@@ -1,6 +1,6 @@
 [package]
 name = "documents"
-description = "ced's engine: open documents over the edit service, actions, ced.* verbs, sessions"
+description = "ced's engine: open documents over the edit service, actions, ced.* commands, sessions"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

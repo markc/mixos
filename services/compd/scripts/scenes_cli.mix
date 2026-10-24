@@ -1,6 +1,6 @@
 -- version: 0.1.0
 -- The scene loader from a terminal: anywhere, and over the mesh (Scene
--- Editor plan §4.7, safety layer 3). Every command is one scenes.* verb.
+-- Editor plan §4.7, safety layer 3). Every command is one scenes.* command.
 -- usage: mix scenes-cli.mix [--target SERVICE] COMMAND
 --   list [--json] | templates [--json] | editor [--safe] [--view V] [--scene NAME]
 --   install TEMPLATE [--as NAME] [--enable]
@@ -48,29 +48,29 @@ fn build_request($o)
   $p = $o.pos
   if len($p) == 0 then usage("missing command") end
   $cmd = $p[0]
-  if $cmd == "list" and len($p) == 1 then return {verb:"scenes.list", body:{}} end
-  if $cmd == "templates" and len($p) == 1 then return {verb:"scenes.templates", body:{}} end
+  if $cmd == "list" and len($p) == 1 then return {command:"scenes.list", body:{}} end
+  if $cmd == "templates" and len($p) == 1 then return {command:"scenes.templates", body:{}} end
   if $cmd == "editor" and len($p) == 1 then
     $body = {safe:$o.safe}
     if $o.view != nil then $body.view = $o.view end
     if $o.scene != nil then $body.scene = $o.scene end
-    return {verb:"scenes.editor.open", body:$body}
+    return {command:"scenes.editor.open", body:$body}
   end
   if $cmd == "install" and len($p) == 2 then
     $body = {template:$p[1], enable:$o.enable}
     if $o.as != nil then $body.name = $o.as end
-    return {verb:"scenes.install", body:$body}
+    return {command:"scenes.install", body:$body}
   end
   if contains(["enable", "disable", "reload", "reset", "remove"], $cmd) and len($p) == 2 then
-    return {verb:"scenes." .. $cmd, body:{name:$p[1]}}
+    return {command:"scenes." .. $cmd, body:{name:$p[1]}}
   end
   if $cmd == "fork" and len($p) == 2 then
     $body = {name:$p[1]}
     if $o.as != nil then $body.as = $o.as end
-    return {verb:"scenes.fork", body:$body}
+    return {command:"scenes.fork", body:$body}
   end
-  if $cmd == "promote" and len($p) == 2 then return {verb:"scenes.promote", body:{from:$p[1]}} end
-  if $cmd == "move" and len($p) == 3 then return {verb:"scenes.move", body:{name:$p[1], edge:$p[2]}} end
+  if $cmd == "promote" and len($p) == 2 then return {command:"scenes.promote", body:{from:$p[1]}} end
+  if $cmd == "move" and len($p) == 3 then return {command:"scenes.move", body:{name:$p[1], edge:$p[2]}} end
   usage("bad command: " .. join($p, " "))
 end
 
@@ -120,10 +120,10 @@ end
 -- Worker: one send, print, exit.
 $req = json_parse(env("SCENES_CLI_REQUEST"))
 $target = $req.target
-$verb = $req.verb
+$command = $req.command
 $wire = json_encode($req.body)
 -- An editor open that falls back runs two behaviour checks (review NIT).
-send $target $verb body=$wire timeout=90
+send $target $command body=$wire timeout=90
 $code = $rc
 $value = $result
 if type($value) == "string" then
@@ -137,9 +137,9 @@ if $code != 0 then
   print(json_encode({error_code:$v.error_code ?? "SCENES_CLI_RC_" .. to_string($code), message:$v.message ?? to_string($value)}))
   exit(1)
 end
-if $req.verb == "scenes.list" and not $req.json then
+if $req.command == "scenes.list" and not $req.json then
   show_list($value)
-elif $req.verb == "scenes.templates" and not $req.json then
+elif $req.command == "scenes.templates" and not $req.json then
   show_templates($value)
 else
   print(json_encode($value))

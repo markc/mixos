@@ -6,7 +6,7 @@
 //! deterministic output (the underlying type is `HashSet` so
 //! iteration order is randomised). A domain not in this set is
 //! `404`ed by the autoconfig handler before any DNS lookup — see
-//! `maild-autoconfig.md §Security` — so this verb tells operators
+//! `maild-autoconfig.md §Security` — so this command tells operators
 //! and agents exactly which Hosts the autoconfig path will accept.
 
 use std::sync::Arc;

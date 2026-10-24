@@ -1,8 +1,8 @@
 -- Real native/ABP boundary. Tests replace this map, never the state machine.
-fn rpc($target, $verb, $body)
+fn rpc($target, $command, $body)
   try
     $wire = type($body) == "string" ? $body : json_encode($body)
-    send $target $verb body=$wire timeout=5
+    send $target $command body=$wire timeout=5
     $code = $rc
     $value = $result
     if type($value) == "string" then
@@ -12,15 +12,15 @@ fn rpc($target, $verb, $body)
       end
     end
     if $code != 0 then
-      raise("SCENES_UPSTREAM", "scene host refused request", {target:$target, verb:$verb, rc:$code, upstream:$value})
+      raise("SCENES_UPSTREAM", "scene host refused request", {target:$target, command:$command, rc:$code, upstream:$value})
     end
     if $value == nil then
-      raise("SCENES_UPSTREAM", "scene host returned no reply value", {target:$target, verb:$verb, rc:$code})
+      raise("SCENES_UPSTREAM", "scene host returned no reply value", {target:$target, command:$command, rc:$code})
     end
     return $value
   catch $message, $error
     if $error.code == "SCENES_UPSTREAM" then raise($error.code, $message, $error.details) end
-    raise("SCENES_TRANSPORT", "scene host request failed", {target:$target, verb:$verb, rc:20, upstream:{error_code:$error.code, message:$message, context:$error.details}})
+    raise("SCENES_TRANSPORT", "scene host request failed", {target:$target, command:$command, rc:20, upstream:{error_code:$error.code, message:$message, context:$error.details}})
   end
 end
 

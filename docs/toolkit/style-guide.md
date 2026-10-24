@@ -24,12 +24,12 @@ crate's `Cargo.toml` lists, as workshop's does:
 [dependencies]
 eframe.workspace = true      # the window
 egui.workspace = true        # labels and layouts the toolkit does not wrap
-toolkit.workspace = true     # theme, chrome, widgets, commands, drive verbs
+toolkit.workspace = true     # theme, chrome, widgets, commands, drive commands
 settings.workspace = true    # the session look follower
 citizen.workspace = true     # the Bus connection
 bus = { workspace = true, features = ["native"] }   # the native client citizen is built on
 futures.workspace = true     # the connection's delivery stream
-serde_json.workspace = true  # verb bodies
+serde_json.workspace = true  # command bodies
 
 [dev-dependencies]
 egui_kittest.workspace = true  # offscreen snapshots and accessibility queries
@@ -164,7 +164,7 @@ fn view(ui: &mut egui::Ui, engine: &Engine) {
 | a hairline or divider | `bars::hairline`, `bars::divider` | `ui.separator()` |
 | a modal | `dialog::Dialog` with `Choice`s | `egui::Window` |
 | a tooltip | `.tooltip(...)`, `tooltip::text` | ad-hoc `on_hover_text` wording |
-| menus, context menus, the Theme menu | the registry's `menu_bar`, `menus`, `context_menu`, `theme_menu::register` | `egui::menu`, a theme verb |
+| menus, context menus, the Theme menu | the registry's `menu_bar`, `menus`, `context_menu`, `theme_menu::register` | `egui::menu`, a theme command |
 | a selectable row | `toolkit::selectable` | `selectable_label` |
 | dim, faint or coloured text | `toolkit::text::{dim, faint, role}` | `RichText::color`, `::font`, `::size` |
 | rendered markdown | `markdown::View` | your own layout |
@@ -250,7 +250,7 @@ the menu bar, menus, context menus and palette from the registry. Right-click
 rows are 24 pt and flush. The View › Theme submenu is
 `toolkit::theme_menu::register`: its rows are commands, and
 `view.theme.set {scheme?, style?, mode?, decorations?, captions?}` is the
-same choice for agents. An app writes no theme verb of its own. The
+same choice for agents. An app writes no theme command of its own. The
 window's choice reaches the compositor too: a server-decorated window's
 title bar is drawn from the window's own look, attributed through the
 broker's record of the app's connection. A multi-window app's extra
@@ -321,7 +321,7 @@ repository gates and in CI.
 ## 13. What the app exposes on the Bus for its look
 
 The toolkit provides these; the app lists them in `app.describe` with its
-drive verbs and registers them in the verb registry:
+drive commands and registers them in the command registry:
 
 - `<app>.look` (query; `{context?}` for apps with several contexts): the
   authority identity (binding, incarnation, revision, source digest, or
@@ -366,7 +366,7 @@ in between.
 - Every view has an offscreen snapshot in the app's `tests/`, rendered in at
   least Studio dark and one light scheme. Look at the image.
 - Rows are found by accessible name, never by position.
-- A registry test checks the verbs the app describes are the ones it
+- A registry test checks the commands the app describes are the ones it
   registers, including `<app>.look` and the `<app>.look.changed` topic.
 - A theme-follow test feeds a look delivery with a `tune` and asserts
   `Chrome::of(ctx)` changed; one with `ui.reduced_motion` asserts the
@@ -391,7 +391,7 @@ in between.
 - [ ] Scrolling uses `toolkit::scroll::Area` with a stable id salt.
 - [ ] Icons come from `Icon`; new ones were added to the toolkit.
 - [ ] Every action is a registry command; menus and the Theme menu come
-      from the registry; no app theme verb.
+      from the registry; no app theme command.
 - [ ] `<app>.look`, `<app>.look.changed`, `view.look.preview` and
       `view.theme.set` are described and registered.
 - [ ] Content regions use `content::surface` and are reported under

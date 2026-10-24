@@ -8,21 +8,21 @@ use design::{DesignContext, Mode, Scheme};
 use egui::Key;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use inspector::model::Verb;
+use inspector::model::Command;
 use inspector::{Dialog, Effect, Engine, Selection, Snapshot};
 use toolkit::Theme;
 use workshop::view::{UiEvent, view};
-use workshop::{commands, label, strings};
+use workshop::{actions, label, strings};
 
 fn engine(dialog: Option<Dialog>) -> Engine {
     let mut s = Snapshot::default();
-    let verb = Verb {
+    let command_name = Command {
         name: "settings.get".into(),
         args: String::new(),
         description: "Read one setting".into(),
         read_only: Some(true),
     };
-    s.services.insert("settingsd".into(), Ok(vec![verb]));
+    s.services.insert("settingsd".into(), Ok(vec![command_name]));
     let mut e = Engine::new(label);
     let Some(Effect::Discover { ticket }) = e.take_effects().pop() else {
         panic!("initial discovery")
@@ -31,7 +31,7 @@ fn engine(dialog: Option<Dialog>) -> Engine {
     e.take_effects();
     e.ui.selected = Some(Selection {
         service: "settingsd".into(),
-        verb: "settings.get".into(),
+        command: "settings.get".into(),
     });
     e.ui.dialog = dialog;
     e
@@ -39,7 +39,7 @@ fn engine(dialog: Option<Dialog>) -> Engine {
 
 /// The window over `engine`; the state collects every frame's events.
 fn harness(engine: Engine) -> Harness<'static, Vec<UiEvent>> {
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let theme = Theme::for_context(DesignContext {
         scheme: Scheme::Pro,
@@ -85,7 +85,7 @@ fn the_body_buttons_run_their_commands_and_name_their_shortcuts() {
     h.run();
     assert!(
         h.state()
-            .contains(&UiEvent::Command("bus.call", toolkit::command::Origin::Ui))
+            .contains(&UiEvent::Command("bus.call", toolkit::action::Origin::Ui))
     );
     let at = h.get_by_label(&label("call")).rect().center();
     h.hover_at(at);

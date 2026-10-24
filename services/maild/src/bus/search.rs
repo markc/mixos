@@ -4,7 +4,7 @@
 //! `maild.search.*` Bus action handlers.
 //!
 //! One action today: `maild.search.rebuild` — Phase 8e gate 3 admin
-//! verb that wipes and re-derives the `mail_search` FTS5 projection
+//! command that wipes and re-derives the `mail_search` FTS5 projection
 //! for one account (or all accounts) from the underlying
 //! `mail_envelopes` rows + CAS blob bodies. Useful when the
 //! projection is corrupt or absent (failed migration, manual wipe).
@@ -104,7 +104,7 @@ async fn handle_rebuild(
     // Per-account rebuild runs on the blocking pool —
     // `rebuild_search_index` does a single `with_set_tx` that holds
     // the per-set mutex for the duration of the rebuild. Targets are
-    // processed sequentially (not concurrently) because the verb is
+    // processed sequentially (not concurrently) because the command is
     // an administrative one-shot, not a hot path; a failure on one
     // account does not stop the others.
     let mut results: Vec<serde_json::Value> = Vec::with_capacity(targets.len());

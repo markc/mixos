@@ -41,7 +41,7 @@ async fn tab_bus(client: &NodedClient) -> Value {
     match peers {
         // noded wraps the peers in an authority record; the list is its routing view.
         Ok(value) => tab["peers"] = peer_list(value),
-        // Peers are optional detail; a noded without the verb still shows services.
+        // Peers are optional detail; a noded without the command still shows services.
         Err(error) => tab["peers_error"] = json!(error.to_string()),
     }
     tab

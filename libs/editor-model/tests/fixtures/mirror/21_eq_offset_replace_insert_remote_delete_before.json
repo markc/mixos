@@ -6,8 +6,8 @@
   "run_id": 1,
   "steps": [
     {"local": {"id": "L1", "edit": {"items": [[10, 20, "R"], [10, 10, "A"]], "coalesce": false}}},
-    {"agent": {"caller": "local:agent", "verb": "edit.delete", "args": {"buffer": "b1_0000e1e1", "range": [0, 5], "origin": "agent:ctl-90"}, "expect": {"rc": 0, "rev": 1}}},
-    {"send": {"id": "L1", "verb": "edit.apply", "caller": "local:ced",
+    {"agent": {"caller": "local:agent", "command": "edit.delete", "args": {"buffer": "b1_0000e1e1", "range": [0, 5], "origin": "agent:ctl-90"}, "expect": {"rc": 0, "rev": 1}}},
+    {"send": {"id": "L1", "command": "edit.apply", "caller": "local:ced",
       "args": {"buffer": "b1_0000e1e1", "ops": [{"op": "replace", "range": [10, 20], "text": "R"}, {"op": "insert", "at": 10, "text": "A"}], "base_rev": 0, "coalesce": false, "origin": "human:ced", "op_id": "c00000001-000001"},
       "expect": {"rc": 0, "rev": 2}}},
     {"deliver_all": {}}

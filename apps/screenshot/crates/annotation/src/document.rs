@@ -3,7 +3,7 @@
 //! Immutable source pixels and bounded editable objects. Undo snapshots
 //! hold geometry, never raster copies; the original is shared, never
 //! written.
-use command::{History, history::Budget};
+use action::{History, history::Budget};
 use image::RgbaImage;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

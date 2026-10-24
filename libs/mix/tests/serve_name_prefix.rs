@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! `on @.verb`: the serve-name placeholder.
+//! `on @.command`: the serve-name placeholder.
 //!
 //! Parser half: `@` (unquoted) is accepted only as the whole first segment
-//! of an `on` name, the AST keeps the static `@.verb` form, and every other
+//! of an `on` name, the AST keeps the static `@.command` form, and every other
 //! placement (`on a.@.b`, `on @`, `on @x.y`, quoted `on "@.x"`, an
 //! expression) is a parse error that names the one valid form.
 //!
 //! Evaluator half: registration replaces `@` with the serve runtime's
 //! service name, so the handler map, dispatch and the HELP listing all see
-//! `<svc>.verb`; outside serve mode the statement raises the catchable
+//! `<svc>.command`; outside serve mode the statement raises the catchable
 //! `SERVE_PREFIX_OUTSIDE_SERVE`.
 
 use std::cell::RefCell;
@@ -101,21 +101,21 @@ fn literal_names_are_unchanged() {
 // ── parser: refused forms ──────────────────────────────────────────────
 
 #[test]
-fn bare_at_without_a_verb_is_refused() {
+fn bare_at_without_a_command_is_refused() {
     let e = parse_err("on @\nend\n");
-    assert!(e.contains("must be followed by `.<verb>`"), "{e}");
+    assert!(e.contains("must be followed by `.<command>`"), "{e}");
 }
 
 #[test]
 fn at_glued_to_a_word_is_refused() {
     let e = parse_err("on @x.y\nend\n");
-    assert!(e.contains("must be followed by `.<verb>`"), "{e}");
+    assert!(e.contains("must be followed by `.<command>`"), "{e}");
 }
 
 #[test]
 fn at_dot_with_no_segment_is_refused() {
     let e = parse_err("on @.\nend\n");
-    assert!(e.contains("expected a verb name after `@.`"), "{e}");
+    assert!(e.contains("expected a command name after `@.`"), "{e}");
 }
 
 #[test]
@@ -273,7 +273,7 @@ end
 on @.ping
   $trace = $trace .. "ping;"
 end
-on literal.verb
+on literal.command
   $trace = $trace .. "literal;"
 end
 "#;
@@ -301,14 +301,14 @@ end
     tx.send(event("photo.call", "A")).unwrap();
     tx.send(event("@.call", "never")).unwrap();
     tx.send(event("photo.ping", "")).unwrap();
-    tx.send(event("literal.verb", "")).unwrap();
+    tx.send(event("literal.command", "")).unwrap();
     drop(tx);
     eval.run_event_pump().await.unwrap();
 
     assert_eq!(
         eval.get_global("trace").unwrap().to_mix_string(),
         "call:A;second:A;ping;literal;",
-        "the resolved name dispatches; the placeholder form is not a verb"
+        "the resolved name dispatches; the placeholder form is not a command"
     );
     let mut names: Vec<String> = runtime
         .help
@@ -318,7 +318,7 @@ end
         .collect();
     names.sort();
     names.dedup();
-    assert_eq!(names, ["literal.verb", "photo.call", "photo.ping"]);
+    assert_eq!(names, ["literal.command", "photo.call", "photo.ping"]);
     assert!(
         runtime
             .help

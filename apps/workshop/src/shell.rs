@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, mpsc};
 use std::task::Poll;
-use toolkit::command::{CommandError, Origin};
+use toolkit::action::{CommandError, Origin};
 use toolkit::{Registry, Strings, Theme, drive};
 
 /// What finished off the UI thread.
@@ -99,25 +99,25 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
     }
 }
 
-/// The app prefix of Workshop's verbs, and of its drive verbs.
+/// The app prefix of Workshop's commands, and of its drive commands.
 pub const APP: &str = "workshop";
 
-/// The whole Bus surface: the engine's verbs and the window's drive verbs.
+/// The whole Bus surface: the engine's commands and the window's drive commands.
 pub fn describe() -> Value {
     let mut surface = model::describe();
-    if let Some(verbs) = surface["verbs"].as_array_mut() {
-        verbs.extend([
+    if let Some(command_names) = surface["commands"].as_array_mut() {
+        command_names.extend([
             json!({"name":"workshop.traffic","args":{"limit":"optional integer 0..1024","filter":"optional string"},"description":"Read the bounded traffic ring","read_only":true}),
             json!({"name":"workshop.observe","args":{"on":"bool","filter":"optional observe filter","body":"none or redacted (default)"},"description":"Control broker observation; topic rows remain after refusal","read_only":false}),
             json!({"name":"workshop.macros.open","args":{"app":"app or global","id":"string"},"description":"Select a macro and read its document","read_only":false}),
         ]);
-        verbs.extend(drive::describe(APP));
-        verbs.extend(inspector::bus::macros::describe(APP));
+        command_names.extend(drive::describe(APP));
+        command_names.extend(inspector::bus::macros::describe(APP));
     }
     surface
 }
 
-/// Resolve the effects that only need the registry (`workshop.commands`
+/// Resolve the effects that only need the registry (`workshop.actions`
 /// and `workshop.execute`) or the description right now, in order, and
 /// return the rest for the shell to perform. Running an executed command
 /// here, before any later event, is what keeps its target the one selected
@@ -144,7 +144,7 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                         ),
                         Err(CommandError::Unknown(_)) => (
                             10,
-                            json!({"error_code":"UNKNOWN_COMMAND","message":label("unknown-command")}),
+                            json!({"error_code":"UNKNOWN_ACTION","message":label("unknown-action")}),
                         ),
                         Err(CommandError::Disabled(_)) => (
                             10,
@@ -156,7 +156,7 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                 Effect::Describe { id, help } => {
                     let surface = describe();
                     let body = if help {
-                        surface["verbs"].clone()
+                        surface["commands"].clone()
                     } else {
                         surface
                     };
@@ -307,7 +307,7 @@ impl Shell {
             macro_stopped: false,
             _macro_change: macro_change,
             engine: Engine::new(label),
-            commands: crate::commands::registry(),
+            commands: crate::actions::registry(),
             strings: strings(),
             file_theme: theme.clone(),
             theme,
@@ -539,7 +539,7 @@ impl Shell {
                         continue;
                     }
                     if !event["topic"].as_str().is_some_and(|topic| {
-                        topic.ends_with(".command.executed") || topic.ends_with(".macros.finished")
+                        topic.ends_with(".action.executed") || topic.ends_with(".macros.finished")
                     }) {
                         continue;
                     }
@@ -554,7 +554,7 @@ impl Shell {
                         self.engine.workshop.message = body.to_string();
                         self.engine.workshop.filter.clear();
                     }
-                    self.engine.workshop.retain(json!({"ts":timestamp(),"direction":"topic","from":event["from"],"service":event["from"],"verb":event["topic"],"payload":body}));
+                    self.engine.workshop.retain(json!({"ts":timestamp(),"direction":"topic","from":event["from"],"service":event["from"],"command":event["topic"],"payload":body}));
                 }
                 if *topic == self.follower.topic() {
                     self.read_look();
@@ -594,8 +594,8 @@ impl Shell {
     /// queue goes straight on; anything else waits until the drive input
     /// before it is answered.
     fn release(&mut self) {
-        while let Some(Event::Delivery(Delivery::Command { verb, .. })) = self.held.front() {
-            let joins_queue = verb.strip_prefix("workshop.").is_some_and(drive::queues);
+        while let Some(Event::Delivery(Delivery::Command { command: command_name, .. })) = self.held.front() {
+            let joins_queue = command_name.strip_prefix("workshop.").is_some_and(drive::queues);
             if self.exiting || self.engine.quitting || (drive::pending(&self.ctx) && !joins_queue) {
                 return;
             }
@@ -613,7 +613,7 @@ impl Shell {
     }
 
     /// Publish the commands run since the last call on
-    /// `<service>.command.executed`.
+    /// `<service>.action.executed`.
     fn publish_executed(&self) {
         let (runs, lost) = self.commands.take_executed();
         if runs.is_empty() && lost == 0 {
@@ -650,15 +650,15 @@ impl Shell {
                     .snapshot
                     .services
                     .iter()
-                    .filter_map(|(service, verbs)| {
+                    .filter_map(|(service, command_names)| {
                         if service.ends_with(".bus") || service == self.bus.service() {
                             return None;
                         }
-                        let app = verbs
+                        let app = command_names
                             .as_ref()
                             .ok()?
                             .iter()
-                            .find_map(|verb| verb.name.strip_suffix(".macros.list"))?;
+                            .find_map(|command_name| command_name.name.strip_suffix(".macros.list"))?;
                         if app == "workshop" {
                             return None;
                         }
@@ -673,7 +673,7 @@ impl Shell {
                         self.bus.service()
                     )]);
                     for service in running.values() {
-                        topics.insert(format!("{service}.command.executed"));
+                        topics.insert(format!("{service}.action.executed"));
                         topics.insert(format!("{service}.macros.finished"));
                     }
                     subscriptions.extend(
@@ -726,7 +726,7 @@ impl Shell {
                 let bus = self.bus.clone();
                 self.spawn(async move {
                     let start = std::time::Instant::now();
-                    let result = bus.raw(&target.service, &target.verb, body).await;
+                    let result = bus.raw(&target.service, &target.command, body).await;
                     Event::Measured(
                         ticket,
                         result,
@@ -740,8 +740,8 @@ impl Shell {
                 self.spawn(async move { Event::Shown(ticket, reply, bus::show(bus, comp).await) });
             }
             Effect::Reply { id, rc, body } => self.bus.reply(id, rc, body),
-            Effect::Drive { id, verb, args } => {
-                if let Some(answer) = drive::request(&self.ctx, id, &verb, &args) {
+            Effect::Drive { id, command: command_name, args } => {
+                if let Some(answer) = drive::request(&self.ctx, id, &command_name, &args) {
                     self.bus.reply(answer.id, answer.rc, answer.body);
                 }
             }
@@ -848,7 +848,7 @@ impl Shell {
         let bus = self.bus.clone();
         self.spawn(async move {
             let result = bus
-                .raw_within(read.service, read.verb, read.body.to_string(), LOOK_BUDGET)
+                .raw_within(read.service, read.command, read.body.to_string(), LOOK_BUDGET)
                 .await;
             Event::Look(read.ticket, result)
         });
@@ -930,7 +930,7 @@ impl Shell {
     /// The window's theme choice (View › Theme, the title bar's switch,
     /// `workshop.theme`).
     fn choice(&self) -> toolkit::theme_menu::Choice {
-        crate::commands::choice(&self.engine)
+        crate::actions::choice(&self.engine)
     }
 
     /// Install the session theme (settingsd's look, else the theme file's)
@@ -1018,7 +1018,7 @@ impl eframe::App for Shell {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use inspector::model::Verb;
+    use inspector::model::Command;
     use inspector::{Selection, Snapshot};
 
     fn test_shell() -> Shell {
@@ -1080,23 +1080,23 @@ mod tests {
         assert!(shell.watched_topics.contains("ced.macros.finished"));
     }
 
-    fn target(verb: &str) -> Selection {
+    fn target(command_name: &str) -> Selection {
         Selection {
             service: "example".into(),
-            verb: verb.into(),
+            command: command_name.into(),
         }
     }
 
     fn engine() -> Engine {
         let mut s = Snapshot::default();
-        let verb = |name: &str| Verb {
+        let command_name = |name: &str| Command {
             name: name.into(),
             args: String::new(),
             description: String::new(),
             read_only: Some(false),
         };
         s.services
-            .insert("example".into(), Ok(vec![verb("a"), verb("b")]));
+            .insert("example".into(), Ok(vec![command_name("a"), command_name("b")]));
         let mut e = Engine::new(label);
         let Some(Effect::Discover { ticket }) = e.take_effects().pop() else {
             panic!("initial discovery")
@@ -1110,7 +1110,7 @@ mod tests {
         effects
             .iter()
             .filter_map(|e| match e {
-                Effect::Call { target, .. } => Some(target.verb.clone()),
+                Effect::Call { target, .. } => Some(target.command.clone()),
                 _ => None,
             })
             .collect()
@@ -1120,19 +1120,19 @@ mod tests {
     /// back, calls `a` and refuses the select.
     #[test]
     fn an_executed_call_keeps_its_target_against_a_later_select() {
-        let (commands, strings) = (crate::commands::registry(), crate::strings());
+        let (commands, strings) = (crate::actions::registry(), crate::strings());
         let mut e = engine();
         e.ui.selected = Some(target("a"));
         let mut performed = Vec::new();
-        for (id, verb, body) in [
+        for (id, command_name, body) in [
             (1, "workshop.execute", r#"{"id":"bus.call"}"#),
-            (2, "workshop.select", r#"{"service":"example","verb":"b"}"#),
+            (2, "workshop.select", r#"{"service":"example","command":"b"}"#),
         ] {
             apply_event(
                 &mut e,
                 Event::Delivery(Delivery::Command {
                     id,
-                    verb: verb.into(),
+                    command: command_name.into(),
                     body: body.into(),
                 }),
             );
@@ -1148,7 +1148,7 @@ mod tests {
     /// sol finding 2: an edit and Ctrl+Enter in one frame call with the edit.
     #[test]
     fn a_same_frame_edit_reaches_the_call() {
-        let (commands, strings) = (crate::commands::registry(), crate::strings());
+        let (commands, strings) = (crate::actions::registry(), crate::strings());
         let mut e = engine();
         e.ui.selected = Some(target("a"));
         e.set_body("{\"old\":1}".into());
@@ -1169,23 +1169,23 @@ mod tests {
     /// row → body → call over the Bus leaves the state the same UI events
     /// leave, and sends the same call.
     #[test]
-    fn bus_verbs_and_ui_events_reach_the_same_state() {
-        let (commands, strings) = (crate::commands::registry(), crate::strings());
+    fn bus_commands_and_ui_events_reach_the_same_state() {
+        let (commands, strings) = (crate::actions::registry(), crate::strings());
         let mut bus = engine();
         let mut performed = Vec::new();
         let steps = [
             ("workshop.filter", json!({"text":"b"})),
             ("workshop.expand", json!({"key":"mesh","open":true})),
-            ("workshop.select_row", json!({"key":"verb:example:b"})),
+            ("workshop.select_row", json!({"key":"command:example:b"})),
             ("workshop.body", json!({"text":"{\"n\":1}"})),
             ("workshop.execute", json!({"id":"bus.call"})),
         ];
-        for (id, (verb, body)) in (1..).zip(steps) {
+        for (id, (command_name, body)) in (1..).zip(steps) {
             apply_event(
                 &mut bus,
                 Event::Delivery(Delivery::Command {
                     id,
-                    verb: verb.into(),
+                    command: command_name.into(),
                     body: body.to_string(),
                 }),
             );
@@ -1199,7 +1199,7 @@ mod tests {
         );
 
         let mut ui = engine();
-        let row = inspector::engine::find(&ui.tree(), "verb:example:b")
+        let row = inspector::engine::find(&ui.tree(), "command:example:b")
             .cloned()
             .unwrap();
         let frame = vec![UiEvent::Filter("b".into()), UiEvent::Toggle("mesh".into())];
@@ -1226,15 +1226,15 @@ mod tests {
     }
 
     #[test]
-    fn every_verb_is_described_and_every_described_verb_is_handled() {
+    fn every_command_is_described_and_every_described_command_is_handled() {
         let surface = describe();
-        let names: Vec<String> = surface["verbs"]
+        let names: Vec<String> = surface["commands"]
             .as_array()
             .unwrap()
             .iter()
             .map(|v| v["name"].as_str().unwrap().into())
             .collect();
-        let mut expected: Vec<String> = model::VERBS.iter().map(|v| (*v).to_owned()).collect();
+        let mut expected: Vec<String> = model::COMMANDS.iter().map(|v| (*v).to_owned()).collect();
         expected.extend(
             [
                 "workshop.traffic",
@@ -1243,7 +1243,7 @@ mod tests {
             ]
             .map(str::to_owned),
         );
-        expected.extend(drive::VERBS.iter().map(|v| format!("{APP}.{v}")));
+        expected.extend(drive::COMMANDS.iter().map(|v| format!("{APP}.{v}")));
         expected.extend(
             inspector::bus::macros::describe(APP)
                 .iter()
@@ -1256,17 +1256,17 @@ mod tests {
             }
             let mut e = engine();
             e.command(1, name, "{}");
-            let effects = settle(&mut e, &crate::commands::registry(), &crate::strings());
+            let effects = settle(&mut e, &crate::actions::registry(), &crate::strings());
             assert!(
-                !effects.iter().any(|x| matches!(x, Effect::Reply { body, .. } if body["error_code"] == "UNKNOWN_VERB")),
+                !effects.iter().any(|x| matches!(x, Effect::Reply { body, .. } if body["error_code"] == "UNKNOWN_COMMAND")),
                 "{name}: {effects:?}"
             );
-            if let Some(verb) = name
+            if let Some(command_name) = name
                 .strip_prefix("workshop.")
-                .filter(|v| drive::VERBS.contains(v))
+                .filter(|v| drive::COMMANDS.contains(v))
             {
                 assert!(
-                    matches!(&effects[..], [Effect::Drive { verb: v, .. }] if v == verb),
+                    matches!(&effects[..], [Effect::Drive { command: v, .. }] if v == command_name),
                     "{name}: {effects:?}"
                 );
             }
@@ -1274,16 +1274,16 @@ mod tests {
         let help = {
             let mut e = engine();
             e.command(1, "HELP", "{}");
-            settle(&mut e, &crate::commands::registry(), &crate::strings())
+            settle(&mut e, &crate::actions::registry(), &crate::strings())
         };
         assert!(
-            matches!(&help[..], [Effect::Reply { rc: 0, body, .. }] if body == &surface["verbs"])
+            matches!(&help[..], [Effect::Reply { rc: 0, body, .. }] if body == &surface["commands"])
         );
     }
 
     #[test]
     fn every_command_is_reachable_by_execute() {
-        let (commands, strings) = (crate::commands::registry(), crate::strings());
+        let (commands, strings) = (crate::actions::registry(), crate::strings());
         for command in commands.iter() {
             let mut e = engine();
             e.ui.selected = Some(target("a"));
@@ -1305,9 +1305,9 @@ mod tests {
 
     #[test]
     fn execute_and_commands_are_answered_in_place() {
-        let (commands, strings) = (crate::commands::registry(), crate::strings());
+        let (commands, strings) = (crate::actions::registry(), crate::strings());
         let mut e = engine();
-        e.command(1, "workshop.commands", "{}");
+        e.command(1, "workshop.actions", "{}");
         e.command(2, "workshop.execute", r#"{"id":"nope"}"#);
         e.command(3, "workshop.execute", r#"{"id":"help.about"}"#);
         e.command(4, "workshop.execute", r#"{"id":"help.about"}"#);
@@ -1325,7 +1325,7 @@ mod tests {
                 .as_array()
                 .is_some_and(|c| c.iter().any(|c| c["id"] == "bus.call"))
         );
-        assert_eq!(reply(2).unwrap().1["error_code"], "UNKNOWN_COMMAND");
+        assert_eq!(reply(2).unwrap().1["error_code"], "UNKNOWN_ACTION");
         assert_eq!(reply(3).unwrap().0, 0);
         assert_eq!(
             reply(4).unwrap().1["error_code"],

@@ -9,7 +9,7 @@
 //! that a resting pointer cannot undo.
 //!
 //! - [`Menu`], [`Entry`], [`Row`]: the model, built each frame (the command
-//!   registry builds it from its commands, [`crate::command::Registry::menus`]).
+//!   registry builds it from its commands, [`crate::action::Registry::menus`]).
 //! - [`Nav`]: which menu is open and which row of each level is highlighted,
 //!   with the keyboard rules of §3.6. Pure data, tested without egui.
 //! - [`bar`]: draws the titles into the current row and each open level as a
@@ -507,7 +507,7 @@ struct State {
     /// The menu those keys were typed in.
     deferred_menu: Option<usize>,
     /// The menus drawn last frame (the whole model, not a search view), for
-    /// the drive verbs that list, open and close them.
+    /// the drive commands that list, open and close them.
     menus: Vec<Menu>,
 }
 

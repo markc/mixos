@@ -369,7 +369,7 @@ fn info_once($svc)
   return {rc: $rc, reply: $reply}
 end
 
--- The structured verbs travel as a JSON body, which keeps a refusal whole.
+-- The structured commands travel as a JSON body, which keeps a refusal whole.
 fn list_once($svc)
   $b = json_encode({})
   send $svc comp.windows.list body=$b timeout=5
@@ -418,9 +418,9 @@ fn unmaximize_once($svc, $id, $gen)
   return {rc: $rc, reply: $reply}
 end
 
-fn input_once($svc, $verb, $args)
+fn input_once($svc, $command, $args)
   $b = json_encode($args)
-  send $svc $verb body=$b timeout=5
+  send $svc $command body=$b timeout=5
   return {rc: $rc, reply: $reply}
 end
 
@@ -1229,7 +1229,7 @@ if $bus then
   print("bus: workspace 1: s" .. to_string($wid) .. " shown, commits resumed " .. to_string($c2) .. " -> " .. to_string($c3))
   truth_matches($SVC, "truth back on workspace 1", [$kp, $cp, $wp])
   $gen = $row.generation
-  -- 13. minimise / restore through compd's verbs.
+  -- 13. minimise / restore through compd's commands.
   $m = minimize_once($SVC, $wid, $gen)
   if $m.rc != 0 or type($m.reply) != "map" or $m.reply.minimized != true then
     finish(false, "comp.window.minimize: rc " .. to_string($m.rc) .. " " .. json_encode($m.reply), [$kp, $cp, $wp])
@@ -1513,7 +1513,7 @@ if $bus then
   end
   print("bus: input.host.passthrough false/true; injected move landed with it off")
   -- A human sequence completes, one reply per step.
-  $sq = seq_once($SVC, {seat: "human", steps: [{verb: "comp.input.pointer.move", args: {x: 200, y: 200}}, {verb: "comp.input.pointer.move", args: {x: 210, y: 210}, delay_ms: 100}]})
+  $sq = seq_once($SVC, {seat: "human", steps: [{command: "comp.input.pointer.move", args: {x: 200, y: 200}}, {command: "comp.input.pointer.move", args: {x: 210, y: 210}, delay_ms: 100}]})
   if $sq.rc != 0 or type($sq.reply) != "map" or $sq.reply.seat != "human" or len($sq.reply.steps ?? []) != 2 then
     finish(false, "comp.input.sequence human: rc " .. to_string($sq.rc) .. " " .. json_encode($sq.reply), [$kp, $cp, $wp])
   end
@@ -1542,7 +1542,7 @@ if $bus then
       finish(false, "the agent-seat client (" .. $dot .. ") never mapped a window", [$dp, $kp, $cp, $wp])
     end
     $aw = {id: $arow.id, generation: $arow.generation}
-    $sq = seq_once($SVC, {steps: [{verb: "comp.input.pointer.move", args: {window: $aw, x: 10, y: 10}}, {verb: "comp.input.pointer.move", args: {window: $aw, x: 20, y: 20}}, {verb: "comp.input.pointer.move", args: {window: $aw, x: 30, y: 30}}, {verb: "comp.input.pointer.button", args: {button: "left"}}]})
+    $sq = seq_once($SVC, {steps: [{command: "comp.input.pointer.move", args: {window: $aw, x: 10, y: 10}}, {command: "comp.input.pointer.move", args: {window: $aw, x: 20, y: 20}}, {command: "comp.input.pointer.move", args: {window: $aw, x: 30, y: 30}}, {command: "comp.input.pointer.button", args: {button: "left"}}]})
     if $sq.rc != 0 or type($sq.reply) != "map" or $sq.reply.seat != "agent" or len($sq.reply.steps ?? []) != 4 or $sq.reply.steps[0].coalesced != 3 or type($sq.reply.steps[3].target) != "map" or $sq.reply.steps[3].target.id != $arow.id then
       finish(false, "agent sequence onto s" .. to_string($arow.id) .. ": rc " .. to_string($sq.rc) .. " " .. json_encode($sq.reply), [$dp, $kp, $cp, $wp])
     end
@@ -1551,7 +1551,7 @@ if $bus then
     $helper = $run_dir .. "/human-mid.mix"
     write_file($helper, "sleep(0.4)\n$b = json_encode({seat: \"human\", x: 300, y: 300})\nsend " .. $SVC .. " comp.input.pointer.move body=$b timeout=5\nprint(\"rc \" .. to_string($rc))\n")
     $hm = spawn([$mix_bin, $helper], {stdout: {file: $logs .. "/human-mid.log"}, stderr: "stdout", detach: true})
-    $sq = seq_once($SVC, {steps: [{verb: "comp.input.pointer.move", args: {window: $aw, x: 12, y: 12}}, {verb: "comp.input.pointer.move", args: {window: $aw, x: 40, y: 40}, delay_ms: 1200}]})
+    $sq = seq_once($SVC, {steps: [{command: "comp.input.pointer.move", args: {window: $aw, x: 12, y: 12}}, {command: "comp.input.pointer.move", args: {window: $aw, x: 40, y: 40}, delay_ms: 1200}]})
     $n = 0
     while alive($hm) and $n < 20
       sleep(0.1)
@@ -1910,8 +1910,8 @@ if $bus then
   $rshot_after = $logs .. "/region-after.ppm"
   $rregion = "600,400,200,150"
   $rsteps = "sleep(0.6)\n"
-  for each $st in [{verb: "comp.input.pointer.move", args: {seat: "human", x: 600, y: 400}}, {verb: "comp.input.pointer.button", args: {seat: "human", button: "left", action: "press"}}, {verb: "comp.input.pointer.move", args: {seat: "human", x: 700, y: 480}}, {verb: "comp.input.pointer.move", args: {seat: "human", x: 800, y: 550}}]
-    $rsteps = $rsteps .. "$b = " .. json_encode(json_encode($st.args)) .. "\nsend " .. $SVC .. " " .. $st.verb .. " body=$b timeout=5\nprint(\"rc \" .. to_string($rc))\nsleep(0.05)\n"
+  for each $st in [{command: "comp.input.pointer.move", args: {seat: "human", x: 600, y: 400}}, {command: "comp.input.pointer.button", args: {seat: "human", button: "left", action: "press"}}, {command: "comp.input.pointer.move", args: {seat: "human", x: 700, y: 480}}, {command: "comp.input.pointer.move", args: {seat: "human", x: 800, y: 550}}]
+    $rsteps = $rsteps .. "$b = " .. json_encode(json_encode($st.args)) .. "\nsend " .. $SVC .. " " .. $st.command .. " body=$b timeout=5\nprint(\"rc \" .. to_string($rc))\nsleep(0.05)\n"
   end
   $rsteps = $rsteps .. "sleep(0.3)\n$s = run_argv([" .. json_encode($shot) .. ", " .. json_encode($rshot_during) .. ", \"--region\", " .. json_encode($rregion) .. "], {timeout: 20})\nprint(\"shot \" .. to_string($s.exit_code) .. \" \" .. trim($s.stderr))\n"
   $rsteps = $rsteps .. "$b = " .. json_encode(json_encode({seat: "human", button: "left", action: "release"})) .. "\nsend " .. $SVC .. " comp.input.pointer.button body=$b timeout=5\nprint(\"rc \" .. to_string($rc))\n"
@@ -2096,7 +2096,7 @@ if $bus then
   truth_matches($SVC, "truth after the binding chords", [$ed, $kp, $cp, $wp])
   -- 14j. session lock (batch C): testkit-lock-client locks the session with
   -- eventdemo (14i) mapped and focused. Bus reads focus.session_lock locked,
-  -- no windows.* rows and nameless, invisible windows; window verbs and
+  -- no windows.* rows and nameless, invisible windows; window commands and
   -- workspace sets answer `locked`; a human Super+2 switches nothing; a key
   -- reaches the lock client and not eventdemo; the screen at eventdemo's
   -- window shows the lock colour, not the window. SIGUSR1 unlocks: the
@@ -2238,7 +2238,7 @@ if $bus then
   if channel_gap($lpx, $lock_colour) > 12 then
     finish(false, "the locked screen at " .. $probe_at .. " shows " .. json_encode($lpx) .. " (the window was " .. json_encode($window_px) .. "), not the lock colour " .. json_encode($lock_colour), [$lk, $ed, $kp, $cp, $wp])
   end
-  print("bus: locked: the screen shows the lock surface " .. json_encode($lpx) .. " where the window was " .. json_encode($window_px) .. "; b reached the lock client only; Super+2 and window verbs refused")
+  print("bus: locked: the screen shows the lock surface " .. json_encode($lpx) .. " where the window was " .. json_encode($window_px) .. "; b reached the lock client only; Super+2 and window commands refused")
   -- Unlock.
   $ul = kill($lk, 10)
   $phase = nil
@@ -2558,7 +2558,7 @@ if $bus then
   -- human click where it sat reaches something else (never s<eventdemo>),
   -- focus does not go to it and the workspace does not switch to it. Then
   -- it comes back. (Touch and tablet, the paths E5 changes, have no Bus
-  -- injection verb; the pointer exercises the same hit driver's precondition
+  -- injection command; the pointer exercises the same hit driver's precondition
   -- through the canvas press.)
   $ew5 = truth_window($SVC, $erow.id)
   $sb5 = json_encode({id: $erow.id, generation: $erow.generation, index: 2, follow: false})

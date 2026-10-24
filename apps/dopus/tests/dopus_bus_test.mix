@@ -3,24 +3,24 @@
 -- clients. The twin panes are proven over the Bus: dopus.info reports two
 -- panes; dopus.open lands the first PATH in the left pane and the second in
 -- the right (extras logged and ignored, `~` expanded); nav.switch-pane (Tab)
--- flips the active pane and every active-pane verb (view.sort-* with law 5's
+-- flips the active pane and every active-pane command (view.sort-* with law 5's
 -- same-column toggle, view.toggle-hidden, nav.parent/back/forward/home,
 -- selection.*) moves only the active pane while dopus.state shows both;
--- refusals stay honest (unknown action INVALID_ARGUMENT, unknown verb
--- UNKNOWN_VERB, theme.set AND the theme.* actions UNAVAILABLE headless).
+-- refusals stay honest (unknown action INVALID_ARGUMENT, unknown command
+-- UNKNOWN_COMMAND, theme.set AND the theme.* actions UNAVAILABLE headless).
 -- The P3 posture is pinned: EVERY `file.*` id (all six) stays FORBIDDEN —
 -- the file operations are keyboard + dialog only in the windowed app; the
 -- Bus never mutates the filesystem, permanently. A watcher on
--- dopus-test.command.executed sees every accepted dopus.action, in order,
+-- dopus-test.action.executed sees every accepted dopus.action, in order,
 -- with origin bus, and none of the refused ones. dopus.quit answers rc 0
 -- BEFORE the process exits
 -- (reply-then-exit: the client's send would time out otherwise).
 --
 -- NOT reachable over the Bus, so not drivable here: the listing's directory
--- expansion (core `toggle_expand`) has no verb and `file.*` is refused — the
+-- expansion (core `toggle_expand`) has no command and `file.*` is refused — the
 -- window exercises both (dialogs included); the wire cannot. The confirm/
 -- prompt dialogs are raised ONLY by the windowed keyboard actions
--- (file.delete confirms; file.new-folder/file.rename prompt): no Bus verb
+-- (file.delete confirms; file.new-folder/file.rename prompt): no Bus command
 -- triggers one, so the headless fail-closed answers (law 3) are trivially
 -- satisfied, and `dopus.state` deliberately carries no dialog fields.
 -- Documented, not faked.
@@ -59,7 +59,7 @@ $dopus_pid = nil
 $alpha = $tmp .. "/work/alpha"
 $beta = $tmp .. "/work/beta"
 $gamma = $tmp .. "/work/gamma"
--- dopus-test.command.executed, one JSON line per delivery, written by a
+-- dopus-test.action.executed, one JSON line per delivery, written by a
 -- `mix --serve` watcher; $expected is every accepted dopus.action id, in order.
 $watch_pid = nil
 $watch_out = $tmp .. "/executed.jsonl"
@@ -110,7 +110,7 @@ fn executed()
   return $rows
 end
 -- The pane's row in dopus.state (re-fetched each time: state only moves
--- through verbs, and every verb here answers before the next call).
+-- through commands, and every command here answers before the next call).
 fn pane($index)
   $st = ok('dopus.state', {})
   check(length($st.panes) == 2, "dopus.state has " .. to_string(length($st.panes)) .. " panes")
@@ -165,16 +165,16 @@ try
     "dopus.ping: " .. json_encode($pong))
   $desc = ok('dopus.describe', {})
   check($desc.contract == "ctk-app-control.v0" and $desc.app == "dopus" and $desc.engine == "egui"
-    and contains(join($desc.verbs, " "), "dopus.state"),
+    and contains(join($desc.commands, " "), "dopus.state"),
     "dopus.describe: " .. json_encode($desc))
 
-  -- 0. watch dopus-test.command.executed. The `on` line must name the full
+  -- 0. watch dopus-test.action.executed. The `on` line must name the full
   -- topic, and subscribe() returns before the broker confirms it, so publish
   -- probes (carrying $tag) until one comes back: then the watcher is live.
   -- The bare hyphenated `on` name needs mix 0.113.1 or later.
-  write_file($tmp .. "/watch.mix", "subscribe(\"dopus-test.command.executed\")\nwrite_file(env(\"WATCH_OUT\"), \"\")\n" ..
-    "on dopus-test.command.executed\n  append_file(env(\"WATCH_OUT\"), json_encode($event.args) .. \"\\n\")\nend\n")
-  write_file($tmp .. "/probe.mix", "publish(\"dopus-test.command.executed\", json_encode({probe: $1}))\nexit(if $rc == 0 then 0 else 1 end)\n")
+  write_file($tmp .. "/watch.mix", "subscribe(\"dopus-test.action.executed\")\nwrite_file(env(\"WATCH_OUT\"), \"\")\n" ..
+    "on dopus-test.action.executed\n  append_file(env(\"WATCH_OUT\"), json_encode($event.args) .. \"\\n\")\nend\n")
+  write_file($tmp .. "/probe.mix", "publish(\"dopus-test.action.executed\", json_encode({probe: $1}))\nexit(if $rc == 0 then 0 else 1 end)\n")
   $watch_pid = spawn([$mix, "--serve", $tmp .. "/watch.mix", "--name", "dopus-test-watch"],
     {detach: true, clear_env: true, env: merge($env, {WATCH_OUT: $watch_out}),
      stdout: {file: $tmp .. "/watch.log"}, stderr: "stdout"})
@@ -381,7 +381,7 @@ try
   check(deep_eq($after_panels.places, $before_panels.places)
     and deep_eq($after_panels.properties, $before_panels.properties),
     "refused headless toggles changed panel state")
-  refused('dopus.frobnicate', {}, "UNKNOWN_VERB")
+  refused('dopus.frobnicate', {}, "UNKNOWN_COMMAND")
   refused('dopus.theme.set mode="dark"', {}, "UNAVAILABLE")
   -- The theme.* actions share theme.set's posture: UNAVAILABLE (the
   -- vocabulary exists; headless has no painter), never FORBIDDEN.
@@ -406,7 +406,7 @@ try
   refused('dopus.action id="file.move-other-pane"', {}, "FORBIDDEN")
   refused('dopus.action id="file.delete"', {}, "FORBIDDEN")
   -- The confirm/prompt dialogs are raised ONLY by the windowed keyboard
-  -- actions: there is deliberately no Bus verb that triggers one, so the
+  -- actions: there is deliberately no Bus command that triggers one, so the
   -- headless fail-closed answers (law 3) are trivially satisfied and
   -- nothing here can drive a dialog. dopus.state's shape is the whole
   -- contract includes P4 panel fields — assert every documented
@@ -433,9 +433,9 @@ try
   end
   check($file_rows == 6, "expected 6 file.* rows in actions.list, got " .. to_string($file_rows))
 
-  -- 10c. dopus-test.command.executed carried every accepted dopus.action, in
+  -- 10c. dopus-test.action.executed carried every accepted dopus.action, in
   -- order, from the bus, and nothing else: no refused action (unknown id,
-  -- bad pane, headless-unavailable, theme.*, file.*) and no other verb.
+  -- bad pane, headless-unavailable, theme.*, file.*) and no other command.
   -- The publisher is async: wait for the count, then a beat for strays.
   for each $i in range(1, 50)
     if length(executed()) >= length($expected) then break end
@@ -469,7 +469,7 @@ try
   end
   check($exited, "dopus still running 10 s after dopus.quit")
   $dopus_pid = nil
-  print("PASS dopus headless e2e: boot twin-pane state, dopus.open pane routing + extras ignored + tilde, switch-pane, active-pane sort (law 5 toggle)/hidden/nav/selection, refusals (unknown action/verb, theme.set + theme.*), P3 posture (all six file.* FORBIDDEN, state shape unchanged, actions.list availability both ways: empty-dir disabled, selected enabled), single instance, executed topic (every accepted action in order, origin bus, seq from 1, refusals absent), reply-then-exit quit")
+  print("PASS dopus headless e2e: boot twin-pane state, dopus.open pane routing + extras ignored + tilde, switch-pane, active-pane sort (law 5 toggle)/hidden/nav/selection, refusals (unknown action/command, theme.set + theme.*), P3 posture (all six file.* FORBIDDEN, state shape unchanged, actions.list availability both ways: empty-dir disabled, selected enabled), single instance, executed topic (every accepted action in order, origin bus, seq from 1, refusals absent), reply-then-exit quit")
 catch $err
   for each $log in glob($tmp .. "/*.log")
     print("--- " .. $log .. "\n" .. read_file($log))

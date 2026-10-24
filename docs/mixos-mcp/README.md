@@ -46,7 +46,7 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 - `bus_call`, `bus_list_services`, `bus_node_info`, `bus_list_peers`, `noded_ping`
 - `term_list`, `term_snapshot`, `term_type`, `term_tab`, `term_pane`
 - `log_tail`, `log_search`
-- `app_describe`, `app_commands`, `app_execute`
+- `app_describe`, `app_actions`, `app_execute`
 - `desktop_windows`, `desktop_window_wait`
 - `context_search`, `index_workspace`, `knowledge_digest`, `knowledge_brief`
 - `skills_retrieve`, `skills_store`, `skills_refine`, `skills_graduate`,
@@ -57,7 +57,7 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 ### Application commands
 
 `app_describe {service}` calls `app.describe` on that Bus service.
-`app_commands {service}` calls `<service>.commands`. Its `result` contains
+`app_actions {service}` calls `<service>.actions`. Its `result` contains
 the application's command rows unchanged: `id`, `label`, `menu`, `shortcut`,
 `more` (when present), `enabled` and `checked`, plus any further metadata.
 
@@ -73,8 +73,8 @@ The same error-text pass-through and prefix removal apply to `app_describe`,
 
 Retired tools: `app_actions_list`, `app_action_invoke`, `app_controls_list`,
 `app_control_get`, `app_control_set` and `app_control_wait` have been removed
-without aliases. Use `app_commands` and `app_execute` for registry commands,
-and `app_describe` to discover an application's state verbs. These retired
+without aliases. Use `app_actions` and `app_execute` for registry commands,
+and `app_describe` to discover an application's state commands. These retired
 tool names must not be reused.
 
 ### Knowledge tools

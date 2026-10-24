@@ -18,7 +18,7 @@ decision fixes these addresses.
 - [Try it beside your desktop](try.md): run MixOS as a small signed image on
   its own virtual terminal, next to the desktop you already use.
 - [Driving apps over the Bus](drive.md): how an agent drives a native MixOS
-  app through Bus verbs.
+  app through Bus commands.
 
 ## Indexes
 
@@ -44,7 +44,7 @@ and in the [repository](https://github.com/markc/mixos/tree/main/docs/docs/decis
 
 ## Specifications
 
-- [Bus verb registry](https://github.com/markc/mixos/blob/main/docs/docs/spec/bus/verbs.conf.mix)
+- [Bus command registry](https://github.com/markc/mixos/blob/main/docs/docs/spec/bus/commands.conf.mix)
 - [Bridge](spec/bridge/README.md)
 - [Portal](spec/portal/README.md)
 - [Releases](spec/releases/README.md)

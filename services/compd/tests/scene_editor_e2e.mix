@@ -42,23 +42,23 @@ fn check($ok, $message)
   if not $ok then raise("SE_E2E", $message) end
 end
 -- One-shot anonymous client; runtime values arrive as $a from argv.
-fn call($svc, $verb, $a)
-  $src = "$a = json_parse($1)\n$w = json_encode($a)\nsend " .. $svc .. " " .. $verb .. " body=$w timeout=30\n" ..
+fn call($svc, $command, $a)
+  $src = "$a = json_parse($1)\n$w = json_encode($a)\nsend " .. $svc .. " " .. $command .. " body=$w timeout=30\n" ..
     "$v = $result\nif type($v) == \"string\" then\n  try\n    $v = json_parse($v)\n  catch $ignored\n  end\nend\n" ..
     "print(json_encode({rc: $rc, reply: $v}))\n"
   write_file($tmp .. "/step.mix", $src)
   $run = run_argv([$mix, $tmp .. "/step.mix", json_encode($a)], {clear_env:true, env:$env, timeout:45})
-  check($run.ok, "client step failed: " .. $svc .. " " .. $verb .. ": " .. $run.stderr .. $run.stdout)
+  check($run.ok, "client step failed: " .. $svc .. " " .. $command .. ": " .. $run.stderr .. $run.stdout)
   return json_parse($run.stdout)
 end
-fn ok($svc, $verb, $a)
-  $r = call($svc, $verb, $a)
-  check($r.rc == 0, $svc .. " " .. $verb .. " failed: " .. json_encode($r))
+fn ok($svc, $command, $a)
+  $r = call($svc, $command, $a)
+  check($r.rc == 0, $svc .. " " .. $command .. " failed: " .. json_encode($r))
   return $r.reply
 end
-fn refused($svc, $verb, $a, $code)
-  $r = call($svc, $verb, $a)
-  check($r.rc == 10 and ($r.reply ?? {}).error_code == $code, $svc .. " " .. $verb .. " expected " .. $code .. ": " .. json_encode($r))
+fn refused($svc, $command, $a, $code)
+  $r = call($svc, $command, $a)
+  check($r.rc == 10 and ($r.reply ?? {}).error_code == $code, $svc .. " " .. $command .. " expected " .. $code .. ": " .. json_encode($r))
   return $r.reply
 end
 fn editor()
@@ -73,13 +73,13 @@ fn until($what, $pred_field, $want)
   end
   raise("SE_E2E", "timed out waiting for " .. $what .. ": " .. json_encode(ok("scenes", "scenes.list", {})))
 end
--- Requests a recording fake appended to its log, for one verb.
-fn logged($path, $verb)
+-- Requests a recording fake appended to its log, for one command.
+fn logged($path, $command)
   if not exists($path) then return [] end
-  return filter(map(read_lines($path), fn($l) = json_parse($l)), fn($c) = $c.verb == $verb)
+  return filter(map(read_lines($path), fn($l) = json_parse($l)), fn($c) = $c.command == $command)
 end
-fn shell_calls($verb)
-  return logged($shell_log, $verb)
+fn shell_calls($command)
+  return logged($shell_log, $command)
 end
 fn start_citizen($name, $script, $extra, $log)
   $e = {}
@@ -138,26 +138,26 @@ fn estate()
   return ok("scene-editor", "editor.state", {})
 end
 -- A click as Quoin directs it: {scene, node, kind, item?}.
-fn click($verb, $node, $item)
+fn click($command, $node, $item)
   $a = {scene:"editor", node:$node, kind:"click"}
   if $item != nil then $a.item = $item end
-  return ok("scene-editor", $verb, $a)
+  return ok("scene-editor", $command, $a)
 end
 -- An action click is answered {queued:true} and runs as one local task; the
 -- behaviour sets busy before it replies, so busy:false after the reply means
 -- exactly this action finished.
-fn act($verb, $node, $item)
-  $r = click($verb, $node, $item)
-  check($r.queued == true, $verb .. " " .. $node .. " was not queued: " .. json_encode($r))
+fn act($command, $node, $item)
+  $r = click($command, $node, $item)
+  check($r.queued == true, $command .. " " .. $node .. " was not queued: " .. json_encode($r))
   for each $i in range(1, 300)
     $st = estate()
     if not $st.busy then
-      check($st.last != nil and $st.last.failed == nil, $verb .. " " .. $node .. " failed: " .. json_encode($st.last))
+      check($st.last != nil and $st.last.failed == nil, $command .. " " .. $node .. " failed: " .. json_encode($st.last))
       return $st
     end
     sleep(0.1)
   end
-  raise("SE_E2E", $verb .. " " .. $node .. " never finished: " .. json_encode(estate()))
+  raise("SE_E2E", $command .. " " .. $node .. " never finished: " .. json_encode(estate()))
 end
 fn scene_row($name)
   for each $row in ok("scenes", "scenes.list", {}).scenes

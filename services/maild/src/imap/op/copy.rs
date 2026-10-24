@@ -91,7 +91,7 @@ struct CopyReq {
 
 /// Parse `COPY` / `UID COPY` arguments per RFC 9051 §6.4.7.
 ///
-/// Grammar after the verb is stripped:
+/// Grammar after the command is stripped:
 ///
 /// ```text
 /// args = sequence-set SP mailbox

@@ -13,16 +13,16 @@
 //! ensure`], `nested` or `kms-live`); before that every key is forwarded.
 //! Actions that touch only this state or the session run here (the toggle,
 //! the VT switch, the nested exit); window and workspace actions are queued
-//! and run by the same Bus pass through the comp verbs' code
-//! (`policy_host::control::apply_bindings`), so a chord and its verb share
+//! and run by the same Bus pass through the comp commands' code
+//! (`policy_host::control::apply_bindings`), so a chord and its command share
 //! one primitive.
 //!
 //! The user keys come first ([`policy::user_keys`], §6.0): bare F1–F12 and
 //! Right Ctrl/Alt/Shift + arrows, matched side-exact on the evdev code. A
 //! user key fires the user's binding, goes on when the user bound it
 //! passthrough, and is otherwise swallowed; it never reaches the table
-//! below or a client. A `comp` verb runs in the Bus pass through the comp
-//! verbs' own parser and code; any other verb is sent over the comp port's
+//! below or a client. A `comp` command runs in the Bus pass through the comp
+//! commands' own parser and code; any other command is sent over the comp port's
 //! Bus client, fire-and-forget. The keymap is the session user's keymap.v1
 //! file ([`user_keymap_path`]), followed live by an inotify watch.
 
@@ -58,13 +58,13 @@ const BUS_FIRE_TTL: Duration = Duration::from_secs(2);
 pub struct Bindings {
     /// The user-key layer, ahead of the table.
     pub user: UserKeys,
-    /// User-key verbs fired since start, and the last one.
+    /// User-key commands fired since start, and the last one.
     pub user_fired: u64,
     pub user_last: Option<&'static str>,
     user_keymap: Option<UserKeymap>,
-    /// `comp` verbs waiting for the Bus pass.
+    /// `comp` commands waiting for the Bus pass.
     comp_fires: Vec<UserFire>,
-    /// Other services' verbs waiting for the comp port.
+    /// Other services' commands waiting for the comp port.
     bus_fires: VecDeque<(Instant, UserFire)>,
     state: Option<BindingState>,
     /// Window/workspace actions waiting for the Bus pass.
@@ -119,11 +119,11 @@ impl Bindings {
         std::mem::take(&mut self.launches)
     }
 
-    /// Queue a user key's verb: a `comp` verb for the Bus pass, any other
+    /// Queue a user key's command: a `comp` command for the Bus pass, any other
     /// for the comp port.
     pub fn queue_user_fire(&mut self, fire: UserFire) {
         self.user_fired = self.user_fired.saturating_add(1);
-        self.user_last = Some(fire.verb);
+        self.user_last = Some(fire.command);
         if fire.is_comp() {
             self.comp_fires.push(fire);
             return;
@@ -134,12 +134,12 @@ impl Bindings {
         self.bus_fires.push_back((Instant::now(), fire));
     }
 
-    /// The queued `comp` verbs, oldest first.
+    /// The queued `comp` commands, oldest first.
     pub fn take_comp_fires(&mut self) -> Vec<UserFire> {
         std::mem::take(&mut self.comp_fires)
     }
 
-    /// The queued verbs for other services, oldest first; any queued
+    /// The queued commands for other services, oldest first; any queued
     /// longer than [`BUS_FIRE_TTL`] is dropped.
     pub fn take_bus_fires(&mut self) -> Vec<UserFire> {
         let now = Instant::now();
@@ -432,7 +432,7 @@ pub fn key(
 
 /// The user-key half of [`key`], on the comp state alone (the headless
 /// harness drives it as the seat does): the layer's decision for one edge,
-/// with its verb queued and the edge recorded for the injector. When it
+/// with its command queued and the edge recorded for the injector. When it
 /// took the edge, the caller arms `repeat` and stops: no later layer and no
 /// client sees the key.
 pub fn user_key(

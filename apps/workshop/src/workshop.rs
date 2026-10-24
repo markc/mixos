@@ -16,9 +16,9 @@ pub async fn perform(
             let library = macros::Library::scan(&roots).map_err(|error| error.to_string())?;
             let mut catalogues = serde_json::Map::new();
             let session = macros::Session::for_app("workshop");
-            let global = macros::verbs::handle(
+            let global = macros::commands::handle(
                 &session,
-                macros::verbs::Caller::Workshop,
+                macros::commands::Caller::Workshop,
                 "reload",
                 &json!({}),
             )
@@ -31,9 +31,9 @@ pub async fn perform(
                 }
                 let session = macros::Session::with_roots(&app, Some(roots.clone()));
                 session.replace_catalogue(catalogue);
-                let mut list = macros::verbs::handle(
+                let mut list = macros::commands::handle(
                     &session,
-                    macros::verbs::Caller::Workshop,
+                    macros::commands::Caller::Workshop,
                     "list",
                     &json!({}),
                 )
@@ -176,7 +176,7 @@ pub async fn perform(
 }
 
 async fn observe(bus: &Handle, args: &Value) -> Result<Value, String> {
-    observe_with(args, |verb, args| bus.call("noded", verb, args)).await
+    observe_with(args, |command, args| bus.call("noded", command, args)).await
 }
 
 async fn observe_with<F, Fut>(args: &Value, mut call: F) -> Result<Value, String>
@@ -269,7 +269,7 @@ async fn request_macro(
         } else {
             macros::Session::with_roots(&app, macros::Roots::resolve())
         };
-        match macros::verbs::handle(&session, macros::verbs::Caller::Workshop, &suffix, &args)
+        match macros::commands::handle(&session, macros::commands::Caller::Workshop, &suffix, &args)
             .wait()
         {
             Ok(answer) => Ok(answer),
@@ -286,9 +286,9 @@ mod tests {
     #[tokio::test]
     async fn failed_stop_cleans_up_the_replacement() {
         let mut calls = Vec::new();
-        let answer = observe_with(&json!({"on":true,"subscription_id":"old"}), |verb, args| {
-            calls.push((verb, args.clone()));
-            let reply = if verb == "noded.observe.start" {
+        let answer = observe_with(&json!({"on":true,"subscription_id":"old"}), |command, args| {
+            calls.push((command, args.clone()));
+            let reply = if command == "noded.observe.start" {
                 Ok(inspector::bus::Reply {
                     rc: 0,
                     body: json!({"subscription_id":"new","body":"redacted"}).to_string(),
@@ -349,13 +349,13 @@ mod tests {
             use futures::StreamExt;
             let event = tokio::time::timeout(std::time::Duration::from_secs(5), async {
                 loop {
-                    if let Some(inspector::bus::Delivery::Command { id, verb, body }) =
+                    if let Some(inspector::bus::Delivery::Command { id, command, body }) =
                         observed.next().await
                     {
-                        if verb == "noded.observe.event" {
+                        if command == "noded.observe.event" {
                             assert_eq!(id, 0, "one-way events must not occupy reply slots");
                             let row: Value = serde_json::from_str(&body).unwrap();
-                            if row["verb"] == "noded.ping" {
+                            if row["command"] == "noded.ping" {
                                 break row;
                             }
                         } else {
@@ -366,7 +366,7 @@ mod tests {
             })
             .await
             .unwrap();
-            assert_eq!(event["verb"], "noded.ping");
+            assert_eq!(event["command"], "noded.ping");
             let replacement = perform(
                 allowed.clone(),
                 "observe",
@@ -400,8 +400,8 @@ mod tests {
                     .unwrap()
                     .contains("observe_unauthorised")
             );
-            denied.subscribe("ced.command.executed").await.unwrap();
-            denied.unsubscribe("ced.command.executed").await.unwrap();
+            denied.subscribe("ced.action.executed").await.unwrap();
+            denied.unsubscribe("ced.action.executed").await.unwrap();
             for args in [
                 json!({}),
                 json!({"on":true,"body":"raw"}),

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! `inputd`, the input broker: keys become Bus verbs.
+//! `inputd`, the input broker: keys become Bus commands.
 //!
-//! It registers the `inputd` Bus service and answers the `input.*` verbs
+//! It registers the `inputd` Bus service and answers the `input.*` commands
 //! over the shared [`Resolver`], with key and pointer injection through a
 //! uinput device of its own; neither needs a physical keyboard. `--observe`
 //! reads a keyboard without grabbing it and logs what each key would do.
@@ -32,7 +32,7 @@ use service::Shared;
 #[derive(Parser, Debug)]
 #[command(
     name = "inputd",
-    about = "Input broker: keys become Bus verbs. Serves the inputd service; --observe \
+    about = "Input broker: keys become Bus commands. Serves the inputd service; --observe \
              reads a keyboard safely; --grab or --grab-name intercepts it, optionally \
              only on the VTs given with --vt."
 )]
@@ -42,7 +42,7 @@ struct Args {
     #[arg(long, value_name = "DEVICE", conflicts_with_all = ["grab", "grab_name"])]
     observe: Option<String>,
 
-    /// Grab this keyboard event node: bound strokes fire their verbs,
+    /// Grab this keyboard event node: bound strokes fire their commands,
     /// unbound user keys are swallowed, the rest is re-emitted. Killing the
     /// process releases the grab.
     #[arg(long, value_name = "DEVICE")]
@@ -111,7 +111,7 @@ fn main() -> anyhow::Result<()> {
         mesh_open,
         "mesh access {}",
         if mesh_open {
-            "open: every verb reachable by mesh callers"
+            "open: every command reachable by mesh callers"
         } else {
             "locked (MIXOS_MESH_OPEN=0): keymap changes node-local only"
         }
@@ -120,9 +120,9 @@ fn main() -> anyhow::Result<()> {
         .with_mesh_open(mesh_open);
     let resolver: Shared = Arc::new(Mutex::new(Resolver::new(keymap)));
 
-    // The reader thread sends resolved verbs to the Bus side. The original
+    // The reader thread sends resolved commands to the Bus side. The original
     // sender lives as long as the process, so the receiver never closes.
-    let (fire_tx, fire_rx) = tokio::sync::mpsc::unbounded_channel::<reader::FiredVerb>();
+    let (fire_tx, fire_rx) = tokio::sync::mpsc::unbounded_channel::<reader::FiredCommand>();
 
     let grab_device = match (&args.grab, &args.grab_name) {
         (Some(path), _) => Some(path.clone()),
@@ -193,11 +193,11 @@ fn reader_outcome(body: impl FnOnce() -> std::io::Result<()>) -> Result<(), (i32
     }
 }
 
-/// Serve `input.*` and send fired verbs, across broker restarts.
+/// Serve `input.*` and send fired commands, across broker restarts.
 async fn serve(
     resolver: Shared,
     store: service::Store,
-    mut fire_rx: tokio::sync::mpsc::UnboundedReceiver<reader::FiredVerb>,
+    mut fire_rx: tokio::sync::mpsc::UnboundedReceiver<reader::FiredCommand>,
 ) -> anyhow::Result<()> {
     let build = buildinfo::build_info!();
     let provenance = bus::RegisterProvenance::from_parts(
@@ -211,7 +211,7 @@ async fn serve(
     let client =
         SupervisedClient::connect_options(SERVICE, &bus::client_helpers::resolve_noded_url())
             .fatal_on_registration_rejection(true)
-            .with_verbs(service::verb_manifest())
+            .with_commands(service::command_manifest())
             .with_provenance(provenance)
             .start();
     let mut incoming = client
@@ -239,32 +239,32 @@ async fn serve(
                 }
                 let (rc, body) = service::dispatch(&resolver, &store, &mut injector, &command);
                 if let Err(error) = client.respond(&command, rc, &body).await {
-                    tracing::warn!(%error, verb = %command.command, "reply failed");
+                    tracing::warn!(%error, command_name = %command.command, "reply failed");
                 }
             }
             fired = fire_rx.recv() => {
                 let Some(fired) = fired else { break };
-                fire_verb(&client, &fired).await;
+                fire_command(&client, &fired).await;
             }
         }
     }
     Ok(())
 }
 
-/// The `(service, command)` a fired verb is sent as: the row's explicit
-/// `service` with the verb unchanged, else the verb's first dot-segment
+/// The `(service, command)` a fired command is sent as: the row's explicit
+/// `service` with the command unchanged, else the command's first dot-segment
 /// (`desktop.workspace.next` -> `desktop`). `None` when there is no target.
-fn fire_target(fired: &reader::FiredVerb) -> Option<(&str, &str)> {
+fn fire_target(fired: &reader::FiredCommand) -> Option<(&str, &str)> {
     let service = match fired.service.as_deref() {
         Some(explicit) => explicit,
-        None => fired.verb.split('.').next().unwrap_or(""),
+        None => fired.command.split('.').next().unwrap_or(""),
     };
-    (!service.is_empty()).then_some((service, fired.verb.as_str()))
+    (!service.is_empty()).then_some((service, fired.command.as_str()))
 }
 
-/// Send a fired verb, fire-and-forget, with its args as the body. A verb
+/// Send a fired command, fire-and-forget, with its args as the body. A command
 /// nobody answers simply does not route.
-async fn fire_verb(client: &SupervisedClient, fired: &reader::FiredVerb) {
+async fn fire_command(client: &SupervisedClient, fired: &reader::FiredCommand) {
     let Some((service, command)) = fire_target(fired) else {
         return;
     };
@@ -272,7 +272,7 @@ async fn fire_verb(client: &SupervisedClient, fired: &reader::FiredVerb) {
     let body = match fired.args.clone() {
         Some(args) if args.is_object() => args,
         Some(_) => {
-            tracing::warn!(verb = %fired.verb, "non-object args dropped");
+            tracing::warn!(command_name = %fired.command, "non-object args dropped");
             serde_json::json!({})
         }
         None => serde_json::json!({}),
@@ -287,16 +287,16 @@ mod tests {
     use super::*;
     use inputd_core::{Edge, SCENE_EDITOR_CHORDS, SCENE_EDITOR_KEY, default_keymap};
 
-    fn fired(verb: &str, service: Option<&str>) -> reader::FiredVerb {
-        reader::FiredVerb {
-            verb: verb.to_string(),
+    fn fired(command_name: &str, service: Option<&str>) -> reader::FiredCommand {
+        reader::FiredCommand {
+            command: command_name.to_string(),
             args: None,
             service: service.map(str::to_string),
         }
     }
 
     #[test]
-    fn an_explicit_service_is_the_target_and_the_verb_is_unchanged() {
+    fn an_explicit_service_is_the_target_and_the_command_is_unchanged() {
         let f = fired("desktop.clipboard.menu", Some("desktop-vt1"));
         assert_eq!(
             fire_target(&f),
@@ -321,8 +321,8 @@ mod tests {
         let r = Resolver::new(default_keymap());
         for modifiers in SCENE_EDITOR_CHORDS {
             let out = r.resolve(SCENE_EDITOR_KEY, modifiers, Edge::Press);
-            let f = reader::FiredVerb {
-                verb: out.verb.expect("bound").as_str().to_string(),
+            let f = reader::FiredCommand {
+                command: out.command.expect("bound").as_str().to_string(),
                 args: out.args,
                 service: out.service,
             };

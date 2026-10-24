@@ -5,7 +5,7 @@
 //!
 //! The namespace is the system of record; this loop is the executor.
 //! An operator flips `enabled` (the kill switch) or a guard field via
-//! `props.set` (or the ergonomic verbs); the namespace hook enqueues a
+//! `props.set` (or the ergonomic commands); the namespace hook enqueues a
 //! [`ListenerEvent`]; this loop reconciles the listener set to match
 //! and writes the observed state back into the daemon-owned columns.
 //!
@@ -20,7 +20,7 @@
 //!
 //! ## Ownership / races
 //!
-//! This loop is the *only* writer of [`ListenerSetControl`]; verbs
+//! This loop is the *only* writer of [`ListenerSetControl`]; commands
 //! write L1 only. It writes only daemon-owned columns
 //! (`bound`/`bound_addr`/`active_conns`/`last_transition`/`last_error`)
 //! via `WriteOrigin::backend()`, while callers write only caller-owned

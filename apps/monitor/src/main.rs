@@ -4,7 +4,7 @@ use monitor::{label, shell::Shell};
 use vitals::model::APP_ID;
 
 /// The app name: the worker thread, and the `monitor.ping` /
-/// `monitor.show` activation verbs.
+/// `monitor.show` activation commands.
 const APP: &str = "monitor";
 
 #[derive(Debug, Clone)]

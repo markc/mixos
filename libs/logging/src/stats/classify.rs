@@ -3,7 +3,7 @@
 //! Label-sensitivity classification registry (plan §3.3.2).
 //!
 //! Each metric family declares its `LabelSensitivity` at startup via
-//! [`classify`]. The recorder, JSONL writer, and Bus snapshot verb
+//! [`classify`]. The recorder, JSONL writer, and Bus snapshot command
 //! consult [`sensitivity_of`] to decide whether to write raw label
 //! values or the hashed form.
 //!

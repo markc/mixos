@@ -189,7 +189,7 @@ fn fetch_windows()
 end
 
 -- comp.workspaces.list: count, current and one {index, windows, name} row per
--- workspace. A compd without it (unknown_verb) answers the same object from
+-- workspace. A compd without it (unknown_command) answers the same object from
 -- the props tree, with no names.
 fn read_workspaces()
   $ws = $r.call($COMP, "comp.workspaces.list", {})
@@ -605,7 +605,7 @@ on task async
     $r.respond($r.failure($action.error_code, $action.message))
     return
   end
-  $out = $r.call($COMP, $action.verb, $action.args)
+  $out = $r.call($COMP, $action.command, $action.args)
   schedule()
   $r.respond($out)
 end
@@ -671,7 +671,7 @@ fn gap($event)
 end
 
 -- Compositor (windows, workspaces), tray and notification diffs all arrive
--- with the inner verb props.changed; broker registrations too.
+-- with the inner command props.changed; broker registrations too.
 on props.changed
   $a = $r.event_args($event)
   if $event.headers.topic == $NODED .. ".props.changed" then

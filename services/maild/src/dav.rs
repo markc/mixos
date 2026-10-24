@@ -16,7 +16,7 @@
 //!   listings. Read of individual objects, REPORT, writes, and sync come
 //!   in M2–M4.
 //!
-//! DAV's non-standard verbs (PROPFIND/REPORT/MKCALENDAR/…) reach handlers
+//! DAV's non-standard commands (PROPFIND/REPORT/MKCALENDAR/…) reach handlers
 //! because every route is registered with `any(...)` and the dispatcher
 //! branches on `Request::method` — axum's `MethodFilter` would otherwise
 //! drop them.

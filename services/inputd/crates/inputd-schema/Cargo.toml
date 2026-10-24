@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "inputd's wire contract: keymap.v1 rows, the input.* verbs, and the fixed user-key rule"
+description = "inputd's wire contract: keymap.v1 rows, the input.* commands, and the fixed user-key rule"
 
 [package.metadata.mixos]
 component = "inputd"

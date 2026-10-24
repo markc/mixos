@@ -159,9 +159,9 @@ fn agent_sequence_types_into_a_probe_window() {
     let output_x = row["window_x"].as_f64().unwrap() + 40.0;
     let output_y = row["window_y"].as_f64().unwrap() + 50.0;
     let reply = bus.call(SERVICE, "comp.input.sequence", json!({"seat":"agent","steps":[
-        {"verb":"comp.input.pointer.move","args":{"output":"headless-0","x":output_x,"y":output_y}},
-        {"verb":"comp.input.pointer.button","args":{"button":"left","action":"click"}},
-        {"verb":"comp.input.key","args":{"window":target(&row),"text":"abc"}}
+        {"command":"comp.input.pointer.move","args":{"output":"headless-0","x":output_x,"y":output_y}},
+        {"command":"comp.input.pointer.button","args":{"button":"left","action":"click"}},
+        {"command":"comp.input.key","args":{"window":target(&row),"text":"abc"}}
     ]}));
     assert_eq!(reply["steps"].as_array().unwrap().len(), 3, "{reply}");
     for line in [
@@ -217,7 +217,7 @@ fn agent_sequence_types_into_a_probe_window() {
     assert_eq!(unknown["body"]["error"], "unknown_output", "{unknown}");
     probe.no_human_input();
     println!(
-        "sequence + single verbs: agent-only enter/motion/button/text; headless-0 bounds clamped"
+        "sequence + single commands: agent-only enter/motion/button/text; headless-0 bounds clamped"
     );
 }
 
@@ -232,8 +232,8 @@ fn agent_runs_survive_without_a_vt() {
     // 200 taps inject 400 events, crossing SEQUENCE_YIELD_EVENTS (256).
     // A delayed final step also crosses a calloop timer dispatch.
     let mut steps =
-        vec![json!({"verb":"comp.input.key","args":{"window":target(&row),"key":"a"}}); 200];
-    steps.push(json!({"verb":"comp.input.key","args":{"key":"b"},"delay_ms":50}));
+        vec![json!({"command":"comp.input.key","args":{"window":target(&row),"key":"a"}}); 200];
+    steps.push(json!({"command":"comp.input.key","args":{"key":"b"},"delay_ms":50}));
     let reply = bus.call(
         SERVICE,
         "comp.input.sequence",
@@ -273,8 +273,8 @@ fn lock_clears_agent_input() {
                 "comp.input.sequence",
                 json!({
                     "seat":"agent", "steps":[
-                        {"verb":"comp.input.key","args":{"window":target(&row),"key":"a"}},
-                        {"verb":"comp.input.key","args":{"key":"b"},"delay_ms":3000}
+                        {"command":"comp.input.key","args":{"window":target(&row),"key":"a"}},
+                        {"command":"comp.input.key","args":{"key":"b"},"delay_ms":3000}
                     ]
                 }),
             )
@@ -323,7 +323,7 @@ fn lock_clears_agent_input() {
             "comp.input.sequence",
             json!({
                 "seat":"agent", "steps":[
-                    {"verb":"comp.input.key","args":{"window":target(&row),"key":"c"}}
+                    {"command":"comp.input.key","args":{"window":target(&row),"key":"c"}}
                 ]
             }),
         );
@@ -505,7 +505,7 @@ fn human_seat_has_no_sources() {
         text.contains("PROBE seat \"agent\" bound keyboard=1 pointer=1 "),
         "{text}"
     );
-    for (verb, args) in [
+    for (command, args) in [
         (
             "comp.input.pointer.move",
             json!({"seat":"human","output":"headless-0","x":20,"y":20}),
@@ -518,7 +518,7 @@ fn human_seat_has_no_sources() {
         ("comp.input.key", json!({"seat":"human","text":"abc"})),
         ("comp.input.pointer.scroll", json!({"seat":"human","dy":10})),
     ] {
-        let reply = bus.request(SERVICE, verb, args);
+        let reply = bus.request(SERVICE, command, args);
         assert_ne!(reply["rc"], 0, "{reply}");
         assert_eq!(reply["body"]["error"], "seat_unavailable", "{reply}");
         assert_eq!(reply["body"]["seat"], "human", "{reply}");
@@ -528,6 +528,6 @@ fn human_seat_has_no_sources() {
     assert!(process.child.try_wait().unwrap().is_none());
     bus.call(SERVICE, "comp.windows.list", json!({}));
     println!(
-        "seat0: no pointer/keyboard; agent: both; five human verbs refused seat_unavailable and compd stayed up"
+        "seat0: no pointer/keyboard; agent: both; five human commands refused seat_unavailable and compd stayed up"
     );
 }

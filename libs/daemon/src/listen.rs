@@ -91,7 +91,7 @@ struct Inner {
     entries: HashMap<String, Entry>,
     running: Mutex<HashMap<String, Running>>,
     /// Serializes enable/disable so two concurrent control calls (e.g.
-    /// from Bus verbs) cannot both pass the `is_running` check and then
+    /// from Bus commands) cannot both pass the `is_running` check and then
     /// clobber each other's `Running` handle. Async-aware: held across
     /// the bind `.await`s.
     control: tokio::sync::Mutex<()>,
@@ -171,7 +171,7 @@ impl ListenerSet {
     }
 
     /// A cheap, cloneable control handle (drive enable/disable/status
-    /// from an Bus verb or the daemon's runtime loop).
+    /// from an Bus command or the daemon's runtime loop).
     pub fn control(&self) -> ListenerSetControl {
         ListenerSetControl {
             inner: self.inner.clone(),
@@ -224,7 +224,7 @@ pub struct ListenerStatus {
 }
 
 /// Cheap, cloneable control surface for a [`ListenerSet`]. Shares the
-/// set's state, so a clone driven from an Bus verb toggles the same
+/// set's state, so a clone driven from an Bus command toggles the same
 /// listeners the daemon's main task started.
 #[derive(Clone)]
 pub struct ListenerSetControl {

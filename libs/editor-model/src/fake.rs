@@ -7,7 +7,7 @@
 //! Faithful to `mixos-editd` where the mirror can observe it: CAS
 //! (`expect_rev` / `base_rev` / latest), attested-looking origins (a claim is
 //! honoured as given; the default is `agent:<caller>`), per-origin undo lanes,
-//! op_id dedup keyed `(caller, origin, verb, op_id)` over successful replies
+//! op_id dedup keyed `(caller, origin, command, op_id)` over successful replies
 //! with an LRU of [`DEDUP_ENTRIES`] (like `actor.rs`), compact mutation replies
 //! (the editd builder, copied), `edit.changed` events with a daemon-wide
 //! `event_seq`, `resync oversized` past [`FakeEditd::max_event_insert`], and
@@ -358,8 +358,8 @@ impl FakeEditd {
 
     /// Handle one request from `caller` (an attested caller key such as
     /// `local:ced`). Emits events into the outbox.
-    pub fn handle(&mut self, caller: &str, verb: &str, args: &Value) -> FakeReply {
-        match self.dispatch(caller, verb, args) {
+    pub fn handle(&mut self, caller: &str, command: &str, args: &Value) -> FakeReply {
+        match self.dispatch(caller, command, args) {
             Ok(body) => FakeReply { rc: 0, body },
             Err(r) => FakeReply {
                 rc: 10,
@@ -368,12 +368,12 @@ impl FakeEditd {
         }
     }
 
-    fn dispatch(&mut self, caller: &str, verb: &str, args: &Value) -> Result<Value, wire::Refusal> {
-        match verb {
+    fn dispatch(&mut self, caller: &str, command: &str, args: &Value) -> Result<Value, wire::Refusal> {
+        match command {
             "edit.insert" | "edit.delete" | "edit.replace" | "edit.apply" => {
-                self.text_mutation(caller, verb, args)
+                self.text_mutation(caller, command, args)
             }
-            "edit.undo" | "edit.redo" => self.undo_redo(caller, verb, args),
+            "edit.undo" | "edit.redo" => self.undo_redo(caller, command, args),
             "edit.get" => self.get(args),
             "edit.history" => self.history(args),
             "edit.save" => self.save(args),
@@ -385,9 +385,9 @@ impl FakeEditd {
                 json!({"pong": true, "service": "edit", "schema": "edit.v1", "epoch": self.epoch}),
             ),
             _ => Err(refusal(
-                ErrorCode::UnknownVerb,
+                ErrorCode::UnknownCommand,
                 None,
-                format!("fake editd: unsupported verb {verb}"),
+                format!("fake editd: unsupported command {command}"),
             )),
         }
     }
@@ -429,10 +429,10 @@ impl FakeEditd {
     fn text_mutation(
         &mut self,
         caller: &str,
-        verb: &str,
+        command: &str,
         args: &Value,
     ) -> Result<Value, wire::Refusal> {
-        let (bid, ops, targs) = match verb {
+        let (bid, ops, targs) = match command {
             "edit.insert" => {
                 let r: wire::InsertReq = parse(args)?;
                 (
@@ -477,7 +477,7 @@ impl FakeEditd {
             .meta
             .op_id
             .clone()
-            .map(|id| (caller.to_string(), origin.to_string(), verb.to_string(), id));
+            .map(|id| (caller.to_string(), origin.to_string(), command.to_string(), id));
         if let Some(k) = &key
             && let Some(cached) = self.dedup_get(k)
         {
@@ -514,18 +514,18 @@ impl FakeEditd {
     fn undo_redo(
         &mut self,
         caller: &str,
-        verb: &str,
+        command: &str,
         args: &Value,
     ) -> Result<Value, wire::Refusal> {
         let r: wire::UndoReq = parse(args)?;
         self.lookup(&r.buffer)?;
-        let redo = verb == "edit.redo";
+        let redo = command == "edit.redo";
         let as_origin = Self::origin_of(caller, r.as_.as_deref())?;
         let key = r.op_id.clone().map(|id| {
             (
                 caller.to_string(),
                 as_origin.to_string(),
-                verb.to_string(),
+                command.to_string(),
                 id,
             )
         });

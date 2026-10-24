@@ -10,7 +10,7 @@
 -- applies each write to it, logs every call, and, as `pactl subscribe`,
 -- prints one change event per line the test appends to its events file.
 -- Every wait is bounded. Bus callers (cli.mix) are not the host: every
--- write verb must refuse them.
+-- write command must refuse them.
 --
 --   mix services/compd/tests/volume_behaviour_test.mix
 --
@@ -69,17 +69,17 @@ $PACTL = join([
   "  eprint('Failure: Access denied')",
   "  exit(1)",
   "end",
-  "$verb = $argv[0]",
-  "$list = contains($verb, 'sink-input') ? 'sink_inputs' : (contains($verb, 'source') ? 'sources' : 'sinks')",
-  "if $verb == 'set-default-sink' then $s.info.default_sink_name = $argv[1] end",
-  "if $verb == 'set-default-source' then $s.info.default_source_name = $argv[1] end",
+  "$command = $argv[0]",
+  "$list = contains($command, 'sink-input') ? 'sink_inputs' : (contains($command, 'source') ? 'sources' : 'sinks')",
+  "if $command == 'set-default-sink' then $s.info.default_sink_name = $argv[1] end",
+  "if $command == 'set-default-source' then $s.info.default_source_name = $argv[1] end",
   "$items = $s[$list]",
   "for $i = 0 to length($items) - 1",
   "  $d = $items[$i]",
   "  $hit = $list == 'sink_inputs' ? to_string($d.index) == $argv[1] : $d.name == $argv[1]",
   "  if not $hit then continue end",
-  "  if ends_with($verb, '-mute') then $d.mute = ($argv[2] == 'toggle') ? (not $d.mute) : ($argv[2] == '1') end",
-  "  if ends_with($verb, '-volume') then",
+  "  if ends_with($command, '-mute') then $d.mute = ($argv[2] == 'toggle') ? (not $d.mute) : ($argv[2] == '1') end",
+  "  if ends_with($command, '-volume') then",
   "    $value = round(to_number(replace($argv[2], '%', '')) * 65536 / 100)",
   "    for each $ch in keys($d.volume)",
   "      $d.volume[$ch].value = $value",
@@ -93,20 +93,20 @@ $PACTL = join([
   ""
 ], "\n")
 
--- The scene host stand-in. It answers the host verbs the behaviour calls
+-- The scene host stand-in. It answers the host commands the behaviour calls
 -- and forwards a UI event as itself: the broker stamps this citizen's name.
 $SHELL_STUB = join([
   "-- SPDX-License-Identifier: MIT OR Apache-2.0",
-  "-- The scene host stand-in: answers the host verbs, and forwards UI events",
+  "-- The scene host stand-in: answers the host commands, and forwards UI events",
   "-- to the behaviour as this citizen (headers.from = shell-stub).",
   "on shell.scene.describe",
   "  reply(0, json_encode([{path: 'flow', enum: ['vertical', 'horizontal']}, {path: 'hidden', type: 'bool'}]))",
   "end",
   "on ui.forward",
   "  $to = $event.args.to",
-  "  $verb = $event.args.verb",
+  "  $command = $event.args.command",
   "  $body = json_encode($event.args.event)",
-  "  send $to $verb body=$body timeout=8",
+  "  send $to $command body=$body timeout=8",
   "  $code = $rc < 0 ? 20 : $rc",
   "  reply($code, json_encode($result))",
   "end",
@@ -196,9 +196,9 @@ fn wait_model($what, $path, $value)
 end
 
 -- One Bus request from a plain client (not the host).
-fn direct($target, $verb, $body)
-  $r = run_argv([$mix, $tmp .. "/cli.mix", $target, $verb, json_encode($body)], {clear_env: true, env: $env, timeout: 25})
-  check($r.ok, "client " .. $verb .. " did not run: " .. ($r.stderr ?? ""))
+fn direct($target, $command, $body)
+  $r = run_argv([$mix, $tmp .. "/cli.mix", $target, $command, json_encode($body)], {clear_env: true, env: $env, timeout: 25})
+  check($r.ok, "client " .. $command .. " did not run: " .. ($r.stderr ?? ""))
   return json_parse(trim($r.stdout))
 end
 
@@ -206,20 +206,20 @@ end
 fn ui_event($handler, $node, $item = nil)
   $ev = {scene: "volume", node: $node, kind: "click"}
   if $item != nil then $ev.item = $item end
-  return direct("shell-stub", "ui.forward", {to: "scene-volume", verb: $handler, event: $ev})
+  return direct("shell-stub", "ui.forward", {to: "scene-volume", command: $handler, event: $ev})
 end
 
 fn expect_rc($r, $rc, $what)
   check($r.rc == $rc, $what .. ": rc " .. to_string($r.rc) .. " " .. json_encode($r.result))
 end
 
-fn wait_reply($target, $verb, $body)
+fn wait_reply($target, $command, $body)
   for $i = 1 to 150
-    $r = direct($target, $verb, $body)
+    $r = direct($target, $command, $body)
     if $r.rc == 0 then return $r end
     sleep(0.1)
   end
-  raise("VOLUME_BEHAVIOUR_TEST", "no reply from " .. $target .. " " .. $verb)
+  raise("VOLUME_BEHAVIOUR_TEST", "no reply from " .. $target .. " " .. $command)
 end
 
 -- A citizen from its own source file, on the private broker.
@@ -370,7 +370,7 @@ try
   check($m.out.level_text == "125%" and $m.has_note, "after a refused write the bar shows PipeWire's level")
   remove($tmp .. "/pactl/fail")
 
-  -- F: a Bus caller is refused for every write verb, a forged header in
+  -- F: a Bus caller is refused for every write command, a forged header in
   -- its body included; nothing reaches pactl.
   $before = length(writes())
   for each $handler in ["vol_out_set", "vol_in_set", "vol_stream_set", "vol_out_down", "vol_out_up", "vol_in_down", "vol_in_up",

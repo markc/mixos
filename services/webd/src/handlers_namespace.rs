@@ -11,14 +11,14 @@
 //!
 //! ## Naming — why `handlers`, not `routes`
 //!
-//! webd already has an ergonomic verb `webd.routes.list` that means
+//! webd already has an ergonomic command `webd.routes.list` that means
 //! something unrelated: a read-only snapshot of the *vhost map* (which
 //! sites exist + their `has_cms`/`has_jmap` flags). This namespace is
 //! reached on the wire as `webd.props.* namespace=handlers` (the
-//! generic SPEC-12 surface), so there is no verb-string collision —
+//! generic SPEC-12 surface), so there is no command-string collision —
 //! but `handlers` is the operator-legible name for "the request
 //! handlers I configured" and avoids overloading "routes" against the
-//! existing vhost-map verb. (Decision 2026-06-04, Mark.)
+//! existing vhost-map command. (Decision 2026-06-04, Mark.)
 //!
 //! ## Schema
 //!
@@ -140,12 +140,12 @@ fn default_enabled() -> bool {
 const KNOWN_CAPABILITIES: &[&str] = &["db", "jmap", "public_read", "public_cache", "net"];
 
 /// Whether a capability token is accepted: a static [`KNOWN_CAPABILITIES`]
-/// entry; a delegated-Bus verb grant `bus:<verb>` (the `bus:` prefix + one verb
+/// entry; a delegated-Bus command grant `bus:<command>` (the `bus:` prefix + one command
 /// from the EXPLICIT delegated-safe allowlist —
-/// `bus_call_handler::is_delegated_safe_bus_verb`; NO wildcards, ONLY verbs with
+/// `bus_call_handler::is_delegated_safe_bus_command`; NO wildcards, ONLY commands with
 /// a daemon-side delegated-envelope authz spine, else a confused-deputy hole);
 /// or the per-route target-service binding `bus-svc:<service>` (which Bus service
-/// the granted verbs route to, e.g. `filesd-notes` — needed when the verb prefix
+/// the granted commands route to, e.g. `filesd-notes` — needed when the command prefix
 /// isn't the instance service name); or `db-schema:<name>`, which grants THIS
 /// route access to an ATTACHed aux database schema (`WebdVhostConfig.aux_dbs`).
 /// The plain `db` capability reaches `main` only; a co-hosted handler without
@@ -155,22 +155,22 @@ fn is_known_capability(tok: &str) -> bool {
     KNOWN_CAPABILITIES.contains(&tok)
         || tok
             .strip_prefix("bus:")
-            .is_some_and(crate::bus_call_handler::is_delegated_safe_bus_verb)
+            .is_some_and(crate::bus_call_handler::is_delegated_safe_bus_command)
         || tok
             .strip_prefix("bus-svc:")
             .is_some_and(is_valid_bus_service)
         || tok
             .strip_prefix("db-schema:")
             .is_some_and(crate::is_valid_schema_name)
-        // `wake:<verb>` — an authority-free accelerator wake webd fires ITSELF,
+        // `wake:<command>` — an authority-free accelerator wake webd fires ITSELF,
         // best-effort, after the route returns a non-error (`< 400`) response for
         // an authenticated session (decoupled from `bus-svc:`, so a route pinned to
         // another service for its real work can still nudge a queue drain).
-        // Restricted to the EXACT accelerator wake verbs (no args, no target) —
+        // Restricted to the EXACT accelerator wake commands (no args, no target) —
         // never the broader delegated-safe set.
         || tok
             .strip_prefix("wake:")
-            .is_some_and(crate::bus_call_handler::is_accelerator_wake_verb)
+            .is_some_and(crate::bus_call_handler::is_accelerator_wake_command)
 }
 
 /// A valid `bus-svc:` target-service name: non-empty, ≤64 bytes, ASCII
@@ -278,7 +278,7 @@ pub fn schema() -> PropertySchema {
                    'net' (outbound HTTP builtins http_get/http_post/http_request/dns_lookup \
                    for THIS route only — payment-gateway/registrar handlers), \
                    'db-schema:<name>' (access to an ATTACHed aux database schema; \
-                   'db' alone reaches main only). Plus 'bus:<verb>' + 'bus-svc:<service>' \
+                   'db' alone reaches main only). Plus 'bus:<command>' + 'bus-svc:<service>' \
                    delegated-Bus grants. Default empty."
                 .into(),
             since: None,
@@ -496,7 +496,7 @@ impl HookHandler for HandlersHooks {
                         PropValue::String(tok) => {
                             return Err(HookError::validation(format!(
                                 "unknown capability {tok:?}; known: {KNOWN_CAPABILITIES:?} \
-                                 or an exact delegated-Bus verb grant \"bus:maild.<verb>\"",
+                                 or an exact delegated-Bus command grant \"bus:maild.<command>\"",
                             )));
                         }
                         other => {
@@ -618,7 +618,7 @@ pub async fn snapshot_rows(runtime: &Runtime) -> Result<Vec<HandlerRow>> {
 /// One-shot AMP→Bus rename migration for durable `webd.handlers` rows.
 ///
 /// Rows written by a pre-rename daemon carry delegated-call grants
-/// spelled `amp:<verb>` / `amp-svc:<service>`. The renamed daemon only
+/// spelled `amp:<command>` / `amp-svc:<service>`. The renamed daemon only
 /// recognises the `bus:` / `bus-svc:` prefixes, so left in place those
 /// grants are silently inert (the route loses delegated Bus access) —
 /// and because `is_known_capability` no longer accepts the `amp:`
@@ -649,8 +649,8 @@ pub async fn migrate_amp_capability_rows(runtime: &Runtime, ts_ms: i64) -> Resul
             .iter()
             .map(|item| match item {
                 PropValue::String(tok) => {
-                    let new_tok = if let Some(verb) = tok.strip_prefix("amp:") {
-                        format!("bus:{verb}")
+                    let new_tok = if let Some(command) = tok.strip_prefix("amp:") {
+                        format!("bus:{command}")
                     } else if let Some(svc) = tok.strip_prefix("amp-svc:") {
                         format!("bus-svc:{svc}")
                     } else {
@@ -669,7 +669,7 @@ pub async fn migrate_amp_capability_rows(runtime: &Runtime, ts_ms: i64) -> Resul
         let mut patch = BTreeMap::new();
         patch.insert("capabilities".to_string(), PropValue::List(rewritten));
         // A HOOK refusal degrades, never aborts: a legacy grant that
-        // today's hook refuses (e.g. a verb no longer on the
+        // today's hook refuses (e.g. a command no longer on the
         // delegated-safe allowlist) leaves the row exactly as
         // pre-migration — grants inert, row un-editable — which must
         // not brick daemon startup. Loud ERROR so the operator sees
@@ -868,12 +868,12 @@ mod tests {
     }
 
     #[test]
-    fn bus_verb_capability_validation() {
+    fn bus_command_capability_validation() {
         // Static capabilities.
         for c in ["db", "jmap", "public_read"] {
             assert!(is_known_capability(c), "{c} should be known");
         }
-        // The EXACT delegated-safe verb allowlist (the only accepted bus grants).
+        // The EXACT delegated-safe command allowlist (the only accepted bus grants).
         for ok in [
             "bus:maild.vtoken.mint_opaque",
             "bus:maild.vtoken.list_opaque",
@@ -882,13 +882,13 @@ mod tests {
         ] {
             assert!(is_known_capability(ok), "{ok:?} should be accepted");
         }
-        // Rejected: wildcards; ANY maild verb outside the delegated-safe
+        // Rejected: wildcards; ANY maild command outside the delegated-safe
         // allowlist (the confused-deputy hole — these have no delegated-envelope
         // authz); non-maild target; malformed; junk.
         for bad in [
             "bus:maild.vtoken.*",
             "bus:maild.vtoken.seed", // not in the allowlist
-            "bus:maild.vtoken.add",  // legacy segmented verbs, removed in 0.4.0
+            "bus:maild.vtoken.add",  // legacy segmented commands, removed in 0.4.0
             "bus:maild.vtoken.list",
             "bus:maild.vtoken.lookup",
             "bus:maild.vtoken.rotate",
@@ -910,11 +910,11 @@ mod tests {
 
     #[test]
     fn wake_capability_validation() {
-        // Accepted: EXACTLY the argument-free accelerator wake verbs.
+        // Accepted: EXACTLY the argument-free accelerator wake commands.
         for ok in ["wake:sshm.wake", "wake:provisiond.wake", "wake:toolsd.wake"] {
             assert!(is_known_capability(ok), "{ok:?} should be accepted");
         }
-        // Rejected: a non-accelerator (even delegated-safe) verb, a bare/unknown
+        // Rejected: a non-accelerator (even delegated-safe) command, a bare/unknown
         // wake, malformed, and the empty case — a wake grant must never widen past
         // the closed accelerator list.
         for bad in [
@@ -1098,7 +1098,7 @@ mod tests {
     }
 
     /// AMP→Bus migration degrade path — a legacy grant today's hook
-    /// refuses (verb absent from the delegated-safe allowlist) leaves
+    /// refuses (command absent from the delegated-safe allowlist) leaves
     /// its row as-is WITHOUT aborting the pass; a valid legacy row in
     /// the same store still migrates.
     #[tokio::test]

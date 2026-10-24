@@ -145,7 +145,7 @@ fn systemctl(args: &[&str]) -> Result<(), String> {
 ///
 /// BUS ONLY, unlike [`stop_session_slice`], and not for want of trying: no systemd CLI
 /// adopts an existing pid. `systemd-run --user --scope` STARTS a process in a new scope;
-/// there is no verb for "take this one", because `StartTransientUnit` with a `PIDs=`
+/// there is no command for "take this one", because `StartTransientUnit` with a `PIDs=`
 /// property is the only interface systemd exposes for it. `busctl` would carry the same
 /// call but needs the bus just as much, so it buys nothing.
 ///

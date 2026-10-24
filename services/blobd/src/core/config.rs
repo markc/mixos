@@ -8,7 +8,7 @@
 //!
 //! Keys: `root`, `name`, `lane_bind`, `lane_max_uploads`,
 //! `fetch_max_concurrent`, `fetch_queue_max`, `fetch_deadline_secs`,
-//! `verb_max_concurrent`, `cas_group`, `lane_upload_deadline_secs`, `upload_ttl`,
+//! `command_max_concurrent`, `cas_group`, `lane_upload_deadline_secs`, `upload_ttl`,
 //! `quota_total_bytes`, `quota_owner_default_bytes`,
 //! `quota_owner: <owner>=<bytes>` (repeatable). The byte values accept
 //! plain integers or a `KiB` family suffix.
@@ -25,19 +25,19 @@ pub const DEFAULT_QUOTA_OWNER_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 /// immediately — no queueing (the no-poll/no-flood law).
 pub const DEFAULT_LANE_MAX_UPLOADS: usize = 4;
 /// Default concurrent `blob.fetch` downloads: 2. Beyond it a fetch
-/// queues in-process up to `fetch_queue_max`; the verb reply stays
+/// queues in-process up to `fetch_queue_max`; the command reply stays
 /// immediate either way.
 pub const DEFAULT_FETCH_MAX_CONCURRENT: usize = 2;
 /// Default in-process fetch queue depth: 32. A fetch arriving beyond
 /// it is refused rc 10 `busy` — never an unbounded queue.
 pub const DEFAULT_FETCH_QUEUE_MAX: usize = 32;
-/// Default concurrent verb dispatches: 8. A slow verb (a multi-GiB
+/// Default concurrent command dispatches: 8. A slow command (a multi-GiB
 /// `blob.put`, a CAS-walking `blob.gc`) holds one permit, not the
-/// connection: beyond the bound a verb waits (its reply is late,
-/// never lost) instead of blocking every other verb past the 30 s
-/// mesh timeout (M2). Only the data-scaled verbs take a permit; quick
+/// connection: beyond the bound a command waits (its reply is late,
+/// never lost) instead of blocking every other command past the 30 s
+/// mesh timeout (M2). Only the data-scaled commands take a permit; quick
 /// lookups dispatch without one (M2a).
-pub const DEFAULT_VERB_MAX_CONCURRENT: usize = 8;
+pub const DEFAULT_COMMAND_MAX_CONCURRENT: usize = 8;
 /// Default CAS shared-read group (SPEC 10a §3.3): blobd chgrps its
 /// state root and CAS root to this group with the setgid bit at open,
 /// so members read `blob.path` targets and the daemon's supplementary
@@ -76,9 +76,9 @@ pub struct Config {
     /// In-process fetch queue depth; a fetch beyond it is refused
     /// rc 10 `busy`.
     pub fetch_queue_max: usize,
-    /// Concurrent verb dispatches; beyond it a verb queues (bounded,
-    /// in-process) rather than blocking every other verb.
-    pub verb_max_concurrent: usize,
+    /// Concurrent command dispatches; beyond it a command queues (bounded,
+    /// in-process) rather than blocking every other command.
+    pub command_max_concurrent: usize,
     /// The shared-read group the state root and CAS root are chgrped
     /// to at open, with the setgid bit (mode 2750) so shard
     /// directories and CAS files inherit it (M4).
@@ -110,7 +110,7 @@ impl Default for Config {
             lane_max_uploads: DEFAULT_LANE_MAX_UPLOADS,
             fetch_max_concurrent: DEFAULT_FETCH_MAX_CONCURRENT,
             fetch_queue_max: DEFAULT_FETCH_QUEUE_MAX,
-            verb_max_concurrent: DEFAULT_VERB_MAX_CONCURRENT,
+            command_max_concurrent: DEFAULT_COMMAND_MAX_CONCURRENT,
             cas_group: DEFAULT_CAS_GROUP.to_string(),
             lane_upload_deadline_secs: DEFAULT_LANE_UPLOAD_DEADLINE_SECS,
             upload_ttl: 86_400,
@@ -203,17 +203,17 @@ impl Config {
                     }
                     cfg.fetch_queue_max = n;
                 }
-                "verb_max_concurrent" => {
+                "command_max_concurrent" => {
                     let n: usize = v
                         .parse()
-                        .map_err(|e| format!("verb_max_concurrent: bad count {v:?}: {e}"))?;
+                        .map_err(|e| format!("command_max_concurrent: bad count {v:?}: {e}"))?;
                     if n == 0 {
                         return Err(
-                            "verb_max_concurrent: must be at least 1 (0 would stall every verb)"
+                            "command_max_concurrent: must be at least 1 (0 would stall every command)"
                                 .into(),
                         );
                     }
-                    cfg.verb_max_concurrent = n;
+                    cfg.command_max_concurrent = n;
                 }
                 "cas_group" => {
                     if v.is_empty() {
@@ -366,7 +366,7 @@ mod tests {
         let cfg = Config::parse(
             "# comment\nroot: /var/lib/mixos/blobd-two\nname: two\n\
              lane_bind: 10.42.0.5:4210\nlane_max_uploads: 8\nfetch_max_concurrent: 3\n\
-             fetch_queue_max: 8\nverb_max_concurrent: 2\nquota_total_bytes: 100GiB\n\
+             fetch_queue_max: 8\ncommand_max_concurrent: 2\nquota_total_bytes: 100GiB\n\
              quota_owner_default_bytes: 512MiB\nquota_owner: maild=1GiB\n\
              quota_owner: capture=2 GiB\ncas_group: blob\nignored_key: whatever\n",
         )
@@ -381,7 +381,7 @@ mod tests {
         assert_eq!(cfg.lane_max_uploads, 8);
         assert_eq!(cfg.fetch_max_concurrent, 3);
         assert_eq!(cfg.fetch_queue_max, 8);
-        assert_eq!(cfg.verb_max_concurrent, 2);
+        assert_eq!(cfg.command_max_concurrent, 2);
         assert_eq!(cfg.cas_group, "blob");
         assert_eq!(
             cfg.lane_upload_deadline_secs,
@@ -409,8 +409,8 @@ mod tests {
         assert!(Config::parse("fetch_max_concurrent: few\n").is_err());
         assert!(Config::parse("fetch_queue_max: 0\n").is_err());
         assert!(Config::parse("fetch_queue_max: lots\n").is_err());
-        assert!(Config::parse("verb_max_concurrent: 0\n").is_err());
-        assert!(Config::parse("verb_max_concurrent: few\n").is_err());
+        assert!(Config::parse("command_max_concurrent: 0\n").is_err());
+        assert!(Config::parse("command_max_concurrent: few\n").is_err());
         assert!(Config::parse("cas_group:\n").is_err());
         assert!(Config::parse("lane_upload_deadline_secs: 0\n").is_err());
         assert!(Config::parse("lane_upload_deadline_secs: soon\n").is_err());

@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 const SCHEMA: &str = "backdrop.v1";
-const VERB_STATE: &str = "backdrop.state";
-const VERB_SET: &str = "backdrop.set";
+const COMMAND_STATE: &str = "backdrop.state";
+const COMMAND_SET: &str = "backdrop.set";
 const MAX_OUTPUTS: usize = 64;
 const MAX_IMAGES: usize = 4;
 const MAX_DOCUMENT: usize = 64 * 1024;
@@ -24,7 +24,7 @@ const MAX_PATH: usize = 4096;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Call {
     pub ticket: u64,
-    pub verb: &'static str,
+    pub command: &'static str,
     pub body: Value,
 }
 
@@ -268,7 +268,7 @@ impl WallpaperEditor {
             self.deferred = true;
             return None;
         }
-        self.start(ticket, Step::Read, VERB_STATE, json!({}))
+        self.start(ticket, Step::Read, COMMAND_STATE, json!({}))
     }
 
     /// Start Apply with a preflight state read. The set follows only if the
@@ -280,7 +280,7 @@ impl WallpaperEditor {
         self.status = "status.applying".to_owned();
         self.refusal = false;
         self.detail = None;
-        self.start(ticket, Step::Preflight, VERB_STATE, json!({}))
+        self.start(ticket, Step::Preflight, COMMAND_STATE, json!({}))
     }
 
     /// Fold in the answer to `ticket`. Any other ticket is stale and ignored.
@@ -379,9 +379,9 @@ impl WallpaperEditor {
         self.settle();
     }
 
-    fn start(&mut self, ticket: u64, step: Step, verb: &'static str, body: Value) -> Option<Call> {
+    fn start(&mut self, ticket: u64, step: Step, command: &'static str, body: Value) -> Option<Call> {
         self.job = Some(Job { ticket, step });
-        Some(Call { ticket, verb, body })
+        Some(Call { ticket, command, body })
     }
 
     /// The one state read a finished job owes. A set always rereads; other
@@ -391,7 +391,7 @@ impl WallpaperEditor {
         if !force && !deferred {
             return None;
         }
-        self.start(ticket, Step::Read, VERB_STATE, json!({}))
+        self.start(ticket, Step::Read, COMMAND_STATE, json!({}))
     }
 
     /// Take a state reply, or mark the state unavailable. Returns success.
@@ -471,7 +471,7 @@ impl WallpaperEditor {
         self.start(
             next_ticket,
             Step::Set(requested.clone()),
-            VERB_SET,
+            COMMAND_SET,
             requested,
         )
     }
@@ -652,7 +652,7 @@ mod tests {
         latest: Result<Reply, CallError>,
     ) -> Option<Call> {
         let call = editor.apply(ticket).expect("preflight read");
-        assert_eq!(call.verb, VERB_STATE);
+        assert_eq!(call.command, COMMAND_STATE);
         editor.complete(ticket, latest, ticket + 1)
     }
 
@@ -739,7 +739,7 @@ mod tests {
         let call = editor
             .complete(1, state(config(), Value::Null), 4)
             .expect("one deferred read");
-        assert_eq!((call.ticket, call.verb), (4, VERB_STATE));
+        assert_eq!((call.ticket, call.command), (4, COMMAND_STATE));
         assert!(
             editor
                 .complete(4, state(config(), Value::Null), 5)
@@ -785,7 +785,7 @@ mod tests {
         editor.edit_colour("#445566".into()).unwrap();
         let draft = editor.draft.clone();
         let call = preflight(&mut editor, 10, state(config(), Value::Null)).expect("set");
-        assert_eq!(call.verb, VERB_SET);
+        assert_eq!(call.command, COMMAND_SET);
         assert!(
             editor
                 .complete(
@@ -814,7 +814,7 @@ mod tests {
                 12,
             )
             .expect("reread");
-        assert_eq!(reread.verb, VERB_STATE);
+        assert_eq!(reread.command, COMMAND_STATE);
         assert!(editor.draft.is_none());
         assert_eq!(
             editor.current.as_ref().unwrap()["default"]["colour"],
@@ -829,7 +829,7 @@ mod tests {
         let landed = editor.draft.clone().unwrap();
         let call = preflight(&mut editor, 10, state(config(), Value::Null)).expect("set");
         let reread = editor.complete(call.ticket, lost(), 12).expect("reread");
-        assert_eq!(reread.verb, VERB_STATE);
+        assert_eq!(reread.command, COMMAND_STATE);
         assert!(editor.uncertain);
         assert_eq!(editor.status, "status.uncertain");
         assert!(!editor.can_apply());

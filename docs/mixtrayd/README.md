@@ -1,7 +1,7 @@
 # mixtrayd
 
 `mixtrayd` is the data service behind the MixOS tray popup, `mixtray`. It
-registers on the noded Bus as `mixtrayd` and answers one verb,
+registers on the noded Bus as `mixtrayd` and answers one command,
 `mixtrayd.snapshot`, with four tabs of state:
 
 | Tab | Source |
@@ -30,7 +30,7 @@ unit's state changes on screen as systemd reports it.
 ## Control
 
 The COS tab can start, stop and restart a unit through the `mixtrayd.control`
-verb. A system unit goes through hostd's `unit.control` verb: hostd is root,
+command. A system unit goes through hostd's `unit.control` command: hostd is root,
 and its grant `mixtray-units` names the only units this daemon may act on, so
 no sudo or polkit prompt is involved. The daemon refuses `hostd.service` and
 its own unit, and it marks each unit it can control in the snapshot.
@@ -43,7 +43,7 @@ it, since a restart has no undo.
 Each host is one file in `~/.ssh/hosts/`, named after its alias and holding a
 single `Host` line, which `~/.ssh/config` pulls in with
 `Include ~/.ssh/hosts/*`. Dotfiles in that directory are shared snippets, not
-hosts. The `mixtrayd.ssh` verb takes an `action`:
+hosts. The `mixtrayd.ssh` command takes an `action`:
 
 | Action | Fields | Effect |
 |---|---|---|

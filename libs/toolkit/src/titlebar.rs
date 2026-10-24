@@ -34,7 +34,7 @@
 
 use crate::button::{IconButton, Link};
 use crate::chrome::Chrome;
-use crate::command::{Origin, Registry};
+use crate::action::{Origin, Registry};
 use crate::icons::{self, Icon};
 use crate::strings::Strings;
 use design::{CaptionSide, Decorations};
@@ -316,7 +316,7 @@ pub fn show_engine_with<S>(
     ui: &mut Ui,
     title: &str,
     icon: Option<Icon>,
-    registry: &crate::command::EngineAdapter<S>,
+    registry: &crate::action::EngineAdapter<S>,
     state: &S,
     strings: &Strings,
     controls: &mut [Control<'_>],
@@ -433,7 +433,7 @@ pub fn show_engine_bar<S>(
     ui: &mut Ui,
     title: &str,
     icon: Option<Icon>,
-    registry: &crate::command::EngineAdapter<S>,
+    registry: &crate::action::EngineAdapter<S>,
     state: &S,
     strings: &Strings,
     actions: &[Action],
@@ -502,7 +502,7 @@ fn right_group<S>(
             Control::Link { command, .. } => {
                 let label = registry
                     .get(command)
-                    .map(|c| crate::command::label_text(strings, c.label))
+                    .map(|c| crate::action::label_text(strings, c.label))
                     .unwrap_or_default();
                 Slot::Link(Link::width(ui, &label))
             }
@@ -518,7 +518,7 @@ fn right_group<S>(
             Control::Link { command, .. } => {
                 let label = registry
                     .get(command)
-                    .map(|c| crate::command::label_text(strings, c.label))
+                    .map(|c| crate::action::label_text(strings, c.label))
                     .unwrap_or_default();
                 Link::width(ui, &label)
             }
@@ -570,7 +570,7 @@ fn right_group<S>(
                 (c, response.clicked())
             }),
             Control::Link { command, icon } => registry.get(command).map(|c| {
-                let link = Link::new(*icon, crate::command::label_text(strings, c.label));
+                let link = Link::new(*icon, crate::action::label_text(strings, c.label));
                 (
                     c,
                     cell.add_enabled(registry.enabled(c.id, state), link)

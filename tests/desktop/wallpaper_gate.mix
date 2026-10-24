@@ -138,12 +138,12 @@ $DOC = $run .. "/backdrop.mx"
 write_file($DOC, "schema: 1\ndefault: { colour: \"#102030\" }\n")
 $BSVC = "backdrop-wp-" .. to_string(pid())
 
-fn call($verb, $args)
-  return $n.call($svc, $verb, $args)
+fn call($command, $args)
+  return $n.call($svc, $command, $args)
 end
 
-fn bcall($verb, $args)
-  return $n.call($BSVC, $verb, $args)
+fn bcall($command, $args)
+  return $n.call($BSVC, $command, $args)
 end
 
 fn client_env()

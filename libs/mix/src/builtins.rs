@@ -311,7 +311,7 @@ builtin_table! {
     ("db_exec", CapabilityClass::Db,         "db",      "Exec on the host-injected scoped DB: db_exec(sql, [params]) → {affected, last_insert_id}", contract!((sql: string, params?: any_of(list, nil)) -> map("db_exec_result", {affected: number, last_insert_id: number}); effects[blocking]; failure[raises])),
     ("jmap", CapabilityClass::Jmap,            "jmap",    "Call the host-injected JMAP upstream: jmap(method, args) → result, or jmap([[method,args,callId],…]) → methodResponses", contract!((method: any_of(string, list), args?: any_of(map, nil)) -> any_of(map, list); effects[blocking]; failure[raises])),
     ("jmap_upload", CapabilityClass::Jmap,     "jmap",    "Upload bytes as a JMAP blob via the host-injected upstream: jmap_upload(body[, content_type]) → blobId (the compose half of the mail seam; Email/set create is blob-only)", contract!((body: any_of(string, bytes, buffer), content_type?: any_of(string, nil)) -> string; effects[blocking]; failure[raises])),
-    ("bus_call", CapabilityClass::Bus,         "bus",     "Call a host-injected Bus verb under delegated identity: bus_call(verb, args) → reply. The embedder bounds which verbs are reachable and injects the delegation envelope; the script names no host/peer/actor", contract!((verb: string, args?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
+    ("bus_call", CapabilityClass::Bus,         "bus",     "Call a host-injected Bus command under delegated identity: bus_call(command, args) → reply. The embedder bounds which commands are reachable and injects the delegation envelope; the script names no host/peer/actor", contract!((command_name: string, args?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
     ("publish", CapabilityClass::Bus,          "bus",     "One-call topic publish (0.63.0): publish(topic, body[, opts]) builds the SPEC-02 wire frame and sends it via noded topic.publish — no hand-built ---\\n frames, no body=/name= header-route trap. body is the payload STRING (json_encode a map first); opts: {retain: bool, command: string (inner frame header override, defaults to topic), headers: map}. Sets $rc/$result like `send`; returns rc (0 = published)", contract!((topic: string, body?: any_of(string, nil), opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises]; hints[body: "encode it first (json_encode, data_encode or to_string)"])),
     ("serve_name", CapabilityClass::Pure,      "bus",     "The Bus service name this `mix --serve` citizen registered under — the `--name` value, else the script-stem derivation — or nil in a plain script or the REPL. Read it instead of hard-coding the name: a second instance started with `--name other` must publish `other`, not the first instance's name, in anything that routes replies or clicks back to it. `$me = serve_name() ?? \"quoin-panel\"` keeps a script runnable outside serve mode (v0.91.0)", contract!(() -> any_of(string, nil))),
     ("is_reload_candidate", CapabilityClass::Pure, "bus", "True only while a `--serve` hot-reload candidate's init body is executing (false during the initial boot, in a plain script, and in every committed generation). A loader branches on it: the candidate must prepare passive state only — no starts, no spawns, no stopping old behaviour, no persisted writes — because a failed candidate reverts to the old evaluator with its managed children intact, and the committed generation reaps the old children before its own `lifecycle.commit` handler starts anything. Commit-time work belongs in an `on lifecycle.commit` handler, which the runtime queues locally exactly once per committed swap", contract!(() -> bool)),
@@ -394,7 +394,7 @@ builtin_table! {
     ("dkim_keygen", CapabilityClass::Pure,     "system",  "Generate a DKIM keypair. dkim_keygen(\"rsa\", [bits=2048]) or dkim_keygen(\"ed25519\") → {algorithm, private_pem, public_b64, dns_txt_record}", contract!((algo: string, bits?: number) -> map("dkim_keypair", {algorithm: string, private_pem: string, public_b64: string, dns_txt_record: string}))),
     ("http_get", CapabilityClass::Network,        "system",  "HTTP GET. http_get(url, [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}] — whole-call timeout default 30, 0 disables; idle_timeout optional positive seconds (fractions allowed, max one year), longest response byte gap; idle failure HTTP_IDLE_TIMEOUT and cut body HTTP_STREAM_CUT retain bytes with bytes_received on failure only; ssl_verify default true, false skips TLS cert/hostname checks like curl -k; ca_file/ca_pem ADD a private CA to the default roots — mutually exclusive with each other and with ssl_verify:false, 4 MiB cap, bad PEM raises HTTP_TLS, v0.29.0) → {status, body, bytes, headers, final_url, duration_ms, error_code, error} (headers lowercase-name→list; final_url after redirects; transport failure = status:0 + HTTP_* error_code; v0.30.0). `body` is the response decoded as UTF-8 (nil if not valid UTF-8); `bytes` is the raw byte buffer. Response bodies are capped at 64 MiB (over-cap → {status:0, error}).", contract!((url: string, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map("http_response", {status: number, body: any, bytes: bytes, headers: map, final_url: string, duration_ms: number, bytes_received: number, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
     ("http_post", CapabilityClass::Network,       "system",  "HTTP POST. http_post(url, body, [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}]) → {status, body, bytes, headers, final_url, duration_ms, error_code, error} (headers lowercase-name→list; final_url after redirects; transport failure = status:0 + HTTP_* error_code; v0.30.0). Opts (incl. ssl_verify: false → skip TLS verification like curl -k) and `body`/`bytes` semantics (incl. the 64 MiB body cap) match http_get.", contract!((url: string, body: any, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map("http_response", {status: number, body: any, bytes: bytes, headers: map, final_url: string, duration_ms: number, bytes_received: number, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
-    ("http_request", CapabilityClass::Network,    "system",  "HTTP any-verb. http_request(method, url, [body], [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}]) → {status, body, bytes, headers, final_url, duration_ms, error_code, error} (headers lowercase-name→list; final_url after redirects; transport failure = status:0 + HTTP_* error_code; v0.30.0). Opts (incl. ssl_verify: false → skip TLS verification like curl -k) and `body`/`bytes` semantics (incl. the 64 MiB body cap) match http_get.", contract!((method: string, url: string, body?: any, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map("http_response", {status: number, body: any, bytes: bytes, headers: map, final_url: string, duration_ms: number, bytes_received: number, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
+    ("http_request", CapabilityClass::Network,    "system",  "HTTP any-command. http_request(method, url, [body], [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}]) → {status, body, bytes, headers, final_url, duration_ms, error_code, error} (headers lowercase-name→list; final_url after redirects; transport failure = status:0 + HTTP_* error_code; v0.30.0). Opts (incl. ssl_verify: false → skip TLS verification like curl -k) and `body`/`bytes` semantics (incl. the 64 MiB body cap) match http_get.", contract!((method: string, url: string, body?: any, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map("http_response", {status: number, body: any, bytes: bytes, headers: map, final_url: string, duration_ms: number, bytes_received: number, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
     ("http_post_multipart", CapabilityClass::Network, "system", "HTTP POST with a multipart/form-data body: http_post_multipart(url, fields, files, [headers], [opts]) → http_response map. `fields` is a map of string form fields; `files` is a map of field_name → {filename, content_type?, data: bytes|buffer} (raw binary payloads, the webhook/file-upload slot — v0.103.12). The boundary is generated, and the Content-Type header is set accordingly.", contract!((url: string, fields: map, files: map, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map("http_response", {status: number, body: any, bytes: bytes, headers: map, final_url: string, duration_ms: number, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
     ("http_put_file", CapabilityClass::Network, "system", "Stream a regular file or inclusive range with exact Content-Length. Opts: method PUT/POST/PATCH (default PUT), range:{start,end}, headers, idle_timeout (seconds, default 30), deadline (seconds, default 0), ssl_verify, ca_file, ca_pem. Redirects disabled; 3xx returned. Deadline is cooperative and best-effort during blocking DNS/IO. Fixed 64 KiB transfer buffer; response capped at 64 MiB. Operational errors return status:0; invalid options raise. bytes_written counts source bytes consumed, size is window size, blake3 hashes that window (nil on failure). published is false (no local publication).", contract!((url: string, path: string, opts?: map("http_put_file_options", {method: string, range: map, headers: map, idle_timeout: number, deadline: number, ssl_verify: bool, ca_file: string, ca_pem: any})) -> map("http_file_response", {status: number, headers: map, bytes_written: number, size: number, blake3: any, body: any, bytes: bytes, final_url: string, duration_ms: number, error_code: any, error: any, published: bool}); effects[must_use, blocking]; failure[returns_result]; caps[FsRead])),
     ("http_get_file", CapabilityClass::Network, "system", "Stream GET through a unique temp sibling and publish atomically. Opts: overwrite (default false), append (default false; requires expect_blake3 and matching 206 Content-Range), expect_blake3 (64 lowercase hex), max_bytes (final size), headers, idle_timeout (seconds, default 30), deadline (seconds, default 0), ssl_verify, ca_file, ca_pem. 200/206 require identity framing and Content-Length; missing length or encoded responses return HTTP_IDENTITY_FRAMING. Append copies and hashes the existing prefix. Redirects returned; error bodies never installed. No-replace is atomic. Deadline is cooperative and best-effort during blocking DNS/IO. bytes_written counts downloaded bytes, size includes prefix, blake3 hashes the final file. published records publication even if directory fsync fails. Operational errors return status:0; invalid options raise.", contract!((url: string, path: string, opts?: map("http_get_file_options", {overwrite: bool, append: bool, expect_blake3: string, max_bytes: number, headers: map, idle_timeout: number, deadline: number, ssl_verify: bool, ca_file: string, ca_pem: any})) -> map("http_file_response", {status: number, headers: map, bytes_written: number, size: number, blake3: any, body: any, bytes: bytes, final_url: string, duration_ms: number, error_code: any, error: any, published: bool}); effects[must_use, blocking]; failure[returns_result]; caps[FsWrite]; cond_caps[append: FsRead, ca_file: FsRead])),
@@ -430,7 +430,7 @@ builtin_table! {
     ("tcp_recv_line", CapabilityClass::Network,   "system",  "Read the next LINE: tcp_recv_line(h[, {timeout, max}]) -> string (LF + one trailing CR stripped) | nil on timeout. Buffers across reads; if `max` bytes accumulate with no newline the handle RAISES and RETIRES (a peer that never terminates a line — broken framing). For line protocols (SMTP/redis) so a caller need not hand-roll a \\r\\n scanner. On a unix_connect {frame:\"nul\"} handle a line is a NUL-terminated frame (no CR stripping). From v0.115.0 a line longer than max raises even when its terminator has arrived. Numeric Class C recv yields on native readiness. A line-mode source-id recv yields outside serve; serve mode refuses SOCKET_RECV_SERVE and uses event handlers. nil on timeout keeps the connection usable; terminal raises SOCKET_CLOSED (v0.78.0)", contract!((handle: any_of(number, string), opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
     ("ws_on",   CapabilityClass::Network,         "system",  "Subscribe a ws_connect handle to the event stream: ws_on(handle, command) -> source id (string). The connection MOVES to an evaluator-generation reader thread: ordered frames arrive as `command` events {watch, frame:{kind:\"text\"|\"binary\", data}} (binary data hex-encoded), a peer close as ONE terminal {watch, closed:{reason}} — then the source retires. ws_send on the moved handle routes to the owner and awaits its receipt; numeric ws_recv refuses. Serve handlers receive frames as events. The reader parks in poll(2) when idle (no timer). Overflow hard-closes the socket with exactly one terminal event, never a silent drop. ws_unwatch cancels, joins and emits NO terminal marker (v0.107.0)", contract!((handle: number, command: string) -> string; failure[raises])),
     ("ws_unwatch", CapabilityClass::Network,      "system",  "Cancel a ws_on subscription: ws_unwatch(source) -> nil. Cancels and joins the reader, drops queued frames and wakes a parked ws_recv with SOCKET_WATCH_HANDLE. Emits NO terminal event (explicit close — documented). Unknown or retired sources raise (v0.107.0)", contract!((handle: string) -> nil; failure[raises])),
-    ("tcp_on",   CapabilityClass::Network,        "system",  "Subscribe a tcp_connect handle to the event stream: tcp_on(handle, command[, {frame:\"line\"|\"bytes\", max}]) -> source id (string). frame defaults to \"bytes\": ordered raw chunks of at most 64 KiB; frame:\"line\" splits on LF (one trailing CR stripped) with max capping the line length (default 65536) — a line over max hard-closes with one terminal event. On a unix_connect {frame:\"nul\"} handle, line frames end at NUL; from v0.115.0 a complete line over max also hard-closes. Same ownership, ordering, overflow and retirement rules as ws_on; tcp_recv consumes a bytes source, tcp_recv_line a line source, and a mismatched verb refuses (SOCKET_KIND). A tcp_listen LISTENER subscribes too (no options): each accepted connection arrives as {watch, accepted:{handle, peer:{host, port}}}, handle a plain connected handle; tcp_accept(source) takes the next one outside serve mode (v0.107.0; listeners v0.112.0)", contract!((handle: number, command: string, opts?: map) -> string; failure[raises])),
+    ("tcp_on",   CapabilityClass::Network,        "system",  "Subscribe a tcp_connect handle to the event stream: tcp_on(handle, command[, {frame:\"line\"|\"bytes\", max}]) -> source id (string). frame defaults to \"bytes\": ordered raw chunks of at most 64 KiB; frame:\"line\" splits on LF (one trailing CR stripped) with max capping the line length (default 65536) — a line over max hard-closes with one terminal event. On a unix_connect {frame:\"nul\"} handle, line frames end at NUL; from v0.115.0 a complete line over max also hard-closes. Same ownership, ordering, overflow and retirement rules as ws_on; tcp_recv consumes a bytes source, tcp_recv_line a line source, and a mismatched command refuses (SOCKET_KIND). A tcp_listen LISTENER subscribes too (no options): each accepted connection arrives as {watch, accepted:{handle, peer:{host, port}}}, handle a plain connected handle; tcp_accept(source) takes the next one outside serve mode (v0.107.0; listeners v0.112.0)", contract!((handle: number, command: string, opts?: map) -> string; failure[raises])),
     ("tcp_unwatch", CapabilityClass::Network,     "system",  "Cancel a tcp_on subscription: tcp_unwatch(source) -> nil. Same contract as ws_unwatch (v0.107.0)", contract!((handle: string) -> nil; failure[raises])),
     ("tcp_close", CapabilityClass::Network,       "system",  "Close a TCP handle or listener: true when live, false when unknown/already closed (never raises for that, like funlock) (v0.78.0)", contract!((handle: number) -> bool; failure[raises])),
     ("tcp_listen", CapabilityClass::Network,      "system",  "Listen for TCP connections: tcp_listen(host, port[, {backlog}]) -> numeric listener handle (tcp_connect's handle space). host is required: \"127.0.0.1\" is the normal choice, and a non-loopback address (\"0.0.0.0\", a LAN IP) must be named explicitly. port 0 binds an ephemeral port (read it with tcp_local_addr); backlog defaults to 128 (1..4096). Owned by the evaluator generation. Raises TCP_LISTEN_ADDR_IN_USE, TCP_LISTEN_PERMISSION, TCP_LISTEN_ADDR_UNAVAILABLE, TCP_LISTEN_ADDRESS, TCP_LISTEN_ARGUMENT, TCP_HANDLE_LIMIT (v0.112.0)", contract!((host: string, port: number, opts?: any_of(map, nil)) -> number; failure[raises])),
@@ -1199,19 +1199,19 @@ pub enum CapabilityClass {
     /// outbound HTTP. The script never names a host; reach is only the
     /// embedder's configured upstream.
     Jmap,
-    /// Calls a host-injected Bus verb under DELEGATED identity via the
+    /// Calls a host-injected Bus command under DELEGATED identity via the
     /// [`BusCallHandler`](crate::evaluator::BusCallHandler) seam
     /// (`bus_call`). The bare `send`/`emit` broker forms are gated
     /// `Bus` too (since the 0.89.0 capability-gate fix — a policy that
     /// withholds `Bus` denies them before any arg evaluates), while the
     /// `bus_call` seam remains separately classed because it is a
     /// *scoped, mediated* control-plane channel the embedder fully
-    /// controls: the embedder bounds WHICH verbs are callable (a per-route
-    /// exact-verb allowlist) and injects the delegation envelope (the
+    /// controls: the embedder bounds WHICH commands are callable (a per-route
+    /// exact-command allowlist) and injects the delegation envelope (the
     /// authenticated actor, vhost, route) from trusted request state. The
-    /// Mix script supplies ONLY the verb + args and can name no
+    /// Mix script supplies ONLY the command + args and can name no
     /// host/peer/actor — it cannot forge identity or reach an unlisted
-    /// verb.
+    /// command.
     Bus,
 }
 
@@ -22049,12 +22049,12 @@ fn builtin_http_post_multipart(args: Vec<Value>) -> MixResult<Option<Value>> {
     )))
 }
 
-/// `http_request(method, url, [body], [headers])` — any-verb HTTP.
+/// `http_request(method, url, [body], [headers])` — any-command HTTP.
 ///
 /// `method` is upper-cased so `"get"`, `"Get"`, `"GET"` are equivalent.
 /// The body slot is optional and `nil`-tolerant: an absent or `nil` 3rd
 /// arg sends no body (a bare request via `.call()`), matching how
-/// body-less verbs (GET/HEAD/DELETE/OPTIONS) are expected to behave.
+/// body-less commands (GET/HEAD/DELETE/OPTIONS) are expected to behave.
 /// A `Value::Bytes` body is sent as raw bytes; anything else is
 /// stringified.
 #[cfg(feature = "http")]
@@ -22827,7 +22827,7 @@ mod tcp_client {
     pub(super) enum Stream {
         Plain(std::net::TcpStream),
         Tls(Box<rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>>),
-        /// A unix_connect stream socket: the same handle space and verbs.
+        /// A unix_connect stream socket: the same handle space and commands.
         #[cfg(unix)]
         Unix(std::os::unix::net::UnixStream),
     }
@@ -23180,7 +23180,7 @@ fn tcp_handle(name: &str, args: &[Value]) -> MixResult<u64> {
     Ok(id)
 }
 
-/// The "unknown handle" error for a connection verb, naming the mistake
+/// The "unknown handle" error for a connection command, naming the mistake
 /// when the number is a listener rather than a connection.
 #[cfg(feature = "ws")]
 fn tcp_unknown(name: &str, id: u64) -> MixError {
@@ -24712,7 +24712,7 @@ pub(crate) mod socket_sources {
                 id,
             }
         }
-        /// The backend a numeric recv/send verb addresses.
+        /// The backend a numeric recv/send command addresses.
         pub(crate) fn of(name: &str, id: u64) -> Self {
             if name.starts_with("ws_") {
                 Self::ws(id)
@@ -24750,8 +24750,8 @@ pub(crate) mod socket_sources {
     #[cfg(target_os = "linux")]
     pub(crate) const SEND_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
 
-    /// Source kinds a Class C recv verb may consume. The subscription stores
-    /// its kind so a mismatched verb refuses instead of misreading bytes.
+    /// Source kinds a Class C recv command may consume. The subscription stores
+    /// its kind so a mismatched command refuses instead of misreading bytes.
     pub(crate) const KIND_WS: &str = "ws";
     pub(crate) const KIND_TCP_BYTES: &str = "tcp:bytes";
     pub(crate) const KIND_TCP_LINE: &str = "tcp:line";
@@ -27745,7 +27745,7 @@ pub(crate) mod socket_sources {
         }
 
         #[tokio::test]
-        async fn mismatched_recv_verb_refuses_by_kind() {
+        async fn mismatched_recv_command_refuses_by_kind() {
             let q = Queue::default();
             q.register_socket_for_test("tcp:1", "test.tcp", KIND_TCP_BYTES);
             let err = q

@@ -16,7 +16,7 @@
 -- message-id chain, and the subject fallback only runs for *new*
 -- emails whose References resolve to nothing. The fallback skips the
 -- index lookup when the normalized form is empty, so empty-default
--- rows never falsely cluster. A future envelope-rebuild admin verb
+-- rows never falsely cluster. A future envelope-rebuild admin command
 -- could backfill historical rows if needed; that is out of scope for
 -- gate 4.
 --

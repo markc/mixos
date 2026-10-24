@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Macro transport glue shared by application Bus lanes.
 use crate::outbox::Outbox;
-pub use ::macros::verbs::{Caller, Refusal, SUFFIXES, describe};
+pub use ::macros::commands::{Caller, Refusal, SUFFIXES, describe};
 use bus::native_client::{IncomingCommand, SupervisedClient};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -65,13 +65,13 @@ pub fn dispatch(
                     id == "bus.call"
                         || id
                             .strip_prefix("macro.")
-                            .is_some_and(::macros::verbs::mutates)
+                            .is_some_and(::macros::commands::mutates)
                 }),
-                "workshop.call" => body["verb"].as_str().is_none_or(|verb| {
-                    verb.rsplit_once(".macros.")
-                        .is_some_and(|(_, suffix)| ::macros::verbs::mutates(suffix))
+                "workshop.call" => body["command"].as_str().is_none_or(|command_name| {
+                    command_name.rsplit_once(".macros.")
+                        .is_some_and(|(_, suffix)| ::macros::commands::mutates(suffix))
                         || matches!(
-                            verb,
+                            command_name,
                             "workshop.call"
                                 | "workshop.execute"
                                 | "workshop.ui.click"
@@ -91,13 +91,13 @@ pub fn dispatch(
         suffix
     };
     let limit = if suffix == "put" {
-        ::macros::verbs::PUT_ENVELOPE_LIMIT
+        ::macros::commands::PUT_ENVELOPE_LIMIT
     } else {
         REQUEST_BODY_LIMIT
     };
     let caller = caller(command, service);
     let authority =
-        ::macros::verbs::authorize(app, caller, suffix, &Value::Null).map_err(|mut error| {
+        ::macros::commands::authorize(app, caller, suffix, &Value::Null).map_err(|mut error| {
             if proxy_write {
                 error.message = format!(
                     "{}: macro-file writes through Workshop require Workshop",
@@ -121,9 +121,9 @@ pub fn dispatch(
     }
     while jobs.0.try_join_next().is_some() {}
     let reply = if let Err(error) = authority {
-        ::macros::verbs::Reply::Immediate(Err(error))
+        ::macros::commands::Reply::Immediate(Err(error))
     } else if jobs.0.len() >= 32 {
-        ::macros::verbs::Reply::Immediate(Err(Refusal::new(
+        ::macros::commands::Reply::Immediate(Err(Refusal::new(
             "BUSY",
             "macro request capacity exhausted",
         )))
@@ -141,7 +141,7 @@ pub fn dispatch(
     };
     jobs.0.spawn(async move {
         let answer = match reply {
-            ::macros::verbs::Reply::Immediate(answer) => answer,
+            ::macros::commands::Reply::Immediate(answer) => answer,
             deferred => tokio::task::spawn_blocking(move || deferred.wait())
                 .await
                 .unwrap_or_else(|e| Err(Refusal::new("INTERNAL", e))),
@@ -156,47 +156,47 @@ pub fn dispatch(
     true
 }
 
-pub fn caller(command: &IncomingCommand, service: &str) -> ::macros::verbs::Caller {
+pub fn caller(command: &IncomingCommand, service: &str) -> ::macros::commands::Caller {
     if command.header("broker_origin") == Some("local") {
-        ::macros::verbs::Caller::local(&command.from, service)
+        ::macros::commands::Caller::local(&command.from, service)
     } else {
-        ::macros::verbs::Caller::Other
+        ::macros::commands::Caller::Other
     }
 }
 
 pub fn request(
     app: &str,
-    caller: ::macros::verbs::Caller,
+    caller: ::macros::commands::Caller,
     suffix: &str,
     body: &str,
-) -> ::macros::verbs::Reply {
+) -> ::macros::commands::Reply {
     // Refuse an unauthorised write before its body is read, so the refusal
     // is always DENIED; `handle` re-checks with the real body.
-    if let Err(refusal) = ::macros::verbs::authorize(app, caller, suffix, &Value::Null) {
-        return ::macros::verbs::Reply::Immediate(Err(refusal));
+    if let Err(refusal) = ::macros::commands::authorize(app, caller, suffix, &Value::Null) {
+        return ::macros::commands::Reply::Immediate(Err(refusal));
     }
     let limit = if suffix == "put" {
-        ::macros::verbs::PUT_ENVELOPE_LIMIT
+        ::macros::commands::PUT_ENVELOPE_LIMIT
     } else {
         REQUEST_BODY_LIMIT
     };
     if body.len() > limit {
-        return ::macros::verbs::Reply::Immediate(Err(Refusal::new(
+        return ::macros::commands::Reply::Immediate(Err(Refusal::new(
             "INVALID_ARGUMENT",
             format!("request exceeds {limit} bytes"),
         )));
     }
     match serde_json::from_str::<Value>(if body.trim().is_empty() { "{}" } else { body }) {
         Ok(body) => {
-            ::macros::verbs::handle(&::macros::Session::for_app(app), caller, suffix, &body)
+            ::macros::commands::handle(&::macros::Session::for_app(app), caller, suffix, &body)
         }
         Err(error) => {
-            ::macros::verbs::Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", error)))
+            ::macros::commands::Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", error)))
         }
     }
 }
 
-pub fn answer_body(answer: ::macros::verbs::Answer) -> (u8, Value) {
+pub fn answer_body(answer: ::macros::commands::Answer) -> (u8, Value) {
     match answer {
         Ok(body) => (0, body),
         Err(refusal) => (
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn macro_authority_requires_local_broker_origin_and_exact_owner_service() {
-        use ::macros::verbs::Caller;
+        use ::macros::commands::Caller;
         let mut command = IncomingCommand {
             generation: 0,
             from: "ced-instance".into(),
@@ -262,7 +262,7 @@ mod tests {
         // No existing id is required to prove that the envelope was admitted.
         let error = request(
             "escape-heavy-test",
-            ::macros::verbs::Caller::Workshop,
+            ::macros::commands::Caller::Workshop,
             "put",
             &body,
         )

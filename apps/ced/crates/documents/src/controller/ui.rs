@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 
 use super::{Controller, DEADLINE_MS, Effect, Req, code, reply_result};
 use crate::actions::ActionId;
-use crate::verbs;
+use crate::commands;
 
 /// A decision only a human can make; the chrome shows a dialog and answers
 /// through [`Controller::on_action_args`] (or the methods below).
@@ -118,14 +118,14 @@ fn push_sample(q: &mut VecDeque<u64>, v: u64) {
     q.push_back(v);
 }
 
-pub(super) fn percentiles(q: &VecDeque<u64>) -> verbs::Percentiles {
+pub(super) fn percentiles(q: &VecDeque<u64>) -> commands::Percentiles {
     if q.is_empty() {
-        return verbs::Percentiles::default();
+        return commands::Percentiles::default();
     }
     let mut v: Vec<u64> = q.iter().copied().collect();
     v.sort_unstable();
     let at = |p: usize| v[((v.len() - 1) * p) / 100];
-    verbs::Percentiles {
+    commands::Percentiles {
         p50: at(50),
         p95: at(95),
         p99: at(99),
@@ -320,7 +320,7 @@ impl Controller {
         let mut fx = Vec::new();
         self.recovered.retain(|r| r.buffer != buffer);
         let out = Outgoing {
-            verb: "edit.close".into(),
+            command: "edit.close".into(),
             body:
                 json!({"buffer": buffer, "force": true, "origin": editor_model::types::UI_ORIGIN})
                     .to_string(),
@@ -333,7 +333,7 @@ impl Controller {
 
     /// The last frame's engine geometry; `ced.layout` answers from it (none,
     /// or headless → UNAVAILABLE).
-    pub fn set_layout(&mut self, layout: Option<verbs::LayoutReply>) {
+    pub fn set_layout(&mut self, layout: Option<commands::LayoutReply>) {
         self.layout = layout;
     }
 
@@ -448,7 +448,7 @@ impl Controller {
     }
 
     /// The latest `edit.info` (its `volatile` drives the UNPROTECTED badge).
-    pub fn edit_info(&self) -> Option<&verbs::EditInfo> {
+    pub fn edit_info(&self) -> Option<&commands::EditInfo> {
         self.edit_info.epoch.as_ref().map(|_| &self.edit_info)
     }
 
@@ -677,7 +677,7 @@ impl Controller {
             }
         }
         let out = Outgoing {
-            verb: "edit.find".into(),
+            command: "edit.find".into(),
             body: body.to_string(),
             op_id: None,
             deadline_ms: DEADLINE_MS,
@@ -910,7 +910,7 @@ impl Controller {
             body["groups"] = json!(job.expand);
         }
         let out = Outgoing {
-            verb: "edit.find".into(),
+            command: "edit.find".into(),
             body: body.to_string(),
             op_id: None,
             deadline_ms: DEADLINE_MS,
@@ -1062,7 +1062,7 @@ impl Controller {
     /// none) or a refusal. Answers the Bus `ced.action` that caused it, once;
     /// a token nobody is waiting on (window-invoked, or already timed out) is
     /// a no-op.
-    pub fn ui_done(&mut self, token: u64, result: Result<Value, verbs::Refusal>) -> Vec<Effect> {
+    pub fn ui_done(&mut self, token: u64, result: Result<Value, commands::Refusal>) -> Vec<Effect> {
         let mut fx = Vec::new();
         if let Some((id, action)) = self.ui_pending.remove(&token) {
             self.timers
@@ -1072,7 +1072,7 @@ impl Controller {
                     let result = (!v.is_null()).then_some(v);
                     (
                         0,
-                        super::ok_body(&verbs::ActionReply {
+                        super::ok_body(&commands::ActionReply {
                             id: action,
                             ok: true,
                             result,
@@ -1116,7 +1116,7 @@ impl Controller {
             Ok(result) => fx.push(Effect::Respond {
                 id,
                 rc: 0,
-                body: super::ok_body(&verbs::ActionReply {
+                body: super::ok_body(&commands::ActionReply {
                     id: action_id,
                     ok: true,
                     result: result.or(Some(args)),
@@ -1163,7 +1163,7 @@ impl Controller {
 
     pub(super) fn ui_timeout(&mut self, token: u64, fx: &mut Vec<Effect>) {
         if let Some((id, action)) = self.ui_pending.remove(&token) {
-            let body = serde_json::to_string(&verbs::Refusal {
+            let body = serde_json::to_string(&commands::Refusal {
                 error_code: "TIMEOUT".into(),
                 message: format!(
                     "the window did not finish {action} within {} s",
@@ -1221,7 +1221,7 @@ impl Controller {
         }
         let body = json!({"buffer": m.buffer(), "pattern": query.pattern, "regex": query.regex, "case": query.case, "limit": MATCHES_MAX});
         let out = Outgoing {
-            verb: "edit.find".into(),
+            command: "edit.find".into(),
             body: body.to_string(),
             op_id: None,
             deadline_ms: DEADLINE_MS,
@@ -1380,6 +1380,6 @@ mod tests {
         let q: VecDeque<u64> = (1..=100).collect();
         let p = percentiles(&q);
         assert_eq!((p.p50, p.p95, p.p99, p.max), (50, 95, 99, 100));
-        assert_eq!(percentiles(&VecDeque::new()), verbs::Percentiles::default());
+        assert_eq!(percentiles(&VecDeque::new()), commands::Percentiles::default());
     }
 }

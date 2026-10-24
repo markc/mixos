@@ -17,7 +17,7 @@
 //!
 //! The "must be in Selected" gate and the no-arguments check live in the
 //! session loop so the BAD response shape stays uniform with the other
-//! selected-state, zero-argument verbs (CLOSE / UNSELECT).
+//! selected-state, zero-argument commands (CLOSE / UNSELECT).
 
 use crate::imap::response::{Status, tagged};
 

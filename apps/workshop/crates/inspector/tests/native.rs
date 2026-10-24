@@ -33,11 +33,11 @@ fn native_discovery_calls_topics_and_singleton_registration() {
                 while let Some(command)=incoming.recv().await {
                     let (rc,body)=match (name,command.command.as_str()) {
                         ("example","HELP")=>(0,r#"[{"name":"echo","read_only":true},{"name":"refuse","read_only":true}]"#.to_owned()),
-                        ("legacy","app.describe")=>(0,r#"{"verbs":["ping"]}"#.to_owned()),
+                        ("legacy","app.describe")=>(0,r#"{"commands":["ping"]}"#.to_owned()),
                         ("example","echo")=>{count.fetch_add(1,Ordering::SeqCst);(0,command.body.clone())},
                         ("example","hold")=>{count.fetch_add(1,Ordering::SeqCst);held.notify_one();continue;},
                         ("example","refuse")=>(10,"permission denied".into()),
-                        _=>(10,"unknown verb".into()),
+                        _=>(10,"unknown command".into()),
                     };
                     worker.respond(&command,rc,&body).await.unwrap();
                 }
@@ -55,8 +55,8 @@ fn native_discovery_calls_topics_and_singleton_registration() {
                     Delivery::Changed=>notification.notify_one(),
                     Delivery::Disconnected=>down.notify_one(),
                     Delivery::Connected=>up.notify_one(),
-                    Delivery::Command{id,ref verb,..} if verb=="workshop.quit"=>{responder.reply(id,0,serde_json::json!({"quitting":true}));responder.quit();},
-                    Delivery::Command{id,verb,..}=>responder.reply(id,0,if verb=="HELP"{inspector::model::describe()["verbs"].clone()}else{inspector::model::describe()}),
+                    Delivery::Command{id,command: ref command_name,..} if command_name=="workshop.quit"=>{responder.reply(id,0,serde_json::json!({"quitting":true}));responder.quit();},
+                    Delivery::Command{id,command: command_name,..}=>responder.reply(id,0,if command_name=="HELP"{inspector::model::describe()["commands"].clone()}else{inspector::model::describe()}),
                     _=>{},
                 }
             }

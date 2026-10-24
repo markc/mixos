@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Fluent strings, re-exported from the UI-free command crate.
-pub use ::command::Strings;
+pub use ::action::Strings;
 
 /// The toolkit's own catalogue: the strings its widgets show.
 const TOOLKIT: &str = include_str!("../i18n/en/toolkit.ftl");

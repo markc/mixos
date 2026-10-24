@@ -153,7 +153,7 @@ fn run(name: &str, fx: &Value) {
                 let args = expand(body.get("server_args").unwrap_or(&body["args"]));
                 let reply = fake.handle(
                     body["caller"].as_str().unwrap_or("local:ced"),
-                    body["verb"].as_str().unwrap(),
+                    body["command"].as_str().unwrap(),
                     &args,
                 );
                 check_expect(name, &what, &reply, &body["expect"]);
@@ -165,14 +165,14 @@ fn run(name: &str, fx: &Value) {
                     .unwrap_or_else(|| panic!("{name}: {what}: {id} was not lost"));
                 let _ = fake.handle(
                     sent["caller"].as_str().unwrap_or("local:ced"),
-                    sent["verb"].as_str().unwrap(),
+                    sent["command"].as_str().unwrap(),
                     &expand(&sent["args"]),
                 );
             }
             "agent" => {
                 let reply = fake.handle(
                     body["caller"].as_str().unwrap(),
-                    body["verb"].as_str().unwrap(),
+                    body["command"].as_str().unwrap(),
                     &expand(&body["args"]),
                 );
                 check_expect(name, &what, &reply, &body["expect"]);

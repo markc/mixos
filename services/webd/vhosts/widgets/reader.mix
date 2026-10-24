@@ -20,7 +20,7 @@
 --   actions     list    the top action bar (left cluster). Each is EITHER a link
 --                       { "label", icon, href, variant } OR a POST action
 --                       { "label", icon, variant, post: <url>, fields: [{name,value}], confirm: <msg> }
---                       (an inline form — for a destructive verb like Delete/Archive). label esc()'d.
+--                       (an inline form — for a destructive command like Delete/Archive). label esc()'d.
 --   back        map     { "label", href }; the top-right back affordance (.btn.btn-primary, like fm_form).
 --   mode        string  reserved ("canvas"|"modal"); v1 renders the canvas form only.
 --
@@ -133,7 +133,7 @@ function rd_actions_html($actions)
     $icon = rd_icon("" .. rd_or($a["icon"], ""))
     $lbl = esc("" .. rd_or($a["label"], ""))
     if $a["post"] != nil then
-      -- A POST action (Delete / Archive …): an inline form so a destructive verb isn't a GET link.
+      -- A POST action (Delete / Archive …): an inline form so a destructive command isn't a GET link.
       -- `fields` is a list of { name, value } hidden inputs (each esc()'d); `confirm` rides as a
       -- data-confirm attribute (the house JS gate), matching the per-handler delete forms it replaces.
       $form = '<form method="post" action="' .. esc("" .. $a["post"]) .. '" class="rd-action-form"'

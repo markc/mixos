@@ -39,7 +39,7 @@ wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "s
 wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
 
 [dev-dependencies]
-# The Bus path's request parser, for the user-key tests' comp verbs.
+# The Bus path's request parser, for the user-key tests' comp commands.
 comp-model = { workspace = true }
 policy-host = { workspace = true }
 # The workspace model the window tests drive.

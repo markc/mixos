@@ -1310,7 +1310,7 @@ async fn protected_requests_responses_and_recipient_events_never_reach_tap_paylo
     send(
         &mut observer,
         &request("noded.observe.start", "noded", "observe")
-            .with_body(r#"{"filter":{"verbs":["probe.*"]},"body":"redacted"}"#),
+            .with_body(r#"{"filter":{"commands":["probe.*"]},"body":"redacted"}"#),
     )
     .await;
     assert_eq!(receive(&mut observer).await.get("rc"), Some("0"));
@@ -1401,7 +1401,7 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
     send(
         &mut observer,
         &request("noded.observe.start", "noded", "observe")
-            .with_body(r#"{"filter":{"verbs":["noded.session.*"]},"body":"redacted"}"#),
+            .with_body(r#"{"filter":{"commands":["noded.session.*"]},"body":"redacted"}"#),
     )
     .await;
     assert_eq!(receive(&mut observer).await.get("rc"), Some("0"));
@@ -1548,7 +1548,7 @@ async fn protected_late_response_after_disconnect_and_duplicate_after_completion
         send(
             &mut observer,
             &request("noded.observe.start", "noded", "observe")
-                .with_body(r#"{"filter":{"verbs":["probe.*"]},"body":"redacted"}"#),
+                .with_body(r#"{"filter":{"commands":["probe.*"]},"body":"redacted"}"#),
         )
         .await;
         assert_eq!(receive(&mut observer).await.get("rc"), Some("0"));
@@ -1666,7 +1666,7 @@ async fn tcp_only_reserved_topic_keeps_legacy_observation_without_fanout_events(
     send(
         &mut observer,
         &request("noded.observe.start", "noded", "observe")
-            .with_body(r#"{"filter":{"verbs":["maild.props.*","noded.ping"]},"body":"redacted"}"#),
+            .with_body(r#"{"filter":{"commands":["maild.props.*","noded.ping"]},"body":"redacted"}"#),
     )
     .await;
     assert_eq!(receive(&mut observer).await.get("rc"), Some("0"));
@@ -1704,7 +1704,7 @@ async fn tcp_only_reserved_topic_keeps_legacy_observation_without_fanout_events(
     // The first matching observation must still be this ordered ping barrier.
     let event = receive(&mut observer).await;
     let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
-    assert_eq!(body["verb"], "noded.ping");
+    assert_eq!(body["command"], "noded.ping");
     assert_ne!(body["payload_omitted"], "native_session_protected");
 }
 

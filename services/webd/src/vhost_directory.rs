@@ -20,9 +20,9 @@
 //! ## Why an immutable snapshot
 //!
 //! `NodeState::vhosts` is `Arc<ArcSwap<VhostDirectory>>` so the
-//! provisioner (C4) and the C5 ergonomic verbs can publish a new
+//! provisioner (C4) and the C5 ergonomic commands can publish a new
 //! directory atomically — every reader (HTTPS dispatch, plain-HTTP
-//! admit, Bus read verbs) sees a consistent view. Pre-computing the
+//! admit, Bus read commands) sees a consistent view. Pre-computing the
 //! three views inside the snapshot avoids "directory swapped between
 //! read of `by_host` and read of `keys()`" race windows.
 //!
@@ -86,7 +86,7 @@ pub struct VhostDirectoryEntry {
 
 /// One per-primary entry in [`VhostDirectory::primaries`]. Carries
 /// both the per-vhost runtime state and the alias list that the Bus
-/// read verbs surface. Aliases are sorted ascending with the primary
+/// read commands surface. Aliases are sorted ascending with the primary
 /// excluded — matching today's `webd.routes.list` output shape
 /// (`bus::routes::list_body`).
 #[derive(Debug, Clone)]

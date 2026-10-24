@@ -253,7 +253,7 @@ fn execute_batch(
             return Err(format!(
                 "{} batch partially failed after {completed}/{total} completed: {} -> {}: \
                  {error}; {remaining} item(s) not attempted",
-                batch_verb(kind),
+                batch_command(kind),
                 item.source.display(),
                 item.target.display(),
             ));
@@ -365,11 +365,11 @@ fn preflight_batch<'a>(
     Ok(prepared)
 }
 
-fn batch_verb(kind: FileOpKind) -> &'static str {
+fn batch_command(kind: FileOpKind) -> &'static str {
     match kind {
         FileOpKind::BatchCopy => "copy",
         FileOpKind::BatchMove => "move",
-        _ => unreachable!("only batch operations have a batch verb"),
+        _ => unreachable!("only batch operations have a batch command"),
     }
 }
 

@@ -10,7 +10,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 #[derive(Deserialize)]
 struct Request {
     id: Value,
-    verb: String,
+    command: String,
     body: Value,
     timeout_secs: Option<u64>,
 }
@@ -58,7 +58,7 @@ where
                         client
                             .call_with_headers_raw_within(
                                 "indexd",
-                                &request.verb,
+                                &request.command,
                                 &Default::default(),
                                 &request.body.to_string(),
                                 std::time::Duration::from_secs(
@@ -151,7 +151,7 @@ mod tests {
         let owner = NodedClient::connect("indexd", &broker.url).await.unwrap();
         let mut incoming = owner.incoming_async().await.unwrap();
         let client = NodedClient::connect_anonymous(&broker.url).await;
-        let input = br#"{"id":1,"verb":"indexd.feedback","body":{},"timeout_secs":0}"#;
+        let input = br#"{"id":1,"command":"indexd.feedback","body":{},"timeout_secs":0}"#;
         let mut output = Vec::new();
         run(&input[..], &mut output, &client).await.unwrap();
         assert_eq!(
@@ -180,7 +180,7 @@ mod tests {
             }
         });
         let client = NodedClient::connect_anonymous(&broker.url).await;
-        let input = b"{\"id\":1,\"verb\":\"indexd.feedback\",\"body\":{},\"timeout_secs\":0}\n{\"id\":2,\"verb\":\"indexd.stats\",\"body\":{}}\n";
+        let input = b"{\"id\":1,\"command\":\"indexd.feedback\",\"body\":{},\"timeout_secs\":0}\n{\"id\":2,\"command\":\"indexd.stats\",\"body\":{}}\n";
         let mut output = Vec::new();
         run(&input[..], &mut output, &client).await.unwrap();
         let replies: Vec<Value> = std::str::from_utf8(&output)

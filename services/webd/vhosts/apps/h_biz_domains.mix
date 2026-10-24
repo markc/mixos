@@ -460,7 +460,7 @@ if $METHOD == "POST" then
   -- declarative row delete (datatable.mix): action="row:delete:<id>".
   $ra = dt_row_action($f)
   if $ra != nil then
-    if $ra["verb"] == "delete" then
+    if $ra["command"] == "delete" then
       $flash = bd_delete($ra["id"], $user)
     end
     if $flash == "" then

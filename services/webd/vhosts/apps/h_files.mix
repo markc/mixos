@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- h_files.mix — Dolphin-style dual-pane FILE MANAGER (/files) over the delegated
--- mixos-filesd fs-mode bus_call seam (filesd-fs / fs.* verbs). S2 = read-only
+-- mixos-filesd fs-mode bus_call seam (filesd-fs / fs.* commands). S2 = read-only
 -- browse: two independent panes (each its own cwd/sort, l.* / r.* query state), a
 -- Places sidebar (swapped into the DCS left nav by lib.mix's page() /files branch),
 -- a toolbar, per-pane location/status/filter bars, and an Information panel.
@@ -18,10 +18,10 @@ include "/opt/mixos/vhosts/shared/widgets/treeview.mix"
 include "/opt/mixos/vhosts/shared/widgets/modals.mix"
 
 -- The single wrapped filesd-fs seam: bus_call raises on any failure (gate denied,
--- daemon down, verb error), so every call goes through here and degrades gracefully.
-function files_call($verb, $args)
+-- daemon down, command error), so every call goes through here and degrades gracefully.
+function files_call($command, $args)
   try
-    $r = bus_call($verb, $args)
+    $r = bus_call($command, $args)
     return { ok: true, result: $r }
   catch $e
     return { ok: false, err: ("" .. $e) }
@@ -489,7 +489,7 @@ end
 
 -- Mutations (S3). Every path is re-scoped + permission-checked by the daemon
 -- (fsops), so a client-built destination is safe; webd's admin gate + SameSite is
--- the request-level auth (the bus POST is tokenless per the verb-aware CSRF rule).
+-- the request-level auth (the bus POST is tokenless per the command-aware CSRF rule).
 function files_handle_post($f)
   $action = "" .. fm_or($f["action"], "")
   $ret = "" .. fm_or($f["ret"], "")

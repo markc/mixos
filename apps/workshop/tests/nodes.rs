@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use inspector::model::{Node, Verb};
+use inspector::model::{Node, Command};
 use inspector::{Effect, Engine, Snapshot};
 
 #[test]
@@ -22,7 +22,7 @@ fn nodes_keep_service_identity_and_distinct_routed_selections() {
         snapshot.identities.insert(route.into(), identity);
         snapshot.services.insert(
             route.into(),
-            Ok(vec![Verb {
+            Ok(vec![Command {
                 name: "ced.ping".into(),
                 args: String::new(),
                 description: String::new(),
@@ -45,11 +45,11 @@ fn nodes_keep_service_identity_and_distinct_routed_selections() {
         .unwrap();
     assert_eq!(service["identity"]["version"], "1.2.3");
     assert!(service["label"].as_str().unwrap().contains("12345678"));
-    let verb = rows
+    let command = rows
         .iter()
-        .find(|row| row["key"] == "verb:beta:ced:ced.ping")
+        .find(|row| row["key"] == "command:beta:ced:ced.ping")
         .unwrap();
-    assert_eq!(verb["selection"]["service"], "ced.beta.bus");
+    assert_eq!(command["selection"]["service"], "ced.beta.bus");
     engine.toggle("node:alpha");
     assert!(
         !engine

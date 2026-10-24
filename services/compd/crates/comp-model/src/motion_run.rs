@@ -83,7 +83,7 @@ impl MotionSpec {
     }
 }
 
-/// Parse the verb's arguments.
+/// Parse the command's arguments.
 pub fn parse(args: &Value) -> Result<MotionSpec, ControlReply> {
     let empty = serde_json::Map::new();
     let object = args_object(args, &empty, &["targets"])?;

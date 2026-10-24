@@ -8,7 +8,7 @@
 --
 -- Run: mix --serve notifyd.mix --name notify       (Bus service "notify")
 --
--- Verbs (bodies are JSON objects):
+-- Commands (bodies are JSON objects):
 --   notify.send     {summary, body?, app?, source?, actions?: [{id, label}],
 --                    urgency?, timeout_ms?, request_id?, thread?} -> {id, status}
 --   notify.get      {id}               the record, with its outcome once set
@@ -24,7 +24,7 @@
 -- notify.get reads it afterwards. Other inner commands: notification.created,
 -- notification.closed (any outcome that is not a button press).
 -- present records a local surface; action, dismiss, close and close_all settle
--- a notification. These verbs are
+-- a notification. These commands are
 -- taken from callers on this node only (the broker's broker_origin stamp): a
 -- peer across the mesh must never answer or withdraw a question for the
 -- person, such as portald's screen-share consent.

@@ -66,7 +66,7 @@ binding in one place.
 
 - dopus no longer reads `keymap.conf.mix`. No such file existed on the
   running session, so nothing needed migrating.
-- `<app>.commands` reports each command's effective shortcut and its further
+- `<app>.actions` reports each command's effective shortcut and its further
   chords, so an agent can read what a key does before and after a change.
 - A shell that decodes the full snapshot (`deny_unknown_fields`) must be
   rebuilt before a profile carries `keymaps`. The portal is one; it is

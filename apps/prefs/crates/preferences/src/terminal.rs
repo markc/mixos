@@ -252,12 +252,12 @@ mod tests {
         e
     }
 
-    /// The settings calls queued: (ticket, verb, body).
+    /// The settings calls queued: (ticket, command, body).
     fn settings_calls(e: &mut Engine) -> Vec<(u64, &'static str, Value)> {
         e.take_effects()
             .into_iter()
             .filter_map(|x| match x {
-                Effect::Settings { ticket, verb, body } => Some((ticket, verb, body)),
+                Effect::Settings { ticket, command, body } => Some((ticket, command, body)),
                 _ => None,
             })
             .collect()
@@ -270,8 +270,8 @@ mod tests {
         e.edit_terminal(Setting::Padding(1));
         let calls = settings_calls(&mut e);
         assert_eq!(calls.len(), 1);
-        let (ticket, verb, body) = calls[0].clone();
-        assert_eq!(verb, "settings.apply");
+        let (ticket, command, body) = calls[0].clone();
+        assert_eq!(command, "settings.apply");
         assert_eq!(body["expected_incarnation"], "inc-1");
         assert_eq!(body["expected_revision"], "7");
         assert_eq!(body["changes"], json!({"terminal.padding": 1}));

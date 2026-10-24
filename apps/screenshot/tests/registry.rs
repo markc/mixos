@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The Bus verb registry (`docs/docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
-//! lists exactly the verbs screenshot describes (its own and the window's
-//! drive verbs), apart from the protocol verbs every service answers; and
-//! each verb's class agrees with what the app says of it.
+//! The Bus command registry (`docs/docs/spec/bus/commands.conf.mix`, AGENTS.md §5)
+//! lists exactly the commands screenshot describes (its own and the window's
+//! drive commands), apart from the protocol commands every service answers; and
+//! each command's class agrees with what the app says of it.
 use screenshot::jobs::describe;
 
-const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/verbs.conf.mix");
+const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
 
 /// The registry's names owned by `owner`, from its one-entry-per-line form.
 fn registered(owner: &str) -> Vec<String> {
@@ -25,7 +25,7 @@ fn registered(owner: &str) -> Vec<String> {
 }
 
 fn described() -> Vec<String> {
-    describe(true)["verbs"]
+    describe(true)["commands"]
         .as_array()
         .unwrap()
         .iter()
@@ -36,7 +36,7 @@ fn described() -> Vec<String> {
 }
 
 #[test]
-fn every_described_verb_is_registered_and_nothing_else() {
+fn every_described_command_is_registered_and_nothing_else() {
     let described = described();
     assert!(!described.is_empty());
     assert_eq!(registered("screenshot"), described);
@@ -54,16 +54,16 @@ fn class_of(name: &str) -> Option<&'static str> {
         .next()
 }
 
-/// A read-only verb is a query; activation is system
+/// A read-only command is a query; activation is system
 /// (docs/docs/decisions/2026-10-11-verb-classes.md).
 #[test]
-fn classes_follow_what_the_verbs_do() {
-    for verb in describe(true)["verbs"].as_array().unwrap() {
-        let name = verb["name"].as_str().unwrap();
+fn classes_follow_what_the_commands_do() {
+    for command in describe(true)["commands"].as_array().unwrap() {
+        let name = command["name"].as_str().unwrap();
         if matches!(name, "HELP" | "app.describe") {
             continue;
         }
-        if verb["read_only"].as_bool() == Some(true) {
+        if command["read_only"].as_bool() == Some(true) {
             assert_eq!(class_of(name), Some("query"), "{name}");
         }
     }
@@ -72,9 +72,9 @@ fn classes_follow_what_the_verbs_do() {
     assert_eq!(class_of("screenshot.recent"), Some("query"));
 }
 
-/// Cap's verbs were renamed, never reused: none is registered any more.
+/// Cap's commands were renamed, never reused: none is registered any more.
 #[test]
-fn the_iced_cap_verbs_are_gone() {
+fn the_iced_cap_commands_are_gone() {
     assert!(registered("cap").is_empty());
     assert!(!REGISTRY.contains("name:\"cap."));
 }

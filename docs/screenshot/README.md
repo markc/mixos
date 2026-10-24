@@ -136,7 +136,7 @@ first.
 
 Screenshot answers on the Bus as `screenshot` (schema `screenshot.v1`).
 
-| Verb | Arguments | Answer |
+| Command | Arguments | Answer |
 |---|---|---|
 | `screenshot.ping`, `screenshot.info` | | liveness and the compositor served (`comp`); the document, its source and last save, the capture, the job and the UI state |
 | `screenshot.capture` | `mode` (`screen`, `window`, `region`), `output`, `window` `{id, generation}`, `cursor`, `delay` (0–10) | a new document, once it is ready; any answer, refusals included, carries `restore_failed: true` if the window could not be shown again; refused while unsaved annotations exist |
@@ -151,7 +151,7 @@ Screenshot answers on the Bus as `screenshot` (schema `screenshot.v1`).
 | `screenshot.export` | `path` | Save As to a new file |
 | `screenshot.recent` | `limit` (1–100) | the newest saved shots |
 | `screenshot.select` | `tool`, `mode`, `window`, `output` | the UI state |
-| `screenshot.commands` | | every command with parameter schemas, labels, shortcuts and enablement |
+| `screenshot.actions` | | every command with parameter schemas, labels, shortcuts and enablement |
 | `screenshot.execute` | `id`, optional `params` | runs a command; answers `{executed, result, status, dialog, job}` |
 | `screenshot.theme` | `scheme`, `mode` | this window's look |
 | `screenshot.show`, `screenshot.quit` | | brings the window forward; closes it (refused with unsaved work) |
@@ -184,7 +184,7 @@ Uncrop dispatches `edit.crop`. The shell's dialog/job checks compose with
 the engine's enablement.
 
 The six `screenshot.annotate`, `screenshot.move`, `screenshot.delete`,
-`screenshot.crop`, `screenshot.undo` and `screenshot.redo` verbs remain
+`screenshot.crop`, `screenshot.undo` and `screenshot.redo` commands remain
 deprecated aliases of execute and preserve their old reply bodies and
 argument error codes at document limits. Alias undo/redo with empty history
 return the document without executing or publishing an event; the command
@@ -194,9 +194,9 @@ workers receive a fresh history without old edits.
 
 The window is drivable like every MixOS app, including its menus: see
 [driving an app](../docs/drive.md) (`screenshot.ui.*`, `screenshot.window`). The
-verbs are registered in `docs/docs/spec/bus/verbs.conf.mix`. Each command run
+commands are registered in `docs/docs/spec/bus/commands.conf.mix`. Each command run
 from a menu, a key, the toolbar or `screenshot.execute` is published on
-`screenshot.command.executed` v2 with accepted `params` and returned `result`,
+`screenshot.action.executed` v2 with accepted `params` and returned `result`,
 including successful edits reached by hand or through the deprecated aliases
 ([executed commands](../docs/decisions/2026-10-11-executed-commands.md)).
 Edit › Delete and Edit › Uncrop each publish two executed events: first the
@@ -204,7 +204,7 @@ inner `edit.delete` / `edit.crop` with parameters, then the nullary wrapper
 `edit.delete_selected` / `edit.uncrop`. The wrapper records the gesture;
 the inner command records the document edit.
 
-`screenshot --headless` runs the same verbs with no window, for agents and
+`screenshot --headless` runs the same commands with no window, for agents and
 tests, registered under the headless names above so Print Screen never
 lands in an instance nobody can see. It never asks anything: work that would need a
 question is refused.
@@ -268,7 +268,7 @@ cargo test -p screenshot -p annotation
 `tests/native_bus.rs` runs the headless binary against an in-process
 broker and a fixture compositor; `tests/snapshot.rs` renders the window
 offscreen (regenerate with `UPDATE_SNAPSHOTS=1` and look at the images);
-`tests/registry.rs` checks the verb registry.
+`tests/registry.rs` checks the command registry.
 
 ## Notes
 
@@ -291,14 +291,14 @@ offscreen (regenerate with `UPDATE_SNAPSHOTS=1` and look at the images);
 - A region selection may take up to 70 seconds (Cap allowed 38).
 - Raw shots are deleted when no longer needed, and the folder is pruned.
 
-## Macro Bus verbs
+## Macro Bus commands
 
-The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+The shared [macro Bus surface](/macros/#bus-commands) uses this process's
 catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
 the instance’s registered Bus name (for example `term-1234` for a second Term
-instance). Verbs keep the app’s canonical prefix, such as `screenshot.macros.run`.
+instance). Commands keep the app’s canonical prefix, such as `screenshot.macros.run`.
 
-| Verb | Arguments | Result |
+| Command | Arguments | Result |
 |---|---|---|
 | `screenshot.macros.list` | `{}` | Catalogue and diagnostics |
 | `screenshot.macros.reload` | `{}` | Catalogue and diagnostics |

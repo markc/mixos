@@ -8,15 +8,15 @@ end
 fn check($ok, $message)
   if not $ok then raise("INDEXD_BUS_TEST", $message) end
 end
-fn call($verb, $body)
+fn call($command, $body)
   $encoded = json_encode($body)
-  send indexd $verb body=$encoded timeout=10
+  send indexd $command body=$encoded timeout=10
   $value = $reply
   return {rc: $rc, body: $value}
 end
-fn ok($verb, $body)
-  $reply = call($verb, $body)
-  check($reply.rc == 0, $verb .. ": " .. json_encode($reply))
+fn ok($command, $body)
+  $reply = call($command, $body)
+  check($reply.rc == 0, $command .. ": " .. json_encode($reply))
   return $reply.body
 end
 check(ok("indexd.stats", {action:"stats"}).total_vectors == 0, "initial stats")
@@ -42,4 +42,4 @@ $bad = call("indexd.store", {texts:["x"],metadata:[{}]})
 check($bad.rc == 10 and type($bad.body.error) == "string", "error rc and JSON body")
 $mismatch = call("indexd.stats", {action:"search"})
 check($mismatch.rc == 10 and type($mismatch.body.error) == "string", "redundant action verified")
-print("indexd Bus: 11 verbs, mutation chain, superseded filter and error replies passed")
+print("indexd Bus: 11 commands, mutation chain, superseded filter and error replies passed")

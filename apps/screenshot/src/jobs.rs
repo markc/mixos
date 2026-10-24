@@ -2,13 +2,13 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The effects that leave the process, shared by the window and headless
 //! mode: captures over compd, decoding, rendering and publishing PNGs, the
-//! ledger, and the registry-backed Bus verbs. Image work runs on blocking
+//! ledger, and the registry-backed Bus commands. Image work runs on blocking
 //! threads, never the UI thread or the Bus thread.
 use crate::app::{App, Effect, SaveTo};
 use crate::capture::{self, Comp, Request, Window};
 use annotation::library::{self, Ledger, Saved};
 use annotation::{Document, Face};
-use command::{Error, Origin};
+use action::{Error, Origin};
 use image::RgbaImage;
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -194,12 +194,12 @@ pub fn recent(limit: usize) -> Value {
     })
 }
 
-/// The whole Bus surface: the app's verbs, and with a window the toolkit's
-/// drive verbs.
+/// The whole Bus surface: the app's commands, and with a window the toolkit's
+/// drive commands.
 pub fn describe(window: bool) -> Value {
-    let mut surface = crate::verbs::describe();
-    if window && let Some(verbs) = surface["verbs"].as_array_mut() {
-        verbs.extend(toolkit::drive::describe(crate::SERVICE));
+    let mut surface = crate::commands::describe();
+    if window && let Some(command_names) = surface["commands"].as_array_mut() {
+        command_names.extend(toolkit::drive::describe(crate::SERVICE));
     }
     surface
 }
@@ -245,10 +245,10 @@ pub fn settle(
                         ),
                         Err(Error::Unknown(_)) => (
                             10,
-                            json!({"error_code":"UNKNOWN_COMMAND","message":crate::label("unknown-command")}),
+                            json!({"error_code":"UNKNOWN_ACTION","message":crate::label("unknown-action")}),
                         ),
                         Err(Error::Disabled { .. })
-                            if app.headless && crate::commands::needs_window(&command) =>
+                            if app.headless && crate::actions::needs_window(&command) =>
                         {
                             (
                                 10,
@@ -288,7 +288,7 @@ pub fn settle(
                 Effect::Describe { id, help } => {
                     let surface = describe(window);
                     let body = if help {
-                        surface["verbs"].clone()
+                        surface["commands"].clone()
                     } else {
                         surface
                     };
@@ -320,7 +320,7 @@ mod tests {
         a.document = Some(Document::new(RgbaImage::new(16, 16)).unwrap());
         let commands = a.commands.clone();
         let params = json!({"kind":"arrow", "points":[{"x":1,"y":1},{"x":8,"y":8}], "colour":[255,0,0,255], "width":2});
-        a.command(1, "screenshot.commands", "{}");
+        a.command(1, "screenshot.actions", "{}");
         a.command(2, "screenshot.execute", r#"{"id":"nope"}"#);
         a.command(
             6,
@@ -344,7 +344,7 @@ mod tests {
                 .as_array()
                 .is_some_and(|c| c.iter().any(|c| c["id"] == "capture.take"))
         );
-        assert_eq!(reply(2).unwrap().1["error_code"], "UNKNOWN_COMMAND");
+        assert_eq!(reply(2).unwrap().1["error_code"], "UNKNOWN_ACTION");
         assert_eq!(reply(6).unwrap().0, 0);
         assert_eq!(reply(6).unwrap().1["result"]["id"], 1);
         assert_eq!(reply(3).unwrap().1["dialog"], "about");

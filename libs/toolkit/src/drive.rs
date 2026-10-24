@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The drive layer: the same UI-level Bus verbs for every MixOS app, so an
+//! The drive layer: the same UI-level Bus commands for every MixOS app, so an
 //! agent can do in the window whatever a person can (agentic first).
 //!
 //! [`install`] registers [`Drive`] as an egui plugin. It turns AccessKit on,
@@ -9,11 +9,11 @@
 //! menus, the title bar, trees and text fields all respond as they would to
 //! a hand.
 //!
-//! The verbs ([`VERBS`]) are namespaced under the app (`<app>.ui.tree`,
+//! The commands ([`COMMANDS`]) are namespaced under the app (`<app>.ui.tree`,
 //! `<app>.window`, …). The app forwards each one, without its prefix, to
 //! [`request`] from inside a frame, sends whatever [`request`] or [`logic`]
 //! (once a frame) hands back, and holds later commands while [`pending`];
-//! [`finish`] answers everything before it closes. Reads answer at once. Input verbs run one at
+//! [`finish`] answers everything before it closes. Reads answer at once. Input commands run one at
 //! a time, one step per pass, and answer one pass after their last step with
 //! the menu, focus and pointer the input left, so a caller can step the
 //! window deterministically.
@@ -28,8 +28,8 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-/// The drive verbs, after the app's prefix.
-pub const VERBS: [&str; 13] = [
+/// The drive commands, after the app's prefix.
+pub const COMMANDS: [&str; 13] = [
     "ui.tree",
     "ui.click",
     "ui.pointer",
@@ -69,9 +69,9 @@ fn refusal(id: u64, code: &str, message: &str) -> Answer {
     }
 }
 
-/// Every drive verb under `app`, as `HELP` / `app.describe` list them.
+/// Every drive command under `app`, as `HELP` / `app.describe` list them.
 pub fn describe(app: &str) -> Vec<Value> {
-    let verbs = [
+    let command_names = [
         (
             "ui.tree",
             json!({"label":"optional substring","exact":"optional bool: the label must equal it","role":"optional role name"}),
@@ -151,10 +151,10 @@ pub fn describe(app: &str) -> Vec<Value> {
             true,
         ),
     ];
-    verbs
+    command_names
         .into_iter()
-        .map(|(verb, mut args, description, read_only)| {
-            let mut entry = json!({"name":format!("{app}.{verb}"),"description":description,"read_only":read_only});
+        .map(|(command_name, mut args, description, read_only)| {
+            let mut entry = json!({"name":format!("{app}.{command_name}"),"description":description,"read_only":read_only});
             if args.is_null() {
                 args = json!({});
             }
@@ -184,7 +184,7 @@ impl Default for Options {
     }
 }
 
-/// Register the drive layer on `ctx` for the app whose verbs start `app.`.
+/// Register the drive layer on `ctx` for the app whose commands start `app.`.
 pub fn install(ctx: &Context, app: &str) {
     install_with(ctx, app, Options::default());
 }
@@ -198,12 +198,12 @@ pub fn install_with(ctx: &Context, app: &str, options: Options) {
     });
 }
 
-/// `verb` only queues input behind the input before it, so an app may hand
-/// it over while earlier input is still running; every other verb reads or
+/// `command` only queues input behind the input before it, so an app may hand
+/// it over while earlier input is still running; every other command reads or
 /// changes state now and must wait until [`pending`] is false.
-pub fn queues(verb: &str) -> bool {
+pub fn queues(command_name: &str) -> bool {
     matches!(
-        verb,
+        command_name,
         "ui.click" | "ui.pointer" | "ui.scroll" | "ui.key" | "ui.type" | "ui.capture"
     )
 }
@@ -275,10 +275,10 @@ pub fn finish(ctx: &Context) -> Vec<Answer> {
     .unwrap_or_default()
 }
 
-/// Answer or queue the drive verb `verb` (without the app prefix). Call it
+/// Answer or queue the drive command `command` (without the app prefix). Call it
 /// inside a frame. `None` means queued: its answer comes from [`logic`]
 /// in a later frame.
-pub fn request(ctx: &Context, id: u64, verb: &str, args: &Value) -> Option<Answer> {
+pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Option<Answer> {
     if let Some(name) = args.get("viewport") {
         let Some(name) = name.as_str() else {
             return Some(refusal(id, "ARGUMENT", "viewport must be a window name"));
@@ -304,7 +304,7 @@ pub fn request(ctx: &Context, id: u64, verb: &str, args: &Value) -> Option<Answe
                 if child.requests.len() >= QUEUE_LIMIT {
                     return Some(refusal(id, "BUSY", "viewport request queue is full"));
                 }
-                child.requests.push_back((id, verb.into(), args.clone()));
+                child.requests.push_back((id, command_name.into(), args.clone()));
                 child
                     .deadlines
                     .insert(id, Instant::now() + child.options.capture_timeout);
@@ -321,7 +321,7 @@ pub fn request(ctx: &Context, id: u64, verb: &str, args: &Value) -> Option<Answe
             });
     }
     let answer = ctx
-        .with_plugin(|drive: &mut Drive| drive.request(ctx, id, verb, args))
+        .with_plugin(|drive: &mut Drive| drive.request(ctx, id, command_name, args))
         .unwrap_or_else(|| {
             Some(refusal(
                 id,
@@ -335,7 +335,7 @@ pub fn request(ctx: &Context, id: u64, verb: &str, args: &Value) -> Option<Answe
     answer
 }
 
-/// Name an owned auxiliary viewport for the common drive verbs.
+/// Name an owned auxiliary viewport for the common drive commands.
 pub fn register_viewport(
     ctx: &Context,
     owner: egui::ViewportId,
@@ -538,8 +538,8 @@ impl egui::Plugin for Drive {
     fn on_begin_pass(&mut self, ui: &mut Ui) {
         if ui.ctx().viewport_id() != egui::ViewportId::ROOT {
             if let Some(child) = self.children.get_mut(&ui.ctx().viewport_id()) {
-                while let Some((id, verb, args)) = child.requests.pop_front() {
-                    if let Some(answer) = child.request(ui.ctx(), id, &verb, &args) {
+                while let Some((id, command_name, args)) = child.requests.pop_front() {
+                    if let Some(answer) = child.request(ui.ctx(), id, &command_name, &args) {
                         child.answers.push(answer);
                     }
                 }
@@ -636,11 +636,11 @@ impl Drive {
 }
 
 impl Drive {
-    fn request(&mut self, ctx: &Context, id: u64, verb: &str, args: &Value) -> Option<Answer> {
+    fn request(&mut self, ctx: &Context, id: u64, command_name: &str, args: &Value) -> Option<Answer> {
         if !args.is_object() {
             return Some(refusal(id, "ARGUMENT", "arguments must be a JSON object"));
         }
-        let job = match verb {
+        let job = match command_name {
             "ui.tree" => return Some(self.tree_answer(id, args)),
             "ui.menu" => return Some(ok(id, json!({"menu":menu_state(ctx)}))),
             "ui.menu.list" => {
@@ -690,7 +690,7 @@ impl Drive {
                 None => Err("text must be a string".to_owned()),
             },
             "ui.capture" => self.capture(args),
-            _ => return Some(refusal(id, "UNKNOWN_VERB", "unknown drive verb")),
+            _ => return Some(refusal(id, "UNKNOWN_COMMAND", "unknown drive command")),
         };
         let job = match job {
             Ok(job) => job,
@@ -1777,12 +1777,12 @@ mod tests {
     }
 
     #[test]
-    fn every_verb_is_described_once() {
+    fn every_command_is_described_once() {
         let names: Vec<String> = describe("demo")
             .iter()
             .filter_map(|v| v["name"].as_str().map(str::to_owned))
             .collect();
-        let expected: Vec<String> = VERBS.iter().map(|v| format!("demo.{v}")).collect();
+        let expected: Vec<String> = COMMANDS.iter().map(|v| format!("demo.{v}")).collect();
         assert_eq!(names, expected);
     }
 
@@ -1790,11 +1790,11 @@ mod tests {
     fn arguments_are_validated() {
         let ctx = Context::default();
         install(&ctx, "demo");
-        let code = |verb: &str, args: Value| {
-            request(&ctx, 1, verb, &args)
+        let code = |command_name: &str, args: Value| {
+            request(&ctx, 1, command_name, &args)
                 .map(|a| a.body["error_code"].as_str().unwrap_or("").to_owned())
         };
-        assert_eq!(code("ui.nope", json!({})).as_deref(), Some("UNKNOWN_VERB"));
+        assert_eq!(code("ui.nope", json!({})).as_deref(), Some("UNKNOWN_COMMAND"));
         assert_eq!(code("ui.tree", json!([])).as_deref(), Some("ARGUMENT"));
         assert_eq!(code("ui.click", json!({})).as_deref(), Some("ARGUMENT"));
         assert_eq!(
@@ -1851,7 +1851,7 @@ mod tests {
     }
 
     #[test]
-    fn without_the_plugin_every_verb_is_unavailable() {
+    fn without_the_plugin_every_command_is_unavailable() {
         let ctx = Context::default();
         let answer = request(&ctx, 3, "ui.tree", &json!({})).unwrap();
         assert_eq!(answer.body["error_code"], "UNAVAILABLE");

@@ -3,7 +3,7 @@
 `mix --serve` runs a Mix script as a long-lived, supervised Bus citizen. The
 runtime registers one service identity, executes the script's initialisation
 body, and then runs an unconditional event pump for author-defined `on`
-handlers and runtime-reserved verbs.
+handlers and runtime-reserved commands.
 
 ## Synopsis
 
@@ -64,9 +64,9 @@ close ends the event pump.
 Calling `bus_reconnect()` is unnecessary in serve mode; the supervised client
 owns recovery.
 
-## Runtime-reserved verbs
+## Runtime-reserved commands
 
-The runtime checks reserved verbs before author handlers. A script cannot
+The runtime checks reserved commands before author handlers. A script cannot
 shadow them.
 
 | Command | Arguments | Result |

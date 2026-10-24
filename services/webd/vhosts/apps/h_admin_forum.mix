@@ -106,11 +106,11 @@ end
 
 if $METHOD == "POST" then
   $f = parse_form($BODY)
-  -- declarative row action (datatable.mix): action="row:<verb>:<id>"; id = the slug
+  -- declarative row action (datatable.mix): action="row:<command>:<id>"; id = the slug
   -- (bulk_id), untrusted → bound in forum_delete_by_slug, never spliced.
   $ra = dt_row_action($f)
   if $ra != nil then
-    if $ra["verb"] == "delete" then
+    if $ra["command"] == "delete" then
       $block = dt_try_delete_row(forum_slug_ok($ra["id"]), forum_del_hooks())
       if $block != "" then
         return redirect_flash("/admin/forum", $block, "danger")

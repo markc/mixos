@@ -61,7 +61,7 @@ fn change_scheme(authority: &mut Authority, scheme: &str, operation: &str) {
 }
 
 #[test]
-fn appearance_projects_the_desktop_context_through_the_verb() {
+fn appearance_projects_the_desktop_context_through_the_command() {
     let dir = tempfile::tempdir().unwrap();
     let mut authority = authority(dir.path());
     let reply = service::dispatch(&mut authority, "settings.appearance.get", &body("fixture"))
@@ -158,13 +158,13 @@ fn appearance_keeps_caption_side_in_the_atomic_snapshot_for_legacy_readers() {
 }
 
 #[test]
-fn appearance_verb_is_registered_as_read_only() {
+fn appearance_command_is_registered_as_read_only() {
     let manifest = service::manifest();
-    let verb = manifest
+    let command = manifest
         .iter()
         .find(|descriptor| descriptor.name == "settings.appearance.get")
-        .expect("verb in manifest");
-    assert!(verb.read_only);
+        .expect("command in manifest");
+    assert!(command.read_only);
 }
 
 #[test]

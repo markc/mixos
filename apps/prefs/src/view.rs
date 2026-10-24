@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::sync::{Mutex, OnceLock};
 use toolkit::button::PushButton;
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 use toolkit::dialog::{self, Choice};
 use toolkit::field::ValueField;
 use toolkit::slider::Slider;
@@ -1148,7 +1148,7 @@ fn look_controls(
                                 if let Some(swatch) = swatch(scheme, look.mode) {
                                     paint_swatch(ui, swatch);
                                 }
-                                let name = toolkit::command::label_text(
+                                let name = toolkit::action::label_text(
                                     strings,
                                     &format!("toolkit-theme-{}", scheme.name()),
                                 );

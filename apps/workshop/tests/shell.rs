@@ -8,7 +8,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use futures::channel::mpsc;
 use inspector::bus::{Delivery, Handle, Logged};
-use inspector::model::Verb;
+use inspector::model::Command;
 use inspector::{Engine, Snapshot};
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -24,14 +24,14 @@ struct Rig {
 }
 
 fn fixture() -> Snapshot {
-    let verb = |name: &str| Verb {
+    let command_name = |name: &str| Command {
         name: name.into(),
         args: String::new(),
         description: String::new(),
         read_only: Some(true),
     };
     let mut s = Snapshot::default();
-    s.services.insert("example".into(), Ok(vec![verb("echo")]));
+    s.services.insert("example".into(), Ok(vec![command_name("echo")]));
     s
 }
 
@@ -117,11 +117,11 @@ fn step_until(rig: &mut Rig, what: &str, done: impl Fn(&Rig) -> bool) {
     panic!("{what} never happened: {:?}", rig.bus.log());
 }
 
-fn send(rig: &mut Rig, id: u64, verb: &str, args: Value) {
+fn send(rig: &mut Rig, id: u64, command_name: &str, args: Value) {
     rig.deliveries
         .try_send(Delivery::Command {
             id,
-            verb: verb.into(),
+            command: command_name.into(),
             body: args.to_string(),
         })
         .unwrap();
@@ -144,13 +144,13 @@ fn wait(rig: &mut Rig, ids: &[u64]) {
     });
 }
 
-/// The `<service>.command.executed` bodies the shell published, in order.
+/// The `<service>.action.executed` bodies the shell published, in order.
 fn published(rig: &Rig) -> Vec<Value> {
     rig.bus
         .log()
         .into_iter()
         .filter_map(|l| match l {
-            Logged::Publish { topic, body } if topic == "sink.command.executed" => Some(body),
+            Logged::Publish { topic, body } if topic == "sink.action.executed" => Some(body),
             _ => None,
         })
         .collect()
@@ -233,7 +233,7 @@ fn a_call_after_typed_input_sends_the_typed_body() {
         &mut rig,
         1,
         "workshop.select",
-        json!({"service":"example","verb":"echo"}),
+        json!({"service":"example","command":"echo"}),
     );
     wait(&mut rig, &[1]);
     let editor = body_editor(&mut rig);
@@ -252,7 +252,7 @@ fn a_call_after_typed_input_sends_the_typed_body() {
         calls,
         [Logged::Call {
             service: "example".into(),
-            verb: "echo".into(),
+            command: "echo".into(),
             body: "{\"n\":2}".into()
         }]
     );
@@ -344,7 +344,7 @@ fn a_quit_answers_every_command_behind_it_before_the_bus_stops() {
         rig.deliveries
             .try_send(Delivery::Command {
                 id: 13,
-                verb: "workshop.ping".into(),
+                command: "workshop.ping".into(),
                 body: "{}".into()
             })
             .is_err()
@@ -619,7 +619,7 @@ fn view_theme_forest_by_bus_clicks_installs_forest() {
         panel_of(Scheme::Forest, Mode::Light),
         "Forest is installed"
     );
-    send(&mut rig, 4, "workshop.commands", json!({}));
+    send(&mut rig, 4, "workshop.actions", json!({}));
     wait(&mut rig, &[4]);
     let commands = reply(&rig, 4).unwrap().2;
     let tick = |id: &str| {
@@ -644,7 +644,7 @@ fn view_theme_forest_by_bus_clicks_installs_forest() {
 /// workshop.theme sets an axis, null follows the session again, an unknown
 /// name is refused; the window installs each answer's effective theme.
 #[test]
-fn the_theme_verb_installs_its_choice() {
+fn the_theme_command_installs_its_choice() {
     use design::{Mode, Scheme};
     let mut rig = live_rig();
     send(
@@ -1045,7 +1045,7 @@ fn view_theme_style_and_decorations_by_bus_clicks() {
     let menus = tree(&mut rig, 102, json!({"label":view,"exact":true}));
     assert!(!menus.is_empty(), "the menus stay, in the menu-bar row");
 
-    send(&mut rig, 103, "workshop.commands", json!({}));
+    send(&mut rig, 103, "workshop.actions", json!({}));
     wait(&mut rig, &[103]);
     let commands = reply(&rig, 103).unwrap().2;
     let tick = |id: &str| {
@@ -1068,10 +1068,10 @@ fn view_theme_style_and_decorations_by_bus_clicks() {
     );
 }
 
-/// The theme verb's new axes reach the installed chrome; null follows the
+/// The theme command's new axes reach the installed chrome; null follows the
 /// session again.
 #[test]
-fn the_theme_verb_sets_style_and_framing() {
+fn the_theme_command_sets_style_and_framing() {
     let mut rig = live_rig();
     send(
         &mut rig,

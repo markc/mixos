@@ -16,7 +16,7 @@
 //!   headless answers each No at once;
 //! - law 4, the `OpenFile` handler: [`app`] spawns `xdg-open`; headless
 //!   refuses and logs;
-//! - law 5, `ascending: true` when switching sort columns: [`verbs`] and
+//! - law 5, `ascending: true` when switching sort columns: [`commands`] and
 //!   the column headers in [`view`];
 //! - law 6, validate prompt names with `validate_filename`: [`view`]'s
 //!   prompt dialog;
@@ -24,7 +24,7 @@
 //!
 //! Modules:
 //! - [`bus`]: the Bus thread (`dopus.*` commands, topics, the session look);
-//! - [`verbs`]: the `dopus.v1` Bus surface, shared by window and headless;
+//! - [`commands`]: the `dopus.v1` Bus surface, shared by window and headless;
 //! - [`keymap`]: the default chords (the person's own come from the desktop
 //!   profile);
 //! - [`app`]: the window's state around the core; [`commands`]: the
@@ -33,7 +33,7 @@
 
 pub mod app;
 pub mod bus;
-pub mod commands;
+pub mod actions;
 pub mod config;
 pub mod dirs;
 pub mod elide;
@@ -41,7 +41,7 @@ pub mod headless;
 pub mod icons;
 pub mod keymap;
 pub mod shell;
-pub mod verbs;
+pub mod commands;
 pub mod view;
 
 use toolkit::Strings;

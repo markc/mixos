@@ -321,7 +321,7 @@ pub fn run_lint(args: &[String], version: &str) -> i32 {
 ///    carry a header (it would become the entry script whose record
 ///    `script_version()` returns, masking the code under test's own);
 /// 3. a `bin`, `_bin`, `scripts` or `build` directory component — a script;
-/// 4. a serve citizen: a top-level `on <verb>` handler (column 0), or a
+/// 4. a serve citizen: a top-level `on <command>` handler (column 0), or a
 ///    `--serve` mention in the leading comment region — a script.
 ///
 /// Stdin (`-`) has no path, so only rules 1 and 4 apply. Known false
@@ -358,7 +358,7 @@ fn runs_as_script(source: &str, file: &str) -> bool {
     declares_serve(source)
 }
 
-/// A serve citizen: a top-level `on <verb>` handler, or a `--serve` mention
+/// A serve citizen: a top-level `on <command>` handler, or a `--serve` mention
 /// in the leading comment region ("Run with mix --serve x.mix").
 fn declares_serve(source: &str) -> bool {
     let top_level_handler = source.lines().any(|line| {
@@ -716,8 +716,8 @@ fn report_json(
         // 2 (0.63.0): severity domain gains "note"; summary gains
         // `notes`. `handlers` is an additive field under the same version:
         // always present, empty when a file declares no `on` handler. Its
-        // in-tree consumer is the --source check in tools/verb_registry.mix
-        // (tools/lib/verb_registry_source.mix), which checks every field it
+        // in-tree consumer is the --source check in tools/command_registry.mix
+        // (tools/lib/command_registry_source.mix), which checks every field it
         // relies on. Existing fields are unchanged.
         // 3: parsed function declarations for embedding-context consumers.
         // Every existing field keeps its schema-2 meaning.

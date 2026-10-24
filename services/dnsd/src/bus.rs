@@ -57,17 +57,17 @@ const RC_CALLER_ERROR: u8 = 10;
 /// fragment, so this string is the single registration use of it.
 const BUS_SERVICE: &str = "dnsd";
 
-fn verb_manifest() -> Vec<::bus::VerbDescriptor> {
-    use ::bus::VerbDescriptor;
+fn command_manifest() -> Vec<::bus::CommandDescriptor> {
+    use ::bus::CommandDescriptor;
     vec![
-        VerbDescriptor::new("HELP", &[], "List all commands this service accepts", true),
-        VerbDescriptor::new(
+        CommandDescriptor::new("HELP", &[], "List all commands this service accepts", true),
+        CommandDescriptor::new(
             "dnsd.zone.snapshot",
             &[],
             "Return the configuration hash and served zone names",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "dnsd.stats",
             &[],
             "Return DNS response counters by rcode",
@@ -186,7 +186,7 @@ async fn connect_with_backoff(
         {
             Ok(c) => {
                 tracing::info!(service = BUS_SERVICE, "registered as Bus service");
-                return c.with_verbs(verb_manifest());
+                return c.with_commands(command_manifest());
             }
             Err(e) => {
                 tracing::warn!(
@@ -205,7 +205,7 @@ async fn connect_with_backoff(
 /// Pure request→(rc, body) router. Read-only by construction: there is
 /// no mutation arm — anything that is not one of the two read actions
 /// is a caller error (this includes any future write-shaped
-/// `dnsd.zone.*` verb, which v0 must reject, not silently accept).
+/// `dnsd.zone.*` command, which v0 must reject, not silently accept).
 /// Split out from [`run`] so it is unit-testable without a broker.
 fn dispatch(
     cmd: &IncomingCommand,
@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn registry_matches_the_read_only_manifest() {
-        let registry = include_str!("../../../docs/docs/spec/bus/verbs.conf.mix");
+        let registry = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
         let mut registered: Vec<&str> = registry
             .lines()
             .filter(|line| line.contains("owner:\"dnsd\""))
@@ -320,12 +320,12 @@ mod tests {
                     .unwrap()
             })
             .collect();
-        let mut described: Vec<String> = verb_manifest()
+        let mut described: Vec<String> = command_manifest()
             .into_iter()
-            .filter(|verb| verb.name != "HELP")
-            .map(|verb| {
-                assert!(verb.read_only);
-                verb.name
+            .filter(|command_name| command_name.name != "HELP")
+            .map(|command_name| {
+                assert!(command_name.read_only);
+                command_name.name
             })
             .collect();
         registered.sort();
@@ -366,7 +366,7 @@ mod tests {
     fn unknown_and_write_shaped_actions_are_rejected_read_only() {
         let store = store_with(0, &[]);
         let stats = Arc::new(DnsStats::new());
-        // A plausible future *write* verb must be rejected by v0, not
+        // A plausible future *write* command must be rejected by v0, not
         // silently accepted (read-only-by-construction guard).
         for bad in [
             "dnsd.zone.set",

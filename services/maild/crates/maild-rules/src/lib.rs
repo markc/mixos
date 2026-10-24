@@ -23,7 +23,7 @@
 //! score breach > continue), shadow-mode downgrade, MIME views, sender
 //! globs, and per-account overrides are wired. Hot reload + Bus
 //! integration are partially wired (reload exists; per-rule stats Bus
-//! verbs are commit 4 / commit 5 work).
+//! commands are commit 4 / commit 5 work).
 
 mod compiled;
 pub mod config;

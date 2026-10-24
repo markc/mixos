@@ -91,7 +91,7 @@ pub struct Loaded {
 /// wrote for the clipboard rows. Those rows never worked (the citizen is
 /// registered `desktop-vt1` and answers `desktop.clipboard.*`); on load they
 /// are rewritten to an explicit target. Deliberately narrow — a generic
-/// "split `<svc>.<verb>`" would re-route rows that are valid today.
+/// "split `<svc>.<command>`" would re-route rows that are valid today.
 const LEGACY_CLIPBOARD_PREFIX: &str = "desktop-vt1.desktop.clipboard.";
 const LEGACY_CLIPBOARD_SERVICE: &str = "desktop-vt1";
 
@@ -482,10 +482,10 @@ fn migrate_legacy_clipboard_row(row: &mut PhysicalBinding) -> bool {
     if row.service.is_some() {
         return false;
     }
-    let Some(verb) = row.action.as_str().strip_prefix(LEGACY_CLIPBOARD_PREFIX) else {
+    let Some(command) = row.action.as_str().strip_prefix(LEGACY_CLIPBOARD_PREFIX) else {
         return false;
     };
-    let Ok(action) = inputd_schema::ActionId::intern(&format!("desktop.clipboard.{verb}")) else {
+    let Ok(action) = inputd_schema::ActionId::intern(&format!("desktop.clipboard.{command}")) else {
         return false;
     };
     row.action = action;
@@ -546,7 +546,7 @@ fn parse(text: &str, path: &Path) -> Result<Loaded, String> {
     }
     // An explicit `service` target must be registered-name-shaped. A bad one
     // drops the WHOLE row: stripping just the field would silently re-route
-    // the verb to its first segment, a different service than the author named.
+    // the command to its first segment, a different service than the author named.
     let mut admitted = Vec::with_capacity(physical.len());
     for (raw, row) in physical {
         match row.service.as_deref() {

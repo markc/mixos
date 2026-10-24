@@ -41,9 +41,9 @@ is shown. Acting on another node, or as another user, is
 
 ## Agents
 
-Everything in the window is a command or a verb, under `monitor`:
+Everything in the window is a command or a command, under `monitor`:
 
-| Verb | Body | Does |
+| Command | Body | Does |
 |---|---|---|
 | `monitor.info` | — | The window's state: node, page, section, sort, filter, selection, and the latest readings |
 | `monitor.rows` | — | The process rows in the order shown |
@@ -55,10 +55,10 @@ Everything in the window is a command or a verb, under `monitor`:
 | `monitor.tree` | `on` | Tree or flat |
 | `monitor.select` | `pid` (or null) | Select a row |
 | `monitor.refresh` | — | Read the node now |
-| `monitor.commands`, `monitor.execute` | `id` | List and run commands (`process.end`, `view.pause`, ...) |
+| `monitor.actions`, `monitor.execute` | `id` | List and run commands (`process.end`, `view.pause`, ...) |
 | `monitor.dialog`, `monitor.theme`, `monitor.show`, `monitor.quit`, `monitor.ping` | | As every MixOS app |
 
-The window's drive verbs (`monitor.ui.*`, `monitor.window*`) are the
+The window's drive commands (`monitor.ui.*`, `monitor.window*`) are the
 toolkit's, described in [driving an app](../docs/drive.md).
 
 ```mix
@@ -88,14 +88,14 @@ checked by offscreen snapshots (`apps/monitor/tests/snapshots/`); run with
 committing. The snapshot suite also times the representative workload, a
 2,000-process table and a 64-core grid, and prints it.
 
-## Macro Bus verbs
+## Macro Bus commands
 
-The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+The shared [macro Bus surface](/macros/#bus-commands) uses this process's
 catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
 the instance’s registered Bus name (for example `term-1234` for a second Term
-instance). Verbs keep the app’s canonical prefix, such as `monitor.macros.run`.
+instance). Commands keep the app’s canonical prefix, such as `monitor.macros.run`.
 
-| Verb | Arguments | Result |
+| Command | Arguments | Result |
 |---|---|---|
 | `monitor.macros.list` | `{}` | Catalogue and diagnostics |
 | `monitor.macros.reload` | `{}` | Catalogue and diagnostics |

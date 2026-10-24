@@ -22,12 +22,12 @@ fn region_arguments_are_strict_and_leave_reply_margin() {
     }
     let op = parse_region_select(&json!({"output":"Output-1","timeout_ms":55_000})).unwrap();
     assert_eq!(op.budget(), Duration::from_secs(59));
-    assert!(op.budget() < LONG_VERB_MAX);
+    assert!(op.budget() < LONG_COMMAND_MAX);
     let reply_budget = Duration::from_secs(55) + REGION_CLEANUP_BUDGET;
     assert_eq!(reply_budget, Duration::from_secs(58));
     assert_eq!(op.budget(), reply_budget + Duration::from_secs(1));
     assert_eq!(
-        op.budget().min(LONG_VERB_MAX) + LONG_VERB_SLACK,
+        op.budget().min(LONG_COMMAND_MAX) + LONG_COMMAND_SLACK,
         reply_budget + Duration::from_secs(2)
     );
     assert!(
@@ -36,17 +36,17 @@ fn region_arguments_are_strict_and_leave_reply_margin() {
 }
 
 #[test]
-fn state_verbs_are_registered_fenced_and_strict() {
-    for (verb, state, enabled) in [
+fn state_commands_are_registered_fenced_and_strict() {
+    for (command, state, enabled) in [
         ("comp.window.maximize", WindowState::Maximized, true),
         ("comp.window.unmaximize", WindowState::Maximized, false),
         ("comp.window.fullscreen", WindowState::Fullscreen, true),
         ("comp.window.unfullscreen", WindowState::Fullscreen, false),
     ] {
-        assert_eq!(window_verb(verb), Some(verb));
+        assert_eq!(window_command(command), Some(command));
         assert_eq!(
-            parse_window_verb(verb, &json!({"id":7,"generation":3})),
-            Ok(WindowVerb::Op(WindowOp::State {
+            parse_window_command(command, &json!({"id":7,"generation":3})),
+            Ok(WindowCommand::Op(WindowOp::State {
                 id: 7,
                 generation: 3,
                 state,
@@ -60,16 +60,16 @@ fn state_verbs_are_registered_fenced_and_strict() {
             json!({"id":7,"generation":null}),
             json!({"id":7,"generation":3,"typo":true}),
         ] {
-            assert!(parse_window_verb(verb, &args).is_err(), "{verb}: {args}");
+            assert!(parse_window_command(command, &args).is_err(), "{command}: {args}");
         }
         let output = json!({"id":7,"generation":3,"output":"Output-1"});
         assert_eq!(
-            parse_window_verb(verb, &output).is_ok(),
-            verb == "comp.window.fullscreen"
+            parse_window_command(command, &output).is_ok(),
+            command == "comp.window.fullscreen"
         );
     }
     assert!(
-        parse_window_verb(
+        parse_window_command(
             "comp.window.fullscreen",
             &json!({"id":7,"generation":3,"output":""})
         )
@@ -85,15 +85,15 @@ fn state_waits_parse_and_name_the_committed_condition() {
         WaitUntil::Fullscreen,
         WaitUntil::Unfullscreen,
     ] {
-        assert!(matches!(parse_window_verb("comp.window.wait", &json!({
+        assert!(matches!(parse_window_command("comp.window.wait", &json!({
             "match":{"id":7,"generation":3}, "until":until.name(),
-        })), Ok(WindowVerb::Long(LongOp::Wait(spec))) if spec.until == until));
+        })), Ok(WindowCommand::Long(LongOp::Wait(spec))) if spec.until == until));
     }
 }
 
 #[test]
 fn targeted_input_is_strict_and_sequences_share_the_parser() {
-    for (verb, mut args) in [
+    for (command, mut args) in [
         ("comp.input.key", json!({"key":"a"})),
         ("comp.input.key", json!({"text":"hello"})),
         ("comp.input.pointer.button", json!({"button":"left"})),
@@ -101,7 +101,7 @@ fn targeted_input_is_strict_and_sequences_share_the_parser() {
         args["seat"] = json!("human");
         args["window"] = json!({"id":7,"generation":3});
         assert!(matches!(
-            parse_input_op(verb, &args),
+            parse_input_op(command, &args),
             Ok(InputOp::Targeted {
                 id: 7,
                 generation: 3,
@@ -111,10 +111,10 @@ fn targeted_input_is_strict_and_sequences_share_the_parser() {
         ));
         args["raise"] = json!(false);
         assert!(matches!(
-            parse_input_op(verb, &args),
+            parse_input_op(command, &args),
             Ok(InputOp::Targeted { raise: false, .. })
         ));
-        assert!(parse_sequence(&json!({"steps":[{"verb":verb,"args":args}]})).is_ok());
+        assert!(parse_sequence(&json!({"steps":[{"command":command,"args":args}]})).is_ok());
         for window in [
             json!({"id":7}),
             json!({"generation":3}),
@@ -122,10 +122,10 @@ fn targeted_input_is_strict_and_sequences_share_the_parser() {
             json!(7),
         ] {
             args["window"] = window;
-            assert!(parse_input_op(verb, &args).is_err(), "{verb}: {args}");
+            assert!(parse_input_op(command, &args).is_err(), "{command}: {args}");
         }
         args.as_object_mut().unwrap().remove("window");
-        assert!(parse_input_op(verb, &args).is_err(), "raise needs window");
+        assert!(parse_input_op(command, &args).is_err(), "raise needs window");
     }
 }
 
@@ -209,9 +209,9 @@ fn seat_defaults_raise_policy_and_release_all_are_explicit() {
 }
 
 #[test]
-fn every_delivery_verb_defaults_to_agent_and_bare_sequence_cleanup_stays_both() {
+fn every_delivery_command_defaults_to_agent_and_bare_sequence_cleanup_stays_both() {
     assert_eq!(DEFAULT_INPUT_SEAT, SeatKind::Agent);
-    for (verb, args) in [
+    for (command, args) in [
         ("comp.input.key", json!({"key":"a"})),
         ("comp.input.key", json!({"text":"a"})),
         ("comp.input.pointer.move", json!({"x":1,"y":2})),
@@ -220,19 +220,19 @@ fn every_delivery_verb_defaults_to_agent_and_bare_sequence_cleanup_stays_both() 
     ] {
         assert!(
             matches!(
-                parse_input_op(verb, &args).unwrap(),
+                parse_input_op(command, &args).unwrap(),
                 InputOp::OnSeat {
                     seat: SeatKind::Agent,
                     ..
                 }
             ),
-            "{verb}"
+            "{command}"
         );
     }
     let LongOp::Sequence(steps) = parse_sequence(&json!({"steps":[
-        {"verb":"comp.input.key","args":{"text":"a"}},
-        {"verb":"comp.input.key","args":{"text":"b","seat":"human"}},
-        {"verb":"comp.input.release_all"}
+        {"command":"comp.input.key","args":{"text":"a"}},
+        {"command":"comp.input.key","args":{"text":"b","seat":"human"}},
+        {"command":"comp.input.release_all"}
     ]}))
     .unwrap() else {
         panic!("default sequence")
@@ -251,9 +251,9 @@ fn every_delivery_verb_defaults_to_agent_and_bare_sequence_cleanup_stays_both() 
 #[test]
 fn sequence_seat_is_inherited_and_each_step_can_override_it() {
     let LongOp::SeatedSequence { seat, steps } = parse_sequence(&json!({"seat":"agent","steps":[
-        {"verb":"comp.input.key","args":{"text":"a"}},
-        {"verb":"comp.input.key","args":{"text":"b","seat":"human"}},
-        {"verb":"comp.input.release_all"}
+        {"command":"comp.input.key","args":{"text":"a"}},
+        {"command":"comp.input.key","args":{"text":"b","seat":"human"}},
+        {"command":"comp.input.release_all"}
     ]}))
     .unwrap() else {
         panic!("seated sequence")
@@ -276,11 +276,11 @@ fn sequence_seat_is_inherited_and_each_step_can_override_it() {
     ));
 }
 
-/// The verb-to-scope mapping is the only production path into the
+/// The command-to-scope mapping is the only production path into the
 /// scoped snapshot: pin it,
 /// and pin that a list prefix and its scope agree at segment boundaries.
 #[test]
-fn read_scope_names_each_snapshot_verbs_subtree() {
+fn read_scope_names_each_snapshot_commands_subtree() {
     let list = |prefix: &str| read_scope("comp.props.list", &json!({ "prefix": prefix }));
     assert_eq!(list("windows"), Some("windows".to_string()));
     assert_eq!(list("windows.s3"), Some("windows.s3".to_string()));
@@ -324,7 +324,7 @@ fn session_get_is_a_snapshot_read_and_refuses_malformed_json() {
         assert!(matches!(
             classify("comp.session.get", &args, false),
             Ok(Request::Read {
-                verb: "comp.session.get",
+                command: "comp.session.get",
                 scope: Some(scope),
             }) if scope == "session"
         ));
@@ -344,7 +344,7 @@ fn service_name_validation_matches_abp_grammar() {
 }
 
 #[test]
-fn window_verb_arguments_parse_with_both_or_neither_target_fields() {
+fn window_command_arguments_parse_with_both_or_neither_target_fields() {
     assert_eq!(
         parse_window_op("comp.window.restore", &Value::Null),
         Ok(WindowOp::Restore {
@@ -395,7 +395,7 @@ fn window_verb_arguments_parse_with_both_or_neither_target_fields() {
             generation: 3
         })
     );
-    for (verb, args, field) in [
+    for (command, args, field) in [
         ("comp.window.restore", json!({"id": 7}), "generation"),
         ("comp.window.restore", json!({"generation": 3}), "id"),
         (
@@ -412,19 +412,19 @@ fn window_verb_arguments_parse_with_both_or_neither_target_fields() {
         ("comp.window.minimize", json!({}), "id"),
         ("comp.window.minimize", json!({"id": 7}), "generation"),
     ] {
-        let Err(reply) = parse_window_op(verb, &args) else {
-            panic!("{verb} {args} must be refused");
+        let Err(reply) = parse_window_op(command, &args) else {
+            panic!("{command} {args} must be refused");
         };
         let (rc, body) = reply.into_wire();
         let body = serde_json::from_str::<Value>(&body).unwrap();
-        assert_eq!(rc, 10, "{verb} {args}");
-        assert_eq!(body["error"], "invalid_value", "{verb} {args}");
-        assert_eq!(body["path"], field, "{verb} {args}");
+        assert_eq!(rc, 10, "{command} {args}");
+        assert_eq!(body["error"], "invalid_value", "{command} {args}");
+        assert_eq!(body["path"], field, "{command} {args}");
     }
 }
 
 #[test]
-fn stats_verb_arguments_name_a_window_or_a_source() {
+fn stats_command_arguments_name_a_window_or_a_source() {
     let window = StatsTarget::Window {
         id: 7,
         generation: 3,
@@ -471,7 +471,7 @@ fn stats_verb_arguments_name_a_window_or_a_source() {
             })
         })
     );
-    for (verb, args, field) in [
+    for (command, args, field) in [
         (
             "comp.window.stats",
             json!({"id": 7, "generation": 3, "source": "scene"}),
@@ -499,14 +499,14 @@ fn stats_verb_arguments_name_a_window_or_a_source() {
         ("comp.window.stats.reset", json!({"generation": 3}), "id"),
         ("comp.window.stats.reset", json!([1]), "args"),
     ] {
-        let Err(reply) = parse_stats_op(verb, &args) else {
-            panic!("{verb} {args} must be refused");
+        let Err(reply) = parse_stats_op(command, &args) else {
+            panic!("{command} {args} must be refused");
         };
         let (rc, body) = reply.into_wire();
         let body = serde_json::from_str::<Value>(&body).unwrap();
-        assert_eq!(rc, 10, "{verb} {args}");
-        assert_eq!(body["error"], "invalid_value", "{verb} {args}");
-        assert_eq!(body["path"], field, "{verb} {args}");
+        assert_eq!(rc, 10, "{command} {args}");
+        assert_eq!(body["error"], "invalid_value", "{command} {args}");
+        assert_eq!(body["path"], field, "{command} {args}");
     }
     let reply = parse_stats_op("comp.window.stats.reset", &json!({"samples": 1}))
         .expect_err("reset takes no samples");
@@ -516,87 +516,87 @@ fn stats_verb_arguments_name_a_window_or_a_source() {
 }
 
 #[test]
-fn window_verb_unknown_fields_are_refused_by_name() {
-    for verb in ["comp.window.restore", "comp.window.minimize"] {
-        let reply = parse_window_op(verb, &json!({"id": 7, "gen": 3}))
+fn window_command_unknown_fields_are_refused_by_name() {
+    for command in ["comp.window.restore", "comp.window.minimize"] {
+        let reply = parse_window_op(command, &json!({"id": 7, "gen": 3}))
             .expect_err("a typo must not be ignored");
         let (rc, body) = reply.into_wire();
         assert_eq!(rc, 10);
         assert_eq!(
             serde_json::from_str::<Value>(&body).unwrap(),
-            if verb == "comp.window.restore" {
+            if command == "comp.window.restore" {
                 json!({"error": "invalid_args", "field": "gen", "allowed": ["id", "generation", "activate"]})
             } else {
                 json!({"error": "invalid_args", "field": "gen", "allowed": ["id", "generation"]})
             },
-            "{verb}"
+            "{command}"
         );
     }
 }
 
 #[test]
-fn step_eight_window_verbs_parse_and_refuse_by_field() {
+fn step_eight_window_commands_parse_and_refuse_by_field() {
     assert_eq!(
-        parse_window_verb("comp.window.focus", &json!({"id": 7, "generation": 3})),
-        Ok(WindowVerb::Op(WindowOp::Focus {
+        parse_window_command("comp.window.focus", &json!({"id": 7, "generation": 3})),
+        Ok(WindowCommand::Op(WindowOp::Focus {
             id: 7,
             generation: 3,
             raise: true
         }))
     );
     assert_eq!(
-        parse_window_verb(
+        parse_window_command(
             "comp.window.focus",
             &json!({"id": 7, "generation": 3, "raise": false})
         ),
-        Ok(WindowVerb::Op(WindowOp::Focus {
+        Ok(WindowCommand::Op(WindowOp::Focus {
             id: 7,
             generation: 3,
             raise: false
         }))
     );
     assert_eq!(
-        parse_window_verb("comp.window.raise", &json!({"id": 7, "generation": 3})),
-        Ok(WindowVerb::Op(WindowOp::Raise {
+        parse_window_command("comp.window.raise", &json!({"id": 7, "generation": 3})),
+        Ok(WindowCommand::Op(WindowOp::Raise {
             id: 7,
             generation: 3
         }))
     );
     assert_eq!(
-        parse_window_verb("comp.window.close", &json!({"id": 7, "generation": 3})),
-        Ok(WindowVerb::Op(WindowOp::Close {
+        parse_window_command("comp.window.close", &json!({"id": 7, "generation": 3})),
+        Ok(WindowCommand::Op(WindowOp::Close {
             id: 7,
             generation: 3
         }))
     );
     assert_eq!(
-        parse_window_verb(
+        parse_window_command(
             "comp.window.close",
             &json!({"id": 7, "generation": 3, "force": true})
         ),
-        Ok(WindowVerb::Long(LongOp::ForceClose {
+        Ok(WindowCommand::Long(LongOp::ForceClose {
             id: 7,
             generation: 3,
             timeout: CLOSE_FORCE_DEFAULT
         }))
     );
     assert_eq!(
-        parse_window_verb(
+        parse_window_command(
             "comp.window.close",
             &json!({"id": 7, "generation": 3, "force": true, "timeout_ms": 250})
         ),
-        Ok(WindowVerb::Long(LongOp::ForceClose {
+        Ok(WindowCommand::Long(LongOp::ForceClose {
             id: 7,
             generation: 3,
             timeout: Duration::from_millis(250)
         }))
     );
     assert_eq!(
-        parse_window_verb(
+        parse_window_command(
             "comp.window.place",
             &json!({"id": 7, "generation": 3, "output": "o_x", "x": 10, "height": 300})
         ),
-        Ok(WindowVerb::Op(WindowOp::Place(PlaceSpec {
+        Ok(WindowCommand::Op(WindowOp::Place(PlaceSpec {
             id: 7,
             generation: 3,
             output: Some("o_x".into()),
@@ -607,11 +607,11 @@ fn step_eight_window_verbs_parse_and_refuse_by_field() {
         })))
     );
     assert_eq!(
-        parse_window_verb(
+        parse_window_command(
             "comp.window.wait",
             &json!({"match": {"app_id": "a", "title_contains": "b"}, "until": "presented"})
         ),
-        Ok(WindowVerb::Long(LongOp::Wait(WaitSpec {
+        Ok(WindowCommand::Long(LongOp::Wait(WaitSpec {
             window: WindowMatch {
                 app_id: Some("a".into()),
                 title_contains: Some("b".into()),
@@ -622,7 +622,7 @@ fn step_eight_window_verbs_parse_and_refuse_by_field() {
         })))
     );
     assert_eq!(
-        parse_window_verb(
+        parse_window_command(
             "comp.window.wait",
             &json!({
                 "match": {"id": 7},
@@ -632,7 +632,7 @@ fn step_eight_window_verbs_parse_and_refuse_by_field() {
                 "timeout_ms": 60_000,
             })
         ),
-        Ok(WindowVerb::Long(LongOp::Wait(WaitSpec {
+        Ok(WindowCommand::Long(LongOp::Wait(WaitSpec {
             window: WindowMatch {
                 id: Some(7),
                 ..WindowMatch::default()
@@ -641,11 +641,11 @@ fn step_eight_window_verbs_parse_and_refuse_by_field() {
                 width: 500,
                 height: 300
             },
-            timeout: LONG_VERB_MAX,
+            timeout: LONG_COMMAND_MAX,
         })))
     );
 
-    for (verb, args, path) in [
+    for (command, args, path) in [
         ("comp.window.focus", json!({"id": 7}), "generation"),
         (
             "comp.window.focus",
@@ -707,11 +707,11 @@ fn step_eight_window_verbs_parse_and_refuse_by_field() {
             "timeout_ms",
         ),
     ] {
-        let body = refusal(parse_window_verb(verb, &args).expect_err("refused"));
-        assert_eq!(body["error"], "invalid_value", "{verb} {args}: {body}");
-        assert_eq!(body["path"], path, "{verb} {args}: {body}");
+        let body = refusal(parse_window_command(command, &args).expect_err("refused"));
+        assert_eq!(body["error"], "invalid_value", "{command} {args}: {body}");
+        assert_eq!(body["path"], path, "{command} {args}: {body}");
     }
-    for (verb, args, field) in [
+    for (command, args, field) in [
         (
             "comp.window.focus",
             json!({"id": 7, "generation": 3, "rise": true}),
@@ -738,9 +738,9 @@ fn step_eight_window_verbs_parse_and_refuse_by_field() {
             "for",
         ),
     ] {
-        let body = refusal(parse_window_verb(verb, &args).expect_err("typo refused"));
-        assert_eq!(body["error"], "invalid_args", "{verb}");
-        assert_eq!(body["field"], field, "{verb}");
+        let body = refusal(parse_window_command(command, &args).expect_err("typo refused"));
+        assert_eq!(body["error"], "invalid_args", "{command}");
+        assert_eq!(body["field"], field, "{command}");
     }
 }
 
@@ -748,42 +748,42 @@ fn step_eight_window_verbs_parse_and_refuse_by_field() {
 /// is `>= 1`, `next` or `prev` (0 is `invalid_value` at the parser),
 /// `wrap` defaults on, `follow` off, and a typo is refused by name.
 #[test]
-fn workspace_verbs_parse_and_refuse_by_field() {
-    assert!(window_verb("comp.workspace.switch").is_some());
-    assert!(window_verb("comp.window.send_to_workspace").is_some());
+fn workspace_commands_parse_and_refuse_by_field() {
+    assert!(window_command("comp.workspace.switch").is_some());
+    assert!(window_command("comp.window.send_to_workspace").is_some());
     assert_eq!(
-        parse_window_verb("comp.workspace.switch", &json!({"index": "next"})),
-        Ok(WindowVerb::Op(WindowOp::SwitchWorkspace {
+        parse_window_command("comp.workspace.switch", &json!({"index": "next"})),
+        Ok(WindowCommand::Op(WindowOp::SwitchWorkspace {
             output: None,
             index: WorkspaceIndex::Next,
             wrap: true,
         }))
     );
     assert_eq!(
-        parse_window_verb(
+        parse_window_command(
             "comp.workspace.switch",
             &json!({"index": 3, "output": "o_x", "wrap": false})
         ),
-        Ok(WindowVerb::Op(WindowOp::SwitchWorkspace {
+        Ok(WindowCommand::Op(WindowOp::SwitchWorkspace {
             output: Some("o_x".into()),
             index: WorkspaceIndex::Absolute(3),
             wrap: false,
         }))
     );
     assert_eq!(
-        parse_window_verb("comp.workspace.switch", &json!({"index": "prev"})),
-        Ok(WindowVerb::Op(WindowOp::SwitchWorkspace {
+        parse_window_command("comp.workspace.switch", &json!({"index": "prev"})),
+        Ok(WindowCommand::Op(WindowOp::SwitchWorkspace {
             output: None,
             index: WorkspaceIndex::Prev,
             wrap: true,
         }))
     );
     assert_eq!(
-        parse_window_verb(
+        parse_window_command(
             "comp.window.send_to_workspace",
             &json!({"id": 7, "generation": 3, "index": 2})
         ),
-        Ok(WindowVerb::Op(WindowOp::SendToWorkspace {
+        Ok(WindowCommand::Op(WindowOp::SendToWorkspace {
             id: 7,
             generation: 3,
             index: WorkspaceIndex::Absolute(2),
@@ -791,18 +791,18 @@ fn workspace_verbs_parse_and_refuse_by_field() {
         }))
     );
     assert_eq!(
-        parse_window_verb(
+        parse_window_command(
             "comp.window.send_to_workspace",
             &json!({"id": 7, "generation": 3, "index": "prev", "follow": true})
         ),
-        Ok(WindowVerb::Op(WindowOp::SendToWorkspace {
+        Ok(WindowCommand::Op(WindowOp::SendToWorkspace {
             id: 7,
             generation: 3,
             index: WorkspaceIndex::Prev,
             follow: true,
         }))
     );
-    for (verb, args, path) in [
+    for (command, args, path) in [
         ("comp.workspace.switch", json!({}), "index"),
         ("comp.workspace.switch", json!({"index": 0}), "index"),
         ("comp.workspace.switch", json!({"index": -1}), "index"),
@@ -853,19 +853,19 @@ fn workspace_verbs_parse_and_refuse_by_field() {
             "follow",
         ),
     ] {
-        let body = refusal(parse_window_verb(verb, &args).expect_err("refused"));
-        assert_eq!(body["error"], "invalid_value", "{verb} {args}: {body}");
-        assert_eq!(body["path"], path, "{verb} {args}: {body}");
+        let body = refusal(parse_window_command(command, &args).expect_err("refused"));
+        assert_eq!(body["error"], "invalid_value", "{command} {args}: {body}");
+        assert_eq!(body["path"], path, "{command} {args}: {body}");
     }
     let body = refusal(
-        parse_window_verb(
+        parse_window_command(
             "comp.window.send_to_workspace",
             &json!({"id": 7, "index": 2}),
         )
         .expect_err("refused"),
     );
     assert_eq!(body["range"], "required (read windows.s<id>.generation)");
-    for (verb, args, field) in [
+    for (command, args, field) in [
         (
             "comp.workspace.switch",
             json!({"index": 1, "wrap_around": true}),
@@ -877,9 +877,9 @@ fn workspace_verbs_parse_and_refuse_by_field() {
             "output",
         ),
     ] {
-        let body = refusal(parse_window_verb(verb, &args).expect_err("typo refused"));
-        assert_eq!(body["error"], "invalid_args", "{verb}");
-        assert_eq!(body["field"], field, "{verb}");
+        let body = refusal(parse_window_command(command, &args).expect_err("typo refused"));
+        assert_eq!(body["error"], "invalid_args", "{command}");
+        assert_eq!(body["field"], field, "{command}");
     }
 }
 
@@ -891,45 +891,45 @@ fn workspace_verbs_parse_and_refuse_by_field() {
 #[test]
 fn workspace_count_and_rename_parse_and_refuse_by_field() {
     assert_eq!(
-        parse_window_verb("comp.workspaces.set_count", &json!({"count": 6})),
-        Ok(WindowVerb::Op(WindowOp::SetWorkspaceCount {
+        parse_window_command("comp.workspaces.set_count", &json!({"count": 6})),
+        Ok(WindowCommand::Op(WindowOp::SetWorkspaceCount {
             count: 6,
             persist: true,
         }))
     );
     assert_eq!(
-        parse_window_verb(
+        parse_window_command(
             "comp.workspaces.set_count",
             &json!({"count": 16, "persist": false})
         ),
-        Ok(WindowVerb::Op(WindowOp::SetWorkspaceCount {
+        Ok(WindowCommand::Op(WindowOp::SetWorkspaceCount {
             count: 16,
             persist: false,
         }))
     );
     assert_eq!(
-        parse_window_verb(
+        parse_window_command(
             "comp.workspace.rename",
             &json!({"index": 2, "name": "Mail"})
         ),
-        Ok(WindowVerb::Op(WindowOp::RenameWorkspace {
+        Ok(WindowCommand::Op(WindowOp::RenameWorkspace {
             index: 2,
             name: "Mail".into(),
             persist: true,
         }))
     );
     assert_eq!(
-        parse_window_verb(
+        parse_window_command(
             "comp.workspace.rename",
             &json!({"index": 1, "name": "", "persist": false})
         ),
-        Ok(WindowVerb::Op(WindowOp::RenameWorkspace {
+        Ok(WindowCommand::Op(WindowOp::RenameWorkspace {
             index: 1,
             name: String::new(),
             persist: false,
         }))
     );
-    for (verb, args, path) in [
+    for (command, args, path) in [
         ("comp.workspaces.set_count", json!({}), "count"),
         ("comp.workspaces.set_count", json!({"count": 0}), "count"),
         ("comp.workspaces.set_count", json!({"count": 17}), "count"),
@@ -957,11 +957,11 @@ fn workspace_count_and_rename_parse_and_refuse_by_field() {
             "name",
         ),
     ] {
-        let body = refusal(parse_window_verb(verb, &args).expect_err("refused"));
-        assert_eq!(body["error"], "invalid_value", "{verb} {args}: {body}");
-        assert_eq!(body["path"], path, "{verb} {args}: {body}");
+        let body = refusal(parse_window_command(command, &args).expect_err("refused"));
+        assert_eq!(body["error"], "invalid_value", "{command} {args}: {body}");
+        assert_eq!(body["path"], path, "{command} {args}: {body}");
     }
-    for (verb, args, field) in [
+    for (command, args, field) in [
         (
             "comp.workspaces.set_count",
             json!({"count": 4, "keep": true}),
@@ -973,9 +973,9 @@ fn workspace_count_and_rename_parse_and_refuse_by_field() {
             "label",
         ),
     ] {
-        let body = refusal(parse_window_verb(verb, &args).expect_err("typo refused"));
-        assert_eq!(body["error"], "invalid_args", "{verb}");
-        assert_eq!(body["field"], field, "{verb}");
+        let body = refusal(parse_window_command(command, &args).expect_err("typo refused"));
+        assert_eq!(body["error"], "invalid_args", "{command}");
+        assert_eq!(body["field"], field, "{command}");
     }
     assert_eq!(
         read_scope("comp.workspaces.list", &json!({})),
@@ -1023,7 +1023,7 @@ fn refusal(reply: ControlReply) -> Value {
 }
 
 #[test]
-fn input_verbs_parse_every_documented_form() {
+fn input_commands_parse_every_documented_form() {
     assert_eq!(
         parse_input_op(
             "comp.input.pointer.move",
@@ -1167,8 +1167,8 @@ fn input_verbs_parse_every_documented_form() {
 }
 
 #[test]
-fn input_verbs_refuse_ambiguous_and_out_of_range_arguments() {
-    for (verb, args, path) in [
+fn input_commands_refuse_ambiguous_and_out_of_range_arguments() {
+    for (command, args, path) in [
         ("comp.input.pointer.move", json!({"x": 1}), "y"),
         (
             "comp.input.pointer.move",
@@ -1232,14 +1232,14 @@ fn input_verbs_refuse_ambiguous_and_out_of_range_arguments() {
         ("comp.input.key", json!({"text": "x".repeat(4097)}), "text"),
         ("comp.input.release_all", json!([1]), "args"),
     ] {
-        let Err(reply) = parse_input_op(verb, &args) else {
-            panic!("{verb} {args} must be refused");
+        let Err(reply) = parse_input_op(command, &args) else {
+            panic!("{command} {args} must be refused");
         };
         let body = refusal(reply);
-        assert_eq!(body["error"], "invalid_value", "{verb} {args}: {body}");
-        assert_eq!(body["path"], path, "{verb} {args}: {body}");
+        assert_eq!(body["error"], "invalid_value", "{command} {args}: {body}");
+        assert_eq!(body["path"], path, "{command} {args}: {body}");
     }
-    for (verb, args, field) in [
+    for (command, args, field) in [
         (
             "comp.input.pointer.move",
             json!({"x": 1, "y": 2, "screen": 0}),
@@ -1259,9 +1259,9 @@ fn input_verbs_refuse_ambiguous_and_out_of_range_arguments() {
         ("comp.input.key", json!({"key": "a", "mods": []}), "mods"),
         ("comp.input.release_all", json!({"all": true}), "all"),
     ] {
-        let body = refusal(parse_input_op(verb, &args).expect_err("typo refused"));
-        assert_eq!(body["error"], "invalid_args", "{verb}");
-        assert_eq!(body["field"], field, "{verb}");
+        let body = refusal(parse_input_op(command, &args).expect_err("typo refused"));
+        assert_eq!(body["error"], "invalid_args", "{command}");
+        assert_eq!(body["field"], field, "{command}");
     }
 }
 
@@ -1270,9 +1270,9 @@ fn sequence_parses_delays_and_names_the_failing_step() {
     let Ok(LongOp::Sequence(steps)) = parse_sequence(&json!({
         "interval_ms": 10,
         "steps": [
-            {"verb": "comp.input.pointer.button", "args": {"action": "press"}, "delay_ms": 0},
-            {"verb": "comp.input.pointer.move", "args": {"dx": 5}},
-            {"verb": "comp.input.release_all"},
+            {"command": "comp.input.pointer.button", "args": {"action": "press"}, "delay_ms": 0},
+            {"command": "comp.input.pointer.move", "args": {"dx": 5}},
+            {"command": "comp.input.release_all"},
         ],
     })) else {
         panic!("sequence parses");
@@ -1280,7 +1280,7 @@ fn sequence_parses_delays_and_names_the_failing_step() {
     assert_eq!(
         steps
             .iter()
-            .map(|step| (step.verb, step.delay))
+            .map(|step| (step.command, step.delay))
             .collect::<Vec<_>>(),
         [
             ("comp.input.pointer.button", Duration::ZERO),
@@ -1292,56 +1292,56 @@ fn sequence_parses_delays_and_names_the_failing_step() {
 
     let body = refusal(
         parse_sequence(&json!({"steps": [
-            {"verb": "comp.input.key", "args": {"key": "a"}},
-            {"verb": "comp.input.key", "args": {"key": "a", "action": "hold"}},
+            {"command": "comp.input.key", "args": {"key": "a"}},
+            {"command": "comp.input.key", "args": {"key": "a", "action": "hold"}},
         ]}))
         .expect_err("bad step refused"),
     );
     assert_eq!(body["path"], "steps[1].args.action");
     let body = refusal(
-        parse_sequence(&json!({"steps": [{"verb": "comp.input.key", "args": {"k": 1}}]}))
+        parse_sequence(&json!({"steps": [{"command": "comp.input.key", "args": {"k": 1}}]}))
             .expect_err("bad step field refused"),
     );
     assert_eq!(body["field"], "steps[0].args.k");
     for (args, path) in [
         (json!({"steps": []}), "steps"),
         (
-            json!({"steps": [{"verb": "comp.window.focus"}]}),
-            "steps.verb",
+            json!({"steps": [{"command": "comp.window.focus"}]}),
+            "steps.command",
         ),
         (
-            json!({"steps": [{"verb": "comp.input.sequence"}]}),
-            "steps.verb",
+            json!({"steps": [{"command": "comp.input.sequence"}]}),
+            "steps.command",
         ),
         (
             json!({"steps": [
-                {"verb": "comp.input.release_all", "delay_ms": 40_000},
-                {"verb": "comp.input.release_all", "delay_ms": 30_000},
+                {"command": "comp.input.release_all", "delay_ms": 40_000},
+                {"command": "comp.input.release_all", "delay_ms": 30_000},
             ]}),
             "steps",
         ),
         (
-            json!({"steps": [{"verb": "comp.input.release_all"}], "interval_ms": -1}),
+            json!({"steps": [{"command": "comp.input.release_all"}], "interval_ms": -1}),
             "interval_ms",
         ),
     ] {
         let body = refusal(parse_sequence(&args).expect_err("refused"));
         assert_eq!(body["path"], path, "{args}");
     }
-    let too_many = vec![json!({"verb": "comp.input.release_all"}); SEQUENCE_MAX_STEPS + 1];
+    let too_many = vec![json!({"command": "comp.input.release_all"}); SEQUENCE_MAX_STEPS + 1];
     let body = refusal(parse_sequence(&json!({"steps": too_many})).expect_err("capped"));
     assert_eq!(body["path"], "steps");
     let body = refusal(
-        parse_sequence(&json!({"steps": [{"verb": "comp.input.release_all", "wait": 1}]}))
+        parse_sequence(&json!({"steps": [{"command": "comp.input.release_all", "wait": 1}]}))
             .expect_err("unknown step field"),
     );
     assert_eq!(body["field"], "steps[0].wait");
 }
 
 #[test]
-fn one_verb_is_capped_at_4096_injected_events() {
+fn one_command_is_capped_at_4096_injected_events() {
     let text = "a".repeat(TEXT_MAX_CHARS);
-    let step = json!({"verb": "comp.input.key", "args": {"text": text}});
+    let step = json!({"command": "comp.input.key", "args": {"text": text}});
     // 4 x 256 x 4 = 4096 fits exactly; one more event does not.
     let Ok(LongOp::Sequence(steps)) = parse_sequence(&json!({"steps": vec![step.clone(); 4]}))
     else {
@@ -1352,10 +1352,10 @@ fn one_verb_is_capped_at_4096_injected_events() {
             .iter()
             .map(|step| step.op.event_bound())
             .sum::<usize>(),
-        MAX_EVENTS_PER_VERB
+        MAX_EVENTS_PER_COMMAND
     );
     let mut over = vec![step; 4];
-    over.push(json!({"verb": "comp.input.pointer.move", "args": {"dx": 1}}));
+    over.push(json!({"command": "comp.input.pointer.move", "args": {"dx": 1}}));
     let body = refusal(parse_sequence(&json!({"steps": over})).expect_err("over the cap"));
     assert_eq!(body["path"], "steps");
     assert!(body["range"].as_str().unwrap().contains("4096"), "{body}");
@@ -1378,7 +1378,7 @@ fn one_verb_is_capped_at_4096_injected_events() {
         })
     );
     let body = refusal(
-        parse_window_verb(
+        parse_window_command(
             "comp.window.wait",
             &json!({"match": {"id": 7, "app_id": "a"}, "until": "mapped"}),
         )
@@ -1388,15 +1388,15 @@ fn one_verb_is_capped_at_4096_injected_events() {
 }
 
 #[test]
-fn long_admission_budget_is_the_verb_deadline_plus_slack() {
+fn long_admission_budget_is_the_command_deadline_plus_slack() {
     let op = LongOp::Sequence(vec![SequenceStep {
-        verb: "comp.input.release_all",
+        command: "comp.input.release_all",
         op: InputOp::ReleaseAll,
         delay: Duration::from_millis(1500),
     }]);
     assert_eq!(
         op.admission_timeout(),
-        Duration::from_millis(1500) + LONG_VERB_SLACK
+        Duration::from_millis(1500) + LONG_COMMAND_SLACK
     );
     // The cap applies before the slack.
     let long = LongOp::Wait(WaitSpec {
@@ -1407,7 +1407,7 @@ fn long_admission_budget_is_the_verb_deadline_plus_slack() {
         until: WaitUntil::Mapped,
         timeout: Duration::from_secs(600),
     });
-    assert_eq!(long.admission_timeout(), LONG_VERB_MAX + LONG_VERB_SLACK);
+    assert_eq!(long.admission_timeout(), LONG_COMMAND_MAX + LONG_COMMAND_SLACK);
 }
 
 #[test]
@@ -1441,36 +1441,36 @@ fn classify_refuses_a_malformed_body_per_family_and_ping_ignores_it() {
         Ok(Request::Ping)
     ));
     assert_eq!(PING_BODY, r#"{"pong":true}"#);
-    for verb in [
+    for command in [
         "comp.props.watch",
         "comp.pointer.watch",
         "comp.props.get",
         "comp.windows.list",
     ] {
-        let body = refused_body(classify(verb, &Value::Null, true).unwrap_err());
-        assert_eq!(body, json!({"error": "unknown_path"}), "{verb}");
+        let body = refused_body(classify(command, &Value::Null, true).unwrap_err());
+        assert_eq!(body, json!({"error": "unknown_path"}), "{command}");
     }
     let body = refused_body(classify("comp.props.set", &Value::Null, true).unwrap_err());
     assert_eq!(
         body,
         json!({"error": "invalid_value", "path": null, "expected": "JSON property value", "range": "descriptor"})
     );
-    for (verb, range) in [
+    for (command, range) in [
         ("comp.window.focus", "{id, generation}"),
         ("comp.region.select", "{output?, timeout_ms?}"),
         ("comp.input.sequence", "{steps, interval_ms?}"),
-        ("comp.input.key", "verb arguments"),
+        ("comp.input.key", "command arguments"),
         ("comp.panel.hold", "{output, edge, surface, ...}"),
     ] {
-        let body = refused_body(classify(verb, &Value::Null, true).unwrap_err());
-        assert_eq!(body["error"], "invalid_value", "{verb}");
-        assert_eq!(body["path"], "args", "{verb}");
-        assert_eq!(body["range"], range, "{verb}");
+        let body = refused_body(classify(command, &Value::Null, true).unwrap_err());
+        assert_eq!(body["error"], "invalid_value", "{command}");
+        assert_eq!(body["path"], "args", "{command}");
+        assert_eq!(body["range"], range, "{command}");
     }
 }
 
 #[test]
-fn classify_routes_every_family_and_keeps_verbs_literal() {
+fn classify_routes_every_family_and_keeps_commands_literal() {
     assert!(matches!(
         classify(
             "comp.window.focus",
@@ -1498,7 +1498,7 @@ fn classify_routes_every_family_and_keeps_verbs_literal() {
     assert!(matches!(
         classify(
             "comp.input.sequence",
-            &json!({"steps": [{"verb": "comp.input.release_all"}]}),
+            &json!({"steps": [{"command": "comp.input.release_all"}]}),
             false
         ),
         Ok(Request::Long(LongOp::Sequence(_)))
@@ -1542,7 +1542,7 @@ fn classify_routes_every_family_and_keeps_verbs_literal() {
         .unwrap_err(),
     );
     assert_eq!(body, json!({"error": "read_only"}));
-    let Ok(Request::Read { verb, scope }) = classify(
+    let Ok(Request::Read { command, scope }) = classify(
         "comp.props.get",
         &json!({"path": "windows.s3.visible"}),
         false,
@@ -1550,7 +1550,7 @@ fn classify_routes_every_family_and_keeps_verbs_literal() {
         panic!("reads route");
     };
     assert_eq!(
-        (verb, scope.as_deref()),
+        (command, scope.as_deref()),
         ("comp.props.get", Some("windows.s3.visible"))
     );
     for unknown in [
@@ -1561,7 +1561,7 @@ fn classify_routes_every_family_and_keeps_verbs_literal() {
     ] {
         assert_eq!(
             refused_body(classify(unknown, &Value::Null, false).unwrap_err()),
-            json!({"error": "unknown_verb"}),
+            json!({"error": "UNKNOWN_COMMAND"}),
             "{unknown}"
         );
     }
@@ -1676,12 +1676,12 @@ fn agent_admissions_are_recognised_for_the_epoch_fence() {
             .uses_agent()
     );
     assert!(
-        parse_sequence(&json!({"steps": [{"verb": "comp.input.key", "args": {"text": "a"}}]}))
+        parse_sequence(&json!({"steps": [{"command": "comp.input.key", "args": {"text": "a"}}]}))
             .unwrap()
             .uses_agent()
     );
     assert!(
-        !parse_sequence(&json!({"steps": [{"verb": "comp.input.release_all"}]}))
+        !parse_sequence(&json!({"steps": [{"command": "comp.input.release_all"}]}))
             .unwrap()
             .uses_agent()
     );

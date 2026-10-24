@@ -3,7 +3,7 @@
 ## 0.5.0 (draft)
 
 The broker enters MixOS. The wire is unchanged: Bus service `inputd`, the
-`input.*` verbs and their bodies, and the keymap.v1 file
+`input.*` commands and their bodies, and the keymap.v1 file
 (`{"version":1,"physical":[...]}`); a keymap written by the earlier broker
 loads unchanged.
 

@@ -1,28 +1,28 @@
 ---
 title: Driving apps over the Bus
-description: How an agent drives a native MixOS app through Bus verbs, from the widget tree and injected input to window commands and captures, with Workshop as the worked example.
+description: How an agent drives a native MixOS app through Bus commands, from the widget tree and injected input to window commands and captures, with Workshop as the worked example.
 ---
 
 # Driving apps over the Bus
 
 MixOS is agentic first: anything a person can do in a native app, an agent
 can do over the Bus. Every egui app built on the shared toolkit offers two
-sets of verbs:
+sets of commands:
 
-- **Its own verbs**, which read and change its state directly, such as
+- **Its own commands**, which read and change its state directly, such as
   Workshop's `workshop.filter` or `workshop.call`. These are the
   fastest and most precise way to work with an app.
-- **The drive verbs**, which are the same in every app and work the window
+- **The drive commands**, which are the same in every app and work the window
   the way a hand does: read the widget tree, click, type, press keys,
   scroll, open menus, move the window and take a screenshot.
 
-The drive verbs are named under the app's own prefix: `<app>.ui.tree`,
+The drive commands are named under the app's own prefix: `<app>.ui.tree`,
 `<app>.ui.click`, `<app>.window` and so on. `HELP` and `app.describe` list
-all of an app's verbs with their arguments, both sets included.
+all of an app's commands with their arguments, both sets included.
 
 ## Replies and refusals
 
-A verb answers with return code 0 and a JSON body, or with return code 10
+A command answers with return code 0 and a JSON body, or with return code 10
 and a body naming the reason:
 
 ```json
@@ -32,23 +32,23 @@ and a body naming the reason:
 | `error_code` | Meaning |
 |---|---|
 | `ARGUMENT` | The arguments are wrong, or name something that is not there. |
-| `UNKNOWN_VERB` | The app has no such verb. |
+| `UNKNOWN_COMMAND` | The app has no such command. |
 | `BUSY` | Not now: work is in flight, a dialog is open, the window is hidden, no frame has been drawn yet, or the app is closing. |
 | `CANCELLED` | Input that was accepted but never delivered: the window was hidden or minimised first, or the app closed. |
 | `CAPTURE` | A screenshot could not be taken or written. |
-| `UNAVAILABLE` | The app does not offer the drive verbs. |
+| `UNAVAILABLE` | The app does not offer the drive commands. |
 
-An app's own verbs may add codes of their own; Workshop's are listed
+An app's own commands may add codes of their own; Workshop's are listed
 [below](#workshop-the-worked-example).
 
-## The drive verbs
+## The drive commands
 
 Coordinates and sizes are in points, egui's logical pixels: the same space
-for every verb, at any display scale.
+for every command, at any display scale.
 
 ### `<app>.ui.tree`
 
-All drive verbs accept an optional `viewport` field. Omit it for the app
+All drive commands accept an optional `viewport` field. Omit it for the app
 window, or use `{"viewport":"macro-editor"}` for its open macro editor.
 The editor has its own widget tree, input coordinates and captures. A closed
 editor returns `NOT_FOUND`; pending requests are cancelled when it closes.
@@ -74,11 +74,11 @@ first from the root.
 Node ids are 64-bit numbers, and most JSON readers keep only 53 bits of a
 number. Every id in a drive answer is therefore text, and should be passed
 back as text. For a plain text label, egui puts the text in the node's
-value; the drive verbs report it as the `label` too.
+value; the drive commands report it as the `label` too.
 
 ### `<app>.ui.click`
 
-**Each step is one frame.** Input verbs run one pass per step and answer
+**Each step is one frame.** Input commands run one pass per step and answer
 a pass after their last, so their time is the window's frame interval. A
 session on a background VT, or a window without focus, may be drawn only
 once a second: there a `ui.click` (move, click, redraw) takes about two to
@@ -109,7 +109,7 @@ press for that reason.
   that was clicked and `at` the point. The rest is the state the click
   left: the open menu (as `ui.menu` reports it), the focused node and the
   pointer position.
-- **Tracing:** every input verb (`ui.click`, `ui.pointer`, `ui.scroll`,
+- **Tracing:** every input command (`ui.click`, `ui.pointer`, `ui.scroll`,
   `ui.key`, `ui.type`) takes `trace: true`, and its answer then carries
   `passes`: one entry per pass the job ran, with every input event egui
   read in it (the platform's own and the injected ones, in order), egui's
@@ -236,7 +236,7 @@ pixels_per_point}`, where `size` and `outer_size` are `[width, height]`.
 
 ## Ordering
 
-The drive verbs are built so that a caller can step an app
+The drive commands are built so that a caller can step an app
 deterministically.
 
 - **Input runs one request at a time, in order.** Each step of a click,
@@ -246,9 +246,9 @@ deterministically.
 - **Later requests wait for earlier input.** The app holds each Bus command
   in arrival order. Further input (`ui.click`, `ui.pointer`, `ui.scroll`,
   `ui.key`, `ui.type`, `ui.capture`) joins the input queue directly. Every
-  other verb waits until the input before it has been answered: reads such
-  as `ui.tree`, `window` commands, and the app's own verbs. So `ui.type`
-  into a field followed by an app verb that reads that field sees the
+  other command waits until the input before it has been answered: reads such
+  as `ui.tree`, `window` commands, and the app's own commands. So `ui.type`
+  into a field followed by an app command that reads that field sees the
   typed text.
 - **A hidden window draws no frames.** While the window is minimised or
   covered, new input is refused with `BUSY`. Input already accepted is
@@ -268,7 +268,7 @@ deterministically.
 
 ## Workshop: the worked example
 
-Native `<app>.commands` responses report `shortcut` and `more` using stored
+Native `<app>.actions` responses report `shortcut` and `more` using stored
 keymap chords, with modifiers in Ctrl, Alt, Shift order. Key names follow the
 keymaps grammar (`ArrowLeft` or `Left`, `=`, `-`, `/`), so reported chords can
 be used in keymap overrides without translating display labels.
@@ -277,50 +277,50 @@ Command execution returns `DENIED` for an authorisation refusal and
 `DISABLED` when the command cannot run in the current state. Authorisation
 is checked first.
 
-Workshop browses the services and verbs on a node and calls one verb with
-a JSON body. Everything in its window is also a Bus verb.
+Workshop browses the services and commands on a node and calls one command with
+a JSON body. Everything in its window is also a Bus command.
 
 ### Reading
 
-| Verb | Arguments | Answer |
+| Command | Arguments | Answer |
 |---|---|---|
 | `workshop.ping` | | `{schema, version}` |
 | `workshop.info` | | the whole state: connection, discovery snapshot, selection, body, last reply, status, and the arranged UI (`ui`) |
-| `workshop.tree` | | `{rows}`: the rows the tree shows, depth first, each with `key`, `kind`, `label`, `depth`, `expanded`, `selected` and its child count; verb rows add `selection`, error rows `error` |
+| `workshop.tree` | | `{rows}`: the rows the tree shows, depth first, each with `key`, `kind`, `label`, `depth`, `expanded`, `selected` and its child count; command rows add `selection`, error rows `error` |
 | `workshop.reply` | | `{text, value}`: the reply panel and the last reply |
-| `workshop.commands` | | every menu command with its label, shortcut, further chords (`more`, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (`settings.apply` `keymaps.workshop.<id>`) |
-| `HELP`, `app.describe` | | every verb, with arguments |
+| `workshop.actions` | | every menu command with its label, shortcut, further chords (`more`, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (`settings.apply` `keymaps.workshop.<id>`) |
+| `HELP`, `app.describe` | | every command, with arguments |
 
-A row's `kind` is `service`, `verb`, `error`, `peers`, `peer` or
-`no_peers`. Its `key` names it in the verbs below, for example
-`node:alpha`, `service:alpha:noded` or `verb:alpha:noded:noded.list`.
+A row's `kind` is `service`, `command`, `error`, `peers`, `peer` or
+`no_peers`. Its `key` names it in the commands below, for example
+`node:alpha`, `service:alpha:noded` or `command:alpha:noded:noded.list`.
 
 ### Changing state
 
-| Verb | Arguments | Notes |
+| Command | Arguments | Notes |
 |---|---|---|
 | `workshop.filter` | `text` | Filters the tree, as typing in the search field does. Answers with the rows. |
 | `workshop.expand` | `key`, `open` (bool) | Opens or closes a row that has children. |
-| `workshop.select_row` | `key` | Selects any row. A verb row also selects its verb. |
-| `workshop.select` | `service`, `verb` | Selects an advertised verb. |
+| `workshop.select_row` | `key` | Selects any row. A command row also selects its command. |
+| `workshop.select` | `service`, `command` | Selects an advertised command. |
 | `workshop.body` | `text` | Sets the JSON body (at most 65,536 bytes). Refused while a call is using the body. |
 | `workshop.split` | `value`, 0 to 1 | The services pane's share of the window, kept between 0.2 and 0.65. The answer reports the value in effect, to 4 places. |
 | `workshop.dialog` | `open`: `"about"`, `"shortcuts"` or null | Opens a dialog, or closes the open one. |
-| `workshop.call` | `service`, `verb` and `body`, each optional | Calls the selected verb once, or the given one; `service` and `verb` go together. The answer is the reply: `{service, verb, request_body, rc, body}`. A transport failure is never retried: it answers return code 10 with `transport_error` and `outcome_unknown`. |
+| `workshop.call` | `service`, `command` and `body`, each optional | Calls the selected command once, or the given one; `service` and `command` go together. The answer is the reply: `{service, command, request_body, rc, body}`. A transport failure is never retried: it answers return code 10 with `transport_error` and `outcome_unknown`. |
 | `workshop.theme` | `scheme`, `style`, `mode`, `decorations` and `caption_side`, each optional: a name, or null | Chooses the window's theme, in this window only. A present key sets that axis (null follows the session's), an absent one leaves it, and an unknown name is refused with `ARGUMENT`; nothing changes unless every axis is valid. Schemes: `ocean`, `crimson`, `stone`, `forest`, `sunset`, `mono`, `pro`, `studio`, `classic`; styles: `plain`, `pro`, `studio`, `classic`, or `own` for the scheme's own; modes: `light`, `dark`; decorations: `csd` (the app's title bar), `ssd` (the compositor's, with the menus in a menu-bar row); caption sides: `right`, `left`. The answer is `{scheme, style, mode, decorations, caption_side, effective: {…}}`: the choice, then what the window shows. Taken while a dialog is open. |
-| `workshop.execute` | `id` | Runs one command, from the menus or the title bar: `file.refresh`, `file.quit`, `edit.format`, `edit.clear`, `edit.copy`, `bus.call`, `help.shortcuts`, `help.about`, `view.search`, `view.mode` (the light/dark switch), and View › Theme's choices `view.theme.<scheme>`, `view.theme.session`, `view.mode.light`, `view.mode.dark`, `view.mode.session`, `view.style.own`, `view.style.<style>`, `view.style.session`, `view.decorations.csd`, `view.decorations.ssd`, `view.captions.left`, `view.captions.right`. `workshop.commands` lists them all, with each choice's `checked` tick. |
+| `workshop.execute` | `id` | Runs one command, from the menus or the title bar: `file.refresh`, `file.quit`, `edit.format`, `edit.clear`, `edit.copy`, `bus.call`, `help.shortcuts`, `help.about`, `view.search`, `view.mode` (the light/dark switch), and View › Theme's choices `view.theme.<scheme>`, `view.theme.session`, `view.mode.light`, `view.mode.dark`, `view.mode.session`, `view.style.own`, `view.style.<style>`, `view.style.session`, `view.decorations.csd`, `view.decorations.ssd`, `view.captions.left`, `view.captions.right`. `workshop.actions` lists them all, with each choice's `checked` tick. |
 | `workshop.refresh` | | Discovers services again. |
 | `workshop.show` | | Restores and focuses the window. |
 | `workshop.quit` | | Closes once idle. |
 
 While a dialog is open, the window takes no edits, so neither does the
-Bus: those verbs are refused with `BUSY` until the dialog is closed.
+Bus: those commands are refused with `BUSY` until the dialog is closed.
 Workshop's own refusals are:
 
 - `BUSY`: a refresh or call is in flight, or a dialog is open;
 - `DISCONNECTED`: the node's broker is unreachable;
-- `ARGUMENT` and `UNKNOWN_VERB`, as above;
-- `UNKNOWN_COMMAND` and `DISABLED`, from `workshop.execute`.
+- `ARGUMENT` and `UNKNOWN_COMMAND`, as above;
+- `UNKNOWN_ACTION` and `DISABLED`, from `workshop.execute`.
 
 ### Driving it from Mix
 
@@ -331,11 +331,11 @@ captures the window:
 -- Open Workshop's Help menu, close it, filter the tree and capture the window.
 $app = "workshop"
 
-fn drive($verb, $args)
+fn drive($command, $args)
   $payload = json_encode($args)
-  send $app $verb body=$payload timeout=30
+  send $app $command body=$payload timeout=30
   if $rc != 0 then
-    raise("DRIVE", $verb .. " rc=" .. to_string($rc) .. ": " .. to_string($result))
+    raise("DRIVE", $command .. " rc=" .. to_string($rc) .. ": " .. to_string($result))
   end
   return if type($result) == "string" then json_parse($result) else $result end
 end
@@ -350,28 +350,28 @@ print "capture: " .. $shot.path
 ```
 
 Each `send` waits for its answer before the next one is sent. A longer
-scenario follows the same pattern: send a verb, check its return code,
+scenario follows the same pattern: send a command, check its return code,
 print the fields that matter, and stop at the first surprise. That is how
 the project's own driver checks a running Workshop from end to end.
 
 ## For app authors
 
-The drive verbs come from the toolkit's `drive` module, an egui plugin. It
+The drive commands come from the toolkit's `drive` module, an egui plugin. It
 switches AccessKit on, keeps each frame's widget tree, and injects input
 through egui's input hook: the same path a person's input takes. An app
 wires it up in five places:
 
 1. `drive::install(ctx, "<app>")` once, when the window opens.
 2. For each `<app>.ui.*` or `<app>.window*` command, call
-   `drive::request(ctx, id, verb, args)` from inside a frame, with the
+   `drive::request(ctx, id, command, args)` from inside a frame, with the
    prefix stripped. It returns either an answer to send now, or nothing,
    meaning the answer will come later.
 3. `drive::logic(ctx)` once per frame, from the app's logic. It runs while
    the window is hidden too, and returns the answers to send.
-4. `drive::pending(ctx)` and `drive::queues(verb)`, to hold later commands
+4. `drive::pending(ctx)` and `drive::queues(command)`, to hold later commands
    back while earlier input is still running.
 5. `drive::finish(ctx)` before closing, sending every answer it returns
    before the Bus connection stops.
 
-`drive::describe("<app>")` lists the verbs for `HELP` and `app.describe`.
+`drive::describe("<app>")` lists the commands for `HELP` and `app.describe`.
 Workshop's shell (`apps/workshop/src/shell.rs`) is the reference wiring.

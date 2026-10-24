@@ -5,7 +5,7 @@
 //! the running window of the same compositor
 //! (`screenshot.take`, or `screenshot.open` then `screenshot.show`) and
 //! exits; Print Screen launches it this way. `--headless` serves the same
-//! verbs with no window, for agents.
+//! commands with no window, for agents.
 use screenshot::capture::{self, Mode, Target};
 use screenshot::shell::{Shell, Start};
 use screenshot::{APP_ID, SERVICE, label, names};
@@ -144,12 +144,12 @@ fn forward(args: &Args) -> Result<(), String> {
     // A name shared through a hash collision must never take a request
     // meant for another compositor.
     check_running(args)?;
-    let call = |verb: &str, body: serde_json::Value| {
-        let reply = citizen::request(&args.url, &args.service, verb, body)?;
+    let call = |command: &str, body: serde_json::Value| {
+        let reply = citizen::request(&args.url, &args.service, command, body)?;
         if reply.rc == 0 {
             Ok(())
         } else {
-            Err(format!("{verb} refused (rc {}): {}", reply.rc, reply.body))
+            Err(format!("{command} refused (rc {}): {}", reply.rc, reply.body))
         }
     };
     if let Some(mode) = args.capture {

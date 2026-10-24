@@ -8,7 +8,7 @@
 --
 -- Run: mix --serve releasesd.mix --name releases     (Bus service "releases")
 --
--- Verbs (bodies are JSON objects; every field is optional unless named):
+-- Commands (bodies are JSON objects; every field is optional unless named):
 --   releases.status                    paths, catalogue size, installed count
 --   releases.list     {apps}           installed vs latest, from the last check
 --   releases.check    {apps}           ask GitHub (ETag-conditional), then list

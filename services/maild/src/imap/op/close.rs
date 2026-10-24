@@ -3,7 +3,7 @@
 
 //! `CLOSE` (RFC 9051 §6.4.2) / `UNSELECT` (RFC 3691 §2).
 //!
-//! Phase 2 : both verbs transition `Selected(_)` → `Authenticated`
+//! Phase 2 : both commands transition `Selected(_)` → `Authenticated`
 //! and emit a tagged OK. They have identical semantics in Phase 2
 //! because the `\Deleted` purge that distinguishes CLOSE from
 //! UNSELECT requires STORE — which doesn't ship until Phase 4.
@@ -11,7 +11,7 @@
 //! The session loop performs the state transition; this module only
 //! emits the wire response. The "must be in Selected" gate also
 //! lives in the session loop so the BAD/NO response shape stays
-//! uniform across verbs that share it (FETCH, SEARCH, … from Phase
+//! uniform across commands that share it (FETCH, SEARCH, … from Phase
 //! 3+).
 //!
 //! The Phase 4 split, once \Deleted exists:

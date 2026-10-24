@@ -31,13 +31,13 @@ v1 format, so a binary rollback can read state written by this port.
 
 The `dnsd` Bus service exposes two read-only queries:
 
-| Verb | Reply |
+| Command | Reply |
 |---|---|
 | `dnsd.zone.snapshot` | Serial-excluded configuration hash (decimal string), sorted zone names and count |
 | `dnsd.stats` | Response counters by DNS rcode |
 
 DNS serving continues while the broker is unavailable. Registration
-retries with bounded exponential backoff. Mutation verbs are rejected.
+retries with bounded exponential backoff. Mutation commands are rejected.
 
 `services/dnsd/units/dnsd.service` runs `/opt/mixos/bin/dnsd` as `dnsd`,
 with UID and GID 506, `CAP_NET_BIND_SERVICE` and the original hardening.

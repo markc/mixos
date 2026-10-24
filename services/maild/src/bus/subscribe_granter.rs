@@ -3,7 +3,7 @@
 
 //! Production [`SubscribeGranter`] for maild — bridges
 //! `<svc>.props.watch` / `<svc>.props.audit.watch` to noded's
-//! `noded.props.subscribe_grant` verb (the props contract,).
+//! `noded.props.subscribe_grant` command (the props contract,).
 //!
 //! ## Refreshable client handle
 //!
@@ -38,7 +38,7 @@
 //! ## No revoke path (yet)
 //!
 //! `grant()` discards the broker's `subscription_id` because the watch
-//! handler doesn't expose a peer-facing revoke verb. Subscriptions
+//! handler doesn't expose a peer-facing revoke command. Subscriptions
 //! survive until the target peer disconnects (broker drops the entry
 //! on close). A future (or later) can surface a revoke pathway by
 //! threading the id back through `SubscribeGranter` — until then
@@ -141,7 +141,7 @@ mod tests {
 
     #[tokio::test]
     async fn grant_before_install_returns_err_not_panic() {
-        // Load-bearing invariant: a watch verb arriving before the
+        // Load-bearing invariant: a watch command arriving before the
         // broker connection is up must surface a *typed* error to the
         // PropsRouter, which then projects rc=10 grant_failed. An
         // unwrap/expect or OnceCell::get panic here would crash the

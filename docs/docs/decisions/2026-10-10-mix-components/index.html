@@ -290,13 +290,13 @@ applies the same identity, layer and contract rules to each, and checks
 that <code>program</code> names a <code>.mix</code> file inside the component. Names are unique
 across both kinds. A Mix component has no Cargo dependency closure, so its
 declared layer is checked at review: it may use only the <code>mix</code> binary, the
-Bus and the verbs of components at or below its layer.</p>
+Bus and the commands of components at or below its layer.</p>
 </li>
 <li>
 <p><strong>Versions and contracts.</strong> A Mix component carries its own version, since
 there is no workspace package to inherit one from. With
-<code>contract: "public"</code>, its Bus verbs and document schemas are registered
-like any other (<code>docs/docs/spec/bus/verbs.conf.mix</code>, <code>docs/docs/spec/&lt;topic&gt;/</code>).</p>
+<code>contract: "public"</code>, its Bus commands and document schemas are registered
+like any other (<code>docs/docs/spec/bus/commands.conf.mix</code>, <code>docs/docs/spec/&lt;topic&gt;/</code>).</p>
 </li>
 </ul>
 <h2 id="why">Why</h2>

@@ -24,22 +24,22 @@
 //!
 //! Mutations have explicit asynchronous dispatchers. Share operations run on
 //! eight session-owned workers; mesh callers need no additional authorisation.
-//! Unknown verbs return `rc=10` (the caller-error sentinel).
+//! Unknown commands return `rc=10` (the caller-error sentinel).
 //!
 //! **Goal-(c)-equivalent:** the HTTPS / HTTP serve loops and the C5d
 //! provisioner run in sibling tokio tasks; broker outages affect only
 //! the Bus surface, never request serving or cert renewal.
 
 pub mod autoconfig;
-pub mod listener_verbs;
+pub mod listener_commands;
 pub mod props_publisher;
 pub mod routes;
-pub mod session_verbs;
-pub mod share_verbs;
+pub mod session_commands;
+pub mod share_commands;
 pub mod stats;
 pub mod subscribe_granter;
 pub mod tls;
-pub mod vhost_verbs;
+pub mod vhost_commands;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -111,11 +111,11 @@ where
 /// Read a string kwarg by name from either the JSON `args` object OR the
 /// Bus `header` map — **args first**, header only as a fallback.
 ///
-/// A bare Mix `send verb k=v` places the operator's kwargs in the command's
+/// A bare Mix `send command k=v` places the operator's kwargs in the command's
 /// `args` map, so a header-only read silently misses `fqdn=` / `email=` /
-/// `id=` and the verb reports "missing required kwarg" for a call the
+/// `id=` and the command reports "missing required kwarg" for a call the
 /// operator plainly made (2026-07: bit `webd.session.revoke`, then swept
-/// across the vhost/listener verbs).
+/// across the vhost/listener commands).
 ///
 /// **Args must win over headers** (not the reverse): noded stamps reserved
 /// transport headers — notably `id`, the message correlation id
@@ -292,7 +292,7 @@ pub async fn run(node: Arc<NodeState>) {
                             "props fan-out dispatcher startup failed; \
                              live records.changed/audit topics will not \
                              fire for this namespace — subscribers must \
-                             use the replay verbs",
+                             use the replay commands",
                         );
                     }
                 }
@@ -331,7 +331,7 @@ pub async fn run(node: Arc<NodeState>) {
                     tracing::warn!(%error, "share worker failed");
                 }
             }
-            if share_verbs::handles(&cmd.command) {
+            if share_commands::handles(&cmd.command) {
                 let node = node.clone();
                 let client = client_arc.clone();
                 let _ = spawn_transfer(&mut workers, &busy_replies, |busy| async move {
@@ -344,7 +344,7 @@ pub async fn run(node: Arc<NodeState>) {
                             )
                             .await;
                     } else {
-                        let (rc, body) = share_verbs::dispatch(&node, &cmd).await;
+                        let (rc, body) = share_commands::dispatch(&node, &cmd).await;
                         let _ = tokio::time::timeout(
                             Duration::from_secs(10),
                             client.respond(&cmd, rc, &body),
@@ -355,7 +355,7 @@ pub async fn run(node: Arc<NodeState>) {
                 continue;
             }
             let (rc, body) = if let Some(suffix) = cmd.command.strip_prefix("webd.props.") {
-                // SPEC-12 verb surface. PropsRouter::dispatch handles
+                // SPEC-12 command surface. PropsRouter::dispatch handles
                 // its own auth check + error projection — anything not
                 // in the dispatch arms (typo, missing namespace) comes
                 // back as a `not_found` or `validation_error` from the
@@ -363,23 +363,23 @@ pub async fn run(node: Arc<NodeState>) {
                 // unknown-action sentinel.
                 crate::vhosts_namespace::dispatch_props(&node.props_router, suffix, &cmd).await
             } else if let Some(ergonomic_suffix) = cmd.command.strip_prefix("webd.") {
-                // C5 ergonomic verbs surface — `vhost.add` /
+                // C5 ergonomic commands surface — `vhost.add` /
                 // `vhost.remove` / `vhost.list` / `acme.renew` /
                 // `acme.status`. Returns `Some((rc, body))` for one
                 // of those five suffixes; `None` for anything else
                 // (e.g. `webd.routes.list`, typo, unknown action),
                 // which falls through to the synchronous `dispatch`
-                // below for the remaining snapshot verbs and the
+                // below for the remaining snapshot commands and the
                 // `rc=10` unknown-action sentinel. Share/media operations
                 // already entered the bounded worker branch above.
-                // Try the vhost verbs, then the P3 listener verbs
+                // Try the vhost commands, then the P3 listener commands
                 // (`listener.{enable,disable,status}`); fall through to
                 // the synchronous `dispatch` for anything else.
-                match vhost_verbs::dispatch(ergonomic_suffix, &cmd, &node).await {
+                match vhost_commands::dispatch(ergonomic_suffix, &cmd, &node).await {
                     Some(result) => result,
-                    None => match listener_verbs::dispatch(ergonomic_suffix, &cmd, &node).await {
+                    None => match listener_commands::dispatch(ergonomic_suffix, &cmd, &node).await {
                         Some(result) => result,
-                        // B2 — the mutating `tls.reload` verb (async:
+                        // B2 — the mutating `tls.reload` command (async:
                         // file IO + reload lock). Read-only `tls.status`
                         // returns `None` here and falls through to the
                         // synchronous `dispatch` below, unchanged.
@@ -388,7 +388,7 @@ pub async fn run(node: Arc<NodeState>) {
                             // `session.revoke` — cookie-path revocation
                             // (2026-07 audit); async (per-vhost DB locks).
                             None => {
-                                match session_verbs::dispatch(ergonomic_suffix, &cmd, &node).await {
+                                match session_commands::dispatch(ergonomic_suffix, &cmd, &node).await {
                                     Some(result) => result,
                                     None => dispatch(&cmd, &node),
                                 }
@@ -429,115 +429,115 @@ pub async fn run(node: Arc<NodeState>) {
     }
 }
 
-fn verb_manifest() -> Vec<::bus::VerbDescriptor> {
-    use ::bus::VerbDescriptor;
+fn command_manifest() -> Vec<::bus::CommandDescriptor> {
+    use ::bus::CommandDescriptor;
     vec![
-        VerbDescriptor::new("HELP", &[], "List all commands this service accepts", true),
-        VerbDescriptor::new(
+        CommandDescriptor::new("HELP", &[], "List all commands this service accepts", true),
+        CommandDescriptor::new(
             "webd.props.get",
             &["namespace", "key"],
             "Read properties",
             true,
         ),
-        VerbDescriptor::new("webd.props.list", &["namespace"], "List properties", true),
-        VerbDescriptor::new(
+        CommandDescriptor::new("webd.props.list", &["namespace"], "List properties", true),
+        CommandDescriptor::new(
             "webd.props.describe",
             &["namespace"],
             "Describe properties",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "webd.props.watch",
             &["namespace"],
             "Watch property changes",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "webd.props.audit.watch",
             &["namespace"],
             "Watch property audit events",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "webd.props.set",
             &["namespace", "key", "body", "merge", "if_version"],
             "Set a property record",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "webd.props.delete",
             &["namespace", "key", "if_version"],
             "Delete a property record",
             false,
         ),
-        VerbDescriptor::new("webd.routes.list", &[], "List HTTP routes", true),
-        VerbDescriptor::new("webd.stats", &[], "Read HTTP statistics", true),
-        VerbDescriptor::new("webd.tls.status", &[], "Read TLS status", true),
-        VerbDescriptor::new(
+        CommandDescriptor::new("webd.routes.list", &[], "List HTTP routes", true),
+        CommandDescriptor::new("webd.stats", &[], "Read HTTP statistics", true),
+        CommandDescriptor::new("webd.tls.status", &[], "Read TLS status", true),
+        CommandDescriptor::new(
             "webd.autoconfig.served_domains",
             &[],
             "List autoconfiguration domains",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "webd.vhost.add",
             &["fqdn", "www_dir"],
             "Add or update a virtual host",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "webd.vhost.remove",
             &["fqdn"],
             "Remove a virtual host",
             false,
         ),
-        VerbDescriptor::new("webd.vhost.list", &[], "List virtual hosts", true),
-        VerbDescriptor::new(
+        CommandDescriptor::new("webd.vhost.list", &[], "List virtual hosts", true),
+        CommandDescriptor::new(
             "webd.acme.renew",
             &["fqdn"],
             "Request certificate renewal",
             false,
         ),
-        VerbDescriptor::new("webd.acme.status", &["fqdn"], "Read ACME status", true),
-        VerbDescriptor::new("webd.listener.enable", &["id"], "Enable a listener", false),
-        VerbDescriptor::new(
+        CommandDescriptor::new("webd.acme.status", &["fqdn"], "Read ACME status", true),
+        CommandDescriptor::new("webd.listener.enable", &["id"], "Enable a listener", false),
+        CommandDescriptor::new(
             "webd.listener.disable",
             &["id"],
             "Disable a listener",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "webd.listener.status",
             &["id"],
             "Read listener status",
             true,
         ),
-        VerbDescriptor::new("webd.tls.reload", &[], "Reload TLS identities", false),
-        VerbDescriptor::new(
+        CommandDescriptor::new("webd.tls.reload", &[], "Reload TLS identities", false),
+        CommandDescriptor::new(
             "webd.media.ref",
             &["vhost", "id"],
             "Return or retry a disk media blob reference",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "webd.share.create",
             &["vhost", "account"],
             "Create a path or pinned local blob share",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "webd.share.list",
             &["vhost", "account"],
             "List account shares",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "webd.share.revoke",
             &["vhost", "account", "token"],
             "Revoke an account share",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "webd.session.revoke",
             &["email"],
             "Revoke an account's web sessions",
@@ -564,7 +564,7 @@ async fn connect_with_backoff(
         {
             Ok(c) => {
                 tracing::info!(service = BUS_SERVICE, "registered as Bus service");
-                return c.with_verbs(verb_manifest());
+                return c.with_commands(command_manifest());
             }
             Err(e) => {
                 tracing::warn!(
@@ -583,7 +583,7 @@ async fn connect_with_backoff(
 /// Pure request→(rc, body) router. Read-only by construction: there
 /// is no mutation arm — anything that is not one of the listed read
 /// actions is a caller error (this includes any future write-shaped
-/// `webd.*.set` / `webd.acme.*` verb, which v0 must reject, not
+/// `webd.*.set` / `webd.acme.*` command, which v0 must reject, not
 /// silently accept). Split out from [`run`] so it is unit-testable
 /// without a broker.
 fn dispatch(cmd: &IncomingCommand, node: &Arc<NodeState>) -> (u8, String) {
@@ -702,8 +702,8 @@ mod tests {
 
     #[test]
     fn kwarg_prefers_args_then_falls_back_to_header() {
-        // args-only (the bare `send verb k=v` path — the gap that bit the
-        // vhost/listener/session verbs before this sweep).
+        // args-only (the bare `send command k=v` path — the gap that bit the
+        // vhost/listener/session commands before this sweep).
         assert_eq!(
             kwarg(
                 &cmd_kw(&[], serde_json::json!({ "fqdn": "a.test" })),
@@ -853,7 +853,7 @@ mod tests {
     }
 
     /// Minimal `NodeState` for dispatch tests. Empty vhost map, no
-    /// MX resolver, no TLS config — all four read verbs return
+    /// MX resolver, no TLS config — all four read commands return
     /// well-formed JSON over empty inputs, and the unknown-action arm
     /// exercises the `rc=10` invariant without needing any populated
     /// state. The `tls_status_rx` is seeded from a default
@@ -873,7 +873,7 @@ mod tests {
             login_throttle: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             login_pending: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             // C3b: an empty `VhostDirectory` matches the prior empty-
-            // HashMap test shape. None of the `rc=10` / ergonomic-verb
+            // HashMap test shape. None of the `rc=10` / ergonomic-command
             // tests in this module dispatch through the host router or
             // `webd.routes.list`; an empty directory keeps the body
             // builders' iteration paths exercised (`primaries.iter()`
@@ -888,7 +888,7 @@ mod tests {
             autoconfig_mail_host: None,
             acme_challenges: Arc::new(RwLock::new(HashMap::new())),
             tls_status_rx: rx,
-            // The ergonomic-verb dispatch tests below never enter the
+            // The ergonomic-command dispatch tests below never enter the
             // `webd.props.*` path, so an empty router suffices. The
             // subscribe-granter is similarly unreachable; we still
             // construct one so the struct is well-formed (the
@@ -900,12 +900,12 @@ mod tests {
                 ),
             ),
             broker_handle: crate::bus::subscribe_granter::new_broker_handle(),
-            // These verb-dispatch unit tests cover only the sync
+            // These command-dispatch unit tests cover only the sync
             // `dispatch` function (`webd.routes.list` / `.stats` /
             // `.tls.status` / `.autoconfig.served_domains`), never
-            // the async C5 ergonomic verbs. Leave the runtime + lock
+            // the async C5 ergonomic commands. Leave the runtime + lock
             // map + notify unattached; the C5 fixture in
-            // `bus::vhost_verbs::tests` wires its own.
+            // `bus::vhost_commands::tests` wires its own.
             vhosts_runtime: None,
             listeners_runtime: None,
             listeners_operators: Vec::new(),
@@ -924,16 +924,16 @@ mod tests {
     }
 
     #[test]
-    fn known_read_only_verbs_return_rc_zero() {
+    fn known_read_only_commands_return_rc_zero() {
         let node = empty_node();
-        for verb in [
+        for command_name in [
             "webd.routes.list",
             "webd.stats",
             "webd.tls.status",
             "webd.autoconfig.served_domains",
         ] {
-            let (rc, body) = dispatch(&cmd(verb), &node);
-            assert_eq!(rc, 0, "{verb} must return rc=0");
+            let (rc, body) = dispatch(&cmd(command_name), &node);
+            assert_eq!(rc, 0, "{command_name} must return rc=0");
             // Body must parse as JSON — wire contract.
             let _: serde_json::Value =
                 serde_json::from_str(&body).expect("response body is valid JSON");
@@ -978,14 +978,14 @@ mod tests {
     #[test]
     fn unknown_and_write_shaped_actions_are_rejected_read_only() {
         let node = empty_node();
-        // Plausible-future *write* verbs that do NOT hit the C5
-        // ergonomic surface (those go through `vhost_verbs::dispatch`
+        // Plausible-future *write* commands that do NOT hit the C5
+        // ergonomic surface (those go through `vhost_commands::dispatch`
         // upstream in `run()`) must be rejected by the sync
         // `dispatch` shim, not silently accepted. `webd.acme.renew`
-        // is omitted from this list because it IS a real C5 verb and
+        // is omitted from this list because it IS a real C5 command and
         // would otherwise hit the read-only-by-construction trap —
         // its cap-deny / arg-validation paths are covered by V-V
-        // tests in [`vhost_verbs::tests`]. The replacement typo
+        // tests in [`vhost_commands::tests`]. The replacement typo
         // (`webd.acme.renew_yesterday`) pins the next plausible-but-
         // typo'd write shape.
         for bad in [

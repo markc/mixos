@@ -462,7 +462,7 @@ fn function_valued_variable_bareword_call_ok() {
 
 #[test]
 fn address_block_sends_are_not_undefined_functions() {
-    let src = "address \"noded.delta.bus\"\n  some_remote_verb(1)\nend\n";
+    let src = "address \"noded.delta.bus\"\n  some_remote_command(1)\nend\n";
     assert_eq!(lint(src), vec![]);
 }
 
@@ -1150,8 +1150,8 @@ fn send_status_read_in_condition_map_or_nested_arg_counts() {
     // Reproducer: `$rc` is read in an if-condition and inside a map value
     // nested in a call argument. Both used to be invisible to the scan,
     // so a correctly checked send warned.
-    let reproducer = "$target=\"svc\"\n$verb=\"ping\"\n$payload=\"{}\"\n\
-        send $target $verb body=$payload timeout=45\n\
+    let reproducer = "$target=\"svc\"\n$command=\"ping\"\n$payload=\"{}\"\n\
+        send $target $command body=$payload timeout=45\n\
         if $rc != 0 then exit(1) end\n\
         print(json_encode({rc:$rc,result:$result}))\n";
     let out = codes(reproducer);
@@ -1980,7 +1980,7 @@ fn the_null_fix_is_offered_only_where_the_word_is_surely_a_value() {
         // sol round 6: a bare grouping is no argument list.
         "fn null()\n  print(\"called\")\nend\nprint(\"first\") && (null)\n",
         "fn f($x = null)\n  return $x\nend\nprint(f())\n",
-        "send svc verb open=null\nprint($rc)\n",
+        "send svc command open=null\nprint($rc)\n",
         // sol round 8: an index key, not a list element; `$m[nil]` would
         // lose the entry stored under "null".
         "$m = {null: 7}\nprint($m[null])\n",
@@ -2025,7 +2025,7 @@ fn every_foreign_null_spelling_warns() {
             format!("$x = 1\nif $x == {spelling} then print(1) end\n"),
             format!("print([1, {spelling}])\n"),
             format!("$x = true ? {spelling} : 1\nprint($x)\n"),
-            format!("send svc verb open={spelling}\nprint($rc)\n"),
+            format!("send svc command open={spelling}\nprint($rc)\n"),
             // Expression bodies and parameter defaults of fn and lambdas.
             format!("fn f($x = {spelling}) = $x\nprint(f())\n"),
             format!("fn g() = {spelling}\nprint(g())\n"),
@@ -2060,7 +2060,7 @@ fn null_that_is_not_a_bareword_value_stays_silent() {
         "include ./lib/null.mix\nprint(\"null\")\n",
         // The text of an external command after `|`.
         "print(\"null\") | echo null\n",
-        "send svc verb null=1\nprint($rc)\n",
+        "send svc command null=1\nprint($rc)\n",
         // The real null.
         "$x = nil\nprint($x)\n",
         // A statement head is a bareword dispatch, not a value.

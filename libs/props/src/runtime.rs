@@ -3,7 +3,7 @@
 
 //! Substrate runtime — threads hooks + store for Simple and Saga lifecycles.
 //!
-//! The runtime is the in-process layer the Bus verbs call into. For
+//! The runtime is the in-process layer the Bus commands call into. For
 //! each `<svc>.props.set` / `<svc>.props.delete`, it:
 //!
 //! 1. Runs `before_set` / `before_delete` against the resolved
@@ -67,8 +67,8 @@ use crate::record::{Actor, RecordEvent, RecordKey, Version};
 use crate::store::{CompleteCommit, DeleteCommit, MergeMode, PropertyStore, SetCommit, StoreError};
 use crate::value::PropValue;
 
-/// Errors surfaced to the Bus verb layer. Each maps 1:1 to a
-/// wire `error_code`; the verb layer constructs the body envelope.
+/// Errors surfaced to the Bus command layer. Each maps 1:1 to a
+/// wire `error_code`; the command layer constructs the body envelope.
 #[derive(Debug, Clone)]
 pub enum RuntimeError {
     /// A `before_*` or `after_*` hook returned a [`HookError`]. The
@@ -104,7 +104,7 @@ impl From<StoreError> for RuntimeError {
 
 /// Caller-supplied options for `Runtime::set`. The fields named after
 /// wire headers (`expected_version`, `merge`, `cause`,
-/// `actor`) match the values the verb layer extracts from the request.
+/// `actor`) match the values the command layer extracts from the request.
 #[derive(Debug, Clone)]
 pub struct SetOpts {
     pub expected_version: Option<Version>,
@@ -210,7 +210,7 @@ impl Runtime {
     /// event the substrate emitted after `after_set`.
     ///
     /// Caller-facing dispatch — origin is stamped `WriteOrigin::caller()`.
-    /// Daemon-internal code paths (bootstrap upsert, ergonomic verb shim,
+    /// Daemon-internal code paths (bootstrap upsert, ergonomic command shim,
     /// post-issuance writeback) call [`Runtime::set_with_origin`] with
     /// `WriteOrigin::backend()` so hooks guarding daemon-owned columns
     /// can branch on `ctx.origin.is_backend()`.

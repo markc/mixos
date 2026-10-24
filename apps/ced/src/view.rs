@@ -15,7 +15,7 @@ use editor_model::diag::Severity;
 use editor_model::mirror::{DetachReason, Phase};
 use editor_model::types::TabId;
 use egui::{Align, Layout, RichText, Ui};
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 use toolkit::dialog::{self, Choice, Role};
 use toolkit::tabs::DocTab;
 use toolkit::titlebar;
@@ -807,7 +807,7 @@ fn dialogs(
                         egui::Grid::new("ced.keys").striped(true).show(ui, |ui| {
                             for command in commands.iter() {
                                 if let Some(shortcut) = command.shortcut {
-                                    ui.label(toolkit::command::label_text(strings, command.label));
+                                    ui.label(toolkit::action::label_text(strings, command.label));
                                     ui.monospace(ui.ctx().format_shortcut(&shortcut));
                                     ui.end_row();
                                 }

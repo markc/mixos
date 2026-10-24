@@ -247,11 +247,11 @@ behind its opt-in <code>props</code> feature. Services supply domain-table mappi
 and use their existing native Bus connection for subscription grants and
 publication. No new crate, transport or broker is introduced.</p>
 <p>The <a href="/docs/spec/props/">condensed contract</a> preserves capability
-strings, verb envelopes, errors, topic suffixes, audit canonicalisation and
+strings, command envelopes, errors, topic suffixes, audit canonicalisation and
 the five <code>__props_*</code> table names and DDL. Persisted databases require no
 migration. <code>noded.props.subscribe_grant</code>, already served by the broker,
 is registered as an intent because it installs a subscription for another
-peer. Concrete service verbs are registered when their owner adopts them.</p>
+peer. Concrete service commands are registered when their owner adopts them.</p>
 <h2 id="why">Why</h2>
 <p>Service domain data and the logging bridge need the same schema, storage,
 audit and native routing contracts. Keeping those contracts beside the

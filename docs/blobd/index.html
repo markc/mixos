@@ -238,7 +238,7 @@
 Names live by owner, in a blobd-owned <code>blobd.sqlite</code>. Movement between nodes
 happens over a byte lane on the WireGuard address; the Bus carries references
 only, never bytes.</p>
-<p>The daemon <code>blobd</code> registers on the Bus as <code>blobd</code>, serves the <code>blob.*</code> verbs,
+<p>The daemon <code>blobd</code> registers on the Bus as <code>blobd</code>, serves the <code>blob.*</code> commands,
 publishes its events with <code>retain: false</code>, and listens for byte-lane transfers
 on the WireGuard address. Cross-node fetches go through the same lane.</p>
 <p>On a mesh node that runs the previous build, it replaces that build in place: the unit keeps the uid, the group

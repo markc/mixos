@@ -77,12 +77,12 @@ fn a_bound_stroke_fires_and_swallows() {
     let r = personal();
     let out = r.resolve(KEY_RIGHT, SideModifiers::RIGHT_CTRL, Edge::Press);
     assert_eq!(
-        out.verb.map(ActionId::as_str),
+        out.command.map(ActionId::as_str),
         Some("desktop.workspace.next")
     );
     assert!(out.swallow);
     let release = r.resolve(KEY_RIGHT, SideModifiers::RIGHT_CTRL, Edge::Release);
-    assert_eq!(release.verb, None, "verbs fire on press, not release");
+    assert_eq!(release.command, None, "commands fire on press, not release");
     assert!(release.swallow, "the release is swallowed too");
 }
 
@@ -104,13 +104,13 @@ fn repeat_honours_the_policy() {
     let mut r = personal();
     assert!(
         r.resolve(KEY_RIGHT, SideModifiers::RIGHT_CTRL, Edge::Repeat)
-            .verb
+            .command
             .is_some()
     );
     r.bind_physical(row(KEY_F5, SideModifiers::NONE, "term.snapshot"))
         .unwrap();
     let f5 = r.resolve(KEY_F5, SideModifiers::NONE, Edge::Repeat);
-    assert_eq!(f5.verb, None, "ignore-policy rows do not repeat");
+    assert_eq!(f5.command, None, "ignore-policy rows do not repeat");
     assert!(f5.swallow);
 }
 
@@ -148,7 +148,7 @@ fn rebind_and_unbind() {
         .unwrap();
     assert!(g > g0);
     let out = r.resolve(KEY_F5, SideModifiers::NONE, Edge::Press);
-    assert_eq!(out.verb.map(ActionId::as_str), Some("term.snapshot"));
+    assert_eq!(out.command.map(ActionId::as_str), Some("term.snapshot"));
     let stroke = PhysicalStroke {
         code: KEY_F5,
         modifiers: SideModifiers::NONE,
@@ -176,7 +176,7 @@ fn args_ride_the_firing_edges_only() {
     let repeat = r.resolve(KEY_F5, SideModifiers::NONE, Edge::Repeat);
     assert_eq!(repeat.args, press.args);
     let release = r.resolve(KEY_F5, SideModifiers::NONE, Edge::Release);
-    assert_eq!((release.verb, release.args), (None, None));
+    assert_eq!((release.command, release.args), (None, None));
 }
 
 #[test]
@@ -293,11 +293,11 @@ fn the_scene_editor_chord_is_side_exact() {
     let r = Resolver::new(default_keymap());
     for held in SCENE_EDITOR_CHORDS {
         let press = r.resolve(SCENE_EDITOR_KEY, held, Edge::Press);
-        assert_eq!(press.verb.map(ActionId::as_str), Some("scenes.editor.open"));
+        assert_eq!(press.command.map(ActionId::as_str), Some("scenes.editor.open"));
         assert!(press.swallow);
         let repeat = r.resolve(SCENE_EDITOR_KEY, held, Edge::Repeat);
         assert_eq!(
-            (repeat.verb, repeat.swallow),
+            (repeat.command, repeat.swallow),
             (None, true),
             "no flap on repeat"
         );
@@ -347,7 +347,7 @@ impl Run {
             self.emitted.push((code, value));
         }
         if let Some(fire) = step.fire {
-            self.fired.push(fire.verb.as_str());
+            self.fired.push(fire.command.as_str());
         }
         self
     }
@@ -444,7 +444,7 @@ fn releasing_the_modifier_first_keeps_the_arrow_swallowed() {
         assert_eq!(run.emitted, [(modifier, 1), (modifier, 0)], "{name}");
         run.assert_balanced();
     }
-    // The same with a bound key: the verb fires once and its release stays
+    // The same with a bound key: the command fires once and its release stays
     // swallowed.
     let mut run = Run::new(personal());
     run.feed(KEY_RIGHTCTRL, 1)
@@ -506,12 +506,12 @@ fn a_rebind_while_held_applies_from_the_next_press() {
     assert_eq!(run.emitted[2..], [(KEY_F5, 1), (KEY_F5, 2), (KEY_F5, 0)]);
     run.assert_balanced();
 
-    // Bound to one verb at press, rebound while held: repeats keep firing
-    // the verb latched at the press.
+    // Bound to one command at press, rebound while held: repeats keep firing
+    // the command latched at the press.
     let mut run = Run::new(personal());
     run.feed(KEY_RIGHTCTRL, 1).feed(KEY_RIGHT, 1);
     run.resolver
-        .bind_physical(row(KEY_RIGHT, SideModifiers::RIGHT_CTRL, "other.verb"))
+        .bind_physical(row(KEY_RIGHT, SideModifiers::RIGHT_CTRL, "other.command"))
         .unwrap();
     run.feed(KEY_RIGHT, 2).feed(KEY_RIGHT, 0);
     assert_eq!(
@@ -521,7 +521,7 @@ fn a_rebind_while_held_applies_from_the_next_press() {
     run.feed(KEY_RIGHT, 1)
         .feed(KEY_RIGHT, 0)
         .feed(KEY_RIGHTCTRL, 0);
-    assert_eq!(run.fired.last(), Some(&"other.verb"));
+    assert_eq!(run.fired.last(), Some(&"other.command"));
     run.assert_balanced();
 }
 

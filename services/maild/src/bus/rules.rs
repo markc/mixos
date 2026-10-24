@@ -106,7 +106,7 @@ const DEFAULT_PER_RULE_TOP_N: usize = 256;
 
 /// Hard ceiling on `top_n`. Bounds the wire payload and the final
 /// returned per-rule map of a single `maild.rules.stats` reply —
-/// the verb returns a single JSON string body, so an unbounded
+/// the command returns a single JSON string body, so an unbounded
 /// result map would translate directly into an unbounded
 /// allocation + send. 4096 entries at ~80 bytes per entry caps the
 /// per-rule slice at well under 1 MiB.
@@ -124,7 +124,7 @@ const MAX_PER_RULE_TOP_N: usize = 4096;
 /// `{ "top_n": <u64> }`) deserialize cleanly via the optional field.
 /// Non-object request bodies (`[]`, `"bad"`, `42`, etc.) are
 /// rejected at deserialization with rc=10, matching the validation
-/// discipline of `handle_explain` and other maild Bus verbs.
+/// discipline of `handle_explain` and other maild Bus commands.
 #[derive(serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct StatsRequest {
@@ -1267,7 +1267,7 @@ mod tests {
     async fn dispatch_stats_rejects_malformed_json_in_args_header() {
         // The loose `resolve_args` helper silently drops an
         // unparsable `args:` header to `Value::Null` and lets the
-        // verb succeed with defaults. For `stats` we want a hard
+        // command succeed with defaults. For `stats` we want a hard
         // rc=10 instead, so dispatch routes through
         // `try_resolve_args`. Verify that path here.
         let e = engine();

@@ -7,7 +7,7 @@
 //! `MailStore::destroy_mailbox` with [`DestroyPolicy::Reject`]. The
 //! locked Phase 2 design refuses to auto-purge messages — STORE and
 //! EXPUNGE ship in Phase 4, so a non-empty mailbox cannot be
-//! deleted yet through this verb.
+//! deleted yet through this command.
 //!
 //! Special cases:
 //! * `DELETE INBOX` is rejected up-front with `NO [CANNOT] INBOX

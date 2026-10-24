@@ -5,7 +5,7 @@
 //! While a mapped layer surface asks for `KeyboardInteractivity::Exclusive`,
 //! it holds the keyboard from the moment it maps, not from the first key:
 //! `focus.exclusive_latch` names it, nothing else takes the keyboard (the
-//! focus and switch verbs see `exclusive_layer`, a toplevel's popup keyboard
+//! focus and switch commands see `exclusive_layer`, a toplevel's popup keyboard
 //! grab is denied), and when it goes the keyboard falls back to the highest
 //! visible window on the current workspace.
 //!

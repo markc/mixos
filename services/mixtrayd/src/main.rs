@@ -27,11 +27,11 @@ use tokio::sync::watch as revision;
 use crate::ssh::Ssh;
 
 const SERVICE: &str = "mixtrayd";
-const VERB_SNAPSHOT: &str = "mixtrayd.snapshot";
-const VERB_WAIT: &str = "mixtrayd.wait";
-const VERB_CONTROL: &str = "mixtrayd.control";
-const VERB_SSH: &str = "mixtrayd.ssh";
-const VERB_PING: &str = "mixtrayd.ping";
+const COMMAND_SNAPSHOT: &str = "mixtrayd.snapshot";
+const COMMAND_WAIT: &str = "mixtrayd.wait";
+const COMMAND_CONTROL: &str = "mixtrayd.control";
+const COMMAND_SSH: &str = "mixtrayd.ssh";
+const COMMAND_PING: &str = "mixtrayd.ping";
 const SSH_USAGE: &str = "usage: mixtrayd ssh probe [ID...] | create NAME HOSTNAME PORT USER KEY | trash ID | restore ID | purge ID";
 /// The longest one `mixtrayd.wait` blocks. The Bus client gives up on a call
 /// after 60 s, so a wait answers well inside that and the popup asks again.
@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
             _ => anyhow::bail!("usage: mixtrayd control UNIT start|stop|restart"),
         },
         Some("ssh") => match ssh_request(&args[2..]) {
-            Some(request) => verb_client(VERB_SSH, request).await,
+            Some(request) => command_client(COMMAND_SSH, request).await,
             None => anyhow::bail!(SSH_USAGE),
         },
         Some("--version") => {
@@ -83,7 +83,7 @@ fn ssh_request(args: &[String]) -> Option<Value> {
 
 /// Registers on the Bus, starts the unit and SSH watchers, and answers each
 /// command in its own task, so a long `mixtrayd.wait` never holds up another
-/// verb.
+/// command.
 async fn serve() -> anyhow::Result<()> {
     let (rev_tx, rev_rx) = revision::channel(0u64);
     let ssh = Ssh::new(rev_tx.clone());
@@ -95,7 +95,7 @@ async fn serve() -> anyhow::Result<()> {
         .await
         .ok_or_else(|| anyhow::anyhow!("the Bus client has no command stream"))?;
     while let Some(cmd) = incoming.recv().await {
-        // Topic deliveries carry no command; only verbs get a reply.
+        // Topic deliveries carry no command; only commands get a reply.
         if cmd.command.is_empty() {
             continue;
         }
@@ -112,26 +112,26 @@ async fn handle(
     cmd: &IncomingCommand,
 ) {
     let (rc, body) = match cmd.command.as_str() {
-        VERB_SNAPSHOT => {
+        COMMAND_SNAPSHOT => {
             let current = *rev.borrow();
             (
                 RC_SUCCESS,
                 snapshot_at(client, ssh, current).await.to_string(),
             )
         }
-        VERB_WAIT => (
+        COMMAND_WAIT => (
             RC_SUCCESS,
             wait_reply(client, ssh, rev, &cmd.args).await.to_string(),
         ),
-        VERB_CONTROL => control_reply(&cmd.args).await,
-        VERB_SSH => match ssh.act(&cmd.args).await {
+        COMMAND_CONTROL => control_reply(&cmd.args).await,
+        COMMAND_SSH => match ssh.act(&cmd.args).await {
             Ok(reply) => (RC_SUCCESS, reply.to_string()),
             Err(error) => (RC_ERROR, json!({ "error": error }).to_string()),
         },
-        VERB_PING => (RC_SUCCESS, json!({ "service": SERVICE }).to_string()),
+        COMMAND_PING => (RC_SUCCESS, json!({ "service": SERVICE }).to_string()),
         other => (
             RC_ERROR,
-            json!({ "error": format!("unknown verb {other}") }).to_string(),
+            json!({ "error": format!("unknown command {other}") }).to_string(),
         ),
     };
     if let Err(error) = client.respond(cmd, rc, &body).await {
@@ -191,7 +191,7 @@ async fn control_reply(args: &Value) -> (u8, String) {
 /// `mixtrayd snapshot`: asks the running daemon for a snapshot, prints it.
 async fn snapshot_client() -> anyhow::Result<()> {
     let client = connect_anonymous_default().await?;
-    let value = client.call(SERVICE, VERB_SNAPSHOT, Value::Null).await?;
+    let value = client.call(SERVICE, COMMAND_SNAPSHOT, Value::Null).await?;
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
 }
@@ -201,7 +201,7 @@ async fn snapshot_client() -> anyhow::Result<()> {
 async fn wait_client(rev: u64) -> anyhow::Result<()> {
     let client = connect_anonymous_default().await?;
     let value = client
-        .call(SERVICE, VERB_WAIT, json!({ "since": rev }))
+        .call(SERVICE, COMMAND_WAIT, json!({ "since": rev }))
         .await?;
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
@@ -209,13 +209,13 @@ async fn wait_client(rev: u64) -> anyhow::Result<()> {
 
 /// `mixtrayd control UNIT ACTION`: asks the running daemon to act on one unit.
 async fn control_client(unit: &str, action: &str) -> anyhow::Result<()> {
-    verb_client(VERB_CONTROL, json!({ "unit": unit, "action": action })).await
+    command_client(COMMAND_CONTROL, json!({ "unit": unit, "action": action })).await
 }
 
-/// Sends one verb to the running daemon and prints its reply.
-async fn verb_client(verb: &str, args: Value) -> anyhow::Result<()> {
+/// Sends one command to the running daemon and prints its reply.
+async fn command_client(command_name: &str, args: Value) -> anyhow::Result<()> {
     let client = connect_anonymous_default().await?;
-    let value = client.call(SERVICE, verb, args).await?;
+    let value = client.call(SERVICE, command_name, args).await?;
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
 }

@@ -3,7 +3,7 @@
 //! External diagnostic sets: what `ced.diagnostics`
 //! stores per `(path, source)` and applies to every tab showing that path.
 //!
-//! The store is an LRU of [`verbs::DIAG_STORE_PATHS`] paths. A set is applied
+//! The store is an LRU of [`commands::DIAG_STORE_PATHS`] paths. A set is applied
 //! with `Diagnostics::accept_items` at the tab's current gen (so it follows
 //! covered-range invalidation from there), and only when the tab's text
 //! hashes to the set's `digest`; otherwise the tab shows nothing for that
@@ -19,7 +19,7 @@ use editor_model::mirror::Phase;
 use sha2::{Digest, Sha256};
 
 use super::Tab;
-use crate::verbs::{self, DiagSeverity};
+use crate::commands::{self, DiagSeverity};
 
 /// Sets kept per path. A caller looping over fresh source names evicts its
 /// own oldest set, never grows the store without bound.
@@ -42,7 +42,7 @@ pub(super) struct Store {
 
 impl Store {
     /// Store (or, for an empty list, drop) `source`'s set for `path`.
-    pub(super) fn put(&mut self, req: &verbs::DiagnosticsReq) {
+    pub(super) fn put(&mut self, req: &commands::DiagnosticsReq) {
         let at = self.paths.iter().position(|(p, _)| *p == req.path);
         let mut sets = at.map(|i| self.paths.remove(i).1).unwrap_or_default();
         if req.diagnostics.is_empty() {
@@ -72,7 +72,7 @@ impl Store {
         if !sets.is_empty() {
             self.paths.push((req.path.clone(), sets));
         }
-        while self.paths.len() > verbs::DIAG_STORE_PATHS {
+        while self.paths.len() > commands::DIAG_STORE_PATHS {
             self.paths.remove(0);
         }
     }
@@ -90,19 +90,19 @@ impl Store {
 /// The request's refusal (message, reason), if any. `body_len` is the raw
 /// request body's size.
 pub(super) fn check(
-    req: &verbs::DiagnosticsReq,
+    req: &commands::DiagnosticsReq,
     body_len: usize,
 ) -> Result<(), (String, &'static str)> {
-    if body_len > verbs::MAX_DIAGNOSTICS_BODY {
+    if body_len > commands::MAX_DIAGNOSTICS_BODY {
         return Err((
             format!(
                 "the request is {body_len} bytes (at most {})",
-                verbs::MAX_DIAGNOSTICS_BODY
+                commands::MAX_DIAGNOSTICS_BODY
             ),
             "too_large",
         ));
     }
-    if req.source == verbs::LINT_SOURCE {
+    if req.source == commands::LINT_SOURCE {
         return Err((
             "source lint is reserved for ced's own lint".into(),
             "bad_source",
@@ -120,12 +120,12 @@ pub(super) fn check(
     if !std::path::Path::new(&req.path).is_absolute() {
         return Err((format!("path {:?} is not absolute", req.path), "bad_path"));
     }
-    if req.diagnostics.len() > verbs::MAX_EXTERNAL_DIAGNOSTICS {
+    if req.diagnostics.len() > commands::MAX_EXTERNAL_DIAGNOSTICS {
         return Err((
             format!(
                 "{} diagnostics (at most {})",
                 req.diagnostics.len(),
-                verbs::MAX_EXTERNAL_DIAGNOSTICS
+                commands::MAX_EXTERNAL_DIAGNOSTICS
             ),
             "too_many",
         ));
@@ -152,7 +152,7 @@ fn valid_source(s: &str) -> bool {
             .all(|&c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
 }
 
-fn item(d: &verbs::ExternalDiagnostic) -> DiagItem {
+fn item(d: &commands::ExternalDiagnostic) -> DiagItem {
     DiagItem {
         line: d.line,
         column: d.col,
@@ -207,7 +207,7 @@ pub(super) struct Applied {
 /// `undigested`: whether sets sent without a digest are applied. Nothing can
 /// tell such a set is still about this text, so the tab going clean (the one
 /// trigger that is only about the text) must not bring back rows an edit
-/// dropped; the verb, a tab opening and a Resync apply them.
+/// dropped; the command, a tab opening and a Resync apply them.
 pub(super) fn apply(store: &Store, t: &mut Tab, only: Option<&str>, undigested: bool) -> Applied {
     let mut out = Applied::default();
     let Some(m) = t
@@ -275,15 +275,15 @@ pub(super) fn apply(store: &Store, t: &mut Tab, only: Option<&str>, undigested: 
 mod tests {
     use super::*;
 
-    fn req(path: &str, source: &str, n: usize) -> verbs::DiagnosticsReq {
-        let d = verbs::ExternalDiagnostic {
+    fn req(path: &str, source: &str, n: usize) -> commands::DiagnosticsReq {
+        let d = commands::ExternalDiagnostic {
             line: 1,
             col: None,
             severity: DiagSeverity::Error,
             code: "c".into(),
             message: "m".into(),
         };
-        verbs::DiagnosticsReq {
+        commands::DiagnosticsReq {
             path: path.into(),
             source: source.into(),
             digest: None,
@@ -294,10 +294,10 @@ mod tests {
     #[test]
     fn the_store_is_an_lru_of_paths_and_empty_lists_clear() {
         let mut s = Store::default();
-        for i in 0..verbs::DIAG_STORE_PATHS + 2 {
+        for i in 0..commands::DIAG_STORE_PATHS + 2 {
             s.put(&req(&format!("/p/{i}"), "scenes", 1));
         }
-        assert_eq!(s.paths().len(), verbs::DIAG_STORE_PATHS);
+        assert_eq!(s.paths().len(), commands::DIAG_STORE_PATHS);
         assert_eq!(
             s.paths()[0],
             "/p/2",
@@ -361,16 +361,16 @@ mod tests {
         );
         assert_eq!(
             check(
-                &req("/a", "scenes", verbs::MAX_EXTERNAL_DIAGNOSTICS + 1),
+                &req("/a", "scenes", commands::MAX_EXTERNAL_DIAGNOSTICS + 1),
                 100
             )
             .unwrap_err()
             .1,
             "too_many"
         );
-        assert!(check(&req("/a", "scenes", verbs::MAX_EXTERNAL_DIAGNOSTICS), 100).is_ok());
+        assert!(check(&req("/a", "scenes", commands::MAX_EXTERNAL_DIAGNOSTICS), 100).is_ok());
         assert_eq!(
-            check(&req("/a", "scenes", 1), verbs::MAX_DIAGNOSTICS_BODY + 1)
+            check(&req("/a", "scenes", 1), commands::MAX_DIAGNOSTICS_BODY + 1)
                 .unwrap_err()
                 .1,
             "too_large"

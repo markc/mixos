@@ -302,7 +302,7 @@ impl VerifiedConnection {
     /// Renew the caller's OWN attachment and bind the conservative local
     /// deadline that renewal establishes, plus the context it is bound to.
     ///
-    /// `lease.check` cannot answer for this record. That verb requires the
+    /// `lease.check` cannot answer for this record. That command requires the
     /// asking connection to hold a delivery dependency on the target
     /// (PROP-025), which is registered when the target's stamped traffic is
     /// routed to the asker — so a recipient never holds one on its own

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Mix Scenes for compd: the host side of the Mix Scenes contract (Quoin's
-//! `shell.scene.*` verbs), drawn with egui.
+//! `shell.scene.*` commands), drawn with egui.
 //!
-//! - [`store`]: the transactional verb semantics (revisions, model
+//! - [`store`]: the transactional command semantics (revisions, model
 //!   authority, the page registry and the one dialog seat, notices, digest,
 //!   refusals);
 //! - [`host`]: request handling on compd's loop (provenance, owner
@@ -43,13 +43,13 @@ mod state;
 pub mod store;
 pub mod templates;
 pub mod tooltip;
-pub mod verb;
+pub mod command;
 pub mod view;
 
 pub use host::{Host, SceneHost, SceneSurface, Serviced, scene_surface_id};
 pub use port::{DEFAULT_SERVICE, HostConfig, Waker};
 pub use store::{Mounted, SceneStore};
-pub use verb::SceneVerb;
+pub use command::SceneCommand;
 
 thread_local! {
     /// The running host. Compositor-thread only: the request path evaluates

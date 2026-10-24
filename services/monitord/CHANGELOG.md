@@ -2,7 +2,7 @@
 
 ## 0.1.0 (draft)
 
-- Read verbs `monitord.status`, `monitord.snapshot`, `monitord.processes`,
+- Read commands `monitord.status`, `monitord.snapshot`, `monitord.processes`,
   `monitord.process`, `monitord.series` and `monitord.history`, all
   queries.
 - Retained topic `monitord.summary`, every 5 s.

@@ -20,10 +20,10 @@
 //! swaps each [`ListenerTls`], and republishes the `tls.status` watch
 //! snapshot. Failure posture is **fail-loud-and-keep**: if any cert fails
 //! to read/validate, or a resolver fails to build (e.g. key↔cert
-//! mismatch), the verb returns `rc=10` and every listener keeps its prior
+//! mismatch), the command returns `rc=10` and every listener keeps its prior
 //! resolver — no half-valid swap, in-flight handshakes undisturbed.
 //!
-//! The verb is **manual-PEM only**. On a node with an active ACME
+//! The command is **manual-PEM only**. On a node with an active ACME
 //! provisioner the per-listener resolvers are owned by that provisioner
 //! (it merges the manual floor with the ACME identities on every
 //! republish, re-reading the manual cert files in the process), so an
@@ -56,7 +56,7 @@ use crate::tls_status::TlsStatusSnapshot;
 /// per-listener TLS resolvers, so it is gated to the SAME operator tier
 /// as the `webd.listener.{enable,disable}` kill switch — a caller in the
 /// `[webd.listeners] operators` L0 allowlist (resolved via
-/// `listeners_namespace::auth_policy`, which `listener_verbs::require_cap`
+/// `listeners_namespace::auth_policy`, which `listener_commands::require_cap`
 /// uses). Reusing the existing operator cap means no new policy grant to
 /// register and keeps "who may mutate listener/TLS state" a single tier.
 /// An anonymous caller (e.g. the bare `webd tls reload` CLI on a
@@ -83,7 +83,7 @@ pub fn status_body(node: &Arc<NodeState>) -> String {
     })
 }
 
-/// Shared state for the `webd.tls.reload` verb. Clone-cheap — every
+/// Shared state for the `webd.tls.reload` command. Clone-cheap — every
 /// field is `Arc`-shaped or a small owned map captured once at startup.
 /// Constructed by `main` only on a manual-PEM-capable node (see the
 /// module docs); absent (`NodeState::tls_reload == None`) otherwise.
@@ -108,7 +108,7 @@ pub struct TlsReloadState {
     /// rather than the reload reverting to a startup-frozen value.
     listeners_runtime: Arc<Runtime>,
     /// `webd.tls.status` watch sender. Republished after a successful
-    /// swap so the status verb reflects the reload. `Option` for
+    /// swap so the status command reflects the reload. `Option` for
     /// defensiveness — on a manual-PEM node `main` always hands the
     /// sender here (the provisioner, which would otherwise own it, does
     /// not exist), so it is `Some` in practice.
@@ -138,7 +138,7 @@ impl TlsReloadState {
     }
 }
 
-/// Dispatch a `webd.tls.*` mutation verb. Returns `Some((rc, body))`
+/// Dispatch a `webd.tls.*` mutation command. Returns `Some((rc, body))`
 /// for `tls.reload`; `None` for anything else (notably the read-only
 /// `tls.status`, which stays on the synchronous `dispatch` path).
 pub async fn dispatch(
@@ -148,13 +148,13 @@ pub async fn dispatch(
 ) -> Option<(u8, String)> {
     match suffix {
         "tls.reload" => Some(
-            // Mutating verb — gate it to the listeners operator tier (the
+            // Mutating command — gate it to the listeners operator tier (the
             // same gate as the `webd.listener.*` kill switch;
             // `feedback_bus_wire_trust_boundary`: the WG trust domain does
             // not make callers non-adversarial). Cap-check first so an
             // unauthorised caller can't even probe the node's TLS posture
             // via the availability message.
-            match crate::bus::listener_verbs::require_cap(node, cmd, RELOAD_CAP) {
+            match crate::bus::listener_commands::require_cap(node, cmd, RELOAD_CAP) {
                 Err(rsp) => rsp,
                 Ok(()) => match &node.tls_reload {
                     Some(state) => to_response(handle_reload(state).await),

@@ -14,7 +14,7 @@
 //! (`accounts`). The fully-qualified form (`<svc>.<name>`, e.g.
 //! `demod.accounts`) is library-derived from the registration's owning
 //! service and only appears in capability strings (`props.write:demod.accounts`)
-//! and audit/event verb strings (`demod.props.set`). The
+//! and audit/event command strings (`demod.props.set`). The
 //! two forms are distinct concepts and the substrate keeps them separate.
 //!
 use std::fmt;
@@ -33,7 +33,7 @@ use crate::value::PropValue;
 ///
 /// The fully-qualified form `<service>.<name>` is constructed via
 /// [`NamespaceName::qualified`] and is NOT a separate type; it is only
-/// used as a string in capability vocabularies and event verbs.
+/// used as a string in capability vocabularies and event commands.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
 // INVARIANT: every value originates from `new` (FromStr and Deserialize
@@ -114,7 +114,7 @@ impl NamespaceName {
     }
 
     /// Compose the fully qualified `<service>.<name>` form. Used in
-    /// capability strings and audit/event verbs; never on the
+    /// capability strings and audit/event commands; never on the
     /// `namespace:` wire header (which carries `self.as_str()`).
     pub fn qualified(&self, service: &str) -> String {
         format!("{}.{}", service, self.0)
@@ -238,7 +238,7 @@ pub enum SubscribePayload {
 ///
 /// - `Allow` (default) — `view: public` is reachable for callers
 ///   the `AuthPolicy` grants `props.describe:<svc>.<ns>:public` to.
-///   Without the capability, the verb returns `auth_denied` as
+///   Without the capability, the command returns `auth_denied` as
 ///   normal. This is *not* an "anyone can read" switch.
 /// - `Deny` — `view: public` returns `auth_denied` regardless of
 ///   capability, even if the `AuthPolicy` would otherwise allow it.
@@ -406,7 +406,7 @@ pub struct PeerIdentity {
 }
 
 /// pure mapping from peer identity to capability set.
-/// Called once per Bus request, before verb dispatch.
+/// Called once per Bus request, before command dispatch.
 ///
 /// Stored as `Arc<dyn Fn>` so policies can close over per-namespace
 /// state (capability sets, in-memory trust/grants caches built from
@@ -427,7 +427,7 @@ impl fmt::Debug for AuthPolicy {
 
 impl AuthPolicy {
     /// Wrap a resolve closure into an `AuthPolicy`. The closure runs
-    /// once per Bus request before verb dispatch and MUST stay
+    /// once per Bus request before command dispatch and MUST stay
     /// synchronous.
     pub fn new<F>(resolve: F) -> Self
     where
@@ -635,9 +635,9 @@ fn is_false(b: &bool) -> bool {
 ///
 /// **Not the describe wire body.**'s example envelope
 /// (`{namespace, schema_version, cardinality, primary_key_field,
-/// fields: [...]}`) is composed at describe-verb time by combining
+/// fields: [...]}`) is composed at describe-command time by combining
 /// these fields with the owning `NamespaceSpec`'s `name`,
-/// `cardinality`, and (future) `schema_version`. The verb-level
+/// `cardinality`, and (future) `schema_version`. The command-level
 /// projection combines the field-list shape and the per-field wire
 /// shapes (`FieldSchema`, `FieldType`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -677,7 +677,7 @@ pub type ValidatorFn = Arc<dyn Fn(&PropValue) -> Result<(), HookError> + Send + 
 /// `before_set`. Validators are pure, do not perform IO, and fail with
 /// `HookError::Validation` to surface as `validation_error` on the wire.
 ///
-/// **Wire projection.** The describe verb projects a validator
+/// **Wire projection.** The describe command projects a validator
 /// to `{ "name": "..." }` under `view: full`. Under `view: public` the
 /// projection is `{ "name": "<redacted>" }` when `validator_secret`
 /// is set, since regex patterns can themselves leak security details.
@@ -723,7 +723,7 @@ impl fmt::Debug for Validator {
 #[derive(Debug, Clone)]
 pub struct NamespaceSpec {
     /// Per-service unqualified name. The library composes
-    /// `<service>.<name>` when needed for capabilities and audit verbs.
+    /// `<service>.<name>` when needed for capabilities and audit commands.
     pub name: NamespaceName,
 
     /// Record schema.
@@ -800,7 +800,7 @@ impl NamespaceSpec {
     }
 
     /// Compose the fully qualified `<service>.<name>` form for use in
-    /// capability strings and audit/event verbs.
+    /// capability strings and audit/event commands.
     pub fn fqn(&self, service: &str) -> String {
         self.name.qualified(service)
     }

@@ -290,7 +290,7 @@ impl Drop for PendingGuard {
 /// Bus WebSocket client for communicating with noded.
 pub struct NodedClient {
     service_name: Arc<RwLock<String>>,
-    verbs: Arc<RwLock<Option<String>>>,
+    commands: Arc<RwLock<Option<String>>>,
     sink: Arc<Mutex<WsSink>>,
     pending: Arc<StdMutex<PendingMap>>,
     incoming_rx: Mutex<Option<NativeIncomingReceiver>>,
@@ -453,15 +453,15 @@ fn classify_registration_rejection(body: &str) -> RegistrationRejectionKind {
 impl NodedClient {
     /// Opt into central HELP handling. Install before publishing the service
     /// where possible. HELP is consumed by the reader, never the application.
-    pub fn with_verbs(self, verbs: Vec<crate::VerbDescriptor>) -> Self {
-        self.set_verbs(verbs);
+    pub fn with_commands(self, command_names: Vec<crate::CommandDescriptor>) -> Self {
+        self.set_commands(command_names);
         self
     }
 
     /// Replace the manifest on a live client, including verified Unix clients.
-    pub fn set_verbs(&self, verbs: Vec<crate::VerbDescriptor>) {
-        *self.verbs.write().expect("verbs lock poisoned") =
-            Some(serde_json::to_string(&verbs).expect("verb descriptors serialize"));
+    pub fn set_commands(&self, command_names: Vec<crate::CommandDescriptor>) {
+        *self.commands.write().expect("commands lock poisoned") =
+            Some(serde_json::to_string(&command_names).expect("command descriptors serialize"));
     }
 
     #[cfg(unix)]
@@ -476,7 +476,7 @@ impl NodedClient {
         let pending = Arc::new(StdMutex::new(HashMap::new()));
         let connected = Arc::new(AtomicBool::new(true));
         let service_name = Arc::new(RwLock::new(service_name.to_string()));
-        let verbs = Arc::new(RwLock::new(None));
+        let command_names = Arc::new(RwLock::new(None));
         let (tx, rx) = match incoming_capacity {
             Some(capacity @ 1..=1024) => {
                 let (tx, commands) = mpsc::channel(capacity);
@@ -514,12 +514,12 @@ impl NodedClient {
             connected.clone(),
             service_name.clone(),
             sink.clone(),
-            verbs.clone(),
+            command_names.clone(),
         ));
         let mut guard = AbortOnDrop::new(reader.abort_handle());
         let client = Self {
             service_name,
-            verbs,
+            commands: command_names,
             sink,
             pending,
             incoming_rx: Mutex::new(None),
@@ -585,7 +585,7 @@ impl NodedClient {
         noded_url: &str,
         provenance: Option<crate::RegisterProvenance>,
         bounded_capacity: Option<usize>,
-        manifest: Option<Vec<crate::VerbDescriptor>>,
+        manifest: Option<Vec<crate::CommandDescriptor>>,
         refuse_rpc: bool,
     ) -> Result<Self> {
         let (ws_stream, _) = tokio_tungstenite::connect_async(noded_url)
@@ -598,8 +598,8 @@ impl NodedClient {
         let connected = Arc::new(AtomicBool::new(true));
         let (incoming_tx, incoming_rx) = incoming_channel(bounded_capacity, refuse_rpc);
         let service_name = Arc::new(RwLock::new(service_name.to_string()));
-        let verbs = Arc::new(RwLock::new(manifest.map(|verbs| {
-            serde_json::to_string(&verbs).expect("verb descriptors serialize")
+        let command_names = Arc::new(RwLock::new(manifest.map(|command_names| {
+            serde_json::to_string(&command_names).expect("command descriptors serialize")
         })));
 
         // Spawn the reader task
@@ -613,7 +613,7 @@ impl NodedClient {
             reader_connected,
             reader_service,
             sink.clone(),
-            verbs.clone(),
+            command_names.clone(),
         ));
         // `register()` awaits a broker response after the reader has taken the
         // socket's read half. If an outer timeout drops this connect future,
@@ -623,7 +623,7 @@ impl NodedClient {
 
         let client = Self {
             service_name,
-            verbs,
+            commands: command_names,
             sink,
             pending,
             incoming_rx: Mutex::new(Some(incoming_rx)),
@@ -666,7 +666,7 @@ impl NodedClient {
         let connected = Arc::new(AtomicBool::new(true));
         let (incoming_tx, incoming_rx) = incoming_channel(None, false);
         let service_name = Arc::new(RwLock::new("anonymous".to_string()));
-        let verbs = Arc::new(RwLock::new(None));
+        let command_names = Arc::new(RwLock::new(None));
 
         let reader_pending = pending.clone();
         let reader_connected = connected.clone();
@@ -677,12 +677,12 @@ impl NodedClient {
             reader_connected,
             service_name.clone(),
             sink.clone(),
-            verbs.clone(),
+            command_names.clone(),
         ));
 
         Ok(Self {
             service_name,
-            verbs,
+            commands: command_names,
             sink,
             pending,
             incoming_rx: Mutex::new(Some(incoming_rx)),
@@ -834,7 +834,7 @@ impl NodedClient {
     }
 
     /// Like [`call`] but with caller-supplied headers and an optional
-    /// caller-supplied body. Used by callers whose target verb reads
+    /// caller-supplied body. Used by callers whose target command reads
     /// parameters from headers (e.g. `noded.props.subscribe_grant`'s
     /// `topic`/`target_peer`/`namespace`) rather than the JSON-args
     /// body. A non-empty `body` is forwarded verbatim — most callers
@@ -953,7 +953,7 @@ impl NodedClient {
     }
 
     /// [`call_with_headers_raw`] waiting up to `limit` for the response
-    /// instead of the default 60 s, for verbs whose work legitimately runs
+    /// instead of the default 60 s, for commands whose work legitimately runs
     /// long (an install downloading). Past `limit` the outcome is unknown.
     ///
     /// [`call_with_headers_raw`]: Self::call_with_headers_raw
@@ -1363,7 +1363,7 @@ impl NodedClient {
         connected: Arc<AtomicBool>,
         live_service_name: Arc<RwLock<String>>,
         sink: Arc<Mutex<WsSink>>,
-        verbs: Arc<RwLock<Option<String>>>,
+        command_names: Arc<RwLock<Option<String>>>,
     ) {
         let service_name = live_service_name
             .read()
@@ -1462,7 +1462,7 @@ impl NodedClient {
                     headers: msg.headers.clone(),
                 };
                 let help = if cmd.command == "HELP" {
-                    verbs.read().expect("verbs lock poisoned").clone()
+                    command_names.read().expect("commands lock poisoned").clone()
                 } else {
                     None
                 };
@@ -1567,7 +1567,7 @@ mod verified_bound_tests {
             let sink: Arc<Mutex<WsSink>> = Arc::new(Mutex::new(Box::pin(sink)));
             let (tx, mut commands) = mpsc::unbounded_channel();
             let name = Arc::new(RwLock::new(String::new()));
-            let verbs = Arc::new(RwLock::new(None));
+            let command_names = Arc::new(RwLock::new(None));
             let connected = Arc::new(AtomicBool::new(true));
             let reader = tokio::spawn(NodedClient::reader_loop(
                 stream,
@@ -1576,11 +1576,11 @@ mod verified_bound_tests {
                 connected,
                 name.clone(),
                 sink,
-                verbs.clone(),
+                command_names.clone(),
             ));
             // Native sessions acquire their service identity after connecting.
             *name.write().unwrap() = "term-instance".into();
-            *verbs.write().unwrap() = Some("[]".into());
+            *command_names.write().unwrap() = Some("[]".into());
             let help = BusMessage::new()
                 .with_header("command", "HELP")
                 .with_header("type", "request")
@@ -2220,7 +2220,7 @@ mod native_ingress_regression_tests {
             ));
             let client = NodedClient {
                 service_name: Arc::new(RwLock::new("close-test".to_string())),
-                verbs: Arc::new(RwLock::new(None)),
+                commands: Arc::new(RwLock::new(None)),
                 sink: Arc::new(Mutex::new(sink)),
                 pending: pending.clone(),
                 incoming_rx: Mutex::new(None),
@@ -2258,7 +2258,7 @@ mod native_ingress_regression_tests {
         ));
         NodedClient {
             service_name: Arc::new(RwLock::new("post-close-test".to_string())),
-            verbs: Arc::new(RwLock::new(None)),
+            commands: Arc::new(RwLock::new(None)),
             sink: Arc::new(Mutex::new(sink)),
             pending: Arc::new(StdMutex::new(HashMap::new())),
             incoming_rx: Mutex::new(None),

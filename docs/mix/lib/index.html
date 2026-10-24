@@ -304,11 +304,11 @@ fn load_data() -&gt; MixResult&lt;String&gt; {
 <p><code>EvalLimits</code> checks wall-clock time at statement polls. A single blocking builtin cannot be interrupted in the middle of its blocking operation.</p>
 <h2 id="host-seams">Host seams</h2>
 <p><code>BusHandler</code> connects language-level messaging to a host. It covers request/reply sends, fire-and-forget emits, port checks, incoming events, service registration, topic subscription, correlated replies, and reconnect requests.</p>
-<p><code>BusCallHandler</code> backs the scoped <code>bus_call(verb, args)</code> builtin. The host chooses the reachable verbs and supplies trusted delegation context; the script supplies only the verb and arguments.</p>
+<p><code>BusCallHandler</code> backs the scoped <code>bus_call(command, args)</code> builtin. The host chooses the reachable commands and supplies trusted delegation context; the script supplies only the command and arguments.</p>
 <p><code>DbHandler</code> backs <code>db_query</code> and <code>db_exec</code> with positional bind values. Queries return lists of row maps. Executions return a map containing affected-row and last-insert information.</p>
 <p><code>JmapHandler</code> backs JMAP method batches and blob uploads without exposing network credentials or an arbitrary destination to the script.</p>
 <p><code>ShellHandler</code> classifies, validates, and executes shell lines when a host enables mixed <code>source</code> handling. Without a registered handler, sourced files retain strict Mix semantics.</p>
-<p><code>ServeRuntime</code> handles runtime-reserved Bus verbs before author-defined handlers. It returns <code>ReservedOutcome</code> values containing a Bus return code, response body, and graceful-quit flag.</p>
+<p><code>ServeRuntime</code> handles runtime-reserved Bus commands before author-defined handlers. It returns <code>ReservedOutcome</code> values containing a Bus return code, response body, and graceful-quit flag.</p>
 <p>The evaluator and its boxed host futures use single-threaded <code>Rc</code> and <code>RefCell</code> state. Host implementations are therefore not required to return <code>Send</code> futures.</p>
 <h2 id="values-and-errors">Values and errors</h2>
 <p><code>Value</code> represents strings, numbers, booleans, lists, maps, functions, raw bytes, mutable byte buffers, and <code>nil</code>. Lists, maps, and raw bytes use reference-counted copy-on-write storage. Buffers use shared reference semantics, so mutations are visible through aliases.</p>

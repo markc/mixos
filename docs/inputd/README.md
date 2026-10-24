@@ -1,15 +1,15 @@
 ---
 title: The input broker
-description: How inputd turns keys into Bus verbs below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.
+description: How inputd turns keys into Bus commands below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.
 ---
 
 # The input broker
 
 `inputd` reads the keyboard below the compositor, where Left Ctrl and Right
-Ctrl are still different keys. A key the person has bound fires a Bus verb
+Ctrl are still different keys. A key the person has bound fires a Bus command
 and never reaches an app. Everything else is passed on unchanged.
 
-It is the successor of AmigaOS's `input.device`: keys become verbs, and
+It is the successor of AmigaOS's `input.device`: keys become commands, and
 bindings are data that a person, an agent or a Bus message can change.
 
 ## The user keys
@@ -21,7 +21,7 @@ These strokes belong to the person, never to an app or a system default:
   right-hand modifiers, and no other modifier).
 
 inputd swallows every user key on its press, repeats and release unless the
-person has bound it to a verb or marked it passthrough. The shipped keymap
+person has bound it to a command or marked it passthrough. The shipped keymap
 binds none of them. `Ctrl+F3`, bare arrows and Left-hand modifier arrows
 stay with the apps.
 
@@ -33,7 +33,7 @@ The one shipped binding is the system-reserved recovery chord `Ctrl+Alt+P`
 Each key is decided **once, at its press**, and keeps that decision until
 it is released:
 
-- **fire:** a binding matched, so its verb is sent and the key is
+- **fire:** a binding matched, so its command is sent and the key is
   swallowed. A row with `repeat: "allow"` fires again on each repeat.
 - **swallow:** an unbound user key.
 - **pass:** anything else, or a passthrough row. The key is re-emitted on
@@ -118,13 +118,13 @@ keymap.v1 format:
 ]}
 ```
 
-`code` is the Linux key code. `service` names the Bus service the verb goes
-to; without it, the verb's first dot-segment does. `args` is the verb's
+`code` is the Linux key code. `service` names the Bus service the command goes
+to; without it, the command's first dot-segment does. `args` is the command's
 body. A row with `"passthrough": true` re-emits its stroke instead.
 
-## Verbs
+## Commands
 
-| verb | what it does |
+| command | what it does |
 |---|---|
 | `input.query` | the rows, the mode and the generation |
 | `input.bind` | add or replace a row (`{"layer":"physical", ...row}`) |

@@ -244,7 +244,7 @@
 <li>
 <p><strong>Every application publishes each command it runs.</strong></p>
 <ul>
-<li>The topic is <code>&lt;app&gt;.command.executed</code>, where <code>&lt;app&gt;</code> is the
+<li>The topic is <code>&lt;app&gt;.action.executed</code>, where <code>&lt;app&gt;</code> is the
 application's Bus service name.</li>
 <li>An event means the command registry accepted the invocation and the
 command's handler returned.</li>
@@ -252,7 +252,7 @@ command's handler returned.</li>
 published.</li>
 <li>The event does not report the outcome of work the handler queued, such
 as a save that later fails. Outcomes travel by the application's own
-verbs and topics.</li>
+commands and topics.</li>
 </ul>
 </li>
 <li>
@@ -304,7 +304,7 @@ cause:</p>
 <li><code>shortcut</code>: a key binding, including a synthetic key press;</li>
 <li><code>palette</code>: the command palette or Help search;</li>
 <li><code>ui</code>: any other control in the window, such as a toolbar button;</li>
-<li><code>bus</code>: <code>&lt;app&gt;.execute</code> (or another verb whose documentation says it runs
+<li><code>bus</code>: <code>&lt;app&gt;.execute</code> (or another command whose documentation says it runs
 a registry command);</li>
 <li><code>macro</code>: the shared macro runner. This value is reserved until
 applications have a Macros menu.</li>

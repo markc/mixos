@@ -29,7 +29,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 use std::task::Poll;
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 use toolkit::{Strings, Theme, drive};
 
 /// What finished off the UI thread.
@@ -238,11 +238,11 @@ impl Shell {
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             match event {
-                Event::Delivery(Delivery::Command { id, verb, body }) => {
+                Event::Delivery(Delivery::Command { id, command: command_name, body }) => {
                     if self.exiting {
                         self.refuse_closing(id);
                     } else {
-                        self.held.push_back((id, verb, body));
+                        self.held.push_back((id, command_name, body));
                         self.release();
                     }
                     continue;
@@ -301,13 +301,13 @@ impl Shell {
     /// queue goes straight on; anything else waits until the drive input
     /// before it is answered.
     fn release(&mut self) {
-        while let Some((_, verb, _)) = self.held.front() {
-            let joins_queue = verb.strip_prefix("screenshot.").is_some_and(drive::queues);
+        while let Some((_, command_name, _)) = self.held.front() {
+            let joins_queue = command_name.strip_prefix("screenshot.").is_some_and(drive::queues);
             if self.exiting || (drive::pending(&self.ctx) && !joins_queue) {
                 return;
             }
-            let (id, verb, body) = self.held.pop_front().expect("a held command");
-            self.app.command(id, &verb, &body);
+            let (id, command_name, body) = self.held.pop_front().expect("a held command");
+            self.app.command(id, &command_name, &body);
             self.settle();
         }
     }
@@ -326,7 +326,7 @@ impl Shell {
     }
 
     /// Publish the commands run since the last call on
-    /// `<service>.command.executed`.
+    /// `<service>.action.executed`.
     fn publish_executed(&self) {
         let (runs, lost) = self.commands.borrow().take_executed();
         if runs.is_empty() && lost == 0 {
@@ -396,8 +396,8 @@ impl Shell {
             Effect::Forget { path } => {
                 self.runtime.spawn_blocking(move || jobs::forget(&path));
             }
-            Effect::Drive { id, verb, args } => {
-                if let Some(answer) = drive::request(&self.ctx, id, &verb, &args) {
+            Effect::Drive { id, command: command_name, args } => {
+                if let Some(answer) = drive::request(&self.ctx, id, &command_name, &args) {
                     self.bus.reply(answer.id, answer.rc, answer.body);
                 }
             }
@@ -574,7 +574,7 @@ impl Shell {
         let bus = self.bus.clone();
         self.spawn(async move {
             let result = bus
-                .raw_within(read.service, read.verb, read.body.to_string(), LOOK_BUDGET)
+                .raw_within(read.service, read.command, read.body.to_string(), LOOK_BUDGET)
                 .await;
             Event::Look(read.ticket, result)
         });

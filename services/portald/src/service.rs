@@ -20,36 +20,36 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-pub const VERBS: &[&str] = &["portald.status"];
+pub const COMMANDS: &[&str] = &["portald.status"];
 pub const SOURCE: &str = "settingsd";
-pub const FETCH_VERB: &str = "settings.appearance.get";
+pub const FETCH_COMMAND: &str = "settings.appearance.get";
 pub const FETCH_TIMEOUT: Duration = Duration::from_secs(1);
 const DEREGISTER_TIMEOUT: Duration = Duration::from_secs(3);
 
-pub fn manifest() -> Vec<bus::VerbDescriptor> {
-    std::iter::once(bus::VerbDescriptor::new(
+pub fn manifest() -> Vec<bus::CommandDescriptor> {
+    std::iter::once(bus::CommandDescriptor::new(
         "HELP",
         &[],
-        "List served verbs",
+        "List served commands",
         true,
     ))
     .chain(
-        VERBS
+        COMMANDS
             .iter()
-            .map(|verb| bus::VerbDescriptor::new(verb, &[], "Settings portal status", true)),
+            .map(|command_name| bus::CommandDescriptor::new(command_name, &[], "Settings portal status", true)),
     )
     .chain(
-        crate::screencast::consent::VERBS
+        crate::screencast::consent::COMMANDS
             .iter()
-            .map(|(verb, description, read_only)| {
-                bus::VerbDescriptor::new(verb, &[], description, *read_only)
+            .map(|(command_name, description, read_only)| {
+                bus::CommandDescriptor::new(command_name, &[], description, *read_only)
             }),
     )
     .collect()
 }
 
 fn fault(message: impl Into<String>) -> Diagnostic {
-    Diagnostic::new("read_failed", FETCH_VERB, message)
+    Diagnostic::new("read_failed", FETCH_COMMAND, message)
 }
 
 struct Read {
@@ -63,16 +63,16 @@ async fn fetch(client: &SupervisedClient, binding: &Binding) -> Result<Read, Dia
     let reply = client
         .call_typed(
             SOURCE,
-            FETCH_VERB,
+            FETCH_COMMAND,
             json!({ "binding": binding, "schema": settings::compact::COMPACT_SCHEMA }),
         )
         .await
         .map_err(|error| fault(error.to_string()))?;
     let value = match reply {
         PortReply::Ok { rc: 0, value } => value,
-        PortReply::Ok { rc, value } => return Err(fault(format!("{FETCH_VERB} rc {rc}: {value}"))),
+        PortReply::Ok { rc, value } => return Err(fault(format!("{FETCH_COMMAND} rc {rc}: {value}"))),
         PortReply::AppError { rc, message } => {
-            return Err(fault(format!("{FETCH_VERB} rc {rc}: {message}")));
+            return Err(fault(format!("{FETCH_COMMAND} rc {rc}: {message}")));
         }
     };
     if serde_json::to_vec(&value)
@@ -141,7 +141,7 @@ async fn execute(
     }
     let result = tokio::time::timeout(fetch_timeout, fetch(&client, work.binding()))
         .await
-        .map_err(|_| Diagnostic::new("read_timeout", FETCH_VERB, "Appearance read timed out"))?;
+        .map_err(|_| Diagnostic::new("read_timeout", FETCH_COMMAND, "Appearance read timed out"))?;
     if native::live_generation(&client) != Some(work.generation()) {
         return Err(fault("Connection changed during appearance read"));
     }
@@ -422,10 +422,10 @@ fn handle_event(
                     report["settings_generation"] = json!(consumer.generation());
                     (0, report)
                 }
-                verb if verb.starts_with("portald.screencast.") => {
-                    crate::screencast::consent::handle_verb(&command)
+                command_name if command_name.starts_with("portald.screencast.") => {
+                    crate::screencast::consent::handle_command(&command)
                 }
-                other => (10, json!({"status": "not_served", "verb": other})),
+                other => (10, json!({"status": "UNKNOWN_COMMAND", "command": other})),
             };
             let body = serde_json::to_string(&value)?;
             if lane.replies.len() == REPLY_QUEUE_LIMIT {
@@ -479,7 +479,7 @@ pub fn connect(
         SupervisedClient::connect_options("portald", noded_url)
             .bounded_incoming(64)
             .fatal_on_registration_rejection(true)
-            .with_verbs(manifest())
+            .with_commands(manifest())
             .with_provenance(provenance)
             .start(),
     );
@@ -651,7 +651,7 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
 
-    /// The Settings side never writes. The only mutating verbs are the
+    /// The Settings side never writes. The only mutating commands are the
     /// ScreenCast consent ones (answer, grant, revoke), which change consent
     /// state and nothing in settings.
     #[test]
@@ -659,8 +659,8 @@ mod tests {
         let manifest = manifest();
         let writers: Vec<_> = manifest
             .iter()
-            .filter(|verb| !verb.read_only)
-            .map(|verb| verb.name.as_str())
+            .filter(|command_name| !command_name.read_only)
+            .map(|command_name| command_name.name.as_str())
             .collect();
         assert_eq!(
             writers,
@@ -670,7 +670,7 @@ mod tests {
                 "portald.screencast.revoke"
             ]
         );
-        assert!(manifest.iter().any(|verb| verb.name == "portald.status"));
+        assert!(manifest.iter().any(|command_name| command_name.name == "portald.status"));
     }
 
     #[test]

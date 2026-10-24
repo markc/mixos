@@ -170,7 +170,7 @@ services/releasesd/
   overwrites a unit it did not write.
 - The component gate checks `component.mx` like a package's metadata. The
   layer is checked at review: a Mix component uses only the `mix` binary, the
-  Bus and the verbs of components at or below its layer.
+  Bus and the commands of components at or below its layer.
 - Shared Mix test helpers live in `tests/lib/` (`private_bus.mix`: an owned
   throwaway broker).
 
@@ -211,7 +211,7 @@ services/releasesd/
    [decision](docs/docs/decisions/2026-10-12-screenshot.md)). MixOS installs
    to `/opt/mixos/bin`, which comes first in its PATH, and units and scripts
    call these binaries by absolute path.
-5. **Never reuse a name.** Retired package, binary, app and Bus verb names
+5. **Never reuse a name.** Retired package, binary, app and Bus command names
    are recorded in `docs/docs/spec/names/retired.conf.mix` and stay reserved
    forever. A gate refuses reuse.
 6. **The brand lives in one layer only:** Wayland app IDs and desktop files
@@ -284,7 +284,7 @@ applies to every GUI app and to the desktop furniture.
   before/after evidence. Specialised CPU renderers draw into textures; a
   software wgpu adapter is the fallback.
 - **External applications are bridged, never forked.** One generic adapter
-  maps a line-delimited JSON control channel to Bus verbs.
+  maps a line-delimited JSON control channel to Bus commands.
 
 ## 5. Contracts and versions
 
@@ -294,19 +294,19 @@ applies to every GUI app and to the desktop furniture.
   are marked `contract = "public"`:
   - the Mix language;
   - the ABP/Bus wire protocol;
-  - each daemon's Bus verbs;
+  - each daemon's Bus commands;
   - every `*.conf.mix` schema.
   A breaking change needs a deprecation period with both behaviours
   working, and a migration where data is involved.
-- **Bus verbs are wire contracts.** Every verb is registered in
-  `docs/docs/spec/bus/verbs.conf.mix` (schema 4: owner, version, status, class:
+- **Bus commands are wire contracts.** Every command is registered in
+  `docs/docs/spec/bus/commands.conf.mix` (schema 4: owner, version, status, class:
   intent, query, input or system, and `schema`: a Rust request type path,
   `none`, or `pending` through 2026-11-30,
   [decision](docs/docs/decisions/2026-10-11-verb-classes.md)). The registry gate
-  (`tools/verb_registry.mix`) refuses a malformed, duplicate or unclassified
+  (`tools/command_registry.mix`) refuses a malformed, duplicate or unclassified
   entry. A component's registry test (`apps/<app>/tests/registry.rs`) checks
-  that the verbs it describes are exactly the ones it registers; every new
-  component adds one. Retired verb names join the retired-names registry
+  that the commands it describes are exactly the ones it registers; every new
+  component adds one. Retired command names join the retired-names registry
   (§3.5) when it lands.
 - **Specs** live in `docs/docs/spec/<topic>/`. That means prose plus
   machine-checkable `*.spec.mix` fixtures that the `tests/` gates consume.
@@ -341,7 +341,7 @@ applies to every GUI app and to the desktop furniture.
 |---|---|---|
 | unit | in the crate (`#[cfg(test)]`) | pure logic |
 | integration | `<component>/tests/` | the crate's public behaviour |
-| bus | `<component>/tests/*_test.mix` | Bus verbs against a test broker |
+| bus | `<component>/tests/*_test.mix` | Bus commands against a test broker |
 | gates | `tests/` | cross-component suites and the dependency, naming and layout gates |
 | desktop | `tests/desktop/` | nested and on-hardware compositor and session runs |
 | fuzz | `<component>/fuzz/` | parsers and wire formats, including frozen-constant byte-exactness |
@@ -386,7 +386,7 @@ path. The URL layout is fixed by the
 3. `Cargo.toml` with `publish = false` and `[package.metadata.mixos]` (§2.3),
    or, for a Mix component, `component.mx` (§2.5).
 4. Its units, scripts, assets, i18n and tests inside the component (§2).
-5. Contracts registered (verbs, schemas) if it has any (§5).
+5. Contracts registered (commands, schemas) if it has any (§5).
 6. SPDX headers; third-party attribution intact (§4).
 7. Gates pass (§6, §9); the site regenerated (`mix docs/_build/gen-site.mix`),
    which rebuilds the component index.

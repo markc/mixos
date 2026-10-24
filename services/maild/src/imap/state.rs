@@ -56,7 +56,7 @@ pub enum State {
 ///   is enabled (Phase 6).
 /// * `read_only` distinguishes SELECT (`OK [READ-WRITE]`, false)
 ///   from EXAMINE (`OK [READ-ONLY]`, true). Mailbox-mutating
-///   verbs against the selected mailbox (STORE, MOVE, EXPUNGE)
+///   commands against the selected mailbox (STORE, MOVE, EXPUNGE)
 ///   must reject with `NO [CANNOT]` when this is true. COPY is
 ///   *permitted* under EXAMINE (RFC 9051 §6.4.7 — the dest is
 ///   the mutating party); the IMAP layer threads `read_only`
@@ -111,7 +111,7 @@ impl State {
 
     /// Borrow the [`SelectedMailbox`] payload when the session is
     /// in `Selected(_)`. Returns `None` otherwise. This is the
-    /// canonical gate for verbs that require a selected mailbox
+    /// canonical gate for commands that require a selected mailbox
     /// (FETCH, SEARCH, STORE, COPY, MOVE, EXPUNGE, UNSELECT, CLOSE —
     /// Phase 4+), and for read-only checks against EXAMINE'd
     /// mailboxes.

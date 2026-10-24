@@ -192,9 +192,9 @@ if ping_broker() != 0 then
   exit(2)
 end
 
-fn call($svc, $verb, $args)
+fn call($svc, $command, $args)
   $b = json_encode($args)
-  send $svc $verb body=$b timeout=5
+  send $svc $command body=$b timeout=5
   return {rc: $rc, reply: $reply}
 end
 
@@ -251,7 +251,7 @@ fn has_bit($list, $bit)
   return false
 end
 
--- Events the citizen recorded: [{verb, args}].
+-- Events the citizen recorded: [{command, args}].
 fn events()
   if not exists($EVENTS) then
     return []
@@ -273,11 +273,11 @@ fn await_event($n, $tenths)
   return nil
 end
 
-fn human($svc, $verb, $args)
+fn human($svc, $command, $args)
   $args.seat = "human"
-  $r = call($svc, $verb, $args)
+  $r = call($svc, $command, $args)
   if $r.rc != 0 then
-    return $verb .. " " .. json_encode($args) .. ": rc " .. to_string($r.rc) .. " " .. json_encode($r.reply)
+    return $command .. " " .. json_encode($args) .. ": rc " .. to_string($r.rc) .. " " .. json_encode($r.reply)
   end
   return nil
 end
@@ -322,7 +322,7 @@ write_file($cfg .. "/preferences.json", json_encode({scene_host: true, scene_ser
 
 -- The smoke citizen: every scene event it receives, one JSON line.
 $cfile = $root .. "/citizen.mix"
-$csrc = "-- scene_gate's smoke citizen: records each scene event it receives.\n$events = \"" .. $EVENTS .. "\"\non go\n  append_file($events, json_encode({verb: \"go\", args: $event.args}) .. \"\\n\")\n  reply(\"ok\")\nend\non pick\n  append_file($events, json_encode({verb: \"pick\", args: $event.args}) .. \"\\n\")\n  reply(\"ok\")\nend\n"
+$csrc = "-- scene_gate's smoke citizen: records each scene event it receives.\n$events = \"" .. $EVENTS .. "\"\non go\n  append_file($events, json_encode({command: \"go\", args: $event.args}) .. \"\\n\")\n  reply(\"ok\")\nend\non pick\n  append_file($events, json_encode({command: \"pick\", args: $event.args}) .. \"\\n\")\n  reply(\"ok\")\nend\n"
 write_file($cfile, $csrc)
 
 $host = $SCALE == 1 ? ["--width=1920", "--height=1080"] : ["--width=3840", "--height=2160"]
@@ -536,7 +536,7 @@ if $ev == nil then
   $after_click = frames().count - $before_click
   fail("S3: clicking `go` at " .. json_encode($c) .. " sent the citizen no event (" .. to_string($after_click) .. " frames after the click; 0 = nothing ticked the scene's surface)")
 end
-if $ev.verb != "go" or $ev.args.node != "go" or $ev.args.kind != "click" or $ev.args.scene != "gate" then
+if $ev.command != "go" or $ev.args.node != "go" or $ev.args.kind != "click" or $ev.args.scene != "gate" then
   fail("S3: the event is not {scene:gate, node:go, kind:click}: " .. json_encode($ev))
 end
 
@@ -551,7 +551,7 @@ $ev = await_event(2, 30)
 if $ev == nil then
   fail("S4: clicking row r2 at " .. json_encode($c) .. " sent the citizen no event")
 end
-if $ev.verb != "pick" or $ev.args.node != "rows" or $ev.args.item == nil or $ev.args.item.id != "r2" then
+if $ev.command != "pick" or $ev.args.node != "rows" or $ev.args.item == nil or $ev.args.item.id != "r2" then
   fail("S4: the event is not pick on rows with item r2: " .. json_encode($ev))
 end
 

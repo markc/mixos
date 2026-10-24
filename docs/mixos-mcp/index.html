@@ -273,7 +273,7 @@ uses the discovered URL. Calls are never replayed after reconnecting.</p>
 <li><code>bus_call</code>, <code>bus_list_services</code>, <code>bus_node_info</code>, <code>bus_list_peers</code>, <code>noded_ping</code></li>
 <li><code>term_list</code>, <code>term_snapshot</code>, <code>term_type</code>, <code>term_tab</code>, <code>term_pane</code></li>
 <li><code>log_tail</code>, <code>log_search</code></li>
-<li><code>app_describe</code>, <code>app_commands</code>, <code>app_execute</code></li>
+<li><code>app_describe</code>, <code>app_actions</code>, <code>app_execute</code></li>
 <li><code>desktop_windows</code>, <code>desktop_window_wait</code></li>
 <li><code>context_search</code>, <code>index_workspace</code>, <code>knowledge_digest</code>, <code>knowledge_brief</code></li>
 <li><code>skills_retrieve</code>, <code>skills_store</code>, <code>skills_refine</code>, <code>skills_graduate</code>,
@@ -283,7 +283,7 @@ uses the discovered URL. Calls are never replayed after reconnecting.</p>
 </ul>
 <h3 id="application-commands">Application commands</h3>
 <p><code>app_describe {service}</code> calls <code>app.describe</code> on that Bus service.
-<code>app_commands {service}</code> calls <code>&lt;service&gt;.commands</code>. Its <code>result</code> contains
+<code>app_actions {service}</code> calls <code>&lt;service&gt;.actions</code>. Its <code>result</code> contains
 the application's command rows unchanged: <code>id</code>, <code>label</code>, <code>menu</code>, <code>shortcut</code>,
 <code>more</code> (when present), <code>enabled</code> and <code>checked</code>, plus any further metadata.</p>
 <p><code>app_execute {service, id, params?}</code> calls <code>&lt;service&gt;.execute</code> once with
@@ -297,8 +297,8 @@ The same error-text pass-through and prefix removal apply to <code>app_describe<
 <code>desktop_windows</code> and <code>desktop_window_wait</code> through their shared native helper.</p>
 <p>Retired tools: <code>app_actions_list</code>, <code>app_action_invoke</code>, <code>app_controls_list</code>,
 <code>app_control_get</code>, <code>app_control_set</code> and <code>app_control_wait</code> have been removed
-without aliases. Use <code>app_commands</code> and <code>app_execute</code> for registry commands,
-and <code>app_describe</code> to discover an application's state verbs. These retired
+without aliases. Use <code>app_actions</code> and <code>app_execute</code> for registry commands,
+and <code>app_describe</code> to discover an application's state commands. These retired
 tool names must not be reused.</p>
 <h3 id="knowledge-tools">Knowledge tools</h3>
 <p>Knowledge tools retain their ranking, indexing, feedback and skill-learning

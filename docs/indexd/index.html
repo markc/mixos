@@ -260,11 +260,11 @@ Bus call.</p>
 <pre><code class="language-mix">send indexd indexd.stats
 send indexd indexd.search query="how are service dependencies declared" limit=3
 </code></pre>
-<p>Each body is a JSON object. Clients may include an <code>action</code> equal to the verb
-suffix; a conflicting value is rejected. Replies contain the verb's JSON
+<p>Each body is a JSON object. Clients may include an <code>action</code> equal to the command
+suffix; a conflicting value is rejected. Replies contain the command's JSON
 directly. Errors use rc 10 and a string <code>error</code> field. Metadata is always a
 JSON-encoded string, including each element of <code>store.metadata</code>.</p>
-<table><thead><tr><th>Verb</th><th>Request fields</th><th>Reply</th></tr></thead><tbody>
+<table><thead><tr><th>Command</th><th>Request fields</th><th>Reply</th></tr></thead><tbody>
 <tr><td><code>indexd.embed</code></td><td><code>texts</code>, optional <code>prefix</code></td><td><code>embeddings</code></td></tr>
 <tr><td><code>indexd.store</code></td><td><code>texts</code>, <code>source</code>, <code>metadata</code></td><td><code>stored</code>, <code>duplicates</code>, <code>ids</code></td></tr>
 <tr><td><code>indexd.search</code></td><td><code>query</code>, <code>limit</code>, optional <code>source</code>, <code>metadata_filter</code></td><td><code>results</code></td></tr>
@@ -290,12 +290,12 @@ Deletion updates the durable vectors and in-memory index in one operation.</p>
 <h2 id="cli-and-bridge">CLI and bridge</h2>
 <p><code>indexd -c /etc/mixos/indexd/config.conf.mix call indexd.stats</code> opens the
 configured engine in-process and prints one JSON reply, with exit status 0
-for success or 1 for an error. Bare verb names also work. For example:</p>
+for success or 1 for an error. Bare command names also work. For example:</p>
 <pre><code class="language-text">indexd -c /etc/mixos/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
 </code></pre>
 <p>Writes (<code>store</code>, <code>update</code>, <code>delete</code>, <code>feedback</code>, <code>supersede</code>, <code>index_file</code>)
 require <code>call --offline</code> with the daemon stopped: otherwise its in-memory
-index would desynchronise. Read verbs need no flag. <code>call</code> always refuses
+index would desynchronise. Read commands need no flag. <code>call</code> always refuses
 <code>background:true</code> because no process remains to run the queued job.</p>
 <p><code>indexd bridge</code> connects to the local node's Bus once and forwards one call
 per stdin line, flushing each reply immediately. It does not open the index
@@ -305,7 +305,7 @@ The bridge honours non-empty <code>MIXOS_NODED_URL</code> first. Otherwise it re
 <code>--node-config PATH</code>, then non-empty <code>MIXOS_NODE_CONFIG</code>, defaulting to
 <code>/opt/mixos/etc/node.conf.mix</code>, the same file pinned by the system unit.
 It derives the broker address from that file rather than user config discovery.</p>
-<pre><code class="language-json">{"id":1,"verb":"indexd.search","body":{"query":"service dependencies","limit":3}}
+<pre><code class="language-json">{"id":1,"command":"indexd.search","body":{"query":"service dependencies","limit":3}}
 </code></pre>
 <p>Each stdout line is <code>{"id":1,"rc":0,"body":{...}}</code>, with the original JSON
 <code>id</code> preserved. Application errors retain rc 10 and the JSON error body.
@@ -318,7 +318,7 @@ leaves the bridge alive. The operation's outcome is unknown. Empty Bus bodies
 become JSON <code>null</code>; Bus error headers are forwarded as the top-level <code>error</code>.</p>
 <h2 id="operating-the-system-service">Operating the system service</h2>
 <p><code>indexd serve</code> registers service <code>indexd</code> using the standard Bus connection
-helper, advertises the eleven verbs above, and reconnects with backoff.
+helper, advertises the eleven commands above, and reconnects with backoff.
 <code>MIXOS_NODE_CONFIG</code> selects the system broker, as for dnsd. The supplied unit
 pins <code>/opt/mixos/etc/node.conf.mix</code>; no broker URL is embedded in indexd.
 SIGTERM stops admission and completes accepted Bus calls before exit.

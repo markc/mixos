@@ -20,7 +20,7 @@ use email::state::{
 };
 use email::view::{UiEvent, view};
 use email::work::Work;
-use email::{commands, label, strings};
+use email::{actions, label, strings};
 use jmap::EmailPage;
 use settings::email::{AccountEntry, Email as EmailSettings};
 use toolkit::Theme;
@@ -195,7 +195,7 @@ fn harness_with(state: State, theme: &Theme) -> Harness<'static, Window> {
     // Dates render in UTC, whatever the worker's zone.
     // SAFETY: every test sets the same value before any date is drawn.
     unsafe { std::env::set_var("TZ", "UTC") };
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let window_theme = theme.clone();
     let mut h = Harness::builder()
@@ -509,7 +509,7 @@ fn a_right_click_on_a_row_opens_the_message_menu_for_that_email() {
     assert!(
         h.state().seen.contains(&UiEvent::Command(
             "mail.send_as_new",
-            toolkit::command::Origin::Menu
+            toolkit::action::Origin::Menu
         )),
         "{:?}",
         h.state().seen

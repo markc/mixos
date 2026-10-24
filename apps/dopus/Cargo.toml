@@ -22,7 +22,7 @@ mod_module_files = "deny"
 [dependencies]
 bus = { workspace = true, features = ["native"] }
 buildinfo.workspace = true
-# The outbox and publisher for dopus.command.executed.
+# The outbox and publisher for dopus.action.executed.
 citizen.workspace = true
 config.workspace = true
 design.workspace = true

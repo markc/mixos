@@ -720,7 +720,7 @@ async fn wire_spoofed_lifecycle_commit_is_refused_without_side_effects() {
     let err = call(&c, "lifecycle.commit", json!({"generation": 0}))
         .await
         .expect_err("wire copies must answer rc:10");
-    assert!(err.contains("not a callable verb"), "{err}");
+    assert!(err.contains("not a callable command"), "{err}");
     assert!(parse_trace(&dir, "commit").is_empty(), "no commit hook ran");
     let st = state(&c).await;
     assert_eq!(st["generation"].as_i64().unwrap(), 0);

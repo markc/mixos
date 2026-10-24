@@ -22,9 +22,9 @@
 //! ## Write origin
 //!
 //! [`WriteOrigin`] discriminates whether a set/delete came in over the
-//! caller-facing Bus verb surface (`<svc>.props.set` / `.delete`) or
+//! caller-facing Bus command surface (`<svc>.props.set` / `.delete`) or
 //! from a daemon-internal code path (bootstrap upsert, ergonomic
-//! verb-shim, post-issuance writeback). Daemons that own server-side
+//! command-shim, post-issuance writeback). Daemons that own server-side
 //! fields (e.g. otherd's `vhosts.cert_blob_id`) read
 //! [`HookCtx::origin`] in their `before_set` hook to reject a caller
 //! attempt to write a daemon-owned column. The unforgeability
@@ -87,7 +87,7 @@ pub type HookResult<T> = Result<T, HookError>;
 /// Discriminator threaded into [`HookCtx::origin`] so hooks can
 /// distinguish caller-facing Bus writes (`<svc>.props.set`,
 /// `<svc>.props.delete`) from daemon-internal writes (bootstrap
-/// upsert, ergonomic verb-shim, post-issuance writeback).
+/// upsert, ergonomic command-shim, post-issuance writeback).
 ///
 /// Unforgeability: the inner variant is private. The only ways to
 /// produce a [`WriteOrigin`] are [`WriteOrigin::caller`] and
@@ -107,14 +107,14 @@ enum WriteOriginInner {
 }
 
 impl WriteOrigin {
-    /// The default origin for caller-facing Bus verb dispatch.
+    /// The default origin for caller-facing Bus command dispatch.
     pub const fn caller() -> Self {
         Self(WriteOriginInner::Caller)
     }
 
     /// Daemon-internal origin — used by `Runtime::set_with_origin` /
     /// `Runtime::delete_with_origin` for bootstrap upserts, ergonomic
-    /// Bus verb shims, and post-issuance writebacks. A hook that
+    /// Bus command shims, and post-issuance writebacks. A hook that
     /// guards daemon-owned columns checks `ctx.origin.is_backend()`
     /// before accepting writes to those columns.
     pub const fn backend() -> Self {
@@ -161,7 +161,7 @@ pub struct HookCtx {
     /// merged effective value) branch on this. Hooks that don't care
     /// ignore it.
     pub merge: Option<MergeMode>,
-    /// Write origin — `Caller` for Bus verb dispatch, `Backend` for
+    /// Write origin — `Caller` for Bus command dispatch, `Backend` for
     /// daemon-internal writes via `Runtime::set_with_origin` /
     /// `Runtime::delete_with_origin`. Hooks that guard daemon-owned
     /// columns branch on `origin.is_backend()` to allow or reject the

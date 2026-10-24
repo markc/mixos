@@ -685,7 +685,7 @@ if $METHOD == "POST" then
   -- declarative row delete (datatable.mix): action="row:delete:<id>".
   $ra = dt_row_action($f)
   if $ra != nil then
-    if $ra["verb"] == "delete" then
+    if $ra["command"] == "delete" then
       $did = to_number($ra["id"])
       if $did == nil then
         return redirect_flash("/biz/services", "No such service", "danger")

@@ -19,7 +19,7 @@ use std::time::Duration;
 use ::bus::native_client::{ConnState, IncomingCommand, NodedClient, SupervisedClient};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
-use crate::verbs::Command;
+use crate::commands::Command;
 
 /// Everything the Bus thread delivers to the host.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -274,7 +274,7 @@ async fn run(
                 next_command += 1;
                 let delivery = Delivery::Command(Command {
                     id: next_command,
-                    verb: cmd.command.clone(),
+                    command: cmd.command.clone(),
                     body: if cmd.body.trim().is_empty() { "{}".to_owned() } else { cmd.body.clone() },
                 });
                 if cmd.id.is_some() {
@@ -318,7 +318,7 @@ async fn run(
                         let (c, o) = (client.clone(), out.clone());
                         tokio::spawn(async move {
                             let (body, headers) = (read.body.to_string(), BTreeMap::new());
-                            let call = c.call_with_headers_raw(read.service, read.verb, &headers, &body);
+                            let call = c.call_with_headers_raw(read.service, read.command, &headers, &body);
                             let reply = match tokio::time::timeout(LOOK_BUDGET, call).await {
                                 Ok(Ok(answer)) => Some(answer),
                                 _ => None,
@@ -374,7 +374,7 @@ async fn run(
 fn anonymous_call(
     url: &str,
     service: &str,
-    verb: &str,
+    command_name: &str,
     body: &serde_json::Value,
     limit: Duration,
 ) -> Option<(u8, String)> {
@@ -386,7 +386,7 @@ fn anonymous_call(
         let call = async {
             let client = NodedClient::connect_anonymous(url).await.ok()?;
             let reply = client
-                .call_with_headers_raw(service, verb, &BTreeMap::new(), &body.to_string())
+                .call_with_headers_raw(service, command_name, &BTreeMap::new(), &body.to_string())
                 .await
                 .ok();
             client.close().await;

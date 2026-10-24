@@ -275,16 +275,16 @@ pub fn peers(value: &Value) -> Vec<String> {
     names
 }
 
-/// Every verb the engine answers itself. The window-level verbs
+/// Every command the engine answers itself. The window-level commands
 /// (`monitor.ui.*`, `monitor.window*`) belong to the toolkit drive layer.
-pub const VERBS: [&str; 19] = [
+pub const COMMANDS: [&str; 19] = [
     "HELP",
     "app.describe",
     "monitor.ping",
     "monitor.info",
     "monitor.show",
     "monitor.refresh",
-    "monitor.commands",
+    "monitor.actions",
     "monitor.execute",
     "monitor.quit",
     "monitor.node",
@@ -299,16 +299,16 @@ pub const VERBS: [&str; 19] = [
     "monitor.theme",
 ];
 
-/// The engine's Bus surface (`HELP` / `app.describe` add the drive verbs).
+/// The engine's Bus surface (`HELP` / `app.describe` add the drive commands).
 pub fn describe() -> Value {
-    json!({"schema":"monitor.v1","app_id":APP_ID,"verbs":[
-        {"name":"HELP","description":"List every verb","read_only":true},
-        {"name":"app.describe","description":"Describe the app and every verb with its arguments","read_only":true},
+    json!({"schema":"monitor.v1","app_id":APP_ID,"commands":[
+        {"name":"HELP","description":"List every command","read_only":true},
+        {"name":"app.describe","description":"Describe the app and every command with its arguments","read_only":true},
         {"name":"monitor.ping","description":"Probe Monitor","read_only":true},
         {"name":"monitor.info","description":"The window's state: node, page, section, sort, filter, selection, and the latest readings","read_only":true},
         {"name":"monitor.show","description":"Restore and focus the existing window","read_only":false},
         {"name":"monitor.refresh","description":"Read the node again now, paused or not","read_only":false},
-        {"name":"monitor.commands","description":"List the app's commands with labels, shortcuts and enablement","read_only":true},
+        {"name":"monitor.actions","description":"List the app's commands with labels, shortcuts and enablement","read_only":true},
         {"name":"monitor.execute","args":{"id":"string"},"description":"Run one app command by id, as its menu item or shortcut would","read_only":false},
         {"name":"monitor.quit","description":"Close the window","read_only":false},
         {"name":"monitor.node","args":{"node":"a mesh node name, or null for this node"},"description":"Watch another node's monitord, or this node's","read_only":false},
@@ -329,14 +329,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_engine_verb_is_described_once() {
-        let described: Vec<_> = describe()["verbs"]
+    fn every_engine_command_is_described_once() {
+        let described: Vec<_> = describe()["commands"]
             .as_array()
             .unwrap()
             .iter()
             .map(|v| v["name"].as_str().unwrap().to_owned())
             .collect();
-        assert_eq!(described, VERBS);
+        assert_eq!(described, COMMANDS);
     }
 
     #[test]

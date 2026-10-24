@@ -1,0 +1,108 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- command_registry_test: tools/command_registry.mix against throwaway registries.
+-- The real registry passes; a good minimal file passes; and each way a file
+-- could pass a loose check yet mislead the line-by-line readers fails: an
+-- entry split across lines, two entries on one line, spaced fields, a
+-- comment in the list or naming a command anywhere, a nil owner, a leading-zero
+-- version, an unknown class, a duplicate, a missing comma and an old schema.
+-- Run from the checkout root: mix tests/command_registry_test.mix
+
+$tool = realpath(dirname(realpath($0)) .. "/../tools/command_registry.mix")
+$tmp = "/var/tmp/command-registry-test." .. uuid()
+mkdir($tmp, {parents: true})
+$results = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+fn gate($file)
+  $argv = ["/opt/mixos/bin/mix", $tool]
+  if $file != nil then
+    push($argv, $file)
+  end
+  return run_argv($argv, {timeout: 30, stderr: "stdout"})
+end
+
+$a = "    {name:\"demo.ping\", owner:\"demo\", version:\"0.1.0\", status:\"accepted\", class:\"query\"}"
+$b = "    {name:\"demo.open\", owner:\"demo\", version:\"0.1.0\", status:\"accepted\", class:\"intent\"}"
+
+fn registry($body, $schema)
+  $tail = if $schema >= 3 then "],\n  families: [\n  ]" else "]" end
+  return "-- test\n{\n  schema: " .. to_string($schema) .. ",\n  commands: [\n" .. $body .. "\n  " .. $tail .. "\n}\n"
+end
+
+fn expect($name, $text, $pass)
+  $file = $tmp .. "/" .. $name .. ".conf.mix"
+  write_file($file, $text)
+  $r = gate($file)
+  check($name, ($r.exit_code == 0) == $pass)
+  if ($r.exit_code == 0) != $pass then
+    print($r.stdout)
+  end
+end
+
+check("the real registry", gate(nil).exit_code == 0)
+expect("good", registry($a .. ",\n" .. $b, 2), true)
+expect("blank lines are allowed", registry($a .. ",\n\n" .. $b, 2), true)
+expect("a comment inside the list", registry("    -- pings\n" .. $a .. ",\n" .. $b, 2), false)
+expect("a hash comment inside the list", registry("    # pings\n" .. $a .. ",\n" .. $b, 2), false)
+expect("a comment naming a command", "-- name:\"demo.ping\" class:\"intent\"\n" .. registry($a .. ",\n" .. $b, 2), false)
+expect("split across lines", registry("    {name: \"demo.ping\",\n      owner:\"demo\", version:\"0.1.0\", status:\"accepted\", class:\"query\"},\n" .. $b, 2), false)
+expect("two on one line", registry(trim($a) .. ", " .. trim($b), 2), false)
+expect("spaced fields", registry("    {name:\"demo.ping\", owner: \"demo\", version:\"0.1.0\", status:\"accepted\", class:\"query\"},\n" .. $b, 2), false)
+expect("nil owner", registry("    {name:\"demo.ping\", owner:nil, version:\"0.1.0\", status:\"accepted\", class:\"query\"},\n" .. $b, 2), false)
+expect("leading zero version", registry("    {name:\"demo.ping\", owner:\"demo\", version:\"01.0.0\", status:\"accepted\", class:\"query\"},\n" .. $b, 2), false)
+expect("unknown class", registry("    {name:\"demo.ping\", owner:\"demo\", version:\"0.1.0\", status:\"accepted\", class:\"read\"},\n" .. $b, 2), false)
+expect("duplicate", registry($a .. ",\n" .. $a, 2), false)
+expect("schema 1", registry($a .. ",\n" .. $b, 1), false)
+expect("missing comma", registry($a .. "\n" .. $b, 2), false)
+
+$a4 = replace($a, '"}', '", schema:"command::ExecuteRequest"}')
+$b4 = replace($b, '"}', '", schema:"none"}')
+expect("schema 4 good", registry($a4 .. ",\n" .. $b4, 4), true)
+expect("multi-segment schema path", registry(replace($a4, "command::ExecuteRequest", "a::B::C"), 4), true)
+expect("schema 4 missing schema", registry($a .. ",\n" .. $b4, 4), false)
+expect("schema 3 with schema", registry($a4, 3), false)
+expect("schema 2 with schema", registry($a4, 2), false)
+for $bad in ["Pending", "foo", "crate:Type"]
+  expect("bad schema " .. $bad, registry(replace($b4, 'schema:"none"', 'schema:"' .. $bad .. '"'), 4), false)
+end
+
+$family = '    {pattern:"<app>.execute", owner:"demo", members:"instances", version:"0.1.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"}'
+$with_family = replace(registry($b4, 4), "families: [\n", "families: [\n" .. $family .. "\n")
+expect("schema 4 family", $with_family, true)
+expect("schema 4 family missing schema", replace($with_family, ', schema:"command::ExecuteRequest"', ""), false)
+expect("schema 3 family with schema", replace($with_family, "schema: 4", "schema: 3"), false)
+expect("schema 4 family bad schema", replace($with_family, 'schema:"command::ExecuteRequest"', 'schema:"foo"'), false)
+
+fn expect_today($name, $text, $today, $pass, $needle)
+  $file = $tmp .. "/" .. $name .. ".conf.mix"
+  write_file($file, $text)
+  $r = run_argv(["/opt/mixos/bin/mix", $tool, $file, "--today", $today], {timeout: 30, stderr: "stdout"})
+  $ok = ($r.exit_code == 0) == $pass and ($needle == "" or contains($r.stdout, $needle))
+  check($name, $ok)
+  if not $ok then print($r.stdout) end
+end
+$pending = registry(replace($b4, 'schema:"none"', 'schema:"pending"'), 4)
+$malformed_today = run_argv(["/opt/mixos/bin/mix", $tool, "--today", "not-a-date"], {timeout: 30, stderr: "stdout"})
+check("malformed --today is a usage error", $malformed_today.exit_code == 2 and contains($malformed_today.stdout, "usage:") and contains($malformed_today.stdout, "--today needs YYYY-MM-DD"))
+expect_today("pending at cutoff", $pending, "2026-11-30", true, "")
+expect_today("pending expired names command", $pending, "2026-12-01", false, "demo.open: pending schema expired")
+$pending_family = replace($with_family, 'schema:"command::ExecuteRequest"', 'schema:"pending"')
+expect_today("pending family at cutoff", $pending_family, "2026-11-30", true, "")
+expect_today("pending family expired names family", $pending_family, "2026-12-01", false, "<app>.execute: pending schema expired")
+
+remove_dir($tmp)
+$failed = 0
+for each $r in $results
+  if not $r.ok then
+    $failed = $failed + 1
+  end
+end
+print("command_registry_test: " .. to_string(len($results) - $failed) .. "/" .. to_string(len($results)) .. " passed")
+if $failed > 0 then
+  exit(1)
+end

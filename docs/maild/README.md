@@ -28,7 +28,7 @@ alias and domain hooks reconcile the mail store after committed changes.
 ## Shared libraries
 
 Maild uses `bus::native_client::NodedClient` and the Bus connection helpers.
-Its advertised verbs are registered in the repository Bus registry and checked
+Its advertised commands are registered in the repository Bus registry and checked
 by `tests/registry.rs`. Incoming commands retain their connection generation;
 the typed port helper preserves the remote return code and parsed reply.
 

@@ -71,7 +71,7 @@ enum ProcessRecord {
 #[derive(Default)]
 struct PendingSocket {
     command: String,
-    /// Which Class C recv verb may consume this source's records.
+    /// Which Class C recv command may consume this source's records.
     kind: &'static str,
     frames: VecDeque<crate::builtins::socket_sources::SocketRecord>,
     bytes: usize,
@@ -386,7 +386,7 @@ impl Queue {
     }
 
     /// Class C recv on one source: the next ordered record, or the
-    /// terminal. `expect` is the source kind the verb may consume; `max`
+    /// terminal. `expect` is the source kind the command may consume; `max`
     /// bounds a bytes-mode take (the remainder stays queued, in order).
     #[cfg(feature = "ws")]
     pub async fn next_socket(
@@ -414,7 +414,7 @@ impl Queue {
                     return Err(refusal(
                         "SOCKET_KIND",
                         format!(
-                            "source {handle} is a {} subscription — use the matching recv verb",
+                            "source {handle} is a {} subscription — use the matching recv command",
                             s.kind
                         ),
                     ));

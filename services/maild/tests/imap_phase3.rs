@@ -490,16 +490,16 @@ async fn fetch_envelope_returns_parsed_structure() -> Result<()> {
 }
 
 #[tokio::test]
-async fn uid_fetch_unknown_inner_verb_returns_bad() -> Result<()> {
+async fn uid_fetch_unknown_inner_command_returns_bad() -> Result<()> {
     let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let (client, _join) = spawn_session(db, ms, ImapConfig::default()).await;
     let (mut reader, mut w) = login(client).await?;
     w.write_all(b"a02 SELECT INBOX\r\n").await?;
     let _ = read_until_tagged(&mut reader, "a02").await?;
 
-    // After - every RFC 9051 §6.4.8 UID inner verb
+    // After - every RFC 9051 §6.4.8 UID inner command
     // (FETCH/STORE/SEARCH/COPY/MOVE/EXPUNGE) is implemented; only an
-    // unknown verb name should now produce the "UID inner command not
+    // unknown command name should now produce the "UID inner command not
     // implemented" BAD path.
     w.write_all(b"a03 UID FROBNICATE 1\r\n").await?;
     let lines = read_until_tagged(&mut reader, "a03").await?;

@@ -12,7 +12,7 @@
 //!   `props.changed`);
 //! - [`truth`]: `compd.truth`, compd's own view for the Bus-truth comparator.
 //!
-//! - [`control`]: the control verbs compd answers (workspaces, windows) and
+//! - [`control`]: the control commands compd answers (workspaces, windows) and
 //!   the executor for the policy effects they return.
 //! - [`input`]: `comp.input.*`, Bus-injected input on the human and agent
 //!   seats.

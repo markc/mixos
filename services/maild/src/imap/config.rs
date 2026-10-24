@@ -33,11 +33,11 @@ pub struct ImapConfig {
     /// TLS is disabled — the listener refuses to start.
     pub tls_slot: TlsSlot,
     /// Per-resolver `Arc<ServerConfig>` cache shared with the SMTP
-    /// stack. The Phase 5a-commit-2 reload verb's `clear()` after
+    /// stack. The Phase 5a-commit-2 reload command's `clear()` after
     /// `slot.store(...)` invalidates both surfaces at once.
     pub tls_config_cache: Arc<ServerConfigCache>,
     /// Maximum literal size accepted on APPEND. 64 MiB default.
-    /// Phase 1 has no literal-accepting verbs; the field is wired
+    /// Phase 1 has no literal-accepting commands; the field is wired
     /// through so Phase 4 inherits the value without churning the
     /// config surface.
     pub max_literal_bytes: u64,

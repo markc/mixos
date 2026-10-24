@@ -1,6 +1,6 @@
 -- Scene Editor Stage S freeze check (scene-editor plan §7 Stage S): the
 -- contract fixtures are complete and self-consistent, and the shipped editor
--- template names exactly the frozen node ids and verbs. No broker, no Cargo.
+-- template names exactly the frozen node ids and commands. No broker, no Cargo.
 $here = dirname(realpath($0))
 $root = realpath($here .. "/../../..")
 $fx = $here .. "/fixtures/scene-editor"
@@ -28,29 +28,29 @@ fn shape($v, $prefix, $out)
   return $out
 end
 
--- 1. Verb fixtures: every frozen verb, request + reply, refusal keys match.
-$loader = load("loader-verbs.json")
-$shell = load("shell-verbs.json")
-$verbs = {loader: ["scenes.templates", "scenes.editor.open", "scenes.editor.close", "scenes.install", "scenes.enable", "scenes.fork", "scenes.promote", "scenes.move"],
+-- 1. Command fixtures: every frozen command, request + reply, refusal keys match.
+$loader = load("loader-commands.json")
+$shell = load("shell-commands.json")
+$commands = {loader: ["scenes.templates", "scenes.editor.open", "scenes.editor.close", "scenes.install", "scenes.enable", "scenes.fork", "scenes.promote", "scenes.move"],
   shell: ["shell.panel.order", "shell.dialog.show", "shell.dialog.hide", "shell.scene.layout", "shell.scene.load"]}
 for each $side in ["loader", "shell"]
   $table = $side == "loader" ? $loader : $shell
   check(type($table._contract) == "string", $side .. ": _contract missing")
-  for each $verb in $verbs[$side]
-    $entry = $table[$verb]
-    check(type($entry) == "map", $side .. ": no fixture for " .. $verb)
-    check(type($entry.request) == "map" and type($entry.reply) == "map", $verb .. ": request and reply must be maps")
-    check(type($entry.refusals) == "map", $verb .. ": refusals map missing")
+  for each $command in $commands[$side]
+    $entry = $table[$command]
+    check(type($entry) == "map", $side .. ": no fixture for " .. $command)
+    check(type($entry.request) == "map" and type($entry.reply) == "map", $command .. ": request and reply must be maps")
+    check(type($entry.refusals) == "map", $command .. ": refusals map missing")
     for each $code in keys($entry.refusals)
       $body = $entry.refusals[$code]
-      check($body.error_code == $code and type($body.message) == "string", $verb .. ": refusal " .. $code .. " must carry {error_code, message}")
+      check($body.error_code == $code and type($body.message) == "string", $command .. ": refusal " .. $code .. " must carry {error_code, message}")
     end
   end
 end
 $codes = []
-for each $verb in keys($loader)
-  if type($loader[$verb]) == "map" and type($loader[$verb].refusals) == "map" then
-    for each $code in keys($loader[$verb].refusals)
+for each $command in keys($loader)
+  if type($loader[$command]) == "map" and type($loader[$command].refusals) == "map" then
+    for each $code in keys($loader[$command].refusals)
       push($codes, $code)
     end
   end
@@ -58,8 +58,8 @@ end
 for each $code in ["SCENES_RESERVED", "SCENES_NOT_FORK", "SCENES_MOUNT", "SCENES_BUS_NAME", "SCENES_STATE_UNREADABLE", "SCENES_EDITOR_UNAVAILABLE"]
   check(contains($codes, $code), "loader refusal code without a fixture: " .. $code)
 end
-for each $verb in ["shell.panel.order", "shell.dialog.show", "shell.dialog.hide", "shell.scene.layout"]
-  check(has_key($shell[$verb].refusals, "UNIMPLEMENTED"), $verb .. ": the Stage S stub refusal needs a fixture")
+for each $command in ["shell.panel.order", "shell.dialog.show", "shell.dialog.hide", "shell.scene.layout"]
+  check(has_key($shell[$command].refusals, "UNIMPLEMENTED"), $command .. ": the Stage S stub refusal needs a fixture")
 end
 check($shell["shell.scene.load"].request.preempt_dialog == true, "load envelope carries preempt_dialog")
 $close = $shell["shell.scene.layout"].reply.chrome.close
@@ -132,7 +132,7 @@ for each $name in ["model-first-run.json", "model-installed.json", "model-arrang
   check(deep_eq(shape(load($name), "", []), $want), $name .. " has the frozen model shape")
 end
 
--- 6. Template: frozen node ids and the verb set, both ways.
+-- 6. Template: frozen node ids and the command set, both ways.
 $nodes = data_parse(before(after($source, "```mix\n"), "\n```"))
 $frozen = ["banner", "tabs", "tab_gallery", "tab_installed", "tab_arrange", "safe_badge", "body",
   "gallery", "welcome_t", "templates", "tpl_detail", "tpl_title", "tpl_desc", "tpl_needs", "tpl_installed",
@@ -153,10 +153,10 @@ $named = []
 for each $id in keys($nodes)
   if type($nodes[$id].on_click) == "string" and not contains($named, $nodes[$id].on_click) then push($named, $nodes[$id].on_click) end
 end
-check(deep_eq(sort($named), sort($lib.verbs())), "on_click verbs equal lib.verbs(): " .. json_encode(sort($named)))
+check(deep_eq(sort($named), sort($lib.commands())), "on_click commands equal lib.commands(): " .. json_encode(sort($named)))
 $behaviour = read_file($editor .. "/behaviour.mix")
-for each $verb in $lib.verbs()
-  check(contains($behaviour, "\non " .. $verb .. "\n"), "behaviour answers " .. $verb)
+for each $command in $lib.commands()
+  check(contains($behaviour, "\non " .. $command .. "\n"), "behaviour answers " .. $command)
 end
 $meta = data_parse(read_file($editor .. "/template.conf.mix"))
 check($meta.name == "editor" and $meta.hidden == true and $meta.behaviour == "behaviour.mix", "editor metadata")

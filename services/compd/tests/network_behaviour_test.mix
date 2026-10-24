@@ -9,7 +9,7 @@
 -- fixed snapshot) and hostd's call() (records each call in a file outside the
 -- behaviour's process, answers from a scripted reply file). Every wait is
 -- bounded. Bus callers (cli.mix) are not the host: their events carry their
--- own name, so every write and editor verb must refuse them.
+-- own name, so every write and editor command must refuse them.
 --
 --   mix services/compd/tests/network_behaviour_test.mix
 --
@@ -46,13 +46,13 @@ $SNAP = {
 
 -- hostd.mix's call() is replaced by this one; the rest of the real file stays.
 -- Every call is appended to hostd/calls.jsonl; the reply comes from
--- hostd/reply-<verb>.json ({delay, result}) when the test wrote one.
+-- hostd/reply-<command>.json ({delay, result}) when the test wrote one.
 $FAKE_CALL = join([
-  "fn call($verb, $body, $wait_s = 10)",
+  "fn call($command, $body, $wait_s = 10)",
   "  $dir = env('HOSTD_FIXTURE_DIR')",
-  "  append_file($dir .. '/calls.jsonl', json_encode({verb: $verb, body: $body}) .. chr(10))",
+  "  append_file($dir .. '/calls.jsonl', json_encode({command: $command, body: $body}) .. chr(10))",
   "  $reply = {delay: 0, result: {ok: true, body: {receipt: 'rc-default'}}}",
-  "  $file = $dir .. '/reply-' .. replace($verb, '.', '_') .. '.json'",
+  "  $file = $dir .. '/reply-' .. replace($command, '.', '_') .. '.json'",
   "  if is_file($file) then $reply = json_parse(read_file($file)) end",
   "  if $reply.delay > 0 then sleep($reply.delay) end",
   "  return $reply.result",
@@ -71,11 +71,11 @@ $NET_FIXTURE = join([
   ""
 ], "\n")
 
--- The scene host stand-in. It answers the two host verbs the behaviour calls
+-- The scene host stand-in. It answers the two host commands the behaviour calls
 -- and forwards a UI event as itself: the broker stamps this citizen's name.
 $SHELL_STUB = join([
   "-- SPDX-License-Identifier: MIT OR Apache-2.0",
-  "-- The scene host stand-in: answers the host verbs, and forwards UI events",
+  "-- The scene host stand-in: answers the host commands, and forwards UI events",
   "-- to the behaviour as this citizen (headers.from = shell-stub).",
   "on shell.scene.describe",
   "  reply(0, json_encode([{path: 'flow', enum: ['vertical', 'horizontal']}, {path: 'hidden', type: 'bool'}]))",
@@ -85,9 +85,9 @@ $SHELL_STUB = join([
   "end",
   "on ui.forward",
   "  $to = $event.args.to",
-  "  $verb = $event.args.verb",
+  "  $command = $event.args.command",
   "  $body = json_encode($event.args.event)",
-  "  send $to $verb body=$body timeout=5",
+  "  send $to $command body=$body timeout=5",
   "  $code = $rc < 0 ? 20 : $rc",
   "  reply($code, json_encode($result))",
   "end",
@@ -135,19 +135,19 @@ fn write_fixtures()
   write_file($tmp .. "/lib/network.mix", $NET_FIXTURE)
 end
 
-fn reply_for($verb, $result, $delay = 0)
-  write_file($tmp .. "/hostd/reply-" .. replace($verb, ".", "_") .. ".json", json_encode({delay: $delay, result: $result}))
+fn reply_for($command, $result, $delay = 0)
+  write_file($tmp .. "/hostd/reply-" .. replace($command, ".", "_") .. ".json", json_encode({delay: $delay, result: $result}))
 end
 
--- Every hostd call of one verb, in the order the behaviour made them.
-fn calls($verb)
+-- Every hostd call of one command, in the order the behaviour made them.
+fn calls($command)
   $out = []
   $file = $tmp .. "/hostd/calls.jsonl"
   if is_file($file) then
     for each $line in read_lines($file)
       if trim($line) == "" then continue end
       $c = json_parse($line)
-      if $c.verb == $verb then push($out, $c) end
+      if $c.command == $command then push($out, $c) end
     end
   end
   return $out
@@ -200,25 +200,25 @@ fn wait_note($what, $part)
 end
 
 -- The task can publish busy before its adapter has recorded the request.
-fn wait_calls($verb, $count)
+fn wait_calls($command, $count)
   for $i = 1 to 150
-    if length(calls($verb)) >= $count then return end
+    if length(calls($command)) >= $count then return end
     sleep(0.1)
   end
-  raise("NETWORK_BEHAVIOUR_TEST", "timed out waiting for " .. $verb .. " call")
+  raise("NETWORK_BEHAVIOUR_TEST", "timed out waiting for " .. $command .. " call")
 end
 
 -- One Bus request from a plain client (not the host).
-fn direct($target, $verb, $body)
-  $r = run_argv([$mix, $tmp .. "/cli.mix", $target, $verb, json_encode($body)], {clear_env: true, env: $env, timeout: 25})
-  check($r.ok, "client " .. $verb .. " did not run: " .. ($r.stderr ?? ""))
+fn direct($target, $command, $body)
+  $r = run_argv([$mix, $tmp .. "/cli.mix", $target, $command, json_encode($body)], {clear_env: true, env: $env, timeout: 25})
+  check($r.ok, "client " .. $command .. " did not run: " .. ($r.stderr ?? ""))
   return json_parse(trim($r.stdout))
 end
 
 -- A Bus request whose handler may never answer (an internal task). Its
 -- outcome is read from the hostd call log, so the reply is not checked.
-fn direct_quiet($target, $verb, $body)
-  return run_argv([$mix, $tmp .. "/cli.mix", $target, $verb, json_encode($body)], {clear_env: true, env: $env, timeout: 25})
+fn direct_quiet($target, $command, $body)
+  return run_argv([$mix, $tmp .. "/cli.mix", $target, $command, json_encode($body)], {clear_env: true, env: $env, timeout: 25})
 end
 
 -- A UI event, as the scene host relays a click, change or submit.
@@ -226,20 +226,20 @@ fn ui_event($handler, $node, $kind, $item = nil, $value = nil)
   $ev = {scene: "network", node: $node, kind: $kind}
   if $item != nil then $ev.item = $item end
   if $value != nil then $ev.value = $value end
-  return direct("shell-stub", "ui.forward", {to: "scene-network", verb: $handler, event: $ev})
+  return direct("shell-stub", "ui.forward", {to: "scene-network", command: $handler, event: $ev})
 end
 
 fn expect_rc($r, $rc, $what)
   check($r.rc == $rc, $what .. ": rc " .. to_string($r.rc) .. " " .. json_encode($r.result))
 end
 
-fn wait_reply($target, $verb, $body)
+fn wait_reply($target, $command, $body)
   for $i = 1 to 150
-    $r = direct($target, $verb, $body)
+    $r = direct($target, $command, $body)
     if $r.rc == 0 then return $r end
     sleep(0.1)
   end
-  raise("NETWORK_BEHAVIOUR_TEST", "no reply from " .. $target .. " " .. $verb)
+  raise("NETWORK_BEHAVIOUR_TEST", "no reply from " .. $target .. " " .. $command)
 end
 
 -- A citizen from its own source file, on the private broker.
@@ -267,7 +267,7 @@ try
   write_file($tmp .. "/scenes-stub.mix", $SCENES_STUB)
   write_file($tmp .. "/cli.mix", $CLI)
   write_file($tmp .. "/snapshot.json", json_encode($SNAP))
-  reply_for("hostd.status", {ok: true, body: {held_grants: [{name: "network-test", verbs: ["net.*"], limits: {links: ["eth0", "hd0", "wlan0", "wg0"]}}]}})
+  reply_for("hostd.status", {ok: true, body: {held_grants: [{name: "network-test", commands: ["net.*"], limits: {links: ["eth0", "hd0", "wlan0", "wg0"]}}]}})
 
   $bus = $pb.start({dir: $tmp .. "/bus", name: "network-behaviour-test", noded: $noded})
   $env = merge($pb.client_env($bus), {MIX_STATS: "off", PATH: "/usr/bin:/bin", HOME: $tmp .. "/home"})
@@ -316,7 +316,7 @@ try
   $u = calls("hostd.undo")
   check(length($u) == 1 and deep_eq($u[0].body, {receipt: "rc-1"}), "undo names the newest receipt: " .. json_encode($u))
 
-  -- B: a Bus caller is refused for every write and editor verb, including a
+  -- B: a Bus caller is refused for every write and editor command, including a
   -- forged `headers` in its body (the broker stamps headers, not the body).
   $before = length(calls("net.link.apply"))
   $undo_before = length(calls("hostd.undo"))
@@ -370,7 +370,7 @@ try
   wait_calls("net.link.apply", $before + 1)
   expect_rc(ui_event("net_apply", "e_apply", "click"), 0, "apply while busy")
   wait_edit("busy", "note", "hostd is busy with another change. Try again.")
-  $headered = direct_quiet("shell-stub", "ui.forward", {to: "scene-network", verb: "net.write", event: {link: "hd0", verb: "net.link.apply", body: {link: "hd0", config: {mode: "dhcp"}, window_s: 20}, done: "net_applied"}})
+  $headered = direct_quiet("shell-stub", "ui.forward", {to: "scene-network", command: "net.write", event: {link: "hd0", command: "net.link.apply", body: {link: "hd0", config: {mode: "dhcp"}, window_s: 20}, done: "net_applied"}})
   check(length(calls("net.link.apply")) == $before + 1, "a headered net.write reached hostd")
   wait_edit("the change lands", "note", "Applied: hd0 came up and hostd kept the change.")
   $m = wait_edit("receipt kept", "has_undo", true)

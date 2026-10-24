@@ -2,10 +2,10 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 // The projections from the engine's state (`snapshot`, `read_snapshot`,
 // `project_*`) stay with the engine. The full-tree cache is a std `OnceLock`,
-// so the read verbs are synchronous: the transport runs them off the
+// so the read commands are synchronous: the transport runs them off the
 // compositor thread.
 
-//! The `comp.*` props tree (`CompSnapshot`) and the read verbs over it:
+//! The `comp.*` props tree (`CompSnapshot`) and the read commands over it:
 //! `comp.info`, `comp.windows.list`, `comp.props.get`, `comp.props.list`
 //! and `comp.props.describe`.
 
@@ -384,9 +384,9 @@ pub struct BindingRowSnapshot {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct UserKeyRowSnapshot {
     pub chord: String,
-    /// The Bus verb fired on press.
+    /// The Bus command fired on press.
     pub action: &'static str,
-    /// The registered service the verb is sent to; absent means the verb's
+    /// The registered service the command is sent to; absent means the command's
     /// first dot-segment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service: Option<String>,
@@ -2315,7 +2315,7 @@ pub fn volatile_path(path: &str) -> bool {
         || path == "dmabuf"
         || path.starts_with("dmabuf.")
 }
-/// Answer one read verb from a snapshot. Synchronous and possibly heavy (a
+/// Answer one read command from a snapshot. Synchronous and possibly heavy (a
 /// full-tree read serialises the whole tree once per snapshot): the
 /// transport runs it off the compositor thread.
 pub fn dispatch_read(snapshot: &CompSnapshot, command: &str, args: &Value) -> (u8, Arc<str>) {
@@ -2379,7 +2379,7 @@ pub fn dispatch_read_with_limit(
         command,
         "comp.props.get" | "comp.props.list" | "comp.props.describe"
     ) {
-        return error("unknown_verb");
+        return error("UNKNOWN_COMMAND");
     }
     if command == "comp.props.get" {
         match optional_path(args, "path") {
@@ -2582,7 +2582,7 @@ fn dispatch_selected_read(snapshot: &CompSnapshot, command: &str, args: &Value) 
                 .map_or_else(|| error("unknown_path"), |body| (0, Arc::from(body))),
             Err(()) => error("unknown_path"),
         },
-        _ => error("unknown_verb"),
+        _ => error("UNKNOWN_COMMAND"),
     }
 }
 

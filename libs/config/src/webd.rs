@@ -195,7 +195,7 @@ impl Default for WebdConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct WebdListenerConfig {
-    /// Stable id — the control-verb key, log tag, and connection tag.
+    /// Stable id — the control-command key, log tag, and connection tag.
     /// Unique within the node's listener set; non-empty.
     pub id: String,
     /// Bind address `"ip:port"`. A specific interface IP, not a

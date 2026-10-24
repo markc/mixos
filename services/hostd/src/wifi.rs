@@ -19,7 +19,7 @@ use std::time::Duration;
 use zbus::zvariant::OwnedObjectPath;
 
 pub const SCAN: &str = "net.wifi.scan";
-pub const VERB: &str = "net.wifi.connect";
+pub const COMMAND: &str = "net.wifi.connect";
 const IWD: &str = "net.connman.iwd";
 const STATION: &str = "net.connman.iwd.Station";
 const DEVICE: &str = "net.connman.iwd.Device";
@@ -350,7 +350,7 @@ pub async fn connect(
     let previous = connected_ssid(&conn, &station).await.map_err(internal)?;
 
     let mut receipt = Receipt::new(
-        VERB,
+        COMMAND,
         &grant,
         &origin,
         json!({"link": request.device, "ssid": request.ssid, "security": target.security,
@@ -465,7 +465,7 @@ pub async fn current(host: &Host, receipt: &Receipt) -> anyhow::Result<bool> {
         anyhow::bail!("receipt names no device or ssid");
     };
     let newer_in_force = crate::receipt::all(&host.state)?.iter().any(|r| {
-        r.verb == VERB
+        r.command == COMMAND
             && r.id > receipt.id
             && field(r, "link") == Some(device)
             && matches!(

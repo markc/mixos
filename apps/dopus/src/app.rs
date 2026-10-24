@@ -7,7 +7,7 @@
 //!
 //! - Every action goes through [`App::action`] (menus, shortcuts, the
 //!   toolbar, the context menu) or [`App::serve`] (the Bus), which share
-//!   [`verbs::apply_action_in`].
+//!   [`commands::apply_action_in`].
 //! - The core's confirm and prompt requests become dialogs; one shows at a
 //!   time and the rest wait (law 3). Dismissing a dialog answers No.
 //! - What needs the process or the theme ([`Effect`]) is left for the
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use dopus_core::config::Sidebar;
 use dopus_core::{ConfirmAnswer, CoreEvent, DopusCore, DropAction, PaneId, PromptKind};
 
-use crate::verbs::{self, ActionReply, Applied, Refusal, Served, ServerMeta, ThemeAction};
+use crate::commands::{self, ActionReply, Applied, Refusal, Served, ServerMeta, ThemeAction};
 
 /// A modal dialog.
 #[derive(Debug, Clone, PartialEq)]
@@ -96,7 +96,7 @@ pub struct App {
     pub macros_open: bool,
     pub core: DopusCore,
     /// `dopus.actions.list`'s table.
-    pub actions: Vec<verbs::ActionRow>,
+    pub actions: Vec<commands::ActionRow>,
     pub dialog: Option<Dialog>,
     queued: VecDeque<Dialog>,
     /// The location bar being edited, and its text.
@@ -110,7 +110,7 @@ pub struct App {
     /// Work for the shell.
     pub effects: Vec<Effect>,
     /// Actions `dopus.action` accepted, oldest first, for the shell to
-    /// publish on `dopus.command.executed` once their effects are done.
+    /// publish on `dopus.action.executed` once their effects are done.
     pub ran: Vec<String>,
     pub quitting: bool,
     /// Bus drive input (`dopus.ui.*`) is playing this frame. File actions,
@@ -171,7 +171,7 @@ impl App {
     }
 
     pub fn new(core: DopusCore) -> Self {
-        let actions = verbs::action_table(crate::keymap::default_keys);
+        let actions = commands::action_table(crate::keymap::default_keys);
         Self {
             core,
             actions,
@@ -248,10 +248,10 @@ impl App {
             return;
         }
         if self.driven && action.starts_with("file.") {
-            self.status = Some(verbs::keyboard_only(action));
+            self.status = Some(commands::keyboard_only(action));
             return;
         }
-        match verbs::apply_action_in(action, &mut self.core, pane) {
+        match commands::apply_action_in(action, &mut self.core, pane) {
             Ok(Applied::Done) => {}
             Ok(Applied::ToggleSidebar(sidebar)) => self.core.toggle_sidebar(sidebar),
             Ok(Applied::LocationFocus(pane)) => self.edit_location(pane),
@@ -275,10 +275,10 @@ impl App {
 
     /// Serve one Bus command, leaving its replies and effects in
     /// [`App::effects`].
-    pub fn serve(&mut self, command: &verbs::Command, meta: &ServerMeta) {
+    pub fn serve(&mut self, command: &commands::Command, meta: &ServerMeta) {
         let info = buildinfo::build_info!();
-        let served = verbs::serve_command(command, &mut self.core, meta, &info);
-        self.ran.extend(verbs::accepted_action(command, &served));
+        let served = commands::serve_command(command, &mut self.core, meta, &info);
+        self.ran.extend(commands::accepted_action(command, &served));
         for served in served {
             match served {
                 Served::Reply { id, rc, body } => self.effects.push(Effect::Reply { id, rc, body }),
@@ -407,7 +407,7 @@ impl App {
             Dialog::Confirm { .. } | Dialog::Prompt { .. } | Dialog::Drop { .. }
         );
         if self.driven && changes_files && answer != Answer::Cancel {
-            self.status = Some(verbs::keyboard_only("a file dialog"));
+            self.status = Some(commands::keyboard_only("a file dialog"));
             return;
         }
         match (dialog, answer) {
@@ -485,7 +485,7 @@ impl App {
     /// Go to the edited location (`~` expands; a file opens its folder).
     pub fn submit_location(&mut self) {
         if let Some((pane, text)) = self.editing.take() {
-            let path = verbs::navigable(crate::dirs::expand_tilde(text.trim()));
+            let path = commands::navigable(crate::dirs::expand_tilde(text.trim()));
             self.core.navigate(pane, path);
         }
     }
@@ -627,13 +627,13 @@ mod tests {
             theme_mode: String::new(),
             appearance: Default::default(),
             actions: a.actions.clone(),
-            extra_verbs: Vec::new(),
+            extra_commands: Vec::new(),
         };
         let open = a.checked("view.toggle-places");
         a.serve(
-            &verbs::Command {
+            &commands::Command {
                 id: 9,
-                verb: "dopus.action".into(),
+                command: "dopus.action".into(),
                 body: r#"{"id":"view.toggle-places"}"#.into(),
             },
             &meta,
@@ -643,16 +643,16 @@ mod tests {
             &a.effects[..],
             [Effect::Reply { id: 9, rc: 0, .. }]
         ));
-        // An accepted action is left for dopus.command.executed; refused
+        // An accepted action is left for dopus.action.executed; refused
         // ones (a file action, an unknown id) are not.
         for (id, body) in [
             (10, r#"{"id":"view.toggle-hidden"}"#),
             (11, r#"{"id":"file.delete"}"#),
             (12, r#"{"id":"nope.nothing"}"#),
         ] {
-            let command = verbs::Command {
+            let command = commands::Command {
                 id,
-                verb: "dopus.action".into(),
+                command: "dopus.action".into(),
                 body: body.into(),
             };
             a.serve(&command, &meta);

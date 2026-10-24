@@ -1,23 +1,23 @@
 ---
 title: Workshop
-description: Workshop is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
+description: Workshop is the MixOS desktop app that lists the services and commands on this node's Bus, shows each command's description and the mesh peers, and calls one command once with a JSON body.
 ---
 
 # Workshop
 
 `workshop` (app id `dev.mixos.workshop`) is a native window onto the Bus
 of the node it runs on. It asks noded which services are registered, asks
-each service to describe its verbs, and shows them as a tree. Select a verb
+each service to describe its commands, and shows them as a tree. Select a command
 to read its arguments and description, type a JSON body, and call it. The
 reply is shown with its return code. Workshop also lists the mesh nodes
 this node can see.
 
 It is for people and agents who want to see what a node offers and try a
-verb by hand. It ships in the `mixos-desktop` package set. Nothing else in
+command by hand. It ships in the `mixos-desktop` package set. Nothing else in
 the workspace depends on it.
 
 Workshop is also the reference app for driving a window over the Bus.
-Everything in its window is a Bus verb, and
+Everything in its window is a Bus command, and
 [Driving apps over the Bus](../docs/drive.md#workshop-the-worked-example)
 uses it as the worked example.
 
@@ -32,7 +32,7 @@ two crates:
 
 - **`inspector`** (`crates/inspector`): the headless engine. No UI and no
   I/O. It holds the protocol model, the discovery and call rules, and the
-  handling of every `workshop.*` verb.
+  handling of every `workshop.*` command.
 - **`workshop`**: the egui shell. It draws the engine's state, runs the
   engine's effects on a small tokio runtime, and owns the command registry
   that the menus, the shortcuts and the Bus all go through.
@@ -49,7 +49,7 @@ reply can never land on a newer operation.
 
 | Module | What it holds |
 |---|---|
-| `model` | `Verb`, `Snapshot` (services, each with its verbs or an error; peers), `Selection`, the parsers for `noded.list`, `noded.peers`, `HELP` and `app.describe`, the limits, and `describe()`, the app's own verb list |
+| `model` | `Command`, `Snapshot` (services, each with its commands or an error; peers), `Selection`, the parsers for `noded.list`, `noded.peers`, `HELP` and `app.describe`, the limits, and `describe()`, the app's own command list |
 | `engine` | `Engine`, `Effect`, `Dialog`, `Row` and `RowKind` (the services tree), `UiState` (what a person arranges), `Session` (the session theme) |
 | `bus` | the connection, through the shared [citizen](../citizen/README.md) library: `start`, `probe`, `forward`, `show`, and `discover` |
 
@@ -57,7 +57,7 @@ Discovery reads `noded.info`, `noded.list` and `noded.peers`. The local node
 appears first, followed by sorted peers. Each peer is queried through
 `noded.<node>.bus`, then its services through `<service>.<node>.bus`.
 Local membership and service identities are published as soon as they arrive,
-without waiting for remote nodes or verb descriptions. Discovery queries up
+without waiting for remote nodes or command descriptions. Discovery queries up
 to eight remote nodes concurrently, with a separate local slot. Each read has
 a three-second deadline (`DISCOVERY_CALL_BUDGET`); info and list run together.
 Across all nodes and refreshes, at most twelve discovery calls run at once:
@@ -111,19 +111,19 @@ finished; nothing polls.
 
 ## Bus
 
-Workshop registers as `workshop` on the local broker. Its verbs are
+Workshop registers as `workshop` on the local broker. Its commands are
 registered in
-[`verbs.conf.mix`](https://github.com/markc/mixos/blob/main/docs/docs/spec/bus/verbs.conf.mix)
+[`commands.conf.mix`](https://github.com/markc/mixos/blob/main/docs/docs/spec/bus/commands.conf.mix)
 with owner `workshop`.
 
 - Reading: `workshop.ping`, `workshop.info`, `workshop.tree`,
-  `workshop.reply`, `workshop.commands`, plus `HELP` and `app.describe`.
+  `workshop.reply`, `workshop.actions`, plus `HELP` and `app.describe`.
 - Changing state: `workshop.filter`, `workshop.expand`,
   `workshop.select_row`, `workshop.select`, `workshop.body`,
   `workshop.split`, `workshop.dialog`, `workshop.theme`,
   `workshop.call`, `workshop.execute`, `workshop.refresh`,
   `workshop.show`, `workshop.quit`.
-- The window's drive verbs, from the toolkit: `workshop.ui.tree`,
+- The window's drive commands, from the toolkit: `workshop.ui.tree`,
   `workshop.ui.click`, `workshop.ui.pointer`, `workshop.ui.scroll`,
   `workshop.ui.key`, `workshop.ui.type`, `workshop.ui.menu`,
   `workshop.ui.menu.list`, `workshop.ui.menu.open`,
@@ -131,22 +131,22 @@ with owner `workshop`.
   and `workshop.window.state`.
 
 Arguments, answers and refusal codes (`BUSY`, `DISCONNECTED`, `ARGUMENT`,
-`UNKNOWN_VERB`, `UNKNOWN_COMMAND`, `DISABLED`) are tabled in
+`UNKNOWN_COMMAND`, `UNKNOWN_ACTION`, `DISABLED`) are tabled in
 [Driving apps over the Bus](../docs/drive.md#workshop-the-worked-example).
 Tree rows use `node:<node>`, `service:<node>:<service>` and
-`verb:<node>:<service>:<verb>`, for example `node:alpha`,
-`service:alpha:noded` and `verb:alpha:noded:noded.list`. A verb selection
+`command:<node>:<service>:<command>`, for example `node:alpha`,
+`service:alpha:noded` and `command:alpha:noded:noded.list`. A command selection
 keeps its routed service address so calls reach the selected node.
 
-Calling a verb from Mix through Workshop:
+Calling a command from Mix through Workshop:
 
 ```mix
-$body = json_encode({service: "noded", verb: "noded.list"})
+$body = json_encode({service: "noded", command: "noded.list"})
 send workshop workshop.call body=$body timeout=30
 print $result
 ```
 
-The answer is `{service, verb, request_body, rc, body}`.
+The answer is `{service, command, request_body, rc, body}`.
 
 ## Commands and keys
 
@@ -160,7 +160,7 @@ Every menu item, shortcut and `workshop.execute` id is one command in
 | `edit.format` | Edit › Format JSON body | Ctrl+Shift+F |
 | `edit.clear` | Edit › Clear body | |
 | `edit.copy` | Edit › Copy reply | |
-| `bus.call` | Bus › Call verb | Ctrl+Enter |
+| `bus.call` | Bus › Call command | Ctrl+Enter |
 | `help.shortcuts` | Help › Keyboard shortcuts | Ctrl+/ |
 | `help.about` | Help › About Workshop | |
 | `view.search` | title bar search button | Ctrl+F |
@@ -170,7 +170,7 @@ View › Theme adds the `view.theme.*`, `view.mode.*`, `view.style.*`,
 `view.decorations.*` and `view.captions.*` choices. They set the theme of
 this window only; the session's theme file is never written. The Help menu
 opens with a field that searches every command. The desktop profile can
-rebind the shortcuts (`keymaps.workshop.<id>`), and `workshop.commands`
+rebind the shortcuts (`keymaps.workshop.<id>`), and `workshop.actions`
 reports the ones in force.
 
 ## Running it
@@ -203,21 +203,21 @@ cargo test --locked -p inspector -p workshop
 ```
 
 - The engine's unit tests (`crates/inspector/src/engine.rs`, `model.rs`)
-  cover discovery, selection, the body, calls, the Bus verbs, refusals,
+  cover discovery, selection, the body, calls, the Bus commands, refusals,
   tickets and quitting, with no UI.
 - `tests/shell.rs` runs the real `Shell` on a logging Bus handle (the
   `inspector` `testing` feature) and checks every reply, call and the final
   quit in order.
-- `tests/drive.rs` drives the window over its Bus verbs against the real
+- `tests/drive.rs` drives the window over its Bus commands against the real
   view: clicks, typing, the title bar controls, menus.
 - `tests/view.rs` checks the dialogs, the body buttons and their tooltips,
   and the search field through kittest.
 - `tests/snapshot.rs` takes offscreen snapshots in several themes into
   `tests/snapshots/`. Regenerate with `UPDATE_SNAPSHOTS=1` and look at the
   images before committing them.
-- `tests/registry.rs` checks that the verb registry lists exactly the
-  verbs Workshop describes, and that read-only verbs are class `query`
-  ([verb classes](../docs/decisions/2026-10-11-verb-classes.md)).
+- `tests/registry.rs` checks that the command registry lists exactly the
+  commands Workshop describes, and that read-only commands are class `query`
+  ([command classes](../docs/decisions/2026-10-11-verb-classes.md)).
 - `crates/inspector/tests/native.rs` runs discovery, calls and
   single-instance registration against an isolated real broker. It is
   ignored by default and needs `WORKSHOP_TEST_URL`.
@@ -225,14 +225,14 @@ cargo test --locked -p inspector -p workshop
   never replies. Local and healthy rows arrive before its timeout, discovery
   settles within a bounded time, and the next refresh retries the failed node.
 
-## Macro Bus verbs
+## Macro Bus commands
 
-The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+The shared [macro Bus surface](/macros/#bus-commands) uses this process's
 catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
 the instance’s registered Bus name (for example `term-1234` for a second Term
-instance). Verbs keep the app’s canonical prefix, such as `workshop.macros.run`.
+instance). Commands keep the app’s canonical prefix, such as `workshop.macros.run`.
 
-| Verb | Arguments | Result |
+| Command | Arguments | Result |
 |---|---|---|
 | `workshop.macros.list` | `{}` | Catalogue and diagnostics |
 | `workshop.macros.reload` | `{}` | Catalogue and diagnostics |
@@ -264,12 +264,12 @@ Stop, Copy to user, Move, Delete with confirmation, Open in Ced and Show in
 Dopus dispatch through Workshop's command registry. A `-- target:` header
 offers only its allowed apps; `any` offers running apps. The chosen app is
 passed as `MIXOS_MACRO_TARGET`. Without a header, Run remains target-free.
-Each app serves the same management verbs through its own macro Session.
+Each app serves the same management commands through its own macro Session.
 Macro requests are capped at 8 KiB, except `put`: its envelope is capped at
 1544 KiB and its text at 256 KiB.
 
 The collapsible Traffic dock combines broker observations and native
-`<service>.command.executed` / `<service>.macros.finished` topics. It retains
+`<service>.action.executed` / `<service>.macros.finished` topics. It retains
 at most 1,024 rows and 8 MiB, reports dropped rows and redacts sensitive
 topic fields before retaining them. Broker observation defaults to redacted
 bodies; `none` is also supported. A refused observer leaves the reason in
@@ -281,14 +281,14 @@ the advertised observe extension and open and close a probe stream.
 Open Workshop in an app's macro menu launches or focuses Workshop; a launch
 with `--app ced --id tidy-imports` selects that macro. The global folder in
 Dopus is the fallback when Workshop is not installed. Headless instances
-use the same management and traffic verbs.
+use the same management and traffic commands.
 
 Macro-file writes (`put`, `remove`, `move`, `copy`, `new`) require the owning
 process’s registered local service or Workshop (`workshop`, `workshop-*`).
 Global writes and moves into another app’s catalogue require Workshop.
-Workshop’s own mutating macro verbs, including forwarding with `app`, accept
+Workshop’s own mutating macro commands, including forwarding with `app`, accept
 only Workshop callers, preventing arbitrary callers from using it as a write
-proxy. Refusals use rc 10, `DENIED`, and name the verb and rule before any
+proxy. Refusals use rc 10, `DENIED`, and name the command and rule before any
 file effects. Read/run/status/output/stop/reload remain open.
 
 The broker stamps service identity and local/mesh origin; mesh writes are
@@ -300,4 +300,4 @@ Workshop’s Bus `execute` for mutating `macro.*` actions and `bus.call`,
 implicit-target `call`, calls forwarding macro mutations or these proxy
 operations, and UI click/pointer/key/type injection require Workshop too.
 These paths can otherwise turn an untrusted caller into the manager.
-Explicit `call` requests for read/run verbs and UI inspection remain open.
+Explicit `call` requests for read/run commands and UI inspection remain open.

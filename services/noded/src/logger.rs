@@ -37,7 +37,7 @@ struct ObserveEvent {
     #[serde(default)]
     to: Option<String>,
     #[serde(default)]
-    verb: Option<String>,
+    command: Option<String>,
     size: usize,
     dropped_count: u64,
 }
@@ -141,14 +141,14 @@ pub async fn run(noded_url: &str) -> Result<()> {
             };
             let from = event.from.as_deref().unwrap_or("?");
             let to = event.to.as_deref().unwrap_or("?");
-            let verb = event.verb.as_deref().unwrap_or("?");
+            let command_name = event.command.as_deref().unwrap_or("?");
             let dropped = if event.dropped_count == 0 {
                 String::new()
             } else {
                 format!(" dropped={}", event.dropped_count)
             };
             let line = format!(
-                "[{now}] {from} → {to}  {verb}  wire={}B{dropped}\n",
+                "[{now}] {from} → {to}  {command_name}  wire={}B{dropped}\n",
                 event.size
             );
 

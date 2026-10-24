@@ -249,10 +249,10 @@ impl Session {
                 }
             };
 
-            // Literal-framing arrived for a verb that does not accept
+            // Literal-framing arrived for a command that does not accept
             // one. The codec already consumed the body, so the stream
             // is in sync; we just refuse the command.
-            if cmd.literal.is_some() && !parsed.verb_upper.eq_ignore_ascii_case("APPEND") {
+            if cmd.literal.is_some() && !parsed.command_upper.eq_ignore_ascii_case("APPEND") {
                 self.bad_commands += 1;
                 let resp = tagged(
                     &parsed.tag,
@@ -260,7 +260,7 @@ impl Session {
                     None,
                     &format!(
                         "{} does not accept literal arguments in this phase",
-                        parsed.verb_upper
+                        parsed.command_upper
                     ),
                 );
                 writer.write_all(resp.as_bytes()).await?;
@@ -275,12 +275,12 @@ impl Session {
             tracing::debug!(
                 peer = %self.peer,
                 tag = %parsed.tag,
-                verb = %parsed.verb_upper,
+                command_name = %parsed.command_upper,
                 state = ?self.state,
                 "imap command"
             );
 
-            match parsed.verb_upper.as_str() {
+            match parsed.command_upper.as_str() {
                 "CAPABILITY" => {
                     writer
                         .write_all(op::capability::handle(&parsed.tag, &self.cfg).as_bytes())
@@ -366,7 +366,7 @@ impl Session {
                         writer.write_all(resp.as_bytes()).await?;
                     }
                 }
-                verb @ ("SELECT" | "EXAMINE") => {
+                command_name @ ("SELECT" | "EXAMINE") => {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
@@ -383,7 +383,7 @@ impl Session {
                         let aid = self
                             .account_id
                             .expect("authenticated session must have account_id");
-                        let read_only = verb == "EXAMINE";
+                        let read_only = command_name == "EXAMINE";
                         let outcome = op::select::handle(
                             &parsed.tag,
                             &parsed.args,
@@ -471,8 +471,8 @@ impl Session {
                         }
                     }
                 }
-                verb @ ("CLOSE" | "UNSELECT") => {
-                    // RFC 9051 §6.4.2 / RFC 3691 §2 — both verbs
+                command_name @ ("CLOSE" | "UNSELECT") => {
+                    // RFC 9051 §6.4.2 / RFC 3691 §2 — both commands
                     // are zero-argument. Refuse any trailing tokens
                     // so a typo'd argument is loud rather than
                     // silently ignored.
@@ -486,13 +486,13 @@ impl Session {
                         let resp = tagged(&parsed.tag, Status::Bad, None, "no mailbox selected");
                         writer.write_all(resp.as_bytes()).await?;
                     } else {
-                        let resp = if verb == "CLOSE" {
+                        let resp = if command_name == "CLOSE" {
                             op::close::handle_close(&parsed.tag)
                         } else {
                             op::close::handle_unselect(&parsed.tag)
                         };
                         // Phase 2: no \Deleted purge yet (Phase 4
-                        // ships STORE). Both verbs simply drop the
+                        // ships STORE). Both commands simply drop the
                         // selected mailbox.
                         self.state = State::Authenticated;
                         writer.write_all(resp.as_bytes()).await?;
@@ -501,7 +501,7 @@ impl Session {
                 "CHECK" => {
                     // RFC 3501 §6.4.1 — CHECK requests a mailbox
                     // checkpoint. Like CLOSE/UNSELECT it is a
-                    // zero-argument, Selected-state-only verb; unlike
+                    // zero-argument, Selected-state-only command; unlike
                     // them it leaves the mailbox selected. We have no
                     // deferred state to flush, so a successful CHECK is
                     // a NOOP that returns OK (RFC 3501 sanctions this).
@@ -524,7 +524,7 @@ impl Session {
                             .await?;
                     }
                 }
-                verb @ ("CREATE" | "DELETE" | "RENAME" | "SUBSCRIBE" | "UNSUBSCRIBE") => {
+                command_name @ ("CREATE" | "DELETE" | "RENAME" | "SUBSCRIBE" | "UNSUBSCRIBE") => {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
@@ -533,7 +533,7 @@ impl Session {
                         let aid = self
                             .account_id
                             .expect("authenticated session must have account_id");
-                        let resp = match verb {
+                        let resp = match command_name {
                             "CREATE" => {
                                 op::create::handle(
                                     &parsed.tag,
@@ -585,7 +585,7 @@ impl Session {
                         writer.write_all(resp.as_bytes()).await?;
                     }
                 }
-                verb @ ("FETCH" | "STORE" | "SEARCH" | "COPY" | "MOVE" | "EXPUNGE" | "UID") => {
+                command_name @ ("FETCH" | "STORE" | "SEARCH" | "COPY" | "MOVE" | "EXPUNGE" | "UID") => {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
@@ -594,7 +594,7 @@ impl Session {
                         // Route to one of seven actions: Fetch(mode),
                         // Store(mode), Search(mode), Copy(mode),
                         // Move(mode), Expunge(uid?, args), or BadInner
-                        // (UID with an unimplemented inner verb).
+                        // (UID with an unimplemented inner command).
                         // RFC 9051 §6.4.8 — UID is followed by
                         // FETCH / COPY / MOVE / SEARCH / STORE /
                         // EXPUNGE. shipped FETCH; added STORE;
@@ -609,39 +609,39 @@ impl Session {
                             Expunge(bool, String),
                             BadInner,
                         }
-                        let action = if verb == "UID" {
+                        let action = if command_name == "UID" {
                             let trimmed = parsed.args.trim_start();
-                            let (inner_verb, inner_args) = match trimmed.split_once(' ') {
+                            let (inner_command, inner_args) = match trimmed.split_once(' ') {
                                 Some((v, a)) => (v, a),
                                 None => (trimmed, ""),
                             };
-                            if inner_verb.eq_ignore_ascii_case("FETCH") {
+                            if inner_command.eq_ignore_ascii_case("FETCH") {
                                 Action::Fetch(op::fetch::FetchMode::Uid, inner_args.to_string())
-                            } else if inner_verb.eq_ignore_ascii_case("STORE") {
+                            } else if inner_command.eq_ignore_ascii_case("STORE") {
                                 Action::Store(op::store::StoreMode::Uid, inner_args.to_string())
-                            } else if inner_verb.eq_ignore_ascii_case("SEARCH") {
+                            } else if inner_command.eq_ignore_ascii_case("SEARCH") {
                                 Action::Search(op::search::SearchMode::Uid, inner_args.to_string())
-                            } else if inner_verb.eq_ignore_ascii_case("COPY") {
+                            } else if inner_command.eq_ignore_ascii_case("COPY") {
                                 Action::Copy(op::copy::CopyMode::Uid, inner_args.to_string())
-                            } else if inner_verb.eq_ignore_ascii_case("MOVE") {
+                            } else if inner_command.eq_ignore_ascii_case("MOVE") {
                                 Action::Move(op::mv::MoveMode::Uid, inner_args.to_string())
-                            } else if inner_verb.eq_ignore_ascii_case("EXPUNGE") {
+                            } else if inner_command.eq_ignore_ascii_case("EXPUNGE") {
                                 Action::Expunge(true, inner_args.to_string())
                             } else {
                                 Action::BadInner
                             }
-                        } else if verb == "FETCH" {
+                        } else if command_name == "FETCH" {
                             Action::Fetch(op::fetch::FetchMode::Msn, parsed.args.clone())
-                        } else if verb == "STORE" {
+                        } else if command_name == "STORE" {
                             Action::Store(op::store::StoreMode::Msn, parsed.args.clone())
-                        } else if verb == "COPY" {
+                        } else if command_name == "COPY" {
                             Action::Copy(op::copy::CopyMode::Msn, parsed.args.clone())
-                        } else if verb == "MOVE" {
+                        } else if command_name == "MOVE" {
                             Action::Move(op::mv::MoveMode::Msn, parsed.args.clone())
-                        } else if verb == "EXPUNGE" {
+                        } else if command_name == "EXPUNGE" {
                             Action::Expunge(false, parsed.args.clone())
                         } else {
-                            // verb == "SEARCH"
+                            // command == "SEARCH"
                             Action::Search(op::search::SearchMode::Msn, parsed.args.clone())
                         };
 
@@ -1111,12 +1111,12 @@ impl Session {
     {
         let max_lit = self.cfg.max_literal_bytes;
         // Refuse literals before the session is authenticated, and
-        // post-auth refuse them for any verb that doesn't actually
+        // post-auth refuse them for any command that doesn't actually
         // consume a literal body. With `LITERAL+` advertised in the
         // greeting an unauthenticated peer — or an authenticated one
         // issuing `CAPABILITY {N+}` etc. — could otherwise push
         // `max_literal_bytes` (default 64 MiB) into RAM before any
-        // account-scoped cap applies. The only verb in that legally
+        // account-scoped cap applies. The only command in that legally
         // takes a literal is APPEND; later phases (AUTHENTICATE
         // continuation, SEARCH, STORE flags via literal8) extend this
         // allow-list as those surfaces land. Refused literals leave the
@@ -1130,8 +1130,8 @@ impl Session {
             }
             let mut parts = line.splitn(3, |b| *b == b' ');
             let _tag = parts.next();
-            let verb = parts.next().unwrap_or(b"");
-            verb.eq_ignore_ascii_case(b"APPEND")
+            let command_name = parts.next().unwrap_or(b"");
+            command_name.eq_ignore_ascii_case(b"APPEND")
         };
         let fut = codec::read_command(reader, writer, max_lit, accept_literals);
         let result = if !self.state.is_authenticated() {
@@ -1172,7 +1172,7 @@ impl Session {
                     peer = %self.peer,
                     declared,
                     authed,
-                    "imap sync literal refused (pre-auth or verb does not take literal)"
+                    "imap sync literal refused (pre-auth or command does not take literal)"
                 );
                 let msg = if authed {
                     "literal not accepted for this command"
@@ -1190,7 +1190,7 @@ impl Session {
                     peer = %self.peer,
                     declared,
                     authed,
-                    "imap non-sync literal refused (bytes drained); pre-auth or verb does not take literal"
+                    "imap non-sync literal refused (bytes drained); pre-auth or command does not take literal"
                 );
                 let msg = if authed {
                     "literal not accepted for this command"

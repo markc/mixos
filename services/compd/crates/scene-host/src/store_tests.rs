@@ -8,7 +8,7 @@ use super::*;
 const STATIC: &str = scene::fixtures::STATIC;
 const FIXTURE: &str = scene::fixtures::CONFORMANCE;
 const CLIPPANEL: &str = scene::fixtures::CLIPPANEL;
-const SHELL_VERBS: &str = include_str!("../tests/fixtures/shell-verbs.json");
+const SHELL_COMMANDS: &str = include_str!("../tests/fixtures/shell-commands.json");
 
 const TOAST: &str = "---\nscene: 1\nname: toast-probe\ncitizen: c\nwindow: {\"kind\":\"toast\",\"w\":360,\"h\":120}\nmodel: {\"text\":\"hello\"}\n---\n```mix\nroot: {widget: \"column\", children: []}\n```\n";
 
@@ -22,18 +22,18 @@ fn toast_show_is_busy_independently_of_the_dialog_and_hide_frees_it() {
     ] {
         assert_eq!(
             store
-                .dispatch(SceneVerb::Load, &source, &Value::Null, &mut caller)
+                .dispatch(SceneCommand::Load, &source, &Value::Null, &mut caller)
                 .rc,
             0
         );
     }
-    let frozen: Value = serde_json::from_str(SHELL_VERBS).unwrap();
+    let frozen: Value = serde_json::from_str(SHELL_COMMANDS).unwrap();
     let dialog = frozen["shell.scene.load"]["request"]["source"]
         .as_str()
         .unwrap();
     assert_eq!(
         store
-            .dispatch(SceneVerb::Load, dialog, &Value::Null, &mut caller)
+            .dispatch(SceneCommand::Load, dialog, &Value::Null, &mut caller)
             .rc,
         0
     );
@@ -83,7 +83,7 @@ fn toast_reload_updates_geometry_refuses_kind_changes_and_cleans_up_departures()
     let mut caller = mount("loader", 1);
     assert_eq!(
         store
-            .dispatch(SceneVerb::Load, TOAST, &Value::Null, &mut caller)
+            .dispatch(SceneCommand::Load, TOAST, &Value::Null, &mut caller)
             .rc,
         0
     );
@@ -94,7 +94,7 @@ fn toast_reload_updates_geometry_refuses_kind_changes_and_cleans_up_departures()
     let resized = TOAST.replace("\"h\":120", "\"h\":180");
     assert_eq!(
         store
-            .dispatch(SceneVerb::Load, &resized, &Value::Null, &mut caller)
+            .dispatch(SceneCommand::Load, &resized, &Value::Null, &mut caller)
             .rc,
         0
     );
@@ -105,7 +105,7 @@ fn toast_reload_updates_geometry_refuses_kind_changes_and_cleans_up_departures()
         let source = TOAST
             .replace("\"toast\"", &format!("\"{kind}\""))
             .replace("\"h\":120", "\"h\":300");
-        let done = store.dispatch(SceneVerb::Load, &source, &Value::Null, &mut caller);
+        let done = store.dispatch(SceneCommand::Load, &source, &Value::Null, &mut caller);
         assert_eq!(done.rc, 10);
         assert!(done.body.contains("SUBPANEL_COLLISION"));
         assert_eq!(store.toast_seat().unwrap().h, 180.0);
@@ -117,7 +117,7 @@ fn toast_reload_updates_geometry_refuses_kind_changes_and_cleans_up_departures()
     assert!(store.toast_seat().is_none());
     assert_eq!(
         store
-            .dispatch(SceneVerb::Load, TOAST, &Value::Null, &mut caller)
+            .dispatch(SceneCommand::Load, TOAST, &Value::Null, &mut caller)
             .rc,
         0
     );
@@ -127,7 +127,7 @@ fn toast_reload_updates_geometry_refuses_kind_changes_and_cleans_up_departures()
     assert_eq!(
         store
             .dispatch(
-                SceneVerb::Unload,
+                SceneCommand::Unload,
                 "",
                 &json!({"scene":"toast-probe"}),
                 &mut caller
@@ -179,7 +179,7 @@ fn every_fixture_validates_loads_and_reads_back_as_scene_core_resolves_it() {
         let expected = scene::resolve(&scene::parse(source).unwrap()).unwrap();
         let mut store = SceneStore::default();
         let (valid, summary) = store
-            .request(SceneVerb::Validate, source, &Value::Null)
+            .request(SceneCommand::Validate, source, &Value::Null)
             .unwrap();
         assert_eq!(
             (valid["scene"].as_str(), valid["valid"].as_bool()),
@@ -190,7 +190,7 @@ fn every_fixture_validates_loads_and_reads_back_as_scene_core_resolves_it() {
             "validate has no side effects"
         );
         let mut caller = mount("loader", 1);
-        let done = store.dispatch(SceneVerb::Load, source, &Value::Null, &mut caller);
+        let done = store.dispatch(SceneCommand::Load, source, &Value::Null, &mut caller);
         assert_eq!(done.rc, 0, "{}", done.body);
         let reply: Value = serde_json::from_str(&done.body).unwrap();
         assert_eq!(reply["revision"], 1);
@@ -201,14 +201,14 @@ fn every_fixture_validates_loads_and_reads_back_as_scene_core_resolves_it() {
         assert_eq!(summaries[0]["ops"], expected.nodes.len());
         let get = json!({"scene": expected.name});
         assert_eq!(
-            store.request(SceneVerb::Get, "", &get).unwrap().0,
+            store.request(SceneCommand::Get, "", &get).unwrap().0,
             json!(expected)
         );
         // The source export round-trips to the same scene (line numbers may
         // move; identity, envelope, families and ports may not).
         let (export, _) = store
             .request(
-                SceneVerb::Get,
+                SceneCommand::Get,
                 "",
                 &json!({"scene": expected.name, "format": "source"}),
             )
@@ -224,7 +224,7 @@ fn every_fixture_validates_loads_and_reads_back_as_scene_core_resolves_it() {
             assert_eq!(node.family, actual.nodes[id].family, "{id}");
             assert_eq!(node.ports, actual.nodes[id].ports, "{id}");
         }
-        let watch = store.request(SceneVerb::Watch, "", &get).unwrap().0;
+        let watch = store.request(SceneCommand::Watch, "", &get).unwrap().0;
         assert_eq!(
             watch,
             json!({"scene": expected.name, "revision": 1, "digest": digest(&expected),
@@ -237,7 +237,7 @@ fn every_fixture_validates_loads_and_reads_back_as_scene_core_resolves_it() {
 fn the_clippanel_fixture_prepares_its_rows_for_the_renderer() {
     let mut store = SceneStore::default();
     store
-        .request(SceneVerb::Load, CLIPPANEL, &Value::Null)
+        .request(SceneCommand::Load, CLIPPANEL, &Value::Null)
         .unwrap();
     let entry = store.scenes.values().next().unwrap();
     let lists: Vec<_> = entry
@@ -266,7 +266,7 @@ fn the_clippanel_fixture_prepares_its_rows_for_the_renderer() {
 fn describe_answers_every_family_and_refuses_an_unknown_one() {
     let mut store = SceneStore::default();
     let (all, _) = store
-        .request(SceneVerb::Describe, "", &Value::Null)
+        .request(SceneCommand::Describe, "", &Value::Null)
         .unwrap();
     let names: Vec<_> = all.as_object().unwrap().keys().cloned().collect();
     let mut expected: Vec<_> = FAMILIES.iter().map(|f| f.to_string()).collect();
@@ -275,13 +275,13 @@ fn describe_answers_every_family_and_refuses_an_unknown_one() {
     for family in FAMILIES {
         assert!(!all[family].as_array().unwrap().is_empty(), "{family}");
         let (one, _) = store
-            .request(SceneVerb::Describe, "", &json!({"family": family}))
+            .request(SceneCommand::Describe, "", &json!({"family": family}))
             .unwrap();
         assert_eq!(one, all[family]);
     }
     let mut caller = mount("x", 1);
     let done = store.dispatch(
-        SceneVerb::Describe,
+        SceneCommand::Describe,
         "",
         &json!({"family":"nope"}),
         &mut caller,
@@ -299,7 +299,7 @@ fn describe_answers_every_family_and_refuses_an_unknown_one() {
 fn a_refused_load_publishes_a_zero_op_summary_with_its_diagnostics() {
     let mut store = SceneStore::default();
     let mut caller = mount("loader", 1);
-    let done = store.dispatch(SceneVerb::Load, "not a scene", &Value::Null, &mut caller);
+    let done = store.dispatch(SceneCommand::Load, "not a scene", &Value::Null, &mut caller);
     assert_eq!(done.rc, 10);
     let body: Value = serde_json::from_str(&done.body).unwrap();
     assert_eq!(body["error_code"], "SCENE_REFUSED");
@@ -324,12 +324,12 @@ fn managed_model_writes_require_loader_and_current_generation() {
     let mut caller = mount("scenes", 1);
     let load = json!({"source": MODEL_SCENE, "model_generation": 7});
     store
-        .request_mounted(SceneVerb::Load, "", &load, Some(&mut caller))
+        .request_mounted(SceneCommand::Load, "", &load, Some(&mut caller))
         .unwrap();
     let patch =
         json!({"scene":"model-test", "path":"model.caption", "value":"current", "generation":7});
     store
-        .request_mounted(SceneVerb::Patch, "", &patch, Some(&mut caller))
+        .request_mounted(SceneCommand::Patch, "", &patch, Some(&mut caller))
         .unwrap();
     assert_eq!(
         store.scenes["model-test"].tree.nodes["caption"].ports["text"],
@@ -350,7 +350,7 @@ fn managed_model_writes_require_loader_and_current_generation() {
                 json!("bad")
             };
             let error = store
-                .request_mounted(SceneVerb::Patch, "", &request, Some(&mut caller))
+                .request_mounted(SceneCommand::Patch, "", &request, Some(&mut caller))
                 .unwrap_err();
             assert_eq!(error["error_code"], "SCENE_MODEL_AUTHORITY");
             assert_eq!(store.scenes["model-test"].tree, before);
@@ -359,7 +359,7 @@ fn managed_model_writes_require_loader_and_current_generation() {
         assert!(
             store
                 .request_mounted(
-                    SceneVerb::Load,
+                    SceneCommand::Load,
                     MODEL_SCENE,
                     &Value::Null,
                     Some(&mut caller)
@@ -368,7 +368,7 @@ fn managed_model_writes_require_loader_and_current_generation() {
         );
         assert!(
             store
-                .request_mounted(SceneVerb::Load, "", &load, Some(&mut caller))
+                .request_mounted(SceneCommand::Load, "", &load, Some(&mut caller))
                 .is_err()
         );
     }
@@ -376,7 +376,7 @@ fn managed_model_writes_require_loader_and_current_generation() {
     assert!(
         store
             .request_mounted(
-                SceneVerb::Load,
+                SceneCommand::Load,
                 MODEL_SCENE,
                 &Value::Null,
                 Some(&mut caller)
@@ -385,7 +385,7 @@ fn managed_model_writes_require_loader_and_current_generation() {
     );
     store
         .request_mounted(
-            SceneVerb::Load,
+            SceneCommand::Load,
             "",
             &json!({"source":MODEL_SCENE,"model_generation":8}),
             Some(&mut caller),
@@ -397,7 +397,7 @@ fn managed_model_writes_require_loader_and_current_generation() {
         stale["generation"] = generation;
         assert!(
             store
-                .request_mounted(SceneVerb::Patch, "", &stale, Some(&mut caller))
+                .request_mounted(SceneCommand::Patch, "", &stale, Some(&mut caller))
                 .is_err()
         );
         assert_eq!(store.scenes["model-test"].revision, revision);
@@ -405,11 +405,11 @@ fn managed_model_writes_require_loader_and_current_generation() {
     let mut current = patch;
     current["generation"] = json!(8);
     store
-        .request_mounted(SceneVerb::Patch, "", &current, Some(&mut caller))
+        .request_mounted(SceneCommand::Patch, "", &current, Some(&mut caller))
         .unwrap();
     store
         .request_mounted(
-            SceneVerb::Patch,
+            SceneCommand::Patch,
             "",
             &json!({"scene":"model-test","path":"caption.text","value":"layout"}),
             Some(&mut caller),
@@ -418,7 +418,7 @@ fn managed_model_writes_require_loader_and_current_generation() {
     assert_eq!(store.scenes["model-test"].model_generation, Some(8));
     store
         .request_mounted(
-            SceneVerb::Load,
+            SceneCommand::Load,
             "",
             &json!({"source":MODEL_SCENE,"model_generation":0}),
             Some(&mut caller),
@@ -427,14 +427,14 @@ fn managed_model_writes_require_loader_and_current_generation() {
     current["generation"] = json!(0);
     assert!(
         store
-            .request_mounted(SceneVerb::Patch, "", &current, Some(&mut caller))
+            .request_mounted(SceneCommand::Patch, "", &current, Some(&mut caller))
             .is_err()
     );
     // An out-of-range or non-integer generation is refused before parsing.
     for generation in [json!(9_007_199_254_740_991u64), json!(-1), json!(1.5)] {
         let error = store
             .request_mounted(
-                SceneVerb::Load,
+                SceneCommand::Load,
                 "",
                 &json!({"source":MODEL_SCENE,"model_generation":generation}),
                 Some(&mut caller),
@@ -448,12 +448,12 @@ fn managed_model_writes_require_loader_and_current_generation() {
 fn model_patch_is_transactional_and_retains_bindings_and_last_good_values() {
     let mut store = SceneStore::default();
     store
-        .request(SceneVerb::Load, MODEL_SCENE, &Value::Null)
+        .request(SceneCommand::Load, MODEL_SCENE, &Value::Null)
         .unwrap();
     let bindings = store.scenes["model-test"].bindings.clone();
     store
         .request(
-            SceneVerb::Patch,
+            SceneCommand::Patch,
             "",
             &json!({"scene":"model-test","path":"model.caption","value":"second"}),
         )
@@ -471,7 +471,7 @@ fn model_patch_is_transactional_and_retains_bindings_and_last_good_values() {
     // data and returning an evaluation diagnostic, per core binding policy.
     let (_, summary) = store
         .request(
-            SceneVerb::Patch,
+            SceneCommand::Patch,
             "",
             &json!({"scene":"model-test","path":"model","value":{"caption":7,"rows":[]}}),
         )
@@ -500,7 +500,7 @@ fn model_patch_is_transactional_and_retains_bindings_and_last_good_values() {
         assert!(
             store
                 .request(
-                    SceneVerb::Patch,
+                    SceneCommand::Patch,
                     "",
                     &json!({"scene":"model-test","path":path,"value":value})
                 )
@@ -515,16 +515,16 @@ fn model_patch_is_transactional_and_retains_bindings_and_last_good_values() {
 fn cumulative_model_bounds_source_export_and_validation_have_no_side_effects() {
     let mut store = SceneStore::default();
     store
-        .request(SceneVerb::Validate, MODEL_SCENE, &Value::Null)
+        .request(SceneCommand::Validate, MODEL_SCENE, &Value::Null)
         .unwrap();
     assert!(store.scenes.is_empty());
     assert!(store.revisions.is_empty());
     store
-        .request(SceneVerb::Load, MODEL_SCENE, &Value::Null)
+        .request(SceneCommand::Load, MODEL_SCENE, &Value::Null)
         .unwrap();
     store
         .request(
-            SceneVerb::Patch,
+            SceneCommand::Patch,
             "",
             &json!({"scene":"model-test","path":"model.a","value":"x".repeat(150_000)}),
         )
@@ -533,7 +533,7 @@ fn cumulative_model_bounds_source_export_and_validation_have_no_side_effects() {
     assert!(
         store
             .request(
-                SceneVerb::Patch,
+                SceneCommand::Patch,
                 "",
                 &json!({"scene":"model-test","path":"model.b","value":"x".repeat(150_000)})
             )
@@ -542,7 +542,7 @@ fn cumulative_model_bounds_source_export_and_validation_have_no_side_effects() {
     assert_eq!(store.scenes["model-test"].revision, revision);
     let (export, _) = store
         .request(
-            SceneVerb::Get,
+            SceneCommand::Get,
             "",
             &json!({"scene":"model-test","format":"source"}),
         )
@@ -565,13 +565,13 @@ fn model_patch_cannot_move_a_live_mount_address() {
     let mut store = SceneStore::default();
     let source = "---\nscene: 1\nname: edge-binding\ncitizen: behaviour\nmodel: {\"edge\":\"right\"}\n---\n```mix\nroot: {widget: \"window\", kind: \"edge\", edge: \"= $model.edge\"}\n```\n";
     store
-        .request(SceneVerb::Load, source, &Value::Null)
+        .request(SceneCommand::Load, source, &Value::Null)
         .unwrap();
     let before = store.scenes["edge-binding"].tree.clone();
     let revision = store.scenes["edge-binding"].revision;
     let error = store
         .request(
-            SceneVerb::Patch,
+            SceneCommand::Patch,
             "",
             &json!({"scene":"edge-binding", "path":"model.edge", "value":"left"}),
         )
@@ -585,11 +585,11 @@ fn model_patch_cannot_move_a_live_mount_address() {
 fn inventory_requires_the_render_reservation_and_reports_unowned_watch() {
     let mut store = SceneStore::default();
     store
-        .request(SceneVerb::Load, FIXTURE, &Value::Null)
+        .request(SceneCommand::Load, FIXTURE, &Value::Null)
         .unwrap();
     let output = "test-output";
     let watched = store
-        .request(SceneVerb::Watch, "", &json!({"scene":"conformance"}))
+        .request(SceneCommand::Watch, "", &json!({"scene":"conformance"}))
         .unwrap()
         .0;
     let row = &store.list(output)[0];
@@ -640,13 +640,13 @@ fn inventory_requires_the_render_reservation_and_reports_unowned_watch() {
 fn cumulative_patch_size_is_transactional() {
     let mut store = SceneStore::default();
     store
-        .request(SceneVerb::Load, FIXTURE, &Value::Null)
+        .request(SceneCommand::Load, FIXTURE, &Value::Null)
         .unwrap();
     // Each patch fits the ingress bound; their combined document does not.
     for path in ["text.text", "field.value"] {
         store
             .request(
-                SceneVerb::Patch,
+                SceneCommand::Patch,
                 "",
                 &json!({"scene":"conformance","path":path,"value":"x".repeat(100_000)}),
             )
@@ -656,7 +656,7 @@ fn cumulative_patch_size_is_transactional() {
     let revision = store.scenes["conformance"].revision;
     let error = store
         .request(
-            SceneVerb::Patch,
+            SceneCommand::Patch,
             "",
             &json!({"scene":"conformance","path":"button.label","value":"x".repeat(100_000)}),
         )
@@ -672,25 +672,25 @@ fn conformance_and_last_good() {
     let expected = scene::resolve(&scene::parse(FIXTURE).unwrap()).unwrap();
     let mut store = SceneStore::default();
     store
-        .request(SceneVerb::Load, FIXTURE, &Value::Null)
+        .request(SceneCommand::Load, FIXTURE, &Value::Null)
         .unwrap();
     let get = json!({"scene":"conformance"});
     assert_eq!(
-        store.request(SceneVerb::Get, "", &get).unwrap().0,
+        store.request(SceneCommand::Get, "", &get).unwrap().0,
         json!(expected)
     );
-    assert!(store.request(SceneVerb::Load, "bad", &Value::Null).is_err());
+    assert!(store.request(SceneCommand::Load, "bad", &Value::Null).is_err());
     assert!(
         store
             .request(
-                SceneVerb::Patch,
+                SceneCommand::Patch,
                 "",
                 &json!({"scene":"conformance","path":"field.value","value":false})
             )
             .is_err()
     );
     assert_eq!(
-        store.request(SceneVerb::Get, "", &get).unwrap().0,
+        store.request(SceneCommand::Get, "", &get).unwrap().0,
         json!(expected)
     );
     assert_eq!(store.scenes["conformance"].revision, 1);
@@ -698,7 +698,7 @@ fn conformance_and_last_good() {
     assert_eq!(
         store
             .request(
-                SceneVerb::Get,
+                SceneCommand::Get,
                 "",
                 &json!({"scene":"conformance","path":"button.label"})
             )
@@ -709,7 +709,7 @@ fn conformance_and_last_good() {
     assert!(
         store
             .request(
-                SceneVerb::Get,
+                SceneCommand::Get,
                 "",
                 &json!({"scene":"conformance","path":"button"})
             )
@@ -718,7 +718,7 @@ fn conformance_and_last_good() {
     assert!(
         store
             .request(
-                SceneVerb::Patch,
+                SceneCommand::Patch,
                 "",
                 &json!({"scene":"conformance","path":"button.nope","value":1})
             )
@@ -748,7 +748,7 @@ fn load(
     if preempt {
         args["preempt_dialog"] = json!(true);
     }
-    store.request_mounted(SceneVerb::Load, "", &args, Some(&mut caller))
+    store.request_mounted(SceneCommand::Load, "", &args, Some(&mut caller))
 }
 
 #[test]
@@ -829,7 +829,7 @@ fn a_second_dialog_is_busy_unless_it_preempts_and_the_incumbent_is_told() {
         json!({"scene":"other-dialog","owner":"some-citizen"})
     );
     // The refusal body is the frozen one, plus the scene it refused.
-    let frozen: Value = serde_json::from_str(SHELL_VERBS).unwrap();
+    let frozen: Value = serde_json::from_str(SHELL_COMMANDS).unwrap();
     let mut refusal = frozen["shell.scene.load"]["refusals"]["DIALOG_BUSY"].clone();
     refusal["scene"] = json!("editor");
     assert_eq!(error, refusal);
@@ -956,7 +956,7 @@ fn unload_and_owner_disconnect_release_the_dialog_seat() {
     };
     store
         .request_mounted(
-            SceneVerb::Unload,
+            SceneCommand::Unload,
             "",
             &json!({"scene":"editor"}),
             Some(&mut caller),
@@ -1059,7 +1059,7 @@ fn an_offscreen_seated_page_applies_each_revision() {
     let mut store = SceneStore::default();
     let watch = |store: &mut SceneStore| {
         store
-            .request(SceneVerb::Watch, "", &json!({"scene": "notes"}))
+            .request(SceneCommand::Watch, "", &json!({"scene": "notes"}))
             .unwrap()
             .0["applied_revision"]
             .clone()
@@ -1104,7 +1104,7 @@ fn unloading_an_unknown_scene_refuses_with_the_pinned_body() {
         owner: "scenes",
         accepted_at: 1,
     };
-    let done = store.dispatch(SceneVerb::Unload, "", &json!({"scene":"gone"}), &mut caller);
+    let done = store.dispatch(SceneCommand::Unload, "", &json!({"scene":"gone"}), &mut caller);
     assert_eq!(done.rc, 10, "{}", done.body);
     let body: Value = serde_json::from_str(&done.body).unwrap();
     assert_eq!(body["error"], "unknown scene", "{body}");
@@ -1129,7 +1129,7 @@ fn a_preempting_dispatch_publishes_the_incumbents_notice_first() {
             owner,
             accepted_at: receipt,
         };
-        let done = store.dispatch(SceneVerb::Load, "", &args, &mut caller);
+        let done = store.dispatch(SceneCommand::Load, "", &args, &mut caller);
         assert_eq!(done.rc, 0, "{}", done.body);
         publish.extend(done.publish);
     }

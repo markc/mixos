@@ -3,7 +3,7 @@
 //! The command line. `serve` is the daemon; the rest work with no daemon
 //! running, reading the kernel in process (or the history database), so a
 //! person on a node's console or an agent over ssh gets an answer either
-//! way. `--json` prints what the matching Bus verb would return.
+//! way. `--json` prints what the matching Bus command would return.
 use crate::engine::{Config, Engine};
 use crate::history::{self, Retention, Store, Tier};
 use crate::kernel::Root;

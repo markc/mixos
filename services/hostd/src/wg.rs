@@ -31,7 +31,7 @@ use std::{
     time::Duration,
 };
 
-pub const VERB: &str = "net.wg.apply";
+pub const COMMAND: &str = "net.wg.apply";
 const DEFAULT_WINDOW: u64 = 25;
 const MAX_WINDOW: u64 = 60;
 const MAX_ADDRESSES: usize = 8;
@@ -202,7 +202,7 @@ pub fn plan(root: &Path, request: Request) -> Result<Plan, Value> {
     let public_key = encode_key(&public_of(&private));
 
     let mut netdev_text = format!(
-        "# Written by hostd ({VERB}). hostd replaces this file; edits are lost.\n\
+        "# Written by hostd ({COMMAND}). hostd replaces this file; edits are lost.\n\
          [NetDev]\nName={}\nKind=wireguard\n\n[WireGuard]\nPrivateKeyFile={}\n",
         request.name,
         key.strip_prefix(root)
@@ -286,7 +286,7 @@ pub fn plan(root: &Path, request: Request) -> Result<Plan, Value> {
     }
 
     let mut network_text = format!(
-        "# Written by hostd ({VERB}). hostd replaces this file; edits are lost.\n\
+        "# Written by hostd ({COMMAND}). hostd replaces this file; edits are lost.\n\
          [Match]\nName={}\n\n[Network]\n",
         request.name
     );
@@ -572,7 +572,7 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
     }
 
     let networkd = Networkd::connect().await.map_err(internal)?;
-    let mut receipt = Receipt::new(VERB, &grant, &origin, summary(&plan));
+    let mut receipt = Receipt::new(COMMAND, &grant, &origin, summary(&plan));
     let mut files = vec![];
     if let Some(key) = &plan.new_key {
         let mut change = FileChange::backup(&plan.key).map_err(internal)?;

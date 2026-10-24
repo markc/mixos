@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Wire adapter for the `<svc>.stats.snapshot` Bus verb (plan §4.2).
+//! Wire adapter for the `<svc>.stats.snapshot` Bus command (plan §4.2).
 //!
-//! This is the `bus-handlers`-gated half of the verb — it parses the
+//! This is the `bus-handlers`-gated half of the command — it parses the
 //! Bus headers documented in plan §4.2, calls [`snapshot_dispatch`] (the
 //! Bus-agnostic core in `stats/dispatch.rs`), and serializes the
 //! resulting [`Snapshot`] into the §4.2 response envelope. The 1 MiB
@@ -13,13 +13,13 @@
 //! # Why a free function and not a struct
 //!
 //! Slice 5b's "option 1" shape (see
-//! `_doc/planned/logging-stats.md` §4.2 — *"This verb is
+//! `_doc/planned/logging-stats.md` §4.2 — *"This command is
 //! registered on the host's existing `PropsRouter`"*) was deferred in
-//! favour of matching every other custom verb in the tree: a free
+//! favour of matching every other custom command in the tree: a free
 //! function the daemon's existing `cmd.command.strip_prefix(...)`
 //! dispatch loop calls directly. `PropsRouter` is exclusively the
 //! SPEC-12 `<svc>.props.*` router (see
-//! `mixos-lib-props-store/src/bus/mutation.rs`); routing a non-props verb
+//! `mixos-lib-props-store/src/bus/mutation.rs`); routing a non-props command
 //! through it would have crossed an architectural boundary. The
 //! free-function shape is the smallest blast radius and matches the
 //! `maild::bus::{dkim,rules,bayesian,tls}::dispatch` precedent
@@ -51,10 +51,10 @@
 //!
 //! # Cap-admission vs probe-oracle gate
 //!
-//! Two layered gates protect this verb:
+//! Two layered gates protect this command:
 //!
-//! 1. **Verb admission** — `stats.snapshot:<svc>` (operator-class
-//!    default). The caller must hold this to call the verb at all.
+//! 1. **Command admission** — `stats.snapshot:<svc>` (operator-class
+//!    default). The caller must hold this to call the command at all.
 //!    Enforced here in [`handle_snapshot_bus`] before any header
 //!    parsing or registry access (plan §4.3, §4.2).
 //! 2. **Restricted-family probe-oracle defense** —
@@ -135,7 +135,7 @@ const RC_ERR: u8 = 10;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SnapshotCaps {
     /// `stats.snapshot:<svc>` (plan §4.3, operator-class default).
-    /// Required to call the verb at all. Missing → `RC_ERR` with
+    /// Required to call the command at all. Missing → `RC_ERR` with
     /// `error="CapabilityRequired"`, `needed="stats.snapshot:<svc>"`.
     pub has_snapshot: bool,
     /// `stats.snapshot:raw-labels:<svc>` (plan §4.3, host-class
@@ -152,7 +152,7 @@ pub struct SnapshotCaps {
 ///
 /// # Ordering (load-bearing)
 ///
-/// 1. Verb-admission cap-check (`has_snapshot`) — *before* any header
+/// 1. Command-admission cap-check (`has_snapshot`) — *before* any header
 ///    parse, so a caller with no operator cap can't probe for parse
 ///    differentials (e.g. observing whether an invalid `metric` glob
 ///    surfaces faster than a valid one).
@@ -170,7 +170,7 @@ pub fn handle_snapshot_bus(
     recorder: &StatsRecorder,
     caps: &SnapshotCaps,
 ) -> (u8, String) {
-    // 1. Verb-admission cap-check (plan §4.3).
+    // 1. Command-admission cap-check (plan §4.3).
     if !caps.has_snapshot {
         return capability_required(
             "stats.snapshot:<svc>",

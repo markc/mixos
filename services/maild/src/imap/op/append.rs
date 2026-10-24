@@ -8,7 +8,7 @@
 //! has already consumed the literal body by the time this handler
 //! runs; we only see the parsed command line plus `literal: Vec<u8>`.
 //!
-//! Wire grammar (after the verb is stripped):
+//! Wire grammar (after the command is stripped):
 //!
 //! ```text
 //! args        = mailbox [SP "(" flag-list ")"] [SP date-time]
@@ -77,7 +77,7 @@ struct AppendReq {
 
 /// Parse the APPEND argument head — mailbox, optional flag-list, and
 /// optional date-time. The literal has already been stripped by the
-/// codec, so `args` is everything between the verb and the (now
+/// codec, so `args` is everything between the command and the (now
 /// removed) literal marker. Trailing whitespace is tolerated.
 fn parse_args(args: &str) -> Result<AppendReq, String> {
     let s = args.trim_start();

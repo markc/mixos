@@ -140,9 +140,9 @@ pub struct Record {
 }
 
 /// `kind` body field on records.changed events.
-/// Not to be confused with the storage-history `verb` string
+/// Not to be confused with the storage-history `command` string
 /// (`<svc>.props.{set,delete,complete,reconcile}`), which is derived
-/// from `kind` plus the owning service via [`EventKind::verb_for`].
+/// from `kind` plus the owning service via [`EventKind::command_for`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventKind {
@@ -153,19 +153,19 @@ pub enum EventKind {
     /// Caller-driven `<svc>.props.delete`.
     Deleted,
     /// Library-internal saga lifecycle transition (Provisioning →
-    /// Active|Failed). Wire verb is `<svc>.props.complete`.
+    /// Active|Failed). Wire command is `<svc>.props.complete`.
     Completed,
     /// Synthetic startup-reconciliation event after hand-edit
-    /// divergence. Wire verb is `<svc>.props.reconcile`. Bumps
+    /// divergence. Wire command is `<svc>.props.reconcile`. Bumps
     /// `audit_epoch`.
     Reconciled,
 }
 
 impl EventKind {
-    /// Full wire verb for this kind under the named service. Examples:
-    /// `EventKind::Created.verb_for("demod") == "demod.props.set"`,
-    /// `EventKind::Reconciled.verb_for("demod") == "demod.props.reconcile"`.
-    pub fn verb_for(&self, service: &str) -> String {
+    /// Full wire command for this kind under the named service. Examples:
+    /// `EventKind::Created.command_for("demod") == "demod.props.set"`,
+    /// `EventKind::Reconciled.command_for("demod") == "demod.props.reconcile"`.
+    pub fn command_for(&self, service: &str) -> String {
         let suffix = match self {
             Self::Created | Self::Updated => "set",
             Self::Deleted => "delete",
@@ -373,14 +373,14 @@ impl std::str::FromStr for Actor {
 /// wire shapes:
 ///
 /// - `<svc>.props.records.changed` body — adds the
-///   service-prefixed `verb` string (`demod.props.set` etc., derived
-///   from `kind` via [`EventKind::verb_for`]); drops `audit_digest`;
+///   service-prefixed `command` string (`demod.props.set` etc., derived
+///   from `kind` via [`EventKind::command_for`]); drops `audit_digest`;
 ///   flattens [`Lifecycle`] into `{lifecycle: "active"|"failed",
 ///   reason?: string}` **only on `Completed` events**, and omits
 ///   the field entirely on `Created`/`Updated`/`Deleted`/`Reconciled`
 ///   even when the storage row's `lifecycle` is `Some(_)`.
 /// - `<svc>.props.audit` body — projected via
-///   [`AuditRow`], which carries the service-prefixed `verb`
+///   [`AuditRow`], which carries the service-prefixed `command`
 ///   string and `audit_digest`; never carries `lifecycle`.
 ///
 /// Serialisation here flattens `namespace`, `key`, and `field_path`
@@ -395,15 +395,15 @@ pub struct RecordEvent {
     pub audit_epoch: AuditEpoch,
     /// The `kind` body field on records.changed.
     pub kind: EventKind,
-    /// the service-prefixed verb string the storage
+    /// the service-prefixed command string the storage
     /// backend writes at commit time (one of `<svc>.props.set`,
     /// `<svc>.props.delete`, `<svc>.props.complete`,
     /// `<svc>.props.reconcile`). Storing it on the row keeps the
     /// event-history rows self-describing for audit replay even if
     /// the owning daemon's registered name changes between writes
-    /// and reads. Composed via [`EventKind::verb_for`] at commit
+    /// and reads. Composed via [`EventKind::command_for`] at commit
     /// time.
-    pub verb: String,
+    pub command: String,
     #[serde(flatten)]
     pub key: RecordKey,
     /// Saga state at the moment this row was committed. Stored on
@@ -461,11 +461,11 @@ fn is_zero_u32(n: &u32) -> bool {
 }
 
 /// Audit-stream projection. Flat body fields:
-/// `namespace`, `key`, `verb`, `version`, `nseq`, `audit_epoch`,
+/// `namespace`, `key`, `command`, `version`, `nseq`, `audit_epoch`,
 /// `actor`, `at`, `fields_changed`, `audit_digest`.
 ///
 /// `AuditRow` is the projection type the dispatcher constructs
-/// for audit emission from a stored [`RecordEvent`]; `verb`,
+/// for audit emission from a stored [`RecordEvent`]; `command`,
 /// `audit_digest`, and the `at` timestamp are all read verbatim
 /// from the persisted `RecordEvent` row. The storage layer does not persist a
 /// separate audit row — `events_since` returns the same rows, and
@@ -509,12 +509,12 @@ fn is_zero_u32(n: &u32) -> bool {
 pub struct AuditRow {
     pub namespace: NamespaceName,
     pub key: String,
-    /// Service-prefixed verb string, e.g. `demod.props.set`. Copied
-    /// verbatim from the stored [`RecordEvent::verb`] field; the
+    /// Service-prefixed command string, e.g. `demod.props.set`. Copied
+    /// verbatim from the stored [`RecordEvent::command`] field; the
     /// storage backend computed it once at commit time via
-    /// [`EventKind::verb_for`] so audit replay reproduces the
+    /// [`EventKind::command_for`] so audit replay reproduces the
     /// row as written regardless of any later service renames.
-    pub verb: String,
+    pub command: String,
     pub version: Version,
     pub nseq: Nseq,
     pub audit_epoch: AuditEpoch,
@@ -611,16 +611,16 @@ mod tests {
     }
 
     #[test]
-    fn event_kind_verb_composition() {
-        assert_eq!(EventKind::Created.verb_for("demod"), "demod.props.set");
-        assert_eq!(EventKind::Updated.verb_for("demod"), "demod.props.set");
-        assert_eq!(EventKind::Deleted.verb_for("demod"), "demod.props.delete");
+    fn event_kind_command_composition() {
+        assert_eq!(EventKind::Created.command_for("demod"), "demod.props.set");
+        assert_eq!(EventKind::Updated.command_for("demod"), "demod.props.set");
+        assert_eq!(EventKind::Deleted.command_for("demod"), "demod.props.delete");
         assert_eq!(
-            EventKind::Completed.verb_for("demod"),
+            EventKind::Completed.command_for("demod"),
             "demod.props.complete"
         );
         assert_eq!(
-            EventKind::Reconciled.verb_for("demod"),
+            EventKind::Reconciled.command_for("demod"),
             "demod.props.reconcile"
         );
         assert!(EventKind::Completed.is_internal());
@@ -750,7 +750,7 @@ mod tests {
     fn actor_validation_nested_in_event_and_audit() {
         let mut wire = serde_json::json!({
             "namespace": "accounts", "key": "alice@example.org",
-            "kind": "created", "verb": "demod.props.set",
+            "kind": "created", "command": "demod.props.set",
             "version": 1, "nseq": 1, "audit_epoch": 0,
             "actor": "demod", "at": "2026-05-11T12:00:00Z"
         });
@@ -791,7 +791,7 @@ mod tests {
             version: Version(1),
             audit_epoch: AuditEpoch::zero(),
             kind: EventKind::Created,
-            verb: EventKind::Created.verb_for("demod"),
+            command: EventKind::Created.command_for("demod"),
             key: RecordKey::collection(ns(), "test@example.com"),
             lifecycle: Some(Lifecycle::Provisioning),
             actor: Actor::operator("alice").expect("valid actor"),
@@ -820,8 +820,8 @@ mod tests {
             "event-history row serialises as `at`, dispatcher remaps to `ts` on the records.changed projection"
         );
         assert_eq!(j["kind"], "created");
-        // The event-history row carries the service-prefixed verb.
-        assert_eq!(j["verb"], "demod.props.set");
+        // The event-history row carries the service-prefixed command.
+        assert_eq!(j["command"], "demod.props.set");
         assert_eq!(j["secret_fields_changed_count"], 1);
         // records.changed body has flat namespace + key at top
         // level (the row's RecordKey is flattened on the wire).
@@ -840,7 +840,7 @@ mod tests {
             version: Version(2),
             audit_epoch: AuditEpoch::zero(),
             kind: EventKind::Deleted,
-            verb: EventKind::Deleted.verb_for("demod"),
+            command: EventKind::Deleted.command_for("demod"),
             key: RecordKey::collection(ns(), "u@h"),
             lifecycle: None,
             actor: Actor::service("demod").expect("valid actor"),
@@ -865,7 +865,7 @@ mod tests {
         let row = AuditRow {
             namespace: ns(),
             key: "u@h".into(),
-            verb: "demod.props.set".into(),
+            command: "demod.props.set".into(),
             version: Version(1),
             nseq: Nseq(1),
             audit_epoch: AuditEpoch::zero(),
@@ -878,7 +878,7 @@ mod tests {
         // Flat audit field set.
         assert_eq!(j["namespace"], "accounts");
         assert_eq!(j["key"], "u@h");
-        assert_eq!(j["verb"], "demod.props.set");
+        assert_eq!(j["command"], "demod.props.set");
         assert_eq!(j["version"], 1);
         assert_eq!(j["nseq"], 1);
         assert_eq!(j["audit_epoch"], 0);

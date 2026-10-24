@@ -6,7 +6,7 @@
 //! Phase 4 introduces a second source of truth for DKIM signer rows
 //! alongside the operator-edited `[[dkim.domain]]` config: the
 //! `maild.domains` substrate namespace, whose `dkim_selectors` /
-//! `dkim_selector_active` fields are driven by the Phase 4 verbs
+//! `dkim_selector_active` fields are driven by the Phase 4 commands
 //! (`maild.dkim.{generate,rotate,retire}`).
 //!
 //! `rebuild_signer_from_substrate` takes:
@@ -38,7 +38,7 @@ use std::sync::Arc;
 
 use crate::props::domains::{namespace_name, view};
 
-/// Convention path for a substrate-managed signer PEM. The verbs and
+/// Convention path for a substrate-managed signer PEM. The commands and
 /// the rebuild loop both go through this so the on-disk layout stays
 /// addressable from a single function.
 pub fn pem_path(key_root: &Path, domain: &str, selector: &str) -> PathBuf {

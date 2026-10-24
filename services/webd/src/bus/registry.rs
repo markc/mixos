@@ -2,13 +2,13 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The public registry must match the service's HELP metadata exactly.
 #[test]
-fn registry_matches_registered_verbs_and_classes() {
+fn registry_matches_registered_commands_and_classes() {
     use std::collections::BTreeMap;
     let registry: serde_json::Value = config::from_conf_mix_str(include_str!(
-        "../../../../docs/docs/spec/bus/verbs.conf.mix"
+        "../../../../docs/docs/spec/bus/commands.conf.mix"
     ))
     .unwrap();
-    let registered: BTreeMap<String, String> = registry["verbs"]
+    let registered: BTreeMap<String, String> = registry["commands"]
         .as_array()
         .unwrap()
         .iter()
@@ -20,13 +20,13 @@ fn registry_matches_registered_verbs_and_classes() {
             )
         })
         .collect();
-    let declared: BTreeMap<String, String> = super::verb_manifest()
+    let declared: BTreeMap<String, String> = super::command_manifest()
         .into_iter()
-        .filter(|verb| verb.name != "HELP")
-        .map(|verb| {
+        .filter(|command| command.name != "HELP")
+        .map(|command| {
             (
-                verb.name,
-                if verb.read_only { "query" } else { "intent" }.to_owned(),
+                command.name,
+                if command.read_only { "query" } else { "intent" }.to_owned(),
             )
         })
         .collect();

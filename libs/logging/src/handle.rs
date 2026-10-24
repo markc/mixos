@@ -128,7 +128,7 @@ impl LogHandle {
     /// `init` always installs a subscriber (the `--log-level none` path
     /// installs `EnvFilter::off()` behind the reload layer), so this
     /// returns `Some` on every successful `init`. A property
-    /// watcher and any Bus-driven filter verb
+    /// watcher and any Bus-driven filter command
     /// drive runtime level swaps through the returned
     /// [`LogReloadHandle`].
     pub fn reload_handle(&self) -> Option<LogReloadHandle> {
@@ -170,7 +170,7 @@ impl LogHandle {
 
 /// Opaque handle to the live-reloadable `EnvFilter` layer. Hands the
 /// caller (e.g. a property watcher, or a future
-/// Mix Bus verb) the ability to swap the active filter at runtime
+/// Mix Bus command) the ability to swap the active filter at runtime
 /// without exposing the `tracing_subscriber` reload type.
 #[derive(Clone)]
 pub struct LogReloadHandle {

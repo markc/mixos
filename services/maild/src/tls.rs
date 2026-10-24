@@ -24,7 +24,7 @@ use rustls::server::ServerConfig;
 pub use ::config::tls::sni::{SniCertResolver, TlsIdentity, pick_identity};
 
 /// Live-swappable TLS resolver slot. The Phase 5a `maild.tls.reload`
-/// verb (commit-2) `store`s a freshly-built `Arc<SniCertResolver>`
+/// command (commit-2) `store`s a freshly-built `Arc<SniCertResolver>`
 /// here; the listener accept loops `load_full()` it once per
 /// connection and pass the captured snapshot to the session for the
 /// duration of that connection.
@@ -48,7 +48,7 @@ pub fn new_tls_slot(initial: Option<Arc<SniCertResolver>>) -> TlsSlot {
 ///
 /// The cache is intentionally small: at most one entry while the slot
 /// is steady; transiently two during the post-`store` / pre-`clear`
-/// window in the reload verb body. A live SMTPS handshake holding
+/// window in the reload command body. A live SMTPS handshake holding
 /// the old `Arc<ServerConfig>` keeps the old `Arc<SniCertResolver>`
 /// alive via the `with_cert_resolver` reference, so in-flight
 /// connections drain cleanly without coordination.
@@ -82,7 +82,7 @@ impl ServerConfigCache {
     }
 
     /// Drop all cached `ServerConfig`s. The Phase 5a-commit-2 reload
-    /// verb calls this after `slot.store(new_resolver)`. In-flight
+    /// command calls this after `slot.store(new_resolver)`. In-flight
     /// handshakes hold their own `Arc<ServerConfig>` and are
     /// unaffected.
     pub fn clear(&self) {

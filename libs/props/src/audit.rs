@@ -49,7 +49,7 @@ impl AuditKey {
     }
 
     /// Raw bytes for persistence. Callers MUST store this only inside the
-    /// owning service's private storage area — never in any verb response
+    /// owning service's private storage area — never in any command response
     /// or audit body.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0

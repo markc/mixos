@@ -15,7 +15,7 @@
 //!   holds; a caller that stopped waiting ends it silently;
 //! - losing input authority ends the agent's runs `input_cleared`.
 //!
-//! Every step runs through policy-host `input::run_step`, the single-verb
+//! Every step runs through policy-host `input::run_step`, the single-command
 //! path, with the run as the owner of what it presses.
 
 use std::cell::RefCell;
@@ -178,7 +178,7 @@ impl Sequences {
                     let Some(entry) = self.runs.get_mut(&id) else {
                         return;
                     };
-                    if let Some(failed) = entry.run.record(index, step.verb, reply, coalesced) {
+                    if let Some(failed) = entry.run.record(index, step.command, reply, coalesced) {
                         let entry = self.runs.remove(&id).expect("the run is present");
                         policy_host::input::release_run(lp, id);
                         entry.reply.send(failed);

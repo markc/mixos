@@ -3,7 +3,7 @@
 //! Terminal: MixOS's tabbed terminal, with split panes, drawn on the GPU.
 //!
 //! The behaviour is the `term-core` engine (PTYs, the VT grid, tabs and
-//! panes, selection, mouse reporting, the `term.*` Bus verbs and the native
+//! panes, selection, mouse reporting, the `term.*` Bus commands and the native
 //! session); the grid is drawn by `term-render`. This crate is the egui
 //! shell around them (AGENTS.md §4.1):
 //!
@@ -12,13 +12,13 @@
 //!   terminal actions and PTY input;
 //! - [`layout`]: pane rectangles and grid sizes on whole physical pixels;
 //! - [`commands`]: the registry every action goes through;
-//! - [`bus`]: the window's own verbs on the `term` name;
+//! - [`bus`]: the window's own commands on the `term` name;
 //! - [`view`]: the drawing; [`shell`]: the running window.
 
 pub mod app;
 pub mod bus;
 pub mod clipboard;
-pub mod commands;
+pub mod actions;
 mod font;
 pub mod ime;
 pub mod input;

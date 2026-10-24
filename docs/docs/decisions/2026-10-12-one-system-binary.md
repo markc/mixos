@@ -39,7 +39,7 @@ Status: accepted 2026-10-12, **on hold 2026-10-20**. Amends [the source layout](
   - The shell's self re-execution passes `mix` as its name, so a re-exec from
     a daemon personality comes back as the shell.
 - **Components keep their identity.** Each daemon keeps its own crate, tests,
-  units, metadata, version and verb registry. Its library exports
+  units, metadata, version and command registry. Its library exports
   `pub fn main() -> ExitCode`; its own `[[bin]]` stays for development
   builds. `cli/mix-shell` becomes a library with no binary.
 - **What goes in:** the shell, `noded`, and every headless base and server

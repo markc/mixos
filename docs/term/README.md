@@ -12,7 +12,7 @@ two private crates:
 
 - `crates/term-core`: the engine. PTYs, the VT grid, tabs and panes,
   selection, mouse reporting, configuration, the native session and the
-  `term.*` Bus verbs.
+  `term.*` Bus commands.
 - `crates/term-render`: the grid on the GPU. A glyph atlas and instanced
   cells drawn by an egui-wgpu paint callback per pane. The CPU raster in
   term-core is its test oracle.
@@ -21,7 +21,7 @@ The shell adds the window: the toolkit title bar and menus, the tab strip,
 pane borders on whole physical pixels, the keyboard and input method, the
 pointer (selection, mouse reporting, middle-click paste of the primary
 selection), the clipboard, and font zoom. Every action is a command on the
-toolkit registry, published on `term.command.executed`.
+toolkit registry, published on `term.action.executed`.
 
 The source is [`apps/term`](https://github.com/markc/mixos/tree/main/apps/term).
 
@@ -30,13 +30,13 @@ The source is [`apps/term`](https://github.com/markc/mixos/tree/main/apps/term).
 The window registers `term` (or `term-<pid>` when another instance holds
 it) and answers:
 
-- the terminal's verbs, served by term-core (`HELP` lists them):
+- the terminal's commands, served by term-core (`HELP` lists them):
   `term.session`, `term.tabs`, `term.tab.*`, `term.panes`, `term.pane.*`,
   `term.snapshot`, `term.scroll`, `term.type`, `term.props.watch`;
-- the window's own: `term.commands`, `term.execute`, `app.describe`, and the
-  toolkit drive verbs (`term.ui.*`, `term.window`, `term.window.state`).
+- the window's own: `term.actions`, `term.execute`, `app.describe`, and the
+  toolkit drive commands (`term.ui.*`, `term.window`, `term.window.state`).
 
-`term --headless` serves the terminal's verbs with no window.
+`term --headless` serves the terminal's commands with no window.
 
 ## Configuration
 
@@ -78,14 +78,14 @@ cargo build --locked --profile release-fast -p term
 and a split; regenerate it with `UPDATE_SNAPSHOTS=1` and look at it. The
 PTY tests need the Mix binary at `/opt/mixos/bin/mix`.
 
-## Macro Bus verbs
+## Macro Bus commands
 
-The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+The shared [macro Bus surface](/macros/#bus-commands) uses this process's
 catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
 the instance’s registered Bus name (for example `term-1234` for a second Term
-instance). Verbs keep the app’s canonical prefix, such as `term.macros.run`.
+instance). Commands keep the app’s canonical prefix, such as `term.macros.run`.
 
-| Verb | Arguments | Result |
+| Command | Arguments | Result |
 |---|---|---|
 | `term.macros.list` | `{}` | Catalogue and diagnostics |
 | `term.macros.reload` | `{}` | Catalogue and diagnostics |

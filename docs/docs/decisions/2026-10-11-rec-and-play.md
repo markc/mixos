@@ -32,7 +32,7 @@ Status: accepted 2026-10-11. Amends [the source layout](2026-10-04-source-layout
   - Opening a `.mix` over the Bus shows it in the editor. Only
     `play.perform` runs it, and every perform is logged.
 - **`rec` writes an editable Mix script** from what happens on the desktop.
-  It builds on [executed commands](2026-10-11-executed-commands.md), [verb
+  It builds on [executed commands](2026-10-11-executed-commands.md), [command
   classes](2026-10-11-verb-classes.md) and the broker's observation stream.
   Runs of lines to one application are grouped in `address … end`, and a
   script never waits with a sleep.
@@ -47,7 +47,7 @@ Status: accepted 2026-10-11. Amends [the source layout](2026-10-04-source-layout
   - **One record per action.** A Bus call that runs a command shows up both
     in observation and as a command event. A causal identifier, or a rule
     for which source is authoritative, keeps exactly one.
-  - **Per-verb replay rules.** Targets are resolved stably instead of being
+  - **Per-command replay rules.** Targets are resolved stably instead of being
     dropped (a tab, a buffer). Fencing values are made fresh on replay
     (revisions, operation ids). Deliberate waits such as `ced.wait` are kept
     as conditions, never turned into sleeps.
@@ -67,7 +67,7 @@ Status: accepted 2026-10-11. Amends [the source layout](2026-10-04-source-layout
 ## Why
 
 Opening a file and recording what a person does are two halves of the same
-contract, the desktop's verbs. One resolver means the file manager, the
+contract, the desktop's commands. One resolver means the file manager, the
 portal, the command line and agents never disagree about which application
 opens a file. Using the freedesktop data that applications already install
 means MixOS learns a new format the moment an application that handles it
@@ -84,7 +84,7 @@ calling them by full path, falls on few people and is easy to pay.
 
 - AGENTS.md §3.4 lists the accepted collisions: `mix` (Elixir), and `rec`
   and `play` (sox).
-- `play`'s Bus verbs, the per-user handler document and the Bus snapshot
+- `play`'s Bus commands, the per-user handler document and the Bus snapshot
   document schema are registered as contracts when they land.
 - The file manager stops spawning `xdg-open` and calls `play.open`.
 - Rejected: a MixOS MIME-to-application table. It duplicates what every

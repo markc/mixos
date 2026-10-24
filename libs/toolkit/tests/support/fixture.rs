@@ -10,7 +10,7 @@
 use design::{DesignContext, Mode, Scheme};
 use egui::{Key, KeyboardShortcut, Modifiers};
 use egui_kittest::{Harness, HarnessBuilder};
-use toolkit::command::{Command, Registry, always};
+use toolkit::action::{Action, Registry, always};
 use toolkit::dialog::{Choice, Dialog, Role};
 use toolkit::titlebar::Control;
 use toolkit::{Icon, Strings, Theme, titlebar};
@@ -87,7 +87,7 @@ const CTRL_ALT: Modifiers = Modifiers::COMMAND.plus(Modifiers::ALT);
 
 macro_rules! commands {
     ($registry:ident: $($id:literal $label:literal $menu:literal $submenu:expr, $group:literal, $shortcut:expr, $enabled:expr;)+) => {
-        $($registry.add(Command {
+        $($registry.add(Action {
             id: $id,
             label: $label,
             menu: Some($menu),
@@ -131,7 +131,7 @@ pub fn registry() -> Registry<Fixture> {
         ("view.theme", "theme", None),
         ("help.community", "community", None),
     ] {
-        r.add(Command {
+        r.add(Action {
             id,
             label,
             menu: None,
@@ -184,7 +184,7 @@ pub fn harness(builder: HarnessBuilder<Fixture>, theme: &Theme) -> Harness<'stat
             let mut fired: Vec<_> = registry
                 .shortcuts(ui.ctx(), state)
                 .into_iter()
-                .map(|id| (id, toolkit::command::Origin::Shortcut))
+                .map(|id| (id, toolkit::action::Origin::Shortcut))
                 .collect();
             let mut workspace = state.workspace;
             let mut controls = [

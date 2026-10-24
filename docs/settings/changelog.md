@@ -90,7 +90,7 @@ coercion; callers that take ownership unwrap with `*appearance`.
 
 ## 0.5.0
 
-Authority verbs 0.3.0 (additive): snapshot schema 2
+Authority commands 0.3.0 (additive): snapshot schema 2
 ([decision](https://github.com/markc/mixos/blob/main/docs/docs/decisions/2026-10-11-settings-snapshot-schema-2.md)).
 
 - `compact`: `CompactSnapshot` (schema 2) sends each distinct design
@@ -110,7 +110,7 @@ Authority verbs 0.3.0 (additive): snapshot schema 2
 
 ## 0.4.0
 
-Authority verbs 0.2.0 (additive), snapshot schema still 1
+Authority commands 0.2.0 (additive), snapshot schema still 1
 ([decision](https://github.com/markc/mixos/blob/main/docs/docs/decisions/2026-10-11-settings-summary-reads.md)):
 
 - `Summary` (schema 1): binding, incarnation, revision, design revision,
@@ -136,13 +136,13 @@ scheme's own style; else plain, pro, studio or classic),
 `appearance.caption_side` (right, the default, or left). They resolve into
 every effective context; a style change is a paint and layout change and a
 decorations or caption-side change a layout change. Older desktops and
-snapshots load with the defaults. Authority verbs/schema remain 0.1.0/1.
+snapshots load with the defaults. Authority commands/schema remain 0.1.0/1.
 
 ## 0.3.4
 
 Expose the public snapshot identity of an activated cache capture so hosts can
 report fenced persistence receipts without copying its projection or private
-producer serial. Authority verbs/schema remain 0.1.0/1. The cache interpretation
+producer serial. Authority commands/schema remain 0.1.0/1. The cache interpretation
 includes the library version; older caches fall back visibly without affecting
 authority history.
 
@@ -151,7 +151,7 @@ authority history.
 Add immutable cache targets for borrowed workers, capture deduplication and
 producer-fenced writer opening. Add lazy persistent fallback loading after
 retained resource validation, preserving load diagnostics when embedded works.
-Authority verbs/schema remain 0.1.0/1. Older presentation caches are rejected
+Authority commands/schema remain 0.1.0/1. Older presentation caches are rejected
 because the cache interpretation includes this library version.
 
 ## 0.3.2
@@ -159,7 +159,7 @@ because the cache interpretation includes this library version.
 Expose shared consumer evidence with separate accepted and applied identities,
 connection generation, confirmation, presentation kind and faults. Readback
 never claims frame presentation or broker participant registration. Authority
-verbs and snapshot schema remain 0.1.0 and 1.
+commands and snapshot schema remain 0.1.0 and 1.
 
 ## 0.3.1
 

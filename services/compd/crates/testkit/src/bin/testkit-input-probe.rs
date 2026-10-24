@@ -3,7 +3,7 @@
 //! testkit-input-probe: a minimal SHM toplevel that echoes the seat input it
 //! receives.
 //!
-//! Gate client for compd's input and window verbs. Maps one xdg toplevel
+//! Gate client for compd's input and window commands. Maps one xdg toplevel
 //! (title, app id and size from the arguments), follows the compositor's
 //! configure size, redraws on every frame callback with presentation
 //! feedback, and prints one `PROBE ...` line per event:

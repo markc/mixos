@@ -245,7 +245,7 @@
 connect before any bytes are sent. A missing, unreadable or unusable key is
 rc 11 with no connection; the retry after <code>backoff_s</code> reads it again.
 <code>status</code> works before the key exists and never shows it. Token and none
-modes are unchanged. Bus verbs and registry classes are unchanged.</li>
+modes are unchanged. Bus commands and registry classes are unchanged.</li>
 </ul>
 <h2 id="010">0.1.0</h2>
 <p>First version. A Bus bridge to an external application's line-delimited JSON
@@ -259,8 +259,8 @@ auth, transport or timeout) or 12 (a bad request).</p>
 (loopback only), <code>port</code>, <code>auth</code> (<code>token</code> or <code>none</code>), <code>token_file</code>,
 <code>timeout_s</code>, <code>connect_timeout_s</code>, <code>backoff_s</code>, <code>max_line</code>, <code>instance</code>.</li>
 <li>Start checks, also as <code>mix bridged.mix --check &lt;app&gt;</code>: the Bus service-name
-rule, and no name that a registered verb already starts with (read from the
-installed verb registry, failing closed). A refusal exits 2 with
+rule, and no name that a registered command already starts with (read from the
+installed command registry, failing closed). A refusal exits 2 with
 <code>RUNTIME</code>, <code>NAME_INVALID</code>, <code>NAME_RESERVED</code>, <code>REGISTRY</code>, <code>CONFIG</code> or
 <code>TOKEN</code>.</li>
 <li>The name may not start with <code>mixos-</code> (mix --serve strips it) or be one of
@@ -292,10 +292,10 @@ and <code>IPAddressDeny=any</code>; a non-loopback Bus needs a drop-in).
 <code>systemd-analyze security</code> exposure 4.0 (OK).</li>
 <li>Documented residuals: loopback port squatting after the app dies (a
 unix-socket channel would close it), a direct <code>mix --serve</code> briefly holding
-a refused name, and the reverse name collision being the verb-registry
+a refused name, and the reverse name collision being the command-registry
 gate's to refuse.</li>
-<li>The six verbs are declared in <code>docs/spec/bus/verbs.conf.mix</code> as the
-<code>bridged</code> instance family (<code>&lt;app&gt;.&lt;verb&gt;</code>, <code>members: "instances"</code>), in the
+<li>The six commands are declared in <code>docs/spec/bus/commands.conf.mix</code> as the
+<code>bridged</code> instance family (<code>&lt;app&gt;.&lt;command&gt;</code>, <code>members: "instances"</code>), in the
 registry's schema 3. Installing the registry is a separate deployed
 prerequisite, and this entry does not claim a live installation.</li>
 <li>The bridge tests run in <code>tools/mix_tests.mix</code>. Their mix binary is

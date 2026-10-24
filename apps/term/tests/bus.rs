@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The window's own Bus verbs over a real broker (libs/test-broker): the
-//! lane registers `term`, serves its terminal verbs itself and hands the
-//! window `app.describe`, `term.commands`, `term.execute` and the drive verbs,
+//! The window's own Bus commands over a real broker (libs/test-broker): the
+//! lane registers `term`, serves its terminal commands itself and hands the
+//! window `app.describe`, `term.actions`, `term.execute` and the drive commands,
 //! which the window answers between its frames. Every command run is
-//! published on `term.command.executed`.
+//! published on `term.action.executed`.
 
 use ::bus::native_client::{BoundedIncomingEvent, NodedClient, SupervisedClient};
 use egui_kittest::Harness;
@@ -22,7 +22,7 @@ use term_core::font::FontSize;
 use term_core::raster::Raster;
 use term_core::tabs::{Cleanup, TabSet};
 
-const EXECUTED: &str = "term.command.executed";
+const EXECUTED: &str = "term.action.executed";
 
 struct Holder {
     start: Option<(App, WindowBus)>,
@@ -38,7 +38,7 @@ fn mix_available() -> bool {
 }
 
 #[test]
-fn the_window_answers_its_verbs_over_a_real_broker() {
+fn the_window_answers_its_commands_over_a_real_broker() {
     if !mix_available() {
         return;
     }
@@ -146,11 +146,11 @@ fn the_window_answers_its_verbs_over_a_real_broker() {
             .unwrap(),
     );
     // One call, the window stepping until its answer arrives.
-    let mut call = |verb: &str, body: Value| -> (u8, String) {
-        let (client, verb, body) = (client.clone(), verb.to_owned(), body.to_string());
+    let mut call = |command_name: &str, body: Value| -> (u8, String) {
+        let (client, command_name, body) = (client.clone(), command_name.to_owned(), body.to_string());
         let task = runtime.spawn(async move {
             client
-                .call_with_headers_raw("term", &verb, &Default::default(), &body)
+                .call_with_headers_raw("term", &command_name, &Default::default(), &body)
                 .await
         });
         let deadline = Instant::now() + Duration::from_secs(15);
@@ -163,27 +163,27 @@ fn the_window_answers_its_verbs_over_a_real_broker() {
         (rc, body)
     };
 
-    // The window's description covers the lane's verbs and its own.
+    // The window's description covers the lane's commands and its own.
     let (rc, body) = call("app.describe", json!({}));
     assert_eq!(rc, 0, "{body}");
     let described: Value = serde_json::from_str(&body).unwrap();
-    let names: Vec<&str> = described["verbs"]
+    let names: Vec<&str> = described["commands"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(|v| v["name"].as_str())
         .collect();
-    for verb in [
+    for command_name in [
         "term.tabs",
         "term.execute",
         "term.ui.tree",
         "term.window.state",
         "term.macros.status",
     ] {
-        assert!(names.contains(&verb), "{verb} missing from {names:?}");
+        assert!(names.contains(&command_name), "{command_name} missing from {names:?}");
     }
 
-    // The lane still serves the terminal's own verbs on the same name.
+    // The lane still serves the terminal's own commands on the same name.
     let (rc, body) = call("term.macros.status", json!({}));
     assert_eq!(rc, 0, "{body}");
     assert_eq!(
@@ -198,7 +198,7 @@ fn the_window_answers_its_verbs_over_a_real_broker() {
     assert!(body.contains("instance="), "{body}");
 
     // Commands, by id.
-    let (rc, body) = call("term.commands", json!({}));
+    let (rc, body) = call("term.actions", json!({}));
     assert_eq!(rc, 0, "{body}");
     let commands: Value = serde_json::from_str(&body).unwrap();
     assert!(
@@ -214,12 +214,12 @@ fn the_window_answers_its_verbs_over_a_real_broker() {
     assert_eq!(tabs.lock().unwrap().list().len(), 2);
     let (rc, body) = call("term.execute", json!({"id": "no.such"}));
     assert_eq!(rc, 10);
-    assert!(body.contains("UNKNOWN_COMMAND"), "{body}");
+    assert!(body.contains("UNKNOWN_ACTION"), "{body}");
     let (rc, body) = call("term.execute", json!({}));
     assert_eq!(rc, 10);
     assert!(body.contains("INVALID_ARGUMENT"), "{body}");
 
-    // Drive verbs: the menus, the window, and a key through the keyboard
+    // Drive commands: the menus, the window, and a key through the keyboard
     // path (Ctrl+PageDown, the next tab).
     let (rc, body) = call("term.ui.menu.list", json!({}));
     assert_eq!(rc, 0, "{body}");

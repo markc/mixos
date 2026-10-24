@@ -18,9 +18,9 @@ $app = $g.opts.app ?? "/opt/mixos/bin/ced"
 $root = $path .. ".session"
 if exists($root) then raise("APP_REFERENCE_EXISTS", "session directory already exists: " .. $root) end
 mkdir($root)
-fn call($verb, $body)
-  send $service $verb timeout=15 body=json_encode($body)
-  if $rc != 0 then raise("APP_REFERENCE_BUS", $verb .. ": " .. to_string($result)) end
+fn call($command, $body)
+  send $service $command timeout=15 body=json_encode($body)
+  if $rc != 0 then raise("APP_REFERENCE_BUS", $command .. ": " .. to_string($result)) end
   return if type($result) == "string" then json_parse($result) else $result end
 end
 -- Refuse an existing ced window: never place another session's app.

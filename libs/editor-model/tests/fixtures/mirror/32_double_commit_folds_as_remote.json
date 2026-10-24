@@ -6,11 +6,11 @@
   "run_id": 1,
   "steps": [
     {"local": {"id": "L1", "edit": {"items": [[5, 5, "!"]], "coalesce": true}}},
-    {"send": {"id": "L1", "verb": "edit.insert", "caller": "local:ced", "lost": true,
+    {"send": {"id": "L1", "command": "edit.insert", "caller": "local:ced", "lost": true,
       "args": {"buffer": "b1_0000e1e1", "at": 5, "text": "!", "base_rev": 0, "coalesce": true, "origin": "human:ced", "op_id": "c00000001-000001"},
       "expect": {}}},
     {"deadline": "L1"},
-    {"send": {"id": "L1", "verb": "edit.insert", "caller": "local:ced", "resend": true,
+    {"send": {"id": "L1", "command": "edit.insert", "caller": "local:ced", "resend": true,
       "args": {"buffer": "b1_0000e1e1", "at": 5, "text": "!", "base_rev": 0, "coalesce": true, "origin": "human:ced", "op_id": "c00000001-000001"},
       "expect": {"rc": 0, "rev": 1}}},
     {"evict_dedup": {}},

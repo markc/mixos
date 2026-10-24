@@ -223,7 +223,7 @@ type raises `TYPE_MISMATCH` before the file is touched).
 `append_file` wait for the other end **without holding the runtime thread**
 (since 0.117.0): Ctrl-C raises `interrupted`, SIGTERM takes the graceful
 shutdown path, and a `--serve` citizen whose `async` handler waits on a FIFO
-still answers `QUIT` and its other verbs. `read_file` returns once every
+still answers `QUIT` and its other commands. `read_file` returns once every
 writer has closed; a write returns once the data is in the pipe. Other
 builtins (`read_file_bytes`, `read_lines`, …), stuck NFS/FUSE paths and
 character devices still block the thread, and only the SIGTERM backstop
@@ -1570,9 +1570,9 @@ should be "unified".
 
 **Going forward:**
 
-- A new operation on a `bytes`/`buffer` value is `bytes_<verb>` and must
+- A new operation on a `bytes`/`buffer` value is `bytes_<command>` and must
   **reject** a non-bytes subject rather than stringify it.
-- A new byte-offset operation on text is `byte_<verb>` and takes a string.
+- A new byte-offset operation on text is `byte_<command>` and takes a string.
 - Conversions use the direction in the name: `bytes_to_<x>` out of bytes,
   `bytes_from_<x>` into bytes. `string_to_bytes` predates that rule (it would be
   `bytes_from_string` today) and stays as-is.

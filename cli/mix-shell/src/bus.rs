@@ -44,9 +44,9 @@ enum MeshState {
 /// The two lanes differ in ONE respect that matters: what the broker knows
 /// about the caller. A TCP connection carries a name the caller asserts about
 /// itself, which is not an authority — which is why a session-enrolled
-/// service's protected verbs answer FORBIDDEN over it. A Unix connection
+/// service's protected commands answer FORBIDDEN over it. A Unix connection
 /// carries peer credentials the KERNEL supplies, so the broker learns who is
-/// calling without being told, and the same `send` reaches those verbs.
+/// calling without being told, and the same `send` reaches those commands.
 ///
 /// Verified is preferred and unverified is the fallback, never the reverse: a
 /// host with no local broker socket, or a genuinely remote target, must keep
@@ -714,10 +714,10 @@ impl MixBusHandler {
         }
         let url = crate::node_config::resolve_noded_url();
         // Verified FIRST. This is what makes a plain `send` reach a local
-        // service's protected verbs: the lane carries peer credentials, so
+        // service's protected commands: the lane carries peer credentials, so
         // the broker has a principal it did not have to be told. Nothing
         // about the surface changes — the script still writes
-        // `send <target> <verb>`.
+        // `send <target> <command>`.
         //
         // It is deliberately not an error when this fails. A host with no
         // local broker socket, a broker running as another account, a
@@ -1858,10 +1858,10 @@ impl BusHandler for MixServeHandler {
 /// against a live mesh service).
 ///
 /// The `namespace=` condition is load-bearing: the SPEC-07 *flat-path* read
-/// surface shares the `.props.` verb names (`noded.props.get path=…`,
+/// surface shares the `.props.` command names (`noded.props.get path=…`,
 /// `filesd.props.list`) but reads `path`/args from the JSON body — routing
 /// those through headers would silently drop their args (the server would
-/// answer for the root tree). Flat-path and every non-props verb keep the
+/// answer for the root tree). Flat-path and every non-props command keep the
 /// JSON-body contract; `emit` already header-routes all map args.
 fn wants_header_routing(command: &str, map: &IndexMap<String, Value>) -> bool {
     map.contains_key("body") || (command.contains(".props.") && map.contains_key("namespace"))
@@ -2143,7 +2143,7 @@ mod routing_tests {
 
     #[test]
     fn spec07_flat_path_reads_stay_json_body() {
-        // SPEC-07 flat-path shares the `.props.` verb names but reads
+        // SPEC-07 flat-path shares the `.props.` command names but reads
         // `path`/args from the JSON body — MUST NOT header-route.
         let flat = kv(&[("path", "lifecycle.model_loaded")]);
         assert!(!wants_header_routing("noded.props.get", &flat));
@@ -2154,19 +2154,19 @@ mod routing_tests {
     }
 
     #[test]
-    fn explicit_body_header_routes_any_verb() {
+    fn explicit_body_header_routes_any_command() {
         let args = kv(&[("namespace", "handlers"), ("body", "")]);
         assert!(wants_header_routing("noded.anything", &args));
     }
 
     #[test]
     fn non_props_kv_stays_json_body() {
-        // noded/indexd/maild verbs read args from the JSON body — the
+        // noded/indexd/maild commands read args from the JSON body — the
         // default must NOT flip for them.
         let args = kv(&[("limit", "2"), ("note", "hello")]);
         assert!(!wants_header_routing("noded.ping", &args));
         assert!(!wants_header_routing("indexd.search", &args));
-        // A verb merely ENDING in `.props` (no op segment) is not the surface.
+        // A command merely ENDING in `.props` (no op segment) is not the surface.
         assert!(!wants_header_routing("svc.props", &args));
     }
 }

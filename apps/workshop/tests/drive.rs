@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Workshop driven over its Bus verbs the way the running shell is: every
-//! command enters the engine, is settled, and window-level verbs go to the
+//! Workshop driven over its Bus commands the way the running shell is: every
+//! command enters the engine, is settled, and window-level commands go to the
 //! toolkit drive layer, against the real view. What an agent clicks and
 //! types lands in the engine as a person's input would.
 use egui_kittest::Harness;
-use inspector::model::Verb;
+use inspector::model::Command;
 use inspector::{Effect, Engine, Snapshot};
 use serde_json::{Value, json};
 use toolkit::Theme;
 use toolkit::drive::{self, Answer};
 use workshop::shell::{apply_ui, settle};
 use workshop::view::{UiEvent, view};
-use workshop::{commands, label, strings};
+use workshop::{actions, label, strings};
 
 struct Window {
     engine: Engine,
@@ -21,7 +21,7 @@ struct Window {
 }
 
 fn engine() -> Engine {
-    let verb = |name: &str| Verb {
+    let command_name = |name: &str| Command {
         name: name.into(),
         args: String::new(),
         description: String::new(),
@@ -30,10 +30,10 @@ fn engine() -> Engine {
     let mut s = Snapshot::default();
     s.services.insert(
         "settingsd".into(),
-        Ok(vec![verb("settings.get"), verb("settings.list")]),
+        Ok(vec![command_name("settings.get"), command_name("settings.list")]),
     );
     s.services
-        .insert("noded".into(), Ok(vec![verb("noded.list")]));
+        .insert("noded".into(), Ok(vec![command_name("noded.list")]));
     let mut e = Engine::new(label);
     let Some(Effect::Discover { ticket }) = e.take_effects().pop() else {
         panic!("initial discovery")
@@ -44,7 +44,7 @@ fn engine() -> Engine {
 }
 
 fn window() -> Harness<'static, Window> {
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let theme = Theme::embedded();
     let state = Window {
@@ -56,8 +56,8 @@ fn window() -> Harness<'static, Window> {
         .with_size(egui::vec2(980.0, 620.0))
         .build_ui_state(
             move |ui, w: &mut Window| {
-                for (id, verb, args) in std::mem::take(&mut w.inbox) {
-                    w.engine.command(id, verb, &args.to_string());
+                for (id, command_name, args) in std::mem::take(&mut w.inbox) {
+                    w.engine.command(id, command_name, &args.to_string());
                 }
                 let mut effects = settle(&mut w.engine, &registry, &strings);
                 let fired = registry.shortcuts(ui.ctx(), &w.engine);
@@ -65,15 +65,15 @@ fn window() -> Harness<'static, Window> {
                 events.extend(
                     fired
                         .into_iter()
-                        .map(|id| UiEvent::Command(id, toolkit::command::Origin::Shortcut)),
+                        .map(|id| UiEvent::Command(id, toolkit::action::Origin::Shortcut)),
                 );
                 apply_ui(&mut w.engine, &registry, events);
                 effects.extend(settle(&mut w.engine, &registry, &strings));
                 for effect in effects {
                     match effect {
                         Effect::Reply { id, rc, body } => w.answers.push(Answer { id, rc, body }),
-                        Effect::Drive { id, verb, args } => {
-                            w.answers.extend(drive::request(ui.ctx(), id, &verb, &args))
+                        Effect::Drive { id, command: command_name, args } => {
+                            w.answers.extend(drive::request(ui.ctx(), id, &command_name, &args))
                         }
                         _ => {}
                     }
@@ -88,17 +88,17 @@ fn window() -> Harness<'static, Window> {
     harness
 }
 
-fn ok(h: &mut Harness<'_, Window>, id: u64, verb: &'static str, args: Value) -> Value {
-    h.state_mut().inbox.push((id, verb, args));
+fn ok(h: &mut Harness<'_, Window>, id: u64, command_name: &'static str, args: Value) -> Value {
+    h.state_mut().inbox.push((id, command_name, args));
     for _ in 0..60 {
         h.step();
         if let Some(at) = h.state().answers.iter().position(|a| a.id == id) {
             let answer = h.state_mut().answers.remove(at);
-            assert_eq!(answer.rc, 0, "{verb}: {}", answer.body);
+            assert_eq!(answer.rc, 0, "{command_name}: {}", answer.body);
             return answer.body;
         }
     }
-    panic!("{verb} was never answered");
+    panic!("{command_name} was never answered");
 }
 
 #[test]
@@ -121,11 +121,11 @@ fn clicking_and_typing_in_the_search_field_filters_the_tree() {
         .map(|r| r["key"].as_str().unwrap().to_owned())
         .collect();
     assert!(
-        keys.contains(&"verb:settingsd:settings.list".to_owned()),
+        keys.contains(&"command:settingsd:settings.list".to_owned()),
         "{keys:?}"
     );
     assert!(
-        !keys.contains(&"verb:settingsd:settings.get".to_owned()),
+        !keys.contains(&"command:settingsd:settings.get".to_owned()),
         "{keys:?}"
     );
 }
@@ -151,18 +151,18 @@ fn a_bus_edit_shows_in_the_window_tree() {
         .unwrap()
         .first()
         .cloned()
-        .expect("the verb row is drawn");
+        .expect("the command row is drawn");
     let id = node["id"].as_str().expect("a text node id").to_owned();
     ok(&mut h, 3, "workshop.ui.click", json!({"id":id}));
-    let selected = h.state().engine.ui.selected.clone().map(|s| s.verb);
+    let selected = h.state().engine.ui.selected.clone().map(|s| s.command);
     assert_eq!(
         selected.as_deref(),
         Some("settings.get"),
-        "the click selected the verb"
+        "the click selected the command"
     );
     assert_eq!(
         h.state().engine.ui.row_key.as_deref(),
-        Some("verb:settingsd:settings.get")
+        Some("command:settingsd:settings.get")
     );
 }
 

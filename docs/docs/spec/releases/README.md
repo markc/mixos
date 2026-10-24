@@ -3,12 +3,12 @@
 Status: accepted, version 0.3.0 (0.3.0 adds optional `category` metadata;
 0.2.0 adds `exec_wrapper`). Verified by
 `services/releasesd/tests/releases_test.mix` (offline logic) and
-`services/releasesd/tests/releasesd_test.mix` (every verb over a private
+`services/releasesd/tests/releasesd_test.mix` (every command over a private
 broker).
 
 `releasesd` follows GitHub repositories named in a per-user catalogue and
 installs their Linux release tarballs for that user. This page fixes the
-catalogue schema, the Bus verbs and the on-disk layout that other tools may
+catalogue schema, the Bus commands and the on-disk layout that other tools may
 rely on.
 
 ## Bus identity
@@ -16,7 +16,7 @@ rely on.
 | Item | Value |
 |---|---|
 | Service | `releases` (`mix --serve releasesd.mix --name releases`) |
-| Verbs | `releases.status`, `.list`, `.check`, `.notes`, `.install`, `.update`, `.rollback`, `.remove`, `.link` |
+| Commands | `releases.status`, `.list`, `.check`, `.notes`, `.install`, `.update`, `.rollback`, `.remove`, `.link` |
 | Bodies | JSON objects; `{}` or an empty body where no field is required |
 | Success | rc 0, JSON reply |
 | Refusals | rc 10 bad request, rc 14 unknown app, rc 15 the operation failed; body `{error_code, message}` |
@@ -25,7 +25,7 @@ Error codes: `USAGE`, `ROOT`, `UNKNOWN_APP`, `CATALOGUE`, `NO_RELEASE`, `NO_ASSE
 `AMBIGUOUS_ASSET`, `DOWNLOAD`, `DIGEST`, `UNVERIFIABLE`, `LAYOUT`,
 `NO_PREVIOUS`, `PENDING`, `BUSY`.
 
-| Verb | Body | Reply |
+| Command | Body | Reply |
 |---|---|---|
 | `releases.status` | — | `{catalogue, apps, installed, root, share, bin, state, authenticated, arch}` |
 | `releases.list` | `{apps?}` | rows from the last check |

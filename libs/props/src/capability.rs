@@ -135,8 +135,8 @@ impl FromIterator<Capability> for CapabilitySet {
     }
 }
 
-/// Verb-level decision result. The substrate library returns
-/// this from the registration-supplied policy at every verb entry.
+/// Command-level decision result. The substrate library returns
+/// this from the registration-supplied policy at every command entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthDecision {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The `comp.*` catalogue: 39 verbs in three families and 13 topics.
+//! The `comp.*` catalogue: 39 commands in three families and 13 topics.
 
 pub use crate::observation::{
     CORNER_CLICKED_TOPIC_SUFFIX, CORNER_CLICKED_V2_TOPIC_SUFFIX, CORNER_ENTERED_TOPIC_SUFFIX,
@@ -11,7 +11,7 @@ pub use crate::observation::{
 
 /// The service name on KMS.
 pub const SERVICE: &str = "comp";
-/// The service name nested (`--bus-service` overrides either). Verbs stay
+/// The service name nested (`--bus-service` overrides either). Commands stay
 /// literal `comp.*` under it.
 pub const NESTED_SERVICE: &str = "comp-nested";
 /// The service name for the render-node-only virtual output.
@@ -22,8 +22,8 @@ pub const HEADLESS_SERVICE: &str = "comp-headless";
 /// service leave the Bus. Only the local broker may speak on it.
 pub const REGISTRY_TOPIC: &str = "noded.props.changed";
 
-/// The read verbs answered from a snapshot.
-pub const READ_VERBS: &[&str] = &[
+/// The read commands answered from a snapshot.
+pub const READ_COMMANDS: &[&str] = &[
     "comp.info",
     "comp.session.get",
     "comp.props.get",
@@ -33,9 +33,9 @@ pub const READ_VERBS: &[&str] = &[
     "comp.workspaces.list",
 ];
 
-/// The 17 verbs the dispatcher answers directly (not a window or input
+/// The 17 commands the dispatcher answers directly (not a window or input
 /// family member).
-pub const DIRECT_VERBS: &[&str] = &[
+pub const DIRECT_COMMANDS: &[&str] = &[
     "comp.capture.frame",
     "comp.ping",
     "comp.props.watch",
@@ -55,9 +55,9 @@ pub const DIRECT_VERBS: &[&str] = &[
     "comp.workspaces.list",
 ];
 
-/// The 17 window-family verbs (`{id, generation}`-addressed, plus the
+/// The 17 window-family commands (`{id, generation}`-addressed, plus the
 /// workspace switch, count and rename).
-pub const WINDOW_VERBS: &[&str] = &[
+pub const WINDOW_COMMANDS: &[&str] = &[
     "comp.window.maximize",
     "comp.window.unmaximize",
     "comp.window.fullscreen",
@@ -77,9 +77,9 @@ pub const WINDOW_VERBS: &[&str] = &[
     "comp.workspace.rename",
 ];
 
-/// The 5 single-step input verbs (also the only verbs a sequence step may
+/// The 5 single-step input commands (also the only commands a sequence step may
 /// name).
-pub const INPUT_VERBS: &[&str] = &[
+pub const INPUT_COMMANDS: &[&str] = &[
     "comp.input.pointer.move",
     "comp.input.pointer.button",
     "comp.input.pointer.scroll",
@@ -87,33 +87,33 @@ pub const INPUT_VERBS: &[&str] = &[
     "comp.input.release_all",
 ];
 
-/// Which family a verb belongs to.
+/// Which family a command belongs to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum VerbFamily {
+pub enum CommandFamily {
     Direct,
     Window,
     Input,
 }
 
-/// The family of a known `comp.*` verb; `None` is `unknown_verb`.
-pub fn verb_family(verb: &str) -> Option<VerbFamily> {
-    if DIRECT_VERBS.contains(&verb) {
-        Some(VerbFamily::Direct)
-    } else if WINDOW_VERBS.contains(&verb) {
-        Some(VerbFamily::Window)
-    } else if INPUT_VERBS.contains(&verb) {
-        Some(VerbFamily::Input)
+/// The family of a known `comp.*` command; `None` is `unknown_command`.
+pub fn command_family(command: &str) -> Option<CommandFamily> {
+    if DIRECT_COMMANDS.contains(&command) {
+        Some(CommandFamily::Direct)
+    } else if WINDOW_COMMANDS.contains(&command) {
+        Some(CommandFamily::Window)
+    } else if INPUT_COMMANDS.contains(&command) {
+        Some(CommandFamily::Input)
     } else {
         None
     }
 }
 
-/// Every verb, direct first.
-pub fn all_verbs() -> impl Iterator<Item = &'static str> {
-    DIRECT_VERBS
+/// Every command, direct first.
+pub fn all_commands() -> impl Iterator<Item = &'static str> {
+    DIRECT_COMMANDS
         .iter()
-        .chain(WINDOW_VERBS)
-        .chain(INPUT_VERBS)
+        .chain(WINDOW_COMMANDS)
+        .chain(INPUT_COMMANDS)
         .copied()
 }
 
@@ -122,14 +122,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_surface_is_39_verbs_and_13_topics() {
-        assert_eq!(DIRECT_VERBS.len(), 17);
-        assert_eq!(WINDOW_VERBS.len(), 17);
-        assert_eq!(INPUT_VERBS.len(), 5);
-        let verbs = all_verbs().collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(verbs.len(), 39, "no verb is in two families");
-        assert!(verbs.iter().all(|verb| verb.starts_with("comp.")));
-        assert!(READ_VERBS.iter().all(|verb| DIRECT_VERBS.contains(verb)));
+    fn the_surface_is_39_commands_and_13_topics() {
+        assert_eq!(DIRECT_COMMANDS.len(), 17);
+        assert_eq!(WINDOW_COMMANDS.len(), 17);
+        assert_eq!(INPUT_COMMANDS.len(), 5);
+        let commands = all_commands().collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(commands.len(), 39, "no command is in two families");
+        assert!(commands.iter().all(|command| command.starts_with("comp.")));
+        assert!(READ_COMMANDS.iter().all(|command| DIRECT_COMMANDS.contains(command)));
         assert_eq!(TOPIC_SUFFIXES.len(), 13);
         assert_eq!(
             TOPIC_SUFFIXES
@@ -138,11 +138,11 @@ mod tests {
                 .len(),
             13
         );
-        assert_eq!(verb_family("comp.window.focus"), Some(VerbFamily::Window));
-        assert_eq!(verb_family("comp.input.key"), Some(VerbFamily::Input));
-        assert_eq!(verb_family("comp.ping"), Some(VerbFamily::Direct));
-        assert_eq!(verb_family("comp.session.get"), Some(VerbFamily::Direct));
-        assert_eq!(verb_family("comp-nested.panel.hold"), None);
+        assert_eq!(command_family("comp.window.focus"), Some(CommandFamily::Window));
+        assert_eq!(command_family("comp.input.key"), Some(CommandFamily::Input));
+        assert_eq!(command_family("comp.ping"), Some(CommandFamily::Direct));
+        assert_eq!(command_family("comp.session.get"), Some(CommandFamily::Direct));
+        assert_eq!(command_family("comp-nested.panel.hold"), None);
         assert_eq!(
             topic_name(NESTED_SERVICE, FOCUS_TOPIC_SUFFIX),
             "comp-nested.focus.changed"

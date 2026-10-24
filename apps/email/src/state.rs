@@ -1369,8 +1369,8 @@ pub mod code {
     pub const SECRETS: &str = "SECRETS";
     pub const SERVER: &str = "SERVER";
     pub const BUSY: &str = "BUSY";
-    pub const UNKNOWN_VERB: &str = "UNKNOWN_VERB";
     pub const UNKNOWN_COMMAND: &str = "UNKNOWN_COMMAND";
+    pub const UNKNOWN_ACTION: &str = "UNKNOWN_ACTION";
     pub const DENIED: &str = "DENIED";
     pub const DISABLED: &str = "DISABLED";
 }
@@ -1757,7 +1757,7 @@ impl State {
         self.work.push(work);
     }
 
-    /// Queue `work` from a Bus verb (`verbs.rs` builds it).
+    /// Queue `work` from a Bus command (`commands.rs` builds it).
     pub fn queue_work(&mut self, work: Work) {
         self.queue(work);
     }
@@ -2751,7 +2751,7 @@ impl State {
                         json!({ "account": tag.account, "id": email.id, "subject": email.subject }),
                     ),
                     Err(error) => {
-                        let (code, message) = crate::verbs::server_refusal(error);
+                        let (code, message) = crate::commands::server_refusal(error);
                         self.refuse(reply, code, &message);
                     }
                 }
@@ -3203,8 +3203,8 @@ impl State {
         &mut self,
         account: String,
         reply: u64,
-        query: crate::verbs::Query,
-        then: crate::verbs::Then,
+        query: crate::commands::Query,
+        then: crate::commands::Then,
     ) {
         self.outstanding.insert(reply, false);
         self.queue(Work::Query {
@@ -3221,7 +3221,7 @@ impl State {
         &mut self,
         account: String,
         reply: Option<u64>,
-        write: crate::verbs::Write,
+        write: crate::commands::Write,
     ) {
         if let Some(reply) = reply {
             self.outstanding.insert(reply, true);
@@ -3236,7 +3236,7 @@ impl State {
     }
 
     /// A form's change on `account`'s server, under operation `op`.
-    fn write_form(&mut self, account: String, op: u64, write: crate::verbs::Write) {
+    fn write_form(&mut self, account: String, op: u64, write: crate::commands::Write) {
         let generation = self.generation_of(&account);
         self.write_bound(account, Some(op), generation, write);
     }
@@ -3248,7 +3248,7 @@ impl State {
         account: String,
         form: Option<u64>,
         generation: u64,
-        write: crate::verbs::Write,
+        write: crate::commands::Write,
     ) {
         self.queue(Work::Write {
             account,
@@ -3265,10 +3265,10 @@ impl State {
         &mut self,
         tag: &Tag,
         reply: u64,
-        then: crate::verbs::Then,
+        then: crate::commands::Then,
         result: Result<Value, jmap::Error>,
     ) {
-        use crate::verbs::Then;
+        use crate::commands::Then;
         // An answer from a connection the account has left since (a new URL
         // or login) is not the account's answer any more.
         if self.account(&tag.account).map(AccountView::generation) != Some(tag.generation) {
@@ -3277,7 +3277,7 @@ impl State {
         let value = match result {
             Ok(value) => value,
             Err(error) => {
-                let (code, message) = crate::verbs::server_refusal(&error);
+                let (code, message) = crate::commands::server_refusal(&error);
                 return self.refuse(reply, code, &message);
             }
         };
@@ -3367,7 +3367,7 @@ impl State {
         tag: &Tag,
         reply: Option<u64>,
         form: Option<u64>,
-        write: crate::verbs::Write,
+        write: crate::commands::Write,
         result: Result<Value, jmap::Error>,
     ) {
         // Only the form that sent this write (by its operation ticket)
@@ -3399,7 +3399,7 @@ impl State {
                 }
                 self.status = message;
                 if let Some(reply) = reply {
-                    let (code, message) = crate::verbs::server_refusal(&error);
+                    let (code, message) = crate::commands::server_refusal(&error);
                     self.refuse(reply, code, &message);
                 }
                 return;
@@ -4557,7 +4557,7 @@ impl State {
                     form.op = Some(op);
                     form.error = None;
                 }
-                let write = crate::verbs::Write::CreateEvent {
+                let write = crate::commands::Write::CreateEvent {
                     calendar: f.calendar,
                     draft,
                 };
@@ -4584,7 +4584,7 @@ impl State {
                     form.op = Some(op);
                     form.error = None;
                 }
-                let write = crate::verbs::Write::CreateContact {
+                let write = crate::commands::Write::CreateContact {
                     book: f.book,
                     draft,
                 };
@@ -4710,7 +4710,7 @@ impl State {
             Form::Contact(f) => json!({"kind": "contact", "account": f.account, "book": f.book, "name": f.name, "email": f.email, "phone": f.phone, "organization": f.organization, "busy": f.busy, "error": f.error}),
         });
         json!({
-            "schema": crate::verbs::SCHEMA,
+            "schema": crate::commands::SCHEMA,
             "version": env!("CARGO_PKG_VERSION"),
             "selected": self.selected,
             "mode": self.mode,
@@ -6772,9 +6772,9 @@ pub(crate) mod tests {
     #[test]
     fn round2_oversized_compose_returns_invalid_and_closes() {
         let mut state = connected();
-        crate::verbs::command(
+        crate::commands::command(
             &mut state,
-            &crate::commands::registry(),
+            &crate::actions::registry(),
             &crate::strings(),
             1,
             "email.compose",
@@ -6903,9 +6903,9 @@ pub(crate) mod tests {
     #[test]
     fn programmatic_body_replaces_text_and_advances_revision() {
         let mut state = connected();
-        crate::verbs::command(
+        crate::commands::command(
             &mut state,
-            &crate::commands::registry(),
+            &crate::actions::registry(),
             &crate::strings(),
             1,
             "email.compose",
@@ -6929,9 +6929,9 @@ pub(crate) mod tests {
     fn oversized_bus_compose_and_reply_quote_report_errors_without_panicking() {
         let mut state = connected();
         let huge = "x".repeat(65 * 1024 * 1024);
-        crate::verbs::command(
+        crate::commands::command(
             &mut state,
-            &crate::commands::registry(),
+            &crate::actions::registry(),
             &crate::strings(),
             1,
             "email.compose",
@@ -7044,7 +7044,7 @@ pub(crate) mod tests {
         let theme = toolkit::Theme::embedded();
         toolkit::install(&ctx, &theme);
         let palette = editor::Palette::from_theme(&theme);
-        let registry = crate::commands::registry();
+        let registry = crate::actions::registry();
         let strings = crate::strings();
         let frame = |state: &State| {
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -8044,7 +8044,7 @@ pub(crate) mod tests {
         assert_eq!(state.accounts.len(), 1);
     }
 
-    use crate::verbs::{Then, Write};
+    use crate::commands::{Then, Write};
 
     /// A connected account showing its inbox with E1 open.
     fn reading() -> State {
@@ -8742,7 +8742,7 @@ pub(crate) mod tests {
     #[test]
     fn open_email_actions_wait_while_another_email_loads() {
         let mut state = reading();
-        let registry = crate::commands::registry();
+        let registry = crate::actions::registry();
         let enabled = |state: &State, id: &str| (registry.get(id).unwrap().enabled)(state);
         for id in ["mail.reply", "mail.forward", "mail.send_as_new"] {
             assert!(enabled(&state, id), "{id} with E1 open");
@@ -8831,7 +8831,7 @@ pub(crate) mod tests {
     #[test]
     fn a_failed_open_gives_the_actions_back_to_the_email_shown() {
         let mut state = reading();
-        let registry = crate::commands::registry();
+        let registry = crate::actions::registry();
         assert!(state.open_email("a", "E2".into()));
         let ticket = state
             .take_work()
@@ -8914,8 +8914,8 @@ pub(crate) mod tests {
     }
 
     fn registry_run(state: &mut State, id: &str) {
-        crate::commands::registry()
-            .execute(id, state, toolkit::command::Origin::Bus)
+        crate::actions::registry()
+            .execute(id, state, toolkit::action::Origin::Bus)
             .unwrap();
     }
 
@@ -9764,7 +9764,7 @@ pub(crate) mod tests {
         state.change_accounts(rename(), Some(1), Some("pw-1".into()));
         settings_ticket(&mut state);
         state.set_password("a", "pw-2", Some(2));
-        state.query("a".into(), 3, crate::verbs::Query::Mailboxes, Then::Answer);
+        state.query("a".into(), 3, crate::commands::Query::Mailboxes, Then::Answer);
         state.write_server("a".into(), Some(4), Write::DeleteMailbox { id: "m".into() });
         state.take_work();
         state.close_out();

@@ -33,10 +33,10 @@ use toolkit::{Registry, Strings, Theme, drive};
 
 use crate::app::{App, Effect};
 use crate::bus::{BusHandle, Delivery};
-use crate::verbs::{self, ActionReply, AppearanceState, Command, ServerMeta, ThemeAction};
+use crate::commands::{self, ActionReply, AppearanceState, Command, ServerMeta, ThemeAction};
 use crate::view::{apply, view};
 
-/// The app prefix of dopus's verbs, and of its drive verbs.
+/// The app prefix of dopus's commands, and of its drive commands.
 pub const APP: &str = "dopus";
 
 /// The topic the theme file's changes are announced on.
@@ -123,7 +123,7 @@ impl Shell {
         if let Err(error) = pumped {
             eprintln!("dopus: core event pump: {error}");
         }
-        let commands = crate::commands::registry();
+        let commands = crate::actions::registry();
         let shell = Self {
             app,
             commands,
@@ -186,7 +186,7 @@ impl Shell {
                 icon_weight: None,
             },
             actions: self.app.actions.clone(),
-            extra_verbs: drive::VERBS.iter().map(|v| format!("{APP}.{v}")).collect(),
+            extra_commands: drive::COMMANDS.iter().map(|v| format!("{APP}.{v}")).collect(),
         }
     }
 
@@ -247,24 +247,24 @@ impl Shell {
         self.release();
     }
 
-    /// Run held Bus commands in order. Drive verbs that only join the drive
+    /// Run held Bus commands in order. Drive commands that only join the drive
     /// queue go straight on; anything else waits for drive input before it.
     fn release(&mut self) {
         while let Some(cmd) = self.held.front() {
-            let drive_verb = cmd
-                .verb
+            let drive_command = cmd
+                .command
                 .strip_prefix("dopus.")
-                .filter(|v| drive::VERBS.contains(v))
+                .filter(|v| drive::COMMANDS.contains(v))
                 .map(str::to_owned);
-            let joins_queue = drive_verb.as_deref().is_some_and(drive::queues);
+            let joins_queue = drive_command.as_deref().is_some_and(drive::queues);
             if self.exiting || (drive::pending(&self.ctx) && !joins_queue) {
                 return;
             }
             let cmd = self.held.pop_front().expect("a held command");
-            match drive_verb {
-                Some(verb) => {
+            match drive_command {
+                Some(command_name) => {
                     let args: Value = serde_json::from_str(&cmd.body).unwrap_or(Value::Null);
-                    if let Some(answer) = drive::request(&self.ctx, cmd.id, &verb, &args) {
+                    if let Some(answer) = drive::request(&self.ctx, cmd.id, &command_name, &args) {
                         self.respond(answer.id, answer.rc, answer.body.to_string());
                     }
                 }
@@ -362,8 +362,8 @@ impl Shell {
         let Some(id) = id else { return };
         match refusal {
             Some(message) => {
-                let body = serde_json::to_string(&verbs::Refusal {
-                    error_code: verbs::code::INVALID_ARGUMENT.into(),
+                let body = serde_json::to_string(&commands::Refusal {
+                    error_code: commands::code::INVALID_ARGUMENT.into(),
                     message,
                     reason: None,
                 })
@@ -371,7 +371,7 @@ impl Shell {
                 self.respond(id, 10, body);
             }
             None => {
-                let body = serde_json::to_string(&verbs::ThemeSetReply {
+                let body = serde_json::to_string(&commands::ThemeSetReply {
                     scheme: self.theme.scheme().name().into(),
                     mode: self.theme.mode().name().into(),
                 })
@@ -445,7 +445,7 @@ impl Shell {
         }
         self.keymap = keymap;
         let commands = &self.commands;
-        self.app.actions = verbs::action_table(|action| {
+        self.app.actions = commands::action_table(|action| {
             commands
                 .shortcuts_of(action)
                 .iter()
@@ -605,7 +605,7 @@ impl Shell {
             let fired = self.commands.shortcuts(ui.ctx(), &self.app);
             let events = fired
                 .into_iter()
-                .map(|id| crate::view::UiEvent::Command(id, toolkit::command::Origin::Shortcut))
+                .map(|id| crate::view::UiEvent::Command(id, toolkit::action::Origin::Shortcut))
                 .collect();
             apply(&mut self.app, &self.commands, events);
             self.perform();
@@ -633,14 +633,14 @@ impl Shell {
     fn note_bus_runs(&mut self) {
         for id in std::mem::take(&mut self.app.ran) {
             if self.commands.get(&id).is_some() {
-                self.commands.note(&id, toolkit::command::Origin::Bus);
+                self.commands.note(&id, toolkit::action::Origin::Bus);
             }
         }
         self.publish_executed();
     }
 
     /// Publish the commands run since the last call on
-    /// `<service>.command.executed`. Without a Bus they are dropped.
+    /// `<service>.action.executed`. Without a Bus they are dropped.
     fn publish_executed(&self) {
         let (runs, lost) = self.commands.take_executed();
         let Some(bus) = &self.bus else { return };

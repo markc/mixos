@@ -175,7 +175,7 @@ enum Command {
         #[command(subcommand)]
         action: VhostAction,
     },
-    /// ACME (Let's Encrypt) lifecycle verbs for substrate-managed
+    /// ACME (Let's Encrypt) lifecycle commands for substrate-managed
     /// vhosts. Wraps `webd.acme.renew` (narrow `webd.acme.renew:webd.vhosts`
     /// cap; bypasses cooldown + 30-day renewal-window gates but NOT
     /// disabled/apex-policy gates) and `webd.acme.status`.
@@ -184,7 +184,7 @@ enum Command {
         action: AcmeAction,
     },
     /// Read-only inspection of the per-vhost route map
-    /// (`webd.routes.list`). The verb's wire shape returns a sorted
+    /// (`webd.routes.list`). The command's wire shape returns a sorted
     /// list of primaries with alias + capability booleans
     /// (`has_cms` / `has_jmap` / `has_ws` / `has_docs`); see
     /// `bus/routes.rs` for the snapshot semantics.
@@ -193,7 +193,7 @@ enum Command {
         action: RoutesAction,
     },
     /// Read-only per-vhost response-class counters (`webd.stats`).
-    /// Leaf verb — no sub-action. See `bus/stats.rs`.
+    /// Leaf command — no sub-action. See `bus/stats.rs`.
     Stats,
     /// Read-only TLS posture: manual-PEM identity hostnames, ACME
     /// plan summary, and per-vhost issuance state. Wraps
@@ -244,7 +244,7 @@ enum AutoconfigAction {
 #[derive(Subcommand)]
 enum VhostAction {
     /// Create a `webd.vhosts` row through the daemon's `webd.vhost.add`
-    /// Bus verb. The verb stamps `source = "bus.runtime"` and performs
+    /// Bus command. The command stamps `source = "bus.runtime"` and performs
     /// the tombstone-aware OCC anchor (`vhost.remove` → `vhost.add` is
     /// a valid flow). Required: `fqdn` + `www_dir`. This CLI rejects
     /// ACME companion fields without a provider; the daemon rejects
@@ -326,15 +326,15 @@ pub(crate) struct CachedSessionEpoch {
 pub(crate) type SessionEpochSlot = Arc<tokio::sync::Mutex<Option<CachedSessionEpoch>>>;
 
 /// How long this node trusts a cached session epoch before re-reading the
-/// per-vhost DB. Revocation is IN-PROCESS (the `webd.session.revoke` verb
-/// updates the very same slot synchronously — see `bus::session_verbs`), so
+/// per-vhost DB. Revocation is IN-PROCESS (the `webd.session.revoke` command
+/// updates the very same slot synchronously — see `bus::session_commands`), so
 /// the normal revoke path has ZERO staleness; this TTL only bounds an
 /// unsupported out-of-band DB edit of `session_epochs`.
 const SESSION_EPOCH_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Per-vhost session-epoch cache. The outer lock guards only slot
 /// fetch/insert; each per-email slot single-flights cold/expired reads and is
-/// the lock the revoke verb takes to publish a freshly-bumped epoch. Keyed by
+/// the lock the revoke command takes to publish a freshly-bumped epoch. Keyed by
 /// email WITHIN a `VhostState`, so two vhosts sharing an email have separate
 /// caches (per-vhost DB ⇒ per-vhost epoch).
 #[derive(Default)]
@@ -456,7 +456,7 @@ mod session_epoch_cache_tests {
 pub(crate) struct VhostState {
     /// The primary FQDN for this vhost (`config.host`, lowercased).
     /// Host routing is keyed by `NodeState::vhosts`, not by this
-    /// field; Bus read verbs (`webd.routes.list`, `webd.stats`)
+    /// field; Bus read commands (`webd.routes.list`, `webd.stats`)
     /// read it as the per-vhost primary key.
     fqdn: String,
     /// Per-vhost CMS SQLite. `None` ⇒ the `/api/posts*` routes 404
@@ -517,7 +517,7 @@ pub(crate) struct VhostState {
     /// Per-account session-epoch cache for this vhost's CMS DB. Lets the hot
     /// authed-request epoch check ([`current_session_epoch`]) skip the
     /// per-vhost DB lock on a cache hit; the in-process `webd.session.revoke`
-    /// verb updates the matching slot so a revocation is visible with zero
+    /// command updates the matching slot so a revocation is visible with zero
     /// staleness. Aliases share this by construction (one per `VhostState`).
     session_epoch_cache: SessionEpochCache,
     /// Per-vhost cache of rendered ANONYMOUS public responses, for routes that
@@ -849,7 +849,7 @@ struct NodeState {
     /// Hot-swappable host-routing snapshot (C3b). Carries every
     /// host-derived view — lookup by Host, plain-HTTP admit set,
     /// per-primary group with aliases — behind a single `ArcSwap`
-    /// so the provisioner (C4) and the C5 ergonomic verbs can
+    /// so the provisioner (C4) and the C5 ergonomic commands can
     /// publish a new directory atomically. Every reader
     /// (`host_router` HTTPS dispatch, `plain_http_host_admit`
     /// redirect admit, `webd.routes.list`, `webd.stats`) takes a
@@ -862,7 +862,7 @@ struct NodeState {
     /// map threaded in for per-row wiring recovery).
     ///
     /// The outer `Arc` lets future consumers (provisioner, C5
-    /// ergonomic verbs) hold a handle independent of the
+    /// ergonomic commands) hold a handle independent of the
     /// `Arc<NodeState>` lifetime.
     vhosts: Arc<ArcSwap<vhost_directory::VhostDirectory>>,
     /// HTTP client used by the JMAP reverse proxy and the autoconfig
@@ -923,7 +923,7 @@ struct NodeState {
     acme_challenges: Arc<RwLock<HashMap<String, String>>>,
     /// Backs `webd.tls.status`. Seeded from the resolved manual-PEM
     /// identities before the ACME branch so manual-PEM-only and
-    /// HTTP-only deployments still expose the verb (the snapshot's
+    /// HTTP-only deployments still expose the command (the snapshot's
     /// `acme` field is `None`). When ACME exists, the
     /// `AcmeProvisioner` holds the matching sender and overwrites the
     /// snapshot after `startup_pass` and after every state-mutating
@@ -962,7 +962,7 @@ struct NodeState {
     /// pre-rework C1b draft.
     broker_handle: bus::subscribe_granter::SharedBrokerHandle,
     /// SPEC-12 runtime handle for the `webd.vhosts` namespace. C5
-    /// ergonomic Bus verbs ([`bus::vhost_verbs`]) read/write through
+    /// ergonomic Bus commands ([`bus::vhost_commands`]) read/write through
     /// this directly (not through the props router) because they
     /// stamp daemon-owned fields (`source = "bus_runtime"`) via
     /// `Runtime::set_with_origin(.., WriteOrigin::backend())` — a
@@ -974,22 +974,22 @@ struct NodeState {
     /// `Option<_>` so the bootstrap-only `NodeState` (pre-ACME
     /// :80 listener) and the middleware-test `synth_node` can be
     /// constructed without registering a real namespace. `None` ⇒
-    /// the C5 verbs return `rc=10 webd.vhosts runtime not attached`
+    /// the C5 commands return `rc=10 webd.vhosts runtime not attached`
     /// rather than panicking.
     vhosts_runtime: Option<Arc<props::Runtime>>,
     /// SPEC-12 runtime handle for the `webd.listeners` namespace (P3).
-    /// The `webd.listener.{enable,disable,status}` ergonomic verbs
-    /// ([`bus::listener_verbs`]) read/write through it (props.set the
+    /// The `webd.listener.{enable,disable,status}` ergonomic commands
+    /// ([`bus::listener_commands`]) read/write through it (props.set the
     /// `enabled` field; the reaction loop applies it). `None` on the
-    /// bootstrap / test fixtures ⇒ the verbs return `rc=10`.
+    /// bootstrap / test fixtures ⇒ the commands return `rc=10`.
     listeners_runtime: Option<Arc<props::Runtime>>,
     /// L0 operator allowlist (`[webd.listeners] operators`) — the
-    /// `listener_verbs` resolve the operator-tier write cap against
+    /// `listener_commands` resolve the operator-tier write cap against
     /// this same list the namespace's AuthPolicy uses. Empty on
     /// fixtures (no operator ⇒ no write).
     listeners_operators: Vec<String>,
     /// Per-FQDN lock map shared with the ACME provisioner (C4b). The
-    /// C5 `vhost.add` verb acquires the same lock identity the
+    /// C5 `vhost.add` command acquires the same lock identity the
     /// provisioner's `VhostRemoved` arm holds, so a `vhost.add`
     /// racing a cleanup serialises on the same outer mutex →
     /// inner-Arc lookup → inner mutex ladder. See
@@ -1000,7 +1000,7 @@ struct NodeState {
     /// `vhosts_runtime`. `None` ⇒ C5 returns `rc=10`.
     vhost_key_locks: Option<acme_provisioner::FqdnLockMap>,
     /// Notify channel into the ACME provisioner's sweep loop. C5's
-    /// `webd.acme.renew` verb calls `notify_one` here so the next
+    /// `webd.acme.renew` command calls `notify_one` here so the next
     /// sweep ticks immediately after queueing into
     /// [`Self::acme_force_renew_queue`]. The provisioner reads
     /// this same `Notify` in its `run_forever` loop's `select!`.
@@ -1013,12 +1013,12 @@ struct NodeState {
     /// the provisioner.
     acme_notify: Option<Arc<tokio::sync::Notify>>,
     /// Force-renew queue shared with the ACME provisioner. The C5
-    /// `webd.acme.renew` verb inserts a fqdn here before calling
+    /// `webd.acme.renew` command inserts a fqdn here before calling
     /// `notify_one` on [`Self::acme_notify`]; the provisioner's
     /// `tick_once` drains this set at the top of each sweep and, for
     /// any plan whose fqdn appears in the drained snapshot, bypasses
     /// both the renewal-window gate and the per-vhost cooldown gate
-    /// for that tick. Without this handle the verb would only kick
+    /// for that tick. Without this handle the command would only kick
     /// the loop and any cert outside the 30-day window would silently
     /// remain unrenewed despite the operator's explicit request.
     ///
@@ -1044,7 +1044,7 @@ struct NodeState {
     /// only on a manual-PEM-capable node (no ACME provisioner + at least
     /// one TLS listener); `None` on ACME-managed nodes (the provisioner
     /// owns the resolvers — refresh via `webd.acme.renew`) and HTTP-only
-    /// nodes (no TLS). The verb returns a helpful `rc=10` when `None`.
+    /// nodes (no TLS). The command returns a helpful `rc=10` when `None`.
     /// See [`bus::tls`].
     tls_reload: Option<bus::tls::TlsReloadState>,
     /// Whether this RUNNING daemon partitions hosts by an explicit
@@ -2272,7 +2272,7 @@ CREATE TABLE IF NOT EXISTS posts (
 );
 -- session_epochs — webd-owned cookie-path revocation counters (see
 -- session.rs module doc). One row per account email; a missing row is
--- epoch 0. Bumped by the `webd.session.revoke` Bus verb; the value
+-- epoch 0. Bumped by the `webd.session.revoke` Bus command; the value
 -- current at login is sealed into the cookie and re-checked on every
 -- cookie-authorized request. Deliberately SEPARATE from the Mix-owned
 -- `users` table so identities without a CMS staff row are revocable too.
@@ -2492,7 +2492,7 @@ async fn current_session_epoch(vhost: &VhostState, email: &str) -> i64 {
     // lock entirely (the concurrency win — 100 authed requests no longer
     // serialize on that lock); a miss single-flights the read so a cold burst
     // for one account does ONE SELECT. Lock order is ALWAYS slot → DB (the
-    // revoke verb takes the same order); never hold the DB lock across a slot
+    // revoke command takes the same order); never hold the DB lock across a slot
     // await.
     let slot = vhost.session_epoch_cache.slot(email).await;
     let mut cached = slot.lock().await;
@@ -2583,7 +2583,7 @@ fn bus_origin_matches(v: &str, fqdn: &str) -> bool {
 /// Whether a matched Mix-handler request must present a strict same-origin
 /// Origin/Referer (the handler CSRF gate, Codex D8 #1). True iff the method is
 /// NOT a safe method (anything but GET/HEAD/OPTIONS — so an `ANY`-method route
-/// can't mutate through an unlisted verb) AND the caller is authenticated (a
+/// can't mutate through an unlisted command) AND the caller is authenticated (a
 /// session cookie OR an ambient internal `dev_session` — CSRF only matters when
 /// there is authority to ride). Applies to EVERY authenticated mutating handler
 /// request, bus routes included: the delegated-bus gate only withholds the
@@ -2689,7 +2689,7 @@ fn wake_rate_limit_ok(fqdn: &str) -> bool {
 }
 
 /// Build the delegated-`bus_call` injection for a matched route that granted
-/// `bus:<verb>` capabilities — ONLY if webd's Rust admin + CSRF gate passes
+/// `bus:<command>` capabilities — ONLY if webd's Rust admin + CSRF gate passes
 /// (vtoken C2). Returns `None` (⇒ no `Bus` capability, no handler — `bus_call`
 /// raises "not available") on ANY gate failure, logging the reason; the route's
 /// own Mix `require_role` is page-level defence on top. The gate is THE
@@ -2709,7 +2709,7 @@ async fn build_bus_injection(
         None => {
             // ACCELERATOR EXCEPTION (Codex 019f5bc3). A dev_session vhost on an
             // INTERNAL listener authenticates with no cookie, so `cms_session_role`
-            // (cookie-only) finds nothing and every delegated verb is refused —
+            // (cookie-only) finds nothing and every delegated command is refused —
             // which silently kills the `*.wake` accelerators on every dev rig, and
             // with them the whole point of an interactive spinner.
             //
@@ -2719,18 +2719,18 @@ async fn build_bus_injection(
             // authorised, rate-limited and COMMITTED by webd's admin gate before
             // the wake is even sent. So a dev_session may call an argument-free
             // accelerator wake, and NOTHING else: this branch does not inherit the
-            // delegated-safe allowlist, `accelerator_only` re-checks the exact verb
-            // + empty args in the handler, and every OTHER verb still requires a
+            // delegated-safe allowlist, `accelerator_only` re-checks the exact command
+            // + empty args in the handler, and every OTHER command still requires a
             // real cookie-backed session.
             //
             // Losing a wake can only cost latency, never a run (the durable queue +
             // lease expiry + backstop timer are the correctness mechanism), so
             // failing closed here is always safe.
-            let all_accelerators = !matched.bus_verbs.is_empty()
+            let all_accelerators = !matched.bus_commands.is_empty()
                 && matched
-                    .bus_verbs
+                    .bus_commands
                     .iter()
-                    .all(|v| bus_call_handler::is_accelerator_wake_verb(v));
+                    .all(|v| bus_call_handler::is_accelerator_wake_command(v));
             let dev_email = vhost.dev_session_email.clone();
             if dev_ambient && all_accelerators && dev_email.is_some() {
                 if !wake_rate_limit_ok(&vhost.fqdn) {
@@ -2749,7 +2749,7 @@ async fn build_bus_injection(
                 return Some(mix_handler::BusInjection {
                     broker: node.broker_handle.clone(),
                     main_handle: tokio::runtime::Handle::current(),
-                    bus_verbs: matched.bus_verbs.clone(),
+                    bus_commands: matched.bus_commands.clone(),
                     inputs: bus_call_handler::DelegationInputs {
                         actor,
                         vhost: vhost.fqdn.clone(),
@@ -2774,17 +2774,17 @@ async fn build_bus_injection(
         );
         return None;
     }
-    // Verb-aware CSRF (Codex C2 ruling C): an explicit `x-csrf-token` is
-    // required only when a MUTATING verb is reachable by a NON-`POST` method (a
+    // Command-aware CSRF (Codex C2 ruling C): an explicit `x-csrf-token` is
+    // required only when a MUTATING command is reachable by a NON-`POST` method (a
     // Lax-cookie GET, or a fetch/JSON method). An SSR plain-form `POST` relies
     // on the SameSite session cookie + this admin gate, like every existing webd
     // SSR admin handler. See `bus_route_requires_csrf`.
     let has_mutating = matched
-        .bus_verbs
+        .bus_commands
         .iter()
-        .any(|v| !bus_call_handler::is_read_only_bus_verb(v));
-    if bus_call_handler::bus_route_requires_csrf(&matched.bus_verbs, method) {
-        // A mutating verb reachable by a NON-POST method → explicit token.
+        .any(|v| !bus_call_handler::is_read_only_bus_command(v));
+    if bus_call_handler::bus_route_requires_csrf(&matched.bus_commands, method) {
+        // A mutating command reachable by a NON-POST method → explicit token.
         let header_token = headers
             .get("x-csrf-token")
             .and_then(|v| v.to_str().ok())
@@ -2817,7 +2817,7 @@ async fn build_bus_injection(
     Some(mix_handler::BusInjection {
         broker: node.broker_handle.clone(),
         main_handle: tokio::runtime::Handle::current(),
-        bus_verbs: matched.bus_verbs.clone(),
+        bus_commands: matched.bus_commands.clone(),
         inputs: bus_call_handler::DelegationInputs {
             actor: email,
             vhost: vhost.fqdn.clone(),
@@ -4121,7 +4121,7 @@ async fn serve_static(
             && !req
                 .headers()
                 .contains_key(axum::http::header::AUTHORIZATION)
-            && m.bus_verbs.is_empty();
+            && m.bus_commands.is_empty();
         let mut pcache_slot: Option<
             tokio::sync::OwnedMutexGuard<Option<public_response_cache::Entry>>,
         > = None;
@@ -4316,14 +4316,14 @@ async fn serve_static(
             None
         };
         // `bus`: the delegated `bus_call` seam. Only routes that granted
-        // `bus:<verb>` get it, and ONLY after the Rust admin + CSRF gate
+        // `bus:<command>` get it, and ONLY after the Rust admin + CSRF gate
         // passes. Built from `req` borrows BEFORE `req` is moved below.
-        let bus = if m.bus_verbs.is_empty() {
+        let bus = if m.bus_commands.is_empty() {
             None
         } else {
             // `dev_ambient`: a dev_session vhost on an INTERNAL listener authenticates
             // with no cookie. It buys ONLY the argument-free accelerator wake (see
-            // build_bus_injection); every other delegated verb still needs a real
+            // build_bus_injection); every other delegated command still needs a real
             // cookie-backed session. resolve_node_state independently refuses a
             // dev_session vhost bound to an external listener, so this cannot fire
             // publicly.
@@ -4400,7 +4400,7 @@ async fn serve_static(
             req,
         )
         .await;
-        // `wake:<verb>` — webd fires the accelerator wake ITSELF, best-effort,
+        // `wake:<command>` — webd fires the accelerator wake ITSELF, best-effort,
         // after the handler returned a NON-ERROR status (`< 400`). This
         // deliberately includes 3xx: the sshm enqueue handlers confirm success
         // with a 303 `redirect_flash` (Post/Redirect/Get), so a 2xx-only gate
@@ -4412,7 +4412,7 @@ async fn serve_static(
         // never blocks or fails this response; a dropped wake costs only latency
         // (the target daemon's backstop timer recovers the work). Rate-limited
         // per vhost, exactly like the dev_session accelerator path.
-        if let Some((wake_verb, wake_service)) = m.wake.clone() {
+        if let Some((wake_command, wake_service)) = m.wake.clone() {
             // Only an AUTHENTICATED session's non-error response nudges the drain.
             // The `wake_actor.is_some()` gate excludes an anonymous caller whose 303
             // login redirect would otherwise pass the `< 400` check.
@@ -4424,7 +4424,7 @@ async fn serve_static(
                         node.broker_handle.clone(),
                         &tokio::runtime::Handle::current(),
                         wake_service,
-                        wake_verb,
+                        wake_command,
                         bus_call_handler::DelegationInputs {
                             actor,
                             vhost: vhost.fqdn.clone(),
@@ -4434,7 +4434,7 @@ async fn serve_static(
                     );
                 } else {
                     tracing::warn!(
-                        target: "webd::bus", route_id = %m.route_id, verb = %wake_verb,
+                        target: "webd::bus", route_id = %m.route_id, command_name = %wake_command,
                         "post-response wake rate-limited; the backstop timer will pick the work up"
                     );
                 }
@@ -6727,7 +6727,7 @@ async fn run_vhost_cli(action: VhostAction) -> Result<()> {
                 ));
             }
             // `webd.vhost.add` reads its parameters as flat HEADER
-            // kwargs (see `bus/vhost_verbs.rs::vhost_add`), not a
+            // kwargs (see `bus/vhost_commands.rs::vhost_add`), not a
             // JSON body. It stamps `source = "bus.runtime"` daemon-
             // side and performs the tombstone-aware OCC anchor so a
             // prior `remove` doesn't trap the FQDN.
@@ -6961,7 +6961,7 @@ async fn run_vhost_cli(action: VhostAction) -> Result<()> {
 }
 
 /// Run a CLI `acme` subcommand as a transient Bus client. Each arm
-/// passes `fqdn` as a header kwarg (matching `bus/vhost_verbs.rs`
+/// passes `fqdn` as a header kwarg (matching `bus/vhost_commands.rs`
 /// `acme_renew` / `acme_status` signatures). Errors fall back through
 /// `error` → `message` → raw body for forward compatibility with
 /// either envelope shape.
@@ -6978,7 +6978,7 @@ async fn run_acme_cli(action: AcmeAction) -> Result<()> {
             )
         })?;
 
-    let (verb, fqdn) = match action {
+    let (command_name, fqdn) = match action {
         AcmeAction::Renew { fqdn } => ("webd.acme.renew", fqdn),
         AcmeAction::Status { fqdn } => ("webd.acme.status", fqdn),
     };
@@ -6986,7 +6986,7 @@ async fn run_acme_cli(action: AcmeAction) -> Result<()> {
     headers.insert("fqdn".to_string(), fqdn.clone());
 
     let (rc, body_str, _err_hdr) = client
-        .call_with_headers_raw("webd", verb, &headers, "")
+        .call_with_headers_raw("webd", command_name, &headers, "")
         .await?;
     if rc == 0 {
         match serde_json::from_str::<serde_json::Value>(&body_str) {
@@ -7011,20 +7011,20 @@ async fn run_acme_cli(action: AcmeAction) -> Result<()> {
                     &body_str
                 }
             });
-        return Err(anyhow!("{verb} failed (rc={rc}): {msg}"));
+        return Err(anyhow!("{command_name} failed (rc={rc}): {msg}"));
     }
     Ok(())
 }
 
-/// Fire a parameter-less read-only Bus verb as a transient anonymous
+/// Fire a parameter-less read-only Bus command as a transient anonymous
 /// client and pretty-print the JSON body. Shared by the `routes
 /// list`, `stats`, `tls status`, and `autoconfig served-domains` CLI
-/// subcommands — every one of those verbs takes no headers and no
+/// subcommands — every one of those commands takes no headers and no
 /// body and produces a JSON object that's the operator-facing
 /// snapshot in its entirety. Error envelope handling falls back
 /// through `error` → `message` → raw body for forward compatibility
 /// with either substrate or DKIM-style error shapes.
-async fn run_readonly_verb_cli(verb: &'static str) -> Result<()> {
+async fn run_readonly_command_cli(command_name: &'static str) -> Result<()> {
     use std::collections::BTreeMap;
 
     let client = ::bus::client_helpers::connect_anonymous_default()
@@ -7032,14 +7032,14 @@ async fn run_readonly_verb_cli(verb: &'static str) -> Result<()> {
         .map_err(|e| {
             anyhow!(
                 "webd daemon not reachable via broker ({e}). \
-                 read-only inspection verbs require the daemon to be \
+                 read-only inspection commands require the daemon to be \
                  running — `systemctl start webd` (or equivalent) first."
             )
         })?;
 
     let headers: BTreeMap<String, String> = BTreeMap::new();
     let (rc, body_str, _err_hdr) = client
-        .call_with_headers_raw("webd", verb, &headers, "")
+        .call_with_headers_raw("webd", command_name, &headers, "")
         .await?;
     if rc == 0 {
         match serde_json::from_str::<serde_json::Value>(&body_str) {
@@ -7064,7 +7064,7 @@ async fn run_readonly_verb_cli(verb: &'static str) -> Result<()> {
                     &body_str
                 }
             });
-        return Err(anyhow!("{verb} failed (rc={rc}): {msg}"));
+        return Err(anyhow!("{command_name} failed (rc={rc}): {msg}"));
     }
     Ok(())
 }
@@ -7124,27 +7124,27 @@ async fn async_main() -> Result<()> {
         }
         Command::Routes { action } => {
             let RoutesAction::List = action;
-            run_readonly_verb_cli("webd.routes.list").await?;
+            run_readonly_command_cli("webd.routes.list").await?;
         }
         Command::Stats => {
-            run_readonly_verb_cli("webd.stats").await?;
+            run_readonly_command_cli("webd.stats").await?;
         }
         Command::Tls { action } => match action {
             TlsAction::Status => {
-                run_readonly_verb_cli("webd.tls.status").await?;
+                run_readonly_command_cli("webd.tls.status").await?;
             }
             TlsAction::Reload => {
                 // `webd.tls.reload` is parameter-less and returns a JSON
                 // reload report (or a `{"error": ...}` envelope with
                 // rc=10 on a bad cert / non-manual-PEM node). The
-                // param-less verb helper applies cleanly — empty body,
+                // param-less command helper applies cleanly — empty body,
                 // JSON response, error-envelope handling.
-                run_readonly_verb_cli("webd.tls.reload").await?;
+                run_readonly_command_cli("webd.tls.reload").await?;
             }
         },
         Command::Autoconfig { action } => {
             let AutoconfigAction::ServedDomains = action;
-            run_readonly_verb_cli("webd.autoconfig.served_domains").await?;
+            run_readonly_command_cli("webd.autoconfig.served_domains").await?;
         }
         Command::Serve {
             listen: cli_listen,
@@ -7350,7 +7350,7 @@ async fn async_main() -> Result<()> {
 
             // `webd.tls.status` watch-channel seed — carries the
             // resolved manual-PEM hostnames so manual-PEM-only and
-            // HTTP-only deployments still expose the verb (`acme:
+            // HTTP-only deployments still expose the command (`acme:
             // None`). When ACME exists, the sender is moved into
             // `AcmeProvisioner::new` below; the provisioner
             // overwrites the snapshot once after `startup_pass` then
@@ -7458,7 +7458,7 @@ async fn async_main() -> Result<()> {
                         // were spawned (none is).
                         broker_handle: bus::subscribe_granter::new_broker_handle(),
                         // Bootstrap node serves only the pre-ACME HTTP-01
-                        // redirect; C5 verbs (which need the runtime,
+                        // redirect; C5 commands (which need the runtime,
                         // the lock map, and the notify) never dispatch
                         // here. Leave all three `None` — C5 returns
                         // `rc=10` instead of panicking.
@@ -7616,7 +7616,7 @@ async fn async_main() -> Result<()> {
             // shape is operator-side and specifically scoped:
             // restart webd after adding the **first** ACME row to
             // `node.conf.mix`'s `acme_plans` array. A namespace-only
-            // add (via `props.set` or the C5 `vhost.add` verb)
+            // add (via `props.set` or the C5 `vhost.add` command)
             // does **not** populate `node.conf.mix` and therefore does
             // **not** flip the boot-time `acme_provisioner_opt`
             // gate. Closing that loop — provisioner construction
@@ -7625,7 +7625,7 @@ async fn async_main() -> Result<()> {
             // `node.conf.mix` edit — is a later-phase substrate fix,
             // not C4a's scope.
             // `Disk`: the namespace hooks re-read node.conf.mix on each
-            // guarded write so no writer (vhost verbs, raw props.set /
+            // guarded write so no writer (vhost commands, raw props.set /
             // props.delete) can leave a row the next boot's listener
             // resolution rejects.
             let (vhosts_runtime, vhosts_provisioner_events_rx) =
@@ -7996,16 +7996,16 @@ async fn async_main() -> Result<()> {
             // C5 — capture the ACME provisioner's notify-into-sweep
             // handle BEFORE the match arm below consumes
             // `acme_provisioner_opt` into the tokio task. The
-            // `webd.acme.renew` verb's `notify_one` runs against this
+            // `webd.acme.renew` command's `notify_one` runs against this
             // handle to bypass the renewal-window gate. `None` on
-            // no-ACME boots (no provisioner constructed) — the verb
+            // no-ACME boots (no provisioner constructed) — the command
             // returns `rc=10 no ACME provisioner attached` in that
             // case.
             let acme_notify_handle: Option<Arc<tokio::sync::Notify>> =
                 acme_provisioner_opt.as_ref().map(|p| p.notify_handle());
             // C5 BLOCKER 1 fix — capture the force-renew queue handle
             // BEFORE `tokio::spawn` below consumes the provisioner.
-            // The verb cannot reach the queue any other way once the
+            // The command cannot reach the queue any other way once the
             // provisioner has moved into the runtime.
             let acme_force_renew_handle: Option<
                 Arc<tokio::sync::Mutex<std::collections::HashSet<String>>>,
@@ -8013,10 +8013,10 @@ async fn async_main() -> Result<()> {
                 .as_ref()
                 .map(|p| p.force_renew_handle());
             // C4b — shared per-FQDN coordination lock map, lifted to
-            // before NodeState construction so the C5 ergonomic verbs
+            // before NodeState construction so the C5 ergonomic commands
             // can acquire the same lock identity the provisioner's
             // `VhostRemoved` arm holds. Constructed unconditionally
-            // so the C5 verbs work even on no-ACME boots (they still
+            // so the C5 commands work even on no-ACME boots (they still
             // need to serialise operator-driven add/remove). The
             // match arm below clones this same handle into the
             // provisioner via `attach_key_locks`.
@@ -8175,7 +8175,7 @@ async fn async_main() -> Result<()> {
             // failure on every namespace mutation.
             let mut vhosts_provisioner_events_rx_opt = Some(vhosts_provisioner_events_rx);
             // C4b/C5 — `webd_key_locks` is constructed above (before
-            // NodeState) so the C5 ergonomic verbs can share the same
+            // NodeState) so the C5 ergonomic commands can share the same
             // lock map. The match arm here just clones it into the
             // provisioner via `attach_key_locks`.
             // Set when the startup adoption left runtime rows needing
@@ -9195,8 +9195,8 @@ vhost: [
             )),
             broker_handle: bus::subscribe_granter::new_broker_handle(),
             // Bucket-D middleware tests never dispatch into the C5
-            // ergonomic verbs, so the runtime + lock-map + notify
-            // stay `None`. The dedicated `bus::vhost_verbs::tests`
+            // ergonomic commands, so the runtime + lock-map + notify
+            // stay `None`. The dedicated `bus::vhost_commands::tests`
             // module builds its own NodeState with these populated.
             vhosts_runtime: None,
             listeners_runtime: None,
@@ -10246,7 +10246,7 @@ mod cli_parser_tests {
         assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
-    // --- read-only inspection verbs ------------------------------------
+    // --- read-only inspection commands ------------------------------------
 
     #[test]
     fn routes_list_parses() {
@@ -10985,11 +10985,11 @@ mod session_login_tests {
     /// `session_epochs` table means a revoke is only complete if EVERY
     /// vhost the account touches is bumped). An account with a live cookie
     /// in TWO vhosts on one node: a single `webd.session.revoke` (the real
-    /// verb, iterating all directory primaries) must kill BOTH cookies —
+    /// command, iterating all directory primaries) must kill BOTH cookies —
     /// the case where a per-vhost table plus an incomplete enumeration
     /// would leave one door open.
     #[tokio::test]
-    async fn revoke_verb_kills_cookies_in_every_vhost() {
+    async fn revoke_command_kills_cookies_in_every_vhost() {
         const HOST_A: &str = "a.pim.example";
         const HOST_B: &str = "b.pim.example";
 
@@ -11094,7 +11094,7 @@ mod session_login_tests {
             );
         }
 
-        // ONE revoke through the REAL verb — it must iterate every primary.
+        // ONE revoke through the REAL command — it must iterate every primary.
         let mut cmd_headers = std::collections::BTreeMap::new();
         cmd_headers.insert("email".to_string(), EMAIL.to_string());
         let cmd = ::bus::native_client::IncomingCommand {
@@ -11106,7 +11106,7 @@ mod session_login_tests {
             body: String::new(),
             headers: cmd_headers,
         };
-        let (rc, body) = bus::session_verbs::dispatch("session.revoke", &cmd, &node)
+        let (rc, body) = bus::session_commands::dispatch("session.revoke", &cmd, &node)
             .await
             .expect("session.revoke dispatches");
         assert_eq!(rc, 0, "revoke rc=0; body={body}");

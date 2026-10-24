@@ -365,9 +365,9 @@ memory. Compressed input, decoder allocations, RGBA conversion and resizing
 have their own transient bounds; the renderer also owns resources beyond the
 wallpaper textures.</p>
 <h2 id="the-bus">The Bus</h2>
-<p>Service <code>backdrop</code> (or <code>--service</code>). Verbs (registered in
-<code>docs/docs/spec/bus/verbs.conf.mix</code>):</p>
-<table><thead><tr><th>Verb</th><th>Class</th><th>Body</th><th>Reply</th></tr></thead><tbody>
+<p>Service <code>backdrop</code> (or <code>--service</code>). Commands (registered in
+<code>docs/docs/spec/bus/commands.conf.mix</code>):</p>
+<table><thead><tr><th>Command</th><th>Class</th><th>Body</th><th>Reply</th></tr></thead><tbody>
 <tr><td><code>backdrop.ping</code></td><td>query</td><td><code>{}</code></td><td><code>{schema, service}</code></td></tr>
 <tr><td><code>backdrop.state</code></td><td>query</td><td><code>{}</code></td><td>the state below</td></tr>
 <tr><td><code>backdrop.set</code></td><td>intent</td><td>a complete document (above)</td><td>the change, once applied</td></tr>
@@ -386,7 +386,7 @@ stored but its durability is not confirmed (applied; the reply says so);</li>
 <li><code>SUPERSEDED</code>: a newer set replaced this one before it applied.</li>
 <li><code>BUSY</code>: a next arrived while a set or advance was decoding;</li>
 <li><code>NON_SLIDESHOW</code>: a next was requested with no applied slideshow;</li>
-<li><code>UNKNOWN</code>: the requested verb is not implemented.</li>
+<li><code>UNKNOWN</code>: the requested command is not implemented.</li>
 </ul>
 <p><code>backdrop.next</code> advances configured slideshows without changing or storing their
 sources. It refuses a configuration with no slideshow. An advance waiting for
@@ -411,7 +411,7 @@ shows (<code>theme</code>, <code>colour</code>, <code>image</code> or <code>fall
 <code>presented_revision</code>: the revision that output last drew. Use that field to see
 what is on screen; <code>active</code> alone does not mean every output has presented it yet.</p>
 <p>Every applied Bus set or next is one run of its command and is published on
-<code>backdrop.command.executed</code> with origin <code>bus</code>. The command line's default is
+<code>backdrop.action.executed</code> with origin <code>bus</code>. The command line's default is
 not a run: it is the start state.</p>
 <h2 id="cost">Cost</h2>
 <p>It costs nothing while nothing changes. A static colour or image draws once
@@ -473,7 +473,7 @@ On a build worker add <code>--software --private-bus --noded &lt;noded&gt;</code
 <li>Unit tests (<code>cargo test -p wallpaper</code>, <code>cargo test -p backdrop</code>) cover the
 document, colour, fit, decoder limits (including an oversized header and a
 FIFO), revisions, candidate and active images, the texture budget and the
-verb registry.</li>
+command registry.</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/backdrop/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

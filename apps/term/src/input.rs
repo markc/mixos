@@ -800,7 +800,7 @@ mod tests {
 
     #[test]
     fn every_action_names_a_command() {
-        let registry = crate::commands::registry();
+        let registry = crate::actions::registry();
         for action in [
             Action::NewTab,
             Action::CloseTab,

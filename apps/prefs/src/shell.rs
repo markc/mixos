@@ -24,7 +24,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, mpsc};
 use std::task::Poll;
 use std::time::Duration;
-use toolkit::command::{CommandError, Origin};
+use toolkit::action::{CommandError, Origin};
 use toolkit::{Registry, Strings, Theme, drive};
 
 /// What finished off the UI thread.
@@ -108,21 +108,21 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
     }
 }
 
-/// The app prefix of Preferences' verbs, and of its drive verbs.
+/// The app prefix of Preferences' commands, and of its drive commands.
 pub const APP: &str = "prefs";
 
 /// How long a releases call may take: reads are quick, a check asks GitHub
 /// once per app, and a change downloads and unpacks (releasesd bounds each
 /// file at 30 minutes; an update covers every installed app).
-pub fn budget(verb: &str) -> Duration {
-    Duration::from_secs(match verb {
+pub fn budget(command_name: &str) -> Duration {
+    Duration::from_secs(match command_name {
         "releases.list" | "releases.notes" | "releases.status" => 30,
         "releases.check" => 600,
         _ => 4 * 3600,
     })
 }
 
-/// How long a settingsd call may take: every verb answers from memory or
+/// How long a settingsd call may take: every command answers from memory or
 /// one durable write.
 pub const SETTINGS_BUDGET: Duration = Duration::from_secs(30);
 
@@ -140,17 +140,17 @@ fn hostname() -> String {
         .unwrap_or_else(|| "host".into())
 }
 
-/// The whole Bus surface: the engine's verbs and the window's drive verbs.
+/// The whole Bus surface: the engine's commands and the window's drive commands.
 pub fn describe() -> Value {
     let mut surface = model::describe();
-    if let Some(verbs) = surface["verbs"].as_array_mut() {
-        verbs.extend(drive::describe(APP));
-        verbs.extend(citizen::macros::describe(APP));
+    if let Some(command_names) = surface["commands"].as_array_mut() {
+        command_names.extend(drive::describe(APP));
+        command_names.extend(citizen::macros::describe(APP));
     }
     surface
 }
 
-/// Resolve the effects that only need the registry (`prefs.commands` and
+/// Resolve the effects that only need the registry (`prefs.actions` and
 /// `prefs.execute`) or the description right now, in order, and return the
 /// rest for the shell to perform.
 pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &Strings) -> Vec<Effect> {
@@ -175,7 +175,7 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                         ),
                         Err(CommandError::Unknown(_)) => (
                             10,
-                            json!({"error_code":"UNKNOWN_COMMAND","message":label("unknown-command")}),
+                            json!({"error_code":"UNKNOWN_ACTION","message":label("unknown-action")}),
                         ),
                         Err(CommandError::Disabled(_)) => (
                             10,
@@ -187,7 +187,7 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                 Effect::Describe { id, help } => {
                     let surface = describe();
                     let body = if help {
-                        surface["verbs"].clone()
+                        surface["commands"].clone()
                     } else {
                         surface
                     };
@@ -288,7 +288,7 @@ impl Shell {
         });
         let mut shell = Self {
             engine: Engine::new(crate::label_with),
-            commands: crate::commands::registry(),
+            commands: crate::actions::registry(),
             keymap: toolkit::keymap::Overrides::new(),
             strings: strings(),
             theme,
@@ -370,8 +370,8 @@ impl Shell {
     /// queue goes straight on; anything else waits until the drive input
     /// before it is answered.
     fn release(&mut self) {
-        while let Some(Event::Delivery(Delivery::Command { verb, .. })) = self.held.front() {
-            let joins_queue = verb.strip_prefix("prefs.").is_some_and(drive::queues);
+        while let Some(Event::Delivery(Delivery::Command { command: command_name, .. })) = self.held.front() {
+            let joins_queue = command_name.strip_prefix("prefs.").is_some_and(drive::queues);
             if self.exiting || (drive::pending(&self.ctx) && !joins_queue) {
                 return;
             }
@@ -389,7 +389,7 @@ impl Shell {
     }
 
     /// Publish the commands run since the last call on
-    /// `<service>.command.executed`.
+    /// `<service>.action.executed`.
     fn publish_executed(&self) {
         let (runs, lost) = self.commands.take_executed();
         if runs.is_empty() && lost == 0 {
@@ -402,12 +402,12 @@ impl Shell {
 
     fn perform(&mut self, effect: Effect) {
         match effect {
-            Effect::Backdrop { ticket, verb, body } => {
+            Effect::Backdrop { ticket, command: command_name, body } => {
                 let bus = self.bus.clone();
                 self.spawn(async move {
                     Event::Backdrop(
                         ticket,
-                        bus.raw_within("backdrop", verb, body.to_string(), Duration::from_secs(60))
+                        bus.raw_within("backdrop", command_name, body.to_string(), Duration::from_secs(60))
                             .await,
                     )
                 });
@@ -420,20 +420,20 @@ impl Shell {
                     Event::Browsed(ticket, result)
                 });
             }
-            Effect::Releases { ticket, verb, body } => {
+            Effect::Releases { ticket, command: command_name, body } => {
                 let bus = self.bus.clone();
                 self.spawn(async move {
                     let result = bus
-                        .raw_within(RELEASES, verb, body.to_string(), budget(verb))
+                        .raw_within(RELEASES, command_name, body.to_string(), budget(command_name))
                         .await;
                     Event::Released(ticket, result)
                 });
             }
-            Effect::Settings { ticket, verb, body } => {
+            Effect::Settings { ticket, command: command_name, body } => {
                 let bus = self.bus.clone();
                 self.spawn(async move {
                     let result = bus
-                        .raw_within(SETTINGS, verb, body.to_string(), SETTINGS_BUDGET)
+                        .raw_within(SETTINGS, command_name, body.to_string(), SETTINGS_BUDGET)
                         .await;
                     Event::Settled(ticket, result)
                 });
@@ -441,7 +441,7 @@ impl Shell {
             Effect::Mail {
                 ticket,
                 service,
-                verb,
+                command: command_name,
                 mut body,
                 secret,
             } => {
@@ -452,7 +452,7 @@ impl Shell {
                 let bus = self.bus.clone();
                 self.spawn(async move {
                     let result = bus
-                        .raw_within(service, verb, body.to_string(), MAIL_BUDGET)
+                        .raw_within(service, command_name, body.to_string(), MAIL_BUDGET)
                         .await;
                     Event::Mailed(ticket, result)
                 });
@@ -470,8 +470,8 @@ impl Shell {
                 });
             }
             Effect::Reply { id, rc, body } => self.bus.reply(id, rc, body),
-            Effect::Drive { id, verb, args } => {
-                if let Some(answer) = drive::request(&self.ctx, id, &verb, &args) {
+            Effect::Drive { id, command: command_name, args } => {
+                if let Some(answer) = drive::request(&self.ctx, id, &command_name, &args) {
                     self.bus.reply(answer.id, answer.rc, answer.body);
                 }
             }
@@ -514,7 +514,7 @@ impl Shell {
     }
 
     fn choice(&self) -> toolkit::theme_menu::Choice {
-        crate::commands::choice(&self.engine)
+        crate::actions::choice(&self.engine)
     }
 
     /// What the window is drawn in, under its own choice: the Appearance
@@ -646,16 +646,16 @@ mod tests {
     }
 
     #[test]
-    fn every_verb_is_described_and_every_described_verb_is_handled() {
+    fn every_command_is_described_and_every_described_command_is_handled() {
         let surface = describe();
-        let names: Vec<String> = surface["verbs"]
+        let names: Vec<String> = surface["commands"]
             .as_array()
             .unwrap()
             .iter()
             .map(|v| v["name"].as_str().unwrap().into())
             .collect();
-        let mut expected: Vec<String> = model::VERBS.iter().map(|v| (*v).to_owned()).collect();
-        expected.extend(drive::VERBS.iter().map(|v| format!("{APP}.{v}")));
+        let mut expected: Vec<String> = model::COMMANDS.iter().map(|v| (*v).to_owned()).collect();
+        expected.extend(drive::COMMANDS.iter().map(|v| format!("{APP}.{v}")));
         expected.extend(
             citizen::macros::describe(APP)
                 .iter()
@@ -668,17 +668,17 @@ mod tests {
             }
             let mut e = engine();
             e.command(1, name, "{}");
-            let effects = settle(&mut e, &crate::commands::registry(), &crate::strings());
+            let effects = settle(&mut e, &crate::actions::registry(), &crate::strings());
             assert!(
-                !effects.iter().any(|x| matches!(x, Effect::Reply { body, .. } if body["error_code"] == "UNKNOWN_VERB")),
+                !effects.iter().any(|x| matches!(x, Effect::Reply { body, .. } if body["error_code"] == "UNKNOWN_COMMAND")),
                 "{name}: {effects:?}"
             );
-            if let Some(verb) = name
+            if let Some(command_name) = name
                 .strip_prefix("prefs.")
-                .filter(|v| drive::VERBS.contains(v))
+                .filter(|v| drive::COMMANDS.contains(v))
             {
                 assert!(
-                    matches!(&effects[..], [Effect::Drive { verb: v, .. }] if v == verb),
+                    matches!(&effects[..], [Effect::Drive { command: v, .. }] if v == command_name),
                     "{name}: {effects:?}"
                 );
             }
@@ -687,7 +687,7 @@ mod tests {
 
     #[test]
     fn every_command_is_reachable_by_execute() {
-        let (commands, strings) = (crate::commands::registry(), crate::strings());
+        let (commands, strings) = (crate::actions::registry(), crate::strings());
         for command in commands.iter() {
             let mut e = engine();
             e.command(1, "prefs.execute", &json!({"id":command.id}).to_string());
@@ -703,10 +703,10 @@ mod tests {
     }
 
     /// A command run from the window and one run over the Bus are recorded
-    /// with their origins, for `prefs.command.executed`.
+    /// with their origins, for `prefs.action.executed`.
     #[test]
     fn runs_are_recorded_with_their_origin() {
-        let (commands, strings) = (crate::commands::registry(), crate::strings());
+        let (commands, strings) = (crate::actions::registry(), crate::strings());
         let mut e = engine();
         apply_ui(
             &mut e,
@@ -740,7 +740,7 @@ mod tests {
     /// acts on the row clicked in the same frame.
     #[test]
     fn a_same_frame_selection_reaches_the_command() {
-        let (commands, strings) = (crate::commands::registry(), crate::strings());
+        let (commands, strings) = (crate::actions::registry(), crate::strings());
         let mut e = engine();
         let frame = vec![
             UiEvent::Command("apps.install", Origin::Ui),
@@ -748,15 +748,15 @@ mod tests {
         ];
         apply_ui(&mut e, &commands, frame);
         let effects = settle(&mut e, &commands, &strings);
-        let verbs: Vec<_> = effects
+        let command_names: Vec<_> = effects
             .iter()
             .filter_map(|x| match x {
-                Effect::Releases { verb, .. } => Some(*verb),
+                Effect::Releases { command: command_name, .. } => Some(*command_name),
                 _ => None,
             })
             .collect();
-        assert_eq!(verbs, ["releases.notes", "releases.update"]);
-        assert!(effects.iter().any(|x| matches!(x, Effect::Releases { verb: "releases.update", body, .. } if body["apps"][0] == "demo")));
+        assert_eq!(command_names, ["releases.notes", "releases.update"]);
+        assert!(effects.iter().any(|x| matches!(x, Effect::Releases { command: "releases.update", body, .. } if body["apps"][0] == "demo")));
     }
 
     #[test]

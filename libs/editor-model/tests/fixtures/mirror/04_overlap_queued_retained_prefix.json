@@ -7,10 +7,10 @@
   "steps": [
     {"local": {"id": "L1", "edit": {"items": [[0, 0, "1"]], "coalesce": true}}},
     {"local": {"id": "L2", "edit": {"items": [[7, 8, "q"]], "coalesce": false}}},
-    {"agent": {"caller": "local:agent", "verb": "edit.apply",
+    {"agent": {"caller": "local:agent", "command": "edit.apply",
       "args": {"buffer": "b1_0000e1e1", "ops": [{"op": "replace", "range": [5, 7], "text": "FG"}, {"op": "insert", "at": 10, "text": "!"}], "origin": "agent:ctl-90"},
       "expect": {"rc": 0, "rev": 1}}},
-    {"send": {"id": "L1", "verb": "edit.insert", "caller": "local:ced",
+    {"send": {"id": "L1", "command": "edit.insert", "caller": "local:ced",
       "args": {"buffer": "b1_0000e1e1", "at": 0, "text": "1", "base_rev": 0, "coalesce": true, "origin": "human:ced", "op_id": "c00000001-000001"},
       "expect": {"rc": 0, "rev": 2}}},
     {"deliver_event": {"seq": 1}},

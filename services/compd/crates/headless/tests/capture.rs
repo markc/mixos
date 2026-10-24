@@ -52,21 +52,21 @@ impl Bus {
             url: record["url"].as_str().unwrap().into(),
         }
     }
-    fn call(&self, verb: &str, args: Value) -> Value {
+    fn call(&self, command_name: &str, args: Value) -> Value {
         let output = helper(
             "call",
             &self.root,
-            &[verb, &args.to_string()],
+            &[command_name, &args.to_string()],
             Some(&self.url),
         );
         let text = String::from_utf8_lossy(&output.stdout);
         assert!(
             output.status.success(),
-            "Bus {verb}: {text} {}",
+            "Bus {command_name}: {text} {}",
             String::from_utf8_lossy(&output.stderr)
         );
         let reply: Value = serde_json::from_str(text.lines().last().expect("Bus reply")).unwrap();
-        assert_eq!(reply["rc"], 0, "{verb}: {reply}");
+        assert_eq!(reply["rc"], 0, "{command_name}: {reply}");
         match &reply["body"] {
             Value::String(body) => serde_json::from_str(body).unwrap(),
             body => body.clone(),

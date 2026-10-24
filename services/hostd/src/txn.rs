@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The transaction every write verb runs through, whatever it changes:
+//! The transaction every write command runs through, whatever it changes:
 //! a receipt recorded before anything moves, the change, its proof, then
 //! keep or put back; recovery of changes a stop or crash cut short; undo.
 //!
-//! A verb supplies the files it writes and how to make the host use them
+//! A command supplies the files it writes and how to make the host use them
 //! (`reapply`). Everything about ordering, durability, the circuit breaker
 //! and blocked writes lives here, once.
 use crate::{
@@ -122,7 +122,7 @@ pub enum Put {
 /// - a file already holding the backup is left as it is;
 /// - if any file holds anything else, nothing is touched (`LeftAlone`).
 ///
-/// The verb's `reapply` runs whenever the files hold their backups, even if
+/// The command's `reapply` runs whenever the files hold their backups, even if
 /// this call wrote nothing, because an earlier attempt may have written the
 /// files and then failed before the host was told.
 pub async fn put_back(host: &Host, receipt: &Receipt) -> anyhow::Result<Put> {
@@ -131,13 +131,13 @@ pub async fn put_back(host: &Host, receipt: &Receipt) -> anyhow::Result<Put> {
             return Ok(Put::LeftAlone);
         }
     }
-    // The live object a verb would reconfigure or delete must still be
+    // The live object a command would reconfigure or delete must still be
     // hostd's: a WireGuard link replaced by someone else's is left alone.
-    if receipt.verb == wg::VERB && !wg::owns(receipt).await? {
+    if receipt.command == wg::COMMAND && !wg::owns(receipt).await? {
         return Ok(Put::LeftAlone);
     }
     // A Wi-Fi station someone has since moved to another network is theirs.
-    if receipt.verb == wifi::VERB && !wifi::owns(receipt).await? {
+    if receipt.command == wifi::COMMAND && !wifi::owns(receipt).await? {
         return Ok(Put::LeftAlone);
     }
     for change in &receipt.files {
@@ -145,10 +145,10 @@ pub async fn put_back(host: &Host, receipt: &Receipt) -> anyhow::Result<Put> {
             receipt::restore(std::slice::from_ref(change))?;
         }
     }
-    match receipt.verb.as_str() {
-        link::VERB => link::reapply(host, receipt).await?,
-        wg::VERB => wg::reapply(host, receipt).await?,
-        wifi::VERB => wifi::reapply(host, receipt).await?,
+    match receipt.command.as_str() {
+        link::COMMAND => link::reapply(host, receipt).await?,
+        wg::COMMAND => wg::reapply(host, receipt).await?,
+        wifi::COMMAND => wifi::reapply(host, receipt).await?,
         other => anyhow::bail!(
             "receipt {} is for {other}, which this hostd can't put back",
             receipt.id
@@ -204,7 +204,7 @@ pub async fn undo(host: &Host, receipt: &mut Receipt) -> Result<(), Value> {
         }
         // Wi-Fi writes no files: its change is current only while the
         // station is still on the network it connected.
-        if receipt.verb == wifi::VERB && !wifi::current(host, receipt).await.map_err(internal)? {
+        if receipt.command == wifi::COMMAND && !wifi::current(host, receipt).await.map_err(internal)? {
             return Err(json!({"status":"superseded","receipt":receipt.id,
                 "message":"the station is no longer on this network"}));
         }

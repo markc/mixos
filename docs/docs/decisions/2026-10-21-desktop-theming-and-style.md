@@ -71,7 +71,7 @@ Settings contract 0.9.0 (additive), store format 4.
   generation, bounded, one per window, cleared by every look change except
   the arrival of the window's pinned design source, which keeps it.
   `view.theme.set` is the window's axis choice; older per-application
-  theme verbs are deprecated aliases. Writes use `settings.validate`,
+  theme commands are deprecated aliases. Writes use `settings.validate`,
   `settings.apply` (fenced; `null` resets), `settings.reset` and
   `prefs.appearance.set`. Undo is the caller's held before-values applied
   as an inverse fenced on the accepted receipt.

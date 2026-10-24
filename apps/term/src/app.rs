@@ -413,7 +413,7 @@ impl App {
     }
 
     /// Everything a wake can mean, in one place: reap exited shells, follow
-    /// the tab set's shape (a Bus verb may have changed it), and size any
+    /// the tab set's shape (a Bus command may have changed it), and size any
     /// pane that needs it. Painting is [`App::paint`]'s.
     pub fn sync(&mut self) -> Synced {
         let (removed, notes) = self.tabs.lock().expect("tabs").reap_exited();
@@ -1078,7 +1078,7 @@ impl App {
         self.tabs.lock().expect("tabs").list().len() > 1
     }
 
-    /// The window's state, for `term.commands` callers and tests.
+    /// The window's state, for `term.actions` callers and tests.
     pub fn state(&self) -> serde_json::Value {
         let (cw, ch) = self.logical_cell();
         serde_json::json!({

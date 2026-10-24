@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-// The snapshot tree and the read verbs over it. The read verbs are
+// The snapshot tree and the read commands over it. The read commands are
 // synchronous, so the single-flight test races two threads.
 
 use super::*;
@@ -879,7 +879,7 @@ fn workspaces_list_is_the_workspaces_subtree() {
     assert_ne!(rc, 0);
 }
 
-// The read verbs, on the model alone.
+// The read commands, on the model alone.
 #[test]
 fn session_get_returns_the_last_transition_with_a_nullable_vt() {
     let mut snapshot = fixture();
@@ -961,7 +961,7 @@ fn info_and_windows_list_bodies_are_comps() {
     );
     assert_eq!(
         dispatch_read(&snapshot, "comp.props.set", &Value::Null),
-        crate::reply::error("unknown_verb")
+        crate::reply::error("UNKNOWN_COMMAND")
     );
     assert_eq!(
         dispatch_read(&snapshot, "comp.props.get", &json!({"path": "Bad Path"})),

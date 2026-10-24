@@ -11,7 +11,7 @@
 -- This citizen is that registered service: the smoke asks it to report or
 -- hold, and it forwards the request to the compositor under its own name.
 --
--- Verbs (answered with {rc, reply} from the compositor):
+-- Commands (answered with {rc, reply} from the compositor):
 --   holder.mode {output, edge, surface, mode, generation?}  -> comp.panel.mode
 --   holder.hold {output, edge, surface, holder, acquire}   -> comp.panel.hold
 --

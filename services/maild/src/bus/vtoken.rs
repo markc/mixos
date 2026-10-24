@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! `maild.vtoken.*` Bus verbs — the vtoken registry's operator control surface
+//! `maild.vtoken.*` Bus commands — the vtoken registry's operator control surface
 //! Replaces
 //! the hand-SQL seeding: an operator can `add` / `list` / `rotate` / `disable` /
 //! `lookup` tokens over Bus, and the Mix `vtoken` CLI re-points here.
 //!
 //! ## Auth
 //!
-//! EVERY verb is operator-gated — the Bus sender (`cmd.from`) must be in the
+//! EVERY command is operator-gated — the Bus sender (`cmd.from`) must be in the
 //! configured `vtoken_operators` allowlist (the same shape as
 //! `retention_operators` gating `maild.retention.run`; empty allowlist ⇒
 //! nobody; an anonymous caller, whose `from` noded strips to empty, is refused).
 //! Token management mints/rotates the publish capability, so even the read
-//! verbs (`list`/`lookup`) are operator-only — and they **redact `pin`/
+//! commands (`list`/`lookup`) are operator-only — and they **redact `pin`/
 //! `pin_prev`** so a secret never crosses the wire.
 
 use std::sync::{Arc, Mutex};
@@ -26,7 +26,7 @@ use crate::vtoken::{OpaqueRow, VtokenStore};
 
 const RC_ERROR: u8 = 10;
 
-/// Shared state for the `maild.vtoken.*` verbs.
+/// Shared state for the `maild.vtoken.*` commands.
 #[derive(Clone)]
 pub struct VtokenBusState {
     pub store: Arc<VtokenStore>,
@@ -58,7 +58,7 @@ pub async fn dispatch(action: &str, cmd: &IncomingCommand, state: &VtokenBusStat
     if let Some((envelope, args)) = detect_delegation(cmd) {
         return dispatch_delegated(action, cmd, &envelope, &args, state).await;
     }
-    // Operator gate (all verbs): the Bus sender must be in the allowlist.
+    // Operator gate (all commands): the Bus sender must be in the allowlist.
     let from = cmd.from.as_str();
     // Defence-in-depth against a config overlap: a DELEGATED peer must ALWAYS
     // present an envelope — it can NEVER fall through to the global operator
@@ -86,7 +86,7 @@ pub async fn dispatch(action: &str, cmd: &IncomingCommand, state: &VtokenBusStat
         );
     }
     match action {
-        // Opaque verbs — the sender-locked single-segment namespace.
+        // Opaque commands — the sender-locked single-segment namespace.
         "mint_opaque" => handle_mint_opaque(cmd, state).await,
         "list_opaque" => handle_list_opaque(state).await,
         "lookup_opaque" => handle_lookup_opaque(cmd, state).await,
@@ -250,7 +250,7 @@ async fn handle_disable_opaque(cmd: &IncomingCommand, state: &VtokenBusState) ->
 //
 // webd relays a logged-in vhost-admin actor via the `$mixos_delegation`
 // envelope. webd is the policy decision point (admin RBAC + CSRF + a per-route
-// exact-verb grant, all enforced in webd before the call); maild binds the
+// exact-command grant, all enforced in webd before the call); maild binds the
 // actor to the target so a confused/compromised webd path can't manage tokens
 // outside the actor's own domain. maild grows NO role model. Design:
 //
@@ -267,7 +267,7 @@ struct Delegation {
 
 /// Detect a delegated call: `Some((envelope, args))` iff the body is a JSON
 /// object with a top-level `$mixos_delegation` key. The inner `args` object
-/// (the verb's own arguments) is returned separately — envelope and args are
+/// (the command's own arguments) is returned separately — envelope and args are
 /// NEVER merged, so a key like `actor` inside `args` is plain user data. A body
 /// that is empty / not JSON / an object without the key → `None` (operator
 /// path). A malformed envelope VALUE still selects the delegated path (its
@@ -376,14 +376,14 @@ fn check_domain_bind(actor: &str, target_account: &str, vhost: &str) -> Result<(
 }
 
 /// One audit line per delegated call outcome ( §7).
-fn audit_delegated(peer: &str, env: &Delegation, verb: &str, target: &str, rc: u8) {
+fn audit_delegated(peer: &str, env: &Delegation, command_name: &str, target: &str, rc: u8) {
     tracing::info!(
         peer = peer,
         actor = %env.actor,
         vhost = %env.vhost,
         route_id = %env.route_id,
         request_id = %env.request_id,
-        verb = verb,
+        command_name = command_name,
         target = target,
         rc = rc,
         "vtoken delegated call"
@@ -446,10 +446,10 @@ async fn dispatch_delegated(
         }
         Err(e) => return (RC_ERROR, err_body(&e)),
     }
-    // (4-7) Per-verb: resolve the target, bind it to the actor's domain, act,
-    // audit. list is domain-scoped; mutating verbs bind on the token's account.
+    // (4-7) Per-command: resolve the target, bind it to the actor's domain, act,
+    // audit. list is domain-scoped; mutating commands bind on the token's account.
     match action {
-        // Opaque verbs — domain-bound on the token's content account.
+        // Opaque commands — domain-bound on the token's content account.
         "mint_opaque" => delegated_mint_opaque(peer, &env, args, state).await,
         "list_opaque" => delegated_list_opaque(peer, &env, state).await,
         "lookup_opaque" => delegated_lookup_opaque(peer, &env, args, state).await,
@@ -602,18 +602,18 @@ async fn delegated_disable_opaque(
 
 /// Look up an opaque token by `token_hmac` and enforce the actor↔account↔vhost
 /// domain bind. The opaque twin of [`resolve_target_in_domain`]; shared by the
-/// delegated lookup/disable verbs so the bind is applied before any action.
+/// delegated lookup/disable commands so the bind is applied before any action.
 async fn resolve_opaque_target_in_domain(
     peer: &str,
     env: &Delegation,
-    verb: &str,
+    command_name: &str,
     token_hmac: &str,
     state: &VtokenBusState,
 ) -> Result<OpaqueRow, (u8, String)> {
     let row = match state.store.lookup_opaque_by_hmac(token_hmac).await {
         Ok(Some(r)) => r,
         Ok(None) => {
-            audit_delegated(peer, env, verb, token_hmac, RC_ERROR);
+            audit_delegated(peer, env, command_name, token_hmac, RC_ERROR);
             return Err((
                 RC_ERROR,
                 err_body(&format!("unknown token_hmac: {token_hmac}")),
@@ -622,7 +622,7 @@ async fn resolve_opaque_target_in_domain(
         Err(e) => return Err((RC_ERROR, err_body(&format!("lookup_opaque failed: {e}")))),
     };
     if let Err(e) = check_domain_bind(&env.actor, &row.account, &env.vhost) {
-        audit_delegated(peer, env, verb, &row.account, RC_ERROR);
+        audit_delegated(peer, env, command_name, &row.account, RC_ERROR);
         return Err((RC_ERROR, err_body(&format!("auth_denied: {e}"))));
     }
     Ok(row)
@@ -753,7 +753,7 @@ mod tests {
     }
 
     /// A request from `from` with a JSON body (the `client.call` shape the Mix
-    /// CLI produces). An empty body models a no-arg verb.
+    /// CLI produces). An empty body models a no-arg command.
     fn cmd(from: &str, body: Value) -> IncomingCommand {
         IncomingCommand {
             generation: 0,
@@ -933,7 +933,7 @@ mod tests {
         assert!(out.contains("auth_denied"), "{out}");
     }
 
-    // ── Opaque verbs ────────────────────────────────────────────────
+    // ── Opaque commands ────────────────────────────────────────────────
 
     #[tokio::test]
     async fn operator_mint_opaque_roundtrip_list_lookup_disable() {

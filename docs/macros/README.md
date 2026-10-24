@@ -7,7 +7,7 @@ description: Shared Mix macro discovery, user storage and background execution f
 
 A macro is an ordinary Mix program (`.mix`) that you run from an app's
 **Macros** icon or Help menu. It can use the usual Mix facilities, including
-application commands and Bus verbs. Listing macros never executes them.
+application commands and Bus commands. Listing macros never executes them.
 Macros run with your normal session authority.
 
 ## Folders and precedence
@@ -104,7 +104,7 @@ list so a stale highlight cannot select a different file.
 Every completed GUI run posts a plain notifyd toast with no actions: title
 and done or failed status, plus the last few output lines. Run errors also
 post toasts. The runner retains the last 64 KiB of combined output, available
-through the output verb and the editor's output strip while it is open.
+through the output command and the editor's output strip while it is open.
 If notification delivery fails, an open editor shows the output; otherwise
 the app logs the failure. Results and errors never open the editor. Only
 right-click, Shift+Enter or successful New macro creation opens it.
@@ -114,7 +114,7 @@ subscriptions or polling. Each originating window owns its editor and
 output strip. Closing that window stops its GUI run through `stop_if_origin`;
 closing another window leaves the run alone.
 
-Drive verbs accept `viewport: "macro-editor"` to address the open editor,
+Drive commands accept `viewport: "macro-editor"` to address the open editor,
 including `ui.tree`, `ui.click`, `ui.key`, `ui.type` and `ui.capture`. Omitting
 the field addresses the app window. A closed editor returns `NOT_FOUND`.
 
@@ -183,7 +183,7 @@ resources in the egui context while each app keeps the menu's open flag
 in its UI state. This keeps application engines below the GUI boundary in
 the application layering gate.
 
-## Bus verbs
+## Bus commands
 
 Email, Workshop, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
 same macro surface under their component prefix. `list`, `status` and
@@ -243,7 +243,7 @@ Filesystem watching and per-app context adapters remain future work.
 GUI runs use `origin: gui:<window-id>`, with a process-local numeric window id.
 Bus runs use `origin: bus`. Both publish `<service>.macros.finished`, where `service` is the instance’s
 registered Bus name (for example `term-1234` for a second Term instance).
-Verbs retain the app’s canonical prefix, such as `term.macros.run`; only the
+Commands retain the app’s canonical prefix, such as `term.macros.run`; only the
 starting GUI window posts a toast. All windows show the shared busy dot and
 Stop title. Closing the starting window stops its GUI run and removes its
 finish subscription; closing another window does not stop the run.
@@ -258,9 +258,9 @@ for Bus starts, catalogue changes and completion without idle polling.
 Macro-file writes (`put`, `remove`, `move`, `copy`, `new`) require the owning
 process’s registered local service or Workshop (`workshop`, `workshop-*`).
 Global writes and moves into another app’s catalogue require Workshop.
-Workshop’s own mutating macro verbs, including forwarding with `app`, accept
+Workshop’s own mutating macro commands, including forwarding with `app`, accept
 only Workshop callers, preventing arbitrary callers from using it as a write
-proxy. Refusals use rc 10, `DENIED`, and name the verb and rule before any
+proxy. Refusals use rc 10, `DENIED`, and name the command and rule before any
 file effects. Read/run/status/output/stop/reload remain open.
 
 The broker stamps service identity and local/mesh origin; mesh writes are

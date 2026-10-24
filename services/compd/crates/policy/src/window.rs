@@ -25,7 +25,7 @@ use surfaces::{Registry, SurfaceId, SurfaceRecord, SurfaceRole, WindowTargetErro
 use crate::Effect;
 use crate::workspaces::{self, DefaultOutput, SwitchGates, WorkspaceState};
 
-/// A session lock refuses every `comp.window.*` verb that names or changes
+/// A session lock refuses every `comp.window.*` command that names or changes
 /// a window, and the workspace switch (D12: it changes what is on screen).
 /// Source stats and a global stats reset still answer.
 pub fn locked_refusal(op: &WindowOp, session_lock: bool) -> Option<ControlReply> {
@@ -39,7 +39,7 @@ pub fn locked_refusal(op: &WindowOp, session_lock: bool) -> Option<ControlReply>
     (names_window && session_lock).then_some(ControlReply::Locked)
 }
 
-/// The `{id, generation}` fence every window verb starts with.
+/// The `{id, generation}` fence every window command starts with.
 pub fn resolve<H: Clone + Eq + Hash>(
     registry: &Registry<H>,
     id: u64,
@@ -154,7 +154,7 @@ pub fn set_state<H: Clone + Eq + Hash>(
     Ok(effects)
 }
 
-/// The state verbs' success body, read after the configure went out.
+/// The state commands' success body, read after the configure went out.
 pub fn state_reply<H>(
     record: &SurfaceRecord<H>,
     changed: bool,
@@ -264,7 +264,7 @@ pub struct FocusDecision {
 /// `comp.window.focus {id, generation, raise}`. Rule 6 (F1.2): a window on another workspace
 /// is brought on screen by switching to its workspace, never pulled
 /// across, and only when the workspace-independent rungs would let it take
-/// focus: a refused verb must not change the desktop. The engine reads
+/// focus: a refused command must not change the desktop. The engine reads
 /// `focused` back afterwards and replies with [`focus_reply`].
 #[allow(clippy::too_many_arguments)]
 pub fn focus<H: Clone + Eq + Hash>(
@@ -328,7 +328,7 @@ pub fn focus<H: Clone + Eq + Hash>(
     Ok(FocusDecision { effects, reason })
 }
 
-/// The focus verb's body: `focused` as read back; a `reason` when a gate
+/// The focus command's body: `focused` as read back; a `reason` when a gate
 /// held, else `refused` when the focus did not take.
 pub fn focus_reply(
     id: u64,
@@ -736,7 +736,7 @@ pub fn place<H: Clone + Eq + Hash>(
     })
 }
 
-/// The place verb's body, from where the window actually stands.
+/// The place command's body, from where the window actually stands.
 pub fn place_reply(
     spec: &PlaceSpec,
     placement: &Placement,

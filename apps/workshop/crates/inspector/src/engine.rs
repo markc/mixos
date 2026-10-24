@@ -48,11 +48,11 @@ pub enum Effect {
     /// Run registry command `command` and answer `id`.
     Execute { id: u64, command: String },
     /// Answer `id` with the whole Bus surface (`app.describe`), or only its
-    /// verbs (`HELP`): the engine's and the window's drive verbs.
+    /// commands (`HELP`): the engine's and the window's drive commands.
     Describe { id: u64, help: bool },
-    /// Hand the window-level verb `verb` (without the `workshop.` prefix:
+    /// Hand the window-level command `command` (without the `workshop.` prefix:
     /// `ui.click`, `window`, …) to the toolkit drive layer.
-    Drive { id: u64, verb: String, args: Value },
+    Drive { id: u64, command: String, args: Value },
     /// Put `text` on the clipboard.
     Copy(String),
     /// Close: stop the Bus connection and the window.
@@ -77,7 +77,7 @@ pub enum RowKind {
     },
     Node(String),
     Service(String),
-    Verb(Selection),
+    Command(Selection),
     Error(String),
     Peers,
     Peer(String),
@@ -334,7 +334,7 @@ impl Engine {
         self.call.is_some()
     }
 
-    /// The selected verb is advertised and can be called now.
+    /// The selected command is advertised and can be called now.
     pub fn callable(&self) -> bool {
         !self.busy()
             && self.connected
@@ -343,7 +343,7 @@ impl Engine {
                 .ui
                 .selected
                 .as_ref()
-                .is_some_and(|t| self.snapshot.verb(t).is_some())
+                .is_some_and(|t| self.snapshot.command_name(t).is_some())
     }
 
     fn next(&mut self) -> u64 {
@@ -462,7 +462,7 @@ impl Engine {
         self.effects.push(Effect::Discover { ticket });
     }
 
-    /// Call the selected verb with the body, as the person would.
+    /// Call the selected command with the body, as the person would.
     pub fn call_selected(&mut self) {
         if let Some(target) = self.ui.selected.clone() {
             let body = self.ui.body.clone();
@@ -474,7 +474,7 @@ impl Engine {
         let blocked = self.busy() || self.ui.dialog.is_some() || !self.connected || self.quitting;
         let error = if blocked {
             Some(self.label("busy"))
-        } else if self.snapshot.verb(&target).is_none() {
+        } else if self.snapshot.command_name(&target).is_none() {
             Some(self.label("invalid-target"))
         } else if body.len() > model::BODY_LIMIT {
             Some(self.label("body-too-large"))
@@ -658,7 +658,7 @@ impl Engine {
         }
     }
 
-    /// Select the row `key`; a verb row also selects that verb.
+    /// Select the row `key`; a command row also selects that command.
     pub fn select_row(&mut self, row: &Row) {
         if self.ui.dialog.is_some() {
             return;
@@ -670,7 +670,7 @@ impl Engine {
             self.workshop.selected = None;
         }
         self.ui.selected = match &row.kind {
-            RowKind::Verb(target) => Some(target.clone()),
+            RowKind::Command(target) => Some(target.clone()),
             _ => None,
         };
     }
@@ -679,7 +679,7 @@ impl Engine {
 
     /// The services and mesh trees for the current filter. A filter opens
     /// every match; otherwise rows keep the person's expansion, and the
-    /// selected verb's service is always open.
+    /// selected command's service is always open.
     pub fn tree(&self) -> Vec<Row> {
         let mut rows = self.service_tree();
         self.macro_tree(&mut rows);
@@ -696,10 +696,10 @@ impl Engine {
         for (service, result) in &self.snapshot.services {
             let key = format!("service:{service}");
             let service_matches = service.to_lowercase().contains(&filter);
-            let verbs: Vec<_> = result
+            let command_names: Vec<_> = result
                 .as_ref()
-                .map(|verbs| {
-                    verbs
+                .map(|command_names| {
+                    command_names
                         .iter()
                         .filter(|v| {
                             service_matches
@@ -710,16 +710,16 @@ impl Engine {
                         .collect()
                 })
                 .unwrap_or_default();
-            if !service_matches && verbs.is_empty() {
+            if !service_matches && command_names.is_empty() {
                 continue;
             }
-            let mut children: Vec<Row> = verbs
+            let mut children: Vec<Row> = command_names
                 .into_iter()
-                .map(|verb| Row {
-                    key: format!("verb:{service}:{}", verb.name),
-                    kind: RowKind::Verb(Selection {
+                .map(|command_name| Row {
+                    key: format!("command:{service}:{}", command_name.name),
+                    kind: RowKind::Command(Selection {
                         service: service.clone(),
-                        verb: verb.name.clone(),
+                        command: command_name.name.clone(),
                     }),
                     expanded: false,
                     children: Vec::new(),
@@ -784,7 +784,7 @@ impl Engine {
         }
         for node in &self.snapshot.nodes {
             let engine = self.clone_for_node(node);
-            // Reuse the service/verb filtering and selection rules.
+            // Reuse the service/command filtering and selection rules.
             let mut children = engine.service_tree();
             children.retain(|row| row.key != "mesh");
             for row in &mut children {
@@ -798,8 +798,8 @@ impl Engine {
                     row.key = format!("service:{}:{name}", node.name);
                     row.expanded |= self.ui.expanded.contains(&row.key);
                     for child in &mut row.children {
-                        if let RowKind::Verb(target) = &child.kind {
-                            child.key = format!("verb:{}:{name}:{}", node.name, target.verb);
+                        if let RowKind::Command(target) = &child.kind {
+                            child.key = format!("command:{}:{name}:{}", node.name, target.command);
                         }
                     }
                 }
@@ -838,7 +838,7 @@ impl Engine {
             .services
             .iter()
             .filter(|(name, _)| node.services.contains(name))
-            .map(|(name, verbs)| (name.clone(), verbs.clone()))
+            .map(|(name, command_names)| (name.clone(), command_names.clone()))
             .collect();
         engine
     }
@@ -862,7 +862,7 @@ impl Engine {
     /// A delivery from the Bus connection.
     pub fn delivery(&mut self, delivery: Delivery) {
         match delivery {
-            Delivery::Command { id, verb, body } => self.command(id, &verb, &body),
+            Delivery::Command { id, command: command_name, body } => self.command(id, &command_name, &body),
             Delivery::Changed => {
                 if self.busy() {
                     self.refetch = true;
@@ -885,28 +885,28 @@ impl Engine {
         }
     }
 
-    /// Resolve the caller's target: both of service and verb, or neither
+    /// Resolve the caller's target: both of service and command, or neither
     /// (the current selection). Never a silent fallback from one to the other.
     fn target(&self, args: &Value) -> Result<Selection, String> {
-        match (args.get("service"), args.get("verb")) {
+        match (args.get("service"), args.get("command")) {
             (None, None) => self
                 .ui
                 .selected
                 .clone()
                 .ok_or_else(|| self.label("invalid-target")),
-            (Some(service), Some(verb)) => Ok(Selection {
+            (Some(service), Some(command_name)) => Ok(Selection {
                 service: service.as_str().ok_or("service must be a string")?.into(),
-                verb: verb.as_str().ok_or("verb must be a string")?.into(),
+                command: command_name.as_str().ok_or("command must be a string")?.into(),
             }),
-            _ => Err("service and verb must be supplied together".into()),
+            _ => Err("service and command must be supplied together".into()),
         }
     }
 
     /// A command an agent sent to Workshop over the Bus.
-    pub fn command(&mut self, id: u64, verb: &str, body: &str) {
-        if let Some(suffix) = verb.strip_prefix("workshop.macros.") {
+    pub fn command(&mut self, id: u64, command_name: &str, body: &str) {
+        if let Some(suffix) = command_name.strip_prefix("workshop.macros.") {
             let limit = if suffix == "put" {
-                ::macros::verbs::PUT_ENVELOPE_LIMIT
+                ::macros::commands::PUT_ENVELOPE_LIMIT
             } else {
                 8192
             };
@@ -922,24 +922,24 @@ impl Engine {
             Ok(args) if args.is_object() => args,
             _ => return self.error(id, "ARGUMENT", "arguments must be a JSON object"),
         };
-        if self.workshop_command(id, verb, &args) {
+        if self.workshop_command(id, command_name, &args) {
             return;
         }
-        if let Some(window) = verb
+        if let Some(window) = command_name
             .strip_prefix("workshop.")
             .filter(|v| v.starts_with("ui.") || v.starts_with("window"))
         {
             return self.effects.push(Effect::Drive {
                 id,
-                verb: window.to_owned(),
+                command: window.to_owned(),
                 args,
             });
         }
-        if !model::VERBS.contains(&verb) {
-            return self.error(id, "UNKNOWN_VERB", "unknown Workshop verb");
+        if !model::COMMANDS.contains(&command_name) {
+            return self.error(id, "UNKNOWN_COMMAND", "unknown Workshop command");
         }
         let idle = !self.busy() && self.ui.dialog.is_none() && !self.quitting;
-        match verb {
+        match command_name {
             "workshop.ping" => self.effects.push(Effect::Reply {
                 id,
                 rc: 0,
@@ -959,7 +959,7 @@ impl Engine {
             | "workshop.split"
             | "workshop.expand"
             | "workshop.select_row"
-            | "workshop.dialog" => match self.edit(verb, &args) {
+            | "workshop.dialog" => match self.edit(command_name, &args) {
                 Ok(body) => self.effects.push(Effect::Reply { id, rc: 0, body }),
                 Err((code, message)) => self.error(id, code, &message),
             },
@@ -967,7 +967,7 @@ impl Engine {
                 Ok(body) => self.effects.push(Effect::Reply { id, rc: 0, body }),
                 Err((code, message)) => self.error(id, code, &message),
             },
-            "workshop.commands" => self.effects.push(Effect::Commands { id }),
+            "workshop.actions" => self.effects.push(Effect::Commands { id }),
             "workshop.execute" => match args.get("id").and_then(Value::as_str) {
                 Some(command) => self.effects.push(Effect::Execute {
                     id,
@@ -978,7 +978,7 @@ impl Engine {
             "workshop.show" if !self.quitting => self.show(Some(id)),
             "workshop.refresh" if self.ui.dialog.is_none() => self.refresh(Some(id)),
             "workshop.select" if idle => match self.target(&args) {
-                Ok(target) if self.snapshot.verb(&target).is_some() => {
+                Ok(target) if self.snapshot.command_name(&target).is_some() => {
                     self.ui.row_key = Some(
                         if let Some(node) = self
                             .snapshot
@@ -993,9 +993,9 @@ impl Engine {
                                 .map(|info| info.name.as_str())
                                 .unwrap_or(&target.service);
                             self.ui.expanded.insert(format!("node:{}", node.name));
-                            format!("verb:{}:{name}:{}", node.name, target.verb)
+                            format!("command:{}:{name}:{}", node.name, target.command)
                         } else {
-                            format!("verb:{}:{}", target.service, target.verb)
+                            format!("command:{}:{}", target.service, target.command)
                         },
                     );
                     self.ui.selected = Some(target);
@@ -1034,21 +1034,21 @@ impl Engine {
                 let message = self.label("busy");
                 self.error(id, "BUSY", &message);
             }
-            _ => self.error(id, "UNKNOWN_VERB", "unknown Workshop verb"),
+            _ => self.error(id, "UNKNOWN_COMMAND", "unknown Workshop command"),
         }
     }
 
-    /// The state verbs: a read, or one edit as the window makes it. Refused
+    /// The state commands: a read, or one edit as the window makes it. Refused
     /// under a dialog (as the window refuses them), and the body while a
     /// call holds it.
-    fn edit(&mut self, verb: &str, args: &Value) -> Result<Value, (&'static str, String)> {
+    fn edit(&mut self, command_name: &str, args: &Value) -> Result<Value, (&'static str, String)> {
         let text = |key: &str| {
             args.get(key)
                 .and_then(Value::as_str)
                 .map(str::to_owned)
                 .ok_or_else(|| ("ARGUMENT", format!("{key} must be a string")))
         };
-        match verb {
+        match command_name {
             "workshop.tree" => return Ok(json!({"rows":self.rows()})),
             "workshop.reply" => return Ok(json!({"text":self.reply,"value":self.last_reply})),
             "workshop.dialog" => {
@@ -1077,7 +1077,7 @@ impl Engine {
         if self.ui.dialog.is_some() {
             return Err(("BUSY", self.label("busy")));
         }
-        match verb {
+        match command_name {
             "workshop.filter" => {
                 self.set_filter(text("text")?);
                 Ok(json!({"filter":self.ui.filter,"rows":self.rows()}))
@@ -1127,7 +1127,7 @@ impl Engine {
                 self.select_row(&row);
                 Ok(json!({"row_key":self.ui.row_key,"selection":self.ui.selected}))
             }
-            _ => Err(("UNKNOWN_VERB", "unknown Workshop verb".into())),
+            _ => Err(("UNKNOWN_COMMAND", "unknown Workshop command".into())),
         }
     }
 
@@ -1142,7 +1142,7 @@ impl Engine {
                     RowKind::Macro { title, .. } => ("macro", title.clone()),
                     RowKind::Node(name) => ("node", engine.node_label(name)),
                     RowKind::Service(name) => ("service", engine.service_label(name)),
-                    RowKind::Verb(target) => ("verb", target.verb.clone()),
+                    RowKind::Command(target) => ("command", target.command.clone()),
                     RowKind::Error(_) => ("error", engine.label("descriptions-failed")),
                     RowKind::Peers => ("peers", engine.label("peers")),
                     RowKind::Peer(name) => ("peer", name.clone()),
@@ -1164,7 +1164,7 @@ impl Engine {
                     RowKind::Service(name) => {
                         entry["identity"] = json!(engine.snapshot.identities.get(name))
                     }
-                    RowKind::Verb(target) => entry["selection"] = json!(target),
+                    RowKind::Command(target) => entry["selection"] = json!(target),
                     RowKind::Error(error) => entry["error"] = json!(error),
                     _ => {}
                 }
@@ -1232,7 +1232,7 @@ impl Engine {
             && self.ui.selected.as_ref().is_some_and(|target| {
                 self.snapshot.error.is_none()
                     && !matches!(self.snapshot.services.get(&target.service), Some(Err(_)))
-                    && self.snapshot.verb(target).is_none()
+                    && self.snapshot.command_name(target).is_none()
             });
         if vanished {
             self.ui.selected = None;
@@ -1308,28 +1308,28 @@ impl Engine {
             return false;
         }
         let call = self.call.take().expect("matching call");
-        let (service, verb, request) = (&call.target.service, &call.target.verb, &call.body);
+        let (service, command_name, request) = (&call.target.service, &call.target.command, &call.body);
         self.last_reply = match result {
             Ok(reply) => {
-                json!({"service":service,"verb":verb,"request_body":request,"rc":reply.rc,"body":reply.body})
+                json!({"service":service,"command":command_name,"request_body":request,"rc":reply.rc,"body":reply.body})
             }
-            Err(error) => json!({"service":service,"verb":verb,"request_body":request,
+            Err(error) => json!({"service":service,"command":command_name,"request_body":request,
                 "transport_error":error.message,"outcome_unknown":error.outcome_unknown,"retried":false}),
         };
         let payload = self.last_reply["body"]
             .as_str()
             .and_then(|text| serde_json::from_str::<Value>(text).ok());
         let request_body = serde_json::from_str::<Value>(request).ok();
-        let retained = self.workshop.retain(json!({"direction":"local","from":"workshop","service":service,"verb":verb,"rc":self.last_reply["rc"],"payload":payload,"request":request_body}));
+        let retained = self.workshop.retain(json!({"direction":"local","from":"workshop","service":service,"command":command_name,"rc":self.last_reply["rc"],"payload":payload,"request":request_body}));
         let rendered = if let Some(rc) = self.last_reply["rc"].as_u64() {
             let body = model::pretty(self.last_reply["body"].as_str().unwrap_or_default());
-            format!("{service}  {verb}\n{} = {rc}\n\n{body}", self.label("rc"))
+            format!("{service}  {command_name}\n{} = {rc}\n\n{body}", self.label("rc"))
         } else {
             let error = self.last_reply["transport_error"]
                 .as_str()
                 .unwrap_or_default();
             format!(
-                "{service}  {verb}\n{}\n{error}",
+                "{service}  {command_name}\n{}\n{error}",
                 self.label("transport-error")
             )
         };
@@ -1501,7 +1501,7 @@ mod tests {
         });
     }
 
-    use crate::model::Verb;
+    use crate::model::Command;
 
     fn label(key: &str) -> String {
         key.to_owned()
@@ -1510,7 +1510,7 @@ mod tests {
     fn target() -> Selection {
         Selection {
             service: "example".into(),
-            verb: "echo".into(),
+            command: "echo".into(),
         }
     }
 
@@ -1518,7 +1518,7 @@ mod tests {
         let mut s = Snapshot::default();
         s.services.insert(
             "example".into(),
-            Ok(vec![Verb {
+            Ok(vec![Command {
                 name: "echo".into(),
                 args: String::new(),
                 description: "Echo".into(),
@@ -1583,7 +1583,7 @@ mod tests {
     fn oversized_completion_never_stamps_an_earlier_row() {
         let mut e = engine();
         e.workshop
-            .retain(json!({"verb":"earlier","ts":"original","ms":1}));
+            .retain(json!({"command":"earlier","ts":"original","ms":1}));
         e.ui.selected = Some(target());
         e.call_selected();
         let ticket = e.call.as_ref().unwrap().ticket;
@@ -1647,7 +1647,7 @@ mod tests {
         let broken = tree.iter().find(|r| r.key == "service:broken").unwrap();
         assert!(matches!(broken.children[0].kind, RowKind::Error(_)));
         let example = tree.iter().find(|r| r.key == "service:example").unwrap();
-        assert!(example.expanded, "the selected verb's service is open");
+        assert!(example.expanded, "the selected command's service is open");
     }
 
     #[test]
@@ -1714,7 +1714,7 @@ mod tests {
             [Effect::Reply { id: 7, rc: 10, .. }]
         ));
         assert_eq!(calls(&effects), 0);
-        e.command(8, "workshop.call", r#"{"service":"example","verb":"nope"}"#);
+        e.command(8, "workshop.call", r#"{"service":"example","command":"nope"}"#);
         assert!(
             matches!(&e.take_effects()[..], [Effect::Reply { id: 8, rc: 10, body }] if body["error_code"] == "ARGUMENT")
         );
@@ -1737,7 +1737,7 @@ mod tests {
         );
         e.command(3, "nope", "{}");
         assert!(
-            matches!(&e.take_effects()[..], [Effect::Reply { body, .. }] if body["error_code"] == "UNKNOWN_VERB")
+            matches!(&e.take_effects()[..], [Effect::Reply { body, .. }] if body["error_code"] == "UNKNOWN_COMMAND")
         );
         e.command(4, "workshop.info", "[]");
         assert!(
@@ -1773,7 +1773,7 @@ mod tests {
         e.command(
             5,
             "workshop.call",
-            r#"{"service":"example","verb":"echo","body":"{}"}"#,
+            r#"{"service":"example","command":"echo","body":"{}"}"#,
         );
         let Some(Effect::Call { ticket, .. }) = e.take_effects().pop() else {
             panic!()
@@ -1817,7 +1817,7 @@ mod tests {
     #[test]
     fn commands_and_execute_go_to_the_registry() {
         let mut e = engine();
-        e.command(1, "workshop.commands", "{}");
+        e.command(1, "workshop.actions", "{}");
         e.command(2, "workshop.execute", r#"{"id":"file.refresh"}"#);
         e.command(3, "workshop.execute", "{}");
         let effects = e.take_effects();
@@ -1844,12 +1844,12 @@ mod tests {
         assert!(!tree.iter().any(|r| r.key == "service:broken"));
     }
 
-    /// Send `verb` with `body` and return the one reply.
-    fn ask(e: &mut Engine, verb: &str, body: Value) -> (u8, Value) {
-        e.command(9, verb, &body.to_string());
+    /// Send `command` with `body` and return the one reply.
+    fn ask(e: &mut Engine, command_name: &str, body: Value) -> (u8, Value) {
+        e.command(9, command_name, &body.to_string());
         match &e.take_effects()[..] {
             [Effect::Reply { id: 9, rc, body }] => (*rc, body.clone()),
-            other => panic!("{verb}: {other:?}"),
+            other => panic!("{command_name}: {other:?}"),
         }
     }
 
@@ -1862,20 +1862,20 @@ mod tests {
     }
 
     #[test]
-    fn every_verb_is_answered_and_the_rest_are_unknown() {
-        for verb in model::VERBS {
+    fn every_command_is_answered_and_the_rest_are_unknown() {
+        for command_name in model::COMMANDS {
             let mut e = engine();
-            e.command(1, verb, "{}");
+            e.command(1, command_name, "{}");
             let effects = e.take_effects();
             assert!(
-                !effects.iter().any(|x| matches!(x, Effect::Reply { body, .. } if body["error_code"] == "UNKNOWN_VERB")),
-                "{verb}: {effects:?}"
+                !effects.iter().any(|x| matches!(x, Effect::Reply { body, .. } if body["error_code"] == "UNKNOWN_COMMAND")),
+                "{command_name}: {effects:?}"
             );
         }
         let mut e = engine();
         assert_eq!(
             code(ask(&mut e, "workshop.nope", json!({}))),
-            "UNKNOWN_VERB"
+            "UNKNOWN_COMMAND"
         );
         e.command(2, "HELP", "{}");
         e.command(3, "app.describe", "{}");
@@ -1889,7 +1889,7 @@ mod tests {
     }
 
     #[test]
-    fn window_verbs_go_to_the_drive_layer() {
+    fn window_commands_go_to_the_drive_layer() {
         let mut e = engine();
         e.command(1, "workshop.ui.click", r#"{"label":"File"}"#);
         e.command(2, "workshop.window", r#"{"action":"maximize"}"#);
@@ -1899,12 +1899,12 @@ mod tests {
             effects[0],
             Effect::Drive {
                 id: 1,
-                verb: "ui.click".into(),
+                command: "ui.click".into(),
                 args: json!({"label":"File"})
             }
         );
-        assert!(matches!(&effects[1], Effect::Drive { id: 2, verb, .. } if verb == "window"));
-        assert!(matches!(&effects[2], Effect::Drive { id: 3, verb, .. } if verb == "window.state"));
+        assert!(matches!(&effects[1], Effect::Drive { id: 2, command: command_name, .. } if command_name == "window"));
+        assert!(matches!(&effects[2], Effect::Drive { id: 3, command: command_name, .. } if command_name == "window.state"));
     }
 
     #[test]
@@ -1921,7 +1921,7 @@ mod tests {
             .collect();
         assert_eq!(
             keys,
-            ["service:example", "verb:example:echo", "mesh", "mesh:empty"]
+            ["service:example", "command:example:echo", "mesh", "mesh:empty"]
         );
         assert_eq!(
             code(ask(&mut e, "workshop.filter", json!({"text":5}))),
@@ -2014,20 +2014,20 @@ mod tests {
             json!({"key":"service:example","open":true}),
         );
         assert_eq!((rc, body["expanded"].as_bool()), (0, Some(true)));
-        let verb = body["rows"]
+        let command_name = body["rows"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|r| r["key"] == "verb:example:echo")
+            .find(|r| r["key"] == "command:example:echo")
             .cloned()
             .unwrap();
         assert_eq!(
-            (verb["kind"].as_str(), verb["depth"].as_u64()),
-            (Some("verb"), Some(1))
+            (command_name["kind"].as_str(), command_name["depth"].as_u64()),
+            (Some("command"), Some(1))
         );
         assert_eq!(
-            verb["selection"],
-            json!({"service":"example","verb":"echo"})
+            command_name["selection"],
+            json!({"service":"example","command":"echo"})
         );
         ask(
             &mut e,
@@ -2048,7 +2048,7 @@ mod tests {
             code(ask(
                 &mut e,
                 "workshop.expand",
-                json!({"key":"verb:example:echo","open":true})
+                json!({"key":"command:example:echo","open":true})
             )),
             "ARGUMENT"
         );
@@ -2072,12 +2072,12 @@ mod tests {
         let (rc, body) = ask(
             &mut e,
             "workshop.select_row",
-            json!({"key":"verb:example:echo"}),
+            json!({"key":"command:example:echo"}),
         );
         assert_eq!(rc, 0);
         assert_eq!(
             body["selection"],
-            json!({"service":"example","verb":"echo"})
+            json!({"service":"example","command":"echo"})
         );
         assert_eq!(e.ui.selected, Some(target()));
         let (_, body) = ask(&mut e, "workshop.select_row", json!({"key":"error:broken"}));
@@ -2085,7 +2085,7 @@ mod tests {
             (body["row_key"].as_str(), &body["selection"]),
             (Some("error:broken"), &Value::Null)
         );
-        assert_eq!(e.ui.selected, None, "a non-verb row clears the verb");
+        assert_eq!(e.ui.selected, None, "a non-command row clears the command");
         assert_eq!(
             code(ask(&mut e, "workshop.select_row", json!({"key":"nope"}))),
             "ARGUMENT"
@@ -2181,7 +2181,7 @@ mod tests {
     }
 
     #[test]
-    fn the_theme_verb_sets_present_axes_and_answers_the_effective_theme() {
+    fn the_theme_command_sets_present_axes_and_answers_the_effective_theme() {
         let mut e = engine();
         e.session = Session {
             scheme: Scheme::Pro,
@@ -2251,7 +2251,7 @@ mod tests {
     }
 
     #[test]
-    fn the_theme_verb_sets_style_decorations_and_caption_side() {
+    fn the_theme_command_sets_style_decorations_and_caption_side() {
         let mut e = engine();
         let (rc, body) = ask(
             &mut e,

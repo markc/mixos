@@ -11,7 +11,7 @@ use std::time::Duration;
 
 const MAX_REQUEST: usize = 2048;
 const ADMISSION: Duration = Duration::from_secs(2);
-pub(crate) const VERB: &str = "shell.status";
+pub(crate) const COMMAND: &str = "shell.status";
 /// Concurrent status dispatches the resident will carry at once, and the share
 /// of them any caller other than this pane's own Term may hold.
 const DISPATCH_SLOTS: usize = 4;
@@ -108,7 +108,7 @@ struct Reply {
 /// Pure policy step, called only with a broker-authenticated stamp. Bound
 /// principals never fall back to ambient owner authority on the same connection.
 ///
-/// `capability` is the one the verb family requires — `ReadState` for a
+/// `capability` is the one the command family requires — `ReadState` for a
 /// snapshot, `Execute` for an admission. It is a parameter rather than a
 /// constant because a reader must never be able to reach the execute surface by
 /// holding the capability that answers questions.
@@ -204,14 +204,14 @@ pub(crate) async fn dispatch(
         refuse(connection, event).await;
         return;
     };
-    // One capability per verb family. Reading the shell's state and driving it
-    // are different authorities, so an execute verb is admitted against
+    // One capability per command family. Reading the shell's state and driving it
+    // are different authorities, so an execute command is admitted against
     // `Execute` and a caller holding only `ReadState` never reaches it.
     //
-    // An UNKNOWN verb is deliberately admitted against the WEAKEST capability
+    // An UNKNOWN command is deliberately admitted against the WEAKEST capability
     // rather than answered early. Answering it before admission would tell an
-    // unauthorised caller which verbs exist — a known verb would come back
-    // REFUSED and an unknown one UNSUPPORTED, which is a probe of the verb
+    // unauthorised caller which commands exist — a known command would come back
+    // REFUSED and an unknown one UNSUPPORTED, which is a probe of the command
     // table. Admitted callers still get UNSUPPORTED below, and unadmitted ones
     // get the same uniform refusal for everything.
     let capability = match command.command.as_str() {
@@ -240,7 +240,7 @@ pub(crate) async fn dispatch(
         refuse(connection, event).await;
         return;
     }
-    let response = if command.command != VERB && capability != Capability::Execute {
+    let response = if command.command != COMMAND && capability != Capability::Execute {
         (10, "{\"error_code\":\"UNSUPPORTED\"}".to_owned())
     } else if capability == Capability::Execute {
         crate::session_execute::dispatch(connection, hello, bound, event, principal).await

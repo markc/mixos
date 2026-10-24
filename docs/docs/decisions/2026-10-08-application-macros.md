@@ -11,7 +11,7 @@ global macros belong to Workshop.
 Every native MixOS GUI application has macros by default. A macro is an
 ordinary Mix program (`.mix`); there is no separate workflow language or
 broker. Macros give people and agents one programming surface across the
-desktop: a script can drive any app's commands and Bus verbs, and reach
+desktop: a script can drive any app's commands and Bus commands, and reach
 other nodes over ABP between noded instances. Macros run with the normal
 session authority of the user who runs them.
 
@@ -48,7 +48,7 @@ user macro folder in Dopus until Workshop exists. Shared libraries own
 discovery, execution, the menu and editor; apps supply their registration
 and domain context.
 
-## Bus verbs
+## Bus commands
 
 Agents use `<app>.macros.list`, `run`, `status`, `stop`, `output`, `new`
 and `reload`. The session shares one catalogue and runner per app process.

@@ -15,7 +15,7 @@
 -- Contract under test (the workspaces contract): the
 -- props (workspaces.count / workspaces.current / workspaces.list /
 -- windows.s<id>.workspace; the per-output workspaces.o_<slug>.current is
--- NOT read here — one nested output — and is owed to the core's tests), the verbs
+-- NOT read here — one nested output — and is owed to the core's tests), the commands
 -- (comp.workspace.switch, comp.window.send_to_workspace, the windows.list
 -- workspace filter, focus-switches-first) and the numbered behaviour rules.
 -- Each rule is one or more PASS/FAIL lines; the run ends with one summary
@@ -23,8 +23,8 @@
 -- and its socket are always torn down.
 --
 -- Against a compositor without workspaces every workspace line FAILS on the
--- missing prop/verb, which is this gate's proof that it can fail. Every line
--- that could pass on a missing verb or a nil id has been tightened. The X11
+-- missing prop/command, which is this gate's proof that it can fail. Every line
+-- that could pass on a missing command or a nil id has been tightened. The X11
 -- rule (10) is SKIPPED, not failed, when the compositor publishes no
 -- `xwayland.display`.
 --
@@ -36,7 +36,7 @@
 -- Mix facts this file leans on: type() names are lowercase ("map",
 -- "string", "number", "nil"); comp.props.get replies with the BARE leaf
 -- (a number, a bool, a string), not a wrapper; prop writes and switches are
--- asynchronous to the caller, so every read after a verb is a bounded wait.
+-- asynchronous to the caller, so every read after a command is a bounded wait.
 
 $n = require("nested_host_lib.mix")
 $CLEANUP = {ok: false, run: nil}
@@ -119,8 +119,8 @@ $svc = $session["service"]
 print("nested " .. $KIND .. " (" .. $comp .. "): socket " .. $session["socket"] ..
   ", service " .. $svc)
 
-fn call($verb, $args)
-  return $n.call($svc, $verb, $args)
+fn call($command, $args)
+  return $n.call($svc, $command, $args)
 end
 
 -- A refusal's reason code, or "" for a success / an undecodable body.
@@ -134,7 +134,7 @@ fn reason($r)
   return to_string($r["result"])
 end
 
--- A verb reply that is a map, or nil.
+-- A command reply that is a map, or nil.
 fn map_of($r)
   if $r["rc"] != 0 or type($r["result"]) != "map" then
     return nil
@@ -161,8 +161,8 @@ fn sleep_ms($ms)
 end
 
 -- Wait up to $ms for a prop to read $want; returns the last value read.
--- Props settle asynchronously after a verb reply, so a bare read after a
--- verb is a race the gate must not encode.
+-- Props settle asynchronously after a command reply, so a bare read after a
+-- command is a race the gate must not encode.
 fn wait_prop($path, $want, $ms)
   $deadline = time() + $ms / 1000
   $last = nil
@@ -280,7 +280,7 @@ try
   $bad = call("comp.workspace.switch", {index: 9})
   check("switch to an index past count is refused invalid_value", $bad["rc"] != 0 and reason($bad) == "invalid_value", reason($bad))
   $bad0 = call("comp.workspace.switch", {index: 0})
-  check("switch to index 0 is refused (1-based)", $bad0["rc"] != 0 and reason($bad0) != "unknown_verb", reason($bad0))
+  check("switch to index 0 is refused (1-based)", $bad0["rc"] != 0 and reason($bad0) != "UNKNOWN_COMMAND", reason($bad0))
 
   -- ── 2. a new window joins the current workspace ───────────────────────
   print("== 2: a new window joins the current workspace")
@@ -305,7 +305,7 @@ try
   check("A hidden but not minimised", $a_id != nil and $vis == false and $min["ok"] and $min["value"] == false,
     "visible=" .. to_string($vis) .. " minimized=" .. to_string($min["value"]))
   $wv = wait_window("dev.mixos.WsA", "visible", 1500)
-  check("F1.9: window.wait until:visible times out while off-workspace", $wv["rc"] != 0 and reason($wv) != "unknown_verb", reason($wv))
+  check("F1.9: window.wait until:visible times out while off-workspace", $wv["rc"] != 0 and reason($wv) != "UNKNOWN_COMMAND", reason($wv))
   $back = map_of(call("comp.workspace.switch", {index: 1}))
   check("switch back to 1", $back != nil and $back["to"] == 1, to_string($back))
   -- Only meaningful if A was actually hidden first: a compositor that never
@@ -345,7 +345,7 @@ try
   check("followed to workspace 4", $mv != nil and wait_prop("workspaces.current", 4, 2000) == 4, "")
   check("B visible on 4", $mv != nil and wait_prop("windows.s" .. to_string($b_id) .. ".visible", true, 3000) == true, "moved=" .. to_string($mv != nil))
   $stale = call("comp.window.send_to_workspace", {id: $b_id, generation: 999999, index: 1})
-  check("send_to_workspace with a wrong generation is refused", $stale["rc"] != 0 and reason($stale) != "unknown_verb", reason($stale))
+  check("send_to_workspace with a wrong generation is refused", $stale["rc"] != 0 and reason($stale) != "UNKNOWN_COMMAND", reason($stale))
 
   -- ── 6. focus switches to the window's workspace, never pulls it ───────
   print("== 6: focus on an off-workspace window switches first")

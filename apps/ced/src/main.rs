@@ -34,7 +34,7 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut out = Args {
         headless: false,
         print_config: false,
-        service: documents::verbs::SERVICE.to_owned(),
+        service: documents::commands::SERVICE.to_owned(),
         url: ::bus::client_helpers::resolve_noded_url(),
         paths: Vec::new(),
     };

@@ -71,7 +71,7 @@ struct MoveReq {
 
 /// Parse `MOVE` / `UID MOVE` arguments per RFC 6851 §3.1.
 ///
-/// Grammar after the verb is stripped:
+/// Grammar after the command is stripped:
 ///
 /// ```text
 /// args = sequence-set SP mailbox

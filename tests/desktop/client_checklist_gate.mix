@@ -127,8 +127,8 @@ if not check("compositor socket up and comp.ping answered", $n.wait_ready($sessi
 end
 print("nested " .. $KIND .. " (" .. $comp .. "): socket " .. $session["socket"] .. ", service " .. $svc)
 
-fn call($verb, $args)
-  return $n.call($svc, $verb, $args)
+fn call($command, $args)
+  return $n.call($svc, $command, $args)
 end
 
 fn client_env()

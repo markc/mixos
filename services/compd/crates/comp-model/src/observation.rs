@@ -101,8 +101,8 @@ pub struct PanelRequest {
 }
 
 impl PanelRequest {
-    /// Refusals name the offending argument, like the window/input verbs.
-    pub fn parse(verb: &str, args: &Value) -> Result<Self, ControlReply> {
+    /// Refusals name the offending argument, like the window/input commands.
+    pub fn parse(command_name: &str, args: &Value) -> Result<Self, ControlReply> {
         let invalid = |field: &str| ControlReply::InvalidArgs {
             field: field.to_owned(),
             allowed: PANEL_ARGS,
@@ -137,7 +137,7 @@ impl PanelRequest {
             }
         }
         let request: Self = serde_json::from_value(args.clone()).map_err(|_| invalid("args"))?;
-        let hold = verb == "comp.panel.hold";
+        let hold = command_name == "comp.panel.hold";
         let bounded = |value: &str| !value.is_empty() && value.len() <= 256;
         let checks = [
             ("output", bounded(&request.output)),

@@ -171,5 +171,5 @@ async fn async_main() -> anyhow::Result<()> {
         lane,
         fetcher,
     ));
-    blobd::citizen::serve(citizen, cfg.verb_max_concurrent).await
+    blobd::citizen::serve(citizen, cfg.command_max_concurrent).await
 }

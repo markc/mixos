@@ -64,7 +64,7 @@ pub enum BindPolicy {
 /// [`ListenerSetControl`]: crate::listen::ListenerSetControl
 #[derive(Debug, Clone)]
 pub struct ListenerSpec {
-    /// Stable id — the key for control verbs, logs, and the
+    /// Stable id — the key for control commands, logs, and the
     /// `listener_id` connection tag. Unique within a [`ListenerSet`].
     ///
     /// [`ListenerSet`]: crate::listen::ListenerSet

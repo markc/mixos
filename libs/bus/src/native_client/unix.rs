@@ -258,7 +258,7 @@ impl VerifiedCommand {
             delivery: Delivery::Gap,
         }
     }
-    /// What the receive owner owes this delivery. Check this before the verb:
+    /// What the receive owner owes this delivery. Check this before the command:
     /// a refusal or a gap carries no admissible request.
     pub fn delivery(&self) -> Delivery {
         self.delivery

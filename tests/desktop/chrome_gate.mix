@@ -214,9 +214,9 @@ fn output_scale_why($svc)
   return nil
 end
 
-fn input_once($svc, $verb, $args)
+fn input_once($svc, $command, $args)
   $b = json_encode($args)
-  send $svc $verb body=$b timeout=5
+  send $svc $command body=$b timeout=5
   return {rc: $rc, reply: $reply}
 end
 
@@ -235,11 +235,11 @@ fn centre($r)
 end
 
 -- Inject one human pointer step; a refusal fails the phase.
-fn human($svc, $verb, $args)
+fn human($svc, $command, $args)
   $args.seat = "human"
-  $r = input_once($svc, $verb, $args)
+  $r = input_once($svc, $command, $args)
   if $r.rc != 0 then
-    return $verb .. " " .. json_encode($args) .. ": rc " .. to_string($r.rc) .. " " .. json_encode($r.reply)
+    return $command .. " " .. json_encode($args) .. ": rc " .. to_string($r.rc) .. " " .. json_encode($r.reply)
   end
   return nil
 end

@@ -1,6 +1,6 @@
 ---
 title: Decision — email accounts live in settingsd, passwords in the app
-description: The email app's accounts and mail options are the session profile's email group, edited in Preferences; their passwords stay in the app's private 0600 file and reach it only through a write-only verb.
+description: The email app's accounts and mail options are the session profile's email group, edited in Preferences; their passwords stay in the app's private 0600 file and reach it only through a write-only command.
 ---
 
 # Decision — email accounts live in settingsd, passwords in the app
@@ -36,12 +36,12 @@ and the [settings contract](../spec/settings/README.md) (`email.*`, contract
     overwritten.
   - Only the email app writes that file, and a password leaves it only
     toward the account's own server.
-- **A password is reachable only through a write-only verb.**
+- **A password is reachable only through a write-only command.**
   - `email.account.password.set {id, password}` stores a password and
     reconnects the account.
   - `email.account.set` may carry `password` too. It is held only once
     settingsd has accepted the account.
-  - No verb, topic, log line or diagnostic returns a password.
+  - No command, topic, log line or diagnostic returns a password.
     `email.accounts` and `email.info` report `has_password: bool`.
 - **Preferences is the configuration surface.**
   - Accounts are added, edited, removed, reordered and made the default
@@ -79,7 +79,7 @@ and the [settings contract](../spec/settings/README.md) (`email.*`, contract
   settingsd and are edited in Preferences. Mail accounts are the same kind of
   thing, and a second account form inside the app would drift from it.
 - **Automation needs the accounts as data.** An agent can list, add or
-  disable an account through `settings.apply` or the email verbs. It
+  disable an account through `settings.apply` or the email commands. It
   never handles a secret, unless it is the one supplying the password.
 
 ## Consequences
@@ -107,4 +107,4 @@ and the [settings contract](../spec/settings/README.md) (`email.*`, contract
   `CONFLICT`.
 - MixOS has no keyring yet. The secrets file has the same trust as the
   app's other private files. A keyring, when it lands, replaces only that
-  file; the settings group and the verbs stay as they are.
+  file; the settings group and the commands stay as they are.

@@ -18,7 +18,7 @@
 //! - Direct `topic.subscribe` to the private records/audit topics is refused
 //!   from **every** peer including the owning service itself. Subscribers go
 //!   through the higher-level `<svc>.props.watch` /
-//!   `<svc>.props.audit.watch` verbs, which
+//!   `<svc>.props.audit.watch` commands, which
 //!   re-check the capability vocabulary (§7.1) every time. Letting
 //!   peers subscribe directly to the raw topic would bypass that.
 //!   Flat `<svc>.props.changed` remains publicly subscribable.
@@ -353,7 +353,7 @@ mod tests {
         assert_eq!(
             reparsed.get("command"),
             Some("maild.props.records.changed"),
-            "command must be the topic name, not the spoofed verb",
+            "command must be the topic name, not the spoofed command",
         );
         assert_eq!(reparsed.get("from"), None);
         assert_eq!(reparsed.get("to"), None);

@@ -28,7 +28,7 @@
 //! 3. **`maild.tls.reload` hot-swap** — write `gamma.test` PEMs into
 //!    the substrate `tls_root`, add a `maild.domains` row pointing at
 //!    `tls_identity_name = "gamma.test"`, dispatch the reload Bus
-//!    verb against the live [`BuiltMaild::tls_state`]. The next TLS
+//!    command against the live [`BuiltMaild::tls_state`]. The next TLS
 //!    connection with SNI=`gamma.test` MUST present the new gamma
 //!    leaf cert; SNI=`alpha.test` MUST still present the alpha leaf
 //!    cert (config rows survive every reload, substrate rows merge
@@ -43,7 +43,7 @@
 //!   the same fake-MX seam.
 //!
 //! Bus wiring is disabled (`enable_bus: false`) so there is no broker
-//! dependency. The `tls.reload` verb is dispatched directly against
+//! dependency. The `tls.reload` command is dispatched directly against
 //! the `TlsReloadState` clone preserved on `BuiltMaild`; production
 //! goes through the broker, but both paths share the same Arc-backed
 //! slot + cache so behaviour is observably identical.
@@ -205,7 +205,7 @@ async fn multi_vhost_sni_rcpt_and_reload() -> Result<()> {
     // -------- Phase C — maild.tls.reload picks up substrate row --------
     let gamma = make_identity(&tls_root, "gamma.test")?;
     // Substrate-declared identity — `tls_identity_name = "gamma.test"`
-    // is what the reload verb walks.
+    // is what the reload command walks.
     seed_domain_row(&built, "gamma.test", Some("gamma.test")).await?;
 
     let cmd = IncomingCommand {

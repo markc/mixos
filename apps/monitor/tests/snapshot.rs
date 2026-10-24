@@ -10,7 +10,7 @@
 //! asserted, so the figure is recorded with the run.
 use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
-use monitor::{commands, label, strings, view::view};
+use monitor::{actions, label, strings, view::view};
 use serde_json::{Value, json};
 use toolkit::Theme;
 use vitals::{Effect, Engine, Fetch, Tab};
@@ -139,7 +139,7 @@ fn render(
         engine.set_section(section).unwrap();
     }
     engine.ui.selected = selected;
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1040.0, 680.0))
@@ -245,7 +245,7 @@ fn a_large_table_and_core_grid() {
         ("2000-process table", engine(4, 2000, Tab::Processes)),
         ("64-core grid", engine(64, 10, Tab::Performance)),
     ] {
-        let registry = commands::registry();
+        let registry = actions::registry();
         let strings = strings();
         let theme = dark();
         let mut harness = Harness::builder()

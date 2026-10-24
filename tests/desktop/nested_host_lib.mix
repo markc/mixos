@@ -17,7 +17,7 @@
 --
 --   start({bin, tag, config, env, max_secs})
 --   wait_ready(session, seconds)   ping the session's own Bus service
---   call(service, verb, map)       one Bus request, structured refusal kept
+--   call(service, command, map)       one Bus request, structured refusal kept
 --   stop(session)                  tear down what start() created
 --   new_run(prefix)                create and record a fresh scratch directory
 --   finish_run(record|nil, ok)     remove owned scratch only after a full PASS
@@ -159,23 +159,23 @@ end
 -- refusal whole; a child `mix` keeps `$rc` / `$result` out of the caller's
 -- globals (a send in a fn would clobber them). Returns {rc, result}: rc 0 on
 -- success, >= 10 for a peer refusal, -9 when the child itself failed.
-fn call($service, $verb, $args)
-  return bus_child($service, $verb, $args, 30, 60)
+fn call($service, $command, $args)
+  return bus_child($service, $command, $args, 30, 60)
 end
 
 -- `call` with the whole request (the child process included) bounded by
 -- `secs`, at least 2: for loops that keep an elapsed deadline.
-fn call_within($service, $verb, $args, $secs)
+fn call_within($service, $command, $args, $secs)
   $secs = max(2, ceil($secs))
-  return bus_child($service, $verb, $args, $secs - 1, $secs)
+  return bus_child($service, $command, $args, $secs - 1, $secs)
 end
 
 -- One child `mix` that sends the request: `send_secs` for the Bus reply,
 -- `proc_secs` for the whole child.
-fn bus_child($service, $verb, $args, $send_secs, $proc_secs)
+fn bus_child($service, $command, $args, $send_secs, $proc_secs)
   $body = json_encode($args)
   $script = "$b = " .. json_encode($body) .. "\nsend " .. json_encode($service) ..
-    " " .. $verb .. " body=$b timeout=" .. to_string($send_secs) .. "\nprint($rc)\nprint(json_encode($result))\n"
+    " " .. $command .. " body=$b timeout=" .. to_string($send_secs) .. "\nprint($rc)\nprint(json_encode($result))\n"
   $mix = env("MIXOS_TEST_MIX", "/opt/mixos/bin/mix")
   $r = run_argv([$mix, "-c", $script], {timeout: $proc_secs})
   $lines = split(trim($r.stdout), "\n")
@@ -230,10 +230,10 @@ end
 
 -- One Bus request against an EXPLICIT broker record: the child mix gets the
 -- record's own env, so no exported or inherited broker address can leak in.
-fn _call_at($broker, $service, $verb, $args)
+fn _call_at($broker, $service, $command, $args)
   $body = json_encode($args)
   $script = "$b = " .. json_encode($body) .. "\nsend " .. json_encode($service) ..
-    " " .. $verb .. " body=$b timeout=30\nprint($rc)\nprint(json_encode($result))\n"
+    " " .. $command .. " body=$b timeout=30\nprint($rc)\nprint(json_encode($result))\n"
   $mix = env("MIXOS_TEST_MIX", "/opt/mixos/bin/mix")
   $r = run_argv([$mix, "-c", $script], {timeout: 60, env: _bus_env($broker)})
   $lines = split(trim($r.stdout), "\n")

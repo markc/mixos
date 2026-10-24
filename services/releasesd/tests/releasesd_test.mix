@@ -1,9 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- releasesd_test: the releases.* verbs over a real Bus, offline. A private
+-- releasesd_test: the releases.* commands over a real Bus, offline. A private
 -- noded broker (tests/lib/private_bus.mix), a static stand-in for the GitHub
 -- API (http_serve over release JSON and fixture tarballs) and releasesd
--- itself as a serve citizen. Every verb is driven with `send`, including the
+-- itself as a serve citizen. Every command is driven with `send`, including the
 -- refusals: a tampered digest, a bad body, an unknown app and a path tag.
 -- Run from the checkout root: mix services/releasesd/tests/releasesd_test.mix [--noded PATH]
 -- Needs a noded binary (default /opt/mixos/bin/noded).
@@ -24,9 +24,9 @@ fn check($name, $ok)
 end
 
 -- One Bus call: {rc, v} where v is the decoded reply.
-fn call($verb, $body)
+fn call($command, $body)
   $b = json_encode($body)
-  send releases $verb body=$b timeout=120
+  send releases $command body=$b timeout=120
   $v = $result
   if type($v) == "string" then
     try

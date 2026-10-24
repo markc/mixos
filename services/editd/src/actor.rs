@@ -11,7 +11,7 @@
 //!
 //! # Contract: op_id dedup (frozen; plan §3.5)
 //! Owned here, not in the core (the core only records and echoes `op_id`).
-//! - Key = [`DedupKey`] `(caller_key, origin, verb, op_id)`, all fixed BEFORE
+//! - Key = [`DedupKey`] `(caller_key, origin, command, op_id)`, all fixed BEFORE
 //!   any lane selection — a retried `edit.undo origin:"*"` hits the cached
 //!   reply even if another lane is now newest.
 //! - Only SUCCESSFUL replies are cached; a refused request can be retried with
@@ -67,7 +67,7 @@ pub struct DedupKey {
     pub caller: CallerKey,
     /// The resolved claimed origin (`kind:label`), not the undo lane.
     pub origin: String,
-    pub verb: String,
+    pub command: String,
     pub op_id: String,
 }
 
@@ -105,9 +105,9 @@ impl DedupCache {
     }
 }
 
-/// A buffer-scoped verb, already parsed (argument shape checked).
+/// A buffer-scoped command, already parsed (argument shape checked).
 #[derive(Debug, Clone)]
-pub enum BufVerb {
+pub enum BufCommand {
     Save(SaveReq),
     Reload(ReloadReq),
     Get(GetReq),
@@ -126,42 +126,42 @@ pub enum BufVerb {
     History(HistoryReq),
 }
 
-impl BufVerb {
-    pub fn verb(&self) -> &'static str {
+impl BufCommand {
+    pub fn command_name(&self) -> &'static str {
         match self {
-            BufVerb::Save(_) => "edit.save",
-            BufVerb::Reload(_) => "edit.reload",
-            BufVerb::Get(_) => "edit.get",
-            BufVerb::Insert(_) => "edit.insert",
-            BufVerb::Delete(_) => "edit.delete",
-            BufVerb::Replace(_) => "edit.replace",
-            BufVerb::Apply(_) => "edit.apply",
-            BufVerb::Find(_) => "edit.find",
-            BufVerb::Select(_) => "edit.select",
-            BufVerb::Cursor(_) => "edit.cursor",
-            BufVerb::AnchorSet(_) => "edit.anchor.set",
-            BufVerb::AnchorGet(_) => "edit.anchor.get",
-            BufVerb::AnchorClear(_) => "edit.anchor.clear",
-            BufVerb::Undo(_) => "edit.undo",
-            BufVerb::Redo(_) => "edit.redo",
-            BufVerb::History(_) => "edit.history",
+            BufCommand::Save(_) => "edit.save",
+            BufCommand::Reload(_) => "edit.reload",
+            BufCommand::Get(_) => "edit.get",
+            BufCommand::Insert(_) => "edit.insert",
+            BufCommand::Delete(_) => "edit.delete",
+            BufCommand::Replace(_) => "edit.replace",
+            BufCommand::Apply(_) => "edit.apply",
+            BufCommand::Find(_) => "edit.find",
+            BufCommand::Select(_) => "edit.select",
+            BufCommand::Cursor(_) => "edit.cursor",
+            BufCommand::AnchorSet(_) => "edit.anchor.set",
+            BufCommand::AnchorGet(_) => "edit.anchor.get",
+            BufCommand::AnchorClear(_) => "edit.anchor.clear",
+            BufCommand::Undo(_) => "edit.undo",
+            BufCommand::Redo(_) => "edit.redo",
+            BufCommand::History(_) => "edit.history",
         }
     }
 
     fn op_id(&self) -> Option<&str> {
         match self {
-            BufVerb::Save(r) => r.meta.op_id.as_deref(),
-            BufVerb::Reload(r) => r.meta.op_id.as_deref(),
-            BufVerb::Insert(r) => r.args.meta.op_id.as_deref(),
-            BufVerb::Delete(r) => r.args.meta.op_id.as_deref(),
-            BufVerb::Replace(r) => r.args.meta.op_id.as_deref(),
-            BufVerb::Apply(r) => r.args.meta.op_id.as_deref(),
-            BufVerb::Select(r) => r.meta.op_id.as_deref(),
-            BufVerb::Cursor(r) => r.meta.op_id.as_deref(),
-            BufVerb::AnchorSet(r) => r.meta.op_id.as_deref(),
-            BufVerb::AnchorClear(r) => r.meta.op_id.as_deref(),
-            BufVerb::Undo(r) | BufVerb::Redo(r) => r.op_id.as_deref(),
-            BufVerb::Get(_) | BufVerb::Find(_) | BufVerb::AnchorGet(_) | BufVerb::History(_) => {
+            BufCommand::Save(r) => r.meta.op_id.as_deref(),
+            BufCommand::Reload(r) => r.meta.op_id.as_deref(),
+            BufCommand::Insert(r) => r.args.meta.op_id.as_deref(),
+            BufCommand::Delete(r) => r.args.meta.op_id.as_deref(),
+            BufCommand::Replace(r) => r.args.meta.op_id.as_deref(),
+            BufCommand::Apply(r) => r.args.meta.op_id.as_deref(),
+            BufCommand::Select(r) => r.meta.op_id.as_deref(),
+            BufCommand::Cursor(r) => r.meta.op_id.as_deref(),
+            BufCommand::AnchorSet(r) => r.meta.op_id.as_deref(),
+            BufCommand::AnchorClear(r) => r.meta.op_id.as_deref(),
+            BufCommand::Undo(r) | BufCommand::Redo(r) => r.op_id.as_deref(),
+            BufCommand::Get(_) | BufCommand::Find(_) | BufCommand::AnchorGet(_) | BufCommand::History(_) => {
                 None
             }
         }
@@ -170,7 +170,7 @@ impl BufVerb {
 
 pub enum ActorMsg {
     Cmd {
-        verb: Box<BufVerb>,
+        command: Box<BufCommand>,
         caller: Caller,
         reply: oneshot::Sender<Reply>,
     },
@@ -876,21 +876,21 @@ impl Actor {
         })
     }
 
-    // ── verbs ───────────────────────────────────────────────────────────────
+    // ── commands ───────────────────────────────────────────────────────────────
 
-    async fn handle(&mut self, verb: BufVerb, caller: &Caller) -> Result<String, Refusal> {
-        match verb {
-            BufVerb::Insert(r) => {
+    async fn handle(&mut self, command_name: BufCommand, caller: &Caller) -> Result<String, Refusal> {
+        match command_name {
+            BufCommand::Insert(r) => {
                 let ops = vec![OpSpec::Insert {
                     at: r.at,
                     text: r.text,
                 }];
                 self.text_mutation(ops, r.args, caller)
             }
-            BufVerb::Delete(r) => {
+            BufCommand::Delete(r) => {
                 self.text_mutation(vec![OpSpec::Delete { range: r.range }], r.args, caller)
             }
-            BufVerb::Replace(r) => self.text_mutation(
+            BufCommand::Replace(r) => self.text_mutation(
                 vec![OpSpec::Replace {
                     range: r.range,
                     text: r.text,
@@ -898,23 +898,23 @@ impl Actor {
                 r.args,
                 caller,
             ),
-            BufVerb::Apply(r) => self.text_mutation(r.ops, r.args, caller),
-            BufVerb::Undo(r) => self.undo_redo(r, caller, false),
-            BufVerb::Redo(r) => self.undo_redo(r, caller, true),
-            BufVerb::Get(r) => self.get(r),
-            BufVerb::Find(r) => self.find(r),
-            BufVerb::History(r) => self.history(r),
-            BufVerb::Select(r) => self.select(r.ranges, caller),
-            BufVerb::Cursor(r) => self.select(
+            BufCommand::Apply(r) => self.text_mutation(r.ops, r.args, caller),
+            BufCommand::Undo(r) => self.undo_redo(r, caller, false),
+            BufCommand::Redo(r) => self.undo_redo(r, caller, true),
+            BufCommand::Get(r) => self.get(r),
+            BufCommand::Find(r) => self.find(r),
+            BufCommand::History(r) => self.history(r),
+            BufCommand::Select(r) => self.select(r.ranges, caller),
+            BufCommand::Cursor(r) => self.select(
                 vec![SelSpec::Range(RangeSpec::Span {
                     start: r.at.clone(),
                     end: r.at,
                 })],
                 caller,
             ),
-            BufVerb::AnchorSet(r) => self.anchor_set(r),
-            BufVerb::AnchorGet(r) => self.anchor_get(r),
-            BufVerb::AnchorClear(r) => {
+            BufCommand::AnchorSet(r) => self.anchor_set(r),
+            BufCommand::AnchorGet(r) => self.anchor_get(r),
+            BufCommand::AnchorClear(r) => {
                 let cleared = self.buffer.anchor_clear(&r.name);
                 if cleared {
                     self.publisher.event(
@@ -935,8 +935,8 @@ impl Actor {
                     cleared,
                 }))
             }
-            BufVerb::Save(r) => self.save(r, caller).await,
-            BufVerb::Reload(r) => self.reload(r, caller).await,
+            BufCommand::Save(r) => self.save(r, caller).await,
+            BufCommand::Reload(r) => self.reload(r, caller).await,
         }
     }
 
@@ -2056,8 +2056,8 @@ pub async fn run(mut a: ActorInit) {
             biased;
             msg = a.rx.recv() => match msg {
                 None => break,
-                Some(ActorMsg::Cmd { verb, caller, reply }) => {
-                    let body = serve(&mut actor, *verb, &caller).await;
+                Some(ActorMsg::Cmd { command: command_name, caller, reply }) => {
+                    let body = serve(&mut actor, *command_name, &caller).await;
                     let _ = reply.send(body);
                 }
                 Some(ActorMsg::Close { force, reply }) => {
@@ -2102,12 +2102,12 @@ async fn rec_notified(link: Option<&RecLink>) {
     }
 }
 
-/// Dedup, then the verb (plan §3.5 ordering: dedup before CAS).
-async fn serve(actor: &mut Actor, verb: BufVerb, caller: &Caller) -> Reply {
-    let key = verb.op_id().map(|op_id| DedupKey {
+/// Dedup, then the command (plan §3.5 ordering: dedup before CAS).
+async fn serve(actor: &mut Actor, command_name: BufCommand, caller: &Caller) -> Reply {
+    let key = command_name.op_id().map(|op_id| DedupKey {
         caller: caller.key.clone(),
         origin: caller.origin.to_string(),
-        verb: verb.verb().to_string(),
+        command: command_name.command_name().to_string(),
         op_id: op_id.to_string(),
     });
     if let Some(key) = &key
@@ -2115,7 +2115,7 @@ async fn serve(actor: &mut Actor, verb: BufVerb, caller: &Caller) -> Reply {
     {
         return (0, as_duplicate(&body));
     }
-    match actor.handle(verb, caller).await {
+    match actor.handle(command_name, caller).await {
         Ok(body) => {
             if let Some(key) = key {
                 actor.dedup.insert(key, body.clone());
@@ -2134,7 +2134,7 @@ mod tests {
         DedupKey {
             caller: CallerKey::Anon,
             origin: "agent:anon".into(),
-            verb: "edit.undo".into(),
+            command: "edit.undo".into(),
             op_id: op.into(),
         }
     }

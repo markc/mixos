@@ -268,12 +268,12 @@ crate's <code>Cargo.toml</code> lists, as workshop's does:</p>
 <pre><code class="language-toml">[dependencies]
 eframe.workspace = true      # the window
 egui.workspace = true        # labels and layouts the toolkit does not wrap
-toolkit.workspace = true     # theme, chrome, widgets, commands, drive verbs
+toolkit.workspace = true     # theme, chrome, widgets, commands, drive commands
 settings.workspace = true    # the session look follower
 citizen.workspace = true     # the Bus connection
 bus = { workspace = true, features = ["native"] }   # the native client citizen is built on
 futures.workspace = true     # the connection's delivery stream
-serde_json.workspace = true  # verb bodies
+serde_json.workspace = true  # command bodies
 
 [dev-dependencies]
 egui_kittest.workspace = true  # offscreen snapshots and accessibility queries
@@ -394,7 +394,7 @@ colour; <code>icon_mask</code> requires every channel to be at least 0.1.</p>
 <tr><td>a hairline or divider</td><td><code>bars::hairline</code>, <code>bars::divider</code></td><td><code>ui.separator()</code></td></tr>
 <tr><td>a modal</td><td><code>dialog::Dialog</code> with <code>Choice</code>s</td><td><code>egui::Window</code></td></tr>
 <tr><td>a tooltip</td><td><code>.tooltip(...)</code>, <code>tooltip::text</code></td><td>ad-hoc <code>on_hover_text</code> wording</td></tr>
-<tr><td>menus, context menus, the Theme menu</td><td>the registry's <code>menu_bar</code>, <code>menus</code>, <code>context_menu</code>, <code>theme_menu::register</code></td><td><code>egui::menu</code>, a theme verb</td></tr>
+<tr><td>menus, context menus, the Theme menu</td><td>the registry's <code>menu_bar</code>, <code>menus</code>, <code>context_menu</code>, <code>theme_menu::register</code></td><td><code>egui::menu</code>, a theme command</td></tr>
 <tr><td>a selectable row</td><td><code>toolkit::selectable</code></td><td><code>selectable_label</code></td></tr>
 <tr><td>dim, faint or coloured text</td><td><code>toolkit::text::{dim, faint, role}</code></td><td><code>RichText::color</code>, <code>::font</code>, <code>::size</code></td></tr>
 <tr><td>rendered markdown</td><td><code>markdown::View</code></td><td>your own layout</td></tr>
@@ -463,7 +463,7 @@ the menu bar, menus, context menus and palette from the registry. Right-click
 rows are 24 pt and flush. The View › Theme submenu is
 <code>toolkit::theme_menu::register</code>: its rows are commands, and
 <code>view.theme.set {scheme?, style?, mode?, decorations?, captions?}</code> is the
-same choice for agents. An app writes no theme verb of its own. The
+same choice for agents. An app writes no theme command of its own. The
 window's choice reaches the compositor too: a server-decorated window's
 title bar is drawn from the window's own look, attributed through the
 broker's record of the app's connection. A multi-window app's extra
@@ -524,7 +524,7 @@ adversarial fixture exists per refusal. The gate runs with the other
 repository gates and in CI.</p>
 <h2 id="13-what-the-app-exposes-on-the-bus-for-its-look">13. What the app exposes on the Bus for its look</h2>
 <p>The toolkit provides these; the app lists them in <code>app.describe</code> with its
-drive verbs and registers them in the verb registry:</p>
+drive commands and registers them in the command registry:</p>
 <ul>
 <li><code>&lt;app&gt;.look</code> (query; <code>{context?}</code> for apps with several contexts): the
 authority identity (binding, incarnation, revision, source digest, or
@@ -568,7 +568,7 @@ in between.</p>
 <li>Every view has an offscreen snapshot in the app's <code>tests/</code>, rendered in at
 least Studio dark and one light scheme. Look at the image.</li>
 <li>Rows are found by accessible name, never by position.</li>
-<li>A registry test checks the verbs the app describes are the ones it
+<li>A registry test checks the commands the app describes are the ones it
 registers, including <code>&lt;app&gt;.look</code> and the <code>&lt;app&gt;.look.changed</code> topic.</li>
 <li>A theme-follow test feeds a look delivery with a <code>tune</code> and asserts
 <code>Chrome::of(ctx)</code> changed; one with <code>ui.reduced_motion</code> asserts the
@@ -602,7 +602,7 @@ Scrolling uses <code>toolkit::scroll::Area</code> with a stable id salt.</li>
 Icons come from <code>Icon</code>; new ones were added to the toolkit.</li>
 <li><input disabled="" type="checkbox"/>
 Every action is a registry command; menus and the Theme menu come
-from the registry; no app theme verb.</li>
+from the registry; no app theme command.</li>
 <li><input disabled="" type="checkbox"/>
 <code>&lt;app&gt;.look</code>, <code>&lt;app&gt;.look.changed</code>, <code>view.look.preview</code> and
 <code>view.theme.set</code> are described and registered.</li>

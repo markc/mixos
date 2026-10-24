@@ -15,8 +15,8 @@ fn failure($code, $message)
   return {ok: false, rc: 10, value: {error_code: $code, message: $message}}
 end
 
-fn call($target, $verb, $args)
-  send $target $verb body=json_encode($args) timeout=5
+fn call($target, $command, $args)
+  send $target $command body=json_encode($args) timeout=5
   $code = $rc
   $body = $result
   if type($body) == "string" and $body != "" then
@@ -29,8 +29,8 @@ fn call($target, $verb, $args)
   if $code != 0 then
     return {ok: false, rc: $code < 0 ? 20 : 21, value: {
       error_code: $code < 0 ? "upstream_transport" : "upstream_refused",
-      message: "Scene request failed: " .. $target .. " " .. $verb,
-      context: {target: $target, verb: $verb, rc: $code, reply: $body}
+      message: "Scene request failed: " .. $target .. " " .. $command,
+      context: {target: $target, command: $command, rc: $code, reply: $body}
     }}
   end
   return {ok: true, rc: 0, value: $body}
@@ -93,8 +93,8 @@ fn publish_model($ctx, $model)
   return call($ctx.loader, "scenes.model", {name: $ctx.name, generation: $ctx.generation, value: $model})
 end
 
-fn popup($ctx, $verb)
-  return call($ctx.loader, "scenes." .. $verb, {name: $ctx.name})
+fn popup($ctx, $command)
+  return call($ctx.loader, "scenes." .. $command, {name: $ctx.name})
 end
 
 fn event_args($event)

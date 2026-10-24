@@ -209,7 +209,7 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#the-control-channel-an-application-offers">The control channel an application offers</a>
-                        <a href="#bus-verbs">Bus verbs</a>
+                        <a href="#bus-commands">Bus commands</a>
                         <a href="#instance-config-version-020">Instance config, version 0.2.0</a>
                         <a href="#serve-name-and-the-start-checks">Serve name and the start checks</a>
                         <a href="#changes">Changes</a>
@@ -242,12 +242,12 @@
 <a href="/docs/spec/bridge/bridge.spec.mix"><code>bridge.spec.mix</code></a>. Verified by
 <code>services/bridged/tests/bridge_core_test.mix</code> (the config contract against
 the fixture, the wire protocol against a stand-in app) and
-<code>services/bridged/tests/bridged_test.mix</code> (every verb over a private broker).</p>
+<code>services/bridged/tests/bridged_test.mix</code> (every command over a private broker).</p>
 <p><code>bridged</code> puts an external application on the Bus. The application offers a
 line-delimited JSON control channel on loopback TCP; one <code>bridged</code> instance
-per application maps six Bus verbs onto it. This page fixes the control
+per application maps six Bus commands onto it. This page fixes the control
 channel an application must offer, the instance config schema, the serve-name
-rule and the Bus verbs.</p>
+rule and the Bus commands.</p>
 <h2 id="the-control-channel-an-application-offers">The control channel an application offers</h2>
 <table><thead><tr><th>Item</th><th>Rule</th></tr></thead><tbody>
 <tr><td>Transport</td><td>TCP on the loopback interface, one port per application. The bridge keeps one connection open and reuses it.</td></tr>
@@ -258,13 +258,13 @@ rule and the Bus verbs.</p>
 <tr><td>Request</td><td><code>{"id":N,"method":"&lt;name&gt;","params":{...}}</code>, <code>N</code> a number the bridge increments per request.</td></tr>
 <tr><td>Reply</td><td><code>{"id":N,"ok":true,"result":&lt;any JSON&gt;}</code> or <code>{"id":N,"ok":false,"error":"&lt;text&gt;"}</code>, matched to the request by <code>id</code>. Lines that are not JSON or carry another <code>id</code> are skipped. A reply without a boolean <code>ok</code> is a transport failure.</td></tr>
 <tr><td>Port squatting (residual)</td><td>Loopback TCP cannot prove who listens. If the application dies, a local process that binds its port before it returns receives the token on the bridge's next reconnect, and can then impersonate the application to the bridge and use the token on the real one. A unix-socket control channel checked by owner would close this; it is a possible future protocol option.</td></tr>
-<tr><td>Methods the named verbs use</td><td><code>engine.commands</code>, <code>engine.execute</code> (<code>{command, params}</code>), <code>ui.inspect</code>, <code>ui.screenshot</code> (<code>{path?, focus?}</code>). An application without one of them answers <code>ok:false</code>; <code>&lt;app&gt;.call</code> reaches any other method.</td></tr>
+<tr><td>Methods the named commands use</td><td><code>engine.commands</code>, <code>engine.execute</code> (<code>{command, params}</code>), <code>ui.inspect</code>, <code>ui.screenshot</code> (<code>{path?, focus?}</code>). An application without one of them answers <code>ok:false</code>; <code>&lt;app&gt;.call</code> reaches any other method.</td></tr>
 </tbody></table>
-<h2 id="bus-verbs">Bus verbs</h2>
+<h2 id="bus-commands">Bus commands</h2>
 <p>An instance started with <code>--name &lt;app&gt;</code> answers under its own name.</p>
-<table><thead><tr><th>Verb</th><th>Body</th><th>Sends</th><th>Reply on rc 0</th></tr></thead><tbody>
+<table><thead><tr><th>Command</th><th>Body</th><th>Sends</th><th>Reply on rc 0</th></tr></thead><tbody>
 <tr><td><code>&lt;app&gt;.call</code></td><td><code>{method, params?}</code></td><td><code>&lt;method&gt;</code> with <code>params</code> (default <code>{}</code>)</td><td>the app's <code>result</code></td></tr>
-<tr><td><code>&lt;app&gt;.commands</code></td><td>—</td><td><code>engine.commands</code></td><td>the app's <code>result</code></td></tr>
+<tr><td><code>&lt;app&gt;.actions</code></td><td>—</td><td><code>engine.commands</code></td><td>the app's <code>result</code></td></tr>
 <tr><td><code>&lt;app&gt;.execute</code></td><td><code>{command, params?}</code></td><td><code>engine.execute {command, params}</code></td><td>the app's <code>result</code></td></tr>
 <tr><td><code>&lt;app&gt;.inspect</code></td><td>—</td><td><code>ui.inspect</code></td><td>the app's <code>result</code></td></tr>
 <tr><td><code>&lt;app&gt;.screenshot</code></td><td><code>{path?, focus?}</code>, or empty</td><td><code>ui.screenshot</code> with only those keys</td><td>the app's <code>result</code></td></tr>
@@ -298,20 +298,20 @@ the bridge refuses to start (<code>RUNTIME</code>).</p>
 <p>The token never appears in a reply: any occurrence of it, in any letter case,
 in an app's error text, in a result, or in <code>last_error</code>, is replaced by
 <code>[redacted]</code>.</p>
-<p><strong>Registration.</strong> The six verbs are an instance family, <code>&lt;app&gt;.&lt;verb&gt;</code> with
+<p><strong>Registration.</strong> The six commands are an instance family, <code>&lt;app&gt;.&lt;command&gt;</code> with
 owner <code>bridged</code> and <code>members: "instances"</code> (runtime members, not listed). They
-are declared in <code>docs/docs/spec/bus/verbs.conf.mix</code> (registry schema 3). The static
-gate <code>tools/verb_registry.mix</code> checks the family's owner and suffix;
-<code>tools/verb_registry.mix --instances DIR</code> checks private file-stem naming and
-collisions only and reads no config token. The runtime guard reads the verbs
+are declared in <code>docs/docs/spec/bus/commands.conf.mix</code> (registry schema 3). The static
+gate <code>tools/command_registry.mix</code> checks the family's owner and suffix;
+<code>tools/command_registry.mix --instances DIR</code> checks private file-stem naming and
+collisions only and reads no config token. The runtime guard reads the commands
 and families lists but does not enforce the full canonical format. Installing
 the registry is a separate deployed prerequisite: the scripts and the registry
-come from the same revision, at <code>/opt/mixos/share/bus/verbs.conf.mix</code> or the
-<code>BRIDGED_VERBS</code> override.</p>
-<p><strong>Classes.</strong> <code>&lt;app&gt;.call</code> and <code>&lt;app&gt;.execute</code> are <code>intent</code>; <code>&lt;app&gt;.commands</code>,
+come from the same revision, at <code>/opt/mixos/share/bus/commands.conf.mix</code> or the
+<code>BRIDGED_COMMANDS</code> override.</p>
+<p><strong>Classes.</strong> <code>&lt;app&gt;.call</code> and <code>&lt;app&gt;.execute</code> are <code>intent</code>; <code>&lt;app&gt;.actions</code>,
 <code>&lt;app&gt;.inspect</code> and <code>&lt;app&gt;.status</code> are <code>query</code>. <code>&lt;app&gt;.screenshot</code> is <code>intent</code>,
 because its <code>focus</code> option can bring the window forward, a change another
-caller sees, even though the verb otherwise only captures. The reasoning is in
+caller sees, even though the command otherwise only captures. The reasoning is in
 the <a href="/docs/decisions/2026-10-13-instance-verb-families/">decision</a>.</p>
 <h2 id="instance-config-version-020">Instance config, version 0.2.0</h2>
 <p>A strict-data document (<code>load_data</code>; never executed).</p>
@@ -342,18 +342,18 @@ its content.</p>
 service name, and must not start with <code>mixos-</code> (<code>mix --serve</code> strips that
 prefix before registering, so the checked name and the Bus name would
 differ). The broker's own names are refused as noded refuses them: <code>noded</code>,
-<code>noded-*</code>, and the session-name shape <code>&lt;t|c&gt;&lt;1-7 of [a-z0-9]&gt;-&lt;22 of [a-z2-7]&gt;</code>. It must also not be the first segment of a verb the registry
+<code>noded-*</code>, and the session-name shape <code>&lt;t|c&gt;&lt;1-7 of [a-z0-9]&gt;-&lt;22 of [a-z2-7]&gt;</code>. It must also not be the first segment of a command the registry
 already gives to another component, so an instance can never answer, say,
-<code>settings.status</code>. The registry read is <code>$BRIDGED_VERBS</code>, else the installed
-<code>/opt/mixos/share/bus/verbs.conf.mix</code>:</p>
+<code>settings.status</code>. The registry read is <code>$BRIDGED_COMMANDS</code>, else the installed
+<code>/opt/mixos/share/bus/commands.conf.mix</code>:</p>
 <table><thead><tr><th>Registry entry</th><th>Reserves</th></tr></thead><tbody>
-<tr><td><code>verbs: [{name, ...}]</code></td><td>the first segment of <code>name</code>, whatever the status (retired names stay reserved)</td></tr>
+<tr><td><code>commands: [{name, ...}]</code></td><td>the first segment of <code>name</code>, whatever the status (retired names stay reserved)</td></tr>
 <tr><td><code>families: [{pattern, members: "instances"}]</code></td><td>nothing (runtime members, such as bridged's own family)</td></tr>
 <tr><td><code>families: [{pattern, members: [names]}]</code></td><td>each listed name</td></tr>
 <tr><td><code>families: [{pattern}]</code> with a literal first segment</td><td>that segment; an <code>&lt;app&gt;</code> or <code>*</code> first segment reserves nothing</td></tr>
 </tbody></table>
 <p>The guard fails closed: a missing or unreadable registry, one without a
-<code>verbs</code> list, an entry without a <code>name</code> or <code>pattern</code>, or an unknown <code>members</code>
+<code>commands</code> list, an entry without a <code>name</code> or <code>pattern</code>, or an unknown <code>members</code>
 form refuses the start. <code>families</code> is optional, so the schema-1 registry and
 later schemas with families both read.</p>
 <p>A refused start prints <code>bridged: refusing to start: CODE: message</code> and exits
@@ -379,9 +379,9 @@ runs under (default <code>/opt/mixos/bin/mix</code>); it exists for tests.</p>
 <p>Starting <code>mix --serve bridged.mix --name &lt;app&gt;</code> directly, not through
 <code>--start</code>, registers the name on the Bus before the checks run, so a
 refused name holds a free Bus name for a moment before the process exits.
-<code>--start</code> (the unit) is the supported path. The reverse collision, a verb
+<code>--start</code> (the unit) is the supported path. The reverse collision, a command
 registered later whose first segment is an instance already running, is
-the verb-registry gate's to refuse, not the bridge's: the bridge checks only
+the command-registry gate's to refuse, not the bridge's: the bridge checks only
 at start.</p>
 <p>The unit is sandboxed: no capabilities or new privileges, the file system
 read-only with private <code>/tmp</code> and <code>/var/tmp</code> (config and token files must

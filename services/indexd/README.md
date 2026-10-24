@@ -4,7 +4,7 @@
 Local nomic-bert embeddings, SQLite vector storage and semantic retrieval.
 See the [manual](../../docs/indexd/README.md).
 
-The transport-independent `Engine` exposes JSON methods for all eleven verbs.
+The transport-independent `Engine` exposes JSON methods for all eleven commands.
 `indexd check-config` validates settings; `indexd serve` opens the store and
 exits with a notice until stage 4 adds the Bus loop. Neither loads model
 weights. Model loading uses a local `service.model_dir`, with no downloader.

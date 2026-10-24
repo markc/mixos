@@ -5,7 +5,7 @@
 //!
 //! - [`Resolver`] owns the keymap and the mode, and answers one question:
 //!   for this key, with these side-specific modifiers, on this edge, does a
-//!   verb fire and is the stroke swallowed. A bound row swallows every edge
+//!   command fire and is the stroke swallowed. A bound row swallows every edge
 //!   of its stroke and fires on the press (and on repeats when its policy
 //!   allows). A user key ([`inputd_schema::is_user_key`]) with no row is
 //!   swallowed too, so no app ever contends for it.
@@ -34,11 +34,11 @@ pub enum Edge {
 /// The core's answer for one event.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Resolution {
-    /// The verb to fire, on a firing edge of a bound row.
-    pub verb: Option<ActionId>,
-    /// The row's args, present only with `verb`.
+    /// The command to fire, on a firing edge of a bound row.
+    pub command: Option<ActionId>,
+    /// The row's args, present only with `command`.
     pub args: Option<serde_json::Value>,
-    /// The row's explicit target, present only with `verb`.
+    /// The row's explicit target, present only with `command`.
     pub service: Option<String>,
     /// Do not re-emit the original event.
     pub swallow: bool,
@@ -47,14 +47,14 @@ pub struct Resolution {
 impl Resolution {
     /// Re-emit; fire nothing.
     pub const PASS: Self = Self {
-        verb: None,
+        command: None,
         args: None,
         service: None,
         swallow: false,
     };
     /// Swallow; fire nothing.
     pub const SWALLOW: Self = Self {
-        verb: None,
+        command: None,
         args: None,
         service: None,
         swallow: true,
@@ -160,15 +160,15 @@ impl Resolver {
         if binding.passthrough {
             return Resolution::PASS;
         }
-        let verb = match edge {
+        let command = match edge {
             Edge::Press => Some(binding.action),
             Edge::Repeat if binding.repeat == RepeatPolicy::Allow => Some(binding.action),
             Edge::Repeat | Edge::Release => None,
         };
         Resolution {
-            args: verb.and(binding.args.clone()),
-            service: verb.and(binding.service.clone()),
-            verb,
+            args: command.and(binding.args.clone()),
+            service: command.and(binding.service.clone()),
+            command,
             swallow: true,
         }
     }

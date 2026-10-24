@@ -13,7 +13,7 @@ The service is headless and requires no compositor or D-Bus session.
 contents. `edit.insert`, `edit.delete`, `edit.replace` and `edit.apply` change
 text. `edit.save`, `edit.reload` and `edit.close` manage disk state.
 `edit.undo`, `edit.redo` and `edit.history` expose history; selection, cursor
-and anchor verbs retain positions across edits. Properties have get, list,
+and anchor commands retain positions across edits. Properties have get, list,
 describe and watch ports. Ask `HELP` for the complete manifest.
 
 Mutations can carry origin, operation identity and expected revision.

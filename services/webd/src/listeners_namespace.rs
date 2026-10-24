@@ -9,7 +9,7 @@
 //! a listener is bound (`enabled` — the kill switch) and how it is
 //! guarded (rate limit / conn caps / strict-SNI / CIDR ACL). An
 //! operator flips a field via `webd.props.set namespace=listeners`
-//! (or the ergonomic `webd.listener.{enable,disable}` verbs); a
+//! (or the ergonomic `webd.listener.{enable,disable}` commands); a
 //! runtime reaction loop ([`crate::listeners_reaction`]) applies the
 //! change to the live [`ListenerSetControl`] and writes the observed
 //! state back into the daemon-owned columns.
@@ -521,7 +521,7 @@ impl HookHandler for ListenersNamespaceHooks {
     fn after_set<'a>(&'a self, ctx: &'a HookCtx) -> HookFuture<'a, ()> {
         Box::pin(async move {
             // Emit ONLY for caller-origin writes (an operator flip via
-            // a verb or direct props.set). Backend-origin writes are
+            // a command or direct props.set). Backend-origin writes are
             // the daemon's own bookkeeping — the bootstrap seed (the
             // reaction loop's startup pass reconciles those) and the
             // reaction loop's own status writeback. Emitting on the

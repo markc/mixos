@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 /// One entry in a SPEC 02 HELP reply. Metadata describes capabilities; it
 /// does not grant permission to invoke them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct VerbDescriptor {
+pub struct CommandDescriptor {
     pub name: String,
     pub args: Vec<String>,
     pub description: String,
@@ -14,7 +14,7 @@ pub struct VerbDescriptor {
     pub read_only: bool,
 }
 
-impl VerbDescriptor {
+impl CommandDescriptor {
     pub fn new(name: &str, args: &[&str], description: &str, read_only: bool) -> Self {
         Self {
             name: name.into(),
@@ -26,16 +26,16 @@ impl VerbDescriptor {
 }
 
 #[cfg(test)]
-mod verb_descriptor_tests {
-    use super::VerbDescriptor;
+mod command_descriptor_tests {
+    use super::CommandDescriptor;
 
     #[test]
     fn help_shape_is_additive_to_mix_descriptors() {
         let old = serde_json::json!({"name":"status", "args":[], "description":"Read status"});
-        let descriptor: VerbDescriptor = serde_json::from_value(old).unwrap();
+        let descriptor: CommandDescriptor = serde_json::from_value(old).unwrap();
         assert!(!descriptor.read_only);
         assert_eq!(
-            serde_json::to_value(VerbDescriptor::new("status", &[], "Read status", true)).unwrap(),
+            serde_json::to_value(CommandDescriptor::new("status", &[], "Read status", true)).unwrap(),
             serde_json::json!({"name":"status", "args":[], "description":"Read status", "read_only":true})
         );
     }

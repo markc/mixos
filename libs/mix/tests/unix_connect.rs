@@ -136,13 +136,13 @@ async fn nul_frames_round_trip_on_one_connection() {
         &mut e,
         r#"
 $h = unix_connect($path, {frame: "nul", timeout: 5})
-tcp_send($h, json_encode({verb: "host.info", body: {}}) .. chr(0))
-tcp_send($h, json_encode({verb: "net.state", body: {}}) .. chr(0))
+tcp_send($h, json_encode({command: "host.info", body: {}}) .. chr(0))
+tcp_send($h, json_encode({command: "net.state", body: {}}) .. chr(0))
 $one = json_parse(tcp_recv_line($h, {timeout: 5}))
 $two = json_parse(tcp_recv_line($h, {timeout: 5}))
 $cr = tcp_recv_line($h, {timeout: 5})
-$verb1 = $one.body.verb
-$verb2 = $two.body.verb
+$verb1 = $one.body.command
+$verb2 = $two.body.command
 $rc = $one.rc
 $cr_kept = $cr == "cr\r"
 $no_addr = "none"
@@ -157,8 +157,8 @@ tcp_close($h)
     .await
     .unwrap();
     let reqs = server.join().unwrap();
-    assert!(reqs[0].contains(r#""verb":"host.info""#), "{}", reqs[0]);
-    assert!(reqs[1].contains(r#""verb":"net.state""#), "{}", reqs[1]);
+    assert!(reqs[0].contains(r#""command":"host.info""#), "{}", reqs[0]);
+    assert!(reqs[1].contains(r#""command":"net.state""#), "{}", reqs[1]);
     assert_eq!(global_str(&e, "verb1"), "host.info");
     assert_eq!(global_str(&e, "verb2"), "net.state");
     assert_eq!(global_str(&e, "rc"), "0");

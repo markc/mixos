@@ -157,17 +157,17 @@ if $OPT.self_test then
 end
 
 $RUN = {session: nil, probe_pid: nil, target: "", window: nil, log: "", passthrough: nil}
-fn call($verb, $payload)
+fn call($command, $payload)
   $target = $RUN.target
   $body = json_encode($payload)
-  send $target $verb body=$body timeout=10
+  send $target $command body=$body timeout=10
   $r = $reply ?? $result
   if type($r) == "string" and starts_with($r, "{") then $r = json_parse($r) end
   return {rc: $rc, result: $r}
 end
-fn must($verb, $payload)
-  $r = call($verb, $payload)
-  if $r.rc != 0 then raise("BUS", $verb .. ": " .. json_encode($r)) end
+fn must($command, $payload)
+  $r = call($command, $payload)
+  if $r.rc != 0 then raise("BUS", $command .. ": " .. json_encode($r)) end
   return $r.result
 end
 fn input_snapshot()

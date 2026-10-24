@@ -156,7 +156,7 @@ function comments_list_config()
   $status_badge = fn($r) = { "text": "" .. $r["status"], "variant": acm_status_variant($r["status"]) }
   $bulkid = fn($r) = "" .. $r["id"]
   -- Declarative row actions — ALL MUTATING (idempotent), shown on every row's RMB menu.
-  -- A row action posts action="row:<verb>:<id>" to base_route; dt_row_action parses it.
+  -- A row action posts action="row:<command>:<id>" to base_route; dt_row_action parses it.
   $act_approve = dt_action("approve", { "label": "Approve", icon: "check", variant: "action", action: "approve" })
   $act_unapprove = dt_action("unapprove", { "label": "Unapprove", icon: "clock", variant: "action", action: "unapprove" })
   $act_spam = dt_action("spam", { "label": "Spam", icon: "ban", variant: "action", action: "spam" })
@@ -205,27 +205,27 @@ end
 
 if $METHOD == "POST" then
   $f = parse_form($BODY)
-  -- declarative row action (datatable.mix): action="row:<verb>:<id>". The id is the
+  -- declarative row action (datatable.mix): action="row:<command>:<id>". The id is the
   -- cms_threads row id (bulk_id) — UNTRUSTED, treated as a string, bound never spliced.
   $ra = dt_row_action($f)
   if $ra != nil then
     $id = $ra["id"]
-    $verb = $ra["verb"]
-    if $verb == "approve" then
+    $command = $ra["command"]
+    if $command == "approve" then
       db_exec("UPDATE cms_threads SET status = 'visible', updated = datetime('now') WHERE id = ?1", [$id])
       return redirect_flash("/admin/comments", "Reply approved", "success")
     end
-    if $verb == "unapprove" then
+    if $command == "unapprove" then
       db_exec("UPDATE cms_threads SET status = 'pending', updated = datetime('now') WHERE id = ?1", [$id])
       return redirect_flash("/admin/comments", "Reply unapproved", "success")
     end
-    if $verb == "spam" then
+    if $command == "spam" then
       -- reparent BEFORE hiding, or a still-visible child reply orphans.
       acm_reparent_children($id)
       db_exec("UPDATE cms_threads SET status = 'spam', updated = datetime('now') WHERE id = ?1", [$id])
       return redirect_flash("/admin/comments", "Marked as spam", "success")
     end
-    if $verb == "delete" then
+    if $command == "delete" then
       $block = dt_try_delete_row(to_number($id), acm_del_hooks())
       if $block != "" then
         return redirect_flash("/admin/comments", $block, "danger")
@@ -245,7 +245,7 @@ if $METHOD == "POST" then
       $ids = dt_all_ids("cms_threads", $cfg["spec"], dt_state_from_map($f, $cfg["spec"], $cfg["opts"]), "id")
     end
     -- hard deletes ride the Foundation policy helper (reparent + delete in ONE
-    -- tx per row, skip-and-report); moderation verbs stay imperative updates.
+    -- tx per row, skip-and-report); moderation commands stay imperative updates.
     if $ba == "delete" then
       $rep = dt_bulk_report(dt_bulk_try_delete($ids, acm_del_hooks()), "replies")
       return redirect_flash("/admin/comments", $rep["msg"], $rep["kind"])

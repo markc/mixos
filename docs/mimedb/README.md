@@ -8,7 +8,7 @@ description: A library that reads the freedesktop shared-mime-info database and 
 `mimedb` reads the freedesktop shared-mime-info database from the same
 files the desktop reads, and decides a file's MIME type by GLib's rules. The
 answer agrees with `gio info` and the file manager. It is a plain Rust
-library with no Bus verbs, and its only dependency is `libc`.
+library with no Bus commands, and its only dependency is `libc`.
 
 Two components use it:
 

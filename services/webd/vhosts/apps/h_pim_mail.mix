@@ -1043,8 +1043,8 @@ function m_folder_post($user, $pf)
 end
 
 -- ── datatable row/bulk message actions (the auto-RMB + multi-select bulk) ──────────────
--- The standard datatable verbs (row:<verb>:<id> and bulk_<name>) are dispatched here, sharing
--- ONE per-verb JMAP applier so a row action and the bulk loop run identical code over an id-set.
+-- The standard datatable commands (row:<command>:<id> and bulk_<name>) are dispatched here, sharing
+-- ONE per-command JMAP applier so a row action and the bulk loop run identical code over an id-set.
 
 -- /pim/mail?box=<box> for a non-empty box, else the default mailbox.
 function m_dest($box)
@@ -1095,27 +1095,27 @@ function m_set_apply($ids, $patch)
   return { ok: $ok, fail: $fail }
 end
 
--- Build the per-message Email/set patch for $verb and apply it to $ids ($to = the destination
+-- Build the per-message Email/set patch for $command and apply it to $ids ($to = the destination
 -- folder id, move only). → { msg, level } for redirect_flash. trash/move resolve + re-validate
 -- the destination server-side (never trust the client). markread/unread patch the fixed
 -- keywords/$seen read bit; markunread REMOVES it (PatchObject null). A multi-mailbox message
 -- lands in notUpdated (maild rejects keyword/mailbox writes on it) → surfaced as a partial fail.
-function m_apply_verb($verb, $ids, $to)
+function m_apply_command($command, $ids, $to)
   if length($ids) == 0 then
     return { msg: "No messages selected.", level: "danger" }
   end
   $patch = nil
   $label = ""
-  if $verb == "markread" then
+  if $command == "markread" then
     $patch = { "keywords/$seen": true }
     $label = "marked read"
   end
-  if $verb == "markunread" then
+  if $command == "markunread" then
     $patch = {}
     $patch["keywords/$seen"] = nil
     $label = "marked unread"
   end
-  if $verb == "trash" then
+  if $command == "trash" then
     $roles = m_roles()
     $tid = $roles["trash"]
     if $tid == nil or ("" .. $tid) == "" then
@@ -1126,7 +1126,7 @@ function m_apply_verb($verb, $ids, $to)
     $patch = { mailboxIds: $mids }
     $label = "moved to Trash"
   end
-  if $verb == "move" then
+  if $command == "move" then
     $mb = m_mailboxes()
     $destf = m_folder_find($mb, $to)
     if $destf == nil then
@@ -1154,14 +1154,14 @@ function m_apply_verb($verb, $ids, $to)
   return { msg: ("" .. $r["ok"]) .. " " .. $word .. " " .. $label .. ".", level: "success" }
 end
 
--- Single row action (RMB): action="row:<verb>:<id>" → {verb,id}; move also reads the `to` field.
+-- Single row action (RMB): action="row:<command>:<id>" → {command,id}; move also reads the `to` field.
 function m_row_action($user, $f, $rowact)
-  $verb = "" .. $rowact["verb"]
+  $command = "" .. $rowact["command"]
   $to = "" .. fm_val($f, "to")
   $dest = m_dest(m_post_box())
   $res = {}
   try
-    $res = m_apply_verb($verb, [$rowact["id"]], $to)
+    $res = m_apply_command($command, [$rowact["id"]], $to)
   catch $e
     return doc(502, "Mail", $user, m_error())
   end
@@ -1172,14 +1172,14 @@ end
 -- trash (move to Trash). Page-scoped (dt_selected_ids = the rendered selection only; JMAP can't
 -- dt_all_ids across pages).
 function m_bulk_action($user, $f, $bulkact)
-  $verb = $bulkact
+  $command = $bulkact
   if $bulkact == "delete" then
-    $verb = "trash"
+    $command = "trash"
   end
   $dest = m_dest(m_post_box())
   $res = {}
   try
-    $res = m_apply_verb($verb, dt_selected_ids($f), "")
+    $res = m_apply_command($command, dt_selected_ids($f), "")
   catch $e
     return doc(502, "Mail", $user, m_error())
   end
@@ -2061,9 +2061,9 @@ function pim_mail_main()
   end
 
   -- POST: a folder action (RMB folder menu: rename / newsub / delete / …), a datatable row /
-  -- bulk message action (auto-RMB row:<verb>:<id> + the multi-select bulk_<name> bar), else
+  -- bulk message action (auto-RMB row:<command>:<id> + the multi-select bulk_<name> bar), else
   -- compose → send. The row:/bulk_ dispatch MUST precede the mail_send() fallthrough — every
-  -- non-folder_ action falls through to send, so an un-routed verb would hit the compose path.
+  -- non-folder_ action falls through to send, so an un-routed command would hit the compose path.
   if $METHOD == "POST" then
     $pf0 = parse_form($BODY)
     -- Live markdown preview for the composer Workbench (wb_preview_script POSTs body= to
@@ -2076,7 +2076,7 @@ function pim_mail_main()
     if starts_with("" .. fm_val($pf0, "action"), "folder_") then
       return m_folder_post($user, $pf0)
     end
-    -- datatable auto-RMB + multi-select bulk: action="row:<verb>:<id>" or "bulk_<name>" (neither
+    -- datatable auto-RMB + multi-select bulk: action="row:<command>:<id>" or "bulk_<name>" (neither
     -- has the folder_ prefix, so route them explicitly before the compose/send fallthrough).
     $rowact = dt_row_action($pf0)
     if $rowact != nil then
@@ -2213,9 +2213,9 @@ function pim_mail_main()
   -- funnel until maild gains FilterOperator support (a maild/dt_jmap follow-up, not a shared-tree
   -- change). See _plan/2026-06-20-datatable-universal-parity.md (§ feasibility gaps).
   -- The standard auto-RMB action set (like every other DT list): View/Reply/Forward = nav;
-  -- Mark read/unread + Delete = one-click mutating POSTs (action=row:<verb>:<id>); Move to… =
+  -- Mark read/unread + Delete = one-click mutating POSTs (action=row:<command>:<id>); Move to… =
   -- a folder submenu. dt_actions_chrome generates the menu — no hand-built cm_menu. The mutating
-  -- verbs dispatch through m_row_action / m_bulk_action (the SAME JMAP applier for row + bulk).
+  -- commands dispatch through m_row_action / m_bulk_action (the SAME JMAP applier for row + bulk).
   -- Move submenu: one POST-per-folder, current box EXCLUDED (a no-op self-move). Each item posts
   -- action=row:move:<id> + the dest folder id; m_row_action re-validates the dest server-side.
   -- The folder id is baked raw into the &/=-split data-cm-fields template — SAFE because a maild
@@ -2259,7 +2259,7 @@ function pim_mail_main()
     fixed_layout: true,
     row_attrs: $rmb,
     row_action_specs: $row_specs,
-    -- Rich action set (7 verbs) → RMB context menu ONLY; the visible actions
+    -- Rich action set (7 commands) → RMB context menu ONLY; the visible actions
     -- column would be noise (sanctioned override — Mark 2026-07-12).
     row_actions_column: false,
     -- Multi-select bulk: Delete (→ Trash) + Mark read (replaces the default

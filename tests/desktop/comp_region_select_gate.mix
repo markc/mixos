@@ -12,19 +12,19 @@
 -- that must answer a Bus caller with the rectangle a pointer drew. Because compd
 -- also exposes comp.input.pointer.{move,button} and comp.input.key, the
 -- whole interaction can be driven over ABP with no human hand — which is the
--- point: a verb a human must service is not agent-operable, and this gate is
+-- point: a command a human must service is not agent-operable, and this gate is
 -- the proof that it is not one.
 --
--- HOW IT DRIVES A BLOCKING VERB. `send` is a blocking RPC, so the selection
+-- HOW IT DRIVES A BLOCKING COMMAND. `send` is a blocking RPC, so the selection
 -- cannot be started and driven from one script. Each arm spawns a SELECTOR
 -- process (mix -c) that issues comp.region.select and writes its reply to a
 -- file; the gate then drives the pointer and reads the file back. A selector
 -- that never writes its file is a FAILURE, not a pass — an absent answer and a
 -- correct answer must never look alike.
 --
--- THE FAIL ARM HAS BEEN WATCHED. Against a compositor WITHOUT the verb, every
--- arm reports `unknown verb` and the gate exits 1. Run it against a build
--- without the verb once before trusting a green: a gate nobody has watched
+-- THE FAIL ARM HAS BEEN WATCHED. Against a compositor WITHOUT the command, every
+-- arm reports `unknown command` and the gate exits 1. Run it against a build
+-- without the command once before trusting a green: a gate nobody has watched
 -- fail is not yet a gate, and neither is one nobody has watched pass.
 
 $n = require("nested_host_lib.mix")
@@ -86,8 +86,8 @@ fn fail($arm, $why)
   return 0
 end
 
-fn rpc($verb, $payload, $timeout)
-  send $COMP $verb body=json_encode($payload) timeout=$timeout
+fn rpc($command, $payload, $timeout)
+  send $COMP $command body=json_encode($payload) timeout=$timeout
   if $rc != 0 then return {ok: false, rc: $rc, body: to_string($result)} end
   $parsed = nil
   try
@@ -109,14 +109,14 @@ fn start_selector($tag, $payload)
   -- The target goes through a VARIABLE, never inline: a bare `send comp-rs ...`
   -- parses the hyphen as subtraction ("cannot use 'comp' as number"), so any
   -- hyphenated service name -- which is every nested dev instance -- breaks a
-  -- literal send. Same reason the verb is bound rather than written inline.
+  -- literal send. Same reason the command is bound rather than written inline.
   -- RETRY ON BUSY. A selection holds its run open past its own reply, until the
   -- overlay's removal is evidenced, and refuses `busy` for that window -- so a
   -- caller that selects again immediately is legitimately refused. Probing for
   -- readiness beforehand cannot fix this, because the probe is itself a
   -- selection and re-arms the same window; the only correct shape is what a real
   -- caller must do, which is retry. The gate does it here so every arm measures
-  -- the verb rather than the gap between arms.
+  -- the command rather than the gap between arms.
   $src = "$t = " .. json_encode($COMP) .. "\n" ..
     "$v = \"comp.region.select\"\n" ..
     "$n = 0\n" ..
@@ -134,7 +134,7 @@ fn start_selector($tag, $payload)
     -- $result comes back DECODED (a map), not as a JSON string, so the first
     -- cut's to_string($result) wrote Mix's map rendering -- `{status: selected,
     -- ...}`, unquoted keys -- which json_parse then refused, failing every arm
-    -- against a verb that was answering correctly. Nest the value and let
+    -- against a command that was answering correctly. Nest the value and let
     -- json_encode do it properly.
     "write_file(" .. json_encode($path) .. ", json_encode({rc: $rc, body: $result}))\n"
   $script = $DIR .. "/" .. $tag .. ".mix"
@@ -212,7 +212,7 @@ end
 -- expires), and `busy` is refused for that whole window. So back-to-back
 -- selections -- reply, immediately select again -- legitimately see `busy`, and
 -- a caller must tolerate it. Settle before each arm that expects admission, so
--- the gate measures the verb rather than its own impatience. A 1 ms selection is
+-- the gate measures the command rather than its own impatience. A 1 ms selection is
 -- the cheapest liveness probe: admitted means it answers `timeout`.
 fn settle($deadline_s)
   $deadline = time() + $deadline_s
@@ -231,25 +231,25 @@ mkdir($DIR, {parents: true})
 print("gate: comp.region.select (driven over ABP, no human hand)")
 print("  compd service: " .. $COMP)
 
--- ── arm 0: the verb exists ───────────────────────────────────────────────
+-- ── arm 0: the command exists ───────────────────────────────────────────────
 -- Asked FIRST and separately: every later arm's failure is ambiguous if the
--- verb is simply absent, and "unknown verb" must never be reported as a
+-- command is simply absent, and "unknown command" must never be reported as a
 -- selection that went wrong.
--- A compositor without the verb answers:
---   rc=10  {error: unknown_verb, error_code: unknown_verb}
+-- A compositor without the command answers:
+--   rc=10  {error: unknown_command, error_code: unknown_command}
 -- Matched on that exact token, not a loose "unknown": every later arm drives
 -- SYNTHETIC POINTER INPUT, so a probe that fails to recognise the refusal would
 -- start dragging on a live desktop. The narrow match is the safety interlock.
 $probe = rpc("comp.region.select", {timeout_ms: 1000}, 15)
 if not $probe.ok then
-  if contains($probe.body, "unknown_verb") then
+  if contains($probe.body, "UNKNOWN_COMMAND") then
     print("  REFUSE: this compositor has no comp.region.select (" .. $probe.body .. ")")
-    print("          the gate cannot test a verb that is not there")
+    print("          the gate cannot test a command that is not there")
     $n.stop($SESSION)
     exit(2)
   end
 end
-note("arm 0: verb present")
+note("arm 0: command present")
 
 -- ── arm 1: a forward drag returns that rectangle ─────────────────────────
 settle(10)

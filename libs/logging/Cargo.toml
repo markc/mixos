@@ -15,7 +15,7 @@ path = "src/lib.rs"
 [features]
 # The core needs no Bus connection. Keep `cargo test --no-default-features` passing.
 default = []
-# Exposes the `<svc>.stats.snapshot` Bus verb handler
+# Exposes the `<svc>.stats.snapshot` Bus command handler
 # (`stats::handle_snapshot_bus`), using `bus::native_client::IncomingCommand`.
 bus-handlers = ["dep:bus"]
 # Durable log namespace and live filter watcher.

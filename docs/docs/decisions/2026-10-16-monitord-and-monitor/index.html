@@ -249,23 +249,23 @@
 <li><strong><code>monitord</code></strong> (<code>services/monitord</code>, kind service, layer core) runs once
 per host as its own unprivileged user. It samples the system and its
 processes, keeps recent history in memory and longer history in SQLite,
-and answers read verbs on the Bus. It runs headless; a mesh node with no
+and answers read commands on the Bus. It runs headless; a mesh node with no
 desktop is a first-class host.</li>
 <li><strong><code>Monitor</code></strong> (<code>apps/monitor</code>, binary <code>monitor</code>, app id
 <code>dev.mixos.monitor</code>) is the egui task manager: processes, performance
 graphs, apps, services and users, in the shape people know from Windows
 Task Manager and GNOME Mission Center. It reads everything through
-monitord's verbs, never from <code>/proc</code> itself, so the same window shows any
+monitord's commands, never from <code>/proc</code> itself, so the same window shows any
 node on the mesh (<code>monitord.&lt;node&gt;.bus</code>).</li>
-<li><strong>monitord observes; it does not act.</strong> No verb signals, renices or
+<li><strong>monitord observes; it does not act.</strong> No command signals, renices or
 stops anything.
 <ul>
 <li>The <code>monitord</code> command line acts locally as the person who runs it:
 <code>monitord signal</code> and <code>monitord renice</code> make the system call directly
 and the kernel decides, exactly like <code>kill</code> and <code>renice</code>.</li>
-<li>Acting across users or across the mesh is hostd's job, as closed verbs
+<li>Acting across users or across the mesh is hostd's job, as closed commands
 behind grants (<a href="/docs/decisions/2026-10-12-hostd/">hostd decision</a>), added one
-reviewed verb at a time.</li>
+reviewed command at a time.</li>
 </ul>
 </li>
 <li><strong>A personality of the system binary.</strong> monitord's library exports
@@ -299,13 +299,13 @@ a short interval apart, so CPU percentages are never zero by default.</li>
 <li>monitord reads what an unprivileged user can read. A process's I/O
 counters and some of its details are readable only for monitord's own
 processes; elsewhere those fields are absent, never guessed. Wider reads
-are a later, reviewed capability (<code>CAP_SYS_PTRACE</code> or a hostd verb).</li>
+are a later, reviewed capability (<code>CAP_SYS_PTRACE</code> or a hostd command).</li>
 </ul>
 <h3 id="on-the-bus">On the Bus</h3>
 <ul>
-<li>Read verbs (all queries): <code>monitord.status</code>, <code>monitord.snapshot</code>,
+<li>Read commands (all queries): <code>monitord.status</code>, <code>monitord.snapshot</code>,
 <code>monitord.processes</code>, <code>monitord.process</code>, <code>monitord.series</code> and
-<code>monitord.history</code>. The verbs and their bodies are documented in the
+<code>monitord.history</code>. The commands and their bodies are documented in the
 <a href="/monitord/">monitord manual</a>.</li>
 <li>A retained topic, <code>monitord.summary</code>, carries a small system summary
 every 5 s, so a dashboard of the whole mesh subscribes instead of
@@ -348,14 +348,14 @@ the kernel's documentation.</p>
 <h3 id="phases">Phases</h3>
 <ol>
 <li>monitord: CPU, memory, swap, pressure, load, disks, network interfaces,
-the process table and tree; history; the Bus verbs and topic; the command
+the process table and tree; history; the Bus commands and topic; the command
 line, with local <code>signal</code> and <code>renice</code>.</li>
 <li>Monitor: the egui window over phase 1, any node on the mesh.</li>
 <li>GPUs: NVIDIA, AMD and Intel, with use per process.</li>
 <li>systemd services and the Apps view (processes grouped by application).</li>
 <li>Sensors, fans, battery, power.</li>
 <li>Privileged readings (per-process network bytes over eBPF, SMART, RAPL
-energy, DMI) through a reviewed capability or hostd verbs.</li>
+energy, DMI) through a reviewed capability or hostd commands.</li>
 </ol>
 <h2 id="why">Why</h2>
 <ul>
@@ -373,7 +373,7 @@ those go through hostd.</li>
 <h2 id="consequences">Consequences</h2>
 <ul>
 <li>noded's built-in <code>mon</code> module (<code>mon.status</code>, <code>mon.processes</code>,
-<code>mon.props.*</code>) is superseded. Its verbs were never registered and nothing
+<code>mon.props.*</code>) is superseded. Its commands were never registered and nothing
 in the tree calls them. It is removed once monitord is installed on the
 mesh.</li>
 <li>monitord adds a system user, <code>monitord</code>, and the state directory
@@ -388,7 +388,7 @@ mesh.</li>
 <li><strong>Monitor acts on this node's processes the way the command line does.</strong>
 End task (SIGTERM) and Kill (SIGKILL) are local system calls made as the
 person running Monitor, and the kernel decides. They are off while
-another node is shown, and no Bus verb of monitord's is involved. Acting
+another node is shown, and no Bus command of monitord's is involved. Acting
 on another node, or as another user, stays hostd's.</li>
 <li><strong>Phase 2 adds no graph or table crate.</strong> The graphs are painted
 directly: a 64-core grid is 64 graphs a frame, which a plotting widget

@@ -12,22 +12,22 @@ Status: accepted 2026-10-16.
 - **`monitord`** (`services/monitord`, kind service, layer core) runs once
   per host as its own unprivileged user. It samples the system and its
   processes, keeps recent history in memory and longer history in SQLite,
-  and answers read verbs on the Bus. It runs headless; a mesh node with no
+  and answers read commands on the Bus. It runs headless; a mesh node with no
   desktop is a first-class host.
 - **`Monitor`** (`apps/monitor`, binary `monitor`, app id
   `dev.mixos.monitor`) is the egui task manager: processes, performance
   graphs, apps, services and users, in the shape people know from Windows
   Task Manager and GNOME Mission Center. It reads everything through
-  monitord's verbs, never from `/proc` itself, so the same window shows any
+  monitord's commands, never from `/proc` itself, so the same window shows any
   node on the mesh (`monitord.<node>.bus`).
-- **monitord observes; it does not act.** No verb signals, renices or
+- **monitord observes; it does not act.** No command signals, renices or
   stops anything.
   - The `monitord` command line acts locally as the person who runs it:
     `monitord signal` and `monitord renice` make the system call directly
     and the kernel decides, exactly like `kill` and `renice`.
-  - Acting across users or across the mesh is hostd's job, as closed verbs
+  - Acting across users or across the mesh is hostd's job, as closed commands
     behind grants ([hostd decision](2026-10-12-hostd.md)), added one
-    reviewed verb at a time.
+    reviewed command at a time.
 - **A personality of the system binary.** monitord's library exports
   `main`; `cli/system` carries it
   ([one system binary](2026-10-12-one-system-binary.md)). The unit runs
@@ -60,13 +60,13 @@ Status: accepted 2026-10-16.
 - monitord reads what an unprivileged user can read. A process's I/O
   counters and some of its details are readable only for monitord's own
   processes; elsewhere those fields are absent, never guessed. Wider reads
-  are a later, reviewed capability (`CAP_SYS_PTRACE` or a hostd verb).
+  are a later, reviewed capability (`CAP_SYS_PTRACE` or a hostd command).
 
 ### On the Bus
 
-- Read verbs (all queries): `monitord.status`, `monitord.snapshot`,
+- Read commands (all queries): `monitord.status`, `monitord.snapshot`,
   `monitord.processes`, `monitord.process`, `monitord.series` and
-  `monitord.history`. The verbs and their bodies are documented in the
+  `monitord.history`. The commands and their bodies are documented in the
   [monitord manual](../../monitord/README.md).
 - A retained topic, `monitord.summary`, carries a small system summary
   every 5 s, so a dashboard of the whole mesh subscribes instead of
@@ -103,14 +103,14 @@ Status: accepted 2026-10-16.
 ### Phases
 
 1. monitord: CPU, memory, swap, pressure, load, disks, network interfaces,
-   the process table and tree; history; the Bus verbs and topic; the command
+   the process table and tree; history; the Bus commands and topic; the command
    line, with local `signal` and `renice`.
 2. Monitor: the egui window over phase 1, any node on the mesh.
 3. GPUs: NVIDIA, AMD and Intel, with use per process.
 4. systemd services and the Apps view (processes grouped by application).
 5. Sensors, fans, battery, power.
 6. Privileged readings (per-process network bytes over eBPF, SMART, RAPL
-   energy, DMI) through a reviewed capability or hostd verbs.
+   energy, DMI) through a reviewed capability or hostd commands.
 
 ## Why
 
@@ -128,7 +128,7 @@ Status: accepted 2026-10-16.
 ## Consequences
 
 - noded's built-in `mon` module (`mon.status`, `mon.processes`,
-  `mon.props.*`) is superseded. Its verbs were never registered and nothing
+  `mon.props.*`) is superseded. Its commands were never registered and nothing
   in the tree calls them. It is removed once monitord is installed on the
   mesh.
 - monitord adds a system user, `monitord`, and the state directory
@@ -144,7 +144,7 @@ Status: accepted 2026-10-16.
 - **Monitor acts on this node's processes the way the command line does.**
   End task (SIGTERM) and Kill (SIGKILL) are local system calls made as the
   person running Monitor, and the kernel decides. They are off while
-  another node is shown, and no Bus verb of monitord's is involved. Acting
+  another node is shown, and no Bus command of monitord's is involved. Acting
   on another node, or as another user, stays hostd's.
 - **Phase 2 adds no graph or table crate.** The graphs are painted
   directly: a 64-core grid is 64 graphs a frame, which a plotting widget

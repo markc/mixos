@@ -183,7 +183,7 @@ function tools_run($user)
   -- The poll token goes back ONLY here, to the caller that enqueued the run. It is what
   -- makes /tools/status requester-only on a shared dev_session identity.
   $token = "" .. tools_or($r["token"], "")
-  -- Nudge the drain. Authority-free verb: no args, no target — it only asks toolsd to
+  -- Nudge the drain. Authority-free command: no args, no target — it only asks toolsd to
   -- drain runs it independently claims. A wake failure is NOT fatal.
   if $r["duplicate"] != true then
     try

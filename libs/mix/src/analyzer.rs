@@ -6651,7 +6651,7 @@ const NULL_SPELLINGS: &[&str] = &["null", "None", "undefined", "NULL", "nullptr"
 
 /// MIX-W2312: a bareword `null` (or `None`, `undefined`, `NULL`, `nullptr`)
 /// used as a value. It is the STRING "null", not nil, and nothing at runtime
-/// says so: `workshop.dialog {open: null}` sent `{"open":"null"}`, the verb
+/// says so: `workshop.dialog {open: null}` sent `{"open":"null"}`, the command
 /// rightly refused it, and the refusal was taken for an app bug (2026-10-10).
 ///
 /// Needs the source text: a bareword and a quoted `"null"` parse to the same

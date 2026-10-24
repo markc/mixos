@@ -7,7 +7,7 @@
 //!
 //! - **emitted**: the press went to the re-emitter, so its repeats and its
 //!   release go there too;
-//! - **swallowed**: nothing reaches the re-emitter, and the verb latched at
+//! - **swallowed**: nothing reaches the re-emitter, and the command latched at
 //!   the press (if the row allows repeats) fires again on each repeat.
 //!
 //! The latch never looks at the modifiers or the keymap again. Releasing
@@ -32,18 +32,18 @@ use inputd_schema::{ActionId, SideModifiers};
 
 use crate::{Edge, Resolution, Resolver};
 
-/// A verb to fire, with its body and target.
+/// A command to fire, with its body and target.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Fire {
-    pub verb: ActionId,
+    pub command: ActionId,
     pub args: Option<serde_json::Value>,
     pub service: Option<String>,
 }
 
 impl Fire {
     fn from_resolution(resolution: Resolution) -> Option<Self> {
-        resolution.verb.map(|verb| Self {
-            verb,
+        resolution.command.map(|command| Self {
+            command,
             args: resolution.args,
             service: resolution.service,
         })
@@ -55,7 +55,7 @@ impl Fire {
 pub struct Step {
     /// Write the original event to the re-emitter.
     pub emit: bool,
-    /// Fire this verb.
+    /// Fire this command.
     pub fire: Option<Fire>,
     /// The event was a repeat or release with no latch: its press was not
     /// seen. Dropped; the caller may log it.

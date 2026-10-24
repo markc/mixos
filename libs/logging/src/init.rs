@@ -57,7 +57,7 @@ pub fn default_log_dir() -> std::path::PathBuf {
 /// Precedence (highest wins): `RUST_LOG` env > `LogOpts.log_filter`
 /// layered over `LogOpts.log_level` or `LogDefaults.level`. A runtime
 /// rung layers on top via [`LogHandle::reload_handle`]: a consumer
-/// (a property watcher, or a Bus filter verb) swaps the live
+/// (a property watcher, or a Bus filter command) swaps the live
 /// filter through the returned [`crate::LogReloadHandle`].
 ///
 /// # Stats install ordering (plan §3543-3559)
@@ -197,7 +197,7 @@ pub fn init(
 
     // Wrap the filter in `reload::Layer` so a `LogReloadHandle` can
     // swap it at runtime (e.g. a property watcher, or a Bus
-    // filter verb) without restarting the binary. This is core now.
+    // filter command) without restarting the binary. This is core now.
     let (filter_layer, reload_handle) = {
         let (layer, handle) = tracing_subscriber::reload::Layer::new(filter);
         (layer, Some(handle))

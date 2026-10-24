@@ -50,8 +50,8 @@ type SaveCompletion = Result<
 >;
 static NEXT_WINDOW: AtomicU64 = AtomicU64::new(1);
 
-pub fn command<S>(enabled: fn(&S) -> bool, run: fn(&mut S)) -> crate::Command<S> {
-    crate::Command {
+pub fn command<S>(enabled: fn(&S) -> bool, run: fn(&mut S)) -> crate::Action<S> {
+    crate::Action {
         id: "help.macros",
         label: "toolkit-macros",
         menu: Some("help"),
@@ -2207,7 +2207,7 @@ mod tests {
                         mix: temp.path().join("unused"),
                     });
                 }
-                let mut registry = crate::command::Registry::new();
+                let mut registry = crate::action::Registry::new();
                 registry.add(command(
                     |s: &AppMenu| s.open || !s.modal,
                     |s: &mut AppMenu| {
@@ -2236,7 +2236,7 @@ mod tests {
                 }
                 if std::mem::take(&mut app.queued_toggle) {
                     registry
-                        .execute("help.macros", app, crate::command::Origin::Ui)
+                        .execute("help.macros", app, crate::action::Origin::Ui)
                         .unwrap();
                 }
                 if close {

@@ -90,7 +90,7 @@ Use `mix builtins --names` to discover valid builtin names, and `mix builtins
 language and command classifier. Discovery should inspect process status rather
 than stop a sequence when a lookup is invalid.
 
-Mix scripts use `run_argv` for local processes and native Bus verbs for application
+Mix scripts use `run_argv` for local processes and native Bus commands for application
 control. `run_argv_must` is appropriate when a non-zero exit must stop the script.
 The public language regression corpus accompanies the interpreter transplant.
 

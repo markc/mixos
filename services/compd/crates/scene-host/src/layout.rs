@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `shell.scene.layout`: per-node geometry, as drawn.
 //!
-//! The reply is Quoin's frozen shape (shell-verbs.json `shell.scene.layout`):
+//! The reply is Quoin's frozen shape (shell-commands.json `shell.scene.layout`):
 //! `{scene, revision, applied_revision, visible, surface:{kind, edge, output,
 //! x, y, w, h}, nodes:{id:{x,y,w,h,hidden}}, instances:{list:{item:{x,y,w,h}}},
 //! chrome:{close:{x,y,w,h}}}`, logical px relative to the scene's surface.

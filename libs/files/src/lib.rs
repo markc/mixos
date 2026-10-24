@@ -15,7 +15,7 @@
 //!   parse→serialize round trip (invariant #2/#6).
 //! - [`fsops`] — the generic live-filesystem layer (the Dolphin-style file-manager
 //!   backend): `read_dir`/`stat`/mkdir/copy/move/trash/delete over a *places*
-//!   allowlist, with all path-scoping + per-verb `writable` enforcement. Distinct
+//!   allowlist, with all path-scoping + per-command `writable` enforcement. Distinct
 //!   from the corpus index.
 //! - [`atomic`] — write-temp-then-`rename(2)` so a crash never leaves a torn file.
 //! - [`hash`] — BLAKE3 content hashing (the #6 verify key / #7 reconcile signal).

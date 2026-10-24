@@ -12,7 +12,7 @@
 //! filter swaps through the public `LogReloadHandle`.
 //!
 //! Three optional features layer on the core:
-//! - `bus-handlers` — the `<svc>.stats.snapshot` Bus verb handler
+//! - `bus-handlers` — the `<svc>.stats.snapshot` Bus command handler
 //!   (`stats::handle_snapshot_bus`); uses `bus::native_client`.
 //! - `prometheus` — the per-daemon `/metrics` endpoint.
 //! - `props` — a durable `<svc>.log` namespace and live filter watcher.

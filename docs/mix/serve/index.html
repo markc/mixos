@@ -220,7 +220,7 @@
                         <a href="#quit-self-terminates-the-citizen-gracefully" class="toc-h3">quit() self-terminates the citizen gracefully</a>
                         <a href="#outbound-send-from-a-handler-uses-result--rc" class="toc-h3">Outbound send from a handler uses $result / $rc</a>
                         <a href="#handler-fault-isolation-the-per-request-boundary">Handler fault isolation (the per-request boundary)</a>
-                        <a href="#reserved-verbs--what-the-runtime-injects">Reserved verbs — what the runtime injects</a>
+                        <a href="#reserved-commands--what-the-runtime-injects">Reserved commands — what the runtime injects</a>
                         <a href="#the-lifecycle-property-tree" class="toc-h3">The lifecycle property tree</a>
                         <a href="#build-provenance--discoverable-in-nodedlist">Build provenance — discoverable in noded.list</a>
                         <a href="#hot-reload--reload-load-beside-swap">Hot-reload — RELOAD (load-beside-swap)</a>
@@ -259,7 +259,7 @@
 <h1 id="serving-as-a-bus-citizen">Serving as a Bus citizen</h1>
 <p><strong><code>mix --serve service.mix</code> turns a Mix script into a supervised, mesh-registered
 Bus daemon.</strong> Write the <code>on</code> handlers; the runtime supplies the rest — broker
-registration, reconnect with backoff, the standard <code>HELP</code>/<code>INFO</code>/<code>QUIT</code> verbs, a
+registration, reconnect with backoff, the standard <code>HELP</code>/<code>INFO</code>/<code>QUIT</code> commands, a
 lifecycle property tree, per-handler fault isolation, and graceful shutdown. A
 script with <strong>one</strong> <code>on &lt;cmd&gt; … end</code> handler is a complete service.</p>
 <p>This is the AmigaOS "application with an ARexx port" model made native: a
@@ -335,11 +335,11 @@ name, from this machine or across the WireGuard mesh.</li>
 <li><strong>Residency + supervision</strong> — it is long-lived and stays registered. A broker
 (<code>noded</code>) restart is a transient drop it reconnects and re-registers
 through, not a death.</li>
-<li><strong>Participation</strong> — it receives verbs (<code>on</code>), <code>reply</code>s, <code>send</code>s, <code>emit</code>s, and
+<li><strong>Participation</strong> — it receives commands (<code>on</code>), <code>reply</code>s, <code>send</code>s, <code>emit</code>s, and
 <code>subscribe</code>s to topics: a full member of the message fabric, not just a caller.</li>
 <li><strong>A public surface it did not write</strong> — the runtime injects <code>HELP</code>, <code>INFO</code>,
 <code>QUIT</code>, and <code>&lt;svc&gt;.props.{get,list,describe}</code>, so every citizen is
-introspectable and controllable by the same verbs.</li>
+introspectable and controllable by the same commands.</li>
 <li><strong>Trust</strong> — a citizen is a <em>full-capability, trusted</em> process (see
 <a href="/mix/capabilities/">capabilities</a>), not a sandbox for untrusted code.</li>
 <li><strong>Provenance</strong> — its binary (<code>mix-shell</code>) and version show in <code>noded.list</code>, so
@@ -355,7 +355,7 @@ shown is <strong>real</strong>, captured from a live <code>statecache</code> cit
 Examples that <em>start</em> a daemon (the <code>mix --serve …</code> invocations) are
 illustrative of the command shape — you can't paste them into a terminal and
 see output without a broker and a unit. The language facts (the <code>on</code>/<code>reply</code>
-model, <code>$result</code>/<code>$rc</code>, the reserved verbs, service-name derivation) are exact,
+model, <code>$result</code>/<code>$rc</code>, the reserved commands, service-name derivation) are exact,
 and the no-broker and parse paths are verified standalone.</p>
 </blockquote>
 <p>For the messaging primitives themselves — <code>send</code>, <code>emit</code>, <code>address</code>, <code>on</code>,
@@ -408,7 +408,7 @@ print("" .. $result)
 </code></pre>
 <p>That tiny script also answers <code>HELP</code>, <code>INFO</code>, <code>QUIT</code>, and
 <code>echo.props.{get,list,describe}</code> — none of which appear in the file. The runtime
-injects them (see <a href="#reserved-verbs--what-the-runtime-injects">Reserved verbs</a>).</p>
+injects them (see <a href="#reserved-commands--what-the-runtime-injects">Reserved commands</a>).</p>
 <hr />
 <h2 id="service-name-derivation">Service-name derivation</h2>
 <p>The Bus service name is the <code>&lt;svc&gt;</code> the citizen registers under and the target
@@ -445,7 +445,7 @@ publish("scene.update", json_encode({owner: $me, target: $me .. ".click"}))
 <pre><code class="language-text">mix --serve quoin-panel.mix                        # serve_name() = "quoin-panel"
 mix --serve quoin-panel.mix --name quoin-panel-n   # serve_name() = "quoin-panel-n"
 </code></pre>
-<p><strong><code>on @.verb</code> registers a verb under that name</strong> (0.112.0). The unquoted <code>@</code>
+<p><strong><code>on @.command</code> registers a command under that name</strong> (0.112.0). The unquoted <code>@</code>
 is the whole first segment of the handler name; when the <code>on</code> statement runs,
 <code>@</code> is replaced by the serve name. One generic script then serves any
 instance:</p>
@@ -471,7 +471,7 @@ source text rather than tokens take <code>@</code> as an ordinary character: a b
 <hr />
 <h2 id="the-handler-model">The handler model</h2>
 <p>Inbound Bus messages dispatch to matching <code>on &lt;cmd&gt; … end</code> handlers. The
-<code>&lt;cmd&gt;</code> matches the <strong>inner command/verb</strong> the sender used — not the service
+<code>&lt;cmd&gt;</code> matches the <strong>inner command/command</strong> the sender used — not the service
 name or topic — so a request <code>send statecache statecache.get</code> fires
 <code>on statecache.get</code>. The full grammar (the <code>$event</code> map, <code>reply(...)</code>,
 <code>async</code>/Class C, <code>subscribe</code>) is in <a href="/mix/bus/">Bus messaging</a>; the essentials for a
@@ -485,9 +485,9 @@ on config.current               -- a topic delivery: update state, no reply
 end
 </code></pre>
 <h3 id="doc-strings--a-citizen-self-describes-at-the-handler-site">Doc-strings — a citizen self-describes at the handler site</h3>
-<p><code>on &lt;cmd&gt; desc "what this verb does" [async]</code> (mix ≥ 0.87.1; <code>desc</code> and
+<p><code>on &lt;cmd&gt; desc "what this command does" [async]</code> (mix ≥ 0.87.1; <code>desc</code> and
 <code>async</code> compose in either order) attaches a <strong>doc-string</strong> to the handler.
-The runtime surfaces it verbatim as that verb's <code>description</code> in the <code>HELP</code>
+The runtime surfaces it verbatim as that command's <code>description</code> in the <code>HELP</code>
 reply, so GUIs, discovery tools, and agents all read the text the author
 wrote where the handler lives — no separately-maintained manifest. Handlers
 without one show the generic <code>Author-defined handler</code>.</p>
@@ -522,7 +522,7 @@ end
 <h3 id="quit-self-terminates-the-citizen-gracefully"><code>quit()</code> self-terminates the citizen gracefully</h3>
 <p><code>quit()</code> requests the <strong>same graceful shutdown</strong> as the <code>QUIT</code> universal (SPEC 18
 §3.5) — deregister from the broker, then exit <code>0</code> — but self-initiated from
-inside the script rather than driven by an inbound verb. It is the primitive for
+inside the script rather than driven by an inbound command. It is the primitive for
 a <strong>one-shot / ephemeral citizen</strong>: register, do a job that needs the event pump
 (open a dialog, await a topic delivery, drive one interaction), then retire
 itself. It takes no meaningful arguments and returns <code>nil</code> — like the <code>QUIT</code>
@@ -621,14 +621,14 @@ to the terminal, e.g. <code>ERROR … Handler body errored … command=risky.op 
 <p>You can still handle errors yourself with <a href="/mix/errors/"><code>try … catch</code></a> to send a
 tailored reply; the runtime boundary is the backstop for anything you don't catch.</p>
 <hr />
-<h2 id="reserved-verbs--what-the-runtime-injects">Reserved verbs — what the runtime injects</h2>
-<p>Every serve citizen answers a fixed set of verbs the author does <strong>not</strong> write and
+<h2 id="reserved-commands--what-the-runtime-injects">Reserved commands — what the runtime injects</h2>
+<p>Every serve citizen answers a fixed set of commands the author does <strong>not</strong> write and
 <strong>cannot override</strong> (SPEC 18 §7-Q4: <em>runtime wins</em>). They are intercepted
 <em>pre-dispatch</em>, so an author <code>on HELP …</code> or <code>on &lt;svc&gt;.props.get …</code> handler is
 unreachable — and is filtered out of <code>HELP</code> rather than advertised as a shadow
 that never fires.</p>
-<table><thead><tr><th>Verb</th><th>Level</th><th>What it returns</th></tr></thead><tbody>
-<tr><td><code>HELP</code></td><td>L0</td><td><code>[{name, description, args}]</code> — reserved verbs first, then the author's commands (sorted, deduped; <code>description</code> is the handler's doc-string when one was written)</td></tr>
+<table><thead><tr><th>Command</th><th>Level</th><th>What it returns</th></tr></thead><tbody>
+<tr><td><code>HELP</code></td><td>L0</td><td><code>[{name, description, args}]</code> — reserved commands first, then the author's commands (sorted, deduped; <code>description</code> is the handler's doc-string when one was written)</td></tr>
 <tr><td><code>INFO</code></td><td>L0</td><td>the <code>{name, version, description}</code> triple</td></tr>
 <tr><td><code>QUIT</code></td><td>L0</td><td>replies <code>rc:0</code>, then triggers the §3.5 graceful shutdown</td></tr>
 <tr><td><code>RELOAD</code></td><td>L0</td><td>hot-reload (mix ≥ 0.88.0): re-parses the script; <code>rc:0 {reloading: true}</code> = accepted and parsed (the swap then commits, or reverts if the new init fails at runtime — poll <code>lifecycle.generation</code> to confirm), or <code>rc:10 {error}</code> and the citizen is untouched — see below</td></tr>
@@ -726,7 +726,7 @@ answers <code>rc:10 {error}</code> and the running citizen is completely untouch
 a broken edit is a refused reload, never a dead service.</li>
 <li>On a clean parse it answers <code>rc:0 {reloading: true}</code>, then builds a
 <strong>fresh evaluator beside the running one</strong> (same wiring: prelude, limits,
-reserved-verb surface) and executes the new top-level.</li>
+reserved-command surface) and executes the new top-level.</li>
 <li>New top-level succeeds → the new evaluator takes over the pump; the old
 one is drained (in-flight async handlers get the shutdown discipline) and
 dropped. It <strong>fails at runtime</strong> → the failure is logged loudly and the
@@ -777,7 +777,7 @@ pump. To observe which generation went live, poll <code>lifecycle.generation</co
 connection; a re-subscribing new top-level may duplicate delivery
 (v1 limitation — avoid reloading citizens that <code>subscribe</code>, or make
 subscription idempotent on the handler side).</li>
-<li>Like every reserved verb, an author <code>on RELOAD</code> handler is unreachable
+<li>Like every reserved command, an author <code>on RELOAD</code> handler is unreachable
 and filtered from <code>HELP</code>.</li>
 </ul>
 <h3 id="post-commit-handover--is_reload_candidate-and-lifecyclecommit">Post-commit handover — <code>is_reload_candidate()</code> and <code>lifecycle.commit</code></h3>
@@ -914,7 +914,7 @@ resident <code>--serve</code> daemon is what requires the broker to be up.</p>
 <table><thead><tr><th>Thing</th><th>Value</th></tr></thead><tbody>
 <tr><td>Start a citizen</td><td><code>mix --serve &lt;script&gt; [--name &lt;svc&gt;] [--no-prelude]</code></td></tr>
 <tr><td>Service name</td><td><code>--name</code>, else the script file stem; leading <code>mixos-</code> stripped; the script reads it with <code>serve_name()</code></td></tr>
-<tr><td>Verb under the serve name</td><td><code>on @.verb</code> registers <code>&lt;svc&gt;.verb</code>; outside <code>--serve</code> it raises <code>SERVE_PREFIX_OUTSIDE_SERVE</code></td></tr>
+<tr><td>Command under the serve name</td><td><code>on @.command</code> registers <code>&lt;svc&gt;.command</code>; outside <code>--serve</code> it raises <code>SERVE_PREFIX_OUTSIDE_SERVE</code></td></tr>
 <tr><td>Anonymous serve</td><td>a launch error — no nameless citizen</td></tr>
 <tr><td>Init</td><td>top-level body runs <strong>once</strong>, then the pump runs forever</td></tr>
 <tr><td>Reserved (injected)</td><td><code>HELP</code>, <code>INFO</code>, <code>QUIT</code>, <code>&lt;svc&gt;.props.{get,list,describe}</code></td></tr>
@@ -933,7 +933,7 @@ resident <code>--serve</code> daemon is what requires the broker to be up.</p>
 control surface on the other, and its whole job is to map between them. This is
 the AmigaOS ARexx model in full: ARexx let a script receive a message on an
 application's port and turn it into whatever that application understood; a Mix
-citizen receives a Bus verb and turns it into a D-Bus call, a shell command, an
+citizen receives a Bus command and turns it into a D-Bus call, a shell command, an
 HTTP request, or a <code>send</code> to another node.</p>
 <p>The shape is tiny. A KDE Plasma workspace adapter, in full:</p>
 <pre><code class="language-mix">-- desktop-workspace.mix — run: mix --serve desktop-workspace.mix --name desktop
@@ -942,7 +942,7 @@ fn kwin(m)
   return trim(run("qdbus6 org.kde.KWin /KWin org.kde.KWin." .. m))
 end
 
--- Multi-segment verbs must be QUOTED in `on` (a bare handler verb takes one dot).
+-- Multi-segment commands must be QUOTED in `on` (a bare handler command takes one dot).
 on "desktop.workspace.next"
   kwin("nextDesktop")
   reply(json_encode({ok: true, desktop: kwin("currentDesktop")}))
@@ -954,18 +954,18 @@ on "desktop.workspace.prev"
 end
 </code></pre>
 <p>Now <code>send desktop desktop.workspace.next</code> from <strong>any</strong> process on the node
-switches the desktop. The Bus verb is the request; <code>run("qdbus6 …")</code> is the
+switches the desktop. The Bus command is the request; <code>run("qdbus6 …")</code> is the
 translation. Why this is more than a convenience:</p>
 <ul>
-<li><strong>The verb is the stable interface; the adapter is swappable.</strong> Everything
-upstream — a keybinding, an agent, another citizen — only knows the verb
+<li><strong>The command is the stable interface; the adapter is swappable.</strong> Everything
+upstream — a keybinding, an agent, another citizen — only knows the command
 <code>desktop.workspace.next</code>. <em>How</em> it is carried out is hidden behind the adapter.
-Swap the host desktop for a compositor that answers the verb natively and the
+Swap the host desktop for a compositor that answers the command natively and the
 adapter simply retires — nothing upstream changes. The vocabulary is portable;
 the adapter absorbs the host difference.</li>
 <li><strong>It bridges to any host.</strong> The same shape wraps GNOME's D-Bus, a media player,
 <code>notify-send</code>, a REST endpoint, <code>systemctl</code>, or the tools on another mesh node.
-The Bus presents one clean verb vocabulary; a small Mix adapter per host
+The Bus presents one clean command vocabulary; a small Mix adapter per host
 translates it into that host's native language.</li>
 <li><strong>The whole glue layer is editable Mix, not compiled daemons.</strong> Because an
 adapter is a <code>--serve</code> script, you write one in minutes, <code>mix --check</code> it
@@ -980,14 +980,14 @@ or <code>run_argv(argv)</code> (foreground, an argv list). An app launcher is ba
 file: <code>on "launch.editor" spawn("my-editor") end</code>. Run such a citizen in the
 <strong>user's</strong> session — GUI programs need the caller's <code>WAYLAND_DISPLAY</code> /
 <code>DBUS_SESSION_BUS_ADDRESS</code>, so never launch them from a root daemon; a
-root daemon should <code>send</code> the verb and let a session citizen do the launching.</li>
+root daemon should <code>send</code> the command and let a session citizen do the launching.</li>
 <li><strong>Fan out</strong> with topics: a citizen can <code>subscribe</code> to an event topic and
 translate each delivery, so one publisher drives many adapters without knowing
 any of them — the ARexx broadcast, mesh-wide.</li>
 </ul>
 <p>The result: the Bus becomes a universal remote for the machine — and for the
 mesh — with the translation layer written in the same small language you script
-everything else in. A verb in; a real-world effect out; the bridge is a handful
+everything else in. A command in; a real-world effect out; the bridge is a handful
 of lines of Mix.</p>
 <h2 id="see-also">See also</h2>
 <ul>

@@ -5,11 +5,11 @@ fn macros_status_dispatch_and_surface() {
         .wait()
         .unwrap();
     assert_eq!(body["state"], "idle");
-    let surface = email::verbs::describe();
+    let surface = email::commands::describe();
     for suffix in ["list", "reload", "run", "status", "output", "stop", "new"] {
         let name = format!("email.macros.{suffix}");
         assert!(
-            surface["verbs"]
+            surface["commands"]
                 .as_array()
                 .unwrap()
                 .iter()

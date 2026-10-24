@@ -46,13 +46,13 @@ Local native events (`fs.changed`, `proc.exited`, `bus.connected`) share the sam
 handler dispatch and `$event.args` conversion as incoming Bus events. Structured
 event bodies are parsed even in a library build without the optional JSON
 *builtin* feature. This introduces no new transport or local-only command gate;
-the citizen's public verbs retain their existing local/mesh routing.
+the citizen's public commands retain their existing local/mesh routing.
 
 ## The model in one paragraph
 
 A **broker** (`noded`) runs on the node. Services register a **name**
 (`noded`, `statecache`, `webd`, …). You **`send`** a service a **command** (a
-dotted verb like `noded.ping`) with optional **key=value args**; the reply lands
+dotted command like `noded.ping`) with optional **key=value args**; the reply lands
 in `$result` and the status code in `$rc`. That's an RPC. **`emit`** is the same
 shape but fire-and-forget — no reply, no wait. **`address`** is a block of
 implicit sends to one target. **`on … end`** is the other direction: it
@@ -100,11 +100,11 @@ pong is true
 core ext: 1.0
 ```
 
-### Verb names with keyword segments (mix 0.96.2)
+### Command names with keyword segments (mix 0.96.2)
 
-A bare verb is a dotted name, and **any segment may be a Mix keyword** —
-Bus verbs belong to the services that define them, and `select`, `if`,
-`print`, `end` are ordinary verb words there:
+A bare command is a dotted name, and **any segment may be a Mix keyword** —
+Bus commands belong to the services that define them, and `select`, `if`,
+`print`, `end` are ordinary command words there:
 
 ```mix
 send ced ced.select anchor=0
@@ -116,13 +116,13 @@ end
 ```
 
 The same rule holds everywhere a bare Bus name is written: the `send`/`emit`
-command, `address` body lines, a dotted target (`send print.x verb`), and the
+command, `address` body lines, a dotted target (`send print.x command`), and the
 `on` handler header. A keyword may also *lead* the name, but only when dotted
-(`send svc select.all`, `on print.page`); a bare keyword verb (`send svc
+(`send svc select.all`, `on print.page`); a bare keyword command (`send svc
 select`) stays a parse error — quote it: `send svc "select"`. `fn` and
 `function` segments are read by their source spelling (`x.fn` is `"x.fn"`).
 Before 0.96.2 a keyword segment failed with `unexpected token Dot` and the
-verb had to be quoted (`send ced "ced.select"`); quoting still works.
+command had to be quoted (`send ced "ced.select"`); quoting still works.
 
 ### `send` as an expression
 
@@ -140,7 +140,7 @@ captured: {extensions: {core: 1.0, topic: 1.0}, pong: true}
 ### Args: scalars, `body=`, and numbers
 
 For `send`, bare `key=value` args are serialized as a **JSON body** (RPC
-framing) by default — noded/indexd/maild verbs read their args from it — with
+framing) by default — noded/indexd/maild commands read their args from it — with
 two exceptions that select **header routing** (scalar args → Bus headers,
 `body=` → the body channel):
 
@@ -233,21 +233,21 @@ planned (filed in the Mix TODO list). Until it lands, read them immediately
 after the `send`, or capture the reply with the expression form —
 `$r = send svc cmd` — and copy `$rc` into a local before the next await.
 
-**A wrong verb name answers at once.** A `mix --serve` citizen (or any script
+**A wrong command name answers at once.** A `mix --serve` citizen (or any script
 with `on` handlers) that receives a request for a command it has no handler
 for refuses it immediately with `rc 10`. On an ordinary send `$result` is the
 message ("unknown command 'x' (this citizen handles: …)"); on the header
 route (a `body=` send) the `error_code` rule above makes `$result` the whole
 object instead. Either way the structure is in `$reply` —
-`$reply.error_code == "UNKNOWN_COMMAND"`, `$reply.command` the verb you sent,
+`$reply.error_code == "UNKNOWN_COMMAND"`, `$reply.command` the command you sent,
 `$reply.available` the citizen's declared handlers. (Before 0.92.0 the request
 was dropped: the caller waited out its full timeout and got `-2`, which read as
-a mesh problem.) So a `-2` from a citizen that answers its other verbs is no
+a mesh problem.) So a `-2` from a citizen that answers its other commands is no
 longer a typo symptom — look at the citizen's handler instead. Props paths such
-as `lifecycle.generation` are not verbs: read them with
+as `lifecycle.generation` are not commands: read them with
 `send svc svc.props.get path="lifecycle.generation"`. The code is a Mix
 citizen's: other daemons name the same refusal differently — comp answers
-`unknown_verb`, noded its own rc 10 message — so a script that must work
+`unknown_command`, noded its own rc 10 message — so a script that must work
 against any service should test `$rc >= 10` and read the code from `$reply`
 rather than match one spelling.
 
@@ -259,7 +259,7 @@ and treat `error_code` as the authoritative signal:
 
 | `$rc` | `$reply.error_code` | When |
 |---|---|---|
-| 10 | `UNKNOWN_COMMAND` | no `on` handler for the verb |
+| 10 | `UNKNOWN_COMMAND` | no `on` handler for the command |
 | 15 | `HANDLER_FAULT` | the handler raised, `die`d or panicked before replying; the real error is in the citizen's log, never on the wire |
 | 16 | `HANDLER_CANCELLED` | the citizen shut down or reloaded while the handler was still running |
 
@@ -272,7 +272,7 @@ See [handler fault isolation](serve.md#handler-fault-isolation-the-per-request-b
 A locally registered service can be addressed two ways, and only one of them
 carries an identity. A TCP connection is known by a name the caller asserts
 about itself, which is not an authority — which is why a session-enrolled
-service's protected verbs answer `FORBIDDEN` over it. A Unix connection to the
+service's protected commands answer `FORBIDDEN` over it. A Unix connection to the
 local broker carries peer credentials the KERNEL supplies, so the broker learns
 who is calling without having to be told.
 
@@ -280,7 +280,7 @@ who is calling without having to be told.
 
 ```mix
 $list = send noded "noded.list"          -- find the instance
-$r = send $name "term.session" body=$b   -- a protected verb, admitted
+$r = send $name "term.session" body=$b   -- a protected command, admitted
 ```
 
 This grants no new authority. Any same-uid process can already open this
@@ -462,7 +462,7 @@ print("" .. $result)
 
 Self-addressing works — `send noded.<thisnode>.bus` resolves to the local broker.
 
-**3. A dynamic target from a loop/var** — build the address (or the verb) with
+**3. A dynamic target from a loop/var** — build the address (or the command) with
 `..` concat. This is the path when the node name isn't a literal:
 
 ```mix
@@ -470,9 +470,9 @@ $node = "node1"
 $target = "noded." .. $node .. ".bus"
 -- send $target noded.info   -- illustrative; routes to that node's broker
 
--- the verb is an expression too:
-$verb = "noded" .. ".ping"
-send noded $verb
+-- the command is an expression too:
+$command = "noded" .. ".ping"
+send noded $command
 print("rc=" .. ("" .. $rc) .. " result=" .. ("" .. $result))
 ```
 ```text
@@ -480,7 +480,7 @@ rc=0 result={extensions: {core: 1.0, topic: 1.0}, pong: true}
 ```
 
 > Edge: if an inline `(expr)` in command position collides with the parser,
-> pre-build the verb into a `$var` (as above) and pass the var.
+> pre-build the command into a `$var` (as above) and pass the var.
 
 ---
 
@@ -538,10 +538,10 @@ ghost:      false
 in either order) registers a **handler** that fires when a matching Bus
 message arrives. The handler body uses newline- or
 `;`-separated statements closed by `end` — **no `do` keyword**. The
-`<command>` matches the *inner command* of the inbound message (the verb the
+`<command>` matches the *inner command* of the inbound message (the command the
 publisher sent), **not** the topic/target name — check the publisher to know
 what to match. The optional `desc "…"` doc-string (mix ≥ 0.87.1) is static
-metadata: a serve citizen surfaces it as the verb's `description` in its
+metadata: a serve citizen surfaces it as the command's `description` in its
 `HELP` reply — see [Serve citizens](serve.md).
 
 ```mix
@@ -553,13 +553,13 @@ end
 
 The `<command>` is a dotted name whose segments may be Mix keywords
 (`on ced.select`, `on print.page`) — see
-[keyword segments](#verb-names-with-keyword-segments-mix-0962).
+[keyword segments](#command-names-with-keyword-segments-mix-0962).
 A hyphenated name is read whole, with the same shape and the same two
 quoting exceptions as a [hyphenated `send` target](#send-and-the-verified-session-lane):
-`on dopus-test.command.executed` handles that topic (mix ≥ 0.113.1). Before
+`on dopus-test.action.executed` handles that topic (mix ≥ 0.113.1). Before
 0.113.1 the header stopped at the hyphen, so the handler registered as
-`dopus` and `-test.command.executed` became its body: it parsed, linted
-clean and never fired. The quoted form, `on "dopus-test.command.executed"`,
+`dopus` and `-test.action.executed` became its body: it parsed, linted
+clean and never fired. The quoted form, `on "dopus-test.action.executed"`,
 works in every version.
 
 Legacy `done` still closes `on` (with a deprecation warning); prefer `end`.
@@ -571,7 +571,7 @@ fields:
 
 | Field | Type | Access |
 |---|---|---|
-| `$event.command` | string | the inbound verb |
+| `$event.command` | string | the inbound command |
 | `$event.headers` | map | scalar headers, e.g. `$event.headers["topic"]` |
 | `$event.body` | string | the raw message body |
 | `$event.args` | parsed body \| nil | the body pre-parsed as JSON, or `nil` |
@@ -712,14 +712,14 @@ the props surface. Before 0.63.0 a faulting handler looked exactly like a
 healthy one (noded reported `delivered=1` while its side effects silently
 never happened).
 
-**`lifecycle.commit` is a native hook, never a verb.** After a hot-reload
+**`lifecycle.commit` is a native hook, never a command.** After a hot-reload
 swap commits, the runtime queues one local `lifecycle.commit` event into
 the new generation (see [Serve citizens](serve.md) — post-commit
 handover). A wire-delivered `lifecycle.commit` is refused with `rc 10`
 before any author handler and is filtered from `HELP`: an external caller
 cannot run a loader's commit behaviour ahead of or behind the real commit.
 
-A live citizen answers the standard verbs like any Rust daemon:
+A live citizen answers the standard commands like any Rust daemon:
 
 ```mix
 send statecache HELP
@@ -822,7 +822,7 @@ state) still raise, so a genuine outage is heard.
 
 Sharp edges:
 
-- Command position matches the publisher's **inner verb**, not the topic/target.
+- Command position matches the publisher's **inner command**, not the topic/target.
 - `emit` is a statement only (no `$x = emit …`) and sets **neither** `$rc` nor `$result`.
 - Inside `address`, do **not** write `send` (each line is already a send).
 - Synchronous request cycles deadlock — keep the graph acyclic.
@@ -830,7 +830,7 @@ Sharp edges:
 
 ## See also
 
-- [strings](strings.md) — `..` concat for building dynamic targets/verbs; `${…}` vs literal `$name`
+- [strings](strings.md) — `..` concat for building dynamic targets/commands; `${…}` vs literal `$name`
 - [collections](collections.md) — field access into `$result` / `$event` maps
 - [functions](functions.md) — handler bodies, lambdas, the pass-in/return/reassign state idiom
 - [running commands](system.md) — `run` / `run_rc` / `ssh_run` for non-Bus I/O

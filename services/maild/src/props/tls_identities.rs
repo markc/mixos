@@ -15,7 +15,7 @@
 //!
 //! Phase 1 of the maild SNI / internal-CA plan does not mint or
 //! rotate certs — that is Phase 3's job, behind the `pki.props.*`
-//! verbs in `pki`. This namespace's writes are denied at the
+//! commands in `pki`. This namespace's writes are denied at the
 //! [`AuthPolicy`] layer (no `props.write` / `props.delete`
 //! capabilities granted). The internal bootstrap call below uses
 //! [`Runtime::set`] / [`Runtime::delete`] directly, which bypasses
@@ -502,7 +502,7 @@ pub async fn register(
 
 /// Re-project the read-only `tls_identities` namespace from a freshly
 /// merged identity list. Called by Phase 5a-commit-2's
-/// `maild.tls.reload` verb BEFORE the resolver swap so subscribers see
+/// `maild.tls.reload` command BEFORE the resolver swap so subscribers see
 /// identity rows update before cert behaviour changes.
 ///
 /// `identities` carries explicit `(TlsIdentityConfig, IdentitySource)`

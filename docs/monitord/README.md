@@ -1,6 +1,6 @@
 ---
 title: The system monitor service
-description: How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the mesh.
+description: How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read commands on the Bus, so any node's load can be read from anywhere on the mesh.
 ---
 
 # The system monitor service
@@ -25,11 +25,11 @@ print($reply.cpu.busy)
 send monitord.alpha.bus monitord.processes sort=memory limit=5
 ```
 
-Every verb is a query: it changes nothing. A refusal comes back with `rc`
+Every command is a query: it changes nothing. A refusal comes back with `rc`
 10 and a body whose `status` says why: `bad_request`, `not_found`,
-`unknown_verb`, `failed` or `busy`.
+`unknown_command`, `failed` or `busy`.
 
-| Verb | Body | Returns |
+| Command | Body | Returns |
 |---|---|---|
 | `monitord.status` | — | Version, uptime, sample interval, whether the process sampler is running, and the history database's size and retention |
 | `monitord.snapshot` | — | The system now (below) |
@@ -152,9 +152,9 @@ monitord signal 1234 TERM    send a signal, as you
 monitord renice 1234 10      change a nice value, as you
 ```
 
-`--json` prints what the matching verb returns. `signal` and `renice` run as
+`--json` prints what the matching command returns. `signal` and `renice` run as
 the person who typed them, and the kernel decides whether they may. No Bus
-verb signals or renices anything: acting across users or nodes is
+command signals or renices anything: acting across users or nodes is
 [hostd](../hostd/README.md)'s job.
 
 ## Running it
@@ -180,6 +180,6 @@ when it comes back.
 cargo test -p monitord
 ```
 
-The kernel readers take the text of each file, and the verb tests run
+The kernel readers take the text of each file, and the command tests run
 against a fixture `/proc` and `/sys` tree, so no test needs a real host or
 a broker.

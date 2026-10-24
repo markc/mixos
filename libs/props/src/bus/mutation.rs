@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Contract: `docs/docs/spec/props/README.md#verbs`.
+//! Contract: `docs/docs/spec/props/README.md#commands`.
 
-//! Structured property mutation verbs.
+//! Structured property mutation commands.
 //!
 //! [`PropsRouter`] owns a per-service set of [`Runtime`] coordinators
 //! (one per registered namespace) and dispatches `<svc>.props.*` Bus
-//! requests against them. Each verb:
+//! requests against them. Each command:
 //!
 //! 1. Resolves the `namespace` header to a registered [`Runtime`].
 //! 2. Runs the namespace's [`crate::namespace::AuthPolicy`] over the supplied
 //!    [`PeerIdentity`] to obtain the caller's [`CapabilitySet`], then
-//!    checks the capability token for the verb.
+//!    checks the capability token for the command.
 //! 3. Parses headers + body, calls the runtime / store, and
 //!    projects the result into the response shape.
 //! 4. Maps [`RuntimeError`] / [`StoreError`] back to the error
 //!    taxonomy via [`PropsResponse`] body envelopes.
 //!
-//! ### Verb scope
+//! ### Command scope
 //!
 //! - `set`, `delete`, `list`, `get`, `describe` are fully synchronous
 //!   request/response.
@@ -37,7 +37,7 @@
 //! body) and produces [`PropsResponse`]. It does not persist state
 //! itself. The live-subscription handoff is mediated through the
 //! injected [`SubscribeGranter`], so this module remains
-//! transport-agnostic and tests can drive the verbs with an in-process
+//! transport-agnostic and tests can drive the commands with an in-process
 //! granter stub instead of standing up a noded.
 
 use std::collections::BTreeMap;
@@ -141,7 +141,7 @@ fn ok(body: Json) -> PropsResponse {
 
 /// Per-service registry of property-namespace runtimes. The daemon
 /// constructs one of these at startup, registers each of its
-/// namespaces, and hands `dispatch` a `<svc>.props.<verb>` request as
+/// namespaces, and hands `dispatch` a `<svc>.props.<command>` request as
 /// it arrives from its broker connection.
 pub struct PropsRouter {
     service: String,
@@ -214,7 +214,7 @@ impl PropsRouter {
     /// Register a namespace under this router. Trust-boundary check —
     /// the runtime's owning service must match this router's service
     /// so a stray namespace registration cannot be smuggled into
-    /// another daemon's verb surface.
+    /// another daemon's command surface.
     pub fn register(&mut self, runtime: Arc<Runtime>) -> Result<(), String> {
         if runtime.service() != self.service {
             return Err(format!(
@@ -541,7 +541,7 @@ impl PropsRouter {
         }
     }
 
-    /// watch verb. After the capability check, if a
+    /// watch command. After the capability check, if a
     /// [`SubscribeGranter`] is installed, transition the caller
     /// to live broker delivery on `<svc>.props.records.changed`
     /// filtered to `namespace`, then replay events strictly newer than
@@ -576,7 +576,7 @@ impl PropsRouter {
         .await
     }
 
-    /// `audit.watch` verb. Same flow as
+    /// `audit.watch` command. Same flow as
     /// [`Self::handle_watch`] but: gated on `props.audit:<fqn>` (a
     /// capability distinct from `props.read`); projects per-row audit
     /// rows including `audit_digest` (flat shape); transitions
@@ -598,19 +598,19 @@ impl PropsRouter {
     }
 
     /// Shared watch / audit.watch implementation. The differences
-    /// between the two verbs are exactly the capability token, the
-    /// reserved topic, the verb name (for diagnostics), the
+    /// between the two commands are exactly the capability token, the
+    /// reserved topic, the command name (for diagnostics), the
     /// event-projection function, and whether the
     /// `caught_up` marker is embedded in the response (`watch` does;
     /// `audit.watch` does not).
-    #[allow(clippy::too_many_arguments)] // private helper, two call sites, each tuple is a verb-distinction
+    #[allow(clippy::too_many_arguments)] // private helper, two call sites, each tuple is a command-distinction
     async fn handle_watch_inner(
         &self,
         req: &BusMessage,
         peer: &PeerIdentity,
         cap_token: &str,
         topic: String,
-        verb: &str,
+        command_name: &str,
         project: fn(&str, &PropertySchema, &RecordEvent) -> Json,
         emit_caught_up: bool,
     ) -> PropsResponse {
@@ -623,7 +623,7 @@ impl PropsRouter {
                 return err(
                     ErrorCode::ValidationError,
                     format!(
-                        "missing required header: namespace ({verb}; flat-path uses the read surface)"
+                        "missing required header: namespace ({command_name}; flat-path uses the read surface)"
                     ),
                 );
             }
@@ -663,7 +663,7 @@ impl PropsRouter {
                         return err(
                             ErrorCode::AuthDenied,
                             format!(
-                                "{verb}: anonymous callers cannot receive live deliveries; \
+                                "{command_name}: anonymous callers cannot receive live deliveries; \
                                  register as a service or omit live-watch usage"
                             ),
                         );
@@ -679,7 +679,7 @@ impl PropsRouter {
                     // socket paths) to the watching peer.
                     tracing::warn!(
                         error_code = "grant_failed",
-                        verb = %verb,
+                        command_name = %command_name,
                         topic = %topic,
                         namespace = %ns,
                         target_peer = %target_peer,
@@ -688,7 +688,7 @@ impl PropsRouter {
                     );
                     return err(
                         ErrorCode::GrantFailed,
-                        format!("{verb}: grant_failed (see daemon log for upstream detail)"),
+                        format!("{command_name}: grant_failed (see daemon log for upstream detail)"),
                     );
                 }
                 true
@@ -703,7 +703,7 @@ impl PropsRouter {
                 return err(
                     ErrorCode::Unavailable,
                     format!(
-                        "{verb}: live delivery not configured — daemon must install a \
+                        "{command_name}: live delivery not configured — daemon must install a \
                          SubscribeGranter (production) or call \
                          `allow_replay_only_for_tests` (test harnesses)"
                     ),
@@ -773,7 +773,7 @@ impl PropsRouter {
 
 // ---------------- helpers ----------------
 
-/// `validation_error` when a structured verb receives the flat-path
+/// `validation_error` when a structured command receives the flat-path
 /// `path:` header alongside `namespace:`. The two addressing modes are
 /// mutually exclusive; we refuse early so the rest of the handler can
 /// assume structured mode.
@@ -815,7 +815,7 @@ fn refuse_get_body(req: &BusMessage) -> Result<(), PropsResponse> {
 }
 
 /// Pagination, ordering, and per-record projection are deferred. The
-/// list verb currently returns every record under the namespace; rather
+/// list command currently returns every record under the namespace; rather
 /// than silently ignoring the caller's intent we refuse the headers and
 /// body fields that would otherwise change shape.
 fn refuse_unsupported_list_options(req: &BusMessage) -> Result<(), PropsResponse> {
@@ -1103,7 +1103,7 @@ fn project_fields(value: &PropValue, schema: &PropertySchema, with_secrets: bool
 }
 
 /// Project the records.changed wire body from a stored
-/// [`RecordEvent`]. Used by the `watch` verb's replay slice and
+/// [`RecordEvent`]. Used by the `watch` command's replay slice and
 /// by the live fan-out publisher in [`crate::dispatcher`] so the
 /// replay shape and the live-publish shape are byte-identical at the
 /// projection seam — with the watch-mediated subscriber bridge
@@ -1112,9 +1112,9 @@ fn project_fields(value: &PropValue, schema: &PropertySchema, with_secrets: bool
 /// replay.
 ///
 /// Discrepancies from the raw event row:
-/// - `verb` is derived from `kind` + service (already in the row, but
+/// - `command` is derived from `kind` + service (already in the row, but
 ///   we re-derive here so replay matches the live shape even when the
-///   row's `verb` is the storage column written at commit time).
+///   row's `command` is the storage column written at commit time).
 /// - `ts` (renamed from the row's `at` field).
 /// - `lifecycle` flat-projects `{state,reason?}` and is emitted only
 ///   on `Completed` events from Saga namespaces.
@@ -1132,7 +1132,7 @@ pub(crate) fn project_records_changed(
         "namespace": event.key.namespace.as_str(),
         "key": event.key.key,
         "kind": serde_kind(event.kind),
-        "verb": event.kind.verb_for(service),
+        "command": event.kind.command_for(service),
         "nseq": event.nseq.0,
         "version": event.version.0,
         "audit_epoch": event.audit_epoch.0,
@@ -1182,7 +1182,7 @@ pub(crate) fn project_records_changed(
 ///  - timestamp field is `at`, not `ts`;
 ///  - `audit_digest` is present (it is the whole point of the audit
 ///    stream);
-///  - the `verb`/`fields_changed` columns are present, but `kind`,
+///  - the `command`/`fields_changed` columns are present, but `kind`,
 ///    `secret_fields_changed_count`, `lifecycle`, and `cause` are
 ///    NOT — audit rows are intentionally lean and reproducible from
 ///    a `<svc>.props.get` snapshot.
@@ -1194,7 +1194,7 @@ pub(crate) fn project_records_changed(
 ///
 /// Visibility: `pub(crate)` so the live fan-out publisher in
 /// [`crate::dispatcher`] can reuse the same projection helper as the
-/// `audit.watch` verb's replay slice. Replay and live-publish
+/// `audit.watch` command's replay slice. Replay and live-publish
 /// shapes must remain byte-identical at the projection seam — with
 /// the watch-mediated subscriber bridge in place, a
 /// client resuming from a stale `since_nseq` cannot distinguish rows
@@ -1207,7 +1207,7 @@ pub(crate) fn project_audit_row(
     let mut body = json!({
         "namespace": event.key.namespace.as_str(),
         "key": event.key.key,
-        "verb": event.kind.verb_for(service),
+        "command": event.kind.command_for(service),
         "version": event.version.0,
         "nseq": event.nseq.0,
         "audit_epoch": event.audit_epoch.0,
@@ -1491,10 +1491,10 @@ mod tests {
                 ..Default::default()
             },
         ] {
-            for verb in ["set", "delete"] {
+            for command_name in ["set", "delete"] {
                 let response = router
                     .dispatch(
-                        verb,
+                        command_name,
                         &req(
                             &[("namespace", "accounts"), ("key", "alice@example.org")],
                             r#"{"email":"alice@example.org"}"#,
@@ -2232,7 +2232,7 @@ mod tests {
         let events = body["events"].as_array().unwrap();
         assert_eq!(events.len(), 2, "should replay events at nseq 2,3 only");
         assert_eq!(events[0]["nseq"], 2);
-        assert_eq!(events[0]["verb"], "demod.props.set");
+        assert_eq!(events[0]["command"], "demod.props.set");
         assert_eq!(events[0]["kind"], "created");
     }
 
@@ -2474,7 +2474,7 @@ mod tests {
         // the passive `records.changed` topic deliberately omits
         // `audit_digest` so anyone with `props.read` can subscribe
         // without gaining the privileged column that gates tamper
-        // verification. The `watch` verb is the replay surface for the
+        // verification. The `watch` command is the replay surface for the
         // same projection.
         let (router, _) = router_with(spec_simple());
         router
@@ -2592,7 +2592,7 @@ mod tests {
         assert!(row.get("ts").is_none(), "audit row must not use `ts`");
         let digest = row["audit_digest"].as_str().unwrap();
         assert_eq!(digest.len(), 64, "hex-encoded HMAC-SHA256 is 64 chars");
-        assert_eq!(row["verb"], "demod.props.set");
+        assert_eq!(row["command"], "demod.props.set");
         assert_eq!(row["version"], 1);
         assert_eq!(row["nseq"], 1);
     }

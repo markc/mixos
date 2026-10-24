@@ -231,8 +231,8 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     let x = layout["editor"]["x"].as_f64().unwrap() + layout["gutter_w"].as_f64().unwrap() + 20.0;
     let y = layout["editor"]["y"].as_f64().unwrap() + layout["line_height"].as_f64().unwrap() / 2.0;
     bus.call(COMP, "comp.input.sequence", json!({"seat":"agent","steps":[
-        {"verb":"comp.input.pointer.move","args":{"window":target,"x":x,"y":y,"require_hit":true}},
-        {"verb":"comp.input.pointer.button","args":{"button":"left","action":"click"}}
+        {"command":"comp.input.pointer.move","args":{"window":target,"x":x,"y":y,"require_hit":true}},
+        {"command":"comp.input.pointer.button","args":{"button":"left","action":"click"}}
     ]}));
     thread::sleep(Duration::from_millis(300));
     capture(&bus, target, &before);
@@ -245,7 +245,7 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
         COMP,
         "comp.input.sequence",
         json!({"seat":"agent","steps":[
-            {"verb":"comp.input.key","args":{"window":target,"text":LINE}}
+            {"command":"comp.input.key","args":{"window":target,"text":LINE}}
         ]}),
     );
     assert!(reply.get("error").is_none(), "{reply}");

@@ -6,7 +6,7 @@
   "run_id": 1,
   "steps": [
     {"server_op": {"id": "R1", "op": {"reload": {"force": false}}}},
-    {"send": {"id": "R1", "verb": "edit.reload", "caller": "local:ced",
+    {"send": {"id": "R1", "command": "edit.reload", "caller": "local:ced",
       "args": {"buffer": "b1_0000e1e1", "force": false, "origin": "human:ced", "op_id": "c00000001-000001"},
       "expect": {"rc": 0, "rev": 0, "unchanged": true}}},
     {"deliver_reply": "R1"}

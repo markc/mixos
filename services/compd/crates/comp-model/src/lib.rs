@@ -5,13 +5,13 @@
 //! The `comp.*` wire is frozen, including `{id, generation}` numeric window
 //! addressing. This crate is that wire:
 //!
-//! - [`catalogue`]: the 34 verbs and 11 topics;
-//! - [`request`]: verb routing ([`request::classify`]) and the argument
+//! - [`catalogue`]: the 34 commands and 11 topics;
+//! - [`request`]: command routing ([`request::classify`]) and the argument
 //!   parsers, which refuse unknown fields by name (`invalid_args`) and parse
 //!   `{id, generation}`;
 //! - [`reply`]: the `(rc, body)` reply shape and every refusal body;
 //! - [`snapshot`]: the `CompSnapshot` props tree, its describe schema and the
-//!   read verbs (`comp.info`, `comp.windows.list`, `comp.props.*`);
+//!   read commands (`comp.info`, `comp.windows.list`, `comp.props.*`);
 //! - [`observation`]: topic payloads (every one carries `event_seq`), the
 //!   gap message, the props value type and the `comp.props.set` gate;
 //! - [`prop_path`]: the dotted property path;

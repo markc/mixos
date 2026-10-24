@@ -255,7 +255,7 @@ SQLite table names follow the shared props contract unchanged. Account,
 alias and domain hooks reconcile the mail store after committed changes.</p>
 <h2 id="shared-libraries">Shared libraries</h2>
 <p>Maild uses <code>bus::native_client::NodedClient</code> and the Bus connection helpers.
-Its advertised verbs are registered in the repository Bus registry and checked
+Its advertised commands are registered in the repository Bus registry and checked
 by <code>tests/registry.rs</code>. Incoming commands retain their connection generation;
 the typed port helper preserves the remote return code and parsed reply.</p>
 <p>Configuration uses <code>config::Dir::{Etc, Var}</code> and <code>config::path</code>. The system

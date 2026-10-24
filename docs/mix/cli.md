@@ -1006,7 +1006,7 @@ caller can still switch on it exhaustively.
 
 **Advertised deferrals**, refused explicitly rather than left to look like
 typos: `shell.task.watch` and `shell.task.list` answer `UNSUPPORTED` with
-`reason: "deferred"` — a bare code would be word-for-word what an unknown verb
+`reason: "deferred"` — a bare code would be word-for-word what an unknown command
 gets back, which is not an advertisement of anything (v1 is poll-only, through
 `shell.task.result`); there is no stdin feeding; there is no
 reply chunking (the 64 KiB caps stand in for it); and a task has no Bus identity

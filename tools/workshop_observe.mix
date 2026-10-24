@@ -6,7 +6,7 @@ if $rc != 0 or type($result) != "map" or $result.extensions.observe == nil then
   raise("UNAVAILABLE", "noded.ping does not advertise extensions.observe")
 end
 print(json_encode({observe: $result.extensions.observe}))
-send noded noded.observe.start body=json_encode({body:"redacted", filter:{verbs:["noded.ping"]}, capacity:64}) timeout=5
+send noded noded.observe.start body=json_encode({body:"redacted", filter:{commands:["noded.ping"]}, capacity:64}) timeout=5
 if $rc != 0 then raise("UNAVAILABLE", "observe probe refused: " .. to_string($result)) end
 $subscription_id = $result.subscription_id
 if type($subscription_id) != "string" then raise("INVALID_REPLY", "observe start omitted subscription_id") end

@@ -241,7 +241,7 @@
 <p><code>mimedb</code> reads the freedesktop shared-mime-info database from the same
 files the desktop reads, and decides a file's MIME type by GLib's rules. The
 answer agrees with <code>gio info</code> and the file manager. It is a plain Rust
-library with no Bus verbs, and its only dependency is <code>libc</code>.</p>
+library with no Bus commands, and its only dependency is <code>libc</code>.</p>
 <p>Two components use it:</p>
 <ul>
 <li><a href="/mix/">Mix</a>, through the <code>mime_type()</code> builtin (behind the

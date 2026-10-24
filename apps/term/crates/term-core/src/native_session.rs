@@ -1005,7 +1005,7 @@ impl Actor {
         };
         connection
             .client()
-            .set_verbs(crate::control::verb_manifest());
+            .set_commands(crate::control::command_manifest());
         let public_key = HexBytes(self.key.verifying_key().to_bytes());
         let hello = match bounded(connection.session_hello()).await {
             Ok(hello) => hello,
@@ -1436,7 +1436,7 @@ impl Actor {
                 event = async { self.connection.as_ref().expect("guarded connection").recv_shared().await }, if self.connection.is_some() => {
                     match event {
                         Some(event) => {
-                            // The lane says what this delivery is before the verb
+                            // The lane says what this delivery is before the command
                             // does. A Gap is the absence of a delivery — the
                             // dropped envelope may have been a lifecycle notice,
                             // so it takes the identical path to a broker-signalled

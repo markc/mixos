@@ -242,16 +242,16 @@
 <p>Status: accepted, version 0.3.0 (0.3.0 adds optional <code>category</code> metadata;
 0.2.0 adds <code>exec_wrapper</code>). Verified by
 <code>services/releasesd/tests/releases_test.mix</code> (offline logic) and
-<code>services/releasesd/tests/releasesd_test.mix</code> (every verb over a private
+<code>services/releasesd/tests/releasesd_test.mix</code> (every command over a private
 broker).</p>
 <p><code>releasesd</code> follows GitHub repositories named in a per-user catalogue and
 installs their Linux release tarballs for that user. This page fixes the
-catalogue schema, the Bus verbs and the on-disk layout that other tools may
+catalogue schema, the Bus commands and the on-disk layout that other tools may
 rely on.</p>
 <h2 id="bus-identity">Bus identity</h2>
 <table><thead><tr><th>Item</th><th>Value</th></tr></thead><tbody>
 <tr><td>Service</td><td><code>releases</code> (<code>mix --serve releasesd.mix --name releases</code>)</td></tr>
-<tr><td>Verbs</td><td><code>releases.status</code>, <code>.list</code>, <code>.check</code>, <code>.notes</code>, <code>.install</code>, <code>.update</code>, <code>.rollback</code>, <code>.remove</code>, <code>.link</code></td></tr>
+<tr><td>Commands</td><td><code>releases.status</code>, <code>.list</code>, <code>.check</code>, <code>.notes</code>, <code>.install</code>, <code>.update</code>, <code>.rollback</code>, <code>.remove</code>, <code>.link</code></td></tr>
 <tr><td>Bodies</td><td>JSON objects; <code>{}</code> or an empty body where no field is required</td></tr>
 <tr><td>Success</td><td>rc 0, JSON reply</td></tr>
 <tr><td>Refusals</td><td>rc 10 bad request, rc 14 unknown app, rc 15 the operation failed; body <code>{error_code, message}</code></td></tr>
@@ -259,7 +259,7 @@ rely on.</p>
 <p>Error codes: <code>USAGE</code>, <code>ROOT</code>, <code>UNKNOWN_APP</code>, <code>CATALOGUE</code>, <code>NO_RELEASE</code>, <code>NO_ASSET</code>,
 <code>AMBIGUOUS_ASSET</code>, <code>DOWNLOAD</code>, <code>DIGEST</code>, <code>UNVERIFIABLE</code>, <code>LAYOUT</code>,
 <code>NO_PREVIOUS</code>, <code>PENDING</code>, <code>BUSY</code>.</p>
-<table><thead><tr><th>Verb</th><th>Body</th><th>Reply</th></tr></thead><tbody>
+<table><thead><tr><th>Command</th><th>Body</th><th>Reply</th></tr></thead><tbody>
 <tr><td><code>releases.status</code></td><td>—</td><td><code>{catalogue, apps, installed, root, share, bin, state, authenticated, arch}</code></td></tr>
 <tr><td><code>releases.list</code></td><td><code>{apps?}</code></td><td>rows from the last check</td></tr>
 <tr><td><code>releases.check</code></td><td><code>{apps?}</code></td><td>rows after asking GitHub</td></tr>

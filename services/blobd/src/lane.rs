@@ -872,7 +872,7 @@ fn content_length(headers: &HeaderMap) -> Option<u64> {
         .ok()
 }
 
-/// The D6 reference JSON, the exact shape every verb returns.
+/// The D6 reference JSON, the exact shape every command returns.
 fn reference_response(status: StatusCode, reference: &Reference) -> Response {
     json_response(status, reference.to_json())
 }
@@ -1560,7 +1560,7 @@ mod tests {
         }
         assert_eq!(header_value(&head_headers, "content-length"), "8192");
 
-        // Unknown hash → 404 with the verb-style error token.
+        // Unknown hash → 404 with the command-style error token.
         let (status, _, body) = request(
             addr,
             "GET",

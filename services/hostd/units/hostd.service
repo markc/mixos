@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
-# One per host, not per session. Root because write verbs change root-owned
+# One per host, not per session. Root because write commands change root-owned
 # host configuration.
 [Unit]
 Description=MixOS host service
@@ -17,7 +17,7 @@ TimeoutStopSec=90
 # Sandbox. hostd reads the host and its policy (/etc/hostd/policy.mx). It
 # writes its state directory (freeze record, receipts, circuit breaker) and,
 # through net.link.apply and net.wg.apply, only its own 50-hostd-* files
-# in /etc/systemd/network. Each new write verb adds exactly the paths it
+# in /etc/systemd/network. Each new write command adds exactly the paths it
 # needs.
 StateDirectory=hostd
 StateDirectoryMode=0700

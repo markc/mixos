@@ -213,7 +213,7 @@
                         <a href="#agents">Agents</a>
                         <a href="#running-it">Running it</a>
                         <a href="#testing">Testing</a>
-                        <a href="#macro-bus-verbs">Macro Bus verbs</a>
+                        <a href="#macro-bus-commands">Macro Bus commands</a>
                     </nav>
                 </div>
             </div>
@@ -270,8 +270,8 @@ they may: the same as <code>kill</code> in a terminal. They are off while anothe
 is shown. Acting on another node, or as another user, is
 <a href="/hostd/">hostd</a>'s job.</p>
 <h2 id="agents">Agents</h2>
-<p>Everything in the window is a command or a verb, under <code>monitor</code>:</p>
-<table><thead><tr><th>Verb</th><th>Body</th><th>Does</th></tr></thead><tbody>
+<p>Everything in the window is a command or a command, under <code>monitor</code>:</p>
+<table><thead><tr><th>Command</th><th>Body</th><th>Does</th></tr></thead><tbody>
 <tr><td><code>monitor.info</code></td><td>—</td><td>The window's state: node, page, section, sort, filter, selection, and the latest readings</td></tr>
 <tr><td><code>monitor.rows</code></td><td>—</td><td>The process rows in the order shown</td></tr>
 <tr><td><code>monitor.node</code></td><td><code>node</code> (a name, or null for this node)</td><td>Watch another node</td></tr>
@@ -282,10 +282,10 @@ is shown. Acting on another node, or as another user, is
 <tr><td><code>monitor.tree</code></td><td><code>on</code></td><td>Tree or flat</td></tr>
 <tr><td><code>monitor.select</code></td><td><code>pid</code> (or null)</td><td>Select a row</td></tr>
 <tr><td><code>monitor.refresh</code></td><td>—</td><td>Read the node now</td></tr>
-<tr><td><code>monitor.commands</code>, <code>monitor.execute</code></td><td><code>id</code></td><td>List and run commands (<code>process.end</code>, <code>view.pause</code>, ...)</td></tr>
+<tr><td><code>monitor.actions</code>, <code>monitor.execute</code></td><td><code>id</code></td><td>List and run commands (<code>process.end</code>, <code>view.pause</code>, ...)</td></tr>
 <tr><td><code>monitor.dialog</code>, <code>monitor.theme</code>, <code>monitor.show</code>, <code>monitor.quit</code>, <code>monitor.ping</code></td><td></td><td>As every MixOS app</td></tr>
 </tbody></table>
-<p>The window's drive verbs (<code>monitor.ui.*</code>, <code>monitor.window*</code>) are the
+<p>The window's drive commands (<code>monitor.ui.*</code>, <code>monitor.window*</code>) are the
 toolkit's, described in <a href="/docs/drive/">driving an app</a>.</p>
 <pre><code class="language-mix">send monitor monitor.node node=beta
 send monitor monitor.sort column=memory
@@ -304,12 +304,12 @@ checked by offscreen snapshots (<code>apps/monitor/tests/snapshots/</code>); run
 <code>UPDATE_SNAPSHOTS=1</code> to redraw them, and look at the images before
 committing. The snapshot suite also times the representative workload, a
 2,000-process table and a 64-core grid, and prints it.</p>
-<h2 id="macro-bus-verbs">Macro Bus verbs</h2>
-<p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
+<h2 id="macro-bus-commands">Macro Bus commands</h2>
+<p>The shared <a href="/macros/#bus-commands">macro Bus surface</a> uses this process's
 catalogue and runner. Subscribe to <code>&lt;service&gt;.macros.finished</code> for completion, where <code>service</code> is
 the instance’s registered Bus name (for example <code>term-1234</code> for a second Term
-instance). Verbs keep the app’s canonical prefix, such as <code>monitor.macros.run</code>.</p>
-<table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
+instance). Commands keep the app’s canonical prefix, such as <code>monitor.macros.run</code>.</p>
+<table><thead><tr><th>Command</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
 <tr><td><code>monitor.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>monitor.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>monitor.macros.run</code></td><td><code>{id}</code></td><td>Acceptance and run number</td></tr>

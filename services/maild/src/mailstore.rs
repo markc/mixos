@@ -1851,7 +1851,7 @@ impl SqliteMailStore {
 
         // Skip cleanly when the account has no MDS set at all. Calling
         // `with_set_tx` on a missing set would surface `SetNotFound`;
-        // for a rebuild verb that's not an error — there is simply
+        // for a rebuild command that's not an error — there is simply
         // nothing to project.
         let sets = self
             .mds
@@ -4183,7 +4183,7 @@ impl MailStore for SqliteMailStore {
         // row does not (item never in this mailbox, or removed by a
         // peer between UID lookup and STORE). The wrapper maps the
         // first to "mailbox not found" — matching every other
-        // mailbox-parametric MailStore verb — and the second to
+        // mailbox-parametric MailStore command — and the second to
         // "email not found", so existing error-prefix matchers keep
         // working.
         match self

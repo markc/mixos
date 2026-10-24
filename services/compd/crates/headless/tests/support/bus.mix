@@ -20,9 +20,9 @@ elif $a[0] == "ready" then
   end
   raise("COMPD_READY", "headless Bus port did not register")
 else
-  $verb = $a[2]
+  $command = $a[2]
   $body = $a[3]
   $service = if len($a) > 4 then $a[4] else "comp-headless" end
-  send $service $verb timeout=10 body=$body
+  send $service $command timeout=10 body=$body
   print(json_encode({rc: $rc, body: $result}))
 end

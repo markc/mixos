@@ -206,7 +206,7 @@ feature itself enables BLAKE3; `crypto` is not required for these transfers.
 
 The HTTP client builtins — a small, blocking HTTP/1.1 client built on
 [`ureq`](https://docs.rs/ureq). Three calls cover the whole surface:
-`http_get`, `http_post`, and the any-verb `http_request`. They are
+`http_get`, `http_post`, and the any-command `http_request`. They are
 **feature-gated** (the `http` cargo feature) in `mixos-lib-mix`; the shipped
 `mix` binary turns the feature on, so they are always present in the CLI. In
 the builtin catalogue they list under the `system` category
@@ -235,7 +235,7 @@ body_len=559
 ```
 http_get(url, [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}])                      -- GET
 http_post(url, body, [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}])               -- POST with a body
-http_request(method, url, [body], [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}])  -- any verb
+http_request(method, url, [body], [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}])  -- any command
 http_post_multipart(url, fields, files, [headers], [opts])                              -- POST multipart/form-data
 ```
 

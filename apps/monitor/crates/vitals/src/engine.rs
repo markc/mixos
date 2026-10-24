@@ -39,12 +39,12 @@ pub enum Signal {
 /// Work for the shell. Nothing here has happened yet.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Effect {
-    /// Call `verb` on `target` with `body`, and report [`Engine::fetched`].
+    /// Call `command` on `target` with `body`, and report [`Engine::fetched`].
     Fetch {
         ticket: u64,
         kind: Fetch,
         target: String,
-        verb: &'static str,
+        command: &'static str,
         body: Value,
     },
     /// Restore and focus the window and report [`Engine::shown`].
@@ -56,11 +56,11 @@ pub enum Effect {
     /// Run registry command `command` and answer `id`.
     Execute { id: u64, command: String },
     /// Answer `id` with the whole Bus surface (`app.describe`), or only its
-    /// verbs (`HELP`).
+    /// commands (`HELP`).
     Describe { id: u64, help: bool },
-    /// Hand the window-level verb `verb` (`ui.click`, `window`, ...) to the
+    /// Hand the window-level command `command` (`ui.click`, `window`, ...) to the
     /// toolkit drive layer.
-    Drive { id: u64, verb: String, args: Value },
+    Drive { id: u64, command: String, args: Value },
     /// Signal one local process as the person running Monitor, and report
     /// [`Engine::signalled`]. Only ever this node's processes.
     Signal { pid: u32, signal: Signal },
@@ -307,7 +307,7 @@ impl Engine {
         self.inflight.contains_key(&kind)
     }
 
-    fn fetch(&mut self, kind: Fetch, verb: &'static str, body: Value) {
+    fn fetch(&mut self, kind: Fetch, command_name: &'static str, body: Value) {
         if self.inflight.contains_key(&kind) || self.quitting {
             return;
         }
@@ -321,7 +321,7 @@ impl Engine {
             ticket,
             kind,
             target,
-            verb,
+            command: command_name,
             body,
         });
     }
@@ -769,26 +769,26 @@ impl Engine {
     }
 
     /// A command an agent sent to Monitor over the Bus.
-    pub fn command(&mut self, id: u64, verb: &str, body: &str) {
+    pub fn command(&mut self, id: u64, command_name: &str, body: &str) {
         let body = if body.trim().is_empty() { "{}" } else { body };
         let args = match serde_json::from_str::<Value>(body) {
             Ok(args) if args.is_object() => args,
             _ => return self.error(id, "ARGUMENT", "arguments must be a JSON object"),
         };
-        if let Some(window) = verb
+        if let Some(window) = command_name
             .strip_prefix("monitor.")
             .filter(|v| v.starts_with("ui.") || v.starts_with("window"))
         {
             return self.effects.push(Effect::Drive {
                 id,
-                verb: window.to_owned(),
+                command: window.to_owned(),
                 args,
             });
         }
-        if !model::VERBS.contains(&verb) {
-            return self.error(id, "UNKNOWN_VERB", "unknown Monitor verb");
+        if !model::COMMANDS.contains(&command_name) {
+            return self.error(id, "UNKNOWN_COMMAND", "unknown Monitor command");
         }
-        match verb {
+        match command_name {
             "HELP" => self.effects.push(Effect::Describe { id, help: true }),
             "app.describe" => self.effects.push(Effect::Describe { id, help: false }),
             "monitor.ping" => self.ok(
@@ -803,7 +803,7 @@ impl Engine {
                 let rows = self.rows();
                 self.ok(id, json!({"rows": rows}));
             }
-            "monitor.commands" => self.effects.push(Effect::Commands { id }),
+            "monitor.actions" => self.effects.push(Effect::Commands { id }),
             "monitor.execute" => match args.get("id").and_then(Value::as_str) {
                 Some(command) => self.effects.push(Effect::Execute {
                     id,
@@ -828,7 +828,7 @@ impl Engine {
                 let message = self.label("busy");
                 self.error(id, "BUSY", &message);
             }
-            _ => match self.edit(verb, &args) {
+            _ => match self.edit(command_name, &args) {
                 Ok(body) => self.ok(id, body),
                 Err((code, message)) => self.error(id, code, &message),
             },
@@ -857,15 +857,15 @@ impl Engine {
         Ok(json!({"dialog": self.ui.dialog}))
     }
 
-    /// The state verbs: one edit as the window makes it.
-    fn edit(&mut self, verb: &str, args: &Value) -> Result<Value, (&'static str, String)> {
+    /// The state commands: one edit as the window makes it.
+    fn edit(&mut self, command_name: &str, args: &Value) -> Result<Value, (&'static str, String)> {
         let text = |key: &str| {
             args.get(key)
                 .and_then(Value::as_str)
                 .map(str::to_owned)
                 .ok_or_else(|| ("ARGUMENT", format!("{key} must be a string")))
         };
-        match verb {
+        match command_name {
             "monitor.refresh" => {
                 self.refresh();
                 Ok(json!({"refreshing": true}))
@@ -930,7 +930,7 @@ impl Engine {
                 self.select(pid).map_err(|e| ("ARGUMENT", e))?;
                 Ok(json!({"selected": self.ui.selected}))
             }
-            _ => Err(("UNKNOWN_VERB", "unknown Monitor verb".into())),
+            _ => Err(("UNKNOWN_COMMAND", "unknown Monitor command".into())),
         }
     }
 
@@ -1260,9 +1260,9 @@ mod tests {
         assert!(e.error.as_deref().unwrap().contains("not found"));
     }
 
-    fn reply(e: &mut Engine, verb: &str, body: Value) -> (u8, Value) {
+    fn reply(e: &mut Engine, command_name: &str, body: Value) -> (u8, Value) {
         e.take_effects();
-        e.command(1, verb, &body.to_string());
+        e.command(1, command_name, &body.to_string());
         e.take_effects()
             .into_iter()
             .find_map(|x| match x {
@@ -1273,7 +1273,7 @@ mod tests {
     }
 
     #[test]
-    fn bus_verbs_edit_the_same_state() {
+    fn bus_commands_edit_the_same_state() {
         let mut e = ready();
         assert_eq!(
             reply(&mut e, "monitor.tab", json!({"tab": "performance"})).0,
@@ -1316,7 +1316,7 @@ mod tests {
         );
         assert_eq!(
             reply(&mut e, "monitor.bogus", json!({})).1["error_code"],
-            "UNKNOWN_VERB"
+            "UNKNOWN_COMMAND"
         );
         assert_eq!(
             reply(&mut e, "monitor.theme", json!({"mode": "dark"})).1["mode"],
@@ -1325,12 +1325,12 @@ mod tests {
     }
 
     #[test]
-    fn window_verbs_go_to_the_drive_layer() {
+    fn window_commands_go_to_the_drive_layer() {
         let mut e = Engine::new(label);
         e.take_effects();
         e.command(5, "monitor.ui.tree", "{}");
         assert!(
-            matches!(&e.take_effects()[..], [Effect::Drive { id: 5, verb, .. }] if verb == "ui.tree")
+            matches!(&e.take_effects()[..], [Effect::Drive { id: 5, command: command_name, .. }] if command_name == "ui.tree")
         );
     }
 }

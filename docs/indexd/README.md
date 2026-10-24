@@ -32,12 +32,12 @@ send indexd indexd.stats
 send indexd indexd.search query="how are service dependencies declared" limit=3
 ```
 
-Each body is a JSON object. Clients may include an `action` equal to the verb
-suffix; a conflicting value is rejected. Replies contain the verb's JSON
+Each body is a JSON object. Clients may include an `action` equal to the command
+suffix; a conflicting value is rejected. Replies contain the command's JSON
 directly. Errors use rc 10 and a string `error` field. Metadata is always a
 JSON-encoded string, including each element of `store.metadata`.
 
-| Verb | Request fields | Reply |
+| Command | Request fields | Reply |
 |---|---|---|
 | `indexd.embed` | `texts`, optional `prefix` | `embeddings` |
 | `indexd.store` | `texts`, `source`, `metadata` | `stored`, `duplicates`, `ids` |
@@ -67,7 +67,7 @@ Deletion updates the durable vectors and in-memory index in one operation.
 
 `indexd -c /etc/mixos/indexd/config.conf.mix call indexd.stats` opens the
 configured engine in-process and prints one JSON reply, with exit status 0
-for success or 1 for an error. Bare verb names also work. For example:
+for success or 1 for an error. Bare command names also work. For example:
 
 ```text
 indexd -c /etc/mixos/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
@@ -75,7 +75,7 @@ indexd -c /etc/mixos/indexd/config.conf.mix call indexd.search '{"query":"servic
 
 Writes (`store`, `update`, `delete`, `feedback`, `supersede`, `index_file`)
 require `call --offline` with the daemon stopped: otherwise its in-memory
-index would desynchronise. Read verbs need no flag. `call` always refuses
+index would desynchronise. Read commands need no flag. `call` always refuses
 `background:true` because no process remains to run the queued job.
 
 `indexd bridge` connects to the local node's Bus once and forwards one call
@@ -88,7 +88,7 @@ The bridge honours non-empty `MIXOS_NODED_URL` first. Otherwise it reads
 It derives the broker address from that file rather than user config discovery.
 
 ```json
-{"id":1,"verb":"indexd.search","body":{"query":"service dependencies","limit":3}}
+{"id":1,"command":"indexd.search","body":{"query":"service dependencies","limit":3}}
 ```
 
 Each stdout line is `{"id":1,"rc":0,"body":{...}}`, with the original JSON
@@ -105,7 +105,7 @@ become JSON `null`; Bus error headers are forwarded as the top-level `error`.
 ## Operating the system service
 
 `indexd serve` registers service `indexd` using the standard Bus connection
-helper, advertises the eleven verbs above, and reconnects with backoff.
+helper, advertises the eleven commands above, and reconnects with backoff.
 `MIXOS_NODE_CONFIG` selects the system broker, as for dnsd. The supplied unit
 pins `/opt/mixos/etc/node.conf.mix`; no broker URL is embedded in indexd.
 SIGTERM stops admission and completes accepted Bus calls before exit.

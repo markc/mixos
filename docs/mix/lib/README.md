@@ -79,7 +79,7 @@ The capability policy is an in-process robustness boundary for trusted embedded 
 
 `BusHandler` connects language-level messaging to a host. It covers request/reply sends, fire-and-forget emits, port checks, incoming events, service registration, topic subscription, correlated replies, and reconnect requests.
 
-`BusCallHandler` backs the scoped `bus_call(verb, args)` builtin. The host chooses the reachable verbs and supplies trusted delegation context; the script supplies only the verb and arguments.
+`BusCallHandler` backs the scoped `bus_call(command, args)` builtin. The host chooses the reachable commands and supplies trusted delegation context; the script supplies only the command and arguments.
 
 `DbHandler` backs `db_query` and `db_exec` with positional bind values. Queries return lists of row maps. Executions return a map containing affected-row and last-insert information.
 
@@ -87,7 +87,7 @@ The capability policy is an in-process robustness boundary for trusted embedded 
 
 `ShellHandler` classifies, validates, and executes shell lines when a host enables mixed `source` handling. Without a registered handler, sourced files retain strict Mix semantics.
 
-`ServeRuntime` handles runtime-reserved Bus verbs before author-defined handlers. It returns `ReservedOutcome` values containing a Bus return code, response body, and graceful-quit flag.
+`ServeRuntime` handles runtime-reserved Bus commands before author-defined handlers. It returns `ReservedOutcome` values containing a Bus return code, response body, and graceful-quit flag.
 
 The evaluator and its boxed host futures use single-threaded `Rc` and `RefCell` state. Host implementations are therefore not required to return `Send` futures.
 

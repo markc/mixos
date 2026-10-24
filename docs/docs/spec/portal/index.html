@@ -213,7 +213,7 @@
                         <a href="#keys">Keys</a>
                         <a href="#source-and-identity">Source and identity</a>
                         <a href="#startup">Startup</a>
-                        <a href="#verbs">Verbs</a>
+                        <a href="#commands">Commands</a>
                         <a href="#compatibility">Compatibility</a>
                         <a href="#screencast">ScreenCast</a>
                         <a href="#deferred">Deferred</a>
@@ -243,7 +243,7 @@
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="portal-contract-settings-and-screencast">Portal contract: Settings and ScreenCast</h1>
 <p>Settings status: accepted, version 0.1.0 (ScreenCast is a draft, below). The cbc2 verification of <code>services/portald</code>
-passed on the commit that carries it (dcd2f1a). The verbs and wire shapes below
+passed on the commit that carries it (dcd2f1a). The commands and wire shapes below
 are fixed by the XDG portal specification.</p>
 <p><code>portald</code> implements the Settings interface of the XDG desktop portal, on the
 session bus, for the <code>org.freedesktop.appearance</code> namespace. The machine-checkable
@@ -279,7 +279,7 @@ changes.</li>
 <code>accent-color</code>.</p>
 <h2 id="source-and-identity">Source and identity</h2>
 <ul>
-<li>Source verb: <code>settings.appearance.get</code>, read-only, from <code>settingsd</code>.</li>
+<li>Source command: <code>settings.appearance.get</code>, read-only, from <code>settingsd</code>.</li>
 <li>The reply carries the atomic snapshot evidence alongside the projection.
 The shared settings Consumer checks the evidence and manages subscription,
 initial reads, lifecycle generations, delivery loss and bounded recovery.</li>
@@ -304,8 +304,8 @@ and configuration against a silent authority, including cache and profile switch
 remains alive through initial broker failure.</li>
 </ol>
 <p>The name is never held waiting on the source.</p>
-<h2 id="verbs">Verbs</h2>
-<p><code>portald.status</code> (read-only) is registered in <code>docs/docs/spec/bus/verbs.conf.mix</code>.</p>
+<h2 id="commands">Commands</h2>
+<p><code>portald.status</code> (read-only) is registered in <code>docs/docs/spec/bus/commands.conf.mix</code>.</p>
 <h2 id="compatibility">Compatibility</h2>
 <p>Version 2 of the interface is the one served. A breaking change to a method
 shape, key type or key value needs a new interface version, and both versions
@@ -348,11 +348,11 @@ output's mode size, variable rate up to 30 fps, memfd buffers.</li>
 </ul>
 <p>Consent: every <code>Start</code> is granted by the <code>allow</code> policy, a standing grant
 matching the caller's process name, or an answer to a notifyd question (Allow /
-Deny, 60 s, timeout denies). A refusal answers <code>Response</code> 1. Bus verbs, all
+Deny, 60 s, timeout denies). A refusal answers <code>Response</code> 1. Bus commands, all
 local-only (<code>broker_origin</code> must be <code>local</code>, else rc 13 <code>FORBIDDEN</code>):
 <code>portald.screencast.pending</code> (query), <code>portald.screencast.answer {request, allow}</code> (input), <code>portald.screencast.grant {app?, count?, ttl_ms?}</code> (intent),
 <code>portald.screencast.revoke {id?}</code> (intent). Registered in
-<code>docs/docs/spec/bus/verbs.conf.mix</code>.</p>
+<code>docs/docs/spec/bus/commands.conf.mix</code>.</p>
 <h2 id="deferred">Deferred</h2>
 <ul>
 <li>The FileChooser interface.</li>

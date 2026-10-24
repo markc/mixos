@@ -13,7 +13,7 @@
 //! 2. [`CallerKey`] (holders + dedup, never a gate): local registered →
 //!    `local:<from>`; mesh → `mesh:<broker_service>@<broker_peer>`; local
 //!    anonymous → `anon`.
-//! 3. Origin = the caller's claim (`origin` on mutating verbs; `as` on
+//! 3. Origin = the caller's claim (`origin` on mutating commands; `as` on
 //!    undo/redo, where `origin` names the lane), else derived `agent:<from>` /
 //!    `agent:<service>@<peer>` / `agent:anon`. A claim that fails the label
 //!    grammar → INVALID_ARGUMENT `bad_origin`. Derived labels over 64 chars →
@@ -21,7 +21,7 @@
 //! 4. Kind rule, identical for `origin` and `as`: `human:` only for a local
 //!    registered caller; `tool:` never; otherwise the label is kept with kind
 //!    `agent` and the reply says `origin_downgraded: true`.
-//! 5. `MIXOS_MESH_OPEN=0` (read once at start): mutating verbs from
+//! 5. `MIXOS_MESH_OPEN=0` (read once at start): mutating commands from
 //!    `broker_origin != local` → FORBIDDEN `mesh_locked`. Reads always allowed.
 //!    This is the only authorization-shaped check in editd, and it is opt-in.
 

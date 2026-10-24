@@ -117,7 +117,7 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
             json!({"id":null,"rc":-1,"error":"invalid bridge request"})
         );
     }
-    for (id, verb, body, rc) in [
+    for (id, command_name, body, rc) in [
         (
             json!({"correlation":[1,"x"]}),
             "indexd.stats",
@@ -133,7 +133,7 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
         (json!(3), "indexd.unknown", json!({}), 10),
     ] {
         input
-            .write_all(format!("{}\n", json!({"id":id,"verb":verb,"body":body})).as_bytes())
+            .write_all(format!("{}\n", json!({"id":id,"command":command_name,"body":body})).as_bytes())
             .await
             .unwrap();
         input.flush().await.unwrap();
@@ -166,7 +166,7 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
     );
     broker.stop();
     input
-        .write_all(b"{\"id\":4,\"verb\":\"indexd.stats\",\"body\":{}}\n")
+        .write_all(b"{\"id\":4,\"command\":\"indexd.stats\",\"body\":{}}\n")
         .await
         .unwrap();
     let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
@@ -204,7 +204,7 @@ fn bridge_initial_connection_failure_replies_then_exits_nonzero() {
         .unwrap();
     let mut input = child.stdin.take().unwrap();
     input
-        .write_all(b"{\"id\":7,\"verb\":\"indexd.stats\",\"body\":{}}\n")
+        .write_all(b"{\"id\":7,\"command\":\"indexd.stats\",\"body\":{}}\n")
         .unwrap();
     // Keep stdin open: exit must not depend on EOF.
     let output = child.wait_with_output().unwrap();
@@ -230,7 +230,7 @@ async fn bridge_honours_url_override_with_empty_node_config() {
     );
     let mut input = child.0.stdin.take().unwrap();
     input
-        .write_all(b"{\"id\":1,\"verb\":\"indexd.stats\",\"body\":{}}\n")
+        .write_all(b"{\"id\":1,\"command\":\"indexd.stats\",\"body\":{}}\n")
         .await
         .unwrap();
     drop(input);
@@ -250,9 +250,9 @@ async fn bridge_honours_url_override_with_empty_node_config() {
 #[test]
 fn call_is_in_process_and_uses_explicit_config() {
     let (_dir, config) = fixture();
-    let run = |verb: &str, body: &str| {
+    let run = |command_name: &str, body: &str| {
         std::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
-            .args(["--config", config.to_str().unwrap(), "call", verb, body])
+            .args(["--config", config.to_str().unwrap(), "call", command_name, body])
             .env("MIXOS_NODED_URL", "ws://127.0.0.1:1/ws")
             .output()
             .unwrap()
@@ -293,9 +293,9 @@ fn call_charges_original_argv_bytes_including_whitespace() {
 #[test]
 fn call_requires_offline_for_writes_and_always_refuses_background() {
     let (_dir, config) = fixture();
-    let run = |verb: &str, body: &str, offline: bool| {
+    let run = |command_name: &str, body: &str, offline: bool| {
         let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_indexd"));
-        command.args(["-c", config.to_str().unwrap(), "call", verb, body]);
+        command.args(["-c", config.to_str().unwrap(), "call", command_name, body]);
         if offline {
             command.arg("--offline");
         }
@@ -309,23 +309,23 @@ fn call_requires_offline_for_writes_and_always_refuses_background() {
         "supersede",
         "index_file",
     ] {
-        for verb in [action.to_string(), format!("indexd.{action}")] {
-            let output = run(&verb, "{}", false);
+        for command_name in [action.to_string(), format!("indexd.{action}")] {
+            let output = run(&command_name, "{}", false);
             assert!(!output.status.success());
             assert!(String::from_utf8_lossy(&output.stderr).contains("would desynchronise"));
-            let output = run(&verb, "{}", true);
+            let output = run(&command_name, "{}", true);
             assert!(!String::from_utf8_lossy(&output.stderr).contains("require --offline"));
         }
     }
-    for verb in ["search", "list", "stats", "stale", "embed"] {
-        let output = run(verb, "{}", false);
+    for command_name in ["search", "list", "stats", "stale", "embed"] {
+        let output = run(command_name, "{}", false);
         assert!(!String::from_utf8_lossy(&output.stderr).contains("require --offline"));
         assert!(serde_json::from_slice::<Value>(&output.stdout).is_ok());
     }
     assert!(!run("delete", r#"{"ids":[]}"#, true).status.success());
     for offline in [false, true] {
-        for verb in ["indexd.index_file", "stats"] {
-            let output = run(verb, r#"{"background":true}"#, offline);
+        for command_name in ["indexd.index_file", "stats"] {
+            let output = run(command_name, r#"{"background":true}"#, offline);
             assert!(!output.status.success());
             assert!(String::from_utf8_lossy(&output.stderr).contains("no process remains"));
         }

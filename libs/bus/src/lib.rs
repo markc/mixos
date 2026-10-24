@@ -10,7 +10,7 @@
 //!   registers a service with the local broker, noded, and keeps it
 //!   registered across broker restarts ([`SupervisedClient`]).
 //!
-//! The wire format and the verbs the client speaks (`noded.register`,
+//! The wire format and the commands the client speaks (`noded.register`,
 //! `topic.subscribe`, …) are contracts with a running broker: their bytes
 //! never change.
 

@@ -676,7 +676,7 @@ impl Lexer {
             // in bareword-path contexts; reaching it elsewhere falls
             // through to the usual "unexpected token" error.
             '~' => Ok(self.spanned(Token::Tilde, line, col)),
-            // Bare `@`: the serve-name placeholder in `on @.verb`. The
+            // Bare `@`: the serve-name placeholder in `on @.command`. The
             // parser accepts it only there; anywhere else it is a parse
             // error naming that one use (it was a lexer error before).
             '@' => Ok(self.spanned(Token::At, line, col)),

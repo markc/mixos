@@ -40,9 +40,9 @@ Each step is exactly one key.
 |---|---|---|
 | `local` `{id, edit:{items:[[s,e,"text"],…], coalesce}, intent?}` | client | `Mirror::local_edit` (view coordinates, request order). `intent` defaults to `"ui"` (origin `human:ced`). |
 | `server_op` `{id, op, intent?}` | client | `Mirror::server_op`. `op` is one of `{"undo":{"lane":"own"\|"*"\|"kind:label"}}`, `{"redo":…}`, `{"save":{}}`, `{"reload":{"force":bool}}`. |
-| `send` `{id, verb, caller, args, lost?, resend?, truncate_reply?, server_args?, expect}` | both | The request the mirror emits for `id`. `args` is **exactly** its body, which the mirror test compares. The server receives it at this point in the script unless `lost` is set. `server_args` (a test of the desync path) makes the fake apply different args. `expect` gives `{rc, rev?, reason?, duplicate?, reply_truncated?}`. |
+| `send` `{id, command, caller, args, lost?, resend?, truncate_reply?, server_args?, expect}` | both | The request the mirror emits for `id`. `args` is **exactly** its body, which the mirror test compares. The server receives it at this point in the script unless `lost` is set. `server_args` (a test of the desync path) makes the fake apply different args. `expect` gives `{rc, rev?, reason?, duplicate?, reply_truncated?}`. |
 | `arrive` `{id}` | server | A `lost` send reaches the server now, late. |
-| `agent` `{caller, verb, args, expect}` | server | Another client's request. |
+| `agent` `{caller, command, args, expect}` | server | Another client's request. |
 | `evict_dedup` `{}` | server | The fake forgets cached replies, as if 1,024 other ops had evicted them. |
 | `set_disk` `{text}` | server | What the next `edit.reload` reads. |
 | `epoch_change` `{new_epoch, text?}` | both | The daemon restarts with recovery (`text` overrides the restored text). The client is told through its epoch detection. |

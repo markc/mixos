@@ -64,9 +64,9 @@ struct StatusSnapshot {
     last: Option<RetentionRunReport>,
 }
 
-/// Shared last-sweep status for the `maild.retention.status` verb. The
+/// Shared last-sweep status for the `maild.retention.status` command. The
 /// spawned loop and the Bus-dispatch handle share one `Arc<RetentionStatus>`
-/// (via `RetentionWorker::clone`), so the verb reports what the loop did.
+/// (via `RetentionWorker::clone`), so the command reports what the loop did.
 #[derive(Default)]
 pub struct RetentionStatus {
     inner: Mutex<StatusSnapshot>,
@@ -91,7 +91,7 @@ impl RetentionStatus {
 
 /// The retention worker. Cheap to clone — all heavy fields are `Arc`s /
 /// a `Db` handle (itself `Arc`-backed) — so one clone drives the spawned
-/// loop while another backs the `maild.retention.*` Bus verbs, both
+/// loop while another backs the `maild.retention.*` Bus commands, both
 /// sharing the same status cell.
 #[derive(Clone)]
 pub struct RetentionWorker {
@@ -131,7 +131,7 @@ impl RetentionWorker {
         &self.db
     }
 
-    /// Current effective config (for the `status` verb).
+    /// Current effective config (for the `status` command).
     pub async fn current_config(&self) -> Result<RetentionConfig> {
         retention::read_config(&self.runtime).await
     }
@@ -166,11 +166,11 @@ impl RetentionWorker {
         }
     }
 
-    /// Run one sweep. `dry_run_override` (the `run` verb's `dry_run=`)
+    /// Run one sweep. `dry_run_override` (the `run` command's `dry_run=`)
     /// forces dry-run on/off for this pass regardless of config;
-    /// `account_override` (the `run` verb's `account=` resolved to an id)
+    /// `account_override` (the `run` command's `account=` resolved to an id)
     /// limits the pass to a single account. Public so the
-    /// `maild.retention.run` verb and tests can drive it directly.
+    /// `maild.retention.run` command and tests can drive it directly.
     pub async fn sweep(
         &self,
         dry_run_override: Option<bool>,
@@ -199,7 +199,7 @@ impl RetentionWorker {
 
         // The armed allowlist is THE per-account gate (LOCKED decision:
         // no fleet auto-default). Sweep only accounts whose email is
-        // opted in — and, if the run verb targeted one account, only that
+        // opted in — and, if the run command targeted one account, only that
         // one. `is_disabled` already short-circuited an empty allowlist,
         // so `armed` is non-empty here.
         let armed: std::collections::HashSet<String> = cfg.armed_accounts.iter().cloned().collect();
@@ -488,8 +488,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_verb_dry_run_override_forces_dry() {
-        // Config armed for real, but the run verb forces dry_run=true.
+    async fn run_command_dry_run_override_forces_dry() {
+        // Config armed for real, but the run command forces dry_run=true.
         let fx = fixture(Vec::new()).await;
         let junk = mk_junk(&fx.mds);
         add_aged(&fx.mds, junk, 30);
@@ -513,7 +513,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_verb_operator_gate() {
+    async fn run_command_operator_gate() {
         use crate::bus::retention::{RetentionBusState, dispatch};
         use ::bus::native_client::IncomingCommand;
 
@@ -546,7 +546,7 @@ mod tests {
         let (rc, body) = dispatch("run", &mk("ops-node"), &state).await;
         assert_eq!(rc, 0, "body: {body}");
 
-        // status verb is open (no gate).
+        // status command is open (no gate).
         let (rc, _) = dispatch("status", &mk(""), &state).await;
         assert_eq!(rc, 0);
     }

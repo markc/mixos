@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Native Bus registration, bounded concurrent dispatch and reconnect.
 use crate::Engine;
-use ::bus::{RegisterProvenance, VerbDescriptor, native_client::NodedClient};
+use ::bus::{RegisterProvenance, CommandDescriptor, native_client::NodedClient};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -11,8 +11,8 @@ use tokio::sync::watch;
 
 pub const BUS_SERVICE: &str = "indexd";
 
-pub fn verb_manifest() -> &'static [VerbDescriptor] {
-    static VERBS: std::sync::LazyLock<Vec<VerbDescriptor>> = std::sync::LazyLock::new(|| {
+pub fn command_manifest() -> &'static [CommandDescriptor] {
+    static COMMANDS: std::sync::LazyLock<Vec<CommandDescriptor>> = std::sync::LazyLock::new(|| {
         [
             (
                 "indexd.embed",
@@ -83,10 +83,10 @@ pub fn verb_manifest() -> &'static [VerbDescriptor] {
             ),
         ]
         .into_iter()
-        .map(|(name, args, help, read_only)| VerbDescriptor::new(name, &args, help, read_only))
+        .map(|(name, args, help, read_only)| CommandDescriptor::new(name, &args, help, read_only))
         .collect()
     });
-    &VERBS
+    &COMMANDS
 }
 
 pub async fn run(engine: Arc<Engine>, mut stop: watch::Receiver<bool>) {
@@ -111,7 +111,7 @@ pub async fn run(engine: Arc<Engine>, mut stop: watch::Receiver<bool>) {
         match connected {
             Ok(client) => {
                 let started = Instant::now();
-                let client = Arc::new(client.with_verbs(verb_manifest().to_vec()));
+                let client = Arc::new(client.with_commands(command_manifest().to_vec()));
                 tracing::info!(service = BUS_SERVICE, "registered on node Bus");
                 serve_client(engine.clone(), client.clone(), &mut stop).await;
                 client.close().await;
@@ -260,7 +260,7 @@ mod tests {
             NodedClient::connect(BUS_SERVICE, &broker.url)
                 .await
                 .unwrap()
-                .with_verbs(verb_manifest().to_vec()),
+                .with_commands(command_manifest().to_vec()),
         );
         let (stop_tx, mut stop_rx) = watch::channel(false);
         let task = tokio::spawn(async move {

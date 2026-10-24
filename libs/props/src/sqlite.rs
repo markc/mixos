@@ -277,7 +277,7 @@ impl SqliteStore {
                 version INTEGER NOT NULL, \
                 audit_epoch INTEGER NOT NULL, \
                 kind TEXT NOT NULL, \
-                verb TEXT NOT NULL, \
+                command TEXT NOT NULL, \
                 key TEXT NOT NULL, \
                 field_path TEXT NOT NULL, \
                 lifecycle_kind TEXT, \
@@ -298,6 +298,16 @@ impl SqliteStore {
              );",
         )
         .map_err(sql_err)?;
+        // Stores created before the Bus commands rename (2026-10-25) name
+        // the events column `verb`; rename it in place, once.
+        let old_column = conn
+            .prepare("SELECT 1 FROM pragma_table_info('__props_events') WHERE name = 'verb'")
+            .and_then(|mut s| s.exists([]))
+            .map_err(sql_err)?;
+        if old_column {
+            conn.execute_batch("ALTER TABLE __props_events RENAME COLUMN verb TO command")
+                .map_err(sql_err)?;
+        }
 
         Ok(Self {
             service: service.into(),
@@ -658,10 +668,10 @@ fn insert_event(
     let (lk, lr) = lifecycle_to_cols(event.lifecycle.as_ref());
     let fields_changed_json =
         serde_json::to_string(&event.fields_changed).expect("Vec<String> serialises");
-    let _ = service; // verb already composed by the caller via EventKind::verb_for
+    let _ = service; // command already composed by the caller via EventKind::command_for
     tx.execute(
         "INSERT INTO __props_events \
-            (namespace, nseq, version, audit_epoch, kind, verb, key, field_path, \
+            (namespace, nseq, version, audit_epoch, kind, command, key, field_path, \
              lifecycle_kind, lifecycle_reason, actor, fields_changed, \
              secret_fields_changed_count, at_ms, cause, audit_digest) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
@@ -671,7 +681,7 @@ fn insert_event(
             event.version.0 as i64,
             event.audit_epoch.0 as i64,
             kind_to_str(event.kind),
-            event.verb,
+            event.command,
             event.key.key,
             serde_json::to_string(&event.key.field_path).expect("field path serialises"),
             lk,
@@ -949,7 +959,7 @@ impl PropertyStore for SqliteStore {
                 version: new_version,
                 audit_epoch,
                 kind,
-                verb: kind.verb_for(&self.service),
+                command: kind.command_for(&self.service),
                 key: op.key.clone(),
                 lifecycle: op.lifecycle.clone(),
                 actor: op.actor,
@@ -1063,7 +1073,7 @@ impl PropertyStore for SqliteStore {
                 version: tombstone_version,
                 audit_epoch,
                 kind: EventKind::Deleted,
-                verb: EventKind::Deleted.verb_for(&self.service),
+                command: EventKind::Deleted.command_for(&self.service),
                 key: op.key.clone(),
                 lifecycle: None,
                 actor: op.actor,
@@ -1152,7 +1162,7 @@ impl PropertyStore for SqliteStore {
                 version: new_version,
                 audit_epoch,
                 kind: EventKind::Completed,
-                verb: EventKind::Completed.verb_for(&self.service),
+                command: EventKind::Completed.command_for(&self.service),
                 key: op.key.clone(),
                 lifecycle: Some(op.lifecycle.clone()),
                 actor: op.actor,
@@ -1200,7 +1210,7 @@ impl PropertyStore for SqliteStore {
             let was_tombstone = meta.as_ref().map(|m| m.tombstoned).unwrap_or(false);
 
             // Same mapping/record divergence guard as commit_set /
-            // commit_delete. Reconcile is the verb for an observed
+            // commit_delete. Reconcile is the command for an observed
             // *value* drift; an externally-deleted row must come
             // through commit_delete, not be silently resurrected here.
             // Absent metadata (first reconcile) and tombstones are
@@ -1247,7 +1257,7 @@ impl PropertyStore for SqliteStore {
                 version: new_version,
                 audit_epoch: new_audit_epoch,
                 kind: EventKind::Reconciled,
-                verb: EventKind::Reconciled.verb_for(&self.service),
+                command: EventKind::Reconciled.command_for(&self.service),
                 key: op.key.clone(),
                 lifecycle: preserved_lifecycle.clone(),
                 actor: Actor::reconciliation(),
@@ -1286,7 +1296,7 @@ impl PropertyStore for SqliteStore {
             let mut stmt = inner
                 .conn
                 .prepare(
-                    "SELECT nseq, version, audit_epoch, kind, verb, key, field_path, \
+                    "SELECT nseq, version, audit_epoch, kind, command, key, field_path, \
                             lifecycle_kind, lifecycle_reason, actor, fields_changed, \
                             secret_fields_changed_count, at_ms, cause, audit_digest \
                      FROM __props_events WHERE namespace = ?1 AND nseq > ?2 ORDER BY nseq",
@@ -1299,7 +1309,7 @@ impl PropertyStore for SqliteStore {
                         version: r.get::<_, i64>(1)?,
                         audit_epoch: r.get::<_, i64>(2)?,
                         kind: r.get::<_, String>(3)?,
-                        verb: r.get::<_, String>(4)?,
+                        command: r.get::<_, String>(4)?,
                         key: r.get::<_, String>(5)?,
                         field_path: r.get::<_, String>(6)?,
                         lifecycle_kind: r.get::<_, Option<String>>(7)?,
@@ -1326,7 +1336,7 @@ impl PropertyStore for SqliteStore {
                     version: Version(row.version as u64),
                     audit_epoch: AuditEpoch(row.audit_epoch as u64),
                     kind,
-                    verb: row.verb,
+                    command: row.command,
                     key: RecordKey {
                         namespace: namespace.clone(),
                         key: row.key,
@@ -1397,7 +1407,7 @@ struct EventRow {
     version: i64,
     audit_epoch: i64,
     kind: String,
-    verb: String,
+    command: String,
     key: String,
     field_path: String,
     lifecycle_kind: Option<String>,
@@ -1450,6 +1460,23 @@ mod tests {
         s
     }
 
+    #[test]
+    fn a_store_from_before_the_rename_gets_its_events_column_renamed() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE __props_events (id INTEGER PRIMARY KEY AUTOINCREMENT, namespace TEXT NOT NULL, nseq INTEGER NOT NULL, version INTEGER NOT NULL, audit_epoch INTEGER NOT NULL, kind TEXT NOT NULL, verb TEXT NOT NULL, key TEXT NOT NULL, field_path TEXT NOT NULL, lifecycle_kind TEXT, lifecycle_reason TEXT, actor TEXT NOT NULL, fields_changed TEXT NOT NULL, secret_fields_changed_count INTEGER NOT NULL, at_ms INTEGER NOT NULL, cause TEXT, audit_digest TEXT NOT NULL DEFAULT '', UNIQUE (namespace, nseq));\n\
+             INSERT INTO __props_events (namespace, nseq, version, audit_epoch, kind, verb, key, field_path, actor, fields_changed, secret_fields_changed_count, at_ms) VALUES ('demo', 1, 1, 0, 'set', 'demo.props.set', 'k', '', 'a', '[]', 0, 1);",
+        )
+        .unwrap();
+        let store = SqliteStore::new("demod", conn).unwrap();
+        let inner = store.inner.lock().unwrap();
+        let command: String = inner
+            .conn
+            .query_row("SELECT command FROM __props_events WHERE nseq = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(command, "demo.props.set");
+    }
+
     fn open_store(delete_mode: DeleteMode) -> SqliteStore {
         let conn = Connection::open_in_memory().unwrap();
         let store = SqliteStore::new("demod", conn).unwrap();
@@ -1496,7 +1523,7 @@ mod tests {
         // Frozen persisted DDL. Keep these literals independent of bootstrap.
         let expected = [
             ("__props_audit_keys", "CREATE TABLE __props_audit_keys (namespace TEXT PRIMARY KEY, key_bytes BLOB NOT NULL)"),
-            ("__props_events", "CREATE TABLE __props_events (id INTEGER PRIMARY KEY AUTOINCREMENT, namespace TEXT NOT NULL, nseq INTEGER NOT NULL, version INTEGER NOT NULL, audit_epoch INTEGER NOT NULL, kind TEXT NOT NULL, verb TEXT NOT NULL, key TEXT NOT NULL, field_path TEXT NOT NULL, lifecycle_kind TEXT, lifecycle_reason TEXT, actor TEXT NOT NULL, fields_changed TEXT NOT NULL, secret_fields_changed_count INTEGER NOT NULL, at_ms INTEGER NOT NULL, cause TEXT, audit_digest TEXT NOT NULL DEFAULT '', UNIQUE (namespace, nseq))"),
+            ("__props_events", "CREATE TABLE __props_events (id INTEGER PRIMARY KEY AUTOINCREMENT, namespace TEXT NOT NULL, nseq INTEGER NOT NULL, version INTEGER NOT NULL, audit_epoch INTEGER NOT NULL, kind TEXT NOT NULL, command TEXT NOT NULL, key TEXT NOT NULL, field_path TEXT NOT NULL, lifecycle_kind TEXT, lifecycle_reason TEXT, actor TEXT NOT NULL, fields_changed TEXT NOT NULL, secret_fields_changed_count INTEGER NOT NULL, at_ms INTEGER NOT NULL, cause TEXT, audit_digest TEXT NOT NULL DEFAULT '', UNIQUE (namespace, nseq))"),
             ("__props_meta", "CREATE TABLE __props_meta (namespace TEXT PRIMARY KEY, nseq INTEGER NOT NULL, audit_epoch INTEGER NOT NULL)"),
             ("__props_records", "CREATE TABLE __props_records (namespace TEXT NOT NULL, key TEXT NOT NULL, version INTEGER NOT NULL, nseq INTEGER NOT NULL, lifecycle_kind TEXT, lifecycle_reason TEXT, tombstoned INTEGER NOT NULL DEFAULT 0, tombstone_at_ms INTEGER, PRIMARY KEY (namespace, key))"),
             ("__props_values", "CREATE TABLE __props_values (namespace TEXT NOT NULL, key TEXT NOT NULL, value_json TEXT NOT NULL, PRIMARY KEY (namespace, key))"),
@@ -1519,7 +1546,7 @@ mod tests {
             .unwrap();
         assert_eq!(rec1.version, Version(1));
         assert_eq!(ev1.kind, EventKind::Created);
-        assert_eq!(ev1.verb, "demod.props.set");
+        assert_eq!(ev1.command, "demod.props.set");
 
         let (rec2, ev2) = store
             .commit_set(set_commit(
@@ -2013,7 +2040,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         let ev = &events[0];
         assert_eq!(ev.kind, EventKind::Created);
-        assert_eq!(ev.verb, "demod.props.set");
+        assert_eq!(ev.command, "demod.props.set");
         assert_eq!(ev.key.key, "user@example.com");
         assert!(ev.key.field_path.is_empty());
         assert_eq!(ev.lifecycle, Some(Lifecycle::Provisioning));

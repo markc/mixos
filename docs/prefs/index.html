@@ -215,7 +215,7 @@
                         <a href="#for-agents">For agents</a>
                         <a href="#wallpaper">Wallpaper</a>
                         <a href="#running-and-testing">Running and testing</a>
-                        <a href="#macro-bus-verbs">Macro Bus verbs</a>
+                        <a href="#macro-bus-commands">Macro Bus commands</a>
                     </nav>
                 </div>
             </div>
@@ -390,7 +390,7 @@ it gone, asks a running Email to forget the password; Preferences does not start
 Email for this, and if Email is away or refuses, the status line says the
 password may still be held. An account still being migrated comes back
 when Email next starts, by design.
-An Email too old to know these verbs is reported as such, not retried.</p>
+An Email too old to know these commands is reported as such, not retried.</p>
 <pre><code class="language-mix">-- What Preferences shows: accounts (with has_password), default, mail options.
 send prefs prefs.email
 
@@ -439,10 +439,10 @@ tree order. It uses the same search as the sidebar and leaves the window alone.
 under Apps → Email above.
 <code>prefs.execute {id}</code> runs any command a button
 or menu would (<code>apps.check</code>, <code>apps.install</code>, <code>appearance.apply</code>,
-<code>appearance.revert</code>, …), and <code>prefs.commands</code> lists them with their
+<code>appearance.revert</code>, …), and <code>prefs.actions</code> lists them with their
 enablement. The window is drivable like every MixOS app
-(<code>prefs.ui.*</code>, <code>prefs.window</code>). The verbs are registered in
-<code>docs/docs/spec/bus/verbs.conf.mix</code>.</p>
+(<code>prefs.ui.*</code>, <code>prefs.window</code>). The commands are registered in
+<code>docs/docs/spec/bus/commands.conf.mix</code>.</p>
 <p>For scripted work, call the services directly (<code>releases.*</code>,
 <code>settings.*</code>): Preferences is their window, not a second implementation.</p>
 <h2 id="wallpaper">Wallpaper</h2>
@@ -464,13 +464,13 @@ state read, never automatically resent.</p>
 <p>Wallpaper and browser state are included in <code>prefs.info</code>, wallpaper state in
 <code>prefs.appearance</code>. Commands <code>wallpaper.apply</code>, <code>wallpaper.revert</code>,
 <code>wallpaper.refresh</code> and <code>wallpaper.browse</code> are available through
-<code>prefs.execute</code>; the normal <code>prefs.ui.*</code> verbs drive the controls and browser.</p>
+<code>prefs.execute</code>; the normal <code>prefs.ui.*</code> commands drive the controls and browser.</p>
 <h2 id="running-and-testing">Running and testing</h2>
 <p>Run with <code>prefs [--noded-url URL]</code>; a second launch raises the first window
 (<code>prefs.show</code>). The Bus connection is <a href="/citizen/">citizen</a>.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/apps/prefs"><code>apps/prefs</code></a>:</p>
 <table><thead><tr><th>Path</th><th>What</th></tr></thead><tbody>
-<tr><td><code>crates/preferences</code></td><td>the headless engine: sections, rows, notes, one operation at a time, the <code>prefs.*</code> verbs</td></tr>
+<tr><td><code>crates/preferences</code></td><td>the headless engine: sections, rows, notes, one operation at a time, the <code>prefs.*</code> commands</td></tr>
 <tr><td><code>crates/preferences/src/navigation.rs</code></td><td>the section registry, seven categories, software groups and search</td></tr>
 <tr><td><code>crates/preferences/src/appearance.rs</code></td><td>Appearance: the look, families, scale, density and motion, with drafts, fenced applies and receipts for lost replies</td></tr>
 <tr><td><code>crates/preferences/src/email.rs</code></td><td>Apps → Email: account changes planned and checked, fenced applies, passwords handed to Email</td></tr>
@@ -481,12 +481,12 @@ state read, never automatically resent.</p>
 </tbody></table>
 <p>Test with <code>cargo test -p preferences -p prefs</code>. Regenerate the snapshots
 with <code>UPDATE_SNAPSHOTS=1</code> and look at the images before committing them.</p>
-<h2 id="macro-bus-verbs">Macro Bus verbs</h2>
-<p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
+<h2 id="macro-bus-commands">Macro Bus commands</h2>
+<p>The shared <a href="/macros/#bus-commands">macro Bus surface</a> uses this process's
 catalogue and runner. Subscribe to <code>&lt;service&gt;.macros.finished</code> for completion, where <code>service</code> is
 the instance’s registered Bus name (for example <code>term-1234</code> for a second Term
-instance). Verbs keep the app’s canonical prefix, such as <code>prefs.macros.run</code>.</p>
-<table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
+instance). Commands keep the app’s canonical prefix, such as <code>prefs.macros.run</code>.</p>
+<table><thead><tr><th>Command</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
 <tr><td><code>prefs.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>prefs.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>prefs.macros.run</code></td><td><code>{id}</code></td><td>Acceptance and run number</td></tr>

@@ -643,7 +643,7 @@ path, in any order.</p>
 broker bounce is a transient drop, not a death); an <strong>unconditional</strong> event pump
 (a plain run pumps only when the script registered handlers); an exhausted
 initial connect budget that fails fast (exit non-zero) under systemd; and a
-runtime-reserved verb surface — <code>HELP</code> / <code>INFO</code> / <code>QUIT</code> plus
+runtime-reserved command surface — <code>HELP</code> / <code>INFO</code> / <code>QUIT</code> plus
 <code>&lt;svc&gt;.props.{get,list,describe}</code> are answered by the runtime pre-dispatch, so
 an <code>on</code> handler can never shadow them. Logging goes to <strong>journald</strong> (stderr
 fallback off-systemd), tagged with <code>service = &lt;svc&gt;</code>. The full contract is on

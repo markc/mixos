@@ -188,7 +188,7 @@ fn rebuild_authorised(cmd: &IncomingCommand, state: &BayesianBusState) -> bool {
 }
 
 /// Account selector shared by the per-account inspection and training
-/// verbs: exactly one of `account_id` (the `maild.accounts` PK) or `email`.
+/// commands: exactly one of `account_id` (the `maild.accounts` PK) or `email`.
 /// The email form exists because no CLI or props surface prints the PK.
 #[derive(serde::Deserialize)]
 struct AccountSelector {
@@ -199,7 +199,7 @@ struct AccountSelector {
     /// corpus tree.
     #[serde(default)]
     account_id: Option<serde_json::Value>,
-    /// Also accepted as `account`, the key the `maild.stats.*` verbs use.
+    /// Also accepted as `account`, the key the `maild.stats.*` commands use.
     #[serde(default, alias = "account")]
     email: Option<String>,
 }
@@ -275,8 +275,8 @@ struct UntrainRequest {
 }
 
 /// `#[serde(flatten)]` rules out `deny_unknown_fields`, so the training
-/// verbs check keys by hand: a misspelt or unsupported option (`dry_run`,
-/// say) must be refused, not silently ignored while the verb trains for real.
+/// commands check keys by hand: a misspelt or unsupported option (`dry_run`,
+/// say) must be refused, not silently ignored while the command trains for real.
 fn reject_unknown_keys(args: &serde_json::Value, allowed: &[&str]) -> Result<(), String> {
     let Some(map) = args.as_object() else {
         return Err("request must be a JSON object".to_string());
@@ -3239,7 +3239,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rebuild_verbs_reject_non_integer_account_id() {
+    async fn rebuild_commands_reject_non_integer_account_id() {
         let (dir, _mds, store) = temp_mailstore();
         let cls = disk_classifier(&dir.path().join("bayes"));
         let database = database_with_accounts(&[1]);

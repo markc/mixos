@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The Bus verb registry (`docs/docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
-//! lists exactly the verbs DOpus registers: its own (`dopus.describe`
-//! reports them in this order) and the toolkit's drive verbs under its
-//! prefix, apart from the protocol verbs every service answers.
+//! The Bus command registry (`docs/docs/spec/bus/commands.conf.mix`, AGENTS.md §5)
+//! lists exactly the commands DOpus registers: its own (`dopus.describe`
+//! reports them in this order) and the toolkit's drive commands under its
+//! prefix, apart from the protocol commands every service answers.
 use dopus::shell::APP;
-use dopus::verbs::VERBS;
+use dopus::commands::COMMANDS;
 
-const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/verbs.conf.mix");
+const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
 
 /// The registry's names owned by `owner`, from its one-entry-per-line form.
 fn registered(owner: &str) -> Vec<String> {
@@ -25,18 +25,18 @@ fn registered(owner: &str) -> Vec<String> {
         .collect()
 }
 
-/// What `dopus.describe` lists: [`VERBS`], then the drive verbs (the
-/// shell's `extra_verbs`).
+/// What `dopus.describe` lists: [`COMMANDS`], then the drive commands (the
+/// shell's `extra_commands`).
 fn described() -> Vec<String> {
-    VERBS
+    COMMANDS
         .iter()
-        .map(|(verb, _)| (*verb).to_owned())
-        .chain(toolkit::drive::VERBS.iter().map(|v| format!("{APP}.{v}")))
+        .map(|(command, _)| (*command).to_owned())
+        .chain(toolkit::drive::COMMANDS.iter().map(|v| format!("{APP}.{v}")))
         .collect()
 }
 
 #[test]
-fn every_described_verb_is_registered_and_nothing_else() {
+fn every_described_command_is_registered_and_nothing_else() {
     let described = described();
     assert!(!described.is_empty());
     assert_eq!(registered("dopus"), described);
@@ -54,11 +54,11 @@ fn class_of(name: &str) -> Option<&'static str> {
         .next()
 }
 
-/// A verb the app describes as read-only is a query
+/// A command the app describes as read-only is a query
 /// (docs/docs/decisions/2026-10-11-verb-classes.md).
 #[test]
-fn read_only_verbs_are_queries() {
-    for (name, read_only) in VERBS {
+fn read_only_commands_are_queries() {
+    for (name, read_only) in COMMANDS {
         if *read_only {
             assert_eq!(class_of(name), Some("query"), "{name}");
         }

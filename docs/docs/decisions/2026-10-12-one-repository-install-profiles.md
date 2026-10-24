@@ -114,7 +114,7 @@ before it joins `server`.
   wait for releases, but every foundation change would still mean a
   coordinated upgrade on the other side, and consolidating duplicated code
   across the boundary would mean moving it between repositories.
-- **Changes cut across both.** The verb registry's move to classes changed
+- **Changes cut across both.** The command registry's move to classes changed
   the registry, its gate and every application in one commit. Across two
   repositories that is coordinated pull requests that can drift apart.
 - **The separation that matters can be enforced here.** Headless code

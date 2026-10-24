@@ -20,8 +20,8 @@
 //!   `shutdown_installed_recorder`; `local_snapshot()` reads the
 //!   installed recorder directly and always returns raw labels; the
 //!   cap-gated `snapshot_dispatch` family that applies redaction
-//!   projection backs the `<svc>.stats.snapshot` Bus verb.
-//! - **Bus verb handler (`feature = "bus-handlers"`):** the
+//!   projection backs the `<svc>.stats.snapshot` Bus command.
+//! - **Bus command handler (`feature = "bus-handlers"`):** the
 //!   `<svc>.stats.snapshot` Bus handler (`handle_snapshot_bus`),
 //!   parsing the wire frame via `bus::native_client`'s
 //!   `IncomingCommand`. Property namespace registration is separate from snapshot handling.

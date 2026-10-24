@@ -7,7 +7,7 @@
   connect before any bytes are sent. A missing, unreadable or unusable key is
   rc 11 with no connection; the retry after `backoff_s` reads it again.
   `status` works before the key exists and never shows it. Token and none
-  modes are unchanged. Bus verbs and registry classes are unchanged.
+  modes are unchanged. Bus commands and registry classes are unchanged.
 
 ## 0.1.0
 
@@ -22,8 +22,8 @@ auth, transport or timeout) or 12 (a bad request).
   (loopback only), `port`, `auth` (`token` or `none`), `token_file`,
   `timeout_s`, `connect_timeout_s`, `backoff_s`, `max_line`, `instance`.
 - Start checks, also as `mix bridged.mix --check <app>`: the Bus service-name
-  rule, and no name that a registered verb already starts with (read from the
-  installed verb registry, failing closed). A refusal exits 2 with
+  rule, and no name that a registered command already starts with (read from the
+  installed command registry, failing closed). A refusal exits 2 with
   `RUNTIME`, `NAME_INVALID`, `NAME_RESERVED`, `REGISTRY`, `CONFIG` or
   `TOKEN`.
 - The name may not start with `mixos-` (mix --serve strips it) or be one of
@@ -55,10 +55,10 @@ auth, transport or timeout) or 12 (a bad request).
   `systemd-analyze security` exposure 4.0 (OK).
 - Documented residuals: loopback port squatting after the app dies (a
   unix-socket channel would close it), a direct `mix --serve` briefly holding
-  a refused name, and the reverse name collision being the verb-registry
+  a refused name, and the reverse name collision being the command-registry
   gate's to refuse.
-- The six verbs are declared in `docs/spec/bus/verbs.conf.mix` as the
-  `bridged` instance family (`<app>.<verb>`, `members: "instances"`), in the
+- The six commands are declared in `docs/spec/bus/commands.conf.mix` as the
+  `bridged` instance family (`<app>.<command>`, `members: "instances"`), in the
   registry's schema 3. Installing the registry is a separate deployed
   prerequisite, and this entry does not claim a live installation.
 - The bridge tests run in `tools/mix_tests.mix`. Their mix binary is

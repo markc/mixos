@@ -373,7 +373,7 @@ pub enum Hold {
     Button(u32),
 }
 
-/// Who pressed a hold: a sequence run, or `None` for single verbs.
+/// Who pressed a hold: a sequence run, or `None` for single commands.
 pub type HoldOwner = Option<u64>;
 
 /// Every injected hold of one seat and the owners that pressed it. A hold
@@ -469,7 +469,7 @@ pub enum SequenceNext {
     /// Arm a one-shot timer for the front step's delay, then call
     /// [`SequenceRun::delay_elapsed`] and ask again.
     Wait(Duration),
-    /// Run this step through the single-verb path (`service_input_op`),
+    /// Run this step through the single-command path (`service_input_op`),
     /// with the run as the hold owner, and report its reply.
     Run { index: usize, step: SequenceStep },
     /// Every step ran: reply with [`SequenceRun::finish`].
@@ -551,7 +551,7 @@ impl SequenceRun {
     pub fn record(
         &mut self,
         index: usize,
-        verb: &'static str,
+        command: &'static str,
         reply: ControlReply,
         coalesced: usize,
     ) -> Option<ControlReply> {
@@ -570,7 +570,7 @@ impl SequenceRun {
                 json!({
                     "seat": self.reply_seat(),
                     "index": index,
-                    "verb": verb,
+                    "command": command,
                     "step": refusal.wire_json(),
                     "completed": self.replies,
                     "released": true,

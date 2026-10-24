@@ -91,7 +91,7 @@ end
 print $rc
 print $result
 
--- ── Dynamic command (verb in a variable) ──
+-- ── Dynamic command (command in a variable) ──
 
 -- Variable in send-statement command position
 $cmd = "greet"
@@ -114,10 +114,10 @@ print $result
 -- Concat expression built into a variable, then dispatched.
 -- (Inline `send target (a .. b) …` collides with the pre-existing
 -- "string-followed-by-LParen = function call" grammar in parse_primary;
--- pre-building the verb in a variable is the user-facing pattern.)
+-- pre-building the command in a variable is the user-facing pattern.)
 $svc = "edit"
-$verb = "open"
-$dotted = $svc .. "." .. $verb
+$command = "open"
+$dotted = $svc .. "." .. $command
 send "test-port" $dotted path="/tmp/dyn.txt"
 print $rc
 print $result

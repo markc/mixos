@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Golden contract fixtures (ced E0 plan §4.2, Stage S).
 //!
-//! File names: `<verb>.<request|reply|refusal>[.<case>].json` and
+//! File names: `<command>.<request|reply|refusal>[.<case>].json` and
 //! `event.<kind>[.<case>].json`. Requests must parse into their request type;
 //! replies, refusals and events must round-trip exactly (every reply field is
 //! serialized, so a fixture lists all of them). An unrecognised file name
@@ -63,8 +63,8 @@ fn split(stem: &str) -> (String, &'static str) {
 }
 
 fn check(name: &str, v: &Value) {
-    let (verb, kind) = split(name);
-    match (verb.as_str(), kind) {
+    let (command, kind) = split(name);
+    match (command.as_str(), kind) {
         (_, "refusal") => round_trips::<Refusal>(name, v),
         (_, "event") => round_trips::<Event>(name, v),
         ("edit.ping" | "edit.info" | "edit.list" | "edit.recovery.flush", "request") => {
@@ -106,7 +106,7 @@ fn check(name: &str, v: &Value) {
         ("edit.undo" | "edit.redo", "reply") => round_trips::<UndoReply>(name, v),
         ("edit.history", "reply") => round_trips::<HistoryReply>(name, v),
         ("edit.props.watch", "reply") => round_trips::<PropsWatchReply>(name, v),
-        _ => panic!("{name}: no DTO mapping for ({verb}, {kind})"),
+        _ => panic!("{name}: no DTO mapping for ({command}, {kind})"),
     }
 }
 
@@ -142,21 +142,21 @@ fn every_fixture_matches_its_dto() {
 }
 
 #[test]
-fn every_verb_has_a_request_and_a_reply_fixture() {
+fn every_command_has_a_request_and_a_reply_fixture() {
     let names: Vec<String> = fixtures().into_iter().map(|(n, _)| n).collect();
-    for (verb, _) in VERBS {
-        if verb.starts_with("edit.props.") && *verb != "edit.props.watch" {
+    for (command, _) in COMMANDS {
+        if command.starts_with("edit.props.") && *command != "edit.props.watch" {
             continue; // props-core's own contract
         }
         let has = |kind: &str| {
             names
                 .iter()
-                .any(|n| split(n) == (verb.to_string(), kind_static(kind)))
+                .any(|n| split(n) == (command.to_string(), kind_static(kind)))
         };
-        if *verb != "edit.props.watch" {
-            assert!(has("request"), "{verb}: no request fixture");
+        if *command != "edit.props.watch" {
+            assert!(has("request"), "{command}: no request fixture");
         }
-        assert!(has("reply"), "{verb}: no reply fixture");
+        assert!(has("reply"), "{command}: no reply fixture");
     }
 }
 

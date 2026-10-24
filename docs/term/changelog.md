@@ -11,13 +11,13 @@ generated: by docs/_build/gen-site.mix from apps/term/CHANGELOG.md; do not edit
 ## 0.4.0
 
 The window is egui on wgpu, its grid drawn on the GPU by `term-render`.
-The terminal's own verbs (`term.session`, `term.tabs`, `term.tab.*`,
+The terminal's own commands (`term.session`, `term.tabs`, `term.tab.*`,
 `term.panes`, `term.pane.*`, `term.snapshot`, `term.scroll`, `term.type`,
 `term.props.watch`, INFO and HELP) are unchanged.
 
-Added: `term.commands` and `term.execute` (every window action by command
-id), `app.describe`, the toolkit drive verbs (`term.ui.*`, `term.window`,
-`term.window.state`), and `term.command.executed`, published for every
+Added: `term.actions` and `term.execute` (every window action by command
+id), `app.describe`, the toolkit drive commands (`term.ui.*`, `term.window`,
+`term.window.state`), and `term.action.executed`, published for every
 command run with how it was reached.
 
 Alt is Meta: ESC before the key (readline's Alt+b/f/., Alt+Backspace,
@@ -36,6 +36,6 @@ unchanged.
 
 ## 0.3.4
 
-The terminal frontend and native session verbs entered the tree. The
+The terminal frontend and native session commands entered the tree. The
 cross-process session constants and the child-only descriptor handoff keep
 their bytes.

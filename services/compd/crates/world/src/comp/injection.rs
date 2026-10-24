@@ -2,10 +2,10 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Bus-injected input state on the compd host.
 //!
-//! The verbs themselves are policy-host `input`; this is what they keep
+//! The commands themselves are policy-host `input`; this is what they keep
 //! between calls:
 //! - the `input_seq` mint and the injected-event count (a sequence's yield);
-//! - each seat's injected holds, owned by the single verb (`None`) or the
+//! - each seat's injected holds, owned by the single command (`None`) or the
 //!   sequence run that pressed them, so `release_all` and an aborted run let
 //!   go of what injection pressed and nothing a person holds;
 //! - where the agent pointer is (the agent seat has no cursor of its own:
@@ -75,7 +75,7 @@ pub struct Injection {
     /// Events injected so far (a sequence yields every 256).
     pub events: u64,
     /// The sequence run whose step is being injected: the owner of what it
-    /// presses (`None` = a single verb).
+    /// presses (`None` = a single command).
     pub current_run: Option<u64>,
     pub human: Holds,
     pub agent: Holds,

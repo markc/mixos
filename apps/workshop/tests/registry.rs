@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The Bus verb registry (`docs/docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
-//! lists exactly the verbs Workshop describes, apart from the protocol
-//! verbs every service answers.
+//! The Bus command registry (`docs/docs/spec/bus/commands.conf.mix`, AGENTS.md §5)
+//! lists exactly the commands Workshop describes, apart from the protocol
+//! commands every service answers.
 use workshop::shell::describe;
 
-const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/verbs.conf.mix");
+const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
 
 /// The registry's names owned by `owner`, from its one-entry-per-line form.
 fn registered(owner: &str) -> Vec<String> {
@@ -24,8 +24,8 @@ fn registered(owner: &str) -> Vec<String> {
 }
 
 #[test]
-fn every_described_verb_is_registered_and_nothing_else() {
-    let described: Vec<String> = describe()["verbs"]
+fn every_described_command_is_registered_and_nothing_else() {
+    let described: Vec<String> = describe()["commands"]
         .as_array()
         .unwrap()
         .iter()
@@ -49,17 +49,17 @@ fn class_of(name: &str) -> Option<&'static str> {
         .next()
 }
 
-/// A verb the app describes as read-only is a query
+/// A command the app describes as read-only is a query
 /// (docs/docs/decisions/2026-10-11-verb-classes.md).
 #[test]
-fn read_only_verbs_are_queries() {
-    let verbs = describe();
-    for verb in verbs["verbs"].as_array().unwrap() {
-        let name = verb["name"].as_str().unwrap();
+fn read_only_commands_are_queries() {
+    let commands = describe();
+    for command in commands["commands"].as_array().unwrap() {
+        let name = command["name"].as_str().unwrap();
         if matches!(name, "HELP" | "app.describe") {
             continue;
         }
-        if verb["read_only"].as_bool() == Some(true) {
+        if command["read_only"].as_bool() == Some(true) {
             assert_eq!(class_of(name), Some("query"), "{name}");
         }
     }

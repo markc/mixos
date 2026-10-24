@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The comp control verbs compd answers, and the executor for the policy
+//! The comp control commands compd answers, and the executor for the policy
 //! effects they return.
 //!
 //! - `comp.workspace.switch`, `comp.window.send_to_workspace`;
 //! - `comp.window.{maximize,unmaximize,fullscreen,unfullscreen}`,
 //!   `minimize`, `restore` (named, or `{}` = rule 8's LIFO pick), `close`
-//!   (polite); `close {force}` is a long verb (compd's waiter, kill via
+//!   (polite); `close {force}` is a long command (compd's waiter, kill via
 //!   [`kill_client`]);
 //! - `props.set` of `windows.s<id>.{minimized,maximized,fullscreen}`;
 //! - the client's own maximise / minimise requests ([`apply_client_requests`]);
@@ -14,12 +14,12 @@
 //!   interactive move/resize grab ([`apply_interactive`]);
 //! - `props.set` of `workspaces.count`, `workspaces.current`,
 //!   `workspaces.o_<key>.current` and `windows.s<id>.workspace` (the same
-//!   replies as the verbs).
+//!   replies as the commands).
 //!
 //! - `props.set windows.s<id>.band` (`bottom` / `normal`) and the window
-//!   stats verbs.
+//!   stats commands.
 //!
-//! A session lock answers `locked` for every verb that names or changes a
+//! A session lock answers `locked` for every command that names or changes a
 //! window, and for the window and workspace sets.
 //!
 //! The effects: visibility is not stored but derived (`CompState::hidden`,
@@ -171,18 +171,18 @@ pub fn refresh_default_output(lp: &mut Loop) {
     lp.inner.comp.default_output = default;
 }
 
-/// A `comp.window.*` / `comp.workspace.*` verb, or `None` when compd does not
+/// A `comp.window.*` / `comp.workspace.*` command, or `None` when compd does not
 /// answer it yet (the caller replies `busy`).
 pub fn window(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
     let reply = window_op(lp, op);
-    // What a window verb changed carries `comp.window` as its cause.
+    // What a window command changed carries `comp.window` as its cause.
     if let Some(id) = named_window(op) {
         lp.inner.comp.causes.note_window(id, "comp.window");
     }
     reply
 }
 
-/// The window a verb names, if any.
+/// The window a command names, if any.
 fn named_window(op: &WindowOp) -> Option<u64> {
     match op {
         WindowOp::State { id, .. }
@@ -198,7 +198,7 @@ fn named_window(op: &WindowOp) -> Option<u64> {
 }
 
 fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
-    // A session lock refuses every verb that names or changes a window, and
+    // A session lock refuses every command that names or changes a window, and
     // the workspace switch.
     if let Some(locked) = policy::window::locked_refusal(op, world::comp::session_lock::active(lp))
     {
@@ -748,7 +748,7 @@ pub fn wlcs_place_surface(lp: &mut Loop, id: SurfaceId, origin: Point<i32, Logic
         return;
     };
     // wlcs may deliberately put the window partly or wholly off the output.
-    // Keep the operator verb's native effects, without its clipping policy.
+    // Keep the operator command's native effects, without its clipping policy.
     let location = origin + window.geometry().loc;
     execute(
         lp,
@@ -1412,7 +1412,7 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
                 match state {
                     WindowState::Maximized => maximize(lp, id, enabled),
                     // Applied now, not queued to the frame hook (the engine's
-                    // `fullscreen_request`): the verb reads the requested state
+                    // `fullscreen_request`): the command reads the requested state
                     // back at once, and a queued request read as refused.
                     WindowState::Fullscreen => {
                         if let Some(window) = window_of(lp, id) {
@@ -1481,7 +1481,7 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
             // EWMH desktops: the root pair, and every X11 window's.
             Effect::PublishDesktops => crate::x11::publish_desktops(lp),
             Effect::ResyncAllX11 => crate::x11::sync(lp),
-            // The workspace verbs return none of the rest.
+            // The workspace commands return none of the rest.
             _ => {}
         }
     }
@@ -1522,8 +1522,8 @@ fn raise_now(lp: &mut Loop, id: SurfaceId) {
 }
 
 /// Focus and raise `id`. The raise happens
-/// NOW, inside the verb: the engine's activation is queued to
-/// the next frame step, and a verb that follows before that frame (a hit test,
+/// NOW, inside the command: the engine's activation is queued to
+/// the next frame step, and a command that follows before that frame (a hit test,
 /// `comp_control_smoke`'s occluded refusal) must already see the new
 /// order. Idempotent with the engine's later activation.
 fn activate(lp: &mut Loop, id: SurfaceId) {
@@ -1580,7 +1580,7 @@ pub fn maximize(lp: &mut Loop, id: SurfaceId, enabled: bool) {
 }
 
 /// The client's own maximise / minimise requests, through the same policy as
-/// the verbs (a refusal still answers the client with a configure).
+/// the commands (a refusal still answers the client with a configure).
 pub fn apply_client_requests(lp: &mut Loop) {
     for (id, request) in lp.inner.comp.take_requests() {
         let Some((window_id, generation)) = lp
@@ -1621,7 +1621,7 @@ pub fn apply_client_requests(lp: &mut Loop) {
                 }
             }
             // X11 requests, answered through the
-            // verbs' own code, so a session lock refuses them (`locked_refusal`)
+            // commands' own code, so a session lock refuses them (`locked_refusal`)
             // and an exclusive latch refuses the focus. A request for an
             // override-redirect window is ignored (X-2a).
             WindowRequest::Unminimize
@@ -1635,7 +1635,7 @@ pub fn apply_client_requests(lp: &mut Loop) {
                     .get(id)
                     .is_some_and(|record| record.role().managed_toplevel()) => {}
             // An X11 `Reorder::Top` ConfigureRequest: a raise, no focus.
-            // Through the raise verb, so the band rules apply.
+            // Through the raise command, so the band rules apply.
             WindowRequest::Raise => {
                 let _ = window(
                     lp,
@@ -1708,7 +1708,7 @@ pub fn apply_client_requests(lp: &mut Loop) {
     }
 }
 
-/// The binding chords queued since the last pass, run through the same code as the verbs they
+/// The binding chords queued since the last pass, run through the same code as the commands they
 /// mirror. A refusal is a no-op: a key press has nobody to reply to.
 pub fn apply_bindings(lp: &mut Loop) {
     use comp_model::request::WorkspaceIndex;
@@ -1787,15 +1787,15 @@ pub fn apply_bindings(lp: &mut Loop) {
     }
 }
 
-/// A user key's `comp.*` verb: parsed by the Bus path's own `classify` and
-/// run by the code the matching verb runs (the engine's `set`, `window` and
+/// A user key's `comp.*` command: parsed by the Bus path's own `classify` and
+/// run by the code the matching command runs (the engine's `set`, `window` and
 /// `input`), so `comp.workspace.switch {index:"next"}` from a key is exactly
-/// the Bus request. A verb that replies later or reads (`window.wait`,
+/// the Bus request. A command that replies later or reads (`window.wait`,
 /// `motion.run`, `panel.*`, the reads) has no meaning without a caller and
 /// is not run. A refusal is a no-op: a key press has nobody to reply to.
 fn run_user_fire(lp: &mut Loop, fire: &policy::user_keys::UserFire) {
     use comp_model::request::{Request, classify};
-    match classify(fire.verb, &fire.body, false) {
+    match classify(fire.command, &fire.body, false) {
         Ok(Request::Window(op)) => {
             let _ = window(lp, &op);
         }
@@ -1810,10 +1810,10 @@ fn run_user_fire(lp: &mut Loop, fire: &policy::user_keys::UserFire) {
             let _ = crate::input::input(lp, &op);
         }
         Ok(_) => model::warn!(
-            "user key: {} is not a one-shot comp verb; not run",
-            fire.verb
+            "user key: {} is not a one-shot comp command; not run",
+            fire.command
         ),
-        Err((rc, body)) => model::warn!("user key: {} refused ({rc}): {body}", fire.verb),
+        Err((rc, body)) => model::warn!("user key: {} refused ({rc}): {body}", fire.command),
     }
 }
 

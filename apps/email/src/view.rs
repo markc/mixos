@@ -20,7 +20,7 @@ pub mod identities;
 pub mod mail;
 pub mod tree;
 
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 use toolkit::dialog::{self, Choice};
 use toolkit::titlebar::{self, Action};
 use toolkit::{Icon, Registry, Strings, bars, panel};

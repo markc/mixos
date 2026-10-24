@@ -15,7 +15,7 @@
 //! trait.
 //!
 //! Production implementation wraps a `bus::native_client::NodedClient` and
-//! issues the `noded.props.subscribe_grant` Bus verb. Test
+//! issues the `noded.props.subscribe_grant` Bus command. Test
 //! implementations (e.g. the recorder used in this crate's mutation
 //! tests) just collect `(topic, target_peer, namespace)` tuples and
 //! return success without ever leaving the test process.
@@ -34,7 +34,7 @@ pub trait SubscribeGranter: Send + Sync {
     /// `rc=0`; any non-zero rc or transport failure maps to `Err`.
     ///
     /// The implementation is responsible for asserting (via noded's
-    /// `subscribe_grant` verb) that the calling service is the
+    /// `subscribe_grant` command) that the calling service is the
     /// reserved-topic owner — the handler itself does not re-check
     /// ownership before calling `grant`. The owner-peer authentication
     /// happens broker-side using the connection-level `peer_id`

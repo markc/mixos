@@ -254,7 +254,7 @@ check(shown($em, "gallery") and not shown($em, "recommended") and not shown($em,
 -- ── 2. lib.mix ──────────────────────────────────────────────────────────
 $SVC = {loader: "scenes", host: "shell", ced: "ced", apps: "apps"}
 $list = load("scenes-list.json")
-$templates = load("loader-verbs.json")["scenes.templates"].reply
+$templates = load("loader-commands.json")["scenes.templates"].reply
 $props = load("props-snapshots.json").props_get
 $want_shape = shape(load("model-empty.json"), "", [])
 
@@ -404,7 +404,7 @@ fn run_plan($p, $outcomes)
   $k = 0
   $s = $e.next_step($p)
   while $s != nil
-    push($calls, [$s.target, $s.verb, $s.args])
+    push($calls, [$s.target, $s.command, $s.args])
     $out = $k < length($outcomes) ? $outcomes[$k] : ok({})
     $k = $k + 1
     $p = $e.advance($p, $out)
@@ -413,8 +413,8 @@ fn run_plan($p, $outcomes)
   $done = $e.finish($p)
   return {calls: $calls, ui: $done.ui, message: $done.message, plan: $p}
 end
-fn click($verb, $args, $ui)
-  return $e.plan_click($verb, $args, $ui, $D)
+fn click($command, $args, $ui)
+  return $e.plan_click($command, $args, $ui, $D)
 end
 fn cargs($node, $item)
   $a = {scene: "editor", node: $node, kind: "click"}
@@ -512,8 +512,8 @@ $x = run_plan($e.plan_click("editor.scene.edit", cargs("btn_edit_scene", nil), $
 check(length($x.calls) == 3 and $x.plan.failed == nil and contains($x.message, "Hide the Scene Editor: gone"), "close and push are soft")
 $x = run_plan($e.plan_click("editor.scene.edit", cargs("btn_edit_scene", nil), $sel, data($list, $templates, $props, [])), [refused("NOT_FOUND", "no such app")])
 check(length($x.calls) == 1 and $x.plan.failed.code == "NOT_FOUND", "a failed launch stops before hiding the editor")
-check(deep_eq($e.edit_route(["ced"], $SVC, "/a/b.mix", nil), {target: "ced", verb: "ced.open", args: {paths: ["/a/b.mix"]}, label: "Open b.mix in ced", soft: false, retry: nil}), "ced route without a line")
-check($e.edit_route(["cedar"], $SVC, "/a/b.mix", 3).verb == "apps.launch", "only the ced service counts")
+check(deep_eq($e.edit_route(["ced"], $SVC, "/a/b.mix", nil), {target: "ced", command: "ced.open", args: {paths: ["/a/b.mix"]}, label: "Open b.mix in ced", soft: false, retry: nil}), "ced route without a line")
+check($e.edit_route(["cedar"], $SVC, "/a/b.mix", 3).command == "apps.launch", "only the ced service counts")
 
 -- fork / promote
 $x = run_plan(click("editor.scene.fork", cargs("btn_fork", nil), $sel), [ok({name: "panel-sandbox", installed: true, enabled: true, forked_from: "panel"})])
@@ -594,12 +594,12 @@ $sp.panels.right.declared = ["settings.appearance", "scene-notes", "scene-calend
 $x = run_plan($e.plan_click("editor.edge.order", cargs("order_right_down", nil), $slot, data($list, $templates, $sp, [])), [])
 check(deep_eq($x.calls[0][2], {edges: {right: ["settings.appearance", "scene-notes"]}}) and $x.ui.page == nil, "an empty slot moved past the end is dropped")
 
--- every node-driven verb refuses an unknown node without Bus steps
-check(length($e.verbs()) == 15, "fifteen verbs")
-for each $verb in $e.verbs()
-  if $verb == "editor.recommended" then continue end
-  $q = $e.plan_click($verb, cargs("nothing", nil), $e.default_ui(), $D)
-  check(type($q) == "map" and $q.kind == "ui", $verb .. " refuses a bad node without steps")
+-- every node-driven command refuses an unknown node without Bus steps
+check(length($e.commands()) == 15, "fifteen commands")
+for each $command in $e.commands()
+  if $command == "editor.recommended" then continue end
+  $q = $e.plan_click($command, cargs("nothing", nil), $e.default_ui(), $D)
+  check(type($q) == "map" and $q.kind == "ui", $command .. " refuses a bad node without steps")
 end
 
 -- ── ced diagnostics diff ────────────────────────────────────────────────

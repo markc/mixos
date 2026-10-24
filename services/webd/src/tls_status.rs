@@ -15,7 +15,7 @@
 //!    `run_forever` loop (each successful issuance, each backoff
 //!    advance). Publishing only at the top of each ~6h tick would
 //!    leave `last_error` / `next_attempt` stale until the next sweep,
-//!    which defeats the verb's purpose — operators want fresh failure
+//!    which defeats the command's purpose — operators want fresh failure
 //!    detail, not yesterday's snapshot.
 //!
 //! The Bus layer holds a `watch::Receiver<TlsStatusSnapshot>` (via
@@ -72,7 +72,7 @@ pub struct AcmePlanSummary {
 /// `issued` is derived from
 /// [`crate::acme_provisioner::AcmeProvisioner::acme_identities`] —
 /// `true` iff a live ACME chain is currently spliced into the
-/// resolver for this FQDN. Operators reading the verb's output use
+/// resolver for this FQDN. Operators reading the command's output use
 /// this to distinguish "configured but never issued" from "issued
 /// and renewing".
 #[derive(Clone, Debug, Default, Serialize)]

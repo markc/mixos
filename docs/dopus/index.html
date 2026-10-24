@@ -212,7 +212,7 @@
                         <a href="#menus-and-keys">Menus and keys</a>
                         <a href="#what-it-remembers">What it remembers</a>
                         <a href="#for-agents">For agents</a>
-                        <a href="#macro-bus-verbs">Macro Bus verbs</a>
+                        <a href="#macro-bus-commands">Macro Bus commands</a>
                     </nav>
                 </div>
             </div>
@@ -325,7 +325,7 @@ configuration it would use. One setting lives only there:
 FUSE and automounted filesystems too.</p>
 <h2 id="for-agents">For agents</h2>
 <p>DOpus answers on the Bus as <code>dopus</code> (schema <code>dopus.v1</code>).</p>
-<table><thead><tr><th>Verb</th><th>Arguments</th><th>Answer</th></tr></thead><tbody>
+<table><thead><tr><th>Command</th><th>Arguments</th><th>Answer</th></tr></thead><tbody>
 <tr><td><code>dopus.ping</code>, <code>dopus.describe</code>, <code>dopus.info</code></td><td></td><td>liveness, the control surface, version and build</td></tr>
 <tr><td><code>dopus.state</code></td><td></td><td>both panes (path, sort, hidden files, previews, selection, rows, status) and the sidebars</td></tr>
 <tr><td><code>dopus.open</code></td><td><code>paths</code> (one per pane), or one path and <code>pane</code></td><td>goes there</td></tr>
@@ -335,29 +335,29 @@ FUSE and automounted filesystems too.</p>
 <tr><td><code>dopus.quit</code></td><td></td><td>closes the window</td></tr>
 </tbody></table>
 <p><strong>File operations are keyboard-only.</strong> <code>dopus.action</code> refuses every <code>file.*</code>
-action (<code>FORBIDDEN</code>). Input played through the drive verbs (<code>dopus.ui.*</code>)
+action (<code>FORBIDDEN</code>). Input played through the drive commands (<code>dopus.ui.*</code>)
 is held to the same rule: while it runs, file actions and opening files are
 refused, and a delete, name or drop dialog can be dismissed but not
 accepted. The rule holds for the whole time drive input runs, so a key you
 press yourself in that moment is refused too; press it again after. An agent reads, navigates, sorts and selects through DOpus, but
 never creates, renames, moves, copies, deletes or opens files through it.</p>
 <p>The window is drivable like every MixOS app, including its menus: see
-<a href="/docs/drive/">driving an app</a> (<code>dopus.ui.*</code>, <code>dopus.window</code>). The verbs are
-registered in <code>docs/docs/spec/bus/verbs.conf.mix</code>.</p>
+<a href="/docs/drive/">driving an app</a> (<code>dopus.ui.*</code>, <code>dopus.window</code>). The commands are
+registered in <code>docs/docs/spec/bus/commands.conf.mix</code>.</p>
 <p>Each command run from a menu, a key, a sidebar button or an accepted
-<code>dopus.action</code> is published on <code>dopus.command.executed</code>, with how it was
+<code>dopus.action</code> is published on <code>dopus.action.executed</code>, with how it was
 reached (<code>menu</code>, <code>shortcut</code>, <code>ui</code> or <code>bus</code>;
 <a href="/docs/decisions/2026-10-11-executed-commands/">executed commands</a>). A refused
 action is not published.</p>
 <p><code>dopus --headless</code> runs the core and the Bus port without a window, for
-tests: the same verbs, minus those that need a window. It publishes its
-accepted <code>dopus.action</code> runs on <code>&lt;service&gt;.command.executed</code> too.</p>
-<h2 id="macro-bus-verbs">Macro Bus verbs</h2>
-<p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
+tests: the same commands, minus those that need a window. It publishes its
+accepted <code>dopus.action</code> runs on <code>&lt;service&gt;.action.executed</code> too.</p>
+<h2 id="macro-bus-commands">Macro Bus commands</h2>
+<p>The shared <a href="/macros/#bus-commands">macro Bus surface</a> uses this process's
 catalogue and runner. Subscribe to <code>&lt;service&gt;.macros.finished</code> for completion, where <code>service</code> is
 the instance’s registered Bus name (for example <code>term-1234</code> for a second Term
-instance). Verbs keep the app’s canonical prefix, such as <code>dopus.macros.run</code>.</p>
-<table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
+instance). Commands keep the app’s canonical prefix, such as <code>dopus.macros.run</code>.</p>
+<table><thead><tr><th>Command</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
 <tr><td><code>dopus.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>dopus.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>dopus.macros.run</code></td><td><code>{id}</code></td><td>Acceptance and run number</td></tr>

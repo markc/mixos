@@ -1,8 +1,8 @@
 # workshop: the egui shell around the inspector engine — browse ABP
-# services and verbs, call one with a JSON body (AGENTS.md §4.1).
+# services and commands, call one with a JSON body (AGENTS.md §4.1).
 [package]
 name = "workshop"
-description = "Native ABP service browser and verb caller"
+description = "Native ABP service browser and command caller"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

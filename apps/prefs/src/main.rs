@@ -3,7 +3,7 @@
 use preferences::model::APP_ID;
 use prefs::{label, shell::Shell};
 
-/// The app name: its worker thread, closing refusal and activation verbs.
+/// The app name: its worker thread, closing refusal and activation commands.
 const APP: &str = "prefs";
 
 #[derive(Debug, Clone)]
@@ -54,7 +54,7 @@ fn run(settings: &Settings) -> Result<(), String> {
     // The desktop profile's change hints wake the Appearance panel.
     let topics = [
         preferences::appearance::topic(),
-        "backdrop.command.executed".into(),
+        "backdrop.action.executed".into(),
     ];
     let (handle, deliveries) =
         citizen::start_with_macros(APP, &settings.service, &settings.url, &topics)?;

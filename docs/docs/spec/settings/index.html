@@ -208,7 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <a href="#served-verbs">Served verbs</a>
+                        <a href="#served-commands">Served commands</a>
                         <a href="#initial-data-and-resolution">Initial data and resolution</a>
                         <a href="#shell-panel-preferences">Shell panel preferences</a>
                         <a href="#key-bindings">Key bindings</a>
@@ -251,11 +251,11 @@ integration remains in development. No frozen ABP wire bytes change.</p>
 <code>design::DesignReadProjection</code> is render data that cannot construct an accepted
 design or fork compiler apply lineage. Consumers are the desktop applications
 and compd's Quoin shell.</p>
-<h2 id="served-verbs">Served verbs</h2>
-<p>All trusted mesh operators can invoke these verbs. Requests carry JSON bodies;
+<h2 id="served-commands">Served commands</h2>
+<p>All trusted mesh operators can invoke these commands. Requests carry JSON bodies;
 responses preserve ordinary ABP rc conventions: 0 for handled results and 10 for
-refusal, invalid input or unknown verbs. Domain status is structured in the body.</p>
-<table><thead><tr><th>Verb</th><th>Input and result</th></tr></thead><tbody>
+refusal, invalid input or unknown commands. Domain status is structured in the body.</p>
+<table><thead><tr><th>Command</th><th>Input and result</th></tr></thead><tbody>
 <tr><td><code>settings.describe</code></td><td>No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities</td></tr>
 <tr><td><code>settings.get</code></td><td><code>{binding:{instance,profile}, view?, schema?}</code>; <code>view</code> <code>full</code> (default): complete accepted snapshot under <code>snapshot</code>, in <code>schema</code> 1 (default) or 2 (each distinct design projection once under <code>designs</code>, contexts naming it by digest; other schemas refused with <code>unsupported_schema</code>); <code>summary</code>: the profile's <code>Summary</code> (schema, binding, incarnation, revision, design revision, source digest, appearance names, <code>custom_source</code>, session <code>ui</code> (text scale, density and reduced motion), <code>keymaps</code> when any are set, <code>terminal</code> when any value is set, and <code>email</code> when any value is set; never projections or a source) under <code>summary</code>; both with publication/recovery status</td></tr>
 <tr><td><code>settings.appearance.get</code></td><td><code>{binding:{instance,profile}, schema?}</code>; read-only schema 1 appearance projection (<code>mode</code>, <code>contrast</code>, sRGB <code>accent</code>) tagged with incarnation and revisions; the reply also includes the atomic <code>snapshot</code> (in <code>schema</code> 1 or 2, as for <code>settings.get</code>) for shared Consumer validation and effective desktop caption placement; portald derives its schema 2 projection and cache from this same read; <code>wrong_target</code> on a foreign binding</td></tr>
@@ -347,7 +347,7 @@ installed values rather than enter an endless readback loop.
 Fresh decoded topic deliveries use Reducer.observe. Captured tickets are for
 asynchronous completions; a new delivery can advance the state while an older
 bound read is pending, and that read cannot roll the revision back.</p>
-<p>The settings library API is now 0.5.0; authority verbs are 0.3.0. Snapshot
+<p>The settings library API is now 0.5.0; authority commands are 0.3.0. Snapshot
 schema 1 is the default; schema 2 is its compact wire form, decoded into the
 same in-memory snapshot. The shared native consumer follows the compact topic
 and reads schema 2; consumers on their own library copy stay on schema 1 until
@@ -525,7 +525,7 @@ retained on the Bus for any client to read, so an account has no password
 field and every record in the group refuses unknown keys: an account carrying
 <code>password</code> is refused with <code>validation_failed</code>, and nothing is written.
 Passwords live only in the email app's private secrets file, set through its
-own write-only verb. The group is omitted at its defaults, so older profiles
+own write-only command. The group is omitted at its defaults, so older profiles
 keep their seals and the store format stays 3. It does not affect the
 resolved design.</p>
 <table><thead><tr><th>Field</th><th>Type and range</th><th>Default</th></tr></thead><tbody>

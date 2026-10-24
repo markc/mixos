@@ -214,7 +214,7 @@
                         <a href="#source">Source</a>
                         <a href="#tests">Tests</a>
                         <a href="#not-yet">Not yet</a>
-                        <a href="#macro-bus-verbs">Macro Bus verbs</a>
+                        <a href="#macro-bus-commands">Macro Bus commands</a>
                     </nav>
                 </div>
             </div>
@@ -247,7 +247,7 @@ carets, selections and changes as they happen, and keeps typing instant by
 applying it locally first.</p>
 <h2 id="running">Running</h2>
 <pre><code>ced [PATH[:LINE[:COL]]…]   open paths (in the running ced, if there is one)
-ced --headless             every verb, no window
+ced --headless             every command, no window
 ced --service NAME         register as NAME (tests)
 </code></pre>
 <p>Without the edit service, Ced shows a clear waiting state within three seconds
@@ -277,7 +277,7 @@ text, not a local copy.</li>
 <p><code>ced.*</code> (schema <code>ced.v1</code>): <code>ping</code>, <code>info</code>, <code>open</code>, <code>new</code>, <code>tabs</code>, <code>focus</code>,
 <code>state</code>, <code>type</code>, <code>select</code>, <code>action</code>, <code>actions</code>, <code>wait</code>, <code>layout</code>, <code>stats</code>,
 <code>diagnostics</code>, <code>problems</code>, plus <code>app.describe</code> and <code>app.quit</code>; and the
-toolkit drive verbs (<code>ced.ui.*</code>, <code>ced.window</code>, <code>ced.window.state</code>; see
+toolkit drive commands (<code>ced.ui.*</code>, <code>ced.window</code>, <code>ced.window.state</code>; see
 <a href="/docs/drive/">driving an app</a>). A Bus caller's edits carry its own
 origin (<code>agent:ced.&lt;caller&gt;</code>), so they show as an agent's, and its undo is
 its own.</p>
@@ -285,14 +285,14 @@ its own.</p>
 <ul>
 <li><code>crates/documents</code>: the engine, with no UI toolkit. Open documents (one
 tab per buffer of the edit service, each a mirror with its editing model,
-highlighting and diagnostics), every action, the <code>ced.*</code> verbs and their
+highlighting and diagnostics), every action, the <code>ced.*</code> commands and their
 waiters, reconnects and reattaches, the session.</li>
 <li><code>src/</code>: the shell. The Bus thread, <code>ced --headless</code>, and the egui window
 around the shared <a href="/editor/">editor</a> text view.</li>
 </ul>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/apps/ced"><code>apps/ced</code></a>.</p>
 <h2 id="tests">Tests</h2>
-<p><code>cargo test -p documents -p ced</code>: the engine's unit and golden verb-fixture
+<p><code>cargo test -p documents -p ced</code>: the engine's unit and golden command-fixture
 tests, and <code>tests/window.rs</code>, which runs the real window against the fake
 edit service in-process (no Bus): typing reaches the service, and two
 offscreen snapshots. Regenerate them with <code>UPDATE_SNAPSHOTS=1</code> and look at
@@ -305,12 +305,12 @@ tools send with <code>ced.diagnostics</code>).</li>
 <li>Paste from the menu asks the platform for the clipboard; the primary
 selection (middle click) is the compositor's, not ced's.</li>
 </ul>
-<h2 id="macro-bus-verbs">Macro Bus verbs</h2>
-<p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
+<h2 id="macro-bus-commands">Macro Bus commands</h2>
+<p>The shared <a href="/macros/#bus-commands">macro Bus surface</a> uses this process's
 catalogue and runner. Subscribe to <code>&lt;service&gt;.macros.finished</code> for completion, where <code>service</code> is
 the instance’s registered Bus name (for example <code>term-1234</code> for a second Term
-instance). Verbs keep the app’s canonical prefix, such as <code>ced.macros.run</code>.</p>
-<table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
+instance). Commands keep the app’s canonical prefix, such as <code>ced.macros.run</code>.</p>
+<table><thead><tr><th>Command</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
 <tr><td><code>ced.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>ced.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>ced.macros.run</code></td><td><code>{id}</code></td><td>Acceptance and run number</td></tr>

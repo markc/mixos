@@ -1,5 +1,5 @@
 //! Start, stop and restart for the COS tab. A system unit is controlled
-//! through hostd's `unit.control` verb: hostd is root, and its grant
+//! through hostd's `unit.control` command: hostd is root, and its grant
 //! (`mixtray-units`) names the units this daemon may act on, so no sudo and no
 //! polkit prompt is involved. The daemon refuses anything outside the COS list.
 
@@ -14,7 +14,7 @@ use crate::units;
 /// hostd's local socket. Its peer is this daemon, so the grant's cgroup match
 /// is the `mixtrayd.service` cgroup.
 pub const HOSTD_SOCKET: &str = "/run/hostd/hostd.sock";
-const HOSTD_VERB: &str = "unit.control";
+const HOSTD_COMMAND: &str = "unit.control";
 /// hostd waits for the unit job, so this covers its own budget plus a margin.
 const HOSTD_BUDGET: Duration = Duration::from_secs(75);
 const ACTIONS: &[&str] = &["start", "stop", "restart"];
@@ -45,19 +45,19 @@ pub fn check(args: &Value) -> Result<Request, String> {
 /// success, or its error body (or a transport message) on failure.
 pub async fn run(request: &Request) -> Result<Value, Value> {
     let body = json!({"unit": request.unit, "action": request.action});
-    tokio::time::timeout(HOSTD_BUDGET, hostd_call(HOSTD_VERB, body))
+    tokio::time::timeout(HOSTD_BUDGET, hostd_call(HOSTD_COMMAND, body))
         .await
         .unwrap_or_else(|_| Err(json!({"status": "timeout", "message": "hostd did not answer"})))
 }
 
 /// One NUL-framed request on hostd's socket. hostd replies `{rc, body}`:
 /// rc 0 is success, anything else carries hostd's reason in `body`.
-async fn hostd_call(verb: &str, body: Value) -> Result<Value, Value> {
+async fn hostd_call(command: &str, body: Value) -> Result<Value, Value> {
     let transport = |e: String| json!({"status": "transport", "message": e});
     let mut stream = UnixStream::connect(HOSTD_SOCKET)
         .await
         .map_err(|e| transport(format!("cannot reach hostd: {e}")))?;
-    let mut frame = serde_json::to_vec(&json!({"verb": verb, "body": body}))
+    let mut frame = serde_json::to_vec(&json!({"command": command, "body": body}))
         .map_err(|e| transport(e.to_string()))?;
     frame.push(0);
     stream

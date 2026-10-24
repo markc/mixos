@@ -24,9 +24,9 @@ impl Drop for Process {
     }
 }
 
-async fn call(client: &SupervisedClient, verb: &str, args: Value) -> Result<Value, String> {
+async fn call(client: &SupervisedClient, command_name: &str, args: Value) -> Result<Value, String> {
     client
-        .call(SERVICE, verb, args)
+        .call(SERVICE, command_name, args)
         .await
         .map_err(|e| e.to_string())
 }
@@ -69,7 +69,7 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
     let mut incoming = client.incoming_bounded().unwrap();
     for topic in [
         format!("{SERVICE}.saved"),
-        format!("{SERVICE}.command.executed"),
+        format!("{SERVICE}.action.executed"),
     ] {
         client.subscribe_topic(&topic).await.unwrap();
     }
@@ -192,7 +192,7 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
         ("edit.annotate", alias["id"].clone()),
         ("edit.undo", Value::Null),
     ] {
-        let event = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
+        let event = next_on(&mut incoming, &format!("{SERVICE}.action.executed")).await;
         assert_eq!(event["v"], 2);
         assert_eq!(event["id"], id);
         assert_eq!(event["origin"], "bus");
@@ -211,7 +211,7 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
     let cropped = call(&client, "screenshot.crop", json!({"crop":crop}))
         .await
         .unwrap();
-    let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
+    let run = next_on(&mut incoming, &format!("{SERVICE}.action.executed")).await;
     assert_eq!(run["v"], 2);
     assert_eq!(run["id"], "edit.crop");
     assert_eq!(run["origin"], "bus");
@@ -229,7 +229,7 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
     assert!(path.starts_with(&shots), "{path:?}");
     let name = path.file_name().unwrap().to_string_lossy().into_owned();
     assert!(annotation::library::is_shot_name(&name), "{name}");
-    let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
+    let run = next_on(&mut incoming, &format!("{SERVICE}.action.executed")).await;
     assert_eq!(run["id"], "file.save");
     assert_eq!(run["origin"], "bus");
     let heard = next_on(&mut incoming, &format!("{SERVICE}.saved")).await;
@@ -277,9 +277,9 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
         .await
         .unwrap();
     assert_eq!(executed["executed"], "file.save");
-    let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
+    let run = next_on(&mut incoming, &format!("{SERVICE}.action.executed")).await;
     assert_eq!(run["id"], "edit.annotate");
-    let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
+    let run = next_on(&mut incoming, &format!("{SERVICE}.action.executed")).await;
     assert_eq!(run["id"], "file.save");
     assert_eq!(run["origin"], "bus");
     let second = next_on(&mut incoming, &format!("{SERVICE}.saved")).await;

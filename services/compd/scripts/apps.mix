@@ -193,7 +193,7 @@ end
 
 -- ── Properties ──────────────────────────────────────────────────────────
 -- mix 0.89.0 reserves <svc>.props.{get,list,describe} for the runtime-owned
--- lifecycle tree, so the author properties publish through the SPEC-12 verbs
+-- lifecycle tree, so the author properties publish through the SPEC-12 commands
 -- that fall through to author handlers: watch (snapshot read) and set.
 
 on "apps.props.watch" desc "read citizen properties: apps.count, apps.icon_theme, apps.terminal"

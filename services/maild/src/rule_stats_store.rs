@@ -149,7 +149,7 @@ impl RuleStatsStore {
 
         // Delete rule_hits rows not in the new snapshot — keeps the
         // on-disk shape == the in-memory shape. (A future "purge
-        // rules removed from pack" admin verb would live elsewhere;
+        // rules removed from pack" admin command would live elsewhere;
         // RuleStats itself doesn't drop entries, so this delete only
         // fires when an operator hand-edits the DB.)
         let now = unix_secs();

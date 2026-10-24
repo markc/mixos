@@ -108,8 +108,8 @@ impl PortContext {
     }
 }
 
-/// The reply handle of a long verb (`comp.window.wait`, `close {force}`,
-/// `region.select`, `input.sequence`): the engine answers when the verb
+/// The reply handle of a long command (`comp.window.wait`, `close {force}`,
+/// `region.select`, `input.sequence`): the engine answers when the command
 /// resolves. Dropping it unanswered reads as `busy` to the caller.
 pub struct LongReply(tokio::sync::oneshot::Sender<ControlReply>);
 
@@ -134,13 +134,13 @@ pub trait CompEngine {
     fn snapshot(&mut self, scopes: &ReadScopes) -> Option<CompSnapshot>;
     /// `comp.props.set`, already through the ingress gate.
     fn set(&mut self, path: &str, value: &Value, generation: Option<u64>) -> ControlReply;
-    /// A one-pass `comp.window.*` verb.
+    /// A one-pass `comp.window.*` command.
     fn window(&mut self, op: &WindowOp) -> ControlReply;
-    /// A single-step `comp.input.*` verb.
+    /// A single-step `comp.input.*` command.
     fn input(&mut self, op: &InputOp) -> ControlReply;
     /// `comp.panel.hold` / `comp.panel.mode` (`sender` is the broker's).
     fn panel(&mut self, request: &PanelRequest) -> ControlReply;
-    /// Start a long verb; answer through `reply` when it resolves. Its
+    /// Start a long command; answer through `reply` when it resolves. Its
     /// deadline runs from `admitted`.
     fn start_long(&mut self, op: LongOp, reply: LongReply, admitted: Instant);
     /// The broker's live service set (holder cleanup).
@@ -150,7 +150,7 @@ pub trait CompEngine {
     fn watch_props(&mut self, active: bool) -> bool;
     /// Renew the pointer observation lease.
     fn renew_pointer_lease(&mut self);
-    /// `compd.truth` ([`crate::port::TRUTH_VERB`]): the engine's own view, as JSON.
+    /// `compd.truth` ([`crate::port::TRUTH_COMMAND`]): the engine's own view, as JSON.
     /// Default: null (an engine with no truth to offer).
     fn truth(&mut self) -> Value {
         Value::Null
@@ -271,7 +271,7 @@ impl PortService {
         controls.sort_by_key(PortControl::order);
         let epoch = self.context.agent_epoch.load(Ordering::Acquire);
         controls.retain_mut(|control| !control.refuse_cleared_agent(epoch));
-        // Bound agent verbs without reordering: a suffix stays queued.
+        // Bound agent commands without reordering: a suffix stays queued.
         let mut agent_ops = 0;
         let mut initial_sequence_available = true;
         let end = controls
@@ -356,7 +356,7 @@ impl PortService {
                     }
                 }
                 PortControl::Long(request) => {
-                    // The ingress slot is released here: the verb now waits
+                    // The ingress slot is released here: the command now waits
                     // on its own permit and deadline, not the bounded queue.
                     request.slot.take();
                     if let (Some(op), Some(reply)) = (request.op.take(), request.reply.take()) {

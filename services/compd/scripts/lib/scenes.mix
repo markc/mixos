@@ -1351,10 +1351,10 @@ fn drive_popups_inner($s)
   return $s
 end
 
-fn panel_command($s, $edge, $verb, $args)
-  $r = $s.io.rpc($s.host, $verb, $args)
-  if type($r) != "map" then fail("SCENES_SNAPSHOT", "missing panel command receipt", {verb:$verb}) end
-  if $r.accepted == false or $r.applied == false then fail("SCENES_UPSTREAM", "panel command refused", {verb:$verb, upstream:$r}) end
+fn panel_command($s, $edge, $command, $args)
+  $r = $s.io.rpc($s.host, $command, $args)
+  if type($r) != "map" then fail("SCENES_SNAPSHOT", "missing panel command receipt", {command:$command}) end
+  if $r.accepted == false or $r.applied == false then fail("SCENES_UPSTREAM", "panel command refused", {command:$command, upstream:$r}) end
   $p = $s.io.rpc($s.host, "shell.panel.state", {edge:$edge})
   if type($p) != "map" or type($p.pages) != "list" then fail("SCENES_SNAPSHOT", "missing applied panel state", {edge:$edge}) end
   $s.panels[$edge] = $p
@@ -1626,12 +1626,12 @@ end
 -- capability probe is shell.dialog.hide: NOT_FOUND or success means dialogs.
 fn dialog_probe($s)
   if $s.dialog_capable == true then return $s end
-  -- shell.info lists the verbs without touching a visible dialog; hosts that
-  -- answer no verb list fall back to the hide probe.
+  -- shell.info lists the commands without touching a visible dialog; hosts that
+  -- answer no command list fall back to the hide probe.
   try
     $info = $s.io.rpc($s.host, "shell.info", {})
-    if type($info) == "map" and type($info.verbs) == "list" then
-      $s.dialog_capable = contains($info.verbs, "dialog.show") or contains($info.verbs, "shell.dialog.show")
+    if type($info) == "map" and type($info.commands) == "list" then
+      $s.dialog_capable = contains($info.commands, "dialog.show") or contains($info.commands, "shell.dialog.show")
       return $s
     end
   catch $ignored
@@ -2080,27 +2080,27 @@ fn reset_scene($s, $name, $e)
   return $s
 end
 
-fn request($s, $verb, $args)
+fn request($s, $command, $args)
   $previous_desired = $s.desired
   $s.rc = 0
   $s.response = {}
   try
     if type($args) != "map" then fail("SCENES_ARGUMENT", "arguments must be a map", {}) end
-    if $verb == "list" then
+    if $command == "list" then
       $s.response = inventory($s)
       return $s
     end
-    if $verb == "templates" then
+    if $command == "templates" then
       $s.response = templates_list($s)
       return $s
     end
-    if $verb == "editor.open" then return editor_open($s, $args) end
-    if $verb == "editor.close" then return editor_close($s, $args) end
-    if $verb == "fork" then return fork($s, $args) end
-    if $verb == "promote" then return promote($s, $args) end
-    if $verb == "move" then return move($s, $args) end
-    if contains(["install", "remove", "enable", "disable", "reset", "open", "close", "toggle"], $verb) then require_state($s) end
-    if $verb == "install" then
+    if $command == "editor.open" then return editor_open($s, $args) end
+    if $command == "editor.close" then return editor_close($s, $args) end
+    if $command == "fork" then return fork($s, $args) end
+    if $command == "promote" then return promote($s, $args) end
+    if $command == "move" then return move($s, $args) end
+    if contains(["install", "remove", "enable", "disable", "reset", "open", "close", "toggle"], $command) then require_state($s) end
+    if $command == "install" then
       $name = $args.name ?? authored_name($s, $args.template)
       if not valid_name($name) then fail("SCENES_NAME", "invalid installation name", {}) end
       if ($name == "editor") != ($args.template == "editor") then
@@ -2133,15 +2133,15 @@ fn request($s, $verb, $args)
     $name = $args.name
     known($s, $name)
     if $name == "editor" then
-      if contains(["enable", "disable"], $verb) then fail("SCENES_RESERVED", "the editor is summoned, never enabled", {name:"editor"}) end
-      if contains(["open", "close", "toggle"], $verb) then fail("SCENES_RESERVED", "use scenes.editor.open and scenes.editor.close", {name:"editor"}) end
-      if $verb == "remove" then return editor_remove($s) end
-      if $verb == "reset" then return editor_reset($s) end
+      if contains(["enable", "disable"], $command) then fail("SCENES_RESERVED", "the editor is summoned, never enabled", {name:"editor"}) end
+      if contains(["open", "close", "toggle"], $command) then fail("SCENES_RESERVED", "use scenes.editor.open and scenes.editor.close", {name:"editor"}) end
+      if $command == "remove" then return editor_remove($s) end
+      if $command == "reset" then return editor_reset($s) end
     end
     $e = $s.scenes[$name]
-    if not $e.installed and not contains(["disable", "remove", "reset", "reload"], $verb) then fail("SCENES_NOT_FOUND", "scene document is missing", {name:$name}) end
-    if $verb == "enable" or $verb == "disable" then
-      $enable = $verb == "enable"
+    if not $e.installed and not contains(["disable", "remove", "reset", "reload"], $command) then fail("SCENES_NOT_FOUND", "scene document is missing", {name:$name}) end
+    if $command == "enable" or $command == "disable" then
+      $enable = $command == "enable"
       if $enable and not contains($s.desired.enabled, $name) then $s.desired.enabled = push($s.desired.enabled, $name) end
       if not $enable then
         $s.desired.enabled = filter($s.desired.enabled, fn($n) = $n != $name)
@@ -2150,11 +2150,11 @@ fn request($s, $verb, $args)
       $s = persist($s)
       $s = reconcile_one($s, $name, false)
       $s = drive_popups($s)
-    elif $verb == "reload" then
+    elif $command == "reload" then
       -- An explicit reload also retries a crash record naming this scene.
       $s = recover_records($s, $name)
       $s = reconcile_one($s, $name, true)
-    elif $verb == "remove" then
+    elif $command == "remove" then
       $recovery = recovery_directory($s)
       $installation = $s.root .. "/" .. $name
       if exists($installation, {follow_symlinks:false}) and not stat($installation, {follow_symlinks:false}).is_dir then
@@ -2174,13 +2174,13 @@ fn request($s, $verb, $args)
       $s = persist($s)
       $s.response = {name:$name, recovery:$backup}
       return $s
-    elif $verb == "reset" then
+    elif $command == "reset" then
       return reset_scene($s, $name, $e)
-    elif $verb == "ready" or $verb == "model" then
+    elif $command == "ready" or $command == "model" then
       if not $e.enabled or $e.pid == nil or type($args.generation) != "number" or $e.generation != $args.generation then
         fail("SCENES_STALE_GENERATION", "behaviour generation is no longer current", {name:$name})
       end
-      if $verb == "ready" then
+      if $command == "ready" then
         $s.scenes[$name].diagnostic = nil
         $s.scenes[$name].ready = true
         $s.scenes[$name].status = "running"
@@ -2197,9 +2197,9 @@ fn request($s, $verb, $args)
         $s.scenes[$name].diagnostic = nil
       end
       $s = drive_popups($s)
-    elif contains(["open", "close", "toggle"], $verb) then
+    elif contains(["open", "close", "toggle"], $command) then
       if not $e.enabled then fail("SCENES_DISABLED", "scene is disabled", {name:$name}) end
-      $opening = $verb == "open" or ($verb == "toggle" and $s.open != $name)
+      $opening = $command == "open" or ($command == "toggle" and $s.open != $name)
       -- Snapshot before saving the page/mode we will later restore.
       $snapshot = $s.io.rpc($s.host, "shell.props.get", {})
       if type(($snapshot ?? {}).panels) != "map" then fail("SCENES_SNAPSHOT", "missing panel snapshot", {}) end
@@ -2220,9 +2220,9 @@ fn request($s, $verb, $args)
       if $s.rc != 0 then return $s end
       $s.response = {name:$name, open:$s.open == $name, pending:$s.scenes[$name].pending}
     else
-      fail("SCENES_VERB", "unknown scenes verb", {verb:$verb})
+      fail("SCENES_COMMAND", "unknown scenes command", {command:$command})
     end
-    if failure($s.scenes[$name]) != nil and contains(["reload", "enable"], $verb) then
+    if failure($s.scenes[$name]) != nil and contains(["reload", "enable"], $command) then
       $s.rc = 10
       $s.response = failure($s.scenes[$name])
     elif len(keys($s.response)) == 0 then

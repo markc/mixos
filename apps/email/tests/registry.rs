@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The Bus verb registry (`docs/docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
-//! lists exactly the verbs Email describes: its own (`app.describe` reports
-//! them in this order) and the toolkit's drive verbs under its prefix, apart
-//! from the protocol verbs every service answers.
+//! The Bus command registry (`docs/docs/spec/bus/commands.conf.mix`, AGENTS.md §5)
+//! lists exactly the commands Email describes: its own (`app.describe` reports
+//! them in this order) and the toolkit's drive commands under its prefix, apart
+//! from the protocol commands every service answers.
 use email::APP;
-use email::verbs::{VERBS, describe};
+use email::commands::{COMMANDS, describe};
 
-const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/verbs.conf.mix");
+const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
 
 /// The registry's names owned by `owner`, from its one-entry-per-line form.
 fn registered(owner: &str) -> Vec<String> {
@@ -25,9 +25,9 @@ fn registered(owner: &str) -> Vec<String> {
         .collect()
 }
 
-/// What `app.describe` lists, without the protocol verbs.
+/// What `app.describe` lists, without the protocol commands.
 fn described() -> Vec<String> {
-    describe()["verbs"]
+    describe()["commands"]
         .as_array()
         .unwrap()
         .iter()
@@ -38,13 +38,13 @@ fn described() -> Vec<String> {
 }
 
 #[test]
-fn every_described_verb_is_registered_and_nothing_else() {
+fn every_described_command_is_registered_and_nothing_else() {
     let described = described();
     assert!(!described.is_empty());
     assert_eq!(registered("email"), described);
-    // The drive verbs are there under the app's prefix.
-    for verb in toolkit::drive::VERBS {
-        assert!(described.contains(&format!("{APP}.{verb}")), "{verb}");
+    // The drive commands are there under the app's prefix.
+    for command in toolkit::drive::COMMANDS {
+        assert!(described.contains(&format!("{APP}.{command}")), "{command}");
     }
 }
 
@@ -60,20 +60,20 @@ fn class_of(name: &str) -> Option<&'static str> {
         .next()
 }
 
-/// A verb the app describes as read-only is a query
+/// A command the app describes as read-only is a query
 /// (docs/docs/decisions/2026-10-11-verb-classes.md), and one that changes
 /// something is not.
 #[test]
-fn read_only_verbs_are_queries() {
-    for verb in VERBS {
-        if matches!(verb.name, "HELP" | "app.describe") {
+fn read_only_commands_are_queries() {
+    for command in COMMANDS {
+        if matches!(command.name, "HELP" | "app.describe") {
             continue;
         }
-        let class = class_of(verb.name);
-        if verb.read_only {
-            assert_eq!(class, Some("query"), "{}", verb.name);
+        let class = class_of(command.name);
+        if command.read_only {
+            assert_eq!(class, Some("query"), "{}", command.name);
         } else {
-            assert_ne!(class, Some("query"), "{}", verb.name);
+            assert_ne!(class, Some("query"), "{}", command.name);
         }
     }
 }

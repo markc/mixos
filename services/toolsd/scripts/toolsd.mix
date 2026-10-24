@@ -17,7 +17,7 @@
 -- `toolsd.wake` is AUTHORITY-FREE — it takes no args and names no target. It cannot say
 -- WHICH tool to run or for WHOM: it only nudges the drain to go and claim whatever webd
 -- has already authorised and queued, through the separately-authenticated seam. That is
--- exactly the property that lets webd hold it as a delegated-safe verb (the same
+-- exactly the property that lets webd hold it as a delegated-safe command (the same
 -- exception provisiond.wake takes).
 
 -- The drain unit this wake activates. Overridable via Environment= in the unit for a

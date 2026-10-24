@@ -10,7 +10,7 @@ use std::sync::{Arc, OnceLock};
 use dopus::app::App;
 use dopus::dirs::{AppDirs, COMPONENT};
 use dopus::shell::{Bus, Shell};
-use dopus::{APP_ID, bus, label, verbs};
+use dopus::{APP_ID, bus, label, commands};
 use dopus_core::DopusCore;
 
 const HELP: &str = "dopus — the MixOS twin-pane file manager\n\
@@ -20,7 +20,7 @@ Usage: dopus [LEFT [RIGHT]]\n\
   --noded-url URL   the broker (default: the session's)\n\
   --print-config    print the resolved configuration and exit\n\
   --version         print version and build hash, and nothing else\n\
-Bus: serves `dopus.*` (schema dopus.v1) and the window's drive verbs.";
+Bus: serves `dopus.*` (schema dopus.v1) and the window's drive commands.";
 
 struct Args {
     headless: bool,
@@ -34,7 +34,7 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut out = Args {
         headless: false,
         print_config: false,
-        service: verbs::SERVICE.to_owned(),
+        service: commands::SERVICE.to_owned(),
         url: ::bus::client_helpers::resolve_noded_url(),
         paths: Vec::new(),
     };
@@ -115,7 +115,7 @@ fn window(args: &Args, dirs: Option<AppDirs>, paths: Vec<String>) -> Result<(), 
     let (config, file) = dopus::config::load(dirs.as_ref().map(AppDirs::config_dir).as_deref());
     let config_path = file.as_ref().map(|f| f.path.display().to_string());
     let (mut core, core_events) = DopusCore::new(config, file);
-    verbs::apply_open_paths(&mut core, &paths);
+    commands::apply_open_paths(&mut core, &paths);
     let theme = toolkit::Theme::load();
     let options = eframe::NativeOptions {
         // Client-side decorations: the toolkit title bar is the window frame.

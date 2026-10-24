@@ -112,9 +112,9 @@ function pt_invoices($cust)
     $b = pt_inv_badge("" .. $i.status, "" .. $i.due)
     $link = ""
     if ("" .. $i.token) != "" then
-      $verb = "View"
-      if ("" .. $i.status) == "open" then $verb = "View &amp; pay" end
-      $link = '<a class="btn btn-xs" href="/invoice/' .. esc("" .. $i.token) .. '">' .. $verb .. '</a>'
+      $command = "View"
+      if ("" .. $i.status) == "open" then $command = "View &amp; pay" end
+      $link = '<a class="btn btn-xs" href="/invoice/' .. esc("" .. $i.token) .. '">' .. $command .. '</a>'
     end
     $h = $h .. '<tr><td>INV-' .. $i.id .. '</td><td>' .. esc("" .. $i.issued) .. '</td><td>' .. esc("" .. $i.due) .. '</td><td>' .. fmt_aud($i.total_cents) .. '</td><td>' .. pt_badge_html($b) .. '</td><td>' .. $link .. '</td></tr>'
   end

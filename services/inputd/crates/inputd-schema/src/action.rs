@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Action ids: the Bus verb a binding fires.
+//! Action ids: the Bus command a binding fires.
 //!
 //! An id is a `&'static str`. Constants use [`ActionId::from_static`]; ids
 //! read from a keymap file or a Bus body are validated and interned for the

@@ -110,7 +110,7 @@ async fn verified(broker: &Broker) -> VerifiedConnection {
     };
     c
 }
-async fn call(client: &NodedClient, name: &str, verb: &str, mut body: Value) -> (u8, Value) {
+async fn call(client: &NodedClient, name: &str, command_name: &str, mut body: Value) -> (u8, Value) {
     // Caller-side cache preserves the operation epoch after pane close. The
     // recipient still verifies this value against its broker-stamped actor.
     thread_local! {
@@ -149,22 +149,22 @@ async fn call(client: &NodedClient, name: &str, verb: &str, mut body: Value) -> 
             // A stale cached epoch is refused BEFORE the recipient executes
             // anything, so re-probing and retrying once cannot double-apply.
             // A genuine unknown outcome answers the same way the second time.
-            let first = raw(client, name, verb, &body).await;
+            let first = raw(client, name, command_name, &body).await;
             if first.1["error_code"] != "UNKNOWN_OUTCOME" {
                 return first;
             }
             EPOCHS.with(|epochs| epochs.borrow_mut().remove(&key));
             let mut retry = body.clone();
             retry.as_object_mut().unwrap().remove("request_epoch");
-            return Box::pin(call(client, name, verb, retry)).await;
+            return Box::pin(call(client, name, command_name, retry)).await;
         }
     }
-    raw(client, name, verb, &body).await
+    raw(client, name, command_name, &body).await
 }
-async fn raw(client: &NodedClient, name: &str, verb: &str, body: &Value) -> (u8, Value) {
+async fn raw(client: &NodedClient, name: &str, command_name: &str, body: &Value) -> (u8, Value) {
     let (rc, body, _) = tokio::time::timeout(
         Duration::from_secs(6),
-        client.call_with_headers_raw(name, verb, &Default::default(), &body.to_string()),
+        client.call_with_headers_raw(name, command_name, &Default::default(), &body.to_string()),
     )
     .await
     .expect("real Term reply deadline")
@@ -675,9 +675,9 @@ fn p0i_07_real_recipient_both_policies() {
             let owner = verified(&fixture.broker).await;
             let (parent, child) = fixture.records(&owner, 1).await;
             let target = target(&parent, &child);
-            for verb in ["term.session", "term.list", "term.tabs", "term.panes", "term.snapshot"] {
-                let reply = call(owner.client(), &parent.name, verb, json!({"target":target})).await;
-                if policy == Policy::DefaultOpen { assert_eq!(reply.0, 0, "{verb}: {reply:?}"); }
+            for command_name in ["term.session", "term.list", "term.tabs", "term.panes", "term.snapshot"] {
+                let reply = call(owner.client(), &parent.name, command_name, json!({"target":target})).await;
+                if policy == Policy::DefaultOpen { assert_eq!(reply.0, 0, "{command_name}: {reply:?}"); }
                 else { forbidden(reply); }
             }
             for property in ["state", "contents"] {
@@ -685,12 +685,12 @@ fn p0i_07_real_recipient_both_policies() {
                 if policy == Policy::DefaultOpen { assert_eq!(reply.0, 0); } else { forbidden(reply); }
             }
             let tcp = NodedClient::connect_anonymous(&fixture.broker.url).await.unwrap();
-            for verb in ["term.session", "term.snapshot", "term.type", "term.pane.close", "term.props.set", "term.execute"] {
-                forbidden(call(&tcp, &parent.name, verb, json!({"target":target})).await);
+            for command_name in ["term.session", "term.snapshot", "term.type", "term.pane.close", "term.props.set", "term.execute"] {
+                forbidden(call(&tcp, &parent.name, command_name, json!({"target":target})).await);
             }
             let bound = verified(&fixture.broker).await;
             let (parent, target) = fixture.bound(&bound).await;
-            for (verb, extra) in [
+            for (command_name, extra) in [
                 ("term.session", json!({})), ("term.snapshot", json!({"contents":true})),
                 ("term.pane.select", json!({"request_id":"1"})),
                 ("term.props.get", json!({"property":"contents"})),
@@ -698,7 +698,7 @@ fn p0i_07_real_recipient_both_policies() {
             ] {
                 let mut body = json!({"target":target});
                 body.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
-                assert_eq!(call(bound.client(), &parent.name, verb, body).await.0, 0, "{policy:?} {verb}");
+                assert_eq!(call(bound.client(), &parent.name, command_name, body).await.0, 0, "{policy:?} {command_name}");
             }
             // Stage D made `execute` real, so an authorised caller no longer
             // gets the "unimplemented" answer — it gets the schema refusal for
@@ -846,7 +846,7 @@ fn p0i_10_unbound_pane_has_no_control() {
             .open_with(|| crate::terminal::Terminal::start_session(settings, None, 2))
             .unwrap();
         target.pane_id = DecimalU64(2);
-        for verb in [
+        for command_name in [
             "term.session",
             "term.snapshot",
             "term.type",
@@ -856,14 +856,14 @@ fn p0i_10_unbound_pane_has_no_control() {
             "term.props.set",
         ] {
             let mut body = json!({"target":target,"request_id":"1"});
-            if verb == "term.props.get" {
+            if command_name == "term.props.get" {
                 body["property"] = json!("state");
             }
-            if verb == "term.props.set" {
+            if command_name == "term.props.set" {
                 body["property"] = json!("input");
                 body["value"] = json!("blocked");
             }
-            forbidden(call(owner.client(), &parent.name, verb, body).await);
+            forbidden(call(owner.client(), &parent.name, command_name, body).await);
         }
     });
 }
@@ -874,7 +874,7 @@ fn p0i_07_owner_mutations_and_retired_retries() {
     if in_posture("p0i_07_owner_mutations_and_retired_retries", Some("0")) {
         return;
     }
-    for verb in [
+    for command_name in [
         "term.tab.new",
         "term.pane.split",
         "term.tab.select",
@@ -890,10 +890,10 @@ fn p0i_07_owner_mutations_and_retired_retries() {
             let (parent, child) = fixture.records(&owner, 1).await;
             let target = target(&parent, &child);
             let mut request = json!({"target":target,"request_id":"1"});
-            if verb == "term.pane.split" {
+            if command_name == "term.pane.split" {
                 request["dir"] = json!("h");
             }
-            if verb == "term.type" {
+            if command_name == "term.type" {
                 request["foreground_generation"] = json!(
                     fixture
                         .tabs
@@ -909,16 +909,16 @@ fn p0i_07_owner_mutations_and_retired_retries() {
                 );
                 request["text"] = json!("print(123)\n");
             }
-            if verb == "term.props.set" {
+            if command_name == "term.props.set" {
                 request["property"] = json!("selected");
                 request["value"] = json!(true);
             }
-            let first = call(owner.client(), &parent.name, verb, request.clone()).await;
-            assert_eq!(first.0, 0, "{verb}: {first:?}");
+            let first = call(owner.client(), &parent.name, command_name, request.clone()).await;
+            assert_eq!(first.0, 0, "{command_name}: {first:?}");
             assert_eq!(
-                call(owner.client(), &parent.name, verb, request.clone()).await,
+                call(owner.client(), &parent.name, command_name, request.clone()).await,
                 first,
-                "retry duplicated {verb}"
+                "retry duplicated {command_name}"
             );
             assert_eq!(
                 call(
@@ -933,7 +933,7 @@ fn p0i_07_owner_mutations_and_retired_retries() {
             );
             fixture._control.expire_retries();
             assert_eq!(
-                call(owner.client(), &parent.name, verb, request).await.1["error_code"],
+                call(owner.client(), &parent.name, command_name, request).await.1["error_code"],
                 "UNKNOWN_OUTCOME"
             );
             assert_eq!(
@@ -1061,7 +1061,7 @@ fn p0i_09_real_payload_tap_observe_and_logs() {
     runtime().block_on(async {
         let audit = NodedClient::connect("term-policy-audit", &fixture.broker.url).await.unwrap();
         let mut observed = audit.incoming_async().await.unwrap();
-        audit.call("noded", "noded.observe.start", json!({"filter":{"verbs":["term.*"]},"body":"redacted"})).await.unwrap();
+        audit.call("noded", "noded.observe.start", json!({"filter":{"commands":["term.*"]},"body":"redacted"})).await.unwrap();
         let tap = NodedClient::connect_anonymous(&fixture.broker.url).await.unwrap();
         let mut tapped = tap.incoming_async().await.unwrap();
         tap.call("noded", "noded.tap", json!({})).await.unwrap();
@@ -1126,9 +1126,9 @@ fn p0i_07_other_uid_both_policies() {
             let UnixConnectOutcome::VerifiedUnix(client) = NodedClient::connect_unix("", configuration["url"].as_str().unwrap(), &options, None).await.unwrap()
             else { panic!("real other-UID kernel verified connection required"); };
             assert_ne!(unsafe { libc::geteuid() }, options.broker_account.uid);
-            for verb in ["term.session", "term.list", "term.tabs", "term.panes", "term.snapshot", "term.type", "term.execute", "term.tab.new", "term.tab.select", "term.tab.close", "term.pane.split", "term.pane.select", "term.pane.close", "term.props.get", "term.props.set", "term.props.watch"] {
+            for command_name in ["term.session", "term.list", "term.tabs", "term.panes", "term.snapshot", "term.type", "term.execute", "term.tab.new", "term.tab.select", "term.tab.close", "term.pane.split", "term.pane.select", "term.pane.close", "term.props.get", "term.props.set", "term.props.watch"] {
                 for target in [configuration["target"].clone(), json!({"nonexistent":true})] {
-                    forbidden(call(client.client(), configuration["name"].as_str().unwrap(), verb, json!({"target":target,"request_id":"1","property":"input","value":"BLOCKED"})).await);
+                    forbidden(call(client.client(), configuration["name"].as_str().unwrap(), command_name, json!({"target":target,"request_id":"1","property":"input","value":"BLOCKED"})).await);
                 }
             }
         });
@@ -1200,7 +1200,7 @@ fn p0i_10_real_tcp_fallback_is_control_free() {
         })
         .await
         .expect("real legacy diagnostic registration");
-        for verb in [
+        for command_name in [
             "term.session",
             "term.tabs",
             "term.panes",
@@ -1217,7 +1217,7 @@ fn p0i_10_real_tcp_fallback_is_control_free() {
             "term.props.set",
             "term.props.watch",
         ] {
-            forbidden(call(&client, "term", verb, json!({"text":"NO_LEGACY_CONTROL"})).await);
+            forbidden(call(&client, "term", command_name, json!({"text":"NO_LEGACY_CONTROL"})).await);
         }
     });
     fixture
@@ -1259,7 +1259,7 @@ fn p0i_10_launch_failures_reach_real_recipient_denial() {
                 }
             }).await.unwrap_or_else(|_| panic!("{fault}: missing graphics-only Mix prompt"));
             assert!(fixture.native().pane_generation(1).is_none());
-            for (verb, extra) in [
+            for (command_name, extra) in [
                 ("term.session", json!({})), ("term.snapshot", json!({"contents":true})),
                 ("term.type", json!({"text":"MUST_NOT_EXECUTE","foreground_generation":"1"})),
                 ("term.tab.new", json!({})), ("term.pane.split", json!({"dir":"h"})),
@@ -1270,7 +1270,7 @@ fn p0i_10_launch_failures_reach_real_recipient_denial() {
             ] {
                 let mut body = json!({"target":target,"request_id":"1"});
                 body.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
-                forbidden(call(owner.client(), &parent.name, verb, body).await);
+                forbidden(call(owner.client(), &parent.name, command_name, body).await);
             }
             // A names-only collision cannot install an alternative native
             // endpoint, even while the real child is graphics-only.
@@ -1346,7 +1346,7 @@ fn p0i_10_parent_bootstrap_outage_has_only_diagnostic_lane() {
         })
         .await
         .unwrap();
-        for verb in [
+        for command_name in [
             "term.session",
             "term.snapshot",
             "term.type",
@@ -1356,7 +1356,7 @@ fn p0i_10_parent_bootstrap_outage_has_only_diagnostic_lane() {
             "term.props.get",
             "term.props.set",
         ] {
-            forbidden(call(owner.client(), "term", verb, json!({})).await);
+            forbidden(call(owner.client(), "term", command_name, json!({})).await);
         }
     });
     cleanup.submit(tabs.lock().unwrap().shutdown());
@@ -1450,7 +1450,7 @@ fn p0i_07_capability_separation_and_bound_termination() {
                 .0,
                 0
             );
-            for (verb, extra) in [
+            for (command_name, extra) in [
                 ("term.snapshot", json!({"contents":true})),
                 (
                     "term.type",
@@ -1469,7 +1469,7 @@ fn p0i_07_capability_separation_and_bound_termination() {
                 body.as_object_mut()
                     .unwrap()
                     .extend(extra.as_object().unwrap().clone());
-                forbidden(call(bound.client(), &parent.name, verb, body).await);
+                forbidden(call(bound.client(), &parent.name, command_name, body).await);
             }
         });
         drop(fixture);
@@ -1800,18 +1800,18 @@ fn p0i_07_actor_table_survives_reconnect_churn() {
     });
 }
 
-/// A grant whose capability set misses a verb the dispatch table can route
+/// A grant whose capability set misses a command the dispatch table can route
 /// leaves a bound child permanently unable to use it, and nothing else would
 /// say so: the child would just see FORBIDDEN and have no way to tell a policy
 /// decision from a provisioning mistake. Pin the two tables against each other.
 #[test]
-fn default_child_capabilities_cover_every_dispatchable_verb() {
+fn default_child_capabilities_cover_every_dispatchable_command() {
     let granted = super::capabilities();
-    // Mirrors dispatch's verb-to-capability table, and has to stay a COMPLETE
-    // mirror: a verb missing from here is a verb this gate silently stops
-    // covering. Stage D turned `execute` on and added two operation verbs to
+    // Mirrors dispatch's command-to-capability table, and has to stay a COMPLETE
+    // mirror: a command missing from here is a command this gate silently stops
+    // covering. Stage D turned `execute` on and added two operation commands to
     // the same capability, without reissuing anyone's grant.
-    for (verb, capability) in [
+    for (command_name, capability) in [
         ("term.session", Capability::ReadState),
         ("term.list", Capability::ReadState),
         ("term.tabs", Capability::ReadState),
@@ -1841,25 +1841,25 @@ fn default_child_capabilities_cover_every_dispatchable_verb() {
     ] {
         assert!(
             granted.contains(&capability),
-            "{verb} routes to {capability:?}, which the default grant omits"
+            "{command_name} routes to {capability:?}, which the default grant omits"
         );
         // And the mirror is checked AGAINST the real table rather than merely
         // sitting beside it — a hand-kept copy is what drifted before.
         assert_eq!(
-            super::super::control::capability_of(verb, verb == "term.snapshot"),
+            super::super::control::capability_of(command_name, command_name == "term.snapshot"),
             Some(capability),
-            "{verb} disagrees with dispatch's own table"
+            "{command_name} disagrees with dispatch's own table"
         );
     }
     // Nothing outside the mirror dispatches, either.
-    for verb in [
+    for command_name in [
         "term.invented",
         "term.exec",
         "term.task",
         "shell.task.submit",
         "",
     ] {
-        assert_eq!(super::super::control::capability_of(verb, false), None);
+        assert_eq!(super::super::control::capability_of(command_name, false), None);
     }
     // And the reverse: a capability nobody routes to is dead weight in every
     // grant, so the two tables have to stay the same size.
@@ -2035,8 +2035,8 @@ fn p0j_d_execute_forwards_to_the_pane_shell_and_refuses_at_the_edges() {
         let tcp = NodedClient::connect_anonymous(&fixture.broker.url)
             .await
             .unwrap();
-        for verb in ["term.execute", "term.exec.result", "term.exec.cancel"] {
-            forbidden(call(&tcp, &parent.name, verb, json!({"target":target})).await);
+        for command_name in ["term.execute", "term.exec.result", "term.exec.cancel"] {
+            forbidden(call(&tcp, &parent.name, command_name, json!({"target":target})).await);
         }
 
         // The announcement names the ORIGINATING agent, not Term. On the real
@@ -2262,8 +2262,8 @@ fn p4_task_forwards_to_the_pane_shell_and_scopes_by_actor_and_kind() {
         let tcp = NodedClient::connect_anonymous(&fixture.broker.url)
             .await
             .unwrap();
-        for verb in ["term.task.submit", "term.task.result", "term.task.cancel"] {
-            forbidden(call(&tcp, &parent.name, verb, json!({"target":target})).await);
+        for command_name in ["term.task.submit", "term.task.result", "term.task.cancel"] {
+            forbidden(call(&tcp, &parent.name, command_name, json!({"target":target})).await);
         }
 
         // A pane generation that is not this child's is not this child.
@@ -2282,7 +2282,7 @@ fn p4_task_forwards_to_the_pane_shell_and_scopes_by_actor_and_kind() {
 }
 
 /// The arc's real proof: a SEPARATE mix process, driving term with plain
-/// `send`, reaching a protected verb end to end.
+/// `send`, reaching a protected command end to end.
 ///
 /// This is the VT5 shape. The driver is not the pane shell and holds no grant;
 /// it is an ordinary script that happens to run as the same uid. Before the
@@ -2377,12 +2377,12 @@ fn unified_send_drives_term_execute_from_a_separate_driver_process() {
             "the driver could not find the term instance in noded.list\n{out}\n{err}"
         );
         // The decisive line, and it is term.session rather than term.execute:
-        // a PROTECTED verb answering rc 0 to a grantless separate process is
+        // a PROTECTED command answering rc 0 to a grantless separate process is
         // precisely what the diagnostic lane refuses with FORBIDDEN. If the
         // verified lane were not carrying the principal, this is where it ends.
         assert!(
             out.contains("SESSION_RC=0"),
-            "plain send did not reach a protected verb — this is the VT5 gap\n{out}\n{err}"
+            "plain send did not reach a protected command — this is the VT5 gap\n{out}\n{err}"
         );
         assert!(
             out.contains("RC=0"),

@@ -28,7 +28,7 @@ library target. References to `mixos_mix` in its source name the
 
 See [Command-line interface](cli.md) for modes, options, subcommands, files,
 and environment variables. See [Serve mode](serve-mode.md) for the supervised
-Bus runtime and its reserved verbs.
+Bus runtime and its reserved commands.
 
 ## What it provides
 
@@ -48,7 +48,7 @@ Bus runtime and its reserved verbs.
 - Usage statistics stored under the XDG state directory, with JSON rotation
   and optional SQLite queries.
 - Bus adapters for transient scripts and supervised `--serve` citizens.
-- Runtime-owned `HELP`, `INFO`, `QUIT`, and L1 property verbs for every served
+- Runtime-owned `HELP`, `INFO`, `QUIT`, and L1 property commands for every served
   citizen.
 
 ## Execution modes
@@ -82,7 +82,7 @@ and collection limits remain unset. The process runs evaluation on a dedicated
 | `meta` | Help, manuals, introspection, build, diagnostics, mesh, AI, and orchestration commands. |
 | `node_config` | Read-only broker URL resolution from `node.conf.mix`. |
 | `repl` | Interactive loop, history, prompt, tracing, directory stack, jobs, and `.mixrc` loading. |
-| `serve_runtime` | Reserved Bus verbs and the lifecycle property tree for served citizens. |
+| `serve_runtime` | Reserved Bus commands and the lifecycle property tree for served citizens. |
 | `shell` | REPL and `-c` classification between Mix, functions, builtins, and external commands. |
 | `shell_handler` | Per-line shell fallback for files loaded through `source`. |
 | `stats_io` | XDG state paths, the append-only JSONL statistics store, its cache and ops, and stats reports. |

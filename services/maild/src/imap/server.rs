@@ -61,7 +61,7 @@ pub async fn start(
     let cfg = Arc::new(cfg);
     // `slots` is created by the caller (`runtime.rs`) and shared with
     // the `maild.stats.online` Bus surface, so the connection counts
-    // this listener maintains are the ones the stats verb reads.
+    // this listener maintains are the ones the stats command reads.
 
     let mut imaps_addrs: Vec<SocketAddr> = Vec::with_capacity(cfg.listen_imaps.len());
     for addr in cfg.listen_imaps.clone() {

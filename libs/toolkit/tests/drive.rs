@@ -72,9 +72,9 @@ fn window_with(builder: egui_kittest::HarnessBuilder<App>) -> Harness<'static, A
     let builder = builder.with_size(egui::vec2(900.0, 500.0));
     let mut harness = builder.build_ui_state(
         move |ui, app: &mut App| {
-            for (id, verb, args) in std::mem::take(&mut app.inbox) {
+            for (id, command_name, args) in std::mem::take(&mut app.inbox) {
                 app.answers
-                    .extend(drive::request(ui.ctx(), id, verb, &args));
+                    .extend(drive::request(ui.ctx(), id, command_name, &args));
             }
             app.answers.extend(drive::logic(ui.ctx()));
             if std::mem::take(&mut app.finish) {
@@ -83,7 +83,7 @@ fn window_with(builder: egui_kittest::HarnessBuilder<App>) -> Harness<'static, A
             let mut fired: Vec<_> = registry
                 .shortcuts(ui.ctx(), &app.fixture)
                 .into_iter()
-                .map(|id| (id, toolkit::command::Origin::Shortcut))
+                .map(|id| (id, toolkit::action::Origin::Shortcut))
                 .collect();
             fired.extend(titlebar::show(
                 ui,
@@ -132,24 +132,24 @@ fn window_with(builder: egui_kittest::HarnessBuilder<App>) -> Harness<'static, A
     harness
 }
 
-/// Send `verb` from inside the next frame and step until it is answered.
-fn call(h: &mut Harness<'_, App>, verb: &'static str, args: Value) -> Answer {
+/// Send `command` from inside the next frame and step until it is answered.
+fn call(h: &mut Harness<'_, App>, command_name: &'static str, args: Value) -> Answer {
     let app = h.state_mut();
     app.next += 1;
     let id = app.next;
-    app.inbox.push((id, verb, args));
+    app.inbox.push((id, command_name, args));
     for _ in 0..60 {
         h.step();
         if let Some(at) = h.state().answers.iter().position(|a| a.id == id) {
             return h.state_mut().answers.remove(at);
         }
     }
-    panic!("{verb} was never answered");
+    panic!("{command_name} was never answered");
 }
 
-fn ok(h: &mut Harness<'_, App>, verb: &'static str, args: Value) -> Value {
-    let answer = call(h, verb, args);
-    assert_eq!(answer.rc, 0, "{verb}: {}", answer.body);
+fn ok(h: &mut Harness<'_, App>, command_name: &'static str, args: Value) -> Value {
+    let answer = call(h, command_name, args);
+    assert_eq!(answer.rc, 0, "{command_name}: {}", answer.body);
     answer.body
 }
 
@@ -334,7 +334,7 @@ fn a_click_on_a_menu_title_opens_it_and_keys_navigate() {
 }
 
 #[test]
-fn menus_list_open_and_close_by_verb() {
+fn menus_list_open_and_close_by_command() {
     let mut h = window();
     let list = ok(&mut h, "ui.menu.list", json!({}));
     let file = &list["menus"][0];
@@ -479,7 +479,7 @@ fn unknown_and_ambiguous_targets_are_refused() {
         (10, Some("ARGUMENT"))
     );
     let unknown = call(&mut h, "ui.wave", json!({}));
-    assert_eq!(unknown.body["error_code"], "UNKNOWN_VERB");
+    assert_eq!(unknown.body["error_code"], "UNKNOWN_COMMAND");
 }
 
 #[test]
@@ -499,7 +499,7 @@ fn queued_inputs_run_in_order() {
 }
 
 #[test]
-fn window_verbs_send_viewport_commands() {
+fn window_commands_send_viewport_commands() {
     let mut h = window();
     let maximized = ok(&mut h, "window", json!({"action":"maximize"}));
     assert_eq!(maximized["requested"], "maximize");
@@ -567,9 +567,9 @@ fn captures(h: &Harness<'_, App>) -> std::path::PathBuf {
         .join("demo/captures")
 }
 
-fn refused(h: &mut Harness<'_, App>, verb: &'static str, args: Value) -> String {
-    let answer = call(h, verb, args);
-    assert_eq!(answer.rc, 10, "{verb} must be refused: {}", answer.body);
+fn refused(h: &mut Harness<'_, App>, command_name: &'static str, args: Value) -> String {
+    let answer = call(h, command_name, args);
+    assert_eq!(answer.rc, 10, "{command_name} must be refused: {}", answer.body);
     answer.body["error_code"].as_str().unwrap().to_owned()
 }
 

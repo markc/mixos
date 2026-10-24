@@ -29,7 +29,7 @@ $bus = nil
 $env = nil
 $citizen_env = nil
 $svc_pid = nil
--- One-shot Bus client: cli.mix <target> <verb> [json-body] -> one JSON line.
+-- One-shot Bus client: cli.mix <target> <command> [json-body] -> one JSON line.
 -- The send must NOT be assigned to $rc -- the runtime sets $rc/$result
 -- itself and an assignment would shadow them with the reply value.
 fn write_client()
@@ -60,10 +60,10 @@ fn fixture($path, $content)
   mkdir(dirname($tmp .. "/" .. $path), {parents: true})
   write_file($tmp .. "/" .. $path, $content)
 end
-fn call($target, $verb, $body)
+fn call($target, $command, $body)
   -- run_argv_must returns captured stdout directly (raising on a spawn
   -- failure); the client prints exactly one JSON line.
-  return json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", $target, $verb, $body], {clear_env: true, env: $env, timeout: 25}))
+  return json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", $target, $command, $body], {clear_env: true, env: $env, timeout: 25}))
 end
 -- apps.icon for $name at $size. An empty $theme omits the field, so the
 -- citizen's selected theme (apps.props.set apps.icon_theme) applies.

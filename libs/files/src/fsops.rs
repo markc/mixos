@@ -17,7 +17,7 @@
 //!   ancestor, require it under the canonical root). An EMPTY `rel` means the place
 //!   root itself (the one case the corpus `is_safe_rel` rejects — hence the shared
 //!   `allow_empty` resolver, not a verbatim copy of `safe_full`).
-//! - `writable` is checked **per-verb, per-operand**: create/write → dest writable;
+//! - `writable` is checked **per-command, per-operand**: create/write → dest writable;
 //!   copy → source readable + dest writable; move → both writable; trash/delete →
 //!   source writable; restore → recorded origin writable. (A read-only place is a
 //!   valid copy *source*.)

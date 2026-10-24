@@ -990,7 +990,7 @@ fn status_pump_scenarios(editor: &str) {
 }
 
 #[test]
-fn status_restricted_identity_rejection_and_unsupported_verbs() {
+fn status_restricted_identity_rejection_and_unsupported_commands() {
     for editor in ["owned", "legacy"] {
         status_restricted_scenarios(editor);
     }
@@ -1040,7 +1040,7 @@ fn status_restricted_scenarios(editor: &str) {
             .unwrap_err();
         assert_eq!(error.to_string(), r#"{"error_code":"REFUSED"}"#);
         tcp.close().await;
-        for verb in [
+        for command_name in [
             "shell.jobs",
             "shell.evaluate",
             "shell.evaluation.inspect",
@@ -1052,7 +1052,7 @@ fn status_restricted_scenarios(editor: &str) {
                 parent
                     .connection
                     .client()
-                    .call(&bound.name, verb, status_request(&bound)),
+                    .call(&bound.name, command_name, status_request(&bound)),
             )
             .await
             .unwrap()
@@ -1091,20 +1091,20 @@ fn status_restricted_scenarios(editor: &str) {
 }
 
 #[test]
-fn status_verbs_are_absent_from_legacy_surfaces() {
+fn status_commands_are_absent_from_legacy_surfaces() {
     for source in [
         include_str!("../../mix-shell/src/bus.rs"),
         include_str!("../../mix-shell/src/serve_runtime.rs"),
         include_str!("../../mix-shell/src/meta.rs"),
         include_str!("../../../libs/mix/src/builtins.rs"),
     ] {
-        for verb in [
+        for command_name in [
             "shell.status",
             "shell.jobs",
             "shell.evaluate",
             "shell.input",
         ] {
-            assert!(!source.contains(verb), "legacy surface contains {verb}");
+            assert!(!source.contains(command_name), "legacy surface contains {command_name}");
         }
     }
 }
@@ -1276,13 +1276,13 @@ fn operation_request(record: &SessionRecord, operation_id: u64) -> serde_json::V
 async fn execute_call(
     parent: &mut Parent,
     record: &SessionRecord,
-    verb: &str,
+    command_name: &str,
     body: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     parent.renew().await;
     tokio::time::timeout(
         Duration::from_secs(5),
-        parent.connection.client().call(&record.name, verb, body),
+        parent.connection.client().call(&record.name, command_name, body),
     )
     .await
     .expect("an execute-family request must always answer")
@@ -1799,12 +1799,12 @@ fn stage_d_reports_its_own_capability_and_refuses_unauthorised_callers() {
         assert!(error.contains("REFUSED"), "{error}");
         tcp.close().await;
 
-        // An unauthorised caller must not be able to tell a verb that EXISTS
-        // from one that does not. If a known verb answered REFUSED and an
+        // An unauthorised caller must not be able to tell a command that EXISTS
+        // from one that does not. If a known command answered REFUSED and an
         // unknown one UNSUPPORTED, the refusal would itself be a probe of the
-        // verb table — so both answer the same, and the distinction is only
+        // command table — so both answer the same, and the distinction is only
         // ever visible to a caller that was admitted.
-        for verb in [
+        for command_name in [
             "shell.status",
             "shell.execute",
             "shell.execute.result",
@@ -1815,7 +1815,7 @@ fn stage_d_reports_its_own_capability_and_refuses_unauthorised_callers() {
                 Duration::from_secs(5),
                 foreign.connection.client().call(
                     &f.bound.name,
-                    verb,
+                    command_name,
                     execute_request(&f.bound, 3, generation, "print(1)"),
                 ),
             )
@@ -1825,7 +1825,7 @@ fn stage_d_reports_its_own_capability_and_refuses_unauthorised_callers() {
             .to_string();
             assert_eq!(
                 error, r#"{"error_code":"REFUSED"}"#,
-                "{verb} leaked: {error}"
+                "{command_name} leaked: {error}"
             );
         }
 
@@ -2997,22 +2997,22 @@ fn p4_bounds_are_reported_and_refusals_leave_no_trace() {
         }
 
         // The deferrals answer UNSUPPORTED explicitly, and — the part that
-        // makes this fixture mean anything — DIFFERENTLY from a verb that does
+        // makes this fixture mean anything — DIFFERENTLY from a command that does
         // not exist. Asserting only the code passed with the deferral arms
-        // deleted, because an unknown verb is refused the same way.
-        for verb in ["shell.task.watch", "shell.task.list"] {
+        // deleted, because an unknown command is refused the same way.
+        for command_name in ["shell.task.watch", "shell.task.list"] {
             let error = execute_call(
                 &mut f.parent,
                 &f.bound,
-                verb,
+                command_name,
                 operation_request(&f.bound, 1),
             )
             .await
             .unwrap_err();
-            assert!(error.contains("UNSUPPORTED"), "{verb}: {error}");
+            assert!(error.contains("UNSUPPORTED"), "{command_name}: {error}");
             assert!(
                 error.contains("deferred"),
-                "{verb} is a deferral and must say so: {error}"
+                "{command_name} is a deferral and must say so: {error}"
             );
         }
         let typo = execute_call(
@@ -3026,7 +3026,7 @@ fn p4_bounds_are_reported_and_refusals_leave_no_trace() {
         assert!(typo.contains("UNSUPPORTED"), "{typo}");
         assert!(
             !typo.contains("deferred"),
-            "an unknown verb must not look like a deferral: {typo}"
+            "an unknown command must not look like a deferral: {typo}"
         );
         teardown(f).await;
     });

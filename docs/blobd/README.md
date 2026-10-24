@@ -10,7 +10,7 @@ Names live by owner, in a blobd-owned `blobd.sqlite`. Movement between nodes
 happens over a byte lane on the WireGuard address; the Bus carries references
 only, never bytes.
 
-The daemon `blobd` registers on the Bus as `blobd`, serves the `blob.*` verbs,
+The daemon `blobd` registers on the Bus as `blobd`, serves the `blob.*` commands,
 publishes its events with `retain: false`, and listens for byte-lane transfers
 on the WireGuard address. Cross-node fetches go through the same lane.
 

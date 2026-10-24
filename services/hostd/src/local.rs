@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The local socket. Each frame is `{"verb": ..., "body": {...}}` and each
+//! The local socket. Each frame is `{"command": ..., "body": {...}}` and each
 //! reply `{"rc": 0|10, "body": {...}}`, NUL-terminated, many per connection.
 use crate::{
     caller::{Origin, Peer},
@@ -116,14 +116,14 @@ async fn connection(stream: UnixStream, host: &Host) -> anyhow::Result<()> {
             }
             Ok(Ok(Some(request))) => request,
         };
-        let reply = match request.get("verb").and_then(Value::as_str) {
-            Some(verb) => {
+        let reply = match request.get("command").and_then(Value::as_str) {
+            Some(command) => {
                 let body = request.get("body").cloned().unwrap_or_else(|| json!({}));
                 // Identity is read for this request, not once per connection.
                 let origin = Origin::Local(peer.caller());
-                service::dispatch_from(host, verb, &body, &origin, Some(peer.clone())).await
+                service::dispatch_from(host, command, &body, &origin, Some(peer.clone())).await
             }
-            None => Err(json!({"status":"bad_request","message":"missing verb"})),
+            None => Err(json!({"status":"bad_request","message":"missing command"})),
         };
         let (rc, body) = match reply {
             Ok(body) => (0, body),
@@ -142,12 +142,12 @@ async fn send(write: &mut OwnedWriteHalf, rc: u8, body: Value) -> anyhow::Result
 }
 
 /// One request from a client, for `hostd call` and tests.
-pub async fn call(path: &Path, verb: &str, body: Value) -> anyhow::Result<(u8, Value)> {
+pub async fn call(path: &Path, command: &str, body: Value) -> anyhow::Result<(u8, Value)> {
     let stream = UnixStream::connect(path)
         .await
         .with_context(|| format!("connect {}", path.display()))?;
     let (read, mut write) = stream.into_split();
-    frame::write(&mut write, &json!({"verb": verb, "body": body})).await?;
+    frame::write(&mut write, &json!({"command": command, "body": body})).await?;
     let reply = frame::read(&mut BufReader::new(read), 8 * 1024 * 1024)
         .await?
         .context("hostd closed without a reply")?;
@@ -176,7 +176,7 @@ mod tests {
         let (rc, body) = call(&socket, "net.exec", json!({"cmd":"id"}))
             .await
             .unwrap();
-        assert_eq!((rc, &body["status"]), (10, &json!("not_served")));
+        assert_eq!((rc, &body["status"]), (10, &json!("UNKNOWN_COMMAND")));
     }
 
     /// Callers that pipeline requests and never read the replies take
@@ -190,7 +190,7 @@ mod tests {
 
         let mut frames = Vec::new();
         for _ in 0..2000 {
-            frames.extend_from_slice(b"{\"verb\":\"HELP\"}\0");
+            frames.extend_from_slice(b"{\"command\":\"HELP\"}\0");
         }
         let mut stalled = Vec::new();
         for _ in 0..CONNECTIONS {

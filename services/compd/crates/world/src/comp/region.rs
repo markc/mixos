@@ -13,7 +13,7 @@
 //! same calls. Coordinates are output-local logical (the cursor's physical
 //! screen position over the output's scale).
 //!
-//! The verb, its timers and its reply are the host's (policy-host `region`,
+//! The command, its timers and its reply are the host's (policy-host `region`,
 //! compd). The overlay is [`overlay`]: plain solids (the dim and the
 //! selection's outline) and one CPU-rasterised hint, drawn only while a
 //! selection runs on the output being drawn, plus the clean-frame record the

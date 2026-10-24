@@ -38,7 +38,7 @@ $checks = [
   {name: "layering", argv: ["tools/layering_gate.mix", "--manifest-path", "Cargo.toml", "--locked"]},
   {name: "layering-apps", argv: ["tools/layering_gate.mix", "--manifest-path", "Cargo.toml",
     "--layers", "apps/layers.conf.mix", "--across-components", "--require", "--locked"]},
-  {name: "verb-registry", argv: ["tools/verb_registry.mix"]},
+  {name: "command-registry", argv: ["tools/command_registry.mix"]},
   {name: "webd", argv: ["tools/webd_lint.mix"]},
   {name: "component-index", argv: ["tools/component_index.mix", "--check"]},
   {name: "units", argv: ["tools/unit_gate.mix"]},

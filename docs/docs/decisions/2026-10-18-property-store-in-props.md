@@ -20,11 +20,11 @@ and use their existing native Bus connection for subscription grants and
 publication. No new crate, transport or broker is introduced.
 
 The [condensed contract](../spec/props/README.md) preserves capability
-strings, verb envelopes, errors, topic suffixes, audit canonicalisation and
+strings, command envelopes, errors, topic suffixes, audit canonicalisation and
 the five `__props_*` table names and DDL. Persisted databases require no
 migration. `noded.props.subscribe_grant`, already served by the broker,
 is registered as an intent because it installs a subscription for another
-peer. Concrete service verbs are registered when their owner adopts them.
+peer. Concrete service commands are registered when their owner adopts them.
 
 ## Why
 

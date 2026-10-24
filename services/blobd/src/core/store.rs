@@ -120,7 +120,7 @@ pub enum StoreError {
     /// Bad request (e.g. `mode: hardlink` without `immutable: true`).
     BadRequest(String),
     SourceInsideStore,
-    /// A bounded resource is taken; the verb replies rc 10 `busy:
+    /// A bounded resource is taken; the command replies rc 10 `busy:
     /// <why>` — the `blob.fetch` queue is full (`fetch_queue_max`), or
     /// another `blob.gc` is already sweeping (one GC owner, M2b).
     Busy(&'static str),
@@ -1677,7 +1677,7 @@ fn shrink_owner_used(tx: &rusqlite::Transaction<'_>, owner: &str, delta: u64) ->
 /// the tree stays daemon-owned), a refused chown (the daemon is not a
 /// member; the unit's `SupplementaryGroups=blob` is what grants
 /// it), a refused chmod. Never fatal: a private CAS still serves
-/// verbs, it just has no same-node zero-copy readers.
+/// commands, it just has no same-node zero-copy readers.
 fn apply_cas_group(state_root: &Path, blobs_root: &Path, group: &str) {
     let Some(gid) = group_gid(group) else {
         tracing::warn!(
@@ -2537,7 +2537,7 @@ mod tests {
     #[test]
     fn an_absent_cas_group_is_skipped_without_failing_open() {
         // A dev host without the group: open succeeds, the tree stays
-        // daemon-owned, and the store still serves verbs.
+        // daemon-owned, and the store still serves commands.
         let dir = TempDir::new().unwrap();
         let store = Store::open(
             dir.path().join("store"),

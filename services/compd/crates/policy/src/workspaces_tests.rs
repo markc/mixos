@@ -577,10 +577,10 @@ fn a_replaced_default_output_keeps_its_workspace() {
     );
 }
 
-/// The workspace switch verb wraps and refuses at the end, on the reply
+/// The workspace switch command wraps and refuses at the end, on the reply
 /// bodies.
 #[test]
-fn workspace_switch_verb_wraps_and_refuses_at_end() {
+fn workspace_switch_command_wraps_and_refuses_at_end() {
     let registry = Registry::<u32>::new();
     let output = output();
     let out = Some(&output);

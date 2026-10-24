@@ -14,11 +14,11 @@ use email::shell::{Done, Event};
 use email::state::{ComposeField, Mode as Surface, SessionInfo, State, Tag, UiState};
 use email::view::{UiEvent, view};
 use email::work::Work;
-use email::{commands, label, strings};
+use email::{actions, label, strings};
 use jmap::EmailPage;
 use settings::email::{AccountEntry, Email as EmailSettings};
 use toolkit::Theme;
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 
 const MARKDOWN: &str = "\
 Hi Ann,
@@ -182,7 +182,7 @@ fn theme(scheme: Scheme, mode: Mode) -> Theme {
 fn harness(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>)> {
     // SAFETY: every test sets the same value before any date is drawn.
     unsafe { std::env::set_var("TZ", "UTC") };
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let mut h = Harness::builder()
         .with_size(egui::vec2(620.0, 980.0))
@@ -215,7 +215,7 @@ fn harness(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>
 fn window(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>)> {
     // SAFETY: every test sets the same value before any date is drawn.
     unsafe { std::env::set_var("TZ", "UTC") };
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let window_theme = theme.clone();
     let mut h = Harness::builder()
@@ -227,12 +227,12 @@ fn window(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>)
                 } else {
                     &window_theme
                 });
-                let fired = commands::shortcuts(ui.ctx(), state, &registry);
+                let fired = actions::shortcuts(ui.ctx(), state, &registry);
                 let mut events = view(ui, state, &registry, &strings, &palette);
                 events.extend(
                     fired
                         .into_iter()
-                        .map(|id| UiEvent::Command(id, toolkit::command::Origin::Shortcut)),
+                        .map(|id| UiEvent::Command(id, toolkit::action::Origin::Shortcut)),
                 );
                 for event in events {
                     seen.push(event.clone());
@@ -279,7 +279,7 @@ fn a_markdown_written_body_renders_as_markdown() {
         serde_json::json!({ "format": "markdown", "auto": true })
     );
     assert_eq!(
-        commands::registry().checked("view.reader.markdown", &h.state().0),
+        actions::registry().checked("view.reader.markdown", &h.state().0),
         Some(true),
         "View › Message › Render Markdown is ticked"
     );
@@ -291,7 +291,7 @@ fn the_toggle_shows_the_source_and_back() {
         opened("text/plain", MARKDOWN),
         &theme(Scheme::Pro, Mode::Light),
     );
-    let registry = commands::registry();
+    let registry = actions::registry();
     // The menu item and `email.execute` run the same command.
     registry
         .execute("view.reader.markdown", &mut h.state_mut().0, Origin::Bus)
@@ -343,7 +343,7 @@ fn a_plain_body_stays_plain() {
 fn an_html_text_body_is_never_markdown() {
     let state = opened("text/html", "<h1>Hi</h1>\n\n# not markdown\n\n## either\n");
     assert_eq!(reader_info(&state)["format"], "plain");
-    let registry = commands::registry();
+    let registry = actions::registry();
     assert!(
         registry
             .execute("view.reader.markdown", &mut { state }, Origin::Bus)
@@ -410,7 +410,7 @@ fn with_no_email_open_the_toolbar_is_disabled() {
 
 #[test]
 fn a_quoted_reply_quotes_and_an_unquoted_one_does_not() {
-    let registry = commands::registry();
+    let registry = actions::registry();
     let mut state = opened("text/plain", PLAIN);
     registry
         .execute("mail.reply_quoted", &mut state, Origin::Bus)
@@ -431,7 +431,7 @@ fn a_quoted_reply_quotes_and_an_unquoted_one_does_not() {
 
 #[test]
 fn mark_unread_keeps_the_email_open_and_unread() {
-    let registry = commands::registry();
+    let registry = actions::registry();
     let mut state = opened("text/plain", PLAIN);
     let strings = strings();
     assert_eq!(
@@ -499,7 +499,7 @@ fn mark_unread_keeps_the_email_open_and_unread() {
 
 #[test]
 fn star_toggles_and_relabels() {
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let mut state = opened("text/plain", PLAIN);
     let label_now = |state: &State| {
@@ -523,8 +523,8 @@ fn star_toggles_and_relabels() {
 
 #[test]
 fn bare_key_and_delete_shortcuts_are_browsing_only() {
-    use toolkit::command::Scope;
-    let registry = commands::registry();
+    use toolkit::action::Scope;
+    let registry = actions::registry();
     for id in [
         "mail.flag",
         "mail.mark_unread",
@@ -579,7 +579,7 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
         "Typed body"
     );
 
-    let registry = commands::registry();
+    let registry = actions::registry();
     h.state_mut().1.clear();
     for command in registry.iter() {
         for chord in registry.shortcuts_of(command.id) {
@@ -672,7 +672,7 @@ fn last_batch(state: &mut State) -> Option<(Vec<String>, jmap::EmailChange)> {
 
 #[test]
 fn junk_moves_to_the_junk_mailbox_and_not_junk_back_to_the_inbox() {
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let mut state = opened("text/plain", PLAIN);
     // No Junk mailbox yet: disabled, and the label says why.
@@ -742,7 +742,7 @@ fn with_attachments(mut state: State) -> State {
 #[test]
 fn attachments_save_open_and_refuse_as_they_should() {
     let mut state = with_attachments(opened("text/plain", PLAIN));
-    let registry = commands::registry();
+    let registry = actions::registry();
     // The command toggles the popup.
     registry
         .execute("mail.attachments", &mut state, Origin::Bus)
@@ -827,7 +827,7 @@ fn composing(typed: &str) -> (State, u64) {
             source: email::suggest::Source::Recent,
         },
     ];
-    commands::registry()
+    actions::registry()
         .execute("mail.compose", &mut state, Origin::Bus)
         .unwrap();
     state.take_work();
@@ -1203,7 +1203,7 @@ fn reader_context_menu_studio_dark() {
 #[test]
 fn quoted_reply_compose_studio_dark() {
     let mut state = opened("text/plain", PLAIN);
-    commands::registry()
+    actions::registry()
         .execute("mail.reply_quoted", &mut state, Origin::Bus)
         .unwrap();
     let mut h = window(state, &theme(Scheme::Studio, Mode::Dark));

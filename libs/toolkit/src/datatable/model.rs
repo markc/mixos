@@ -30,7 +30,7 @@ impl Order {
         }
     }
 
-    /// The short name agents and Bus verbs use: `asc` or `desc`.
+    /// The short name agents and Bus commands use: `asc` or `desc`.
     pub fn name(self) -> &'static str {
         match self {
             Order::Ascending => "asc",

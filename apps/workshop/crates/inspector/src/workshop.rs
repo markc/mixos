@@ -302,7 +302,7 @@ impl Engine {
         }
         fn insert(engine: &Engine, rows: &mut [Row], app: &str) -> bool {
             for row in rows {
-                if matches!(&row.kind, RowKind::Service(name) if name == app || engine.snapshot.services.get(name).and_then(|verbs| verbs.as_ref().ok()).is_some_and(|verbs| verbs.iter().any(|verb| verb.name == format!("{app}.macros.list"))))
+                if matches!(&row.kind, RowKind::Service(name) if name == app || engine.snapshot.services.get(name).and_then(|command_names| command_names.as_ref().ok()).is_some_and(|command_names| command_names.iter().any(|command_name| command_name.name == format!("{app}.macros.list"))))
                 {
                     row.children.push(branch(engine, app));
                     return true;
@@ -375,8 +375,8 @@ impl Engine {
         });
     }
 
-    pub fn workshop_command(&mut self, id: u64, verb: &str, args: &Value) -> bool {
-        if verb == "workshop.traffic" {
+    pub fn workshop_command(&mut self, id: u64, command_name: &str, args: &Value) -> bool {
+        if command_name == "workshop.traffic" {
             let valid = args.as_object().is_some_and(|args| {
                 args.keys()
                     .all(|key| matches!(key.as_str(), "limit" | "filter"))
@@ -396,7 +396,7 @@ impl Engine {
             });
             return true;
         }
-        if verb == "noded.observe.event" {
+        if command_name == "noded.observe.event" {
             if id == 0
                 && self
                     .workshop
@@ -416,11 +416,11 @@ impl Engine {
             }
             return true;
         }
-        if verb == "workshop.observe"
-            || verb == "workshop.macros.open"
-            || verb
+        if command_name == "workshop.observe"
+            || command_name == "workshop.macros.open"
+            || command_name
                 .strip_prefix("workshop.macros.")
-                .is_some_and(|suffix| macros::verbs::SUFFIXES.contains(&suffix))
+                .is_some_and(|suffix| macros::commands::SUFFIXES.contains(&suffix))
         {
             if self.quitting {
                 self.push_workshop(Effect::Reply {
@@ -431,7 +431,7 @@ impl Engine {
                 return true;
             }
             self.queue_workshop(
-                verb.strip_prefix("workshop.").unwrap_or(verb),
+                command_name.strip_prefix("workshop.").unwrap_or(command_name),
                 args.clone(),
                 Some(id),
             );
@@ -448,7 +448,7 @@ mod tests {
     fn observe_events_never_generate_reply_effects() {
         let mut engine = Engine::new(str::to_owned);
         engine.take_effects();
-        assert!(engine.workshop_command(0, "noded.observe.event", &json!({"verb":"noded.ping"})));
+        assert!(engine.workshop_command(0, "noded.observe.event", &json!({"command":"noded.ping"})));
         assert!(engine.take_effects().is_empty());
         assert_eq!(engine.workshop.ignored_observations, 1);
         engine.workshop.subscription = Some("live".into());
@@ -476,7 +476,7 @@ mod tests {
     fn observations_join_replies_by_caller_and_keep_origin_and_latency() {
         let mut state = Workshop::default();
         for caller in ["a", "b"] {
-            state.observe(json!({"message_type":"request","correlation_id":"1","from":caller,"to":"ced","verb":"ced.execute","ts":"2026-10-24T23:59:59.997Z","payload":{"headers":{"macro-origin":"macro:ced:proof"}}}));
+            state.observe(json!({"message_type":"request","correlation_id":"1","from":caller,"to":"ced","command":"ced.execute","ts":"2026-10-24T23:59:59.997Z","payload":{"headers":{"macro-origin":"macro:ced:proof"}}}));
         }
         state.observe(json!({"message_type":"response","correlation_id":"1","from":"ced","to":"a","rc":10,"ts":"2026-10-25T00:00:00.005Z","payload":{"body":{"token":"hidden"}}}));
         assert_eq!(state.traffic.len(), 2);
@@ -510,10 +510,10 @@ mod tests {
     }
 
     #[test]
-    fn traffic_verb_bounds_filter_and_refusals() {
+    fn traffic_command_bounds_filter_and_refusals() {
         let mut engine = Engine::new(str::to_owned);
         engine.take_effects();
-        engine.workshop.retain(json!({"verb":"ced.execute"}));
+        engine.workshop.retain(json!({"command":"ced.execute"}));
         for (args, rc) in [
             (json!({"limit":1,"filter":"ced"}), 0),
             (json!({"limit":1025}), 10),

@@ -1,7 +1,7 @@
 //! `blob.fetch`: cross-node pull over the byte lane, early reply,
 //! completion through the `blob.fetched` event.
 //!
-//! The verb **replies immediately** — never a deferred reply: the mesh
+//! The command **replies immediately** — never a deferred reply: the mesh
 //! response timeout is 30 s (the mesh peer code) and a
 //! multi-GiB pull outlives it. Completion is the `blob.fetched` event
 //! (`retain: false`) plus the `blob.stat` transition `present:false →
@@ -13,7 +13,7 @@
 //!
 //! **Resolution:** `from` if given, else the reference's `origin` —
 //! advisory, first try only. The node's lane URL comes from a
-//! mesh-open `blob.props.get {path:"lane"}` (the verb namespace is
+//! mesh-open `blob.props.get {path:"lane"}` (the command namespace is
 //! `blob.*`; the service is `blobd`, addressed `blobd[.<instance>].<node>`
 //! through the local noded); on `Service 'blobd' not
 //! found` / `disconnected` (both rc=10, discriminated by message text)
@@ -23,9 +23,9 @@
 //! never retried against another peer.
 //!
 //! **Bounded:** at most `fetch_max_concurrent` (default 2) downloads
-//! run; beyond that the verb still replies `accepted` and the fetch
+//! run; beyond that the command still replies `accepted` and the fetch
 //! queues in-process up to `fetch_queue_max` (default 32) — above
-//! that the verb replies rc 10 `busy`. Never an unbounded queue. A
+//! that the command replies rc 10 `busy`. Never an unbounded queue. A
 //! peer that never sends a response head, or a stalled body, aborts
 //! after the same 30 s idle bound. The resolver
 //! and peer roster sit behind small traits so tests inject them and
@@ -139,7 +139,7 @@ pub struct FetchTarget {
 
 /// Resolves a node's byte-lane base URL (`http://<wg-ip>:<port>`).
 /// Production wires noded: a mesh-open `blob.props.get` (the citizen's
-/// `blob.*` namespace — the service is `blobd`, the verb never carries
+/// `blob.*` namespace — the service is `blobd`, the command never carries
 /// the `blobd.` prefix) addressed `blobd[.<instance>].<node>` through
 /// the local broker. Every failure is "this source is unreachable" —
 /// the caller falls back.
@@ -151,12 +151,12 @@ pub trait Resolver: Send + Sync {
     ) -> BoxFuture<'a, Result<String, String>>;
 }
 
-/// The props verb [`NodedResolver`] sends — `blob.props.get`, the
-/// citizen's own namespace (the service is `blobd`, the verb is not
+/// The props command [`NodedResolver`] sends — `blob.props.get`, the
+/// citizen's own namespace (the service is `blobd`, the command is not
 /// `blobd.props.get`; B1). A shared constant so the citizen test can
 /// push the resolver's exact command string through
 /// [`crate::citizen::Citizen::dispatch`] and the two can never drift.
-pub(crate) const RESOLVER_PROPS_VERB: &str = "blob.props.get";
+pub(crate) const RESOLVER_PROPS_COMMAND: &str = "blob.props.get";
 
 /// The `to` address [`NodedResolver`] uses: `blobd.<node>`, or
 /// `blobd-<name>.<node>` when the reference carries an instance (the
@@ -286,7 +286,7 @@ impl PendingEvents {
 // ---- Production wiring (noded through the client slot) ----
 
 /// Resolves lane URLs with `blob.props.get` (the citizen's `blob.*`
-/// verb namespace) through the local noded.
+/// command namespace) through the local noded.
 pub struct NodedResolver {
     client: ClientSlot,
 }
@@ -305,7 +305,7 @@ impl Resolver for NodedResolver {
     ) -> BoxFuture<'a, Result<String, String>> {
         Box::pin(async move {
             let to = resolver_to(node, instance);
-            debug!(to = %to, verb = RESOLVER_PROPS_VERB, "resolving remote lane");
+            debug!(to = %to, command_name = RESOLVER_PROPS_COMMAND, "resolving remote lane");
             let result = async {
                 let client = self
                     .client
@@ -313,11 +313,11 @@ impl Resolver for NodedResolver {
                     .ok_or_else(|| "not connected to the broker".to_string())?;
                 let reply = tokio::time::timeout(
                     BUS_CALL_TIMEOUT,
-                    client.call_typed(&to, RESOLVER_PROPS_VERB, json!({"path": "lane"})),
+                    client.call_typed(&to, RESOLVER_PROPS_COMMAND, json!({"path": "lane"})),
                 )
                 .await
-                .map_err(|_| format!("{RESOLVER_PROPS_VERB} on {to} timed out"))?
-                .map_err(|e| format!("{RESOLVER_PROPS_VERB} on {to}: {e}"))?;
+                .map_err(|_| format!("{RESOLVER_PROPS_COMMAND} on {to} timed out"))?
+                .map_err(|e| format!("{RESOLVER_PROPS_COMMAND} on {to}: {e}"))?;
                 match reply {
                     PortReply::Ok { value, .. } => {
                         let bind = value
@@ -335,10 +335,10 @@ impl Resolver for NodedResolver {
             .await;
             match &result {
                 Ok(url) => {
-                    debug!(to = %to, verb = RESOLVER_PROPS_VERB, rc = 0, url = %url, "lane resolved")
+                    debug!(to = %to, command_name = RESOLVER_PROPS_COMMAND, rc = 0, url = %url, "lane resolved")
                 }
                 Err(message) => {
-                    debug!(to = %to, verb = RESOLVER_PROPS_VERB, rc = 10, message = %message, "lane resolution failed")
+                    debug!(to = %to, command_name = RESOLVER_PROPS_COMMAND, rc = 10, message = %message, "lane resolution failed")
                 }
             }
             result
@@ -512,7 +512,7 @@ impl FetchConfig {
     }
 }
 
-/// What [`Fetcher::submit`] decided — the verb reply's `in_flight`
+/// What [`Fetcher::submit`] decided — the command reply's `in_flight`
 /// and `queued`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubmitOutcome {
@@ -581,7 +581,7 @@ struct Inner {
     failed: AtomicU64,
 }
 
-/// The fetch machinery: submit from the (synchronous) verb dispatch,
+/// The fetch machinery: submit from the (synchronous) command dispatch,
 /// download on the runtime, complete through the event sink.
 /// Cheap to clone (`Arc` inside); construction never touches the
 /// network.
@@ -651,7 +651,7 @@ impl Fetcher {
     }
 
     /// Submit a fetch. Synchronous and quick (a map insert and a
-    /// channel send) — the verb reply is immediate by construction.
+    /// channel send) — the command reply is immediate by construction.
     /// Admission is decided under the state lock by taking the slot
     /// itself (m5), never by reading a counter: a permit acquired →
     /// this call started the download and the task inherits the
@@ -1639,13 +1639,13 @@ mod tests {
         (dir, Arc::new(store))
     }
 
-    fn command(verb: &str, from: &str, args: Value) -> IncomingCommand {
+    fn command(command_name: &str, from: &str, args: Value) -> IncomingCommand {
         let mut headers = BTreeMap::new();
         headers.insert("args".into(), args.to_string());
         IncomingCommand {
             generation: 0,
             from: from.into(),
-            command: verb.into(),
+            command: command_name.into(),
             id: Some("1".into()),
             args: Value::Null,
             body: String::new(),
@@ -1679,13 +1679,13 @@ mod tests {
         String::from_utf8_lossy(&buf).into_owned()
     }
 
-    // ---- B1: the resolver's exact command must be a citizen verb ----
+    // ---- B1: the resolver's exact command must be a citizen command ----
 
     #[test]
     fn resolver_props_command_dispatches_through_the_citizen() {
         // B1 was exactly this drift: the resolver sent `blobd.props.get`,
         // the citizen routes only `blob.*`, and every remote resolution
-        // answered "unknown blob verb". Push the resolver's command
+        // answered "unknown blob command". Push the resolver's command
         // string through Citizen::dispatch so the two can never drift
         // again.
         let (_dir, store) = bare_store("B");
@@ -1708,7 +1708,7 @@ mod tests {
             Arc::new(fetcher),
         );
         let (rc, body, _) = citizen.dispatch(&command(
-            RESOLVER_PROPS_VERB,
+            RESOLVER_PROPS_COMMAND,
             "maild",
             json!({"path": "lane"}),
         ));
@@ -2350,7 +2350,7 @@ mod tests {
     // ---- The queue bound: busy, never an unbounded queue ----
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn beyond_the_queue_bound_the_verb_answers_busy() {
+    async fn beyond_the_queue_bound_the_command_answers_busy() {
         // Two slots held by gated downloads, a queue of one, and a
         // fourth fetch refused busy. The release is a watch latch so a
         // download that starts after the release still completes.

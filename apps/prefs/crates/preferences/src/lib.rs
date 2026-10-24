@@ -4,7 +4,7 @@
 //! search, Software's rows and release notes (from the `releases`
 //! service), Appearance over settingsd, Apps → Email (the
 //! email app's settings in settingsd, its passwords handed to the app), the
-//! one-operation-at-a-time rules and the `prefs.*` Bus verbs,
+//! one-operation-at-a-time rules and the `prefs.*` Bus commands,
 //! and knows nothing about the UI; `prefs` renders it with egui
 //! (AGENTS.md §4.1, engine first).
 pub mod appearance;

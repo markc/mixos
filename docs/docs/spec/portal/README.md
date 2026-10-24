@@ -1,7 +1,7 @@
 # Portal contract: Settings and ScreenCast
 
 Settings status: accepted, version 0.1.0 (ScreenCast is a draft, below). The cbc2 verification of `services/portald`
-passed on the commit that carries it (dcd2f1a). The verbs and wire shapes below
+passed on the commit that carries it (dcd2f1a). The commands and wire shapes below
 are fixed by the XDG portal specification.
 
 `portald` implements the Settings interface of the XDG desktop portal, on the
@@ -45,7 +45,7 @@ Defaults before any projection: `color-scheme` 1 (dark), `contrast` 0, no
 
 ## Source and identity
 
-- Source verb: `settings.appearance.get`, read-only, from `settingsd`.
+- Source command: `settings.appearance.get`, read-only, from `settingsd`.
 - The reply carries the atomic snapshot evidence alongside the projection.
   The shared settings Consumer checks the evidence and manages subscription,
   initial reads, lifecycle generations, delivery loss and bounded recovery.
@@ -71,9 +71,9 @@ Defaults before any projection: `color-scheme` 1 (dark), `contrast` 0, no
 
 The name is never held waiting on the source.
 
-## Verbs
+## Commands
 
-`portald.status` (read-only) is registered in `docs/docs/spec/bus/verbs.conf.mix`.
+`portald.status` (read-only) is registered in `docs/docs/spec/bus/commands.conf.mix`.
 
 ## Compatibility
 
@@ -122,12 +122,12 @@ generated.
 
 Consent: every `Start` is granted by the `allow` policy, a standing grant
 matching the caller's process name, or an answer to a notifyd question (Allow /
-Deny, 60 s, timeout denies). A refusal answers `Response` 1. Bus verbs, all
+Deny, 60 s, timeout denies). A refusal answers `Response` 1. Bus commands, all
 local-only (`broker_origin` must be `local`, else rc 13 `FORBIDDEN`):
 `portald.screencast.pending` (query), `portald.screencast.answer {request,
 allow}` (input), `portald.screencast.grant {app?, count?, ttl_ms?}` (intent),
 `portald.screencast.revoke {id?}` (intent). Registered in
-`docs/docs/spec/bus/verbs.conf.mix`.
+`docs/docs/spec/bus/commands.conf.mix`.
 
 ## Deferred
 

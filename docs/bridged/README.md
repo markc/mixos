@@ -7,13 +7,13 @@ description: How bridged puts an external application with a line-delimited JSON
 
 Some applications MixOS runs are not MixOS's own: they are built elsewhere
 and offer their own automation port. MixOS never forks them to add Bus
-verbs. Instead, `bridged` connects to an application's control channel and
+commands. Instead, `bridged` connects to an application's control channel and
 answers on the Bus for it, so agents and scripts drive it the same way as
 any native app.
 
 One `bridged` instance serves one application, under the application's own
 name. An instance named `fakeapp` answers `fakeapp.call`,
-`fakeapp.commands`, `fakeapp.execute`, `fakeapp.inspect`,
+`fakeapp.actions`, `fakeapp.execute`, `fakeapp.inspect`,
 `fakeapp.screenshot` and `fakeapp.status`.
 
 ## What the application must offer
@@ -29,7 +29,7 @@ A line-delimited JSON control channel on loopback TCP:
 3. One reply per line, `{"id":N,"ok":true,"result":...}` or
    `{"id":N,"ok":false,"error":"..."}`, matched to its request by `id`.
 
-The named verbs use the methods `engine.commands`, `engine.execute`,
+The named commands use the methods `engine.commands`, `engine.execute`,
 `ui.inspect` and `ui.screenshot`; `<app>.call` passes any other method
 through. The full contract is in the
 [bridge spec](../docs/spec/bridge/README.md).
@@ -69,9 +69,9 @@ start is refused when:
 - the name is not a valid Bus service name, or starts with `mixos-`
   (`NAME_INVALID`);
 - the name belongs to the Bus broker (`noded`, `noded-*`) (`NAME_RESERVED`);
-- the name is the first segment of a verb already registered to another
+- the name is the first segment of a command already registered to another
   component, such as `settings` (`NAME_RESERVED`);
-- the installed verb registry, `/opt/mixos/share/bus/verbs.conf.mix`, is
+- the installed command registry, `/opt/mixos/share/bus/commands.conf.mix`, is
   missing or unreadable (`REGISTRY`: the check fails closed);
 - the config or the token file is missing or wrong, or the token file is
   readable by group or other (`CONFIG`, `TOKEN`).
@@ -80,7 +80,7 @@ start is refused when:
 
 ```sh
 send fakeapp fakeapp.status
-send fakeapp fakeapp.commands
+send fakeapp fakeapp.actions
 send fakeapp fakeapp.execute body='{"command":"file.new","params":{"width":640}}'
 send fakeapp fakeapp.call body='{"method":"echo","params":{"a":1}}'
 ```
@@ -107,7 +107,7 @@ after it then fails at once. This needs Mix 0.112.1 or later.
 Read this before bridging an application.
 
 - **Any mesh member can drive a bridged application.** The Bus gives every
-  member of the mesh access to every verb; there is no per-verb access
+  member of the mesh access to every command; there is no per-command access
   control, and `bridged` adds none. Whatever the application's control
   channel allows, any mesh member can do through `<app>.call`: send it UI
   input, run its commands and, if it has file commands, read and write files.
@@ -151,34 +151,34 @@ Read this before bridging an application.
   `systemd-analyze security` score is computed from the unit file and does
   not prove the filter is enforced on a given host.
 - **The name cannot shadow a system service.** The start checks refuse a
-  name that a registered verb already starts with, and the Bus itself refuses
+  name that a registered command already starts with, and the Bus itself refuses
   a name that is already registered.
 
 ## Status
 
-`bridged` is version 0.2.0 (unreleased); 0.2.0 adds `auth: "key"`. Its six verbs are declared in the Bus
-verb registry, `docs/docs/spec/bus/verbs.conf.mix` (schema 3), as the `bridged`
-instance family `<app>.<verb>`. The static registry gate checks the family's
+`bridged` is version 0.2.0 (unreleased); 0.2.0 adds `auth: "key"`. Its six commands are declared in the Bus
+command registry, `docs/docs/spec/bus/commands.conf.mix` (schema 3), as the `bridged`
+instance family `<app>.<command>`. The static registry gate checks the family's
 owner and suffix. Installing the registry is a separate prerequisite: the
 scripts and the registry must come from the same revision, and the registry
-must be at `/opt/mixos/share/bus/verbs.conf.mix` or named by `BRIDGED_VERBS`
+must be at `/opt/mixos/share/bus/commands.conf.mix` or named by `BRIDGED_COMMANDS`
 in `/etc/mixos/bridge/<app>.env`. Otherwise every start is refused. This
 source tree is not a live deployment, and nothing in it installs the
 registry for you.
 
 The family is declared with `members: "instances"`, so the running
-instances are not listed. `tools/verb_registry.mix --instances DIR` checks
+instances are not listed. `tools/command_registry.mix --instances DIR` checks
 only the private file-stem naming and collisions; it reads no config token.
-Mesh access is unchanged: the Bus still gives every member every verb. The
-runtime guard reads the verbs and families lists. It does not enforce the
+Mesh access is unchanged: the Bus still gives every member every command. The
+runtime guard reads the commands and families lists. It does not enforce the
 full canonical format (field order, spacing); the static gate does that.
 
-**Verb classes.** `<app>.call` and `<app>.execute` are `intent`;
-`<app>.commands`, `<app>.inspect` and `<app>.status` are `query`.
+**Command classes.** `<app>.call` and `<app>.execute` are `intent`;
+`<app>.actions`, `<app>.inspect` and `<app>.status` are `query`.
 `<app>.screenshot` is `intent`: its `focus` option can bring the window
 forward, a change another caller sees, so it is not a query even though it
 only captures. See the
-[instance verb families decision](../docs/decisions/2026-10-13-instance-verb-families.md).
+[instance command families decision](../docs/decisions/2026-10-13-instance-verb-families.md).
 
 ## Source and tests
 
@@ -194,7 +194,7 @@ package, identity in `component.mx`. The source is
 | `units/bridged@.service` | one unit per application; config `/etc/mixos/bridge/<app>.conf.mix` |
 | `tests/lib/fake_app.mix` | a stand-in application on `tcp_listen` (token, key or no auth, slow and dropping methods) |
 | `tests/bridge_core_test.mix` | offline: config, token, guard, spec fixture, the client against stand-in apps |
-| `tests/bridged_test.mix` | every verb over a private broker, the start refusals, `--start` (no child on a refusal, the child's exit code passed through), the app dying and coming back |
+| `tests/bridged_test.mix` | every command over a private broker, the start refusals, `--start` (no child on a refusal, the child's exit code passed through), the app dying and coming back |
 
 Run the tests from the checkout root with Mix 0.112.1 or later. The mix
 binary the tests run under is `BRIDGED_MIX`, else `MIXOS_TEST_MIX`, else

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Standing grants: who may call which write verbs, within which limits,
+//! Standing grants: who may call which write commands, within which limits,
 //! until when. Default deny. The policy is a strict-data document
 //! (`/etc/hostd/policy.mx`), root-owned and not writable by anyone else,
 //! read again for every write request so an edit takes effect at once.
@@ -11,7 +11,7 @@
 //!   grants: [
 //!     {name: "desk-network",
 //!      caller: {cgroup: "/machine.slice/systemd-nspawn@desk.service/*"},
-//!      verbs: ["net.*"],
+//!      commands: ["net.*"],
 //!      limits: {links: ["eth0"], ssids: ["example"]},
 //!      expires: "2027-01-01T00:00:00Z",
 //!      rate: {count: 3, per_s: 600}}
@@ -30,7 +30,7 @@ use std::{
 
 pub const POLICY: &str = "/etc/hostd/policy.mx";
 const SCHEMA: u32 = 1;
-/// Verbs no grant may name: thawing is for local root only.
+/// Commands no grant may name: thawing is for local root only.
 const UNGRANTABLE: &[&str] = &["hostd.thaw"];
 
 #[derive(Debug, Deserialize)]
@@ -46,9 +46,9 @@ pub struct Policy {
 pub struct Grant {
     pub name: String,
     pub caller: CallerMatch,
-    /// Exact verb names, or a family as `prefix.*`.
-    pub verbs: Vec<String>,
-    /// Named allow-lists a verb checks its arguments against (`links`,
+    /// Exact command names, or a family as `prefix.*`.
+    pub commands: Vec<String>,
+    /// Named allow-lists a command checks its arguments against (`links`,
     /// `ssids`, …). A key the grant doesn't list is unrestricted.
     #[serde(default)]
     pub limits: BTreeMap<String, Vec<String>>,
@@ -163,21 +163,21 @@ impl Policy {
             if !grant.caller.cgroup.starts_with('/') {
                 bail!("grant {:?}: cgroup must be an absolute path", grant.name);
             }
-            if grant.verbs.is_empty() {
-                bail!("grant {:?} names no verbs", grant.name);
+            if grant.commands.is_empty() {
+                bail!("grant {:?} names no commands", grant.name);
             }
-            for verb in &grant.verbs {
-                let family = verb.strip_suffix(".*");
-                let bare = family.unwrap_or(verb);
+            for command in &grant.commands {
+                let family = command.strip_suffix(".*");
+                let bare = family.unwrap_or(command);
                 if bare.is_empty() || bare.contains('*') || bare.split('.').any(str::is_empty) {
                     bail!(
-                        "grant {:?}: {verb:?} is not a verb or a `prefix.*` family",
+                        "grant {:?}: {command:?} is not a command or a `prefix.*` family",
                         grant.name
                     );
                 }
-                if UNGRANTABLE.iter().any(|u| covers(verb, u)) {
+                if UNGRANTABLE.iter().any(|u| covers(command, u)) {
                     bail!(
-                        "grant {:?}: {verb:?} would grant a root-only verb",
+                        "grant {:?}: {command:?} would grant a root-only command",
                         grant.name
                     );
                 }
@@ -195,11 +195,11 @@ impl Policy {
         Ok(())
     }
 
-    /// The first unexpired grant that matches this caller and verb.
+    /// The first unexpired grant that matches this caller and command.
     pub fn grant_for(
         &self,
         caller: &Caller,
-        verb: &str,
+        command: &str,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<&Grant, Refusal> {
         if !caller.verified {
@@ -207,16 +207,16 @@ impl Policy {
         }
         self.grants
             .iter()
-            .find(|g| g.matches(caller) && g.covers(verb) && !g.expired(now))
+            .find(|g| g.matches(caller) && g.covers(command) && !g.expired(now))
             .ok_or(Refusal::NoGrant)
     }
 
-    /// Every unexpired grant that matches this caller and verb, in policy
+    /// Every unexpired grant that matches this caller and command, in policy
     /// order, so the caller can pick the first whose allow-lists fit.
     pub fn grants_for(
         &self,
         caller: &Caller,
-        verb: &str,
+        command: &str,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<Vec<&Grant>, Refusal> {
         if !caller.verified {
@@ -225,7 +225,7 @@ impl Policy {
         let found: Vec<&Grant> = self
             .grants
             .iter()
-            .filter(|g| g.matches(caller) && g.covers(verb) && !g.expired(now))
+            .filter(|g| g.matches(caller) && g.covers(command) && !g.expired(now))
             .collect();
         if found.is_empty() {
             Err(Refusal::NoGrant)
@@ -270,8 +270,8 @@ impl Grant {
             }
     }
 
-    pub fn covers(&self, verb: &str) -> bool {
-        self.verbs.iter().any(|pattern| covers(pattern, verb))
+    pub fn covers(&self, command: &str) -> bool {
+        self.commands.iter().any(|pattern| covers(pattern, command))
     }
 
     fn expired(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
@@ -289,12 +289,12 @@ impl Grant {
     }
 }
 
-fn covers(pattern: &str, verb: &str) -> bool {
+fn covers(pattern: &str, command: &str) -> bool {
     match pattern.strip_suffix(".*") {
-        Some(family) => verb
+        Some(family) => command
             .strip_prefix(family)
             .is_some_and(|rest| rest.starts_with('.')),
-        None => pattern == verb,
+        None => pattern == command,
     }
 }
 
@@ -303,7 +303,7 @@ fn covers(pattern: &str, verb: &str) -> bool {
 /// the per-caller limit) can't multiply it without bound.
 const GRANT_SHARE: u32 = 4;
 
-/// Calls per grant, verb and caller inside a sliding window, plus a
+/// Calls per grant, command and caller inside a sliding window, plus a
 /// grant-wide cap. Held in memory: a restart forgets the window, which the
 /// deadlines, rollback and circuit breaker keep safe.
 #[derive(Default)]
@@ -317,7 +317,7 @@ impl RateLimiter {
     pub fn admit(
         &mut self,
         grant: &Grant,
-        verb: &str,
+        command: &str,
         who: &str,
         now: Instant,
     ) -> Result<(), Refusal> {
@@ -328,9 +328,9 @@ impl RateLimiter {
         let refused = || Refusal::RateLimited {
             grant: grant.name.clone(),
         };
-        let caller_key = (grant.name.clone(), verb.to_owned(), who.to_owned());
+        let caller_key = (grant.name.clone(), command.to_owned(), who.to_owned());
         // The empty caller key holds the grant-wide window.
-        let grant_key = (grant.name.clone(), verb.to_owned(), String::new());
+        let grant_key = (grant.name.clone(), command.to_owned(), String::new());
         for (key, limit) in [
             (&caller_key, rate.count),
             (&grant_key, rate.count.saturating_mul(GRANT_SHARE)),
@@ -376,7 +376,7 @@ mod tests {
 
     const DESK: &str = r#"{schema: 1, grants: [
         {name: "desk", caller: {cgroup: "/machine.slice/systemd-nspawn@desk.service/*"},
-         verbs: ["net.*", "power.suspend"], limits: {links: ["eth0"]},
+         commands: ["net.*", "power.suspend"], limits: {links: ["eth0"]},
          expires: "2030-01-01T00:00:00Z", rate: {count: 2, per_s: 60}}
     ]}"#;
 
@@ -404,7 +404,7 @@ mod tests {
             p.grant_for(&inside, "power.reboot", now()).unwrap_err(),
             Refusal::NoGrant
         );
-        // `net.*` is a family: it does not cover a verb that merely starts with "net".
+        // `net.*` is a family: it does not cover a command that merely starts with "net".
         assert_eq!(
             p.grant_for(&inside, "network.x", now()).unwrap_err(),
             Refusal::NoGrant
@@ -454,16 +454,16 @@ mod tests {
     fn validation_refuses_bad_policies() {
         let bad = [
             r#"{schema: 2, grants: []}"#,
-            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, verbs: ["*"]}]}"#,
-            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, verbs: ["net.*.x"]}]}"#,
-            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, verbs: ["hostd.*"]}]}"#,
-            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, verbs: ["hostd.thaw"]}]}"#,
-            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "x"}, verbs: ["net.*"]}]}"#,
-            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, verbs: []}]}"#,
-            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, verbs: ["net.*"], expires: "soon"}]}"#,
-            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, verbs: ["net.*"]},
-                                    {name: "a", caller: {cgroup: "/y"}, verbs: ["net.*"]}]}"#,
-            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, verbs: ["net.*"], extra: 1}]}"#,
+            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, commands: ["*"]}]}"#,
+            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, commands: ["net.*.x"]}]}"#,
+            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, commands: ["hostd.*"]}]}"#,
+            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, commands: ["hostd.thaw"]}]}"#,
+            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "x"}, commands: ["net.*"]}]}"#,
+            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, commands: []}]}"#,
+            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, commands: ["net.*"], expires: "soon"}]}"#,
+            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, commands: ["net.*"]},
+                                    {name: "a", caller: {cgroup: "/y"}, commands: ["net.*"]}]}"#,
+            r#"{schema: 1, grants: [{name: "a", caller: {cgroup: "/x"}, commands: ["net.*"], extra: 1}]}"#,
         ];
         for text in bad {
             assert!(policy(text).is_err(), "accepted: {text}");
@@ -503,16 +503,16 @@ mod tests {
         let g = &p.grants[0];
         let mut limiter = RateLimiter::default();
         let t0 = Instant::now();
-        let verb = "net.link.apply";
-        assert!(limiter.admit(g, verb, "/a", t0).is_ok());
-        assert!(limiter.admit(g, verb, "/a", t0).is_ok());
-        assert!(limiter.admit(g, verb, "/a", t0).is_err());
-        // Another verb, and another caller under the same grant, have their own windows.
+        let command = "net.link.apply";
+        assert!(limiter.admit(g, command, "/a", t0).is_ok());
+        assert!(limiter.admit(g, command, "/a", t0).is_ok());
+        assert!(limiter.admit(g, command, "/a", t0).is_err());
+        // Another command, and another caller under the same grant, have their own windows.
         assert!(limiter.admit(g, "net.wifi.connect", "/a", t0).is_ok());
-        assert!(limiter.admit(g, verb, "/b", t0).is_ok());
+        assert!(limiter.admit(g, command, "/b", t0).is_ok());
         assert!(
             limiter
-                .admit(g, verb, "/a", t0 + Duration::from_secs(60))
+                .admit(g, command, "/a", t0 + Duration::from_secs(60))
                 .is_ok()
         );
     }

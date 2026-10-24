@@ -13,7 +13,7 @@ use design::{CaptionSide, DesignContext, Mode, Scheme, Style};
 use egui_kittest::Harness;
 use preferences::email::Field;
 use preferences::{Category, Dialog, Effect, Engine, Look, Section, SoftwareGroup};
-use prefs::{commands, label_with, strings, view::view};
+use prefs::{actions, label_with, strings, view::view};
 use serde_json::json;
 use toolkit::Theme;
 
@@ -280,7 +280,7 @@ fn draw(theme: Theme, name: &str, engine: Engine) {
 }
 
 fn draw_at_size(theme: Theme, name: &str, engine: Engine, size: egui::Vec2) {
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let mut harness = Harness::builder()
         .with_size(size)
@@ -529,7 +529,7 @@ fn releases_missing_studio_dark() {
         }),
     );
     let theme = chrome(Scheme::Studio, Mode::Dark);
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let mut harness = Harness::builder()
         .with_size(egui::vec2(980.0, 640.0))

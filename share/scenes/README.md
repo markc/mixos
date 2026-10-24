@@ -32,7 +32,7 @@ window, which compd draws into the card while it is up.
 Quoin's declared page `settings.appearance`, so `{template:"settings"}`
 installs under that name and keeps the page. Its behaviour does not own any
 state: it reads `shell.settings.get`, wakes on `shell.settings.changed` and
-forwards clicks to Quoin's `shell.settings.*` verbs. Quoin also builds its
+forwards clicks to Quoin's `shell.settings.*` commands. Quoin also builds its
 built-in fallback page from this `scene.mix` at compile time, so edit the
 node block here and nowhere else. The template mounts on the right edge; edit
 `window.edge` if your configuration declares the page elsewhere.
@@ -61,7 +61,7 @@ not answer.
 
 The top bar's power buttons send `power.suspend`, `power.reboot` and
 `power.poweroff` to hostd. Each needs a hostd grant. A refusal is shown in the
-button's tooltip, and nothing runs. Shutdown is not a hostd verb yet.
+button's tooltip, and nothing runs. Shutdown is not a hostd command yet.
 
 `network` shows links and addresses from rtnetlink, plus systemd-networkd,
 systemd-resolved and the default routes when their tools answer
@@ -84,7 +84,7 @@ only on clicks the scene host relays.
 ## The editor helpers and legacy template
 
 The normal Scene Editor is the Wayland app in `apps/scene-editor`. Its menus
-use the loader's `scenes.editor.snapshot/action` verbs, which reuse the pure
+use the loader's `scenes.editor.snapshot/action` commands, which reuse the pure
 model and action planner in `editor/lib.mix`.
 
 `editor/` also preserves the legacy compositor frontend, selected explicitly

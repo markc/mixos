@@ -6,7 +6,7 @@
 //! decides what a caller can touch, and a request can never reach past it.
 //!
 //! hostd runs `systemctl ACTION UNIT` itself, so a caller needs no polkit
-//! rule and no sudo. The verb never touches hostd's own units: a restart of
+//! rule and no sudo. The command never touches hostd's own units: a restart of
 //! hostd from its own callers would cut the grant that asked for it.
 use crate::{
     caller::Origin,
@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{path::Path, time::Duration};
 
-pub const VERB: &str = "unit.control";
+pub const COMMAND: &str = "unit.control";
 /// The grant limit that names the units a caller may control.
 pub const LIMIT_UNITS: &str = "units";
 /// The grant limit that names the actions a caller may take.
@@ -77,7 +77,7 @@ async fn act_with(
     origin: &Origin,
 ) -> Result<Value, Value> {
     if REFUSED.contains(&unit) {
-        return Err(json!({"status":"refused","verb":VERB,"unit":unit,
+        return Err(json!({"status":"refused","command":COMMAND,"unit":unit,
             "message":"hostd does not control its own units"}));
     }
     let run = tokio::time::timeout(
@@ -87,20 +87,20 @@ async fn act_with(
             .output(),
     )
     .await
-    .map_err(|_| json!({"status":"timeout","verb":VERB,"unit":unit,"action":action}))?
-    .map_err(|e| json!({"status":"internal","verb":VERB,"message":e.to_string()}))?;
+    .map_err(|_| json!({"status":"timeout","command":COMMAND,"unit":unit,"action":action}))?
+    .map_err(|e| json!({"status":"internal","command":COMMAND,"message":e.to_string()}))?;
     if !run.status.success() {
         let message = String::from_utf8_lossy(&run.stderr).trim().to_owned();
-        tracing::warn!(target: "hostd::audit", verb = VERB, unit, action, %message, "unit action failed");
-        return Err(json!({"status":"unit_failed","verb":VERB,"unit":unit,
+        tracing::warn!(target: "hostd::audit", command = COMMAND, unit, action, %message, "unit action failed");
+        return Err(json!({"status":"unit_failed","command":COMMAND,"unit":unit,
             "action":action,"message":message}));
     }
-    let mut receipt = Receipt::new(VERB, grant, origin, json!({"unit": unit, "action": action}));
+    let mut receipt = Receipt::new(COMMAND, grant, origin, json!({"unit": unit, "action": action}));
     receipt.outcome = Outcome::Applied;
     receipt
         .save(state)
-        .map_err(|e| json!({"status":"internal","verb":VERB,"message":format!("{e:#}")}))?;
-    tracing::info!(target: "hostd::audit", verb = VERB, unit, action, receipt = %receipt.id, "unit action done");
+        .map_err(|e| json!({"status":"internal","command":COMMAND,"message":format!("{e:#}")}))?;
+    tracing::info!(target: "hostd::audit", command = COMMAND, unit, action, receipt = %receipt.id, "unit action done");
     Ok(json!({"unit": unit, "action": action, "receipt": receipt.id}))
 }
 
@@ -170,7 +170,7 @@ mod tests {
         assert_eq!(out["unit"], "noded.service");
         assert_eq!(out["action"], "restart");
         let receipt = Receipt::load(&state, out["receipt"].as_str().unwrap()).expect("saved");
-        assert_eq!(receipt.verb, VERB);
+        assert_eq!(receipt.command, COMMAND);
         assert_eq!(receipt.outcome, Outcome::Applied);
         assert_eq!(receipt.summary["unit"], "noded.service");
     }

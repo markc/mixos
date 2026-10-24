@@ -58,19 +58,19 @@ fn command($args)
     if contains(["remove", "reset", "promote"], $action) and $args.confirmed != true then
       raise("SCENES_CONFIRM", "this action needs confirmed:true")
     end
-    return {verb:$simple[$action][0], args:{node:$simple[$action][1]}}
+    return {command:$simple[$action][0], args:{node:$simple[$action][1]}}
   end
   $edge = $args.edge
   if not contains(["top", "bottom", "left", "right"], $edge ?? "") then raise("SCENES_ARGUMENT", "unknown edge") end
-  if $action == "move" then return {verb:"editor.scene.move", args:{node:"move_" .. $edge}} end
+  if $action == "move" then return {command:"editor.scene.move", args:{node:"move_" .. $edge}} end
   if $action == "mode" and contains(["hidden", "pinned", "docked"], $args.mode ?? "") then
-    return {verb:"editor.edge.mode", args:{node:"mode_" .. $edge .. "_" .. $args.mode}}
+    return {command:"editor.edge.mode", args:{node:"mode_" .. $edge .. "_" .. $args.mode}}
   end
   if $action == "size" and contains(["minus", "plus"], $args.direction ?? "") then
-    return {verb:"editor.edge.size", args:{node:"size_" .. $edge .. "_" .. $args.direction}}
+    return {command:"editor.edge.size", args:{node:"size_" .. $edge .. "_" .. $args.direction}}
   end
   if $action == "order" and contains(["up", "down"], $args.direction ?? "") then
-    return {verb:"editor.edge.order", args:{node:"order_" .. $edge .. "_" .. $args.direction}}
+    return {command:"editor.edge.order", args:{node:"order_" .. $edge .. "_" .. $args.direction}}
   end
   raise("SCENES_ARGUMENT", "unknown editor action")
 end
@@ -109,7 +109,7 @@ fn request($s, $kind, $args, $loader)
     end
     -- Arm removal only for the explicitly confirmed, named scene.
     if $args.action == "remove" then $ui.armed = $ui.scene end
-    $plan = $helpers.plan_click($cmd.verb, $cmd.args, $ui, $data)
+    $plan = $helpers.plan_click($cmd.command, $cmd.args, $ui, $data)
     if contains(["edit-scene", "edit-behaviour"], $args.action) then
       $selected = $helpers.row($data.list, $ui.scene)
       $path = $selected.files[$args.action == "edit-behaviour" ? "behaviour" : "scene"]
@@ -121,18 +121,18 @@ fn request($s, $kind, $args, $loader)
     end
     -- Source editing keeps the normal app open. The old scene editor's hide
     -- step would recursively ask this app to quit while it awaits this plan.
-    $plan.steps = filter($plan.steps, fn($step) = $step.verb != "scenes.editor.close")
+    $plan.steps = filter($plan.steps, fn($step) = $step.command != "scenes.editor.close")
     $plan.done = len($plan.steps) == 0
     while not $plan.done
       $step = $helpers.next_step($plan)
       $out = nil
       if $step.target == $s.me then
-        $s = $loader.request($s, substr($step.verb, 7), $step.args)
+        $s = $loader.request($s, substr($step.command, 7), $step.args)
         $out = {ok:$s.rc == 0, rc:$s.rc, value:if $s.rc == 0 then $s.response else
           {error_code:"upstream_refused", context:{reply:$s.response}} end}
       else
         try
-          $value = $s.io.rpc($step.target, $step.verb, $step.args)
+          $value = $s.io.rpc($step.target, $step.command, $step.args)
           $out = {ok:true, rc:0, value:$value}
         catch $message, $error
           $out = {ok:false, rc:10, value:{error_code:"upstream_refused",

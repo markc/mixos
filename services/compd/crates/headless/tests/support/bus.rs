@@ -71,11 +71,11 @@ impl Bus {
         check(&helper("ready", &self.root, &[service], Some(&self.url)));
     }
 
-    pub fn request(&self, service: &str, verb: &str, args: Value) -> Value {
+    pub fn request(&self, service: &str, command: &str, args: Value) -> Value {
         let output = helper(
             "call",
             &self.root,
-            &[verb, &args.to_string(), service],
+            &[command, &args.to_string(), service],
             Some(&self.url),
         );
         check(&output);
@@ -93,9 +93,9 @@ impl Bus {
         reply
     }
 
-    pub fn call(&self, service: &str, verb: &str, args: Value) -> Value {
-        let reply = self.request(service, verb, args);
-        assert_eq!(reply["rc"], 0, "{service} {verb}: {reply}");
+    pub fn call(&self, service: &str, command: &str, args: Value) -> Value {
+        let reply = self.request(service, command, args);
+        assert_eq!(reply["rc"], 0, "{service} {command}: {reply}");
         reply["body"].clone()
     }
 }

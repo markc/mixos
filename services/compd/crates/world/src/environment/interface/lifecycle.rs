@@ -175,7 +175,7 @@ pub fn push_session_env_if_active(active: bool, pairs: &[(&str, &str)]) {
 /// read at all — no systemd, or `show-environment` failing — where the old rule is still
 /// the best available guess.
 ///
-/// Clearing is an empty value, since neither publisher has an unset verb. Pairs with an
+/// Clearing is an empty value, since neither publisher has an unset command. Pairs with an
 /// empty value are skipped: there is nothing to own and nothing to retract.
 pub fn retract_session_env(active: bool, owned: &[(&str, &str)]) {
     let published: Vec<(&str, &str)> = owned

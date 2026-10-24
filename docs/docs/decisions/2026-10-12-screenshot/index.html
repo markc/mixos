@@ -245,13 +245,13 @@
 <li>
 <p><strong>The screenshot and annotation app is <code>apps/screenshot</code>.</strong> Its package,
 binary and directory are <code>screenshot</code>, its app id is
-<code>dev.mixos.screenshot</code> and its Bus service and verbs are <code>screenshot</code> and
+<code>dev.mixos.screenshot</code> and its Bus service and commands are <code>screenshot</code> and
 <code>screenshot.*</code>. "Screenshot" is exactly what the app does, and it is the
 word a person looks for in a launcher.</p>
 </li>
 <li>
 <p><strong>It supersedes Cap.</strong> Cap was the iced screenshot app (<code>apps/cap</code>,
-<code>dev.mixos.cap</code>, verbs <code>cap.*</code>) that lived outside this tree. The egui
+<code>dev.mixos.cap</code>, commands <code>cap.*</code>) that lived outside this tree. The egui
 port brings its behaviour across under the new name:</p>
 <ul>
 <li>the engine moves into the <code>annotation</code> crate: the immutable capture,
@@ -261,7 +261,7 @@ and no-clobber PNG publication;</li>
 registry command.</li>
 </ul>
 <p>Cap's names are retired and stay reserved (§3.5): the binary <code>cap</code>, the
-app id <code>dev.mixos.cap</code> and the verbs <code>cap.ping</code>, <code>cap.info</code>,
+app id <code>dev.mixos.cap</code> and the commands <code>cap.ping</code>, <code>cap.info</code>,
 <code>cap.capture</code>, <code>cap.cancel</code>, <code>cap.open</code>, <code>cap.annotate</code>, <code>cap.move</code>,
 <code>cap.delete</code>, <code>cap.crop</code>, <code>cap.undo</code>, <code>cap.redo</code>, <code>cap.export</code>,
 <code>cap.show</code> and <code>cap.quit</code>. They are entered in the retired-names
@@ -324,8 +324,8 @@ give the agent the file without the person saying where it is.</p>
 <ul>
 <li>AGENTS.md §3.4 lists the accepted collisions: <code>mix</code> (Elixir), <code>rec</code> and
 <code>play</code> (sox), and <code>screenshot</code> (nwg-shell).</li>
-<li>The <code>screenshot.*</code> verbs and its drive verbs are registered in
-<code>docs/docs/spec/bus/verbs.conf.mix</code>.</li>
+<li>The <code>screenshot.*</code> commands and its drive commands are registered in
+<code>docs/docs/spec/bus/commands.conf.mix</code>.</li>
 <li>compd's binding table gains Print, Shift+Print and Alt+Print. No F1–F12
 key is bound, bare or with modifiers: those belong to the person
 (<a href="/docs/decisions/2026-10-17-function-keys-belong-to-the-user/">decision</a>).</li>

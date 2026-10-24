@@ -169,7 +169,7 @@ fn push(leaves: &mut Vec<(PropPath, PropValue)>, path: &str, value: PropValue) {
 }
 
 /// Diff two props snapshots into `blob.props.changed` events
-/// (transient leaves excluded). Shared by the verb dispatch path
+/// (transient leaves excluded). Shared by the command dispatch path
 /// (around a synchronous mutation) and the fetch completion path
 /// (around a background download landing).
 pub fn props_diff_events(before: &PropsInput, after: &PropsInput) -> Vec<crate::citizen::BusEvent> {
@@ -191,7 +191,7 @@ pub fn props_diff_events(before: &PropsInput, after: &PropsInput) -> Vec<crate::
                 &path,
                 &old_value,
                 &new_value,
-                "blob.verb",
+                "blob.command",
             ),
         });
     }

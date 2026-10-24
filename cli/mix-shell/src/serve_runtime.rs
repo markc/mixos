@@ -4,7 +4,7 @@
 //! `mix --serve` citizens.
 //!
 //! A Mix citizen author writes only its domain `on` handlers. The
-//! runtime injects, *pre-dispatch* and unconditionally, the verbs the
+//! runtime injects, *pre-dispatch* and unconditionally, the commands the
 //! author does **not** write and **cannot** override (SPEC 18 DECIDED
 //! §7-Q4 — *runtime wins*; an author `on HELP do` /
 //! `on <svc>.props.get do` would let §9(d)/(e) conformance be silently
@@ -25,7 +25,7 @@
 //!
 //! Authors *extend* the data surfaced through `INFO`/props via their
 //! own domain commands and (future) lifecycle contributions; they do
-//! not replace these verbs. The struct is built once per process by
+//! not replace these commands. The struct is built once per process by
 //! `run_serve` and installed via `Evaluator::set_serve_runtime`.
 
 use std::time::Instant;
@@ -88,7 +88,7 @@ impl Default for ReloadIdentity {
 }
 
 /// The Mix serve-mode runtime surface (SPEC 18 WS4). Implements both
-/// [`ServeRuntime`] (the pre-dispatch reserved-verb chokepoint the
+/// [`ServeRuntime`] (the pre-dispatch reserved-command chokepoint the
 /// evaluator consults) and [`PropTree`] (the lifecycle property model
 /// `dispatch_props` reads), so one value answers all of L0+L1.
 pub struct MixServeRuntime {
@@ -240,7 +240,7 @@ impl MixServeRuntime {
         ]
     }
 
-    /// Build the HELP body: the runtime-reserved verbs (fixed canonical
+    /// Build the HELP body: the runtime-reserved commands (fixed canonical
     /// order) followed by the citizen's author commands (sorted, so the
     /// payload is byte-deterministic for a given handler set). SPEC 02
     /// §3 shape: `[{name, description, args}]`.
@@ -283,7 +283,7 @@ impl MixServeRuntime {
                 "args": ["path"],
             }),
         ];
-        // Drop any authored command that collides with a reserved verb:
+        // Drop any authored command that collides with a reserved command:
         // it is intercepted pre-dispatch and unreachable, so advertising
         // it would publish a duplicate name with a misleading
         // "author-defined" description for a handler that never fires.
@@ -342,7 +342,7 @@ impl MixServeRuntime {
         serde_json::from_str::<Json>(req_body).ok()
     }
 
-    /// Is `command` a runtime-reserved verb — intercepted pre-dispatch
+    /// Is `command` a runtime-reserved command — intercepted pre-dispatch
     /// and never delivered to an author handler? Single source of truth
     /// for the [`ServeRuntime::handle_reserved`] dispatch arms and the
     /// [`Self::help_body`] author-list filter, so the two cannot drift.
@@ -581,7 +581,7 @@ impl ServeRuntime for MixServeRuntime {
                 return Some(ReservedOutcome {
                     rc: 10,
                     body: json!({
-                        "error": "lifecycle.commit is a native runtime hook, not a callable verb"
+                        "error": "lifecycle.commit is a native runtime hook, not a callable command"
                     })
                     .to_string(),
                     quit: false,
@@ -627,7 +627,7 @@ mod tests {
     }
 
     #[test]
-    fn help_lists_reserved_verbs_then_sorted_author_commands() {
+    fn help_lists_reserved_commands_then_sorted_author_commands() {
         let r = rt();
         let out = r
             .handle_reserved(
@@ -646,7 +646,7 @@ mod tests {
         let v: Json = serde_json::from_str(&out.body).unwrap();
         let arr = v.as_array().unwrap();
         let names: Vec<&str> = arr.iter().map(|e| e["name"].as_str().unwrap()).collect();
-        // Reserved verbs first, fixed order.
+        // Reserved commands first, fixed order.
         assert_eq!(
             &names[..7],
             &[
@@ -661,7 +661,7 @@ mod tests {
         );
         // Author commands appended, sorted+deduped.
         assert_eq!(&names[7..], &["alpha.cmd", "statecache.get"]);
-        // A doc-string surfaces as the verb's description; an undocumented
+        // A doc-string surfaces as the command's description; an undocumented
         // handler keeps the generic placeholder.
         let desc_of = |name: &str| {
             arr.iter()
@@ -882,7 +882,7 @@ mod tests {
     }
 
     #[test]
-    fn help_filters_authored_commands_that_collide_with_reserved_verbs() {
+    fn help_filters_authored_commands_that_collide_with_reserved_commands() {
         let r = rt();
         let out = r
             .handle_reserved(
@@ -1080,7 +1080,7 @@ mod tests {
                 .is_some(),
             "an uncorrelated delivery is consumed, not dispatched"
         );
-        // And HELP never advertises a verb no caller can use.
+        // And HELP never advertises a command no caller can use.
         let help = r
             .handle_reserved(
                 "HELP",
@@ -1107,7 +1107,7 @@ mod tests {
     #[test]
     fn props_prefix_is_service_scoped() {
         let r = MixServeRuntime::new("statecache");
-        // A different service's props verb is NOT this citizen's
+        // A different service's props command is NOT this citizen's
         // reserved surface (it would never be routed here anyway, but
         // the matcher must not claim it).
         assert!(

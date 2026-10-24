@@ -3,7 +3,7 @@
 -- h_ssh_hosts.mix — /ssh/hosts : full-CRUD SSH host inventory (P1).
 --
 -- admin-list/1 over the sshm.ssh_hosts mirror (FS-authoritative). CRUD is
--- imperative FS-first verbs (ssh_host_save / ssh_host_delete in ssh_lib.mix):
+-- imperative FS-first commands (ssh_host_save / ssh_host_delete in ssh_lib.mix):
 -- write ~/.ssh via filesd FIRST, then project into the mirror + audit as single
 -- statements (NO tx). Editor = fm_form modal fetched over Datastar; RMB context
 -- menu (locked-on) + row edit/delete; guarded delete; bulk delete. OCC via a
@@ -158,7 +158,7 @@ function ssh_hosts_main()
   ssh_init()
   $actor = "" .. ssh_or($user["username"], "")
 
-  -- ── POST: mutating verbs (operator-gated above, SameSite-protected) ──
+  -- ── POST: mutating commands (operator-gated above, SameSite-protected) ──
   if $METHOD == "POST" then
     $f = parse_form($BODY)
     $action = "" .. ssh_or($f["action"], "save")
@@ -187,7 +187,7 @@ function ssh_hosts_main()
 
     -- Reindex + Test-all are POST (they mutate: reindex rewrites the mirror, testall
     -- creates a scan + enqueues jobs) AND each does a delegated bus_call — the bus
-    -- gate needs POST + same-origin for that on this mutating-verb route (a GET <a>
+    -- gate needs POST + same-origin for that on this mutating-command route (a GET <a>
     -- can't carry the required token), so these are header POST-form actions.
     if $action == "reindex" then
       $ri = ssh_reindex()
@@ -222,7 +222,7 @@ function ssh_hosts_main()
 
     $ra = dt_row_action($f)
     $delname = ""
-    if $ra != nil and $ra["verb"] == "delete" then $delname = "" .. $ra["id"] end
+    if $ra != nil and $ra["command"] == "delete" then $delname = "" .. $ra["id"] end
     if $action == "delete" then $delname = "" .. ssh_or($f["name"], "") end
     if $delname != "" then
       $block = ssh_host_delete($delname, $actor)
@@ -249,7 +249,7 @@ function ssh_hosts_main()
   $q = parse_query($QUERY)
 
   -- (Reindex + Test-all moved to POST header actions above — a GET bus_call on this
-  -- mutating-verb route can't satisfy the bus gate's off-POST CSRF requirement.)
+  -- mutating-command route can't satisfy the bus gate's off-POST CSRF requirement.)
 
   -- Job progress (copy-key): poll /ssh/job-status, then redirect back to the list.
   $jobid = "" .. ssh_or($q["job"], "")

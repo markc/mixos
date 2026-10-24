@@ -5,7 +5,7 @@
 //! Wire shape (decision 10): `rc = 10`, body
 //! `{"error_code": CODE, "message": text, "reason"?: REASON, …context}`.
 //! The core only ever produces `InvalidArgument`, `NotFound`, `Conflict`,
-//! `ResourceLimit` and `Internal`; editd adds `IoError`, `UnknownVerb` and
+//! `ResourceLimit` and `Internal`; editd adds `IoError`, `UnknownCommand` and
 //! `Forbidden` (the last only under the `MIXOS_MESH_OPEN=0` lock).
 
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ pub enum ErrorCode {
     Conflict,
     ResourceLimit,
     IoError,
-    UnknownVerb,
+    UnknownCommand,
     Forbidden,
     Internal,
 }

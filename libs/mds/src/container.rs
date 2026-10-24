@@ -1065,7 +1065,7 @@ pub fn store_flags_in_tx(
             // resolution-race as a stale-UID error. Surface
             // `ContainerNotFound` so the wrapper layer can map it to
             // the "mailbox not found" wire shape every other
-            // mailbox-parametric verb already uses.
+            // mailbox-parametric command already uses.
             if !container_exists_tx(tx, container_id)? {
                 return Err(Error::ContainerNotFound(container_id.0.to_string()));
             }

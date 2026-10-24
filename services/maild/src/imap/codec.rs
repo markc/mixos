@@ -3,7 +3,7 @@
 
 //! Minimal CRLF line codec.
 //!
-//! Phase 1 verbs (CAPABILITY, NOOP, LOGOUT, ID, LOGIN, AUTHENTICATE)
+//! Phase 1 commands (CAPABILITY, NOOP, LOGOUT, ID, LOGIN, AUTHENTICATE)
 //! never include IMAP literals on the wire, so a strict CRLF line
 //! reader was sufficient for them. Phase 4 (APPEND,) introduces
 //! a single trailing literal at the end of a command — handled here
@@ -42,7 +42,7 @@
 //!   `<tag> <command> [<args>]\r\n`
 //! where tag/command are ASCII tokens (no whitespace, no NUL), and
 //! `<args>` is the remainder of the line verbatim. The session loop
-//! re-parses `<args>` per-verb because the v1 verb set has very
+//! re-parses `<args>` per-command because the v1 command set has very
 //! different argument shapes (`LOGIN user pass` vs `ID NIL` vs
 //! `AUTHENTICATE PLAIN [<initial-response>]`).
 
@@ -52,7 +52,7 @@ use anyhow::{Result, anyhow};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
 /// Per-line read limit. Phase 1 commands fit comfortably under 4 KiB
-/// (tag + verb + LOGIN args ≤ ~200 B; AUTHENTICATE SASL-IR base64 of
+/// (tag + command + LOGIN args ≤ ~200 B; AUTHENTICATE SASL-IR base64 of
 /// a 2 KiB credential is ~3 KiB). 8 KiB gives headroom without
 /// allowing a hostile client to exhaust memory pre-auth.
 pub const MAX_LINE_BYTES: usize = 8 * 1024;
@@ -62,8 +62,8 @@ pub const MAX_LINE_BYTES: usize = 8 * 1024;
 pub struct Line {
     /// The literal tag bytes (ASCII, ≥1 character, no whitespace).
     pub tag: String,
-    /// The verb upper-cased for case-insensitive dispatch.
-    pub verb_upper: String,
+    /// The command upper-cased for case-insensitive dispatch.
+    pub command_upper: String,
     /// Argument tail verbatim, with the trailing CRLF stripped. May
     /// be empty (e.g. `a NOOP\r\n`).
     pub args: String,
@@ -124,10 +124,10 @@ impl std::fmt::Display for ReadLineError {
 }
 impl std::error::Error for ReadLineError {}
 
-/// Parse a command framing line (tag + verb + args).
+/// Parse a command framing line (tag + command + args).
 ///
 /// Returns `Err` if the line is structurally malformed (no tag, no
-/// verb, contains NUL, or signals an unsupported literal). The
+/// command, contains NUL, or signals an unsupported literal). The
 /// caller maps `Err` to `BAD` and increments the bad-command counter.
 pub fn parse_line(line: &[u8]) -> Result<Line> {
     if line.is_empty() {
@@ -139,7 +139,7 @@ pub fn parse_line(line: &[u8]) -> Result<Line> {
     // Reject IMAP literal indicators at this phase. A line whose
     // last non-whitespace token is `{NNN}` or `{NNN+}` means the
     // client expects to send NNN bytes of literal data on the next
-    // line; Phase 1 has no verb that should receive a literal.
+    // line; Phase 1 has no command that should receive a literal.
     if has_unsupported_literal(line) {
         return Err(anyhow!("literal not supported in this phase"));
     }
@@ -153,8 +153,8 @@ pub fn parse_line(line: &[u8]) -> Result<Line> {
     if tag.is_empty() || !is_valid_tag(tag) {
         return Err(anyhow!("invalid tag"));
     }
-    let verb = parts.next().ok_or_else(|| anyhow!("missing command"))?;
-    if verb.is_empty() {
+    let command_name = parts.next().ok_or_else(|| anyhow!("missing command"))?;
+    if command_name.is_empty() {
         return Err(anyhow!("missing command"));
     }
     let args = parts
@@ -164,7 +164,7 @@ pub fn parse_line(line: &[u8]) -> Result<Line> {
         .to_string();
     Ok(Line {
         tag: tag.to_string(),
-        verb_upper: verb.to_ascii_uppercase(),
+        command_upper: command_name.to_ascii_uppercase(),
         args,
     })
 }
@@ -278,17 +278,17 @@ struct LiteralMarker {
 /// we drain the announced bytes plus the trailing CRLF so the stream
 /// stays in sync per RFC 7888 §4.
 ///
-/// `accept_literals` is the session/verb gate: the closure is called
+/// `accept_literals` is the session/command gate: the closure is called
 /// with the line bytes *before* the literal marker (so it can sniff
-/// the tag and verb) and returns `true` only if the literal body
+/// the tag and command) and returns `true` only if the literal body
 /// should actually be consumed. Refusal cases:
 ///
 /// - Pre-auth — an attacker would otherwise be able to push
 ///   `max_literal` bytes (default 64 MiB) into memory before any
 ///   account-scoped cap applies. The session gates on
 ///   `state.is_authenticated()`.
-/// - Verbs that don't accept literal arguments — APPEND is the only
-///   verb that does; everything else is rejected by dispatch
+/// - Commands that don't accept literal arguments — APPEND is the only
+///   command that does; everything else is rejected by dispatch
 ///   anyway, so consuming the body wastes bandwidth + RAM.
 ///
 /// On refusal we refuse the literal at the codec layer: sync → no
@@ -333,7 +333,7 @@ where
         }
     };
 
-    // State/verb gate. Refuse before consuming any body bytes / before
+    // State/command gate. Refuse before consuming any body bytes / before
     // ack'ing a sync continuation. Cap-check intentionally runs after
     // this, since refusal is the stricter outcome.
     if !accept_literals(&line) {
@@ -563,7 +563,7 @@ mod tests {
     fn parses_simple_noop() {
         let l = parse_line(b"a001 NOOP").unwrap();
         assert_eq!(l.tag, "a001");
-        assert_eq!(l.verb_upper, "NOOP");
+        assert_eq!(l.command_upper, "NOOP");
         assert_eq!(l.args, "");
     }
 
@@ -571,14 +571,14 @@ mod tests {
     fn parses_login_with_args() {
         let l = parse_line(b"a002 LOGIN alice@example.com hunter2").unwrap();
         assert_eq!(l.tag, "a002");
-        assert_eq!(l.verb_upper, "LOGIN");
+        assert_eq!(l.command_upper, "LOGIN");
         assert_eq!(l.args, "alice@example.com hunter2");
     }
 
     #[test]
-    fn uppercases_verb() {
+    fn uppercases_command() {
         let l = parse_line(b"a003 capability").unwrap();
-        assert_eq!(l.verb_upper, "CAPABILITY");
+        assert_eq!(l.command_upper, "CAPABILITY");
     }
 
     #[test]

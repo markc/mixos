@@ -12,13 +12,13 @@ integration remains in development. No frozen ABP wire bytes change.
 design or fork compiler apply lineage. Consumers are the desktop applications
 and compd's Quoin shell.
 
-## Served verbs
+## Served commands
 
-All trusted mesh operators can invoke these verbs. Requests carry JSON bodies;
+All trusted mesh operators can invoke these commands. Requests carry JSON bodies;
 responses preserve ordinary ABP rc conventions: 0 for handled results and 10 for
-refusal, invalid input or unknown verbs. Domain status is structured in the body.
+refusal, invalid input or unknown commands. Domain status is structured in the body.
 
-| Verb | Input and result |
+| Command | Input and result |
 | --- | --- |
 | `settings.describe` | No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities |
 | `settings.get` | `{binding:{instance,profile}, view?, schema?}`; `view` `full` (default): complete accepted snapshot under `snapshot`, in `schema` 1 (default) or 2 (each distinct design projection once under `designs`, contexts naming it by digest; other schemas refused with `unsupported_schema`); `summary`: the profile's `Summary` (schema, binding, incarnation, revision, design revision, source digest, appearance names, `custom_source`, session `ui` (text scale, density and reduced motion), `keymaps` when any are set, `terminal` when any value is set, and `email` when any value is set; never projections or a source) under `summary`; both with publication/recovery status |
@@ -121,7 +121,7 @@ Fresh decoded topic deliveries use Reducer.observe. Captured tickets are for
 asynchronous completions; a new delivery can advance the state while an older
 bound read is pending, and that read cannot roll the revision back.
 
-The settings library API is now 0.5.0; authority verbs are 0.3.0. Snapshot
+The settings library API is now 0.5.0; authority commands are 0.3.0. Snapshot
 schema 1 is the default; schema 2 is its compact wire form, decoded into the
 same in-memory snapshot. The shared native consumer follows the compact topic
 and reads schema 2; consumers on their own library copy stay on schema 1 until
@@ -316,7 +316,7 @@ retained on the Bus for any client to read, so an account has no password
 field and every record in the group refuses unknown keys: an account carrying
 `password` is refused with `validation_failed`, and nothing is written.
 Passwords live only in the email app's private secrets file, set through its
-own write-only verb. The group is omitted at its defaults, so older profiles
+own write-only command. The group is omitted at its defaults, so older profiles
 keep their seals and the store format stays 3. It does not affect the
 resolved design.
 

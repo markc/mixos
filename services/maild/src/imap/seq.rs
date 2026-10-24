@@ -26,7 +26,7 @@
 //!   endpoint exceeds it (`3291:*` matches the last UID even if the
 //!   last UID is < 3291).
 //!
-//! lands the parser + a passive `SequenceMap` resolver. No verb
+//! lands the parser + a passive `SequenceMap` resolver. No command
 //! (FETCH / STORE / COPY / SEARCH) wiring yet — those come in +.
 //!
 //! ## Design choices
@@ -327,9 +327,9 @@ impl SequenceMap {
                 // Element lies wholly above EXISTS — no msns to resolve.
                 // Per RFC 9051 §6.4.8 (extended to msn sets via §6.4.5
                 // FETCH semantics), out-of-range msns are silently
-                // dropped at the resolver layer. Stricter per-verb
+                // dropped at the resolver layer. Stricter per-command
                 // checks (e.g. STORE rejecting a single OOR explicit
-                // msn as BAD per §6.4.6) are the verb's job.
+                // msn as BAD per §6.4.6) are the command's job.
                 continue;
             };
             for msn in a..=b {
@@ -687,9 +687,9 @@ mod tests {
         // out-of-range msn to `exists` would silently retarget any
         // out-of-range FETCH / STORE / COPY at the last message,
         // which is a correctness disaster. Resolver intersects with
-        // [1, exists] instead of clamping. Per-verb stricter handling
+        // [1, exists] instead of clamping. Per-command stricter handling
         // (e.g. STORE on OOR msn returning BAD per §6.4.6) is layered
-        // on top by the verb handler; the resolver answers "no rows."
+        // on top by the command handler; the resolver answers "no rows."
         let map = SequenceMap::from_entries((1..=3).map(|i| (i as u64 * 10, iid(i as u64))));
         let got = map.resolve_msn(&SeqSet::parse("99").unwrap());
         assert!(got.is_empty(), "got {got:?}");

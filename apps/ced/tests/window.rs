@@ -138,10 +138,10 @@ impl Transport for Fake {
             let mut answer = self
                 .editd
                 .borrow_mut()
-                .handle("local:ced", &out.verb, &args);
+                .handle("local:ced", &out.command, &args);
             // The fake answers every document as plain text; the real
             // service detects the language from the path and first line.
-            if out.verb == "edit.open"
+            if out.command == "edit.open"
                 && answer.rc == 0
                 && let Some(path) = answer.body["path"].as_str().map(str::to_owned)
             {
@@ -631,7 +631,7 @@ fn following(reply: Option<(u8, String, Option<String>)>) -> (Harness<'static, H
     service.deliver(Delivery::Subscribed { topic: summary });
     h.run_steps(2);
     assert_eq!(service.reads(), 1, "one read once hints arrive");
-    assert_eq!(service.looks.borrow()[0].verb, "settings.get");
+    assert_eq!(service.looks.borrow()[0].command, "settings.get");
     service.answer_look(reply);
     h.run_steps(4);
     (h, service)
@@ -942,7 +942,7 @@ fn the_editor_in_the_session_look() {
 }
 
 /// docs/docs/decisions/2026-10-11-executed-commands.md: a shortcut and a menu
-/// pick are published on ced.command.executed with their origin and
+/// pick are published on ced.action.executed with their origin and
 /// consecutive seq.
 #[test]
 fn executed_commands_are_published_with_their_origin() {
@@ -957,7 +957,7 @@ fn executed_commands_are_published_with_their_origin() {
     // Refused by the window: there is no document to save.
     service.deliver(Delivery::Command(BusCommand {
         id: 9,
-        verb: "ced.action".into(),
+        command: "ced.action".into(),
         body: json!({ "id": "file.save_as" }).to_string(),
         caller_key: "local:test".into(),
     }));
@@ -979,7 +979,7 @@ fn executed_commands_are_published_with_their_origin() {
     let bus = |id: u64, action: &str| {
         Delivery::Command(BusCommand {
             id,
-            verb: "ced.action".into(),
+            command: "ced.action".into(),
             body: json!({ "id": action }).to_string(),
             caller_key: "local:test".into(),
         })
@@ -990,7 +990,7 @@ fn executed_commands_are_published_with_their_origin() {
     let published = service.published.borrow();
     let bodies: Vec<Value> = published
         .iter()
-        .filter(|(topic, _)| topic == "ced.command.executed")
+        .filter(|(topic, _)| topic == "ced.action.executed")
         .map(|(_, body)| body.clone())
         .collect();
     for body in &bodies {

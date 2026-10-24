@@ -1,6 +1,6 @@
 ---
 title: Toolkit
-description: The shared shell for MixOS egui applications, giving every app the same theme, fonts, icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive verbs.
+description: The shared shell for MixOS egui applications, giving every app the same theme, fonts, icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive commands.
 ---
 
 # Toolkit
@@ -14,7 +14,7 @@ serialisable struct. The toolkit draws the window around that state and
 routes every action through one command registry.
 
 The UI-free registry and Fluent `Strings` now live in
-[`command`](../command/README.md). Toolkit keeps the egui adapter and its
+[`action`](../action/README.md). Toolkit keeps the egui adapter and its
 existing nullary command API, with the moved data types re-exported.
 Core and toolkit `describe()` emit stored chords in the keymaps grammar
 (`Ctrl+=`, `ArrowLeft`, or short forms), ordered Ctrl, Alt, Shift. Executed
@@ -32,7 +32,7 @@ It gives each app:
   chrome specification in each chrome scheme;
 - the command registry, which generates menus, shortcuts, the palette and
   the Bus surface, and records every executed command;
-- the drive verbs, the UI-level Bus verbs that every app shares;
+- the drive commands, the UI-level Bus commands that every app shares;
 - Fluent string catalogues, a key-chord grammar, and thumbnail decoding.
 
 The source is
@@ -59,7 +59,7 @@ says why on stderr, when the file is missing or unusable.
 A minimal window, condensed from `tests/snapshot.rs`:
 
 ```rust
-use toolkit::command::{Command, Registry, always};
+use toolkit::action::{Command, Registry, always};
 use toolkit::{Icon, Strings, Theme, icons};
 
 #[derive(Default)]
@@ -192,23 +192,23 @@ injecting both facts and the variable without reading the real session.
   state for the app's effect loop. `Registry<S>` provides `add`,
   `add_choice`, `add_toggle`, `execute(id, state, origin)`, `describe`,
   `menus` and `model`, `shortcuts`, `search`, `shortcut_grid` and `rebind`.
-  The UI, the command line and Bus verbs all dispatch by id.
+  The UI, the command line and Bus commands all dispatch by id.
 - `executed`: every run is recorded with its `Origin` (`menu`, `shortcut`,
   `palette`, `ui`, `bus`, `macro`) and given a per-process sequence number.
   It goes into a bounded `Journal` that counts the runs it drops.
   `Registry::take_executed` hands the records to the app's Bus connection,
-  which publishes them on `<app>.command.executed`
+  which publishes them on `<app>.action.executed`
   ([decision](../docs/decisions/2026-10-11-executed-commands.md)).
 - `keymap`: the chord grammar (`Ctrl`, `Alt`, `Shift`, then one key, joined
   by `+`). `Registry::rebind` applies the person's bindings from the
   desktop profile.
 
-### Drive verbs
+### Drive commands
 
 `drive` lets an agent do in the window anything a person can.
 `drive::install(ctx, app)` turns on AccessKit, keeps each pass's widget
 tree, and injects queued pointer and key events through egui's input hook,
-the same path real input takes. The app registers these verbs under its own
+the same path real input takes. The app registers these commands under its own
 prefix (`<app>.ui.tree` and so on):
 
 `ui.tree`, `ui.click`, `ui.pointer`, `ui.scroll`, `ui.key`, `ui.type`,
@@ -219,7 +219,7 @@ The app forwards each request, with the prefix removed, to
 `drive::request` from inside a frame. It sends back whatever `request`, or
 `drive::logic` (called once per frame), returns. It holds later commands
 while `drive::pending` is true, and calls `drive::finish` before closing.
-Reads answer at once. Input verbs run one at a time, one step per pass,
+Reads answer at once. Input commands run one at a time, one step per pass,
 and answer one pass after their last step. At most 32 input requests can
 be queued. The [driving guide](../docs/drive.md) shows them in use.
 
@@ -279,7 +279,7 @@ the [bundled font licences decision](../docs/decisions/2026-10-13-bundled-font-l
 | `src/titlebar.rs`, `menu.rs` | window chrome |
 | `src/bars.rs` … `src/dialog.rs` | chrome components |
 | `src/command.rs`, `executed.rs`, `keymap.rs` | commands, executed records, chords |
-| `src/drive.rs` | the drive verbs |
+| `src/drive.rs` | the drive commands |
 | `src/strings.rs`, `thumbnail.rs` | Fluent strings, thumbnail decoding |
 | `src/layer.rs`, `src/layer/` | layer-shell surfaces (feature `layer`) |
 | `i18n/en/toolkit.ftl` | the toolkit's own strings |
@@ -293,7 +293,7 @@ data. The integration tests in `tests/` drive real frames through
 
 - `components.rs`, `menu.rs`, `titlebar.rs`, `chrome.rs`: component, menu
   and title-bar behaviour under pointer and keyboard;
-- `drive.rs`: the drive verbs, requested inside frames the way an app's
+- `drive.rs`: the drive commands, requested inside frames the way an app's
   shell requests them;
 - `snapshot.rs`, `components_snapshot.rs`: offscreen wgpu snapshots across
   schemes and modes, compared with `tests/snapshots/*.png`. Regenerate them

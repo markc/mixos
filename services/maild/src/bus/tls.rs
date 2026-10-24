@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! `maild.tls.reload` Bus verb — Phase 5a-commit-2 hot-swap entry
+//! `maild.tls.reload` Bus command — Phase 5a-commit-2 hot-swap entry
 //! point. Walks the substrate's `maild.domains` rows, merges every
 //! row's `tls_identity_name` with the **startup-snapshot**
 //! `[[tls.identity]]` config rows (config wins on `server_name`
@@ -13,7 +13,7 @@
 //! resolver; in-flight handshakes drain on the captured prior
 //! `Arc<ServerConfig>`.
 //!
-//! The verb is daemon-global (no per-identity argument). A single
+//! The command is daemon-global (no per-identity argument). A single
 //! `tokio::sync::Mutex` inside [`TlsReloadState`] serializes concurrent
 //! reload calls so the read-rebuild-reproject-swap-clear-cache sequence
 //! is never interleaved. Concurrent reloads reduce to "last writer
@@ -22,7 +22,7 @@
 //!
 //! Failure posture: fail-loud-and-keep. If any substrate-declared
 //! identity fails (missing PEM, canonical-path escape, cert parse
-//! error), the verb returns `rc=10` with a per-identity error list and
+//! error), the command returns `rc=10` with a per-identity error list and
 //! the prior resolver keeps serving — no half-valid swap. The resolver
 //! build itself happens BEFORE the swap, so even a builder failure
 //! (key↔cert mismatch surfaced by `SniCertResolver::from_config`)
@@ -47,7 +47,7 @@ use crate::tls::{ServerConfigCache, SniCertResolver, TlsSlot};
 const RC_OK: u8 = 0;
 const RC_ERROR: u8 = 10;
 
-/// Shared state threaded into `bus::run` for the `maild.tls.*` verb
+/// Shared state threaded into `bus::run` for the `maild.tls.*` command
 /// surface. Clone-cheap (every field is already `Arc`-shaped).
 #[derive(Clone)]
 pub struct TlsReloadState {
@@ -77,7 +77,7 @@ pub struct TlsReloadState {
     pub tls_root: PathBuf,
     /// Resolver-global strict-SNI flag — mirrored from `TlsConfig`.
     pub strict_sni: bool,
-    /// Serializes concurrent reloads. The verb body holds this for the
+    /// Serializes concurrent reloads. The command body holds this for the
     /// whole (walk-rebuild-reproject-swap-clear-cache) sequence.
     pub reload_lock: Arc<Mutex<()>>,
 }

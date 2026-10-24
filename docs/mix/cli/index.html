@@ -1050,7 +1050,7 @@ Either way the request id stays unspent, and the error set stays closed, so a
 caller can still switch on it exhaustively.</p>
 <p><strong>Advertised deferrals</strong>, refused explicitly rather than left to look like
 typos: <code>shell.task.watch</code> and <code>shell.task.list</code> answer <code>UNSUPPORTED</code> with
-<code>reason: "deferred"</code> — a bare code would be word-for-word what an unknown verb
+<code>reason: "deferred"</code> — a bare code would be word-for-word what an unknown command
 gets back, which is not an advertisement of anything (v1 is poll-only, through
 <code>shell.task.result</code>); there is no stdin feeding; there is no
 reply chunking (the 64 KiB caps stand in for it); and a task has no Bus identity

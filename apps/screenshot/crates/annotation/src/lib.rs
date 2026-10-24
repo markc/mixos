@@ -16,13 +16,13 @@
 //! Transplanted from `apps/cap/src/{document,viewport,capture}.rs`
 //! (markc/mixos-iced); the painter no longer reaches into a UI toolkit for
 //! its text shaper.
-pub mod commands;
+pub mod actions;
 pub mod document;
 pub mod library;
 pub mod paint;
 pub mod viewport;
 
-pub use commands::{Annotate, Delete, HasDocument, Move, SetCrop, commands};
+pub use actions::{Annotate, Delete, HasDocument, Move, SetCrop, commands};
 pub use document::{Crop, Document, Kind, MAX_OBJECTS, MAX_PIXELS, Object, Point, Shape};
 pub use paint::Face;
 pub use viewport::Viewport;

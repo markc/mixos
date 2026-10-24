@@ -1,6 +1,6 @@
 [package]
 name = "policy"
-description = "compd window policy as pure logic: workspaces, window verbs, hot corners, panel holders, agent-seat preflight"
+description = "compd window policy as pure logic: workspaces, window commands, hot corners, panel holders, agent-seat preflight"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

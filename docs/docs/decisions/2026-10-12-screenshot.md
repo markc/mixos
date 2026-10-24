@@ -14,11 +14,11 @@ Status: accepted 2026-10-12; amended 2026-10-13 (saved shots are named
 
 - **The screenshot and annotation app is `apps/screenshot`.** Its package,
   binary and directory are `screenshot`, its app id is
-  `dev.mixos.screenshot` and its Bus service and verbs are `screenshot` and
+  `dev.mixos.screenshot` and its Bus service and commands are `screenshot` and
   `screenshot.*`. "Screenshot" is exactly what the app does, and it is the
   word a person looks for in a launcher.
 - **It supersedes Cap.** Cap was the iced screenshot app (`apps/cap`,
-  `dev.mixos.cap`, verbs `cap.*`) that lived outside this tree. The egui
+  `dev.mixos.cap`, commands `cap.*`) that lived outside this tree. The egui
   port brings its behaviour across under the new name:
   - the engine moves into the `annotation` crate: the immutable capture,
     the editable objects with undo, one painter for preview and export,
@@ -27,7 +27,7 @@ Status: accepted 2026-10-12; amended 2026-10-13 (saved shots are named
     registry command.
 
   Cap's names are retired and stay reserved (§3.5): the binary `cap`, the
-  app id `dev.mixos.cap` and the verbs `cap.ping`, `cap.info`,
+  app id `dev.mixos.cap` and the commands `cap.ping`, `cap.info`,
   `cap.capture`, `cap.cancel`, `cap.open`, `cap.annotate`, `cap.move`,
   `cap.delete`, `cap.crop`, `cap.undo`, `cap.redo`, `cap.export`,
   `cap.show` and `cap.quit`. They are entered in the retired-names
@@ -83,8 +83,8 @@ give the agent the file without the person saying where it is.
 
 - AGENTS.md §3.4 lists the accepted collisions: `mix` (Elixir), `rec` and
   `play` (sox), and `screenshot` (nwg-shell).
-- The `screenshot.*` verbs and its drive verbs are registered in
-  `docs/docs/spec/bus/verbs.conf.mix`.
+- The `screenshot.*` commands and its drive commands are registered in
+  `docs/docs/spec/bus/commands.conf.mix`.
 - compd's binding table gains Print, Shift+Print and Alt+Print. No F1–F12
   key is bound, bare or with modifiers: those belong to the person
   ([decision](2026-10-17-function-keys-belong-to-the-user.md)).

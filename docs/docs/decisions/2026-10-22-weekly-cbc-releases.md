@@ -37,7 +37,7 @@ releases are not release candidates and do not run the full gate.
 Every push runs the **lint tier** instead (`tools/lint.mix`, workflow
 `lint`, amended 2026-10-23). It runs `rustfmt --check`, a syntax or data
 check of every Mix file, and the repository's own gates that need no
-compile: closure, layering, verb registry, webd, units, style, component
+compile: closure, layering, command registry, webd, units, style, component
 index and site. The site check needs the pinned font assets and subsetting
 tools, so a bare runner skips it; the pre-commit hook runs it on every
 commit. The tier compiles no Rust

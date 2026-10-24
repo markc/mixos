@@ -19,7 +19,7 @@
 //! (CSD, captions right). Labels come
 //! from the toolkit's own catalogue.
 
-use crate::command::{Place, Registry};
+use crate::action::{Place, Registry};
 pub use crate::theme::Choice;
 use design::{CaptionSide, Mode, RequestedDecorations as Decorations, Scheme, Style};
 
@@ -351,7 +351,7 @@ mod tests {
     fn choosing_sets_one_axis_and_the_ticks_follow() {
         let r = registry();
         let mut app = App::default();
-        r.execute("view.theme.forest", &mut app, crate::command::Origin::Bus)
+        r.execute("view.theme.forest", &mut app, crate::action::Origin::Bus)
             .unwrap();
         assert_eq!(
             app.choice,
@@ -360,17 +360,17 @@ mod tests {
                 ..Choice::default()
             }
         );
-        r.execute("view.mode.dark", &mut app, crate::command::Origin::Bus)
+        r.execute("view.mode.dark", &mut app, crate::action::Origin::Bus)
             .unwrap();
-        r.execute("view.style.studio", &mut app, crate::command::Origin::Bus)
+        r.execute("view.style.studio", &mut app, crate::action::Origin::Bus)
             .unwrap();
         r.execute(
             "view.decorations.ssd",
             &mut app,
-            crate::command::Origin::Bus,
+            crate::action::Origin::Bus,
         )
         .unwrap();
-        r.execute("view.captions.left", &mut app, crate::command::Origin::Bus)
+        r.execute("view.captions.left", &mut app, crate::action::Origin::Bus)
             .unwrap();
         assert_eq!(
             app.choice,
@@ -393,7 +393,7 @@ mod tests {
                 "Captions left"
             ]
         );
-        r.execute(OWN_STYLE, &mut app, crate::command::Origin::Bus)
+        r.execute(OWN_STYLE, &mut app, crate::action::Origin::Bus)
             .unwrap();
         assert_eq!(
             app.choice.style,
@@ -401,9 +401,9 @@ mod tests {
             "the scheme's own style, chosen"
         );
         assert_eq!(ticked(&rows(&r, &app))[2], "Scheme's own style");
-        r.execute(SESSION_SCHEME, &mut app, crate::command::Origin::Bus)
+        r.execute(SESSION_SCHEME, &mut app, crate::action::Origin::Bus)
             .unwrap();
-        r.execute(SESSION_MODE, &mut app, crate::command::Origin::Bus)
+        r.execute(SESSION_MODE, &mut app, crate::action::Origin::Bus)
             .unwrap();
         assert_eq!((app.choice.scheme, app.choice.mode), (None, None));
         assert_eq!(
@@ -411,7 +411,7 @@ mod tests {
             Some(Decorations::Server),
             "framing stays"
         );
-        r.execute(SESSION_STYLE, &mut app, crate::command::Origin::Bus)
+        r.execute(SESSION_STYLE, &mut app, crate::action::Origin::Bus)
             .unwrap();
         assert_eq!(app.choice.style, None, "the session's style again");
     }
@@ -435,7 +435,7 @@ mod tests {
             r.execute(
                 "view.decorations.auto",
                 &mut app,
-                crate::command::Origin::Bus,
+                crate::action::Origin::Bus,
             )
             .unwrap();
             assert_eq!(app.choice.decorations, Some(Decorations::Auto));
@@ -476,7 +476,7 @@ mod tests {
             "view.decorations.ssd",
             "view.captions.left",
         ] {
-            r.execute(id, &mut app, crate::command::Origin::Bus)
+            r.execute(id, &mut app, crate::action::Origin::Bus)
                 .unwrap();
         }
         assert_ne!(
@@ -490,7 +490,7 @@ mod tests {
             "view.decorations.csd",
             "view.captions.right",
         ] {
-            r.execute(id, &mut app, crate::command::Origin::Bus)
+            r.execute(id, &mut app, crate::action::Origin::Bus)
                 .unwrap();
         }
         assert_eq!(app.choice.style, None);

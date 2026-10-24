@@ -113,7 +113,7 @@ pub fn cert_source_kind_variants() -> Vec<String> {
 }
 
 /// Build the substrate-shape value for a fresh row keyed `domain`.
-/// Caller (CLI, tests, later-phase verbs) uses this to assemble a
+/// Caller (CLI, tests, later-phase commands) uses this to assemble a
 /// full Replace body without hand-keying every field.
 ///
 /// Every `FieldType::Option` field is `PropValue::Null`; list fields
@@ -390,7 +390,7 @@ pub fn schema() -> PropertySchema {
 /// roadmap so this is not lost.
 ///
 /// **5a-commit-2 carry-over (accepted risk, to be closed in
-/// 5a-commit-2b).** The `maild.tls.reload` verb shipped in
+/// 5a-commit-2b).** The `maild.tls.reload` command shipped in
 /// 5a-commit-2 makes `tls_identity_name` writes load-bearing for
 /// live TLS resolution, so the obligation above applies, but the
 /// narrowing did not land in the same diff. The actor visible at
@@ -416,14 +416,14 @@ pub fn schema() -> PropertySchema {
 ///
 /// **Disposition (2026-05-26).** Acceptable bridging risk; the
 /// narrowing remains open. The two original options — field-level
-/// hook gate or verb-level capability check on `maild.tls.reload` —
+/// hook gate or command-level capability check on `maild.tls.reload` —
 /// both depend on a substrate primitive that does not exist yet:
 ///
 ///   * Field-level: blocked on the operator-actor distinction over
 ///     Bus.
-///   * Verb-level: `maild-auth` carries no access-control
+///   * Command-level: `maild-auth` carries no access-control
 ///     vocabulary (it is mail authentication — SPF, DKIM, DMARC, ARC,
-///     iprev), and the sibling Bus verbs (`maild.dkim.*`,
+///     iprev), and the sibling Bus commands (`maild.dkim.*`,
 ///     `maild.rules.*`, `maild.accounts.*`, `maild.search.*`) are
 ///     direct WG-trust surfaces — with audit cause where they perform
 ///     substrate mutations (e.g. `maild.dkim.*` embeds `cmd.from`),
@@ -1107,7 +1107,7 @@ fn validate_invariants(value: &PropValue) -> Result<(), HookError> {
 /// — the daemon does **not** auto-create or auto-delete substrate rows
 /// based on this diff. An operator who wants the diff again after
 /// adding/removing accounts restarts the daemon or invokes a future
-/// `maild.domains.reconcile` verb (Phase 3 territory if/when needed).
+/// `maild.domains.reconcile` command (Phase 3 territory if/when needed).
 ///
 /// Errors are surfaced for the caller to log-and-continue; a substrate
 /// read failure on first boot must not block a daemon that hasn't even

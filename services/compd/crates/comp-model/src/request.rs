@@ -7,7 +7,7 @@
 // of `PortControl` are public.
 
 //! `comp.*` request routing and argument parsing. Each parser refuses an
-//! argument the verb does not define by name (`invalid_args`), so a typo
+//! argument the command does not define by name (`invalid_args`), so a typo
 //! such as `{"gen": 3}` can never act unfenced, and parses `{id,
 //! generation}` strictly.
 
@@ -19,24 +19,24 @@ use serde_json::{Value, json};
 use ledger::presentation_stats::STATS_RING;
 use surfaces::SeatKind;
 
-use crate::catalogue::{INPUT_VERBS, READ_VERBS, WINDOW_VERBS};
+use crate::catalogue::{INPUT_COMMANDS, READ_COMMANDS, WINDOW_COMMANDS};
 use crate::observation::{
     PanelRequest, SetValidationError, WORKSPACE_COUNT_MAX, parse_window_leaf_path,
     validate_set_request,
 };
 use crate::reply::{ControlReply, error};
 
-/// The longest a long verb may run before its reply is due.
-pub const LONG_VERB_MAX: Duration = Duration::from_secs(60);
-/// Admission slack on top of a long verb's own deadline: the compositor
+/// The longest a long command may run before its reply is due.
+pub const LONG_COMMAND_MAX: Duration = Duration::from_secs(60);
+/// Admission slack on top of a long command's own deadline: the compositor
 /// answers at the deadline, and the worker must still be listening.
-pub const LONG_VERB_SLACK: Duration = Duration::from_secs(1);
+pub const LONG_COMMAND_SLACK: Duration = Duration::from_secs(1);
 pub const SEQUENCE_MAX_STEPS: usize = 256;
 /// At most four events a character (Shift press, key press/release,
-/// Shift release), so the largest text stays within one verb's event cap.
+/// Shift release), so the largest text stays within one command's event cap.
 pub const TEXT_MAX_CHARS: usize = 256;
-/// The most seat events one verb (a whole sequence included) may inject.
-pub const MAX_EVENTS_PER_VERB: usize = 4096;
+/// The most seat events one command (a whole sequence included) may inject.
+pub const MAX_EVENTS_PER_COMMAND: usize = 4096;
 /// How long a finished region selection may take to clean up its overlay
 /// before the reply.
 pub const REGION_CLEANUP_BUDGET: Duration = Duration::from_secs(3);
@@ -56,7 +56,7 @@ pub enum StatsTarget {
     },
 }
 
-/// A window-addressed verb. `{id, generation}` is always required when a
+/// A window-addressed command. `{id, generation}` is always required when a
 /// window is named; only `restore` may name none (most recently minimised).
 #[derive(Clone, Debug, PartialEq)]
 pub enum WindowOp {
@@ -216,14 +216,14 @@ pub struct WaitSpec {
     pub timeout: Duration,
 }
 
-/// A parsed `comp.window.*` verb: answered in one pass, or long.
+/// A parsed `comp.window.*` command: answered in one pass, or long.
 #[derive(Clone, Debug, PartialEq)]
-pub enum WindowVerb {
+pub enum WindowCommand {
     Op(WindowOp),
     Long(LongOp),
 }
 
-/// Press, release, or both in one verb (`click` for buttons, `tap` for
+/// Press, release, or both in one command (`click` for buttons, `tap` for
 /// keys).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PressAction {
@@ -309,7 +309,7 @@ pub enum InputOp {
 
 impl InputOp {
     /// The most seat events this op can inject. `release_all` releases what
-    /// is held, which earlier (capped) verbs bounded.
+    /// is held, which earlier (capped) commands bounded.
     pub fn event_bound(&self) -> usize {
         match self {
             Self::OnSeat { op, .. } => op.event_bound(),
@@ -339,12 +339,12 @@ impl InputOp {
 /// One step of `comp.input.sequence`: the delay runs before the step.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SequenceStep {
-    pub verb: &'static str,
+    pub command: &'static str,
     pub op: InputOp,
     pub delay: Duration,
 }
 
-/// A verb whose reply waits on a timer or an edge.
+/// A command whose reply waits on a timer or an edge.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LongOp {
     CaptureFrame(crate::capture::CaptureFrameSpec),
@@ -376,7 +376,7 @@ impl LongOp {
             Self::Motion(spec) => spec.budget(),
             Self::CaptureFrame(_) => Duration::from_secs(3),
             // Reserve four seconds after interaction for an acknowledged clean
-            // frame (55s + 4s = 59s), strictly inside LONG_VERB_MAX's 60s.
+            // frame (55s + 4s = 59s), strictly inside LONG_COMMAND_MAX's 60s.
             Self::RegionSelect { timeout, .. } => {
                 *timeout + REGION_CLEANUP_BUDGET + Duration::from_secs(1)
             }
@@ -389,9 +389,9 @@ impl LongOp {
     }
 
     /// How long the transport waits for the compositor's answer: the
-    /// verb's own deadline (capped at [`LONG_VERB_MAX`]) plus the slack.
+    /// command's own deadline (capped at [`LONG_COMMAND_MAX`]) plus the slack.
     pub fn admission_timeout(&self) -> Duration {
-        self.budget().min(LONG_VERB_MAX) + LONG_VERB_SLACK
+        self.budget().min(LONG_COMMAND_MAX) + LONG_COMMAND_SLACK
     }
 
     /// Whether any step drives the agent seat.
@@ -471,7 +471,7 @@ fn window_arg(
 /// `comp.window.minimize {id, generation}` and
 /// `comp.window.restore {id?, generation?, activate?}` (id and generation
 /// both or neither; `activate` defaults to true).
-pub fn parse_window_op(verb: &str, args: &Value) -> Result<WindowOp, ControlReply> {
+pub fn parse_window_op(command_name: &str, args: &Value) -> Result<WindowOp, ControlReply> {
     let empty = serde_json::Map::new();
     let object = match args {
         Value::Null => &empty,
@@ -482,7 +482,7 @@ pub fn parse_window_op(verb: &str, args: &Value) -> Result<WindowOp, ControlRepl
     };
     const WINDOW_ARGS: &[&str] = &["id", "generation"];
     const RESTORE_ARGS: &[&str] = &["id", "generation", "activate"];
-    let allowed = if verb == "comp.window.restore" {
+    let allowed = if command_name == "comp.window.restore" {
         RESTORE_ARGS
     } else {
         WINDOW_ARGS
@@ -516,7 +516,7 @@ pub fn parse_window_op(verb: &str, args: &Value) -> Result<WindowOp, ControlRepl
             ));
         }
     };
-    if verb == "comp.window.minimize" {
+    if command_name == "comp.window.minimize" {
         let Some((id, generation)) = target else {
             return Err(invalid_argument("id", "unsigned integer", "required"));
         };
@@ -529,9 +529,9 @@ pub fn parse_window_op(verb: &str, args: &Value) -> Result<WindowOp, ControlRepl
     }
 }
 
-/// The canonical `&'static` name of a window-family verb.
-pub fn window_verb(verb: &str) -> Option<&'static str> {
-    WINDOW_VERBS.iter().copied().find(|known| *known == verb)
+/// The canonical `&'static` name of a window-family command.
+pub fn window_command(command_name: &str) -> Option<&'static str> {
+    WINDOW_COMMANDS.iter().copied().find(|known| *known == command_name)
 }
 
 /// The defaults for `comp.window.wait` and `comp.window.close {force}`.
@@ -567,7 +567,7 @@ fn bool_arg(
     }
 }
 
-/// `index` of the workspace verbs: an unsigned integer `>= 1`, `"next"` or
+/// `index` of the workspace commands: an unsigned integer `>= 1`, `"next"` or
 /// `"prev"`. `0` is refused here as `invalid_value` (the contract: outside
 /// `1..count`, 0 included); an index above the count is refused by the
 /// compositor, which knows the count.
@@ -640,50 +640,50 @@ fn timeout_arg(
         None => Ok(default),
         Some(value) => value
             .as_u64()
-            .filter(|ms| (1..=LONG_VERB_MAX.as_millis() as u64).contains(ms))
+            .filter(|ms| (1..=LONG_COMMAND_MAX.as_millis() as u64).contains(ms))
             .map(Duration::from_millis)
             .ok_or_else(|| invalid_argument("timeout_ms", "unsigned integer", "1..=60000")),
     }
 }
 
-/// Every `comp.window.*` verb. Minimise and restore keep their own parser.
-pub fn parse_window_verb(verb: &str, args: &Value) -> Result<WindowVerb, ControlReply> {
+/// Every `comp.window.*` command. Minimise and restore keep their own parser.
+pub fn parse_window_command(command_name: &str, args: &Value) -> Result<WindowCommand, ControlReply> {
     let empty = serde_json::Map::new();
-    match verb {
+    match command_name {
         "comp.window.maximize"
         | "comp.window.unmaximize"
         | "comp.window.fullscreen"
         | "comp.window.unfullscreen" => {
-            let allowed: &'static [&'static str] = if verb == "comp.window.fullscreen" {
+            let allowed: &'static [&'static str] = if command_name == "comp.window.fullscreen" {
                 &["id", "generation", "output"]
             } else {
                 &["id", "generation"]
             };
             let object = args_object(args, &empty, allowed)?;
             let (id, generation) = required_target(object)?;
-            Ok(WindowVerb::Op(WindowOp::State {
+            Ok(WindowCommand::Op(WindowOp::State {
                 id,
                 generation,
-                state: if verb.ends_with("maximize") {
+                state: if command_name.ends_with("maximize") {
                     WindowState::Maximized
                 } else {
                     WindowState::Fullscreen
                 },
-                enabled: matches!(verb, "comp.window.maximize" | "comp.window.fullscreen"),
+                enabled: matches!(command_name, "comp.window.maximize" | "comp.window.fullscreen"),
                 output: output_arg(object)?,
             }))
         }
         "comp.window.minimize" | "comp.window.restore" => {
-            parse_window_op(verb, args).map(WindowVerb::Op)
+            parse_window_op(command_name, args).map(WindowCommand::Op)
         }
         "comp.window.stats" | "comp.window.stats.reset" => {
-            parse_stats_op(verb, args).map(WindowVerb::Op)
+            parse_stats_op(command_name, args).map(WindowCommand::Op)
         }
         "comp.window.focus" => {
             const ALLOWED: &[&str] = &["id", "generation", "raise"];
             let object = args_object(args, &empty, ALLOWED)?;
             let (id, generation) = required_target(object)?;
-            Ok(WindowVerb::Op(WindowOp::Focus {
+            Ok(WindowCommand::Op(WindowOp::Focus {
                 id,
                 generation,
                 raise: bool_arg(object, "raise", true)?,
@@ -693,14 +693,14 @@ pub fn parse_window_verb(verb: &str, args: &Value) -> Result<WindowVerb, Control
             const ALLOWED: &[&str] = &["id", "generation"];
             let object = args_object(args, &empty, ALLOWED)?;
             let (id, generation) = required_target(object)?;
-            Ok(WindowVerb::Op(WindowOp::Raise { id, generation }))
+            Ok(WindowCommand::Op(WindowOp::Raise { id, generation }))
         }
         "comp.window.close" => {
             const ALLOWED: &[&str] = &["id", "generation", "force", "timeout_ms"];
             let object = args_object(args, &empty, ALLOWED)?;
             let (id, generation) = required_target(object)?;
             if bool_arg(object, "force", false)? {
-                Ok(WindowVerb::Long(LongOp::ForceClose {
+                Ok(WindowCommand::Long(LongOp::ForceClose {
                     id,
                     generation,
                     timeout: timeout_arg(object, CLOSE_FORCE_DEFAULT)?,
@@ -712,7 +712,7 @@ pub fn parse_window_verb(verb: &str, args: &Value) -> Result<WindowVerb, Control
                     "timeout_ms applies with force:true only",
                 ))
             } else {
-                Ok(WindowVerb::Op(WindowOp::Close { id, generation }))
+                Ok(WindowCommand::Op(WindowOp::Close { id, generation }))
             }
         }
         "comp.window.place" => {
@@ -741,12 +741,12 @@ pub fn parse_window_verb(verb: &str, args: &Value) -> Result<WindowVerb, Control
                     "place needs at least one of output, x, y, width, height",
                 ));
             }
-            Ok(WindowVerb::Op(WindowOp::Place(spec)))
+            Ok(WindowCommand::Op(WindowOp::Place(spec)))
         }
         "comp.workspace.switch" => {
             const ALLOWED: &[&str] = &["index", "output", "wrap"];
             let object = args_object(args, &empty, ALLOWED)?;
-            Ok(WindowVerb::Op(WindowOp::SwitchWorkspace {
+            Ok(WindowCommand::Op(WindowOp::SwitchWorkspace {
                 index: workspace_index_arg(object)?,
                 output: output_arg(object)?,
                 wrap: bool_arg(object, "wrap", true)?,
@@ -770,7 +770,7 @@ pub fn parse_window_verb(verb: &str, args: &Value) -> Result<WindowVerb, Control
                     ));
                 }
             };
-            Ok(WindowVerb::Op(WindowOp::SetWorkspaceCount {
+            Ok(WindowCommand::Op(WindowOp::SetWorkspaceCount {
                 count,
                 persist: bool_arg(object, "persist", true)?,
             }))
@@ -805,7 +805,7 @@ pub fn parse_window_verb(verb: &str, args: &Value) -> Result<WindowVerb, Control
                     return Err(invalid_argument("name", "string", "required; \"\" clears"));
                 }
             };
-            Ok(WindowVerb::Op(WindowOp::RenameWorkspace {
+            Ok(WindowCommand::Op(WindowOp::RenameWorkspace {
                 index,
                 name,
                 persist: bool_arg(object, "persist", true)?,
@@ -815,7 +815,7 @@ pub fn parse_window_verb(verb: &str, args: &Value) -> Result<WindowVerb, Control
             const ALLOWED: &[&str] = &["id", "generation", "index", "follow"];
             let object = args_object(args, &empty, ALLOWED)?;
             let (id, generation) = required_target(object)?;
-            Ok(WindowVerb::Op(WindowOp::SendToWorkspace {
+            Ok(WindowCommand::Op(WindowOp::SendToWorkspace {
                 id,
                 generation,
                 index: workspace_index_arg(object)?,
@@ -915,19 +915,19 @@ pub fn parse_window_verb(verb: &str, args: &Value) -> Result<WindowVerb, Control
                     "width and height apply to until:size only",
                 ));
             }
-            Ok(WindowVerb::Long(LongOp::Wait(WaitSpec {
+            Ok(WindowCommand::Long(LongOp::Wait(WaitSpec {
                 window,
                 until,
                 timeout: timeout_arg(object, WINDOW_WAIT_DEFAULT)?,
             })))
         }
-        _ => Err(invalid_argument("verb", "window verb", "comp.window.*")),
+        _ => Err(invalid_argument("command", "window command", "comp.window.*")),
     }
 }
 
-/// The canonical `&'static` name of a single-step input verb.
-pub fn input_verb(verb: &str) -> Option<&'static str> {
-    INPUT_VERBS.iter().copied().find(|known| *known == verb)
+/// The canonical `&'static` name of a single-step input command.
+pub fn input_command(command_name: &str) -> Option<&'static str> {
+    INPUT_COMMANDS.iter().copied().find(|known| *known == command_name)
 }
 
 /// evdev `BTN_LEFT` / `BTN_RIGHT` / `BTN_MIDDLE`.
@@ -945,7 +945,7 @@ pub(crate) fn args_object<'a>(
     let object = match args {
         Value::Null => empty,
         Value::Object(object) => object,
-        _ => return Err(invalid_argument("args", "JSON object", "verb arguments")),
+        _ => return Err(invalid_argument("args", "JSON object", "command arguments")),
     };
     if let Some(field) = object
         .keys()
@@ -1046,24 +1046,24 @@ fn modifier_spec(value: &Value) -> Result<KeySpec, ControlReply> {
     Ok(KeySpec::Name(name.into()))
 }
 
-/// Parse one `comp.input.*` verb's arguments. Shared by the direct verbs
-/// and `comp.input.sequence` steps, so a step is exactly the verb.
-pub fn parse_input_op(verb: &str, args: &Value) -> Result<InputOp, ControlReply> {
+/// Parse one `comp.input.*` command's arguments. Shared by the direct commands
+/// and `comp.input.sequence` steps, so a step is exactly the command.
+pub fn parse_input_op(command_name: &str, args: &Value) -> Result<InputOp, ControlReply> {
     let explicit_seat = parse_input_seat(args.get("seat"))?;
     let seat = explicit_seat.unwrap_or(DEFAULT_INPUT_SEAT);
     let mut args = args.clone();
     if let Some(object) = args.as_object_mut() {
         object.remove("seat");
     }
-    let op = parse_seated_input_op(verb, &args, seat)?;
+    let op = parse_seated_input_op(command_name, &args, seat)?;
     // Bare cleanup always releases both seats' injected holds, regardless of
     // the delivery default. An explicit (including inherited) seat scopes it.
-    if verb == "comp.input.release_all" && explicit_seat.is_none() {
+    if command_name == "comp.input.release_all" && explicit_seat.is_none() {
         return Ok(op);
     }
     // Keep the internal human operation shape stable for existing call sites.
     Ok(
-        if seat == SeatKind::Human && !(verb == "comp.input.release_all" && explicit_seat.is_some())
+        if seat == SeatKind::Human && !(command_name == "comp.input.release_all" && explicit_seat.is_some())
         {
             op
         } else {
@@ -1089,12 +1089,12 @@ fn parse_input_seat(value: Option<&Value>) -> Result<Option<SeatKind>, ControlRe
 }
 
 fn parse_seated_input_op(
-    verb: &str,
+    command_name: &str,
     args: &Value,
     seat: SeatKind,
 ) -> Result<InputOp, ControlReply> {
-    let op = parse_input_payload(verb, args)?;
-    if !matches!(verb, "comp.input.key" | "comp.input.pointer.button") {
+    let op = parse_input_payload(command_name, args)?;
+    if !matches!(command_name, "comp.input.key" | "comp.input.pointer.button") {
         return Ok(op);
     }
     let empty = serde_json::Map::new();
@@ -1139,9 +1139,9 @@ fn parse_seated_input_op(
     })
 }
 
-fn parse_input_payload(verb: &str, args: &Value) -> Result<InputOp, ControlReply> {
+fn parse_input_payload(command_name: &str, args: &Value) -> Result<InputOp, ControlReply> {
     let empty = serde_json::Map::new();
-    match verb {
+    match command_name {
         "comp.input.pointer.move" => {
             const ALLOWED: &[&str] = &[
                 "output",
@@ -1399,8 +1399,8 @@ fn parse_input_payload(verb: &str, args: &Value) -> Result<InputOp, ControlReply
             Ok(InputOp::ReleaseAll)
         }
         _ => Err(invalid_argument(
-            "verb",
-            "input verb",
+            "command",
+            "input command",
             "comp.input.pointer.move|pointer.button|pointer.scroll|key|release_all",
         )),
     }
@@ -1411,7 +1411,7 @@ fn delay_arg(value: Option<&Value>, name: &'static str) -> Result<Option<Duratio
         None => Ok(None),
         Some(value) => value
             .as_u64()
-            .filter(|ms| *ms <= LONG_VERB_MAX.as_millis() as u64)
+            .filter(|ms| *ms <= LONG_COMMAND_MAX.as_millis() as u64)
             .map(|ms| Some(Duration::from_millis(ms)))
             .ok_or_else(|| invalid_argument(name, "unsigned integer", "0..=60000")),
     }
@@ -1448,7 +1448,7 @@ pub fn parse_region_select(args: &Value) -> Result<LongOp, ControlReply> {
     })
 }
 
-/// `comp.input.sequence {steps:[{verb, args?, delay_ms?}], interval_ms?}`.
+/// `comp.input.sequence {steps:[{command, args?, delay_ms?}], interval_ms?}`.
 /// `delay_ms` (default `interval_ms`, default 0) runs before its step; the
 /// delays together are capped at 60 s.
 pub fn parse_sequence(args: &Value) -> Result<LongOp, ControlReply> {
@@ -1467,14 +1467,14 @@ pub fn parse_sequence(args: &Value) -> Result<LongOp, ControlReply> {
     let mut total = Duration::ZERO;
     let mut events = 0_usize;
     for (index, step) in steps.iter().enumerate() {
-        const STEP: &[&str] = &["verb", "args", "delay_ms"];
+        const STEP: &[&str] = &["command", "args", "delay_ms"];
         let step = match step {
             Value::Object(step) => step,
             _ => {
                 return Err(invalid_argument(
                     "steps",
                     "list of objects",
-                    "{verb, args?, delay_ms?}",
+                    "{command, args?, delay_ms?}",
                 ));
             }
         };
@@ -1484,13 +1484,13 @@ pub fn parse_sequence(args: &Value) -> Result<LongOp, ControlReply> {
                 allowed: STEP,
             });
         }
-        let verb = present(step, "verb")
+        let command_name = present(step, "command")
             .and_then(Value::as_str)
-            .and_then(input_verb)
+            .and_then(input_command)
             .ok_or_else(|| {
                 invalid_argument(
-                    "steps.verb",
-                    "input verb",
+                    "steps.command",
+                    "input command",
                     "comp.input.pointer.move|pointer.button|pointer.scroll|key|release_all",
                 )
             })?;
@@ -1503,7 +1503,7 @@ pub fn parse_sequence(args: &Value) -> Result<LongOp, ControlReply> {
                 object.entry("seat").or_insert_with(|| json!(seat.name()));
             }
         }
-        let op = parse_input_op(verb, &args).map_err(|reply| match reply {
+        let op = parse_input_op(command_name, &args).map_err(|reply| match reply {
             ControlReply::Validation(SetValidationError::InvalidValue {
                 path,
                 expected,
@@ -1520,23 +1520,23 @@ pub fn parse_sequence(args: &Value) -> Result<LongOp, ControlReply> {
             other => other,
         })?;
         events += op.event_bound();
-        if events > MAX_EVENTS_PER_VERB {
+        if events > MAX_EVENTS_PER_COMMAND {
             return Err(invalid_argument(
                 "steps",
                 "injected events",
-                "at most 4096 injected events per verb (MAX_EVENTS_PER_VERB)",
+                "at most 4096 injected events per command (MAX_EVENTS_PER_COMMAND)",
             ));
         }
         let delay = delay_arg(present(step, "delay_ms"), "steps.delay_ms")?.unwrap_or(interval);
         total += delay;
-        if total > LONG_VERB_MAX {
+        if total > LONG_COMMAND_MAX {
             return Err(invalid_argument(
                 "steps",
                 "total delay",
                 "the delays together are at most 60000 ms",
             ));
         }
-        parsed.push(SequenceStep { verb, op, delay });
+        parsed.push(SequenceStep { command: command_name, op, delay });
     }
     Ok(match seat {
         Some(seat) => LongOp::SeatedSequence {
@@ -1558,10 +1558,10 @@ pub fn valid_content_source_id(id: &str) -> bool {
 /// `comp.window.stats {id, generation | source, registration?, samples?}`
 /// and `comp.window.stats.reset {id, generation | source, registration? |
 /// nothing}`. `{id, generation}` and `{source}` are mutually exclusive.
-pub fn parse_stats_op(verb: &str, args: &Value) -> Result<WindowOp, ControlReply> {
+pub fn parse_stats_op(command_name: &str, args: &Value) -> Result<WindowOp, ControlReply> {
     const STATS_ARGS: &[&str] = &["id", "generation", "source", "registration", "samples"];
     const RESET_ARGS: &[&str] = &["id", "generation", "source", "registration"];
-    let reset = verb == "comp.window.stats.reset";
+    let reset = command_name == "comp.window.stats.reset";
     let empty = serde_json::Map::new();
     let object = match args {
         Value::Null => &empty,
@@ -1662,17 +1662,17 @@ pub fn parse_stats_op(verb: &str, args: &Value) -> Result<WindowOp, ControlReply
     Ok(WindowOp::Stats { target, samples })
 }
 
-/// The tree path a read verb can reach; `None` for the whole tree.
+/// The tree path a read command can reach; `None` for the whole tree.
 ///
 /// A `list` prefix and a scope relate to paths the same way: at segment
 /// boundaries (`PropPath::starts_with`, `ReadScopes::wants`). A mid-segment
 /// prefix such as `"windows.s"` therefore lists nothing and scopes nothing,
 /// consistently, so the raw prefix is the scope.
-pub fn read_scope(verb: &str, args: &Value) -> Option<String> {
-    // Explicit per verb: a verb added to `needs_snapshot` later must say
+pub fn read_scope(command_name: &str, args: &Value) -> Option<String> {
+    // Explicit per command: a command added to `needs_snapshot` later must say
     // what its scope is, rather than inherit "path" and be mis-scoped by a
     // same-named argument that means something else.
-    let key = match verb {
+    let key = match command_name {
         "comp.info" => return Some("info".to_string()),
         "comp.session.get" => return Some("session".to_string()),
         "comp.workspaces.list" => return Some("workspaces".to_string()),
@@ -1700,7 +1700,7 @@ pub fn invalid_set_shape(path: Option<&str>) -> (u8, Arc<str>) {
 }
 
 /// Whether a non-empty request body failed to parse as JSON. Computed once
-/// per command; each verb family refuses it its own way.
+/// per command; each command family refuses it its own way.
 pub fn body_is_malformed(body: &str) -> bool {
     !body.is_empty() && serde_json::from_str::<Value>(body).is_err()
 }
@@ -1724,13 +1724,13 @@ pub enum Request {
         value: Value,
         generation: Option<u64>,
     },
-    /// A window-family verb answered in one pass.
+    /// A window-family command answered in one pass.
     Window(WindowOp),
-    /// A verb whose reply waits: `window.wait`, `window.close {force}`,
+    /// A command whose reply waits: `window.wait`, `window.close {force}`,
     /// `region.select`, `input.sequence`. Admit with
     /// [`LongOp::admission_timeout`].
     Long(LongOp),
-    /// A single-step input verb.
+    /// A single-step input command.
     Input(InputOp),
     /// `comp.panel.hold` / `comp.panel.mode`. The transport stamps
     /// `sender` from the broker's `from` before admitting it.
@@ -1738,16 +1738,16 @@ pub enum Request {
     /// A snapshot read (`comp.info`, `comp.props.get|list|describe`,
     /// `comp.windows.list`) and the subtree that scopes its snapshot.
     Read {
-        verb: &'static str,
+        command: &'static str,
         scope: Option<String>,
     },
 }
 
-/// Route one command through the verb families, in order, with each
+/// Route one command through the command families, in order, with each
 /// family's own refusal for a malformed body. `Err` is the immediate reply (before the transport adds
-/// `error_code` with [`crate::reply::with_error_code`]). Verbs stay literal
+/// `error_code` with [`crate::reply::with_error_code`]). Commands stay literal
 /// `comp.*` whatever the service is registered as, so
-/// `comp-nested.panel.hold` is `unknown_verb`.
+/// `comp-nested.panel.hold` is `unknown_command`.
 pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request, (u8, Arc<str>)> {
     if command == "comp.capture.frame" {
         if malformed {
@@ -1795,15 +1795,15 @@ pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request,
             generation,
         });
     }
-    if let Some(verb) = window_verb(command) {
+    if let Some(command_name) = window_command(command) {
         let parsed = if malformed {
             Err(invalid_argument("args", "JSON object", "{id, generation}"))
         } else {
-            parse_window_verb(verb, args)
+            parse_window_command(command_name, args)
         };
         return match parsed {
-            Ok(WindowVerb::Op(op)) => Ok(Request::Window(op)),
-            Ok(WindowVerb::Long(op)) => Ok(Request::Long(op)),
+            Ok(WindowCommand::Op(op)) => Ok(Request::Window(op)),
+            Ok(WindowCommand::Long(op)) => Ok(Request::Long(op)),
             Err(reply) => Err(reply.into_wire()),
         };
     }
@@ -1831,11 +1831,11 @@ pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request,
         };
         return parsed.map(Request::Long).map_err(ControlReply::into_wire);
     }
-    if let Some(verb) = input_verb(command) {
+    if let Some(command_name) = input_command(command) {
         let parsed = if malformed {
-            Err(invalid_argument("args", "JSON object", "verb arguments"))
+            Err(invalid_argument("args", "JSON object", "command arguments"))
         } else {
-            parse_input_op(verb, args)
+            parse_input_op(command_name, args)
         };
         return parsed.map(Request::Input).map_err(ControlReply::into_wire);
     }
@@ -1851,15 +1851,15 @@ pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request,
         };
         return parsed.map(Request::Panel).map_err(ControlReply::into_wire);
     }
-    let Some(verb) = READ_VERBS.iter().copied().find(|known| *known == command) else {
-        return Err(error("unknown_verb"));
+    let Some(command_name) = READ_COMMANDS.iter().copied().find(|known| *known == command) else {
+        return Err(error("UNKNOWN_COMMAND"));
     };
     if malformed {
         return Err(error("unknown_path"));
     }
     Ok(Request::Read {
-        verb,
-        scope: read_scope(verb, args),
+        command: command_name,
+        scope: read_scope(command_name, args),
     })
 }
 

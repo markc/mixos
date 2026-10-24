@@ -2362,7 +2362,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
 
         // Check if this is a response to a pending request. Responses MUST be
         // correlated by id AND recipient connection — never fall through to the command dispatcher,
-        // because a `type=response` whose `command` matches a broker verb (e.g.
+        // because a `type=response` whose `command` matches a broker command (e.g.
         // `topic.publish`) would otherwise be re-dispatched as a fresh request,
         // closing a feedback loop with the original publisher (observed
         // indexd↔noded amplification fixed 2026-05-04).
@@ -4638,15 +4638,15 @@ async fn handle_noded_command(
             let _ = tx.try_send(resp.to_wire());
         }
 
-        // SPEC 12 §15.5 / C10 — privileged subscribe-on-behalf verb.
+        // SPEC 12 §15.5 / C10 — privileged subscribe-on-behalf command.
         //
         // The owning service of a reserved props topic (per
         // `props_reservation::reserved_owner`) uses this to subscribe
         // a third-party peer to a per-namespace slice of its
         // `<svc>.props.records.changed` or `<svc>.props.audit` topic.
         // The lower-level `topic.subscribe` is reservation-gated and
-        // rejects every peer; the watch verbs in `props`
-        // call this verb after their own capability re-check so the
+        // rejects every peer; the watch commands in `props`
+        // call this command after their own capability re-check so the
         // live-fan-out wire becomes reachable from
         // `<svc>.props.watch` / `<svc>.props.audit.watch`.
         //
@@ -4704,7 +4704,7 @@ async fn handle_noded_command(
             };
             // Authorization: caller must be the topic's reserved
             // owner. Non-reserved topics are not grantable through
-            // this verb — peers can `topic.subscribe` them directly.
+            // this command — peers can `topic.subscribe` them directly.
             let owner = match crate::props_reservation::reserved_owner(&topic) {
                 Some(o) => o,
                 None => {
@@ -6081,7 +6081,7 @@ mod tests {
 
     /// SPEC 13 §9a (2-c-1b) — broker-speaks-first old-client interop (design §8
     /// MAJOR). An `observe` broker sends a `noded.admit.challenge` as its first
-    /// frame; a client that does not know the verb MUST ignore it and still
+    /// frame; a client that does not know the command MUST ignore it and still
     /// function (the challenge is fire-and-forget; the read loop never awaits a
     /// response). On a host with a verified inventory the challenge is actually
     /// sent (exercising the path); otherwise the broker is Unverified and this
@@ -6132,11 +6132,11 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // SPEC 12 / C10b — `noded.props.subscribe_grant` verb tests
+    // SPEC 12 / C10b — `noded.props.subscribe_grant` command tests
     //
-    // These exercise the verb's parsing, auth gate, and broker call
+    // These exercise the command's parsing, auth gate, and broker call
     // via a raw WebSocket round-trip. `bus::native_client::call()`
-    // can't be used directly because the verb requires custom Bus
+    // can't be used directly because the command requires custom Bus
     // headers (`topic`, `target_peer`, `namespace`) and inspecting
     // the response body's `subscription_id`/`namespace` payload.
     // ─────────────────────────────────────────────────────────────
@@ -6314,7 +6314,7 @@ mod tests {
                 "noded",
                 "noded.observe.start",
                 serde_json::json!({
-                    "filter":{"verbs":["noded.list"],"directions":["local"]},
+                    "filter":{"commands":["noded.list"],"directions":["local"]},
                     "body":"none",
                     "capacity":64
                 }),
@@ -6349,7 +6349,7 @@ mod tests {
             Some(subscription_id.as_str())
         );
         let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
-        assert_eq!(body["verb"], "noded.list");
+        assert_eq!(body["command"], "noded.list");
         assert_eq!(body["outcome"], "broker_handled");
 
         let stopped = tower
@@ -6475,18 +6475,18 @@ mod tests {
                 continue;
             }
             let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
-            let verb = body["verb"].as_str();
+            let command_name = body["command"].as_str();
             let correlation = body["correlation_id"].as_str();
-            collision_canonical |= verb == Some("noded.register")
+            collision_canonical |= command_name == Some("noded.register")
                 && correlation == Some("collision-1")
                 && body["outcome"] == "rejected"
                 && body["from"] == "alice";
             failed_command_rejected |=
-                verb == Some("noded.no_such_command") && body["outcome"] == "rejected";
-            orphan_rejected |= verb == Some("citizen.orphan")
+                command_name == Some("noded.no_such_command") && body["outcome"] == "rejected";
+            orphan_rejected |= command_name == Some("citizen.orphan")
                 && body["message_type"] == "response"
                 && body["outcome"] == "rejected";
-            admit_rejected |= verb == Some("noded.admit.response")
+            admit_rejected |= command_name == Some("noded.admit.response")
                 && body["message_type"] == "response"
                 && body["outcome"] == "rejected";
             route_request_rejected |= correlation == Some("missing-route-1")

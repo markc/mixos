@@ -108,8 +108,8 @@ const DRAIN: Duration = Duration::from_secs(2);
 const LOOK_BUDGET: Duration = Duration::from_secs(30);
 
 /// Broker errors can have only an error header and an empty body/message.
-/// Preserve a real sentence at the boundary, including the verb and code.
-fn failure_body(rc: u8, body: String, error: Option<&str>, verb: &str) -> String {
+/// Preserve a real sentence at the boundary, including the command and code.
+fn failure_body(rc: u8, body: String, error: Option<&str>, command_name: &str) -> String {
     if rc < 10 {
         return body;
     }
@@ -133,8 +133,8 @@ fn failure_body(rc: u8, body: String, error: Option<&str>, verb: &str) -> String
         .is_none_or(|s| s.trim().is_empty())
     {
         value["message"] = serde_json::json!(match error.filter(|s| !s.trim().is_empty()) {
-            Some(error) => format!("{verb} failed ({code}): {error}."),
-            None => format!("{verb} failed ({code})."),
+            Some(error) => format!("{command_name} failed ({code}): {error}."),
+            None => format!("{command_name} failed ({code})."),
         });
     }
     value["error_code"] = serde_json::json!(code);
@@ -359,7 +359,7 @@ async fn run(
                 next_command += 1;
                 let delivery = Delivery::Command(BusCommand {
                     id: next_command,
-                    verb: cmd.command.clone(),
+                    command: cmd.command.clone(),
                     body: if cmd.body.trim().is_empty() { "{}".to_string() } else { cmd.body.clone() },
                     caller_key: caller_key(&cmd),
                 });
@@ -380,7 +380,7 @@ async fn run(
                         tokio::spawn(async move {
                             let headers = BTreeMap::new();
                             let body = read.body.to_string();
-                            let call = c.call_with_headers_raw(read.service, read.verb, &headers, &body);
+                            let call = c.call_with_headers_raw(read.service, read.command, &headers, &body);
                             let reply = match tokio::time::timeout(LOOK_BUDGET, call).await {
                                 Ok(Ok(answer)) => Some(answer),
                                 _ => None,
@@ -424,7 +424,7 @@ async fn run(
                             let headers = BTreeMap::new();
                             let call = c.call_with_headers_raw(
                                 EDIT,
-                                &request.verb,
+                                &request.command,
                                 &headers,
                                 &request.body,
                             );
@@ -438,7 +438,7 @@ async fn run(
                                     }
                                 }
                                 Ok(Ok((rc, body, error))) => Incoming::Reply {
-                                    req, rc, body: failure_body(rc, body, error.as_deref(), &request.verb)
+                                    req, rc, body: failure_body(rc, body, error.as_deref(), &request.command)
                                 },
                                 Ok(Err(_)) => {
                                     tokio::time::sleep_until(deadline).await;
@@ -609,7 +609,7 @@ async fn drain_replies(
 fn anonymous_call(
     url: &str,
     service: &str,
-    verb: &str,
+    command_name: &str,
     body: &serde_json::Value,
     limit: Duration,
 ) -> Option<(u8, String)> {
@@ -621,7 +621,7 @@ fn anonymous_call(
         let call = async {
             let client = NodedClient::connect_anonymous(url).await.ok()?;
             let reply = client
-                .call_with_headers_raw(service, verb, &BTreeMap::new(), &body.to_string())
+                .call_with_headers_raw(service, command_name, &BTreeMap::new(), &body.to_string())
                 .await
                 .ok();
             client.close().await;
@@ -683,7 +683,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_broker_errors_have_a_code_verb_and_sentence() {
+    fn empty_broker_errors_have_a_code_command_and_sentence() {
         for body in ["", r#"{"error_code":"UNAVAILABLE","message":""}"#] {
             let body = failure_body(
                 10,

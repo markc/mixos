@@ -123,7 +123,7 @@ pub enum ControlReply {
     NotFound {
         minimized_count: usize,
     },
-    /// A verb argument the verb does not define (a typo must not be
+    /// A command argument the command does not define (a typo must not be
     /// silently ignored, or `{"gen": 3}` would act unfenced).
     InvalidArgs {
         field: String,
@@ -131,7 +131,7 @@ pub enum ControlReply {
     },
     Locked,
     Busy,
-    /// A verb's success body (rc 0).
+    /// A command's success body (rc 0).
     Body(Value),
     /// A refusal: `{"error": error, ...detail}` (rc 10). `detail` is an
     /// object or null.

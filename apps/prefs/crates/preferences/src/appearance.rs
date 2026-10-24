@@ -449,7 +449,7 @@ pub(crate) enum Call {
 }
 
 impl Call {
-    fn verb(&self) -> &'static str {
+    fn command_name(&self) -> &'static str {
         match self {
             Call::Read => "settings.get",
             Call::Apply(_) => "settings.apply",
@@ -938,9 +938,9 @@ impl Engine {
                 .expect("an apply request serialises")
             }
         };
-        let verb = call.verb();
+        let command_name = call.command_name();
         self.look.job = Some((ticket, call));
-        self.effects.push(Effect::Settings { ticket, verb, body });
+        self.effects.push(Effect::Settings { ticket, command: command_name, body });
     }
 
     /// The panel takes edits: read, no dialog, not quitting. An edit made
@@ -1421,7 +1421,7 @@ impl Engine {
             "hold":self.look.hold,
             "custom_source":self.look.custom_source,
             "uncertain":self.look.uncertain.as_ref().map(|s| &s.operation),
-            "working":self.look.job.as_ref().map(|(_, c)| c.verb()),
+            "working":self.look.job.as_ref().map(|(_, c)| c.command_name()),
             "can_apply":self.can_apply_look(),"can_revert":self.can_revert_look(),
             "can_keep":self.can_keep_look(),"can_recheck":self.can_recheck_look()})
     }
@@ -1535,7 +1535,7 @@ mod tests {
         e.take_effects()
             .into_iter()
             .filter_map(|x| match x {
-                Effect::Settings { ticket, verb, body } => Some((ticket, verb, body)),
+                Effect::Settings { ticket, command: command_name, body } => Some((ticket, command_name, body)),
                 _ => None,
             })
             .collect()
@@ -1619,8 +1619,8 @@ mod tests {
         for (control, path, value, default) in control_cases() {
             let mut e = read();
             e.edit_appearance(control);
-            let (ticket, verb, body) = next(&mut e);
-            assert_eq!(verb, "settings.apply");
+            let (ticket, command_name, body) = next(&mut e);
+            assert_eq!(command_name, "settings.apply");
             assert_eq!(body["expected_incarnation"], "inc-1");
             assert_eq!(body["expected_revision"], "7");
             assert_eq!(body["changes"], json!({path:value.clone()}));
@@ -1628,8 +1628,8 @@ mod tests {
             answer_next(&mut e, 0, stored_control("8", path, value));
             let key = path.split_once('.').unwrap().1;
             edit(&mut e, json!({key:default.clone()}));
-            let (_, verb, body) = next(&mut e);
-            assert_eq!(verb, "settings.apply");
+            let (_, command_name, body) = next(&mut e);
+            assert_eq!(command_name, "settings.apply");
             assert_eq!(body["expected_revision"], "8");
             assert_eq!(body["changes"], json!({path:default}));
         }
@@ -1656,8 +1656,8 @@ mod tests {
                 assert!(e.look.waiting());
                 assert!(settings_calls(&mut e).is_empty());
                 e.keep_look();
-                let (_, verb, body) = next(&mut e);
-                assert_eq!(verb, "settings.apply");
+                let (_, command_name, body) = next(&mut e);
+                assert_eq!(command_name, "settings.apply");
                 assert_eq!(body["expected_revision"], "8");
                 assert_eq!(body["changes"], json!({path:value}));
             }
@@ -1722,9 +1722,9 @@ mod tests {
 
     /// Answer the next settings call with `body`.
     fn answer_next(e: &mut Engine, rc: u8, body: Value) -> (&'static str, Value) {
-        let (ticket, verb, sent) = next(e);
+        let (ticket, command_name, sent) = next(e);
         e.settled(ticket, reply(rc, body));
-        (verb, sent)
+        (command_name, sent)
     }
 
     #[test]
@@ -1783,8 +1783,8 @@ mod tests {
             &mut e,
             json!({"scheme":"forest","style":"pro","decorations":"ssd"}),
         );
-        let (ticket, verb, body) = next(&mut e);
-        assert_eq!(verb, "settings.apply");
+        let (ticket, command_name, body) = next(&mut e);
+        assert_eq!(command_name, "settings.apply");
         assert_eq!(body["expected_incarnation"], "inc-1");
         assert_eq!(body["expected_revision"], "7");
         assert_eq!(
@@ -1829,8 +1829,8 @@ mod tests {
         e.settled(apply, reply(0, changed()));
         // The read-back first, then the queued edits, on its fence.
         answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
-        let (_, verb, body) = next(&mut e);
-        assert_eq!(verb, "settings.apply");
+        let (_, command_name, body) = next(&mut e);
+        assert_eq!(command_name, "settings.apply");
         assert_eq!(body["expected_revision"], "8");
         assert_eq!(
             body["changes"],
@@ -1917,8 +1917,8 @@ mod tests {
         );
         // Another writer changed the scheme only: re-applied on the new fence.
         answer_next(&mut e, 0, snapshot_body("9", "ocean", "dark"));
-        let (_, verb, body) = next(&mut e);
-        assert_eq!(verb, "settings.apply");
+        let (_, command_name, body) = next(&mut e);
+        assert_eq!(command_name, "settings.apply");
         assert_eq!(body["expected_revision"], "9");
         assert_eq!(body["changes"], json!({"appearance.mode":"light"}));
     }
@@ -1932,8 +1932,8 @@ mod tests {
             10,
             json!({"status":"conflict","incarnation":"inc-1","revision":"9"}),
         );
-        let (read_after, verb, _) = next(&mut e);
-        assert_eq!(verb, "settings.get");
+        let (read_after, command_name, _) = next(&mut e);
+        assert_eq!(command_name, "settings.get");
         e.settled(read_after, lost());
         assert!(
             settings_calls(&mut e).is_empty(),
@@ -1948,9 +1948,9 @@ mod tests {
         e.ui.section = crate::Section::Themes;
         e.refresh();
         answer_next(&mut e, 0, snapshot_body("9", "studio", "dark"));
-        let (_, verb, body) = next(&mut e);
+        let (_, command_name, body) = next(&mut e);
         assert_eq!(
-            (verb, &body["expected_revision"]),
+            (command_name, &body["expected_revision"]),
             ("settings.apply", &json!("9"))
         );
     }
@@ -1965,9 +1965,9 @@ mod tests {
         e.settled(apply, reply(0, changed()));
         answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
         // Accepted before the dialog: it drains regardless.
-        let (_, verb, body) = next(&mut e);
+        let (_, command_name, body) = next(&mut e);
         assert_eq!(
-            (verb, &body["changes"]),
+            (command_name, &body["changes"]),
             ("settings.apply", &json!({"appearance.mode":"light"}))
         );
         // And if it had waited, closing the dialog sends it.
@@ -1995,14 +1995,14 @@ mod tests {
         e.quit();
         assert!(!e.take_effects().contains(&Effect::Exit));
         e.settled(apply, reply(0, changed()));
-        let (read_back, verb, _) = next(&mut e);
-        assert_eq!(verb, "settings.get", "the read-back the queued edit needs");
+        let (read_back, command_name, _) = next(&mut e);
+        assert_eq!(command_name, "settings.get", "the read-back the queued edit needs");
         e.settled(read_back, reply(0, snapshot_body("8", "forest", "dark")));
         let calls: Vec<_> = e
             .take_effects()
             .into_iter()
             .filter_map(|x| match x {
-                Effect::Settings { ticket, verb, body } => Some((ticket, verb, body)),
+                Effect::Settings { ticket, command: command_name, body } => Some((ticket, command_name, body)),
                 _ => None,
             })
             .collect();
@@ -2030,11 +2030,11 @@ mod tests {
             json!({"status":"unknown_operation","receipt":null,"recovering":false}),
         );
         // The read that decides runs although quitting.
-        let (verb, _) = answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
-        assert_eq!(verb, "settings.get");
-        let (apply2, verb, body) = next(&mut e);
+        let (command_name, _) = answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
+        assert_eq!(command_name, "settings.get");
+        let (apply2, command_name, body) = next(&mut e);
         assert_eq!(
-            (verb, &body["changes"]),
+            (command_name, &body["changes"]),
             ("settings.apply", &json!({"appearance.mode":"light"}))
         );
         e.settled(apply2, reply(0, changed()));
@@ -2111,20 +2111,20 @@ mod tests {
         assert!(e.look.uncertain.is_some() && !e.can_apply_look());
         // Edits queue meanwhile and go out only after the receipt and read.
         edit(&mut e, json!({"mode":"light"}));
-        let (verb, sent) = answer_next(
+        let (command_name, sent) = answer_next(
             &mut e,
             0,
             json!({"status":"current","receipt":{"operation_id":operation},"recovering":false}),
         );
         assert_eq!(
-            (verb, sent["operation_id"].as_str()),
+            (command_name, sent["operation_id"].as_str()),
             ("settings.status", Some(operation.as_str()))
         );
         assert!(e.look.uncertain.is_none());
         assert_eq!(e.status, "applied-look");
         answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
-        let (_, verb, body) = next(&mut e);
-        assert_eq!(verb, "settings.apply");
+        let (_, command_name, body) = next(&mut e);
+        assert_eq!(command_name, "settings.apply");
         assert_eq!(body["changes"], json!({"appearance.mode":"light"}));
     }
 
@@ -2145,8 +2145,8 @@ mod tests {
             );
             assert!(e.look.uncertain.is_none());
             let scheme = if shows { "forest" } else { "studio" };
-            let (verb, _) = answer_next(&mut e, 0, snapshot_body("8", scheme, "dark"));
-            assert_eq!(verb, "settings.get");
+            let (command_name, _) = answer_next(&mut e, 0, snapshot_body("8", scheme, "dark"));
+            assert_eq!(command_name, "settings.get");
             assert_eq!(e.status, status);
             assert_eq!(
                 e.look.hold, !shows,
@@ -2205,9 +2205,9 @@ mod tests {
         assert!(e.can_refresh());
         e.refresh();
         answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
-        let (_, verb, body) = next(&mut e);
+        let (_, command_name, body) = next(&mut e);
         assert_eq!(
-            (verb, &body["changes"]),
+            (command_name, &body["changes"]),
             ("settings.apply", &json!({"appearance.mode":"light"}))
         );
     }
@@ -2228,7 +2228,7 @@ mod tests {
                 .take_effects()
                 .into_iter()
                 .filter_map(|x| match x {
-                    Effect::Settings { ticket, verb, .. } => Some((ticket, verb)),
+                    Effect::Settings { ticket, command: command_name, .. } => Some((ticket, command_name)),
                     _ => None,
                 })
                 .collect();
@@ -2258,9 +2258,9 @@ mod tests {
                 json!({"status":"unknown_operation","receipt":null,"recovering":false}),
             );
             let scheme = if shows { "forest" } else { "studio" };
-            let (ticket, verb, _) = next(&mut e);
+            let (ticket, command_name, _) = next(&mut e);
             assert_eq!(
-                verb, "settings.get",
+                command_name, "settings.get",
                 "the deciding read runs while quitting"
             );
             e.settled(ticket, reply(0, snapshot_body("8", scheme, "dark")));
@@ -2296,8 +2296,8 @@ mod tests {
         e.quit();
         e.settled(apply, lost());
         for _ in 0..QUIT_RECEIPT_TRIES {
-            let (ticket, verb, _) = next(&mut e);
-            assert_eq!(verb, "settings.status");
+            let (ticket, command_name, _) = next(&mut e);
+            assert_eq!(command_name, "settings.status");
             e.settled(ticket, lost());
         }
         let effects = e.take_effects();
@@ -2309,7 +2309,7 @@ mod tests {
         let reads: Vec<_> = effects
             .into_iter()
             .filter_map(|x| match x {
-                Effect::Settings { ticket, verb, .. } => Some((ticket, verb)),
+                Effect::Settings { ticket, command: command_name, .. } => Some((ticket, command_name)),
                 _ => None,
             })
             .collect();
@@ -2335,8 +2335,8 @@ mod tests {
         );
         assert!(e.look.conflicts.is_empty() && e.look.hold);
         e.apply_look();
-        let (_, verb, body) = next(&mut e);
-        assert_eq!(verb, "settings.apply");
+        let (_, command_name, body) = next(&mut e);
+        assert_eq!(command_name, "settings.apply");
         assert_eq!(body["expected_revision"], "8");
         assert_eq!(body["changes"], json!({"appearance.scheme":"studio"}));
     }
@@ -2414,11 +2414,11 @@ mod tests {
         );
         // The deciding read fails: Preferences stays open with the reversal, and
         // reads again rather than trusting the stale look.
-        let (ticket, verb, _) = next(&mut e);
-        assert_eq!(verb, "settings.get");
+        let (ticket, command_name, _) = next(&mut e);
+        assert_eq!(command_name, "settings.get");
         e.settled(ticket, lost());
-        let (again, verb, _) = next(&mut e);
-        assert_eq!(verb, "settings.get");
+        let (again, command_name, _) = next(&mut e);
+        assert_eq!(command_name, "settings.get");
         assert_eq!(e.status, "look-kept-open");
         assert_eq!(e.look.shown().unwrap().scheme, Scheme::Studio);
         // That fails too: still kept, nothing applied, Refresh reads again.

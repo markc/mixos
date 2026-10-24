@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Structured property verbs, capabilities, replay and live topics, errors and SQLite table ownership.">
+    <meta name="description" content="Structured property commands, capabilities, replay and live topics, errors and SQLite table ownership.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -209,7 +209,7 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#addressing">Addressing</a>
-                        <a href="#verbs">Verbs</a>
+                        <a href="#commands">Commands</a>
                         <a href="#capabilities-and-redaction">Capabilities and redaction</a>
                         <a href="#watch-and-topics">Watch and topics</a>
                         <a href="#errors">Errors</a>
@@ -243,8 +243,8 @@
 <p>Status: accepted, version 0.2.1. This records the existing structured
 namespace wire surface implemented by <code>props</code>' optional store and router.
 The <a href="/docs/decisions/2026-10-18-property-store-in-props/">ownership decision</a>
-places it in <code>libs/props</code>. Verbs belong to the service exposing them and
-must be registered under that owner in the <a href="/docs/spec/bus/verbs.conf.mix">Bus registry</a>.</p>
+places it in <code>libs/props</code>. Commands belong to the service exposing them and
+must be registered under that owner in the <a href="/docs/spec/bus/commands.conf.mix">Bus registry</a>.</p>
 <h2 id="addressing">Addressing</h2>
 <p>Commands are <code>&lt;svc&gt;.props.&lt;suffix&gt;</code>. The <code>namespace</code> header names a
 registered unqualified namespace; its capability name is <code>&lt;svc&gt;.&lt;namespace&gt;</code>.
@@ -256,14 +256,14 @@ namespace <code>nseq</code> increase on commits. <code>cause</code> is an option
 string on mutations. Actor identity comes from the authenticated peer,
 never a caller-supplied actor header. <code>_lifecycle</code> is reserved.</p>
 <p>This surface requires structured addressing. <code>set</code> refuses <code>path</code> with
-<code>flat_path_mutation_deferred</code>; other verbs refuse it as mixed addressing.
+<code>flat_path_mutation_deferred</code>; other commands refuse it as mixed addressing.
 The compositor's flat <code>{path,value,generation}</code> mutation remains its own
 contract. <code>field_path</code> is refused on set/delete/get, even when empty.
 Get refuses any non-empty body. List refuses <code>cursor</code>, <code>limit</code>, <code>order_by</code>,
 <code>filter</code>, <code>fields</code> and any non-empty body. These refusals carry diagnostic
 prefixes <code>field_path_deferred</code>, <code>get_projection_deferred</code> or
 <code>list_option_deferred</code> under <code>validation_error</code>.</p>
-<h2 id="verbs">Verbs</h2>
+<h2 id="commands">Commands</h2>
 <table><thead><tr><th>Suffix</th><th>Headers/body and successful reply</th></tr></thead><tbody>
 <tr><td><code>set</code></td><td>JSON object body; <code>merge=true</code>/<code>patch</code> (default) or <code>false</code>/<code>replace</code>. Simple reply: <code>{namespace,key,version,nseq,created,warnings?}</code>. Saga reply: <code>{namespace,key,set_version,set_nseq,complete_version,complete_nseq,lifecycle,created,reason?}</code>.</td></tr>
 <tr><td><code>delete</code></td><td>Collection only; optional <code>if_version</code>, <code>cause</code>. Reply: <code>{namespace,key,deleted:true,tombstone_version,nseq}</code>.</td></tr>
@@ -274,7 +274,7 @@ prefixes <code>field_path_deferred</code>, <code>get_projection_deferred</code> 
 <tr><td><code>audit.watch</code></td><td>Same cursor and grant sequence; audit rows in <code>events</code>, with no <code>caught_up</code> field.</td></tr>
 </tbody></table>
 <p>Get/list/describe are queries; set/delete/watch/audit.watch are intents.
-Watch verbs install an observable broker subscription. Replay-only
+Watch commands install an observable broker subscription. Replay-only
 <code>live:false</code> is available exclusively in the library's unit tests.</p>
 <h2 id="capabilities-and-redaction">Capabilities and redaction</h2>
 <p>Policies resolve <code>PeerIdentity</code> into exact capability strings:
@@ -298,7 +298,7 @@ for the owner. After its capability check, the service calls
 <code>namespace</code> headers. The broker authenticates the topic owner, requires a
 connected registered target, and installs a top-level namespace body filter.
 Success returns <code>{subscription_id,namespace}</code> with rc 0; refusal uses rc 10
-(including <code>target_peer_not_connected</code>). The registered verb's owner is
+(including <code>target_peer_not_connected</code>). The registered command's owner is
 <code>noded</code>, class <code>intent</code>, version 0.1.0.</p>
 <p>The grant completes <strong>before</strong> the observed cursor is captured. Replay
 contains <code>since_nseq &lt; nseq &lt;= observed_nseq</code>; later events are eligible
@@ -306,10 +306,10 @@ for live delivery. The <code>caught_up.nseq</code> is always the observed cursor
 including when the caller supplied a higher cursor. Process replay, then
 the marker, and discard overlapping live events through that cursor;
 deduplicate by <code>(namespace,key,nseq)</code>.</p>
-<p>Records-changed bodies contain <code>namespace,key,kind,verb,nseq,version, audit_epoch,actor,ts</code> and optional <code>fields_changed</code>,
+<p>Records-changed bodies contain <code>namespace,key,kind,command,nseq,version, audit_epoch,actor,ts</code> and optional <code>fields_changed</code>,
 <code>secret_fields_changed_count</code>, <code>cause</code>, plus <code>lifecycle,reason?</code> on completed
 events. Kinds are <code>created</code>, <code>updated</code>, <code>deleted</code>, <code>completed</code>, <code>reconciled</code>.
-Audit bodies contain <code>namespace,key,verb,version,nseq,audit_epoch,actor,at, audit_digest</code> and optional <code>fields_changed</code>; they omit kind, lifecycle,
+Audit bodies contain <code>namespace,key,command,version,nseq,audit_epoch,actor,at, audit_digest</code> and optional <code>fields_changed</code>; they omit kind, lifecycle,
 cause and secret count. Timestamps use RFC 3339 UTC with milliseconds.
 Records-changed bodies omit the digest. Both topics use <code>retain:false</code>.</p>
 <p>Replay and live publication share the same projection functions. Each

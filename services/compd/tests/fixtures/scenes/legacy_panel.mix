@@ -112,8 +112,8 @@ fn rc_ok($code)
   return $code >= 0 and $code < 10
 end
 
-fn rpc($target, $verb, $payload)
-  send $target $verb body=json_encode($payload) timeout=3
+fn rpc($target, $command, $payload)
+  send $target $command body=json_encode($payload) timeout=3
   if not rc_ok($rc) then return nil end
   if type($result) == "string" then
     try
@@ -146,13 +146,13 @@ fn load_scene($doc)
   return (type($r) == "map" and $r.revision != nil) ? $r.revision : 0
 end
 
-fn panel_verb($verb, $edge, $id)
-  if $verb == "shell.panel.mode" then
-    send $HOST $verb edge=$edge mode="hidden" timeout=3
+fn panel_command($command, $edge, $id)
+  if $command == "shell.panel.mode" then
+    send $HOST $command edge=$edge mode="hidden" timeout=3
   elif $id == nil then
-    send $HOST $verb edge=$edge timeout=3
+    send $HOST $command edge=$edge timeout=3
   else
-    send $HOST $verb edge=$edge id=$id timeout=3
+    send $HOST $command edge=$edge id=$id timeout=3
   end
   $ok = rc_ok($rc)
   $receipt = $result
@@ -250,8 +250,8 @@ fn drive_panel_edge($edge)
       $key = to_string($op.token) .. ":" .. $action
       if $attempted[$key] ?? false then break end
       $attempted[$key] = true
-      $verb = $action == "release" ? "shell.panel.mode" : ($action == "select" ? "shell.panel.page.set" : "shell.panel.pin")
-      $ok = panel_verb($verb, $edge, $action == "select" ? $op.page : nil)
+      $command = $action == "release" ? "shell.panel.mode" : ($action == "select" ? "shell.panel.page.set" : "shell.panel.pin")
+      $ok = panel_command($command, $edge, $action == "select" ? $op.page : nil)
       if not $p.panel_operation_current($state.pending_panels, $edge, $op.token) then continue end
       -- An applied state can confirm success even if the reply was lost.
       if not $ok and $p.panel_action($op, $state.applied_panels[$edge]) != "done" then
@@ -1021,7 +1021,7 @@ fn hide_popup($edge)
   -- Dismiss it only while one of our own pages is on the edge.
   $now = $state.applied_panels[$edge] ?? {}
   if $now.visible == true and contains(["scene-launcher", "scene-calendar", "scene-notes"], $now.page ?? "") then
-    if not panel_verb("shell.panel.hide", $edge, nil) then return false end
+    if not panel_command("shell.panel.hide", $edge, nil) then return false end
     if (($state.applied_panels[$edge] ?? {}).visible ?? false) == true then return false end
   end
   return true
@@ -1069,7 +1069,7 @@ end
 -- Scene clicks reply AFTER their effect is applied, like Quoin's applied
 -- replies: a caller that reads state after the reply sees the popup already
 -- closed or opened. rc 0 carries the applied popup flags; a release the host
--- did not confirm is release_failed (22), as for the agent verbs.
+-- did not confirm is release_failed (22), as for the agent commands.
 fn popup_flags()
   return {launcher: $state.launcher_open, calendar: $state.calendar_open, notes: $state.notes_open}
 end
@@ -1674,8 +1674,8 @@ end
 
 -- Compositor state (windows opening/closing/focusing/minimising, workspace
 -- switches), tray items and notifications all publish property diffs with
--- the inner verb props.changed -- a handler matches the publisher's inner
--- verb, not the topic name -- so this one handler drives every rebuild.
+-- the inner command props.changed -- a handler matches the publisher's inner
+-- command, not the topic name -- so this one handler drives every rebuild.
 -- The adapters' named events are wired too, in case a diff is coalesced
 -- away; schedule() refetches everything either way.
 on props.changed async
@@ -1858,7 +1858,7 @@ reconcile_services((($initial_registry ?? {}).services ?? {}).registered)
 note("quoin-panel up: host=" .. $HOST .. " comp=" .. $COMP)
 
 -- The clock runs in its own local async task, started here, so
--- this init body returns and the runtime serves its reserved verbs (RELOAD,
+-- this init body returns and the runtime serves its reserved commands (RELOAD,
 -- QUIT, INFO, lifecycle props) -- an init that never returns would starve
 -- them. On shutdown the runtime drains the loop like any async handler.
 start_clock()

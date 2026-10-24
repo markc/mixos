@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! monitord: samples the system and its processes, keeps history, and
-//! answers read verbs on the Bus, so any node's load can be read from
+//! answers read commands on the Bus, so any node's load can be read from
 //! anywhere on the mesh (docs/docs/decisions/2026-10-16-monitord-and-monitor.md).
 //!
 //! The `monitord` binary, and the system binary started as `monitord`,

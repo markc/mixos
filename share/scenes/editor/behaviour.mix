@@ -155,8 +155,8 @@ end
 -- outcome and re-reads everything; the click itself is answered at once
 -- with {queued:true}, so the host never waits on a slow install. One action
 -- at a time: a second while one runs is refused, never interleaved.
-fn click($verb, $event)
-  $p = $e.plan_click($verb, $r.event_args($event), $state.ui, $state.data)
+fn click($command, $event)
+  $p = $e.plan_click($command, $r.event_args($event), $state.ui, $state.data)
   if $p.kind == "ui" then
     $state.ui = $e.finish($p).ui
     schedule(false)
@@ -191,7 +191,7 @@ on editor.run async
   try
     $s = $e.next_step($p)
     while $s != nil
-      $p = $e.advance($p, $r.call($s.target, $s.verb, $s.args))
+      $p = $e.advance($p, $r.call($s.target, $s.command, $s.args))
       $s = $e.next_step($p)
     end
   catch $message

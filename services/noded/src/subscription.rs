@@ -1099,7 +1099,7 @@ impl SubscriptionBroker {
 
         // Push the replay to the new subscriber. If the channel was
         // closed at this point (target peer disconnected after the
-        // verb-level close-check, before the snapshot try_send) the
+        // command-level close-check, before the snapshot try_send) the
         // sub is dead-on-arrival: the publish hot loop only prunes
         // *during* a matching publish, so on a low-traffic or
         // never-matching topic the dead sub would persist

@@ -31,7 +31,7 @@ use bus::{ConnState, IncomingCommand, SupervisedClient};
 use serde_json::{Value, json};
 use tokio::sync::{mpsc as tokio_mpsc, watch};
 
-use crate::verb::SceneVerb;
+use crate::command::SceneCommand;
 
 /// The contract's host name.
 pub const DEFAULT_SERVICE: &str = "shell";
@@ -67,7 +67,7 @@ pub struct HostConfig {
 /// One admitted scene request.
 #[derive(Clone, Debug)]
 pub struct Request {
-    pub verb: SceneVerb,
+    pub kind: SceneCommand,
     pub from: String,
     pub command: String,
     pub id: Option<String>,
@@ -109,7 +109,7 @@ enum Outbound {
 
 struct Event {
     to: String,
-    verb: String,
+    kind: String,
     body: Value,
 }
 
@@ -286,11 +286,11 @@ impl Port {
         let _ = self.outbound.send(Outbound::Publish { panel: true, wire });
     }
 
-    /// A scene event: a directed request to `citizen`, verb = the handler
+    /// A scene event: a directed request to `citizen`, command = the handler
     /// name, body `{scene,node,kind,value?,item?}`. False when the
     /// contract's 128 pending events are already in flight (dropped, logged).
-    pub fn emit(&self, citizen: &str, verb: &str, body: Value) -> bool {
-        self.sink.emit(citizen, verb, body)
+    pub fn emit(&self, citizen: &str, kind: &str, body: Value) -> bool {
+        self.sink.emit(citizen, kind, body)
     }
 
     /// A sender for scene events that any thread may hold (the UI
@@ -329,19 +329,19 @@ pub struct EventSink {
 impl EventSink {
     /// False when 128 events are already pending (dropped, logged) or the
     /// worker is gone.
-    pub fn emit(&self, citizen: &str, verb: &str, body: Value) -> bool {
+    pub fn emit(&self, citizen: &str, kind: &str, body: Value) -> bool {
         if self.pending.fetch_add(1, Ordering::AcqRel) >= MAX_PENDING_EVENTS {
             self.pending.fetch_sub(1, Ordering::AcqRel);
             tracing::warn!(
                 citizen,
-                verb,
+                kind,
                 "scene event dropped: {MAX_PENDING_EVENTS} events already pending"
             );
             return false;
         }
         let event = Event {
             to: citizen.to_owned(),
-            verb: verb.to_owned(),
+            kind: kind.to_owned(),
             body,
         };
         if self.events.send(event).is_err() {
@@ -381,11 +381,11 @@ impl Delivery {
 /// Where one incoming frame goes.
 #[derive(Debug, PartialEq)]
 pub enum Route {
-    Scene(SceneVerb),
+    Scene(SceneCommand),
     Live(BTreeSet<String>),
     /// A registry claim not from the local broker; dropped, logged.
     Forged,
-    /// A request for a verb this host does not serve.
+    /// A request for a command this host does not serve.
     Unknown,
     /// A topic delivery or a reply: nothing to answer.
     Ignore,
@@ -412,8 +412,8 @@ pub fn route(service: &str, command: &IncomingCommand) -> Route {
     if command.is_topic_delivery() || command.command.is_empty() {
         return Route::Ignore;
     }
-    match SceneVerb::parse(service, &command.command) {
-        Some(verb) => Route::Scene(verb),
+    match SceneCommand::parse(service, &command.command) {
+        Some(kind) => Route::Scene(kind),
         None if command.id.is_some() => Route::Unknown,
         None => Route::Ignore,
     }
@@ -733,11 +733,11 @@ async fn serve(
                 let pending = PendingEvent(pending);
                 flights.spawn(async move {
                     let _pending = pending;
-                    let call = client.call(&event.to, &event.verb, event.body);
+                    let call = client.call(&event.to, &event.kind, event.body);
                     match tokio::time::timeout(EVENT_TIMEOUT, call).await {
                         Ok(Ok(_)) => {}
-                        Ok(Err(error)) => tracing::debug!(%error, to = %event.to, verb = %event.verb, "scene event failed"),
-                        Err(_) => tracing::debug!(to = %event.to, verb = %event.verb, "scene event timed out"),
+                        Ok(Err(error)) => tracing::debug!(%error, to = %event.to, kind = %event.kind, "scene event failed"),
+                        Err(_) => tracing::debug!(to = %event.to, kind = %event.kind, "scene event timed out"),
                     }
                 });
             }
@@ -844,9 +844,9 @@ fn admit(
     command: IncomingCommand,
 ) -> Option<(IncomingCommand, u8, Value)> {
     match route(service, &command) {
-        Route::Scene(verb) => {
+        Route::Scene(kind) => {
             let request = Request {
-                verb,
+                kind,
                 from: command.from.clone(),
                 command: command.command.clone(),
                 id: command.id.clone(),
@@ -868,11 +868,11 @@ fn admit(
             tracing::warn!(from = %command.from, "scene host: ignoring a registry claim not from the local broker")
         }
         Route::Unknown => {
-            let message = format!("{} is not a scene host verb", command.command);
+            let message = format!("{} is not a scene host command", command.command);
             return Some((
                 command,
                 10,
-                json!({"error_code":"UNKNOWN_VERB","message":message}),
+                json!({"error_code":"UNKNOWN_COMMAND","message":message}),
             ));
         }
         Route::Ignore => {}
@@ -1448,8 +1448,8 @@ mod tests {
 
         let mut host = crate::host::Host::default();
         host.panels.ensure("DP-1", (1280.0, 800.0));
-        let request = |verb, body: Value| Request {
-            verb,
+        let request = |kind, body: Value| Request {
+            kind,
             from: "scenes".into(),
             command: "shell.panel.page.set".into(),
             id: Some("1".into()),
@@ -1464,7 +1464,7 @@ mod tests {
                 "---\nscene: 1\nname: {name}\ncitizen: scenes\nwindow: {{\"kind\":\"edge\",\"edge\":\"right\"}}\n---\n```mix\nroot: {{widget: \"column\", children: []}}\n```\n"
             );
             let answer = host.answer(
-                &request(SceneVerb::Load, json!({"source":source})),
+                &request(SceneCommand::Load, json!({"source":source})),
                 "DP-1",
                 Some(1),
                 &mut no_layout,
@@ -1507,7 +1507,7 @@ mod tests {
             .enumerate()
         {
             let delivery = Arc::clone(&delivery);
-            let request = request(SceneVerb::PanelPageSet, json!({"edge":"right", "id":page}));
+            let request = request(SceneCommand::PanelPageSet, json!({"edge":"right", "id":page}));
             let worker =
                 std::thread::spawn(move || assert!(delivery.send(Inbound::Request(request))));
             event_loop
@@ -1559,7 +1559,7 @@ mod tests {
     }
 
     #[test]
-    fn frames_route_to_verbs_registry_sets_or_nothing() {
+    fn frames_route_to_commands_registry_sets_or_nothing() {
         let load = incoming(
             "loader",
             "shell.scene.load",
@@ -1567,10 +1567,10 @@ mod tests {
             &[("broker_origin", "local")],
             "{}",
         );
-        assert_eq!(route("shell", &load), Route::Scene(SceneVerb::Load));
-        let unknown = incoming("loader", "shell.no.such.verb", Some("2"), &[], "{}");
+        assert_eq!(route("shell", &load), Route::Scene(SceneCommand::Load));
+        let unknown = incoming("loader", "shell.no.such.kind", Some("2"), &[], "{}");
         assert_eq!(route("shell", &unknown), Route::Unknown);
-        let fire_and_forget = incoming("loader", "shell.no.such.verb", None, &[], "{}");
+        let fire_and_forget = incoming("loader", "shell.no.such.kind", None, &[], "{}");
         assert_eq!(route("shell", &fire_and_forget), Route::Ignore);
         let registry = r#"{"path":"services.registered","new":["comp","scenes"]}"#;
         let live = incoming(

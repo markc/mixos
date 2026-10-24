@@ -44,7 +44,7 @@ fn as_binary_sub(expr: &Expr) -> (&Expr, &Expr) {
     }
 }
 
-/// The motivating line, verbatim: hyphenated bare target, dotted verb,
+/// The motivating line, verbatim: hyphenated bare target, dotted command,
 /// kwargs. The target must arrive whole — `comp-vt2`, never `comp` minus
 /// `vt2` (the old parse died at RUNTIME with "cannot use 'comp' as
 /// number").

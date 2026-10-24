@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `edit.v1` Bus contract as serde types (plan §4). One request and one
-//! reply type per verb, one type per event kind, and the refusal body.
+//! reply type per command, one type per event kind, and the refusal body.
 //!
 //! Golden fixtures: `tests/fixtures/contract/*.json`, checked by
 //! `tests/contract_fixtures.rs` (requests must parse; replies, refusals and
@@ -28,8 +28,8 @@ pub const SCHEMA: &str = "edit.v1";
 pub const TOPIC_CHANGED: &str = "edit.changed";
 pub const TOPIC_PROPS_CHANGED: &str = "edit.props.changed";
 
-/// Every verb, in manifest order. `read_only` per the manifest (plan §4.4).
-pub const VERBS: &[(&str, bool)] = &[
+/// Every command, in manifest order. `read_only` per the manifest (plan §4.4).
+pub const COMMANDS: &[(&str, bool)] = &[
     ("edit.ping", true),
     ("edit.info", true),
     ("edit.list", true),
@@ -60,7 +60,7 @@ pub const VERBS: &[(&str, bool)] = &[
 
 // ── shared request fragments ────────────────────────────────────────────────
 
-/// Label claim + retry id, on every mutating verb.
+/// Label claim + retry id, on every mutating command.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MutMeta {
     #[serde(default)]

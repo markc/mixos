@@ -239,7 +239,7 @@
 <code>&lt;app&gt;.macros.put</code>, <code>remove</code>, <code>move</code>, <code>copy</code> and <code>new</code> accept the owning
 process's local registered service and Workshop (<code>workshop</code> or <code>workshop-*</code>).
 Global catalogue writes and cross-app moves require Workshop.</p>
-<p>Workshop is the trusted catalogue manager. Its mutating macro verbs must
+<p>Workshop is the trusted catalogue manager. Its mutating macro commands must
 themselves accept only Workshop callers, including requests forwarded to
 another app. Its generic execute/call paths must not bypass this restriction.
 A person using Workshop's UI retains the manager's authority.</p>
@@ -248,14 +248,14 @@ caller. Mesh callers cannot mutate macro files. Service registration on a
 default-open node is not executable authentication: a local process able to
 claim an unused Workshop service name gains that authority. This rule does
 not isolate code running under the same filesystem user.</p>
-<p>Refusals use <code>DENIED</code>, name the verb and rule, and precede file effects.
+<p>Refusals use <code>DENIED</code>, name the command and rule, and precede file effects.
 <code>list</code>, <code>get</code>, <code>run</code>, <code>status</code>, <code>output</code>, <code>stop</code> and <code>reload</code> remain open.
 Running user code retains its existing authority and is not a sandbox.</p>
 <p>Workshop’s Bus <code>execute</code> for mutating <code>macro.*</code> actions and <code>bus.call</code>,
 implicit-target <code>call</code>, calls forwarding macro mutations or these proxy
 operations, and UI click/pointer/key/type injection require Workshop too.
 These paths can otherwise turn an untrusted caller into the manager.
-Explicit <code>call</code> requests for read/run verbs and UI inspection remain open.</p>
+Explicit <code>call</code> requests for read/run commands and UI inspection remain open.</p>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-24-macro-file-write-authority.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

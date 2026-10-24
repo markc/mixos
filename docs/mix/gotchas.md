@@ -46,14 +46,14 @@ must appear in the error.
 | `sort_by` takes a direction | ascending only, with a lambda; `reverse()` for descending | `print(sort_by([3, 1, 2], fn($x) = $x))` | `[1, 2, 3]` |
 | `'~/x'` expands | a **single**-quoted string is raw — no `~`, no `${...}` | `print('~/x')` | `~/x` |
 | — and `"~/x"`? | a double-quoted one expands `~` to `$HOME` | `print(starts_with("~/x", "/"))` | `true` |
-| `send svc-name verb` needs quoting | it does not — a tight-hyphenated bare target is read whole, like the quoted and `$var` forms | `send zz-no-such-svc ping timeout=1; print(type($result))` | `string` |
-| — but `send a - b verb`? | a **space** makes it subtraction again, and a bareword is a string, so that is a type error | `send a - b ping timeout=1` | `!as number` |
+| `send svc-name command` needs quoting | it does not — a tight-hyphenated bare target is read whole, like the quoted and `$var` forms | `send zz-no-such-svc ping timeout=1; print(type($result))` | `string` |
+| — but `send a - b command`? | a **space** makes it subtraction again, and a bareword is a string, so that is a type error | `send a - b ping timeout=1` | `!as number` |
 | `replace()` tells you it missed | it returns the input unchanged, **silently** — check the result, or use `mix edit` from a prompt | `print(replace("abc", "zz", "!"))` | `abc` |
 | `replace()` replaces the first | it replaces **all** of them | `print(replace("a a a", "a", "b"))` | `b b b` |
 | `mix -c 'print(x)'` needs escaping gymnastics | it does not; a probe is one call and the binary is the oracle | `print(mix_version() != "")` | `true` |
 | a provable `-c` arity/dead-mutation snippet runs | the D1 lint gate REFUSES it with exit 2 before any line runs — `--no-lint` overrides (0.103.4) | `mix -c '$m = {}; remove($m, "k")'` | `!refusing to run` |
 | `is_reload_candidate()` is true while a `--serve` RELOAD is pending | it is true **only while the replacement's init body executes** — false in a plain script, at initial boot, and in every committed generation; the candidate must stay passive (no starts, no persisted writes) and commit-time work belongs in `on lifecycle.commit` | `print(is_reload_candidate())` | `false` |
-| `on $svc .. ".call"` registers a verb under the `--serve` name | `on` takes a static name (that is a parse error); write `on @.call` — the unquoted `@` becomes the serve name when the handler registers, and outside `--serve` it raises `SERVE_PREFIX_OUTSIDE_SERVE` | `try on @.call end catch $m, $e print($e.code) end` | `SERVE_PREFIX_OUTSIDE_SERVE` |
+| `on $svc .. ".call"` registers a command under the `--serve` name | `on` takes a static name (that is a parse error); write `on @.call` — the unquoted `@` becomes the serve name when the handler registers, and outside `--serve` it raises `SERVE_PREFIX_OUTSIDE_SERVE` | `try on @.call end catch $m, $e print($e.code) end` | `SERVE_PREFIX_OUTSIDE_SERVE` |
 
 ## Three rules that are not a syntax trap
 

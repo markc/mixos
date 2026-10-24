@@ -290,8 +290,8 @@ function dt_action_link($a)
   end
   $label = "" .. dt_or($a["label"], "")
   -- A `post: true` field makes this a same-origin POST <form> button (href = the
-  -- form action URL, `action` = the hidden action-verb field). Use it for a header
-  -- action that triggers an bus_call on a route carrying MUTATING bus verbs: a GET
+  -- form action URL, `action` = the hidden action-command field). Use it for a header
+  -- action that triggers an bus_call on a route carrying MUTATING bus commands: a GET
   -- <a> can't carry the X-CSRF-Token webd's bus gate demands off-POST, but a plain
   -- same-origin form POST satisfies the gate's POST branch (Origin/Referer + the
   -- SameSite session cookie), exactly like every SSR mutating form. No-JS safe (a
@@ -333,8 +333,8 @@ end
 -- dt_action($name, $opts) → one declarative row-action spec (opt-in via
 -- opts.row_action_specs). Two kinds, by which of href/action is set:
 --   NAV (href = fn($row) -> url): a styled <a>, no POST, no modal — Filament's own rule.
---   MUTATING (action = a verb string): a <button> that submits the table's wrapping
---     POST form carrying name=action value="row:<verb>:<id>" (id = bulk_id($row)); the
+--   MUTATING (action = a command string): a <button> that submits the table's wrapping
+--     POST form carrying name=action value="row:<command>:<id>" (id = bulk_id($row)); the
 --     handler parses it with dt_row_action and BINDS the id. confirm (string) gates it
 --     via the native <dialog> (S-6). The mini-form is the table's shared bulk/action
 --     form — a row action never opens its OWN <form> (no nested forms).
@@ -355,7 +355,7 @@ function dt_action($name, $opts)
   $modal = nil
   -- optional overrides for a mutating action in context-menu mode: post to a custom
   -- route (e.g. a native webd route that unlinks a file) with custom fields, instead of
-  -- base_route + the row:<verb>:<id> wire format.
+  -- base_route + the row:<command>:<id> wire format.
   $post_route = nil
   $post_fields = nil
   -- optional one-level flyout: a list of cm_item-shaped maps (e.g. one POST-per-folder using
@@ -397,7 +397,7 @@ function dt_action($name, $opts)
 end
 
 -- Render ONE declarative action for a row. A mutating action (a[`action`] set) → a
--- submit button carrying the row:<verb>:<id> value; otherwise a nav <a> from href($row).
+-- submit button carrying the row:<command>:<id> value; otherwise a nav <a> from href($row).
 -- Action inner content + extra attrs, honouring the labels toggle. With opts.action_labels
 -- == false AND an icon present, the label is moved to title + aria-label (icon-ONLY, but
 -- still hover-discoverable + screen-reader-named) and dropped from the visible body. Default
@@ -428,7 +428,7 @@ function dt_render_action($a, $row, $opts)
   $label = esc("" .. dt_or($a["label"], ""))
   $body = dt_action_body($ic, $label, $opts)
   if $a["action"] != nil then
-    -- mutating: submit the table's wrapping form with action=row:<verb>:<id>.
+    -- mutating: submit the table's wrapping form with action=row:<command>:<id>.
     $id = "" .. $opts["bulk_id"]($row)
     $cattr = ""
     if $a["confirm"] != nil and ("" .. $a["confirm"]) != "" then
@@ -510,7 +510,7 @@ end
 -- modal shell + shim emitted once by the handler (dt_actions_chrome). A nav/modal action's
 -- href is a per-ROW lambda, so the resolved per-row URL is bound WHOLE into data-cm-<name>
 -- and the menu item references it via the no-encode {!<name>} placeholder; a mutating action
--- becomes a one-click POST submitting the identical row:<verb>:<id> wire format (so the
+-- becomes a one-click POST submitting the identical row:<command>:<id> wire format (so the
 -- handler's dt_row_action dispatch is unchanged). Requires a non-empty declarative spec list
 -- (a raw row_actions lambda can't be decomposed into items).
 
@@ -570,7 +570,7 @@ function dt_actions_cm_items($opts)
       $sep_added = true
     end
     if $is_mut then
-      -- MUTATING: one-click POST. By default → base_route with the row:<verb>:<id> wire
+      -- MUTATING: one-click POST. By default → base_route with the row:<command>:<id> wire
       -- format (handler dispatch unchanged). A spec MAY override post_route + post_fields to
       -- target a different route — e.g. a native webd route that can unlink a file, which the
       -- Mix base_route handler is sandboxed from doing (media delete). {id} resolves from the
@@ -676,10 +676,10 @@ function dt_row_actions_html($opts, $row)
   return $inner
 end
 
--- Parse a posted row-action submit value "row:<verb>:<id>" → { verb, id } (strip the
+-- Parse a posted row-action submit value "row:<command>:<id>" → { command, id } (strip the
 -- "row:" prefix, split on the FIRST remaining ":" so an id may itself contain ":").
--- nil when the action isn't a row action or verb/id is empty. The handler dispatches on
--- the author-literal verb and treats `id` as UNTRUSTED — bind it, never splice it.
+-- nil when the action isn't a row action or command/id is empty. The handler dispatches on
+-- the author-literal command and treats `id` as UNTRUSTED — bind it, never splice it.
 function dt_row_action($form)
   $a = $form["action"]
   if $a == nil then
@@ -694,12 +694,12 @@ function dt_row_action($form)
   if $ci == 0 then
     return nil
   end
-  $verb = substr($rest, 0, $ci - 1)
+  $command = substr($rest, 0, $ci - 1)
   $id = substr($rest, $ci, length($rest) - $ci)
-  if $verb == "" or $id == "" then
+  if $command == "" or $id == "" then
     return nil
   end
-  return { verb: $verb, id: $id }
+  return { command: $command, id: $id }
 end
 
 -- ─────────────────────────── reorder (Phase 5, move-links, SQL-only) ───────────────────────────
@@ -1420,7 +1420,7 @@ function dt_opts($o)
     die("datatable: bulk requires bulk_id (fn(row)->id)")
   end
   -- a mutating declarative row action also needs bulk_id (the row id rides in the
-  -- button value row:<verb>:<id>); require it here so a non-bulk table with a mutating
+  -- button value row:<command>:<id>); require it here so a non-bulk table with a mutating
   -- spec dies LOUD at config rather than crashing on a nil bulk_id per row.
   if dt_specs_have_mutation($o) and $o["bulk_id"] == nil then
     die("datatable: a mutating row_action_specs action requires bulk_id (fn(row)->id)")

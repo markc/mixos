@@ -19,7 +19,7 @@ Commands take parameters and return results; see [the amendment](2026-10-20-comm
 - **Every action is a command.** A command has a stable id, a label, a menu
   path, an optional shortcut, an enablement rule and a handler. Menus,
   shortcuts and the command palette are generated from the registry. The UI,
-  the `mix` command line and ABP Bus verbs all dispatch commands by id, so
+  the `mix` command line and ABP Bus commands all dispatch commands by id, so
   everything a person can do in an application an agent can do too, locally or
   across the mesh.
 - **UI state is one serialisable struct.** Agents can read it, drive it and
@@ -32,7 +32,7 @@ Commands take parameters and return results; see [the amendment](2026-10-20-comm
   and editor text) draw into textures. A software adapter is the fallback.
 - **External applications are welcome without being forked.** An application
   that offers a line-delimited JSON control channel can be bridged to the Bus
-  as a set of verbs by one generic adapter, and runs inside the MixOS session
+  as a set of commands by one generic adapter, and runs inside the MixOS session
   unmodified.
 
 ## Why

@@ -166,8 +166,8 @@ fn target($kind)
   return $m.vol_stream_target($snap, $state.selected)
 end
 
--- The pactl verbs per control: devices by name, streams by index.
-$VERBS = {out: ["set-sink-volume", "set-sink-mute"], in: ["set-source-volume", "set-source-mute"],
+-- The pactl commands per control: devices by name, streams by index.
+$COMMANDS = {out: ["set-sink-volume", "set-sink-mute"], in: ["set-source-volume", "set-source-mute"],
   stream: ["set-sink-input-volume", "set-sink-input-mute"]}
 
 fn key_of($t, $kind)
@@ -192,7 +192,7 @@ end
 fn set_level($kind, $level)
   $t = target($kind)
   if $t == nil then return republish() end
-  return apply([$VERBS[$kind][0], key_of($t, $kind), $a.percent($level, min($a.MAX_LEVEL, max(100, $t.level)))])
+  return apply([$COMMANDS[$kind][0], key_of($t, $kind), $a.percent($level, min($a.MAX_LEVEL, max(100, $t.level)))])
 end
 
 fn nudge($kind, $delta)
@@ -204,7 +204,7 @@ end
 fn toggle_mute($kind)
   $t = target($kind)
   if $t == nil then return republish() end
-  return apply([$VERBS[$kind][1], key_of($t, $kind), "toggle"])
+  return apply([$COMMANDS[$kind][1], key_of($t, $kind), "toggle"])
 end
 
 -- A segment of a level bar: item {pct}.
@@ -266,7 +266,7 @@ end
 -- A device row: make it the default. Rows are matched against the last
 -- snapshot by index, so only a listed device can be chosen. Guarded like
 -- every other write: no change while writable() is false.
-fn pick_default($event, $prefix, $list_key, $verb)
+fn pick_default($event, $prefix, $list_key, $command)
   if not from_ui($event) then $r.respond(ui_only()); return end
   if not writable() then $r.respond(republish()); return end
   $id = $r.item_id($event)
@@ -276,7 +276,7 @@ fn pick_default($event, $prefix, $list_key, $verb)
   for each $d in $snap[$list_key] ?? []
     if $d.index == $index then
       if $d.default then $r.respond(republish()); return end
-      $r.respond(apply([$verb, $d.name])); return
+      $r.respond(apply([$command, $d.name])); return
     end
   end
   $r.respond(republish())

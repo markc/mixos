@@ -24,17 +24,17 @@ $events = $tmp .. "/events.jsonl"
 fn check($ok, $message)
   if not $ok then raise("EDIT_PATH", $message) end
 end
-fn call($verb, $body)
+fn call($command, $body)
   write_file($tmp .. "/call.mix", '$body = $2' .. "\n" ..
     'send screenshot-step3 $1 body=$body timeout=5' .. "\n" ..
     'print(json_encode({rc:$rc, body:$reply}))' .. "\n")
-  $r = run_argv([$mix, $tmp .. "/call.mix", $verb, json_encode($body)], {clear_env:true, env:$child_env, timeout:10})
+  $r = run_argv([$mix, $tmp .. "/call.mix", $command, json_encode($body)], {clear_env:true, env:$child_env, timeout:10})
   check($r.ok, "client failed: " .. $r.stderr)
   return json_parse($r.stdout)
 end
-fn ok($verb, $body)
-  $r = call($verb, $body)
-  check($r.rc == 0, $verb .. ": " .. json_encode($r))
+fn ok($command, $body)
+  $r = call($command, $body)
+  check($r.rc == 0, $command .. ": " .. json_encode($r))
   return $r.body
 end
 try
@@ -45,8 +45,8 @@ try
   write_file($tmp .. "/image.png", base64_decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII="))
   write_file($events, "")
   write_file($tmp .. "/watch.mix", join([
-    'subscribe("screenshot-step3.command.executed")',
-    'on screenshot-step3.command.executed',
+    'subscribe("screenshot-step3.action.executed")',
+    'on screenshot-step3.action.executed',
     '  append_file(env("EVENTS"), json_encode($event.args) .. "\n")',
     'end'
   ], "\n") .. "\n")
@@ -55,7 +55,7 @@ try
   -- Confirm the subscription with a round-trip probe before editing.
   $ready = false
   for $i = 1 to 50
-    publish("screenshot-step3.command.executed", json_encode({probe:true}))
+    publish("screenshot-step3.action.executed", json_encode({probe:true}))
     sleep(0.1)
     if contains(read_file($events), "probe") then $ready = true; break end
   end

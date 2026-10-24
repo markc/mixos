@@ -547,7 +547,7 @@ async fn mesh_and_unstamped_callers_reach_set_and_pointer_watch() {
         let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
         let (reply_sender, mut replies) = tokio_mpsc::channel(2);
         let reply_timeouts = Arc::new(AtomicU64::new(0));
-        let verb = command.command.clone();
+        let command_name = command.command.clone();
         let id = command.id.clone();
         handle_incoming(
             &ingress,
@@ -559,15 +559,15 @@ async fn mesh_and_unstamped_callers_reach_set_and_pointer_watch() {
             command,
         );
         match source.try_recv() {
-            Ok(PortCommand::Set(_)) => assert_eq!(verb, "comp.props.set", "{id:?}"),
+            Ok(PortCommand::Set(_)) => assert_eq!(command_name, "comp.props.set", "{id:?}"),
             Ok(PortCommand::PointerWatch(_)) => {
-                assert_eq!(verb, "comp.pointer.watch", "{id:?}")
+                assert_eq!(command_name, "comp.pointer.watch", "{id:?}")
             }
-            _ => panic!("{verb} {id:?} was not admitted"),
+            _ => panic!("{command_name} {id:?} was not admitted"),
         }
         assert!(
             replies.try_recv().is_err(),
-            "{verb} {id:?} got an early refusal"
+            "{command_name} {id:?} got an early refusal"
         );
         responders.abort_all();
     }
@@ -578,11 +578,11 @@ async fn region_mesh_dispatch_uses_long_pool_and_replies_once() {
     let (ingress, source, depth) = test_ingress();
     let mut responders = JoinSet::new();
     let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
-    let long_permits = Arc::new(Semaphore::new(LONG_VERB_PERMITS));
+    let long_permits = Arc::new(Semaphore::new(LONG_COMMAND_PERMITS));
     // Model seven other long operations occupying the production pool.
     let other_operations = long_permits
         .clone()
-        .try_acquire_many_owned((LONG_VERB_PERMITS - 1) as u32)
+        .try_acquire_many_owned((LONG_COMMAND_PERMITS - 1) as u32)
         .unwrap();
     let (reply_sender, mut replies) = tokio_mpsc::channel(8);
     let reply_timeouts = Arc::new(AtomicU64::new(0));
@@ -641,18 +641,18 @@ async fn region_mesh_dispatch_uses_long_pool_and_replies_once() {
     assert!(replies.try_recv().is_err(), "exactly one terminal reply");
     assert_eq!(long_permits.available_permits(), 1);
     drop(other_operations);
-    assert_eq!(long_permits.available_permits(), LONG_VERB_PERMITS);
+    assert_eq!(long_permits.available_permits(), LONG_COMMAND_PERMITS);
 }
 
 /// noded's registry diffs reach the compositor as the full live set,
-/// unanswered (a topic delivery is not a verb); other props diffs, and a
+/// unanswered (a topic delivery is not a command); other props diffs, and a
 /// malformed set, change nothing.
 #[tokio::test]
 async fn registry_diffs_reach_the_compositor_as_the_live_set() {
     let (ingress, source, _depth) = test_ingress();
     let mut responders = JoinSet::new();
     let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
-    let long_permits = Arc::new(Semaphore::new(LONG_VERB_PERMITS));
+    let long_permits = Arc::new(Semaphore::new(LONG_COMMAND_PERMITS));
     let (reply_sender, mut replies) = tokio_mpsc::channel(8);
     let reply_timeouts = Arc::new(AtomicU64::new(0));
     // The live broker's shape (noded 0.18.2): no `from`, the publisher
@@ -716,16 +716,16 @@ async fn registry_diffs_reach_the_compositor_as_the_live_set() {
 }
 
 #[tokio::test]
-async fn panel_verbs_dispatch_by_literal_command_under_a_non_default_service() {
+async fn panel_commands_dispatch_by_literal_command_under_a_non_default_service() {
     let (ingress, source, _depth) = test_ingress();
     let mut responders = JoinSet::new();
     let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
-    let long_permits = Arc::new(Semaphore::new(LONG_VERB_PERMITS));
+    let long_permits = Arc::new(Semaphore::new(LONG_COMMAND_PERMITS));
     let (reply_sender, mut replies) = tokio_mpsc::channel(8);
     let reply_timeouts = Arc::new(AtomicU64::new(0));
     let hold = json!({"output":"Output-1","edge":"left","surface":"quoin.panel.1",
         "holder":"popup","acquire":true});
-    for (index, (verb, args)) in [
+    for (index, (command_name, args)) in [
         ("comp.panel.hold", hold.clone()),
         ("comp-nested.panel.hold", hold),
         (
@@ -737,7 +737,7 @@ async fn panel_verbs_dispatch_by_literal_command_under_a_non_default_service() {
     .into_iter()
     .enumerate()
     {
-        let mut incoming = command(verb, index);
+        let mut incoming = command(command_name, index);
         incoming.body = args.to_string();
         incoming.args = args;
         dispatch_incoming(
@@ -751,7 +751,7 @@ async fn panel_verbs_dispatch_by_literal_command_under_a_non_default_service() {
             incoming,
         );
     }
-    // The service-prefixed spelling is not a verb, and a typo names its field.
+    // The service-prefixed spelling is not a command, and a typo names its field.
     let mut refusals = BTreeMap::new();
     for _ in 0..2 {
         let reply = replies.try_recv().unwrap();
@@ -759,11 +759,11 @@ async fn panel_verbs_dispatch_by_literal_command_under_a_non_default_service() {
         refusals.insert(reply.id.clone().unwrap(), (reply.rc, body));
     }
     assert_eq!(refusals["1"].0, 10);
-    assert_eq!(refusals["1"].1["error"], "unknown_verb");
+    assert_eq!(refusals["1"].1["error"], "UNKNOWN_COMMAND");
     assert_eq!(refusals["2"].0, 10);
     assert_eq!(refusals["2"].1["error"], "invalid_args");
     assert_eq!(refusals["2"].1["field"], "sticky");
-    // The literal verb reaches the compositor thread under any service name.
+    // The literal command reaches the compositor thread under any service name.
     let Ok(PortCommand::Panel(mut request)) = source.try_recv() else {
         panic!("comp.panel.hold must be admitted");
     };
@@ -791,10 +791,10 @@ async fn window_wait_and_forced_close_take_the_long_pool() {
     let (ingress, source, depth) = test_ingress();
     let mut responders = JoinSet::new();
     let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
-    let long_permits = Arc::new(Semaphore::new(LONG_VERB_PERMITS));
+    let long_permits = Arc::new(Semaphore::new(LONG_COMMAND_PERMITS));
     let (reply_sender, _replies) = tokio_mpsc::channel(8);
     let reply_timeouts = Arc::new(AtomicU64::new(0));
-    for (index, (verb, args)) in [
+    for (index, (command_name, args)) in [
         (
             "comp.window.wait",
             json!({"match": {"id": 7}, "until": "gone", "timeout_ms": 30_000}),
@@ -808,7 +808,7 @@ async fn window_wait_and_forced_close_take_the_long_pool() {
     .into_iter()
     .enumerate()
     {
-        let mut incoming = command(verb, index);
+        let mut incoming = command(command_name, index);
         incoming.body = args.to_string();
         incoming.args = args;
         dispatch_incoming(
@@ -840,7 +840,7 @@ async fn window_wait_and_forced_close_take_the_long_pool() {
             generation: 3
         }
     );
-    assert_eq!(long_permits.available_permits(), LONG_VERB_PERMITS - 2);
+    assert_eq!(long_permits.available_permits(), LONG_COMMAND_PERMITS - 2);
     assert_eq!(depth.load(Ordering::Acquire), 3);
     drop((wait, close));
     assert_eq!(depth.load(Ordering::Acquire), 1);
@@ -848,7 +848,7 @@ async fn window_wait_and_forced_close_take_the_long_pool() {
 }
 
 #[tokio::test]
-async fn mesh_window_verbs_cross_ingress_in_order() {
+async fn mesh_window_commands_cross_ingress_in_order() {
     let (ingress, source, _) = test_ingress();
     let mut responders = JoinSet::new();
     let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
@@ -905,15 +905,15 @@ async fn mesh_window_verbs_cross_ingress_in_order() {
 }
 
 #[tokio::test]
-async fn input_verbs_cross_ingress_in_order_and_long_verbs_release_their_slot() {
+async fn input_commands_cross_ingress_in_order_and_long_commands_release_their_slot() {
     let (ingress, source, depth) = test_ingress();
     let mut responders = JoinSet::new();
     let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
     let long_permits = Arc::new(Semaphore::new(1));
     let (reply_sender, mut replies) = tokio_mpsc::channel(8);
     let reply_timeouts = Arc::new(AtomicU64::new(0));
-    let mut dispatch = |verb: &str, id: usize, args: Value| {
-        let mut incoming = command(verb, id);
+    let mut dispatch = |command_name: &str, id: usize, args: Value| {
+        let mut incoming = command(command_name, id);
         incoming.body = args.to_string();
         incoming.args = args;
         incoming
@@ -934,13 +934,13 @@ async fn input_verbs_cross_ingress_in_order_and_long_verbs_release_their_slot() 
     dispatch(
         "comp.input.sequence",
         2,
-        json!({"steps": [{"verb": "comp.input.release_all", "delay_ms": 50}]}),
+        json!({"steps": [{"command": "comp.input.release_all", "delay_ms": 50}]}),
     );
     // The long pool has one permit and it is held.
     dispatch(
         "comp.input.sequence",
         3,
-        json!({"steps": [{"verb": "comp.input.release_all"}]}),
+        json!({"steps": [{"command": "comp.input.release_all"}]}),
     );
     dispatch("comp.input.key", 4, json!({"text": "ok"}));
     dispatch("comp.input.teleport", 5, json!({}));
@@ -966,7 +966,7 @@ async fn input_verbs_cross_ingress_in_order_and_long_verbs_release_their_slot() 
     assert!(matches!(source.try_recv(), Err(mpsc::TryRecvError::Empty)));
     assert_eq!(depth.load(Ordering::Acquire), 3);
     // Taking the long request off the queue frees its slot while the
-    // verb itself keeps waiting.
+    // command itself keeps waiting.
     assert!(second.slot.take().is_some());
     assert_eq!(depth.load(Ordering::Acquire), 2);
 
@@ -979,7 +979,7 @@ async fn input_verbs_cross_ingress_in_order_and_long_verbs_release_their_slot() 
         );
     }
     assert_eq!(refusals["3"]["error"], "busy");
-    assert_eq!(refusals["5"]["error"], "unknown_verb");
+    assert_eq!(refusals["5"]["error"], "UNKNOWN_COMMAND");
     assert_eq!(refusals["6"]["error"], "invalid_args");
 
     // The long reply waits for its own budget, not the 2 s snapshot one.
@@ -995,18 +995,18 @@ async fn input_verbs_cross_ingress_in_order_and_long_verbs_release_their_slot() 
 }
 
 #[test]
-fn long_admission_budget_is_the_verb_deadline_plus_slack() {
+fn long_admission_budget_is_the_command_deadline_plus_slack() {
     let (ingress, _source, _) = test_ingress();
     let admission = ingress
         .request_long(LongOp::Sequence(vec![SequenceStep {
-            verb: "comp.input.release_all",
+            command: "comp.input.release_all",
             op: InputOp::ReleaseAll,
             delay: Duration::from_millis(1500),
         }]))
         .expect("admitted");
     assert_eq!(
         admission.timeout(),
-        Duration::from_millis(1500) + LONG_VERB_SLACK
+        Duration::from_millis(1500) + LONG_COMMAND_SLACK
     );
 }
 
@@ -1134,13 +1134,13 @@ async fn exact_noded_topic_lifecycle_notices_cross_as_watch_state_only() {
     let reply_timeouts = Arc::new(AtomicU64::new(0));
     // Either spelling of the broker: `from: noded`, or the live shape (no
     // `from`, `broker_service: noded`, origin local).
-    for (verb, active, stamped) in [
+    for (command_name, active, stamped) in [
         ("topic.active", true, false),
         ("topic.idle", false, false),
         ("topic.active", true, true),
         ("topic.idle", false, true),
     ] {
-        let mut command = command(verb, 1);
+        let mut command = command(command_name, 1);
         if stamped {
             command.from = String::new();
             command
@@ -1209,7 +1209,7 @@ async fn mesh_origin_noded_claims_do_not_steer_the_broker_state() {
     let (ingress, source, _) = test_ingress();
     let mut responders = JoinSet::new();
     let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
-    let long_permits = Arc::new(Semaphore::new(LONG_VERB_PERMITS));
+    let long_permits = Arc::new(Semaphore::new(LONG_COMMAND_PERMITS));
     let (reply_sender, mut replies) = tokio_mpsc::channel(4);
     let reply_timeouts = Arc::new(AtomicU64::new(0));
     let idle = |origin: &str| {
@@ -2444,8 +2444,8 @@ async fn graceful_shutdown_closes_within_budget_when_deregister_hangs() {
 }
 
 /// `compd.truth` is routed before `classify` (which would answer it
-/// `unknown_verb`), admitted as an ordered control, and answered with the
-/// engine's body; a near-miss name stays `unknown_verb`.
+/// `unknown_command`), admitted as an ordered control, and answered with the
+/// engine's body; a near-miss name stays `unknown_command`.
 #[tokio::test]
 async fn compd_truth_is_admitted_as_a_control_and_near_misses_stay_unknown() {
     let (ingress, source, _) = test_ingress();
@@ -2460,7 +2460,7 @@ async fn compd_truth_is_admitted_as_a_control_and_near_misses_stay_unknown() {
         &reply_sender,
         &reply_timeouts,
         "comp-nested",
-        command(TRUTH_VERB, 1),
+        command(TRUTH_COMMAND, 1),
     );
     let Ok(PortCommand::Truth(request)) = source.try_recv() else {
         panic!("compd.truth was not admitted as a truth control");
@@ -2481,9 +2481,9 @@ async fn compd_truth_is_admitted_as_a_control_and_near_misses_stay_unknown() {
         "comp-nested",
         command("comp.truth", 2),
     );
-    let refused = replies.recv().await.expect("unknown verb refused");
+    let refused = replies.recv().await.expect("unknown command refused");
     assert_eq!(refused.rc, 10);
-    assert!(refused.body.contains("unknown_verb"), "{}", refused.body);
+    assert!(refused.body.contains("UNKNOWN_COMMAND"), "{}", refused.body);
     assert!(source.try_recv().is_err(), "a near miss is never admitted");
     responders.abort_all();
 }

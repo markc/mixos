@@ -24,10 +24,10 @@ end
 -- ── filesd seam ─────────────────────────────────────────────────────────────
 
 -- The single wrapped filesd-fs seam: bus_call raises on any failure (gate
--- denied, daemon down, verb error), so every call degrades gracefully.
-function ssh_call($verb, $args)
+-- denied, daemon down, command error), so every call degrades gracefully.
+function ssh_call($command, $args)
   try
-    $r = bus_call($verb, $args)
+    $r = bus_call($command, $args)
     return { ok: true, result: $r }
   catch $e
     return { ok: false, err: ("" .. $e) }
@@ -522,7 +522,7 @@ function ssh_tool_terminal($status)
   return $s == "done" or $s == "error" or $s == "abandoned"
 end
 
--- ── CRUD: mutation verbs (FS-first, single-statement, no tx — P1) ───────────
+-- ── CRUD: mutation commands (FS-first, single-statement, no tx — P1) ───────────
 --
 -- Every host/key mutation writes ~/.ssh via the filesd seam FIRST (the
 -- authoritative event), then projects into the sshm.* mirror + audit as SINGLE
@@ -799,7 +799,7 @@ function ssh_job_detail($kind, $status, $result_json)
 end
 
 -- GET /ssh/job-status?job=<id> → JSON {status,kind,terminal,detail}. On a DONE
--- FS-mutating job it reindexes server-side (read-only bus verbs → this GET passes
+-- FS-mutating job it reindexes server-side (read-only bus commands → this GET passes
 -- the bus CSRF gate) so the new key/perm shows the moment the poller redirects.
 -- Idempotent: reindex only fires on 'done', and the client stops polling after.
 function ssh_job_status_json($id)

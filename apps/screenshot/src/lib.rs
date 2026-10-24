@@ -7,25 +7,25 @@
 //! rules with no drawing in it. This crate is the egui shell around them
 //! (AGENTS.md §4.1):
 //!
-//! - [`capture`]: one capture job over compd's verbs (hide, select, frame,
+//! - [`capture`]: one capture job over compd's commands (hide, select, frame,
 //!   restore);
 //! - [`app`]: the state one serialisable struct describes, every action,
-//!   the Bus verbs, and the effects left for the shell;
+//!   the Bus commands, and the effects left for the shell;
 //! - [`commands`]: the registry every action goes through, from a menu, a
 //!   shortcut, the toolbar or the Bus;
 //! - [`jobs`]: the effects that leave the process (captures, files, the
 //!   ledger), shared by the window and headless mode;
 //! - [`view`]: the drawing; [`shell`]: the running window;
-//! - [`headless`]: the same app and verbs with no window, for agents.
+//! - [`headless`]: the same app and commands with no window, for agents.
 pub mod app;
 pub mod capture;
-pub mod commands;
+pub mod actions;
 pub mod headless;
 pub mod ink;
 pub mod jobs;
 pub mod names;
 pub mod shell;
-pub mod verbs;
+pub mod commands;
 pub mod view;
 
 use toolkit::Strings;
@@ -33,7 +33,7 @@ use toolkit::Strings;
 /// The desktop identity.
 pub const APP_ID: &str = "dev.mixos.screenshot";
 
-/// The Bus service and the prefix of every verb.
+/// The Bus service and the prefix of every command.
 pub const SERVICE: &str = "screenshot";
 
 /// The English catalogue.

@@ -6,7 +6,7 @@
 //!
 //! The window is built from the toolkit's chrome components: the title bar,
 //! a status bar, two docked panel groups ("Services on this node" with its
-//! search field and tree, "Details" with the verb's description, the JSON
+//! search field and tree, "Details" with the command's description, the JSON
 //! body and the reply), push buttons for the body's commands with
 //! "Label (Shortcut)" tooltips, and the About and Shortcuts dialogs as
 //! modal dialogs.
@@ -14,7 +14,7 @@ use crate::{label, label_with};
 use egui::{Align, Layout, RichText, ScrollArea, TextEdit, Ui};
 use inspector::{Dialog, Engine, Row, RowKind};
 use toolkit::button::PushButton;
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 use toolkit::dialog::{self, Choice};
 use toolkit::titlebar::{self, Action};
 use toolkit::{Icon, Registry, Strings, bars, field, icons, panel, tooltip};
@@ -173,7 +173,7 @@ fn row_name(engine: &Engine, row: &Row) -> String {
         RowKind::Service(name) => engine.service_label(name),
         RowKind::Peer(name) => name.clone(),
         RowKind::Node(name) => engine.node_label(name),
-        RowKind::Verb(target) => target.verb.clone(),
+        RowKind::Command(target) => target.command.clone(),
         RowKind::Error(_) => label("descriptions-failed"),
         RowKind::Peers => label("peers"),
         RowKind::NoPeers => label("no-peers"),
@@ -215,7 +215,7 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
             RowKind::Service(name) => RichText::new(engine.service_label(name)),
             RowKind::Peer(name) => RichText::new(name),
             RowKind::Node(name) => RichText::new(engine.node_label(name)),
-            RowKind::Verb(target) => RichText::new(&target.verb).monospace(),
+            RowKind::Command(target) => RichText::new(&target.command).monospace(),
             RowKind::Error(_) => {
                 RichText::new(label("descriptions-failed")).color(ui.visuals().error_fg_color)
             }
@@ -247,33 +247,33 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
     }
 }
 
-/// The selected verb's description, or what the selected row is.
+/// The selected command's description, or what the selected row is.
 fn description(engine: &Engine) -> String {
-    let verb = engine
+    let command_name = engine
         .ui
         .selected
         .as_ref()
-        .and_then(|s| engine.snapshot.verb(s).map(|v| (s, v)));
-    if let Some((selection, verb)) = verb {
-        let args = if verb.args.is_empty() {
+        .and_then(|s| engine.snapshot.command_name(s).map(|v| (s, v)));
+    if let Some((selection, command_name)) = command_name {
+        let args = if command_name.args.is_empty() {
             label("unspecified")
         } else {
-            verb.args.clone()
+            command_name.args.clone()
         };
-        let read_only = label(match verb.read_only {
+        let read_only = label(match command_name.read_only {
             Some(true) => "yes",
             Some(false) => "no",
             None => "unknown",
         });
-        let description = if verb.description.is_empty() {
+        let description = if command_name.description.is_empty() {
             label("description-unavailable")
         } else {
-            verb.description.clone()
+            command_name.description.clone()
         };
         return format!(
             "{}  {}\n{}: {args}\n{}: {read_only}\n\n{description}",
             selection.service,
-            selection.verb,
+            selection.command,
             label("arguments"),
             label("read-only")
         );
@@ -425,7 +425,7 @@ fn traffic(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                     "traffic-direction",
                     "traffic-from",
                     "traffic-service",
-                    "traffic-verb",
+                    "traffic-command",
                     "traffic-rc",
                     "traffic-ms",
                 ] {
@@ -450,7 +450,7 @@ fn traffic(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                     for key in ["ts", "direction", "from", "service"] {
                         ui.monospace(text(key));
                     }
-                    egui::CollapsingHeader::new(RichText::new(text("verb")).monospace())
+                    egui::CollapsingHeader::new(RichText::new(text("command")).monospace())
                         .id_salt(("traffic-body", index))
                         .show(ui, |ui| {
                             ui.set_max_width(420.0);

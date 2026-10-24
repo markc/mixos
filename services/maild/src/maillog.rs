@@ -200,7 +200,7 @@ pub fn smtp_sasl_fail(method: &str, rip: SocketAddr) {
 /// A rejected SMTP command — postfix `NOQUEUE: reject:` shape, so
 /// fail2ban/logwatch-class tooling and operator muscle memory apply.
 ///
-/// `stage` is the protocol verb the reject fired on (`MAIL`, `RCPT`,
+/// `stage` is the protocol command the reject fired on (`MAIL`, `RCPT`,
 /// `DATA`, `AUTH`, `end-of-data`); `reply` is the literal SMTP reply
 /// already written to the client (status code first, so the reason is
 /// grep-able); `from`/`to`/`helo` are included when known at that

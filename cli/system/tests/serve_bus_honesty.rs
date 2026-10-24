@@ -542,7 +542,7 @@ async fn sigint_ends_a_citizen_whose_catch_keeps_computing() {
 
 // TODO-mix 2026-10-02: a blocking fs builtin stalled the single runtime
 // thread, so a citizen with one handler waiting on a FIFO answered nothing.
-// The FIFO wait now yields: other verbs and QUIT are still answered.
+// The FIFO wait now yields: other commands and QUIT are still answered.
 #[tokio::test]
 async fn a_handler_waiting_on_a_fifo_does_not_stop_quit() {
     let _g = lock().await;
@@ -575,7 +575,7 @@ async fn a_handler_waiting_on_a_fifo_does_not_stop_quit() {
     );
     let c = connect(&broker).await;
     wait_trace(&dir, "blocking", HARD).await;
-    // Another verb is answered while the handler waits.
+    // Another command is answered while the handler waits.
     tokio::time::timeout(Duration::from_secs(5), call(&c, "rel.state", json!({})))
         .await
         .expect("rel.state unanswered while a handler waits on a FIFO")

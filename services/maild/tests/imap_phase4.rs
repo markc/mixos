@@ -879,7 +879,7 @@ async fn capability_advertises_literal_plus_uidplus_and_move() -> Result<()> {
 }
 
 #[tokio::test]
-async fn literal_on_non_append_verb_rejected_and_stays_in_sync() -> Result<()> {
+async fn literal_on_non_append_command_rejected_and_stays_in_sync() -> Result<()> {
     let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let (client, _join) = spawn_session(db, ms, ImapConfig::default()).await;
     let (mut reader, mut w) = login(client).await?;

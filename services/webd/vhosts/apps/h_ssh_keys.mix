@@ -5,7 +5,7 @@
 -- admin-list/1 over sshm.ssh_keys (public-key metadata only — private key bytes
 -- are never served by the path-scoped filesd place, never displayed). CREATE
 -- enqueues a key_create job (the P2 worker runs ssh-keygen; passphrase-less per
--- D6); DELETE is a guarded imperative verb (refuse while any host references the
+-- D6); DELETE is a guarded imperative command (refuse while any host references the
 -- key; trash the .pub; delete the mirror row + audit). Keys aren't editable
 -- (type/bits/fingerprint come from the worker). ?view= = detail (pub + used-by).
 
@@ -136,7 +136,7 @@ function ssh_keys_main()
     end
 
     -- Reindex is a POST header action (it does a delegated bus_call on this
-    -- mutating-verb route — a GET <a> can't carry the token the bus gate needs
+    -- mutating-command route — a GET <a> can't carry the token the bus gate needs
     -- off-POST; POST + same-origin passes it).
     if $action == "reindex" then
       $ri = ssh_reindex()
@@ -156,7 +156,7 @@ function ssh_keys_main()
 
     $ra = dt_row_action($f)
     $delname = ""
-    if $ra != nil and $ra["verb"] == "delete" then $delname = "" .. $ra["id"] end
+    if $ra != nil and $ra["command"] == "delete" then $delname = "" .. $ra["id"] end
     if $action == "delete" then $delname = "" .. ssh_or($f["name"], "") end
     if $delname != "" then
       -- reindex first so the in-use guard reflects the live FS (see bulk above);
@@ -194,7 +194,7 @@ function ssh_keys_main()
   $q = parse_query($QUERY)
 
   -- (Reindex moved to a POST header action above — a GET bus_call on this
-  -- mutating-verb route can't satisfy the bus gate's off-POST CSRF requirement.)
+  -- mutating-command route can't satisfy the bus gate's off-POST CSRF requirement.)
 
   -- Job progress (keygen / fix-perms): poll /ssh/job-status, which reindexes on
   -- completion, then redirect back to the list where the result now shows.

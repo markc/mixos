@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="One root service per host answers host information and carries out privileged host actions through closed, typed, reversible verbs, so agents can act autonomously without sudo.">
+    <meta name="description" content="One root service per host answers host information and carries out privileged host actions through closed, typed, reversible commands, so agents can act autonomously without sudo.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -216,7 +216,7 @@
                         <a href="#why">Why</a>
                         <a href="#consequences">Consequences</a>
                         <a href="#amendments">Amendments</a>
-                        <a href="#2026-10-13-desk-power-verbs-are-an-exception-to-no-irreversible-verbs" class="toc-h3">2026-10-13: desk power verbs are an exception to &quot;no irreversible verbs&quot;</a>
+                        <a href="#2026-10-13-desk-power-commands-are-an-exception-to-no-irreversible-commands" class="toc-h3">2026-10-13: desk power commands are an exception to &quot;no irreversible commands&quot;</a>
                     </nav>
                 </div>
             </div>
@@ -250,15 +250,15 @@ information about the host (hardware, OS, the MixOS mode, network
 management state, devices, power) and privileged actions on the host.
 It is the host agent of the VT-native design: the only MixOS code on the
 host besides <code>mix</code>.</li>
-<li><strong>No generic exec.</strong> No verb runs a caller-supplied command, script or
-shell string. Each verb does one job, checks its arguments against a
+<li><strong>No generic exec.</strong> No command runs a caller-supplied command, script or
+shell string. Each command does one job, checks its arguments against a
 schema and does the work natively (writes the file itself, calls
 networkd, resolved, logind or iwd over Varlink or D-Bus).</li>
 <li><strong>Written in Rust.</strong> Mix is the client. A root process that interprets
 scripts is too much attack surface.</li>
-<li><strong>A verb that can't be reversed is not added.</strong> Exception: the two desk
-power verbs, <code>desk.restart</code> and <code>desk.stop</code> (see Amendments).</li>
-<li><strong>Every new verb is reviewed on its own,</strong> and the verb list stays short.</li>
+<li><strong>A command that can't be reversed is not added.</strong> Exception: the two desk
+power commands, <code>desk.restart</code> and <code>desk.stop</code> (see Amendments).</li>
+<li><strong>Every new command is reviewed on its own,</strong> and the command list stays short.</li>
 </ul>
 <h3 id="callers-and-transport">Callers and transport</h3>
 <ul>
@@ -278,19 +278,19 @@ host.</li>
 <tr><td>read</td><td>host info, network state, devices</td><td>caller identity</td></tr>
 <tr><td>reversible</td><td>Wi-Fi connect, link configuration, device bind, suspend</td><td>a standing grant, plus a dead-man check or a kept previous state</td></tr>
 <tr><td>reversible, wide blast radius</td><td>firewall, host package upgrade, reboot</td><td>a grant, a second signature from an independent reviewer, and a rate limit</td></tr>
-<tr><td>irreversible</td><td>—</td><td>no verb exists</td></tr>
+<tr><td>irreversible</td><td>—</td><td>no command exists</td></tr>
 </tbody></table>
 <h3 id="autonomy-within-limits-set-in-advance">Autonomy within limits set in advance</h3>
 <ul>
 <li><strong>Standing grants,</strong> not per-call prompts. A grant names the caller (from
-the kernel), the verbs, argument limits and an optional expiry. Only
+the kernel), the commands, argument limits and an optional expiry. Only
 creating or widening a grant needs a person, confirmed through physical
 input that no Bus caller can synthesise.</li>
-<li><strong>Reversible by construction.</strong> A verb applies its change, runs a health
+<li><strong>Reversible by construction.</strong> A command applies its change, runs a health
 check, and reverts unless the check passes in time. It keeps the previous
 state (the previous file, or a filesystem snapshot) behind a receipt that
 <code>hostd.undo</code> restores.</li>
-<li><strong>Limits:</strong> a rate limit per caller and verb, a circuit breaker after
+<li><strong>Limits:</strong> a rate limit per caller and command, a circuit breaker after
 repeated rollbacks, and a <code>freeze</code> that drops hostd to reads only.</li>
 <li><strong>Audit:</strong> one journal record per call.</li>
 </ul>
@@ -304,38 +304,38 @@ devices) without <code>sudo</code> from a session, and without a person approvin
 each call.</li>
 <li>MixOS core has no polkit. hostd is the mechanism and its policy in one
 small binary, with rules as data instead of scripts.</li>
-<li>Closed verbs make a stolen credential worth far less than a root shell.</li>
+<li>Closed commands make a stolen credential worth far less than a root shell.</li>
 </ul>
 <h2 id="consequences">Consequences</h2>
 <ul>
 <li>Session code never shells out to <code>sudo</code>; a missing host action is a new
-hostd verb.</li>
-<li>Write verbs arrive one reviewed verb at a time. The first is
-<code>net.link.apply</code>; the verbs, grants and refusals are documented in the
+hostd command.</li>
+<li>Write commands arrive one reviewed command at a time. The first is
+<code>net.link.apply</code>; the commands, grants and refusals are documented in the
 <a href="/hostd/">host service manual</a>.</li>
 <li><strong>Root on the host</strong> means uid 0 in hostd's own pid and user namespaces,
 proven through a pidfd. Root inside a container is never root on the
 host, with or without uid remapping.</li>
 </ul>
 <h2 id="amendments">Amendments</h2>
-<h3 id="2026-10-13-desk-power-verbs-are-an-exception-to-no-irreversible-verbs">2026-10-13: desk power verbs are an exception to "no irreversible verbs"</h3>
+<h3 id="2026-10-13-desk-power-commands-are-an-exception-to-no-irreversible-commands">2026-10-13: desk power commands are an exception to "no irreversible commands"</h3>
 <p><code>desk.restart</code> and <code>desk.stop</code> restart or power off one desk machine. A
 powered-off desk cannot be put back by hostd, so no undo can exist. The
-desk must still be able to restart or stop itself, so the two verbs are
+desk must still be able to restart or stop itself, so the two commands are
 admitted as exceptions to the irreversibility rule. They are not a pattern
-for other verbs.</p>
-<p>Reversibility is replaced by these limits, which apply to both verbs:</p>
+for other commands.</p>
+<p>Reversibility is replaced by these limits, which apply to both commands:</p>
 <ul>
-<li><strong>One desk per grant.</strong> The verb takes no machine name. The grant's
+<li><strong>One desk per grant.</strong> The command takes no machine name. The grant's
 <code>desks</code> limit must name exactly one valid machine, and that machine is the
-only one the verb can touch. A caller with no desk, or two, is refused.</li>
-<li><strong>The host is never powered.</strong> The verbs run <code>machinectl reboot</code> or
+only one the command can touch. A caller with no desk, or two, is refused.</li>
+<li><strong>The host is never powered.</strong> The commands run <code>machinectl reboot</code> or
 <code>machinectl poweroff</code> on the named machine only.</li>
 <li><strong>A standing grant, rate limited.</strong> Nothing runs without a grant, and a
 grant carries a rate limit and an expiry.</li>
-<li><strong>Freeze applies.</strong> <code>hostd.freeze</code> refuses both verbs.</li>
+<li><strong>Freeze applies.</strong> <code>hostd.freeze</code> refuses both commands.</li>
 <li><strong>Every call is recorded,</strong> as a receipt and in the audit journal. <code>hostd.undo</code>
-refuses both verbs.</li>
+refuses both commands.</li>
 </ul>
 <p>Deferred (Mark, 2026-10-13): the second signature from an independent reviewer
 that the reboot tier requires is not built for <code>desk.*</code>. Security gates are

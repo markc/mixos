@@ -10,7 +10,7 @@
 //! - Connection limits: pre-auth idle timeout, per-account concurrent
 //!   cap, max auth failures, max bad commands.
 //! - No mailbox / message commands yet — anything outside the Phase 1
-//!   verb table is rejected with `BAD command not valid` (or `NO
+//!   command table is rejected with `BAD command not valid` (or `NO
 //!   command not allowed in current state` when state-dependent).
 //!
 //! Codec note: Phase 1 commands have no IMAP literals on the wire,

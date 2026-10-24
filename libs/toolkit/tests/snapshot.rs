@@ -8,7 +8,7 @@
 use design::{DesignContext, Mode};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use toolkit::command::{Command, Registry, always};
+use toolkit::action::{Action, Registry, always};
 use toolkit::{Icon, Strings, Theme, icons};
 
 const FTL: &str = "\
@@ -27,7 +27,7 @@ struct Demo {
 
 fn registry() -> Registry<Demo> {
     let mut r = Registry::new();
-    r.add(Command {
+    r.add(Action {
         id: "app.quit",
         label: "cmd-quit",
         menu: Some("menu-file"),
@@ -41,7 +41,7 @@ fn registry() -> Registry<Demo> {
         enabled: always,
         run: |_| {},
     })
-    .add(Command {
+    .add(Action {
         id: "bus.refresh",
         label: "cmd-refresh",
         menu: Some("menu-bus"),

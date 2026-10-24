@@ -85,12 +85,12 @@ fn task_action_at($windows, $item, $ws_current)
       end
       $args = {id: $w.id, generation: $w.generation}
       if $ws_current != nil and elsewhere($w, $ws_current) then
-        return {ok: true, verb: $w.minimized ? "comp.window.restore" : "comp.window.focus", args: $args}
+        return {ok: true, command: $w.minimized ? "comp.window.restore" : "comp.window.focus", args: $args}
       end
-      if $w.minimized then return {ok: true, verb: "comp.window.restore", args: $args} end
-      if $w.focused then return {ok: true, verb: "comp.window.minimize", args: $args} end
+      if $w.minimized then return {ok: true, command: "comp.window.restore", args: $args} end
+      if $w.focused then return {ok: true, command: "comp.window.minimize", args: $args} end
       -- comp.window.focus raises by default
-      return {ok: true, verb: "comp.window.focus", args: $args}
+      return {ok: true, command: "comp.window.focus", args: $args}
     end
   end
   return refusal("stale_window", "window no longer exists")

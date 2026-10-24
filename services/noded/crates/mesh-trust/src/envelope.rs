@@ -115,11 +115,11 @@ pub struct Envelope {
     pub caller_selector: String,
     pub caller_node_id: String,
     pub command: String,
-    /// Verb structured headers (e.g. `{"namespace": "accounts"}`).
+    /// Command structured headers (e.g. `{"namespace": "accounts"}`).
     /// Must be a JSON object; may be empty (`{}`).
     #[serde(deserialize_with = "crate::canonical::deserialize_strict_value")]
     pub headers: Value,
-    /// Verb body; arbitrary JSON value (including `null`).
+    /// Command body; arbitrary JSON value (including `null`).
     #[serde(deserialize_with = "crate::canonical::deserialize_strict_value")]
     pub body: Value,
     /// ISO-8601 UTC timestamp (e.g. `2026-05-20T03:14:00Z`).

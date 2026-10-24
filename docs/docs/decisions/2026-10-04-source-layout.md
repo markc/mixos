@@ -79,7 +79,7 @@ and, as tie-breaker, Gemini.
   - Mix out of `cli/` and split into two packages;
   - layers derived from dependencies and cross-checked;
   - removal as a reviewed operation;
-  - a Bus verb registry and a name-retirement registry;
+  - a Bus command registry and a name-retirement registry;
   - licence headers in the REUSE format, checked without Python;
   - Fluent for translations;
   - a test-tier taxonomy;

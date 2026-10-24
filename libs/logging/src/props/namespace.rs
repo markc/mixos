@@ -40,7 +40,7 @@ pub const CANONICAL_KEY: &str = "current";
 /// `before_set` rejects malformed `EnvFilter` directives behind this
 /// prefix so call-sites can match on it without scraping the full
 /// message. "props.set with a malformed filter returns
-/// `Err` from the verb; the live filter is unchanged."
+/// `Err` from the command; the live filter is unchanged."
 pub const INVALID_FILTER_PREFIX: &str = "log_filter_invalid:";
 
 /// `before_set` rejects unknown enum variants for the three enum-typed

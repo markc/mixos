@@ -546,7 +546,7 @@ fn denied_constructs_are_compile_errors() {
         ("select 1", "select statement"),
         ("address \"sh\"", "address block"),
         ("emit 'x' y", "emit statement"),
-        ("on verb", "on handler registration"),
+        ("on command", "on handler registration"),
         ("source x.mix", "source statement"),
         ("include x.mix", "include statement"),
         ("return 1", "return statement"),

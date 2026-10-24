@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- notifyd_test: the notify.* verbs over a real Bus. A private noded broker
+-- notifyd_test: the notify.* commands over a real Bus. A private noded broker
 -- (tests/lib/private_bus.mix), notifyd as a serve citizen, and a listener
 -- citizen that records the notify.changed topic. Covers send, get, list,
 -- action (first wins), dismiss, close, close_all, expiry, the published
@@ -24,9 +24,9 @@ fn check($name, $ok)
 end
 
 -- One Bus call: {rc, v} where v is the decoded reply.
-fn call($verb, $body)
+fn call($command, $body)
   $b = json_encode($body)
-  send notify $verb body=$b timeout=10
+  send notify $command body=$b timeout=10
   $v = $result
   if type($v) == "string" then
     try
@@ -43,9 +43,9 @@ fn code($v)
   return nil
 end
 
-fn wait_for($verb, $body)
+fn wait_for($command, $body)
   for $i = 1 to 80
-    if call($verb, $body).rc == 0 then return true end
+    if call($command, $body).rc == 0 then return true end
     sleep(0.25)
   end
   return false

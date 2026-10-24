@@ -115,7 +115,7 @@ async fn serve(
         let BoundedIncomingEvent::Command(command) = event else {
             continue;
         };
-        if command.is_topic_delivery() || command.command != service::FETCH_VERB {
+        if command.is_topic_delivery() || command.command != service::FETCH_COMMAND {
             continue;
         }
         let snapshot = authority.state.lock().unwrap().clone();

@@ -76,10 +76,10 @@ fn body(reply: ControlReply) -> (u8, Value) {
     (rc, serde_json::from_str(&body).unwrap())
 }
 
-/// Every verb is fenced by `{id, generation}` with the exact body, and every one that
+/// Every command is fenced by `{id, generation}` with the exact body, and every one that
 /// names a window (or switches) is refused under the lock.
 #[test]
-fn window_verbs_refuse_stale_targets_and_the_lock() {
+fn window_commands_refuse_stale_targets_and_the_lock() {
     let (mut registry, (id, generation), _) = two_windows();
     let stale = generation + 5;
     let mut state = WorkspaceState::default();
@@ -512,7 +512,7 @@ fn minimise_and_restore_report_changed_and_the_record() {
 /// State props fence at service and reject fixed-size windows; an
 /// unsupported state does not install a fullscreen output selection.
 #[test]
-fn state_verbs_refuse_fixed_size_and_unknown_outputs_before_any_configure() {
+fn state_commands_refuse_fixed_size_and_unknown_outputs_before_any_configure() {
     let (registry, (id, generation), _) = two_windows();
     let a = SurfaceId(id);
     let fixed = WindowFacts {

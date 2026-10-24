@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! `on @.verb` end to end: one generic script served twice, as
+//! `on @.command` end to end: one generic script served twice, as
 //! `mix --serve bridge.mix --name foo` and `--name other`, against a real
 //! embedded `noded` broker (test-broker), driven only over native ABP.
 //!
 //! - `foo` answers `foo.call` and `other` answers `other.call`; neither
-//!   answers the other's verb or the literal placeholder `@.call`;
+//!   answers the other's command or the literal placeholder `@.call`;
 //! - HELP lists the resolved `foo.call` with its `desc` text, never `@.call`;
-//! - after RELOAD, a verb the new script adds with `@.` answers under the
+//! - after RELOAD, a command the new script adds with `@.` answers under the
 //!   same serve name (the candidate generation resolves the same way).
 //!
 //! Run: `cargo test -p system --test serve_name_prefix`
@@ -154,16 +154,16 @@ async fn wait_answer(c: &VerifiedConnection, svc: &str, cmd: &str, dir: &Dir) ->
 
 const SCRIPT: &str = r#"-- version: 0.1.0
 on @.call desc "Answer with the serve name"
-  reply(0, json_encode({served_by: serve_name(), verb: $event.command}))
+  reply(0, json_encode({served_by: serve_name(), command: $event.command}))
 end
 "#;
 
 const SCRIPT_RELOADED: &str = r#"-- version: 0.2.0
 on @.call desc "Answer with the serve name"
-  reply(0, json_encode({served_by: serve_name(), verb: $event.command}))
+  reply(0, json_encode({served_by: serve_name(), command: $event.command}))
 end
 on @.added
-  reply(0, json_encode({served_by: serve_name(), verb: $event.command}))
+  reply(0, json_encode({served_by: serve_name(), command: $event.command}))
 end
 "#;
 
@@ -176,7 +176,7 @@ fn help_names(help: &Value) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn placeholder_verbs_answer_under_each_instances_serve_name() {
+async fn placeholder_commands_answer_under_each_instances_serve_name() {
     let dir = Dir::new("names");
     let mut broker = Broker::start();
     let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
@@ -186,11 +186,11 @@ async fn placeholder_verbs_answer_under_each_instances_serve_name() {
     let c = connect(&broker).await;
 
     let foo = wait_answer(&c, "foo", "foo.call", &dir).await;
-    assert_eq!(foo, json!({"served_by": "foo", "verb": "foo.call"}));
+    assert_eq!(foo, json!({"served_by": "foo", "command": "foo.call"}));
     let other = wait_answer(&c, "other", "other.call", &dir).await;
-    assert_eq!(other, json!({"served_by": "other", "verb": "other.call"}));
+    assert_eq!(other, json!({"served_by": "other", "command": "other.call"}));
 
-    // Neither instance answers the other's verb or the literal placeholder.
+    // Neither instance answers the other's command or the literal placeholder.
     assert!(call(&c, "foo", "other.call").await.is_err());
     assert!(call(&c, "foo", "@.call").await.is_err());
     assert!(call(&c, "other", "foo.call").await.is_err());
@@ -221,7 +221,7 @@ async fn placeholder_verbs_answer_under_each_instances_serve_name() {
     let ok = call(&c, "foo", "RELOAD").await.expect("RELOAD rc:0");
     assert_eq!(ok["reloading"], true);
     let added = wait_answer(&c, "foo", "foo.added", &dir).await;
-    assert_eq!(added, json!({"served_by": "foo", "verb": "foo.added"}));
+    assert_eq!(added, json!({"served_by": "foo", "command": "foo.added"}));
     let foo = call(&c, "foo", "foo.call")
         .await
         .expect("foo.call after reload");

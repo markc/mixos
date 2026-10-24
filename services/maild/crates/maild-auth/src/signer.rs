@@ -160,7 +160,7 @@ fn walk_up(domain: &str) -> Vec<&str> {
 /// Infer the DKIM algorithm from a PEM-encoded private key.
 ///
 /// Used by `dkim_rebuild` (the maild substrate-driven signer
-/// reconstruction path) so the verb implementations don't have to
+/// reconstruction path) so the command implementations don't have to
 /// guess: the PEM on disk is the source of truth for which algorithm
 /// to record in the SetupRow. PKCS1 (`-----BEGIN RSA PRIVATE KEY-----`)
 /// is RSA by definition; PKCS8 is shape-only, so we inspect the inner

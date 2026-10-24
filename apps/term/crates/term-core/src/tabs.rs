@@ -592,16 +592,16 @@ impl TabSet {
     }
     /// Layout operations can change focus, sibling geometry and tab selection.
     /// Require authority over the source and destination tabs before commitment.
-    pub fn control_affected(&self, pane: u64, verb: &str) -> Vec<u64> {
+    pub fn control_affected(&self, pane: u64, command: &str) -> Vec<u64> {
         let Some(target) = self.control_tab(pane) else {
             return Vec::new();
         };
         let index = self.tabs.iter().position(|t| t.id == target).unwrap();
-        let closes_tab = verb == "term.tab.close"
-            || (verb == "term.pane.close"
+        let closes_tab = command == "term.tab.close"
+            || (command == "term.pane.close"
                 && self.tabs[index].tree.leaves(Geometry::default()).len() == 1);
         let replacement = if closes_tab
-            && (verb == "term.pane.close" || index == self.active)
+            && (command == "term.pane.close" || index == self.active)
             && self.tabs.len() > 1
         {
             Some(
@@ -620,7 +620,7 @@ impl TabSet {
             .filter(|t| {
                 t.id == target
                     || Some(t.id) == replacement
-                    || (verb != "term.tab.close" && t.id == self.active_id())
+                    || (command != "term.tab.close" && t.id == self.active_id())
             })
             .flat_map(|t| {
                 t.tree

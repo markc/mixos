@@ -251,7 +251,7 @@ fn role_from_special_use_ci(s: &str) -> Option<MailboxRole> {
 /// safely. See module-level docs for the rule list.
 ///
 /// `pub(super)` so `op::rename` reuses the exact same validation —
-/// the two verbs share the segment grammar.
+/// the two commands share the segment grammar.
 pub(super) fn validate_segment(seg: &str) -> Result<(), String> {
     if seg.is_empty() {
         return Err("empty mailbox path segment".to_string());

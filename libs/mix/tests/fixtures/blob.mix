@@ -1,8 +1,8 @@
 -- Retained runtime-library fixture from mixos e029724.
 -- HTTP data-lane headers are frozen and retain their bytes.
 -- version: 0.2.0
--- mix/blob.mix — the Mix surface over blobd's blob.* verbs (the
--- design's §4.4: a require() library, not builtins). Bus verbs wrap send;
+-- mix/blob.mix — the Mix surface over blobd's blob.* commands (the
+-- design's §4.4: a require() library, not builtins). Bus commands wrap send;
 -- caller-local file transfers use the discovered HTTP lane. Both answer
 -- a uniform map
 -- {ok, rc, result} — never a raise on a Bus failure: blobd absent comes
@@ -100,7 +100,7 @@ fn blob_hash($ref)
   return _id($ref)
 end
 
--- ── verb wrappers ──────────────────────────────────────────────────────
+-- ── command wrappers ──────────────────────────────────────────────────────
 
 -- blob.put: daemon-local ingest of a readable path. $opts: mime, name,
 -- owner, mode (copy|reflink|hardlink), immutable, service.

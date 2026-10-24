@@ -821,14 +821,14 @@ pub(crate) struct AppState {
 }
 
 /// Transport-independent service. Construct inside a Tokio runtime.
-/// Each verb accepts its original JSON body and returns its original JSON reply.
+/// Each command accepts its original JSON body and returns its original JSON reply.
 pub struct Engine {
     pub(crate) state: Arc<EngineState>,
     activity_tx: tokio::sync::mpsc::Sender<()>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
-macro_rules! verbs {
+macro_rules! commands {
     ($($name:ident),* $(,)?) => {$ (
         pub async fn $name(&self, body: serde_json::Value) -> serde_json::Value {
             self.call(stringify!($name), body).await
@@ -840,28 +840,28 @@ impl Engine {
     pub(crate) fn max_request_bytes(&self) -> usize {
         self.state.config.service.max_request_line_bytes
     }
-    verbs!(
+    commands!(
         embed, store, search, update, delete, list, feedback, supersede, stale, stats, index_file
     );
 
-    pub async fn call(&self, verb: &str, body: serde_json::Value) -> serde_json::Value {
+    pub async fn call(&self, command: &str, body: serde_json::Value) -> serde_json::Value {
         let bytes = json_size(&body);
-        self.call_sized(verb, body, bytes).await
+        self.call_sized(command, body, bytes).await
     }
 
     /// Dispatch a parsed request with its original transport byte count.
     pub async fn call_sized(
         &self,
-        verb: &str,
+        command: &str,
         body: serde_json::Value,
         bytes: usize,
     ) -> serde_json::Value {
-        let action = verb.strip_prefix("indexd.").unwrap_or(verb);
-        if !crate::bus::verb_manifest()
+        let action = command.strip_prefix("indexd.").unwrap_or(command);
+        if !crate::bus::command_manifest()
             .iter()
             .any(|v| v.name == format!("indexd.{action}"))
         {
-            return serde_json::json!({"error": format!("unknown verb: {verb}")});
+            return serde_json::json!({"error": format!("unknown command: {command}")});
         }
         let mut object = match body {
             serde_json::Value::Object(object) => object,
@@ -871,7 +871,7 @@ impl Engine {
             .get("action")
             .is_some_and(|v| v.as_str() != Some(action))
         {
-            return serde_json::json!({"error":"action does not match verb"});
+            return serde_json::json!({"error":"action does not match command"});
         }
         object.insert("action".into(), action.into());
         let ctx = RequestContext {
@@ -1284,7 +1284,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn json_verbs_keep_metadata_strings_and_do_not_require_a_model_for_reads() {
+    async fn json_commands_keep_metadata_strings_and_do_not_require_a_model_for_reads() {
         let (engine, dir) = engine("json-contract");
         let metadata = r#"{"path":"/srv/project/a.md","section":"A","domain":"mixos","type":"doc","date":"2026-10-20"}"#;
         cache(&engine, "text", "search_document: ", 0.0).await;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The same app, verbs and jobs with no window: a Bus service for agents.
+//! The same app, commands and jobs with no window: a Bus service for agents.
 //! Nothing asks a person anything here: an action that would discard
 //! unsaved work is refused, and there is no clipboard or window to show.
 use crate::app::{App, Effect, Pending};
@@ -115,7 +115,7 @@ pub fn run(service: &str, url: &str, comp: &str, path: Option<PathBuf>) -> Resul
                     }
                 }
                 delivery = deliveries.next() => match delivery {
-                    Some(Delivery::Command { id, verb, body }) => app.command(id, &verb, &body),
+                    Some(Delivery::Command { id, command: command_name, body }) => app.command(id, &command_name, &body),
                     Some(Delivery::Connected) => app.connection(true),
                     Some(Delivery::Disconnected) => app.connection(false),
                     Some(Delivery::Changed | Delivery::Theme | Delivery::Topic(_)) => {}

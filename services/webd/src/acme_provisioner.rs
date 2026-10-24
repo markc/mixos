@@ -82,7 +82,7 @@ use crate::vhosts_namespace::{NamespaceEvent, VhostRow, namespace_name, vhost_ro
 
 /// C4b — shared per-FQDN lock map for serialising
 /// `VhostRemoved` cleanup against the C5 `vhost.add` re-issue
-/// path. The provisioner's `VhostRemoved` arm and the C5 verb
+/// path. The provisioner's `VhostRemoved` arm and the C5 command
 /// dispatcher acquire the same per-fqdn `Mutex<()>` via this
 /// map, ensuring a `vhost.add` for a recently-deleted fqdn
 /// blocks until the archive completes (and then re-issues
@@ -531,15 +531,15 @@ pub struct AcmeProvisioner {
     disabled_hosts: HashSet<String>,
 
     /// C4b — per-FQDN coordination lock map, shared with the
-    /// C5 `vhost.add` Bus verb dispatcher. The `VhostRemoved`
+    /// C5 `vhost.add` Bus command dispatcher. The `VhostRemoved`
     /// cleanup arm acquires `key_locks[&fqdn]` before the
-    /// pre-stale-event read; the C5 verb acquires the same
+    /// pre-stale-event read; the C5 command acquires the same
     /// lock before calling `Runtime::set_with_origin(...)`.
     /// This serialises a `vhost.add` for a recently-deleted
     /// fqdn against the in-flight archive, closing the
     /// rev-4-BLOCKER race window.
     ///
-    /// `Arc<TokioMutex<HashMap<...>>>` so the C5 verb holds
+    /// `Arc<TokioMutex<HashMap<...>>>` so the C5 command holds
     /// a clone of the same map identity; the inner per-fqdn
     /// `Arc<Mutex<()>>` is the actual coordination point.
     /// See [`FqdnLockMap`] for the rationale on not using
@@ -547,7 +547,7 @@ pub struct AcmeProvisioner {
     key_locks: FqdnLockMap,
 
     /// C5 — operator-driven force-renew queue. The
-    /// `webd.acme.renew` Bus verb inserts a fqdn here, then
+    /// `webd.acme.renew` Bus command inserts a fqdn here, then
     /// calls `notify.notify_one()` to wake the renewal loop.
     /// `tick_once` drains the set at the top of the sweep
     /// and, for any plan whose fqdn appears in the drained
@@ -561,7 +561,7 @@ pub struct AcmeProvisioner {
     ///
     /// Single-shot semantics: the set is drained, not
     /// inspected. A caller wanting to retry a failed
-    /// force-renew re-invokes the Bus verb.
+    /// force-renew re-invokes the Bus command.
     force_renew_fqdns: Arc<TokioMutex<HashSet<String>>>,
 
     /// C4b — optional publish-ordering instrumentation. `None`
@@ -950,14 +950,14 @@ impl AcmeProvisioner {
 
     /// C4b — attach a per-FQDN coordination lock map identity.
     /// The provisioner's `VhostRemoved` cleanup arm and the C5
-    /// `vhost.add` Bus verb dispatcher MUST hold clones of the
+    /// `vhost.add` Bus command dispatcher MUST hold clones of the
     /// same map identity; main constructs the map once and hands
     /// one clone to each side.
     ///
     /// Called between construction and `tokio::spawn(run_forever)`.
     /// If omitted, the provisioner falls back to its own
     /// constructor-time `key_locks` instance — fine for tests
-    /// that never invoke the C5 verb, fatal in production where
+    /// that never invoke the C5 command, fatal in production where
     /// the cap-split would let a `vhost.add` race the archive.
     /// Production wiring always calls this method.
     pub fn attach_key_locks(&mut self, key_locks: FqdnLockMap) {
@@ -965,7 +965,7 @@ impl AcmeProvisioner {
     }
 
     /// C4b — cloneable handle to the per-FQDN lock map. The C5
-    /// Bus verb dispatcher acquires the same lock identity via
+    /// Bus command dispatcher acquires the same lock identity via
     /// this handle. Wired into use in C5; until then carry the
     /// allow-dead-code so the workspace clippy gate stays clean.
     #[allow(dead_code)]
@@ -1019,7 +1019,7 @@ impl AcmeProvisioner {
     /// the same semantic via the
     /// [`AcmeProvisioner::force_renew_handle`] + notify pair
     /// because the provisioner is moved into `tokio::spawn` before
-    /// the Bus verbs come up — the verb cannot hold a `&self`
+    /// the Bus commands come up — the command cannot hold a `&self`
     /// reference.
     #[cfg_attr(not(test), allow(dead_code))]
     pub async fn queue_force_renew(&self, fqdn: String) {
@@ -1028,7 +1028,7 @@ impl AcmeProvisioner {
     }
 
     /// Cloneable handle to the force-renew queue. The C5
-    /// `webd.acme.renew` Bus verb dispatcher holds a clone of this
+    /// `webd.acme.renew` Bus command dispatcher holds a clone of this
     /// Arc alongside [`AcmeProvisioner::notify_handle`] so it can
     /// drive `queue_force_renew` semantics from `NodeState` without
     /// keeping a borrow on the provisioner (which has moved into
@@ -2505,7 +2505,7 @@ impl AcmeProvisioner {
     /// This is the durability fix for dropped `VhostSet` events
     /// (channel full → try_send Full → WARN+drop), and also covers
     /// the raw `props.set` path where a caller bypasses the
-    /// `vhost.add` ergonomic verb and writes directly through the
+    /// `vhost.add` ergonomic command and writes directly through the
     /// property surface. The hook channel still fires in that case,
     /// but a test that wires the hook with a disconnected receiver
     /// (V-O1 `notify_snapshot_reconcile_picks_up_*`) demonstrates the
@@ -2606,7 +2606,7 @@ impl AcmeProvisioner {
         // Drained entries bypass both the cooldown and renewal-window
         // gates below; entries queued mid-tick land in the next sweep.
         // Single-shot: if the issuance fails, cooldown re-engages and
-        // the verb caller must re-queue to retry.
+        // the command caller must re-queue to retry.
         let forced: HashSet<String> = {
             let mut guard = self.force_renew_fqdns.lock().await;
             std::mem::take(&mut *guard)
@@ -3030,7 +3030,7 @@ impl AcmeProvisioner {
     /// critical section. Briefly takes the outer
     /// `Arc<TokioMutex<HashMap>>` to look-up-or-insert the
     /// inner `Arc<Mutex<()>>` entry, then drops the outer lock
-    /// and awaits the inner guard. The C5 `vhost.add` verb
+    /// and awaits the inner guard. The C5 `vhost.add` command
     /// acquires the same lock identity via
     /// `key_locks_handle().lock().await.entry(fqdn).or_insert_with(...)`
     /// so a re-add concurrent with an in-flight archive
@@ -5109,7 +5109,7 @@ mod tests {
         let prior_next = st.next_attempt_after;
         // Queue force-renew + tick_once again.
         p.queue_force_renew("forced.example".into()).await;
-        // The verb's notify_one wakes the loop too; here we drive tick
+        // The command's notify_one wakes the loop too; here we drive tick
         // directly since we're testing the bypass arm, not the wake.
         p.tick_once().await;
         let st = p.vhost_state.get("forced.example").unwrap();
@@ -5427,7 +5427,7 @@ mod tests {
     /// Write a `VhostRow` directly into the namespace via
     /// `Runtime::set_with_origin(.., WriteOrigin::backend())`. Used by
     /// V-O1.4 / V-O1.5 to seed the namespace without going through the
-    /// (not-yet-built) C5 ergonomic `vhost.add` verb. Uses the same
+    /// (not-yet-built) C5 ergonomic `vhost.add` command. Uses the same
     /// backend-origin path the bootstrap upsert uses so the
     /// daemon-owned `source` column passes the `before_set` gate.
     async fn _write_row(runtime: &Runtime, row: &VhostRow) {
@@ -5492,7 +5492,7 @@ mod tests {
     #[tokio::test]
     async fn notify_snapshot_reconcile_picks_up_plan_added_via_props_set() {
         // V-O1.5 — A row written directly via Runtime::set_with_origin
-        // (the path C5's ergonomic `vhost.add` verb will use, and the
+        // (the path C5's ergonomic `vhost.add` command will use, and the
         // path a raw `webd.props.set` from an external caller goes
         // through) must be picked up by `snapshot_reconcile_additive`
         // even if the after_set event was dropped. This is the

@@ -3,10 +3,10 @@
 //! The window's side of the `term` Bus name.
 //!
 //! term-core's lane owns the connection and serves the terminal's own
-//! verbs (`term.tabs`, `term.pane.split`, …) on its thread. The verbs only
+//! commands (`term.tabs`, `term.pane.split`, …) on its thread. The commands only
 //! the window can answer reach it as [`WindowEvent`]s: the toolkit's drive
-//! verbs (`term.ui.*`, `term.window`, `term.window.state`), the command
-//! registry (`term.commands`, `term.execute`) and `app.describe`. Topic
+//! commands (`term.ui.*`, `term.window`, `term.window.state`), the command
+//! registry (`term.actions`, `term.execute`) and `app.describe`. Topic
 //! frames the window subscribed come the same way.
 //!
 //! Once the name is registered the lane hands over the client and its
@@ -24,36 +24,36 @@ use std::time::Duration;
 use term_core::bus::{Link, WindowEvent};
 use toolkit::drive;
 
-/// The Bus name and verb namespace this window serves.
+/// The Bus name and command namespace this window serves.
 pub const APP: &str = "term";
 
 /// How long one session-look read may take.
 const LOOK_BUDGET: Duration = Duration::from_secs(30);
 
-/// Whether the window answers `verb` (term-core's [`term_core::bus::Window`]
+/// Whether the window answers `command` (term-core's [`term_core::bus::Window`]
 /// routing test).
-pub fn answers(verb: &str) -> bool {
-    matches!(verb, "app.describe" | "term.commands" | "term.execute")
-        || verb
+pub fn answers(command_name: &str) -> bool {
+    matches!(command_name, "app.describe" | "term.actions" | "term.execute")
+        || command_name
             .strip_prefix("term.")
-            .is_some_and(|v| drive::VERBS.contains(&v))
+            .is_some_and(|v| drive::COMMANDS.contains(&v))
 }
 
-/// The HELP line for `verb`, after the verb and its argument shape.
-fn help_line(verb: &str) -> Option<&'static str> {
+/// The HELP line for `command`, after the command and its argument shape.
+fn help_line(command_name: &str) -> Option<&'static str> {
     term_core::bus::HELP
         .lines()
-        .find(|line| line.split([' ', ':']).next() == Some(verb))
+        .find(|line| line.split([' ', ':']).next() == Some(command_name))
 }
 
-/// The whole Bus surface: the terminal's verbs, the window's command verbs
-/// and the drive verbs.
+/// The whole Bus surface: the terminal's commands, the window's command commands
+/// and the drive commands.
 pub fn describe() -> Value {
-    let mut verbs = vec![
-        json!({"name":"HELP","description":"List every verb","read_only":true}),
-        json!({"name":"app.describe","description":"Describe the app and every verb with its arguments","read_only":true}),
+    let mut command_names = vec![
+        json!({"name":"HELP","description":"List every command","read_only":true}),
+        json!({"name":"app.describe","description":"Describe the app and every command with its arguments","read_only":true}),
     ];
-    for (name, read_only) in term_core::bus::VERBS {
+    for (name, read_only) in term_core::bus::COMMANDS {
         if name.starts_with("term.macros.") {
             continue; // Described with argument shapes by the shared handler below.
         }
@@ -63,13 +63,13 @@ pub fn describe() -> Value {
             }
             _ => name,
         });
-        verbs.push(json!({"name":name,"description":description,"read_only":read_only}));
+        command_names.push(json!({"name":name,"description":description,"read_only":read_only}));
     }
-    verbs.push(json!({"name":"term.commands","description":"List the window's commands with labels, menus, shortcuts and enablement","read_only":true}));
-    verbs.push(json!({"name":"term.execute","args":{"id":"string","tab":"optional tab id: the tab tab.select or tab.close acts on (default the active one)","pane":"optional pane id: the pane pane.focus focuses"},"description":"Run one window command by id, as its menu item or shortcut would (tab.new, pane.split_right, view.zoom_in, edit.paste, app.quit, …; term.commands lists them)","read_only":false}));
-    verbs.extend(drive::describe(APP));
-    verbs.extend(citizen::macros::describe(APP));
-    json!({"schema":"term.v1","app_id":crate::APP_ID,"verbs":verbs})
+    command_names.push(json!({"name":"term.actions","description":"List the window's commands with labels, menus, shortcuts and enablement","read_only":true}));
+    command_names.push(json!({"name":"term.execute","args":{"id":"string","tab":"optional tab id: the tab tab.select or tab.close acts on (default the active one)","pane":"optional pane id: the pane pane.focus focuses"},"description":"Run one window command by id, as its menu item or shortcut would (tab.new, pane.split_right, view.zoom_in, edit.paste, app.quit, …; term.actions lists them)","read_only":false}));
+    command_names.extend(drive::describe(APP));
+    command_names.extend(citizen::macros::describe(APP));
+    json!({"schema":"term.v1","app_id":crate::APP_ID,"commands":command_names})
 }
 
 /// What the window's own Bus work hands back.
@@ -218,7 +218,7 @@ impl WindowBus {
         let (client, tx, wake) = (link.client.clone(), self.tx.clone(), self.wake.clone());
         link.runtime.spawn(async move {
             let (body, headers) = (read.body.to_string(), BTreeMap::new());
-            let call = client.call_with_headers_raw(read.service, read.verb, &headers, &body);
+            let call = client.call_with_headers_raw(read.service, read.command, &headers, &body);
             let reply = match tokio::time::timeout(LOOK_BUDGET, call).await {
                 Ok(Ok(answer)) => Some(answer),
                 _ => None,
@@ -260,7 +260,7 @@ impl WindowBus {
         let (client, tx, wake) = (link.client.clone(), self.tx.clone(), self.wake.clone());
         link.runtime.spawn(async move {
             let (body, headers) = (write.body.to_string(), BTreeMap::new());
-            let call = client.call_with_headers_raw(write.service, write.verb, &headers, &body);
+            let call = client.call_with_headers_raw(write.service, write.command, &headers, &body);
             let reply = match tokio::time::timeout(LOOK_BUDGET, call).await {
                 Ok(Ok(answer)) => Some(answer),
                 _ => None,
@@ -276,7 +276,7 @@ impl WindowBus {
         self.outbox.push(topic, bodies, lost);
     }
 
-    /// The next verb or topic frame from the lane.
+    /// The next command or topic frame from the lane.
     pub fn next_event(&self) -> Option<WindowEvent> {
         self.events.try_recv().ok()
     }
@@ -292,25 +292,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_window_answers_exactly_its_own_verbs() {
-        for verb in drive::VERBS {
-            assert!(answers(&format!("term.{verb}")), "{verb}");
+    fn the_window_answers_exactly_its_own_commands() {
+        for command_name in drive::COMMANDS {
+            assert!(answers(&format!("term.{command_name}")), "{command_name}");
         }
-        for verb in ["app.describe", "term.commands", "term.execute"] {
-            assert!(answers(verb));
+        for command_name in ["app.describe", "term.actions", "term.execute"] {
+            assert!(answers(command_name));
         }
-        for (verb, _) in term_core::bus::VERBS {
-            assert!(!answers(verb), "{verb} is the lane's");
+        for (command_name, _) in term_core::bus::COMMANDS {
+            assert!(!answers(command_name), "{command_name} is the lane's");
         }
         assert!(!answers("HELP") && !answers("ced.ui.tree"));
     }
 
     #[test]
-    fn every_described_verb_has_a_description() {
+    fn every_described_command_has_a_description() {
         let surface = describe();
-        for verb in surface["verbs"].as_array().unwrap() {
-            let name = verb["name"].as_str().unwrap();
-            let description = verb["description"].as_str().unwrap();
+        for command_name in surface["commands"].as_array().unwrap() {
+            let name = command_name["name"].as_str().unwrap();
+            let description = command_name["description"].as_str().unwrap();
             assert!(description.len() > name.len(), "{name}: {description}");
         }
     }

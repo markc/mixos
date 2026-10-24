@@ -4,7 +4,7 @@
 //! wallpaper engine, the command registry and the decoded images. Bus
 //! deliveries and decode results arrive on its one bounded channel, so every
 //! change is applied in order, answered once, and published on
-//! `backdrop.command.executed`.
+//! `backdrop.action.executed`.
 //!
 //! - `backdrop.ping`, `backdrop.state`: queries, answered from the engine and
 //!   the outputs the program has drawn. No output is needed.
@@ -35,7 +35,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use toolkit::command::{Command, Origin, Registry};
+use toolkit::action::{Action, Origin, Registry};
 use wallpaper::decode::Decoded;
 use wallpaper::engine::Schedule;
 use wallpaper::schema::SlideSource;
@@ -47,10 +47,10 @@ pub const APP: &str = "backdrop";
 /// The command a set runs: the one definition every change goes through.
 pub const SET: &str = "backdrop.set";
 pub const NEXT: &str = "backdrop.next";
-/// The verbs this service answers, with their classes
-/// (docs/docs/spec/bus/verbs.conf.mix).
+/// The commands this service answers, with their classes
+/// (docs/docs/spec/bus/commands.conf.mix).
 #[cfg(test)]
-pub const VERBS: &[(&str, &str)] = &[
+pub const COMMANDS: &[(&str, &str)] = &[
     ("backdrop.ping", "query"),
     ("backdrop.state", "query"),
     (SET, "intent"),
@@ -287,7 +287,7 @@ pub fn start(setup: Setup) -> Result<(), String> {
 /// commands. Its run applies the request that is ready.
 fn registry() -> Registry<Engine> {
     let mut registry = Registry::new();
-    registry.add(Command {
+    registry.add(Action {
         id: SET,
         label: "backdrop-set",
         menu: None,
@@ -300,7 +300,7 @@ fn registry() -> Registry<Engine> {
             engine.apply();
         },
     });
-    registry.add(Command {
+    registry.add(Action {
         id: NEXT,
         label: "backdrop-next",
         menu: None,
@@ -362,8 +362,8 @@ impl Controller {
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             };
             match msg {
-                Msg::Delivery(Delivery::Command { id, verb, body }) => {
-                    self.command(id, &verb, &body)
+                Msg::Delivery(Delivery::Command { id, command: command_name, body }) => {
+                    self.command(id, &command_name, &body)
                 }
                 Msg::Delivery(Delivery::Disconnected) => {
                     eprintln!("backdrop: Bus disconnected; native supervision is reconnecting");
@@ -390,8 +390,8 @@ impl Controller {
         }
     }
 
-    fn command(&mut self, id: u64, verb: &str, body: &str) {
-        match verb {
+    fn command(&mut self, id: u64, command_name: &str, body: &str) {
+        match command_name {
             "backdrop.ping" => self.reply(
                 id,
                 0,
@@ -417,7 +417,7 @@ impl Controller {
                 }
                 Ok(()) => self.advance(self.schedules.keys().cloned().collect(), Owed::Next(id)),
             },
-            other => self.reply(id, 10, refusal("UNKNOWN", format!("no verb {other:?}"))),
+            other => self.reply(id, 10, refusal("UNKNOWN", format!("no command {other:?}"))),
         }
     }
 
@@ -844,7 +844,7 @@ impl Controller {
         }
     }
 
-    /// Publish the runs the registry recorded, on `<service>.command.executed`.
+    /// Publish the runs the registry recorded, on `<service>.action.executed`.
     fn journal(&self) {
         let Some(handle) = &self.handle else {
             return;
@@ -988,7 +988,7 @@ mod tests {
     use super::*;
     use wallpaper::Wallpaper;
 
-    const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/verbs.conf.mix");
+    const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
 
     /// A field of one registry line: `key:"value"`.
     fn field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
@@ -1053,7 +1053,7 @@ mod tests {
     }
 
     #[test]
-    fn the_registry_lists_exactly_the_verbs_answered_with_their_classes() {
+    fn the_registry_lists_exactly_the_commands_answered_with_their_classes() {
         let mut registered: Vec<(String, String)> = REGISTRY
             .lines()
             .filter(|line| line.contains("owner:\"backdrop\""))
@@ -1065,7 +1065,7 @@ mod tests {
             })
             .collect();
         registered.sort();
-        let mut answered: Vec<(String, String)> = VERBS
+        let mut answered: Vec<(String, String)> = COMMANDS
             .iter()
             .map(|(name, class)| ((*name).to_owned(), (*class).to_owned()))
             .collect();

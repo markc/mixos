@@ -100,7 +100,7 @@ impl HandlerCapabilityPolicy {
             classes.push(CapabilityClass::Jmap);
         }
         // `Bus` (the delegated `bus_call` seam) is granted only when the route
-        // declared `bus:<verb>` grants AND webd's admin/CSRF gate passed (the
+        // declared `bus:<command>` grants AND webd's admin/CSRF gate passed (the
         // caller injects no handler otherwise, so the class would be inert) —
         // see `run_with_limits`.
         if wants_bus {
@@ -230,7 +230,7 @@ struct CompiledHandler {
     /// The route opted into `public_cache` AND is a GET with no delegated-Bus
     /// grants → its ANONYMOUS render may be cached + replayed. Computed
     /// fail-closed in `from_rows`: a stored `public_cache` grant on a non-GET
-    /// row, or one carrying `bus:` verbs, is IGNORED (logged), never cached.
+    /// row, or one carrying `bus:` commands, is IGNORED (logged), never cached.
     wants_public_cache: bool,
     /// The route opted into the `net` capability (`capabilities` contains
     /// `"net"`) → `CapabilityClass::Network` builtins (http_get/http_post/
@@ -238,13 +238,13 @@ struct CompiledHandler {
     /// external HTTP APIs (payment gateways, registrars) — grant per audited
     /// route, never vhost-wide.
     wants_net: bool,
-    /// The EXACT delegated-Bus verbs the route may call via `bus_call`, parsed
-    /// from its `bus:<verb>` capability grants (vtoken C2). Non-empty ⇒ the
+    /// The EXACT delegated-Bus commands the route may call via `bus_call`, parsed
+    /// from its `bus:<command>` capability grants (vtoken C2). Non-empty ⇒ the
     /// `Bus` capability is granted and the `WebdBusCallHandler` is injected,
     /// bounded to this set. Shared via `Arc` (cheap per-request clone).
-    bus_verbs: Arc<BTreeSet<String>>,
-    /// The Bus service the `bus_verbs` route to (`bus-svc:<service>` capability,
-    /// else derived from the verbs' shared prefix). Empty ⇔ `bus_verbs` empty.
+    bus_commands: Arc<BTreeSet<String>>,
+    /// The Bus service the `bus_commands` route to (`bus-svc:<service>` capability,
+    /// else derived from the commands' shared prefix). Empty ⇔ `bus_commands` empty.
     bus_service: String,
     /// The exact database (schema) names this route may access via the injected
     /// connection: `main` when it holds the plain `db` cap, plus one entry per
@@ -252,10 +252,10 @@ struct CompiledHandler {
     /// outside this set, so a `db-schema`-only route can't reach `main` and a
     /// co-tenant `db` route can't reach an aux schema. Shared via `Arc`.
     allowed_dbs: Arc<BTreeSet<String>>,
-    /// A `wake:<verb>` grant: an authority-free accelerator wake webd fires
+    /// A `wake:<command>` grant: an authority-free accelerator wake webd fires
     /// ITSELF, best-effort, after this route returns a non-error (`< 400`)
-    /// response for an authenticated session — `(verb, service)`,
-    /// service derived from the verb prefix. Decoupled from `bus_service` so a
+    /// response for an authenticated session — `(command, service)`,
+    /// service derived from the command prefix. Decoupled from `bus_service` so a
     /// route pinned to (e.g.) `filesd-fs` for its real work can still nudge a
     /// different daemon's queue drain. `None` unless a valid grant was parsed.
     wake: Option<(String, String)>,
@@ -287,15 +287,15 @@ pub struct MatchedHandler {
     pub wants_public_cache: bool,
     /// Whether the route requested the `net` capability (outbound HTTP builtins).
     pub wants_net: bool,
-    /// The exact delegated-Bus verbs this route may call (`bus:<verb>` grants).
+    /// The exact delegated-Bus commands this route may call (`bus:<command>` grants).
     /// Non-empty ⇒ the `Bus` capability + `WebdBusCallHandler` are wired.
-    pub bus_verbs: Arc<BTreeSet<String>>,
-    /// The Bus service those verbs route to (e.g. `maild`, `filesd-notes`).
+    pub bus_commands: Arc<BTreeSet<String>>,
+    /// The Bus service those commands route to (e.g. `maild`, `filesd-notes`).
     pub bus_service: String,
     /// Database (schema) names this route may access — `main` (with `db`) plus
     /// each `db-schema:<name>` grant; passed to `WebdDbHandler`'s authorizer.
     pub allowed_dbs: Arc<BTreeSet<String>>,
-    /// A validated `wake:<verb>` grant `(verb, service)` — an authority-free
+    /// A validated `wake:<command>` grant `(command, service)` — an authority-free
     /// accelerator wake webd fires itself, best-effort, after a non-error
     /// response for an authenticated session. `None`
     /// unless the route carried a valid grant.
@@ -385,22 +385,22 @@ impl HandlerTable {
             // Either the plain db cap or an aux-schema grant needs the injected
             // connection.
             let wants_db = has_plain_db || !allowed_dbs.is_empty();
-            // Parse the route's exact `bus:<verb>` grants into its verb set.
+            // Parse the route's exact `bus:<command>` grants into its command set.
             // `before_set` validates new writes, but a STORED row could carry a
             // non-delegated-safe `bus:` grant (a pre-allowlist row, or a tooling
             // bug). Filter those out here so a bad persisted grant is inert +
             // noisy (defence-in-depth; the handler re-checks at call time too).
-            let bus_verbs: BTreeSet<String> = row
+            let bus_commands: BTreeSet<String> = row
                 .capabilities
                 .iter()
                 .filter_map(|c| c.strip_prefix("bus:"))
                 .filter(|v| {
-                    let safe = crate::bus_call_handler::is_delegated_safe_bus_verb(v);
+                    let safe = crate::bus_call_handler::is_delegated_safe_bus_command(v);
                     if !safe {
                         tracing::warn!(
                             target: "webd::bus",
                             route_id = %row.route_id,
-                            verb = %v,
+                            command_name = %v,
                             "ignoring a non-delegated-safe bus grant from a stored handler row",
                         );
                     }
@@ -409,7 +409,7 @@ impl HandlerTable {
                 .map(str::to_string)
                 .collect();
             // The target Bus service: explicit `bus-svc:<service>` wins, else
-            // derive from the verbs' shared prefix (maild compat). If verbs are
+            // derive from the commands' shared prefix (maild compat). If commands are
             // granted but the service is unresolved (ambiguous prefixes, no
             // explicit), DROP the grants — fail closed rather than send to a
             // guessed/wrong service.
@@ -418,12 +418,12 @@ impl HandlerTable {
                 .iter()
                 .find_map(|c| c.strip_prefix("bus-svc:"))
                 .map(str::to_string);
-            let (bus_verbs, bus_service) = match crate::bus_call_handler::resolve_target_service(
+            let (bus_commands, bus_service) = match crate::bus_call_handler::resolve_target_service(
                 explicit_svc.as_deref(),
-                &bus_verbs,
+                &bus_commands,
             ) {
-                _ if bus_verbs.is_empty() => (bus_verbs, String::new()),
-                Some(svc) => (bus_verbs, svc),
+                _ if bus_commands.is_empty() => (bus_commands, String::new()),
+                Some(svc) => (bus_commands, svc),
                 None => {
                     tracing::warn!(
                         target: "webd::bus",
@@ -436,11 +436,11 @@ impl HandlerTable {
             // `public_cache` is honoured ONLY on a GET route with NO delegated
             // Bus grants — the response-cache contract is anonymous, side-
             // effect-free reads. A stored grant that violates that (a non-GET
-            // row, or one that also carries `bus:` verbs) is ignored + logged,
+            // row, or one that also carries `bus:` commands) is ignored + logged,
             // never cached — fail closed against a mis-authored/legacy row.
             let declares_public_cache = row.capabilities.iter().any(|c| c == "public_cache");
             let wants_public_cache =
-                declares_public_cache && method == "GET" && bus_verbs.is_empty();
+                declares_public_cache && method == "GET" && bus_commands.is_empty();
             if declares_public_cache && !wants_public_cache {
                 tracing::warn!(
                     target: "webd::mix_handler",
@@ -449,9 +449,9 @@ impl HandlerTable {
                     "ignoring public_cache grant on a non-GET or bus-bearing route",
                 );
             }
-            // `wake:<verb>` — an accelerator wake webd fires itself after a
+            // `wake:<command>` — an accelerator wake webd fires itself after a
             // non-error response, independent of `bus-svc:`. Fail closed: only a
-            // valid accelerator verb whose service resolves is kept; a bad/legacy
+            // valid accelerator command whose service resolves is kept; a bad/legacy
             // grant is dropped and logged.
             let wake_grants: Vec<(String, String)> = row
                 .capabilities
@@ -464,7 +464,7 @@ impl HandlerTable {
                             target: "webd::bus",
                             route_id = %row.route_id,
                             cap = %c,
-                            "ignoring an invalid wake grant (not an argument-free accelerator wake verb)",
+                            "ignoring an invalid wake grant (not an argument-free accelerator wake command)",
                         );
                     }
                     parsed
@@ -494,7 +494,7 @@ impl HandlerTable {
                     wants_public_read,
                     wants_public_cache,
                     wants_net,
-                    bus_verbs: Arc::new(bus_verbs),
+                    bus_commands: Arc::new(bus_commands),
                     bus_service,
                     allowed_dbs: Arc::new(allowed_dbs),
                     wake,
@@ -522,7 +522,7 @@ impl HandlerTable {
                     wants_public_read: h.wants_public_read,
                     wants_public_cache: h.wants_public_cache,
                     wants_net: h.wants_net,
-                    bus_verbs: h.bus_verbs.clone(),
+                    bus_commands: h.bus_commands.clone(),
                     bus_service: h.bus_service.clone(),
                     allowed_dbs: h.allowed_dbs.clone(),
                     wake: h.wake.clone(),
@@ -583,7 +583,7 @@ pub struct JmapCaps {
 }
 
 /// Inputs to wire the delegated `bus_call` seam for one handler request
-/// (vtoken C2). Built ONLY when the route declared `bus:<verb>` grants AND
+/// (vtoken C2). Built ONLY when the route declared `bus:<command>` grants AND
 /// webd's Rust admin/CSRF gate passed (the caller passes `None` otherwise — a
 /// gate failure means no `Bus` capability + no handler). Every field is `Send`
 /// — the `Rc<WebdBusCallHandler>` is built INSIDE the blocking closure (`Rc` is
@@ -592,13 +592,13 @@ pub struct JmapCaps {
 pub struct BusInjection {
     pub broker: crate::bus::subscribe_granter::SharedBrokerHandle,
     pub main_handle: tokio::runtime::Handle,
-    pub bus_verbs: Arc<BTreeSet<String>>,
+    pub bus_commands: Arc<BTreeSet<String>>,
     pub inputs: crate::bus_call_handler::DelegationInputs,
-    /// The Bus service the granted verbs route to (from the matched route).
+    /// The Bus service the granted commands route to (from the matched route).
     pub service: String,
     /// The caller has no cookie-backed session (an internal-listener dev_session)
     /// and may therefore reach ONLY an argument-free accelerator wake. See
-    /// `bus_call_handler::is_accelerator_wake_verb`.
+    /// `bus_call_handler::is_accelerator_wake_command`.
     pub accelerator_only: bool,
 }
 
@@ -776,7 +776,7 @@ async fn run_with_limits(
             // Process-gated by the policy's check_class (mixos-lib-mix
             // ≥ 0.14.1); since 0.89.0 the bare send/emit broker forms
             // are Bus-gated too (and Bus here is granted only for
-            // bus:<verb> routes — those handlers get a catchable
+            // bus:<command> routes — those handlers get a catchable
             // CAPABILITY_DENIED, not a silent no-op).
             eval.set_capability_policy(Rc::new(HandlerCapabilityPolicy::new(
                 wants_db, wants_jmap, wants_bus, wants_net,
@@ -830,7 +830,7 @@ async fn run_with_limits(
                     crate::bus_call_handler::WebdBusCallHandler::new(
                         ac.broker,
                         ac.main_handle,
-                        ac.bus_verbs,
+                        ac.bus_commands,
                         ac.inputs,
                         ac.service,
                         ac.accelerator_only,
@@ -1858,7 +1858,7 @@ mod tests {
     #[test]
     fn wake_capability_parses_into_matched_handler() {
         // A route carrying a `wake:` grant (here db-only, like /ssh/host-tool/run)
-        // resolves it to (verb, derived-service).
+        // resolves it to (command, derived-service).
         let mut r = row(
             "wakey",
             "v",
@@ -1875,7 +1875,7 @@ mod tests {
         assert_eq!(
             m.wake,
             Some(("sshm.wake".to_string(), "sshm".to_string())),
-            "a valid wake: grant parses to (verb, own-derived-service)"
+            "a valid wake: grant parses to (command, own-derived-service)"
         );
 
         // A bad persisted wake grant is dropped by from_rows (defence-in-depth,
@@ -1915,13 +1915,13 @@ mod tests {
         );
 
         // Grant on a GET route that ALSO delegates a (real, delegated-safe) Bus
-        // verb → IGNORED: a cached render must be side-effect free.
+        // command → IGNORED: a cached render must be side-effect free.
         let mut ampy = row("ampy", "v", "GET", "/blog", "blog.mix", true);
         ampy.capabilities = vec!["public_cache".into(), "bus:filesd.read".into()];
         let t = HandlerTable::from_rows(vec![ampy]);
         let m = t.lookup("v", "GET", "/blog").unwrap();
         assert!(
-            !m.bus_verbs.is_empty(),
+            !m.bus_commands.is_empty(),
             "the bus grant is live (guards the next assert)"
         );
         assert!(

@@ -20,7 +20,7 @@ pub struct IncomingCommand {
     /// carried no `command` (a hand-built publish body, e.g. `topic` +
     /// `type: event`): since lib-client 0.7.0 the reader surfaces such frames
     /// because the `topic` header identifies a delivery. Consumers that
-    /// dispatch on `command` alone must treat `""` as "not a verb" and use
+    /// dispatch on `command` alone must treat `""` as "not a command" and use
     /// [`IncomingCommand::is_topic_delivery`] / the `topic` header instead.
     pub command: String,
     pub id: Option<String>,

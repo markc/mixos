@@ -14,14 +14,14 @@
 use crate::app::Commands;
 use crate::app::{Answer, App, Dialog, SIZES, Tool, WIDTHS};
 use crate::capture::{Mode, Target};
-use crate::commands::{ink_id, mode_id, size_id, tool_id, width_id};
+use crate::actions::{ink_id, mode_id, size_id, tool_id, width_id};
 use crate::{label, label_with};
 use annotation::{Crop, Kind, Point, Shape, Viewport};
 use egui::{
     Align, Color32, Id, Layout, PointerButton, Pos2, Rect, RichText, Sense, Stroke, Ui, pos2, vec2,
 };
 use toolkit::button::{IconButton, PushButton};
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 use toolkit::dialog::{self, Choice, Role};
 use toolkit::titlebar::{self, Action};
 use toolkit::{Icon, Strings, bars, field, tooltip};
@@ -191,7 +191,7 @@ fn controls(
         let tip = commands
             .registry()
             .get(id)
-            .map(|c| toolkit::command::label_text(strings, c.label))
+            .map(|c| toolkit::action::label_text(strings, c.label))
             .unwrap_or_default();
         let button = IconButton::new(icon)
             .selected(app.ui.mode == mode)
@@ -1043,7 +1043,7 @@ mod tests {
         let (l, _, r, _) = shapes[2].bounds();
         assert!((r - l - 96.0 * 1.6).abs() < 1e-3);
         // Applied with the stale scale still in the app, they keep it.
-        let commands = crate::commands::registry();
+        let commands = crate::actions::registry();
         apply(&mut app, &commands, events);
         let doc = app.document.as_ref().unwrap();
         let objects = doc.objects();

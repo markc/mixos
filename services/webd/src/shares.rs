@@ -1499,7 +1499,7 @@ pub(crate) mod tests {
             body: String::new(),
             headers: Default::default(),
         };
-        let (rc, body) = crate::bus::share_verbs::dispatch(&node, &cmd).await;
+        let (rc, body) = crate::bus::share_commands::dispatch(&node, &cmd).await;
         assert_eq!(rc, 0, "{body}");
         let value: Value = serde_json::from_str(&body).unwrap();
         let token = value["token"].as_str().unwrap();
@@ -1512,7 +1512,7 @@ pub(crate) mod tests {
             true
         );
         cmd.args["kind"] = json!("dir");
-        let (rc, body) = crate::bus::share_verbs::dispatch(&node, &cmd).await;
+        let (rc, body) = crate::bus::share_commands::dispatch(&node, &cmd).await;
         assert_eq!(rc, 10);
         assert!(body.contains("invalid_arguments:"));
     }

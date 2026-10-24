@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The router: global verbs, buffer table, and every cross-buffer invariant
+//! The router: global commands, buffer table, and every cross-buffer invariant
 //! (plan §4.8, D10).
 //!
 //! # Contract: refusal precedence (frozen; plan §4.1)
 //! The first failing check wins:
-//! 1. unknown verb → UNKNOWN_VERB;
+//! 1. unknown command → UNKNOWN_COMMAND;
 //! 2. argument shape (serde into the `wire` request type; both `expect_rev`
 //!    and `base_rev` → `both_cas`) → INVALID_ARGUMENT;
-//! 3. mutating verb without a `broker_origin` stamp → INVALID_ARGUMENT `unstamped`;
-//! 4. mesh lock (`MIXOS_MESH_OPEN=0`, mutating verb, `broker_origin != local`) → FORBIDDEN `mesh_locked`;
+//! 3. mutating command without a `broker_origin` stamp → INVALID_ARGUMENT `unstamped`;
+//! 4. mesh lock (`MIXOS_MESH_OPEN=0`, mutating command, `broker_origin != local`) → FORBIDDEN `mesh_locked`;
 //! 5. buffer lookup: wrong epoch → NOT_FOUND `epoch_mismatch`; unknown → `unknown_buffer`;
 //! 6. inbox full → RESOURCE_LIMIT `busy`;
 //! 7. (in the actor) op_id duplicate → the cached original reply, `duplicate: true`;
@@ -45,8 +45,8 @@
 //! [`Editd::submit`] is the front door. It runs checks 1-6 synchronously, in
 //! command receive order, and hands the command to its owner with `try_send`
 //! — so per-buffer order is the order commands were submitted, and nothing on
-//! the command path ever blocks. Global verbs (`open`, `close`, `list`,
-//! `info`, `props.*`) go to the router task's bounded inbox; buffer verbs go
+//! the command path ever blocks. Global commands (`open`, `close`, `list`,
+//! `info`, `props.*`) go to the router task's bounded inbox; buffer commands go
 //! straight to the owning actor's bounded inbox (the actor table is written
 //! only by the router). Actors talk back over an unbounded internal channel
 //! that the router drains ahead of new commands. `Closed` is reported by a
@@ -68,7 +68,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::actor::{ActorInit, ActorMsg, BufVerb, Init};
+use crate::actor::{ActorInit, ActorMsg, BufCommand, Init};
 use crate::caller::{self, Caller};
 use crate::events::{EventSink, Publisher};
 use crate::limits::{
@@ -1188,8 +1188,8 @@ pub fn resolve_args(cmd: &IncomingCommand) -> Option<Value> {
     None
 }
 
-fn parse<T: DeserializeOwned>(verb: &str, args: &Value) -> Result<T, Refusal> {
-    serde_json::from_value(args.clone()).map_err(|e| bad_args(format!("{verb}: {e}")))
+fn parse<T: DeserializeOwned>(command_name: &str, args: &Value) -> Result<T, Refusal> {
+    serde_json::from_value(args.clone()).map_err(|e| bad_args(format!("{command_name}: {e}")))
 }
 
 fn check_op_id(op_id: Option<&str>) -> Result<(), Refusal> {
@@ -1298,92 +1298,92 @@ fn check_name(name: &str) -> Result<(), Refusal> {
     }
 }
 
-/// Parsed buffer verb plus the claim that names the caller's origin.
-fn parse_buffer_verb(
-    verb: &str,
+/// Parsed buffer command plus the claim that names the caller's origin.
+fn parse_buffer_command(
+    command_name: &str,
     args: &Value,
-) -> Result<(BufferId, BufVerb, Option<String>), Refusal> {
+) -> Result<(BufferId, BufCommand, Option<String>), Refusal> {
     fn meta(m: &MutMeta) -> Result<Option<String>, Refusal> {
         check_op_id(m.op_id.as_deref())?;
         Ok(m.origin.clone())
     }
-    Ok(match verb {
+    Ok(match command_name {
         "edit.save" => {
-            let r: SaveReq = parse(verb, args)?;
+            let r: SaveReq = parse(command_name, args)?;
             let claim = meta(&r.meta)?;
-            (r.buffer.clone(), BufVerb::Save(r), claim)
+            (r.buffer.clone(), BufCommand::Save(r), claim)
         }
         "edit.reload" => {
-            let r: ReloadReq = parse(verb, args)?;
+            let r: ReloadReq = parse(command_name, args)?;
             let claim = meta(&r.meta)?;
-            (r.buffer.clone(), BufVerb::Reload(r), claim)
+            (r.buffer.clone(), BufCommand::Reload(r), claim)
         }
         "edit.get" => {
-            let r: GetReq = parse(verb, args)?;
-            (r.buffer.clone(), BufVerb::Get(r), None)
+            let r: GetReq = parse(command_name, args)?;
+            (r.buffer.clone(), BufCommand::Get(r), None)
         }
         "edit.insert" => {
-            let r: InsertReq = parse(verb, args)?;
+            let r: InsertReq = parse(command_name, args)?;
             check_cas(&r.args.cas)?;
             let claim = meta(&r.args.meta)?;
-            (r.buffer.clone(), BufVerb::Insert(r), claim)
+            (r.buffer.clone(), BufCommand::Insert(r), claim)
         }
         "edit.delete" => {
-            let r: DeleteReq = parse(verb, args)?;
+            let r: DeleteReq = parse(command_name, args)?;
             check_cas(&r.args.cas)?;
             let claim = meta(&r.args.meta)?;
-            (r.buffer.clone(), BufVerb::Delete(r), claim)
+            (r.buffer.clone(), BufCommand::Delete(r), claim)
         }
         "edit.replace" => {
-            let r: ReplaceReq = parse(verb, args)?;
+            let r: ReplaceReq = parse(command_name, args)?;
             check_cas(&r.args.cas)?;
             let claim = meta(&r.args.meta)?;
-            (r.buffer.clone(), BufVerb::Replace(r), claim)
+            (r.buffer.clone(), BufCommand::Replace(r), claim)
         }
         "edit.apply" => {
-            let r: ApplyReq = parse(verb, args)?;
+            let r: ApplyReq = parse(command_name, args)?;
             check_cas(&r.args.cas)?;
             let claim = meta(&r.args.meta)?;
-            (r.buffer.clone(), BufVerb::Apply(r), claim)
+            (r.buffer.clone(), BufCommand::Apply(r), claim)
         }
         "edit.find" => {
-            let r: FindReq = parse(verb, args)?;
-            (r.buffer.clone(), BufVerb::Find(r), None)
+            let r: FindReq = parse(command_name, args)?;
+            (r.buffer.clone(), BufCommand::Find(r), None)
         }
         "edit.select" => {
-            let r: SelectReq = parse(verb, args)?;
+            let r: SelectReq = parse(command_name, args)?;
             let claim = meta(&r.meta)?;
-            (r.buffer.clone(), BufVerb::Select(r), claim)
+            (r.buffer.clone(), BufCommand::Select(r), claim)
         }
         "edit.cursor" => {
-            let r: CursorReq = parse(verb, args)?;
+            let r: CursorReq = parse(command_name, args)?;
             let claim = meta(&r.meta)?;
-            (r.buffer.clone(), BufVerb::Cursor(r), claim)
+            (r.buffer.clone(), BufCommand::Cursor(r), claim)
         }
         "edit.anchor.set" => {
-            let r: AnchorSetReq = parse(verb, args)?;
+            let r: AnchorSetReq = parse(command_name, args)?;
             check_name(&r.name)?;
             if r.at.is_some() == r.range.is_some() {
                 return Err(bad_args("edit.anchor.set takes exactly one of at / range"));
             }
             let claim = meta(&r.meta)?;
-            (r.buffer.clone(), BufVerb::AnchorSet(r), claim)
+            (r.buffer.clone(), BufCommand::AnchorSet(r), claim)
         }
         "edit.anchor.get" => {
-            let r: AnchorGetReq = parse(verb, args)?;
+            let r: AnchorGetReq = parse(command_name, args)?;
             if let Some(name) = &r.name {
                 check_name(name)?;
             }
-            (r.buffer.clone(), BufVerb::AnchorGet(r), None)
+            (r.buffer.clone(), BufCommand::AnchorGet(r), None)
         }
         "edit.anchor.clear" => {
-            let r: AnchorClearReq = parse(verb, args)?;
+            let r: AnchorClearReq = parse(command_name, args)?;
             check_name(&r.name)?;
             let claim = meta(&r.meta)?;
-            (r.buffer.clone(), BufVerb::AnchorClear(r), claim)
+            (r.buffer.clone(), BufCommand::AnchorClear(r), claim)
         }
         "edit.undo" | "edit.redo" => {
-            let r: UndoReq = parse(verb, args)?;
+            let r: UndoReq = parse(command_name, args)?;
             check_op_id(r.op_id.as_deref())?;
             if let Some(lane) = r.origin.as_deref()
                 && lane != "*"
@@ -1395,23 +1395,23 @@ fn parse_buffer_verb(
             let bid = r.buffer.clone();
             (
                 bid,
-                if verb == "edit.undo" {
-                    BufVerb::Undo(r)
+                if command_name == "edit.undo" {
+                    BufCommand::Undo(r)
                 } else {
-                    BufVerb::Redo(r)
+                    BufCommand::Redo(r)
                 },
                 claim,
             )
         }
         "edit.history" => {
-            let r: HistoryReq = parse(verb, args)?;
-            (r.buffer.clone(), BufVerb::History(r), None)
+            let r: HistoryReq = parse(command_name, args)?;
+            (r.buffer.clone(), BufCommand::History(r), None)
         }
         _ => {
             return Err(refusal(
-                ErrorCode::UnknownVerb,
+                ErrorCode::UnknownCommand,
                 None,
-                format!("unknown edit verb: {verb}"),
+                format!("unknown edit command: {command_name}"),
             ));
         }
     })
@@ -1539,17 +1539,17 @@ impl Editd {
     }
 
     fn route(&self, cmd: &IncomingCommand) -> ReplyFuture {
-        let verb = cmd.command.as_str();
+        let command_name = cmd.command.as_str();
         let args = resolve_args(cmd).unwrap_or_else(|| json!({}));
         let named_buffer = args
             .get("buffer")
             .and_then(Value::as_str)
             .map(str::to_string);
-        let Some(read_only) = VERBS.iter().find(|(v, _)| *v == verb).map(|(_, ro)| *ro) else {
+        let Some(read_only) = COMMANDS.iter().find(|(v, _)| *v == command_name).map(|(_, ro)| *ro) else {
             let mut r = refusal(
-                ErrorCode::UnknownVerb,
+                ErrorCode::UnknownCommand,
                 None,
-                format!("unknown edit verb: {verb}"),
+                format!("unknown edit command: {command_name}"),
             );
             r.buffer = named_buffer;
             return refused(r);
@@ -1561,7 +1561,7 @@ impl Editd {
             }
             r
         };
-        match verb {
+        match command_name {
             "edit.ping" => ready((
                 0,
                 json_of(&PingReply {
@@ -1590,12 +1590,12 @@ impl Editd {
             },
             "edit.list" => self.to_router(|reply| RouterCmd::List { reply }),
             "edit.props.get" | "edit.props.list" | "edit.props.describe" => {
-                let suffix = verb.trim_start_matches("edit.props.").to_string();
+                let suffix = command_name.trim_start_matches("edit.props.").to_string();
                 let args = Some(args);
                 self.to_router(move |reply| RouterCmd::Props { suffix, args, reply })
             }
             "edit.open" => {
-                let req: OpenReq = match parse(verb, &args) {
+                let req: OpenReq = match parse(command_name, &args) {
                     Ok(r) => r,
                     Err(r) => return refused(r),
                 };
@@ -1612,7 +1612,7 @@ impl Editd {
                 self.open(req, caller)
             }
             "edit.close" => {
-                let req: CloseReq = match parse(verb, &args) {
+                let req: CloseReq = match parse(command_name, &args) {
                     Ok(r) => r,
                     Err(r) => return refused(with_buffer(r)),
                 };
@@ -1630,7 +1630,7 @@ impl Editd {
                 self.to_router(move |reply| RouterCmd::Close { bid, force, caller: key, reply })
             }
             _ => {
-                let (bid, bv, claim) = match parse_buffer_verb(verb, &args) {
+                let (bid, bv, claim) = match parse_buffer_command(command_name, &args) {
                     Ok(p) => p,
                     Err(r) => return refused(with_buffer(r)),
                 };
@@ -1684,14 +1684,14 @@ impl Editd {
             .ok_or_else(|| unknown_buffer(bid))
     }
 
-    fn to_actor(&self, bid: &str, verb: BufVerb, caller: Caller) -> ReplyFuture {
+    fn to_actor(&self, bid: &str, command_name: BufCommand, caller: Caller) -> ReplyFuture {
         let tx = match self.lookup(bid) {
             Ok(tx) => tx,
             Err(r) => return refused(r),
         };
         let (reply, rx) = oneshot::channel();
         match tx.try_send(ActorMsg::Cmd {
-            verb: Box::new(verb),
+            command: Box::new(command_name),
             caller,
             reply,
         }) {
@@ -2041,9 +2041,9 @@ mod tests {
     fn both_cas_is_an_argument_shape_error() {
         let args =
             json!({"buffer": "b1_00000000", "at": 0, "text": "x", "expect_rev": 1, "base_rev": 1});
-        let err = parse_buffer_verb("edit.insert", &args).err().unwrap();
+        let err = parse_buffer_command("edit.insert", &args).err().unwrap();
         assert_eq!(err.reason.as_deref(), Some("both_cas"));
-        let err = parse_buffer_verb("edit.insert", &json!({"buffer": "b1_00000000"}))
+        let err = parse_buffer_command("edit.insert", &json!({"buffer": "b1_00000000"}))
             .err()
             .unwrap();
         assert_eq!(err.reason.as_deref(), Some("bad_args"));

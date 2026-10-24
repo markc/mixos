@@ -25,7 +25,7 @@
 -- and can run past the budget; the next transport step then fails at once.
 --
 -- Also here: the serve-name guard (reserved_names, check_name), which keeps
--- an instance from taking the first segment of a registered Bus verb.
+-- an instance from taking the first segment of a registered Bus command.
 
 $_DEFAULTS = {host: "127.0.0.1", timeout_s: 5, connect_timeout_s: 2, backoff_s: 2, max_line: 1048576}
 $_KNOWN = ["host", "port", "auth", "token_file", "timeout_s", "connect_timeout_s", "backoff_s", "max_line", "instance"]
@@ -120,11 +120,11 @@ end
 -- ---------------------------------------------------------------- serve-name guard
 
 -- An instance answers <name>.call, <name>.status and so on, so its name must
--- not be the first segment of any verb the registry already gives to someone
--- else. Returns {<segment>: <an example verb or pattern>}.
+-- not be the first segment of any command the registry already gives to someone
+-- else. Returns {<segment>: <an example command or pattern>}.
 --
--- Registry shapes read (docs/docs/spec/bus/verbs.conf.mix):
---   verbs:    [{name, ...}]               every entry reserves its first segment,
+-- Registry shapes read (docs/docs/spec/bus/commands.conf.mix):
+--   commands:    [{name, ...}]               every entry reserves its first segment,
 --                                         whatever its status (retired names stay
 --                                         reserved forever).
 --   families: [{pattern, members?, ...}]  optional. members: "instances" (runtime
@@ -132,28 +132,28 @@ end
 --                                         reserves nothing. members: [names]
 --                                         reserves each name. A literal first
 --                                         segment (not <app> or *) is reserved.
--- Anything else (no verbs list, an entry with neither name nor pattern, an
+-- Anything else (no commands list, an entry with neither name nor pattern, an
 -- unknown members form) is refused: the guard fails closed.
 fn reserved_names($path)
-  if $path == nil or $path == "" then raise("REGISTRY", "no verb registry path given") end
-  if not is_file($path) then raise("REGISTRY", "verb registry not found: " .. $path) end
+  if $path == nil or $path == "" then raise("REGISTRY", "no command registry path given") end
+  if not is_file($path) then raise("REGISTRY", "command registry not found: " .. $path) end
   $doc = nil
   try
     $doc = load_data($path)
   catch $m
-    raise("REGISTRY", "verb registry unreadable: " .. $path .. ": " .. $m)
+    raise("REGISTRY", "command registry unreadable: " .. $path .. ": " .. $m)
   end
-  if type($doc) != "map" or type($doc.verbs) != "list" then raise("REGISTRY", "verb registry has no verbs list: " .. $path) end
+  if type($doc) != "map" or type($doc.commands) != "list" then raise("REGISTRY", "command registry has no commands list: " .. $path) end
   $families = $doc.families ?? []
-  if type($families) != "list" then raise("REGISTRY", "verb registry families is not a list: " .. $path) end
+  if type($families) != "list" then raise("REGISTRY", "command registry families is not a list: " .. $path) end
   $out = {}
-  for each $e in $doc.verbs
-    if type($e) != "map" or type($e.name) != "string" or $e.name == "" then raise("REGISTRY", "verb registry entry without a name: " .. json_encode($e)) end
+  for each $e in $doc.commands
+    if type($e) != "map" or type($e.name) != "string" or $e.name == "" then raise("REGISTRY", "command registry entry without a name: " .. json_encode($e)) end
     $seg = split($e.name, ".")[0]
     if not has_key($out, $seg) then $out[$seg] = $e.name end
   end
   for each $e in $families
-    if type($e) != "map" or type($e.pattern) != "string" or $e.pattern == "" then raise("REGISTRY", "verb registry family without a pattern: " .. json_encode($e)) end
+    if type($e) != "map" or type($e.pattern) != "string" or $e.pattern == "" then raise("REGISTRY", "command registry family without a pattern: " .. json_encode($e)) end
     $members = $e.members
     if $members != "instances" then
       if type($members) == "list" then
@@ -190,7 +190,7 @@ fn check_name($name, $registry)
   end
   $taken = reserved_names($registry)
   if has_key($taken, $name) then
-    raise("NAME_RESERVED", "the serve name '" .. $name .. "' is taken by registered Bus verbs (" .. $taken[$name] .. " in " .. $registry .. ")")
+    raise("NAME_RESERVED", "the serve name '" .. $name .. "' is taken by registered Bus commands (" .. $taken[$name] .. " in " .. $registry .. ")")
   end
   return true
 end
@@ -255,11 +255,11 @@ fn config_path($name)
   return $etc .. "/bridge/" .. $name .. ".conf.mix"
 end
 
--- The installed verb registry: $BRIDGED_VERBS when set, else the installed copy.
+-- The installed command registry: $BRIDGED_COMMANDS when set, else the installed copy.
 fn registry_path()
-  $explicit = env("BRIDGED_VERBS") ?? ""
+  $explicit = env("BRIDGED_COMMANDS") ?? ""
   if $explicit != "" then return $explicit end
-  return "/opt/mixos/share/bus/verbs.conf.mix"
+  return "/opt/mixos/share/bus/commands.conf.mix"
 end
 
 -- ---------------------------------------------------------------- client
@@ -453,7 +453,7 @@ fn call($st, $method, $params)
   return _finish($st, $t0, 11, "reply has no boolean ok field", nil)
 end
 
--- Body helpers for the serve verbs. A body is a JSON text; nil when it is
+-- Body helpers for the serve commands. A body is a JSON text; nil when it is
 -- empty or not JSON.
 fn parse_body($raw)
   $v = nil
@@ -497,7 +497,7 @@ fn dispatch($st, $method, $params)
   return {st: $out.st, rc: $out.rc, body: redact($out.st.token, $body)}
 end
 
--- Connection health for the status verb. Never includes the token.
+-- Connection health for the status command. Never includes the token.
 fn status($st)
   $connection = "down"
   if $st.connected then $connection = "up" end

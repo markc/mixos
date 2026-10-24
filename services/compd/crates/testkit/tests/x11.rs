@@ -255,7 +255,7 @@ fn maximised_geometry_uses_the_offline_mirror_without_repeated_reflow() {
 /// `_NET_WM_DESKTOP` / `_NET_ACTIVE_WINDOW` / `WM_CHANGE_STATE` arrive as
 /// `SurfaceEvent::Request`s against its X11 handle (the `XwmHandler` methods
 /// queue them), the root `_NET_CURRENT_DESKTOP` as its own event. The
-/// answers (refusals, the verbs they run) are policy-host's.
+/// answers (refusals, the commands they run) are policy-host's.
 #[test]
 fn x11_requests_queue_for_the_policy() {
     use dispatcher::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle, WindowRequest};

@@ -28,15 +28,15 @@ fn bus_macro_writes_refuse_other_services_and_workshop_deputy_calls() {
         for suffix in ["put", "remove", "move", "copy", "new"] {
             for (app, service) in [("ced", "ced-acl-test"), ("workshop", "workshop-acl-test")] {
                 for body in ["{}", r#"{"app":"ced"}"#] {
-                    let verb = format!("{app}.macros.{suffix}");
+                    let command = format!("{app}.macros.{suffix}");
                     let (rc, body, _) = caller
-                        .call_with_headers_raw(service, &verb, &BTreeMap::new(), body)
+                        .call_with_headers_raw(service, &command, &BTreeMap::new(), body)
                         .await
                         .unwrap();
                     let body: serde_json::Value = serde_json::from_str(&body).unwrap();
                     assert_eq!(rc, 10);
                     assert_eq!(body["error_code"], "DENIED");
-                    assert!(body["message"].as_str().unwrap().contains(&verb));
+                    assert!(body["message"].as_str().unwrap().contains(&command));
                 }
             }
             // Invalid arguments demonstrate admission without writing real user files.
@@ -54,19 +54,19 @@ fn bus_macro_writes_refuse_other_services_and_workshop_deputy_calls() {
                 "INVALID_ARGUMENT"
             );
         }
-        for (verb, body) in [
+        for (command, body) in [
             ("workshop.execute", r#"{"id":"macro.put"}"#),
             ("workshop.execute", r#"{"id":"bus.call"}"#),
             (
                 "workshop.call",
-                r#"{"service":"ced","verb":"ced.macros.put"}"#,
+                r#"{"service":"ced","command":"ced.macros.put"}"#,
             ),
             ("workshop.call", r#"{}"#),
             ("workshop.ui.key", r#"{"key":"S","modifiers":["ctrl"]}"#),
             ("workshop.ui.click", r#"{"label":"Save"}"#),
         ] {
             let reply = caller
-                .call_with_headers_raw("workshop-acl-test", verb, &BTreeMap::new(), body)
+                .call_with_headers_raw("workshop-acl-test", command, &BTreeMap::new(), body)
                 .await
                 .unwrap();
             assert_eq!(
@@ -85,11 +85,11 @@ fn bus_macro_writes_refuse_other_services_and_workshop_deputy_calls() {
 
 #[test]
 fn put_has_a_separate_larger_envelope_cap() {
-    let oversized = " ".repeat(macros::verbs::PUT_ENVELOPE_LIMIT + 1);
+    let oversized = " ".repeat(macros::commands::PUT_ENVELOPE_LIMIT + 1);
     let (_, body) = citizen::macros::answer_body(
         citizen::macros::request(
             "put-limit-test",
-            ::macros::verbs::Caller::Workshop,
+            ::macros::commands::Caller::Workshop,
             "put",
             &oversized,
         )
@@ -99,14 +99,14 @@ fn put_has_a_separate_larger_envelope_cap() {
         body["message"],
         format!(
             "request exceeds {} bytes",
-            macros::verbs::PUT_ENVELOPE_LIMIT
+            macros::commands::PUT_ENVELOPE_LIMIT
         )
     );
     let text = serde_json::json!({"id":"missing","text":"x".repeat(9000)}).to_string();
     let (_, body) = citizen::macros::answer_body(
         citizen::macros::request(
             "put-limit-test",
-            ::macros::verbs::Caller::Workshop,
+            ::macros::commands::Caller::Workshop,
             "put",
             &text,
         )
@@ -124,11 +124,11 @@ fn macro_body_limit_is_checked_before_parsing_and_accepts_the_boundary() {
     ] {
         let reply = citizen::macros::request(
             "body-limit-test",
-            ::macros::verbs::Caller::Workshop,
+            ::macros::commands::Caller::Workshop,
             "status",
             &body,
         );
-        assert!(matches!(reply, macros::verbs::Reply::Immediate(_)));
+        assert!(matches!(reply, macros::commands::Reply::Immediate(_)));
         let (rc, body) = citizen::macros::answer_body(reply.wait());
         assert_eq!(rc, 10);
         assert_eq!(body["error_code"], "INVALID_ARGUMENT");
@@ -138,7 +138,7 @@ fn macro_body_limit_is_checked_before_parsing_and_accepts_the_boundary() {
     let (rc, _) = citizen::macros::answer_body(
         citizen::macros::request(
             "body-limit-test",
-            ::macros::verbs::Caller::Workshop,
+            ::macros::commands::Caller::Workshop,
             "status",
             &boundary,
         )
@@ -154,7 +154,7 @@ fn unauthorised_writes_are_denied_before_the_body_is_read() {
             let (rc, reply) = citizen::macros::answer_body(
                 citizen::macros::request(
                     "body-limit-test",
-                    ::macros::verbs::Caller::Other,
+                    ::macros::commands::Caller::Other,
                     suffix,
                     &body,
                 )
@@ -171,7 +171,7 @@ fn malformed_macro_json_has_a_typed_refusal() {
     let (rc, body) = citizen::macros::answer_body(
         citizen::macros::request(
             "body-limit-test",
-            ::macros::verbs::Caller::Workshop,
+            ::macros::commands::Caller::Workshop,
             "status",
             "{",
         )

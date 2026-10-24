@@ -16,16 +16,16 @@
 //! with the same rules.
 use crate::capture::{Captured, Mode, Request, Target, Window};
 use crate::ink::Ink;
-use crate::verbs;
+use crate::commands;
 use annotation::library::Saved;
 use annotation::{Crop, Document, Kind, Point, Shape};
-use command::{ExecuteRequest, Origin};
+use action::{ExecuteRequest, Origin};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::{cell::RefCell, rc::Rc};
 
-pub type Commands = toolkit::command::EngineAdapter<App>;
+pub type Commands = toolkit::action::EngineAdapter<App>;
 pub type SharedCommands = Rc<RefCell<Commands>>;
 
 /// Localises a catalogue key; the shell supplies it.
@@ -324,10 +324,10 @@ pub enum Effect {
         request: ExecuteRequest,
         alias: bool,
     },
-    /// Answer `id` with the Bus surface (`HELP`: its verbs only).
+    /// Answer `id` with the Bus surface (`HELP`: its commands only).
     Describe { id: u64, help: bool },
-    /// Hand window verb `verb` (`ui.click`, `window`, …) to the drive layer.
-    Drive { id: u64, verb: String, args: Value },
+    /// Hand window command `command` (`ui.click`, `window`, …) to the drive layer.
+    Drive { id: u64, command: String, args: Value },
     /// Stop the Bus connection and close.
     Exit,
 }
@@ -365,7 +365,7 @@ pub struct App {
     /// The compositor this instance captures through (its Bus service).
     pub comp: String,
     pub inks: [Ink; 6],
-    /// Command ids Bus verbs ran, for `<service>.command.executed`.
+    /// Command ids Bus commands ran, for `<service>.action.executed`.
     pub ran: Vec<&'static str>,
     /// View points per image pixel as the picture was last laid out (1
     /// until it is): a new object's width and text size are converted
@@ -389,13 +389,13 @@ pub mod code {
     pub const FAILED: &str = "FAILED";
     pub const COMPOSITOR: &str = "COMPOSITOR";
     pub const CANCELLED: &str = "CANCELLED";
-    pub const UNKNOWN_VERB: &str = "UNKNOWN_VERB";
+    pub const UNKNOWN_COMMAND: &str = "UNKNOWN_COMMAND";
 }
 
 impl App {
     pub fn new(label: Label, inks: [Ink; 6], headless: bool) -> Self {
         Self {
-            commands: Rc::new(RefCell::new(crate::commands::registry())),
+            commands: Rc::new(RefCell::new(crate::actions::registry())),
             origin: Origin::Ui,
             ui: UiState::new(inks[0].rgba),
             theme: toolkit::theme_menu::Choice::default(),
@@ -495,7 +495,7 @@ impl App {
     /// The whole state as `screenshot.info` reports it.
     pub fn info(&self) -> Value {
         json!({
-            "schema": verbs::SCHEMA, "app_id": crate::APP_ID,
+            "schema": commands::SCHEMA, "app_id": crate::APP_ID,
             "version": env!("CARGO_PKG_VERSION"), "pid": std::process::id(),
             "headless": self.headless, "connected": self.connected, "comp": self.comp,
             "busy": self.busy(), "job": self.job().map(JobKind::name),
@@ -822,7 +822,7 @@ impl App {
         id: &str,
         params: Value,
         origin: Origin,
-    ) -> Result<Value, command::Error> {
+    ) -> Result<Value, action::Error> {
         let commands = self.commands.clone();
         let previous = std::mem::replace(&mut self.origin, origin);
         let result = commands.borrow().execute(id, self, params, origin);
@@ -835,10 +835,10 @@ impl App {
             Ok(value) => Some(value),
             Err(error) => {
                 match error {
-                    command::Error::BadParams { msg, .. } | command::Error::Failed(msg) => {
+                    action::Error::BadParams { msg, .. } | action::Error::Failed(msg) => {
                         self.fail(msg);
                     }
-                    command::Error::Disabled { reason, .. } => self.fail(reason),
+                    action::Error::Disabled { reason, .. } => self.fail(reason),
                     other => self.fail(other),
                 }
                 None
@@ -1347,7 +1347,7 @@ impl App {
     // ---- the Bus -------------------------------------------------------------
 
     /// A command an agent sent over the Bus.
-    pub fn command(&mut self, id: u64, verb: &str, body: &str) {
+    pub fn command(&mut self, id: u64, command_name: &str, body: &str) {
         if body.len() > 1024 * 1024 {
             return self.error(id, code::ARGUMENT, "command exceeds 1 MiB");
         }
@@ -1356,7 +1356,7 @@ impl App {
                 Ok(args) if args.is_object() => args,
                 _ => return self.error(id, code::ARGUMENT, "arguments must be a JSON object"),
             };
-        if let Some(window) = verb
+        if let Some(window) = command_name
             .strip_prefix("screenshot.")
             .filter(|v| v.starts_with("ui.") || v.starts_with("window"))
         {
@@ -1365,24 +1365,24 @@ impl App {
             }
             return self.effects.push(Effect::Drive {
                 id,
-                verb: window.to_owned(),
+                command: window.to_owned(),
                 args,
             });
         }
-        if !verbs::VERBS.contains(&verb) {
-            return self.error(id, code::UNKNOWN_VERB, "unknown screenshot verb");
+        if !commands::COMMANDS.contains(&command_name) {
+            return self.error(id, code::UNKNOWN_COMMAND, "unknown screenshot command");
         }
-        if verbs::takes_nothing(verb) && args.as_object().is_some_and(|a| !a.is_empty()) {
-            return self.error(id, code::ARGUMENT, "this verb takes an empty object");
+        if commands::takes_nothing(command_name) && args.as_object().is_some_and(|a| !a.is_empty()) {
+            return self.error(id, code::ARGUMENT, "this command takes an empty object");
         }
-        match verb {
+        match command_name {
             "HELP" => return self.effects.push(Effect::Describe { id, help: true }),
             "app.describe" => return self.effects.push(Effect::Describe { id, help: false }),
             "screenshot.ping" => {
                 return self.effects.push(Effect::Reply {
                     id,
                     rc: 0,
-                    body: json!({"schema": verbs::SCHEMA, "version": env!("CARGO_PKG_VERSION"), "comp": self.comp, "headless": self.headless}),
+                    body: json!({"schema": commands::SCHEMA, "version": env!("CARGO_PKG_VERSION"), "comp": self.comp, "headless": self.headless}),
                 });
             }
             "screenshot.info" => {
@@ -1399,7 +1399,7 @@ impl App {
                     Some(_) => self.error(id, code::ARGUMENT, "limit must be 1..100"),
                 };
             }
-            "screenshot.commands" => return self.effects.push(Effect::Commands { id }),
+            "screenshot.actions" => return self.effects.push(Effect::Commands { id }),
             "screenshot.execute" => {
                 return match serde_json::from_value::<ExecuteRequest>(args) {
                     Ok(request) => self.effects.push(Effect::Execute {
@@ -1422,7 +1422,7 @@ impl App {
                     body: json!({"cancelling": cancelling}),
                 });
             }
-            "screenshot.theme" => return self.theme_verb(id, &args),
+            "screenshot.theme" => return self.theme_command(id, &args),
             _ => {}
         }
         if self.quitting {
@@ -1430,10 +1430,10 @@ impl App {
             return self.error(id, code::BUSY, &message);
         }
         // Print Screen answers for itself under a dialog or a job.
-        if verb == "screenshot.take" {
-            return self.take_verb(id, &args);
+        if command_name == "screenshot.take" {
+            return self.take_command(id, &args);
         }
-        if self.modal() && verb != "screenshot.show" {
+        if self.modal() && command_name != "screenshot.show" {
             let message = self.label("dialog-open");
             return self.error(id, code::DIALOG, &message);
         }
@@ -1441,11 +1441,11 @@ impl App {
             let message = self.label("busy");
             return self.error(id, code::BUSY, &message);
         }
-        if verbs::is_edit(verb) {
+        if commands::is_edit(command_name) {
             if self.document.is_none() {
                 return self.error(id, code::NO_IMAGE, "no image");
             }
-            let name = verb.strip_prefix("screenshot.").expect("edit verb");
+            let name = command_name.strip_prefix("screenshot.").expect("edit command");
             return self.effects.push(Effect::Execute {
                 id,
                 request: ExecuteRequest {
@@ -1461,7 +1461,7 @@ impl App {
                 "save, export or undo the unsaved annotations first".to_owned(),
             )
         };
-        match verb {
+        match command_name {
             "screenshot.capture" => {
                 let request = serde_json::from_value::<Request>(args)
                     .map_err(|e| e.to_string())
@@ -1502,7 +1502,7 @@ impl App {
                     self.error(id, code::NO_IMAGE, "no image");
                 }
             }
-            "screenshot.select" => match self.select_verb(&args) {
+            "screenshot.select" => match self.select_command(&args) {
                 Ok(()) => {
                     let body = json!({"ui": self.ui});
                     self.effects.push(Effect::Reply { id, rc: 0, body });
@@ -1532,13 +1532,13 @@ impl App {
                     self.quit();
                 }
             }
-            _ => self.error(id, code::UNKNOWN_VERB, "unknown screenshot verb"),
+            _ => self.error(id, code::UNKNOWN_COMMAND, "unknown screenshot command"),
         }
     }
 
     /// `screenshot.take`: as Print Screen. Unsaved work brings the window
     /// forward with the Discard dialog; headless refuses instead.
-    fn take_verb(&mut self, id: u64, args: &Value) {
+    fn take_command(&mut self, id: u64, args: &Value) {
         if let Some(key) = args.as_object().and_then(|a| {
             a.keys()
                 .find(|k| !matches!(k.as_str(), "mode" | "window" | "comp"))
@@ -1643,7 +1643,7 @@ impl App {
     }
 
     /// `screenshot.select`: every present key is checked before any applies.
-    fn select_verb(&mut self, args: &Value) -> Result<(), String> {
+    fn select_command(&mut self, args: &Value) -> Result<(), String> {
         let object = args.as_object().ok_or("expected an object")?;
         if let Some(key) = object
             .keys()
@@ -1699,7 +1699,7 @@ impl App {
 
     /// `screenshot.theme`: the window's scheme and mode by name (null
     /// follows the session).
-    fn theme_verb(&mut self, id: u64, args: &Value) {
+    fn theme_command(&mut self, id: u64, args: &Value) {
         let scheme = match args.get("scheme") {
             None => None,
             Some(Value::Null) => Some(None),
@@ -1885,14 +1885,14 @@ mod tests {
     fn agents_are_refused_rather_than_discarding_work() {
         let mut a = with_doc();
         a.add_shape(rect());
-        for (verb, body) in [
+        for (command_name, body) in [
             ("screenshot.capture", "{}"),
             ("screenshot.open", r#"{"path":"/tmp/x.png"}"#),
             ("screenshot.quit", "{}"),
         ] {
-            a.command(1, verb, body);
+            a.command(1, command_name, body);
             let r = replies(&a.take_effects());
-            assert_eq!(r[0].2["error_code"], code::UNSAVED, "{verb}");
+            assert_eq!(r[0].2["error_code"], code::UNSAVED, "{command_name}");
         }
         assert!(!a.quitting);
         assert_eq!(a.document.as_ref().unwrap().objects().len(), 1);
@@ -1997,12 +1997,12 @@ mod tests {
         empty_history_alias("screenshot.redo", "edit.redo");
     }
 
-    fn empty_history_alias(verb: &str, command: &str) {
+    fn empty_history_alias(command_name: &str, command: &str) {
         let mut a = with_doc();
         let info = a.document.as_ref().unwrap().info();
         let commands = a.commands.clone();
         let strings = crate::strings();
-        a.command(1, verb, "{}");
+        a.command(1, command_name, "{}");
         let r = replies(&crate::jobs::settle(
             &mut a,
             &commands.borrow(),
@@ -2041,7 +2041,7 @@ mod tests {
             assert_eq!(commands.borrow().take_executed().0.len(), 1);
         }
         let info = a.document.as_ref().unwrap().info();
-        for (verb, body, code) in [
+        for (command_name, body, code) in [
             ("screenshot.annotate", params.clone(), "ARGUMENT"),
             (
                 "screenshot.execute",
@@ -2049,7 +2049,7 @@ mod tests {
                 "FAILED",
             ),
         ] {
-            a.command(2, verb, &body.to_string());
+            a.command(2, command_name, &body.to_string());
             let r = replies(&crate::jobs::settle(
                 &mut a,
                 &commands.borrow(),
@@ -2470,7 +2470,7 @@ mod tests {
     }
 
     #[test]
-    fn select_and_theme_verbs_check_every_key_first() {
+    fn select_and_theme_commands_check_every_key_first() {
         let mut a = app();
         a.command(
             1,
@@ -2680,10 +2680,10 @@ mod tests {
         j.copy();
         j.open(Dialog::About);
         assert_eq!(j.ui.dialog, None);
-        let r = crate::commands::registry();
+        let r = crate::actions::registry();
         for id in ["help.about", "help.shortcuts", "file.save_as", "file.open"] {
             assert!(
-                r.execute(id, &mut j, Value::Null, toolkit::command::Origin::Bus)
+                r.execute(id, &mut j, Value::Null, toolkit::action::Origin::Bus)
                     .is_err(),
                 "{id} waits for the job"
             );
@@ -2695,7 +2695,7 @@ mod tests {
                 "help.about",
                 &mut h,
                 Value::Null,
-                toolkit::command::Origin::Bus
+                toolkit::action::Origin::Bus
             )
             .is_ok()
         );
@@ -2838,14 +2838,14 @@ mod tests {
             })
         };
         // The Take button and Ctrl+N.
-        let commands = crate::commands::registry();
+        let commands = crate::actions::registry();
         let mut a = app();
         commands
             .execute(
                 "capture.take",
                 &mut a,
                 Value::Null,
-                toolkit::command::Origin::Ui,
+                toolkit::action::Origin::Ui,
             )
             .unwrap();
         assert!(focused(a.take_effects()), "the Take button");
@@ -2916,20 +2916,20 @@ mod tests {
     }
 
     #[test]
-    fn unknown_verbs_and_window_verbs_headless_are_refused() {
+    fn unknown_commands_and_window_commands_headless_are_refused() {
         let mut h = App::new(crate::label, crate::ink::inks(), true);
         h.command(1, "screenshot.nope", "{}");
         h.command(2, "screenshot.ui.click", r#"{"label":"File"}"#);
         h.command(3, "screenshot.show", "{}");
         h.command(4, "screenshot.recent", r#"{"limit":0}"#);
         let r = replies(&h.take_effects());
-        assert_eq!(r[0].2["error_code"], code::UNKNOWN_VERB);
+        assert_eq!(r[0].2["error_code"], code::UNKNOWN_COMMAND);
         assert_eq!(r[1].2["error_code"], code::HEADLESS);
         assert_eq!(r[2].2["error_code"], code::HEADLESS);
         assert_eq!(r[3].2["error_code"], code::ARGUMENT);
         // No dialog ever opens headless: the commands that would open one
         // are refused as HEADLESS, by hand too; a capture still runs.
-        let registry = crate::commands::registry();
+        let registry = crate::actions::registry();
         let strings = crate::strings();
         for (n, id) in ["help.about", "help.shortcuts", "file.open", "file.save_as"]
             .into_iter()

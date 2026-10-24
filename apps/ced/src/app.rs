@@ -32,14 +32,14 @@ use documents::actions::ActionId;
 use documents::config::{self, Config, FONT_PX_MAX, FONT_PX_MIN};
 use documents::controller::{Controller, Effect, Prompt, RecoveredRow, Tab};
 use documents::editor::{EditorMsg, LayoutReport};
-use documents::verbs::{Refusal, code};
+use documents::commands::{Refusal, code};
 use editor::{View, Wrap};
 use editor_model::mirror::Phase;
 use editor_model::types::{Intent, Invoker, Level, Notice, TabId};
 use serde::Serialize;
 use serde_json::{Value, json};
 use settings::content::{Content, default_font_size};
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 
 /// The Mono size when nothing sets it, in points.
 pub const DEFAULT_FONT_PX: u16 = 13;
@@ -1084,13 +1084,13 @@ mod tests {
             for effect in std::mem::take(&mut a.effects) {
                 if let Effect::Send { req, out } = effect {
                     let args = serde_json::from_str(&out.body).unwrap();
-                    let mut answer = service.handle("local:ced", &out.verb, &args);
+                    let mut answer = service.handle("local:ced", &out.command, &args);
                     // FakeEditd models buffers, not their window holders.
-                    if out.verb == "edit.close" {
+                    if out.command == "edit.close" {
                         answer.rc = 0;
                         answer.body = json!({});
                     }
-                    if out.verb == "edit.open" && answer.rc == 0 {
+                    if out.command == "edit.open" && answer.rc == 0 {
                         let path = answer.body["path"].as_str().map(std::path::Path::new);
                         answer.body["language"] = json!(edit::lang::detect(path, ""));
                     }
@@ -1136,13 +1136,13 @@ mod tests {
     fn bus(
         a: &mut App,
         service: &mut editor_model::fake::FakeEditd,
-        verb: &str,
+        command_name: &str,
         body: Value,
     ) -> (u8, Value) {
         a.sync_view_hints();
         let fx = a.ctl.on_bus_command(documents::controller::BusCommand {
             id: 7,
-            verb: verb.into(),
+            command: command_name.into(),
             body: body.to_string(),
             caller_key: "local:test".into(),
         });

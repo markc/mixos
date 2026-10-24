@@ -63,11 +63,11 @@ impl Discovery for NodedClient {
     }
 }
 
-async fn call(client: &NodedClient, verb: &str, args: Value) -> Result<Value, String> {
-    match timeout(BUS_TIMEOUT, client.call_typed("blobd", verb, args))
+async fn call(client: &NodedClient, command: &str, args: Value) -> Result<Value, String> {
+    match timeout(BUS_TIMEOUT, client.call_typed("blobd", command, args))
         .await
-        .map_err(|_| format!("lane_unavailable: {verb} timed out"))?
-        .map_err(|e| format!("lane_unavailable: {verb}: {e}"))?
+        .map_err(|_| format!("lane_unavailable: {command} timed out"))?
+        .map_err(|e| format!("lane_unavailable: {command}: {e}"))?
     {
         PortReply::Ok { value, .. } => Ok(value),
         PortReply::AppError { message, .. } => Err(app_error(&message)),

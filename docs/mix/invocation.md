@@ -490,7 +490,7 @@ It differs from a plain run in four ways: a reconnecting supervised transport (a
 broker bounce is a transient drop, not a death); an **unconditional** event pump
 (a plain run pumps only when the script registered handlers); an exhausted
 initial connect budget that fails fast (exit non-zero) under systemd; and a
-runtime-reserved verb surface — `HELP` / `INFO` / `QUIT` plus
+runtime-reserved command surface — `HELP` / `INFO` / `QUIT` plus
 `<svc>.props.{get,list,describe}` are answered by the runtime pre-dispatch, so
 an `on` handler can never shadow them. Logging goes to **journald** (stderr
 fallback off-systemd), tagged with `service = <svc>`. The full contract is on

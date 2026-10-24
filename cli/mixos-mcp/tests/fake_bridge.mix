@@ -31,7 +31,7 @@ while true
         print(json_encode({id: $request.id, rc: -1, error: "fixture Bus closed"}))
         exit(1)
     end
-    $reply_body = if $mode == "error" then {error: "fixture refusal"} else {echo: $request.body, verb: $request.verb, timeout_secs: $request.timeout_secs} end
+    $reply_body = if $mode == "error" then {error: "fixture refusal"} else {echo: $request.body, command: $request.command, timeout_secs: $request.timeout_secs} end
     $reply_rc = if $mode == "rc" then 10 else 0 end
     $reply_id = if $mode == "wrong_id" then $request.id + 1 else $request.id end
     print(json_encode({id: $reply_id, rc: $reply_rc, body: $reply_body}))

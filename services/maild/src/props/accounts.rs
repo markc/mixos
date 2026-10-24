@@ -34,7 +34,7 @@
 //! the four `props.{read,write,describe,audit}:maild.accounts`
 //! capabilities. The WireGuard `/24` is the trust domain; broker-side
 //! reservation (the props contract, landed in) gates the records.changed
-//! and audit topics so a peer cannot bypass the verbs to spoof events.
+//! and audit topics so a peer cannot bypass the commands to spoof events.
 //! Phase 2+ will narrow this to operator vs service capability tiers.
 
 use std::sync::{Arc, Mutex, OnceLock};

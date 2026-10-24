@@ -68,13 +68,13 @@ async fn boot(recdir: &Path, epoch: &str) -> H {
     }
 }
 
-fn cmd(verb: &str, args: Value) -> IncomingCommand {
+fn cmd(command_name: &str, args: Value) -> IncomingCommand {
     let mut headers = BTreeMap::new();
     headers.insert("broker_origin".to_string(), "local".to_string());
     IncomingCommand {
         generation: 0,
         from: "tester".into(),
-        command: verb.into(),
+        command: command_name.into(),
         id: Some("1".into()),
         args,
         body: String::new(),
@@ -83,17 +83,17 @@ fn cmd(verb: &str, args: Value) -> IncomingCommand {
 }
 
 impl H {
-    async fn call(&self, verb: &str, args: Value) -> (u8, Value) {
-        let (rc, body) = self.editd.handle(&cmd(verb, args)).await;
+    async fn call(&self, command_name: &str, args: Value) -> (u8, Value) {
+        let (rc, body) = self.editd.handle(&cmd(command_name, args)).await;
         (
             rc,
             serde_json::from_str(&body).unwrap_or(Value::String(body)),
         )
     }
 
-    async fn ok(&self, verb: &str, args: Value) -> Value {
-        let (rc, v) = self.call(verb, args).await;
-        assert_eq!(rc, 0, "{verb} refused: {v}");
+    async fn ok(&self, command_name: &str, args: Value) -> Value {
+        let (rc, v) = self.call(command_name, args).await;
+        assert_eq!(rc, 0, "{command_name} refused: {v}");
         v
     }
 

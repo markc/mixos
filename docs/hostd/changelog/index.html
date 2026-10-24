@@ -239,23 +239,23 @@
 </blockquote>
 <h2 id="010-draft">0.1.0 (draft)</h2>
 <ul>
-<li>Read verbs <code>host.info</code>, <code>net.state</code>, <code>hostd.status</code>, <code>hostd.receipt</code> on the
+<li>Read commands <code>host.info</code>, <code>net.state</code>, <code>hostd.status</code>, <code>hostd.receipt</code> on the
 local socket and the Bus; retained <code>hostd.info</code> topic.</li>
-<li>Control verbs <code>hostd.freeze</code> (root on the host, or a grant) and
+<li>Control commands <code>hostd.freeze</code> (root on the host, or a grant) and
 <code>hostd.thaw</code> (root on the host only; also lifts grant suspensions), local
 only.</li>
-<li>Write verbs <code>net.link.apply</code> and <code>hostd.undo</code>, local only, behind standing
+<li>Write commands <code>net.link.apply</code> and <code>hostd.undo</code>, local only, behind standing
 grants in <code>/etc/hostd/policy.mx</code> (schema 1): caller by uid and verified
-cgroup, verb families, argument allow-lists, expiry, per-caller rate with a
+cgroup, command families, argument allow-lists, expiry, per-caller rate with a
 grant-wide cap. Receipts, health-checked rollback, and a circuit breaker
 that suspends a grant after two rollbacks in a row.</li>
 <li>Local socket: NUL-framed JSON, kernel caller identity read per request,
 per-uid connection cap, connection lifetime, read and write deadlines.</li>
 <li><code>hostd.status</code> adds <code>held_grants</code>: each grant the caller holds, in full.</li>
-<li>Write verb <code>net.wg.apply</code>: networkd-native WireGuard, key made and kept by
+<li>Write command <code>net.wg.apply</code>: networkd-native WireGuard, key made and kept by
 hostd (0640 root:systemd-network, never returned), the handshake dead-man
 check. The unit gains <code>CAP_CHOWN</code> and <code>CAP_NET_ADMIN</code> for it.</li>
-<li>Write verbs <code>net.wifi.scan</code> and <code>net.wifi.connect</code> through iwd: no files,
+<li>Write commands <code>net.wifi.scan</code> and <code>net.wifi.connect</code> through iwd: no files,
 the passphrase only through a one-connect agent, put back by forgetting
 and reconnecting.</li>
 </ul>

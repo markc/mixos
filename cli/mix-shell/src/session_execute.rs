@@ -54,7 +54,7 @@ pub(crate) const TASK_SUBMIT: &str = "shell.task.submit";
 pub(crate) const TASK_RESULT: &str = "shell.task.result";
 pub(crate) const TASK_CANCEL: &str = "shell.task.cancel";
 /// Named so they can be REFUSED explicitly rather than falling into the
-/// unknown-verb arm. A deferral that answers the same as a typo is not a
+/// unknown-command arm. A deferral that answers the same as a typo is not a
 /// deferral a caller can act on.
 pub(crate) const TASK_WATCH: &str = "shell.task.watch";
 pub(crate) const TASK_LIST: &str = "shell.task.list";
@@ -771,10 +771,10 @@ pub(crate) async fn dispatch(
         // and would otherwise have to discover by silence that watching is not
         // implemented.
         // A DEFERRAL, and it says so. An arm answering exactly like the
-        // unknown-verb fallthrough is not a deferral at all — it is
+        // unknown-command fallthrough is not a deferral at all — it is
         // indistinguishable from a typo, to a caller and to a fixture, and
         // deleting it would change nothing observable. The reason field is
-        // what makes "this verb exists and is not built yet" a fact the
+        // what makes "this command exists and is not built yet" a fact the
         // surface actually states.
         TASK_WATCH | TASK_LIST => (
             10,
@@ -912,7 +912,7 @@ fn cancel(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u8, St
     )
 }
 
-// ---------------------------------------------------------------- task verbs
+// ---------------------------------------------------------------- task commands
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

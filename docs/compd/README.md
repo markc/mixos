@@ -1,6 +1,6 @@
 ---
 title: compd
-description: The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.
+description: The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree.
 ---
 
 # compd
@@ -11,7 +11,7 @@ compd owns KMS scanout, the GLES renderer and one shared wgpu device, its
 own egui surfaces (capture overlays, notifications, the Mix Scenes shell),
 the Xwayland window manager, frame pacing, fractional scale, input devices
 and capture. On top of that sits the MixOS policy layer: the agent seat,
-the `comp` Bus service (verbs, topics and the props tree), the frame and
+the `comp` Bus service (commands, topics and the props tree), the frame and
 presentation ledgers, panel holders and hot corners, and strict idle
 discipline (no frames on a static screen).
 
@@ -44,7 +44,7 @@ separate, pointer-interactive toast seat. It never takes keyboard focus,
 including on click or with an authored autofocus field. It draws above
 windows and edge panels, below the dialog and session lock.
 
-The draft intent verbs are `shell.toast.show {scene, output?, h?}` and
+The draft intent commands are `shell.toast.show {scene, output?, h?}` and
 `shell.toast.hide {scene}`. Both reply `{scene, visible, applied:true}`.
 Scenes load hidden; show reserves the one toast seat and hide releases it.
 A different scene's show returns rc 10 `TOAST_BUSY` with
@@ -278,10 +278,10 @@ The VT is never inferred from a runtime path or display name.
 
 ## Workspaces
 
-Every output has a current workspace; windows belong to one. Verbs on the
+Every output has a current workspace; windows belong to one. Commands on the
 `comp` service:
 
-| Verb | Arguments | Reply |
+| Command | Arguments | Reply |
 |---|---|---|
 | `comp.workspaces.list` | none | `{count, current, o_<key>: {current}, list: [{index, windows, name}]}`, the same object as `comp.props.get {path: "workspaces"}`; `name` is null when unnamed |
 | `comp.workspace.switch` | `{index, output?, wrap?}` | `{output, from, to}` |

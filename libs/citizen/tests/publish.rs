@@ -6,7 +6,7 @@ use ::bus::native_client::{BoundedIncomingEvent, SupervisedClient};
 use serde_json::{Value, json};
 use std::time::Duration;
 
-const TOPIC: &str = "pubtest.command.executed";
+const TOPIC: &str = "pubtest.action.executed";
 
 #[test]
 fn pending_caller_receives_busy_when_citizen_closes() {

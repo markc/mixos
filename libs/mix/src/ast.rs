@@ -91,10 +91,10 @@ pub enum Expr {
     MapLiteral(Vec<(String, Expr)>),
     /// Send expression: `$result = send "target" command key=value`
     ///
-    /// `command` is an Expr evaluated at runtime so the verb can be a
+    /// `command` is an Expr evaluated at runtime so the command can be a
     /// variable, string literal, concat, or any expression that coerces
     /// to a string. Bare-identifier and dotted-identifier forms parse to
-    /// `Expr::StringLiteral("verb")` / `Expr::StringLiteral("noded.ping")`
+    /// `Expr::StringLiteral("command")` / `Expr::StringLiteral("noded.ping")`
     /// — the common literal path stays allocation-light at runtime.
     Send {
         target: Box<Expr>,
@@ -353,10 +353,10 @@ pub enum StmtKind {
     /// registration order.
     On {
         command: String,
-        /// Optional doc-string: `on <cmd> desc "what this verb does"` (the
+        /// Optional doc-string: `on <cmd> desc "what this command does"` (the
         /// explicit `desc` marker — a bare trailing string is a body
         /// statement, never a doc). Static metadata captured at parse time;
-        /// the serve runtime surfaces it as the verb's `description` in the
+        /// the serve runtime surfaces it as the command's `description` in the
         /// `HELP` reply, so a citizen's self-description is authored at the
         /// handler site (GUIs and agents read the same text). `None` ⇒ HELP
         /// shows the generic placeholder.

@@ -264,7 +264,7 @@ library target. References to <code>mixos_mix</code> in its source name the
 <code>mixos-lib-mix</code> dependency, not this package.</p>
 <p>See <a href="/mix/mix-shell/cli/">Command-line interface</a> for modes, options, subcommands, files,
 and environment variables. See <a href="/mix/mix-shell/serve-mode/">Serve mode</a> for the supervised
-Bus runtime and its reserved verbs.</p>
+Bus runtime and its reserved commands.</p>
 <h2 id="what-it-provides">What it provides</h2>
 <ul>
 <li>An interactive readline shell with history, completion, aliases, job
@@ -283,7 +283,7 @@ operators, runtime state, and Bus services.</li>
 <li>Usage statistics stored under the XDG state directory, with JSON rotation
 and optional SQLite queries.</li>
 <li>Bus adapters for transient scripts and supervised <code>--serve</code> citizens.</li>
-<li>Runtime-owned <code>HELP</code>, <code>INFO</code>, <code>QUIT</code>, and L1 property verbs for every served
+<li>Runtime-owned <code>HELP</code>, <code>INFO</code>, <code>QUIT</code>, and L1 property commands for every served
 citizen.</li>
 </ul>
 <h2 id="execution-modes">Execution modes</h2>
@@ -312,7 +312,7 @@ and collection limits remain unset. The process runs evaluation on a dedicated
 <tr><td><code>meta</code></td><td>Help, manuals, introspection, build, diagnostics, mesh, AI, and orchestration commands.</td></tr>
 <tr><td><code>node_config</code></td><td>Read-only broker URL resolution from <code>node.conf.mix</code>.</td></tr>
 <tr><td><code>repl</code></td><td>Interactive loop, history, prompt, tracing, directory stack, jobs, and <code>.mixrc</code> loading.</td></tr>
-<tr><td><code>serve_runtime</code></td><td>Reserved Bus verbs and the lifecycle property tree for served citizens.</td></tr>
+<tr><td><code>serve_runtime</code></td><td>Reserved Bus commands and the lifecycle property tree for served citizens.</td></tr>
 <tr><td><code>shell</code></td><td>REPL and <code>-c</code> classification between Mix, functions, builtins, and external commands.</td></tr>
 <tr><td><code>shell_handler</code></td><td>Per-line shell fallback for files loaded through <code>source</code>.</td></tr>
 <tr><td><code>stats_io</code></td><td>XDG state paths, the append-only JSONL statistics store, its cache and ops, and stats reports.</td></tr>

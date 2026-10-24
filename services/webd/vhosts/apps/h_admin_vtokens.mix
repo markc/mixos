@@ -4,7 +4,7 @@
 -- (GET/POST /admin/vtokens). Admin-only.
 --
 -- Manages email-to-X tokens via the DELEGATED bus_call seam. The routes grant the
--- exact verbs bus:maild.vtoken.{list,lookup,mint,disable}_opaque (GET = list only;
+-- exact commands bus:maild.vtoken.{list,lookup,mint,disable}_opaque (GET = list only;
 -- POST = the mutating set); webd's Rust admin/CSRF gate authorizes (rank>=3 admin;
 -- a plain-form POST relies on the SameSite session cookie); maild binds the actor
 -- (this admin's email) to the token's own domain and scopes the list to that domain.
@@ -36,12 +36,12 @@ include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
 include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
 include "/opt/mixos/vhosts/shared/widgets/modals.mix"
 
--- Call one vtoken verb. bus_call RAISES on any failure (the gate denied it,
+-- Call one vtoken command. bus_call RAISES on any failure (the gate denied it,
 -- maild replied rc>=10, or transport) — catch it and surface the message rather
 -- than 500 the page. Returns { ok, result } or { ok:false, err }.
-function vt_call($verb, $args)
+function vt_call($command, $args)
   try
-    $r = bus_call($verb, $args)
+    $r = bus_call($command, $args)
     return { ok: true, result: $r }
   catch $e
     return { ok: false, err: ("" .. $e) }
@@ -190,8 +190,8 @@ function vt_list_config()
   $active_badge = fn($r) = vt_active_badge($r["active"])
 
   -- Row actions (auto-generated RMB menu via row_actions_contextmenu). Both MUTATING:
-  -- the menu posts action="row:<verb>:<id>" to base_route; dt_row_action parses it. No
-  -- delete verb — Disable IS the revoke (an opaque token is never hard-deleted here).
+  -- the menu posts action="row:<command>:<id>" to base_route; dt_row_action parses it. No
+  -- delete command — Disable IS the revoke (an opaque token is never hard-deleted here).
   $act_rotate = dt_action("rotate", { "label": "Rotate", icon: "refresh-cw", variant: "action", action: "rotate", confirm: "Rotate this token? The current address stops working; a new one is shown once." })
   $act_disable = dt_action("disable", { "label": "Disable", icon: "ban", variant: "action-danger", action: "disable", confirm: "Disable this token? This cannot be undone." })
   $bulkid = fn($r) = ("" .. $r["token_hmac"])
@@ -269,18 +269,18 @@ function admin_vtokens_main()
 
   if $METHOD == "POST" then
     $f = parse_form($BODY)
-    -- declarative row action (datatable.mix): action="row:<verb>:<id>". The id is the
+    -- declarative row action (datatable.mix): action="row:<command>:<id>". The id is the
     -- token_hmac (bulk_id), treated as UNTRUSTED → passed as the bus arg value, never spliced.
     $ra = dt_row_action($f)
     if $ra != nil then
-      if $ra["verb"] == "disable" then
+      if $ra["command"] == "disable" then
         $res = vt_call("maild.vtoken.disable_opaque", { token_hmac: $ra["id"] })
         if $res["ok"] then
           return redirect_flash("/admin/vtokens", "Token disabled", "success")
         end
         return redirect_flash("/admin/vtokens", "Disable failed: " .. $res["err"], "danger")
       end
-      if $ra["verb"] == "rotate" then
+      if $ra["command"] == "rotate" then
         -- Opaque tokens don't rotate in place — look up the old binding, mint a fresh
         -- token with the same fields, then disable the old. The NEW address is shown ONCE,
         -- so render the list inline with the secret card (NOT a redirect).

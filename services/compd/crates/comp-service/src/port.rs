@@ -47,7 +47,7 @@ use comp_model::reply::{
     ControlReply, MAX_REPLY_BODY_BYTES, MAX_REPLY_WIRE_BYTES, error, too_large, with_error_code,
 };
 use comp_model::request::{
-    InputOp, LONG_VERB_MAX, LONG_VERB_SLACK, LongOp, PING_BODY, Request, WindowOp,
+    InputOp, LONG_COMMAND_MAX, LONG_COMMAND_SLACK, LongOp, PING_BODY, Request, WindowOp,
     body_is_malformed, classify,
 };
 use comp_model::snapshot::{BROKER_CONNECTED, BROKER_RETRYING, CompSnapshot, dispatch_read};
@@ -61,15 +61,15 @@ pub use comp_model::catalogue::{HEADLESS_SERVICE, NESTED_SERVICE, REGISTRY_TOPIC
 pub use comp_model::reply::validate_service_name;
 
 pub const PORT_QUEUE_CAPACITY: usize = 16;
-/// compd's read-only truth verb: the engine's own view of the registry and
+/// compd's read-only truth command: the engine's own view of the registry and
 /// focus, beside (not inside) the frozen `comp.*` surface, for the Bus-truth
 /// comparator. Answered in control order, so it is fenced like a mutation.
-pub const TRUTH_VERB: &str = "compd.truth";
+pub const TRUTH_COMMAND: &str = "compd.truth";
 const PORT_REPLY_CAPACITY: usize = 16;
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(2);
-/// Verbs that reply after a wait hold their own permits, so a few long
+/// Commands that reply after a wait hold their own permits, so a few long
 /// waits can never starve ordinary reads and controls.
-pub const LONG_VERB_PERMITS: usize = 8;
+pub const LONG_COMMAND_PERMITS: usize = 8;
 const REPLY_SEND_TIMEOUT: Duration = Duration::from_secs(2);
 const PUBLISH_TIMEOUT: Duration = Duration::from_secs(2);
 const GAP_RETRY_INITIAL: Duration = Duration::from_secs(1);
@@ -85,7 +85,7 @@ const FIRE_CAPACITY: usize = 64;
 const FIRE_TTL: Duration = Duration::from_secs(2);
 const FIRE_SEND_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// One verb compd sends to another service, fire-and-forget: a user key's
+/// One command compd sends to another service, fire-and-forget: a user key's
 /// binding (world's user-key layer) whose service is not `comp`.
 #[derive(Debug)]
 pub struct OutboundFire {
@@ -122,7 +122,7 @@ fn fire_channel() -> (FireSender, FireReceiver) {
     (FireSender(sender), receiver)
 }
 
-/// Send each queued fire in order. Nobody waits for a reply: a verb nobody
+/// Send each queued fire in order. Nobody waits for a reply: a command nobody
 /// answers simply does not route.
 async fn fire_loop<C: WorkerClient>(client: Arc<C>, mut fires: FireReceiver) {
     while let Some(fire) = fires.recv().await {
@@ -168,7 +168,7 @@ pub enum PortCommand {
         active: bool,
         order: u64,
     },
-    /// [`TRUTH_VERB`].
+    /// [`TRUTH_COMMAND`].
     Truth(PortReply),
 }
 
@@ -219,10 +219,10 @@ pub struct PortLongRequest {
     pub op: Option<LongOp>,
     pub reply: Option<tokio::sync::oneshot::Sender<ControlReply>>,
     /// The queue slot this request holds until the engine has taken it:
-    /// dropping it there frees the slot while the verb waits, so long
+    /// dropping it there frees the slot while the command waits, so long
     /// waits never fill the bounded ingress.
     pub slot: Option<QueueSlot>,
-    /// When the worker admitted it; the verb's deadline runs from here.
+    /// When the worker admitted it; the command's deadline runs from here.
     pub admitted: std::time::Instant,
 }
 
@@ -423,11 +423,11 @@ impl PortIngress {
         )
     }
 
-    /// Admit a long verb. The queue slot rides inside the command and is
+    /// Admit a long command. The queue slot rides inside the command and is
     /// released when the protocol thread takes it, not when the reply
-    /// arrives; the reply wait is bounded by the verb's own budget.
+    /// arrives; the reply wait is bounded by the command's own budget.
     pub fn request_long(&self, op: LongOp) -> Result<LongAdmission, QueueFull> {
-        let timeout = op.budget().min(LONG_VERB_MAX) + LONG_VERB_SLACK;
+        let timeout = op.budget().min(LONG_COMMAND_MAX) + LONG_COMMAND_SLACK;
         let (reply, receive) = tokio::sync::oneshot::channel();
         let slot = self.reserve_slot()?;
         let command = PortCommand::Long(PortLongRequest {
@@ -567,7 +567,7 @@ pub struct PortWiring {
     /// Offer observation records here (`offer_next`).
     pub observation_producer: ObservationProducer,
     pub context: Arc<PortContext>,
-    /// Queue fire-and-forget verbs to other services here.
+    /// Queue fire-and-forget commands to other services here.
     pub fires: FireSender,
 }
 
@@ -1060,7 +1060,7 @@ async fn worker_loop<F, Fut, C>(
     apply_connection_state(&broker, *states.borrow());
     let mut responders = JoinSet::new();
     let responder_permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
-    let long_permits = Arc::new(Semaphore::new(LONG_VERB_PERMITS));
+    let long_permits = Arc::new(Semaphore::new(LONG_COMMAND_PERMITS));
     let (reply_sender, reply_receiver) = tokio_mpsc::channel(PORT_REPLY_CAPACITY);
     let reply_task = tokio::spawn(reply_loop(
         Arc::clone(&client),
@@ -1209,8 +1209,8 @@ fn apply_connection_state(broker: &AtomicU8, state: ConnState) {
     );
 }
 
-/// The pre-long-verb entry the existing tests drive: a fresh long pool per
-/// call, so only the tests that exercise long verbs see pool pressure.
+/// The pre-long-command entry the existing tests drive: a fresh long pool per
+/// call, so only the tests that exercise long commands see pool pressure.
 #[cfg(test)]
 fn handle_incoming(
     ingress: &PortIngress,
@@ -1225,7 +1225,7 @@ fn handle_incoming(
         ingress,
         responders,
         responder_permits,
-        &Arc::new(Semaphore::new(LONG_VERB_PERMITS)),
+        &Arc::new(Semaphore::new(LONG_COMMAND_PERMITS)),
         reply_sender,
         reply_timeouts,
         service,
@@ -1278,7 +1278,7 @@ fn warn_foreign_broker_claim(command: &bus::IncomingCommand) {
 
 /// One incoming command through the dispatch boundary: the broker's own
 /// lifecycle and registry notices first (only the local broker may speak as
-/// `noded`), then the verb, routed by comp-model's `classify` in family
+/// `noded`), then the command, routed by comp-model's `classify` in family
 /// order. Every reply is queued, never awaited, so a slow engine or a
 /// black-holed caller cannot stall the worker.
 #[allow(clippy::too_many_arguments)]
@@ -1343,13 +1343,13 @@ fn dispatch_incoming(
     // Any other topic delivery is a pub/sub fan-out, never a request: it is
     // dropped unanswered whatever its publisher (a `props.changed` on the
     // registry topic stamped by another service would otherwise fall through
-    // to verb dispatch and be answered `unknown_verb`).
+    // to command dispatch and be answered `unknown_command`).
     if command.is_topic_delivery() {
         return;
     }
-    // compd's truth verb is not part of the frozen `comp.*` surface, so it is
-    // routed before `classify` (which answers every other name `unknown_verb`).
-    if command.command == TRUTH_VERB {
+    // compd's truth command is not part of the frozen `comp.*` surface, so it is
+    // routed before `classify` (which answers every other name `unknown_command`).
+    if command.command == TRUTH_COMMAND {
         let Ok(permit) = Arc::clone(responder_permits).try_acquire_owned() else {
             queue_reply(
                 reply_sender,
@@ -1395,7 +1395,7 @@ fn dispatch_incoming(
                 PendingReply::new(command, (0, Arc::from(PING_BODY))),
             );
         }
-        Request::Long(op) => spawn_long_verb(
+        Request::Long(op) => spawn_long_command(
             ingress,
             responders,
             long_permits,
@@ -1404,7 +1404,7 @@ fn dispatch_incoming(
             command,
             op,
         ),
-        Request::Read { verb, scope } => {
+        Request::Read { command: command_name, scope } => {
             let Ok(permit) = Arc::clone(responder_permits).try_acquire_owned() else {
                 queue_reply(reply_sender, reply_timeouts, busy(command));
                 return;
@@ -1422,7 +1422,7 @@ fn dispatch_incoming(
                 let reply = match admission.receive().await {
                     Ok(snapshot) => {
                         let args = command.args.clone();
-                        tokio::task::spawn_blocking(move || dispatch_read(&snapshot, verb, &args))
+                        tokio::task::spawn_blocking(move || dispatch_read(&snapshot, command_name, &args))
                             .await
                             .unwrap_or_else(|_| error("busy"))
                     }
@@ -1474,9 +1474,9 @@ fn dispatch_incoming(
     }
 }
 
-/// Admit a long verb under the long pool and reply when it resolves.
+/// Admit a long command under the long pool and reply when it resolves.
 #[allow(clippy::too_many_arguments)]
-fn spawn_long_verb(
+fn spawn_long_command(
     ingress: &PortIngress,
     responders: &mut JoinSet<()>,
     long_permits: &Arc<Semaphore>,

@@ -36,7 +36,7 @@ pub fn corner_name(corner: Corner) -> &'static str {
 pub struct Extra {
     pub label: String,
     pub target: String,
-    pub verb: String,
+    pub kind: String,
     pub args: Vec<String>,
     pub confirm: Option<String>,
 }
@@ -50,7 +50,7 @@ pub fn read_extras(path: &Path, edge: &str) -> Result<Vec<Extra>, String> {
     };
     let value = parse_mix_data(&source).map_err(|error| error.to_string())?;
     let invalid = || {
-        "invalid conf.mix menu_items (expected edge lists of label/target/verb/args/confirm)"
+        "invalid conf.mix menu_items (expected edge lists of label/target/command/args/confirm)"
             .to_owned()
     };
     let MixValue::Map(root) = &value else {
@@ -79,7 +79,7 @@ pub fn read_extras(path: &Path, edge: &str) -> Result<Vec<Extra>, String> {
             };
             if item
                 .keys()
-                .any(|key| !["label", "target", "verb", "args", "confirm"].contains(&key.as_str()))
+                .any(|key| !["label", "target", "command", "args", "confirm"].contains(&key.as_str()))
             {
                 return Err(invalid());
             }
@@ -91,13 +91,13 @@ pub fn read_extras(path: &Path, edge: &str) -> Result<Vec<Extra>, String> {
                 }
                 _ => Err(invalid()),
             };
-            let (label, target, verb) = (string("label")?, string("target")?, string("verb")?);
+            let (label, target, kind) = (string("label")?, string("target")?, string("command")?);
             let identifier = |s: &str| {
                 !s.is_empty()
                     && s.bytes()
                         .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
             };
-            if !identifier(&target) || !identifier(&verb) {
+            if !identifier(&target) || !identifier(&kind) {
                 return Err(invalid());
             }
             let args = match item.get("args") {
@@ -124,7 +124,7 @@ pub fn read_extras(path: &Path, edge: &str) -> Result<Vec<Extra>, String> {
                 chosen.push(Extra {
                     label,
                     target,
-                    verb,
+                    kind,
                     args,
                     confirm,
                 });
@@ -655,13 +655,13 @@ mod tests {
     #[test]
     fn extras_follow_quoins_conf_mix_schema_and_refuse_malformed_items() {
         let path = std::env::temp_dir().join(format!("compd-menu-conf-{}.mix", std::process::id()));
-        std::fs::write(&path, r#"{menu_items: {left: [{label: "Tools", target: "tools", verb: "tools.open", args: ["main"], confirm: "Open tools?"}]}}"#).unwrap();
+        std::fs::write(&path, r#"{menu_items: {left: [{label: "Tools", target: "tools", command: "tools.open", args: ["main"], confirm: "Open tools?"}]}}"#).unwrap();
         let extras = read_extras(&path, "left").unwrap();
         assert_eq!(extras.len(), 1);
         assert_eq!(
             (
                 &extras[0].target,
-                &extras[0].verb,
+                &extras[0].kind,
                 extras[0].args.as_slice()
             ),
             (

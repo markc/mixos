@@ -6,7 +6,7 @@ fn macros_status_dispatch_and_surface() {
         .unwrap();
     assert_eq!(body["state"], "idle");
     assert!(
-        documents::verbs::VERBS
+        documents::commands::COMMANDS
             .iter()
             .any(|(v, _)| *v == "ced.macros.status")
     );

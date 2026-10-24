@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Host information and privileged host actions through closed, typed verbs"
+description = "Host information and privileged host actions through closed, typed commands"
 
 [package.metadata.mixos]
 component = "hostd"

@@ -117,7 +117,7 @@ choose-file = Name a file
 exists = That file already exists; choose a new name
 no-clipboard = A headless instance has no clipboard
 no-window = A headless instance has no window
-unknown-command = No such command
+unknown-action = No such command
 command-denied = That command was denied
 command-disabled = That command cannot run now
 

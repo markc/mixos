@@ -161,7 +161,7 @@ pub struct CorpusStats {
     pub modseq: i64,
 }
 
-/// The doc columns the read verbs project, in the order [`row_to_json`] expects.
+/// The doc columns the read commands project, in the order [`row_to_json`] expects.
 const DOC_COLS: &str = "rel_path, id, title, slug, content_type, created, tags_json, \
      category, word_count, size_bytes, mtime, dup_of, unmanaged, modseq";
 

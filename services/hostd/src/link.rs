@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{net::IpAddr, path::PathBuf, time::Duration};
 
-pub const VERB: &str = "net.link.apply";
+pub const COMMAND: &str = "net.link.apply";
 const DEFAULT_WINDOW: u64 = 20;
 const MAX_WINDOW: u64 = 60;
 const MAX_LIST: usize = 8;
@@ -106,7 +106,7 @@ pub fn plan(root: &std::path::Path, request: Request) -> Result<Plan, Value> {
         return Err(bad(format!("window_s must be 5-{MAX_WINDOW}")));
     }
     let mut text = format!(
-        "# Written by hostd ({VERB}). hostd replaces this file; edits are lost.\n\
+        "# Written by hostd ({COMMAND}). hostd replaces this file; edits are lost.\n\
          [Match]\nName={}\n\n[Network]\n",
         request.link
     );
@@ -329,7 +329,7 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
     let ifindex = ifindex_of(&current).map_err(internal)?;
 
     let networkd = Networkd::connect().await.map_err(internal)?;
-    let mut receipt = Receipt::new(VERB, &grant, &origin, summary(&plan));
+    let mut receipt = Receipt::new(COMMAND, &grant, &origin, summary(&plan));
     // A file that can't be backed up stops the change before anything moves.
     let mut change = FileChange::backup(&plan.path).map_err(internal)?;
     change.installed = Some(receipt::digest(plan.text.as_bytes()));

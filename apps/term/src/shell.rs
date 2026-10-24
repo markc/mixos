@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The running window: wakes from the core, the keyboard, pointer and
-//! input method into the [`App`], the window's Bus verbs, the session look,
+//! input method into the [`App`], the window's Bus commands, the session look,
 //! and the effects the window owns (clipboard, closing). Nothing polls: the
 //! core's wake, the Bus and clipboard reads request a repaint, and egui
 //! runs a frame.
@@ -36,15 +36,15 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 use term_core::bus::WindowEvent;
-use toolkit::command::{CommandError, Origin};
+use toolkit::action::{CommandError, Origin};
 use toolkit::{Registry, Strings, Theme, drive};
 
 type Reply = tokio::sync::oneshot::Sender<(u8, String)>;
 
-/// A window verb waiting its turn.
+/// A window command waiting its turn.
 struct Held {
     id: u64,
-    verb: String,
+    command: String,
     body: String,
 }
 
@@ -131,7 +131,7 @@ impl Shell {
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
         Self {
             app,
-            commands: crate::commands::registry(),
+            commands: crate::actions::registry(),
             strings: crate::strings(),
             base: theme.clone(),
             file_theme: theme.clone(),
@@ -176,7 +176,7 @@ impl Shell {
         }
         while let Some(event) = self.bus.next_event() {
             match event {
-                WindowEvent::Command { verb, body, reply } => {
+                WindowEvent::Command { command: command_name, body, reply } => {
                     if self.exiting {
                         let _ = reply.send(closing());
                         continue;
@@ -185,7 +185,7 @@ impl Shell {
                     self.replies.insert(self.next_id, reply);
                     self.held.push_back(Held {
                         id: self.next_id,
-                        verb,
+                        command: command_name,
                         body,
                     });
                 }
@@ -237,16 +237,16 @@ impl Shell {
         self.release();
     }
 
-    /// Run held Bus commands in order. Drive verbs that only join the drive
+    /// Run held Bus commands in order. Drive commands that only join the drive
     /// queue go straight on; anything else waits for drive input before it.
     fn release(&mut self) {
         while let Some(held) = self.held.front() {
-            let drive_verb = held
-                .verb
+            let drive_command = held
+                .command
                 .strip_prefix("term.")
-                .filter(|v| drive::VERBS.contains(v))
+                .filter(|v| drive::COMMANDS.contains(v))
                 .map(str::to_owned);
-            let joins_queue = drive_verb.as_deref().is_some_and(drive::queues);
+            let joins_queue = drive_command.as_deref().is_some_and(drive::queues);
             if self.exiting || (drive::pending(&self.ctx) && !joins_queue) {
                 return;
             }
@@ -261,14 +261,14 @@ impl Shell {
                 continue;
             }
             let args: Value = serde_json::from_str(&held.body).unwrap_or(Value::Null);
-            match drive_verb {
-                Some(verb) => {
-                    if let Some(answer) = drive::request(&self.ctx, held.id, &verb, &args) {
+            match drive_command {
+                Some(command_name) => {
+                    if let Some(answer) = drive::request(&self.ctx, held.id, &command_name, &args) {
                         self.answer(answer.id, answer.rc, answer.body);
                     }
                 }
                 None => {
-                    let (rc, body) = self.command(&held.verb, &args);
+                    let (rc, body) = self.command(&held.command, &args);
                     self.answer(held.id, rc, body);
                     self.perform();
                 }
@@ -276,11 +276,11 @@ impl Shell {
         }
     }
 
-    /// The window's own verbs, other than drive.
-    fn command(&mut self, verb: &str, args: &Value) -> (u8, Value) {
-        match verb {
+    /// The window's own commands, other than drive.
+    fn command(&mut self, command_name: &str, args: &Value) -> (u8, Value) {
+        match command_name {
             "app.describe" => (0, crate::bus::describe()),
-            "term.commands" => (
+            "term.actions" => (
                 0,
                 json!({
                     "commands": self.commands.describe(&self.app, &self.strings),
@@ -309,7 +309,7 @@ impl Shell {
                     ),
                     Err(CommandError::Unknown(_)) => (
                         10,
-                        json!({"error_code":"UNKNOWN_COMMAND","message":crate::label("unknown-command")}),
+                        json!({"error_code":"UNKNOWN_ACTION","message":crate::label("unknown-action")}),
                     ),
                     Err(CommandError::Disabled(_)) => (
                         10,
@@ -319,7 +319,7 @@ impl Shell {
             }
             _ => (
                 10,
-                json!({"error_code":"UNKNOWN_VERB","message":"unknown verb; use HELP"}),
+                json!({"error_code":"UNKNOWN_COMMAND","message":"unknown command; use HELP"}),
             ),
         }
     }
@@ -520,7 +520,7 @@ impl Shell {
     }
 
     /// Publish the commands run since the last call on
-    /// `<name>.command.executed`.
+    /// `<name>.action.executed`.
     fn publish_executed(&mut self) {
         // Commands the window performed itself (a click focusing a pane).
         for id in std::mem::take(&mut self.app.noted) {

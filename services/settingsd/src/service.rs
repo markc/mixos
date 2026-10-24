@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use settings::*;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 
-pub const VERBS: &[&str] = &[
+pub const COMMANDS: &[&str] = &[
     "settings.describe",
     "settings.get",
     "settings.appearance.get",
@@ -17,19 +17,19 @@ pub const VERBS: &[&str] = &[
     "settings.reset",
     "settings.status",
 ];
-pub fn manifest() -> Vec<bus::VerbDescriptor> {
-    std::iter::once(bus::VerbDescriptor::new(
+pub fn manifest() -> Vec<bus::CommandDescriptor> {
+    std::iter::once(bus::CommandDescriptor::new(
         "HELP",
         &[],
-        "List served verbs",
+        "List served commands",
         true,
     ))
-    .chain(VERBS.iter().map(|verb| {
-        bus::VerbDescriptor::new(
-            verb,
+    .chain(COMMANDS.iter().map(|command_name| {
+        bus::CommandDescriptor::new(
+            command_name,
             &["body"],
             &format!("Desktop settings contract {}", settings::CONTRACT_VERSION),
-            !matches!(*verb, "settings.apply" | "settings.reset"),
+            !matches!(*command_name, "settings.apply" | "settings.reset"),
         )
     }))
     .collect()
@@ -49,8 +49,8 @@ fn decode<T: serde::de::DeserializeOwned>(body: &str) -> Result<T, Value> {
     serde_json::from_str(body)
         .map_err(|e| json!({"status":"validation_failed","message":e.to_string()}))
 }
-pub fn dispatch(authority: &mut Authority, verb: &str, body: &str) -> Result<Value, Value> {
-    match verb {
+pub fn dispatch(authority: &mut Authority, command_name: &str, body: &str) -> Result<Value, Value> {
+    match command_name {
         "HELP" => Ok(json!(manifest())),
         "settings.describe" => Ok(settings::describe()),
         "settings.get" => authority.read(decode(body)?),
@@ -70,7 +70,7 @@ pub fn dispatch(authority: &mut Authority, verb: &str, body: &str) -> Result<Val
             }
             authority.apply(req)
         }
-        _ => Err(json!({"status":"not_served","verb":verb})),
+        _ => Err(json!({"status":"UNKNOWN_COMMAND","command":command_name})),
     }
 }
 /// Publish the retained snapshot in schema 1 (consumers not yet on schema 2)
@@ -179,7 +179,7 @@ pub async fn serve_at(root: PathBuf, binding: Binding, noded_url: String) -> any
         SupervisedClient::connect_options("settingsd", &noded_url)
             .bounded_incoming(64)
             .fatal_on_registration_rejection(true)
-            .with_verbs(manifest())
+            .with_commands(manifest())
             .with_provenance(provenance)
             .connect()
             .await?,
@@ -218,13 +218,13 @@ pub async fn serve_at(root: PathBuf, binding: Binding, noded_url: String) -> any
                     Some(BoundedIncomingEvent::Overflow { dropped }) => tracing::warn!(dropped,"settings request input overflow; callers must resolve receipts"),
                     Some(BoundedIncomingEvent::Command(command)) => {
                         if command.is_topic_delivery() { continue; }
-                        let verb = command.command.clone();
+                        let command_name = command.command.clone();
                         let body = command.body.clone();
                         let previous_revision = authority.accepted.revision;
                         // At most one blocking job. Durable work completes even
                         // when its reply cannot be sent; no mutation replay.
                         let result = tokio::task::spawn_blocking(move || {
-                            let reply = dispatch(&mut authority,&verb,&body);
+                            let reply = dispatch(&mut authority,&command_name,&body);
                             (authority,reply)
                         }).await?;
                         authority = result.0;

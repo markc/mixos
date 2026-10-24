@@ -1629,10 +1629,10 @@ async fn event_pump_passes_handler_docs_to_reserved_help_only() {
     }
 
     let source = r#"
-on doc.verb desc "A documented verb"
+on doc.command desc "A documented command"
   reply("ok")
 end
-on plain.verb
+on plain.command
   reply("ok")
 end
 "#;
@@ -1652,7 +1652,7 @@ end
     eval.execute(&stmts).await.unwrap();
 
     tx.send(mk_event("HELP", "", &[])).unwrap();
-    tx.send(mk_event("plain.verb", "", &[])).unwrap();
+    tx.send(mk_event("plain.command", "", &[])).unwrap();
     drop(tx);
     eval.run_event_pump().await.unwrap();
 
@@ -1667,16 +1667,16 @@ end
         got,
         vec![
             (
-                "doc.verb".to_string(),
-                Some("A documented verb".to_string())
+                "doc.command".to_string(),
+                Some("A documented command".to_string())
             ),
-            ("plain.verb".to_string(), None),
+            ("plain.command".to_string(), None),
         ],
         "HELP must receive every command with its doc-string"
     );
     let other = calls
         .iter()
-        .find(|(c, _)| c == "plain.verb")
+        .find(|(c, _)| c == "plain.command")
         .expect("non-HELP command consults handle_reserved too");
     assert!(
         other.1.is_empty(),
@@ -2015,7 +2015,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 
-/// Shared `(verb, topic)` log. The evaluator is single-threaded
+/// Shared `(command, topic)` log. The evaluator is single-threaded
 /// (`!Send`, Rc/RefCell), so an `Rc<RefCell<…>>` is the idiomatic way
 /// to keep an assertion handle while the box is owned by the evaluator.
 type CallLog = Rc<RefCell<Vec<(String, String)>>>;
@@ -2317,10 +2317,10 @@ async fn unknown_command_request_is_refused_immediately() {
     let log: ReplyLog = Rc::new(RefCell::new(Vec::new()));
     let started = std::time::Instant::now();
     run_then_dispatch(
-        "on q\n    reply(\"v\")\ndone\non b.verb\n    reply(\"w\")\ndone\n",
+        "on q\n    reply(\"v\")\ndone\non b.command\n    reply(\"w\")\ndone\n",
         Some(Rc::new(ReplyRecorder(log.clone()))),
         mk_event(
-            "nosuch.verb",
+            "nosuch.command",
             "",
             &[("from", "c"), ("id", "5"), ("type", "request")],
         ),
@@ -2334,12 +2334,12 @@ async fn unknown_command_request_is_refused_immediately() {
     assert_eq!(
         calls.len(),
         1,
-        "an unknown-verb request must be answered exactly once"
+        "an unknown-command request must be answered exactly once"
     );
     let (to, cmd, id, rc, body) = &calls[0];
     assert_eq!(
         (to.as_str(), cmd.as_str(), id.as_deref(), *rc),
-        ("c", "nosuch.verb", Some("5"), 10)
+        ("c", "nosuch.command", Some("5"), 10)
     );
     assert!(
         body.contains("\"error_code\":\"UNKNOWN_COMMAND\""),
@@ -2348,21 +2348,21 @@ async fn unknown_command_request_is_refused_immediately() {
     // `error` is what a JSON-body send reduces an rc>=10 reply to for
     // `$result`; without it the caller got the raw JSON text.
     assert!(
-        body.contains("\"error\":\"unknown command 'nosuch.verb'"),
+        body.contains("\"error\":\"unknown command 'nosuch.command'"),
         "body: {body}"
     );
-    assert!(body.contains("\"command\":\"nosuch.verb\""), "body: {body}");
+    assert!(body.contains("\"command\":\"nosuch.command\""), "body: {body}");
     assert!(
-        body.contains("\"available\":[\"b.verb\",\"q\"]"),
+        body.contains("\"available\":[\"b.command\",\"q\"]"),
         "body: {body}"
     );
 }
 
 /// dispatch_event is also reached from the `sleep()` yield loop, which does
-/// not run the pump's reserved-verb interception first: a verb the serve
+/// not run the pump's reserved-command interception first: a command the serve
 /// runtime reserves must not be refused there as UNKNOWN_COMMAND.
 #[tokio::test]
-async fn reserved_verbs_are_not_refused_as_unknown() {
+async fn reserved_commands_are_not_refused_as_unknown() {
     use mix::evaluator::{ReservedOutcome, ServeRuntime};
     struct Claims;
     impl ServeRuntime for Claims {
@@ -2399,7 +2399,7 @@ async fn reserved_verbs_are_not_refused_as_unknown() {
     }
     assert!(
         log.borrow().is_empty(),
-        "reserved verbs must not get UNKNOWN_COMMAND: {:?}",
+        "reserved commands must not get UNKNOWN_COMMAND: {:?}",
         log.borrow()
     );
     eval.dispatch_event(mk_event("nosuch", "", &[("id", "2"), ("type", "request")]))
@@ -2408,7 +2408,7 @@ async fn reserved_verbs_are_not_refused_as_unknown() {
     assert_eq!(
         log.borrow().len(),
         1,
-        "a genuinely unknown verb is still refused"
+        "a genuinely unknown command is still refused"
     );
     assert_eq!(log.borrow()[0].3, 10);
 }
@@ -2421,7 +2421,7 @@ async fn unknown_command_emit_is_still_dropped() {
     run_then_dispatch(
         "on q\n    reply(\"v\")\ndone\n",
         Some(Rc::new(ReplyRecorder(log.clone()))),
-        mk_event("nosuch.verb", "", &[("from", "c")]),
+        mk_event("nosuch.command", "", &[("from", "c")]),
     )
     .await;
     assert!(log.borrow().is_empty(), "an emit must never be replied to");
@@ -3545,7 +3545,7 @@ fn parse_on_async_modifier() {
 }
 
 /// `on <cmd> desc "doc"` — the handler doc-string, surfaced by the serve
-/// runtime as the verb's HELP description. `desc` is an explicit contextual
+/// runtime as the command's HELP description. `desc` is an explicit contextual
 /// marker (like `async`) BECAUSE a bare trailing string is ambiguous with a
 /// same-line body statement — `on foo refresh; done` is a body that calls
 /// `refresh`, and a marker-less doc syntax would silently re-mean it (the
@@ -5101,7 +5101,7 @@ async fn include_failed_load_is_retryable() {
 }
 
 // ── Dotted-literal Bus address as a send/emit/address target ──
-// `send noded.delta.bus <verb>` must parse the dotted address as a literal
+// `send noded.delta.bus <command>` must parse the dotted address as a literal
 // Bus address string (so a mesh address is written directly), NOT as
 // field access on the bareword `noded`. `$var`/`(expr)` stay expressions.
 
@@ -5126,7 +5126,7 @@ fn send_target_dotted_bus_address_is_literal() {
             }
             match command {
                 Expr::StringLiteral(s) => assert_eq!(s, "noded.info"),
-                other => panic!("verb must be a literal, got {other:?}"),
+                other => panic!("command must be a literal, got {other:?}"),
             }
         }
         other => panic!("expected Send, got {other:?}"),

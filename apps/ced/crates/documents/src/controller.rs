@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The Controller: tabs, the global `event_seq`, the op-id generator, `ced.*`
-//! verbs, `ced.wait` waiters, reattach. UI-toolkit-free — the GUI (`app.rs`)
+//! commands, `ced.wait` waiters, reattach. UI-toolkit-free — the GUI (`app.rs`)
 //! and `--headless` (`headless.rs`) drive the same Controller.
 //!
 //! Contracts:
@@ -40,7 +40,7 @@ use crate::actions::ActionId;
 use crate::config::Config;
 use crate::editor::{EditorMsg, LayoutReport};
 use crate::session::{RECENT_MAX, Session, SessionTab};
-use crate::verbs::{self, PhaseW, code};
+use crate::commands::{self, PhaseW, code};
 
 mod external;
 mod ui;
@@ -76,7 +76,7 @@ impl Tab {
 pub struct BusCommand {
     /// Correlation for the reply (the bus thread answers `respond(id, …)`).
     pub id: u64,
-    pub verb: String,
+    pub command: String,
     /// JSON body.
     pub body: String,
     /// Attested caller key: `local:<from>`, `mesh:<service>@<peer>`, `anon`.
@@ -93,7 +93,7 @@ pub enum Effect {
     /// Answer a `ced.*` Bus command.
     Respond { id: u64, rc: u8, body: String },
     /// `ced.action` ran action `id` directly (the window runs the rest):
-    /// the host records it for `<app>.command.executed`.
+    /// the host records it for `<app>.action.executed`.
     Executed { id: String },
     /// Arm a one-shot timer (`Incoming::Timer{id}` after `ms`).
     Timer { id: u64, ms: u64 },
@@ -317,7 +317,7 @@ pub struct Controller {
     last_event_seq: Option<u64>,
     edit_epoch: Option<String>,
     edit_present: Option<bool>,
-    edit_info: verbs::EditInfo,
+    edit_info: commands::EditInfo,
     waiters: Vec<Waiter>,
     opens: Vec<PendingOpen>,
     recent: Vec<String>,
@@ -328,7 +328,7 @@ pub struct Controller {
     session_path: Option<String>,
     stats: Stats,
     /// `set_layout`: the last frame's geometry (`ced.layout`).
-    layout: Option<verbs::LayoutReply>,
+    layout: Option<commands::LayoutReply>,
     frames: ui::Frames,
     /// Recovered buffers offered at start, and their epoch.
     recovered: Vec<wire::BufferSummary>,
@@ -350,7 +350,7 @@ pub struct Controller {
 }
 
 fn refusal(code: &str, message: impl Into<String>, reason: Option<&str>) -> String {
-    serde_json::to_string(&verbs::Refusal {
+    serde_json::to_string(&commands::Refusal {
         error_code: code.to_string(),
         message: message.into(),
         reason: reason.map(str::to_string),
@@ -538,7 +538,7 @@ impl Controller {
             last_event_seq: None,
             edit_epoch: None,
             edit_present: None,
-            edit_info: verbs::EditInfo {
+            edit_info: commands::EditInfo {
                 epoch: None,
                 version: None,
                 volatile: None,
@@ -650,7 +650,7 @@ impl Controller {
         }
         self.send_info(&mut fx);
         let out = Outgoing {
-            verb: "edit.list".into(),
+            command: "edit.list".into(),
             body: "{}".into(),
             op_id: None,
             deadline_ms: DEADLINE_MS,
@@ -963,7 +963,7 @@ impl Controller {
     }
 
     /// The tab a Bus request names (`tab` or `buffer`), else the active one.
-    fn resolve_tab(&self, sel: &verbs::TabSel) -> Result<TabId, String> {
+    fn resolve_tab(&self, sel: &commands::TabSel) -> Result<TabId, String> {
         if let Some(t) = sel.tab {
             return self
                 .tab(t)
@@ -1042,7 +1042,7 @@ impl Controller {
 
     fn send_info(&mut self, fx: &mut Vec<Effect>) {
         let out = Outgoing {
-            verb: "edit.info".into(),
+            command: "edit.info".into(),
             body: "{}".into(),
             op_id: None,
             deadline_ms: DEADLINE_MS,
@@ -1066,7 +1066,7 @@ impl Controller {
             None => json!({"origin": UI_ORIGIN}),
         };
         let out = Outgoing {
-            verb: "edit.open".into(),
+            command: "edit.open".into(),
             body: body.to_string(),
             op_id: None,
             deadline_ms: if self.tab(tab).is_some_and(|t| t.mirror.is_some()) {
@@ -1097,7 +1097,7 @@ impl Controller {
             x.reattaching = true;
         }
         let out = Outgoing {
-            verb: "edit.list".into(),
+            command: "edit.list".into(),
             body: "{}".into(),
             op_id: None,
             deadline_ms: self.open_deadline(tab),
@@ -1156,7 +1156,7 @@ impl Controller {
                 if rc < 10
                     && let Ok(info) = serde_json::from_str::<wire::InfoReply>(body)
                 {
-                    self.edit_info = verbs::EditInfo {
+                    self.edit_info = commands::EditInfo {
                         epoch: Some(info.epoch.clone()),
                         version: Some(info.version.clone()),
                         volatile: Some(info.volatile),
@@ -1172,7 +1172,7 @@ impl Controller {
                         fx.push(Effect::Respond {
                             id,
                             rc: 0,
-                            body: ok_body(&verbs::ActionReply {
+                            body: ok_body(&commands::ActionReply {
                                 id: action,
                                 ok: true,
                                 result: None,
@@ -1729,7 +1729,7 @@ impl Controller {
             let p = self.opens.remove(i);
             let row = |c: &Controller, t: TabId| {
                 let tab = c.tab(t);
-                verbs::OpenedTab {
+                commands::OpenedTab {
                     tab: t,
                     buffer: tab
                         .and_then(|t| t.mirror.as_ref())
@@ -1739,13 +1739,13 @@ impl Controller {
             };
             let body = if p.new {
                 let r = row(self, p.tabs[0]);
-                ok_body(&verbs::NewReply {
+                ok_body(&commands::NewReply {
                     tab: r.tab,
                     buffer: r.buffer,
                 })
             } else {
                 let tabs = p.tabs.iter().map(|&t| row(self, t)).collect();
-                ok_body(&verbs::OpenReply { tabs })
+                ok_body(&commands::OpenReply { tabs })
             };
             fx.push(Effect::Respond {
                 id: p.cmd,
@@ -2135,7 +2135,7 @@ impl Controller {
         let (rc, body) = match outcome {
             Outcome::Done => (
                 0,
-                ok_body(&verbs::ActionReply {
+                ok_body(&commands::ActionReply {
                     id: action,
                     ok: true,
                     result: None,
@@ -2157,7 +2157,7 @@ impl Controller {
     /// carries none, and another holder may save behind ced's back.
     fn send_saved(&mut self, tab: TabId, fx: &mut Vec<Effect>) {
         let out = Outgoing {
-            verb: "edit.list".into(),
+            command: "edit.list".into(),
             body: "{}".into(),
             op_id: None,
             deadline_ms: DEADLINE_MS,
@@ -2223,7 +2223,7 @@ impl Controller {
         x.last_publish = Some(Instant::now());
         let body = json!({"buffer": buffer, "ranges": [{"anchor": sel.anchor, "head": sel.head}], "origin": UI_ORIGIN});
         let out = Outgoing {
-            verb: "edit.select".into(),
+            command: "edit.select".into(),
             body: body.to_string(),
             op_id: None,
             deadline_ms: DEADLINE_MS,
@@ -2451,7 +2451,7 @@ impl Controller {
         match buffer {
             Some(b) => {
                 let out = Outgoing {
-                    verb: "edit.close".into(),
+                    command: "edit.close".into(),
                     body: json!({"buffer": b, "force": force, "origin": UI_ORIGIN}).to_string(),
                     op_id: None,
                     deadline_ms: DEADLINE_MS,
@@ -2464,7 +2464,7 @@ impl Controller {
                     fx.push(Effect::Respond {
                         id,
                         rc: 0,
-                        body: ok_body(&verbs::ActionReply {
+                        body: ok_body(&commands::ActionReply {
                             id: action,
                             ok: true,
                             result: None,
@@ -2480,11 +2480,11 @@ impl Controller {
     fn bus_command(&mut self, cmd: &BusCommand, fx: &mut Vec<Effect>) {
         // The declared body limit is enforced before the body is parsed at all,
         // not after a full DOM parse of up to the Bus's 16 MiB.
-        if cmd.verb == "ced.diagnostics" && cmd.body.len() > verbs::MAX_DIAGNOSTICS_BODY {
+        if cmd.command == "ced.diagnostics" && cmd.body.len() > commands::MAX_DIAGNOSTICS_BODY {
             let msg = format!(
                 "the request is {} bytes (at most {})",
                 cmd.body.len(),
-                verbs::MAX_DIAGNOSTICS_BODY
+                commands::MAX_DIAGNOSTICS_BODY
             );
             return fx.push(Effect::Respond {
                 id: cmd.id,
@@ -2503,7 +2503,7 @@ impl Controller {
                             rc: 10,
                             body: refusal(
                                 code::INVALID_ARGUMENT,
-                                format!("{}: {e}", cmd.verb),
+                                format!("{}: {e}", cmd.command),
                                 Some("bad_args"),
                             ),
                         });
@@ -2521,13 +2521,13 @@ impl Controller {
                 body: refusal(code, msg, reason),
             })
         };
-        match cmd.verb.as_str() {
+        match cmd.command.as_str() {
             "ced.ping" => reply(
                 fx,
-                ok_body(&verbs::PingReply {
+                ok_body(&commands::PingReply {
                     pong: true,
-                    service: verbs::SERVICE.into(),
-                    schema: verbs::SCHEMA.into(),
+                    service: commands::SERVICE.into(),
+                    schema: commands::SCHEMA.into(),
                     pid: std::process::id(),
                     headless: self.headless,
                 }),
@@ -2536,7 +2536,7 @@ impl Controller {
                 let info = buildinfo::build_info!();
                 reply(
                     fx,
-                    ok_body(&verbs::InfoReply {
+                    ok_body(&commands::InfoReply {
                         version: info.version.into(),
                         git_sha: info.git_sha.into(),
                         build_time: info.build_time.into(),
@@ -2549,7 +2549,7 @@ impl Controller {
                 )
             }
             "ced.open" => {
-                let r = parse!(verbs::OpenReq);
+                let r = parse!(commands::OpenReq);
                 if r.paths.is_empty() {
                     return refuse(
                         fx,
@@ -2576,14 +2576,14 @@ impl Controller {
                 let tabs = self.tabs.iter().map(|t| self.tab_row(t)).collect();
                 reply(
                     fx,
-                    ok_body(&verbs::TabsReply {
+                    ok_body(&commands::TabsReply {
                         active: self.active,
                         tabs,
                     }),
                 );
             }
             "ced.focus" => {
-                let sel = parse!(verbs::TabSel);
+                let sel = parse!(commands::TabSel);
                 match self.resolve_tab(&sel) {
                     Ok(t) => {
                         self.active = Some(t);
@@ -2591,13 +2591,13 @@ impl Controller {
                             x.agent_since_focus = false;
                         }
                         self.session_changed(fx);
-                        reply(fx, ok_body(&verbs::FocusReply { tab: t }));
+                        reply(fx, ok_body(&commands::FocusReply { tab: t }));
                     }
                     Err(e) => refuse(fx, code::NOT_FOUND, e, None),
                 }
             }
             "ced.state" => {
-                let r = parse!(verbs::StateReq);
+                let r = parse!(commands::StateReq);
                 match self
                     .resolve_tab(&r.sel)
                     .map(|t| self.state_reply(t, r.text))
@@ -2608,7 +2608,7 @@ impl Controller {
                 }
             }
             "ced.type" => {
-                let r = parse!(verbs::TypeReq);
+                let r = parse!(commands::TypeReq);
                 let t = match self.resolve_tab(&r.sel) {
                     Ok(t) => t,
                     Err(e) => return refuse(fx, code::NOT_FOUND, e, None),
@@ -2624,13 +2624,13 @@ impl Controller {
                             .tab(t)
                             .and_then(|t| t.mirror.as_ref())
                             .map_or(0, Mirror::pending);
-                        reply(fx, ok_body(&verbs::TypeReply { tab: t, pending }));
+                        reply(fx, ok_body(&commands::TypeReply { tab: t, pending }));
                     }
                     Err(e) => refuse(fx, code::CONFLICT, e, None),
                 }
             }
             "ced.select" => {
-                let r = parse!(verbs::SelectReq);
+                let r = parse!(commands::SelectReq);
                 let t = match self.resolve_tab(&r.sel) {
                     Ok(t) => t,
                     Err(e) => return refuse(fx, code::NOT_FOUND, e, None),
@@ -2653,8 +2653,8 @@ impl Controller {
                         self.caret_moved(t, fx);
                         reply(
                             fx,
-                            ok_body(&verbs::SelectReply {
-                                selection: verbs::SelectionP {
+                            ok_body(&commands::SelectReply {
+                                selection: commands::SelectionP {
                                     anchor: pa,
                                     head: ph,
                                 },
@@ -2665,7 +2665,7 @@ impl Controller {
                 }
             }
             "ced.action" => {
-                let r = parse!(verbs::ActionReq);
+                let r = parse!(commands::ActionReq);
                 let Some(action) = ActionId::from_id(&r.id) else {
                     return refuse(
                         fx,
@@ -2735,7 +2735,7 @@ impl Controller {
                     Ok(_) if queued => {}
                     Ok(result) => reply(
                         fx,
-                        ok_body(&verbs::ActionReply {
+                        ok_body(&commands::ActionReply {
                             id: r.id,
                             ok: true,
                             result,
@@ -2750,7 +2750,7 @@ impl Controller {
             "ced.actions" => {
                 let actions = ActionId::all()
                     .into_iter()
-                    .map(|a| verbs::ActionRow {
+                    .map(|a| commands::ActionRow {
                         id: a.id(),
                         label: a.label(),
                         menu: a.menu().label().to_string(),
@@ -2769,10 +2769,10 @@ impl Controller {
                         )),
                     })
                     .collect();
-                reply(fx, ok_body(&verbs::ActionsReply { actions }));
+                reply(fx, ok_body(&commands::ActionsReply { actions }));
             }
             "ced.wait" => {
-                let r = parse!(verbs::WaitReq);
+                let r = parse!(commands::WaitReq);
                 self.register_waiter(id, r, fx);
             }
             "ced.layout" => {
@@ -2784,7 +2784,7 @@ impl Controller {
                         Some("headless"),
                     );
                 }
-                let sel = parse!(verbs::TabSel);
+                let sel = parse!(commands::TabSel);
                 let t = match self.resolve_tab(&sel) {
                     Ok(t) => t,
                     Err(e) => return refuse(fx, code::NOT_FOUND, e, None),
@@ -2794,13 +2794,13 @@ impl Controller {
                 }
                 match self.x.get(&t).and_then(|x| x.layout) {
                     Some(l) => {
-                        let rect = |r: [f32; 4]| verbs::Rect {
+                        let rect = |r: [f32; 4]| commands::Rect {
                             x: r[0],
                             y: r[1],
                             w: r[2],
                             h: r[3],
                         };
-                        let zero = verbs::Rect {
+                        let zero = commands::Rect {
                             x: 0.0,
                             y: 0.0,
                             w: 0.0,
@@ -2808,7 +2808,7 @@ impl Controller {
                         };
                         reply(
                             fx,
-                            ok_body(&verbs::LayoutReply {
+                            ok_body(&commands::LayoutReply {
                                 tab: t,
                                 window: zero,
                                 menubar: zero,
@@ -2836,7 +2836,7 @@ impl Controller {
                 let s = &self.stats;
                 reply(
                     fx,
-                    ok_body(&verbs::StatsReply {
+                    ok_body(&commands::StatsReply {
                         keys: s.keys,
                         frames: self.frames.count,
                         model_us: ui::percentiles(&self.frames.model_us),
@@ -2859,7 +2859,7 @@ impl Controller {
                     .unwrap_or_default();
                 reply(
                     fx,
-                    ok_body(&verbs::DescribeReply {
+                    ok_body(&commands::DescribeReply {
                         contract: "ctk-app-control.v0".into(),
                         app: "ced".into(),
                         title: "MixOS Editor".into(),
@@ -2869,22 +2869,22 @@ impl Controller {
                         description: "The MixOS Editor: an egui editor over the edit Bus service"
                             .into(),
                         controls: Vec::new(),
-                        verbs: verbs::VERBS.iter().map(|(v, _)| v.to_string()).collect(),
+                        commands: commands::COMMANDS.iter().map(|(v, _)| v.to_string()).collect(),
                     }),
                 )
             }
             "app.quit" => {
-                reply(fx, ok_body(&verbs::QuitReply { quitting: true }));
+                reply(fx, ok_body(&commands::QuitReply { quitting: true }));
                 fx.push(Effect::SaveSession);
                 fx.push(Effect::Quit);
             }
             "ced.diagnostics" => {
-                let r = parse!(verbs::DiagnosticsReq);
+                let r = parse!(commands::DiagnosticsReq);
                 if let Err((msg, reason)) = external::check(&r, cmd.body.len()) {
                     return refuse(fx, code::INVALID_ARGUMENT, msg, Some(reason));
                 }
                 self.external.put(&r);
-                let mut out = verbs::DiagnosticsReply {
+                let mut out = commands::DiagnosticsReply {
                     path: r.path.clone(),
                     tabs: Vec::new(),
                     shown: 0,
@@ -2902,7 +2902,7 @@ impl Controller {
                 reply(fx, ok_body(&out));
             }
             "ced.problems" => {
-                let sel = parse!(verbs::TabSel);
+                let sel = parse!(commands::TabSel);
                 let t = match self.resolve_tab(&sel) {
                     Ok(t) => t,
                     Err(e) => return refuse(fx, code::NOT_FOUND, e, None),
@@ -2919,13 +2919,13 @@ impl Controller {
                     .diagnostics
                     .items()
                     .iter()
-                    .map(|d| verbs::ProblemRow {
+                    .map(|d| commands::ProblemRow {
                         line: d.line,
                         col: col_of(d.range.start),
                         severity: match d.severity {
-                            Severity::Error => verbs::DiagSeverity::Error,
-                            Severity::Warning => verbs::DiagSeverity::Warning,
-                            Severity::Note => verbs::DiagSeverity::Note,
+                            Severity::Error => commands::DiagSeverity::Error,
+                            Severity::Warning => commands::DiagSeverity::Warning,
+                            Severity::Note => commands::DiagSeverity::Note,
                         },
                         code: d.code.clone(),
                         message: d.message.clone(),
@@ -2935,7 +2935,7 @@ impl Controller {
                 let path = external::tab_path(tab).map(str::to_owned);
                 reply(
                     fx,
-                    ok_body(&verbs::ProblemsReply {
+                    ok_body(&commands::ProblemsReply {
                         tab: t,
                         path,
                         problems,
@@ -2943,17 +2943,17 @@ impl Controller {
                 );
             }
             "INFO" | "HELP" => {
-                let verbs: Vec<&str> = verbs::VERBS.iter().map(|(v, _)| *v).collect();
+                let command_names: Vec<&str> = commands::COMMANDS.iter().map(|(v, _)| *v).collect();
                 reply(
                     fx,
-                    json!({"service": verbs::SERVICE, "schema": verbs::SCHEMA, "verbs": verbs})
+                    json!({"service": commands::SERVICE, "schema": commands::SCHEMA, "commands": command_names})
                         .to_string(),
                 );
             }
             other => refuse(
                 fx,
-                code::UNKNOWN_VERB,
-                format!("unknown verb {other}"),
+                code::UNKNOWN_COMMAND,
+                format!("unknown command {other}"),
                 None,
             ),
         }
@@ -2971,9 +2971,9 @@ impl Controller {
             .unwrap_or_else(|| format!("untitled-{}", t.id))
     }
 
-    fn tab_row(&self, t: &Tab) -> verbs::TabRow {
+    fn tab_row(&self, t: &Tab) -> commands::TabRow {
         let m = t.mirror.as_ref();
-        verbs::TabRow {
+        commands::TabRow {
             tab: t.id,
             buffer: m.map(|m| m.buffer().to_string()),
             epoch: m.map(|m| m.epoch().to_string()),
@@ -3000,7 +3000,7 @@ impl Controller {
         &self,
         tab: TabId,
         with_text: bool,
-    ) -> Result<verbs::StateReply, (&'static str, String)> {
+    ) -> Result<commands::StateReply, (&'static str, String)> {
         let t = self
             .tab(tab)
             .ok_or((code::NOT_FOUND, format!("no tab {tab}")))?;
@@ -3024,7 +3024,7 @@ impl Controller {
         }
         let len = m.text().len();
         let sel = t.editor.sel;
-        Ok(verbs::StateReply {
+        Ok(commands::StateReply {
             tab,
             preview: self.view_hint(tab, "preview").unwrap_or("source").into(),
             buffer: Some(m.buffer().to_string()),
@@ -3036,12 +3036,12 @@ impl Controller {
             text_hash: blake3::hash(text.as_bytes()).to_hex().to_string(),
             bytes: len,
             lines: m.text().line_count(),
-            selection: verbs::SelectionP {
+            selection: commands::SelectionP {
                 anchor: m.text().point(sel.anchor.min(len)),
                 head: m.text().point(sel.head.min(len)),
             },
             first_line: t.editor.scroll.first_line.max(1),
-            last_remote: m.last_remote().map(|r| verbs::LastRemote {
+            last_remote: m.last_remote().map(|r| commands::LastRemote {
                 origin: r.origin.clone(),
                 lane: r.lane.clone(),
                 rev: r.rev,
@@ -3050,7 +3050,7 @@ impl Controller {
             conflicts: m
                 .conflicts()
                 .iter()
-                .map(|c| verbs::ConflictRow {
+                .map(|c| commands::ConflictRow {
                     rev: c.rev,
                     remote_origin: c.remote_origin.clone(),
                     lines: [c.lines.0, c.lines.1],
@@ -3064,7 +3064,7 @@ impl Controller {
 
     // ── ced.wait: event-driven, never a loop ─────────────────────────────────
 
-    fn register_waiter(&mut self, cmd: u64, r: verbs::WaitReq, fx: &mut Vec<Effect>) {
+    fn register_waiter(&mut self, cmd: u64, r: commands::WaitReq, fx: &mut Vec<Effect>) {
         let refuse = |fx: &mut Vec<Effect>, code: &str, msg: String| {
             fx.push(Effect::Respond {
                 id: cmd,
@@ -3192,7 +3192,7 @@ impl Controller {
         let body = match outcome {
             Ok(()) => {
                 let m = self.tab(w.tab).and_then(|t| t.mirror.as_ref());
-                ok_body(&verbs::WaitReply {
+                ok_body(&commands::WaitReply {
                     tab: w.tab,
                     rev: m.map_or(0, Mirror::rev),
                     phase: self.phase_of(w.tab),
@@ -3227,7 +3227,7 @@ mod tests {
         let (req, budget) = effects
             .iter()
             .find_map(|fx| match fx {
-                Effect::Send { req, out } if out.verb == "edit.open" => {
+                Effect::Send { req, out } if out.command == "edit.open" => {
                     Some((*req, out.deadline_ms))
                 }
                 _ => None,
@@ -3253,7 +3253,7 @@ mod tests {
         assert!(
             effects
                 .iter()
-                .any(|fx| matches!(fx, Effect::Send { out, .. } if out.verb == "edit.open"))
+                .any(|fx| matches!(fx, Effect::Send { out, .. } if out.command == "edit.open"))
         );
     }
 
@@ -3273,7 +3273,7 @@ mod tests {
         for (attempt, budget) in [3000, 6000, 12000, 30000, 30000].into_iter().enumerate() {
             let (req, _) = sent(&fx, "edit.list");
             assert!(fx.iter().any(|e| matches!(e, Effect::Send { out, .. }
-                if out.verb == "edit.list" && out.deadline_ms == budget)));
+                if out.command == "edit.list" && out.deadline_ms == budget)));
             fx = c.on_incoming(Incoming::Deadline { req });
             assert!(c.open_slow(tab));
             assert_eq!(c.open_error(tab), None);
@@ -3326,7 +3326,7 @@ mod tests {
         let tab = c.tabs()[0].id;
         for (attempt, budget) in [3000, 6000, 12000, 30000, 30000].into_iter().enumerate() {
             let (req, _) = sent(&fx, "edit.open");
-            assert!(fx.iter().any(|e| matches!(e, Effect::Send { out, .. } if out.verb == "edit.open" && out.deadline_ms == budget)));
+            assert!(fx.iter().any(|e| matches!(e, Effect::Send { out, .. } if out.command == "edit.open" && out.deadline_ms == budget)));
             fx = c.on_incoming(Incoming::Deadline { req });
             assert_eq!(c.open_error(tab), None);
             assert!(c.open_slow(tab));
@@ -3474,7 +3474,7 @@ mod tests {
         ))
         .unwrap();
         let fixture: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/verbs/refusal.timeout.json"))
+            serde_json::from_str(include_str!("../tests/fixtures/commands/refusal.timeout.json"))
                 .unwrap();
         assert_eq!(v, fixture);
     }
@@ -3483,10 +3483,10 @@ mod tests {
         Controller::new(Config::default(), 1, true)
     }
 
-    fn cmd(verb: &str, body: Value) -> BusCommand {
+    fn cmd(command_name: &str, body: Value) -> BusCommand {
         BusCommand {
             id: 7,
-            verb: verb.into(),
+            command: command_name.into(),
             body: body.to_string(),
             caller_key: "local:tester".into(),
         }
@@ -3514,7 +3514,7 @@ mod tests {
     }
 
     #[test]
-    fn tabless_verbs_answer_without_a_tab() {
+    fn tabless_commands_answer_without_a_tab() {
         let mut c = ctl();
         let (rc, v) = response(&c.on_bus_command(cmd("ced.ping", json!({}))));
         assert_eq!(rc, 0);
@@ -3560,19 +3560,19 @@ mod tests {
         }
         assert!(
             fx.iter()
-                .any(|e| matches!(e, Effect::Send { out, .. } if out.verb == "edit.info"))
+                .any(|e| matches!(e, Effect::Send { out, .. } if out.command == "edit.info"))
         );
     }
 
-    fn sent(fx: &[Effect], verb: &str) -> (u64, Value) {
+    fn sent(fx: &[Effect], command_name: &str) -> (u64, Value) {
         fx.iter()
             .find_map(|e| match e {
-                Effect::Send { req, out } if out.verb == verb => {
+                Effect::Send { req, out } if out.command == command_name => {
                     Some((*req, serde_json::from_str(&out.body).unwrap()))
                 }
                 _ => None,
             })
-            .unwrap_or_else(|| panic!("no {verb} in {fx:?}"))
+            .unwrap_or_else(|| panic!("no {command_name} in {fx:?}"))
     }
 
     fn reply(c: &mut Controller, req: u64, body: Value) -> Vec<Effect> {
@@ -3916,7 +3916,7 @@ mod tests {
         let find_req = |fx: &[Effect]| {
             fx.iter().find_map(|e| match e {
                 Effect::Send { req, out }
-                    if out.verb == "edit.find" && out.body.contains("\"from\"") =>
+                    if out.command == "edit.find" && out.body.contains("\"from\"") =>
                 {
                     Some(*req)
                 }
@@ -4116,7 +4116,7 @@ mod tests {
         let req = fx
             .iter()
             .find_map(|e| match e {
-                Effect::Send { req, out } if out.verb == "edit.list" => Some(*req),
+                Effect::Send { req, out } if out.command == "edit.list" => Some(*req),
                 _ => None,
             })
             .expect("edit.list at start");
@@ -4151,7 +4151,7 @@ mod tests {
             ["b1_0000e1e1"]
         );
         let fx = c.discard_recovered("b1_0000e1e1");
-        assert!(fx.iter().any(|e| matches!(e, Effect::Send { out, .. } if out.verb == "edit.close" && out.body.contains("\"force\":true"))));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Send { out, .. } if out.command == "edit.close" && out.body.contains("\"force\":true"))));
         for v in 1..=100 {
             c.record_frame(v, Some(v * 10));
         }
@@ -4361,7 +4361,7 @@ mod tests {
         let (_, v) = response(&c.on_bus_command(cmd("ced.tabs", json!({}))));
         assert_eq!(v["tabs"][0]["dirty"].as_bool(), Some(false));
         assert_eq!(problems(&mut c), [scenes(2, 1)]);
-        // The verb itself still applies an undigested set.
+        // The command itself still applies an undigested set.
         diags(&mut c, None, &[1]);
         assert_eq!(problems(&mut c), [scenes(1, 1)]);
     }
@@ -4402,7 +4402,7 @@ mod tests {
         ));
         let (rc, v) = response(&fx);
         let fixture: Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/verbs/refusal.diagnostics-source.json"
+            "../tests/fixtures/commands/refusal.diagnostics-source.json"
         ))
         .unwrap();
         assert_eq!((rc, v), (10, fixture));
@@ -4416,7 +4416,7 @@ mod tests {
             ),
             "bad_path"
         );
-        let many: Vec<Value> = (0..=verbs::MAX_EXTERNAL_DIAGNOSTICS)
+        let many: Vec<Value> = (0..=commands::MAX_EXTERNAL_DIAGNOSTICS)
             .map(|_| json!({"line": 1, "severity": "note", "code": "c", "message": ""}))
             .collect();
         assert_eq!(
@@ -4426,7 +4426,7 @@ mod tests {
             ),
             "too_many"
         );
-        let big = "x".repeat(verbs::MAX_DIAGNOSTICS_BODY);
+        let big = "x".repeat(commands::MAX_DIAGNOSTICS_BODY);
         assert_eq!(
             reason(
                 &mut c,

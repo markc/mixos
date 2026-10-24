@@ -13,7 +13,7 @@
 -- validation orchestration, parent fences, delete policy, audit, PRG — and
 -- NOTHING else. No join orchestration, money conversion, job control, daemon
 -- protocols, or arbitrary SQL hooks. Money/provisioning/multi-entity mutations
--- stay imperative service functions reached via actions.verbs ROUTING only.
+-- stay imperative service functions reached via actions.commands ROUTING only.
 --
 -- Include AFTER datatable.mix + admin_resource.mix + forms.mix + modals.mix
 -- (uses dt_/fm_/md_ + doc; includes nothing itself). Auth stays in the handler:
@@ -32,7 +32,7 @@
 --   policy: { guard?: fn($id)="", fetch?: fn($id)=row, del?: fn($id,$row),
 --             missing?: "No such X.", audit?: false|{table_ref, create_action,
 --             update_action, delete_action, detail_fn?: fn($vals,$id)=txt} },
---   actions?: { verbs?: { "<action>": fn($f,$user)=response } },
+--   actions?: { commands?: { "<action>": fn($f,$user)=response } },
 --   view_fn?: fn($viewid,$user)=response }   -- custom detail page (?view=)
 --
 -- Field kinds (v1): text email tel select checkbox textarea hidden date number
@@ -138,12 +138,12 @@ function rs_validate($rs)
       $wcols[$sc] = true
     end
   end
-  -- verbs are ROUTING ONLY and must never shadow the engine's own dispatch.
-  if $rs["actions"] != nil and $rs["actions"]["verbs"] != nil then
-    for each $vk in keys($rs["actions"]["verbs"])
+  -- commands are ROUTING ONLY and must never shadow the engine's own dispatch.
+  if $rs["actions"] != nil and $rs["actions"]["commands"] != nil then
+    for each $vk in keys($rs["actions"]["commands"])
       $vn = "" .. $vk
       if $vn == "save" or $vn == "delete" or $vn == "bulk_delete" or starts_with($vn, "row:") or starts_with($vn, "bulk_") then
-        die("resource " .. $rs["entity"] .. ": verb name is reserved: " .. $vn)
+        die("resource " .. $rs["entity"] .. ": command name is reserved: " .. $vn)
       end
     end
   end
@@ -542,14 +542,14 @@ function resource_main($rs0, $user)
   if $METHOD == "POST" then
     $f = parse_form($BODY)
     $action = "" .. fm_or($f["action"], "save")
-    -- custom verbs FIRST: pure routing — money/provisioning/multi-entity work
+    -- custom commands FIRST: pure routing — money/provisioning/multi-entity work
     -- stays in handler-implemented functions (engine never orchestrates them).
-    if $rs["actions"] != nil and $rs["actions"]["verbs"] != nil and $rs["actions"]["verbs"][$action] != nil then
-      return $rs["actions"]["verbs"][$action]($f, $user)
+    if $rs["actions"] != nil and $rs["actions"]["commands"] != nil and $rs["actions"]["commands"][$action] != nil then
+      return $rs["actions"]["commands"][$action]($f, $user)
     end
     $ra = dt_row_action($f)
     if $ra != nil then
-      if $ra["verb"] == "delete" then
+      if $ra["command"] == "delete" then
         $did = to_number($ra["id"])
         if $did == nil then
           return redirect_flash($rs["base_route"], "No such " .. $rs["noun"], "danger")

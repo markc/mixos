@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- New frontend verbs against a private native broker and the real loader.
+-- New frontend commands against a private native broker and the real loader.
 -- Renderer/Ced/apps fixtures are boundaries; loader I/O and files are real.
 $here=dirname(realpath($0))
 $repo=realpath($here .. "/../../..")
@@ -16,8 +16,8 @@ fn check($ok,$message)
   $checks.count=$checks.count+1
   if not $ok then raise("EDITOR_APP_BUS_TEST",$message) end
 end
-fn call($service,$verb,$body)
-  write_file($tmp .. "/call.mix","$body=$1\nsend " .. $service .. " " .. $verb .. " body=$body timeout=30\nprint(json_encode({rc:$rc,result:$result}))\n")
+fn call($service,$command,$body)
+  write_file($tmp .. "/call.mix","$body=$1\nsend " .. $service .. " " .. $command .. " body=$body timeout=30\nprint(json_encode({rc:$rc,result:$result}))\n")
   $r=run_argv([$mix,$tmp .. "/call.mix",json_encode($body)],{env:$env,clear_env:true,timeout:40,max_output:1000000})
   check($r.ok and not $r.stdout_truncated,"native call failed: " .. $r.stderr)
   $reply=json_parse($r.stdout)
@@ -26,9 +26,9 @@ fn call($service,$verb,$body)
   end
   return $reply
 end
-fn rpc($service,$verb,$body)
-  $r=call($service,$verb,$body)
-  check($r.rc==0,$verb .. ": " .. json_encode($r))
+fn rpc($service,$command,$body)
+  $r=call($service,$command,$body)
+  check($r.rc==0,$command .. ": " .. json_encode($r))
   return $r.result
 end
 fn start($name,$script,$extra)
@@ -47,10 +47,10 @@ end
 fn snapshot($selection)
   return rpc("scenes","scenes.editor.snapshot",{selection:$selection})
 end
-fn logs($name,$verb)
+fn logs($name,$command)
   $path=$tmp .. "/" .. $name .. ".jsonl"
   if not is_file($path) then return [] end
-  return filter(map(read_lines($path),fn($line)=json_parse($line)),fn($row)=$row.verb==$verb)
+  return filter(map(read_lines($path),fn($line)=json_parse($line)),fn($row)=$row.command==$command)
 end
 try
   $alive=false
@@ -133,7 +133,7 @@ try
   check(len(logs("ced","ced.open"))==$opened_before+1 and len(logs("ced","ced.diagnostics"))>=1,"source opens in Ced with loader diagnostics")
   $snap=snapshot($selection)
   $r=rpc("scenes","scenes.editor.action",{action:"mode",edge:"bottom",mode:"pinned",selection:$selection,state_token:$snap.state_token})
-  check($r.panels.bottom.mode=="pinned","panel plan executes native host verb and returns its result")
+  check($r.panels.bottom.mode=="pinned","panel plan executes native host command and returns its result")
   rpc("scenes","scenes.enable",{name:"notes"})
   $path=$tmp .. "/scenes/notes/scene.mix"
   $good=read_file($path)
@@ -166,7 +166,7 @@ try
     sleep(0.1)
   end
   check($failed and len(logs("apps","apps.launch"))==1,"failed first-run launch has a bounded native deadline and never spins relaunches")
-  $r=call("scenes","scenes.editor.action",{action:"arbitrary",target:"noded",verb:"anything"})
+  $r=call("scenes","scenes.editor.action",{action:"arbitrary",target:"noded",command:"anything"})
   check($r.rc==10 and $r.result.error_code=="SCENES_ARGUMENT","frontend cannot act as an arbitrary RPC relay")
   print("native scene editor Bus acceptance: " .. to_string($checks.count) .. " checks passed")
 finally

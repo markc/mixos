@@ -19,7 +19,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, mpsc};
 use std::task::Poll;
 use std::time::{Duration, Instant};
-use toolkit::command::{CommandError, Origin};
+use toolkit::action::{CommandError, Origin};
 use toolkit::{Registry, Strings, Theme, drive};
 use vitals::engine::Signal;
 use vitals::model::{self, APP_ID};
@@ -45,7 +45,7 @@ pub enum Event {
 /// Apply one finished event to the engine.
 pub fn apply_event(engine: &mut Engine, event: Event) {
     match event {
-        Event::Delivery(Delivery::Command { id, verb, body }) => engine.command(id, &verb, &body),
+        Event::Delivery(Delivery::Command { id, command: command_name, body }) => engine.command(id, &command_name, &body),
         Event::Delivery(Delivery::Changed) => engine.services_changed(),
         Event::Delivery(Delivery::Connected) => engine.set_connected(true),
         Event::Delivery(Delivery::Disconnected) => engine.set_connected(false),
@@ -93,15 +93,15 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
     }
 }
 
-/// The app prefix of Monitor's verbs, and of its drive verbs.
+/// The app prefix of Monitor's commands, and of its drive commands.
 pub const APP: &str = "monitor";
 
-/// The whole Bus surface: the engine's verbs and the window's drive verbs.
+/// The whole Bus surface: the engine's commands and the window's drive commands.
 pub fn describe() -> Value {
     let mut surface = model::describe();
-    if let Some(verbs) = surface["verbs"].as_array_mut() {
-        verbs.extend(drive::describe(APP));
-        verbs.extend(citizen::macros::describe(APP));
+    if let Some(command_names) = surface["commands"].as_array_mut() {
+        command_names.extend(drive::describe(APP));
+        command_names.extend(citizen::macros::describe(APP));
     }
     surface
 }
@@ -130,7 +130,7 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                         ),
                         Err(CommandError::Unknown(_)) => (
                             10,
-                            json!({"error_code":"UNKNOWN_COMMAND","message":label("unknown-command")}),
+                            json!({"error_code":"UNKNOWN_ACTION","message":label("unknown-action")}),
                         ),
                         Err(CommandError::Disabled(_)) => (
                             10,
@@ -142,7 +142,7 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                 Effect::Describe { id, help } => {
                     let surface = describe();
                     let body = if help {
-                        surface["verbs"].clone()
+                        surface["commands"].clone()
                     } else {
                         surface
                     };
@@ -279,7 +279,7 @@ impl Shell {
         });
         let mut shell = Self {
             engine: Engine::new(label),
-            commands: crate::commands::registry(),
+            commands: crate::actions::registry(),
             strings: strings(),
             file_theme: theme.clone(),
             theme,
@@ -381,8 +381,8 @@ impl Shell {
     }
 
     fn release(&mut self) {
-        while let Some(Event::Delivery(Delivery::Command { verb, .. })) = self.held.front() {
-            let joins_queue = verb.strip_prefix("monitor.").is_some_and(drive::queues);
+        while let Some(Event::Delivery(Delivery::Command { command: command_name, .. })) = self.held.front() {
+            let joins_queue = command_name.strip_prefix("monitor.").is_some_and(drive::queues);
             if self.exiting || (drive::pending(&self.ctx) && !joins_queue) {
                 return;
             }
@@ -415,13 +415,13 @@ impl Shell {
                 ticket,
                 kind,
                 target,
-                verb,
+                command: command_name,
                 body,
             } => {
                 let bus = self.bus.clone();
                 self.spawn(async move {
                     let result = bus
-                        .raw_within(&target, verb, body.to_string(), FETCH_BUDGET)
+                        .raw_within(&target, command_name, body.to_string(), FETCH_BUDGET)
                         .await;
                     Event::Fetched(kind, ticket, reply_value(result))
                 });
@@ -438,8 +438,8 @@ impl Shell {
                 self.ctx.request_repaint();
             }
             Effect::Reply { id, rc, body } => self.bus.reply(id, rc, body),
-            Effect::Drive { id, verb, args } => {
-                if let Some(answer) = drive::request(&self.ctx, id, &verb, &args) {
+            Effect::Drive { id, command: command_name, args } => {
+                if let Some(answer) = drive::request(&self.ctx, id, &command_name, &args) {
                     self.bus.reply(answer.id, answer.rc, answer.body);
                 }
             }
@@ -517,7 +517,7 @@ impl Shell {
         let bus = self.bus.clone();
         self.spawn(async move {
             let result = bus
-                .raw_within(read.service, read.verb, read.body.to_string(), LOOK_BUDGET)
+                .raw_within(read.service, read.command, read.body.to_string(), LOOK_BUDGET)
                 .await;
             Event::Look(read.ticket, result)
         });
@@ -569,7 +569,7 @@ impl Shell {
     }
 
     fn choice(&self) -> toolkit::theme_menu::Choice {
-        crate::commands::choice(&self.engine)
+        crate::actions::choice(&self.engine)
     }
 
     fn install_theme(&mut self) {
@@ -658,16 +658,16 @@ mod tests {
     }
 
     #[test]
-    fn every_verb_is_described_and_every_described_verb_is_handled() {
+    fn every_command_is_described_and_every_described_command_is_handled() {
         let surface = describe();
-        let names: Vec<String> = surface["verbs"]
+        let names: Vec<String> = surface["commands"]
             .as_array()
             .unwrap()
             .iter()
             .map(|v| v["name"].as_str().unwrap().into())
             .collect();
-        let mut expected: Vec<String> = model::VERBS.iter().map(|v| (*v).to_owned()).collect();
-        expected.extend(drive::VERBS.iter().map(|v| format!("{APP}.{v}")));
+        let mut expected: Vec<String> = model::COMMANDS.iter().map(|v| (*v).to_owned()).collect();
+        expected.extend(drive::COMMANDS.iter().map(|v| format!("{APP}.{v}")));
         expected.extend(
             citizen::macros::describe(APP)
                 .iter()
@@ -680,9 +680,9 @@ mod tests {
             }
             let mut e = engine();
             e.command(1, name, "{}");
-            let effects = settle(&mut e, &crate::commands::registry(), &crate::strings());
+            let effects = settle(&mut e, &crate::actions::registry(), &crate::strings());
             assert!(
-                !effects.iter().any(|x| matches!(x, Effect::Reply { body, .. } if body["error_code"] == "UNKNOWN_VERB")),
+                !effects.iter().any(|x| matches!(x, Effect::Reply { body, .. } if body["error_code"] == "UNKNOWN_COMMAND")),
                 "{name}: {effects:?}"
             );
         }
@@ -690,7 +690,7 @@ mod tests {
 
     #[test]
     fn every_command_is_reachable_by_execute() {
-        let (commands, strings) = (crate::commands::registry(), crate::strings());
+        let (commands, strings) = (crate::actions::registry(), crate::strings());
         for command in commands.iter() {
             let mut e = engine();
             e.command(1, "monitor.execute", &json!({"id": command.id}).to_string());
@@ -734,16 +734,16 @@ mod tests {
 
     #[test]
     fn the_bus_and_the_window_reach_the_same_state() {
-        let commands = crate::commands::registry();
+        let commands = crate::actions::registry();
         let strings = crate::strings();
         let mut bus = engine();
-        for (id, (verb, body)) in (1..).zip([
+        for (id, (command_name, body)) in (1..).zip([
             ("monitor.tab", json!({"tab": "processes"})),
             ("monitor.sort", json!({"column": "memory"})),
             ("monitor.filter", json!({"text": "fire"})),
             ("monitor.tree", json!({"on": true})),
         ]) {
-            bus.command(id, verb, &body.to_string());
+            bus.command(id, command_name, &body.to_string());
             settle(&mut bus, &commands, &strings);
         }
         let mut ui = engine();

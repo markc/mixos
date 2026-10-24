@@ -10,14 +10,14 @@ mkdir($tmp)
 fn check($condition,$message)
   if not $condition then raise("EDITOR_APP_TEST",$message) end
 end
-fn rpc($target,$verb,$args)
+fn rpc($target,$command,$args)
   if $target=="scenes" then raise("SELF_RPC","recursive loader RPC") end
-  if $verb=="shell.scenes.list" then return [] end
-  if $verb=="shell.props.get" then return {panels:{bottom:{mode:"docked",width_px:40,pages:[],declared:[]}}} end
-  if $verb=="shell.scene.validate" then return {valid:true} end
-  if $verb=="apps.launch" then return {launched:true,args:$args} end
-  if $verb=="scene-editor.show" then return {shown:true,args:$args} end
-  if $verb=="scene-editor.quit" then return {quitting:true} end
+  if $command=="shell.scenes.list" then return [] end
+  if $command=="shell.props.get" then return {panels:{bottom:{mode:"docked",width_px:40,pages:[],declared:[]}}} end
+  if $command=="shell.scene.validate" then return {valid:true} end
+  if $command=="apps.launch" then return {launched:true,args:$args} end
+  if $command=="scene-editor.show" then return {shown:true,args:$args} end
+  if $command=="scene-editor.quit" then return {quitting:true} end
   raise("SCENES_UPSTREAM","injected host refusal",{upstream:{error_code:"HOST_REFUSED",message:"test host refused"}})
 end
 fn parsed($path,$opts) return {ok:true,problems:[]} end
@@ -51,7 +51,7 @@ try
   $s=$app.request($s,"action",{action:"remove",selection:$selection,state_token:$token,confirmed:true},$loader)
   check($s.rc==0 and not is_dir($tmp .. "/notes") and is_dir($tmp .. "/.recovery"),"confirmed removal retains real recovery copy: " .. json_encode($s.response))
   check($s.response.selection.scene==nil,"removed identity clears selection")
-  $s=$app.request($s,"action",{action:"arbitrary",target:"noded",verb:"anything"},$loader)
+  $s=$app.request($s,"action",{action:"arbitrary",target:"noded",command:"anything"},$loader)
   check($s.rc==10 and $s.response.error_code=="SCENES_ARGUMENT","caller cannot select arbitrary relay target")
   $s=$app.request($s,"snapshot",{selection:{view:"sideways"}},$loader)
   check($s.rc==10 and $s.response.error_code=="SCENES_ARGUMENT","invalid view refused")

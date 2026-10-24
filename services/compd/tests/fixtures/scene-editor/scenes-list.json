@@ -26,7 +26,7 @@
     {
       "name": "panel", "installed": true, "enabled": true, "mounted": true, "revision": 18, "generation": 7,
       "behaviour": "running", "ready": true, "template": "panel",
-      "diagnostic": {"error_code": "SCENES_UPSTREAM", "message": "scene host refused request", "context": {"target": "shell", "verb": "shell.scene.load", "rc": 10, "upstream": {"diagnostics": [{"line": 12, "code": "binding-policy", "severity": "Error", "message": "${env.HOME} is not a model path"}]}}, "file": "/home/user/.config/mixos/scenes/panel/scene.mix", "attempted_digest": "0f6a0c8f1d2b3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e", "last_good_revision": 18},
+      "diagnostic": {"error_code": "SCENES_UPSTREAM", "message": "scene host refused request", "context": {"target": "shell", "command": "shell.scene.load", "rc": 10, "upstream": {"diagnostics": [{"line": 12, "code": "binding-policy", "severity": "Error", "message": "${env.HOME} is not a model path"}]}}, "file": "/home/user/.config/mixos/scenes/panel/scene.mix", "attempted_digest": "0f6a0c8f1d2b3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e", "last_good_revision": 18},
       "diagnostics": [],
       "exit": null,
       "attempted_digest": "0f6a0c8f1d2b3e4a5968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6e",

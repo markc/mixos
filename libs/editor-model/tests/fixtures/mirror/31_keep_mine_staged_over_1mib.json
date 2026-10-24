@@ -7,11 +7,11 @@
   "steps": [
     {"epoch_change": {"new_epoch": "0000e1e2", "text": ""}},
     {"action": {"keep_mine": {}}},
-    {"send": {"id": "K1", "verb": "edit.insert", "caller": "local:ced",
+    {"send": {"id": "K1", "command": "edit.insert", "caller": "local:ced",
       "args": {"buffer": "b2_0000e1e2", "at": 0, "text": {"repeat": ["abcdefgh\n", 116508]}, "expect_rev": 0, "origin": "human:ced", "op_id": "c00000001-keep1-000001"},
       "expect": {"rc": 0, "rev": 1}}},
     {"deliver_all": {}},
-    {"send": {"id": "K2", "verb": "edit.insert", "caller": "local:ced",
+    {"send": {"id": "K2", "command": "edit.insert", "caller": "local:ced",
       "args": {"buffer": "b2_0000e1e2", "at": 1048572, "text": {"repeat": ["abcdefgh\n", 43492]}, "expect_rev": 1, "origin": "human:ced", "op_id": "c00000001-keep1-000002"},
       "expect": {"rc": 0, "rev": 2}}},
     {"deliver_all": {}}

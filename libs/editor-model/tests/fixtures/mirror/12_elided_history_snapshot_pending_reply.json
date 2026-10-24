@@ -6,9 +6,9 @@
   "initial": "hello world\n",
   "run_id": 1,
   "steps": [
-    {"agent": {"caller": "local:agent", "verb": "edit.insert", "args": {"buffer": "b1_0000e1e1", "at": 0, "text": "0123456789", "origin": "agent:ctl-90"}, "expect": {"rc": 0, "rev": 1}}},
+    {"agent": {"caller": "local:agent", "command": "edit.insert", "args": {"buffer": "b1_0000e1e1", "at": 0, "text": "0123456789", "origin": "agent:ctl-90"}, "expect": {"rc": 0, "rev": 1}}},
     {"local": {"id": "L1", "edit": {"items": [[5, 5, "!"]], "coalesce": true}}},
-    {"send": {"id": "L1", "verb": "edit.insert", "caller": "local:ced",
+    {"send": {"id": "L1", "command": "edit.insert", "caller": "local:ced",
       "args": {"buffer": "b1_0000e1e1", "at": 5, "text": "!", "base_rev": 0, "coalesce": true, "origin": "human:ced", "op_id": "c00000001-000001"},
       "expect": {"rc": 0, "rev": 2}}},
     {"local": {"id": "L2", "edit": {"items": [[6, 6, "?"]], "coalesce": true}}},

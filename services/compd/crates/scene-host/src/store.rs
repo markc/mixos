@@ -24,7 +24,7 @@ use crate::seat::{
     DialogError, DialogSeat, DialogSlot, Edge, PageRegistry, PageSeat, ToastSeat, ToastSlot,
 };
 use crate::templates::{PreparedLists, validate_templates};
-use crate::verb::SceneVerb;
+use crate::command::SceneCommand;
 
 /// The command every scene change carries, whatever the host registered as.
 pub const CHANGED_COMMAND: &str = "shell.scene.changed";
@@ -59,7 +59,7 @@ pub struct SceneEntry {
     /// Kept across a hide, never reset to 0.
     pub(crate) applied: u64,
     pub(crate) owner: Option<SceneOwner>,
-    /// Dialogs and toasts map between their show and hide verbs (or close
+    /// Dialogs and toasts map between their show and hide commands (or close
     /// buttons); edge scenes ignore this flag.
     pub(crate) visible: bool,
     // Set by a loader's JSON load envelope; zero fences a stopped behaviour.
@@ -388,12 +388,12 @@ impl SceneStore {
     /// last-good. `Layout` and `List` are the host's, not the store's.
     pub fn dispatch(
         &mut self,
-        verb: SceneVerb,
+        kind: SceneCommand,
         body: &str,
         args: &Value,
         mount: &mut SceneMount<'_>,
     ) -> Dispatched {
-        let result = self.request_mounted(verb, body, args, Some(mount));
+        let result = self.request_mounted(kind, body, args, Some(mount));
         // A pre-empted dialog holder hears before the new holder's own
         // summary, so an owner never sees its successor first.
         let mut publish = self.take_notices();
@@ -410,7 +410,7 @@ impl SceneStore {
             }
             Err(error) => {
                 let error = refusal(error);
-                if matches!(verb, SceneVerb::Load | SceneVerb::Patch) {
+                if matches!(kind, SceneCommand::Load | SceneCommand::Patch) {
                     let name = error["scene"].as_str().or_else(|| args["scene"].as_str());
                     let revision = name
                         .and_then(|name| self.revisions.get(name))
@@ -444,23 +444,23 @@ impl SceneStore {
     #[cfg(test)]
     pub(crate) fn request(
         &mut self,
-        verb: SceneVerb,
+        kind: SceneCommand,
         body: &str,
         args: &Value,
     ) -> Result<(Value, Option<Value>), Value> {
-        self.request_mounted(verb, body, args, None)
+        self.request_mounted(kind, body, args, None)
     }
 
     pub(crate) fn request_mounted(
         &mut self,
-        verb: SceneVerb,
+        kind: SceneCommand,
         body: &str,
         args: &Value,
         mount: Option<&mut SceneMount<'_>>,
     ) -> Result<(Value, Option<Value>), Value> {
         let name = args["scene"].as_str().unwrap_or_default();
-        match verb {
-            SceneVerb::Validate => {
+        match kind {
+            SceneCommand::Validate => {
                 let document = scene::parse(body).map_err(|d| json!({"diagnostics":d}))?;
                 check_size(&document)?;
                 let diagnostics = scene::lint(&document);
@@ -471,7 +471,7 @@ impl SceneStore {
                     None,
                 ))
             }
-            SceneVerb::Load => {
+            SceneCommand::Load => {
                 let managed_generation = if args.get("model_generation").is_some() {
                     Some(args["model_generation"].as_u64().filter(|g| *g <= 9_007_199_254_740_990).ok_or_else(
                         || json!({"error_code":"SCENE_MODEL_GENERATION", "message":"model_generation must be an exact nonnegative integer"}),
@@ -507,7 +507,7 @@ impl SceneStore {
                 }
                 Ok(result)
             }
-            SceneVerb::Describe => {
+            SceneCommand::Describe => {
                 let value = if let Some(family) = args["family"].as_str() {
                     json!(scene::describe(family).ok_or_else(|| json!({"error":"unknown family"}))?)
                 } else {
@@ -524,12 +524,12 @@ impl SceneStore {
                 };
                 Ok((value, None))
             }
-            SceneVerb::Get | SceneVerb::Watch => {
+            SceneCommand::Get | SceneCommand::Watch => {
                 let entry = self
                     .scenes
                     .get(name)
                     .ok_or_else(|| json!({"error":"unknown scene"}))?;
-                let value = if verb == SceneVerb::Watch {
+                let value = if kind == SceneCommand::Watch {
                     json!({"scene":name,"revision":entry.revision,"digest":digest(&entry.tree),
                         "applied_revision":entry.applied,
                         "diagnostics":entry.diagnostics()})
@@ -551,7 +551,7 @@ impl SceneStore {
                 };
                 Ok((value, None))
             }
-            SceneVerb::Patch => {
+            SceneCommand::Patch => {
                 let entry = self
                     .scenes
                     .get(name)
@@ -625,7 +625,7 @@ impl SceneStore {
                 check_size(&document)?;
                 self.accept(document, mount, false, false)
             }
-            SceneVerb::Unload => {
+            SceneCommand::Unload => {
                 let entry = self
                     .scenes
                     .remove(name)
@@ -646,25 +646,25 @@ impl SceneStore {
                 }
                 Ok((json!({"scene":name,"unloaded":true}), None))
             }
-            SceneVerb::Layout
-            | SceneVerb::List
-            | SceneVerb::DialogShow
-            | SceneVerb::DialogHide
-            | SceneVerb::ToastShow
-            | SceneVerb::ToastHide
-            | SceneVerb::Ping
-            | SceneVerb::Info
-            | SceneVerb::PropsGet
-            | SceneVerb::PanelState
-            | SceneVerb::PanelMode
-            | SceneVerb::PanelPageSet
-            | SceneVerb::PanelOrder
-            | SceneVerb::PanelResize
-            | SceneVerb::MenuOpen
-            | SceneVerb::MenuChoose
-            | SceneVerb::MenuClose
-            | SceneVerb::Panel { .. }
-            | SceneVerb::NotServed => Err(json!({"error_code":"UNIMPLEMENTED",
+            SceneCommand::Layout
+            | SceneCommand::List
+            | SceneCommand::DialogShow
+            | SceneCommand::DialogHide
+            | SceneCommand::ToastShow
+            | SceneCommand::ToastHide
+            | SceneCommand::Ping
+            | SceneCommand::Info
+            | SceneCommand::PropsGet
+            | SceneCommand::PanelState
+            | SceneCommand::PanelMode
+            | SceneCommand::PanelPageSet
+            | SceneCommand::PanelOrder
+            | SceneCommand::PanelResize
+            | SceneCommand::MenuOpen
+            | SceneCommand::MenuChoose
+            | SceneCommand::MenuClose
+            | SceneCommand::Panel { .. }
+            | SceneCommand::NotServed => Err(json!({"error_code":"UNIMPLEMENTED",
                 "message":"answered by the host, not the scene store"})),
         }
     }

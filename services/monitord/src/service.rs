@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The verb table and dispatch. Every verb reads; none changes the host
+//! The command table and dispatch. Every command reads; none changes the host
 //! (docs/docs/decisions/2026-10-16-monitord-and-monitor.md).
 use crate::engine::Engine;
 use crate::history;
@@ -10,24 +10,24 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-pub struct Verb {
+pub struct Command {
     pub name: &'static str,
     pub args: &'static [&'static str],
     pub summary: &'static str,
 }
 
-pub const VERBS: &[Verb] = &[
-    Verb {
+pub const COMMANDS: &[Command] = &[
+    Command {
         name: "monitord.status",
         args: &[],
         summary: "monitord itself: version, uptime, sample interval, the process sampler and the history database",
     },
-    Verb {
+    Command {
         name: "monitord.snapshot",
         args: &[],
         summary: "The system now: CPU and each core, memory, swap, load, pressure, disks, filesystems, network interfaces",
     },
-    Verb {
+    Command {
         name: "monitord.processes",
         args: &[
             "sort",
@@ -40,34 +40,34 @@ pub const VERBS: &[Verb] = &[
         ],
         summary: "The process table with CPU share, memory and I/O; sorted, filtered, limited, or as a tree",
     },
-    Verb {
+    Command {
         name: "monitord.process",
         args: &["pid"],
         summary: "One process in full: command line, executable, memory, I/O, open files, unit, children",
     },
-    Verb {
+    Command {
         name: "monitord.series",
         args: &[],
         summary: "The history series monitord holds, live (last ten minutes) and stored",
     },
-    Verb {
+    Command {
         name: "monitord.history",
         args: &["series", "from", "since", "to", "max_points"],
         summary: "History of named series as [time, avg, min, max] points, from memory or the database",
     },
 ];
 
-pub fn manifest() -> Vec<bus::VerbDescriptor> {
-    std::iter::once(bus::VerbDescriptor::new(
+pub fn manifest() -> Vec<bus::CommandDescriptor> {
+    std::iter::once(bus::CommandDescriptor::new(
         "HELP",
         &[],
-        "List served verbs",
+        "List served commands",
         true,
     ))
     .chain(
-        VERBS
+        COMMANDS
             .iter()
-            .map(|v| bus::VerbDescriptor::new(v.name, v.args, v.summary, true)),
+            .map(|v| bus::CommandDescriptor::new(v.name, v.args, v.summary, true)),
     )
     .collect()
 }
@@ -88,11 +88,11 @@ fn args<T: for<'de> Deserialize<'de> + Default>(body: &Value) -> Result<T, Value
     }
 }
 
-/// Answer one verb. `Err` carries the refusal body (rc 10 on the wire).
-pub async fn dispatch(engine: &Arc<Engine>, verb: &str, body: &Value) -> Result<Value, Value> {
-    match verb {
+/// Answer one command. `Err` carries the refusal body (rc 10 on the wire).
+pub async fn dispatch(engine: &Arc<Engine>, command_name: &str, body: &Value) -> Result<Value, Value> {
+    match command_name {
         "HELP" => Ok(json!({
-            "verbs": VERBS.iter().map(|v| json!({"name": v.name, "args": v.args, "summary": v.summary})).collect::<Vec<_>>()
+            "commands": COMMANDS.iter().map(|v| json!({"name": v.name, "args": v.args, "summary": v.summary})).collect::<Vec<_>>()
         })),
         "monitord.status" => Ok(status(engine)),
         "monitord.snapshot" => {
@@ -112,7 +112,7 @@ pub async fn dispatch(engine: &Arc<Engine>, verb: &str, body: &Value) -> Result<
                 .await
                 .map_err(failed)?
         }
-        other => Err(json!({"status": "unknown_verb", "verb": other})),
+        other => Err(json!({"status": "UNKNOWN_COMMAND", "command": other})),
     }
 }
 

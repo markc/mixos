@@ -4,14 +4,14 @@
 //!
 //! Pure data — no I/O, no recorder state, no thread-locals. The
 //! `local_snapshot()` reader (slice 2b), the `disk_snapshot()` reader
-//! (slice 3), and the `<svc>.stats.snapshot` Bus verb (slice 5) all
+//! (slice 3), and the `<svc>.stats.snapshot` Bus command (slice 5) all
 //! return these types verbatim; the JSONL line schema in §4.1 is the
 //! serialized form of `Series` + producer metadata.
 
 use std::collections::BTreeMap;
 
 /// Frozen v1 snapshot shape returned by every read path
-/// (`local_snapshot`, `disk_snapshot`, Bus verb).
+/// (`local_snapshot`, `disk_snapshot`, Bus command).
 #[derive(Debug, Clone)]
 pub struct Snapshot {
     pub service: String,
@@ -102,7 +102,7 @@ pub enum LabelSensitivity {
     Safe,
     /// Labels may carry user-controlled bytes that cross trust
     /// boundaries. JSONL records carry `labels_hash` in place of raw
-    /// `labels`; the `<svc>.stats.snapshot` Bus verb returns the raw
+    /// `labels`; the `<svc>.stats.snapshot` Bus command returns the raw
     /// labels only to callers holding
     /// `stats.snapshot:raw-labels:<svc>`.
     Restricted,

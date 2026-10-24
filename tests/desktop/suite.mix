@@ -17,7 +17,7 @@
 -- one beside the gates, else /opt/mixos/bin/compd.
 --
 -- Harness gates (nested_host_lib; run once): desktop (with the waybar,
--- fuzzel and xmessage arms), control, workspaces, workspace_verbs,
+-- fuzzel and xmessage arms), control, workspaces, workspace_commands,
 -- agent_seat, presentation (g1plus), region, clients.
 -- Standalone gates (the compd binary as their first argument), once per
 -- --scales entry: nested_smoke (--bus), chrome, scene (at a second scale it
@@ -145,7 +145,7 @@ $GATES = [
     args: ["--layer-client", "waybar", "--overlay-client", "fuzzel", "--x-client", "xmessage"]},
   {name: "control", script: "comp_control_smoke.mix", style: "harness", args: []},
   {name: "workspaces", script: "comp_workspaces_gate.mix", style: "harness", args: []},
-  {name: "workspace_verbs", script: "comp_workspace_verbs_gate.mix", style: "harness", args: []},
+  {name: "workspace_commands", script: "comp_workspace_commands_gate.mix", style: "harness", args: []},
   {name: "agent_seat", script: "comp_agent_seat_gate.mix", style: "harness", args: ["--seconds", $SEAT_SECONDS]},
   {name: "presentation", script: "comp_presentation_smoke.mix", style: "harness", args: ["--gate", "g1plus"]},
   {name: "region", script: "comp_region_select_gate.mix", style: "harness", args: []},

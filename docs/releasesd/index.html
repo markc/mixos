@@ -320,7 +320,7 @@ system update path.</p>
 <pre><code class="language-sh">send releases releases.check
 send releases releases.install body='{"app": "example"}' timeout=600
 </code></pre>
-<p>The verbs, bodies and replies are in the <a href="/docs/spec/releases/">releases contract</a>.
+<p>The commands, bodies and replies are in the <a href="/docs/spec/releases/">releases contract</a>.
 After any change it asks the application registry to rescan, so the
 launcher updates by itself.</p>
 <h2 id="sharing-one-install-with-a-container">Sharing one install with a container</h2>
@@ -342,7 +342,7 @@ package, identity in <code>component.mx</code>. The source is
 <tr><td><code>scripts/releases.mix</code></td><td>the command line, same logic in-process</td></tr>
 <tr><td><code>units/releasesd@.service</code></td><td>the session unit</td></tr>
 <tr><td><code>tests/releases_test.mix</code></td><td>offline: validation, verification, install, rollback, links</td></tr>
-<tr><td><code>tests/releasesd_test.mix</code></td><td>every verb over a private broker and a stand-in API</td></tr>
+<tr><td><code>tests/releasesd_test.mix</code></td><td>every command over a private broker and a stand-in API</td></tr>
 </tbody></table>
 <p>Run the tests from the checkout root. The offline test needs <code>bsdtar</code> for
 two hostile fixtures (the service itself unpacks with Mix's <code>tar_unpack</code>); the Bus test
@@ -350,7 +350,7 @@ needs a <code>noded</code>, by default <code>/opt/mixos/bin/noded</code>, or <co
 <pre><code class="language-sh">mix services/releasesd/tests/releases_test.mix
 mix services/releasesd/tests/releasesd_test.mix
 </code></pre>
-<p>The verbs are registered in <code>docs/docs/spec/bus/verbs.conf.mix</code>.</p>
+<p>The commands are registered in <code>docs/docs/spec/bus/commands.conf.mix</code>.</p>
         </article>
         <p class="doc-source"><a href="/releasesd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

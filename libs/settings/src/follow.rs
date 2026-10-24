@@ -34,7 +34,7 @@ pub const PROFILE: &str = "default";
 pub struct Read {
     pub ticket: u64,
     pub service: &'static str,
-    pub verb: &'static str,
+    pub command: &'static str,
     pub body: Value,
 }
 
@@ -174,7 +174,7 @@ impl Follower {
         Read {
             ticket: self.next_ticket,
             service: SERVICE,
-            verb: "settings.get",
+            command: "settings.get",
             body: json!({"binding":self.binding,"view":"summary"}),
         }
     }
@@ -200,7 +200,7 @@ impl Follower {
         Some(Read {
             ticket: 0,
             service: SERVICE,
-            verb: "settings.apply",
+            command: "settings.apply",
             body: json!({
                 "binding": self.binding,
                 "expected_incarnation": incarnation,
@@ -382,7 +382,7 @@ mod tests {
         );
         assert!(f.following());
         let apply = f.apply("op-1", changes.clone()).unwrap();
-        assert_eq!((apply.service, apply.verb), (SERVICE, "settings.apply"));
+        assert_eq!((apply.service, apply.command), (SERVICE, "settings.apply"));
         let request: crate::model::ApplyRequest =
             serde_json::from_value(apply.body.clone()).unwrap();
         assert_eq!(request.binding, *f.binding());
@@ -472,7 +472,7 @@ mod tests {
     fn a_read_yields_the_look_once_per_revision() {
         let mut f = Follower::new("example");
         let read = f.read().unwrap();
-        assert_eq!(read.verb, "settings.get");
+        assert_eq!(read.command, "settings.get");
         assert_eq!(read.body["binding"]["instance"], "example");
         let (followed, next) =
             f.answered(read.ticket, Some((0, &snapshot("i", "7", "forest"), None)));

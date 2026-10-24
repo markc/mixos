@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/verbs.conf.mix");
+const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
 
 #[test]
 fn manifest_matches_registered_names_and_classes() {
@@ -16,23 +16,23 @@ fn manifest_matches_registered_names_and_classes() {
                 .unwrap()
         })
         .collect();
-    let manifest = indexd::bus::verb_manifest();
+    let manifest = indexd::bus::command_manifest();
     let names: Vec<_> = manifest.iter().map(|v| v.name.as_str()).collect();
     assert_eq!(registered, names);
     assert_eq!(names.len(), 11);
-    for verb in manifest {
+    for command in manifest {
         let line = REGISTRY
             .lines()
-            .find(|l| l.contains(&format!("name:\"{}\"", verb.name)))
+            .find(|l| l.contains(&format!("name:\"{}\"", command.name)))
             .unwrap();
         assert!(
-            line.contains(if verb.read_only {
+            line.contains(if command.read_only {
                 "class:\"query\""
             } else {
                 "class:\"intent\""
             }),
             "{}",
-            verb.name
+            command.name
         );
     }
 }

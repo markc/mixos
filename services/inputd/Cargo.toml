@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Input broker: keys become Bus verbs, the user keys stay the user's, and the grab follows the VT"
+description = "Input broker: keys become Bus commands, the user keys stay the user's, and the grab follows the VT"
 
 [package.metadata.mixos]
 component = "inputd"

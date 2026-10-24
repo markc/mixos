@@ -22,5 +22,5 @@ pinned by noded and bus tests.
 ## 0.18.2
 
 Transplant the native broker, session authority and mesh routing to the MixOS
-workspace. Preserve ABP verbs, admission domains and session transcript bytes.
+workspace. Preserve ABP commands, admission domains and session transcript bytes.
 Use strict MixOS configuration and owned shutdown signalling.

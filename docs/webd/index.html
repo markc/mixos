@@ -259,7 +259,7 @@ performs no deployment or data migration.</p>
 <p>Source: <a href="https://github.com/markc/mixos/tree/main/services/webd">services/webd</a>.</p>
 <h2 id="source-gate-limitation">Source gate limitation</h2>
 <p>The Rust suite passes, including the service's registry comparison. The
-repository-wide verb source gate currently treats embedded HTTP template
+repository-wide command source gate currently treats embedded HTTP template
 fragments as standalone programs. It reports undefined prelude functions
 and request globals. With those symbols declared to the native linter,
 <code>vhosts/apps/sw.mix:182,193,220,294</code> and

@@ -2,7 +2,7 @@
 # drawn on the GPU by term-render (AGENTS.md §4.1).
 [package]
 name = "term"
-# Its own version: the term.* verbs are a public contract (CHANGELOG.md).
+# Its own version: the term.* commands are a public contract (CHANGELOG.md).
 description = "Terminal: tabs and split panes over the term-core engine, the grid drawn on the GPU, every action a Bus-reachable command"
 version = "0.4.0"
 edition.workspace = true
@@ -23,7 +23,7 @@ mod_module_files = "deny"
 [dependencies]
 bus = { workspace = true, features = ["native"] }
 buildinfo.workspace = true
-# The outbox for term.command.executed.
+# The outbox for term.action.executed.
 citizen.workspace = true
 eframe.workspace = true
 egui.workspace = true
@@ -46,7 +46,7 @@ design.workspace = true
 egui-wgpu.workspace = true
 egui_kittest.workspace = true
 term-core = { path = "crates/term-core", features = ["test-support"] }
-# A real broker for the window verbs over the Bus (tests/bus.rs).
+# A real broker for the window commands over the Bus (tests/bus.rs).
 test-broker = { path = "../../libs/test-broker" }
 tokio = { workspace = true, features = ["rt-multi-thread", "time"] }
 

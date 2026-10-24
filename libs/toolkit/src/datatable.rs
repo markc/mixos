@@ -30,15 +30,15 @@
 //! id, each row a `Row` node labelled with its cells' text (comma
 //! separated) and marked selected, each header a button carrying its sort
 //! direction, and the pager's buttons are labelled ("Next page", …). The
-//! drive verbs (`<app>.ui.tree role=Row`, `<app>.ui.click`) read and drive
+//! drive commands (`<app>.ui.tree role=Row`, `<app>.ui.click`) read and drive
 //! it as a hand would. For the data itself an app reports
-//! [`TableState::describe`] and [`rows_json`] in its own state verb.
+//! [`TableState::describe`] and [`rows_json`] in its own state command.
 //!
 //! Colours, row heights and type all come from the theme: the row height
 //! is the chrome's menu-row height (a design token), compact by default.
 
 pub mod model;
-pub mod verbs;
+pub mod commands;
 
 pub use model::{
     Align, Column, DEFAULT_PAGE_SIZE, Density, Order, PageMove, Pick, SelectionMode, Sort,
@@ -382,7 +382,7 @@ impl<'a> DataTable<'a> {
 
     fn label(&self, key: &str) -> String {
         match self.strings {
-            Some(strings) => crate::command::label_text(strings, key),
+            Some(strings) => crate::action::label_text(strings, key),
             None => crate::strings::own(key),
         }
     }

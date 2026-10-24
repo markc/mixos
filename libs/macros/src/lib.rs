@@ -5,7 +5,7 @@ mod catalogue;
 mod runner;
 pub mod session;
 mod storage;
-pub mod verbs;
+pub mod commands;
 
 pub use catalogue::{
     Catalogue, Diagnostic, Entry, Library, Roots, Targets, Tier, check_editable, valid_destination,

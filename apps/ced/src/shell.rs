@@ -42,7 +42,7 @@ use crate::app::App;
 use crate::bus::{BusHandle, Delivery};
 use crate::view::{UiEvent, view};
 
-/// The app prefix of ced's verbs, and of its drive verbs.
+/// The app prefix of ced's commands, and of its drive commands.
 pub const APP: &str = "ced";
 
 /// How long a menu or Bus paste waits for the platform's clipboard, in
@@ -184,7 +184,7 @@ impl Shell {
         let palette = editor::Palette::from_theme(&theme);
         let mut shell = Self {
             app,
-            commands: crate::commands::registry(),
+            commands: crate::actions::registry(),
             strings: crate::strings(),
             base: theme.clone(),
             file_theme: theme.clone(),
@@ -290,24 +290,24 @@ impl Shell {
         self.release();
     }
 
-    /// Run held Bus commands in order. Drive verbs that only join the drive
+    /// Run held Bus commands in order. Drive commands that only join the drive
     /// queue go straight on; anything else waits for drive input before it.
     fn release(&mut self) {
         while let Some(cmd) = self.held.front() {
-            let drive_verb = cmd
-                .verb
+            let drive_command = cmd
+                .command
                 .strip_prefix("ced.")
-                .filter(|v| drive::VERBS.contains(v))
+                .filter(|v| drive::COMMANDS.contains(v))
                 .map(str::to_owned);
-            let joins_queue = drive_verb.as_deref().is_some_and(drive::queues);
+            let joins_queue = drive_command.as_deref().is_some_and(drive::queues);
             if self.exiting || (drive::pending(&self.ctx) && !joins_queue) {
                 return;
             }
             let cmd = self.held.pop_front().expect("a held command");
-            match drive_verb {
-                Some(verb) => {
+            match drive_command {
+                Some(command_name) => {
                     let args: Value = serde_json::from_str(&cmd.body).unwrap_or(Value::Null);
-                    if let Some(answer) = drive::request(&self.ctx, cmd.id, &verb, &args) {
+                    if let Some(answer) = drive::request(&self.ctx, cmd.id, &command_name, &args) {
                         self.respond(answer);
                     }
                 }
@@ -491,7 +491,7 @@ impl Shell {
             eprintln!("ced: keymap: {note}");
         }
         self.keymap = keymap;
-        let keys = crate::commands::keys_in_force(&self.commands);
+        let keys = crate::actions::keys_in_force(&self.commands);
         self.app.ctl.set_keys(keys);
     }
 
@@ -697,7 +697,7 @@ impl Shell {
             let fired = self.commands.shortcuts(ui.ctx(), &self.app);
             let events = fired
                 .into_iter()
-                .map(|id| UiEvent::Command(id, toolkit::command::Origin::Shortcut))
+                .map(|id| UiEvent::Command(id, toolkit::action::Origin::Shortcut))
                 .collect();
             crate::view::apply(&mut self.app, &self.commands, events);
             self.perform();
@@ -719,7 +719,7 @@ impl Shell {
     }
 
     /// Publish the commands run since the last call on
-    /// `<service>.command.executed`.
+    /// `<service>.action.executed`.
     fn publish_executed(&mut self) {
         crate::view::record_noted(&mut self.app, &self.commands);
         let (runs, lost) = self.commands.take_executed();

@@ -12,7 +12,7 @@
 use jmap::Composed;
 use serde_json::Value;
 
-pub use crate::verbs::{Query, Then, Write};
+pub use crate::commands::{Query, Then, Write};
 
 /// How long a settings write may stay unsettled before its caller hears
 /// it timed out.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! monitord on the Bus: the read verbs, and `monitord.summary` as a
+//! monitord on the Bus: the read commands, and `monitord.summary` as a
 //! retained topic every few seconds. The broker is optional: monitord keeps
 //! sampling and recording while noded is down, and joins when it appears.
 use crate::{engine::Engine, sampler, service};
@@ -30,7 +30,7 @@ pub async fn serve(engine: Arc<Engine>, noded_url: String) -> anyhow::Result<()>
         SupervisedClient::connect_options("monitord", &noded_url)
             .bounded_incoming(32)
             .fatal_on_registration_rejection(true)
-            .with_verbs(service::manifest())
+            .with_commands(service::manifest())
             .with_provenance(provenance)
             .start(),
     );
@@ -69,7 +69,7 @@ pub async fn serve(engine: Arc<Engine>, noded_url: String) -> anyhow::Result<()>
                     // One task per request, at most WORKERS at once, so a slow
                     // process scan never holds up the requests behind it.
                     let Ok(permit) = workers.clone().try_acquire_owned() else {
-                        let busy = json!({"status":"busy","verb":command.command});
+                        let busy = json!({"status":"busy","command":command.command});
                         let _ = tokio::time::timeout(REPLY, client.respond(&command, 10, &busy.to_string())).await;
                         continue;
                     };

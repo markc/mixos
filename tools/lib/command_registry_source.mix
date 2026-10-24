@@ -1,0 +1,387 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- command_registry_source: the structural checks behind tools/command_registry.mix
+-- (--source and --instances). Nothing here executes Mix source. The on @.<suffix>
+-- declarations in a runtime source are the handler metadata that the native
+-- `mix lint --json FILE` reports from its parsed AST, so nested and duplicate
+-- declarations count, and text inside quotes, heredocs and comments does not.
+-- The directory reads use the native ls and stat builtins, and the source walk
+-- recurses by hand. The native glob and walk skip an unreadable directory
+-- without an error, so neither is used to prove an absence. No command output
+-- is split on newlines, and ls takes a directory name rather than a pattern,
+-- so a filename with a space, a newline or a bracket is an ordinary path.
+--
+-- A declaration is the handler command "@.<suffix>" (@ is the instance's own
+-- service prefix; the suffix is a lower identifier path such as call or
+-- ui.tree). A declaration is evidence of a handler in its owner's code; the
+-- owner's Bus suite proves the runtime registration.
+--
+-- Limits: a symlink anywhere in a kind's tree outside tests, benches and fuzz
+-- is refused, as is a symlinked component or config, and so is a directory
+-- that cannot be listed. The no-follow check covers the last component of the
+-- source root, the kind directories and the instances directory only (trailing
+-- slashes dropped first); a symlink in a directory above them is followed, as
+-- any path is. Config sources are flat by design: only the top level of an
+-- instances directory is read, and *.conf.mix entries in subdirectories, and
+-- any other file, are ignored. None of them is a runtime config, and the gate
+-- neither recurses into them nor reads their contents.
+--
+-- Every helper returns values. Problems are returned as lists of strings,
+-- and nothing is printed here. No config's contents and no source line are
+-- ever returned or reported.
+
+$_KINDS = ["apps", "services", "cli", "libs"]
+$_SKIP_DIRS = ["tests", "test", "benches", "fuzz"]
+-- The Bus's own rule for a service name (noded.register), as bridge_core has it.
+$_NAME = "^[a-z][a-z0-9-]{1,30}$"
+-- The broker's session-name shape (<t|c><id>-<22 base32>).
+$_SESSION = "^[tc][a-z0-9]{1,7}-[a-z2-7]{22}$"
+-- The native lint schema that carries parsed handler metadata.
+$_LINT_SCHEMA = 3
+$_NO_HANDLERS = "native Mix lacks parsed handler metadata; rebuild current Mix"
+$embed = require("command_registry_embed.mix")
+
+-- The native mix binary for the lint calls: MIXOS_TEST_MIX if set, else the
+-- installed one.
+fn mix_bin()
+  $m = env("MIXOS_TEST_MIX") ?? ""
+  if $m == "" then return "/opt/mixos/bin/mix" end
+  return $m
+end
+
+-- stat without following a symlink: {ok, error, link, file, dir}. The native
+-- fields are is_symlink, is_file and is_dir. A path that cannot be stat'ed is
+-- not ok, and no field is guessed.
+fn _info($path)
+  $r = nil
+  $err = ""
+  try
+    $r = stat($path, {follow_symlinks: false})
+  catch $m
+    $err = $m
+  end
+  if $err != "" then return {ok: false, error: $err, link: false, file: false, dir: false} end
+  if not (has_key($r, "is_symlink") and has_key($r, "is_file") and has_key($r, "is_dir")) then
+    return {ok: false, error: "native stat lacks the type fields; rebuild current Mix", link: false, file: false, dir: false}
+  end
+  return {ok: true, error: "", link: $r.is_symlink, file: $r.is_file, dir: $r.is_dir}
+end
+
+-- The last segment of a path.
+fn _leaf($path)
+  $parts = split($path, "/")
+  return $parts[len($parts) - 1]
+end
+
+-- The entries directly inside dir, dot files included, as paths: dir joined to
+-- each name that ls returns. ls raises on a missing or unreadable directory,
+-- and that error is returned rather than skipped. Returns {ok, error, paths}.
+fn _entries($dir)
+  $names = []
+  $err = ""
+  try
+    $names = ls($dir)
+  catch $m
+    $err = $m
+  end
+  if $err != "" then return {ok: false, error: $err, paths: []} end
+  $paths = []
+  for each $n in $names
+    if $n != "." and $n != ".." then push($paths, $dir .. "/" .. $n) end
+  end
+  return {ok: true, error: "", paths: $paths}
+end
+
+-- A directory the checks may list: a plain existing directory, not a symlink.
+-- Trailing slashes are dropped before the stat, because a trailing slash makes
+-- the kernel follow a symlink even when the stat does not. Only the last
+-- component of the path is checked without following links; the directories
+-- above it resolve as usual. Returns "" when it is one, else why not.
+fn _plain_dir($path)
+  $p = $path
+  if len($p) > 1 then $p = re_replace($p, "/+$", "") end
+  if $p == "" then $p = "/" end
+  $info = _info($p)
+  if not $info.ok then return "is missing or unreadable" end
+  if $info.link then return "is a symlink; refused" end
+  if not $info.dir then return "is not a directory" end
+  return ""
+end
+
+fn _lint_fail($message)
+  return {ok: false, error: $message, handlers: []}
+end
+
+-- Check the parsed lint document for one file. Returns {ok, error, handlers};
+-- handlers is a list of {command, line}. Every field is checked: a document
+-- from an older Mix, or one that is cut short or misattributed, fails.
+fn _lint_doc($text, $path)
+  $doc = nil
+  $err = ""
+  try
+    $doc = json_parse($text)
+  catch $m
+    $err = $m
+  end
+  if $err != "" or type($doc) != "map" then return _lint_fail("lint output is not a JSON object") end
+  if not has_key($doc, "handlers") then return _lint_fail($_NO_HANDLERS) end
+  if not (has_key($doc, "schema_version") and $doc.schema_version == $_LINT_SCHEMA) then
+    return _lint_fail("lint schema_version is not " .. to_string($_LINT_SCHEMA))
+  end
+  if not (has_key($doc, "tool") and $doc.tool == "mix lint") then return _lint_fail("lint tool is not mix lint") end
+  if not (has_key($doc, "files") and type($doc.files) == "list" and len($doc.files) == 1) then
+    return _lint_fail("lint files must be a list of the one file")
+  end
+  $files = $doc.files
+  if type($files[0]) != "string" or $files[0] != $path then
+    return _lint_fail("lint answered for another file (file attribution)")
+  end
+  if not (has_key($doc, "summary") and type($doc.summary) == "map" and has_key($doc.summary, "errors")) then
+    return _lint_fail("lint summary must be a map with an errors count")
+  end
+  $errors = $doc.summary.errors
+  if type($errors) == "string" or to_string($errors) != "0" then return _lint_fail("lint reports errors") end
+  if not (has_key($doc, "diagnostics") and type($doc.diagnostics) == "list") then
+    return _lint_fail("lint diagnostics must be a list")
+  end
+  $hs = $doc.handlers
+  if type($hs) != "list" then return _lint_fail("lint handlers must be a list") end
+  $handlers = []
+  for each $h in $hs
+    if type($h) != "map" or not (has_key($h, "command") and has_key($h, "file") and has_key($h, "line")) then
+      return _lint_fail("a lint handler lacks command, file or line")
+    end
+    $cmd = $h.command
+    $where = $h.file
+    $line = $h.line
+    if type($cmd) != "string" or $cmd == "" then return _lint_fail("a lint handler command is not a nonempty string") end
+    if type($where) != "string" or $where != $path then return _lint_fail("a lint handler names another file (file attribution)") end
+    if type($line) == "string" or not re_match(to_string($line), "^[1-9][0-9]*$") then
+      return _lint_fail("a lint handler line is not a positive integer")
+    end
+    push($handlers, {command: $cmd, line: $line})
+  end
+  return {ok: true, error: "", handlers: $handlers}
+end
+
+-- Lint one source file with the native mix. Returns {ok, error, handlers}.
+-- The file is never run. A file that does not lint fails with its exit status
+-- alone, so no source text reaches the report; output that was truncated, or
+-- that is not the lint document, is never read as one.
+fn _lint($path, $flags)
+  $r = nil
+  $err = ""
+  try
+    $r = run_argv(concat([mix_bin(), "lint", "--json"], $flags, [$path]), {timeout: 60})
+  catch $m
+    $err = $m
+  end
+  if $err != "" then return _lint_fail("lint did not finish: " .. $err) end
+  if not (has_key($r, "stdout_truncated") and has_key($r, "stderr_truncated")) then
+    return _lint_fail("run_argv result lacks the truncation flags; rebuild current Mix")
+  end
+  if $r.stdout_truncated or $r.stderr_truncated then return _lint_fail("lint output truncated") end
+  if $r.exit_code != 0 then return _lint_fail("does not lint (exit " .. to_string($r.exit_code) .. ")") end
+  return _lint_doc($r.stdout, $path)
+end
+
+-- The runtime source files under dir, recursively, as {ok, error, files}. rel
+-- names dir from the kind directory down, for messages. owner is the component
+-- directory: the first segment under the kind directory, inherited by all that
+-- sits below it, and "" for a file directly in a kind directory. Test, bench
+-- and fuzz directories are not entered. Strict-data *.conf.mix and *.spec.mix
+-- files are left out. A symlink, or a directory that cannot be listed, is an
+-- error: it would hide source the walk does not read. Each file is
+-- {path, rel, owner}.
+fn _collect($dir, $rel, $owner)
+  $out = []
+  $listed = _entries($dir)
+  if not $listed.ok then
+    return {ok: false, error: "source tree unreadable: " .. $rel .. ": " .. $listed.error, files: []}
+  end
+  for each $p in $listed.paths
+    $name = _leaf($p)
+    $child = $rel .. "/" .. $name
+    $info = _info($p)
+    if not $info.ok then return {ok: false, error: $child .. ": " .. $info.error, files: []} end
+    if $info.link then return {ok: false, error: $child .. ": a symlink in the source tree is refused", files: []} end
+    if $info.dir then
+      if not contains($_SKIP_DIRS, $name) then
+        $owned = $owner
+        if $owned == "" then $owned = $name end
+        $sub = _collect($p, $child, $owned)
+        if not $sub.ok then return $sub end
+        for each $f in $sub.files
+          push($out, $f)
+        end
+      end
+    elif $info.file and re_match($name, "\\.mix$") and not re_match($name, "\\.(conf|spec)\\.mix$") then
+      push($out, {path: $p, rel: $child, owner: $owner})
+    end
+  end
+  return {ok: true, error: "", files: $out}
+end
+
+-- Every component runtime source under root: {ok, error, files}. The kind
+-- directories are read one by one, and each is walked by _collect.
+fn source_files($root)
+  $bad = _plain_dir($root)
+  if $bad != "" then return {ok: false, error: "source root " .. $bad .. ": " .. $root, files: []} end
+  $top = _entries($root)
+  if not $top.ok then return {ok: false, error: "source root unreadable: " .. $top.error, files: []} end
+  $present = {}
+  for each $p in $top.paths
+    $leaf = _leaf($p)
+    $present[$leaf] = true
+  end
+  $out = []
+  for each $kind in $_KINDS
+    if has_key($present, $kind) then
+      $kind_path = $root .. "/" .. $kind
+      $bad = _plain_dir($kind_path)
+      if $bad != "" then return {ok: false, error: $kind .. " " .. $bad, files: []} end
+      $got = _collect($kind_path, $kind, "")
+      if not $got.ok then return {ok: false, error: $got.error, files: []} end
+      for each $f in $got.files
+        push($out, $f)
+      end
+    end
+  end
+  return {ok: true, error: "", files: $out}
+end
+
+-- The source check. families holds the valid families only. Returns
+-- {problems, declared, files}. Every on @.<suffix> in a runtime source must
+-- be the owner's instances family; every instances family must be declared
+-- by its owner at least once. A file that does not lint is a problem, so it
+-- can never count as clean.
+fn check_source($root, $families)
+  $problems = []
+  $listing = source_files($root)
+  if not $listing.ok then return {problems: [$listing.error], declared: 0, files: 0} end
+  $flags = {}
+  try
+    $flags = $embed.prepare(mix_bin(), $embed.scopes($root, $listing.files))
+  catch $m
+    return {problems: ["webd embedding context: " .. $m], declared: 0, files: 0}
+  end
+  $instances = {}
+  $by_suffix = {}
+  for each $f in $families
+    if $f.members == "instances" then
+      $suffix = strip_prefix($f.pattern, "<app>.")
+      $instances[$f.owner .. "|" .. $suffix] = true
+      $by_suffix[$suffix] = $f.owner
+    end
+  end
+  $implemented = {}
+  $declared = 0
+  $files = 0
+  for each $f in $listing.files
+    $files = $files + 1
+    $lint = _lint($f.path, get_or($flags, $f.path, []))
+    if not $lint.ok then
+      push($problems, $f.rel .. ": " .. $lint.error)
+    else
+      for each $h in $lint.handlers
+        if starts_with($h.command, "@.") then
+          $declared = $declared + 1
+          $suffix = strip_prefix($h.command, "@.")
+          $key = $f.owner .. "|" .. $suffix
+          $where = $f.rel .. ":" .. to_string($h.line)
+          if has_key($instances, $key) then
+            $implemented[$key] = true
+          elif has_key($by_suffix, $suffix) then
+            push($problems, $where .. ": on @." .. $suffix .. " belongs to " .. $by_suffix[$suffix] .. ", not to " .. $f.owner)
+          else
+            push($problems, $where .. ": on @." .. $suffix .. " has no instances family")
+          end
+        end
+      end
+    end
+  end
+  for each $f in $families
+    if $f.members == "instances" then
+      $suffix = strip_prefix($f.pattern, "<app>.")
+      if not has_key($implemented, $f.owner .. "|" .. $suffix) then
+        push($problems, "family " .. $f.pattern .. " (" .. $f.owner .. "): no on @." .. $suffix .. " declaration in its owner's code")
+      end
+    end
+  end
+  return {problems: $problems, declared: $declared, files: $files}
+end
+
+-- The webd-only entry point uses the SAME collector, context validation and
+-- lint invocation as check_source, without requiring unrelated Bus families.
+fn check_vhosts($root)
+  $listing = source_files($root)
+  if not $listing.ok then return {problems: [$listing.error], files: 0} end
+  $flags = {}
+  try
+    $flags = $embed.prepare(mix_bin(), $embed.scopes($root, $listing.files))
+  catch $m
+    return {problems: ["webd embedding context: " .. $m], files: 0}
+  end
+  $problems = []
+  $files = 0
+  for $f in $listing.files
+    if starts_with($f.rel, "services/webd/vhosts/") then
+      $files = $files + 1
+      $lint = _lint($f.path, get_or($flags, $f.path, []))
+      if not $lint.ok then push($problems, $f.rel .. ": " .. $lint.error) end
+    end
+  end
+  if $files == 0 then push($problems, "webd vhosts source tree has no checked files") end
+  return {problems: $problems, files: $files}
+end
+
+-- The instance configs in dir: each *.conf.mix file's stem is a bridged
+-- instance name. Only the top level of dir is read; a config in a
+-- subdirectory is not collected. concrete is the set of command first segments,
+-- members the set of listed family members, has_instances whether an
+-- instances family exists. Config contents are never read. Returns
+-- {problems, count}. A name that is a concrete prefix or a listed member is
+-- refused whatever its owner.
+fn check_instances($dir, $concrete, $members, $has_instances)
+  $problems = []
+  $count = 0
+  $bad = _plain_dir($dir)
+  if $bad != "" then
+    return {problems: ["instances directory " .. $bad .. ": " .. $dir], count: 0}
+  end
+  $listed = _entries($dir)
+  if not $listed.ok then
+    return {problems: ["instances directory unreadable: " .. $dir .. ": " .. $listed.error], count: 0}
+  end
+  for each $p in $listed.paths
+    $name = _leaf($p)
+    if re_match($name, "\\.conf\\.mix$") then
+      $count = $count + 1
+      $stem = re_replace($name, "\\.conf\\.mix$", "")
+      $info = _info($p)
+      $why = ""
+      if not $info.ok then
+        $why = "unreadable: " .. $info.error
+      elif $info.link then
+        $why = "a symlink; configs must be regular files"
+      elif not $info.file then
+        $why = "not a regular file"
+      elif not re_match($stem, $_NAME) then
+        $why = "the name must match " .. $_NAME
+      elif starts_with($stem, "mixos-") then
+        $why = "mixos- names are reserved"
+      elif $stem == "noded" or starts_with($stem, "noded-") or re_match($stem, $_SESSION) then
+        $why = "the name is reserved by the Bus broker"
+      elif has_key($concrete, $stem) then
+        $why = "the name is the first segment of a registered command"
+      elif has_key($members, $stem) then
+        $why = "the name is a listed family member"
+      end
+      if $why != "" then push($problems, "instance config " .. $name .. ": " .. $why) end
+    end
+  end
+  if $count > 0 and not $has_instances then
+    push($problems, "instance configs need an instances family in the registry")
+  end
+  return {problems: $problems, count: $count}
+end

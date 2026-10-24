@@ -16,7 +16,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use design::{DesignContext, Mode, Scheme};
 use dopus::app::{App, Dialog, PreviewImage};
-use dopus::{commands, strings, view::view};
+use dopus::{actions, strings, view::view};
 use dopus_core::{CoreEvent, DOpusConfig, DopusCore, PaneId, PromptKind};
 use egui_kittest::Harness;
 use toolkit::Theme;
@@ -132,7 +132,7 @@ fn window(theme: Theme, name: &str, sidebars: bool, dialog: Option<Dialog>) {
     if let Some(dialog) = dialog {
         app.open(dialog);
     }
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let mut theme = Some(theme);
     let mut harness = Harness::builder()
@@ -297,7 +297,7 @@ fn preview(name: &str, w: usize, h: usize) {
         .select_modified(PaneId::Left, photo.clone(), false, false);
     let generation = app.core.pane(PaneId::Left).generation;
     let theme = chrome(Scheme::Studio, Mode::Dark);
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let mut harness = Harness::builder()
         .with_size(egui::vec2(980.0, 640.0))

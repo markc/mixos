@@ -41,7 +41,7 @@ process; application requests and node-to-node control use ABP.
 
 ## Tests
 
-Tests cover broker verbs, scope isolation, replay refusal, authority
+Tests cover broker commands, scope isolation, replay refusal, authority
 reload, mesh admission and recovery. Run
 `cargo test -p noded -p bus -p config -p props -p mesh -p mesh-trust` on a
 configured build worker.

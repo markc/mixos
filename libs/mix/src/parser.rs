@@ -715,7 +715,7 @@ impl Parser {
             Token::Include => self.parse_include(),
             Token::Do => Err(MixError::ParseError {
                 msg: "unexpected `do` — Mix has no `do` keyword; blocks close with `end` \
-                      (write `for $i = 1 to 3 … end`, `while … end`, `on verb … end` — \
+                      (write `for $i = 1 to 3 … end`, `while … end`, `on command … end` — \
                       drop the `do`)"
                     .to_string(),
                 span: self.peek_span(),
@@ -1456,9 +1456,9 @@ impl Parser {
         })
     }
 
-    /// Parse the verb/name position used by `send`, `emit`, `address`-body
+    /// Parse the command/name position used by `send`, `emit`, `address`-body
     /// commands, and `alias` names. Accepts:
-    /// - bare identifier `verb` and dotted identifier `service.verb`
+    /// - bare identifier `command` and dotted identifier `service.command`
     ///   (parsed into a single `Expr::StringLiteral`, no runtime overhead
     ///   beyond the eval dispatch);
     /// - any expression starting with `$var`, `(expr)`, interpolated
@@ -1496,7 +1496,7 @@ impl Parser {
         }
     }
 
-    /// One segment of a dotted Bus name (verb, topic, handler name, dotted
+    /// One segment of a dotted Bus name (command, topic, handler name, dotted
     /// address) at token index `i`: a bareword, or ANY keyword's source
     /// lexeme. Bus names are dotted identifiers owned by the services that
     /// define them, so a segment coinciding with a Mix keyword
@@ -1562,7 +1562,7 @@ impl Parser {
     /// Handles `key=value` pairs and positional expressions.
     /// Returns (command_expr, args_vec).
     /// Command supports dotted literal forms (`edit.open`, `ui.set`) and
-    /// runtime expressions (`$cmd`, `$prefix .. ".verb"`) via
+    /// runtime expressions (`$cmd`, `$prefix .. ".command"`) via
     /// `parse_command_expr`.
     fn parse_send_args(&mut self) -> MixResult<(Expr, Vec<(String, Expr)>)> {
         let command = self.parse_command_expr()?;
@@ -1811,7 +1811,7 @@ impl Parser {
         let mut body = Vec::new();
         loop {
             self.skip_statement_separators();
-            // `end.x …` is a body line sending verb `end.x`, not the
+            // `end.x …` is a body line sending command `end.x`, not the
             // block's closing `end`.
             if self.is_at_end() || (self.check(&Token::End) && !self.at_keyword_led_dotted_name()) {
                 break;
@@ -1826,7 +1826,7 @@ impl Parser {
                 let span = self.peek_span();
                 return Err(MixError::ParseError {
                     msg: "address blocks use implicit send: drop the `send` keyword \
-                          (e.g. `verb name=value` or `$cmd name=value`)"
+                          (e.g. `command name=value` or `$cmd name=value`)"
                         .to_string(),
                     span,
                 });
@@ -1884,10 +1884,10 @@ impl Parser {
         // any segment may be a keyword lexeme (`on ced.select`); a keyword
         // may lead only when dotted (`on select.all`), never bare.
         //
-        // `on @.verb` is the serve-name placeholder: `@` (unquoted) is the
+        // `on @.command` is the serve-name placeholder: `@` (unquoted) is the
         // whole first segment and the evaluator replaces it with the
         // `--serve` name when the handler registers. The AST keeps the
-        // static `@.verb` form so lint and listings still see a name.
+        // static `@.command` form so lint and listings still see a name.
         //
         // A hyphenated name (`on dopus-test.command.executed`) is read whole
         // by the same scan as a `send` target. Without it the header stopped
@@ -1909,7 +1909,7 @@ impl Parser {
                 return Err(MixError::ParseError {
                     msg: format!(
                         "on: a quoted name cannot start with `@` (got \"{name}\"); write the \
-                         serve-name placeholder unquoted: `on @.<verb>`"
+                         serve-name placeholder unquoted: `on @.<command>`"
                     ),
                     span,
                 });
@@ -1921,7 +1921,7 @@ impl Parser {
         if self.peek() == &Token::Dot && self.peek_ahead(1) == &Token::At {
             return Err(MixError::ParseError {
                 msg: "on: `@` is only valid as the whole first segment of a handler name \
-                      (`on @.<verb>`)"
+                      (`on @.<command>`)"
                     .to_string(),
                 span: self.peek_span(),
             });
@@ -1933,7 +1933,7 @@ impl Parser {
         //
         // Doc-string: `on launch.run desc "Run a command"`. Captured as
         // static handler metadata; the serve runtime surfaces it as the
-        // verb's HELP `description`. The explicit `desc` marker exists
+        // command's HELP `description`. The explicit `desc` marker exists
         // because barewords and plain quoted strings both lex as
         // `Token::String`, so a bare trailing string is AMBIGUOUS with a
         // same-line body statement (`on foo refresh; done` is a body that
@@ -1989,15 +1989,15 @@ impl Parser {
         let span = self.peek_span();
         if self.peek_ahead(1) != &Token::Dot {
             return Err(MixError::ParseError {
-                msg: "on: the serve-name placeholder `@` must be followed by `.<verb>` and is \
-                      the whole first segment: write `on @.<verb>`"
+                msg: "on: the serve-name placeholder `@` must be followed by `.<command>` and is \
+                      the whole first segment: write `on @.<command>`"
                     .to_string(),
                 span,
             });
         }
         if self.bus_segment_at(self.pos + 2).is_none() {
             return Err(MixError::ParseError {
-                msg: "on: expected a verb name after `@.` (`on @.<verb>`)".to_string(),
+                msg: "on: expected a command name after `@.` (`on @.<command>`)".to_string(),
                 span,
             });
         }
@@ -2006,7 +2006,7 @@ impl Parser {
         // Same loop as `parse_bus_dotted_name`, but every segment must be
         // one a bare dotted name could spell: a quoted segment (`"@.x"`,
         // `"a.b"`, `""`) would otherwise smuggle `@`, dots or nothing into
-        // the resolved verb.
+        // the resolved command.
         let mut name = String::from("@");
         loop {
             let seg_span = self.peek_span();
@@ -2441,7 +2441,7 @@ impl Parser {
             Token::At => {
                 return Err(MixError::ParseError {
                     msg: "unexpected `@`: it is only the serve-name placeholder at the start of \
-                          an `on` handler name (`on @.<verb>`); quote it in a string"
+                          an `on` handler name (`on @.<command>`); quote it in a string"
                         .to_string(),
                     span: self.peek_span(),
                 });

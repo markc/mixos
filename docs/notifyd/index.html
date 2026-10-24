@@ -210,7 +210,7 @@
                     <nav id="toc-nav">
                         <a href="#posting-a-notification">Posting a notification</a>
                         <a href="#hearing-the-answer">Hearing the answer</a>
-                        <a href="#verbs">Verbs</a>
+                        <a href="#commands">Commands</a>
                         <a href="#limits">Limits</a>
                         <a href="#state">State</a>
                     </nav>
@@ -268,8 +268,8 @@ it:</p>
 listening, and match on the id the send returned. If you were disconnected,
 <code>notify.get {id}</code> tells you the outcome afterwards.</p>
 <p>An expired question was not answered. Treat it as "no answer", never as yes.</p>
-<h2 id="verbs">Verbs</h2>
-<table><thead><tr><th>Verb</th><th>Body</th><th>Reply</th></tr></thead><tbody>
+<h2 id="commands">Commands</h2>
+<table><thead><tr><th>Command</th><th>Body</th><th>Reply</th></tr></thead><tbody>
 <tr><td><code>notify.send</code></td><td><code>summary</code>, and optionally <code>body</code>, <code>app</code>, <code>source</code>, <code>urgency</code>, <code>actions</code> (<code>[{id, label}]</code>), <code>timeout_ms</code>, <code>request_id</code>, <code>thread</code></td><td><code>{id, status}</code></td></tr>
 <tr><td><code>notify.get</code></td><td><code>{id}</code></td><td>the notification, with <code>outcome</code> once it has one</td></tr>
 <tr><td><code>notify.list</code></td><td><code>{all?}</code></td><td>open notifications, oldest first; <code>all: true</code> includes answered ones</td></tr>

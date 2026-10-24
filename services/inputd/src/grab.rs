@@ -227,7 +227,7 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
     }
 
     /// Handle one batch of events read from the device, in order. Returns
-    /// the verbs to fire. When a key snapshot is taken mid-batch (the grab
+    /// the commands to fire. When a key snapshot is taken mid-batch (the grab
     /// is taken, or dropped events are recovered), the rest of the batch
     /// predates the snapshot and is discarded: processing resumes strictly
     /// after it.
@@ -247,7 +247,7 @@ impl<D: GrabDevice, E: Emit> Grabber<D, E> {
         Ok(fired)
     }
 
-    /// Handle one event read from the device. Returns a verb to fire.
+    /// Handle one event read from the device. Returns a command to fire.
     pub fn event(
         &mut self,
         resolver: &Resolver,
@@ -603,7 +603,7 @@ mod tests {
                 .event(&self.resolver, EV_KEY, code, value)
                 .unwrap();
             if let Some(fire) = fire {
-                self.fired.push(fire.verb.as_str());
+                self.fired.push(fire.command.as_str());
             }
             self
         }
@@ -1096,7 +1096,7 @@ mod tests {
 
     fn batch(rig: &mut Rig, events: &[(u16, u16, i32)]) {
         let fired = rig.grabber.events(&rig.resolver, events).unwrap();
-        rig.fired.extend(fired.iter().map(|f| f.verb.as_str()));
+        rig.fired.extend(fired.iter().map(|f| f.command.as_str()));
     }
 
     #[test]

@@ -38,7 +38,7 @@ pub const HORIZONTAL_RESIZE_RANGE: std::ops::RangeInclusive<f32> = 24.0..=200.0;
 /// chrome usable.
 pub const VERTICAL_RESIZE_RANGE: std::ops::RangeInclusive<f32> = 120.0..=500.0;
 
-/// The one per-orientation resize range the `shell.panel.resize` verb, the
+/// The one per-orientation resize range the `shell.panel.resize` command, the
 /// settings stepper and pointer drag all share.
 pub fn resize_thickness_range(edge: Edge) -> std::ops::RangeInclusive<f32> {
     match edge.orientation() {

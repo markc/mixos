@@ -9,7 +9,7 @@
 //! (`/etc/mixos/noded/genesis.pub`, §7.4), enforces epoch monotonicity
 //! against the persisted `(epoch, recovery_generation, canonical hash)` baseline
 //! (`/var/lib/mixos/noded/inventory.baseline`, wipe-surviving, §6.4), and
-//! exposes the accepted member set + posture (the `noded.inventory` verb).
+//! exposes the accepted member set + posture (the `noded.inventory` command).
 //!
 //! **Fail closed (§7.7) — but NON-FATAL.** A missing / unsigned / malformed
 //! / failing / stale inventory leaves the node in the [`Posture::Unverified`]
@@ -17,7 +17,7 @@
 //! "fail closed" here means "do not grant authority," NOT "refuse to run":
 //! `load_and_verify` never panics, exits, or blocks indefinitely, and `run()` does not
 //! gate broker startup on the posture. An `Unverified` node boots and serves
-//! exactly like a pre-1b node — the broker, routing, and every existing verb
+//! exactly like a pre-1b node — the broker, routing, and every existing command
 //! are unaffected; only authority-consuming gates report/use `unverified`. This is what
 //! makes a staged fleet roll safe: a bad inventory push on one node cannot
 //! take that node down, it just doesn't advance to a verified trust root.
@@ -132,7 +132,7 @@ pub struct MemberSummary {
 }
 
 impl Posture {
-    /// JSON view for the `noded.inventory` verb / §17 observability. Admission
+    /// JSON view for the `noded.inventory` command / §17 observability. Admission
     /// consumes `members_full`; routing and `noded.peers` consume the strict
     /// typed routing view from the same atomically-published runtime snapshot.
     pub fn to_json(&self) -> serde_json::Value {

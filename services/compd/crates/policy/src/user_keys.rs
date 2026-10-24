@@ -6,7 +6,7 @@
 //! the keyboard itself, so it enforces the rule itself, ahead of its own
 //! binding table ([`crate::bindings`]):
 //!
-//! - a user key the user bound fires the user's verb;
+//! - a user key the user bound fires the user's command;
 //! - a user key the user bound `passthrough` goes on to the next layer;
 //! - every other user key is swallowed;
 //! - no user key ever reaches a client, and no shipped default binds one
@@ -30,30 +30,30 @@ use inputd_core::inputd_schema::{
 use inputd_core::{BindError, Edge, Fire, Interceptor, Resolver};
 use serde_json::Value;
 
-/// The service a fired verb runs on inside compd, through the same code a
+/// The service a fired command runs on inside compd, through the same code a
 /// Bus `comp.*` request takes, rather than over the Bus.
 pub const COMP_SERVICE: &str = "comp";
 
 /// xkb keycodes are evdev codes plus this offset.
 pub const XKB_OFFSET: u32 = 8;
 
-/// A verb to run: the resolved target service, the verb and its body.
+/// A command to run: the resolved target service, the command and its body.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserFire {
-    /// The explicit `service`, else the verb's first dot-segment (inputd's
+    /// The explicit `service`, else the command's first dot-segment (inputd's
     /// `fire_target` rule).
     pub service: String,
-    pub verb: &'static str,
+    pub command: &'static str,
     /// The row's args; always a JSON object (empty when absent).
     pub body: Value,
 }
 
 impl UserFire {
     fn from_fire(fire: Fire) -> Option<Self> {
-        let verb = fire.verb.as_str();
+        let command = fire.command.as_str();
         let service = match fire.service {
             Some(explicit) => explicit,
-            None => verb.split('.').next().unwrap_or("").to_owned(),
+            None => command.split('.').next().unwrap_or("").to_owned(),
         };
         if service.is_empty() {
             return None;
@@ -64,12 +64,12 @@ impl UserFire {
         };
         Some(Self {
             service,
-            verb,
+            command,
             body,
         })
     }
 
-    /// True when the verb runs inside compd ([`COMP_SERVICE`]).
+    /// True when the command runs inside compd ([`COMP_SERVICE`]).
     pub fn is_comp(&self) -> bool {
         self.service == COMP_SERVICE
     }
@@ -80,7 +80,7 @@ impl UserFire {
 pub struct UserKeyEdge {
     /// The layer took the edge: no later layer and no client sees it.
     pub took: bool,
-    /// Run this verb (a press of a bound user key, never under a lock).
+    /// Run this command (a press of a bound user key, never under a lock).
     pub fire: Option<UserFire>,
     /// Arm the repeat timer with this token: the press latched a row whose
     /// repeat policy is `allow`. [`UserKeys::repeat`] answers each tick.
@@ -182,7 +182,7 @@ impl UserKeys {
         out.fire = step.fire.and_then(UserFire::from_fire);
         if fresh
             && self.interceptor.is_swallowed(code)
-            && resolver.resolve(code, mods, Edge::Repeat).verb.is_some()
+            && resolver.resolve(code, mods, Edge::Repeat).command.is_some()
         {
             self.next_token += 1;
             self.repeating = Some((code, self.next_token));
@@ -191,7 +191,7 @@ impl UserKeys {
         out
     }
 
-    /// One repeat tick for `token`. `Some` fires the latched verb again and
+    /// One repeat tick for `token`. `Some` fires the latched command again and
     /// keeps the timer; `None` stops it (the key went up, another key was
     /// pressed, or the layer was reset).
     pub fn repeat(&mut self, token: u64) -> Option<UserFire> {

@@ -78,7 +78,7 @@ pub struct SmtpConfig {
     /// without STARTTLS.
     pub tls_slot: TlsSlot,
     /// Per-resolver `Arc<ServerConfig>` cache shared with the IMAPS
-    /// listener. Phase 5a-commit-2's `maild.tls.reload` verb stores a
+    /// listener. Phase 5a-commit-2's `maild.tls.reload` command stores a
     /// new resolver in `tls_slot` and `clear()`s this cache; in-flight
     /// handshakes keep the old `Arc<ServerConfig>` alive via their
     /// captured snapshot and drain cleanly without coordination.

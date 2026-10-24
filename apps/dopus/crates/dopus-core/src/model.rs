@@ -1217,7 +1217,7 @@ impl DopusCore {
             return false;
         }
         self.operation = OpState::Running;
-        let verb = match operation.kind {
+        let command = match operation.kind {
             FileOpKind::Copy => "Copying",
             FileOpKind::Move => "Moving",
             FileOpKind::Delete => "Deleting",
@@ -1229,7 +1229,7 @@ impl DopusCore {
         };
         self.set_status(
             Some(source_pane),
-            &format!("{verb} {}…", operation.source.display()),
+            &format!("{command} {}…", operation.source.display()),
         );
         self.workers.spawn_operation(operation, source_pane);
         true

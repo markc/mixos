@@ -215,7 +215,7 @@
                         <a href="#driving-it-over-the-bus">Driving it over the Bus</a>
                         <a href="#how-it-talks-to-the-server">How it talks to the server</a>
                         <a href="#performance-workload">Performance workload</a>
-                        <a href="#macro-bus-verbs">Macro Bus verbs</a>
+                        <a href="#macro-bus-commands">Macro Bus commands</a>
                     </nav>
                 </div>
             </div>
@@ -465,7 +465,7 @@ instants.</p>
 text field has the keyboard (they type into the search box or a draft
 otherwise). Help › Keyboard Shortcuts shows the chords in force.</p>
 <h2 id="driving-it-over-the-bus">Driving it over the Bus</h2>
-<p>Service <code>email</code>, schema <code>email.v1</code>. <code>HELP</code> lists the verbs, and
+<p>Service <code>email</code>, schema <code>email.v1</code>. <code>HELP</code> lists the commands, and
 <code>app.describe</code> gives each one with its arguments and <code>read_only</code> flag.
 <code>account</code> defaults to the selected account. A refusal is rc 10 with
 <code>{error_code, message}</code>, and two of the codes are kept distinct:</p>
@@ -483,11 +483,11 @@ from the old config, so its password cannot change, and it cannot be
 removed, until that finishes), <code>CANCELLED</code> (Email closed before the
 request ran; a write that may have run answers <code>OUTCOME_UNKNOWN</code>),
 <code>SERVER</code>,
-<code>BUSY</code>, <code>UNKNOWN_VERB</code>, <code>UNKNOWN_COMMAND</code> and <code>DISABLED</code>.</p>
+<code>BUSY</code>, <code>UNKNOWN_COMMAND</code>, <code>UNKNOWN_ACTION</code> and <code>DISABLED</code>.</p>
 <p>Queries that need the server answer when the server does. The window
 never waits on them.</p>
-<table><thead><tr><th>Verb</th><th>Class</th><th>Does</th></tr></thead><tbody>
-<tr><td><code>email.ping</code>, <code>email.info</code>, <code>email.commands</code></td><td>query</td><td>probe; the whole window state (no secret); the command registry</td></tr>
+<table><thead><tr><th>Command</th><th>Class</th><th>Does</th></tr></thead><tbody>
+<tr><td><code>email.ping</code>, <code>email.info</code>, <code>email.actions</code></td><td>query</td><td>probe; the whole window state (no secret); the command registry</td></tr>
 <tr><td><code>email.accounts</code></td><td>query</td><td>the accounts with <code>has_password</code> and <code>state</code>, never a password</td></tr>
 <tr><td><code>email.mailboxes {account?}</code></td><td>query</td><td>mailboxes with roles, parents and counts</td></tr>
 <tr><td><code>email.list {account?, mailbox?, offset?, limit?, query?}</code></td><td>query</td><td>one page, newest first, with <code>total</code></td></tr>
@@ -514,10 +514,10 @@ never waits on them.</p>
 <tr><td><code>email.compose {…}</code>, <code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose dialog, filled in</td></tr>
 <tr><td><code>email.calendar.select</code>, <code>email.event.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code>; <code>end</code> or an ISO 8601 <code>duration</code></td></tr>
 <tr><td><code>email.book.select</code>, <code>email.contact.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code></td></tr>
-<tr><td><code>email.ui.*</code>, <code>email.window</code>, <code>email.window.state</code></td><td>input, query</td><td>the toolkit <a href="/docs/drive/">drive verbs</a></td></tr>
+<tr><td><code>email.ui.*</code>, <code>email.window</code>, <code>email.window.state</code></td><td>input, query</td><td>the toolkit <a href="/docs/drive/">drive commands</a></td></tr>
 </tbody></table>
 <p>Every command the window runs (menu, shortcut, button or <code>email.execute</code>)
-is published on <code>email.command.executed</code> with how it was reached.</p>
+is published on <code>email.action.executed</code> with how it was reached.</p>
 <p><code>email.info</code> reports how the open email is shown under each account's
 <code>mail.reader</code>: <code>{"format": "markdown" | "plain", "auto": true | false}</code>,
 where <code>auto</code> is false once the person (or <code>email.execute {"id":"view.reader.markdown"}</code>) has flipped it. The command is disabled
@@ -556,12 +556,12 @@ each of several accounts. The list renders one page (the page size) from
 a single query-and-get round trip, the reader fetches one email's bodies
 when it opens, and the tree's work grows with the mailbox count, not the
 email count. Nothing else scales with mailbox size.</p>
-<h2 id="macro-bus-verbs">Macro Bus verbs</h2>
-<p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
+<h2 id="macro-bus-commands">Macro Bus commands</h2>
+<p>The shared <a href="/macros/#bus-commands">macro Bus surface</a> uses this process's
 catalogue and runner. Subscribe to <code>&lt;service&gt;.macros.finished</code> for completion, where <code>service</code> is
 the instance’s registered Bus name (for example <code>term-1234</code> for a second Term
-instance). Verbs keep the app’s canonical prefix, such as <code>email.macros.run</code>.</p>
-<table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
+instance). Commands keep the app’s canonical prefix, such as <code>email.macros.run</code>.</p>
+<table><thead><tr><th>Command</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
 <tr><td><code>email.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>email.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>email.macros.run</code></td><td><code>{id}</code></td><td>Acceptance and run number</td></tr>

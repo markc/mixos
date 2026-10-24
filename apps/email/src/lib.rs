@@ -22,7 +22,7 @@
 //! account the person points it at, not a service this node hosts.
 
 pub mod attachments;
-pub mod commands;
+pub mod actions;
 pub mod config;
 pub mod drafts;
 pub mod print;
@@ -32,7 +32,7 @@ pub mod secrets;
 pub mod shell;
 pub mod state;
 pub mod suggest;
-pub mod verbs;
+pub mod commands;
 pub mod view;
 pub mod work;
 pub mod writer;

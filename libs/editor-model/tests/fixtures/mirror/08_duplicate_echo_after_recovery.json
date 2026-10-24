@@ -5,9 +5,9 @@
   "initial": "hello world\n",
   "run_id": 1,
   "steps": [
-    {"agent": {"caller": "local:agent", "verb": "edit.insert", "args": {"buffer": "b1_0000e1e1", "at": 0, "text": "A", "origin": "agent:ctl-90"}, "expect": {"rc": 0, "rev": 1}}},
-    {"agent": {"caller": "local:agent", "verb": "edit.insert", "args": {"buffer": "b1_0000e1e1", "at": 0, "text": "B", "origin": "agent:ctl-90"}, "expect": {"rc": 0, "rev": 2}}},
-    {"agent": {"caller": "local:agent", "verb": "edit.insert", "args": {"buffer": "b1_0000e1e1", "at": 0, "text": "C", "origin": "agent:ctl-90"}, "expect": {"rc": 0, "rev": 3}}},
+    {"agent": {"caller": "local:agent", "command": "edit.insert", "args": {"buffer": "b1_0000e1e1", "at": 0, "text": "A", "origin": "agent:ctl-90"}, "expect": {"rc": 0, "rev": 1}}},
+    {"agent": {"caller": "local:agent", "command": "edit.insert", "args": {"buffer": "b1_0000e1e1", "at": 0, "text": "B", "origin": "agent:ctl-90"}, "expect": {"rc": 0, "rev": 2}}},
+    {"agent": {"caller": "local:agent", "command": "edit.insert", "args": {"buffer": "b1_0000e1e1", "at": 0, "text": "C", "origin": "agent:ctl-90"}, "expect": {"rc": 0, "rev": 3}}},
     {"deliver_event": {"seq": 1}},
     {"drop_event": {"seq": 2}},
     {"deliver_event": {"seq": 3}}

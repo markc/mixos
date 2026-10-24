@@ -82,7 +82,7 @@ impl FileChange {
     ///
     /// An existing file keeps its mode, owner and group on restore (read
     /// from the same open file as its content). A new file is written with
-    /// the `mode` (and `group`, if set) the verb chooses.
+    /// the `mode` (and `group`, if set) the command chooses.
     pub fn backup(path: &Path) -> anyhow::Result<Self> {
         use std::{io::Read, os::unix::fs::MetadataExt};
         let context = || format!("back up {}", path.display());
@@ -135,11 +135,11 @@ pub fn digest(bytes: &[u8]) -> String {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Receipt {
     pub id: String,
-    pub verb: String,
+    pub command: String,
     pub grant: String,
     pub origin: Origin,
     pub at: String,
-    /// The non-secret arguments, as the verb chose to record them.
+    /// The non-secret arguments, as the command chose to record them.
     pub summary: serde_json::Value,
     pub files: Vec<FileChange>,
     pub outcome: Outcome,
@@ -158,10 +158,10 @@ pub fn valid_id(id: &str) -> bool {
 }
 
 impl Receipt {
-    pub fn new(verb: &str, grant: &str, origin: &Origin, summary: serde_json::Value) -> Self {
+    pub fn new(command: &str, grant: &str, origin: &Origin, summary: serde_json::Value) -> Self {
         Self {
             id: uuid::Uuid::now_v7().hyphenated().to_string(),
-            verb: verb.into(),
+            command: command.into(),
             grant: grant.into(),
             origin: origin.clone(),
             at: chrono::Utc::now().to_rfc3339(),
@@ -410,7 +410,7 @@ mod tests {
         );
         r.save(dir.path()).unwrap();
         assert_eq!(
-            Receipt::load(dir.path(), &r.id).unwrap().verb,
+            Receipt::load(dir.path(), &r.id).unwrap().command,
             "net.link.apply"
         );
         assert!(Receipt::load(dir.path(), "../breaker").is_err());

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The `input.*` Bus verb surface, dispatched over the shared [`Resolver`].
+//! The `input.*` Bus command surface, dispatched over the shared [`Resolver`].
 //!
 //! This module needs no keyboard at all: an agent can query and rebind the
-//! keymap whether or not the evdev reader is running. Every verb is
+//! keymap whether or not the evdev reader is running. Every command is
 //! reachable by node-local and mesh callers (full mesh access): the broker
 //! stamps `broker_origin` (`local` or `mesh`) from the source socket, and
 //! membership of the mesh is the whole authorization.
@@ -16,56 +16,56 @@ use std::sync::{Arc, Mutex};
 
 use bus::native_client::IncomingCommand;
 use inputd_core::Resolver;
-use inputd_schema::{BindingRow, InputMode, KeyInjection, PhysicalStroke, verbs};
+use inputd_schema::{BindingRow, InputMode, KeyInjection, PhysicalStroke, commands};
 use serde_json::{Value, json};
 
 use crate::inject::{Injection, Injector};
 use crate::keymap_file;
 
-pub fn verb_manifest() -> Vec<bus::VerbDescriptor> {
-    use bus::VerbDescriptor;
+pub fn command_manifest() -> Vec<bus::CommandDescriptor> {
+    use bus::CommandDescriptor;
     vec![
-        VerbDescriptor::new("HELP", &[], "List all commands this service accepts", true),
-        VerbDescriptor::new("input.query", &[], "Read the keymap and input mode", true),
-        VerbDescriptor::new(
+        CommandDescriptor::new("HELP", &[], "List all commands this service accepts", true),
+        CommandDescriptor::new("input.query", &[], "Read the keymap and input mode", true),
+        CommandDescriptor::new(
             "input.bind",
             &["body"],
             "Bind a physical stroke from a BindingRow JSON body",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "input.unbind",
             &["body"],
             "Unbind a PhysicalStroke JSON body",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "input.mode",
             &["mode"],
             "Set or toggle the input mode",
             false,
         ),
-        VerbDescriptor::new("input.reload", &[], "Reload the keymap file", false),
-        VerbDescriptor::new(
-            verbs::KEY,
+        CommandDescriptor::new("input.reload", &[], "Reload the keymap file", false),
+        CommandDescriptor::new(
+            commands::KEY,
             &["key", "action"],
             "Inject a key press/release/tap by name or decimal Linux code",
             false,
         ),
-        VerbDescriptor::new(
-            verbs::POINTER_MOVE,
+        CommandDescriptor::new(
+            commands::POINTER_MOVE,
             &["dx", "dy"],
             "Inject relative pointer motion (signed i32 deltas)",
             false,
         ),
-        VerbDescriptor::new(
-            verbs::POINTER_BUTTON,
+        CommandDescriptor::new(
+            commands::POINTER_BUTTON,
             &["button", "action"],
             "Inject left/right/middle button press/release/click",
             false,
         ),
-        VerbDescriptor::new(
-            verbs::POINTER_SCROLL,
+        CommandDescriptor::new(
+            commands::POINTER_SCROLL,
             &["dy", "dx"],
             "Inject wheel steps (signed i32 dy, optional dx)",
             false,
@@ -89,7 +89,7 @@ fn mesh_open_value(value: Option<&str>) -> bool {
 }
 
 /// Where the keymap lives, whether this process may write it, and the mesh
-/// posture the mutation verbs are served under.
+/// posture the mutation commands are served under.
 ///
 /// The CONFIGURED path is kept even when writing is disabled, so `input.reload`
 /// can still read it (and re-enable writing once the operator has fixed it) and
@@ -149,16 +149,16 @@ pub fn dispatch(
     cmd: &IncomingCommand,
 ) -> (u8, String) {
     match cmd.command.as_str() {
-        verbs::QUERY => query(resolver, store),
-        verbs::BIND => guard_mutation(store, cmd, || bind(resolver, store, &cmd.body)),
-        verbs::UNBIND => guard_mutation(store, cmd, || unbind(resolver, store, &cmd.body)),
-        verbs::MODE => guard_mutation(store, cmd, || mode(resolver, &cmd.body)),
-        verbs::RELOAD => guard_mutation(store, cmd, || reload(resolver, store)),
-        verbs::KEY => key(injector, &cmd.body),
-        verbs::POINTER_MOVE | verbs::POINTER_BUTTON | verbs::POINTER_SCROLL => {
+        commands::QUERY => query(resolver, store),
+        commands::BIND => guard_mutation(store, cmd, || bind(resolver, store, &cmd.body)),
+        commands::UNBIND => guard_mutation(store, cmd, || unbind(resolver, store, &cmd.body)),
+        commands::MODE => guard_mutation(store, cmd, || mode(resolver, &cmd.body)),
+        commands::RELOAD => guard_mutation(store, cmd, || reload(resolver, store)),
+        commands::KEY => key(injector, &cmd.body),
+        commands::POINTER_MOVE | commands::POINTER_BUTTON | commands::POINTER_SCROLL => {
             pointer(injector, &cmd.command, &cmd.body)
         }
-        other => error(&format!("unknown input verb: {other}")),
+        other => error(&format!("unknown input command: {other}")),
     }
 }
 
@@ -180,12 +180,12 @@ fn key(injector: &mut Injector, body: &str) -> (u8, String) {
     }
 }
 
-fn pointer(injector: &mut Injector, verb: &str, body: &str) -> (u8, String) {
-    let request = match verb {
-        verbs::POINTER_MOVE => serde_json::from_str(body).map(Injection::Move),
-        verbs::POINTER_BUTTON => serde_json::from_str(body).map(Injection::Button),
-        verbs::POINTER_SCROLL => serde_json::from_str(body).map(Injection::Scroll),
-        _ => unreachable!("only pointer verbs reach this handler"),
+fn pointer(injector: &mut Injector, command_name: &str, body: &str) -> (u8, String) {
+    let request = match command_name {
+        commands::POINTER_MOVE => serde_json::from_str(body).map(Injection::Move),
+        commands::POINTER_BUTTON => serde_json::from_str(body).map(Injection::Button),
+        commands::POINTER_SCROLL => serde_json::from_str(body).map(Injection::Scroll),
+        _ => unreachable!("only pointer commands reach this handler"),
     };
     let request = match request {
         Ok(request) => request,
@@ -199,7 +199,7 @@ fn pointer(injector: &mut Injector, verb: &str, body: &str) -> (u8, String) {
 
 /// Persist the current physical rows to the keymap file and annotate a
 /// mutation's reply with the outcome. A persistence failure does not fail the
-/// verb (rc stays 0 — the live table DID change), but the reply says so:
+/// command (rc stays 0 — the live table DID change), but the reply says so:
 /// `persisted:false` plus `persist_disabled` (writing is off this run) or
 /// `persist_error` (the save itself failed). A successful save, or no
 /// configured path, leaves the reply unchanged.
@@ -457,11 +457,11 @@ mod tests {
     use std::os::unix::net::UnixStream;
     use std::time::Duration;
 
-    fn command(verb: &str, body: Value, origin: Option<&str>) -> IncomingCommand {
+    fn command(command_name: &str, body: Value, origin: Option<&str>) -> IncomingCommand {
         IncomingCommand {
             generation: 0,
             from: "agent@beta".into(),
-            command: verb.into(),
+            command: command_name.into(),
             id: Some("pointer-test".into()),
             args: json!({}),
             body: body.to_string(),
@@ -486,27 +486,27 @@ mod tests {
         let resolver = resolver();
         let mut cases = vec![
             (
-                verbs::POINTER_MOVE,
+                commands::POINTER_MOVE,
                 json!({"dx": -17, "dy": 23}),
                 vec![(2, 0, -17), (2, 1, 23), (0, 0, 0)],
             ),
             (
-                verbs::POINTER_MOVE,
+                commands::POINTER_MOVE,
                 json!({"dx": i32::MIN, "dy": i32::MAX}),
                 vec![(2, 0, i32::MIN), (2, 1, i32::MAX), (0, 0, 0)],
             ),
             (
-                verbs::POINTER_SCROLL,
+                commands::POINTER_SCROLL,
                 json!({"dy": -2}),
                 vec![(2, 8, -2), (0, 0, 0)],
             ),
             (
-                verbs::POINTER_SCROLL,
+                commands::POINTER_SCROLL,
                 json!({"dy": 3, "dx": -1}),
                 vec![(2, 8, 3), (2, 6, -1), (0, 0, 0)],
             ),
             (
-                verbs::POINTER_SCROLL,
+                commands::POINTER_SCROLL,
                 json!({"dy": 0, "dx": 0}),
                 vec![(2, 8, 0), (2, 6, 0), (0, 0, 0)],
             ),
@@ -521,7 +521,7 @@ mod tests {
                 ),
             ] {
                 cases.push((
-                    verbs::POINTER_BUTTON,
+                    commands::POINTER_BUTTON,
                     json!({"button": button, "action": action}),
                     events,
                 ));
@@ -536,13 +536,13 @@ mod tests {
                     vec![(1, code, 1), (0, 0, 0), (1, code, 0), (0, 0, 0)],
                 ),
             ] {
-                cases.push((verbs::KEY, json!({"key": key, "action": action}), events));
+                cases.push((commands::KEY, json!({"key": key, "action": action}), events));
             }
         }
         // Reuse one injector across calls, for mesh, local and unstamped callers.
         for origin in [Some("mesh"), Some("local"), None] {
-            for (verb, body, expected) in &cases {
-                let cmd = command(verb, body.clone(), origin);
+            for (command_name, body, expected) in &cases {
+                let cmd = command(command_name, body.clone(), origin);
                 let (rc, reply) = dispatch(&resolver, &Store::default(), &mut injector, &cmd);
                 assert_eq!(rc, 0, "{reply}");
                 assert_eq!(
@@ -567,36 +567,36 @@ mod tests {
     #[test]
     fn invalid_pointer_requests_are_rejected_before_device_access() {
         let mut injector = Injector::default();
-        for (verb, body) in [
-            (verbs::POINTER_MOVE, json!({"dx": 1})),
-            (verbs::POINTER_MOVE, json!({"dx": 2147483648_i64, "dy": 0})),
-            (verbs::POINTER_MOVE, json!({"dx": -2147483649_i64, "dy": 0})),
-            (verbs::POINTER_MOVE, json!({"dx": 1.5, "dy": 0})),
-            (verbs::POINTER_MOVE, json!({"dx": "1", "dy": 0})),
-            (verbs::POINTER_SCROLL, json!({"dx": 1})),
-            (verbs::POINTER_SCROLL, json!({"dy": 0, "dx": false})),
+        for (command_name, body) in [
+            (commands::POINTER_MOVE, json!({"dx": 1})),
+            (commands::POINTER_MOVE, json!({"dx": 2147483648_i64, "dy": 0})),
+            (commands::POINTER_MOVE, json!({"dx": -2147483649_i64, "dy": 0})),
+            (commands::POINTER_MOVE, json!({"dx": 1.5, "dy": 0})),
+            (commands::POINTER_MOVE, json!({"dx": "1", "dy": 0})),
+            (commands::POINTER_SCROLL, json!({"dx": 1})),
+            (commands::POINTER_SCROLL, json!({"dy": 0, "dx": false})),
             (
-                verbs::POINTER_SCROLL,
+                commands::POINTER_SCROLL,
                 json!({"dy": 0, "dx": 2147483648_i64}),
             ),
             (
-                verbs::POINTER_BUTTON,
+                commands::POINTER_BUTTON,
                 json!({"button": "side", "action": "click"}),
             ),
             (
-                verbs::POINTER_BUTTON,
+                commands::POINTER_BUTTON,
                 json!({"button": "left", "action": "toggle"}),
             ),
-            (verbs::POINTER_BUTTON, json!({"button": "left"})),
-            (verbs::POINTER_BUTTON, json!(null)),
-            (verbs::POINTER_MOVE, json!([])),
+            (commands::POINTER_BUTTON, json!({"button": "left"})),
+            (commands::POINTER_BUTTON, json!(null)),
+            (commands::POINTER_MOVE, json!([])),
         ] {
-            let cmd = command(verb, body, Some("mesh"));
+            let cmd = command(command_name, body, Some("mesh"));
             let (rc, reply) = dispatch(&resolver(), &Store::default(), &mut injector, &cmd);
             assert_eq!(rc, 10);
             assert!(reply.contains("invalid pointer request"), "{reply}");
         }
-        let mut cmd = command(verbs::POINTER_MOVE, json!({}), None);
+        let mut cmd = command(commands::POINTER_MOVE, json!({}), None);
         cmd.body = "{".into();
         let (rc, reply) = dispatch(&resolver(), &Store::default(), &mut injector, &cmd);
         assert_eq!(rc, 10);
@@ -617,7 +617,7 @@ mod tests {
             "",
         ] {
             let cmd = command(
-                verbs::KEY,
+                commands::KEY,
                 json!({"key": key, "action": "tap"}),
                 Some("mesh"),
             );
@@ -637,12 +637,12 @@ mod tests {
             json!(null),
             json!([]),
         ] {
-            let cmd = command(verbs::KEY, body, Some("mesh"));
+            let cmd = command(commands::KEY, body, Some("mesh"));
             let (rc, reply) = dispatch(&resolver(), &Store::default(), &mut injector, &cmd);
             assert_eq!(rc, 10);
             assert!(reply.contains("invalid key request"), "{reply}");
         }
-        let mut cmd = command(verbs::KEY, json!({}), None);
+        let mut cmd = command(commands::KEY, json!({}), None);
         cmd.body = "{".into();
         let (rc, reply) = dispatch(&resolver(), &Store::default(), &mut injector, &cmd);
         assert_eq!(rc, 10);
@@ -653,12 +653,12 @@ mod tests {
     fn pointer_write_errors_are_reported_and_keymap_gate_is_preserved() {
         let mut injector =
             Injector::with_test_file(File::options().write(true).open("/dev/full").unwrap());
-        let cmd = command(verbs::POINTER_MOVE, json!({"dx": 1, "dy": 0}), Some("mesh"));
+        let cmd = command(commands::POINTER_MOVE, json!({"dx": 1, "dy": 0}), Some("mesh"));
         let (rc, reply) = dispatch(&resolver(), &Store::default(), &mut injector, &cmd);
         assert_eq!(rc, 10);
         assert!(reply.contains("pointer injection failed"));
         let cmd = command(
-            verbs::KEY,
+            commands::KEY,
             json!({"key": "F9", "action": "tap"}),
             Some("mesh"),
         );
@@ -666,7 +666,7 @@ mod tests {
         assert_eq!(rc, 10);
         assert!(reply.contains("key injection failed"));
         // Under the opt-in lock the keymap gate is still in force for mesh.
-        let cmd = command(verbs::MODE, json!({"mode": "transparent"}), Some("mesh"));
+        let cmd = command(commands::MODE, json!({"mode": "transparent"}), Some("mesh"));
         let locked = Store::default().with_mesh_open(false);
         let (rc, reply) = dispatch(&resolver(), &locked, &mut injector, &cmd);
         assert_eq!(rc, 10);
@@ -683,13 +683,13 @@ mod tests {
             .unwrap();
         let mut injector = Injector::with_test_file(File::from(OwnedFd::from(writer)));
         let locked = Store::default().with_mesh_open(false);
-        for (verb, body, frames) in [
-            (verbs::KEY, json!({"key": "F9", "action": "press"}), 2),
-            (verbs::POINTER_MOVE, json!({"dx": 1, "dy": 2}), 3),
+        for (command_name, body, frames) in [
+            (commands::KEY, json!({"key": "F9", "action": "press"}), 2),
+            (commands::POINTER_MOVE, json!({"dx": 1, "dy": 2}), 3),
         ] {
-            let cmd = command(verb, body, Some("mesh"));
+            let cmd = command(command_name, body, Some("mesh"));
             let (rc, reply) = dispatch(&resolver(), &locked, &mut injector, &cmd);
-            assert_eq!(rc, 0, "{verb}: {reply}");
+            assert_eq!(rc, 0, "{command_name}: {reply}");
             let mut event = [0; 24];
             for _ in 0..frames {
                 reader.read_exact(&mut event).unwrap();
@@ -719,11 +719,11 @@ mod tests {
         resolver: &Shared,
         store: &Store,
         origin: Option<&str>,
-        verb: &str,
+        command_name: &str,
         body: Value,
     ) -> (u8, Value) {
         let mut injector = Injector::default();
-        let cmd = command(verb, body, origin);
+        let cmd = command(command_name, body, origin);
         let (rc, reply) = dispatch(resolver, store, &mut injector, &cmd);
         (rc, serde_json::from_str(&reply).unwrap())
     }
@@ -736,7 +736,7 @@ mod tests {
         let before = resolver.lock().unwrap().generation();
         let mesh = Some("mesh");
         // bind: reaches the live keymap, bumps the generation, persists.
-        let (rc, reply) = run_as(&resolver, &store, mesh, verbs::BIND, bind_row());
+        let (rc, reply) = run_as(&resolver, &store, mesh, commands::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");
         let bound = reply["generation"].as_u64().unwrap();
         assert!(bound > before, "{reply}");
@@ -752,7 +752,7 @@ mod tests {
         let written = keymap_file::load(&path).unwrap();
         assert!(written.rows.iter().any(|r| r.action.as_str() == "user.f05"));
         // unbind, mode and reload too.
-        let (rc, reply) = run_as(&resolver, &store, mesh, verbs::UNBIND, json!({"code":63}));
+        let (rc, reply) = run_as(&resolver, &store, mesh, commands::UNBIND, json!({"code":63}));
         assert_eq!(rc, 0, "{reply}");
         assert!(reply["generation"].as_u64().unwrap() > bound, "{reply}");
         assert!(
@@ -763,12 +763,12 @@ mod tests {
             &resolver,
             &store,
             mesh,
-            verbs::MODE,
+            commands::MODE,
             json!({"mode":"transparent"}),
         );
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["mode"], "transparent");
-        let (rc, reply) = run_as(&resolver, &store, mesh, verbs::RELOAD, json!({}));
+        let (rc, reply) = run_as(&resolver, &store, mesh, commands::RELOAD, json!({}));
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["ok"], true);
         let _ = std::fs::remove_dir_all(&dir);
@@ -787,7 +787,7 @@ mod tests {
                 &resolver,
                 &Store::default(),
                 origin,
-                verbs::BIND,
+                commands::BIND,
                 bad.clone(),
             );
             assert_eq!(rc, 10, "{origin:?}: {reply}");
@@ -806,20 +806,20 @@ mod tests {
         let resolver = resolver();
         let before = resolver.lock().unwrap().generation();
         let rows_before = resolver.lock().unwrap().physical_rows().to_vec();
-        for (verb, body) in [
-            (verbs::BIND, bind_row()),
+        for (command_name, body) in [
+            (commands::BIND, bind_row()),
             (
-                verbs::UNBIND,
+                commands::UNBIND,
                 json!({"code":106,"modifiers":{"right_ctrl":true}}),
             ),
-            (verbs::MODE, json!({"mode":"transparent"})),
-            (verbs::RELOAD, json!({})),
+            (commands::MODE, json!({"mode":"transparent"})),
+            (commands::RELOAD, json!({})),
         ] {
-            let (rc, reply) = run_as(&resolver, &store, Some("mesh"), verb, body);
-            assert_eq!(rc, 10, "{verb}: {reply}");
+            let (rc, reply) = run_as(&resolver, &store, Some("mesh"), command_name, body);
+            assert_eq!(rc, 10, "{command_name}: {reply}");
             let error = reply["error"].as_str().unwrap();
-            assert!(error.contains("node-local caller"), "{verb}: {error}");
-            assert!(error.contains("MIXOS_MESH_OPEN=0"), "{verb}: {error}");
+            assert!(error.contains("node-local caller"), "{command_name}: {error}");
+            assert!(error.contains("MIXOS_MESH_OPEN=0"), "{command_name}: {error}");
         }
         {
             let live = resolver.lock().unwrap();
@@ -833,7 +833,7 @@ mod tests {
             "file untouched"
         );
         // Local callers are unaffected by the lock.
-        let (rc, reply) = run_as(&resolver, &store, Some("local"), verbs::BIND, bind_row());
+        let (rc, reply) = run_as(&resolver, &store, Some("local"), commands::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -843,7 +843,7 @@ mod tests {
         for store in [Store::default(), Store::default().with_mesh_open(false)] {
             let resolver = resolver();
             for origin in [None, Some("peer"), Some("")] {
-                let (rc, reply) = run_as(&resolver, &store, origin, verbs::BIND, bind_row());
+                let (rc, reply) = run_as(&resolver, &store, origin, commands::BIND, bind_row());
                 assert_eq!(rc, 10, "{origin:?}: {reply}");
                 assert!(
                     reply["error"].as_str().unwrap().contains("broker-stamped"),
@@ -867,19 +867,19 @@ mod tests {
             })
         };
         for bad in ["", "Desktop", "desk.vt1"] {
-            let cmd = command(verbs::BIND, row(bad), Some("local"));
+            let cmd = command(commands::BIND, row(bad), Some("local"));
             let (rc, reply) = dispatch(&resolver, &Store::default(), &mut injector, &cmd);
             assert_eq!(rc, 10, "{bad:?}: {reply}");
             assert!(reply.contains("InvalidService"), "{reply}");
         }
-        let cmd = command(verbs::BIND, row("desktop-vt1"), Some("local"));
+        let cmd = command(commands::BIND, row("desktop-vt1"), Some("local"));
         let (rc, reply) = dispatch(&resolver, &Store::default(), &mut injector, &cmd);
         assert_eq!(rc, 0, "{reply}");
         let (rc, reply) = dispatch(
             &resolver,
             &Store::default(),
             &mut injector,
-            &command(verbs::QUERY, json!({}), None),
+            &command(commands::QUERY, json!({}), None),
         );
         assert_eq!(rc, 0);
         let reply: Value = serde_json::from_str(&reply).unwrap();
@@ -889,7 +889,7 @@ mod tests {
         assert_eq!(f5["action"], "desktop.clipboard.menu");
         // Rows without a target keep the old wire shape: no `service` key.
         let cmd = command(
-            verbs::BIND,
+            commands::BIND,
             json!({"layer":"physical","stroke":{"code":106,"modifiers":{"right_ctrl":true}},"action":"desktop.workspace.next"}),
             Some("local"),
         );
@@ -899,7 +899,7 @@ mod tests {
             &resolver,
             &Store::default(),
             &mut injector,
-            &command(verbs::QUERY, json!({}), None),
+            &command(commands::QUERY, json!({}), None),
         );
         let reply: Value = serde_json::from_str(&reply).unwrap();
         let next = reply["physical"]
@@ -923,7 +923,7 @@ mod tests {
         let (rc, reply) = run(
             &resolver,
             &store,
-            verbs::BIND,
+            commands::BIND,
             json!({"action":"scenes.editor.open","args":{"safe":true},"layer":"physical",
                 "service":"scenes","stroke":{"code":25,"modifiers":{"left_alt":true,"left_ctrl":true}}}),
         );
@@ -933,7 +933,7 @@ mod tests {
         let (rc, reply) = run(
             &resolver,
             &store,
-            verbs::BIND,
+            commands::BIND,
             json!({"action":"launch.run","args":{"command":"kcalc"},"layer":"physical",
                 "stroke":{"code":65,"modifiers":{}}}),
         );
@@ -942,7 +942,7 @@ mod tests {
         let (rc, reply) = run(
             &resolver,
             &store,
-            verbs::BIND,
+            commands::BIND,
             json!({"action":"input.passthrough","layer":"physical","passthrough":true,
                 "stroke":{"code":105,"modifiers":{"right_shift":true}}}),
         );
@@ -950,7 +950,7 @@ mod tests {
         // list / json: mode, generation, and per row stroke.code,
         // stroke.modifiers (every side spelled out), action, passthrough,
         // and args/service only when set.
-        let (rc, query) = run(&resolver, &store, verbs::QUERY, json!({}));
+        let (rc, query) = run(&resolver, &store, commands::QUERY, json!({}));
         assert_eq!(rc, 0);
         assert_eq!(query["mode"], "normal");
         assert!(query["generation"].is_u64());
@@ -968,7 +968,7 @@ mod tests {
         let (rc, reply) = run(
             &resolver,
             &store,
-            verbs::UNBIND,
+            commands::UNBIND,
             json!({"code":65,"modifiers":{}}),
         );
         assert_eq!(rc, 0, "{reply}");
@@ -980,7 +980,7 @@ mod tests {
             (None, "transparent"),
         ] {
             let mut injector = Injector::default();
-            let mut cmd = command(verbs::MODE, json!({}), Some("local"));
+            let mut cmd = command(commands::MODE, json!({}), Some("local"));
             cmd.body = body.map_or_else(String::new, |b| b.to_string());
             let (rc, reply) = dispatch(&resolver, &store, &mut injector, &cmd);
             assert_eq!(rc, 0, "{reply}");
@@ -1010,7 +1010,7 @@ mod tests {
             r#"{"Mode":"normal"}"#,
             r#"{"other":1}"#,
         ] {
-            let mut cmd = command(verbs::MODE, json!({}), Some("local"));
+            let mut cmd = command(commands::MODE, json!({}), Some("local"));
             cmd.body = body.to_string();
             let (rc, reply) = dispatch(&resolver, &store, &mut injector, &cmd);
             assert_eq!(rc, 10, "{body}: {reply}");
@@ -1019,7 +1019,7 @@ mod tests {
             assert_eq!(live.generation(), 0, "{body} bumped the generation");
         }
         // `{}` still toggles, like an empty body.
-        let (rc, reply) = run(&resolver, &store, verbs::MODE, json!({}));
+        let (rc, reply) = run(&resolver, &store, commands::MODE, json!({}));
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["mode"], "transparent");
     }
@@ -1029,7 +1029,7 @@ mod tests {
         let (rc, reply) = run(
             &resolver(),
             &Store::default(),
-            verbs::BIND,
+            commands::BIND,
             json!({"layer":"semantic","chord":"Ctrl+T","action":"term.tab.new"}),
         );
         assert_eq!(rc, 10);
@@ -1041,22 +1041,22 @@ mod tests {
 
     #[test]
     fn a_user_key_can_be_bound_and_unbound_over_the_bus() {
-        // The person's own binding: Right Ctrl + → fires a verb. Unbinding
+        // The person's own binding: Right Ctrl + → fires a command. Unbinding
         // returns the key to the classifier, which swallows it.
         let resolver = resolver();
         let row = json!({"layer":"physical","stroke":{"code":106,"modifiers":{"right_ctrl":true}},
             "action":"comp.workspace.switch","args":{"index":"next"},"service":"comp","repeat":"allow"});
-        let (rc, reply) = run(&resolver, &Store::default(), verbs::BIND, row);
+        let (rc, reply) = run(&resolver, &Store::default(), commands::BIND, row);
         assert_eq!(rc, 0, "{reply}");
         let edge = inputd_core::Edge::Press;
         let mods = inputd_schema::SideModifiers::RIGHT_CTRL;
         let out = resolver.lock().unwrap().resolve(106, mods, edge);
-        assert_eq!(out.verb.map(|v| v.as_str()), Some("comp.workspace.switch"));
+        assert_eq!(out.command.map(|v| v.as_str()), Some("comp.workspace.switch"));
         assert_eq!(out.service.as_deref(), Some("comp"));
         let (rc, reply) = run(
             &resolver,
             &Store::default(),
-            verbs::UNBIND,
+            commands::UNBIND,
             json!({"code":106,"modifiers":{"right_ctrl":true}}),
         );
         assert_eq!(rc, 0, "{reply}");
@@ -1080,7 +1080,7 @@ mod tests {
         .unwrap();
         let mut injector = Injector::default();
         let resolver = resolver();
-        let cmd = command(verbs::RELOAD, json!({}), Some("local"));
+        let cmd = command(commands::RELOAD, json!({}), Some("local"));
         let (rc, reply) = dispatch(
             &resolver,
             &Store::new(Some(path.clone()), None, None),
@@ -1101,9 +1101,9 @@ mod tests {
         assert_eq!(rows[0].action.as_str(), "desktop.workspace.next");
     }
 
-    fn run(resolver: &Shared, store: &Store, verb: &str, body: Value) -> (u8, Value) {
+    fn run(resolver: &Shared, store: &Store, command_name: &str, body: Value) -> (u8, Value) {
         let mut injector = Injector::default();
-        let cmd = command(verb, body, Some("local"));
+        let cmd = command(command_name, body, Some("local"));
         let (rc, reply) = dispatch(resolver, store, &mut injector, &cmd);
         (rc, serde_json::from_str(&reply).unwrap())
     }
@@ -1125,7 +1125,7 @@ mod tests {
     #[test]
     fn query_reports_recovery_and_disabled_persistence_only_when_they_apply() {
         let resolver = resolver();
-        let (rc, plain) = run(&resolver, &Store::default(), verbs::QUERY, json!({}));
+        let (rc, plain) = run(&resolver, &Store::default(), commands::QUERY, json!({}));
         assert_eq!(rc, 0);
         assert!(plain.get("recovered_from").is_none(), "{plain}");
         assert!(plain.get("persist_disabled").is_none(), "{plain}");
@@ -1135,7 +1135,7 @@ mod tests {
             Some(backup.clone()),
             Some("/var/lib/example/keymap.json: file reappeared".to_string()),
         );
-        let (rc, flagged) = run(&resolver, &store, verbs::QUERY, json!({}));
+        let (rc, flagged) = run(&resolver, &store, commands::QUERY, json!({}));
         assert_eq!(rc, 0);
         assert_eq!(flagged["recovered_from"], backup.to_str().unwrap());
         assert_eq!(
@@ -1157,12 +1157,12 @@ mod tests {
         let reason = format!("{}: unusable and could not be moved aside", path.display());
         let store = Store::new(Some(path.clone()), None, Some(reason.clone()));
         let resolver = resolver();
-        let (rc, reply) = run(&resolver, &store, verbs::BIND, bind_row());
+        let (rc, reply) = run(&resolver, &store, commands::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["ok"], true);
         assert_eq!(reply["persisted"], false);
         assert_eq!(reply["persist_disabled"], reason.as_str());
-        let (rc, reply) = run(&resolver, &store, verbs::UNBIND, json!({"code":63}));
+        let (rc, reply) = run(&resolver, &store, commands::UNBIND, json!({"code":63}));
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["persisted"], false);
         assert_eq!(reply["persist_disabled"], reason.as_str());
@@ -1175,7 +1175,7 @@ mod tests {
         let (dir, path) = keymap_dir("enabled", "{}");
         let store = Store::new(Some(path.clone()), None, None);
         let resolver = resolver();
-        let (rc, reply) = run(&resolver, &store, verbs::BIND, bind_row());
+        let (rc, reply) = run(&resolver, &store, commands::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");
         assert!(reply.get("persisted").is_none(), "{reply}");
         let written = keymap_file::load(&path).expect("bind persisted a loadable file");
@@ -1189,7 +1189,7 @@ mod tests {
         // root too): persistence is enabled but the save itself errors.
         let (dir, blocker) = keymap_dir("save-error", "x");
         let store = Store::new(Some(blocker.join("keymap.json")), None, None);
-        let (rc, reply) = run(&resolver(), &store, verbs::BIND, bind_row());
+        let (rc, reply) = run(&resolver(), &store, commands::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["persisted"], false);
         assert!(
@@ -1207,7 +1207,7 @@ mod tests {
         let resolver = resolver();
         // Still broken: rc 10, names the configured file, the parse reason and
         // why writing is off — never "no keymap file configured".
-        let (rc, reply) = run(&resolver, &store, verbs::RELOAD, json!({}));
+        let (rc, reply) = run(&resolver, &store, commands::RELOAD, json!({}));
         assert_eq!(rc, 10, "{reply}");
         let error = reply["error"].as_str().unwrap();
         assert!(error.contains(&path.display().to_string()), "{error}");
@@ -1219,13 +1219,13 @@ mod tests {
             r#"{"version":1,"physical":[{"stroke":{"code":106},"action":"desktop.workspace.next"}]}"#,
         )
         .unwrap();
-        let (rc, reply) = run(&resolver, &store, verbs::RELOAD, json!({}));
+        let (rc, reply) = run(&resolver, &store, commands::RELOAD, json!({}));
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["persist_reenabled"], reason.as_str());
-        let (_, query) = run(&resolver, &store, verbs::QUERY, json!({}));
+        let (_, query) = run(&resolver, &store, commands::QUERY, json!({}));
         assert!(query.get("persist_disabled").is_none(), "{query}");
         // And a rebind now reaches the disk.
-        let (rc, reply) = run(&resolver, &store, verbs::BIND, bind_row());
+        let (rc, reply) = run(&resolver, &store, commands::BIND, bind_row());
         assert_eq!(rc, 0);
         assert!(reply.get("persisted").is_none(), "{reply}");
         let written = keymap_file::load(&path).unwrap();
@@ -1247,7 +1247,7 @@ mod tests {
             inputd_schema::KEYMAP_SCHEMA_VERSION + 1
         );
         std::fs::write(&path, &newer).unwrap();
-        let (rc, reply) = run(&resolver, &store, verbs::RELOAD, json!({}));
+        let (rc, reply) = run(&resolver, &store, commands::RELOAD, json!({}));
         assert_eq!(rc, 10, "{reply}");
         assert!(
             reply["error"].as_str().unwrap().contains("is newer than"),
@@ -1259,7 +1259,7 @@ mod tests {
         assert!(disabled.contains(&path.display().to_string()), "{disabled}");
         assert!(disabled.contains("is newer than"), "{disabled}");
         // bind/unbind still change the live table but never touch the file.
-        let (rc, reply) = run(&resolver, &store, verbs::BIND, bind_row());
+        let (rc, reply) = run(&resolver, &store, commands::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["persisted"], false);
         assert_eq!(reply["persist_disabled"], disabled);
@@ -1268,7 +1268,7 @@ mod tests {
             newer,
             "unchanged after bind"
         );
-        let (rc, reply) = run(&resolver, &store, verbs::UNBIND, json!({"code":63}));
+        let (rc, reply) = run(&resolver, &store, commands::UNBIND, json!({"code":63}));
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["persisted"], false);
         assert_eq!(reply["persist_disabled"], disabled);
@@ -1279,10 +1279,10 @@ mod tests {
         );
         // The operator restores a current-version file: reload re-enables.
         std::fs::write(&path, current).unwrap();
-        let (rc, reply) = run(&resolver, &store, verbs::RELOAD, json!({}));
+        let (rc, reply) = run(&resolver, &store, commands::RELOAD, json!({}));
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["persist_reenabled"], disabled);
-        let (rc, reply) = run(&resolver, &store, verbs::BIND, bind_row());
+        let (rc, reply) = run(&resolver, &store, commands::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");
         assert!(reply.get("persisted").is_none(), "{reply}");
         let written = keymap_file::load(&path).expect("bind persisted a loadable file");
@@ -1322,7 +1322,7 @@ mod tests {
         let valid = r#"{"version":1,"physical":[]}"#;
         let store = Store::new(Some(path.clone()), None, None);
         let resolver = resolver();
-        let (rc, reply) = run(&resolver, &store, verbs::RELOAD, json!({}));
+        let (rc, reply) = run(&resolver, &store, commands::RELOAD, json!({}));
         assert_eq!(rc, 10, "{reply}");
         let disabled = reply["persist_disabled"]
             .as_str()
@@ -1336,17 +1336,17 @@ mod tests {
             disabled.ends_with("left in place by input.reload"),
             "{disabled}"
         );
-        let (rc, reply) = run(&resolver, &store, verbs::BIND, bind_row());
+        let (rc, reply) = run(&resolver, &store, commands::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["persisted"], false);
         assert_eq!(reply["persist_disabled"], disabled);
         // The operator restores the mode: the file was never touched.
         crate::keymap_file::tests::chmod(&path, 0o644);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), valid);
-        let (rc, reply) = run(&resolver, &store, verbs::RELOAD, json!({}));
+        let (rc, reply) = run(&resolver, &store, commands::RELOAD, json!({}));
         assert_eq!(rc, 0, "{reply}");
         assert_eq!(reply["persist_reenabled"], disabled);
-        let (rc, reply) = run(&resolver, &store, verbs::BIND, bind_row());
+        let (rc, reply) = run(&resolver, &store, commands::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");
         assert!(reply.get("persisted").is_none(), "{reply}");
         let written = keymap_file::load(&path).expect("bind persisted a loadable file");
@@ -1361,7 +1361,7 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         let store = Store::new(Some(path.clone()), None, None);
         let resolver = resolver();
-        let (rc, reply) = run(&resolver, &store, verbs::RELOAD, json!({}));
+        let (rc, reply) = run(&resolver, &store, commands::RELOAD, json!({}));
         assert_eq!(rc, 10, "{reply}");
         assert!(
             reply["error"]
@@ -1371,7 +1371,7 @@ mod tests {
             "{reply}"
         );
         assert!(reply.get("persist_disabled").is_none(), "{reply}");
-        let (rc, reply) = run(&resolver, &store, verbs::BIND, bind_row());
+        let (rc, reply) = run(&resolver, &store, commands::BIND, bind_row());
         assert_eq!(rc, 0, "{reply}");
         assert!(reply.get("persisted").is_none(), "{reply}");
         assert!(keymap_file::load(&path).is_ok(), "bind created the file");
@@ -1384,27 +1384,27 @@ mod tests {
         let backup = dir.join("keymap.json.bad-20260924-101112");
         let store = Store::new(Some(path), Some(backup.clone()), None);
         let resolver = resolver();
-        let (rc, _) = run(&resolver, &store, verbs::RELOAD, json!({}));
+        let (rc, _) = run(&resolver, &store, commands::RELOAD, json!({}));
         assert_eq!(rc, 0);
-        let (_, query) = run(&resolver, &store, verbs::QUERY, json!({}));
+        let (_, query) = run(&resolver, &store, commands::QUERY, json!({}));
         assert_eq!(query["recovered_from"], backup.to_str().unwrap());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn injection_manifest_lists_writable_verbs_and_arguments() {
-        let manifest = serde_json::to_value(verb_manifest()).unwrap();
-        for (verb, args) in [
-            (verbs::KEY, json!(["key", "action"])),
-            (verbs::POINTER_MOVE, json!(["dx", "dy"])),
-            (verbs::POINTER_BUTTON, json!(["button", "action"])),
-            (verbs::POINTER_SCROLL, json!(["dy", "dx"])),
+    fn injection_manifest_lists_writable_commands_and_arguments() {
+        let manifest = serde_json::to_value(command_manifest()).unwrap();
+        for (command_name, args) in [
+            (commands::KEY, json!(["key", "action"])),
+            (commands::POINTER_MOVE, json!(["dx", "dy"])),
+            (commands::POINTER_BUTTON, json!(["button", "action"])),
+            (commands::POINTER_SCROLL, json!(["dy", "dx"])),
         ] {
             let entry = manifest
                 .as_array()
                 .unwrap()
                 .iter()
-                .find(|entry| entry["name"] == verb)
+                .find(|entry| entry["name"] == command_name)
                 .unwrap();
             assert_eq!(entry["args"], args);
             assert_eq!(entry["read_only"], false);

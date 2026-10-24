@@ -12,8 +12,8 @@
 //!   (wallpapers, desktops, docks), one per output;
 //! - [`fonts`]: the embedded Inter and JetBrains Mono faces, chosen by weight;
 //! - [`icons`]: Lucide icons, stroke weight and colour from the theme;
-//! - [`command`]: the command registry menus, shortcuts and Bus verbs come from;
-//! - [`drive`]: the UI-level Bus verbs every app shares (widget tree, injected
+//! - [`action`]: the command registry menus, shortcuts and Bus commands come from;
+//! - [`drive`]: the UI-level Bus commands every app shares (widget tree, injected
 //!   pointer and keys, menus, window commands, captures);
 //! - [`strings`]: Fluent catalogues for every user-visible string;
 //! - [`titlebar`]: the client-side title bar (icon, menus, title, right-hand
@@ -45,7 +45,7 @@ pub mod button;
 pub mod canvas;
 pub mod chrome;
 pub mod combo;
-pub mod command;
+pub mod action;
 pub mod content;
 pub mod datatable;
 pub mod decorations;
@@ -77,7 +77,7 @@ pub mod toggle;
 pub mod tooltip;
 
 pub use button::selectable;
-pub use command::{Command, Registry};
+pub use action::{Action, Registry};
 pub use icons::Icon;
 pub use strings::Strings;
 pub use theme::Theme;

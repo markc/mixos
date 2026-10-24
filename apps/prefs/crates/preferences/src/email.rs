@@ -678,7 +678,7 @@ impl Action {
         }
     }
 
-    fn verb(&self) -> &'static str {
+    fn command_name(&self) -> &'static str {
         match self {
             Action::Password(..) | Action::Forget(_) => "email.account.password.set",
             Action::Remove(_) => "email.account.remove",
@@ -766,12 +766,12 @@ fn passwords(value: &Value) -> Option<BTreeMap<String, bool>> {
     )
 }
 
-/// The email app's answer refuses an unknown verb.
-fn unknown_verb(value: &Value) -> bool {
-    value["error_code"] == "UNKNOWN_VERB"
+/// The email app's answer refuses an unknown command.
+fn unknown_command(value: &Value) -> bool {
+    value["error_code"] == "UNKNOWN_COMMAND"
         || value["message"]
             .as_str()
-            .is_some_and(|m| m.to_ascii_lowercase().contains("unknown verb"))
+            .is_some_and(|m| m.to_ascii_lowercase().contains("unknown command"))
 }
 
 impl Engine {
@@ -1460,7 +1460,7 @@ impl Engine {
             Action::Password(_, password) => Some(password.clone()),
             Action::Forget(_) | Action::Connect(_) | Action::Remove(_) => None,
         };
-        let verb = task.action.verb();
+        let command_name = task.action.command_name();
         // The one empty password sent: a forget, never a typed Set password.
         let body = match &task.action {
             Action::Forget(id) => json!({"id":id,"password":""}),
@@ -1469,7 +1469,7 @@ impl Engine {
         self.effects.push(Effect::Mail {
             ticket,
             service: EMAIL,
-            verb,
+            command: command_name,
             body,
             secret,
         });
@@ -1486,7 +1486,7 @@ impl Engine {
         self.effects.push(Effect::Mail {
             ticket,
             service: EMAIL,
-            verb: "email.accounts",
+            command: "email.accounts",
             body: json!({}),
             secret: None,
         });
@@ -1544,7 +1544,7 @@ impl Engine {
                 self.email.service = Service::Absent;
                 self.email.passwords.clear();
             }
-            Answer::Refused(value) if unknown_verb(&value) => {
+            Answer::Refused(value) if unknown_command(&value) => {
                 self.email.service = Service::Unsupported;
                 self.email.passwords.clear();
             }
@@ -1589,7 +1589,7 @@ impl Engine {
             }
             Answer::Missing if !task.launched && task.may_launch => self.launch_email(task),
             Answer::Missing => self.wait_for_email(task),
-            Answer::Refused(value) if unknown_verb(&value) => {
+            Answer::Refused(value) if unknown_command(&value) => {
                 let text = self.label("email-unsupported", &[]);
                 self.end_action(task, Err(("UNSUPPORTED", text)), Value::Null);
             }
@@ -1639,7 +1639,7 @@ impl Engine {
                 self.email.service = Service::Absent;
                 let _ = self.remove_directly(id, reply);
             }
-            Answer::Refused(value) if unknown_verb(&value) => {
+            Answer::Refused(value) if unknown_command(&value) => {
                 self.email.task = None;
                 let _ = self.remove_directly(id, reply);
             }
@@ -1701,7 +1701,7 @@ impl Engine {
                 let text = self.label("email-password-forgotten", &[("account", &name)]);
                 return self.end_action(task, Ok(text), Value::Null);
             }
-            Answer::Refused(value) if unknown_verb(&value) => self.label("email-unsupported", &[]),
+            Answer::Refused(value) if unknown_command(&value) => self.label("email-unsupported", &[]),
             Answer::Refused(value) => refusal(&value),
             Answer::Missing => self.label("email-not-running", &[]),
             Answer::NotSent(message) | Answer::Lost(message) => message,
@@ -1726,7 +1726,7 @@ impl Engine {
         self.effects.push(Effect::Mail {
             ticket,
             service: APPS,
-            verb: "apps.launch",
+            command: "apps.launch",
             body: json!({"id":EMAIL_APP_ID}),
             secret: None,
         });
@@ -2077,8 +2077,8 @@ mod tests {
         assert!(e.email.identities.is_none(), "a sent list clears the draft");
         let calls = settings_calls(&mut e);
         assert_eq!(calls.len(), 1, "{calls:?}");
-        let (ticket, verb, body) = calls[0].clone();
-        assert_eq!(verb, "settings.apply");
+        let (ticket, command_name, body) = calls[0].clone();
+        assert_eq!(command_name, "settings.apply");
         let sent = body["changes"]["email.accounts"][0]["identities"]
             .as_array()
             .expect("the account's identity list");
@@ -2484,7 +2484,7 @@ mod tests {
         e.take_effects()
             .into_iter()
             .filter_map(|x| match x {
-                Effect::Settings { ticket, verb, body } => Some((ticket, verb, body)),
+                Effect::Settings { ticket, command: command_name, body } => Some((ticket, command_name, body)),
                 _ => None,
             })
             .collect()
@@ -2497,10 +2497,10 @@ mod tests {
                 Effect::Mail {
                     ticket,
                     service,
-                    verb,
+                    command: command_name,
                     body,
                     secret,
-                } => Some((*ticket, *service, *verb, body.clone(), secret.is_some())),
+                } => Some((*ticket, *service, *command_name, body.clone(), secret.is_some())),
                 _ => None,
             })
             .collect()
@@ -2576,8 +2576,8 @@ mod tests {
         e.confirm_email();
         let calls = settings_calls(&mut e);
         assert_eq!(calls.len(), 1);
-        let (ticket, verb, body) = calls[0].clone();
-        assert_eq!(verb, "settings.apply");
+        let (ticket, command_name, body) = calls[0].clone();
+        assert_eq!(command_name, "settings.apply");
         assert_eq!(body["expected_revision"], "7");
         assert_eq!(body["changes"]["email.default_account"], Value::Null);
         assert_eq!(
@@ -2802,7 +2802,7 @@ mod tests {
     }
 
     #[test]
-    fn an_email_without_the_verb_is_reported_not_retried() {
+    fn an_email_without_the_command_is_reported_not_retried() {
         let mut e = read();
         e.select_email_account("b");
         e.connect_email_account();
@@ -2812,7 +2812,7 @@ mod tests {
             calls[0].0,
             reply(
                 10,
-                json!({"error_code":"UNKNOWN_VERB","message":"unknown Email verb"}),
+                json!({"error_code":"UNKNOWN_COMMAND","message":"unknown Email command"}),
             ),
         );
         assert!(e.failed && e.status == "email-unsupported");
@@ -2929,7 +2929,7 @@ mod tests {
                     calls[0].0,
                     reply(
                         10,
-                        json!({"error_code":"UNKNOWN_VERB","message":"unknown verb"}),
+                        json!({"error_code":"UNKNOWN_COMMAND","message":"unknown command"}),
                     ),
                 );
             }
@@ -3077,7 +3077,7 @@ mod tests {
         assert!(effects.iter().any(|x| matches!(
             x,
             Effect::Settings {
-                verb: "settings.apply",
+                command: "settings.apply",
                 ..
             }
         )));
@@ -3096,7 +3096,7 @@ mod tests {
         assert!(effects.iter().any(|x| matches!(
             x,
             Effect::Settings {
-                verb: "settings.apply",
+                command: "settings.apply",
                 ..
             }
         )));
@@ -3119,7 +3119,7 @@ mod tests {
     }
 
     #[test]
-    fn the_bus_verbs_take_the_same_paths() {
+    fn the_bus_commands_take_the_same_paths() {
         let mut e = read();
         e.command(1, "prefs.email.set", r#"{"op":"default","id":"b"}"#);
         let effects = e.take_effects();

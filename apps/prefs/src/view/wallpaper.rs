@@ -4,7 +4,7 @@ use super::{UiEvent, command_button};
 use crate::label;
 use egui::{RichText, Ui};
 use preferences::{Engine, wallpaper::Kind};
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 use toolkit::{
     Registry, Strings, bars,
     dialog::{self, Choice},

@@ -21,7 +21,7 @@ mod_module_files = "deny"
 
 [dependencies]
 bus = { workspace = true, features = ["native"] }
-# The outbox and publisher for ced.command.executed.
+# The outbox and publisher for ced.action.executed.
 citizen.workspace = true
 buildinfo.workspace = true
 documents = { path = "crates/documents" }

@@ -5,19 +5,19 @@
 //! their carets and changes as they happen.
 //!
 //! The behaviour is the `documents` engine (open documents, actions, the
-//! `ced.*` verbs, sessions); the text view is the shared `editor` library.
+//! `ced.*` commands, sessions); the text view is the shared `editor` library.
 //! This crate is the shell around them (AGENTS.md §4.1):
 //!
 //! - [`bus`]: the Bus thread (calls to the edit service, `ced.*` commands,
 //!   topics, timers);
-//! - [`headless`]: `ced --headless`, every verb with no window;
+//! - [`headless`]: `ced --headless`, every command with no window;
 //! - [`app`]: the window's state around the controller;
 //! - [`commands`]: the registry every action goes through;
 //! - [`view`]: the window's drawing; [`shell`]: the running window.
 
 pub mod app;
 pub mod bus;
-pub mod commands;
+pub mod actions;
 pub mod headless;
 pub mod shell;
 pub mod view;

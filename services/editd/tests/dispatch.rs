@@ -56,7 +56,7 @@ enum Who<'a> {
     Unstamped,
 }
 
-fn cmd(who: Who, verb: &str, args: Value) -> IncomingCommand {
+fn cmd(who: Who, command_name: &str, args: Value) -> IncomingCommand {
     let mut headers = BTreeMap::new();
     let from = match who {
         Who::Local(from) => {
@@ -78,7 +78,7 @@ fn cmd(who: Who, verb: &str, args: Value) -> IncomingCommand {
     IncomingCommand {
         generation: 0,
         from,
-        command: verb.into(),
+        command: command_name.into(),
         id: Some("1".into()),
         args,
         body: String::new(),
@@ -87,21 +87,21 @@ fn cmd(who: Who, verb: &str, args: Value) -> IncomingCommand {
 }
 
 impl H {
-    async fn call_as(&self, who: Who<'_>, verb: &str, args: Value) -> (u8, Value) {
-        let (rc, body) = self.editd.handle(&cmd(who, verb, args)).await;
+    async fn call_as(&self, who: Who<'_>, command_name: &str, args: Value) -> (u8, Value) {
+        let (rc, body) = self.editd.handle(&cmd(who, command_name, args)).await;
         (
             rc,
             serde_json::from_str(&body).unwrap_or(Value::String(body)),
         )
     }
 
-    async fn call(&self, verb: &str, args: Value) -> (u8, Value) {
-        self.call_as(Who::Local("tester"), verb, args).await
+    async fn call(&self, command_name: &str, args: Value) -> (u8, Value) {
+        self.call_as(Who::Local("tester"), command_name, args).await
     }
 
-    async fn ok(&self, verb: &str, args: Value) -> Value {
-        let (rc, v) = self.call(verb, args).await;
-        assert_eq!(rc, 0, "{verb} refused: {v}");
+    async fn ok(&self, command_name: &str, args: Value) -> Value {
+        let (rc, v) = self.call(command_name, args).await;
+        assert_eq!(rc, 0, "{command_name} refused: {v}");
         v
     }
 
@@ -302,7 +302,7 @@ async fn refusals_carry_code_and_reason() {
     let h = start();
     refused(
         &h.call("edit.bogus", json!({"buffer": "b1_x"})).await,
-        "UNKNOWN_VERB",
+        "UNKNOWN_COMMAND",
         None,
     );
     refused(
@@ -456,11 +456,11 @@ async fn refusal_precedence_order() {
     let f = h.file("p.txt", "p\n");
     let b = h.open(&f).await;
     let mesh = Who::Mesh("term", "beta");
-    // 1 unknown verb beats everything.
+    // 1 unknown command beats everything.
     refused(
         &h.call_as(Who::Unstamped, "edit.nope", json!({"buffer": "zz"}))
             .await,
-        "UNKNOWN_VERB",
+        "UNKNOWN_COMMAND",
         None,
     );
     // 2 arg shape beats unstamped.
@@ -651,11 +651,11 @@ async fn mesh_lock_blocks_mutations_only() {
         "FORBIDDEN",
         Some("mesh_locked"),
     );
-    for verb in ["edit.get", "edit.history", "edit.anchor.get"] {
+    for command_name in ["edit.get", "edit.history", "edit.anchor.get"] {
         assert_eq!(
-            h.call_as(mesh, verb, json!({"buffer": b})).await.0,
+            h.call_as(mesh, command_name, json!({"buffer": b})).await.0,
             0,
-            "{verb}"
+            "{command_name}"
         );
     }
     assert_eq!(h.call_as(mesh, "edit.list", json!({})).await.0, 0);

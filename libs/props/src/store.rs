@@ -4,7 +4,7 @@
 //! The `PropertyStore` trait — atomic record + event commit primitives.
 //!
 //! Each storage backend implements this trait. The
-//! library threads namespace hooks and Bus verbs above it;
+//! library threads namespace hooks and Bus commands above it;
 //! the trait itself is the narrow contract for "commit one transition,
 //! produce the matching event row, return both atomically".
 //!
@@ -20,7 +20,7 @@ use crate::record::{Actor, AuditEpoch, Nseq, Record, RecordEvent, RecordKey, Ver
 use crate::value::PropValue;
 
 /// Storage-layer errors. These are the error taxonomy that can arise inside a `PropertyStore` call; each
-/// variant maps to one wire `error_code` and the verb layer
+/// variant maps to one wire `error_code` and the command layer
 /// surfaces it verbatim. The other tokens (`auth_denied`,
 /// `hook_error`, `unavailable`) originate above the store — at the
 /// Bus layer, the hook runner, or the transport — and never
@@ -33,7 +33,7 @@ pub enum StoreError {
     /// `if_version` did not match the current version (or the record
     /// did not exist when a non-zero `if_version` was supplied). Maps
     /// to wire `error_code: version_mismatch`; `current` carries the
-    /// actual current value so the verb layer can surface it as the
+    /// actual current value so the command layer can surface it as the
     /// body's `current_version` field.
     VersionMismatch { expected: Version, current: Version },
     /// Backend-level failure (disk error, lock contention, SQL error,
@@ -44,7 +44,7 @@ pub enum StoreError {
     /// (singleton key supplied for a collection or vice versa),
     /// or a field failed type/range/regex/`before_set` validation
     /// inside the storage path. Maps to wire `error_code:
-    /// validation_error`; the verb layer surfaces the
+    /// validation_error`; the command layer surfaces the
     /// `fields` body array.
     Validation { message: String },
     /// uniqueness constraint violated (e.g. creating a
@@ -123,7 +123,7 @@ pub struct SetCommit {
     /// `new_value`'s fields with the existing record; `Replace` (wire
     /// `merge: false`) substitutes the record wholesale. The merge
     /// happens inside the backend transaction so that the read-merge-
-    /// write trio is atomic against concurrent writers — the verb
+    /// write trio is atomic against concurrent writers — the command
     /// layer MUST NOT do its own read-modify-write before calling
     /// `commit_set`.
     pub merge: MergeMode,

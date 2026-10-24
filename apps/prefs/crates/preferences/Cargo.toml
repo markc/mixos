@@ -1,9 +1,9 @@
 # preferences: Preferences' headless engine — its sections, Software's
 # rows and release notes over the releases service, one operation at a time,
-# and the prefs.* Bus verbs. No UI dependency: the prefs shell renders it.
+# and the prefs.* Bus commands. No UI dependency: the prefs shell renders it.
 [package]
 name = "preferences"
-description = "Preferences' headless engine: section registry, search, Software over releases.*, and the prefs.* verbs"
+description = "Preferences' headless engine: section registry, search, Software over releases.*, and the prefs.* commands"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

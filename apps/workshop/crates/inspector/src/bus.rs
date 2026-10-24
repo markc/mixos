@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Workshop's Bus: the app connection is the shared `citizen` library
 //! (promoted from this file when Prefs became its second owner); what stays
-//! here is Workshop's own discovery of the services and their verbs.
+//! here is Workshop's own discovery of the services and their commands.
 #[cfg(feature = "testing")]
 pub use citizen::Logged;
 pub use citizen::{CallError, Delivery, Handle, Reply, macros};
@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::sync::{Arc, LazyLock};
 
 /// The app name: the worker thread, the closing refusal and the
-/// `workshop.ping` / `workshop.show` activation verbs.
+/// `workshop.ping` / `workshop.show` activation commands.
 const APP: &str = "workshop";
 
 /// Register as `service` on the broker at `url`, also subscribed to
@@ -53,13 +53,13 @@ struct Probe {
     permits: Arc<tokio::sync::Semaphore>,
 }
 
-async fn json_call(probe: &Probe, service: &str, verb: &str) -> Result<Value, String> {
+async fn json_call(probe: &Probe, service: &str, command: &str) -> Result<Value, String> {
     let permit = acquire(probe).await?;
     let probe = probe.clone();
     let service = service.to_owned();
-    let verb = verb.to_owned();
+    let command = command.to_owned();
     owned_call(permit, async move {
-        json_call_within(&probe, &service, &verb, DISCOVERY_CALL_BUDGET).await
+        json_call_within(&probe, &service, &command, DISCOVERY_CALL_BUDGET).await
     })
     .await
 }
@@ -93,12 +93,12 @@ async fn acquire(probe: &Probe) -> Result<tokio::sync::OwnedSemaphorePermit, Str
 async fn json_call_within(
     probe: &Probe,
     service: &str,
-    verb: &str,
+    command: &str,
     budget: std::time::Duration,
 ) -> Result<Value, String> {
     let reply = probe
         .handle
-        .raw_within(service, verb, String::new(), budget)
+        .raw_within(service, command, String::new(), budget)
         .await
         .map_err(|e| e.to_string())?;
     if reply.rc >= 10 {
@@ -111,18 +111,18 @@ async fn json_call_within(
     }
     serde_json::from_str(&reply.body).map_err(|e| e.to_string())
 }
-async fn describe(handle: &Probe, service: &str) -> Result<Vec<crate::model::Verb>, String> {
+async fn describe(handle: &Probe, service: &str) -> Result<Vec<crate::model::Command>, String> {
     let permit = acquire(handle).await?;
     let handle = handle.clone();
     let service = service.to_owned();
     let deadline = tokio::time::Instant::now() + DISCOVERY_CALL_BUDGET;
     owned_call(permit, async move {
         let help = match json_call_within(&handle, &service, "HELP", DISCOVERY_CALL_BUDGET).await {
-            Ok(value) => crate::model::parse_verbs(&value),
+            Ok(value) => crate::model::parse_commands(&value),
             Err(error) => Err(error),
         };
         match help {
-            Ok(verbs) => Ok(verbs),
+            Ok(commands) => Ok(commands),
             Err(help_error) if tokio::time::Instant::now() >= deadline => Err(help_error),
             Err(help_error) => match json_call_within(
                 &handle,
@@ -132,7 +132,7 @@ async fn describe(handle: &Probe, service: &str) -> Result<Vec<crate::model::Ver
             )
             .await
             {
-                Ok(value) => crate::model::parse_verbs(&value),
+                Ok(value) => crate::model::parse_commands(&value),
                 Err(error) => Err(format!("HELP: {help_error}\napp.describe: {error}")),
             },
         }

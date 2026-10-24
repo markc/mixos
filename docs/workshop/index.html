@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Workshop is the MixOS desktop app that lists the services and verbs on this node&#x27;s Bus, shows each verb&#x27;s description and the mesh peers, and calls one verb once with a JSON body.">
+    <meta name="description" content="Workshop is the MixOS desktop app that lists the services and commands on this node&#x27;s Bus, shows each command&#x27;s description and the mesh peers, and calls one command once with a JSON body.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -216,7 +216,7 @@
                         <a href="#commands-and-keys">Commands and keys</a>
                         <a href="#running-it">Running it</a>
                         <a href="#testing">Testing</a>
-                        <a href="#macro-bus-verbs">Macro Bus verbs</a>
+                        <a href="#macro-bus-commands">Macro Bus commands</a>
                     </nav>
                 </div>
             </div>
@@ -244,15 +244,15 @@
 <h1 id="workshop">Workshop</h1>
 <p><code>workshop</code> (app id <code>dev.mixos.workshop</code>) is a native window onto the Bus
 of the node it runs on. It asks noded which services are registered, asks
-each service to describe its verbs, and shows them as a tree. Select a verb
+each service to describe its commands, and shows them as a tree. Select a command
 to read its arguments and description, type a JSON body, and call it. The
 reply is shown with its return code. Workshop also lists the mesh nodes
 this node can see.</p>
 <p>It is for people and agents who want to see what a node offers and try a
-verb by hand. It ships in the <code>mixos-desktop</code> package set. Nothing else in
+command by hand. It ships in the <code>mixos-desktop</code> package set. Nothing else in
 the workspace depends on it.</p>
 <p>Workshop is also the reference app for driving a window over the Bus.
-Everything in its window is a Bus verb, and
+Everything in its window is a Bus command, and
 <a href="/docs/drive/#workshop-the-worked-example">Driving apps over the Bus</a>
 uses it as the worked example.</p>
 <p>The source is
@@ -264,7 +264,7 @@ two crates:</p>
 <ul>
 <li><strong><code>inspector</code></strong> (<code>crates/inspector</code>): the headless engine. No UI and no
 I/O. It holds the protocol model, the discovery and call rules, and the
-handling of every <code>workshop.*</code> verb.</li>
+handling of every <code>workshop.*</code> command.</li>
 <li><strong><code>workshop</code></strong>: the egui shell. It draws the engine's state, runs the
 engine's effects on a small tokio runtime, and owns the command registry
 that the menus, the shortcuts and the Bus all go through.</li>
@@ -278,7 +278,7 @@ completion whose ticket is not the one in flight is ignored, so a late
 reply can never land on a newer operation.</p>
 <h3 id="inspector">inspector</h3>
 <table><thead><tr><th>Module</th><th>What it holds</th></tr></thead><tbody>
-<tr><td><code>model</code></td><td><code>Verb</code>, <code>Snapshot</code> (services, each with its verbs or an error; peers), <code>Selection</code>, the parsers for <code>noded.list</code>, <code>noded.peers</code>, <code>HELP</code> and <code>app.describe</code>, the limits, and <code>describe()</code>, the app's own verb list</td></tr>
+<tr><td><code>model</code></td><td><code>Command</code>, <code>Snapshot</code> (services, each with its commands or an error; peers), <code>Selection</code>, the parsers for <code>noded.list</code>, <code>noded.peers</code>, <code>HELP</code> and <code>app.describe</code>, the limits, and <code>describe()</code>, the app's own command list</td></tr>
 <tr><td><code>engine</code></td><td><code>Engine</code>, <code>Effect</code>, <code>Dialog</code>, <code>Row</code> and <code>RowKind</code> (the services tree), <code>UiState</code> (what a person arranges), <code>Session</code> (the session theme)</td></tr>
 <tr><td><code>bus</code></td><td>the connection, through the shared <a href="/citizen/">citizen</a> library: <code>start</code>, <code>probe</code>, <code>forward</code>, <code>show</code>, and <code>discover</code></td></tr>
 </tbody></table>
@@ -286,7 +286,7 @@ reply can never land on a newer operation.</p>
 appears first, followed by sorted peers. Each peer is queried through
 <code>noded.&lt;node&gt;.bus</code>, then its services through <code>&lt;service&gt;.&lt;node&gt;.bus</code>.
 Local membership and service identities are published as soon as they arrive,
-without waiting for remote nodes or verb descriptions. Discovery queries up
+without waiting for remote nodes or command descriptions. Discovery queries up
 to eight remote nodes concurrently, with a separate local slot. Each read has
 a three-second deadline (<code>DISCOVERY_CALL_BUDGET</code>); info and list run together.
 Across all nodes and refreshes, at most twelve discovery calls run at once:
@@ -335,19 +335,19 @@ the connection stops.</li>
 on the Bus, asks it to show its window through compd, and exits.</li>
 </ul>
 <h2 id="bus">Bus</h2>
-<p>Workshop registers as <code>workshop</code> on the local broker. Its verbs are
+<p>Workshop registers as <code>workshop</code> on the local broker. Its commands are
 registered in
-<a href="https://github.com/markc/mixos/blob/main/docs/docs/spec/bus/verbs.conf.mix"><code>verbs.conf.mix</code></a>
+<a href="https://github.com/markc/mixos/blob/main/docs/docs/spec/bus/commands.conf.mix"><code>commands.conf.mix</code></a>
 with owner <code>workshop</code>.</p>
 <ul>
 <li>Reading: <code>workshop.ping</code>, <code>workshop.info</code>, <code>workshop.tree</code>,
-<code>workshop.reply</code>, <code>workshop.commands</code>, plus <code>HELP</code> and <code>app.describe</code>.</li>
+<code>workshop.reply</code>, <code>workshop.actions</code>, plus <code>HELP</code> and <code>app.describe</code>.</li>
 <li>Changing state: <code>workshop.filter</code>, <code>workshop.expand</code>,
 <code>workshop.select_row</code>, <code>workshop.select</code>, <code>workshop.body</code>,
 <code>workshop.split</code>, <code>workshop.dialog</code>, <code>workshop.theme</code>,
 <code>workshop.call</code>, <code>workshop.execute</code>, <code>workshop.refresh</code>,
 <code>workshop.show</code>, <code>workshop.quit</code>.</li>
-<li>The window's drive verbs, from the toolkit: <code>workshop.ui.tree</code>,
+<li>The window's drive commands, from the toolkit: <code>workshop.ui.tree</code>,
 <code>workshop.ui.click</code>, <code>workshop.ui.pointer</code>, <code>workshop.ui.scroll</code>,
 <code>workshop.ui.key</code>, <code>workshop.ui.type</code>, <code>workshop.ui.menu</code>,
 <code>workshop.ui.menu.list</code>, <code>workshop.ui.menu.open</code>,
@@ -355,18 +355,18 @@ with owner <code>workshop</code>.</p>
 and <code>workshop.window.state</code>.</li>
 </ul>
 <p>Arguments, answers and refusal codes (<code>BUSY</code>, <code>DISCONNECTED</code>, <code>ARGUMENT</code>,
-<code>UNKNOWN_VERB</code>, <code>UNKNOWN_COMMAND</code>, <code>DISABLED</code>) are tabled in
+<code>UNKNOWN_COMMAND</code>, <code>UNKNOWN_ACTION</code>, <code>DISABLED</code>) are tabled in
 <a href="/docs/drive/#workshop-the-worked-example">Driving apps over the Bus</a>.
 Tree rows use <code>node:&lt;node&gt;</code>, <code>service:&lt;node&gt;:&lt;service&gt;</code> and
-<code>verb:&lt;node&gt;:&lt;service&gt;:&lt;verb&gt;</code>, for example <code>node:alpha</code>,
-<code>service:alpha:noded</code> and <code>verb:alpha:noded:noded.list</code>. A verb selection
+<code>command:&lt;node&gt;:&lt;service&gt;:&lt;command&gt;</code>, for example <code>node:alpha</code>,
+<code>service:alpha:noded</code> and <code>command:alpha:noded:noded.list</code>. A command selection
 keeps its routed service address so calls reach the selected node.</p>
-<p>Calling a verb from Mix through Workshop:</p>
-<pre><code class="language-mix">$body = json_encode({service: "noded", verb: "noded.list"})
+<p>Calling a command from Mix through Workshop:</p>
+<pre><code class="language-mix">$body = json_encode({service: "noded", command: "noded.list"})
 send workshop workshop.call body=$body timeout=30
 print $result
 </code></pre>
-<p>The answer is <code>{service, verb, request_body, rc, body}</code>.</p>
+<p>The answer is <code>{service, command, request_body, rc, body}</code>.</p>
 <h2 id="commands-and-keys">Commands and keys</h2>
 <p>Every menu item, shortcut and <code>workshop.execute</code> id is one command in
 <code>src/commands.rs</code>:</p>
@@ -376,7 +376,7 @@ print $result
 <tr><td><code>edit.format</code></td><td>Edit › Format JSON body</td><td>Ctrl+Shift+F</td></tr>
 <tr><td><code>edit.clear</code></td><td>Edit › Clear body</td><td></td></tr>
 <tr><td><code>edit.copy</code></td><td>Edit › Copy reply</td><td></td></tr>
-<tr><td><code>bus.call</code></td><td>Bus › Call verb</td><td>Ctrl+Enter</td></tr>
+<tr><td><code>bus.call</code></td><td>Bus › Call command</td><td>Ctrl+Enter</td></tr>
 <tr><td><code>help.shortcuts</code></td><td>Help › Keyboard shortcuts</td><td>Ctrl+/</td></tr>
 <tr><td><code>help.about</code></td><td>Help › About Workshop</td><td></td></tr>
 <tr><td><code>view.search</code></td><td>title bar search button</td><td>Ctrl+F</td></tr>
@@ -386,7 +386,7 @@ print $result
 <code>view.decorations.*</code> and <code>view.captions.*</code> choices. They set the theme of
 this window only; the session's theme file is never written. The Help menu
 opens with a field that searches every command. The desktop profile can
-rebind the shortcuts (<code>keymaps.workshop.&lt;id&gt;</code>), and <code>workshop.commands</code>
+rebind the shortcuts (<code>keymaps.workshop.&lt;id&gt;</code>), and <code>workshop.actions</code>
 reports the ones in force.</p>
 <h2 id="running-it">Running it</h2>
 <pre><code class="language-text">workshop [--headless] [--noded-url URL] [--service NAME] [--comp NAME]
@@ -411,21 +411,21 @@ With no theme chosen it starts in Studio Dark.</p>
 </code></pre>
 <ul>
 <li>The engine's unit tests (<code>crates/inspector/src/engine.rs</code>, <code>model.rs</code>)
-cover discovery, selection, the body, calls, the Bus verbs, refusals,
+cover discovery, selection, the body, calls, the Bus commands, refusals,
 tickets and quitting, with no UI.</li>
 <li><code>tests/shell.rs</code> runs the real <code>Shell</code> on a logging Bus handle (the
 <code>inspector</code> <code>testing</code> feature) and checks every reply, call and the final
 quit in order.</li>
-<li><code>tests/drive.rs</code> drives the window over its Bus verbs against the real
+<li><code>tests/drive.rs</code> drives the window over its Bus commands against the real
 view: clicks, typing, the title bar controls, menus.</li>
 <li><code>tests/view.rs</code> checks the dialogs, the body buttons and their tooltips,
 and the search field through kittest.</li>
 <li><code>tests/snapshot.rs</code> takes offscreen snapshots in several themes into
 <code>tests/snapshots/</code>. Regenerate with <code>UPDATE_SNAPSHOTS=1</code> and look at the
 images before committing them.</li>
-<li><code>tests/registry.rs</code> checks that the verb registry lists exactly the
-verbs Workshop describes, and that read-only verbs are class <code>query</code>
-(<a href="/docs/decisions/2026-10-11-verb-classes/">verb classes</a>).</li>
+<li><code>tests/registry.rs</code> checks that the command registry lists exactly the
+commands Workshop describes, and that read-only commands are class <code>query</code>
+(<a href="/docs/decisions/2026-10-11-verb-classes/">command classes</a>).</li>
 <li><code>crates/inspector/tests/native.rs</code> runs discovery, calls and
 single-instance registration against an isolated real broker. It is
 ignored by default and needs <code>WORKSHOP_TEST_URL</code>.</li>
@@ -433,12 +433,12 @@ ignored by default and needs <code>WORKSHOP_TEST_URL</code>.</li>
 never replies. Local and healthy rows arrive before its timeout, discovery
 settles within a bounded time, and the next refresh retries the failed node.</li>
 </ul>
-<h2 id="macro-bus-verbs">Macro Bus verbs</h2>
-<p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
+<h2 id="macro-bus-commands">Macro Bus commands</h2>
+<p>The shared <a href="/macros/#bus-commands">macro Bus surface</a> uses this process's
 catalogue and runner. Subscribe to <code>&lt;service&gt;.macros.finished</code> for completion, where <code>service</code> is
 the instance’s registered Bus name (for example <code>term-1234</code> for a second Term
-instance). Verbs keep the app’s canonical prefix, such as <code>workshop.macros.run</code>.</p>
-<table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
+instance). Commands keep the app’s canonical prefix, such as <code>workshop.macros.run</code>.</p>
+<table><thead><tr><th>Command</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
 <tr><td><code>workshop.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>workshop.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>workshop.macros.run</code></td><td><code>{id}</code></td><td>Acceptance and run number</td></tr>
@@ -468,11 +468,11 @@ Stop, Copy to user, Move, Delete with confirmation, Open in Ced and Show in
 Dopus dispatch through Workshop's command registry. A <code>-- target:</code> header
 offers only its allowed apps; <code>any</code> offers running apps. The chosen app is
 passed as <code>MIXOS_MACRO_TARGET</code>. Without a header, Run remains target-free.
-Each app serves the same management verbs through its own macro Session.
+Each app serves the same management commands through its own macro Session.
 Macro requests are capped at 8 KiB, except <code>put</code>: its envelope is capped at
 1544 KiB and its text at 256 KiB.</p>
 <p>The collapsible Traffic dock combines broker observations and native
-<code>&lt;service&gt;.command.executed</code> / <code>&lt;service&gt;.macros.finished</code> topics. It retains
+<code>&lt;service&gt;.action.executed</code> / <code>&lt;service&gt;.macros.finished</code> topics. It retains
 at most 1,024 rows and 8 MiB, reports dropped rows and redacts sensitive
 topic fields before retaining them. Broker observation defaults to redacted
 bodies; <code>none</code> is also supported. A refused observer leaves the reason in
@@ -483,13 +483,13 @@ the advertised observe extension and open and close a probe stream.</p>
 <p>Open Workshop in an app's macro menu launches or focuses Workshop; a launch
 with <code>--app ced --id tidy-imports</code> selects that macro. The global folder in
 Dopus is the fallback when Workshop is not installed. Headless instances
-use the same management and traffic verbs.</p>
+use the same management and traffic commands.</p>
 <p>Macro-file writes (<code>put</code>, <code>remove</code>, <code>move</code>, <code>copy</code>, <code>new</code>) require the owning
 process’s registered local service or Workshop (<code>workshop</code>, <code>workshop-*</code>).
 Global writes and moves into another app’s catalogue require Workshop.
-Workshop’s own mutating macro verbs, including forwarding with <code>app</code>, accept
+Workshop’s own mutating macro commands, including forwarding with <code>app</code>, accept
 only Workshop callers, preventing arbitrary callers from using it as a write
-proxy. Refusals use rc 10, <code>DENIED</code>, and name the verb and rule before any
+proxy. Refusals use rc 10, <code>DENIED</code>, and name the command and rule before any
 file effects. Read/run/status/output/stop/reload remain open.</p>
 <p>The broker stamps service identity and local/mesh origin; mesh writes are
 refused. Local service registration is not executable authentication: a
@@ -499,7 +499,7 @@ This is a Bus access rule, not filesystem or same-user code isolation.</p>
 implicit-target <code>call</code>, calls forwarding macro mutations or these proxy
 operations, and UI click/pointer/key/type injection require Workshop too.
 These paths can otherwise turn an untrusted caller into the manager.
-Explicit <code>call</code> requests for read/run verbs and UI inspection remain open.</p>
+Explicit <code>call</code> requests for read/run commands and UI inspection remain open.</p>
         </article>
         <p class="doc-source"><a href="/workshop/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

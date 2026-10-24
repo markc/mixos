@@ -4,7 +4,7 @@
 --
 -- A browse / read / edit web surface over a single mixos-filesd corpus, reached
 -- through webd's DELEGATED bus_call seam (the route grants bus-svc:filesd-notes +
--- the bus:filesd.* verbs; webd's Rust admin gate authorizes; filesd enforces the
+-- the bus:filesd.* commands; webd's Rust admin gate authorizes; filesd enforces the
 -- $mixos_delegation envelope). One handler, four dispatches:
 --
 --   GET  /notes              → list (datatable over filesd.list / filesd.search)
@@ -15,7 +15,7 @@
 --   POST action=delete       → filesd.delete
 --   POST action=rename       → filesd.move (identity-stable rename/relocate)
 --
--- Notes are keyed on their corpus-relative PATH (filesd's verbs are path-addressed).
+-- Notes are keyed on their corpus-relative PATH (filesd's commands are path-addressed).
 -- The seam is admin-only (webd injects the bus capability only for rank>=3), so the
 -- whole surface gates on `admin`. bus_call RAISES on any failure — every call is
 -- wrapped in notes_call() try/catch and degrades to a friendly notice.
@@ -32,9 +32,9 @@ include "/opt/mixos/vhosts/shared/widgets/contextmenu.mix"
 -- ─────────────────────────────────────────────────────────────────────────────
 -- filesd seam — one delegated bus_call, wrapped. Returns { ok, result } | { ok:false, err }.
 -- ─────────────────────────────────────────────────────────────────────────────
-function notes_call($verb, $args)
+function notes_call($command, $args)
   try
-    $r = bus_call($verb, $args)
+    $r = bus_call($command, $args)
     return { ok: true, result: $r }
   catch $e
     return { ok: false, err: ("" .. $e) }
@@ -739,7 +739,7 @@ function notes_main()
     $f = parse_form($BODY)
     $ra = dt_row_action($f)
     if $ra != nil then
-      if $ra["verb"] == "delete" then
+      if $ra["command"] == "delete" then
         $d = notes_call("filesd.delete", { path: $ra["id"] })
         if $d["ok"] then
           return redirect_flash("/notes", "Note deleted", "success")

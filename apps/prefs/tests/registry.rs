@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The Bus verb registry (`docs/docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
-//! lists exactly the verbs Preferences describes, apart from the protocol verbs
+//! The Bus command registry (`docs/docs/spec/bus/commands.conf.mix`, AGENTS.md §5)
+//! lists exactly the commands Preferences describes, apart from the protocol commands
 //! every service answers.
 use prefs::shell::describe;
 
-const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/verbs.conf.mix");
+const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
 
 /// The registry's names owned by `owner`, from its one-entry-per-line form.
 fn registered(owner: &str) -> Vec<String> {
@@ -24,8 +24,8 @@ fn registered(owner: &str) -> Vec<String> {
 }
 
 #[test]
-fn every_described_verb_is_registered_and_nothing_else() {
-    let described: Vec<String> = describe()["verbs"]
+fn every_described_command_is_registered_and_nothing_else() {
+    let described: Vec<String> = describe()["commands"]
         .as_array()
         .unwrap()
         .iter()
@@ -49,25 +49,25 @@ fn class_of(name: &str) -> Option<&'static str> {
         .next()
 }
 
-/// Apps → Email's verbs: the view is a query, the changes intents.
+/// Apps → Email's commands: the view is a query, the changes intents.
 #[test]
-fn the_email_verbs_are_registered_with_their_classes() {
+fn the_email_commands_are_registered_with_their_classes() {
     assert_eq!(class_of("prefs.email"), Some("query"));
     assert_eq!(class_of("prefs.email.set"), Some("intent"));
     assert_eq!(class_of("prefs.email.password"), Some("intent"));
 }
 
-/// A verb the app describes as read-only is a query
+/// A command the app describes as read-only is a query
 /// (docs/docs/decisions/2026-10-11-verb-classes.md).
 #[test]
-fn read_only_verbs_are_queries() {
-    let verbs = describe();
-    for verb in verbs["verbs"].as_array().unwrap() {
-        let name = verb["name"].as_str().unwrap();
+fn read_only_commands_are_queries() {
+    let command_names = describe();
+    for command_name in command_names["commands"].as_array().unwrap() {
+        let name = command_name["name"].as_str().unwrap();
         if matches!(name, "HELP" | "app.describe") {
             continue;
         }
-        if verb["read_only"].as_bool() == Some(true) {
+        if command_name["read_only"].as_bool() == Some(true) {
             assert_eq!(class_of(name), Some("query"), "{name}");
         }
     }
@@ -75,7 +75,7 @@ fn read_only_verbs_are_queries() {
 
 #[test]
 fn every_registry_section_has_one_command_and_is_described() {
-    let commands = prefs::commands::registry();
+    let commands = prefs::actions::registry();
     let surface = describe();
     let described = surface["sections"].as_array().unwrap();
     let mut ids = std::collections::HashSet::new();
@@ -101,7 +101,7 @@ fn every_registry_section_has_one_command_and_is_described() {
 #[test]
 fn all_seven_category_commands_have_ordered_shortcuts_and_gate_empty_categories() {
     use preferences::{Category, Engine};
-    let commands = prefs::commands::registry();
+    let commands = prefs::actions::registry();
     let mut engine = Engine::new(prefs::label_with);
     let keys = [
         egui::Key::Num1,
@@ -137,7 +137,7 @@ fn all_seven_category_commands_have_ordered_shortcuts_and_gate_empty_categories(
         if let Some(first) = category.first_section() {
             engine.ui.expanded.clear();
             commands
-                .execute(command.id, &mut engine, toolkit::command::Origin::Bus)
+                .execute(command.id, &mut engine, toolkit::action::Origin::Bus)
                 .unwrap();
             assert_eq!(engine.section(), first);
             assert!(engine.ui.expanded.contains(&category));

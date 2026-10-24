@@ -356,11 +356,11 @@ end
 -- kept per link (the newest receipt), so the editor may close or move to
 -- another link while the write runs. A Wi-Fi passphrase travels only in the
 -- task's body, straight to hostd; it is never kept in state or a model.
-$WRITE_VERBS = ["net.link.apply", "net.wg.apply", "net.wifi.connect", "hostd.undo"]
-fn start_write($link, $verb, $body, $done_key, $form = nil)
+$WRITE_COMMANDS = ["net.link.apply", "net.wg.apply", "net.wifi.connect", "hostd.undo"]
+fn start_write($link, $command, $body, $done_key, $form = nil)
   $state.inflight = $link
   try
-    task_start("net.write", json_encode({link: $link, verb: $verb, body: $body, done: $done_key, form: $form}))
+    task_start("net.write", json_encode({link: $link, command: $command, body: $body, done: $done_key, form: $form}))
   catch $message
     $state.inflight = nil
     -- Not the message: it could carry the task body, passphrase included.
@@ -374,15 +374,15 @@ on net.write async
   if len(keys($event.headers)) != 0 then return end
   $a = type($event.args) == "map" ? $event.args : {}
   $link = to_string($a.link)
-  $verb = $a.verb
-  if $state.inflight != $link or not contains($WRITE_VERBS, $verb) then return end
+  $command = $a.command
+  if $state.inflight != $link or not contains($WRITE_COMMANDS, $command) then return end
   try
-    $out = $h.call($verb, $a.body, $WRITE_WAIT_S)
+    $out = $h.call($command, $a.body, $WRITE_WAIT_S)
   finally
     $state.inflight = nil
   end
   if $out.ok then
-    if $verb == "hostd.undo" then
+    if $command == "hostd.undo" then
       $state.receipts = delete($state.receipts, $link)
       -- The tunnel is back to its earlier setup, which this panel didn't
       -- record: forget the form, so the next Apply warns again.
@@ -391,8 +391,8 @@ on net.write async
       $state.receipts[$link] = $out.body.receipt
     end
     -- hostd hands back a tunnel's public key, for the peer's side.
-    if $verb == "net.wg.apply" and type($out.body.public_key) == "string" then $state.wg_pub[$link] = $out.body.public_key end
-    if $verb == "net.wg.apply" and type($a.form) == "map" then $state.wg_last[$link] = $a.form end
+    if $command == "net.wg.apply" and type($out.body.public_key) == "string" then $state.wg_pub[$link] = $out.body.public_key end
+    if $command == "net.wg.apply" and type($a.form) == "map" then $state.wg_last[$link] = $a.form end
     note_for($link, $m.text($a.done, {link: $link}))
   elif $h.uncertain($out) then
     -- No answer to a request that left, or hostd's own timeout: hostd may

@@ -18,7 +18,7 @@ async fn headless_binary_serves_local_tree_and_quits_without_a_display() {
     let broker = test_broker::Broker::start();
     let directory = tempfile::tempdir().unwrap();
     let client = SupervisedClient::connect_options("workshop-agent", &broker.url)
-        .with_verbs(Vec::new())
+        .with_commands(Vec::new())
         .connect()
         .await
         .unwrap();
@@ -74,7 +74,7 @@ async fn headless_binary_serves_local_tree_and_quits_without_a_display() {
         .unwrap();
     }
     assert!(started.elapsed() < Duration::from_secs(5));
-    // The public quit verb is intentionally refused while discovery is busy.
+    // The public quit command is intentionally refused while discovery is busy.
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let info = client

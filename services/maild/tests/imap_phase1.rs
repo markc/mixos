@@ -25,7 +25,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 /// Build a per-test sqlite Db + a fresh MailStore over an mds tempdir.
 /// The MailStore is wired through to `handle_connection` so Phase 2
-/// verbs that need it (LIST / LSUB / NAMESPACE) can run; Phase 1
+/// commands that need it (LIST / LSUB / NAMESPACE) can run; Phase 1
 /// tests do not exercise it.
 async fn make_db_with_account(
     email: &str,
@@ -401,7 +401,7 @@ async fn login_in_authenticated_state_is_bad() -> Result<()> {
 }
 
 #[tokio::test]
-async fn unimplemented_verb_returns_bad() -> Result<()> {
+async fn unimplemented_command_returns_bad() -> Result<()> {
     let (_tmp, db, mailstore) = make_db_with_account("alice@example.com", "hunter2").await?;
     let (client, _join) = spawn_session(db, mailstore, ImapConfig::default()).await;
     let (r, mut w) = tokio::io::split(client);

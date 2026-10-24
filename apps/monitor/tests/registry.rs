@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The Bus verb registry (`docs/docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
-//! lists exactly the verbs Monitor describes, apart from the protocol verbs
+//! The Bus command registry (`docs/docs/spec/bus/commands.conf.mix`, AGENTS.md §5)
+//! lists exactly the commands Monitor describes, apart from the protocol commands
 //! every service answers.
 use monitor::shell::describe;
 
-const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/verbs.conf.mix");
+const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
 
 fn field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     line.split(&format!("{key}:\"")).nth(1)?.split('"').next()
@@ -21,8 +21,8 @@ fn registered(owner: &str) -> Vec<String> {
 }
 
 #[test]
-fn every_described_verb_is_registered_and_nothing_else() {
-    let described: Vec<String> = describe()["verbs"]
+fn every_described_command_is_registered_and_nothing_else() {
+    let described: Vec<String> = describe()["commands"]
         .as_array()
         .unwrap()
         .iter()
@@ -34,13 +34,13 @@ fn every_described_verb_is_registered_and_nothing_else() {
     assert_eq!(registered("monitor"), described);
 }
 
-/// A verb the app describes as read-only is a query
+/// A command the app describes as read-only is a query
 /// (docs/docs/decisions/2026-10-11-verb-classes.md).
 #[test]
-fn read_only_verbs_are_queries() {
-    for verb in describe()["verbs"].as_array().unwrap() {
-        let name = verb["name"].as_str().unwrap();
-        if matches!(name, "HELP" | "app.describe") || verb["read_only"].as_bool() != Some(true) {
+fn read_only_commands_are_queries() {
+    for command in describe()["commands"].as_array().unwrap() {
+        let name = command["name"].as_str().unwrap();
+        if matches!(name, "HELP" | "app.describe") || command["read_only"].as_bool() != Some(true) {
             continue;
         }
         let class = REGISTRY

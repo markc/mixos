@@ -102,7 +102,7 @@ end
 -- The editor (fields, modal + canvas rendering, save path, deletes) is DECLARED
 -- in customers_resource() and interpreted by resource_engine.mix (resource/1) —
 -- no hand-written form/save/delete code in this handler. Custom work stays as
--- verb functions the spec ROUTES to (engine never orchestrates them):
+-- command functions the spec ROUTES to (engine never orchestrates them):
 
 -- delete cascade: portal tokens are ephemeral, not history — remove them with
 -- the customer (guarded refs — services/domains/invoices — REFUSE instead).
@@ -123,15 +123,15 @@ function bc_send_setpw($f, $user)
     return redirect_flash("/biz/customers", "No such customer", "danger")
   end
   $purpose = "set"
-  $verb = "set"
+  $command = "set"
   if bc_str($cr[0].password_hash) != "" then
     $purpose = "reset"
-    $verb = "reset"
+    $command = "reset"
   end
   $raw = biz_issue_customer_token($sid, $purpose, 48)
   $link = biz_base_url() .. "/portal/set-password?token=" .. $raw
   $body = "Hi " .. $cr[0].name .. ",\n\n"
-  $body = $body .. "You can " .. $verb .. " your " .. biz_brand() .. " customer portal password here (valid 48 hours):\n"
+  $body = $body .. "You can " .. $command .. " your " .. biz_brand() .. " customer portal password here (valid 48 hours):\n"
   $body = $body .. $link .. "\n\n"
   $body = $body .. "The portal lets you view your invoices and services and update your details.\nSign in afterwards at " .. biz_base_url() .. "/portal/login\n\n— " .. biz_brand() .. " Billing\n"
   -- PRE-STAMP delivered=1 (best-effort — the column exists only where
@@ -160,7 +160,7 @@ function bc_send_setpw($f, $user)
     return redirect_flash($back, "Mail is off — no email sent (the link was NOT activated; retry once mail_mode is set).", "warning")
   end
   if $mr["ok"] then
-    return redirect_flash($back, "Portal " .. $verb .. " link emailed to " .. bc_str($cr[0].email), "success")
+    return redirect_flash($back, "Portal " .. $command .. " link emailed to " .. bc_str($cr[0].email), "success")
   end
   if $mr["indeterminate"] == true then
     return redirect_flash($back, "Mail outcome unknown (" .. $mr["error"] .. ") — the link MAY have been sent and stays valid; retry later if it doesn't arrive.", "warning")
@@ -400,7 +400,7 @@ function customers_resource()
                delete_action: "delete",
                detail_fn: fn($v, $id) = bc_str($v["name"]) .. " <" .. bc_str($v["email"]) .. ">" }
     },
-    actions: { verbs: { "send_setpw": fn($f, $user) = bc_send_setpw($f, $user) } },
+    actions: { commands: { "send_setpw": fn($f, $user) = bc_send_setpw($f, $user) } },
     view_fn: fn($viewid, $user) = bc_view($viewid, $user)
   }
 end

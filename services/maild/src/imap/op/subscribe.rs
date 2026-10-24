@@ -48,35 +48,35 @@ pub async fn handle(
     store: Arc<dyn MailStore>,
     subscribe: bool,
 ) -> String {
-    let verb = if subscribe {
+    let command = if subscribe {
         "SUBSCRIBE"
     } else {
         "UNSUBSCRIBE"
     };
     let name = match parse_args(args) {
         Ok(n) => n,
-        Err(e) => return tagged(tag, Status::Bad, None, &format!("{verb} {e}")),
+        Err(e) => return tagged(tag, Status::Bad, None, &format!("{command} {e}")),
     };
 
     let s = store.clone();
     let records = match tokio::task::spawn_blocking(move || s.list_mailboxes(account_id)).await {
         Ok(Ok(r)) => r,
         Ok(Err(e)) => {
-            tracing::warn!(verb = verb, error = %e, "list_mailboxes failed");
+            tracing::warn!(command = command, error = %e, "list_mailboxes failed");
             return tagged(
                 tag,
                 Status::No,
                 Some("SERVERBUG"),
-                &format!("{verb} failed"),
+                &format!("{command} failed"),
             );
         }
         Err(e) => {
-            tracing::warn!(verb = verb, error = %e, "spawn_blocking panicked");
+            tracing::warn!(command = command, error = %e, "spawn_blocking panicked");
             return tagged(
                 tag,
                 Status::No,
                 Some("SERVERBUG"),
-                &format!("{verb} failed"),
+                &format!("{command} failed"),
             );
         }
     };
@@ -109,17 +109,17 @@ pub async fn handle(
     let res = match res {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!(verb = verb, error = %e, "update_mailbox spawn_blocking panicked");
+            tracing::warn!(command = command, error = %e, "update_mailbox spawn_blocking panicked");
             return tagged(
                 tag,
                 Status::No,
                 Some("SERVERBUG"),
-                &format!("{verb} failed"),
+                &format!("{command} failed"),
             );
         }
     };
     match res {
-        Ok(()) => tagged(tag, Status::Ok, None, &format!("{verb} completed")),
+        Ok(()) => tagged(tag, Status::Ok, None, &format!("{command} completed")),
         Err(e) => {
             let msg = e.to_string();
             if msg.starts_with("mailbox not found") {
@@ -130,12 +130,12 @@ pub async fn handle(
                     "mailbox does not exist",
                 );
             }
-            tracing::warn!(verb = verb, error = %msg, "unexpected storage error");
+            tracing::warn!(command = command, error = %msg, "unexpected storage error");
             tagged(
                 tag,
                 Status::No,
                 Some("SERVERBUG"),
-                &format!("{verb} failed"),
+                &format!("{command} failed"),
             )
         }
     }

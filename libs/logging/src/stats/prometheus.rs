@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn redact_matches_canonical_labels_hash() {
         // The on-wire digest in /metrics must equal the digest the
-        // JSONL writer / Bus verb would emit for the same label-set
+        // JSONL writer / Bus command would emit for the same label-set
         // — operators correlate across surfaces by hash.
         let child = build_child();
         let key = Key::from_parts(

@@ -89,7 +89,7 @@ struct StoreReq {
 
 /// Parse `STORE` / `UID STORE` arguments per RFC 9051 §6.4.6.
 ///
-/// Wire grammar (after the verb has been stripped):
+/// Wire grammar (after the command has been stripped):
 ///
 /// ```text
 /// args      = seq-set SP store-att-flags
@@ -235,7 +235,7 @@ pub fn parse_args_for_dispatch(args: &str, mode: StoreMode) -> Result<(), String
 ///
 /// Caller has already validated `Selected(_)` state, resolved the
 /// container, parsed via [`parse_args`] (used by `session::dispatch`
-/// for the abuse-cap pre-check), and gated the verb against the
+/// for the abuse-cap pre-check), and gated the command against the
 /// session state machine.
 pub async fn handle(
     tag: &str,

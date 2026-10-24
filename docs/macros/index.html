@@ -212,7 +212,7 @@
                         <a href="#using-the-menu">Using the menu</a>
                         <a href="#execution-context">Execution context</a>
                         <a href="#library-boundaries">Library boundaries</a>
-                        <a href="#bus-verbs">Bus verbs</a>
+                        <a href="#bus-commands">Bus commands</a>
                     </nav>
                 </div>
             </div>
@@ -240,7 +240,7 @@
 <h1 id="macros">macros</h1>
 <p>A macro is an ordinary Mix program (<code>.mix</code>) that you run from an app's
 <strong>Macros</strong> icon or Help menu. It can use the usual Mix facilities, including
-application commands and Bus verbs. Listing macros never executes them.
+application commands and Bus commands. Listing macros never executes them.
 Macros run with your normal session authority.</p>
 <h2 id="folders-and-precedence">Folders and precedence</h2>
 <p>Every app scans only its two per-app tiers, from lowest to highest precedence:</p>
@@ -321,7 +321,7 @@ list so a stale highlight cannot select a different file.</p>
 <p>Every completed GUI run posts a plain notifyd toast with no actions: title
 and done or failed status, plus the last few output lines. Run errors also
 post toasts. The runner retains the last 64 KiB of combined output, available
-through the output verb and the editor's output strip while it is open.
+through the output command and the editor's output strip while it is open.
 If notification delivery fails, an open editor shows the output; otherwise
 the app logs the failure. Results and errors never open the editor. Only
 right-click, Shift+Enter or successful New macro creation opens it.</p>
@@ -329,7 +329,7 @@ right-click, Shift+Enter or successful New macro creation opens it.</p>
 subscriptions or polling. Each originating window owns its editor and
 output strip. Closing that window stops its GUI run through <code>stop_if_origin</code>;
 closing another window leaves the run alone.</p>
-<p>Drive verbs accept <code>viewport: "macro-editor"</code> to address the open editor,
+<p>Drive commands accept <code>viewport: "macro-editor"</code> to address the open editor,
 including <code>ui.tree</code>, <code>ui.click</code>, <code>ui.key</code>, <code>ui.type</code> and <code>ui.capture</code>. Omitting
 the field addresses the app window. A closed editor returns <code>NOT_FOUND</code>.</p>
 <h2 id="execution-context">Execution context</h2>
@@ -384,7 +384,7 @@ runner. <code>toolkit::menu::anchored</code> reuses menu navigation and row rend
 resources in the egui context while each app keeps the menu's open flag
 in its UI state. This keeps application engines below the GUI boundary in
 the application layering gate.</p>
-<h2 id="bus-verbs">Bus verbs</h2>
+<h2 id="bus-commands">Bus commands</h2>
 <p>Email, Workshop, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
 same macro surface under their component prefix. <code>list</code>, <code>status</code> and
 <code>output</code> are read-only. <code>run</code>, <code>stop</code> and <code>reload</code> have the same
@@ -436,7 +436,7 @@ or reconnect. Completion uses a callback, without a polling loop.</p>
 <p>GUI runs use <code>origin: gui:&lt;window-id&gt;</code>, with a process-local numeric window id.
 Bus runs use <code>origin: bus</code>. Both publish <code>&lt;service&gt;.macros.finished</code>, where <code>service</code> is the instance’s
 registered Bus name (for example <code>term-1234</code> for a second Term instance).
-Verbs retain the app’s canonical prefix, such as <code>term.macros.run</code>; only the
+Commands retain the app’s canonical prefix, such as <code>term.macros.run</code>; only the
 starting GUI window posts a toast. All windows show the shared busy dot and
 Stop title. Closing the starting window stops its GUI run and removes its
 finish subscription; closing another window does not stop the run.</p>
@@ -449,9 +449,9 @@ for Bus starts, catalogue changes and completion without idle polling.</p>
 <p>Macro-file writes (<code>put</code>, <code>remove</code>, <code>move</code>, <code>copy</code>, <code>new</code>) require the owning
 process’s registered local service or Workshop (<code>workshop</code>, <code>workshop-*</code>).
 Global writes and moves into another app’s catalogue require Workshop.
-Workshop’s own mutating macro verbs, including forwarding with <code>app</code>, accept
+Workshop’s own mutating macro commands, including forwarding with <code>app</code>, accept
 only Workshop callers, preventing arbitrary callers from using it as a write
-proxy. Refusals use rc 10, <code>DENIED</code>, and name the verb and rule before any
+proxy. Refusals use rc 10, <code>DENIED</code>, and name the command and rule before any
 file effects. Read/run/status/output/stop/reload remain open.</p>
 <p>The broker stamps service identity and local/mesh origin; mesh writes are
 refused. Local service registration is not executable authentication: a

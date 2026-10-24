@@ -210,7 +210,7 @@
                     <nav id="toc-nav">
                         <a href="#where-macros-live">Where macros live</a>
                         <a href="#where-macros-appear">Where macros appear</a>
-                        <a href="#bus-verbs">Bus verbs</a>
+                        <a href="#bus-commands">Bus commands</a>
                         <a href="#not-yet-decided">Not yet decided</a>
                     </nav>
                 </div>
@@ -242,7 +242,7 @@ global macros belong to Workshop.</p>
 <p>Every native MixOS GUI application has macros by default. A macro is an
 ordinary Mix program (<code>.mix</code>); there is no separate workflow language or
 broker. Macros give people and agents one programming surface across the
-desktop: a script can drive any app's commands and Bus verbs, and reach
+desktop: a script can drive any app's commands and Bus commands, and reach
 other nodes over ABP between noded instances. Macros run with the normal
 session authority of the user who runs them.</p>
 <h2 id="where-macros-live">Where macros live</h2>
@@ -275,7 +275,7 @@ Runs finish with plain, action-free toasts. Open Workshop opens the global
 user macro folder in Dopus until Workshop exists. Shared libraries own
 discovery, execution, the menu and editor; apps supply their registration
 and domain context.</p>
-<h2 id="bus-verbs">Bus verbs</h2>
+<h2 id="bus-commands">Bus commands</h2>
 <p>Agents use <code>&lt;app&gt;.macros.list</code>, <code>run</code>, <code>status</code>, <code>stop</code>, <code>output</code>, <code>new</code>
 and <code>reload</code>. The session shares one catalogue and runner per app process.
 Scans defer their replies off the caller's thread. Run answers acceptance;

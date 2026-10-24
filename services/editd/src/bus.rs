@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Bus wiring: supervised connect with provenance and the verb manifest
+//! Bus wiring: supervised connect with provenance and the command manifest
 //! (template: `mixos-nspawnd/src/bus.rs` connect; NOT its Authorizer and NOT
 //! its concurrent pump — commands route to the router and per-buffer actors).
 //! `HELP` is answered by mixos-lib-client from the manifest.
@@ -9,11 +9,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ::bus::native_client::{ConnState, SupervisedClient};
-use edit::wire::{SERVICE, VERBS};
+use edit::wire::{SERVICE, COMMANDS};
 
-/// Declared args per verb (the manifest's `args` column).
-fn verb_args(verb: &str) -> &'static [&'static str] {
-    match verb {
+/// Declared args per command (the manifest's `args` column).
+fn command_args(command_name: &str) -> &'static [&'static str] {
+    match command_name {
         "edit.open" => &["path", "create", "language", "origin"],
         "edit.close" => &["buffer", "force", "origin", "op_id"],
         "edit.save" => &["buffer", "path", "expect_rev", "force", "origin", "op_id"],
@@ -76,8 +76,8 @@ fn verb_args(verb: &str) -> &'static [&'static str] {
     }
 }
 
-fn verb_description(verb: &str) -> &'static str {
-    match verb {
+fn command_description(command_name: &str) -> &'static str {
+    match command_name {
         "edit.ping" => "Liveness",
         "edit.info" => "Build, epoch, counts and limits",
         "edit.list" => "Open buffers",
@@ -108,23 +108,23 @@ fn verb_description(verb: &str) -> &'static str {
     }
 }
 
-/// The verb manifest, derived from the frozen `wire::VERBS` list.
-pub fn verb_manifest() -> Vec<::bus::VerbDescriptor> {
-    let mut verbs = vec![::bus::VerbDescriptor::new(
+/// The command manifest, derived from the frozen `wire::COMMANDS` list.
+pub fn command_manifest() -> Vec<::bus::CommandDescriptor> {
+    let mut command_names = vec![::bus::CommandDescriptor::new(
         "HELP",
         &[],
         "List all commands this service accepts",
         true,
     )];
-    for (verb, read_only) in VERBS {
-        verbs.push(::bus::VerbDescriptor::new(
-            verb,
-            verb_args(verb),
-            verb_description(verb),
+    for (command_name, read_only) in COMMANDS {
+        command_names.push(::bus::CommandDescriptor::new(
+            command_name,
+            command_args(command_name),
+            command_description(command_name),
             *read_only,
         ));
     }
-    verbs
+    command_names
 }
 
 /// Supervised connect registering `edit` with provenance and the manifest.
@@ -140,7 +140,7 @@ pub async fn connect() -> Result<Arc<SupervisedClient>, String> {
     );
     SupervisedClient::connect_options(SERVICE, &::bus::client_helpers::resolve_noded_url())
         .with_provenance(provenance)
-        .with_verbs(verb_manifest())
+        .with_commands(command_manifest())
         .connect()
         .await
         .map(Arc::new)
@@ -234,7 +234,7 @@ pub async fn serve() -> anyhow::Result<()> {
             cmd = incoming.recv() => {
                 let Some(cmd) = cmd else { break };
                 if cmd.command.is_empty() {
-                    continue; // a topic delivery, not a verb
+                    continue; // a topic delivery, not a command
                 }
                 // Routing happens here, in receive order; only the wait is spawned.
                 let reply = editd.submit(&cmd);
@@ -296,11 +296,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn manifest_covers_every_verb_with_a_description() {
-        let manifest = verb_manifest();
-        assert_eq!(manifest.len(), VERBS.len() + 1);
-        for (verb, _) in VERBS {
-            assert!(!verb_description(verb).is_empty(), "{verb}: no description");
+    fn manifest_covers_every_command_with_a_description() {
+        let manifest = command_manifest();
+        assert_eq!(manifest.len(), COMMANDS.len() + 1);
+        for (command_name, _) in COMMANDS {
+            assert!(!command_description(command_name).is_empty(), "{command_name}: no description");
         }
     }
 }

@@ -160,7 +160,7 @@ try
   check("runtime: a version that is not one is refused as RUNTIME", code_of(fn() = $core.check_runtime(fn() = nil)) == "RUNTIME" and contains(message_of(fn() = $core.check_runtime(fn() = nil)), "does not report"))
 
   -- Instance config and registry paths.
-  $saved = {c: env("BRIDGED_CONFIG"), e: env("MIXOS_ETC"), v: env("BRIDGED_VERBS")}
+  $saved = {c: env("BRIDGED_CONFIG"), e: env("MIXOS_ETC"), v: env("BRIDGED_COMMANDS")}
   export BRIDGED_CONFIG=""
   export MIXOS_ETC=""
   check("path: default /etc/mixos/bridge/<name>.conf.mix", $core.config_path("fakeapp") == "/etc/mixos/bridge/fakeapp.conf.mix")
@@ -168,18 +168,18 @@ try
   check("path: MIXOS_ETC/bridge/<name>.conf.mix", $core.config_path("fakeapp") == "/home/user/session/etc/bridge/fakeapp.conf.mix")
   export BRIDGED_CONFIG="/home/user/x.conf.mix"
   check("path: BRIDGED_CONFIG wins", $core.config_path("fakeapp") == "/home/user/x.conf.mix")
-  export BRIDGED_VERBS=""
-  check("path: installed registry by default", $core.registry_path() == "/opt/mixos/share/bus/verbs.conf.mix")
+  export BRIDGED_COMMANDS=""
+  check("path: installed registry by default", $core.registry_path() == "/opt/mixos/share/bus/commands.conf.mix")
   export BRIDGED_CONFIG=$saved.c
   export MIXOS_ETC=$saved.e
-  export BRIDGED_VERBS=$saved.v
+  export BRIDGED_COMMANDS=$saved.v
 
   -- Serve-name guard against this checkout's registry.
-  $reg = $checkout .. "/docs/docs/spec/bus/verbs.conf.mix"
+  $reg = $checkout .. "/docs/docs/spec/bus/commands.conf.mix"
   check("guard: fakeapp accepted by the real registry", code_of(fn() = $core.check_name("fakeapp", $reg)) == "OK")
-  check("guard: a concrete verb's first segment refused (settings)", code_of(fn() = $core.check_name("settings", $reg)) == "NAME_RESERVED")
-  check("guard: a concrete verb's first segment refused (releases)", code_of(fn() = $core.check_name("releases", $reg)) == "NAME_RESERVED")
-  check("guard: the refusal names the verb", contains(message_of(fn() = $core.check_name("settings", $reg)), "settings."))
+  check("guard: a concrete command's first segment refused (settings)", code_of(fn() = $core.check_name("settings", $reg)) == "NAME_RESERVED")
+  check("guard: a concrete command's first segment refused (releases)", code_of(fn() = $core.check_name("releases", $reg)) == "NAME_RESERVED")
+  check("guard: the refusal names the command", contains(message_of(fn() = $core.check_name("settings", $reg)), "settings."))
   for each $bad in ["", "a", "Fake", "a.b", "-x", "9app", "a b", "@", "fake_app", repeat("a", 32)]
     check("guard: invalid name '" .. $bad .. "' refused", code_of(fn() = $core.check_name($bad, $reg)) == "NAME_INVALID")
   end
@@ -191,15 +191,15 @@ try
   end
   check("guard: a name near the session shape is accepted", code_of(fn() = $core.check_name("tab-short", $reg)) == "OK")
   check("guard: missing registry fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/no-registry.conf.mix")) == "REGISTRY")
-  write_file($tmp .. "/code.conf.mix", "{schema: 1, verbs: [1 + 1]}\n")
+  write_file($tmp .. "/code.conf.mix", "{schema: 1, commands: [1 + 1]}\n")
   check("guard: a registry that is not strict data fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/code.conf.mix")) == "REGISTRY")
   write_file($tmp .. "/noverbs.conf.mix", "{schema: 1}\n")
-  check("guard: a registry with no verbs list fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/noverbs.conf.mix")) == "REGISTRY")
-  write_file($tmp .. "/noname.conf.mix", "{schema: 1, verbs: [{owner: \"x\"}]}\n")
+  check("guard: a registry with no commands list fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/noverbs.conf.mix")) == "REGISTRY")
+  write_file($tmp .. "/noname.conf.mix", "{schema: 1, commands: [{owner: \"x\"}]}\n")
   check("guard: an entry without a name fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/noname.conf.mix")) == "REGISTRY")
   -- Families (schema 3 and later): <app> patterns, listed and runtime members.
   write_file($tmp .. "/families.conf.mix", join([
-    "{schema: 3, verbs: [{name: \"shell.status\", owner: \"shell\", version: \"0.1.0\", status: \"accepted\"},",
+    "{schema: 3, commands: [{name: \"shell.status\", owner: \"shell\", version: \"0.1.0\", status: \"accepted\"},",
     "  {name: \"oldsvc.ping\", owner: \"oldsvc\", version: \"0.1.0\", status: \"retired\"}],",
     " families: [{pattern: \"<app>.ui.*\", owner: \"toolkit\", version: \"0.1.1\", status: \"accepted\"},",
     "  {pattern: \"<app>.window\", owner: \"toolkit\", members: [\"viewer\"], version: \"0.1.1\", status: \"accepted\"},",
@@ -207,12 +207,12 @@ try
     "  {pattern: \"toolbox.*\", owner: \"toolbox\", version: \"0.1.0\", status: \"accepted\"}]}"], "\n") .. "\n")
   $fam = $tmp .. "/families.conf.mix"
   check("guard: families: fakeapp accepted", code_of(fn() = $core.check_name("fakeapp", $fam)) == "OK")
-  check("guard: families: a concrete verb refused", code_of(fn() = $core.check_name("shell", $fam)) == "NAME_RESERVED")
-  check("guard: families: a retired verb's segment stays reserved", code_of(fn() = $core.check_name("oldsvc", $fam)) == "NAME_RESERVED")
+  check("guard: families: a concrete command refused", code_of(fn() = $core.check_name("shell", $fam)) == "NAME_RESERVED")
+  check("guard: families: a retired command's segment stays reserved", code_of(fn() = $core.check_name("oldsvc", $fam)) == "NAME_RESERVED")
   check("guard: families: a listed member refused", code_of(fn() = $core.check_name("viewer", $fam)) == "NAME_RESERVED")
   check("guard: families: a literal first segment refused", code_of(fn() = $core.check_name("toolbox", $fam)) == "NAME_RESERVED")
   check("guard: families: <app> and instances families reserve nothing", not has_key($core.reserved_names($fam), "app") and not has_key($core.reserved_names($fam), "<app>"))
-  write_file($tmp .. "/badmembers.conf.mix", "{schema: 3, verbs: [], families: [{pattern: \"<app>.x\", owner: \"y\", members: 5}]}\n")
+  write_file($tmp .. "/badmembers.conf.mix", "{schema: 3, commands: [], families: [{pattern: \"<app>.x\", owner: \"y\", members: 5}]}\n")
   check("guard: an unknown members form fails closed", code_of(fn() = $core.check_name("fakeapp", $tmp .. "/badmembers.conf.mix")) == "REGISTRY")
 
   -- The client against the token fake.

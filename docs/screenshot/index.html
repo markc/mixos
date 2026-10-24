@@ -218,7 +218,7 @@
                         <a href="#source-and-tests">Source and tests</a>
                         <a href="#notes">Notes</a>
                         <a href="#changes-from-cap">Changes from Cap</a>
-                        <a href="#macro-bus-verbs">Macro Bus verbs</a>
+                        <a href="#macro-bus-commands">Macro Bus commands</a>
                     </nav>
                 </div>
             </div>
@@ -355,7 +355,7 @@ print $recent.shots[0].path
 first.</p>
 <h2 id="for-agents">For agents</h2>
 <p>Screenshot answers on the Bus as <code>screenshot</code> (schema <code>screenshot.v1</code>).</p>
-<table><thead><tr><th>Verb</th><th>Arguments</th><th>Answer</th></tr></thead><tbody>
+<table><thead><tr><th>Command</th><th>Arguments</th><th>Answer</th></tr></thead><tbody>
 <tr><td><code>screenshot.ping</code>, <code>screenshot.info</code></td><td></td><td>liveness and the compositor served (<code>comp</code>); the document, its source and last save, the capture, the job and the UI state</td></tr>
 <tr><td><code>screenshot.capture</code></td><td><code>mode</code> (<code>screen</code>, <code>window</code>, <code>region</code>), <code>output</code>, <code>window</code> <code>{id, generation}</code>, <code>cursor</code>, <code>delay</code> (0–10)</td><td>a new document, once it is ready; any answer, refusals included, carries <code>restore_failed: true</code> if the window could not be shown again; refused while unsaved annotations exist</td></tr>
 <tr><td><code>screenshot.take</code></td><td><code>mode</code>, <code>window</code>, <code>comp</code></td><td>as Print Screen: starts at once, or brings the window forward and asks about unsaved work at once; refused (<code>COMPOSITOR</code>) when <code>comp</code> names another compositor</td></tr>
@@ -369,7 +369,7 @@ first.</p>
 <tr><td><code>screenshot.export</code></td><td><code>path</code></td><td>Save As to a new file</td></tr>
 <tr><td><code>screenshot.recent</code></td><td><code>limit</code> (1–100)</td><td>the newest saved shots</td></tr>
 <tr><td><code>screenshot.select</code></td><td><code>tool</code>, <code>mode</code>, <code>window</code>, <code>output</code></td><td>the UI state</td></tr>
-<tr><td><code>screenshot.commands</code></td><td></td><td>every command with parameter schemas, labels, shortcuts and enablement</td></tr>
+<tr><td><code>screenshot.actions</code></td><td></td><td>every command with parameter schemas, labels, shortcuts and enablement</td></tr>
 <tr><td><code>screenshot.execute</code></td><td><code>id</code>, optional <code>params</code></td><td>runs a command; answers <code>{executed, result, status, dialog, job}</code></td></tr>
 <tr><td><code>screenshot.theme</code></td><td><code>scheme</code>, <code>mode</code></td><td>this window's look</td></tr>
 <tr><td><code>screenshot.show</code>, <code>screenshot.quit</code></td><td></td><td>brings the window forward; closes it (refused with unsaved work)</td></tr>
@@ -398,7 +398,7 @@ the old nullary <code>edit.delete</code> must move to <code>edit.delete_selected
 Uncrop dispatches <code>edit.crop</code>. The shell's dialog/job checks compose with
 the engine's enablement.</p>
 <p>The six <code>screenshot.annotate</code>, <code>screenshot.move</code>, <code>screenshot.delete</code>,
-<code>screenshot.crop</code>, <code>screenshot.undo</code> and <code>screenshot.redo</code> verbs remain
+<code>screenshot.crop</code>, <code>screenshot.undo</code> and <code>screenshot.redo</code> commands remain
 deprecated aliases of execute and preserve their old reply bodies and
 argument error codes at document limits. Alias undo/redo with empty history
 return the document without executing or publishing an event; the command
@@ -407,16 +407,16 @@ and <code>screenshot.execute</code> remain disabled. Undo/redo use the shared
 workers receive a fresh history without old edits.</p>
 <p>The window is drivable like every MixOS app, including its menus: see
 <a href="/docs/drive/">driving an app</a> (<code>screenshot.ui.*</code>, <code>screenshot.window</code>). The
-verbs are registered in <code>docs/docs/spec/bus/verbs.conf.mix</code>. Each command run
+commands are registered in <code>docs/docs/spec/bus/commands.conf.mix</code>. Each command run
 from a menu, a key, the toolbar or <code>screenshot.execute</code> is published on
-<code>screenshot.command.executed</code> v2 with accepted <code>params</code> and returned <code>result</code>,
+<code>screenshot.action.executed</code> v2 with accepted <code>params</code> and returned <code>result</code>,
 including successful edits reached by hand or through the deprecated aliases
 (<a href="/docs/decisions/2026-10-11-executed-commands/">executed commands</a>).
 Edit › Delete and Edit › Uncrop each publish two executed events: first the
 inner <code>edit.delete</code> / <code>edit.crop</code> with parameters, then the nullary wrapper
 <code>edit.delete_selected</code> / <code>edit.uncrop</code>. The wrapper records the gesture;
 the inner command records the document edit.</p>
-<p><code>screenshot --headless</code> runs the same verbs with no window, for agents and
+<p><code>screenshot --headless</code> runs the same commands with no window, for agents and
 tests, registered under the headless names above so Print Screen never
 lands in an instance nobody can see. It never asks anything: work that would need a
 question is refused.</p>
@@ -468,7 +468,7 @@ names per compositor are in <code>src/names.rs</code>.</li>
 <p><code>tests/native_bus.rs</code> runs the headless binary against an in-process
 broker and a fixture compositor; <code>tests/snapshot.rs</code> renders the window
 offscreen (regenerate with <code>UPDATE_SNAPSHOTS=1</code> and look at the images);
-<code>tests/registry.rs</code> checks the verb registry.</p>
+<code>tests/registry.rs</code> checks the command registry.</p>
 <h2 id="notes">Notes</h2>
 <ul>
 <li>Copy image goes through the desktop's X11 clipboard (XWayland), so
@@ -490,12 +490,12 @@ agents alike.</li>
 <li>A region selection may take up to 70 seconds (Cap allowed 38).</li>
 <li>Raw shots are deleted when no longer needed, and the folder is pruned.</li>
 </ul>
-<h2 id="macro-bus-verbs">Macro Bus verbs</h2>
-<p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
+<h2 id="macro-bus-commands">Macro Bus commands</h2>
+<p>The shared <a href="/macros/#bus-commands">macro Bus surface</a> uses this process's
 catalogue and runner. Subscribe to <code>&lt;service&gt;.macros.finished</code> for completion, where <code>service</code> is
 the instance’s registered Bus name (for example <code>term-1234</code> for a second Term
-instance). Verbs keep the app’s canonical prefix, such as <code>screenshot.macros.run</code>.</p>
-<table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
+instance). Commands keep the app’s canonical prefix, such as <code>screenshot.macros.run</code>.</p>
+<table><thead><tr><th>Command</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
 <tr><td><code>screenshot.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>screenshot.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>screenshot.macros.run</code></td><td><code>{id}</code></td><td>Acceptance and run number</td></tr>

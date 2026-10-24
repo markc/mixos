@@ -28,7 +28,7 @@ use egui::{
     Align, Align2, FontId, Id, Key, Layout, Rect, RichText, ScrollArea, Sense, TextStyle, Ui,
     UiBuilder, pos2, vec2,
 };
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 use toolkit::dialog::{self, Choice, Role};
 use toolkit::titlebar::Action;
 use toolkit::{Icon, Registry, Strings, bars, icons};
@@ -39,7 +39,7 @@ use crate::{label, label_with};
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
-    /// A command, and how it was reached (for `dopus.command.executed`).
+    /// A command, and how it was reached (for `dopus.action.executed`).
     Command(&'static str, Origin),
     CloseMacros,
     /// A context-menu action on a pane (it activates first).
@@ -1074,7 +1074,7 @@ fn context_item(
     let Some(command) = commands.get(id) else {
         return;
     };
-    let text = toolkit::command::label_text(strings, command.label);
+    let text = toolkit::action::label_text(strings, command.label);
     if ui
         .add_enabled((command.enabled)(app), egui::Button::new(text))
         .clicked()

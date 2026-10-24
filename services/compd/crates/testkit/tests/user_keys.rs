@@ -59,13 +59,13 @@ fn harness(test: &str, text: &str) -> (Harness, PathBuf) {
     (h, path)
 }
 
-/// Run the `comp` verbs the layer queued as `policy_host::control::
+/// Run the `comp` commands the layer queued as `policy_host::control::
 /// apply_bindings` does: the Bus path's own parser, then the switch the
-/// `comp.workspace.switch` verb runs. Returns how many ran.
+/// `comp.workspace.switch` command runs. Returns how many ran.
 fn run_comp_fires(h: &mut Harness) -> usize {
     let fires = h.wire.inner.comp.bindings.take_comp_fires();
     for fire in &fires {
-        match classify(fire.verb, &fire.body, false) {
+        match classify(fire.command, &fire.body, false) {
             Ok(Request::Window(WindowOp::SwitchWorkspace {
                 output,
                 index,
@@ -82,7 +82,7 @@ fn run_comp_fires(h: &mut Harness) -> usize {
                     wrap,
                 );
             }
-            other => panic!("unexpected request for {}: {other:?}", fire.verb),
+            other => panic!("unexpected request for {}: {other:?}", fire.command),
         }
     }
     fires.len()
@@ -230,8 +230,8 @@ fn a_reload_while_a_key_is_held_applies_from_its_next_press() {
     assert!(h.key(xkb(EV_F5), true, false));
     let fired = h.wire.inner.comp.bindings.take_bus_fires();
     assert_eq!(fired.len(), 1);
-    assert_eq!(fired[0].service, "user", "the verb's first segment");
-    assert_eq!(fired[0].verb, "user.f05");
+    assert_eq!(fired[0].service, "user", "the command's first segment");
+    assert_eq!(fired[0].command, "user.f05");
 
     std::fs::write(
         &path,

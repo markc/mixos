@@ -385,9 +385,9 @@ fn email_accounts_apply_reach_the_summary_and_never_take_a_password() {
     leaky["password"] = json!("hunter2");
     let before = std::fs::read(dir.path().join("desktop.conf.mix")).unwrap();
     let body = request(&state, "leak", json!({"email.accounts":[leaky]}));
-    for verb in ["settings.validate", "settings.apply"] {
-        let refused = settingsd::service::dispatch(&mut state, verb, &body).unwrap_err();
-        assert_eq!(refused["status"], "validation_failed", "{verb}");
+    for command in ["settings.validate", "settings.apply"] {
+        let refused = settingsd::service::dispatch(&mut state, command, &body).unwrap_err();
+        assert_eq!(refused["status"], "validation_failed", "{command}");
     }
     assert_eq!(
         std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(),
@@ -399,9 +399,9 @@ fn email_accounts_apply_reach_the_summary_and_never_take_a_password() {
     let mut userinfo = account.clone();
     userinfo["url"] = json!("https://me:hunter2@mail.example.org");
     let body = request(&state, "userinfo", json!({"email.accounts":[userinfo]}));
-    for verb in ["settings.validate", "settings.apply"] {
-        let refused = settingsd::service::dispatch(&mut state, verb, &body).unwrap_err();
-        assert_eq!(refused["status"], "validation_failed", "{verb}");
+    for command in ["settings.validate", "settings.apply"] {
+        let refused = settingsd::service::dispatch(&mut state, command, &body).unwrap_err();
+        assert_eq!(refused["status"], "validation_failed", "{command}");
         assert!(!refused.to_string().contains("hunter2"), "{refused}");
     }
     assert_eq!(
@@ -489,29 +489,29 @@ fn the_summary_view_carries_identity_and_appearance_names_only() {
 fn schema_2_reads_expand_to_the_schema_1_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = authority(dir.path());
-    let mut read = |verb: &str, body: serde_json::Value| {
-        settingsd::service::dispatch(&mut state, verb, &body.to_string())
+    let mut read = |command: &str, body: serde_json::Value| {
+        settingsd::service::dispatch(&mut state, command, &body.to_string())
     };
-    for verb in ["settings.get", "settings.appearance.get"] {
-        let one = read(verb, json!({"binding":binding()})).unwrap();
-        let two = read(verb, json!({"binding":binding(),"schema":2})).unwrap();
-        assert_eq!(two["snapshot"]["schema"], 2, "{verb}");
+    for command in ["settings.get", "settings.appearance.get"] {
+        let one = read(command, json!({"binding":binding()})).unwrap();
+        let two = read(command, json!({"binding":binding(),"schema":2})).unwrap();
+        assert_eq!(two["snapshot"]["schema"], 2, "{command}");
         assert_eq!(
             two["snapshot"]["designs"].as_object().unwrap().len(),
             1,
-            "{verb}: the default contexts share one design"
+            "{command}: the default contexts share one design"
         );
         let expanded = settings::compact::decode(two["snapshot"].clone()).unwrap();
         let original: Snapshot = serde_json::from_value(one["snapshot"].clone()).unwrap();
-        assert_eq!(expanded, original, "{verb}");
+        assert_eq!(expanded, original, "{command}");
         assert!(
             two.to_string().len() * 4 < one.to_string().len(),
-            "{verb}: {} vs {} bytes",
+            "{command}: {} vs {} bytes",
             two.to_string().len(),
             one.to_string().len()
         );
         assert_eq!(
-            read(verb, json!({"binding":binding(),"schema":3})).unwrap_err()["status"],
+            read(command, json!({"binding":binding(),"schema":3})).unwrap_err()["status"],
             "unsupported_schema"
         );
     }

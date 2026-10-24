@@ -20,7 +20,7 @@ $LAUNCH = {term: {app: "dev.mixos.term", icon: "dev.mixos.term-symbolic", label:
   files: {app: "dev.mixos.dopus", icon: "dev.mixos.dopus-symbolic", label: "Files"},
   shot: {app: "dev.mixos.screenshot", icon: "dev.mixos.screenshot-symbolic", label: "Screenshot"},
   settings: {app: "dev.mixos.prefs", icon: "dev.mixos.prefs-symbolic", label: "Settings"}}
--- Desk power actions. Each names a hostd verb scoped to the caller's own desk
+-- Desk power actions. Each names a hostd command scoped to the caller's own desk
 -- (hostd identifies the desk by its cgroup): restart and stop this machine
 -- only, never the host. Writes go only through hostd.
 $POWER = {restart: "desk.restart", poweroff: "desk.stop"}

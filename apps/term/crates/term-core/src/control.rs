@@ -24,9 +24,9 @@ const ACTORS: usize = 256;
 
 /// Public command metadata; invocation still passes the recipient's policy
 /// and target/generation checks. Native identity is published after install.
-pub(crate) fn verb_manifest() -> Vec<::bus::VerbDescriptor> {
-    use ::bus::VerbDescriptor;
-    let mut verbs = vec![VerbDescriptor::new(
+pub(crate) fn command_manifest() -> Vec<::bus::CommandDescriptor> {
+    use ::bus::CommandDescriptor;
+    let mut command_names = vec![CommandDescriptor::new(
         "HELP",
         &[],
         "List all commands this service accepts",
@@ -125,16 +125,16 @@ pub(crate) fn verb_manifest() -> Vec<::bus::VerbDescriptor> {
             false,
         ),
     ] {
-        let mut descriptor = VerbDescriptor::new(name, args, description, read_only);
+        let mut descriptor = CommandDescriptor::new(name, args, description, read_only);
         descriptor.args.insert(0, "target".into());
         if !read_only {
             descriptor
                 .args
                 .extend(["request_id".into(), "request_epoch".into()]);
         }
-        verbs.push(descriptor);
+        command_names.push(descriptor);
     }
-    verbs
+    command_names
 }
 
 /// Same default-open posture as CTK app-control and desktop.mix.
@@ -388,8 +388,8 @@ pub(crate) enum Family {
     Task,
 }
 impl Family {
-    fn of(verb: &str) -> Self {
-        if verb.starts_with("term.task.") {
+    fn of(command_name: &str) -> Self {
+        if command_name.starts_with("term.task.") {
             Self::Task
         } else {
             Self::Execute
@@ -635,7 +635,7 @@ impl Control {
         // Live properties adapt to the same owner operations and commitment
         // lock, rather than storing a second writable copy of pane state.
         let property = command.command.starts_with("term.props.");
-        let verb = match (command.command.as_str(), request.property.as_deref()) {
+        let command_name = match (command.command.as_str(), request.property.as_deref()) {
             ("term.props.get", Some("state")) => "term.session",
             ("term.props.get", Some("contents")) => {
                 request.contents = true;
@@ -652,15 +652,15 @@ impl Control {
                     .map(str::to_owned);
                 "term.type"
             }
-            (verb, _) if !property => verb,
+            (command_name, _) if !property => command_name,
             _ => return Reply::error("UNSUPPORTED"),
         };
-        // An unknown verb is resolved against the WEAKEST capability rather
+        // An unknown command is resolved against the WEAKEST capability rather
         // than answered here. Answering early would tell an unauthorised caller
-        // which verbs exist — a known one comes back FORBIDDEN and an unknown
-        // one UNSUPPORTED, which is a probe of the verb table. The UNSUPPORTED
+        // which commands exist — a known one comes back FORBIDDEN and an unknown
+        // one UNSUPPORTED, which is a probe of the command table. The UNSUPPORTED
         // fall-through is below, after `allows`.
-        let capability = capability_of(verb, request.contents).unwrap_or(Capability::ReadState);
+        let capability = capability_of(command_name, request.contents).unwrap_or(Capability::ReadState);
         if (request.request_id.is_some() || request.operation_id.is_some())
             && actor.session.is_none()
             && (request.target.instance_id != parent.instance_id
@@ -672,16 +672,16 @@ impl Control {
             return Reply::error("FORBIDDEN");
         }
         // Only now, to a caller that WOULD have been allowed. An unauthorised
-        // one was refused above and learns nothing about the verb table.
+        // one was refused above and learns nothing about the command table.
         //
         // Derived from the capability match, not a third hand-written copy of
         // it: the same list already existed there and in the coverage test, and
         // a fourth would drift the way the second one did.
-        if capability_of(verb, request.contents).is_none() {
+        if capability_of(command_name, request.contents).is_none() {
             return Reply::error("UNSUPPORTED");
         }
         if !mesh_open()
-            && matches!(verb, "term.tab.new" | "term.pane.split")
+            && matches!(command_name, "term.tab.new" | "term.pane.split")
             && actor
                 .session
                 .as_ref()
@@ -760,7 +760,7 @@ impl Control {
         let identity = actor_key(actor);
         let digest: [u8; 32] =
             Sha256::digest(format!("{}\0{}", command.command, command.body).as_bytes()).into();
-        if verb == "term.operation" {
+        if command_name == "term.operation" {
             let Some(id) = request.operation_id else {
                 return Reply::error("INVALID_ARGUMENT");
             };
@@ -806,7 +806,7 @@ impl Control {
         // after every identity, capability and lease check and before any of
         // those locks are taken.
         if matches!(
-            verb,
+            command_name,
             "term.execute"
                 | "term.exec.result"
                 | "term.exec.cancel"
@@ -815,7 +815,7 @@ impl Control {
                 | "term.task.cancel"
         ) {
             return self
-                .forward_execute(connection, actor, verb, &request, &identity, digest)
+                .forward_execute(connection, actor, command_name, &request, &identity, digest)
                 .await;
         }
         let target = request.target.clone();
@@ -836,11 +836,11 @@ impl Control {
         if !permit.valid() || tabs.pane_by_id(target.pane_id.0).is_none() {
             return Reply::error("FORBIDDEN");
         }
-        // `term.props.*` is a VERB ALIAS, not a second authorisation surface.
-        // Each property name resolved to a verb above and everything after this
+        // `term.props.*` is a COMMAND ALIAS, not a second authorisation surface.
+        // Each property name resolved to a command above and everything after this
         // point is the enforcement for both spellings, which is precisely what
         // PROP-024 requires: the property owner shares BROKER-023's policy and
-        // current-target checks with its verb handlers.
+        // current-target checks with its command handlers.
         //
         // There used to be an AuthPolicy here that rebuilt a PeerIdentity from
         // the actor this function had already authorised, then asked `allows`
@@ -851,7 +851,7 @@ impl Control {
         // does not; until then the alias carries no separate check.
         let layout = matches!(capability, Capability::ManageLayout | Capability::Terminate);
         if layout {
-            let affected = tabs.control_affected(target.pane_id.0, verb);
+            let affected = tabs.control_affected(target.pane_id.0, command_name);
             if affected.is_empty()
                 || affected.iter().any(|id| {
                     let t = if *id == target.pane_id.0 {
@@ -867,7 +867,7 @@ impl Control {
             {
                 return Reply::error("FORBIDDEN");
             }
-            if verb == "term.tab.close"
+            if command_name == "term.tab.close"
                 && affected
                     .iter()
                     .filter(|id| tabs.control_tab(**id) == tabs.control_tab(target.pane_id.0))
@@ -916,7 +916,7 @@ impl Control {
         if !permit.valid() {
             return Reply::error("FORBIDDEN");
         }
-        let mut reply = match verb {
+        let mut reply = match command_name {
             "term.session" | "term.list" | "term.tabs" | "term.panes" => {
                 let panes: Vec<_> = tabs.control_panes().into_iter().filter_map(|p| {
                     let generation = native.pane_generation(p.id)?;
@@ -1003,7 +1003,7 @@ impl Control {
                     _ => Reply::error("INVALID_ARGUMENT"),
                 }
             }
-            _ => self.layout(&mut tabs, verb, &request),
+            _ => self.layout(&mut tabs, command_name, &request),
         };
         if reply.body.len() > 256 * 1024 {
             if !mutation {
@@ -1042,7 +1042,7 @@ impl Control {
     }
 
     /// BROKER-022's commit-before-execute step, and the only copy of it. The
-    /// id is retired BEFORE the verb runs so a mutation whose result was lost
+    /// id is retired BEFORE the command runs so a mutation whose result was lost
     /// can never re-execute; `Err` carries the answer the caller gets instead.
     fn reserve_request_id(
         &self,
@@ -1200,7 +1200,7 @@ impl Control {
         &self,
         connection: &VerifiedConnection,
         actor: &BrokerPrincipal,
-        verb: &str,
+        command_name: &str,
         request: &Request,
         identity: &str,
         digest: [u8; 32],
@@ -1221,7 +1221,7 @@ impl Control {
             "pane_id": child.pane_id,
             "pane_generation": child.pane_generation,
         });
-        let (shell_verb, body, sequence) = match verb {
+        let (shell_command, body, sequence) = match command_name {
             "term.execute" => {
                 let (Some(source), Some(generation)) =
                     (request.source.as_deref(), request.prompt_generation)
@@ -1338,7 +1338,7 @@ impl Control {
                 let Some(operation) = request.operation_id else {
                     return Reply::error("INVALID_ARGUMENT");
                 };
-                let family = Family::of(verb);
+                let family = Family::of(command_name);
                 // Scoped to the actor that submitted it AND to the family it
                 // belongs to, refused exactly like an id that does not exist —
                 // so neither surface can read the other's operations, and
@@ -1346,14 +1346,14 @@ impl Control {
                 if !self.owns_operation(identity, operation.0, family) {
                     return Reply::error("UNKNOWN_OUTCOME");
                 }
-                let shell_verb = match verb {
+                let shell_command = match command_name {
                     "term.exec.cancel" => "shell.execute.cancel",
                     "term.task.cancel" => "shell.task.cancel",
                     "term.task.result" => "shell.task.result",
                     _ => "shell.execute.result",
                 };
                 (
-                    shell_verb,
+                    shell_command,
                     json!({
                         "version": 1,
                         "target": child_target,
@@ -1365,7 +1365,7 @@ impl Control {
         };
         let answer = tokio::time::timeout(
             Duration::from_secs(5),
-            connection.client().call(&child.name, shell_verb, body),
+            connection.client().call(&child.name, shell_command, body),
         )
         .await;
         // `retain` is the load-bearing distinction. A reply that came FROM the
@@ -1385,7 +1385,7 @@ impl Control {
                     .as_str()
                     .and_then(|id| id.parse::<u64>().ok())
                 {
-                    self.claim_operation(identity, operation, Family::of(verb));
+                    self.claim_operation(identity, operation, Family::of(command_name));
                 }
                 value["target"] = json!(request.target);
                 if let Some(sequence) = sequence {
@@ -1417,12 +1417,12 @@ impl Control {
             // guess whether the child was slow, gone, or never asked.
             Err(error) if sequence.is_some() => {
                 eprintln!(
-                    "term control: {verb} -> {shell_verb} child call failed ({error}); reporting unknown outcome"
+                    "term control: {command_name} -> {shell_command} child call failed ({error}); reporting unknown outcome"
                 );
                 (Reply::error("UNKNOWN_OUTCOME"), false)
             }
             Err(error) => {
-                eprintln!("term control: {verb} -> {shell_verb} child call failed ({error})");
+                eprintln!("term control: {command_name} -> {shell_command} child call failed ({error})");
                 (Reply::error("DISCONNECTED"), false)
             }
         };
@@ -1442,12 +1442,12 @@ impl Control {
         reply
     }
 
-    fn layout(&self, tabs: &mut TabSet, verb: &str, request: &Request) -> Reply {
+    fn layout(&self, tabs: &mut TabSet, command_name: &str, request: &Request) -> Reply {
         let id = request.target.pane_id.0;
         let Some(tab) = tabs.control_tab(id) else {
             return Reply::error("FORBIDDEN");
         };
-        match verb {
+        match command_name {
             "term.tab.new" => match tabs.open() {
                 Ok(id) => Reply::ok(json!({"tab_id":id})),
                 Err(_) => Reply::error("RESOURCE_LIMIT"),
@@ -1627,7 +1627,7 @@ fn vocabulary(code: &str) -> Option<&'static str> {
 fn mismatch() -> Value {
     json!({"reason":"request_mismatch","retry_requires":"byte_identical_body"})
 }
-/// The high-water mark is advanced before the verb runs, so an ID can be retired
+/// The high-water mark is advanced before the command runs, so an ID can be retired
 /// without its outcome ever being recorded (BROKER-022: a committed mutation
 /// must never re-execute, even when its result was lost). An actor holding only
 /// Input or Terminate cannot read the mark back through term.session, so the
@@ -1651,13 +1651,13 @@ fn actor_key(actor: &BrokerPrincipal) -> String {
         ),
     }
 }
-/// The ONE verb-to-capability table. `dispatch`'s gate, its UNSUPPORTED
+/// The ONE command-to-capability table. `dispatch`'s gate, its UNSUPPORTED
 /// fall-through and the grant-coverage test all read this, because the moment
 /// there were two copies the second one drifted — it kept answering UNSUPPORTED
-/// before `allows`, which is how an unauthorised caller could tell a real verb
+/// before `allows`, which is how an unauthorised caller could tell a real command
 /// from an invented one.
-pub(crate) fn capability_of(verb: &str, contents: bool) -> Option<Capability> {
-    Some(match verb {
+pub(crate) fn capability_of(command_name: &str, contents: bool) -> Option<Capability> {
+    Some(match command_name {
         "term.macros.run" | "term.macros.stop" | "term.macros.reload" | "term.macros.new" => {
             Capability::Execute
         }

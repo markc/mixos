@@ -224,7 +224,7 @@ pub fn surface_awaits_frame(
 /// (minimised, or on a workspace that is not current). A hidden window is on no
 /// pane, so the occlusion record calls it `unknown` and never lists it; without
 /// this it got no callback at all, and a client that runs its UI loop on
-/// callbacks (egui answering Bus verbs) stalled until it was shown again.
+/// callbacks (egui answering Bus commands) stalled until it was shown again.
 fn trickle_targets(state: &Loop) -> Vec<(Window, Output)> {
     // One owner per window: a hover thumbnail's pacer outranks the trickle.
     let mut targets = trickle_candidates(state);

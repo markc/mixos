@@ -17,7 +17,7 @@
 //! `comp.windows.list`) from the projection, `comp.window.wait`,
 //! `comp.props.watch`, `compd.truth`, and the workspace controls
 //! (`comp.workspace.switch`, `comp.window.send_to_workspace`, the
-//! `workspaces.*` / `windows.s<id>.workspace` sets). Every other control verb
+//! `workspaces.*` / `windows.s<id>.workspace` sets). Every other control command
 //! answers `busy` until it is implemented (an honest refusal, never a fake
 //! success).
 //!
@@ -31,7 +31,7 @@
 //! any is pending. Its edges (map, focus, unmap, destroy) all arrive as loop
 //! events, so nothing polls; the timer only answers `timeout`.
 //!
-//! Injected input: the single `comp.input.*` verbs are
+//! Injected input: the single `comp.input.*` commands are
 //! policy-host `input`; `comp.input.sequence` runs on [`sequence`]'s driver;
 //! `comp.pointer.watch` opens a demand lease and `pointer.changed` is
 //! published from here while it holds (policy `pointer`). A session pause
@@ -305,7 +305,7 @@ pub struct Bus {
     port: PortService,
     /// The outbox the publisher task drains (dropping it ends the outbox).
     producer: ObservationProducer,
-    /// The user keys' verbs for other services, sent by the worker.
+    /// The user keys' commands for other services, sent by the worker.
     fires: FireSender,
     edges: policy_host::Edges,
     context: Arc<PortContext>,
@@ -580,24 +580,24 @@ impl Bus {
         // input in this dispatch, or by a `comp.input.*` key the port just ran
         // (after it, so an injected chord lands in this pass, not the next).
         policy_host::control::apply_bindings(lp);
-        // The user keys' verbs for other services, fire-and-forget, with the
+        // The user keys' commands for other services, fire-and-forget, with the
         // row's args as the body (inputd's rule).
         for fire in lp.inner.comp.bindings.take_bus_fires() {
-            if !self.fires.fire(&fire.service, fire.verb, fire.body) {
+            if !self.fires.fire(&fire.service, fire.command, fire.body) {
                 model::warn!(
                     "user key: {} for {} dropped (fire queue full or no worker)",
-                    fire.verb,
+                    fire.command,
                     fire.service
                 );
             }
         }
         // X11's EWMH desktops and HIDDEN after any state change this pass
-        // (E1): after the port and the chords, so a verb's change lands now.
+        // (E1): after the port and the chords, so a command's change lands now.
         policy_host::x11::sync_if_changed(lp);
-        // ...and the hidden stamps, so a window a verb hid this pass is out of
+        // ...and the hidden stamps, so a window a command hid this pass is out of
         // the hit driver before the next input dispatch (E5).
         world::comp::visibility::sync_hidden(lp);
-        // What the port's verbs and the chords changed this pass reaches the
+        // What the port's commands and the chords changed this pass reaches the
         // topics NOW, with its noted causes. The pass above ran before them,
         // so observers see the applied control before its next frame. This
         // also covers state-only controls. Revision-gated, so a pass with no
@@ -1070,7 +1070,7 @@ impl CompEngine for Engine<'_> {
         Some(snapshot)
     }
 
-    // Controls: the workspace verbs and sets; everything else
+    // Controls: the workspace commands and sets; everything else
     // answers `busy` until it is implemented.
     fn set(&mut self, path: &str, value: &Value, generation: Option<u64>) -> ControlReply {
         policy_host::control::set(self.lp, path, value, generation).unwrap_or(ControlReply::Busy)

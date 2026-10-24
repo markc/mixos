@@ -92,16 +92,16 @@ const EXTRA_STATEMENTS: &[ExtraStatement] = &[
     ExtraStatement {
         name: "send",
         category: "bus",
-        description: "Send a request to a Bus port: send PORT VERB [ARGS...]. Reply bands in $rc: 0 delivered+accepted; 1..9 delivered with a warning (still success); >=10 peer application error (kept in $rc, details in $reply); -1 transport failure; -2 per-send timeout; -3 Bus unavailable. $result holds the reply body",
+        description: "Send a request to a Bus port: send PORT COMMAND [ARGS...]. Reply bands in $rc: 0 delivered+accepted; 1..9 delivered with a warning (still success); >=10 peer application error (kept in $rc, details in $reply); -1 transport failure; -2 per-send timeout; -3 Bus unavailable. $result holds the reply body",
         capability: "bus",
-        contract: mix::contract!((target: string, verb: string, args: ...any) -> nil),
+        contract: mix::contract!((target: string, command_name: string, args: ...any) -> nil),
     },
     ExtraStatement {
         name: "emit",
         category: "bus",
-        description: "Fire-and-forget Bus message (no reply is waited for): emit PORT VERB [ARGS...]",
+        description: "Fire-and-forget Bus message (no reply is waited for): emit PORT COMMAND [ARGS...]",
         capability: "bus",
-        contract: mix::contract!((target: string, verb: string, args: ...any) -> nil),
+        contract: mix::contract!((target: string, command_name: string, args: ...any) -> nil),
     },
     ExtraStatement {
         name: "address",
@@ -113,9 +113,9 @@ const EXTRA_STATEMENTS: &[ExtraStatement] = &[
     ExtraStatement {
         name: "on",
         category: "bus",
-        description: "Register a Bus handler: on VERB ... end. A serve citizen answers VERB calls; reply() sends the answer. Topic subscribers match on the inner command",
+        description: "Register a Bus handler: on COMMAND ... end. A serve citizen answers COMMAND calls; reply() sends the answer. Topic subscribers match on the inner command",
         capability: "bus",
-        contract: mix::contract!((verb: string) -> nil),
+        contract: mix::contract!((command_name: string) -> nil),
     },
     ExtraStatement {
         name: "reply",
@@ -558,7 +558,7 @@ const KEYWORD_DESCRIPTIONS: &[(&str, &str)] = &[
     ("ne", "String inequality operator: a ne b"),
     (
         "on",
-        "Bus handler registration: on verb ... end (a serve citizen answers verb calls)",
+        "Bus handler registration: on command ... end (a serve citizen answers command calls)",
     ),
     (
         "step",

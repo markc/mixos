@@ -183,7 +183,7 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
   catches and `finally` control flow cannot swallow it. A served citizen
   keeps its graceful deregistration and exit status 0.
 - `read_file`, `write_file` and `append_file` yield while waiting on a FIFO,
-  so served citizens still answer other verbs and `QUIT`. Reads honour the
+  so served citizens still answer other commands and `QUIT`. Reads honour the
   string limit, and the FIFO path keeps the normal builtin arity rules.
 - `fs_watch` recovery (after a lost or overflowed event stream) re-arms each
   directory watch in place instead of unwatching and watching it again, so a
@@ -341,12 +341,12 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 - A blocking `tcp_accept` wakes promptly on Ctrl-C through a SIGINT wake
   socket that `interrupt::init` installs, and rechecks the interrupt flag at
   least every 250 ms, so no waiter misses it.
-- `on @.verb` registers a handler under the serve name: the unquoted `@` is
+- `on @.command` registers a handler under the serve name: the unquoted `@` is
   replaced by the `--serve` name (the value `serve_name()` returns) when the
   handler registers, so one generic script run as `--name photo` answers
-  `photo.verb` and a second instance as `--name other` answers `other.verb`.
+  `photo.command` and a second instance as `--name other` answers `other.command`.
   Dispatch, HELP and handler listings show the resolved name; the AST keeps
-  `@.verb`. Outside `mix --serve` the statement raises
+  `@.command`. Outside `mix --serve` the statement raises
   `SERVE_PREFIX_OUTSIDE_SERVE`. Each segment after `@.` must be a bare name,
   quoted or not. `on a.@.b`, `on @`, `on @x.y`, a quoted `on "@.x"`, a quoted
   segment that isn't a bare name (`on @."a.b"`) and `@` in an expression are

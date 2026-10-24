@@ -17,7 +17,7 @@ end
 
 -- One call. $wait_s bounds the reply (a write's window plus hostd's own
 -- slack: up to 15 s queued behind another change, then the window).
-fn call($verb, $body, $wait_s = 10)
+fn call($command, $body, $wait_s = 10)
   if not has_builtin("unix_connect") then return unavailable("this mix has no unix_connect (needs 0.115.0)") end
   try
     $h = unix_connect($SOCKET, {frame: "nul", timeout: 5})
@@ -26,7 +26,7 @@ fn call($verb, $body, $wait_s = 10)
   end
   -- From the first send on, the request may have reached hostd.
   try
-    tcp_send($h, json_encode({verb: $verb, body: $body ?? {}}) .. chr(0))
+    tcp_send($h, json_encode({command: $command, body: $body ?? {}}) .. chr(0))
     $line = tcp_recv_line($h, {timeout: $wait_s, max: $MAX_REPLY})
   catch $message
     try
@@ -60,8 +60,8 @@ fn uncertain($out)
 end
 
 -- What the widget may do, from hostd.status: {available, frozen, grants,
--- held}. held is hostd's held_grants (each in full: verbs, limits);
--- grants their names. may() answers per verb and link.
+-- held}. held is hostd's held_grants (each in full: commands, limits);
+-- grants their names. may() answers per command and link.
 fn grant_state()
   $out = call("hostd.status", {})
   if not $out.ok then return {available: $out.status != "unavailable", frozen: false, grants: [], held: []} end
@@ -73,18 +73,18 @@ fn grant_state()
     grants: map($held, function ($g) = to_string($g.name)), held: $held}
 end
 
--- Does a grant verb cover $verb? hostd's rule: an exact name, or a
--- family `prefix.*` covering every verb that starts with `prefix.`.
-fn verb_covers($pattern, $verb)
+-- Does a grant command cover $command? hostd's rule: an exact name, or a
+-- family `prefix.*` covering every command that starts with `prefix.`.
+fn command_covers($pattern, $command)
   $p = to_string($pattern)
-  if $p == $verb then return true end
-  return ends_with($p, ".*") and starts_with($verb, slice($p, 0, length($p) - 1))
+  if $p == $command then return true end
+  return ends_with($p, ".*") and starts_with($command, slice($p, 0, length($p) - 1))
 end
 
-fn covers($g, $verb)
-  if type($g) != "map" or type($g.verbs) != "list" then return false end
-  for each $v in $g.verbs
-    if verb_covers($v, $verb) then return true end
+fn covers($g, $command)
+  if type($g) != "map" or type($g.commands) != "list" then return false end
+  for each $v in $g.commands
+    if command_covers($v, $command) then return true end
   end
   return false
 end
@@ -97,13 +97,13 @@ fn limit($g, $key)
   return type($l) == "list" ? $l : nil
 end
 
--- May this panel run $verb on $link (and, for Wi-Fi, $ssid)? A live,
--- unfrozen hostd and a held grant covering the verb whose limits allow
+-- May this panel run $command on $link (and, for Wi-Fi, $ssid)? A live,
+-- unfrozen hostd and a held grant covering the command whose limits allow
 -- the arguments.
-fn may($access, $verb, $link, $ssid = nil)
+fn may($access, $command, $link, $ssid = nil)
   if $access == nil or not $access.available or $access.frozen then return false end
   for each $g in $access.held ?? []
-    if not covers($g, $verb) then continue end
+    if not covers($g, $command) then continue end
     $links = limit($g, "links")
     if $links != nil and not contains($links, $link) then continue end
     if $ssid != nil then
@@ -115,14 +115,14 @@ fn may($access, $verb, $link, $ssid = nil)
   return false
 end
 
--- The links a grant names for $verb (only explicit lists: an unlimited
+-- The links a grant names for $command (only explicit lists: an unlimited
 -- grant names none). The panel offers "New tunnel" for names in this list
 -- that don't exist yet.
-fn named_links($access, $verb)
+fn named_links($access, $command)
   $out = []
   if $access == nil or not $access.available or $access.frozen then return $out end
   for each $g in $access.held ?? []
-    if not covers($g, $verb) then continue end
+    if not covers($g, $command) then continue end
     for each $l in limit($g, "links") ?? []
       if not contains($out, $l) then push($out, $l) end
     end

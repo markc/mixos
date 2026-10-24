@@ -9,7 +9,7 @@
 //! The person's bindings come from the desktop profile
 //! (`settings::keymap`); [`crate::Registry::rebind`] applies them.
 
-pub use ::command::keymap::Overrides;
+pub use ::action::keymap::Overrides;
 use egui::{Key, KeyboardShortcut, Modifiers};
 
 /// The function keys F1–F12. They belong to the person: no app binds one by

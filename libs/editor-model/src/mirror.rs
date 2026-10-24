@@ -238,7 +238,7 @@ impl Pending {
 /// The exact bytes sent, immutable for retries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SentRequest {
-    pub verb: &'static str,
+    pub command: &'static str,
     pub body: String,
     pub op_id: String,
     pub base_rev: Option<u64>,
@@ -452,8 +452,8 @@ struct QServer {
     op: ServerOp,
     intent: Intent,
     op_id: String,
-    /// Forced verb (keep-mine stages); `None` = by shape.
-    verb: Option<&'static str>,
+    /// Forced command (keep-mine stages); `None` = by shape.
+    command: Option<&'static str>,
     /// `expect_rev` for an undo (keep-mine compensation).
     expect: Option<u64>,
 }
@@ -462,7 +462,7 @@ struct QServer {
 #[derive(Debug, Clone)]
 struct KeepStage {
     op_id: String,
-    verb: &'static str,
+    command: &'static str,
     range: Range<usize>,
     text: String,
 }
@@ -889,7 +889,7 @@ impl Mirror {
             op,
             intent,
             op_id: op_id.clone(),
-            verb: None,
+            command: None,
             expect: None,
         });
         (Step::default(), op_id)
@@ -1185,9 +1185,9 @@ impl Mirror {
         }
         let (wire, deadline) = {
             let (_, p) = self.queue.pop_front()?;
-            let (verb, body) = self.local_body(&p);
+            let (command, body) = self.local_body(&p);
             let wire = SentRequest {
-                verb,
+                command,
                 body: body.to_string(),
                 op_id: p.op_id.clone(),
                 base_rev: Some(self.rev),
@@ -1202,7 +1202,7 @@ impl Mirror {
             (wire, DEADLINE_MS)
         };
         Some(Outgoing {
-            verb: wire.verb.to_string(),
+            command: wire.command.to_string(),
             body: wire.body,
             op_id: Some(wire.op_id),
             deadline_ms: deadline,
@@ -1210,14 +1210,14 @@ impl Mirror {
     }
 
     fn send_server(&mut self, q: QServer) -> Outgoing {
-        let (verb, body) = self.server_body(&q);
-        let deadline = if verb == "edit.save" {
+        let (command, body) = self.server_body(&q);
+        let deadline = if command == "edit.save" {
             DEADLINE_LONG_MS
         } else {
             DEADLINE_MS
         };
         let wire = SentRequest {
-            verb,
+            command,
             body: body.to_string(),
             op_id: q.op_id.clone(),
             base_rev: None,
@@ -1230,7 +1230,7 @@ impl Mirror {
             state: AckState::Sent,
         });
         Outgoing {
-            verb: wire.verb.to_string(),
+            command: wire.command.to_string(),
             body: wire.body,
             op_id: Some(wire.op_id),
             deadline_ms: deadline,
@@ -1347,7 +1347,7 @@ impl Mirror {
         if ins.len() <= MAX_REQUEST_TEXT_BYTES {
             stages.push_back(KeepStage {
                 op_id: ids.next_tagged(&tag),
-                verb: "edit.replace",
+                command: "edit.replace",
                 range: a..b,
                 text: ins,
             });
@@ -1355,7 +1355,7 @@ impl Mirror {
             if b > a {
                 stages.push_back(KeepStage {
                     op_id: ids.next_tagged(&tag),
-                    verb: "edit.delete",
+                    command: "edit.delete",
                     range: a..b,
                     text: String::new(),
                 });
@@ -1364,7 +1364,7 @@ impl Mirror {
             for piece in chunks(&ins, MAX_REQUEST_TEXT_BYTES, true) {
                 stages.push_back(KeepStage {
                     op_id: ids.next_tagged(&tag),
-                    verb: "edit.insert",
+                    command: "edit.insert",
                     range: at..at,
                     text: piece.to_string(),
                 });
@@ -1436,7 +1436,7 @@ impl Mirror {
     fn send_read(
         &mut self,
         kind: Read,
-        verb: &str,
+        command: &str,
         body: Value,
         deadline_ms: u64,
         step: &mut Step,
@@ -1448,7 +1448,7 @@ impl Mirror {
         self.read_seq += 1;
         let id = format!("read-{}", self.read_seq);
         let out = Outgoing {
-            verb: verb.to_string(),
+            command: command.to_string(),
             body: body.to_string(),
             op_id: Some(id.clone()),
             deadline_ms,
@@ -1476,13 +1476,13 @@ impl Mirror {
     }
 
     fn resend(wire: &SentRequest) -> Outgoing {
-        let deadline = if wire.verb == "edit.save" {
+        let deadline = if wire.command == "edit.save" {
             DEADLINE_LONG_MS
         } else {
             DEADLINE_MS
         };
         Outgoing {
-            verb: wire.verb.to_string(),
+            command: wire.command.to_string(),
             body: wire.body.clone(),
             op_id: Some(wire.op_id.clone()),
             deadline_ms: deadline,
@@ -1608,7 +1608,7 @@ impl Mirror {
         let origin = q.intent.origin.to_string();
         match &q.op {
             ServerOp::Undo { lane } | ServerOp::Redo { lane } => {
-                let verb = if matches!(q.op, ServerOp::Undo { .. }) {
+                let command = if matches!(q.op, ServerOp::Undo { .. }) {
                     "edit.undo"
                 } else {
                     "edit.redo"
@@ -1622,7 +1622,7 @@ impl Mirror {
                 if let Some(x) = q.expect {
                     body["expect_rev"] = json!(x);
                 }
-                (verb, body)
+                (command, body)
             }
             ServerOp::Save { path, force } => {
                 let mut body = json!({"buffer": self.buffer, "origin": origin, "op_id": q.op_id});
@@ -1640,14 +1640,14 @@ impl Mirror {
             ),
             ServerOp::ApplyAt { items, expect_rev } => {
                 if let [(r, t)] = items.as_slice() {
-                    let verb = q.verb.unwrap_or(if r.is_empty() {
+                    let command = q.command.unwrap_or(if r.is_empty() {
                         "edit.insert"
                     } else if t.is_empty() {
                         "edit.delete"
                     } else {
                         "edit.replace"
                     });
-                    let body = match verb {
+                    let body = match command {
                         "edit.insert" => {
                             json!({"buffer": self.buffer, "at": r.start, "text": t, "expect_rev": expect_rev,
                                                 "origin": origin, "op_id": q.op_id})
@@ -1661,7 +1661,7 @@ impl Mirror {
                                     "origin": origin, "op_id": q.op_id})
                         }
                     };
-                    return (verb, body);
+                    return (command, body);
                 }
                 let ops: Vec<Value> = items.iter().map(|(r, t)| op_json(r, t)).collect();
                 (
@@ -2101,7 +2101,7 @@ impl Mirror {
             },
             intent: k.intent.clone(),
             op_id: s.op_id,
-            verb: Some(s.verb),
+            command: Some(s.command),
             expect: None,
         };
         self.queue_server(q);
@@ -2120,7 +2120,7 @@ impl Mirror {
             op: ServerOp::Undo { lane: LaneArg::Own },
             intent: k.intent.clone(),
             op_id,
-            verb: None,
+            command: None,
             expect: Some(expect_rev),
         };
         self.queue_server(q);

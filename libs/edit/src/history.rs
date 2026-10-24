@@ -48,7 +48,7 @@
 //!
 //! # op_id
 //! The core records and echoes `op_id` only. Deduplication belongs to editd's
-//! buffer actor, keyed `(caller_key, origin, verb, op_id)` BEFORE lane
+//! buffer actor, keyed `(caller_key, origin, command, op_id)` BEFORE lane
 //! selection, successes only (plan §3.5).
 
 use std::collections::BTreeMap;

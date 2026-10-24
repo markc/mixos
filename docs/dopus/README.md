@@ -102,7 +102,7 @@ FUSE and automounted filesystems too.
 
 DOpus answers on the Bus as `dopus` (schema `dopus.v1`).
 
-| Verb | Arguments | Answer |
+| Command | Arguments | Answer |
 |---|---|---|
 | `dopus.ping`, `dopus.describe`, `dopus.info` | | liveness, the control surface, version and build |
 | `dopus.state` | | both panes (path, sort, hidden files, previews, selection, rows, status) and the sidebars |
@@ -113,7 +113,7 @@ DOpus answers on the Bus as `dopus` (schema `dopus.v1`).
 | `dopus.quit` | | closes the window |
 
 **File operations are keyboard-only.** `dopus.action` refuses every `file.*`
-action (`FORBIDDEN`). Input played through the drive verbs (`dopus.ui.*`)
+action (`FORBIDDEN`). Input played through the drive commands (`dopus.ui.*`)
 is held to the same rule: while it runs, file actions and opening files are
 refused, and a delete, name or drop dialog can be dismissed but not
 accepted. The rule holds for the whole time drive input runs, so a key you
@@ -121,27 +121,27 @@ press yourself in that moment is refused too; press it again after. An agent rea
 never creates, renames, moves, copies, deletes or opens files through it.
 
 The window is drivable like every MixOS app, including its menus: see
-[driving an app](../docs/drive.md) (`dopus.ui.*`, `dopus.window`). The verbs are
-registered in `docs/docs/spec/bus/verbs.conf.mix`.
+[driving an app](../docs/drive.md) (`dopus.ui.*`, `dopus.window`). The commands are
+registered in `docs/docs/spec/bus/commands.conf.mix`.
 
 Each command run from a menu, a key, a sidebar button or an accepted
-`dopus.action` is published on `dopus.command.executed`, with how it was
+`dopus.action` is published on `dopus.action.executed`, with how it was
 reached (`menu`, `shortcut`, `ui` or `bus`;
 [executed commands](../docs/decisions/2026-10-11-executed-commands.md)). A refused
 action is not published.
 
 `dopus --headless` runs the core and the Bus port without a window, for
-tests: the same verbs, minus those that need a window. It publishes its
-accepted `dopus.action` runs on `<service>.command.executed` too.
+tests: the same commands, minus those that need a window. It publishes its
+accepted `dopus.action` runs on `<service>.action.executed` too.
 
-## Macro Bus verbs
+## Macro Bus commands
 
-The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+The shared [macro Bus surface](/macros/#bus-commands) uses this process's
 catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
 the instance’s registered Bus name (for example `term-1234` for a second Term
-instance). Verbs keep the app’s canonical prefix, such as `dopus.macros.run`.
+instance). Commands keep the app’s canonical prefix, such as `dopus.macros.run`.
 
-| Verb | Arguments | Result |
+| Command | Arguments | Result |
 |---|---|---|
 | `dopus.macros.list` | `{}` | Catalogue and diagnostics |
 | `dopus.macros.reload` | `{}` | Catalogue and diagnostics |

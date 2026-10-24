@@ -26,14 +26,14 @@
 //!   login is sealed into the payload, and every cookie-authorized
 //!   surface (CMS RBAC, the Mix `$SESSION` identity, the delegated
 //!   `bus_call` gate) rejects a payload whose `epoch` no longer matches.
-//!   Bumping the epoch (the `webd.session.revoke` Bus verb) instantly
+//!   Bumping the epoch (the `webd.session.revoke` Bus command) instantly
 //!   kills every outstanding cookie for that account, node-key rotation
 //!   no longer being the only (all-sessions) kill switch.
 //!
 //! A surgical "revoke account X" must hit BOTH authorities — use the
 //! unified revocation script (`_bin/revoke_account.mix` in the mixos
 //! hub), which bumps the webd epoch and revokes the maild tokens in one
-//! operation, rather than either verb alone.
+//! operation, rather than either command alone.
 //!
 //! CSRF uses double-submit: the same random `csrf` is both sealed inside
 //! the (unreadable) session cookie and set in a readable companion

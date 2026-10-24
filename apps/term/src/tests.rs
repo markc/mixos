@@ -19,7 +19,7 @@ use term_core::panes::{Direction, Geometry, SplitDir};
 use term_core::raster::Raster;
 use term_core::tabs::{self, TabSet};
 use term_core::terminal::{ScrollRequest, Terminal};
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 
 /// The pane area: below a 30-point strip in a 900 x 560 window.
 const AREA: Geometry = Geometry {
@@ -903,7 +903,7 @@ fn painting_feeds_the_snapshot_frame_metrics() {
 #[test]
 fn clicks_and_the_strip_run_targeted_commands() {
     let (mut app, reaper) = test_app();
-    let commands = crate::commands::registry();
+    let commands = crate::actions::registry();
     let left = app.shape.active_pane;
     app.act(Action::Split(SplitDir::Vertical));
     app.sync();

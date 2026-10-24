@@ -92,7 +92,7 @@ pub async fn execute_until(
                                     | "validation_failed"
                                     | "unsupported_schema"
                                     | "snapshot_too_large"
-                                    | "not_served"
+                                    | "UNKNOWN_COMMAND"
                             )
                         ) {
                             "authority_refused"

@@ -248,7 +248,7 @@ renders state and dispatches commands.</li>
 <li><strong>Every action is a command.</strong> A command has a stable id, a label, a menu
 path, an optional shortcut, an enablement rule and a handler. Menus,
 shortcuts and the command palette are generated from the registry. The UI,
-the <code>mix</code> command line and ABP Bus verbs all dispatch commands by id, so
+the <code>mix</code> command line and ABP Bus commands all dispatch commands by id, so
 everything a person can do in an application an agent can do too, locally or
 across the mesh.</li>
 <li><strong>UI state is one serialisable struct.</strong> Agents can read it, drive it and
@@ -261,7 +261,7 @@ without a window and checked as images.</li>
 and editor text) draw into textures. A software adapter is the fallback.</li>
 <li><strong>External applications are welcome without being forked.</strong> An application
 that offers a line-delimited JSON control channel can be bridged to the Bus
-as a set of verbs by one generic adapter, and runs inside the MixOS session
+as a set of commands by one generic adapter, and runs inside the MixOS session
 unmodified.</li>
 </ul>
 <h2 id="why">Why</h2>

@@ -431,7 +431,7 @@ options. Structured discovery and <code>mix lint</code> include both. The <code>
 feature itself enables BLAKE3; <code>crypto</code> is not required for these transfers.</p>
 <p>The HTTP client builtins — a small, blocking HTTP/1.1 client built on
 <a href="https://docs.rs/ureq"><code>ureq</code></a>. Three calls cover the whole surface:
-<code>http_get</code>, <code>http_post</code>, and the any-verb <code>http_request</code>. They are
+<code>http_get</code>, <code>http_post</code>, and the any-command <code>http_request</code>. They are
 <strong>feature-gated</strong> (the <code>http</code> cargo feature) in <code>mixos-lib-mix</code>; the shipped
 <code>mix</code> binary turns the feature on, so they are always present in the CLI. In
 the builtin catalogue they list under the <code>system</code> category
@@ -455,7 +455,7 @@ body_len=559
 <h2 id="the-four-calls">The four calls</h2>
 <pre><code>http_get(url, [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}])                      -- GET
 http_post(url, body, [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}])               -- POST with a body
-http_request(method, url, [body], [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}])  -- any verb
+http_request(method, url, [body], [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}])  -- any command
 http_post_multipart(url, fields, files, [headers], [opts])                              -- POST multipart/form-data
 </code></pre>
 <ul>

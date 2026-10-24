@@ -75,7 +75,7 @@ pub(super) fn resolve_args(cmd: &IncomingCommand) -> serde_json::Value {
 /// instead of silently dropping them. Returns the same resolved
 /// value as `resolve_args` on success; returns `Err(reason)` when
 /// either the `args:` header or a non-empty body is present but is
-/// not valid JSON, so the verb can reply `rc=10` instead of
+/// not valid JSON, so the command can reply `rc=10` instead of
 /// running with the default request shape.
 ///
 /// Resolution order is the same as `resolve_args`: `args:` header,
@@ -176,7 +176,7 @@ pub async fn run(
         let client = connect_with_backoff(&mut delay, &prov).await;
         let client = Arc::new(client);
         // Install the broker handle into the `NodedSubscribeGranter`
-        // that PropsRouter already holds. BEFORE this call, watch verbs
+        // that PropsRouter already holds. BEFORE this call, watch commands
         // that require live delivery return `rc=10 grant_failed`; AFTER
         // it they reach noded's `noded.props.subscribe_grant`. Install
         // BEFORE `dispatch_loop` accepts traffic so the first inbound
@@ -201,7 +201,7 @@ pub async fn run(
             // store a permit and wake it the next iteration.
             //
             // End-to-end "join live" is reachable through the watch
-            // verbs: `<svc>.props.watch` / `.audit.watch`
+            // commands: `<svc>.props.watch` / `.audit.watch`
             // authorize the broker subscription first via the
             // `SubscribeGranter` bound to the
             // `NodedSubscribeGranter` wired in `run` above,
@@ -237,7 +237,7 @@ pub async fn run(
                 // we log and skip *this* namespace; sibling namespaces
                 // still register dispatchers and the SMTP/JMAP paths
                 // continue unaffected. Subscribers can still recover
-                // via the replay verbs on the affected namespace, so
+                // via the replay commands on the affected namespace, so
                 // this matches the "Bus surface degraded, not down"
                 // posture used elsewhere in this module.
                 match ::props::spawn_dispatcher(runtime.clone(), Arc::clone(&publisher)).await {
@@ -254,7 +254,7 @@ pub async fn run(
                             "props fan-out dispatcher startup failed; \
                              live records.changed/audit topics will not \
                              fire for this namespace — subscribers must \
-                             use the replay verbs",
+                             use the replay commands",
                         );
                     }
                 }
@@ -319,86 +319,86 @@ pub async fn run(
     }
 }
 
-/// The verbs advertised by maild, checked against the repository registry.
-pub fn verb_manifest() -> Vec<::bus::VerbDescriptor> {
-    use ::bus::VerbDescriptor;
+/// The commands advertised by maild, checked against the repository registry.
+pub fn command_manifest() -> Vec<::bus::CommandDescriptor> {
+    use ::bus::CommandDescriptor;
     vec![
-        VerbDescriptor::new("HELP", &[], "List all commands this service accepts", true),
-        VerbDescriptor::new(
+        CommandDescriptor::new("HELP", &[], "List all commands this service accepts", true),
+        CommandDescriptor::new(
             "maild.submit",
             &["operation_id", "account", "from", "to", "subject", "text"],
             "Submit typed plain-text mail once through the existing mail pipeline",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.props.get",
             &["namespace", "key"],
             "Read properties",
             true,
         ),
-        VerbDescriptor::new("maild.props.list", &["namespace"], "List properties", true),
-        VerbDescriptor::new(
+        CommandDescriptor::new("maild.props.list", &["namespace"], "List properties", true),
+        CommandDescriptor::new(
             "maild.props.describe",
             &["namespace"],
             "Describe properties",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.props.watch",
             &["namespace"],
             "Watch property changes",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.props.audit.watch",
             &["namespace"],
             "Watch property audit events",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.props.set",
             &["namespace", "key", "body", "merge", "if_version"],
             "Set a property record",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.props.delete",
             &["namespace", "key", "if_version"],
             "Delete a property record",
             false,
         ),
-        VerbDescriptor::new("maild.rules.reload", &[], "Reload mail rules", false),
-        VerbDescriptor::new(
+        CommandDescriptor::new("maild.rules.reload", &[], "Reload mail rules", false),
+        CommandDescriptor::new(
             "maild.attachment.list",
             &["account_id", "email_id"],
             "Inspect message MIME parts",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.attachment.ref",
             &["account_id", "email_id", "part", "name"],
             "Export and pin a MIME part",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.message.ref",
             &["account_id", "email_id"],
             "Export and pin a whole message",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.blob.migrate",
             &["apply", "account_id", "cursor", "limit"],
             "Migrate a bounded page of legacy blobs (dry-run by default)",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.rules.stats",
             &["top_n"],
             "Read mail rule statistics",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.rules.explain",
             &[
                 "account_id",
@@ -413,19 +413,19 @@ pub fn verb_manifest() -> Vec<::bus::VerbDescriptor> {
             "Explain rule evaluation for a message",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.bayesian.stats",
             &["account_id", "email", "account"],
             "Read Bayesian classifier statistics",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.bayesian.classify",
             &["account_id", "message_b64", "blob"],
             "Classify a message without training",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.bayesian.train",
             &[
                 "account_id",
@@ -438,94 +438,94 @@ pub fn verb_manifest() -> Vec<::bus::VerbDescriptor> {
             "Train one stored message as spam or ham",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.bayesian.untrain",
             &["account_id", "email", "account", "email_id", "message_id"],
             "Remove one stored message's training label",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.bayesian.rebuild",
             &["account_id", "snapshot", "wait", "allow_empty"],
             "Rebuild Bayesian training data",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.bayesian.rebuild_status",
             &["account_id"],
             "Read Bayesian rebuild progress",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.accounts.seed_mailboxes",
             &["email"],
             "Seed account mailboxes",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.accounts.seed_content",
             &["email"],
             "Seed account content",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.accounts.revoke_tokens",
             &["email"],
             "Revoke account tokens",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.accounts.verify",
             &["email", "password"],
             "Verify account credentials",
             true,
         ),
-        VerbDescriptor::new("maild.accounts.lock", &["email"], "Lock an account", false),
-        VerbDescriptor::new(
+        CommandDescriptor::new("maild.accounts.lock", &["email"], "Lock an account", false),
+        CommandDescriptor::new(
             "maild.accounts.unlock",
             &["email"],
             "Unlock an account",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.search.rebuild",
             &["email"],
             "Rebuild mail search indexes",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.stats.mailboxes",
             &["email"],
             "Read mailbox statistics",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.stats.account",
             &["email"],
             "Read account statistics",
             true,
         ),
-        VerbDescriptor::new("maild.stats.online", &[], "List online mail sessions", true),
-        VerbDescriptor::new(
+        CommandDescriptor::new("maild.stats.online", &[], "List online mail sessions", true),
+        CommandDescriptor::new(
             "maild.stats.server",
             &[],
             "Read mail server statistics",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.stats.top",
             &["by", "limit"],
             "Rank accounts by mail usage",
             true,
         ),
-        VerbDescriptor::new("maild.retention.status", &[], "Read retention status", true),
-        VerbDescriptor::new(
+        CommandDescriptor::new("maild.retention.status", &[], "Read retention status", true),
+        CommandDescriptor::new(
             "maild.retention.run",
             &["email", "dry_run"],
             "Run a retention sweep",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.vtoken.mint_opaque",
             &[
                 "account",
@@ -538,43 +538,43 @@ pub fn verb_manifest() -> Vec<::bus::VerbDescriptor> {
             "Mint an opaque virtual address token",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.vtoken.list_opaque",
             &[],
             "List opaque virtual address tokens",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.vtoken.lookup_opaque",
             &["token_hmac"],
             "Look up an opaque virtual address token",
             true,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.vtoken.disable_opaque",
             &["token_hmac"],
             "Disable an opaque virtual address token",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.dkim.generate",
             &["domain", "selector", "algorithm"],
             "Generate a DKIM signing key",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.dkim.rotate",
             &["domain", "selector", "algorithm"],
             "Rotate a DKIM signing key",
             false,
         ),
-        VerbDescriptor::new(
+        CommandDescriptor::new(
             "maild.dkim.retire",
             &["domain", "selector"],
             "Retire a DKIM signing key",
             false,
         ),
-        VerbDescriptor::new("maild.tls.reload", &[], "Reload mail TLS identities", false),
+        CommandDescriptor::new("maild.tls.reload", &[], "Reload mail TLS identities", false),
     ]
 }
 
@@ -596,7 +596,7 @@ async fn connect_with_backoff(
         {
             Ok(c) => {
                 tracing::info!(service = BUS_SERVICE, "registered as Bus service");
-                return c.with_verbs(verb_manifest());
+                return c.with_commands(command_manifest());
             }
             Err(e) => {
                 tracing::warn!(
@@ -865,7 +865,7 @@ mod tests {
 
     #[test]
     fn attachment_manifest_and_transfer_admission_match_the_wire_contract() {
-        let manifest = verb_manifest();
+        let manifest = command_manifest();
         for (name, args, read_only) in [
             (
                 "maild.attachment.list",
@@ -884,19 +884,19 @@ mod tests {
                 false,
             ),
         ] {
-            let verb = manifest.iter().find(|v| v.name == name).unwrap();
-            assert_eq!(verb.args, args);
-            assert_eq!(verb.read_only, read_only);
+            let command_name = manifest.iter().find(|v| v.name == name).unwrap();
+            assert_eq!(command_name.args, args);
+            assert_eq!(command_name.read_only, read_only);
         }
         assert!(is_transfer("maild.attachment.ref"));
         assert!(is_transfer("maild.message.ref"));
         assert!(!is_transfer("maild.rules.explain"));
         assert!(!is_transfer("maild.bayesian.classify"));
         for name in ["maild.rules.explain", "maild.bayesian.classify"] {
-            let verb = manifest.iter().find(|v| v.name == name).unwrap();
-            assert!(verb.args.iter().any(|a| a == "blob"));
-            assert!(verb.args.iter().any(|a| a == "message_b64"));
-            assert!(verb.read_only);
+            let command_name = manifest.iter().find(|v| v.name == name).unwrap();
+            assert!(command_name.args.iter().any(|a| a == "blob"));
+            assert!(command_name.args.iter().any(|a| a == "message_b64"));
+            assert!(command_name.read_only);
             let mut cmd = IncomingCommand {
                 generation: 0,
                 from: "test".into(),

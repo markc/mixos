@@ -3,7 +3,7 @@
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.2.0
 -- comp_control_smoke.mix — gates G3 and G4 of the control contract: input
--- injection and the window verbs, against a PRIVATE nested compd on its own
+-- injection and the window commands, against a PRIVATE nested compd on its own
 -- headless weston host:
 --
 --   mix tests/desktop/comp_control_smoke.mix [--bin PATH] --config-file PATH [--probe PATH]
@@ -95,8 +95,8 @@ $svc = $session["service"]
 print("nested " .. $KIND .. " (" .. $comp .. "): socket " .. $session["socket"] ..
   ", service " .. $svc)
 
-fn call($verb, $args)
-  return $n.call($svc, $verb, $args)
+fn call($command, $args)
+  return $n.call($svc, $command, $args)
 end
 
 fn probe_env($session)

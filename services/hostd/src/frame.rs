@@ -49,10 +49,10 @@ mod tests {
         let (_, mut w) = tokio::io::split(a);
         let (r, _) = tokio::io::split(b);
         let mut r = BufReader::new(r);
-        write(&mut w, &json!({"verb":"host.info"})).await.unwrap();
+        write(&mut w, &json!({"command":"host.info"})).await.unwrap();
         assert_eq!(
             read(&mut r, 64).await.unwrap(),
-            Some(json!({"verb":"host.info"}))
+            Some(json!({"command":"host.info"}))
         );
         write(&mut w, &json!({"pad":"x".repeat(100)}))
             .await

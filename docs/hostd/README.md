@@ -1,6 +1,6 @@
 ---
 title: The host service
-description: How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
+description: How hostd answers questions about the host and carries out privileged host changes through closed, typed commands behind standing grants, receipts and rollback, so agents never need sudo.
 ---
 
 # The host service
@@ -11,7 +11,7 @@ jobs:
 - **It describes the host:** hardware, OS, the MixOS mode, and who manages
   the network.
 - **It makes privileged changes** through a short list of closed, typed
-  verbs. Each change is checked, recorded, and reversed if it doesn't work.
+  commands. Each change is checked, recorded, and reversed if it doesn't work.
 
 Agents and session code ask hostd instead of running `sudo`. The rules
 behind it are in the
@@ -23,7 +23,7 @@ Locally, hostd listens on `/run/hostd/hostd.sock` (mode 0660, group
 `hostd`). Frames are JSON, each ended by a NUL byte, many per connection:
 
 ```text
--> {"verb":"net.state","body":{}}\0
+-> {"command":"net.state","body":{}}\0
 <- {"rc":0,"body":{...}}\0
 ```
 
@@ -35,7 +35,7 @@ hostd call host.info
 hostd call net.link.apply '{"link":"eth1","config":{"mode":"dhcp"}}'
 ```
 
-Read verbs are also on the Bus, owned by `hostd`. Changes are never taken
+Read commands are also on the Bus, owned by `hostd`. Changes are never taken
 from the Bus.
 
 There is one hostd per host, run as root and socket-activated:
@@ -47,13 +47,13 @@ hostd serve --no-bus             # local socket only
 
 `hostd serve` refuses to take over a socket another hostd is serving.
 
-## Verbs
+## Commands
 
-| Verb | Tier | What |
+| Command | Tier | What |
 |---|---|---|
 | `host.info` | read | hostname, kernel, OS, MixOS mode, container, uptime, CPU, memory |
 | `net.state` | read | which network managers run, networkd links and files, resolved DNS, iwd stations, hostd's own files |
-| `hostd.status` | read | frozen or not, the policy's state, the caller's identity, and the grants it holds: `held` (names) and `held_grants` (each in full: verbs, limits, expiry, rate) |
+| `hostd.status` | read | frozen or not, the policy's state, the caller's identity, and the grants it holds: `held` (names) and `held_grants` (each in full: commands, limits, expiry, rate) |
 | `hostd.receipt` | read | one change's receipt: what it changed, under which grant, how it ended (never file contents) |
 | `hostd.freeze` | control | refuse every change until thawed: root on the host, or a grant naming it |
 | `hostd.thaw` | control | accept changes again and lift grant suspensions: root on the host only |
@@ -63,7 +63,7 @@ hostd serve --no-bus             # local socket only
 | `desk.restart` | write | restart the desk machine that the caller's grant names, session and console included (starts `desk-restart@DESK.service`); the host stays up; no undo |
 | `desk.stop` | write | power off the desk machine that the caller's grant names and give the console back (starts `desk-stop@DESK.service`); the host stays up; no undo |
 
-The desk verbs take no machine name. A grant gives the caller one desk through
+The desk commands take no machine name. A grant gives the caller one desk through
 its `desks` limit, which must name exactly one machine. A grant with no desk,
 or with two, is refused.
 
@@ -76,10 +76,10 @@ hostd runs none of these steps. It starts the host's template unit for the
 action with `systemctl start --no-block`, records a receipt that the cycle
 started, and answers. The host installs `desk-restart@.service` and
 `desk-stop@.service`; the unit's journal says how the cycle ended. If either
-unit is missing, the verb is refused `unit_failed`.
+unit is missing, the command is refused `unit_failed`.
 
 Only hostd on the host can do this. A hostd running inside a desk refuses
-both verbs `in_container`. The desk reaches the host's hostd through its
+both commands `in_container`. The desk reaches the host's hostd through its
 socket bound into the machine, so the grant names the caller by its cgroup as
 the host sees it, under the machine's payload:
 `/machine.slice/systemd-nspawn@DESK.service/payload/system.slice/system-scenes.slice/scenes@VT.service/*`.
@@ -101,7 +101,7 @@ can change:
   grants: [
     {name: "desk-network",
      caller: {cgroup: "/machine.slice/systemd-nspawn@desk.service/*"},
-     verbs: ["net.link.apply"],
+     commands: ["net.link.apply"],
      limits: {links: ["eth0", "wlan0"]},
      expires: "2027-01-01T00:00:00Z",
      rate: {count: 3, per_s: 600}}
@@ -115,9 +115,9 @@ can change:
   Both are read again for every request.
 - **`X/*` matches the cgroup `X` and everything below it.** Name a subtree
   the caller can't move itself into, such as one under `machine.slice`.
-- **Verbs** are exact names or a family such as `net.*`. No grant can name
+- **Commands** are exact names or a family such as `net.*`. No grant can name
   `hostd.thaw`.
-- **Limits** are allow-lists the verb checks its arguments against
+- **Limits** are allow-lists the command checks its arguments against
   (`links` for `net.link.apply`). A key the grant doesn't list is
   unrestricted.
 - **Rate** applies per caller, with a grant-wide cap of four callers' worth.
@@ -211,7 +211,7 @@ keys. Keep the `receipt` id to undo the change later, or to look it up with
 `hostd.receipt`.
 
 **Undo needs no grant of its own.** `hostd.undo {receipt}` is allowed to
-whoever holds a grant that covers the original change: its verb and its
+whoever holds a grant that covers the original change: its command and its
 limits (for `net.link.apply`, that link). A grant that may configure `hd0`
 may undo its own changes to `hd0`. Naming `hostd.undo` in a grant adds
 nothing.
@@ -243,7 +243,7 @@ nothing.
   networkd creates it again. Peers reconnect within a keepalive.
 - Grants limit WireGuard links by `links`, like other links.
 
-hostd's unit has two capabilities, both for this verb:
+hostd's unit has two capabilities, both for this command:
 - `CAP_CHOWN`, to give the key file to group `systemd-network`;
 - `CAP_NET_ADMIN`, to read peer handshakes over WireGuard netlink and to
   delete its own WireGuard link.
@@ -251,7 +251,7 @@ hostd's unit has two capabilities, both for this verb:
 ## Wi-Fi
 
 Wi-Fi goes through iwd. hostd never starts iwd: if it isn't running, the
-Wi-Fi verbs answer `no_iwd`.
+Wi-Fi commands answer `no_iwd`.
 
 ```text
 {"device": "wlan0"}                                         net.wifi.scan
@@ -290,12 +290,12 @@ host itself thaws it, never root inside a container.
 
 | Status | Meaning |
 |---|---|
-| `not_served` | no such verb |
-| `bad_request` | the body doesn't fit the verb's schema |
-| `local_only` | a control or write verb arrived over the Bus |
+| `not_served` | no such command |
+| `bad_request` | the body doesn't fit the command's schema |
+| `local_only` | a control or write command arrived over the Bus |
 | `caller_unverified` | hostd couldn't prove the caller's cgroup |
-| `no_grant` | no unexpired grant covers this caller and verb |
-| `outside_grant` | a grant covers the verb but not these arguments |
+| `no_grant` | no unexpired grant covers this caller and command |
+| `outside_grant` | a grant covers the command but not these arguments |
 | `grant_suspended` | the circuit breaker suspended the grant |
 | `rate_limited` | the grant's rate is used up |
 | `frozen` | hostd is frozen |
@@ -319,7 +319,7 @@ The source is
 |---|---|
 | `src/local.rs` | the local socket: NUL-framed JSON, per-uid and per-connection limits |
 | `src/caller.rs` | caller identity from `SO_PEERCRED`, a held pidfd, cgroup and namespaces, read per request |
-| `src/service.rs` | the verb table, tiers, dispatch and the `authorise` gate |
+| `src/service.rs` | the command table, tiers, dispatch and the `authorise` gate |
 | `src/policy.rs` | grants: loading (one `O_NOFOLLOW` open, root-only), matching, rate limits |
 | `src/freeze.rs` | the kill switch, failing closed |
 | `src/receipt.rs` | receipts, durable atomic writes, restore, the circuit breaker |
@@ -329,27 +329,27 @@ The source is
 | `src/wgnl.rs` | WireGuard generic netlink (peer handshakes) and deleting a link |
 | `src/wifi.rs` | `net.wifi.scan` and `net.wifi.connect` through iwd: the one-connect passphrase agent, runtime put-back |
 | `src/networkd.rs` | networkd over D-Bus and Varlink, the event-driven health wait |
-| `src/net.rs`, `src/info.rs` | the read verbs |
+| `src/net.rs`, `src/info.rs` | the read commands |
 | `units/` | `hostd.socket`, `hostd.service` (sandboxed), `sysusers.conf` |
 
-## Adding a write verb
+## Adding a write command
 
 1. A typed request with `deny_unknown_fields`, validated into a plan before
    anything else happens. Anything the plan reads from the host (a key, a
    file) is read inside the writer lock.
-2. `service::write(host, origin, peer, verb, limits, ...)` with the
-   allow-list keys the verb checks: it gates the call, takes the writer
+2. `service::write(host, origin, peer, command, limits, ...)` with the
+   allow-list keys the command checks: it gates the call, takes the writer
    lock, gates it again and runs the change in its own task.
 3. The change through `txn`: `FileChange::backup` for every file (with the
    mode and group a new file needs), `txn::begin`, the change and its proof,
    then `txn::conclude`. Never order the breaker or the receipt by hand.
-4. A `reapply` for the verb in `txn::put_back`, so rollback, recovery and
-   undo can make the host use the restored files. Without it the verb
+4. A `reapply` for the command in `txn::put_back`, so rollback, recovery and
+   undo can make the host use the restored files. Without it the command
    doesn't ship.
 5. The paths it writes added to `ReadWritePaths=`, and any capability it
    needs to `CapabilityBoundingSet=`, in `units/hostd.service`, with the
    reason beside it.
-6. Registered in `docs/docs/spec/bus/verbs.conf.mix` (class `intent`), in
+6. Registered in `docs/docs/spec/bus/commands.conf.mix` (class `intent`), in
    this page, and reviewed on its own.
 
 ## Tests

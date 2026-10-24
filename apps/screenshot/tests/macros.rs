@@ -10,7 +10,7 @@ fn macros_status_dispatch_and_surface() {
     for suffix in ["list", "reload", "run", "status", "output", "stop", "new"] {
         let name = format!("screenshot.macros.{suffix}");
         assert!(
-            surface["verbs"]
+            surface["commands"]
                 .as_array()
                 .unwrap()
                 .iter()

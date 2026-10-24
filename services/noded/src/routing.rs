@@ -188,7 +188,7 @@ pub(crate) fn local_eligibility(view: &[RoutingMember], canonical_node: &str) ->
 }
 
 /// The one atomically-published authority snapshot used by admission, route
-/// classification, and both inventory-reporting verbs.
+/// classification, and both inventory-reporting commands.
 #[derive(Debug, Clone)]
 pub(crate) struct RoutingAuthority {
     pub(crate) posture: Posture,

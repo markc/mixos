@@ -66,9 +66,9 @@ fn to_result(r: &FakeReply) -> Result<Value, wire::Refusal> {
     }
 }
 
-fn is_read(verb: &str) -> bool {
+fn is_read(command: &str) -> bool {
     matches!(
-        verb,
+        command,
         "edit.get" | "edit.history" | "edit.list" | "edit.open"
     )
 }
@@ -242,12 +242,12 @@ impl Net {
         self.shadow_apply(&step);
         self.notices.extend(step.notices.iter().cloned());
         for o in step.out {
-            if is_read(&o.verb) {
+            if is_read(&o.command) {
                 let args: Value = serde_json::from_str(&o.body).unwrap();
-                if o.verb == "edit.get" && args.get("snapshot") == Some(&Value::Bool(true)) {
+                if o.command == "edit.get" && args.get("snapshot") == Some(&Value::Bool(true)) {
                     self.snapshots += 1;
                 }
-                let reply = self.fake.handle("local:ced", &o.verb, &args);
+                let reply = self.fake.handle("local:ced", &o.command, &args);
                 self.collect();
                 let id = o.op_id.clone().expect("reads carry a correlation id");
                 let s = self.mirror.on_reply(&id, to_result(&reply));
@@ -267,7 +267,7 @@ impl Net {
             self.echo_timers.push(id);
         }
         while let Some(o) = self.mirror.next_outgoing() {
-            assert!(!is_read(&o.verb), "the scheduler only sends writes");
+            assert!(!is_read(&o.command), "the scheduler only sends writes");
             self.outbox.push(o);
         }
     }
@@ -285,7 +285,7 @@ impl Net {
             return o;
         }
         let args = override_args.unwrap_or_else(|| serde_json::from_str(&o.body).unwrap());
-        let reply = self.fake.handle("local:ced", &o.verb, &args);
+        let reply = self.fake.handle("local:ced", &o.command, &args);
         self.collect();
         self.pending.push(Pend::Reply {
             op_id: o.op_id.clone().unwrap(),
@@ -303,7 +303,7 @@ impl Net {
         let o = self.lost.remove(i);
         let reply = self.fake.handle(
             "local:ced",
-            &o.verb,
+            &o.command,
             &serde_json::from_str(&o.body).unwrap(),
         );
         self.collect();
@@ -314,8 +314,8 @@ impl Net {
         });
     }
 
-    fn agent(&mut self, caller: &str, verb: &str, args: &Value) -> FakeReply {
-        let r = self.fake.handle(caller, verb, args);
+    fn agent(&mut self, caller: &str, command: &str, args: &Value) -> FakeReply {
+        let r = self.fake.handle(caller, command, args);
         self.collect();
         r
     }
@@ -580,9 +580,9 @@ fn run_fixture(name: &str, fx: &Value) {
                         panic!("{}: the mirror sent nothing for {id}", net.what)
                     });
                 assert_eq!(
-                    got.verb,
-                    body["verb"].as_str().unwrap(),
-                    "{}: verb",
+                    got.command,
+                    body["command"].as_str().unwrap(),
+                    "{}: command",
                     net.what
                 );
                 let got_body: Value = serde_json::from_str(&got.body).unwrap();
@@ -621,7 +621,7 @@ fn run_fixture(name: &str, fx: &Value) {
             "agent" => {
                 let r = net.agent(
                     body["caller"].as_str().unwrap(),
-                    body["verb"].as_str().unwrap(),
+                    body["command"].as_str().unwrap(),
                     &expand(&body["args"]),
                 );
                 if let Some(rc) = body["expect"].get("rc").and_then(Value::as_u64) {
@@ -895,7 +895,7 @@ fn a_reply_without_rev_reconciles_through_history() {
     let mut net = Net::new("hello world\n", Some(DOC), 1, None);
     let o = typed(&mut net);
     let args: Value = serde_json::from_str(&o.body).unwrap();
-    assert_eq!(net.fake.handle("local:ced", &o.verb, &args).rc, 0);
+    assert_eq!(net.fake.handle("local:ced", &o.command, &args).rc, 0);
     net.collect();
     let s = net
         .mirror
@@ -1086,10 +1086,10 @@ fn span(b: &[usize], frac: u16, n: u8) -> std::ops::Range<usize> {
 fn run_script(initial: &str, script: &[Act]) -> Result<(), TestCaseError> {
     let mut net = Net::new(initial, Some("/prop/doc.txt"), 7, None);
     let evicted = script.iter().any(|a| matches!(a, Act::EvictDedup));
-    let agent = |net: &mut Net, verb: &str, mut args: Value| {
+    let agent = |net: &mut Net, command: &str, mut args: Value| {
         args["buffer"] = json!(net.bid);
         args["origin"] = json!("agent:ctl-90");
-        net.agent("local:agent", verb, &args);
+        net.agent("local:agent", command, &args);
     };
     for (i, a) in script.iter().enumerate() {
         net.what = format!("prop step {i} {a:?}");
@@ -1284,7 +1284,7 @@ fn run_script(initial: &str, script: &[Act]) -> Result<(), TestCaseError> {
     while let Some(o) = net.lost.pop() {
         let reply = net.fake.handle(
             "local:ced",
-            &o.verb,
+            &o.command,
             &serde_json::from_str(&o.body).unwrap(),
         );
         net.collect();

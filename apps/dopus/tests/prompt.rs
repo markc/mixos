@@ -4,7 +4,7 @@
 //! field submits a valid name, and leaves an invalid one open.
 use dopus::app::{Answer, App, Dialog};
 use dopus::view::{UiEvent, view};
-use dopus::{commands, strings};
+use dopus::{actions, strings};
 use dopus_core::{DOpusConfig, DopusCore, PromptKind};
 use egui_kittest::Harness;
 
@@ -30,7 +30,7 @@ fn answers_after_enter(name: &str) -> Vec<Answer> {
     let state = State {
         app,
         events: Vec::new(),
-        registry: commands::registry(),
+        registry: actions::registry(),
         strings: strings(),
     };
     let mut harness = Harness::new_ui_state(

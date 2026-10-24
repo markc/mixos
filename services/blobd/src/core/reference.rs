@@ -3,7 +3,7 @@
 //! The blob reference wire shape (D6).
 //!
 //! `{"blob":"b3:<64 hex>","size":N,"mime":"…","name":"…"?,
-//! "origin":"<node name>"}` — the small JSON value every verb carries
+//! "origin":"<node name>"}` — the small JSON value every command carries
 //! and every app understands. `origin` is the node name that holds the
 //! bytes (props-legible, never an IP). References are what travel over
 //! the Bus; bytes never do.

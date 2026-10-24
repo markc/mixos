@@ -9,7 +9,7 @@ use chrono::{DateTime, Datelike, FixedOffset, Local, TimeZone};
 use egui::{EventFilter, Id, Key, Modifiers, RichText, ScrollArea, Sense, Ui};
 use jmap::Email;
 use toolkit::button::{IconButton, Link};
-use toolkit::command::{Origin, label_text};
+use toolkit::action::{Origin, label_text};
 use toolkit::datatable::{Cell, DataTable, Everything, RowStyle, Rows, SelectionMode, Total};
 use toolkit::markdown::{self, Document};
 use toolkit::{Icon, Registry, Strings, icons, panel};

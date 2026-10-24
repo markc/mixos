@@ -23,7 +23,7 @@ pub struct Connection {
 #[derive(Clone, Default)]
 pub(crate) struct ConnectionOptions {
     pub provenance: Option<crate::RegisterProvenance>,
-    pub verbs: Option<Vec<crate::VerbDescriptor>>,
+    pub commands: Option<Vec<crate::CommandDescriptor>>,
     pub capacity: Option<usize>,
     /// Answer id-bearing requests the bounded lane drops with a correlated
     /// `BUSY` reply. Off by default: a dropped request is then silent.
@@ -45,7 +45,7 @@ impl Connection {
             url,
             options.provenance.clone(),
             options.capacity,
-            options.verbs.clone(),
+            options.commands.clone(),
             options.refuse_overflowed_requests,
         )
         .await

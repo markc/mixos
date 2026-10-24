@@ -426,7 +426,7 @@ mod tests {
     #[test]
     fn the_frozen_order_is_written_merged_and_read_back() {
         let frozen: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/shell-verbs.json")).unwrap();
+            serde_json::from_str(include_str!("../tests/fixtures/shell-commands.json")).unwrap();
         let fixture = &frozen["shell.panel.order"];
         let path = temp_dir("frozen").join("quoin/conf.mix");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -464,7 +464,7 @@ mod tests {
     #[test]
     fn refusals_match_the_frozen_shape() {
         let frozen: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/shell-verbs.json")).unwrap();
+            serde_json::from_str(include_str!("../tests/fixtures/shell-commands.json")).unwrap();
         let both = json!({"edges": {"left": ["scene-notes"], "right": ["scene-notes", "settings.appearance"]}});
         assert_eq!(
             parse_order(&both).unwrap_err().body(),

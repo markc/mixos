@@ -48,11 +48,11 @@ Status: accepted 2026-10-10. Amends [the source layout](2026-10-04-source-layout
   that `program` names a `.mix` file inside the component. Names are unique
   across both kinds. A Mix component has no Cargo dependency closure, so its
   declared layer is checked at review: it may use only the `mix` binary, the
-  Bus and the verbs of components at or below its layer.
+  Bus and the commands of components at or below its layer.
 - **Versions and contracts.** A Mix component carries its own version, since
   there is no workspace package to inherit one from. With
-  `contract: "public"`, its Bus verbs and document schemas are registered
-  like any other (`docs/docs/spec/bus/verbs.conf.mix`, `docs/docs/spec/<topic>/`).
+  `contract: "public"`, its Bus commands and document schemas are registered
+  like any other (`docs/docs/spec/bus/commands.conf.mix`, `docs/docs/spec/<topic>/`).
 
 ## Why
 

@@ -3,19 +3,19 @@
 //! `WebdBusCallHandler` — the local Bus-named implementation of Mix's call-handler API.
 //! backing the `bus_call` builtin in an embedded Mix handler (vtoken C2).
 //!
-//! It lets an admin route's Mix handler call a maild Bus verb under DELEGATED
+//! It lets an admin route's Mix handler call a maild Bus command under DELEGATED
 //! identity. The value lives entirely in the delegation being RIGHT, so this
 //! struct is the choke point:
 //!
-//! - **Verb allowlist (Rust, before any send):** the route grants exact verbs
-//!   (`bus:maild.vtoken.list_opaque`); `bus_verbs` is that set, and `call()` refuses
-//!   anything not in it. The Mix script can NEVER reach an ungranted verb.
+//! - **Command allowlist (Rust, before any send):** the route grants exact commands
+//!   (`bus:maild.vtoken.list_opaque`); `bus_commands` is that set, and `call()` refuses
+//!   anything not in it. The Mix script can NEVER reach an ungranted command.
 //! - **Delegation envelope from TRUSTED state:** the actor (the logged-in
 //!   admin's email), vhost, route_id, and a fresh request_id come from
 //!   [`DelegationInputs`] — webd request state, NOT the Mix args. The handler is
 //!   only constructed AFTER webd's Rust-side admin + CSRF gate passes, so it
 //!   always emits `role:"admin"`, `csrf_verified:true`. The Mix script supplies
-//!   only the verb + args and can name no destination/peer/actor.
+//!   only the command + args and can name no destination/peer/actor.
 //! - **Runtime bridge:** a handler eval runs on an isolated `spawn_blocking`
 //!   current-thread runtime, but the broker `NodedClient`'s WebSocket lives on
 //!   webd's MAIN runtime. So `call()` SPAWNS the broker send onto the captured
@@ -36,18 +36,18 @@ use mix::{BusCallFuture, BusCallHandler, MixError, MixResult};
 
 use crate::bus::subscribe_granter::SharedBrokerHandle;
 
-/// The EXPLICIT allowlist of delegated-Bus verbs webd may grant a route. ONLY
+/// The EXPLICIT allowlist of delegated-Bus commands webd may grant a route. ONLY
 /// these implement a DAEMON-SIDE delegated-envelope authorization spine that
 /// interprets `$mixos_delegation` (maild `bus/vtoken.rs`; filesd `delegation.rs`,
-/// slice S6a). Any OTHER verb authorizes by mesh-peer / operator rules and would
+/// slice S6a). Any OTHER command authorizes by mesh-peer / operator rules and would
 /// IGNORE the envelope — granting it to a webd admin route would be a
 /// confused-deputy hole (e.g. `maild.accounts.*` is callable by any WG peer with
-/// no actor/target binding). A new verb joins this list ONLY after its daemon
+/// no actor/target binding). A new command joins this list ONLY after its daemon
 /// dispatch implements delegated auth. This is the single source of truth; route
 /// capability validation rejects everything else.
-pub(crate) fn is_delegated_safe_bus_verb(verb: &str) -> bool {
+pub(crate) fn is_delegated_safe_bus_command(command: &str) -> bool {
     matches!(
-        verb,
+        command,
         // maild — vtoken C2 delegated path (bus/vtoken.rs).
         "maild.vtoken.mint_opaque"
             | "maild.vtoken.list_opaque"
@@ -63,7 +63,7 @@ pub(crate) fn is_delegated_safe_bus_verb(verb: &str) -> bool {
             | "filesd.move"
             | "filesd.delete"
             // filesd fs-mode — the generic file-manager capability (the dual-pane
-            // FM, D3-A). Every verb interprets the SAME `$mixos_delegation` envelope
+            // FM, D3-A). Every command interprets the SAME `$mixos_delegation` envelope
             // via the shared `gate()` + `fsops`; reads AND writes are web-delegable,
             // gated per-place by `writable` and (delete/trash.empty) by confirm:true.
             // The instance is `filesd-fs` — routes MUST pin `bus-svc:filesd-fs`
@@ -124,13 +124,13 @@ pub(crate) fn is_delegated_safe_bus_verb(verb: &str) -> bool {
     )
 }
 
-/// Read-only delegated-Bus verbs (no state change). The complement within
-/// [`is_delegated_safe_bus_verb`] mutates. CENTRALIZED here (Codex C2) — the
-/// CSRF policy must NOT be inferred from the HTTP method or route path. A verb
+/// Read-only delegated-Bus commands (no state change). The complement within
+/// [`is_delegated_safe_bus_command`] mutates. CENTRALIZED here (Codex C2) — the
+/// CSRF policy must NOT be inferred from the HTTP method or route path. A command
 /// not listed read-only is treated as MUTATING (fail-safe).
-pub(crate) fn is_read_only_bus_verb(verb: &str) -> bool {
+pub(crate) fn is_read_only_bus_command(command: &str) -> bool {
     matches!(
-        verb,
+        command,
         "maild.vtoken.list_opaque"
             | "maild.vtoken.lookup_opaque"
             | "filesd.list"
@@ -148,42 +148,42 @@ pub(crate) fn is_read_only_bus_verb(verb: &str) -> bool {
     )
 }
 
-/// Whether a route granting `bus_verbs` must present a matching `x-csrf-token`
+/// Whether a route granting `bus_commands` must present a matching `x-csrf-token`
 /// for an HTTP request of `method` (Codex C2 ruling C). An explicit token is
-/// required ONLY when a MUTATING verb is reachable by a method OTHER than
+/// required ONLY when a MUTATING command is reachable by a method OTHER than
 /// `POST`:
-/// - `POST` + mutating verb → NO token: an SSR plain-form `POST` relies on the
+/// - `POST` + mutating command → NO token: an SSR plain-form `POST` relies on the
 ///   SameSite session cookie + the admin gate, exactly as every existing webd
 ///   SSR admin handler does (a cross-site `POST` drops the Lax cookie → no
 ///   session → denied).
-/// - `GET`/`HEAD` + only read-only verbs → no token (the SSR list/lookup page).
+/// - `GET`/`HEAD` + only read-only commands → no token (the SSR list/lookup page).
 /// - `GET` + a mutating grant → token required (Lax sends the cookie on a
 ///   cross-site top-level GET) — effectively blocking a mutate-via-GET route.
 /// - `PUT`/`PATCH`/`DELETE`/`OPTIONS` + a mutating grant → token required
 ///   (these are fetch/JSON paths, not plain HTML forms — keep the stronger
 ///   posture).
-pub(crate) fn bus_route_requires_csrf(bus_verbs: &BTreeSet<String>, method: &str) -> bool {
-    let has_mutating = bus_verbs.iter().any(|v| !is_read_only_bus_verb(v));
+pub(crate) fn bus_route_requires_csrf(bus_commands: &BTreeSet<String>, method: &str) -> bool {
+    let has_mutating = bus_commands.iter().any(|v| !is_read_only_bus_command(v));
     has_mutating && method != "POST"
 }
 
-/// Resolve the Bus service a route's delegated verbs route to. An explicit
+/// Resolve the Bus service a route's delegated commands route to. An explicit
 /// `bus-svc:<service>` route capability ALWAYS wins (the way a per-corpus filesd
-/// instance — `filesd-notes` — is named, since the verb prefix `filesd` is not
-/// the instance service). With no explicit value, derive from the verbs' shared
+/// instance — `filesd-notes` — is named, since the command prefix `filesd` is not
+/// the instance service). With no explicit value, derive from the commands' shared
 /// first dotted segment (`maild.vtoken.list` → `maild`) — backward-compatible
-/// for the maild routes. `None` (reject) when the granted verbs span more than
+/// for the maild routes. `None` (reject) when the granted commands span more than
 /// one prefix and no explicit service pins it (an ambiguous misconfiguration) or
 /// the set is empty. Chosen at route-bind time, NEVER from request args.
 pub(crate) fn resolve_target_service(
     explicit: Option<&str>,
-    bus_verbs: &BTreeSet<String>,
+    bus_commands: &BTreeSet<String>,
 ) -> Option<String> {
     // A non-empty explicit value wins; an empty one is treated as absent (derive).
     if let Some(s) = explicit.filter(|s| !s.is_empty()) {
         return Some(s.to_string());
     }
-    let mut prefixes = bus_verbs.iter().filter_map(|v| v.split('.').next());
+    let mut prefixes = bus_commands.iter().filter_map(|v| v.split('.').next());
     let first = prefixes.next()?;
     if !prefixes.all(|p| p == first) {
         return None;
@@ -214,19 +214,19 @@ pub struct DelegationInputs {
 }
 
 /// Per-request handler. Holds the shared broker handle + the captured MAIN
-/// runtime handle (for the cross-runtime bridge), the route's exact-verb grant
+/// runtime handle (for the cross-runtime bridge), the route's exact-command grant
 /// set, and the trusted delegation inputs.
 pub(crate) struct WebdBusCallHandler {
     broker: SharedBrokerHandle,
     main_handle: tokio::runtime::Handle,
-    bus_verbs: Arc<BTreeSet<String>>,
+    bus_commands: Arc<BTreeSet<String>>,
     inputs: DelegationInputs,
-    /// The Bus service the granted verbs route to (e.g. `maild`, `filesd-notes`).
+    /// The Bus service the granted commands route to (e.g. `maild`, `filesd-notes`).
     /// One route = one target service (chosen before the call, never from args).
     service: String,
     /// ACCELERATOR-ONLY mode (a dev_session caller — see `build_bus_injection`).
     /// The caller has NO cookie-backed session, so it gets a deliberately tiny
-    /// slice of the seam: ONLY [`is_accelerator_wake_verb`], and ONLY with empty
+    /// slice of the seam: ONLY [`is_accelerator_wake_command`], and ONLY with empty
     /// args. It does NOT inherit the broader delegated-safe allowlist.
     accelerator_only: bool,
 }
@@ -235,7 +235,7 @@ impl WebdBusCallHandler {
     pub(crate) fn new(
         broker: SharedBrokerHandle,
         main_handle: tokio::runtime::Handle,
-        bus_verbs: Arc<BTreeSet<String>>,
+        bus_commands: Arc<BTreeSet<String>>,
         inputs: DelegationInputs,
         service: String,
         accelerator_only: bool,
@@ -243,7 +243,7 @@ impl WebdBusCallHandler {
         Self {
             broker,
             main_handle,
-            bus_verbs,
+            bus_commands,
             inputs,
             service,
             accelerator_only,
@@ -251,7 +251,7 @@ impl WebdBusCallHandler {
     }
 }
 
-/// The ACCELERATOR verbs: authority-free wakes that carry no args and name no
+/// The ACCELERATOR commands: authority-free wakes that carry no args and name no
 /// target, and therefore cannot select work, a tool, a tenant or an identity.
 /// They only nudge a daemon to drain a queue it independently claims through a
 /// separately-authenticated seam — so calling one confers no authority beyond
@@ -259,33 +259,33 @@ impl WebdBusCallHandler {
 ///
 /// EXACT NAMES ONLY — deliberately not a `*.wake` suffix pattern, so a future
 /// `something.wake` that DOES take args cannot silently inherit this (Codex
-/// 019f5bc3). Adding a verb here is a security decision, not a naming accident.
+/// 019f5bc3). Adding a command here is a security decision, not a naming accident.
 ///
 /// This list is the ONLY thing a dev_session (cookieless auto-login) caller can
-/// reach over the bus seam. It must never grow to include a verb that acts on
+/// reach over the bus seam. It must never grow to include a command that acts on
 /// caller-supplied data.
-pub(crate) fn is_accelerator_wake_verb(verb: &str) -> bool {
-    matches!(verb, "provisiond.wake" | "toolsd.wake" | "sshm.wake")
+pub(crate) fn is_accelerator_wake_command(command: &str) -> bool {
+    matches!(command, "provisiond.wake" | "toolsd.wake" | "sshm.wake")
 }
 
-/// Parse a `wake:<verb>` route capability into its `(verb, service)`.
+/// Parse a `wake:<command>` route capability into its `(command, service)`.
 ///
 /// webd fires this wake ITSELF, best-effort, after the route returns a non-error
 /// (`< 400`) response for an authenticated session (see
 /// [`fire_wake_after_response`]) — decoupled from the route's primary
 /// `bus-svc:` pin, so a route that talks to (say) `filesd-fs` for its real work
-/// can still nudge `sshm`. The verb MUST be an [`is_accelerator_wake_verb`]
+/// can still nudge `sshm`. The command MUST be an [`is_accelerator_wake_command`]
 /// (authority-free, no args, names no target) and its service must resolve from
-/// the verb prefix; anything else returns `None` (fail closed — the grant is
+/// the command prefix; anything else returns `None` (fail closed — the grant is
 /// dropped and logged by the caller).
 pub(crate) fn parse_wake_capability(cap: &str) -> Option<(String, String)> {
-    let verb = cap.strip_prefix("wake:")?;
-    if !is_accelerator_wake_verb(verb) {
+    let command = cap.strip_prefix("wake:")?;
+    if !is_accelerator_wake_command(command) {
         return None;
     }
-    let one: BTreeSet<String> = std::iter::once(verb.to_string()).collect();
+    let one: BTreeSet<String> = std::iter::once(command.to_string()).collect();
     let svc = resolve_target_service(None, &one)?;
-    Some((verb.to_string(), svc))
+    Some((command.to_string(), svc))
 }
 
 /// Fire a best-effort, authority-free accelerator wake AFTER a route returned a
@@ -299,14 +299,14 @@ pub(crate) fn fire_wake_after_response(
     broker: SharedBrokerHandle,
     main_handle: &tokio::runtime::Handle,
     service: String,
-    verb: String,
+    command: String,
     inputs: DelegationInputs,
 ) {
     let body = match build_delegated_body(&inputs, &Value::Nil) {
         Ok(b) => b,
         Err(e) => {
             tracing::warn!(
-                target: "webd::bus", %verb, error = %e,
+                target: "webd::bus", %command, error = %e,
                 "post-response wake: could not build envelope; skipping (backstop timer recovers)"
             );
             return;
@@ -316,7 +316,7 @@ pub(crate) fn fire_wake_after_response(
         let fired = tokio::time::timeout(std::time::Duration::from_secs(2), async {
             match broker.load_full() {
                 Some(client) => client
-                    .call(&service, &verb, body)
+                    .call(&service, &command, body)
                     .await
                     .map_err(|e| e.to_string()),
                 None => Err("broker unavailable (no live noded connection)".to_string()),
@@ -325,14 +325,14 @@ pub(crate) fn fire_wake_after_response(
         .await;
         match fired {
             Ok(Ok(_)) => tracing::debug!(
-                target: "webd::bus", %verb, "post-response accelerator wake fired"
+                target: "webd::bus", %command, "post-response accelerator wake fired"
             ),
             Ok(Err(e)) => tracing::warn!(
-                target: "webd::bus", %verb, error = %e,
+                target: "webd::bus", %command, error = %e,
                 "post-response wake not accepted (backstop timer will recover the work)"
             ),
             Err(_) => tracing::warn!(
-                target: "webd::bus", %verb,
+                target: "webd::bus", %command,
                 "post-response wake timed out after 2s (backstop timer will recover the work)"
             ),
         }
@@ -386,42 +386,42 @@ fn build_delegated_body(
 }
 
 impl BusCallHandler for WebdBusCallHandler {
-    fn call<'a>(&'a self, verb: &'a str, args: &'a Value) -> BusCallFuture<'a, MixResult<Value>> {
-        // Verb allowlist — enforced in RUST, before any send, at BOTH the route
+    fn call<'a>(&'a self, command: &'a str, args: &'a Value) -> BusCallFuture<'a, MixResult<Value>> {
+        // Command allowlist — enforced in RUST, before any send, at BOTH the route
         // membership AND the global delegated-safe allowlist. The second check
         // is defence-in-depth: a stale/injected `bus:` grant persisted in cms.db
         // (e.g. from before the write-time allowlist, or a tooling bug) would
-        // collect into `bus_verbs`, but it can still never reach maild — only a
-        // verb with a delegated-envelope authz spine is ever sent.
-        if !is_delegated_safe_bus_verb(verb) || !self.bus_verbs.contains(verb) {
-            let verb = verb.to_string();
+        // collect into `bus_commands`, but it can still never reach maild — only a
+        // command with a delegated-envelope authz spine is ever sent.
+        if !is_delegated_safe_bus_command(command) || !self.bus_commands.contains(command) {
+            let command = command.to_string();
             return Box::pin(async move {
                 Err(rt_err(format!(
-                    "bus_call: verb {verb:?} is not a granted, delegated-safe verb for this route"
+                    "bus_call: command {command:?} is not a granted, delegated-safe command for this route"
                 )))
             });
         }
         // The authority-free wake exception is valid ONLY while every wake takes no
         // args. Enforce that invariant for every caller, not merely dev_session: no
         // job, host, kind or tenant selector may cross this Rust boundary.
-        if is_accelerator_wake_verb(verb) && !args_are_empty(args) {
-            let verb = verb.to_string();
+        if is_accelerator_wake_command(command) && !args_are_empty(args) {
+            let command = command.to_string();
             return Box::pin(async move {
                 Err(rt_err(format!(
-                    "bus_call: authority-free wake {verb:?} must carry no arguments"
+                    "bus_call: authority-free wake {command:?} must carry no arguments"
                 )))
             });
         }
         // ACCELERATOR-ONLY (dev_session caller): a SEPARATE, strictly smaller gate
         // that does NOT inherit the allowlist checked above. Only an authority-free
         // wake, and only with zero args — so a cookieless dev_session can never
-        // reach vtoken/fs/db-mutating verbs, nor hand data to the one verb it can
+        // reach vtoken/fs/db-mutating commands, nor hand data to the one command it can
         // reach. Both halves are enforced here in Rust, before any send.
-        if self.accelerator_only && !is_accelerator_wake_verb(verb) {
-            let verb = verb.to_string();
+        if self.accelerator_only && !is_accelerator_wake_command(command) {
+            let command = command.to_string();
             return Box::pin(async move {
                 Err(rt_err(format!(
-                    "bus_call: verb {verb:?} is not an argument-free accelerator wake \
+                    "bus_call: command {command:?} is not an argument-free accelerator wake \
                      (this caller has no cookie-backed session)"
                 )))
             });
@@ -437,7 +437,7 @@ impl BusCallHandler for WebdBusCallHandler {
         let broker = self.broker.clone();
         let main_handle = self.main_handle.clone();
         let service = self.service.clone();
-        let verb = verb.to_string();
+        let command = command.to_string();
         Box::pin(async move {
             // Bridge: drive the broker send on the MAIN runtime (its WS lives
             // there), await the reply over a runtime-agnostic oneshot.
@@ -446,7 +446,7 @@ impl BusCallHandler for WebdBusCallHandler {
             main_handle.spawn(async move {
                 let result = match broker.load_full() {
                     Some(client) => client
-                        .call(&svc, &verb, body)
+                        .call(&svc, &command, body)
                         .await
                         .map_err(|e| e.to_string()),
                     None => Err("broker unavailable (no live noded connection)".to_string()),
@@ -479,7 +479,7 @@ mod tests {
         }
     }
 
-    fn verbs(v: &[&str]) -> Arc<BTreeSet<String>> {
+    fn commands(v: &[&str]) -> Arc<BTreeSet<String>> {
         Arc::new(v.iter().map(|s| s.to_string()).collect())
     }
 
@@ -510,13 +510,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ungranted_verb_is_refused_before_any_send() {
-        // No broker connection installed — but an ungranted verb must be refused
+    async fn ungranted_command_is_refused_before_any_send() {
+        // No broker connection installed — but an ungranted command must be refused
         // BEFORE the bridge is reached, so this never touches the broker.
         let h = WebdBusCallHandler::new(
             crate::bus::subscribe_granter::new_broker_handle(),
             tokio::runtime::Handle::current(),
-            verbs(&["maild.vtoken.list_opaque"]),
+            commands(&["maild.vtoken.list_opaque"]),
             inputs(),
             "maild".to_string(),
             false,
@@ -524,22 +524,22 @@ mod tests {
         let err = h
             .call("maild.vtoken.mint_opaque", &Value::map(IndexMap::new()))
             .await
-            .expect_err("an ungranted verb must be refused");
+            .expect_err("an ungranted command must be refused");
         assert!(
-            format!("{err}").contains("not a granted, delegated-safe verb"),
+            format!("{err}").contains("not a granted, delegated-safe command"),
             "{err}"
         );
     }
 
     #[tokio::test]
-    async fn handler_refuses_a_non_delegated_safe_verb_even_if_granted() {
-        // Defence-in-depth: even if a stale/unsafe verb somehow landed in
-        // `bus_verbs`, the handler re-checks the global allowlist and refuses
+    async fn handler_refuses_a_non_delegated_safe_command_even_if_granted() {
+        // Defence-in-depth: even if a stale/unsafe command somehow landed in
+        // `bus_commands`, the handler re-checks the global allowlist and refuses
         // it before any send — `maild.accounts.*` can never reach maild here.
         let h = WebdBusCallHandler::new(
             crate::bus::subscribe_granter::new_broker_handle(),
             tokio::runtime::Handle::current(),
-            verbs(&["maild.accounts.seed_mailboxes"]),
+            commands(&["maild.accounts.seed_mailboxes"]),
             inputs(),
             "maild".to_string(),
             false,
@@ -550,18 +550,18 @@ mod tests {
                 &Value::map(IndexMap::new()),
             )
             .await
-            .expect_err("a non-delegated-safe verb must be refused");
+            .expect_err("a non-delegated-safe command must be refused");
         assert!(format!("{err}").contains("delegated-safe"), "{err}");
     }
 
     #[tokio::test]
-    async fn granted_verb_with_no_broker_surfaces_unavailable() {
-        // A granted verb passes the allowlist, reaches the bridge, and — with no
+    async fn granted_command_with_no_broker_surfaces_unavailable() {
+        // A granted command passes the allowlist, reaches the bridge, and — with no
         // installed client — returns the broker-unavailable error (not a panic).
         let h = WebdBusCallHandler::new(
             crate::bus::subscribe_granter::new_broker_handle(),
             tokio::runtime::Handle::current(),
-            verbs(&["maild.vtoken.list_opaque"]),
+            commands(&["maild.vtoken.list_opaque"]),
             inputs(),
             "maild".to_string(),
             false,
@@ -578,45 +578,45 @@ mod tests {
     // The negative tests Codex required: this mode is a strictly SMALLER gate that
     // does NOT inherit the delegated-safe allowlist. A dev_session may nudge a
     // drain and nothing else — it can reach no vtoken, no filesystem, no future
-    // delegated verb, and it cannot hand ARGS even to the verb it can reach.
+    // delegated command, and it cannot hand ARGS even to the command it can reach.
 
     #[test]
-    fn accelerator_wake_verbs_are_an_exact_closed_list() {
-        assert!(is_accelerator_wake_verb("provisiond.wake"));
-        assert!(is_accelerator_wake_verb("toolsd.wake"));
-        assert!(is_accelerator_wake_verb("sshm.wake"));
+    fn accelerator_wake_commands_are_an_exact_closed_list() {
+        assert!(is_accelerator_wake_command("provisiond.wake"));
+        assert!(is_accelerator_wake_command("toolsd.wake"));
+        assert!(is_accelerator_wake_command("sshm.wake"));
         // NOT a `*.wake` suffix pattern — a future wake that takes args must not
         // silently inherit the exception by virtue of its name.
-        assert!(!is_accelerator_wake_verb("evil.wake"));
-        assert!(!is_accelerator_wake_verb("maild.vtoken.mint_opaque"));
-        assert!(!is_accelerator_wake_verb("fs.write"));
+        assert!(!is_accelerator_wake_command("evil.wake"));
+        assert!(!is_accelerator_wake_command("maild.vtoken.mint_opaque"));
+        assert!(!is_accelerator_wake_command("fs.write"));
         // Every accelerator must also be delegated-safe (the outer gate still runs).
-        assert!(is_delegated_safe_bus_verb("provisiond.wake"));
-        assert!(is_delegated_safe_bus_verb("toolsd.wake"));
-        assert!(is_delegated_safe_bus_verb("sshm.wake"));
+        assert!(is_delegated_safe_bus_command("provisiond.wake"));
+        assert!(is_delegated_safe_bus_command("toolsd.wake"));
+        assert!(is_delegated_safe_bus_command("sshm.wake"));
     }
 
     #[tokio::test]
-    async fn accelerator_only_refuses_every_non_wake_verb_even_when_granted() {
-        // The route GRANTS these verbs and they ARE delegated-safe — the ONLY thing
+    async fn accelerator_only_refuses_every_non_wake_command_even_when_granted() {
+        // The route GRANTS these commands and they ARE delegated-safe — the ONLY thing
         // refusing them is accelerator_only. This is the test that proves a
         // dev_session cannot ride the seam to maild or the filesystem.
-        for verb in ["maild.vtoken.mint_opaque", "fs.write", "filesd.delete"] {
+        for command in ["maild.vtoken.mint_opaque", "fs.write", "filesd.delete"] {
             let h = WebdBusCallHandler::new(
                 crate::bus::subscribe_granter::new_broker_handle(),
                 tokio::runtime::Handle::current(),
-                verbs(&[verb]),
+                commands(&[command]),
                 inputs(),
                 "maild".to_string(),
                 true, // accelerator_only
             );
             let err = h
-                .call(verb, &Value::map(IndexMap::new()))
+                .call(command, &Value::map(IndexMap::new()))
                 .await
-                .expect_err("accelerator-only must refuse a non-wake verb");
+                .expect_err("accelerator-only must refuse a non-wake command");
             assert!(
                 format!("{err}").contains("accelerator wake"),
-                "{verb}: {err}"
+                "{command}: {err}"
             );
         }
     }
@@ -630,7 +630,7 @@ mod tests {
         let h = WebdBusCallHandler::new(
             crate::bus::subscribe_granter::new_broker_handle(),
             tokio::runtime::Handle::current(),
-            verbs(&["toolsd.wake"]),
+            commands(&["toolsd.wake"]),
             inputs(),
             "toolsd".to_string(),
             true,
@@ -654,7 +654,7 @@ mod tests {
         let h = WebdBusCallHandler::new(
             crate::bus::subscribe_granter::new_broker_handle(),
             tokio::runtime::Handle::current(),
-            verbs(&["sshm.wake"]),
+            commands(&["sshm.wake"]),
             inputs(),
             "sshm".to_string(),
             false,
@@ -677,7 +677,7 @@ mod tests {
         let h = WebdBusCallHandler::new(
             crate::bus::subscribe_granter::new_broker_handle(),
             tokio::runtime::Handle::current(),
-            verbs(&["toolsd.wake"]),
+            commands(&["toolsd.wake"]),
             inputs(),
             "toolsd".to_string(),
             true,
@@ -690,9 +690,9 @@ mod tests {
     }
 
     #[test]
-    fn csrf_policy_is_verb_aware_not_just_method_aware() {
-        let read = verbs(&["maild.vtoken.list_opaque", "maild.vtoken.lookup_opaque"]);
-        let write = verbs(&["maild.vtoken.list_opaque", "maild.vtoken.disable_opaque"]);
+    fn csrf_policy_is_command_aware_not_just_method_aware() {
+        let read = commands(&["maild.vtoken.list_opaque", "maild.vtoken.lookup_opaque"]);
+        let write = commands(&["maild.vtoken.list_opaque", "maild.vtoken.disable_opaque"]);
         // Read-only grants → never need a token (no state change), any method.
         assert!(!bus_route_requires_csrf(&read, "GET"));
         assert!(!bus_route_requires_csrf(&read, "HEAD"));
@@ -706,20 +706,20 @@ mod tests {
         assert!(bus_route_requires_csrf(&write, "GET"));
         assert!(bus_route_requires_csrf(&write, "DELETE"));
         assert!(bus_route_requires_csrf(&write, "OPTIONS"));
-        // An unknown verb is treated as mutating (fail-safe).
+        // An unknown command is treated as mutating (fail-safe).
         assert!(bus_route_requires_csrf(
-            &verbs(&["maild.vtoken.future"]),
+            &commands(&["maild.vtoken.future"]),
             "GET"
         ));
         assert!(!bus_route_requires_csrf(
-            &verbs(&["maild.vtoken.future"]),
+            &commands(&["maild.vtoken.future"]),
             "POST"
         ));
         // Read-only classifier.
-        assert!(is_read_only_bus_verb("maild.vtoken.list_opaque"));
-        assert!(is_read_only_bus_verb("maild.vtoken.lookup_opaque"));
-        assert!(!is_read_only_bus_verb("maild.vtoken.mint_opaque"));
-        assert!(!is_read_only_bus_verb("maild.vtoken.disable_opaque"));
+        assert!(is_read_only_bus_command("maild.vtoken.list_opaque"));
+        assert!(is_read_only_bus_command("maild.vtoken.lookup_opaque"));
+        assert!(!is_read_only_bus_command("maild.vtoken.mint_opaque"));
+        assert!(!is_read_only_bus_command("maild.vtoken.disable_opaque"));
     }
 
     #[test]
@@ -728,9 +728,9 @@ mod tests {
         // granted route may call it) but is NOT read-only, so it stays in the
         // mutating class — a Lax-cookie GET or any non-POST needs a token, and it can
         // never ride a tokenless read-only GET.
-        assert!(is_delegated_safe_bus_verb("provisiond.wake"));
-        assert!(!is_read_only_bus_verb("provisiond.wake"));
-        let wake = verbs(&["provisiond.wake"]);
+        assert!(is_delegated_safe_bus_command("provisiond.wake"));
+        assert!(!is_read_only_bus_command("provisiond.wake"));
+        let wake = commands(&["provisiond.wake"]);
         assert!(!bus_route_requires_csrf(&wake, "POST"));
         assert!(bus_route_requires_csrf(&wake, "GET"));
         assert!(bus_route_requires_csrf(&wake, "DELETE"));
@@ -741,16 +741,16 @@ mod tests {
         // Same authority-free exception as provisiond.wake, same class: a granted route
         // may call it, but it is NOT read-only, so it can never ride a tokenless
         // read-only GET. The /tools/run route is POST, which is why it needs no token.
-        assert!(is_delegated_safe_bus_verb("toolsd.wake"));
-        assert!(!is_read_only_bus_verb("toolsd.wake"));
-        let wake = verbs(&["toolsd.wake"]);
+        assert!(is_delegated_safe_bus_command("toolsd.wake"));
+        assert!(!is_read_only_bus_command("toolsd.wake"));
+        let wake = commands(&["toolsd.wake"]);
         assert!(!bus_route_requires_csrf(&wake, "POST"));
         assert!(bus_route_requires_csrf(&wake, "GET"));
         assert!(bus_route_requires_csrf(&wake, "DELETE"));
     }
 
     #[test]
-    fn delegated_safe_allowlist_is_the_vtoken_and_filesd_verbs() {
+    fn delegated_safe_allowlist_is_the_vtoken_and_filesd_commands() {
         for ok in [
             // maild vtoken C2
             "maild.vtoken.mint_opaque",
@@ -787,12 +787,12 @@ mod tests {
             "sshm.wake",
         ] {
             assert!(
-                is_delegated_safe_bus_verb(ok),
+                is_delegated_safe_bus_command(ok),
                 "{ok} should be delegated-safe"
             );
         }
-        // Non-allowlisted verbs (no delegated-envelope authz) are refused —
-        // including legacy segmented vtoken verbs and filesd's operator-only
+        // Non-allowlisted commands (no delegated-envelope authz) are refused —
+        // including legacy segmented vtoken commands and filesd's operator-only
         // `resync` escape hatch (deliberately NOT web-delegable).
         for bad in [
             "maild.accounts.seed_mailboxes",
@@ -804,39 +804,39 @@ mod tests {
             "filesd.props.list",
             "filesd",
             // fs-mode props/operator surfaces are NOT web-delegable; bare prefixes
-            // and unknown verbs are refused.
+            // and unknown commands are refused.
             "fs.props.list",
             "fs.resync",
             "fs",
             "fs.bogus",
         ] {
             assert!(
-                !is_delegated_safe_bus_verb(bad),
+                !is_delegated_safe_bus_command(bad),
                 "{bad} must NOT be delegated-safe"
             );
         }
     }
 
     #[test]
-    fn filesd_read_verbs_are_read_only_writes_are_not() {
+    fn filesd_read_commands_are_read_only_writes_are_not() {
         for ro in [
             "filesd.list",
             "filesd.read",
             "filesd.search",
             "filesd.changes",
         ] {
-            assert!(is_read_only_bus_verb(ro), "{ro} should be read-only");
+            assert!(is_read_only_bus_command(ro), "{ro} should be read-only");
         }
         for rw in ["filesd.save", "filesd.move", "filesd.delete"] {
             assert!(
-                !is_read_only_bus_verb(rw),
+                !is_read_only_bus_command(rw),
                 "{rw} must be treated as mutating"
             );
         }
     }
 
     #[test]
-    fn fs_mode_read_verbs_are_read_only_writes_are_not() {
+    fn fs_mode_read_commands_are_read_only_writes_are_not() {
         for ro in [
             "fs.places",
             "fs.list",
@@ -845,8 +845,8 @@ mod tests {
             "fs.search",
             "fs.trash.list",
         ] {
-            assert!(is_read_only_bus_verb(ro), "{ro} should be read-only");
-            assert!(is_delegated_safe_bus_verb(ro));
+            assert!(is_read_only_bus_command(ro), "{ro} should be read-only");
+            assert!(is_delegated_safe_bus_command(ro));
         }
         for rw in [
             "fs.mkdir",
@@ -860,10 +860,10 @@ mod tests {
             "fs.delete",
         ] {
             assert!(
-                !is_read_only_bus_verb(rw),
+                !is_read_only_bus_command(rw),
                 "{rw} must be treated as mutating"
             );
-            assert!(is_delegated_safe_bus_verb(rw));
+            assert!(is_delegated_safe_bus_command(rw));
         }
     }
 
@@ -873,42 +873,42 @@ mod tests {
         assert_eq!(
             resolve_target_service(
                 Some("filesd-notes"),
-                &verbs(&["filesd.list", "filesd.save"])
+                &commands(&["filesd.list", "filesd.save"])
             ),
             Some("filesd-notes".to_string())
         );
-        // No explicit → derive from the verbs' shared prefix (maild compat).
+        // No explicit → derive from the commands' shared prefix (maild compat).
         assert_eq!(
             resolve_target_service(
                 None,
-                &verbs(&["maild.vtoken.list_opaque", "maild.vtoken.mint_opaque"])
+                &commands(&["maild.vtoken.list_opaque", "maild.vtoken.mint_opaque"])
             ),
             Some("maild".to_string())
         );
         // Mixed prefixes with no explicit service → ambiguous → None (reject).
         assert_eq!(
-            resolve_target_service(None, &verbs(&["maild.vtoken.list_opaque", "filesd.list"])),
+            resolve_target_service(None, &commands(&["maild.vtoken.list_opaque", "filesd.list"])),
             None
         );
         // Empty explicit string is ignored (treated as absent → derive).
         assert_eq!(
-            resolve_target_service(Some(""), &verbs(&["filesd.list"])),
+            resolve_target_service(Some(""), &commands(&["filesd.list"])),
             Some("filesd".to_string())
         );
-        // Empty verb set → None.
-        assert_eq!(resolve_target_service(None, &verbs(&[])), None);
+        // Empty command set → None.
+        assert_eq!(resolve_target_service(None, &commands(&[])), None);
         // fs-mode: an explicit `filesd-fs` pin works…
         assert_eq!(
-            resolve_target_service(Some("filesd-fs"), &verbs(&["fs.list", "fs.move"])),
+            resolve_target_service(Some("filesd-fs"), &commands(&["fs.list", "fs.move"])),
             Some("filesd-fs".to_string())
         );
         // …but an UNPINNED fs.* route must be rejected (the prefix `fs` is never a
         // real service), so the misconfiguration fails closed rather than routing to
         // a phantom `fs` target.
         assert_eq!(
-            resolve_target_service(None, &verbs(&["fs.list", "fs.stat"])),
+            resolve_target_service(None, &commands(&["fs.list", "fs.stat"])),
             None
         );
-        assert_eq!(resolve_target_service(Some(""), &verbs(&["fs.list"])), None);
+        assert_eq!(resolve_target_service(Some(""), &commands(&["fs.list"])), None);
     }
 }

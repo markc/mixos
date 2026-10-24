@@ -10,7 +10,7 @@ impl Engine {
         if let Some(call) = call {
             self.effects.push(Effect::Backdrop {
                 ticket: call.ticket,
-                verb: call.verb,
+                command: call.command,
                 body: call.body,
             });
         }

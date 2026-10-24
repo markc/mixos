@@ -1426,7 +1426,7 @@ enum ServeOutcome {
 /// dropping it flushes. (Mix has no `mixos-lib-props-store`, so the
 /// live SPEC-12 `<svc>.log` swap that webd/maild get is not wired here;
 /// `RUST_LOG` + restart is the control surface until a Mix-native Bus
-/// verb drives the reload handle via props-core.)
+/// command drives the reload handle via props-core.)
 fn init_serve_tracing() -> logging::LogHandle {
     // EnvFilter directives match the runtime tracing *target* = each
     // crate's compiled name, NOT its Cargo package name. Getting this
@@ -1649,7 +1649,7 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
         // a freshly started one — same runtime-reserved Ch07 L0+ surface
         // (HELP/INFO/QUIT/RELOAD + <svc>.props.{get,list,describe},
         // consulted pre-dispatch so an author `on` handler naming a
-        // reserved verb cannot shadow it, DECIDED §7-Q4), same prelude,
+        // reserved command cannot shadow it, DECIDED §7-Q4), same prelude,
         // limits, stats. The SupervisedClient is shared — the broker
         // connection and registration outlive any single evaluator.
         // The bus handler owns the single incoming-message receiver (taken
@@ -2209,7 +2209,7 @@ pub fn main() -> process::ExitCode {
     }
     // Before native_session::start(), because that begins Bus dispatch and a
     // shell.task.submit can arrive immediately. Every invocation mode serves
-    // the task verbs, so capturing this from the REPL alone would leave a
+    // the task commands, so capturing this from the REPL alone would leave a
     // `mix -c` session handing tasks an environment with no PATH at all.
     session_task::capture_base_env();
     native_session::start();

@@ -344,7 +344,7 @@ async fn handle_fake_mx_session(
 
         if let Some(rest) = upper.strip_prefix("EHLO ") {
             // Preserve case for the assertion; `upper` is only used
-            // for verb matching.
+            // for command matching.
             let host = trimmed[5..].trim().to_string();
             ehlo_host = host;
             let _ = rest;
@@ -388,7 +388,7 @@ async fn handle_fake_mx_session(
             wr.flush().await?;
             break;
         } else if upper.starts_with("STARTTLS") {
-            // Don't advertise; reject the verb so the daemon falls
+            // Don't advertise; reject the command so the daemon falls
             // through to plaintext.
             wr.write_all(b"502 5.5.1 STARTTLS not advertised\r\n")
                 .await?;

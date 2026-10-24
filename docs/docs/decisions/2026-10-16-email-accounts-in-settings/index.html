@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="The email app&#x27;s accounts and mail options are the session profile&#x27;s email group, edited in Preferences; their passwords stay in the app&#x27;s private 0600 file and reach it only through a write-only verb.">
+    <meta name="description" content="The email app&#x27;s accounts and mail options are the session profile&#x27;s email group, edited in Preferences; their passwords stay in the app&#x27;s private 0600 file and reach it only through a write-only command.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -272,13 +272,13 @@ overwritten.</li>
 toward the account's own server.</li>
 </ul>
 </li>
-<li><strong>A password is reachable only through a write-only verb.</strong>
+<li><strong>A password is reachable only through a write-only command.</strong>
 <ul>
 <li><code>email.account.password.set {id, password}</code> stores a password and
 reconnects the account.</li>
 <li><code>email.account.set</code> may carry <code>password</code> too. It is held only once
 settingsd has accepted the account.</li>
-<li>No verb, topic, log line or diagnostic returns a password.
+<li>No command, topic, log line or diagnostic returns a password.
 <code>email.accounts</code> and <code>email.info</code> report <code>has_password: bool</code>.</li>
 </ul>
 </li>
@@ -324,7 +324,7 @@ backup of the profile.</li>
 settingsd and are edited in Preferences. Mail accounts are the same kind of
 thing, and a second account form inside the app would drift from it.</li>
 <li><strong>Automation needs the accounts as data.</strong> An agent can list, add or
-disable an account through <code>settings.apply</code> or the email verbs. It
+disable an account through <code>settings.apply</code> or the email commands. It
 never handles a secret, unless it is the one supplying the password.</li>
 </ul>
 <h2 id="consequences">Consequences</h2>
@@ -352,7 +352,7 @@ The email app reads again, retries a few times, and then reports
 <code>CONFLICT</code>.</li>
 <li>MixOS has no keyring yet. The secrets file has the same trust as the
 app's other private files. A keyring, when it lands, replaces only that
-file; the settings group and the verbs stay as they are.</li>
+file; the settings group and the commands stay as they are.</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-16-email-accounts-in-settings.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

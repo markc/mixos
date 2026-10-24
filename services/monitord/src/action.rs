@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The command line's local actions. They run as the person who typed them
-//! and the kernel decides, exactly as `kill` and `renice` do. No Bus verb
+//! and the kernel decides, exactly as `kill` and `renice` do. No Bus command
 //! reaches these: acting across users or nodes is hostd's.
 
 /// Signal names `monitord signal` takes, with or without `SIG`.

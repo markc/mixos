@@ -7,7 +7,7 @@
 //
 // `MIXOS_NODED_URL` picks the broker (default ws://127.0.0.1:4200/ws) and
 // `COMPD_ITEST_SERVICE` the registered name (default `compd-itest`, so a
-// live comp / comp-nested is never displaced). Verbs stay literal `comp.*`
+// live comp / comp-nested is never displaced). Commands stay literal `comp.*`
 // whatever the service is registered as.
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -212,7 +212,7 @@ async fn comp_port_registers_answers_and_publishes_through_noded() {
     let refused = client
         .call(&service, "comp.window.restore", json!({}))
         .await
-        .expect_err("the fake engine refuses window verbs");
+        .expect_err("the fake engine refuses window commands");
     assert!(refused.to_string().contains("busy"), "{refused}");
 
     // Topic publish: subscribe, let noded announce topic.active, offer one

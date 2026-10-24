@@ -20,14 +20,14 @@ use std::task::Poll;
 use futures::StreamExt;
 use jmap::{Client, EmailPage};
 use serde_json::{Value, json};
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 use toolkit::{Registry, Strings, Theme, drive};
 
-use crate::commands;
+use crate::actions;
 use crate::drafts::{DirStore, DraftStore, MemoryStore};
 use crate::secrets::{Secrets, SecretsFile};
 use crate::state::{DRAFT_DEBOUNCE, Mode, SessionInfo, Settled, State, Tag, UiState, code};
-use crate::verbs::{Forward, Then, Write};
+use crate::commands::{Forward, Then, Write};
 use crate::view::{UiEvent, view};
 use crate::work::{Login, Work};
 use crate::{APP, APP_ID, label};
@@ -577,7 +577,7 @@ impl Shell {
             state,
             palette,
             composer_light,
-            commands: commands::registry(),
+            commands: actions::registry(),
             strings: crate::strings(),
             theme: theme.clone(),
             bus,
@@ -694,7 +694,7 @@ impl Shell {
     }
 
     /// Publish the commands run since the last call on
-    /// `<service>.command.executed`.
+    /// `<service>.action.executed`.
     fn publish_executed(&self) {
         let (runs, lost) = self.commands.take_executed();
         if runs.is_empty() && lost == 0 {
@@ -819,7 +819,7 @@ impl Shell {
             } => match self.client(&account) {
                 Some((tag, client)) => {
                     self.spawn(async move {
-                        let answer = crate::verbs::run_query(&client, query).await;
+                        let answer = crate::commands::run_query(&client, query).await;
                         Event::Account(tag, Done::Answered(reply, then, answer))
                     });
                 }
@@ -843,7 +843,7 @@ impl Shell {
                     Some((tag, client)) => {
                         self.spawn(async move {
                             let answer =
-                                crate::verbs::run_write(&client, write.clone(), sent).await;
+                                crate::commands::run_write(&client, write.clone(), sent).await;
                             Event::Account(tag, Done::Wrote(reply, form, Box::new(write), answer))
                         });
                     }
@@ -1032,7 +1032,7 @@ impl Shell {
                             let result = bus
                                 .raw_within(
                                     apply.service,
-                                    apply.verb,
+                                    apply.command,
                                     apply.body.to_string(),
                                     LOOK_BUDGET,
                                 )
@@ -1078,7 +1078,7 @@ impl Shell {
                 if let Some((tag, client)) = self.client(&account) {
                     self.spawn(async move {
                         let found = client
-                            .contacts_search(&text, crate::verbs::SUGGEST_FETCH)
+                            .contacts_search(&text, crate::commands::SUGGEST_FETCH)
                             .await;
                         Event::Account(tag, Done::Suggested(ticket, found))
                     });
@@ -1194,11 +1194,11 @@ impl Shell {
                 self.read_look();
                 continue;
             }
-            if let Event::Delivery(citizen::Delivery::Command { id, verb, body }) = event {
+            if let Event::Delivery(citizen::Delivery::Command { id, command: command_name, body }) = event {
                 if self.exiting {
                     self.refuse_closing(id);
                 } else {
-                    self.held.push_back((id, verb, body));
+                    self.held.push_back((id, command_name, body));
                     self.release();
                 }
                 continue;
@@ -1286,33 +1286,33 @@ impl Shell {
 
     /// Run held Bus commands in order. Input that only joins the drive
     /// queue goes straight on; anything else waits until the drive input
-    /// before it is answered, so a caller's clicks and its later verbs act
+    /// before it is answered, so a caller's clicks and its later commands act
     /// in the order sent.
     fn release(&mut self) {
-        while let Some((_, verb, _)) = self.held.front() {
-            let joins = verb.strip_prefix("email.").is_some_and(drive::queues);
+        while let Some((_, command_name, _)) = self.held.front() {
+            let joins = command_name.strip_prefix("email.").is_some_and(drive::queues);
             if self.exiting || (drive::pending(&self.ctx) && !joins) {
                 return;
             }
-            let (id, verb, body) = self.held.pop_front().expect("a held command");
-            self.command(id, &verb, &body);
+            let (id, command_name, body) = self.held.pop_front().expect("a held command");
+            self.command(id, &command_name, &body);
         }
     }
 
-    /// One Bus command: the verbs layer answers or queues it; the drive
-    /// verbs and the window's activation are the shell's.
-    fn command(&mut self, id: u64, verb: &str, body: &str) {
-        let forward = crate::verbs::command(
+    /// One Bus command: the commands layer answers or queues it; the drive
+    /// commands and the window's activation are the shell's.
+    fn command(&mut self, id: u64, command_name: &str, body: &str) {
+        let forward = crate::commands::command(
             &mut self.state,
             &self.commands,
             &self.strings,
             id,
-            verb,
+            command_name,
             body,
         );
         match forward {
-            Some(Forward::Drive { id, verb, args }) => {
-                if let Some(answer) = drive::request(&self.ctx, id, &verb, &args) {
+            Some(Forward::Drive { id, command: command_name, args }) => {
+                if let Some(answer) = drive::request(&self.ctx, id, &command_name, &args) {
                     self.bus.reply(answer.id, answer.rc, answer.body);
                 }
             }
@@ -1412,7 +1412,7 @@ impl Shell {
         let bus = self.bus.clone();
         self.spawn(async move {
             let result = bus
-                .raw_within(read.service, read.verb, read.body.to_string(), LOOK_BUDGET)
+                .raw_within(read.service, read.command, read.body.to_string(), LOOK_BUDGET)
                 .await;
             Event::Look(read.ticket, result)
         });
@@ -1486,7 +1486,7 @@ impl Shell {
 
     /// The window's theme choice (View › Theme, the title bar's switch).
     fn choice(&self) -> toolkit::theme_menu::Choice {
-        commands::choice(&self.state)
+        actions::choice(&self.state)
     }
 
     /// Install the session theme with the window's choice over it. Neither
@@ -1586,7 +1586,7 @@ impl Shell {
 
     /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        let fired = crate::commands::shortcuts(ui.ctx(), &self.state, &self.commands);
+        let fired = crate::actions::shortcuts(ui.ctx(), &self.state, &self.commands);
         let mut events = view(
             ui,
             &self.state,
@@ -1872,7 +1872,7 @@ mod tests {
     fn round5_23_the_close_drain_drops_nothing_that_waits() {
         let command = Event::Delivery(citizen::Delivery::Command {
             id: 9,
-            verb: "email.ping".into(),
+            command: "email.ping".into(),
             body: "{}".into(),
         });
         assert_eq!(closing(&command), Closing::Cancel(9));

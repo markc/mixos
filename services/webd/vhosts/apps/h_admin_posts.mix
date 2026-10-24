@@ -546,13 +546,13 @@ if $METHOD == "POST" then
   if $action == nil then
     $action = "save"
   end
-  -- declarative row action (datatable.mix): action="row:<verb>:<id>". The id is the
+  -- declarative row action (datatable.mix): action="row:<command>:<id>". The id is the
   -- slug (bulk_id), treated as untrusted → bound, never spliced. Deletes run
   -- through the Foundation policy helper (tx + existence check; skip-and-report
   -- on bulk — see admin_resource.mix).
   $ra = dt_row_action($f)
   if $ra != nil then
-    if $ra["verb"] == "delete" then
+    if $ra["command"] == "delete" then
       $block = dt_try_delete_row(pv_slug_ok($ra["id"]), pv_del_hooks())
       if $block != "" then
         return redirect_flash("/admin/posts", $block, "danger")

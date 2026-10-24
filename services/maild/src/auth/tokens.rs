@@ -4,7 +4,7 @@
 //! Opaque bearer tokens for JMAP auth (SSR PIM Phase 2).
 //!
 //! Three HTTP endpoints on the maild router, beside the `/jmap` service
-//! that consumes the tokens (deliberately HTTP, not Bus verbs — this is
+//! that consumes the tokens (deliberately HTTP, not Bus commands — this is
 //! per-browser login traffic, not operator/admin RPC):
 //!
 //! * `POST /auth/tokens/issue`  — **Basic**-authenticated; mints a token,

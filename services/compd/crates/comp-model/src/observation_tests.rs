@@ -174,7 +174,7 @@ fn panel_request_refusals_name_the_offending_argument() {
             .extend(extra.as_object().unwrap().clone());
         args
     };
-    for (verb, args, field) in [
+    for (command_name, args, field) in [
         (
             "comp.panel.hold",
             with(json!({"holder":"typo","acquire":true})),
@@ -238,14 +238,14 @@ fn panel_request_refusals_name_the_offending_argument() {
             "edge",
         ),
     ] {
-        let Err(reply) = PanelRequest::parse(verb, &args) else {
-            panic!("{verb} {args} must be refused");
+        let Err(reply) = PanelRequest::parse(command_name, &args) else {
+            panic!("{command_name} {args} must be refused");
         };
         let (rc, body) = reply.into_wire();
         let body: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(rc, 10);
         assert_eq!(body["error"], "invalid_args");
-        assert_eq!(body["field"], field, "{verb} {args}");
+        assert_eq!(body["field"], field, "{command_name} {args}");
         assert_eq!(body["allowed"], json!(PANEL_ARGS));
     }
 }

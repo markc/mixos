@@ -1574,7 +1574,7 @@ pub(crate) struct HandlerEntry {
     /// to the body without copying the AST.
     body: Arc<Vec<Stmt>>,
     /// The handler's doc-string (`on <cmd> desc "…"`), surfaced by the serve
-    /// runtime as the verb's HELP `description`. With multiple handlers on
+    /// runtime as the command's HELP `description`. With multiple handlers on
     /// one command, the first documented one wins.
     doc: Option<String>,
     /// Captured at parse time from `StmtKind::On { is_async, .. }`.
@@ -1695,30 +1695,30 @@ pub trait JmapHandler {
 /// [`JmapFuture`]).
 pub type BusCallFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
-/// The host-injected channel backing the `bus_call(verb, args)` builtin —
+/// The host-injected channel backing the `bus_call(command, args)` builtin —
 /// a *scoped, mediated, DELEGATED* Bus control-plane call, injected via
 /// [`Evaluator::set_bus_call_handler`].
 ///
 /// This is deliberately NOT [`BusHandler`] (`send`/`emit`): a sandboxed web
 /// handler must not get the raw broker. Instead the embedder (e.g.
-/// `mixos-webd`) bounds **which verbs** are reachable (a per-route
-/// exact-verb allowlist) and injects the **delegation envelope** (the
+/// `mixos-webd`) bounds **which commands** are reachable (a per-route
+/// exact-command allowlist) and injects the **delegation envelope** (the
 /// authenticated actor, vhost, route_id, csrf flag) from TRUSTED request
-/// state — the Mix script supplies only `verb` + `args` and can name no
+/// state — the Mix script supplies only `command` + `args` and can name no
 /// destination/peer/actor. Gated by
 /// [`crate::builtins::CapabilityClass::Bus`], so a policy that doesn't allow
 /// `Bus` denies `bus_call` before the handler is consulted.
 ///
-/// Contract: `call(verb, args)` runs the verb with `args` (a JSON-encodable
+/// Contract: `call(command, args)` runs the command with `args` (a JSON-encodable
 /// Mix value) and returns the reply as a [`Value`] on success. `Err` is
 /// reserved for a refusal or failure the script should treat as an
-/// exception — the verb is not in the route's allowlist, the broker is
-/// unreachable, or the verb replied with an error rc. (A handler that wants
+/// exception — the command is not in the route's allowlist, the broker is
+/// unreachable, or the command replied with an error rc. (A handler that wants
 /// to render an error gracefully wraps the call in `try`/`catch`.) The
 /// implementor never lets the script choose the destination or forge the
 /// envelope.
 pub trait BusCallHandler {
-    fn call<'a>(&'a self, verb: &'a str, args: &'a Value) -> BusCallFuture<'a, MixResult<Value>>;
+    fn call<'a>(&'a self, command_name: &'a str, args: &'a Value) -> BusCallFuture<'a, MixResult<Value>>;
 }
 
 /// Walk a Mix value (a `jmap` call's args) and return the name of the
@@ -2118,16 +2118,16 @@ pub trait BusHandler {
 /// [`Evaluator::set_serve_runtime`]); **absent** for plain `run_source`
 /// scripts — a transient client is not a registered service and owes no
 /// SPEC 07 §9 conformance, so it falls straight through to author
-/// handlers with no reserved-verb interception.
+/// handlers with no reserved-command interception.
 ///
 /// Consulted by [`Evaluator::run_event_pump`] **before**
-/// [`Evaluator::dispatch_event`]: if a verb is reserved the runtime
+/// [`Evaluator::dispatch_event`]: if a command is reserved the runtime
 /// answers it and the pump `continue`s, so an author `on HELP do` /
-/// `on <svc>.props.get do` can never shadow the runtime verb
+/// `on <svc>.props.get do` can never shadow the runtime command
 /// (SPEC 18 DECIDED §7-Q4 — *runtime wins*; an author override would
 /// let §9(d)/(e) conformance be silently broken). Authors extend the
 /// data surfaced through `INFO`/props via the lifecycle tree, they do
-/// not replace the verbs.
+/// not replace the commands.
 ///
 /// The trait is intentionally `&str`/`String`-only (no `serde_json`,
 /// no `mixos_props`): the prop-tree model and JSON encoding live in
@@ -2135,9 +2135,9 @@ pub trait BusHandler {
 /// keeping `mix` core feature-clean per the core/citizen
 /// split — the same shape as [`BusHandler`].
 pub trait ServeRuntime {
-    /// If `command` is a runtime-reserved verb, service it and return
+    /// If `command` is a runtime-reserved command, service it and return
     /// the reply parts plus whether the runtime must now begin graceful
-    /// shutdown. `None` ⇒ not a reserved verb; the pump dispatches to
+    /// shutdown. `None` ⇒ not a reserved command; the pump dispatches to
     /// author handlers as normal.
     ///
     /// - `args_header` — the inbound `args` header (a JSON object string
@@ -2150,12 +2150,12 @@ pub trait ServeRuntime {
     ///   (`on <cmd> desc "…"`) when the author wrote one. **Populated only
     ///   when `command == "HELP"`** (its sole consumer); every other call
     ///   receives an empty slice — the doc scan stays off the hot path. An
-    ///   implementation must not read it for any other verb.
+    ///   implementation must not read it for any other command.
     /// - `correlated` — whether this delivery is a `type=request` (a reply
     ///   is possible). An implementation may skip expensive work for an
     ///   uncorrelated delivery that will be consumed-and-dropped anyway
     ///   (RELOAD skips its script re-read+parse), but MUST still return
-    ///   `Some(_)` for a reserved verb so it is never handed to an author
+    ///   `Some(_)` for a reserved command so it is never handed to an author
     ///   handler.
     fn handle_reserved(
         &self,
@@ -2185,7 +2185,7 @@ pub trait ServeRuntime {
     }
 }
 
-/// Result of servicing a runtime-reserved verb (see [`ServeRuntime`]).
+/// Result of servicing a runtime-reserved command (see [`ServeRuntime`]).
 pub struct ReservedOutcome {
     /// Bus return code for the response.
     pub rc: u8,
@@ -5136,7 +5136,7 @@ pub(crate) struct EvaluatorGlobals {
     jmap_handler: Option<Rc<dyn JmapHandler>>,
     /// Host Bus delegated-call seam (`bus_call`). `None` for plain
     /// library/REPL use (the builtin then raises "bus_call not available");
-    /// `Some` when an embedder injects a scoped, verb-allowlisted,
+    /// `Some` when an embedder injects a scoped, command-allowlisted,
     /// delegation-wrapping channel via
     /// [`Evaluator::set_bus_call_handler`] (e.g. webd binds it to the
     /// broker for an admin route). Same `Rc` clone-out-before-await
@@ -5152,7 +5152,7 @@ pub(crate) struct EvaluatorGlobals {
     shell_handler: Option<Rc<dyn ShellHandler>>,
     /// SPEC 18 WS4 — runtime-reserved Ch07 L0+ surface, installed only
     /// by serve mode (`set_serve_runtime`). `None` for plain
-    /// `run_source` scripts: no reserved-verb interception, no §9
+    /// `run_source` scripts: no reserved-command interception, no §9
     /// conformance owed. Consulted in `run_event_pump` pre-dispatch.
     ///
     /// `Rc` (not `Box`) for symmetry with `bus_handler` after WS3-C.3.
@@ -5161,7 +5161,7 @@ pub(crate) struct EvaluatorGlobals {
     /// pre-await-borrow sense — but keeping all "global trait objects
     /// invocation tasks may hold across yield points" Rc-typed in one
     /// slice lets C.5 wrap `globals` without a follow-up reshape on
-    /// `serve_runtime` if a future runtime verb gains an async leg.
+    /// `serve_runtime` if a future runtime command gains an async leg.
     serve_runtime: Option<Rc<dyn ServeRuntime>>,
     native_events: crate::native_events::NativeEvents,
     /// The entry script's provenance — what `script_version()` returns.
@@ -6041,7 +6041,7 @@ impl Evaluator {
     ///
     /// Called only by the serve entrypoint. Once set, `run_event_pump`
     /// services `HELP`/`INFO`/`QUIT`/`<svc>.props.{get,list,describe}`
-    /// pre-dispatch — author `on` handlers naming those verbs are
+    /// pre-dispatch — author `on` handlers naming those commands are
     /// shadowed by design (DECIDED §7-Q4: runtime wins).
     pub fn set_serve_runtime(&mut self, runtime: Rc<dyn ServeRuntime>) {
         self.globals.borrow_mut().serve_runtime = Some(runtime);
@@ -6502,17 +6502,17 @@ impl Evaluator {
 
     /// Answer a `type=request` naming a command this script has no `on`
     /// handler for: rc 10 (the application-error band, as noded answers an
-    /// unknown verb) with an `error_code` body, so `send` hands the caller a
-    /// structured refusal — the verb and the declared set — immediately.
+    /// unknown command) with an `error_code` body, so `send` hands the caller a
+    /// structured refusal — the command and the declared set — immediately.
     /// Anything that is not a correlated request is dropped as before.
     async fn refuse_unknown_command(&self, event: &IncomingEvent) {
         if event.headers.get("type").map(String::as_str) != Some("request") {
             return;
         }
-        // A verb the serve runtime reserves (HELP/INFO/QUIT/RELOAD,
+        // A command the serve runtime reserves (HELP/INFO/QUIT/RELOAD,
         // `<svc>.props.get|list|describe`) is never "unknown". The event
         // pump answers those before dispatch; the `sleep()` yield loop calls
-        // dispatch_event directly, and a reserved verb arriving there keeps
+        // dispatch_event directly, and a reserved command arriving there keeps
         // its old fate (dropped) rather than a false UNKNOWN_COMMAND.
         // `correlated: false` makes the probe side-effect free (RELOAD skips
         // its re-read; nothing is sent).
@@ -6628,7 +6628,7 @@ impl Evaluator {
         // A correlated REQUEST for a command with no handler is refused
         // at once (UNKNOWN_COMMAND) rather than dropped: dropping it left
         // the caller waiting out its whole timeout and then blaming the
-        // mesh for a mistyped verb. Topic deliveries stay silent.
+        // mesh for a mistyped command. Topic deliveries stay silent.
         let entries: Vec<HandlerEntry> = self
             .globals
             .borrow()
@@ -6834,7 +6834,7 @@ impl Evaluator {
                 // SPEC 18 §3.5 — the `quit()` builtin requests graceful
                 // self-shutdown. Same terminal break as the Ch02 `QUIT`
                 // universal (`run_event_pump` returns `Ok` → `PumpEnded`
-                // → deregister-before-exit); unlike the QUIT verb there is
+                // → deregister-before-exit); unlike the QUIT command there is
                 // no correlated caller to reply rc:0 to (the request is
                 // self-initiated), so we simply stop accepting inbound.
                 // We reset the flag on THIS break path (mirroring
@@ -6909,7 +6909,7 @@ impl Evaluator {
             match event {
                 Some(ev) => {
                     // SPEC 18 WS4 / DECIDED §7-Q4 — runtime-reserved
-                    // Ch07 L0+ verbs (HELP/INFO/QUIT,
+                    // Ch07 L0+ commands (HELP/INFO/QUIT,
                     // <svc>.props.{get,list,describe}) are serviced
                     // PRE-dispatch. An author `on HELP do` /
                     // `on <svc>.props.get do` must NOT shadow them, else
@@ -6925,7 +6925,7 @@ impl Evaluator {
                     // C.5/C.7 symmetry, not because this path crosses
                     // a yield point.
                     // Correlation is computed BEFORE servicing so a reserved
-                    // verb whose work is expensive (RELOAD re-reads + parses
+                    // command whose work is expensive (RELOAD re-reads + parses
                     // the script) can skip it for an uncorrelated delivery —
                     // a stray `emit RELOAD` is consumed and dropped, never a
                     // parse on the pump thread (the same availability concern
@@ -6980,7 +6980,7 @@ impl Evaluator {
                         // back to the caller by `id` via noded's
                         // pending_responses map; `from` is empty whenever
                         // noded anonymized the caller — see
-                        // [`InvocationReplyHandle::from`]). A reserved verb that is
+                        // [`InvocationReplyHandle::from`]). A reserved command that is
                         // not a request (a topic-delivered HELP/QUIT) is
                         // logged and dropped — it is still *consumed*,
                         // never handed to an author handler (reserved is
@@ -7009,13 +7009,13 @@ impl Evaluator {
                                         tracing::error!(
                                             command = %ev.command,
                                             error = %e,
-                                            "serve: reserved-verb reply failed"
+                                            "serve: reserved-command reply failed"
                                         );
                                     }
                                 }
                                 None => tracing::error!(
                                     command = %ev.command,
-                                    "serve: reserved verb but no Bus handler to reply"
+                                    "serve: reserved command but no Bus handler to reply"
                                 ),
                             }
                             if outcome.quit {
@@ -7047,7 +7047,7 @@ impl Evaluator {
                         } else {
                             tracing::warn!(
                                 command = %ev.command,
-                                "serve: reserved verb arrived without request \
+                                "serve: reserved command arrived without request \
                                  correlation (not type=request); dropped"
                             );
                         }
@@ -10604,7 +10604,7 @@ impl Evaluator {
                     // stored flag — the field is consumed at registration but
                     // not yet at dispatch.
                     //
-                    // `on @.verb` registers under the serve name: `@` is
+                    // `on @.command` registers under the serve name: `@` is
                     // replaced here, so dispatch, HELP and every listing
                     // read the resolved key from `handlers`.
                     let command = self.resolve_handler_command(command)?;
@@ -14554,31 +14554,31 @@ impl Evaluator {
                     }
 
                     // bus_call — the delegated Bus control-plane seam. A web
-                    // handler calls a maild verb under DELEGATED identity: the
-                    // embedder (webd) bounds which verbs are reachable and
+                    // handler calls a maild command under DELEGATED identity: the
+                    // embedder (webd) bounds which commands are reachable and
                     // injects the delegation envelope (actor/vhost/route) from
                     // trusted request state, so the script names no
-                    // host/peer/actor and cannot reach an unlisted verb.
-                    //   bus_call(verb, args) → reply value
+                    // host/peer/actor and cannot reach an unlisted command.
+                    //   bus_call(command, args) → reply value
                     if name == "bus_call" {
                         self.check_capability(name)?; // Knob A — CapabilityClass::Bus
-                        let verb = match eval_args.first() {
+                        let command_name = match eval_args.first() {
                             Some(Value::String(s)) if !s.is_empty() => s.clone(),
                             Some(Value::String(_)) => {
                                 return Err(self.runtime_err(
-                                    "bus_call: verb (first argument) must be a non-empty string",
+                                    "bus_call: command (first argument) must be a non-empty string",
                                 ));
                             }
                             _ => {
                                 return Err(self.runtime_err(
-                                    "bus_call: first argument must be a verb string \
-                                     (bus_call(verb, args))",
+                                    "bus_call: first argument must be a command string \
+                                     (bus_call(command, args))",
                                 ));
                             }
                         };
                         if eval_args.len() > 2 {
                             return Err(self.runtime_err(format!(
-                                "bus_call takes (verb, args); got {} arguments",
+                                "bus_call takes (command, args); got {} arguments",
                                 eval_args.len()
                             )));
                         }
@@ -14601,7 +14601,7 @@ impl Evaluator {
                             )));
                         }
                         // Clone-out the handler Rc before await (drop the Ref
-                        // guard); verb + call_args are locals the future
+                        // guard); command + call_args are locals the future
                         // borrows across the yield.
                         let handler =
                             { self.globals.borrow().bus_call_handler.clone() }.ok_or_else(
@@ -14611,7 +14611,7 @@ impl Evaluator {
                                 ))
                                 },
                             )?;
-                        let fut = handler.call(&verb, &call_args);
+                        let fut = handler.call(&command_name, &call_args);
                         let reply = self
                             .await_with_class_c_yield(fut)
                             .await?
@@ -14709,7 +14709,7 @@ impl Evaluator {
                             } else {
                                 None
                             };
-                        // Class C numeric socket verbs (`ws` feature). A
+                        // Class C numeric socket commands (`ws` feature). A
                         // Class C async body holds a read permit and must
                         // not block on socket I/O: numeric ws_recv/
                         // tcp_recv/tcp_recv_line become a cancel-safe
@@ -15406,7 +15406,7 @@ impl Evaluator {
                     // unreachable via dot-call. Under `--serve`, extensions
                     // stayed above members until 0.117.0, so that a
                     // citizen's map could not fake an injected `props.*`
-                    // verb; but reserved verbs are serviced by the
+                    // command; but reserved commands are serviced by the
                     // ServeRuntime, never by extensions, so all that order
                     // did was hand a module's `fn context` call to the
                     // shell's `context()` string. Builtin-named members

@@ -268,7 +268,7 @@ use it, so every way of opening a file reaches the same handler.</li>
 </ul>
 </li>
 <li><strong><code>rec</code> writes an editable Mix script</strong> from what happens on the desktop.
-It builds on <a href="/docs/decisions/2026-10-11-executed-commands/">executed commands</a>, <a href="/docs/decisions/2026-10-11-verb-classes/">verb
+It builds on <a href="/docs/decisions/2026-10-11-executed-commands/">executed commands</a>, <a href="/docs/decisions/2026-10-11-verb-classes/">command
 classes</a> and the broker's observation stream.
 Runs of lines to one application are grouped in <code>address … end</code>, and a
 script never waits with a sleep.</li>
@@ -284,7 +284,7 @@ dialog returned.</li>
 <li><strong>One record per action.</strong> A Bus call that runs a command shows up both
 in observation and as a command event. A causal identifier, or a rule
 for which source is authoritative, keeps exactly one.</li>
-<li><strong>Per-verb replay rules.</strong> Targets are resolved stably instead of being
+<li><strong>Per-command replay rules.</strong> Targets are resolved stably instead of being
 dropped (a tab, a buffer). Fencing values are made fresh on replay
 (revisions, operation ids). Deliberate waits such as <code>ced.wait</code> are kept
 as conditions, never turned into sleeps.</li>
@@ -308,7 +308,7 @@ path.</li>
 </ul>
 <h2 id="why">Why</h2>
 <p>Opening a file and recording what a person does are two halves of the same
-contract, the desktop's verbs. One resolver means the file manager, the
+contract, the desktop's commands. One resolver means the file manager, the
 portal, the command line and agents never disagree about which application
 opens a file. Using the freedesktop data that applications already install
 means MixOS learns a new format the moment an application that handles it
@@ -322,7 +322,7 @@ calling them by full path, falls on few people and is easy to pay.</p>
 <ul>
 <li>AGENTS.md §3.4 lists the accepted collisions: <code>mix</code> (Elixir), and <code>rec</code>
 and <code>play</code> (sox).</li>
-<li><code>play</code>'s Bus verbs, the per-user handler document and the Bus snapshot
+<li><code>play</code>'s Bus commands, the per-user handler document and the Bus snapshot
 document schema are registered as contracts when they land.</li>
 <li>The file manager stops spawning <code>xdg-open</code> and calls <code>play.open</code>.</li>
 <li>Rejected: a MixOS MIME-to-application table. It duplicates what every

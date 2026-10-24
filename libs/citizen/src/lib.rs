@@ -11,7 +11,7 @@
 //! when Prefs became its second owner (AGENTS.md §2.2). The only change is
 //! that the app's name (`workshop`, `prefs`) is a parameter: it names the
 //! worker thread, the closing refusal and the `<app>.ping` / `<app>.show`
-//! verbs used for single-instance activation.
+//! commands used for single-instance activation.
 pub mod macros;
 pub mod outbox;
 
@@ -35,7 +35,7 @@ pub enum Delivery {
     /// one-way events carry id zero and must not be answered.
     Command {
         id: u64,
-        verb: String,
+        command: String,
         body: String,
     },
     /// The set of registered services changed.
@@ -172,7 +172,7 @@ impl TopicInbox {
 pub enum Logged {
     Call {
         service: String,
-        verb: String,
+        command: String,
         body: String,
     },
     Reply {
@@ -214,8 +214,8 @@ impl Handle {
             .map_err(|_| "Bus stopped".to_owned())?;
         rx.await.map_err(|_| "subscription abandoned".to_owned())?
     }
-    pub async fn raw(&self, service: &str, verb: &str, body: String) -> Result<Reply, CallError> {
-        self.raw_within(service, verb, body, Duration::from_secs(CALL_SECONDS))
+    pub async fn raw(&self, service: &str, command_name: &str, body: String) -> Result<Reply, CallError> {
+        self.raw_within(service, command_name, body, Duration::from_secs(CALL_SECONDS))
             .await
     }
     /// [`Handle::raw`] with its own time limit, for calls that legitimately
@@ -223,26 +223,26 @@ impl Handle {
     pub async fn raw_within(
         &self,
         service: &str,
-        verb: &str,
+        command_name: &str,
         body: String,
         limit: Duration,
     ) -> Result<Reply, CallError> {
         #[cfg(any(test, feature = "testing"))]
         self.log.lock().unwrap().push(Logged::Call {
             service: service.into(),
-            verb: verb.into(),
+            command: command_name.into(),
             body: body.clone(),
         });
         let (tx, rx) = oneshot::channel();
         self.tx
-            .send(Effect::Call(service.into(), verb.into(), body, limit, tx))
+            .send(Effect::Call(service.into(), command_name.into(), body, limit, tx))
             .await
             .map_err(|_| CallError::not_sent("Bus stopped; no call sent"))?;
         rx.await
             .map_err(|_| CallError::from("Bus request abandoned"))?
     }
-    pub async fn call(&self, service: &str, verb: &str, args: Value) -> Result<Reply, String> {
-        self.raw(service, verb, args.to_string())
+    pub async fn call(&self, service: &str, command_name: &str, args: Value) -> Result<Reply, String> {
+        self.raw(service, command_name, args.to_string())
             .await
             .map_err(|e| e.to_string())
     }
@@ -567,7 +567,7 @@ async fn worker(
                     continue;
                 }
                 if command.command.is_empty() {
-                    let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,10,"{\"error_code\":\"ARGUMENT\",\"message\":\"command verb is empty\"}")).await;
+                    let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,10,"{\"error_code\":\"ARGUMENT\",\"message\":\"command is empty\"}")).await;
                     continue;
                 }
                 // Native events are one-way deliveries, never pending calls.
@@ -584,7 +584,7 @@ async fn worker(
                         }
                         body.to_string()
                     } else { command.body.clone() };
-                    let _ = send.send(Delivery::Command {id:0,verb:command.command.clone(),body}).await;
+                    let _ = send.send(Delivery::Command {id:0,command:command.command.clone(),body}).await;
                     continue;
                 }
                 if pending.len() >= 32 {
@@ -596,7 +596,7 @@ async fn worker(
                     && macros::dispatch(app, &service, &command, client.clone(), &mut macro_jobs) {
                     continue;
                 }
-                let delivery = Delivery::Command {id:next_id,verb:command.command.clone(),body:if command.body.trim().is_empty(){"{}".into()}else{command.body.clone()}};
+                let delivery = Delivery::Command {id:next_id,command:command.command.clone(),body:if command.body.trim().is_empty(){"{}".into()}else{command.body.clone()}};
                 pending.insert(next_id,command);
                 let _ = send.send(delivery).await;
             }
@@ -615,7 +615,7 @@ async fn worker(
                         }
                         let _ = reply.send(result);
                     }
-                    Effect::Call(service,verb,body,limit,reply) => {
+                    Effect::Call(service,command_name,body,limit,reply) => {
                         let Ok(permit) = permits.clone().try_acquire_owned() else {
                             let _ = reply.send(Err(CallError::not_sent("Bus call capacity exhausted; no call sent")));
                             continue;
@@ -625,7 +625,7 @@ async fn worker(
                             let _permit = permit;
                             // The client enforces `limit`; the outer bound only guards a
                             // client that never answers at all.
-                            let result = tokio::time::timeout(limit + Duration::from_secs(5),client.call_with_headers_raw_within(&service,&verb,&BTreeMap::new(),&body,limit)).await
+                            let result = tokio::time::timeout(limit + Duration::from_secs(5),client.call_with_headers_raw_within(&service,&command_name,&BTreeMap::new(),&body,limit)).await
                                 .map_err(|_|CallError::from("Bus request timed out"))
                                 .and_then(|v|v.map_err(CallError::transport))
                                 .map(|(rc,body,error)|Reply{rc,body,error});
@@ -680,20 +680,20 @@ fn unanswered(
     owed
 }
 
-fn anonymous(url: &str, service: &str, verb: &str, args: Value) -> Result<Reply, String> {
+fn anonymous(url: &str, service: &str, command_name: &str, args: Value) -> Result<Reply, String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| e.to_string())?;
     runtime.block_on(async {
         // Activation may arrive after registration but before the first map.
-        let budget = if verb.ends_with(".show") { 20 } else { 5 };
+        let budget = if command_name.ends_with(".show") { 20 } else { 5 };
         tokio::time::timeout(Duration::from_secs(budget), async {
             let client = NodedClient::connect_anonymous(url)
                 .await
                 .map_err(|e| e.to_string())?;
             let result = client
-                .call_with_headers_raw(service, verb, &BTreeMap::new(), &args.to_string())
+                .call_with_headers_raw(service, command_name, &BTreeMap::new(), &args.to_string())
                 .await;
             client.close().await;
             let (rc, body, error) = result.map_err(|e| e.to_string())?;
@@ -707,8 +707,8 @@ fn anonymous(url: &str, service: &str, verb: &str, args: Value) -> Result<Reply,
 /// One anonymous call to the instance registered as `service`: a second
 /// launch handing its arguments to the running one (an image to open, a
 /// capture to take). Bounded like the activation it usually precedes.
-pub fn request(url: &str, service: &str, verb: &str, args: Value) -> Result<Reply, String> {
-    anonymous(url, service, verb, args)
+pub fn request(url: &str, service: &str, command_name: &str, args: Value) -> Result<Reply, String> {
+    anonymous(url, service, command_name, args)
 }
 
 /// The broker URL this session's apps use (`MIXOS_NODED_URL`, else the
@@ -845,12 +845,12 @@ mod tests {
         assert_eq!(refusal["message"], "prefs is closing");
     }
 
-    fn request(verb: &str, topic: Option<&str>) -> IncomingCommand {
+    fn request(command_name: &str, topic: Option<&str>) -> IncomingCommand {
         IncomingCommand {
             generation: 1,
             from: "caller".into(),
-            command: verb.into(),
-            id: Some(verb.into()),
+            command: command_name.into(),
+            id: Some(command_name.into()),
             args: Value::Null,
             body: "{}".into(),
             headers: topic
@@ -877,8 +877,8 @@ mod tests {
         ]
         .into_iter();
         let owed = unanswered(pending, || buffered.next());
-        let verbs: Vec<_> = owed.iter().map(|c| c.command.as_str()).collect();
-        assert_eq!(verbs, ["a.first", "b.second", "c.buffered", "d.buffered"]);
+        let command_names: Vec<_> = owed.iter().map(|c| c.command.as_str()).collect();
+        assert_eq!(command_names, ["a.first", "b.second", "c.buffered", "d.buffered"]);
         assert!(buffered.next().is_none(), "drained until nothing was ready");
         assert!(unanswered(HashMap::new(), || None).is_empty());
     }

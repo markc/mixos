@@ -61,6 +61,8 @@ check the owning reader before renaming data or assuming a loader's behaviour.
 One line per component with a page: kind, then install profiles. The
 [component index](https://mixos.dev/docs/components.md) lists every component, with or without a page.
 
+- [action](https://mixos.dev/action/README.md): lib; profiles: none (library). UI-free command registry, typed dispatch and executed journal.
+  - [action — changelog](https://mixos.dev/action/changelog.md): Release notes of the action component, mirrored from libs/action/CHANGELOG.md.
 - [assets](https://mixos.dev/assets/README.md): lib; profiles: none (library). The resolver for a pinned, immutable set of fonts, icons and emoji on the local disk, which finds, verifies and reads a published set without any downloader or daemon.
 - [backdrop](https://mixos.dev/backdrop/README.md): app; profiles: unclassified. The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
 - [blobd](https://mixos.dev/blobd/README.md): service; profiles: unclassified. The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of blobd, with the store, the Bus citizen, the byte lane and the cross-node fetch.
@@ -70,9 +72,7 @@ One line per component with a page: kind, then install profiles. The
 - [bus](https://mixos.dev/bus/README.md): lib; profiles: none (library). The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts.
 - [ced](https://mixos.dev/ced/README.md): app; profiles: unclassified. The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [citizen](https://mixos.dev/citizen/README.md): lib; profiles: none (library). An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore.
-- [command](https://mixos.dev/command/README.md): lib; profiles: none (library). UI-free command registry, typed dispatch and executed journal.
-  - [command — changelog](https://mixos.dev/command/changelog.md): Release notes of the command component, mirrored from libs/command/CHANGELOG.md.
-- [compd](https://mixos.dev/compd/README.md): service; profiles: unclassified. The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.
+- [compd](https://mixos.dev/compd/README.md): service; profiles: unclassified. The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree.
   - [compd — changelog](https://mixos.dev/compd/changelog.md): Release notes of the compd component, mirrored from services/compd/CHANGELOG.md.
 - [config](https://mixos.dev/config/README.md): lib; profiles: none (library). Where MixOS keeps its files and how a conf.mix file is read, with one directory rule for every component and descriptor-safe atomic file helpers.
 - [daemon](https://mixos.dev/daemon/README.md): lib; profiles: none (library). Shared HTTP host parsing, listener guards, TLS and ACME provisioning.
@@ -88,10 +88,10 @@ One line per component with a page: kind, then install profiles. The
 - [email](https://mixos.dev/email/README.md): app; profiles: unclassified. email (dev.mixos.email) is the reserved MixOS mail client: a pure JMAP client that speaks HTTPS to any RFC 8620/8621-shaped server, whether that is the mesh's…
 - [expr](https://mixos.dev/expr/README.md): lib; profiles: none (library). The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits.
 - [files](https://mixos.dev/files/README.md): lib; profiles: none (library). Rooted reads and the files-as-truth markdown corpus model.
-- [hostd](https://mixos.dev/hostd/README.md): service; profiles: unclassified. How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
+- [hostd](https://mixos.dev/hostd/README.md): service; profiles: unclassified. How hostd answers questions about the host and carries out privileged host changes through closed, typed commands behind standing grants, receipts and rollback, so agents never need sudo.
   - [hostd — changelog](https://mixos.dev/hostd/changelog.md): Release notes of the hostd component, mirrored from services/hostd/CHANGELOG.md.
 - [indexd](https://mixos.dev/indexd/README.md): service; profiles: desktop. Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI.
-- [inputd](https://mixos.dev/inputd/README.md): service; profiles: unclassified. How inputd turns keys into Bus verbs below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.
+- [inputd](https://mixos.dev/inputd/README.md): service; profiles: unclassified. How inputd turns keys into Bus commands below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.
   - [inputd — changelog](https://mixos.dev/inputd/changelog.md): Release notes of the inputd component, mirrored from services/inputd/CHANGELOG.md.
 - [logging](https://mixos.dev/logging/README.md): lib; profiles: none (library). Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell.
 - [macros](https://mixos.dev/macros/README.md): lib; profiles: none (library). Shared Mix macro discovery, user storage and background execution for every MixOS app.
@@ -151,9 +151,9 @@ One line per component with a page: kind, then install profiles. The
   - [mix-shell — changelog](https://mixos.dev/mix-shell/changelog.md): Release notes of the mix-shell component, mirrored from cli/mix-shell/CHANGELOG.md.
 - [mixos-mcp](https://mixos.dev/mixos-mcp/README.md): cli; profiles: base. MCP stdio access to the native MixOS Bus.
   - [mixos-mcp — changelog](https://mixos.dev/mixos-mcp/changelog.md): Release notes of the mixos-mcp component, mirrored from cli/mixos-mcp/CHANGELOG.md.
-- [mixtrayd](https://mixos.dev/mixtrayd/README.md): service; profiles: unclassified. mixtrayd is the data service behind the MixOS tray popup, mixtray. It registers on the noded Bus as mixtrayd and answers one verb, mixtrayd.snapshot, with four…
+- [mixtrayd](https://mixos.dev/mixtrayd/README.md): service; profiles: unclassified. mixtrayd is the data service behind the MixOS tray popup, mixtray. It registers on the noded Bus as mixtrayd and answers one command, mixtrayd.snapshot, with…
 - [monitor](https://mixos.dev/monitor/README.md): app; profiles: desktop. Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes.
-- [monitord](https://mixos.dev/monitord/README.md): service; profiles: base. How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the mesh.
+- [monitord](https://mixos.dev/monitord/README.md): service; profiles: base. How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read commands on the Bus, so any node's load can be read from anywhere on the mesh.
   - [monitord — changelog](https://mixos.dev/monitord/changelog.md): Release notes of the monitord component, mirrored from services/monitord/CHANGELOG.md.
 - [noded](https://mixos.dev/noded/README.md): service; profiles: unclassified. The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
   - [noded — changelog](https://mixos.dev/noded/changelog.md): Release notes of the noded component, mirrored from services/noded/CHANGELOG.md.
@@ -175,12 +175,12 @@ One line per component with a page: kind, then install profiles. The
   - [term — changelog](https://mixos.dev/term/changelog.md): Release notes of the term component, mirrored from apps/term/CHANGELOG.md.
 - [test-broker](https://mixos.dev/test-broker/README.md): lib; profiles: none (library). A development fixture that runs the real noded modules in an isolated broker runtime for the Term-to-Mix native session acceptance tests.
 - [thumbs](https://mixos.dev/thumbs/README.md): lib; profiles: none (library). File thumbnails made the freedesktop way, read from and written to the shared thumbnail cache and generated by the system's installed thumbnailers in their own processes.
-- [toolkit](https://mixos.dev/toolkit/README.md): lib; profiles: none (library). The shared shell for MixOS egui applications, giving every app the same theme, fonts, icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive verbs.
+- [toolkit](https://mixos.dev/toolkit/README.md): lib; profiles: none (library). The shared shell for MixOS egui applications, giving every app the same theme, fonts, icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive commands.
   - [MixOS GUI app style guide](https://mixos.dev/toolkit/style-guide.md): An app is two crates: an engine crate under apps/<app>/crates/<name> that knows nothing about egui, and the egui shell crate apps/<app>. The shell crate's…
   - [toolkit — changelog](https://mixos.dev/toolkit/changelog.md): Release notes of the toolkit component, mirrored from libs/toolkit/CHANGELOG.md.
 - [toolsd](https://mixos.dev/toolsd/README.md): service; profiles: server. Runs the tools webd's admin panel queues (whois, dig, traceroute, shwho) as an unprivileged drain, outside webd's sandbox.
 - [webd](https://mixos.dev/webd/README.md): service; profiles: server. Virtual hosts, CMS routes, embedded Mix handlers and ACME for the MixOS web service.
-- [workshop](https://mixos.dev/workshop/README.md): app; profiles: unclassified. Workshop is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
+- [workshop](https://mixos.dev/workshop/README.md): app; profiles: unclassified. Workshop is the MixOS desktop app that lists the services and commands on this node's Bus, shows each command's description and the mesh peers, and calls one command once with a JSON body.
 
 ## Docs
 
@@ -188,7 +188,7 @@ One line per component with a page: kind, then install profiles. The
 
 - [Docs](https://mixos.dev/docs/README.md): Guides, indexes, decision records and specifications for MixOS; every component's own documentation is at mixos.dev/<component>/.
 - [Try it beside your desktop](https://mixos.dev/docs/try.md): How MixOS runs as a small signed systemd-nspawn image on its own virtual terminal, next to the Linux desktop you already use, with native GPU, input and audio.
-- [Driving apps over the Bus](https://mixos.dev/docs/drive.md): How an agent drives a native MixOS app through Bus verbs, from the widget tree and injected input to window commands and captures, with Workshop as the worked example.
+- [Driving apps over the Bus](https://mixos.dev/docs/drive.md): How an agent drives a native MixOS app through Bus commands, from the widget tree and injected input to window commands and captures, with Workshop as the worked example.
 
 ### Indexes
 
@@ -216,7 +216,7 @@ One line per component with a page: kind, then install profiles. The
 - [Settings snapshot schema 2 sends each design once](https://mixos.dev/docs/decisions/2026-10-11-settings-snapshot-schema-2.md): Status: accepted. Settings contract 0.3.0 (additive), snapshot schema 2 beside schema 1. Follows plain followers read a summary.
 - [Plain settings followers read a summary, not the snapshot](https://mixos.dev/docs/decisions/2026-10-11-settings-summary-reads.md): Status: accepted. Settings contract 0.2.0 (additive). Builds on Desktop settings have one native ABP authority.
 - [Decision — verb classes](https://mixos.dev/docs/decisions/2026-10-11-verb-classes.md): Every registered Bus verb declares a class (intent, query, input or system), so tools that watch the Bus can tell a person's or agent's intent from reads, synthetic input and plumbing without guessing.
-- [Decision — hostd, the host service](https://mixos.dev/docs/decisions/2026-10-12-hostd.md): One root service per host answers host information and carries out privileged host actions through closed, typed, reversible verbs, so agents can act autonomously without sudo.
+- [Decision — hostd, the host service](https://mixos.dev/docs/decisions/2026-10-12-hostd.md): One root service per host answers host information and carries out privileged host actions through closed, typed, reversible commands, so agents can act autonomously without sudo.
 - [Decision — non-root install, per-service users, mesh-first ports](https://mixos.dev/docs/decisions/2026-10-12-non-root-install-and-service-ports.md): MixOS installs and updates without root after a one-time bootstrap. Server daemons run as their own unprivileged users, listen on the WireGuard mesh by default, and get privileged ports from systemd rather than from file capabilities or root.
 - [Decision — one repository, install profiles](https://mixos.dev/docs/decisions/2026-10-12-one-repository-install-profiles.md): Server programs and the desktop stay in one MixOS repository and one Cargo workspace. The split between them is made where it matters, in what gets built and installed, by install profiles that every shipping component declares.
 - [Decision — one system binary](https://mixos.dev/docs/decisions/2026-10-12-one-system-binary.md): The mix shell and every headless MixOS daemon ship as one binary, built by cli/system and installed as mix. Each daemon is a symlink named after its component, and the binary picks what to run from the name it was started as. Components keep their own crates, tests, units and versions.
@@ -227,7 +227,7 @@ One line per component with a page: kind, then install profiles. The
 - [Decision — desk and deskd](https://mixos.dev/docs/decisions/2026-10-13-desk-and-deskd.md): The desktop's applications ship as one multi-call binary, desk, and its session services as another, deskd. Each app and service keeps its name as a link, so nothing that calls them changes, and one copy of egui, wgpu and the rest serves them all.
 - [Instance verb families (schema 3)](https://mixos.dev/docs/decisions/2026-10-13-instance-verb-families.md): Status: accepted, 2026-10-13.
 - [Decision — session icon stroke and type](https://mixos.dev/docs/decisions/2026-10-14-session-icon-stroke-and-type.md): The desktop session can choose its icon stroke and its interface and monospace font families and weight, applied to every MixOS app through the settings profile.
-- [Decision — email accounts live in settingsd, passwords in the app](https://mixos.dev/docs/decisions/2026-10-16-email-accounts-in-settings.md): The email app's accounts and mail options are the session profile's email group, edited in Preferences; their passwords stay in the app's private 0600 file and reach it only through a write-only verb.
+- [Decision — email accounts live in settingsd, passwords in the app](https://mixos.dev/docs/decisions/2026-10-16-email-accounts-in-settings.md): The email app's accounts and mail options are the session profile's email group, edited in Preferences; their passwords stay in the app's private 0600 file and reach it only through a write-only command.
 - [Decision — monitord and Monitor](https://mixos.dev/docs/decisions/2026-10-16-monitord-and-monitor.md): One unprivileged service per host, monitord, samples the system and its processes, keeps history in SQLite and answers on the Bus, so any node's load can be read from anywhere on the mesh. Monitor is the egui task manager that draws it. Both are MIT OR Apache-2.0, built on permissive crates; GPL monitors are reference only.
 - [Decision — site URL layout](https://mixos.dev/docs/decisions/2026-10-16-site-url-layout.md): Every component's documentation lives at the top of mixos.dev under its own name, in HTML and Markdown at fixed addresses. Everything that is not a component lives under one /docs/ section, so the only names a component can never take are docs and v.
 - [Decision — the function keys belong to the user](https://mixos.dev/docs/decisions/2026-10-17-function-keys-belong-to-the-user.md): No MixOS program binds F1–F12 by default, bare or with any modifier. Only the person binds them, through their keymap in the desktop profile. The toolkit's command registry refuses a default chord on one.
@@ -245,7 +245,7 @@ One line per component with a page: kind, then install profiles. The
 - [Handler closure capture](https://mixos.dev/docs/spec/handler-closure-capture.md): Lambdas defined inside an on handler capture its local variables by value, including callbacks passed to map and all and nested callbacks. Those locals remain…
 - [Mix program and document file-family contract](https://mixos.dev/docs/spec/mix/2026-10-08-programs-and-documents.md): Execution refusal, strict document parsing, schema bindings and migration requirements for .mix and .mx files.
 - [Portal contract: Settings and ScreenCast](https://mixos.dev/docs/spec/portal/README.md): Settings status: accepted, version 0.1.0 (ScreenCast is a draft, below). The cbc2 verification of services/portald passed on the commit that carries it…
-- [Service property contract](https://mixos.dev/docs/spec/props/README.md): Structured property verbs, capabilities, replay and live topics, errors and SQLite table ownership.
+- [Service property contract](https://mixos.dev/docs/spec/props/README.md): Structured property commands, capabilities, replay and live topics, errors and SQLite table ownership.
 - [Releases contract](https://mixos.dev/docs/spec/releases/README.md): Status: accepted, version 0.3.0 (0.3.0 adds optional category metadata; 0.2.0 adds exec_wrapper). Verified by services/releasesd/tests/releases_test.mix…
 - [Desktop settings contract](https://mixos.dev/docs/spec/settings/README.md): Status: accepted authority contract, version 0.4.0 (0.2.0 added the summary topic and read view, decision; 0.3.0 added snapshot schema 2, decision; 0.4.0 adds…
 

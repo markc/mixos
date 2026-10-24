@@ -1,5 +1,5 @@
 -- End-to-end: a private noded + the real editd, driven by one-shot
--- Mix clients speaking plain `send edit edit.<verb> key=value …` with nested
+-- Mix clients speaking plain `send edit edit.<command> key=value …` with nested
 -- map/list literals (the kv → JSON body shape the edit.v1 DTOs expect), and
 -- a subscriber citizen recording the `edit.changed` feed (plan §6.3).
 -- Nothing here can reach the host Bus: private TCP port, private unix
@@ -230,7 +230,7 @@ try
   $l = ok('edit.list', {})
   check(length($l.buffers) == 1 and deep_eq($l.buffers[0].holders, ["anon"]) and $l.buffers[0].dirty, "list: " .. json_encode($l))
   refused('edit.close buffer=$a.b', {b: $b}, "CONFLICT", "dirty")
-  refused('edit.bogus buffer=$a.b', {b: $b}, "UNKNOWN_VERB", nil)
+  refused('edit.bogus buffer=$a.b', {b: $b}, "UNKNOWN_COMMAND", nil)
   $sv = ok('edit.save buffer=$a.b expect_rev=5', {b: $b})
   check($sv.saved_rev == 5 and $sv.disk == "clean" and $sv.durable and $sv.file_bytes == length($expect), "save: " .. json_encode($sv))
   check(read_file($file) == $expect and read_file($file) == text_of($b), "saved bytes differ from edit.get")

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! workshop: browse the native ABP services on this node, read their verb
-//! descriptions and mesh membership, and call a verb once with a JSON body.
+//! workshop: browse the native ABP services on this node, read their command
+//! descriptions and mesh membership, and call a command once with a JSON body.
 //!
 //! The behaviour is the `inspector` engine; this crate is the egui shell
 //! around it (AGENTS.md §4.1): [`view`] draws the engine's state, [`shell`]
 //! runs its effects, and [`commands`] is the registry every action goes
 //! through, from the menu, a shortcut or the Bus.
-pub mod commands;
+pub mod actions;
 pub mod shell;
 pub mod view;
 pub mod workshop;

@@ -1025,7 +1025,7 @@ A live pid only says SOME process holds that number, and a pidfile alone
 says no more — a stale one names whoever holds that pid now. To stop a
 detached daemon later, check a pidfile together with the process start time
 (field 22 of <code>/proc/&lt;pid&gt;/stat</code>, recorded when the pid was written), or ask a
-Bus verb the child itself answers, rather than trusting a bare pid. Default <code>false</code> (a plain child
+Bus command the child itself answers, rather than trusting a bare pid. Default <code>false</code> (a plain child
 in the caller's session, which stays the caller's to reap).</p>
 </li>
 <li>
@@ -1982,7 +1982,7 @@ handle: <code>tcp_send</code>, <code>tcp_recv</code>, <code>tcp_recv_line</code>
 all work on it. <code>nil</code> on timeout (default 30 s, <code>0</code> waits forever) is an
 ordinary answer and the listener stays usable. Listeners take their
 numbers from <code>tcp_connect</code>'s counter, so a number is never both: a
-connection verb given a listener raises <code>TCP_LISTENER</code>, and <code>tcp_accept</code>
+connection command given a listener raises <code>TCP_LISTENER</code>, and <code>tcp_accept</code>
 given a connection raises <code>TCP_ACCEPT_HANDLE</code>. <code>tcp_close</code> on a listener
 stops listening at once and returns <code>true</code>; <code>false</code> means it was already
 closed.</p>
@@ -2017,7 +2017,7 @@ end
 <tr><td><code>TCP_ACCEPT_ARGUMENT</code></td><td>a bad option</td></tr>
 <tr><td><code>TCP_ACCEPT_FAILED</code></td><td>accept(2) failed on the listener</td></tr>
 <tr><td><code>TCP_HANDLE_LIMIT</code></td><td>1024 live server-side sockets: every listener and accepted connection holds a slot until it closes. The limit is server-side only; <code>tcp_connect</code> is not counted or limited</td></tr>
-<tr><td><code>TCP_LISTENER</code></td><td>a connection verb was given a listener</td></tr>
+<tr><td><code>TCP_LISTENER</code></td><td>a connection command was given a listener</td></tr>
 </tbody></table>
 <p><strong>Serve mode and Class C.</strong> On unix every numeric <code>tcp_accept</code> waits on
 the async runtime, like <code>sleep()</code>: SIGTERM and Ctrl-C end it at once, and
@@ -2173,10 +2173,10 @@ with no newline) also publishes exactly one terminal; afterwards the
 source retires and a further recv raises <code>SOCKET_WATCH_HANDLE</code>.</p>
 <p><strong>Class C recv.</strong> <code>ws_recv("ws:1"[, timeout])</code> (and the tcp forms) park on
 the source's FIFO through the evaluator's class-C yield — the read permit
-is released while waiting, so other verbs keep their latency targets.
+is released while waiting, so other commands keep their latency targets.
 <code>nil</code> on timeout keeps the source usable (poll again); the terminal event
 raises <code>SOCKET_CLOSED</code> and retires it. At most one recv parks per source;
-a second refuses (<code>SOCKET_BUSY</code>). A mismatched verb refuses
+a second refuses (<code>SOCKET_BUSY</code>). A mismatched command refuses
 (<code>SOCKET_KIND</code>). Because this form reads the FIFO the event pump also
 consumes, recv on a <em>source</em> is refused in serve mode
 (<code>SOCKET_RECV_SERVE</code>) — use <code>on &lt;command&gt;</code> there.</p>
@@ -2233,7 +2233,7 @@ a concurrent handler tick (the pull yields the read permit — the tick
 lands while the recv is parked), same-connection send after subscribing
 with the FIFO intact, timeout-then-reuse, a second same-handle waiter
 refusing, close-while-parked retiring, and a cancelled pull leaving the
-handle intact for the next generation. The <em>strict</em> "other verbs stay
+handle intact for the next generation. The <em>strict</em> "other commands stay
 under 1 ms while a recv is parked" acceptance and the 5 s idle
 context-switch measurement remain explicit external acceptance, measured
 by the coordinator's fixture rather than asserted here; they are never

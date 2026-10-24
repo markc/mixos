@@ -10,7 +10,7 @@
 -- through `bus_call`, but webd gates that on an allowlist whose entry condition
 -- is that the target daemon implements a delegated-envelope authorization spine
 -- interpreting `$mixos_delegation`. A controller that authorizes by mesh-peer
--- rules does not, so granting a web route one of its verbs would let any request
+-- rules does not, so granting a web route one of its commands would let any request
 -- reaching this route act with webd's mesh authority — a confused deputy. (The
 -- `send`/`emit` statement is not an alternative: it needs `set_bus_handler`,
 -- which webd never installs, so it is inert here regardless of capability.)

@@ -7,7 +7,7 @@
 //! rests 0.35 s, with a 0.2 s grace period for neighbours. What is left is
 //! the wording: a tooltip that carries a shortcut reads "Label (Shortcut)".
 
-use crate::command::Command;
+use crate::action::Action;
 use crate::strings::Strings;
 
 /// A tooltip's text: `label`, then `shortcut` in parentheses when it has one.
@@ -20,10 +20,10 @@ pub fn text(label: &str, shortcut: Option<&str>) -> String {
 
 /// The tooltip of `command`: its label and its shortcut in the platform's
 /// form.
-pub fn for_command<S>(ctx: &egui::Context, command: &Command<S>, strings: &Strings) -> String {
+pub fn for_command<S>(ctx: &egui::Context, command: &Action<S>, strings: &Strings) -> String {
     let shortcut = command.shortcut.map(|s| ctx.format_shortcut(&s));
     text(
-        &crate::command::label_text(strings, command.label),
+        &crate::action::label_text(strings, command.label),
         shortcut.as_deref(),
     )
 }

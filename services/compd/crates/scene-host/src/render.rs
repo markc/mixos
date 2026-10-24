@@ -743,8 +743,8 @@ pub(crate) fn reconcile(
                         if let Some(action) = action {
                             let _ = actions.send(action);
                             waker();
-                        } else if let Some((citizen, verb, body)) = event_of(message) {
-                            sink.emit(citizen, verb, body);
+                        } else if let Some((citizen, kind, body)) = event_of(message) {
+                            sink.emit(citizen, kind, body);
                         }
                     });
                     // A dialog takes the keyboard every time it maps, before
@@ -1326,7 +1326,7 @@ mod tests {
         ));
     }
     use crate::store::SceneMount;
-    use crate::verb::SceneVerb;
+    use crate::command::SceneCommand;
     use serde_json::json;
 
     fn edge(name: &str, edge: &str, w: Option<u32>) -> String {
@@ -1343,7 +1343,7 @@ mod tests {
             accepted_at: 1,
         };
         let done = store.dispatch(
-            SceneVerb::Load,
+            SceneCommand::Load,
             source,
             &serde_json::Value::Null,
             &mut mount,
@@ -1469,7 +1469,7 @@ mod tests {
     #[test]
     fn a_dialog_is_placed_only_while_shown_and_centred_as_frozen() {
         let frozen: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/shell-verbs.json")).unwrap();
+            serde_json::from_str(include_str!("../tests/fixtures/shell-commands.json")).unwrap();
         let mut store = SceneStore::default();
         load(
             &mut store,
@@ -1508,7 +1508,7 @@ mod tests {
         let mut store = SceneStore::default();
         store
             .request(
-                SceneVerb::Load,
+                SceneCommand::Load,
                 &edge("aa", "left", None),
                 &serde_json::Value::Null,
             )

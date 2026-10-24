@@ -2,7 +2,7 @@
 # rules). No UI dependency: the workshop shell renders it.
 [package]
 name = "inspector"
-description = "Workshop's headless engine: ABP service discovery, verb calls and the rules around them"
+description = "Workshop's headless engine: ABP service discovery, command calls and the rules around them"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -24,8 +24,8 @@ end
 -- The scene's node body ({scene,node,kind}) is forwarded unchanged: Quoin
 -- derives the scheme, motion or edge/step from the node id, so the step size
 -- and clamping stay single-sourced in the host.
-fn forward($verb, $event)
-  $out = $r.call($ctx.host, $verb, $r.event_args($event))
+fn forward($command, $event)
+  $out = $r.call($ctx.host, $command, $r.event_args($event))
   if $out.ok then refresh() end
   return $out
 end

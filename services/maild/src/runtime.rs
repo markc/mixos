@@ -424,7 +424,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     // expiry/retrain workers; ships INERT (0-day windows + dry_run:true),
     // so it loops but deletes nothing until an operator arms it. One
     // `RetentionWorker` clone drives the loop; another (`retention_state`)
-    // backs the `maild.retention.*` verbs — both share the status cell.
+    // backs the `maild.retention.*` commands — both share the status cell.
     let retention_tick_minutes = props::retention::read_config(&retention_runtime)
         .await
         .map(|c| c.tick_minutes)
@@ -608,7 +608,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     // unioned with the substrate-managed selectors in `maild.domains`.
     // Empty on both sides → `None` → legacy single-key path stays in
     // charge. The result is wrapped in an `Arc<ArcSwap<...>>` so the
-    // Phase 4 verb surface (`maild.dkim.{generate,rotate,retire}`) can
+    // Phase 4 command surface (`maild.dkim.{generate,rotate,retire}`) can
     // swap the signer atomically without restarting the daemon. The
     // slot is allocated BEFORE `bus::run` so Bus dispatch holds a
     // clone for live rebuilds; the initial value is stored in-place
@@ -648,7 +648,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
 
     // Umbrella Phase 5a — TLS hot-swap slot + ServerConfig cache. The
     // slot is primed at startup from `cfg.resolve_tls_identities()`;
-    // commit-2's `maild.tls.reload` verb stores a freshly-built
+    // commit-2's `maild.tls.reload` command stores a freshly-built
     // resolver into the same slot and clears the cache. Both the SMTP
     // and IMAP listeners share one slot + one cache, so a single
     // reload atomically rotates certs for both surfaces. Construction
@@ -690,7 +690,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     let imap_slots = crate::imap::session::AccountSlots::new();
     // Per-account JMAP last-seen tracker, shared between the JMAP HTTP
     // handlers (which `touch` it on each authenticated request) and the
-    // `maild.stats.online` Bus verb (which snapshots it). One `Arc`,
+    // `maild.stats.online` Bus command (which snapshots it). One `Arc`,
     // same as `imap_slots`.
     let jmap_activity = bus::stats::JmapActivity::new();
     let stats_state = bus::stats::StatsState {

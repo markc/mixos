@@ -1,6 +1,6 @@
 [package]
 name = "scene-host"
-description = "Mix Scenes host for compd: the shell.scene.* verbs, its own Bus registration, and the UI renderer"
+description = "Mix Scenes host for compd: the shell.scene.* commands, its own Bus registration, and the UI renderer"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

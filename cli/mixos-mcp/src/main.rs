@@ -442,35 +442,35 @@ fn term_unresponsive(candidates: &[&'static str]) -> String {
     )
 }
 
-/// The wire verb for `suffix` in `service`'s namespace.
+/// The wire command for `suffix` in `service`'s namespace.
 ///
-/// **The verb prefix MUST follow the service.** `term-core`'s
-/// `canonical_verb()` rewrites `<service>.` at the dispatch boundary and
+/// **The command prefix MUST follow the service.** `term-core`'s
+/// `canonical_command()` rewrites `<service>.` at the dispatch boundary and
 /// returns None — refused — for any other namespace, so sending `term.tabs`
-/// to `bterm` is not merely untidy, it is rejected. Building every verb here,
+/// to `bterm` is not merely untidy, it is rejected. Building every command here,
 /// from the resolved name, is what makes that impossible to get wrong.
 ///
 /// The `Err` arm catches the specific regression this sweep exists to remove:
-/// a call site that passes an already-namespaced verb (`"term.snapshot"`)
+/// a call site that passes an already-namespaced command (`"term.snapshot"`)
 /// instead of a suffix. Left to `format!` that silently produces
 /// `bterm.term.snapshot`, which the frontend refuses with a message about an
-/// unknown verb — a confusing symptom one indirection from its cause. Here it
+/// unknown command — a confusing symptom one indirection from its cause. Here it
 /// names the cause.
-fn term_verb(service: &str, suffix: &str) -> Result<String, String> {
+fn term_command(service: &str, suffix: &str) -> Result<String, String> {
     if let Some(ns) = TERM_SERVICES
         .into_iter()
         .find(|name| suffix.starts_with(&format!("{name}.")))
     {
         return Err(format!(
-            "internal: Term verb suffix {suffix:?} already carries the `{ns}.` namespace; \
+            "internal: Term command suffix {suffix:?} already carries the `{ns}.` namespace; \
              pass the suffix alone and let the resolved service supply the prefix"
         ));
     }
     Ok(format!("{service}.{suffix}"))
 }
 
-/// The verb SUFFIX (namespace-free) and body for a tab operation. The
-/// namespace is added by [`term_verb`] once the live frontend is resolved.
+/// The command SUFFIX (namespace-free) and body for a tab operation. The
+/// namespace is added by [`term_command`] once the live frontend is resolved.
 fn term_tab_request(p: TermTabParams) -> Result<(&'static str, serde_json::Value), String> {
     match p.op.as_str() {
         "new" => Ok(("tab.new", serde_json::json!({}))),
@@ -589,7 +589,7 @@ fn term_listing_instance(
     Ok(seen)
 }
 
-/// The verb SUFFIX (namespace-free) and body for a pane operation.
+/// The command SUFFIX (namespace-free) and body for a pane operation.
 fn term_pane_request(p: TermPaneParams) -> Result<(&'static str, serde_json::Value), String> {
     match p.op.as_str() {
         "close" => Ok(("pane.close", serde_json::json!({}))),
@@ -897,9 +897,9 @@ impl MixosMcp {
     /// definition `term-desktop.mix` uses, so the two control surfaces agree
     /// on what "live" means rather than being a drift source between them.
     ///
-    /// **A probe, never a retry-on-timeout.** Sending the real verb and
+    /// **A probe, never a retry-on-timeout.** Sending the real command and
     /// falling back when it times out would be one round trip instead of two,
-    /// but a timeout does not mean the verb did not execute — for a mutation
+    /// but a timeout does not mean the command did not execute — for a mutation
     /// (`type`, `tab.new`) the fallback would replay it into a DIFFERENT
     /// terminal, landing keystrokes in the wrong window. `INFO` is read-only
     /// and idempotent, so two bounded round trips beat one ambiguous one.
@@ -1011,7 +1011,7 @@ impl MixosMcp {
         let noded = self.noded().await?;
         let tabs = term_reply(
             noded
-                .call(service, &term_verb(service, "tabs")?, serde_json::json!({}))
+                .call(service, &term_command(service, "tabs")?, serde_json::json!({}))
                 .await
                 .map_err(|e| e.to_string())?,
         )?;
@@ -1019,7 +1019,7 @@ impl MixosMcp {
             noded
                 .call(
                     service,
-                    &term_verb(service, "panes")?,
+                    &term_command(service, "panes")?,
                     serde_json::json!({}),
                 )
                 .await
@@ -1082,7 +1082,7 @@ impl MixosMcp {
     #[tool]
     async fn term_tab(&self, Parameters(p): Parameters<TermTabParams>) -> Result<String, String> {
         match term_tab_request(p) {
-            Ok((verb, args)) => self.term_request(verb, args).await,
+            Ok((command_name, args)) => self.term_request(command_name, args).await,
             Err(e) => Err(format!("ERROR: {e}")),
         }
     }
@@ -1094,20 +1094,20 @@ impl MixosMcp {
     #[tool]
     async fn term_pane(&self, Parameters(p): Parameters<TermPaneParams>) -> Result<String, String> {
         match term_pane_request(p) {
-            Ok((verb, args)) => self.term_request(verb, args).await,
+            Ok((command_name, args)) => self.term_request(command_name, args).await,
             Err(e) => Err(format!("ERROR: {e}")),
         }
     }
 
-    /// Send one verb, named by its namespace-free SUFFIX, to whichever
+    /// Send one command, named by its namespace-free SUFFIX, to whichever
     /// terminal frontend is live. The namespace comes from the resolved
     /// service, never from the caller.
     async fn term_request(
         &self,
-        verb_suffix: &str,
+        command_suffix: &str,
         args: serde_json::Value,
     ) -> Result<String, String> {
-        self.term_request_to(None, verb_suffix, args).await
+        self.term_request_to(None, command_suffix, args).await
     }
 
     /// [`Self::term_request`], optionally pinned: `Some(service)` calls exactly
@@ -1116,7 +1116,7 @@ impl MixosMcp {
     async fn term_request_to(
         &self,
         pinned: Option<&'static str>,
-        verb_suffix: &str,
+        command_suffix: &str,
         args: serde_json::Value,
     ) -> Result<String, String> {
         if args.to_string().len() > 8192 {
@@ -1130,7 +1130,7 @@ impl MixosMcp {
             let noded = self.noded().await?;
             term_reply(
                 noded
-                    .call(service, &term_verb(service, verb_suffix)?, args)
+                    .call(service, &term_command(service, command_suffix)?, args)
                     .await
                     .map_err(|e| e.to_string())?,
             )
@@ -3258,7 +3258,7 @@ mod tests {
                 .is_null()
         );
         assert!(term_listing_instance(&rows(&[Some(9)]), &rows(&[Some(8)])).is_err());
-        for (op, verb) in [
+        for (op, command_name) in [
             ("new", "tab.new"),
             ("select", "tab.select"),
             ("close", "tab.close"),
@@ -3268,7 +3268,7 @@ mod tests {
                 id: Some(7),
             })
             .unwrap();
-            assert_eq!(actual, verb);
+            assert_eq!(actual, command_name);
             assert_eq!(
                 args,
                 if op == "new" {
@@ -3463,11 +3463,11 @@ mod tests {
         assert!(wedged_both.contains("`term`") && wedged_both.contains("`bterm`"));
     }
 
-    /// The wire verb must follow the resolved service: `term-core`
-    /// refuses any other namespace, so a verb built from the wrong name is a
+    /// The wire command must follow the resolved service: `term-core`
+    /// refuses any other namespace, so a command built from the wrong name is a
     /// rejected call, not an untidy one.
     #[test]
-    fn term_verbs_follow_the_resolved_service() {
+    fn term_commands_follow_the_resolved_service() {
         use super::*;
         for service in TERM_SERVICES {
             for suffix in [
@@ -3482,26 +3482,26 @@ mod tests {
                 "pane.select",
                 "pane.close",
             ] {
-                let verb = term_verb(service, suffix).unwrap();
-                assert_eq!(verb, format!("{service}.{suffix}"));
-                assert!(verb.starts_with(&format!("{service}.")), "{verb}");
+                let command_name = term_command(service, suffix).unwrap();
+                assert_eq!(command_name, format!("{service}.{suffix}"));
+                assert!(command_name.starts_with(&format!("{service}.")), "{command_name}");
             }
             // The regression this sweep removes, caught at the funnel: a call
-            // site that passes an already-namespaced verb is refused by name
+            // site that passes an already-namespaced command is refused by name
             // rather than silently producing `bterm.term.snapshot`.
             for bad in TERM_SERVICES.map(|ns| format!("{ns}.snapshot")) {
-                let err = term_verb(service, &bad).unwrap_err();
+                let err = term_command(service, &bad).unwrap_err();
                 assert!(err.contains("already carries"), "{err}");
             }
             // `bterm` must not be mistaken for the `term.` namespace by a
             // naive prefix test — the dot is load-bearing.
             assert_eq!(
-                term_verb(service, "btermish").unwrap(),
+                term_command(service, "btermish").unwrap(),
                 format!("{service}.btermish")
             );
         }
         // Every suffix the request builders can emit is namespace-free, so
-        // `term_verb` cannot double-prefix one.
+        // `term_command` cannot double-prefix one.
         let mut suffixes = vec![
             term_tab_request(TermTabParams {
                 op: "new".into(),

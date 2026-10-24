@@ -6,7 +6,7 @@
 //! `props_publisher.rs` projection. The substrate role flips: the
 //! namespace is no longer a read-only mirror of runtime vhost state
 //! (the `has_cms` / `has_jmap` / `has_ws` / `has_docs` booleans
-//! moved out and the ergonomic `webd.routes.list` verb retains that
+//! moved out and the ergonomic `webd.routes.list` command retains that
 //! projection surface). The namespace is now the declarative
 //! source-of-truth for vhost configuration — the columns mirror
 //! `[[webd.vhost]]` rows plus per-fqdn ACME / cert state owned by the
@@ -65,7 +65,7 @@
 //!   `props.write:webd.vhosts` write cap (re-introduced in C1c now
 //!   that the validating hook can defend it — see
 //!   [`auth_policy`] for the BLOCKER-fix history).
-//! * `dispatch_props` — unchanged Bus verb-suffix bridge from the
+//! * `dispatch_props` — unchanged Bus command-suffix bridge from the
 //!   v0 file.
 //!
 //! ## Bisect contract — non-deployable mid-commit states
@@ -501,9 +501,9 @@ pub fn auth_policy(service: &str) -> AuthPolicy {
         Capability::new(format!("props.audit:{service}.vhosts")).expect("non-empty capability");
     let write =
         Capability::new(format!("props.write:{service}.vhosts")).expect("non-empty capability");
-    // C5 — narrow cap gating the `webd.acme.renew` ergonomic verb
-    // ([`crate::bus::vhost_verbs`]). NOT a `props.*` cap because the
-    // verb is daemon-internal kick semantics, not a substrate row
+    // C5 — narrow cap gating the `webd.acme.renew` ergonomic command
+    // ([`crate::bus::vhost_commands`]). NOT a `props.*` cap because the
+    // command is daemon-internal kick semantics, not a substrate row
     // mutation — the post-renewal namespace writeback runs under
     // webd's own service-tier credential rather than the caller's.
     // Naming follows the spec's "cross-mesh authz narrows later
@@ -511,8 +511,8 @@ pub fn auth_policy(service: &str) -> AuthPolicy {
     // the policy graduates from "every WG peer" to a tighter scope.
     let acme_renew =
         Capability::new(format!("webd.acme.renew:{service}.vhosts")).expect("non-empty capability");
-    // Narrow cap gating the `webd.session.revoke` ergonomic verb
-    // ([`crate::bus::session_verbs`]) — cookie-path session revocation
+    // Narrow cap gating the `webd.session.revoke` ergonomic command
+    // ([`crate::bus::session_commands`]) — cookie-path session revocation
     // (2026-07 audit). Same non-`props.*` rationale as `acme_renew`:
     // it mutates runtime security state (the per-vhost `session_epochs`
     // table), not a substrate row.
@@ -1295,7 +1295,7 @@ pub fn register_vhosts_namespace_with_listener_config(
     Ok((runtime, events_rx))
 }
 
-/// Bridge an `IncomingCommand` whose verb has the `webd.props.`
+/// Bridge an `IncomingCommand` whose command has the `webd.props.`
 /// prefix stripped to the `PropsRouter::dispatch` surface, then
 /// project the `PropsResponse` back to the `(rc, body)` shape the
 /// Bus loop needs.
@@ -1650,7 +1650,7 @@ mod tests {
     /// dispatcher, drive a backend-origin `set`, and assert the
     /// `records.changed` event reaches the publisher. This pins the
     /// gauntlet step that motivated the granter + publisher wiring —
-    /// without it the watch verb silently no-ops.
+    /// without it the watch command silently no-ops.
     ///
     /// The in-process publisher is a simple channel-backed sink; the
     /// production `NodedPropsPublisher` (in `bus/props_publisher.rs`)

@@ -26,18 +26,18 @@ use crate::devices::{CONSOLE_ACTIVE, EvdevDevice, SysfsConsole, UinputDevice};
 use crate::grab::{Console, EV_KEY, Grabber};
 use crate::service::Shared;
 
-/// A verb the reader resolved, for the Bus side to send.
+/// A command the reader resolved, for the Bus side to send.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FiredVerb {
-    pub verb: String,
+pub struct FiredCommand {
+    pub command: String,
     pub args: Option<serde_json::Value>,
     pub service: Option<String>,
 }
 
-impl From<Fire> for FiredVerb {
+impl From<Fire> for FiredCommand {
     fn from(fire: Fire) -> Self {
         Self {
-            verb: fire.verb.as_str().to_string(),
+            command: fire.command.as_str().to_string(),
             args: fire.args,
             service: fire.service,
         }
@@ -61,7 +61,7 @@ pub fn run_observe(device: &str, resolver: Shared) -> io::Result<()> {
                 keys.key(&resolver, code, value)
             };
             if let Some(fire) = &step.fire {
-                tracing::info!(code, value, verb = fire.verb.as_str(), "would fire");
+                tracing::info!(code, value, command = fire.command.as_str(), "would fire");
             } else if !step.emit {
                 tracing::info!(code, value, "would swallow");
             }
@@ -82,7 +82,7 @@ pub struct GrabOptions {
 pub fn run_grab(
     options: GrabOptions,
     resolver: Shared,
-    fire_tx: UnboundedSender<FiredVerb>,
+    fire_tx: UnboundedSender<FiredCommand>,
 ) -> io::Result<()> {
     let dev = EvdevDevice::open(&options.device)?;
     // The re-emitter first, and once: if uinput fails nothing is grabbed,

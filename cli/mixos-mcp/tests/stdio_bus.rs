@@ -29,7 +29,7 @@ async fn application_tools_round_trip_the_registry_contract() {
         .current_dir(dir.path());
     let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
     let tools = service.list_tools(None).await.unwrap().tools;
-    for name in ["app_commands", "app_execute"] {
+    for name in ["app_actions", "app_execute"] {
         let tool = tools.iter().find(|tool| tool.name == name).unwrap();
         let schema = serde_json::to_value(&tool.input_schema).unwrap();
         assert_eq!(schema["type"], "object");
@@ -62,7 +62,7 @@ async fn application_tools_round_trip_the_registry_contract() {
             count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let args: Value = serde_json::from_str(&command.body).unwrap();
             let (rc, reply) = match command.command.as_str() {
-                "registry-fixture.commands" => {
+                "registry-fixture.actions" => {
                     assert_eq!(args, json!({}));
                     (0, listed.to_string())
                 }
@@ -87,7 +87,7 @@ async fn application_tools_round_trip_the_registry_contract() {
         CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone())
     };
     for target in ["workshop@mesh.example", "a.b"] {
-        for name in ["app_commands", "app_execute"] {
+        for name in ["app_actions", "app_execute"] {
             let mut args = json!({"service":target});
             if name == "app_execute" {
                 args["id"] = json!("file.refresh");
@@ -104,7 +104,7 @@ async fn application_tools_round_trip_the_registry_contract() {
     }
     let rejected = service
         .call_tool(call(
-            "app_commands",
+            "app_actions",
             json!({"service":"registry-fixture", "id":"file.refresh"}),
         ))
         .await
@@ -129,14 +129,14 @@ async fn application_tools_round_trip_the_registry_contract() {
     assert_eq!(status["broker_connected"], false);
     let observed = result(
         service
-            .call_tool(call("app_commands", json!({"service":"registry-fixture"})))
+            .call_tool(call("app_actions", json!({"service":"registry-fixture"})))
             .await
             .unwrap(),
     );
     assert_eq!(
         observed,
         json!({
-            "service":"registry-fixture", "command":"registry-fixture.commands", "result":rows
+            "service":"registry-fixture", "command":"registry-fixture.actions", "result":rows
         })
     );
     for body in [
@@ -223,7 +223,7 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
     assert_eq!(
         names,
         [
-            "app_commands",
+            "app_actions",
             "app_describe",
             "app_execute",
             "bus_call",

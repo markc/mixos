@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="How inputd turns keys into Bus verbs below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.">
+    <meta name="description" content="How inputd turns keys into Bus commands below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -214,7 +214,7 @@
                         <a href="#known-limits">Known limits</a>
                         <a href="#running-it">Running it</a>
                         <a href="#the-keymap-file">The keymap file</a>
-                        <a href="#verbs">Verbs</a>
+                        <a href="#commands">Commands</a>
                     </nav>
                 </div>
             </div>
@@ -241,9 +241,9 @@
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="the-input-broker">The input broker</h1>
 <p><code>inputd</code> reads the keyboard below the compositor, where Left Ctrl and Right
-Ctrl are still different keys. A key the person has bound fires a Bus verb
+Ctrl are still different keys. A key the person has bound fires a Bus command
 and never reaches an app. Everything else is passed on unchanged.</p>
-<p>It is the successor of AmigaOS's <code>input.device</code>: keys become verbs, and
+<p>It is the successor of AmigaOS's <code>input.device</code>: keys become commands, and
 bindings are data that a person, an agent or a Bus message can change.</p>
 <h2 id="the-user-keys">The user keys</h2>
 <p>These strokes belong to the person, never to an app or a system default:</p>
@@ -253,7 +253,7 @@ bindings are data that a person, an agent or a Bus message can change.</p>
 right-hand modifiers, and no other modifier).</li>
 </ul>
 <p>inputd swallows every user key on its press, repeats and release unless the
-person has bound it to a verb or marked it passthrough. The shipped keymap
+person has bound it to a command or marked it passthrough. The shipped keymap
 binds none of them. <code>Ctrl+F3</code>, bare arrows and Left-hand modifier arrows
 stay with the apps.</p>
 <p>The one shipped binding is the system-reserved recovery chord <code>Ctrl+Alt+P</code>
@@ -262,7 +262,7 @@ stay with the apps.</p>
 <p>Each key is decided <strong>once, at its press</strong>, and keeps that decision until
 it is released:</p>
 <ul>
-<li><strong>fire:</strong> a binding matched, so its verb is sent and the key is
+<li><strong>fire:</strong> a binding matched, so its command is sent and the key is
 swallowed. A row with <code>repeat: "allow"</code> fires again on each repeat.</li>
 <li><strong>swallow:</strong> an unbound user key.</li>
 <li><strong>pass:</strong> anything else, or a passthrough row. The key is re-emitted on
@@ -336,11 +336,11 @@ keymap.v1 format:</p>
    "service": "comp", "repeat": "allow"}
 ]}
 </code></pre>
-<p><code>code</code> is the Linux key code. <code>service</code> names the Bus service the verb goes
-to; without it, the verb's first dot-segment does. <code>args</code> is the verb's
+<p><code>code</code> is the Linux key code. <code>service</code> names the Bus service the command goes
+to; without it, the command's first dot-segment does. <code>args</code> is the command's
 body. A row with <code>"passthrough": true</code> re-emits its stroke instead.</p>
-<h2 id="verbs">Verbs</h2>
-<table><thead><tr><th>verb</th><th>what it does</th></tr></thead><tbody>
+<h2 id="commands">Commands</h2>
+<table><thead><tr><th>command</th><th>what it does</th></tr></thead><tbody>
 <tr><td><code>input.query</code></td><td>the rows, the mode and the generation</td></tr>
 <tr><td><code>input.bind</code></td><td>add or replace a row (<code>{"layer":"physical", ...row}</code>)</td></tr>
 <tr><td><code>input.unbind</code></td><td>remove the row on a stroke (<code>{"code":..., "modifiers":{...}}</code>)</td></tr>

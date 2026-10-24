@@ -26,9 +26,9 @@ $MAX_CED_DIAGNOSTICS = 500
 $CED_APP_ID = "dev.mixos.ced"
 $DIAG_SOURCE = "scenes"
 
--- Every directed verb a node of scene.mix names (§4.6 "Clicks → behaviour
--- verbs"). The behaviour answers each.
-fn verbs()
+-- Every directed command a node of scene.mix names (§4.6 "Clicks → behaviour
+-- commands"). The behaviour answers each.
+fn commands()
   return ["editor.view", "editor.template.select", "editor.template.install",
     "editor.recommended", "editor.scene.select", "editor.scene.action",
     "editor.scene.remove", "editor.scene.edit", "editor.scene.fork",
@@ -400,7 +400,7 @@ fn build($data, $ui)
 end
 
 -- ── click planning ──────────────────────────────────────────────────────
--- plan_click returns {ui, kind, steps, message}. Steps are {target, verb,
+-- plan_click returns {ui, kind, steps, message}. Steps are {target, command,
 -- args, label, soft?, retry?}; the behaviour runs them in order through
 -- next_step/advance and hands the result to finish(). A refused step stops
 -- the plan unless it is soft; retry {code, args} re-runs that step once with
@@ -412,8 +412,8 @@ fn plan($ui, $kind, $steps, $message)
     results: [], failed: nil, warnings: [], message: $message, subject: nil}
 end
 
-fn bus_step($target, $verb, $args, $label)
-  return {target: $target, verb: $verb, args: $args, label: $label, soft: false, retry: nil}
+fn bus_step($target, $command, $args, $label)
+  return {target: $target, command: $command, args: $args, label: $label, soft: false, retry: nil}
 end
 
 fn node_of($args)
@@ -429,31 +429,31 @@ fn node_parts($node)
   return split($node, "_")
 end
 
-fn plan_click($verb, $args, $ui, $data)
+fn plan_click($command, $args, $ui, $data)
   $node = node_of($args)
-  if $verb != "editor.scene.remove" then $ui.armed = nil end
+  if $command != "editor.scene.remove" then $ui.armed = nil end
   $ui.message = ""
-  if $verb == "editor.view" then
+  if $command == "editor.view" then
     $v = after($node, "tab_") ?? ""
     if not contains($VIEWS, $v) then return plan($ui, "ui", [], "Unknown tab " .. $node) end
     $ui.view = $v
     return plan($ui, "ui", [], "")
   end
-  if $verb == "editor.template.select" then
+  if $command == "editor.template.select" then
     $t = item_of($args).template
     if type($t) != "string" then return plan($ui, "ui", [], "That row names no template") end
     $ui.template = $t
     return plan($ui, "ui", [], "")
   end
-  if $verb == "editor.template.install" then return plan_install($node, $ui, $data) end
-  if $verb == "editor.recommended" then return plan_recommended($ui, $data) end
-  if $verb == "editor.scene.select" then
+  if $command == "editor.template.install" then return plan_install($node, $ui, $data) end
+  if $command == "editor.recommended" then return plan_recommended($ui, $data) end
+  if $command == "editor.scene.select" then
     $name = item_of($args).name
     if type($name) != "string" then return plan($ui, "ui", [], "That row names no scene") end
     $ui.scene = $name
     return plan($ui, "ui", [], "")
   end
-  if $verb == "editor.edge.page" then
+  if $command == "editor.edge.page" then
     $parts = node_parts($node)
     $page = item_of($args).page
     if length($parts) != 2 or $parts[0] != "pages" or not contains($EDGES, $parts[1]) or type($page) != "string" then
@@ -467,14 +467,14 @@ fn plan_click($verb, $args, $ui, $data)
     if $owner != nil then $ui.scene = $owner.name end
     return plan($ui, "ui", [], "")
   end
-  if $verb == "editor.edge.mode" then return plan_mode($node, $ui, $data) end
-  if $verb == "editor.edge.size" then return plan_size($node, $ui, $data) end
-  if $verb == "editor.edge.order" then return plan_order($node, $ui, $data) end
+  if $command == "editor.edge.mode" then return plan_mode($node, $ui, $data) end
+  if $command == "editor.edge.size" then return plan_size($node, $ui, $data) end
+  if $command == "editor.edge.order" then return plan_order($node, $ui, $data) end
   -- Everything below acts on the selected installed scene.
   $r = row($data.list, $ui.scene)
   if $r == nil then return plan($ui, "ui", [], "Select a scene first") end
-  if $verb == "editor.scene.action" then return plan_action($node, $r, $ui, $data) end
-  if $verb == "editor.scene.remove" then
+  if $command == "editor.scene.action" then return plan_action($node, $r, $ui, $data) end
+  if $command == "editor.scene.remove" then
     if $ui.armed != $r.name then
       $ui.armed = $r.name
       return plan($ui, "ui", [], "Click Confirm remove to remove " .. $r.name .. "; a copy is kept in .recovery")
@@ -482,17 +482,17 @@ fn plan_click($verb, $args, $ui, $data)
     $ui.armed = nil
     return plan($ui, "remove", [bus_step($data.svc.loader, "scenes.remove", {name: $r.name}, "Remove " .. $r.name)], "")
   end
-  if $verb == "editor.scene.edit" then return plan_edit($node, $r, $ui, $data) end
-  if $verb == "editor.scene.fork" then
+  if $command == "editor.scene.edit" then return plan_edit($node, $r, $ui, $data) end
+  if $command == "editor.scene.fork" then
     if type($r.forked_from) == "string" then return plan($ui, "ui", [], $r.name .. " is already a sandbox") end
     return plan($ui, "fork", [bus_step($data.svc.loader, "scenes.fork", {name: $r.name}, "Sandbox of " .. $r.name)], "")
   end
-  if $verb == "editor.scene.promote" then
+  if $command == "editor.scene.promote" then
     if type($r.forked_from) != "string" then return plan($ui, "ui", [], "Only a sandbox can be promoted") end
     return plan($ui, "promote", [bus_step($data.svc.loader, "scenes.promote", {from: $r.name}, "Promote " .. $r.name)], "")
   end
-  if $verb == "editor.scene.move" then return plan_move($node, $r, $ui, $data) end
-  return plan($ui, "ui", [], "Unknown action " .. $verb)
+  if $command == "editor.scene.move" then return plan_move($node, $r, $ui, $data) end
+  return plan($ui, "ui", [], "Unknown action " .. $command)
 end
 
 fn plan_install($node, $ui, $data)
@@ -526,8 +526,8 @@ end
 fn plan_action($node, $r, $ui, $data)
   $loader = $data.svc.loader
   if $node == "btn_toggle" then
-    $verb = $r.enabled == true ? "scenes.disable" : "scenes.enable"
-    return plan($ui, "action", [bus_step($loader, $verb, {name: $r.name}, ($r.enabled == true ? "Disable " : "Enable ") .. $r.name)], "")
+    $command = $r.enabled == true ? "scenes.disable" : "scenes.enable"
+    return plan($ui, "action", [bus_step($loader, $command, {name: $r.name}, ($r.enabled == true ? "Disable " : "Enable ") .. $r.name)], "")
   end
   if $node == "btn_reload" then return plan($ui, "action", [bus_step($loader, "scenes.reload", {name: $r.name}, "Reload " .. $r.name)], "") end
   if $node == "btn_reset" then return plan($ui, "action", [bus_step($loader, "scenes.reset", {name: $r.name}, "Reset " .. $r.name .. " to its template")], "") end

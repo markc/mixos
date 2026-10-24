@@ -112,7 +112,7 @@ pub fn target(lp: &mut Loop, window: &Window) -> Option<(Point<i32, Logical>, Si
     Some((geometry.loc, geometry.size))
 }
 
-/// One loop pass: a window that left fullscreen (by any path: the verb, the
+/// One loop pass: a window that left fullscreen (by any path: the command, the
 /// client's own request, an X11 state change) gets its band back. Read off
 /// the windows rather than hooked into the engine's `fullscreen_set`, so every path
 /// is covered by one rule.

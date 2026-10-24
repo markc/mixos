@@ -15,7 +15,7 @@ outright, so the panel only *queues* a run, and `toolsd` runs it.
 1. The panel posts a run. webd checks the caller's role against the tool
    registry, validates the parameters, and stores the run in its own queue
    (the `tools.` schema beside the site's CMS database).
-2. webd calls the authority-free Bus verb `toolsd.wake`. It takes no
+2. webd calls the authority-free Bus command `toolsd.wake`. It takes no
    arguments and names no tool; it only asks toolsd to go and look.
 3. The wake citizen starts the drain unit, `toolsd-drain.service`.
 4. The drain claims the next run from webd over HTTPS with its own secret,

@@ -138,7 +138,7 @@ fn main() {
     buildinfo::exit_on_version!(leading);
     if matches!(std::env::args().nth(1).as_deref(), Some("--help" | "-h")) {
         println!(
-            "workshop — native ABP service and verb browser\nUsage: workshop [--headless] [--noded-url URL] [--service NAME] [--comp NAME]"
+            "workshop — native ABP service and command browser\nUsage: workshop [--headless] [--noded-url URL] [--service NAME] [--comp NAME]"
         );
         return;
     }

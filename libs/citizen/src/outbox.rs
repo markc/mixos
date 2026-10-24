@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Topic events waiting to be published, and the task that publishes them
-//! (`<app>.command.executed`, `docs/docs/decisions/2026-10-11-executed-commands.md`).
+//! (`<app>.action.executed`, `docs/docs/decisions/2026-10-11-executed-commands.md`).
 //!
 //! The [`Outbox`] is a bounded queue that drops its oldest event when full,
 //! and a running count of events lost. The publisher sends one event at a
@@ -288,8 +288,8 @@ mod tests {
 
     #[test]
     fn the_frame_is_what_subscribers_receive() {
-        let text = frame("demo.command.executed", &event(1));
-        assert!(text.starts_with("---\ncommand: demo.command.executed\n---\n{"));
+        let text = frame("demo.action.executed", &event(1));
+        assert!(text.starts_with("---\ncommand: demo.action.executed\n---\n{"));
         let body: Value = serde_json::from_str(text.lines().nth(3).unwrap()).unwrap();
         assert_eq!(body["seq"], 1);
     }

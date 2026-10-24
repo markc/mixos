@@ -535,7 +535,7 @@ end
 
 -- What a click on a link row opens: "wifi" for a Wi-Fi device, "wg" for a
 -- WireGuard link, "link" for any other, each only when a held grant covers
--- that verb for that link; "" when the row is read only.
+-- that command for that link; "" when the row is read only.
 fn row_action($access, $kind, $link)
   if $kind == "wlan" then return $hd.may($access, "net.wifi.connect", $link) ? "wifi" : "" end
   if $kind == "wireguard" then return $hd.may($access, "net.wg.apply", $link) ? "wg" : "" end

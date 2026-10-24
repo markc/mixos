@@ -1,14 +1,14 @@
 -- A ced-shaped citizen for scene-editor-e2e.mix (Scene Editor plan §7,
 -- Stage T): ced.open adds each path as a tab, ced.tabs lists them, and
 -- ced.diagnostics is accepted as ced would for an open path. Every request
--- is appended as one JSON line to FAKE_CED_LOG ({verb, args}), so the test
+-- is appended as one JSON line to FAKE_CED_LOG ({command, args}), so the test
 -- reads what the editor behaviour sent without a Bus round trip.
 -- Serve it as `ced`: mix --serve fake_ced.mix --name ced
 $LOG = env("FAKE_CED_LOG", "")
 $st = {tabs:[], next:1}
 
-fn note($verb, $a)
-  if $LOG != "" then append_file($LOG, json_encode({verb:$verb, args:$a}) .. "\n") end
+fn note($command, $a)
+  if $LOG != "" then append_file($LOG, json_encode({command:$command, args:$a}) .. "\n") end
 end
 
 fn req()

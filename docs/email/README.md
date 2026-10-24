@@ -229,7 +229,7 @@ otherwise). Help › Keyboard Shortcuts shows the chords in force.
 
 ## Driving it over the Bus
 
-Service `email`, schema `email.v1`. `HELP` lists the verbs, and
+Service `email`, schema `email.v1`. `HELP` lists the commands, and
 `app.describe` gives each one with its arguments and `read_only` flag.
 `account` defaults to the selected account. A refusal is rc 10 with
 `{error_code, message}`, and two of the codes are kept distinct:
@@ -247,14 +247,14 @@ from the old config, so its password cannot change, and it cannot be
 removed, until that finishes), `CANCELLED` (Email closed before the
 request ran; a write that may have run answers `OUTCOME_UNKNOWN`),
 `SERVER`,
-`BUSY`, `UNKNOWN_VERB`, `UNKNOWN_COMMAND` and `DISABLED`.
+`BUSY`, `UNKNOWN_COMMAND`, `UNKNOWN_ACTION` and `DISABLED`.
 
 Queries that need the server answer when the server does. The window
 never waits on them.
 
-| Verb | Class | Does |
+| Command | Class | Does |
 |---|---|---|
-| `email.ping`, `email.info`, `email.commands` | query | probe; the whole window state (no secret); the command registry |
+| `email.ping`, `email.info`, `email.actions` | query | probe; the whole window state (no secret); the command registry |
 | `email.accounts` | query | the accounts with `has_password` and `state`, never a password |
 | `email.mailboxes {account?}` | query | mailboxes with roles, parents and counts |
 | `email.list {account?, mailbox?, offset?, limit?, query?}` | query | one page, newest first, with `total` |
@@ -281,10 +281,10 @@ never waits on them.
 | `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
 | `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |
 | `email.book.select`, `email.contact.create/update/delete` | intent | `create` answers `{id}` |
-| `email.ui.*`, `email.window`, `email.window.state` | input, query | the toolkit [drive verbs](../docs/drive.md) |
+| `email.ui.*`, `email.window`, `email.window.state` | input, query | the toolkit [drive commands](../docs/drive.md) |
 
 Every command the window runs (menu, shortcut, button or `email.execute`)
-is published on `email.command.executed` with how it was reached.
+is published on `email.action.executed` with how it was reached.
 
 `email.info` reports how the open email is shown under each account's
 `mail.reader`: `{"format": "markdown" | "plain", "auto": true | false}`,
@@ -333,14 +333,14 @@ a single query-and-get round trip, the reader fetches one email's bodies
 when it opens, and the tree's work grows with the mailbox count, not the
 email count. Nothing else scales with mailbox size.
 
-## Macro Bus verbs
+## Macro Bus commands
 
-The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+The shared [macro Bus surface](/macros/#bus-commands) uses this process's
 catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
 the instance’s registered Bus name (for example `term-1234` for a second Term
-instance). Verbs keep the app’s canonical prefix, such as `email.macros.run`.
+instance). Commands keep the app’s canonical prefix, such as `email.macros.run`.
 
-| Verb | Arguments | Result |
+| Command | Arguments | Result |
 |---|---|---|
 | `email.macros.list` | `{}` | Catalogue and diagnostics |
 | `email.macros.reload` | `{}` | Catalogue and diagnostics |

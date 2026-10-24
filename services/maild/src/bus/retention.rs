@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! `maild.retention.*` Bus action verbs — the retention worker's control
+//! `maild.retention.*` Bus action commands — the retention worker's control
 //! surface.
 //!
 //! - `maild.retention.status` — observability (open to every WG peer):
@@ -12,7 +12,7 @@
 //!   sender (`cmd.from`) in the configured `retention_operators`
 //!   allowlist may invoke it (the same gate as the `props.write`
 //!   config-arming cap; empty allowlist ⇒ nobody). This is the Option-B
-//!   hook — a systemd timer could call exactly this verb instead of the
+//!   hook — a systemd timer could call exactly this command instead of the
 //!   in-process loop.
 
 use std::sync::Arc;
@@ -23,9 +23,9 @@ use crate::retention_worker::{RetentionRunReport, RetentionWorker};
 
 const RC_ERROR: u8 = 10;
 
-/// Shared state for the `maild.retention.*` verbs: the worker handle
+/// Shared state for the `maild.retention.*` commands: the worker handle
 /// (its status cell is shared with the spawned loop) and the operator
-/// write-allowlist that gates the destructive `run` verb.
+/// write-allowlist that gates the destructive `run` command.
 #[derive(Clone)]
 pub struct RetentionBusState {
     pub worker: Arc<RetentionWorker>,
@@ -88,7 +88,7 @@ async fn handle_run(cmd: &IncomingCommand, state: &RetentionBusState) -> (u8, St
     }
 
     // Strict args resolution: a present-but-malformed `args:` header or
-    // body must FAIL the destructive verb, not silently fall through to
+    // body must FAIL the destructive command, not silently fall through to
     // config defaults with no account scope.
     let args = match super::try_resolve_args(cmd) {
         Ok(v) => v,

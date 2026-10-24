@@ -68,7 +68,7 @@ fn seat_edge(edge: ShellEdge) -> Edge {
     }
 }
 
-/// The edge a `shell.corner.*` verb's `corner` summons (Quoin
+/// The edge a `shell.corner.*` command's `corner` summons (Quoin
 /// `corner_edge`, `Corner::summoned_edge`: top-left → left, bottom-left →
 /// bottom, bottom-right → right, top-right → top).
 pub fn corner_edge(corner: &str) -> Option<Edge> {
@@ -174,10 +174,10 @@ impl Default for Panels {
     }
 }
 
-/// A `shell.panel.*` / `shell.corner.*` semantic verb (Quoin
+/// A `shell.panel.*` / `shell.corner.*` semantic command (Quoin
 /// `semantic_shell_command`'s panel arms).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PanelVerb {
+pub enum PanelCommand {
     Show,
     Hide,
     Toggle,
@@ -186,7 +186,7 @@ pub enum PanelVerb {
     Dock,
 }
 
-impl PanelVerb {
+impl PanelCommand {
     /// The core input it is (Quoin: show reveals transiently, toggle is
     /// `ToggleShown`, pin overlays without reserving, unpin releases a
     /// persistent mode into a transient reveal, dock reserves).
@@ -1151,40 +1151,40 @@ impl Panels {
         }
     }
 
-    /// A semantic panel verb on `output`'s `edge`. An input that would show
+    /// A semantic panel command on `output`'s `edge`. An input that would show
     /// content on an edge with no pages refuses `EMPTY_EDGE` (Quoin's
     /// scene-only frame).
-    pub fn input(&mut self, output: &str, edge: Edge, verb: PanelVerb) -> Result<(), Refusal> {
-        self.input_at(output, edge, verb, self.now())
+    pub fn input(&mut self, output: &str, edge: Edge, kind: PanelCommand) -> Result<(), Refusal> {
+        self.input_at(output, edge, kind, self.now())
     }
 
     fn input_at(
         &mut self,
         output: &str,
         edge: Edge,
-        verb: PanelVerb,
+        kind: PanelCommand,
         now: Duration,
     ) -> Result<(), Refusal> {
         if let Some(model) = self.models.get(output)
             && model.preference(shell_edge(edge)).is_some()
         {
             let mode = model.panel(shell_edge(edge)).mode;
-            match verb {
-                PanelVerb::Pin => {
+            match kind {
+                PanelCommand::Pin => {
                     return if mode == PanelMode::Pinned {
                         Ok(())
                     } else {
                         Err(settings_managed())
                     };
                 }
-                PanelVerb::Dock => {
+                PanelCommand::Dock => {
                     return if mode == PanelMode::Docked {
                         Ok(())
                     } else {
                         Err(settings_managed())
                     };
                 }
-                PanelVerb::Unpin => {
+                PanelCommand::Unpin => {
                     return if mode == PanelMode::Hidden {
                         Ok(())
                     } else {
@@ -1193,18 +1193,18 @@ impl Panels {
                 }
                 // Managed Toggle is transient-only; persistent modes ignore it
                 // before the host releases any interaction holders.
-                PanelVerb::Toggle if mode != PanelMode::Hidden => return Ok(()),
+                PanelCommand::Toggle if mode != PanelMode::Hidden => return Ok(()),
                 _ => {}
             }
         }
         // A toggle decides against the actual reveal, including pointer and
         // keyboard holders. Release focus before asking the core to conceal.
         let closing =
-            verb == PanelVerb::Hide || (verb == PanelVerb::Toggle && !self.hidden(output, edge));
-        let input = if closing && verb == PanelVerb::Toggle && self.mode(output, edge) == "hidden" {
+            kind == PanelCommand::Hide || (kind == PanelCommand::Toggle && !self.hidden(output, edge));
+        let input = if closing && kind == PanelCommand::Toggle && self.mode(output, edge) == "hidden" {
             PanelInput::Hide
         } else {
-            verb.input()
+            kind.input()
         };
         if closing {
             self.pending_focus.remove(output);
@@ -1239,7 +1239,7 @@ impl Panels {
         if model.panel(shell_edge(edge)).mode != before {
             self.save_state(output);
         }
-        if !closing && matches!(verb, PanelVerb::Show | PanelVerb::Toggle) {
+        if !closing && matches!(kind, PanelCommand::Show | PanelCommand::Toggle) {
             self.pending_focus.insert(output.into(), edge);
             self.focus_at(output, Some(edge), now);
         }
@@ -1697,7 +1697,7 @@ mod tests {
         );
         panels.set_mode("DP-1", Edge::Bottom, "docked").unwrap();
         panels
-            .input("DP-1", Edge::Bottom, PanelVerb::Toggle)
+            .input("DP-1", Edge::Bottom, PanelCommand::Toggle)
             .unwrap();
         panels.resize("DP-1", Edge::Bottom, 40.0).unwrap();
         assert_eq!(
@@ -2355,7 +2355,7 @@ mod tests {
         let extra = Extra {
             label: "Tools".into(),
             target: "tools".into(),
-            verb: "tools.open".into(),
+            kind: "tools.open".into(),
             args: vec!["main".into()],
             confirm: Some("Open tools?".into()),
         };
@@ -2384,7 +2384,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(
-            (call.target.as_str(), call.verb.as_str()),
+            (call.target.as_str(), call.kind.as_str()),
             ("tools", "tools.open")
         );
         assert!(call.confirm.is_none());
@@ -2538,7 +2538,7 @@ mod tests {
     fn a_refused_resize_leaves_a_transient_reveal_and_its_wake_untouched() {
         let mut panels = panels_with("DP-1");
         register(&mut panels, "DP-1", Edge::Bottom, "scene-panel", 52.0);
-        panels.input("DP-1", Edge::Bottom, PanelVerb::Show).unwrap();
+        panels.input("DP-1", Edge::Bottom, PanelCommand::Show).unwrap();
         let before = format!("{:?}", panels.models["DP-1"]);
         assert_eq!(
             panels.resize("DP-1", Edge::Bottom, 30.0).unwrap_err()["error_code"],
@@ -2579,7 +2579,7 @@ mod tests {
     }
 
     #[test]
-    fn corner_verbs_summon_their_edge_and_hide_conceals_only_a_reveal() {
+    fn corner_commands_summon_their_edge_and_hide_conceals_only_a_reveal() {
         assert_eq!(
             ["top-left", "bottom-left", "bottom-right", "top-right"].map(corner_edge),
             [
@@ -2593,22 +2593,22 @@ mod tests {
         let mut panels = panels_with("DP-1");
         assert_eq!(
             panels
-                .input("DP-1", Edge::Left, PanelVerb::Show)
+                .input("DP-1", Edge::Left, PanelCommand::Show)
                 .unwrap_err()
                 .code,
             "EMPTY_EDGE"
         );
         register(&mut panels, "DP-1", Edge::Left, "scene-launcher", 440.0);
-        panels.input("DP-1", Edge::Left, PanelVerb::Show).unwrap();
+        panels.input("DP-1", Edge::Left, PanelCommand::Show).unwrap();
         assert!(
             !panels.hidden("DP-1", Edge::Left),
             "a transient reveal holds it"
         );
-        panels.input("DP-1", Edge::Left, PanelVerb::Hide).unwrap();
+        panels.input("DP-1", Edge::Left, PanelCommand::Hide).unwrap();
         assert!(panels.hidden("DP-1", Edge::Left));
-        panels.input("DP-1", Edge::Left, PanelVerb::Pin).unwrap();
+        panels.input("DP-1", Edge::Left, PanelCommand::Pin).unwrap();
         assert_eq!(panels.mode("DP-1", Edge::Left), "pinned");
-        panels.input("DP-1", Edge::Left, PanelVerb::Hide).unwrap();
+        panels.input("DP-1", Edge::Left, PanelCommand::Hide).unwrap();
         assert!(
             !panels.hidden("DP-1", Edge::Left),
             "hide never changes a persistent mode"
@@ -2628,7 +2628,7 @@ mod tests {
                 panels.focus_at("DP-1", Some(Edge::Left), revealed);
             }
             panels
-                .input_at("DP-1", Edge::Left, PanelVerb::Toggle, revealed)
+                .input_at("DP-1", Edge::Left, PanelCommand::Toggle, revealed)
                 .unwrap();
             assert!(
                 panels.hidden("DP-1", Edge::Left),
@@ -2642,7 +2642,7 @@ mod tests {
             );
             let reopen = revealed + MOTION + tuning().dwell();
             panels
-                .input_at("DP-1", Edge::Left, PanelVerb::Toggle, reopen)
+                .input_at("DP-1", Edge::Left, PanelCommand::Toggle, reopen)
                 .unwrap();
             assert!(!panels.hidden("DP-1", Edge::Left));
             assert_eq!(

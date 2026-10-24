@@ -73,7 +73,7 @@ impl Transport {
         }
     }
 
-    pub(super) async fn call(&self, verb: &str, body: &Value) -> Result<Value> {
+    pub(super) async fn call(&self, command_name: &str, body: &Value) -> Result<Value> {
         let limit = match self {
             Self::Bus { timeout, .. } | Self::Ssh { timeout, .. } => *timeout,
         };
@@ -99,13 +99,13 @@ impl Transport {
                     let (rc, text, error) = client
                         .call_with_headers_raw_within(
                             target,
-                            verb,
+                            command_name,
                             &Default::default(),
                             &body.to_string(),
                             limit,
                         )
                         .await?;
-                    if verb == "indexd.stats"
+                    if command_name == "indexd.stats"
                         && rc == 10
                         && text.is_empty()
                         && error.as_deref() == Some(&format!("Service '{target}' not found"))
@@ -131,7 +131,7 @@ impl Transport {
                     bridge
                         .as_mut()
                         .expect("SSH lock acquired")
-                        .call(verb, body)
+                        .call(command_name, body)
                         .await
                 }
             }
@@ -247,12 +247,12 @@ impl Bridge {
         })
     }
 
-    async fn call(&mut self, verb: &str, body: &Value) -> Result<Value> {
+    async fn call(&mut self, command_name: &str, body: &Value) -> Result<Value> {
         self.next_id = self.next_id.wrapping_add(1);
         let id = self.next_id;
         let c = self.settings.call_timeout_secs;
         let timeout_secs = if c > 20 { c - 10 } else { (c * 3 / 4).max(1) };
-        let request = json!({"id":id, "verb":verb, "body":body, "timeout_secs":timeout_secs})
+        let request = json!({"id":id, "command":command_name, "body":body, "timeout_secs":timeout_secs})
             .to_string()
             + "\n";
         for attempt in 0..2 {
@@ -289,7 +289,7 @@ impl Bridge {
                         .iter()
                         .copied()
                         .collect::<Vec<_>>();
-                    if error.delivered && !retry_after_delivery(verb) {
+                    if error.delivered && !retry_after_delivery(command_name) {
                         anyhow::bail!(
                             "indexd bridge failed; outcome unknown: {:#}; stderr: {}",
                             error.error,
@@ -320,9 +320,9 @@ struct Reply {
     kind: Option<String>,
 }
 
-fn retry_after_delivery(verb: &str) -> bool {
+fn retry_after_delivery(command_name: &str) -> bool {
     matches!(
-        verb.strip_prefix("indexd.").unwrap_or(verb),
+        command_name.strip_prefix("indexd.").unwrap_or(command_name),
         "search"
             | "list"
             | "stats"
@@ -517,11 +517,11 @@ mod tests {
         );
         assert_eq!(
             first.unwrap(),
-            json!({"echo":a, "verb":"indexd.stats", "timeout_secs":1})
+            json!({"echo":a, "command":"indexd.stats", "timeout_secs":1})
         );
         assert_eq!(
             second.unwrap(),
-            json!({"echo":b, "verb":"indexd.search", "timeout_secs":1})
+            json!({"echo":b, "command":"indexd.search", "timeout_secs":1})
         );
         assert_eq!(starts(&dir), 1);
         client.shutdown().await;
@@ -599,7 +599,7 @@ mod tests {
             error,
             bus::BusMessage::new()
                 .with_body(
-                    &json!({"echo":body, "verb":"indexd.search", "timeout_secs":1}).to_string()
+                    &json!({"echo":body, "command":"indexd.search", "timeout_secs":1}).to_string()
                 )
                 .error_message()
         );
@@ -675,11 +675,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ssh_bridge_timeout_is_not_retried_for_any_verb() {
+    async fn ssh_bridge_timeout_is_not_retried_for_any_command() {
         let Some((client, dir)) = fake() else {
             return;
         };
-        for verb in [
+        for command_name in [
             "search",
             "list",
             "stats",
@@ -693,7 +693,7 @@ mod tests {
             "feedback",
         ] {
             let error = client
-                .call(&format!("indexd.{verb}"), &json!({"mode":"bridge_timeout"}))
+                .call(&format!("indexd.{command_name}"), &json!({"mode":"bridge_timeout"}))
                 .await
                 .unwrap_err()
                 .to_string();

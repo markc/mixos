@@ -29,7 +29,7 @@ macros.workspace = true
 editor.workspace = true
 egui.workspace = true
 egui_extras.workspace = true
-command.workspace = true
+action.workspace = true
 # thumbnail: decodes the shared thumbnail cache's PNGs (never a user's file).
 image.workspace = true
 png.workspace = true

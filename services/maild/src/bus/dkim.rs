@@ -3,7 +3,7 @@
 
 //! `maild.dkim.*` Bus action handlers — per-domain DKIM key lifecycle.
 //!
-//! Phase 4 ships three verbs:
+//! Phase 4 ships three commands:
 //!   * `maild.dkim.generate` — fresh keypair, write PEM atomically,
 //!     stamp the selector into the `maild.domains` row, rebuild and
 //!     swap the in-memory signer. First generate per domain promotes
@@ -11,12 +11,12 @@
 //!     explicitly rotated.
 //!   * `maild.dkim.rotate` — promote an already-present selector to
 //!     `dkim_selector_active`. The PEM must already be on disk (no
-//!     file-system side-effect on this verb).
+//!     file-system side-effect on this command).
 //!   * `maild.dkim.retire` — remove a non-active selector from
 //!     `dkim_selectors`. Swap the signer first, THEN unlink the PEM so
 //!     a concurrent sign call cannot race with file removal.
 //!
-//! Every verb refuses to touch a domain that has an operator-managed
+//! Every command refuses to touch a domain that has an operator-managed
 //! `[[dkim.domain]]` baseline row (the same "pick one source of truth"
 //! gate the startup rebuild enforces).
 
@@ -44,16 +44,16 @@ use crate::props::domains;
 const RC_OK: u8 = 0;
 const RC_ERROR: u8 = 10;
 
-/// Shared state threaded through `bus::run` for the DKIM verb surface.
+/// Shared state threaded through `bus::run` for the DKIM command surface.
 /// Clone-cheap (every field is already `Arc`-shaped).
 #[derive(Clone)]
 pub struct DkimState {
     /// The live signer slot read by the SMTP submission path. Replaced
-    /// atomically once each verb completes its substrate + filesystem
+    /// atomically once each command completes its substrate + filesystem
     /// transition.
     pub signer_slot: Arc<ArcSwap<Option<Arc<MailAuthSigner>>>>,
     /// Operator-configured `[[dkim.domain]]` rows captured at startup.
-    /// Verbs read this snapshot to enforce the baseline-conflict gate
+    /// Commands read this snapshot to enforce the baseline-conflict gate
     /// — the configs themselves never change at runtime, only the
     /// substrate side does.
     pub baseline: Arc<Vec<DkimSignerConfig>>,
@@ -61,7 +61,7 @@ pub struct DkimState {
     pub domains_runtime: Arc<Runtime>,
     /// On-disk root: `<key_root>/<domain>/<selector>.pem`.
     pub key_root: PathBuf,
-    /// Per-domain serialisation so concurrent verbs against the same
+    /// Per-domain serialisation so concurrent commands against the same
     /// domain see a consistent (read-modify-write, rebuild, swap)
     /// transition. The outer `Mutex<HashMap>` guards the map; the
     /// inner `Arc<Mutex<()>>` is per-domain.
@@ -105,11 +105,11 @@ pub async fn dispatch(action: &str, cmd: &IncomingCommand, state: &DkimState) ->
     }
 }
 
-/// Build a substrate audit-cause string that records both the verb and
+/// Build a substrate audit-cause string that records both the command and
 /// the Bus caller (`cmd.from`). The wire-level trust posture is
 /// WG-only mesh (see `feedback_bus_wire_trust_boundary`), so audit IS
 /// the accountability layer here — the cause must name who triggered
-/// the mutation, not just what verb fired it.
+/// the mutation, not just what command fired it.
 fn audit_cause(action: &str, cmd: &IncomingCommand) -> String {
     if cmd.from.is_empty() {
         format!("maild.dkim.{action}")
@@ -130,13 +130,13 @@ fn err_body(msg: &str) -> String {
 }
 
 #[derive(Debug)]
-struct VerbArgs {
+struct CommandArgs {
     domain: String,
     selector: String,
     algorithm: Option<DkimAlgorithm>,
 }
 
-fn parse_args(cmd: &IncomingCommand, want_algorithm: bool) -> Result<VerbArgs> {
+fn parse_args(cmd: &IncomingCommand, want_algorithm: bool) -> Result<CommandArgs> {
     let args = super::resolve_args(cmd);
     let obj = args
         .as_object()
@@ -169,21 +169,21 @@ fn parse_args(cmd: &IncomingCommand, want_algorithm: bool) -> Result<VerbArgs> {
     } else {
         None
     };
-    Ok(VerbArgs {
+    Ok(CommandArgs {
         domain,
         selector,
         algorithm,
     })
 }
 
-/// Reject the verb early if `domain` is operator-managed via
+/// Reject the command early if `domain` is operator-managed via
 /// `[[dkim.domain]]`. Mirrors the startup rebuild's "pick one source
 /// of truth" rule.
 fn ensure_not_baseline(state: &DkimState, domain: &str) -> Result<()> {
     if state.baseline.iter().any(|c| c.domain.as_str() == domain) {
         bail!(
             "domain {:?} is operator-managed via [[dkim.domain]]; \
-             substrate verbs refuse to touch it",
+             substrate commands refuse to touch it",
             domain
         );
     }
@@ -243,7 +243,7 @@ async fn rebuild_and_swap(state: &DkimState) -> Result<()> {
         &state.key_root,
     )
     .await
-    .context("rebuild_signer_from_substrate after dkim verb")?;
+    .context("rebuild_signer_from_substrate after dkim command")?;
     state.signer_slot.store(Arc::new(built));
     Ok(())
 }
@@ -330,7 +330,7 @@ async fn handle_generate(cmd: &IncomingCommand, state: &DkimState) -> Result<Jso
     // 5. Build the new substrate body — add selector to
     // `dkim_selectors`, set active to this selector only if no row
     // had one before. Operators rotate explicitly with the rotate
-    // verb, so a stable existing-active is not silently displaced.
+    // command, so a stable existing-active is not silently displaced.
     let promote_to_active = opt_string_get(&body, "dkim_selector_active").is_none();
     {
         let obj = obj_mut(&mut body)?;
@@ -645,11 +645,11 @@ mod tests {
     }
 
     fn parse_response(rc: u8, body: String) -> JsonValue {
-        assert_eq!(rc, RC_OK, "verb returned rc={rc} body={body}");
+        assert_eq!(rc, RC_OK, "command returned rc={rc} body={body}");
         serde_json::from_str(&body).expect("response is JSON")
     }
 
-    // ---- Bucket C: per-verb correctness ----
+    // ---- Bucket C: per-command correctness ----
 
     #[tokio::test]
     async fn generate_creates_pem_and_marks_active() {
@@ -826,7 +826,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn baseline_conflict_rejected_on_every_verb() {
+    async fn baseline_conflict_rejected_on_every_command() {
         let (mut state, _tmp) = fresh_state();
         // Inject a baseline row for k8.example so the baseline guard
         // fires.
@@ -841,18 +841,18 @@ mod tests {
             allow_body_length_tag: false,
         }]);
         state.baseline = baseline;
-        for verb in ["generate", "rotate", "retire"] {
-            let args = if verb == "generate" {
+        for command_name in ["generate", "rotate", "retire"] {
+            let args = if command_name == "generate" {
                 json!({"domain": "k8.example", "selector": "s", "algorithm": "rsa-sha256"})
             } else {
                 json!({"domain": "k8.example", "selector": "s"})
             };
-            let cmd = cmd_with_args(verb, args);
-            let (rc, body) = dispatch(verb, &cmd, &state).await;
-            assert_eq!(rc, RC_ERROR, "verb={verb} body={body}");
+            let cmd = cmd_with_args(command_name, args);
+            let (rc, body) = dispatch(command_name, &cmd, &state).await;
+            assert_eq!(rc, RC_ERROR, "command={command_name} body={body}");
             assert!(
                 body.contains("operator-managed via [[dkim.domain]]"),
-                "verb={verb} body={body}"
+                "command={command_name} body={body}"
             );
         }
     }
@@ -860,7 +860,7 @@ mod tests {
     // ---- Bucket E: live-swap determinism ----
 
     #[tokio::test]
-    async fn each_verb_swaps_to_a_new_arc() {
+    async fn each_command_swaps_to_a_new_arc() {
         let (state, _tmp) = fresh_state();
         let cmd1 = cmd_with_args(
             "generate",
@@ -903,9 +903,9 @@ mod tests {
 
     /// `Version::zero()` is the substrate's "absent or freshly
     /// created" sentinel — every commit_set bumps version, so two
-    /// concurrent verbs both reading version=0 would collide on the
+    /// concurrent commands both reading version=0 would collide on the
     /// second's commit. This test pins the optimistic-concurrency
-    /// behaviour: the second verb in a race against itself loses with
+    /// behaviour: the second command in a race against itself loses with
     /// a VersionMismatch surfaced through the dispatch error path.
     #[tokio::test]
     async fn double_generate_serialised_by_per_domain_lock() {

@@ -1,6 +1,6 @@
 [package]
 name = "comp-model"
-description = "The comp.* Bus wire data model for compd: verbs, topics, requests, replies and the props tree (no transport)"
+description = "The comp.* Bus wire data model for compd: commands, topics, requests, replies and the props tree (no transport)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -125,8 +125,8 @@ pub struct Config {
     pub bayesian_rebuild_operators: Vec<String>,
 
     /// Bus senders (`cmd.from`) authorised for the `maild.vtoken.*` management
-    /// verbs (add/list/rotate/disable/lookup). Token management mints the
-    /// publish capability, so EVERY vtoken verb is gated on this allowlist (not
+    /// commands (add/list/rotate/disable/lookup). Token management mints the
+    /// publish capability, so EVERY vtoken command is gated on this allowlist (not
     /// just the mutating ones). **Empty (the default) ⇒ nobody** — vtoken
     /// management is unavailable over Bus until an operator is named. Same shape
     /// as `retention_operators`.
@@ -147,7 +147,7 @@ pub struct Config {
     #[serde(default)]
     pub tls: TlsConfig,
     /// Filesystem root for substrate-declared TLS identities. The
-    /// Phase 5a-commit-2 `maild.tls.reload` verb resolves
+    /// Phase 5a-commit-2 `maild.tls.reload` command resolves
     /// `maild.domains.tls_identity_name = "<name>"` rows to PEM paths
     /// at `<tls_key_root>/<name>.cert.pem` +
     /// `<tls_key_root>/<name>.key.pem`. Unset = default
@@ -248,7 +248,7 @@ pub struct DkimSubsection {
     #[serde(rename = "domain", default)]
     pub domains: Vec<DkimDomainConfig>,
     /// Filesystem root for substrate-managed signer PEMs. The Phase 4
-    /// verbs (`maild.dkim.{generate,rotate,retire}`) write keys here
+    /// commands (`maild.dkim.{generate,rotate,retire}`) write keys here
     /// as `<key_root>/<domain>/<selector>.pem`. Unset = default
     /// (`/var/lib/mixos/maild/dkim`). Operator-managed
     /// `[[dkim.domain]]` rows ignore this and read their `key_path`
@@ -353,14 +353,14 @@ impl Default for Config {
     }
 }
 
-/// Substrate-managed DKIM PEM directory. Verbs and the rebuild loop
+/// Substrate-managed DKIM PEM directory. Commands and the rebuild loop
 /// both write/read here when `[dkim] key_root = …` is unset.
 pub fn default_dkim_key_root() -> PathBuf {
     ::config::path(::config::Dir::Var).join("maild/dkim")
 }
 
 /// Substrate-managed TLS PEM directory. Phase 5a-commit-2's
-/// `maild.tls.reload` verb resolves substrate-declared identities to
+/// `maild.tls.reload` command resolves substrate-declared identities to
 /// `<tls_key_root>/<name>.{cert,key}.pem` here when `tls_key_root = …`
 /// is unset. `[[tls.identity]]` config rows are not affected.
 pub fn default_tls_key_root() -> PathBuf {

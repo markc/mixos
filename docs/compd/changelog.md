@@ -22,7 +22,7 @@ generated: by docs/_build/gen-site.mix from services/compd/CHANGELOG.md; do not 
     user's MixOS config dir, or `$MIXOS_USER_KEYMAP`) and reloaded when the
     file changes. A bad file keeps the last good keymap, and a missing one
     binds nothing.
-  - A `comp.*` verb runs as its Bus request does. Any other verb is sent to
+  - A `comp.*` command runs as its Bus request does. Any other command is sent to
     its service fire-and-forget, with the row's args as the body.
     `repeat: allow` rows repeat at the seat's rate while held.
   - `bindings.user` lists the rows.
@@ -71,7 +71,7 @@ generated: by docs/_build/gen-site.mix from services/compd/CHANGELOG.md; do not 
   window decorations take their themes from the same look.
 - A UI surface off screen is suspended: its animations stop waking the
   compositor until it is shown again.
-- The whole `comp.*` verb catalogue is registered, and a registry test keeps
+- The whole `comp.*` command catalogue is registered, and a registry test keeps
   it exact.
 - Window titles are shaped with cosmic-text over the apps' embedded faces, so
   they match the apps' type and need no fonts installed.

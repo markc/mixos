@@ -9,7 +9,7 @@
 //! cross the Bus; bytes never do.
 //!
 //! The pure store core (`core`) has no Bus and no async runtime. The Bus
-//! citizen (verbs, events, props) is `citizen`; the HTTP byte lane is
+//! citizen (commands, events, props) is `citizen`; the HTTP byte lane is
 //! `lane`; the cross-node fetch is `fetch`. The daemon `main` is ported
 //! after them.
 

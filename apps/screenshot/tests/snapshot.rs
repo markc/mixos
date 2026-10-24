@@ -13,7 +13,7 @@ use image::{Rgba, RgbaImage};
 use screenshot::app::{App, Dialog, Tool};
 use screenshot::capture::{self, Target, Window};
 use screenshot::view::{Drag, Preview, view};
-use screenshot::{commands, strings};
+use screenshot::{actions, strings};
 use toolkit::Theme;
 
 /// A made-up desktop: a backdrop, a window with a title bar and a sidebar,
@@ -125,7 +125,7 @@ fn window(theme: Theme, name: &str, app: App) {
 }
 
 fn window_sized(theme: Theme, name: &str, app: App, size: egui::Vec2) {
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let rendered = app
         .document

@@ -46,7 +46,7 @@ use crate::value::PropValue;
 
 /// Pure in-process `PropertyStore`. Owned by one daemon, parameterised
 /// by that daemon's service name so the event-history rows carry the
-/// correct `<svc>.props.*` verb at commit time.
+/// correct `<svc>.props.*` command at commit time.
 pub struct MemoryStore {
     service: String,
     namespaces: Mutex<HashMap<NamespaceName, NamespaceState>>,
@@ -77,7 +77,7 @@ impl NamespaceState {
 
 impl MemoryStore {
     /// `service` is the owning daemon's registered service name — the
-    /// `<svc>` in `<svc>.props.set`. Used to compose [`RecordEvent::verb`]
+    /// `<svc>` in `<svc>.props.set`. Used to compose [`RecordEvent::command`]
     /// once per commit.
     pub fn new(service: impl Into<String>) -> Self {
         Self {
@@ -95,7 +95,7 @@ impl MemoryStore {
     /// `None` if the namespace has never been written to (the
     /// `MemoryStore` allocates a key lazily on first commit). Intended
     /// for in-process verifiers (tamper-detection) and tests; never
-    /// exposed via any Bus verb.
+    /// exposed via any Bus command.
     pub fn audit_key(&self, namespace: &NamespaceName) -> Option<AuditKey> {
         let state = self.namespaces.lock().expect("memory store poisoned");
         state.get(namespace).map(|ns| ns.audit_key.clone())
@@ -248,7 +248,7 @@ impl PropertyStore for MemoryStore {
                 version: new_version,
                 audit_epoch: ns_state.audit_epoch,
                 kind,
-                verb: kind.verb_for(&self.service),
+                command: kind.command_for(&self.service),
                 key: op.key.clone(),
                 lifecycle: op.lifecycle,
                 actor: op.actor,
@@ -309,7 +309,7 @@ impl PropertyStore for MemoryStore {
                 version: tombstone_version,
                 audit_epoch: ns_state.audit_epoch,
                 kind: EventKind::Deleted,
-                verb: EventKind::Deleted.verb_for(&self.service),
+                command: EventKind::Deleted.command_for(&self.service),
                 key: op.key.clone(),
                 lifecycle: None,
                 actor: op.actor,
@@ -376,7 +376,7 @@ impl PropertyStore for MemoryStore {
                 version: record.version,
                 audit_epoch: ns_state.audit_epoch,
                 kind: EventKind::Completed,
-                verb: EventKind::Completed.verb_for(&self.service),
+                command: EventKind::Completed.command_for(&self.service),
                 key: op.key.clone(),
                 lifecycle: Some(op.lifecycle),
                 actor: op.actor,
@@ -433,7 +433,7 @@ impl PropertyStore for MemoryStore {
                 version: new_version,
                 audit_epoch: ns_state.audit_epoch,
                 kind: EventKind::Reconciled,
-                verb: EventKind::Reconciled.verb_for(&self.service),
+                command: EventKind::Reconciled.command_for(&self.service),
                 key: op.key.clone(),
                 lifecycle: preserved_lifecycle,
                 actor: Actor::reconciliation(),
@@ -545,7 +545,7 @@ mod tests {
             .unwrap();
         assert_eq!(rec1.version, Version(1));
         assert_eq!(ev1.kind, EventKind::Created);
-        assert_eq!(ev1.verb, "demod.props.set");
+        assert_eq!(ev1.command, "demod.props.set");
         assert!(ev1.fields_changed.contains(&"email".to_string()));
 
         let (rec2, ev2) = store
@@ -680,7 +680,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(ev.kind, EventKind::Deleted);
-        assert_eq!(ev.verb, "demod.props.delete");
+        assert_eq!(ev.command, "demod.props.delete");
         assert!(ev.fields_changed.is_empty());
 
         let err = store.get(&key).await.unwrap_err();
@@ -716,7 +716,7 @@ mod tests {
             .unwrap();
         assert_eq!(rec2.lifecycle, Some(Lifecycle::Active));
         assert_eq!(ev2.kind, EventKind::Completed);
-        assert_eq!(ev2.verb, "demod.props.complete");
+        assert_eq!(ev2.command, "demod.props.complete");
         assert_eq!(ev2.fields_changed, vec![LIFECYCLE_FIELD.to_string()]);
         assert!(rec2.version > rec.version);
         assert!(ev2.nseq > ev.nseq);

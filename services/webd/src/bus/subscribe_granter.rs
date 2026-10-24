@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Production [`SubscribeGranter`] for webd — bridges
 //! `<svc>.props.watch` / `<svc>.props.audit.watch` to noded's
-//! `noded.props.subscribe_grant` verb (SPEC 12 §15.5, C10b).
+//! `noded.props.subscribe_grant` command (SPEC 12 §15.5, C10b).
 //!
 //! ## Refreshable client handle (webd's reconnect-loop variant)
 //!
@@ -29,7 +29,7 @@
 //! ## No revoke path (yet)
 //!
 //! `grant()` discards the broker's `subscription_id` because the
-//! watch handler doesn't expose a peer-facing revoke verb.
+//! watch handler doesn't expose a peer-facing revoke command.
 //! Subscriptions survive until the target peer disconnects.
 
 use std::collections::BTreeMap;
@@ -73,7 +73,7 @@ impl NodedSubscribeGranter {
 
     /// Clear the broker handle. After this returns, `grant()` calls
     /// surface a typed `client_unavailable` error until the next
-    /// `install_client`. Exists so `bus::run` can fail watch verbs
+    /// `install_client`. Exists so `bus::run` can fail watch commands
     /// fast across the reconnect-gap rather than calling into a
     /// closed `NodedClient` Arc and waiting for the underlying I/O
     /// timeout.
@@ -117,7 +117,7 @@ mod tests {
 
     #[tokio::test]
     async fn grant_before_install_returns_err_not_panic() {
-        // Load-bearing invariant: a watch verb arriving before the
+        // Load-bearing invariant: a watch command arriving before the
         // broker connection is up must surface a *typed* error to the
         // PropsRouter, which then projects rc=10 grant_failed. An
         // unwrap/expect would crash the dispatcher task and silently

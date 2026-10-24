@@ -212,7 +212,7 @@
                         <a href="#service-identity">Service identity</a>
                         <a href="#startup">Startup</a>
                         <a href="#supervision">Supervision</a>
-                        <a href="#runtime-reserved-verbs">Runtime-reserved verbs</a>
+                        <a href="#runtime-reserved-commands">Runtime-reserved commands</a>
                         <a href="#lifecycle-properties">Lifecycle properties</a>
                         <a href="#author-handlers">Author handlers</a>
                         <a href="#broker-configuration">Broker configuration</a>
@@ -246,7 +246,7 @@
 <p><code>mix --serve</code> runs a Mix script as a long-lived, supervised Bus citizen. The
 runtime registers one service identity, executes the script's initialisation
 body, and then runs an unconditional event pump for author-defined <code>on</code>
-handlers and runtime-reserved verbs.</p>
+handlers and runtime-reserved commands.</p>
 <h2 id="synopsis">Synopsis</h2>
 <pre><code class="language-text">mix [--no-prelude] [--strict-arity] \
   --serve citizen.mix [--name alpha] [--no-prelude]
@@ -290,8 +290,8 @@ registry. Its incoming receiver survives those reconnects. A terminal receiver
 close ends the event pump.</p>
 <p>Calling <code>bus_reconnect()</code> is unnecessary in serve mode; the supervised client
 owns recovery.</p>
-<h2 id="runtime-reserved-verbs">Runtime-reserved verbs</h2>
-<p>The runtime checks reserved verbs before author handlers. A script cannot
+<h2 id="runtime-reserved-commands">Runtime-reserved commands</h2>
+<p>The runtime checks reserved commands before author handlers. A script cannot
 shadow them.</p>
 <table><thead><tr><th>Command</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
 <tr><td><code>HELP</code></td><td>None</td><td>JSON array of accepted commands.</td></tr>

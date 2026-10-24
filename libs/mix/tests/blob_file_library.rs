@@ -78,7 +78,7 @@ impl BusHandler for Bus {
                     self.discovery.set(self.discovery.get() + 1);
                     Value::String(self.bind.clone())
                 }
-                other => panic!("unexpected Bus verb {other}"),
+                other => panic!("unexpected Bus command {other}"),
             };
             Ok((0, value))
         })

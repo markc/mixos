@@ -8,7 +8,7 @@
 //!
 //! The substrate's `Runtime` already commits a durable `RecordEvent`
 //! row per state transition (set, delete, Saga complete). The replay
-//! verbs `<svc>.props.watch` and `<svc>.props.audit.watch` synthesise
+//! commands `<svc>.props.watch` and `<svc>.props.audit.watch` synthesise
 //! events from that durable history for subscribers that supply a
 //! `since_nseq`. This module adds a per-namespace task that tails
 //! newly-committed events and publishes them on the two reserved
@@ -21,7 +21,7 @@
 //! `topic.subscribe` on these reserved topics
 //! (noded's `props_reservation::may_subscribe` returns false
 //! even for the owning service), so end-to-end "join live" routes
-//! through the watch verbs: `<svc>.props.watch` and
+//! through the watch commands: `<svc>.props.watch` and
 //! `<svc>.props.audit.watch` call the namespace's
 //! [`crate::subscribe_granter::SubscribeGranter`] to authorize
 //! the per-topic subscription first, then snapshot the post-grant
@@ -52,7 +52,7 @@
 //!
 //! The dispatcher's initial cursor is the namespace's current
 //! `observed_nseq` at task startup. **Historical events stay on the
-//! watch verbs' replay slice.** A subscriber that wants pre-dispatcher
+//! watch commands' replay slice.** A subscriber that wants pre-dispatcher
 //! state uses `<svc>.props.{watch,audit.watch}` with `since_nseq: 0`;
 //! the live topic carries events that occur after the dispatcher
 //! subscribes to its runtime. Live delivery is best-effort;
@@ -66,14 +66,14 @@
 //! deduplicate without per-topic seen-set state, which the wire
 //! shape does not require) or starve the dispatcher (bad — the
 //! `events_signal` Notify only stores one permit). The
-//! reconciliation path and replay verbs provide recovery
+//! reconciliation path and replay commands provide recovery
 //! for missed-window subscribers; live is intentionally best-effort.
 //!
 //! ## `retain: false`
 //!
 //! Both topics carry per-event deltas, not snapshots. A late
 //! subscriber that lands a retained "last event" from the broker
-//! would see arbitrary noise; their entry point is the replay verb.
+//! would see arbitrary noise; their entry point is the replay command.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -157,7 +157,7 @@ impl DispatcherHandle {
 /// Returns the underlying [`StoreError`] when the initial
 /// `observed_nseq` snapshot cannot be read. Defaulting the cursor to
 /// zero would silently violate the "pre-subscription history stays on
-/// replay verbs" contract — a later signal would then publish every
+/// replay commands" contract — a later signal would then publish every
 /// historical event onto the live topic, duplicating rows for
 /// subscribers that already replayed. Callers (typically the daemon's
 /// startup wiring) decide whether to log-and-skip this namespace, fail
@@ -169,7 +169,7 @@ pub async fn spawn_dispatcher(
 ) -> StoreResult<DispatcherHandle> {
     // Pre-spawn cursor capture: the namespace's current observed_nseq
     // *at the moment of subscription*. Pre-existing history stays on
-    // the replay verbs (see module docs); live events are anything
+    // the replay commands (see module docs); live events are anything
     // with `nseq > cursor`.
     let cursor = runtime
         .store()
@@ -234,7 +234,7 @@ async fn run_dispatcher(
                     // every commit). If it does, log loudly and reset
                     // to the current snapshot — better to lose the
                     // gap on the live topic than to spin forever.
-                    // Subscribers can catch up via the replay verbs.
+                    // Subscribers can catch up via the replay commands.
                     tracing::error!(
                         service = %service,
                         namespace = %ns.as_str(),
@@ -279,7 +279,7 @@ async fn run_dispatcher(
                         nseq = event.nseq.0,
                         error = %e,
                         "records.changed publish failed; advancing cursor anyway \
-                         (replay verb is the recovery path)",
+                         (replay command is the recovery path)",
                     );
                 }
                 let audit_body = project_audit_row(&service, &spec.schema, event).to_string();
@@ -290,7 +290,7 @@ async fn run_dispatcher(
                         nseq = event.nseq.0,
                         error = %e,
                         "audit publish failed; advancing cursor anyway \
-                         (audit.watch verb is the recovery path)",
+                         (audit.watch command is the recovery path)",
                     );
                 }
                 cursor = event.nseq;
@@ -531,7 +531,7 @@ mod tests {
     async fn dispatcher_skips_pre_subscription_history() {
         // Initial cursor = current observed_nseq. A set committed
         // BEFORE the dispatcher spawns must not appear on the live
-        // topic; subscribers wanting it use the replay verb.
+        // topic; subscribers wanting it use the replay command.
         let store: Arc<dyn PropertyStore> = Arc::new(MemoryStore::new("demod"));
         let runtime = Arc::new(Runtime::new("demod", ns_spec(), Arc::clone(&store)));
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! One catalogue and runner per application process, shared by all callers.
-use crate::verbs::Refusal;
+use crate::commands::Refusal;
 use crate::{Catalogue, Output, Roots, Runner, Status, Tier};
 use serde_json::{Value, json};
 use std::collections::HashMap;

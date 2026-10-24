@@ -4,13 +4,13 @@
 #![cfg(feature = "native")]
 
 use bus::native_client::NodedClient;
-use bus::{BusMessage, VerbDescriptor};
+use bus::{BusMessage, CommandDescriptor};
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio::time::{Duration, timeout};
 use tokio_tungstenite::tungstenite::Message;
 
-async fn exercise(manifest: Option<Vec<VerbDescriptor>>) {
+async fn exercise(manifest: Option<Vec<CommandDescriptor>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("ws://{}", listener.local_addr().unwrap());
     let server = tokio::spawn(async move {
@@ -19,7 +19,7 @@ async fn exercise(manifest: Option<Vec<VerbDescriptor>>) {
     });
     let client = NodedClient::connect_anonymous(&url).await.unwrap();
     let client = match &manifest {
-        Some(verbs) => client.with_verbs(verbs.clone()),
+        Some(command_names) => client.with_commands(command_names.clone()),
         None => client,
     };
     let mut server = server.await.unwrap();
@@ -54,10 +54,10 @@ async fn exercise(manifest: Option<Vec<VerbDescriptor>>) {
         assert_eq!(reply.get("to"), Some("caller"));
         assert_eq!(reply.get("id"), id);
         assert_eq!(reply.get("rc"), Some("0"));
-        if let Some(verbs) = &manifest {
+        if let Some(command_names) = &manifest {
             assert_eq!(
                 serde_json::from_str::<serde_json::Value>(&reply.body).unwrap(),
-                serde_json::to_value(verbs).unwrap()
+                serde_json::to_value(command_names).unwrap()
             );
         } else {
             assert_eq!(reply.body, "application HELP");
@@ -196,8 +196,8 @@ async fn reader_consumes_help_only_when_manifest_is_present() {
         exercise(None).await;
         exercise(Some(vec![])).await;
         exercise(Some(vec![
-            VerbDescriptor::new("HELP", &[], "List commands", true),
-            VerbDescriptor::new("example.set", &["key", "value"], "Set a value", false),
+            CommandDescriptor::new("HELP", &[], "List commands", true),
+            CommandDescriptor::new("example.set", &["key", "value"], "Set a value", false),
         ]))
         .await;
     })
@@ -210,7 +210,7 @@ async fn supervised_manifest_is_ready_before_registration_and_survives_reconnect
     timeout(Duration::from_secs(5), async {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("ws://{}", listener.local_addr().unwrap());
-        let manifest = vec![VerbDescriptor::new("HELP", &[], "List commands", true)];
+        let manifest = vec![CommandDescriptor::new("HELP", &[], "List commands", true)];
         let expected = serde_json::to_string(&manifest).unwrap();
         let (advance, mut next) = tokio::sync::mpsc::channel(1);
         let server = tokio::spawn(async move {
@@ -258,7 +258,7 @@ async fn supervised_manifest_is_ready_before_registration_and_survives_reconnect
         });
         let client = bus::native_client::SupervisedClient::connect_options("example", &url)
             .bounded_incoming(1)
-            .with_verbs(manifest)
+            .with_commands(manifest)
             .connect()
             .await
             .unwrap();

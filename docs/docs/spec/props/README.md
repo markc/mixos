@@ -1,6 +1,6 @@
 ---
 title: Service property contract
-description: Structured property verbs, capabilities, replay and live topics, errors and SQLite table ownership.
+description: Structured property commands, capabilities, replay and live topics, errors and SQLite table ownership.
 ---
 
 # Service property contract
@@ -8,8 +8,8 @@ description: Structured property verbs, capabilities, replay and live topics, er
 Status: accepted, version 0.2.1. This records the existing structured
 namespace wire surface implemented by `props`' optional store and router.
 The [ownership decision](../../decisions/2026-10-18-property-store-in-props.md)
-places it in `libs/props`. Verbs belong to the service exposing them and
-must be registered under that owner in the [Bus registry](../bus/verbs.conf.mix).
+places it in `libs/props`. Commands belong to the service exposing them and
+must be registered under that owner in the [Bus registry](../bus/commands.conf.mix).
 
 ## Addressing
 
@@ -25,7 +25,7 @@ string on mutations. Actor identity comes from the authenticated peer,
 never a caller-supplied actor header. `_lifecycle` is reserved.
 
 This surface requires structured addressing. `set` refuses `path` with
-`flat_path_mutation_deferred`; other verbs refuse it as mixed addressing.
+`flat_path_mutation_deferred`; other commands refuse it as mixed addressing.
 The compositor's flat `{path,value,generation}` mutation remains its own
 contract. `field_path` is refused on set/delete/get, even when empty.
 Get refuses any non-empty body. List refuses `cursor`, `limit`, `order_by`,
@@ -33,7 +33,7 @@ Get refuses any non-empty body. List refuses `cursor`, `limit`, `order_by`,
 prefixes `field_path_deferred`, `get_projection_deferred` or
 `list_option_deferred` under `validation_error`.
 
-## Verbs
+## Commands
 
 | Suffix | Headers/body and successful reply |
 | --- | --- |
@@ -46,7 +46,7 @@ prefixes `field_path_deferred`, `get_projection_deferred` or
 | `audit.watch` | Same cursor and grant sequence; audit rows in `events`, with no `caught_up` field. |
 
 Get/list/describe are queries; set/delete/watch/audit.watch are intents.
-Watch verbs install an observable broker subscription. Replay-only
+Watch commands install an observable broker subscription. Replay-only
 `live:false` is available exclusively in the library's unit tests.
 
 ## Capabilities and redaction
@@ -75,7 +75,7 @@ for the owner. After its capability check, the service calls
 `namespace` headers. The broker authenticates the topic owner, requires a
 connected registered target, and installs a top-level namespace body filter.
 Success returns `{subscription_id,namespace}` with rc 0; refusal uses rc 10
-(including `target_peer_not_connected`). The registered verb's owner is
+(including `target_peer_not_connected`). The registered command's owner is
 `noded`, class `intent`, version 0.1.0.
 
 The grant completes **before** the observed cursor is captured. Replay
@@ -85,11 +85,11 @@ including when the caller supplied a higher cursor. Process replay, then
 the marker, and discard overlapping live events through that cursor;
 deduplicate by `(namespace,key,nseq)`.
 
-Records-changed bodies contain `namespace,key,kind,verb,nseq,version,
+Records-changed bodies contain `namespace,key,kind,command,nseq,version,
 audit_epoch,actor,ts` and optional `fields_changed`,
 `secret_fields_changed_count`, `cause`, plus `lifecycle,reason?` on completed
 events. Kinds are `created`, `updated`, `deleted`, `completed`, `reconciled`.
-Audit bodies contain `namespace,key,verb,version,nseq,audit_epoch,actor,at,
+Audit bodies contain `namespace,key,command,version,nseq,audit_epoch,actor,at,
 audit_digest` and optional `fields_changed`; they omit kind, lifecycle,
 cause and secret count. Timestamps use RFC 3339 UTC with milliseconds.
 Records-changed bodies omit the digest. Both topics use `retain:false`.

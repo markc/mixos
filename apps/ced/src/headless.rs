@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `ced --headless`: the controller and the Bus thread with no window. Every
-//! `ced.*` verb works except `ced.layout` (UNAVAILABLE), so agents and tests
+//! `ced.*` command works except `ced.layout` (UNAVAILABLE), so agents and tests
 //! can drive the real model.
 //!
 //! The loop blocks on the Bus thread's delivery channel and wakes only for a
@@ -48,7 +48,7 @@ pub fn run(service: &str, url: &str, config: Config, paths: &[String]) -> Result
     }
     let mut quitting = false;
     let mut stopping = false;
-    // ced.action runs, for <service>.command.executed.
+    // ced.action runs, for <service>.action.executed.
     let mut journal = toolkit::executed::Journal::default();
     let topic = toolkit::executed::topic(service);
     futures::executor::block_on(async {
@@ -68,7 +68,7 @@ pub fn run(service: &str, url: &str, config: Config, paths: &[String]) -> Result
                         Effect::Executed { id } => {
                             journal.record(
                                 &id,
-                                toolkit::command::Origin::Bus,
+                                toolkit::action::Origin::Bus,
                                 serde_json::Value::Null,
                                 serde_json::Value::Null,
                             );

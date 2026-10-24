@@ -37,7 +37,7 @@ pub(crate) struct ServiceTarget {
 pub(crate) struct CommandInvocation {
     /// Bus service name, for example "workshop".
     service: String,
-    /// Dotted command id from app_commands, for example "file.refresh".
+    /// Dotted command id from app_actions, for example "file.refresh".
     id: String,
     /// Optional command parameters, forwarded unchanged to the application.
     #[serde(default)]
@@ -155,7 +155,7 @@ impl MixosMcp {
 
 #[tool_router(router = native_tool_router, vis = "pub(crate)")]
 impl MixosMcp {
-    /// Describe one explicitly targeted application and its native verbs.
+    /// Describe one explicitly targeted application and its native commands.
     #[tool(annotations(
         read_only_hint = true,
         destructive_hint = false,
@@ -175,7 +175,7 @@ impl MixosMcp {
         destructive_hint = false,
         idempotent_hint = true
     ))]
-    async fn app_commands(
+    async fn app_actions(
         &self,
         Parameters(p): Parameters<ServiceTarget>,
     ) -> Result<Json<NativeObservation>, String> {
@@ -186,7 +186,7 @@ impl MixosMcp {
                 p.service
             ));
         }
-        let command = format!("{}.commands", p.service);
+        let command = format!("{}.actions", p.service);
         self.native_observation(p.service, &command, json!({}))
             .await
     }

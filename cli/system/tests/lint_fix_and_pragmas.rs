@@ -90,7 +90,7 @@ fn the_w2307_reproducer_lints_clean_through_the_driver() {
     // read that only follows the NEXT send still warn.
     let checked = write_temp(
         "w2307",
-        "$target=\"svc\"\n$verb=\"ping\"\n$payload=\"{}\"\nsend $target $verb body=$payload timeout=45\nif $rc != 0 then exit(1) end\nprint(json_encode({rc:$rc,result:$result}))\n",
+        "$target=\"svc\"\n$command=\"ping\"\n$payload=\"{}\"\nsend $target $command body=$payload timeout=45\nif $rc != 0 then exit(1) end\nprint(json_encode({rc:$rc,result:$result}))\n",
     );
     let (code, out, _) = lint(&["--deny-warnings", checked.to_str().unwrap()]);
     assert_eq!(code, 0, "{out}");

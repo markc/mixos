@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.">
+    <meta name="description" content="The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -246,7 +246,7 @@
 own egui surfaces (capture overlays, notifications, the Mix Scenes shell),
 the Xwayland window manager, frame pacing, fractional scale, input devices
 and capture. On top of that sits the MixOS policy layer: the agent seat,
-the <code>comp</code> Bus service (verbs, topics and the props tree), the frame and
+the <code>comp</code> Bus service (commands, topics and the props tree), the frame and
 presentation ledgers, panel holders and hot corners, and strict idle
 discipline (no frames on a static screen).</p>
 <p>Bevy, when enabled, may render effects on the shared wgpu device. It never
@@ -272,7 +272,7 @@ persistence.</p>
 separate, pointer-interactive toast seat. It never takes keyboard focus,
 including on click or with an authored autofocus field. It draws above
 windows and edge panels, below the dialog and session lock.</p>
-<p>The draft intent verbs are <code>shell.toast.show {scene, output?, h?}</code> and
+<p>The draft intent commands are <code>shell.toast.show {scene, output?, h?}</code> and
 <code>shell.toast.hide {scene}</code>. Both reply <code>{scene, visible, applied:true}</code>.
 Scenes load hidden; show reserves the one toast seat and hide releases it.
 A different scene's show returns rc 10 <code>TOAST_BUSY</code> with
@@ -463,9 +463,9 @@ its Bus service; <code>vt</code> is a u32 or <code>null</code> when the variable
 cannot be parsed. A nested compositor with no supplied VT reports <code>null</code>.
 The VT is never inferred from a runtime path or display name.</p>
 <h2 id="workspaces">Workspaces</h2>
-<p>Every output has a current workspace; windows belong to one. Verbs on the
+<p>Every output has a current workspace; windows belong to one. Commands on the
 <code>comp</code> service:</p>
-<table><thead><tr><th>Verb</th><th>Arguments</th><th>Reply</th></tr></thead><tbody>
+<table><thead><tr><th>Command</th><th>Arguments</th><th>Reply</th></tr></thead><tbody>
 <tr><td><code>comp.workspaces.list</code></td><td>none</td><td><code>{count, current, o_&lt;key&gt;: {current}, list: [{index, windows, name}]}</code>, the same object as <code>comp.props.get {path: "workspaces"}</code>; <code>name</code> is null when unnamed</td></tr>
 <tr><td><code>comp.workspace.switch</code></td><td><code>{index, output?, wrap?}</code></td><td><code>{output, from, to}</code></td></tr>
 <tr><td><code>comp.window.send_to_workspace</code></td><td><code>{id, generation, index, follow?}</code></td><td>the window</td></tr>

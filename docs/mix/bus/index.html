@@ -211,7 +211,7 @@
                         <a href="#connection-events">Connection events</a>
                         <a href="#the-model-in-one-paragraph">The model in one paragraph</a>
                         <a href="#send--rpc-requestreply">send — RPC (request/reply)</a>
-                        <a href="#verb-names-with-keyword-segments-mix-0962" class="toc-h3">Verb names with keyword segments (mix 0.96.2)</a>
+                        <a href="#command-names-with-keyword-segments-mix-0962" class="toc-h3">Command names with keyword segments (mix 0.96.2)</a>
                         <a href="#send-as-an-expression" class="toc-h3">send as an expression</a>
                         <a href="#args-scalars-body-and-numbers" class="toc-h3">Args: scalars, body=, and numbers</a>
                         <a href="#reading-rc-ok-vs-application-error-vs-transport-failure" class="toc-h3">Reading $rc: ok vs application error vs transport failure</a>
@@ -296,11 +296,11 @@ non-serve Bus connection contract is unchanged.</p>
 handler dispatch and <code>$event.args</code> conversion as incoming Bus events. Structured
 event bodies are parsed even in a library build without the optional JSON
 <em>builtin</em> feature. This introduces no new transport or local-only command gate;
-the citizen's public verbs retain their existing local/mesh routing.</p>
+the citizen's public commands retain their existing local/mesh routing.</p>
 <h2 id="the-model-in-one-paragraph">The model in one paragraph</h2>
 <p>A <strong>broker</strong> (<code>noded</code>) runs on the node. Services register a <strong>name</strong>
 (<code>noded</code>, <code>statecache</code>, <code>webd</code>, …). You <strong><code>send</code></strong> a service a <strong>command</strong> (a
-dotted verb like <code>noded.ping</code>) with optional <strong>key=value args</strong>; the reply lands
+dotted command like <code>noded.ping</code>) with optional <strong>key=value args</strong>; the reply lands
 in <code>$result</code> and the status code in <code>$rc</code>. That's an RPC. <strong><code>emit</code></strong> is the same
 shape but fire-and-forget — no reply, no wait. <strong><code>address</code></strong> is a block of
 implicit sends to one target. <strong><code>on … end</code></strong> is the other direction: it
@@ -335,10 +335,10 @@ print("core ext: " .. ("" .. $result.extensions.core))
 <pre><code class="language-text">pong is true
 core ext: 1.0
 </code></pre>
-<h3 id="verb-names-with-keyword-segments-mix-0962">Verb names with keyword segments (mix 0.96.2)</h3>
-<p>A bare verb is a dotted name, and <strong>any segment may be a Mix keyword</strong> —
-Bus verbs belong to the services that define them, and <code>select</code>, <code>if</code>,
-<code>print</code>, <code>end</code> are ordinary verb words there:</p>
+<h3 id="command-names-with-keyword-segments-mix-0962">Command names with keyword segments (mix 0.96.2)</h3>
+<p>A bare command is a dotted name, and <strong>any segment may be a Mix keyword</strong> —
+Bus commands belong to the services that define them, and <code>select</code>, <code>if</code>,
+<code>print</code>, <code>end</code> are ordinary command words there:</p>
 <pre><code class="language-mix">send ced ced.select anchor=0
 send edit edit.select
 emit x x.if.for
@@ -347,12 +347,12 @@ on ced.select
 end
 </code></pre>
 <p>The same rule holds everywhere a bare Bus name is written: the <code>send</code>/<code>emit</code>
-command, <code>address</code> body lines, a dotted target (<code>send print.x verb</code>), and the
+command, <code>address</code> body lines, a dotted target (<code>send print.x command</code>), and the
 <code>on</code> handler header. A keyword may also <em>lead</em> the name, but only when dotted
-(<code>send svc select.all</code>, <code>on print.page</code>); a bare keyword verb (<code>send svc select</code>) stays a parse error — quote it: <code>send svc "select"</code>. <code>fn</code> and
+(<code>send svc select.all</code>, <code>on print.page</code>); a bare keyword command (<code>send svc select</code>) stays a parse error — quote it: <code>send svc "select"</code>. <code>fn</code> and
 <code>function</code> segments are read by their source spelling (<code>x.fn</code> is <code>"x.fn"</code>).
 Before 0.96.2 a keyword segment failed with <code>unexpected token Dot</code> and the
-verb had to be quoted (<code>send ced "ced.select"</code>); quoting still works.</p>
+command had to be quoted (<code>send ced "ced.select"</code>); quoting still works.</p>
 <h3 id="send-as-an-expression"><code>send</code> as an expression</h3>
 <p><code>send</code> also returns the reply, so you can capture it directly (it still sets
 <code>$result</code>/<code>$rc</code> too):</p>
@@ -363,7 +363,7 @@ print("captured: " .. ("" .. $r))
 </code></pre>
 <h3 id="args-scalars-body-and-numbers">Args: scalars, <code>body=</code>, and numbers</h3>
 <p>For <code>send</code>, bare <code>key=value</code> args are serialized as a <strong>JSON body</strong> (RPC
-framing) by default — noded/indexd/maild verbs read their args from it — with
+framing) by default — noded/indexd/maild commands read their args from it — with
 two exceptions that select <strong>header routing</strong> (scalar args → Bus headers,
 <code>body=</code> → the body channel):</p>
 <ul>
@@ -439,21 +439,21 @@ into the function as an argument.) Per-invocation binding of all three is
 planned (filed in the Mix TODO list). Until it lands, read them immediately
 after the <code>send</code>, or capture the reply with the expression form —
 <code>$r = send svc cmd</code> — and copy <code>$rc</code> into a local before the next await.</p>
-<p><strong>A wrong verb name answers at once.</strong> A <code>mix --serve</code> citizen (or any script
+<p><strong>A wrong command name answers at once.</strong> A <code>mix --serve</code> citizen (or any script
 with <code>on</code> handlers) that receives a request for a command it has no handler
 for refuses it immediately with <code>rc 10</code>. On an ordinary send <code>$result</code> is the
 message ("unknown command 'x' (this citizen handles: …)"); on the header
 route (a <code>body=</code> send) the <code>error_code</code> rule above makes <code>$result</code> the whole
 object instead. Either way the structure is in <code>$reply</code> —
-<code>$reply.error_code == "UNKNOWN_COMMAND"</code>, <code>$reply.command</code> the verb you sent,
+<code>$reply.error_code == "UNKNOWN_COMMAND"</code>, <code>$reply.command</code> the command you sent,
 <code>$reply.available</code> the citizen's declared handlers. (Before 0.92.0 the request
 was dropped: the caller waited out its full timeout and got <code>-2</code>, which read as
-a mesh problem.) So a <code>-2</code> from a citizen that answers its other verbs is no
+a mesh problem.) So a <code>-2</code> from a citizen that answers its other commands is no
 longer a typo symptom — look at the citizen's handler instead. Props paths such
-as <code>lifecycle.generation</code> are not verbs: read them with
+as <code>lifecycle.generation</code> are not commands: read them with
 <code>send svc svc.props.get path="lifecycle.generation"</code>. The code is a Mix
 citizen's: other daemons name the same refusal differently — comp answers
-<code>unknown_verb</code>, noded its own rc 10 message — so a script that must work
+<code>unknown_command</code>, noded its own rc 10 message — so a script that must work
 against any service should test <code>$rc &gt;= 10</code> and read the code from <code>$reply</code>
 rather than match one spelling.</p>
 <p><strong>A Mix citizen's runtime refusals are all in the error band.</strong> Besides
@@ -462,7 +462,7 @@ cases, each with an <code>error</code> message and an <code>error_code</code>. <
 the runtime's; pick another <code>rc &gt;= 10</code> for a handler's own <code>reply()</code> refusals,
 and treat <code>error_code</code> as the authoritative signal:</p>
 <table><thead><tr><th><code>$rc</code></th><th><code>$reply.error_code</code></th><th>When</th></tr></thead><tbody>
-<tr><td>10</td><td><code>UNKNOWN_COMMAND</code></td><td>no <code>on</code> handler for the verb</td></tr>
+<tr><td>10</td><td><code>UNKNOWN_COMMAND</code></td><td>no <code>on</code> handler for the command</td></tr>
 <tr><td>15</td><td><code>HANDLER_FAULT</code></td><td>the handler raised, <code>die</code>d or panicked before replying; the real error is in the citizen's log, never on the wire</td></tr>
 <tr><td>16</td><td><code>HANDLER_CANCELLED</code></td><td>the citizen shut down or reloaded while the handler was still running</td></tr>
 </tbody></table>
@@ -473,12 +473,12 @@ See <a href="/mix/serve/#handler-fault-isolation-the-per-request-boundary">handl
 <p>A locally registered service can be addressed two ways, and only one of them
 carries an identity. A TCP connection is known by a name the caller asserts
 about itself, which is not an authority — which is why a session-enrolled
-service's protected verbs answer <code>FORBIDDEN</code> over it. A Unix connection to the
+service's protected commands answer <code>FORBIDDEN</code> over it. A Unix connection to the
 local broker carries peer credentials the KERNEL supplies, so the broker learns
 who is calling without having to be told.</p>
 <p><code>send</code> now prefers that verified lane, with no change to how you write it:</p>
 <pre><code class="language-mix">$list = send noded "noded.list"          -- find the instance
-$r = send $name "term.session" body=$b   -- a protected verb, admitted
+$r = send $name "term.session" body=$b   -- a protected command, admitted
 </code></pre>
 <p>This grants no new authority. Any same-uid process can already open this
 connection — the pane shell and every test harness do — and a local
@@ -620,22 +620,22 @@ send noded.node1.bus noded.info
 print("" .. $result)
 </code></pre>
 <p>Self-addressing works — <code>send noded.&lt;thisnode&gt;.bus</code> resolves to the local broker.</p>
-<p><strong>3. A dynamic target from a loop/var</strong> — build the address (or the verb) with
+<p><strong>3. A dynamic target from a loop/var</strong> — build the address (or the command) with
 <code>..</code> concat. This is the path when the node name isn't a literal:</p>
 <pre><code class="language-mix">$node = "node1"
 $target = "noded." .. $node .. ".bus"
 -- send $target noded.info   -- illustrative; routes to that node's broker
 
--- the verb is an expression too:
-$verb = "noded" .. ".ping"
-send noded $verb
+-- the command is an expression too:
+$command = "noded" .. ".ping"
+send noded $command
 print("rc=" .. ("" .. $rc) .. " result=" .. ("" .. $result))
 </code></pre>
 <pre><code class="language-text">rc=0 result={extensions: {core: 1.0, topic: 1.0}, pong: true}
 </code></pre>
 <blockquote>
 <p>Edge: if an inline <code>(expr)</code> in command position collides with the parser,
-pre-build the verb into a <code>$var</code> (as above) and pass the var.</p>
+pre-build the command into a <code>$var</code> (as above) and pass the var.</p>
 </blockquote>
 <hr />
 <h2 id="per-send-timeout">Per-send <code>timeout=</code></h2>
@@ -679,10 +679,10 @@ reachability.</p>
 in either order) registers a <strong>handler</strong> that fires when a matching Bus
 message arrives. The handler body uses newline- or
 <code>;</code>-separated statements closed by <code>end</code> — <strong>no <code>do</code> keyword</strong>. The
-<code>&lt;command&gt;</code> matches the <em>inner command</em> of the inbound message (the verb the
+<code>&lt;command&gt;</code> matches the <em>inner command</em> of the inbound message (the command the
 publisher sent), <strong>not</strong> the topic/target name — check the publisher to know
 what to match. The optional <code>desc "…"</code> doc-string (mix ≥ 0.87.1) is static
-metadata: a serve citizen surfaces it as the verb's <code>description</code> in its
+metadata: a serve citizen surfaces it as the command's <code>description</code> in its
 <code>HELP</code> reply — see <a href="/mix/serve/">Serve citizens</a>.</p>
 <pre><code class="language-mix">on order.created desc "Acknowledge a new order"
   print("got an order: " .. $event.body)
@@ -691,20 +691,20 @@ end
 </code></pre>
 <p>The <code>&lt;command&gt;</code> is a dotted name whose segments may be Mix keywords
 (<code>on ced.select</code>, <code>on print.page</code>) — see
-<a href="#verb-names-with-keyword-segments-mix-0962">keyword segments</a>.
+<a href="#command-names-with-keyword-segments-mix-0962">keyword segments</a>.
 A hyphenated name is read whole, with the same shape and the same two
 quoting exceptions as a <a href="#send-and-the-verified-session-lane">hyphenated <code>send</code> target</a>:
-<code>on dopus-test.command.executed</code> handles that topic (mix ≥ 0.113.1). Before
+<code>on dopus-test.action.executed</code> handles that topic (mix ≥ 0.113.1). Before
 0.113.1 the header stopped at the hyphen, so the handler registered as
-<code>dopus</code> and <code>-test.command.executed</code> became its body: it parsed, linted
-clean and never fired. The quoted form, <code>on "dopus-test.command.executed"</code>,
+<code>dopus</code> and <code>-test.action.executed</code> became its body: it parsed, linted
+clean and never fired. The quoted form, <code>on "dopus-test.action.executed"</code>,
 works in every version.</p>
 <p>Legacy <code>done</code> still closes <code>on</code> (with a deprecation warning); prefer <code>end</code>.</p>
 <h3 id="the-event-map">The <code>$event</code> map</h3>
 <p>Inside a handler, the inbound message is available as <code>$event</code>, a map with four
 fields:</p>
 <table><thead><tr><th>Field</th><th>Type</th><th>Access</th></tr></thead><tbody>
-<tr><td><code>$event.command</code></td><td>string</td><td>the inbound verb</td></tr>
+<tr><td><code>$event.command</code></td><td>string</td><td>the inbound command</td></tr>
 <tr><td><code>$event.headers</code></td><td>map</td><td>scalar headers, e.g. <code>$event.headers["topic"]</code></td></tr>
 <tr><td><code>$event.body</code></td><td>string</td><td>the raw message body</td></tr>
 <tr><td><code>$event.args</code></td><td>parsed body | nil</td><td>the body pre-parsed as JSON, or <code>nil</code></td></tr>
@@ -818,13 +818,13 @@ reaches stderr, <code>lifecycle.health</code> flips to <code>degraded</code>, an
 the props surface. Before 0.63.0 a faulting handler looked exactly like a
 healthy one (noded reported <code>delivered=1</code> while its side effects silently
 never happened).</p>
-<p><strong><code>lifecycle.commit</code> is a native hook, never a verb.</strong> After a hot-reload
+<p><strong><code>lifecycle.commit</code> is a native hook, never a command.</strong> After a hot-reload
 swap commits, the runtime queues one local <code>lifecycle.commit</code> event into
 the new generation (see <a href="/mix/serve/">Serve citizens</a> — post-commit
 handover). A wire-delivered <code>lifecycle.commit</code> is refused with <code>rc 10</code>
 before any author handler and is filtered from <code>HELP</code>: an external caller
 cannot run a loader's commit behaviour ahead of or behind the real commit.</p>
-<p>A live citizen answers the standard verbs like any Rust daemon:</p>
+<p>A live citizen answers the standard commands like any Rust daemon:</p>
 <pre><code class="language-mix">send statecache HELP
 print("" .. $result)
 </code></pre>
@@ -909,7 +909,7 @@ state) still raise, so a genuine outage is heard.</p>
 </tbody></table>
 <p>Sharp edges:</p>
 <ul>
-<li>Command position matches the publisher's <strong>inner verb</strong>, not the topic/target.</li>
+<li>Command position matches the publisher's <strong>inner command</strong>, not the topic/target.</li>
 <li><code>emit</code> is a statement only (no <code>$x = emit …</code>) and sets <strong>neither</strong> <code>$rc</code> nor <code>$result</code>.</li>
 <li>Inside <code>address</code>, do <strong>not</strong> write <code>send</code> (each line is already a send).</li>
 <li>Synchronous request cycles deadlock — keep the graph acyclic.</li>
@@ -917,7 +917,7 @@ state) still raise, so a genuine outage is heard.</p>
 </ul>
 <h2 id="see-also">See also</h2>
 <ul>
-<li><a href="/mix/strings/">strings</a> — <code>..</code> concat for building dynamic targets/verbs; <code>${…}</code> vs literal <code>$name</code></li>
+<li><a href="/mix/strings/">strings</a> — <code>..</code> concat for building dynamic targets/commands; <code>${…}</code> vs literal <code>$name</code></li>
 <li><a href="/mix/collections/">collections</a> — field access into <code>$result</code> / <code>$event</code> maps</li>
 <li><a href="/mix/functions/">functions</a> — handler bodies, lambdas, the pass-in/return/reassign state idiom</li>
 <li><a href="/mix/system/">running commands</a> — <code>run</code> / <code>run_rc</code> / <code>ssh_run</code> for non-Bus I/O</li>

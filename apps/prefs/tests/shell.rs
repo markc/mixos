@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The real [`Shell`] on a logging Bus handle: what Preferences publishes on
-//! `<service>.command.executed` (docs/docs/decisions/2026-10-11-executed-commands.md).
+//! `<service>.action.executed` (docs/docs/decisions/2026-10-11-executed-commands.md).
 use citizen::{Delivery, Handle, Logged};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
@@ -49,11 +49,11 @@ fn rig() -> Rig {
     Rig { h, bus, deliveries }
 }
 
-fn send(rig: &mut Rig, id: u64, verb: &str, args: Value) {
+fn send(rig: &mut Rig, id: u64, command_name: &str, args: Value) {
     rig.deliveries
         .try_send(Delivery::Command {
             id,
-            verb: verb.into(),
+            command: command_name.into(),
             body: args.to_string(),
         })
         .unwrap();
@@ -82,7 +82,7 @@ fn published(rig: &Rig) -> Vec<Value> {
         .log()
         .into_iter()
         .filter_map(|l| match l {
-            Logged::Publish { topic, body } if topic == "sink.command.executed" => Some(body),
+            Logged::Publish { topic, body } if topic == "sink.action.executed" => Some(body),
             _ => None,
         })
         .collect()
@@ -108,9 +108,9 @@ fn a_password_goes_to_email_and_is_answered_without_it() {
         .find_map(|l| match l {
             Logged::Call {
                 service,
-                verb,
+                command: command_name,
                 body,
-            } if verb == "email.account.password.set" => Some((service.clone(), body.clone())),
+            } if command_name == "email.account.password.set" => Some((service.clone(), body.clone())),
             _ => None,
         })
         .expect("the call to Email");
@@ -213,7 +213,7 @@ fn slash_focuses_search_enter_opens_first_match_and_escape_clears_and_unfocuses(
 }
 
 #[test]
-fn search_verb_uses_translated_titles_and_leaves_the_window_alone() {
+fn search_command_uses_translated_titles_and_leaves_the_window_alone() {
     let mut rig = rig();
     send(&mut rig, 21, "prefs.search", json!({"query":"APPS"}));
     send(&mut rig, 22, "prefs.info", json!({}));

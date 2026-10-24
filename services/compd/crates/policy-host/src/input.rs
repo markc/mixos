@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! `comp.input.*` single verbs.
+//! `comp.input.*` single commands.
 //!
 //! - HUMAN seat: an injected event goes through the engine's own pointer and keyboard
 //!   handlers via seat's synthetic backend ([`seat::inject`]), so it
 //!   meets the same bindings, corners, edge pan and focus policy as a device.
-//!   A `{window}`-targeted button skips the device hit-test: the focus verb
+//!   A `{window}`-targeted button skips the device hit-test: the focus command
 //!   already applied the raise policy.
 //! - AGENT seat (`agent`): events go straight to that seat's own
 //!   smithay handles, hit-tested by the engine's `surface_under_filtered` in host-Space
@@ -13,7 +13,7 @@
 //!   position is what injection last put there. Refusals are policy
 //!   `agent`'s, fed the facts read here.
 //!
-//! The full-mesh-access law: no verb here checks who is calling. What stays
+//! The full-mesh-access law: no command here checks who is calling. What stays
 //! is correctness: `{id, generation}` freshness, grab and continuity checks
 //! (`target_changed`), and the bounds of the coordinates.
 //!
@@ -61,7 +61,7 @@ use world::state::Loop;
 use world::surface::interface::hit::{SurfaceHit, surface_under_filtered};
 use world::window::interface::draw::visible::DrawWindow;
 
-/// `comp.input.*` (one verb). A refused target injects nothing.
+/// `comp.input.*` (one command). A refused target injects nothing.
 pub fn input(lp: &mut Loop, op: &InputOp) -> ControlReply {
     if matches!(op, InputOp::ReleaseAll) {
         // Bare `release_all` cleans both seats' injected holds.
@@ -91,7 +91,7 @@ pub fn input(lp: &mut Loop, op: &InputOp) -> ControlReply {
     reply
 }
 
-/// One step of a `comp.input.sequence` run: the single-verb path, with the
+/// One step of a `comp.input.sequence` run: the single-command path, with the
 /// run as the owner of what it presses.
 pub fn run_step(lp: &mut Loop, run: u64, op: &InputOp) -> ControlReply {
     lp.inner.comp.injection.current_run = Some(run);
@@ -1393,7 +1393,7 @@ fn injected(lp: &mut Loop, seat: SeatKind) {
 }
 
 /// Record an injected press or release, owned by the running sequence (or
-/// `None`, a single verb).
+/// `None`, a single command).
 fn note_hold(lp: &mut Loop, seat: SeatKind, hold: Hold, pressed: bool) {
     let injection = &mut lp.inner.comp.injection;
     let owner = injection.current_run;

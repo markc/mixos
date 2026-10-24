@@ -111,7 +111,7 @@ fn each_right_modifier_arrow_group_is_swallowed_and_its_left_twin_is_not() {
 }
 
 #[test]
-fn a_bound_key_fires_on_press_only_and_routes_comp_verbs_inside() {
+fn a_bound_key_fires_on_press_only_and_routes_comp_commands_inside() {
     let mut keys = UserKeys::new(workspace_rows());
     keys.edge(RCTRL, true, false);
     let press = keys.edge(RIGHT, true, false);
@@ -119,7 +119,7 @@ fn a_bound_key_fires_on_press_only_and_routes_comp_verbs_inside() {
     let fire = press.fire.expect("the binding fires");
     assert_eq!(fire.service, "comp");
     assert!(fire.is_comp());
-    assert_eq!(fire.verb, "comp.workspace.switch");
+    assert_eq!(fire.command, "comp.workspace.switch");
     assert_eq!(fire.body, json!({"index": "next"}));
     assert_eq!(press.repeat, None, "repeat: ignore");
     let release = keys.edge(RIGHT, false, false);
@@ -144,7 +144,7 @@ fn releasing_the_modifier_first_still_swallows_the_arrow_release() {
 fn a_rebind_or_reload_while_held_applies_from_the_next_press() {
     let mut keys = UserKeys::new(vec![row(63, SideModifiers::NONE, "user.f05", json!({}))]);
     assert_eq!(
-        keys.edge(xkb(63), true, false).fire.unwrap().verb,
+        keys.edge(xkb(63), true, false).fire.unwrap().command,
         "user.f05"
     );
     // Rebound to passthrough while held: the release still follows the press.
@@ -222,7 +222,7 @@ fn an_allow_row_repeats_until_release_and_an_ignore_row_never_does() {
     assert_eq!(press.fire.as_ref().unwrap().service, "term");
     assert!(!press.fire.as_ref().unwrap().is_comp());
     for _ in 0..3 {
-        assert_eq!(keys.repeat(token).unwrap().verb, "term.tab.next");
+        assert_eq!(keys.repeat(token).unwrap().command, "term.tab.next");
     }
     // Releasing the modifier does not stop the latched key.
     keys.edge(RALT, false, false);

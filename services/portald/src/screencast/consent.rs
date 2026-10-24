@@ -11,7 +11,7 @@
 //!    `portald.screencast.answer` (an agent standing in for the person), or
 //!    by the timeout, which denies.
 //!
-//! The state is plain data behind one lock, so the Bus verbs (synchronous)
+//! The state is plain data behind one lock, so the Bus commands (synchronous)
 //! and the D-Bus side (async) share it without awaiting under the lock.
 use bus::native_client::{IncomingCommand, SupervisedClient};
 use serde::Serialize;
@@ -350,7 +350,7 @@ pub const UNKNOWN_APP: &str = "an application";
 
 // ── the process-wide consent and the Bus side ───────────────────────────
 //
-// One portald serves one session. The Bus feed (synchronous verb handling,
+// One portald serves one session. The Bus feed (synchronous command handling,
 // a client it owns) and the D-Bus side meet here rather than threading the
 // state through the settings feed's signatures.
 
@@ -378,7 +378,7 @@ fn client() -> Option<Arc<SupervisedClient>> {
         .clone()
 }
 
-pub const VERBS: &[(&str, &str, bool)] = &[
+pub const COMMANDS: &[(&str, &str, bool)] = &[
     (
         "portald.screencast.pending",
         "Screen-share requests waiting for consent, and the standing grants",
@@ -430,18 +430,18 @@ fn usage(message: impl Into<String>) -> (u8, serde_json::Value) {
     )
 }
 
-/// Serves one `portald.screencast.*` verb. Synchronous: the feed calls it
-/// from its event loop. Every verb answers callers on this node only, since
+/// Serves one `portald.screencast.*` command. Synchronous: the feed calls it
+/// from its event loop. Every command answers callers on this node only, since
 /// granting is granting capture of the whole screen.
-pub fn handle_verb(command: &IncomingCommand) -> (u8, serde_json::Value) {
+pub fn handle_command(command: &IncomingCommand) -> (u8, serde_json::Value) {
     let Some(consent) = installed() else {
         return (
             10,
-            json!({"status": "not_served", "verb": command.command, "message": "portald runs without --screencast"}),
+            json!({"status": "UNKNOWN_COMMAND", "command": command.command, "message": "portald runs without --screencast"}),
         );
     };
     if command.header("broker_origin") != Some("local") {
-        tracing::warn!(verb = %command.command, origin = ?command.header("broker_origin"), "screencast consent verb refused: not a local caller");
+        tracing::warn!(command_name = %command.command, origin = ?command.header("broker_origin"), "screencast consent command refused: not a local caller");
         return (
             FORBIDDEN,
             json!({"error_code": "FORBIDDEN", "message": "screen-share consent is answered on this node only"}),
@@ -522,7 +522,7 @@ pub fn handle_verb(command: &IncomingCommand) -> (u8, serde_json::Value) {
             tracing::info!(%caller, ?id, revoked, "screencast grants revoked");
             (0, json!({"revoked": revoked}))
         }
-        other => (10, json!({"status": "not_served", "verb": other})),
+        other => (10, json!({"status": "UNKNOWN_COMMAND", "command": other})),
     }
 }
 
@@ -796,7 +796,7 @@ mod tests {
         assert!(consent.pending().is_empty());
     }
 
-    fn command(verb: &str, body: serde_json::Value, origin: Option<&str>) -> IncomingCommand {
+    fn command(command_name: &str, body: serde_json::Value, origin: Option<&str>) -> IncomingCommand {
         let mut headers = std::collections::BTreeMap::new();
         if let Some(origin) = origin {
             headers.insert("broker_origin".to_owned(), origin.to_owned());
@@ -804,7 +804,7 @@ mod tests {
         IncomingCommand {
             generation: 0,
             from: "agent".into(),
-            command: verb.into(),
+            command: command_name.into(),
             id: None,
             args: serde_json::Value::Null,
             body: body.to_string(),
@@ -812,26 +812,26 @@ mod tests {
         }
     }
 
-    /// The verbs, the Bus answer and the grant path, against the installed
+    /// The commands, the Bus answer and the grant path, against the installed
     /// (process-wide) consent. One test, since the state is shared.
     #[tokio::test]
-    async fn bus_verbs_answer_and_grant_for_local_callers_only() {
+    async fn bus_commands_answer_and_grant_for_local_callers_only() {
         let consent = install(Consent::new(Policy::Prompt));
 
         // Mesh and unstamped callers are refused.
         for origin in [Some("mesh"), None] {
-            let (rc, _) = handle_verb(&command("portald.screencast.grant", json!({}), origin));
+            let (rc, _) = handle_command(&command("portald.screencast.grant", json!({}), origin));
             assert_eq!(rc, FORBIDDEN);
         }
 
         // A grant covers the next Start by that app without asking.
-        let (rc, grant) = handle_verb(&command(
+        let (rc, grant) = handle_command(&command(
             "portald.screencast.grant",
             json!({"app": "obs", "count": 1, "ttl_ms": 60000}),
             Some("local"),
         ));
         assert_eq!(rc, 0, "{grant}");
-        let (_, listed) = handle_verb(&command(
+        let (_, listed) = handle_command(&command(
             "portald.screencast.pending",
             json!({}),
             Some("local"),
@@ -870,13 +870,13 @@ mod tests {
             assert!(Instant::now() < deadline, "the Start never waited");
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        let (_, listed) = handle_verb(&command(
+        let (_, listed) = handle_command(&command(
             "portald.screencast.pending",
             json!({}),
             Some("local"),
         ));
         assert_eq!(listed["pending"][0]["app"], "firefox");
-        let (rc, _) = handle_verb(&command(
+        let (rc, _) = handle_command(&command(
             "portald.screencast.answer",
             json!({"request": "/r/ff", "allow": true}),
             Some("local"),
@@ -885,13 +885,13 @@ mod tests {
         assert_eq!(waiting.await.unwrap(), Decision::AnsweredAllow);
 
         // Answering what is not waiting, and malformed bodies.
-        let (rc, _) = handle_verb(&command(
+        let (rc, _) = handle_command(&command(
             "portald.screencast.answer",
             json!({"request": "/r/none", "allow": false}),
             Some("local"),
         ));
         assert_eq!(rc, 14);
-        let (rc, _) = handle_verb(&command(
+        let (rc, _) = handle_command(&command(
             "portald.screencast.answer",
             json!({"request": "/r/x"}),
             Some("local"),
@@ -901,16 +901,16 @@ mod tests {
         // A body that is not JSON is refused, never read as an any-app grant.
         let mut garbage = command("portald.screencast.grant", json!({}), Some("local"));
         garbage.body = "garbage".into();
-        assert_eq!(handle_verb(&garbage).0, 10);
+        assert_eq!(handle_command(&garbage).0, 10);
 
         // Wrongly typed fields are refused, never read as their defaults.
-        let (rc, _) = handle_verb(&command(
+        let (rc, _) = handle_command(&command(
             "portald.screencast.grant",
             json!({"count": "5"}),
             Some("local"),
         ));
         assert_eq!(rc, 10);
-        let (rc, _) = handle_verb(&command(
+        let (rc, _) = handle_command(&command(
             "portald.screencast.grant",
             json!({"ttl_ms": -1}),
             Some("local"),
@@ -918,24 +918,24 @@ mod tests {
         assert_eq!(rc, 10);
 
         // Revoke clears grants; a malformed id revokes nothing.
-        handle_verb(&command(
+        handle_command(&command(
             "portald.screencast.grant",
             json!({}),
             Some("local"),
         ));
-        let (rc, _) = handle_verb(&command(
+        let (rc, _) = handle_command(&command(
             "portald.screencast.revoke",
             json!({"id": "5"}),
             Some("local"),
         ));
         assert_eq!(rc, 10);
-        let (_, listed) = handle_verb(&command(
+        let (_, listed) = handle_command(&command(
             "portald.screencast.pending",
             json!({}),
             Some("local"),
         ));
         assert_eq!(listed["grants"].as_array().map(Vec::len), Some(1));
-        let (_, revoked) = handle_verb(&command(
+        let (_, revoked) = handle_command(&command(
             "portald.screencast.revoke",
             json!({}),
             Some("local"),

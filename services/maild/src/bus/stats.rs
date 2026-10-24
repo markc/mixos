@@ -12,7 +12,7 @@
 //!
 //! ## Auth (Phase 1)
 //!
-//! Permissive, matching the sibling direct verbs (`maild.accounts.*`,
+//! Permissive, matching the sibling direct commands (`maild.accounts.*`,
 //! `maild.search.*`): any peer reaching the dispatcher invokes these.
 //! The WireGuard `/24` is the trust domain. These are reads of
 //! per-account mailbox metadata (counts/bytes) and live-session counts,
@@ -119,7 +119,7 @@ pub async fn dispatch(
 /// Resolve the account-address argument to an account row. Accepts the
 /// address under either `account` or `email`, as a header (header wins)
 /// or an `args.*` field — `account=<email>` is the advertised shape,
-/// `email=` the sibling-verb convention. Returns `Err((rc, body))`
+/// `email=` the sibling-command convention. Returns `Err((rc, body))`
 /// ready to return on any miss.
 async fn resolve_account(
     cmd: &IncomingCommand,
@@ -425,7 +425,7 @@ async fn handle_server(
 /// (a multi-homed message counts once), so the ranking reflects physical
 /// storage, not summed folder occupancy. The whole-fleet scan is
 /// offloaded via `spawn_blocking`; a per-account scan error is logged
-/// and that account is ranked as zero rather than failing the verb.
+/// and that account is ranked as zero rather than failing the command.
 ///
 /// ```json
 /// {"by": "size", "limit": 10, "accounts": [
@@ -439,7 +439,7 @@ async fn handle_top(
 ) -> (u8, String) {
     // Strict args resolution: a present-but-malformed `args:` header or
     // body is an error, not a silent fall-through to defaults (matches
-    // the `try_resolve_args` sibling verbs).
+    // the `try_resolve_args` sibling commands).
     let args = match super::try_resolve_args(cmd) {
         Ok(v) => v,
         Err(e) => return (RC_ERROR, err_body(&format!("invalid args: {e}"))),

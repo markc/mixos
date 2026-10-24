@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="The shared shell for MixOS egui applications, giving every app the same theme, fonts, icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive verbs.">
+    <meta name="description" content="The shared shell for MixOS egui applications, giving every app the same theme, fonts, icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive commands.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -214,7 +214,7 @@
                         <a href="#theme-and-look" class="toc-h3">Theme and look</a>
                         <a href="#window-chrome-and-components" class="toc-h3">Window chrome and components</a>
                         <a href="#commands" class="toc-h3">Commands</a>
-                        <a href="#drive-verbs" class="toc-h3">Drive verbs</a>
+                        <a href="#drive-commands" class="toc-h3">Drive commands</a>
                         <a href="#strings-thumbnails-layer-surfaces" class="toc-h3">Strings, thumbnails, layer surfaces</a>
                         <a href="#features-and-dependencies">Features and dependencies</a>
                         <a href="#assets-and-licences">Assets and licences</a>
@@ -253,7 +253,7 @@ An app keeps its behaviour in a headless engine and its UI state in one
 serialisable struct. The toolkit draws the window around that state and
 routes every action through one command registry.</p>
 <p>The UI-free registry and Fluent <code>Strings</code> now live in
-<a href="/command/"><code>command</code></a>. Toolkit keeps the egui adapter and its
+<a href="/action/"><code>action</code></a>. Toolkit keeps the egui adapter and its
 existing nullary command API, with the moved data types re-exported.
 Core and toolkit <code>describe()</code> emit stored chords in the keymaps grammar
 (<code>Ctrl+=</code>, <code>ArrowLeft</code>, or short forms), ordered Ctrl, Alt, Shift. Executed
@@ -270,7 +270,7 @@ combos, sliders, canvas scrollbars, tooltips, dialogs), drawn to the
 chrome specification in each chrome scheme;</li>
 <li>the command registry, which generates menus, shortcuts, the palette and
 the Bus surface, and records every executed command;</li>
-<li>the drive verbs, the UI-level Bus verbs that every app shares;</li>
+<li>the drive commands, the UI-level Bus commands that every app shares;</li>
 <li>Fluent string catalogues, a key-chord grammar, and thumbnail decoding.</li>
 </ul>
 <p>The source is
@@ -290,7 +290,7 @@ directory (<code>$MIXOS_ETC</code>, else <code>$MIXOS/etc</code>, else <code>/et
 else <code>$XDG_CONFIG_HOME/mixos</code>). It falls back to the embedded design, and
 says why on stderr, when the file is missing or unusable.</p>
 <p>A minimal window, condensed from <code>tests/snapshot.rs</code>:</p>
-<pre><code class="language-rust">use toolkit::command::{Command, Registry, always};
+<pre><code class="language-rust">use toolkit::action::{Command, Registry, always};
 use toolkit::{Icon, Strings, Theme, icons};
 
 #[derive(Default)]
@@ -421,22 +421,22 @@ leaves the process, such as a Bus call or a file write, is queued on the
 state for the app's effect loop. <code>Registry&lt;S&gt;</code> provides <code>add</code>,
 <code>add_choice</code>, <code>add_toggle</code>, <code>execute(id, state, origin)</code>, <code>describe</code>,
 <code>menus</code> and <code>model</code>, <code>shortcuts</code>, <code>search</code>, <code>shortcut_grid</code> and <code>rebind</code>.
-The UI, the command line and Bus verbs all dispatch by id.</li>
+The UI, the command line and Bus commands all dispatch by id.</li>
 <li><code>executed</code>: every run is recorded with its <code>Origin</code> (<code>menu</code>, <code>shortcut</code>,
 <code>palette</code>, <code>ui</code>, <code>bus</code>, <code>macro</code>) and given a per-process sequence number.
 It goes into a bounded <code>Journal</code> that counts the runs it drops.
 <code>Registry::take_executed</code> hands the records to the app's Bus connection,
-which publishes them on <code>&lt;app&gt;.command.executed</code>
+which publishes them on <code>&lt;app&gt;.action.executed</code>
 (<a href="/docs/decisions/2026-10-11-executed-commands/">decision</a>).</li>
 <li><code>keymap</code>: the chord grammar (<code>Ctrl</code>, <code>Alt</code>, <code>Shift</code>, then one key, joined
 by <code>+</code>). <code>Registry::rebind</code> applies the person's bindings from the
 desktop profile.</li>
 </ul>
-<h3 id="drive-verbs">Drive verbs</h3>
+<h3 id="drive-commands">Drive commands</h3>
 <p><code>drive</code> lets an agent do in the window anything a person can.
 <code>drive::install(ctx, app)</code> turns on AccessKit, keeps each pass's widget
 tree, and injects queued pointer and key events through egui's input hook,
-the same path real input takes. The app registers these verbs under its own
+the same path real input takes. The app registers these commands under its own
 prefix (<code>&lt;app&gt;.ui.tree</code> and so on):</p>
 <p><code>ui.tree</code>, <code>ui.click</code>, <code>ui.pointer</code>, <code>ui.scroll</code>, <code>ui.key</code>, <code>ui.type</code>,
 <code>ui.menu</code>, <code>ui.menu.list</code>, <code>ui.menu.open</code>, <code>ui.menu.close</code>, <code>ui.capture</code>,
@@ -445,7 +445,7 @@ prefix (<code>&lt;app&gt;.ui.tree</code> and so on):</p>
 <code>drive::request</code> from inside a frame. It sends back whatever <code>request</code>, or
 <code>drive::logic</code> (called once per frame), returns. It holds later commands
 while <code>drive::pending</code> is true, and calls <code>drive::finish</code> before closing.
-Reads answer at once. Input verbs run one at a time, one step per pass,
+Reads answer at once. Input commands run one at a time, one step per pass,
 and answer one pass after their last step. At most 32 input requests can
 be queued. The <a href="/docs/drive/">driving guide</a> shows them in use.</p>
 <p><code>viewport: "macro-editor"</code> addresses the editor owned by the app window
@@ -497,7 +497,7 @@ the <a href="/docs/decisions/2026-10-13-bundled-font-licences/">bundled font lic
 <tr><td><code>src/titlebar.rs</code>, <code>menu.rs</code></td><td>window chrome</td></tr>
 <tr><td><code>src/bars.rs</code> … <code>src/dialog.rs</code></td><td>chrome components</td></tr>
 <tr><td><code>src/command.rs</code>, <code>executed.rs</code>, <code>keymap.rs</code></td><td>commands, executed records, chords</td></tr>
-<tr><td><code>src/drive.rs</code></td><td>the drive verbs</td></tr>
+<tr><td><code>src/drive.rs</code></td><td>the drive commands</td></tr>
 <tr><td><code>src/strings.rs</code>, <code>thumbnail.rs</code></td><td>Fluent strings, thumbnail decoding</td></tr>
 <tr><td><code>src/layer.rs</code>, <code>src/layer/</code></td><td>layer-shell surfaces (feature <code>layer</code>)</td></tr>
 <tr><td><code>i18n/en/toolkit.ftl</code></td><td>the toolkit's own strings</td></tr>
@@ -510,7 +510,7 @@ data. The integration tests in <code>tests/</code> drive real frames through
 <ul>
 <li><code>components.rs</code>, <code>menu.rs</code>, <code>titlebar.rs</code>, <code>chrome.rs</code>: component, menu
 and title-bar behaviour under pointer and keyboard;</li>
-<li><code>drive.rs</code>: the drive verbs, requested inside frames the way an app's
+<li><code>drive.rs</code>: the drive commands, requested inside frames the way an app's
 shell requests them;</li>
 <li><code>snapshot.rs</code>, <code>components_snapshot.rs</code>: offscreen wgpu snapshots across
 schemes and modes, compared with <code>tests/snapshots/*.png</code>. Regenerate them

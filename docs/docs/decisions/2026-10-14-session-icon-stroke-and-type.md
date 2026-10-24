@@ -28,8 +28,8 @@ Status: accepted 2026-10-14. Extends
   A missing or still-scanning family falls back to the bundled Inter, which
   stays behind any system font as glyph fallback.
 - **Carried by the existing carrier.** `settings.apply` takes the new keys,
-  `prefs.appearance.set` is the Preferences front verb, and every app follows the
-  summary topic as it does for the scheme. No new verb.
+  `prefs.appearance.set` is the Preferences front command, and every app follows the
+  summary topic as it does for the scheme. No new command.
 
 ## Why
 

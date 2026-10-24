@@ -6,15 +6,15 @@ description: Typed parameters, returned results and one UI-free command registry
 
 # Decision — commands take parameters and return results
 
-Status: accepted 2026-10-20. Amends [egui applications](2026-10-09-egui-applications.md), [executed commands](2026-10-11-executed-commands.md) and [verb classes](2026-10-11-verb-classes.md).
+Status: accepted 2026-10-20. Amends [egui applications](2026-10-09-egui-applications.md), [executed commands](2026-10-11-executed-commands.md) and [command classes](2026-10-11-verb-classes.md).
 
 ## The decision
 
-- **A command has typed parameters and a result.** Its parameter type is a serde struct that refuses unknown fields and derives a JSON Schema; `<app>.commands` reports the schema, enablement and the disabled reason; `<app>.execute { id, params }` runs it and returns the result.
+- **A command has typed parameters and a result.** Its parameter type is a serde struct that refuses unknown fields and derives a JSON Schema; `<app>.actions` reports the schema, enablement and the disabled reason; `<app>.execute { id, params }` runs it and returns the result.
 - **The registry is UI-free** (`libs/command`). Engine crates own their command tables; the egui crate renders menus, shortcuts and the palette from them.
-- **One path.** UI, shortcuts, palette, macros, Bus and headless all dispatch through the registry. A verb that performs an action a command defines is refused in review.
+- **One path.** UI, shortcuts, palette, macros, Bus and headless all dispatch through the registry. A command that performs an action a command defines is refused in review.
 - **Executed events carry `params` and `result`** (`v: 2`); a value above 4 KiB is replaced by `{ bytes, sha256 }`.
-- **Every registered verb names its body schema** (registry schema 4): a request type, `none`, or `pending` through 2026-11-30 inclusive in UTC.
+- **Every registered command names its body schema** (registry schema 4): a request type, `none`, or `pending` through 2026-11-30 inclusive in UTC.
 
 ## Why
 
@@ -33,7 +33,7 @@ consistent across the UI, Bus and headless paths.
 - Each parameter and result value is measured separately using compact JSON
   bytes. Above 4096 bytes it becomes `{ bytes, sha256 }`, with a lowercase
   SHA-256 digest of those bytes. This bounds the executed journal.
-- `<app>.commands` reports stored chords in Ctrl, Alt, Shift modifier order,
+- `<app>.actions` reports stored chords in Ctrl, Alt, Shift modifier order,
   preserving key names from the keymaps grammar, including short forms.
-- Verb owners replace migration placeholders with request types or `none`
-  by the cutoff. The gate refuses expired placeholders by verb or family name.
+- Command owners replace migration placeholders with request types or `none`
+  by the cutoff. The gate refuses expired placeholders by command or family name.

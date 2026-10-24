@@ -25,9 +25,9 @@ enum Command {
         #[arg(long)]
         node_config: Option<PathBuf>,
     },
-    /// Execute one verb in-process, without the Bus.
+    /// Execute one command in-process, without the Bus.
     Call {
-        verb: String,
+        command: String,
         #[arg(default_value = "{}")]
         json_body: String,
         /// Allow writes only when the daemon is stopped.
@@ -86,7 +86,7 @@ fn main() -> Result<()> {
         });
     }
     if let Command::Call {
-        verb,
+        command: command_name,
         json_body,
         offline,
     } = &cli.command
@@ -96,7 +96,7 @@ fn main() -> Result<()> {
             body.get("background").and_then(serde_json::Value::as_bool) != Some(true),
             "indexd call refuses background:true: no process remains to run the job; use the daemon"
         );
-        let action = verb.strip_prefix("indexd.").unwrap_or(verb);
+        let action = command_name.strip_prefix("indexd.").unwrap_or(command_name);
         anyhow::ensure!(
             *offline
                 || !matches!(
@@ -135,10 +135,10 @@ fn main() -> Result<()> {
                 Ok(())
             }
             Command::Call {
-                verb, json_body, ..
+                command: command_name, json_body, ..
             } => {
                 let reply = engine
-                    .call_sized(&verb, serde_json::from_str(&json_body)?, json_body.len())
+                    .call_sized(&command_name, serde_json::from_str(&json_body)?, json_body.len())
                     .await;
                 println!("{reply}");
                 if reply.get("error").is_some() {

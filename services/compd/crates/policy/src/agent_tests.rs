@@ -507,7 +507,7 @@ fn shared_holds_are_released_by_their_last_owner() {
     assert_eq!(holds.owners_of(key_a), 1);
     assert_eq!(holds.drop_owner(Some(1)), [key_a]);
     assert!(holds.is_empty());
-    // A verb's release clears the run's claim; the verb's re-press is its own.
+    // A command's release clears the run's claim; the command's re-press is its own.
     holds.note(Some(3), key_a, true);
     holds.note(None, key_a, false);
     holds.note(None, key_a, true);
@@ -515,7 +515,7 @@ fn shared_holds_are_released_by_their_last_owner() {
     assert_eq!(
         holds.drop_owner(Some(3)),
         Vec::<Hold>::new(),
-        "the verb's hold survives"
+        "the command's hold survives"
     );
     assert_eq!(holds.take_all(), [key_a]);
     assert!(holds.is_empty());
@@ -552,9 +552,9 @@ fn releases_go_newest_key_first_then_buttons_and_spare_physical_holds() {
     assert!(seat.is_empty());
 }
 
-fn step(verb: &'static str, op: InputOp, delay_ms: u64) -> SequenceStep {
+fn step(command: &'static str, op: InputOp, delay_ms: u64) -> SequenceStep {
     SequenceStep {
-        verb,
+        command,
         op,
         delay: Duration::from_millis(delay_ms),
     }
@@ -589,7 +589,7 @@ fn drive(run: &mut SequenceRun, answer: impl Fn(&InputOp) -> ControlReply) -> Op
                     }
                     other => other,
                 };
-                if let Some(failed) = run.record(index, step.verb, reply, 1) {
+                if let Some(failed) = run.record(index, step.command, reply, 1) {
                     return Some(failed);
                 }
             }
@@ -711,7 +711,7 @@ fn an_agent_run_counts_a_refusing_human_step_as_mixed() {
     let body = failed.wire_json();
     assert_eq!(body["seat"], "mixed");
     assert_eq!(body["index"], 1);
-    assert_eq!(body["verb"], "comp.input.key");
+    assert_eq!(body["command"], "comp.input.key");
     assert_eq!(body["completed"][0]["seat"], "agent");
     assert_eq!(body["step"]["seat"], "human");
 }
@@ -720,8 +720,8 @@ fn an_agent_run_counts_a_refusing_human_step_as_mixed() {
 #[test]
 fn a_seated_run_names_its_seat_and_each_step_its_own() {
     let op = comp_model::request::parse_sequence(&json!({"seat": "agent", "steps": [
-        {"verb": "comp.input.key", "args": {"key": "b", "seat": "human"}},
-        {"verb": "comp.input.key", "args": {"key": "a"}},
+        {"command": "comp.input.key", "args": {"key": "b", "seat": "human"}},
+        {"command": "comp.input.key", "args": {"key": "a"}},
     ]}))
     .unwrap();
     let mut run = SequenceRun::new(op).unwrap();
@@ -752,7 +752,7 @@ fn a_cleared_run_reports_what_it_completed() {
     let SequenceNext::Run { index, step } = run.next_action() else {
         panic!("first step runs");
     };
-    assert!(run.record(index, step.verb, ok(&step.op), 2).is_none());
+    assert!(run.record(index, step.command, ok(&step.op), 2).is_none());
     assert_eq!(
         run.next_action(),
         SequenceNext::Wait(Duration::from_millis(50))

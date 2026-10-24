@@ -2,7 +2,7 @@
 -- Stage L): in-memory scenes, edge panels and the one dialog seat, driven by
 -- the real loader over a private noded. Run it under any name but `shell`
 -- (mix --serve fake_shell.mix --name fakeshell) with the loader SCENE_HOST
--- set to that name: the verbs stay shell.*, and a citizen can never answer its
+-- set to that name: the commands stay shell.*, and a citizen can never answer its
 -- own <name>.props.get (the runtime reserves it), so it must not be `shell`.
 -- Real revision semantics: every applied change publishes shell.panel.changed
 -- with a strictly greater revision; an unchanged snapshot publishes nothing.
@@ -22,8 +22,8 @@ for each $edge in $EDGES
   $st.panels[$edge] = {visible:false, pinned:false, mode:"hidden", page:nil, pages:[], declared:[], width_px:$edge == "bottom" ? 52 : 400, output:"FAKE-1"}
 end
 
-fn note($verb)
-  if $LOG != "" then append_file($LOG, json_encode({verb:$verb, args:$event.args, body:$event.args == nil ? $event.body : nil}) .. "\n") end
+fn note($command)
+  if $LOG != "" then append_file($LOG, json_encode({command:$command, args:$event.args, body:$event.args == nil ? $event.body : nil}) .. "\n") end
 end
 
 fn snapshot()
@@ -201,7 +201,7 @@ on shell.panel.order
   changed()
 end
 
-fn dialog_verb($show)
+fn dialog_command($show)
   if not $DIALOGS then
     refuse("UNIMPLEMENTED", "no dialogs on this host")
     return
@@ -223,12 +223,12 @@ end
 
 on shell.dialog.show
   note("shell.dialog.show")
-  dialog_verb(true)
+  dialog_command(true)
 end
 
 on shell.dialog.hide
   note("shell.dialog.hide")
-  dialog_verb(false)
+  dialog_command(false)
 end
 
 on fake.dismiss

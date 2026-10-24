@@ -4,15 +4,15 @@
 -- Wire reference: _doc/2026-07-08-synergy-wholesale-soap-reference.md.
 -- Plan §3 P3. Requires route capability "net". Uses xml_parse (webd 0.9.3+)
 -- + http_post (custom-header bug verified fixed). Creds + mode in biz_settings
--- (sw_reseller_id / sw_api_key / sw_mode). READ-ONLY verbs first.
+-- (sw_reseller_id / sw_api_key / sw_mode). READ-ONLY commands first.
 --
 -- ⚠️ ENVELOPE IS INFERRED, NOT LIVE-CAPTURED. The reference PHP uses a
 -- non-WSDL SoapClient (SOAP 1.1, Apache-Map param0). This builder replicates
 -- that shape; the FIRST live call MUST be sw_balance() to confirm the exact
--- encoding before any write verb is trusted. sw_mode gates everything:
---   "off"  → every verb returns { ok:false, error:"sw disabled" } (default)
---   "read" → read-only verbs live; register/renew/transfer still refuse
---   "live" → all verbs (register/renew) permitted
+-- encoding before any write command is trusted. sw_mode gates everything:
+--   "off"  → every command returns { ok:false, error:"sw disabled" } (default)
+--   "read" → read-only commands live; register/renew/transfer still refuse
+--   "live" → all commands (register/renew) permitted
 -- IP-whitelist this deployment's egress address in the SW portal or every call 403s.
 
 $SW_ENDPOINT = "https://api.synergywholesale.com/?wsdl"
@@ -113,7 +113,7 @@ end
 -- SW encodes every response value with an xsi:type attribute, so xml_parse
 -- yields {#text: "OK", @type: "xsd:string"} instead of a bare "OK". Collapse
 -- those typed scalars to their #text recursively (arrays + nested structs
--- recurse; @attr keys are dropped) so the verb functions read plain values.
+-- recurse; @attr keys are dropped) so the command functions read plain values.
 function sw_unwrap($v)
   if type($v) == "map" then
     if $v["#text"] != nil then
@@ -173,9 +173,9 @@ function sw_response_return($parsed)
   return nil
 end
 
--- ---------------------------------------------------------------- read verbs
+-- ---------------------------------------------------------------- read commands
 
--- balanceQuery — THE first-probe verb. Confirms creds, IP whitelist, and the
+-- balanceQuery — THE first-probe command. Confirms creds, IP whitelist, and the
 -- envelope encoding all at once. Returns { ok, balance, error }.
 function sw_balance()
   if not sw_enabled(false) then return { ok: false, balance: "", error: "sw disabled" } end
@@ -283,7 +283,7 @@ function sw_get_pricing()
   return { ok: true, tlds: $out, error: "" }
 end
 
--- ---------------------------------------------------------------- write verbs
+-- ---------------------------------------------------------------- write commands
 -- (sw_mode=live only; the actual registrar mutations — LAST in the plan)
 
 -- renewDomain — extend a registration. Called by the domain-renewal job runner

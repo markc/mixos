@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The renderer-independent protocol model: services, verbs, peers and the
+//! The renderer-independent protocol model: services, commands, peers and the
 //! body and reply bounds. Transplanted from `apps/workshop/src/model.rs`
 //! (markc/mixos-iced), itself adapted from MixOS Workshop
 //! 70e6c9233a02577099e9c14500aebf44856530e1; the truncation marker is now a
@@ -14,7 +14,7 @@ pub const BODY_LIMIT: usize = 65_536;
 pub const REPLY_LIMIT: usize = 1_000_000;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Verb {
+pub struct Command {
     pub name: String,
     pub args: String,
     pub description: String,
@@ -27,7 +27,7 @@ pub struct Snapshot {
     pub progress: Option<Progress>,
     pub nodes: Vec<Node>,
     pub identities: BTreeMap<String, bus::ServiceInfo>,
-    pub services: BTreeMap<String, Result<Vec<Verb>, String>>,
+    pub services: BTreeMap<String, Result<Vec<Command>, String>>,
     pub peers: Vec<String>,
     pub peer_error: Option<String>,
     pub error: Option<String>,
@@ -52,17 +52,17 @@ pub struct Node {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Selection {
     pub service: String,
-    pub verb: String,
+    pub command: String,
 }
 
 impl Snapshot {
-    pub fn verb(&self, selection: &Selection) -> Option<&Verb> {
+    pub fn command_name(&self, selection: &Selection) -> Option<&Command> {
         self.services
             .get(&selection.service)?
             .as_ref()
             .ok()?
             .iter()
-            .find(|v| v.name == selection.verb)
+            .find(|v| v.name == selection.command)
     }
 
     pub fn failures(&self) -> usize {
@@ -73,19 +73,19 @@ impl Snapshot {
     }
 }
 
-pub fn parse_verbs(value: &Value) -> Result<Vec<Verb>, String> {
+pub fn parse_commands(value: &Value) -> Result<Vec<Command>, String> {
     let entries = value
         .as_array()
-        .or_else(|| value.get("verbs")?.as_array())
-        .ok_or("Expected a HELP array or app.describe verbs array")?;
-    let mut verbs = Vec::new();
+        .or_else(|| value.get("commands")?.as_array())
+        .ok_or("Expected a HELP array or app.describe commands array")?;
+    let mut command_names = Vec::new();
     for entry in entries {
         let name = entry
             .as_str()
             .or_else(|| entry.get("name")?.as_str())
             .filter(|name| !name.is_empty())
-            .ok_or("Verb has no name")?;
-        verbs.push(Verb {
+            .ok_or("Command has no name")?;
+        command_names.push(Command {
             name: name.into(),
             args: entry
                 .get("args")
@@ -103,9 +103,9 @@ pub fn parse_verbs(value: &Value) -> Result<Vec<Verb>, String> {
             read_only: entry.get("read_only").and_then(Value::as_bool),
         });
     }
-    verbs.sort_by(|a, b| a.name.cmp(&b.name));
-    verbs.dedup_by(|a, b| a.name == b.name);
-    Ok(verbs)
+    command_names.sort_by(|a, b| a.name.cmp(&b.name));
+    command_names.dedup_by(|a, b| a.name == b.name);
+    Ok(command_names)
 }
 
 pub fn services(value: &Value) -> Result<Vec<String>, String> {
@@ -181,9 +181,9 @@ pub fn bounded(body: &str, marker: &str) -> String {
     format!("{}\n{marker}", &body[..end])
 }
 
-/// Every verb the engine answers itself. The window-level verbs
+/// Every command the engine answers itself. The window-level commands
 /// (`workshop.ui.*`, `workshop.window*`) belong to the toolkit drive layer.
-pub const VERBS: [&str; 20] = [
+pub const COMMANDS: [&str; 20] = [
     "HELP",
     "app.describe",
     "workshop.ping",
@@ -192,7 +192,7 @@ pub const VERBS: [&str; 20] = [
     "workshop.refresh",
     "workshop.select",
     "workshop.call",
-    "workshop.commands",
+    "workshop.actions",
     "workshop.execute",
     "workshop.quit",
     "workshop.tree",
@@ -206,18 +206,18 @@ pub const VERBS: [&str; 20] = [
     "workshop.theme",
 ];
 
-/// The engine's Bus surface (`HELP` / `app.describe` add the drive verbs).
+/// The engine's Bus surface (`HELP` / `app.describe` add the drive commands).
 pub fn describe() -> Value {
-    json!({"schema":"workshop.v1","app_id":APP_ID,"verbs":[
-        {"name":"HELP","description":"List every verb","read_only":true},
-        {"name":"app.describe","description":"Describe the app and every verb with its arguments","read_only":true},
+    json!({"schema":"workshop.v1","app_id":APP_ID,"commands":[
+        {"name":"HELP","description":"List every command","read_only":true},
+        {"name":"app.describe","description":"Describe the app and every command with its arguments","read_only":true},
         {"name":"workshop.ping","description":"Probe Workshop","read_only":true},
         {"name":"workshop.info","description":"Inspect discovery, selection, reply and UI state","read_only":true},
         {"name":"workshop.show","description":"Restore and focus the existing window","read_only":false},
         {"name":"workshop.refresh","description":"Refetch services and descriptions","read_only":false},
-        {"name":"workshop.select","args":{"service":"string","verb":"string"},"description":"Select an advertised verb","read_only":false},
-        {"name":"workshop.call","args":{"service":"optional string","verb":"optional string","body":"optional JSON text"},"description":"Call exactly once; target's safety is unchanged","read_only":false},
-        {"name":"workshop.commands","description":"List the app's commands with labels, shortcuts and enablement","read_only":true},
+        {"name":"workshop.select","args":{"service":"string","command":"string"},"description":"Select an advertised command","read_only":false},
+        {"name":"workshop.call","args":{"service":"optional string","command":"optional string","body":"optional JSON text"},"description":"Call exactly once; target's safety is unchanged","read_only":false},
+        {"name":"workshop.actions","description":"List the app's commands with labels, shortcuts and enablement","read_only":true},
         {"name":"workshop.execute","args":{"id":"string"},"description":"Run one app command by id, as its menu item or shortcut would (file.refresh, file.quit, edit.format, edit.clear, edit.copy, bus.call, help.shortcuts, help.about)","read_only":false},
         {"name":"workshop.quit","description":"Close when idle","read_only":false},
         {"name":"workshop.tree","description":"The rows the services tree shows: key, kind, label, depth, expanded, selected, children","read_only":true},
@@ -226,7 +226,7 @@ pub fn describe() -> Value {
         {"name":"workshop.body","args":{"text":format!("string, at most {BODY_LIMIT} bytes")},"description":"Set the JSON body; refused while a call holds it","read_only":false},
         {"name":"workshop.split","args":{"value":"number from 0 to 1 (kept within 0.2 to 0.65)"},"description":"Set the services pane's share of the window","read_only":false},
         {"name":"workshop.expand","args":{"key":"row key","open":"bool"},"description":"Open or close a tree row that has children","read_only":false},
-        {"name":"workshop.select_row","args":{"key":"row key"},"description":"Select any tree row; a verb row also selects its verb","read_only":false},
+        {"name":"workshop.select_row","args":{"key":"row key"},"description":"Select any tree row; a command row also selects its command","read_only":false},
         {"name":"workshop.dialog","args":{"open":"\"about\", \"shortcuts\" or null"},"description":"Open a dialog, or close the open one","read_only":false},
         {"name":"workshop.theme","args":{"scheme":"optional scheme name (ocean, crimson, stone, forest, sunset, mono, pro, studio, classic, breeze, adwaita) or null to follow the session","style":"optional style (plain, pro, studio, classic, breeze, adwaita), own for the scheme's own, or null to follow the session","mode":"optional light, dark or null to follow the session","decorations":"optional auto, csd, ssd or null to follow the session","caption_side":"optional right, left or null to follow the session"},"description":"Choose the window's theme: a present key sets that axis, an absent one leaves it; answers the choice and every effective axis, including decorations and decorations_reason","read_only":false}
     ]})
@@ -237,25 +237,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_engine_verb_is_described_once() {
-        let described: Vec<_> = describe()["verbs"]
+    fn every_engine_command_is_described_once() {
+        let described: Vec<_> = describe()["commands"]
             .as_array()
             .unwrap()
             .iter()
             .map(|v| v["name"].as_str().unwrap().to_owned())
             .collect();
-        assert_eq!(described, VERBS);
+        assert_eq!(described, COMMANDS);
     }
 
     #[test]
     fn descriptions_preserve_legacy_unknown_safety_and_sort() {
-        let verbs = parse_verbs(&json!({"verbs":["quit",{"name":"ping","read_only":true},"ping"]}))
+        let command_names = parse_commands(&json!({"commands":["quit",{"name":"ping","read_only":true},"ping"]}))
             .unwrap();
-        assert_eq!(verbs.len(), 2);
-        assert_eq!(verbs[0].name, "ping");
-        assert_eq!(verbs[0].read_only, Some(true));
-        assert_eq!(verbs[1].read_only, None);
-        assert!(parse_verbs(&json!({"title":"legacy"})).is_err());
+        assert_eq!(command_names.len(), 2);
+        assert_eq!(command_names[0].name, "ping");
+        assert_eq!(command_names[0].read_only, Some(true));
+        assert_eq!(command_names[1].read_only, None);
+        assert!(parse_commands(&json!({"title":"legacy"})).is_err());
     }
 
     #[test]

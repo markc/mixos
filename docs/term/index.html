@@ -212,7 +212,7 @@
                         <a href="#configuration">Configuration</a>
                         <a href="#keys">Keys</a>
                         <a href="#building-and-testing">Building and testing</a>
-                        <a href="#macro-bus-verbs">Macro Bus verbs</a>
+                        <a href="#macro-bus-commands">Macro Bus commands</a>
                     </nav>
                 </div>
             </div>
@@ -245,7 +245,7 @@ two private crates:</p>
 <ul>
 <li><code>crates/term-core</code>: the engine. PTYs, the VT grid, tabs and panes,
 selection, mouse reporting, configuration, the native session and the
-<code>term.*</code> Bus verbs.</li>
+<code>term.*</code> Bus commands.</li>
 <li><code>crates/term-render</code>: the grid on the GPU. A glyph atlas and instanced
 cells drawn by an egui-wgpu paint callback per pane. The CPU raster in
 term-core is its test oracle.</li>
@@ -254,19 +254,19 @@ term-core is its test oracle.</li>
 pane borders on whole physical pixels, the keyboard and input method, the
 pointer (selection, mouse reporting, middle-click paste of the primary
 selection), the clipboard, and font zoom. Every action is a command on the
-toolkit registry, published on <code>term.command.executed</code>.</p>
+toolkit registry, published on <code>term.action.executed</code>.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/apps/term"><code>apps/term</code></a>.</p>
 <h2 id="bus">Bus</h2>
 <p>The window registers <code>term</code> (or <code>term-&lt;pid&gt;</code> when another instance holds
 it) and answers:</p>
 <ul>
-<li>the terminal's verbs, served by term-core (<code>HELP</code> lists them):
+<li>the terminal's commands, served by term-core (<code>HELP</code> lists them):
 <code>term.session</code>, <code>term.tabs</code>, <code>term.tab.*</code>, <code>term.panes</code>, <code>term.pane.*</code>,
 <code>term.snapshot</code>, <code>term.scroll</code>, <code>term.type</code>, <code>term.props.watch</code>;</li>
-<li>the window's own: <code>term.commands</code>, <code>term.execute</code>, <code>app.describe</code>, and the
-toolkit drive verbs (<code>term.ui.*</code>, <code>term.window</code>, <code>term.window.state</code>).</li>
+<li>the window's own: <code>term.actions</code>, <code>term.execute</code>, <code>app.describe</code>, and the
+toolkit drive commands (<code>term.ui.*</code>, <code>term.window</code>, <code>term.window.state</code>).</li>
 </ul>
-<p><code>term --headless</code> serves the terminal's verbs with no window.</p>
+<p><code>term --headless</code> serves the terminal's commands with no window.</p>
 <h2 id="configuration">Configuration</h2>
 <p>The desktop profile's <code>terminal.*</code> settings, held by
 <a href="/settingsd/">settingsd</a> and edited in <a href="/prefs/">Preferences</a>:
@@ -298,12 +298,12 @@ cargo build --locked --profile release-fast -p term
 <p><code>tests/window.rs</code> takes an offscreen snapshot of the window with two tabs
 and a split; regenerate it with <code>UPDATE_SNAPSHOTS=1</code> and look at it. The
 PTY tests need the Mix binary at <code>/opt/mixos/bin/mix</code>.</p>
-<h2 id="macro-bus-verbs">Macro Bus verbs</h2>
-<p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
+<h2 id="macro-bus-commands">Macro Bus commands</h2>
+<p>The shared <a href="/macros/#bus-commands">macro Bus surface</a> uses this process's
 catalogue and runner. Subscribe to <code>&lt;service&gt;.macros.finished</code> for completion, where <code>service</code> is
 the instance’s registered Bus name (for example <code>term-1234</code> for a second Term
-instance). Verbs keep the app’s canonical prefix, such as <code>term.macros.run</code>.</p>
-<table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
+instance). Commands keep the app’s canonical prefix, such as <code>term.macros.run</code>.</p>
+<table><thead><tr><th>Command</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
 <tr><td><code>term.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>term.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>term.macros.run</code></td><td><code>{id}</code></td><td>Acceptance and run number</td></tr>

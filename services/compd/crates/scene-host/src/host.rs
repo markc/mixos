@@ -16,7 +16,7 @@ use smithay::utils::{Physical, Rectangle};
 use crate::port::{HostConfig, Inbound, Port, Request, Waker};
 use crate::render::{Action, Surface, Wiring};
 use crate::store::{SceneMount, SceneStore};
-use crate::verb::SceneVerb;
+use crate::command::SceneCommand;
 
 /// What one `service` pass did.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -171,14 +171,14 @@ impl Host {
             .checked_add(1)
             .expect("receipt sequence exhausted");
         let args: Value = serde_json::from_str(&request.body).unwrap_or(Value::Null);
-        match request.verb {
-            SceneVerb::List => Answer {
+        match request.kind {
+            SceneCommand::List => Answer {
                 rc: 0,
                 body: self.store.list(output).to_string(),
                 publish: Vec::new(),
                 changed: false,
             },
-            SceneVerb::Layout => {
+            SceneCommand::Layout => {
                 let scene = argument(request, &args, "scene").unwrap_or_default();
                 let (rc, body) = if self.store.scene(scene).is_none() {
                     (
@@ -198,8 +198,8 @@ impl Host {
                     changed: false,
                 }
             }
-            SceneVerb::NotServed => {
-                let body = json!({"error_code":"not_served",
+            SceneCommand::NotServed => {
+                let body = json!({"error_code":"UNKNOWN_COMMAND",
                     "message":format!("{} is not served by compd's scene host yet", request.command)});
                 Answer {
                     rc: 10,
@@ -208,20 +208,20 @@ impl Host {
                     changed: false,
                 }
             }
-            SceneVerb::Ping => Answer {
+            SceneCommand::Ping => Answer {
                 rc: 0,
                 body: json!({"service":"shell", "status":"ok"}).to_string(),
                 publish: Vec::new(),
                 changed: false,
             },
-            SceneVerb::Info => {
+            SceneCommand::Info => {
                 // Only what this host serves, bare (`dialog.show`), so a loader's
                 // feature check reads the truth.
-                let verbs: Vec<String> = SceneVerb::names("shell")
+                let kinds: Vec<String> = SceneCommand::names("shell")
                     .into_iter()
                     .map(|name| name.trim_start_matches("shell.").to_owned())
                     .collect();
-                let body = json!({"service":"shell", "contract":"shell.v1", "props":["get"], "verbs":verbs});
+                let body = json!({"service":"shell", "contract":"shell.v1", "props":["get"], "commands":kinds});
                 Answer {
                     rc: 0,
                     body: body.to_string(),
@@ -229,7 +229,7 @@ impl Host {
                     changed: false,
                 }
             }
-            SceneVerb::PropsGet => {
+            SceneCommand::PropsGet => {
                 let mut snapshot = self
                     .panels
                     .snapshot(output, dialog_notice(&self.store, self.dialog_fit.as_ref()));
@@ -265,14 +265,14 @@ impl Host {
                     }
                 }
             }
-            SceneVerb::MenuOpen | SceneVerb::MenuChoose | SceneVerb::MenuClose => {
+            SceneCommand::MenuOpen | SceneCommand::MenuChoose | SceneCommand::MenuClose => {
                 let refused = |code: &str, message: &str| Answer {
                     rc: 10,
                     body: json!({"error_code":code, "message":message}).to_string(),
                     publish: Vec::new(),
                     changed: false,
                 };
-                let result = if request.verb == SceneVerb::MenuOpen {
+                let result = if request.kind == SceneCommand::MenuOpen {
                     let Some(corner) = argument(request, &args, "corner").and_then(|name| {
                         edges::Corner::ALL
                             .into_iter()
@@ -292,7 +292,7 @@ impl Host {
                             "menu serial is required (read props.get menu.serial)",
                         );
                     };
-                    let input = if request.verb == SceneVerb::MenuClose {
+                    let input = if request.kind == SceneCommand::MenuClose {
                         crate::menu::Input::Close
                     } else {
                         let Some(index) = args
@@ -318,7 +318,7 @@ impl Host {
                     Err(error) => refused(error.code, &error.message),
                 }
             }
-            SceneVerb::PanelState | SceneVerb::PanelMode | SceneVerb::PanelPageSet => {
+            SceneCommand::PanelState | SceneCommand::PanelMode | SceneCommand::PanelPageSet => {
                 let refused = |code: &str, message: &str, panels: Option<&Value>| {
                     let mut body = json!({"error_code":code, "message":message});
                     if let Some(panels) = panels {
@@ -340,7 +340,7 @@ impl Host {
                         None,
                     );
                 };
-                if request.verb == SceneVerb::PanelState {
+                if request.kind == SceneCommand::PanelState {
                     return Answer {
                         rc: 0,
                         body: self.panels.state(output, edge).to_string(),
@@ -348,7 +348,7 @@ impl Host {
                         changed: false,
                     };
                 }
-                let applied = if request.verb == SceneVerb::PanelMode {
+                let applied = if request.kind == SceneCommand::PanelMode {
                     let Some(mode) = argument(request, &args, "mode") else {
                         return refused(
                             "BAD_ARGUMENT",
@@ -377,8 +377,8 @@ impl Host {
                     Err(refusal) => refused(refusal.code, &refusal.message, Some(&panels)),
                 }
             }
-            SceneVerb::PanelOrder => {
-                // Frozen in shell-verbs.json: `{edges}` as written, or
+            SceneCommand::PanelOrder => {
+                // Frozen in shell-commands.json: `{edges}` as written, or
                 // INVALID_ARGUMENT / CONFIG_WRITE. One atomic conf.mix write,
                 // then every carousel takes the merged order.
                 let refused = |body: Value| Answer {
@@ -409,7 +409,7 @@ impl Host {
                     changed: true,
                 }
             }
-            SceneVerb::PanelResize => {
+            SceneCommand::PanelResize => {
                 let refused = |body: Value| Answer {
                     rc: 10,
                     body: body.to_string(),
@@ -434,10 +434,10 @@ impl Host {
                     Err(body) => refused(body),
                 }
             }
-            SceneVerb::Panel { verb, corner } => {
+            SceneCommand::Panel { kind, corner } => {
                 // Quoin: corner.hide uses the unified refusal shape, the
-                // older verbs `{error}`.
-                let unified = corner && verb == crate::panels::PanelVerb::Hide;
+                // older commands `{error}`.
+                let unified = corner && kind == crate::panels::PanelCommand::Hide;
                 let refused = |code: &str, message: &str, extra: Option<(&str, Value)>| {
                     let mut body = if unified || code != "BAD_ARGUMENT" {
                         json!({"error_code":code, "message":message})
@@ -482,15 +482,15 @@ impl Host {
                         }
                     }
                 };
-                if let Err(refusal) = self.panels.input(output, edge, verb) {
+                if let Err(refusal) = self.panels.input(output, edge, kind) {
                     return refused(
                         refusal.code,
                         &refusal.message,
                         Some(("edge", json!(edge.as_str()))),
                     );
                 }
-                let applied_pin = !corner && verb == crate::panels::PanelVerb::Pin;
-                if verb != crate::panels::PanelVerb::Hide && !applied_pin {
+                let applied_pin = !corner && kind == crate::panels::PanelCommand::Pin;
+                if kind != crate::panels::PanelCommand::Hide && !applied_pin {
                     // Quoin acknowledges these on acceptance; the state is
                     // read back from props.get / panel.changed.
                     return Answer {
@@ -536,9 +536,9 @@ impl Host {
                     answer
                 }
             }
-            SceneVerb::ToastShow | SceneVerb::ToastHide => {
+            SceneCommand::ToastShow | SceneCommand::ToastHide => {
                 let scene = argument(request, &args, "scene").unwrap_or_default();
-                let visible = request.verb == SceneVerb::ToastShow;
+                let visible = request.kind == SceneCommand::ToastShow;
                 let height = if visible && args.get("h").is_some() {
                     let Some(h) = number_argument(&args, "h") else {
                         return Answer {
@@ -570,11 +570,11 @@ impl Host {
                     },
                 }
             }
-            SceneVerb::DialogShow | SceneVerb::DialogHide => {
-                // Frozen in shell-verbs.json: `{scene, visible, applied}`, or
+            SceneCommand::DialogShow | SceneCommand::DialogHide => {
+                // Frozen in shell-commands.json: `{scene, visible, applied}`, or
                 // NOT_FOUND / NOT_DIALOG.
                 let scene = argument(request, &args, "scene").unwrap_or_default();
-                let visible = request.verb == SceneVerb::DialogShow;
+                let visible = request.kind == SceneCommand::DialogShow;
                 let refused = |body: Value| Answer {
                     rc: 10,
                     body: body.to_string(),
@@ -603,15 +603,15 @@ impl Host {
                     }
                 }
             }
-            verb => {
+            kind => {
                 let owner = attested_owner(request, self.receipt);
                 let mut mount = SceneMount {
                     output,
                     owner: &owner,
                     accepted_at: self.receipt,
                 };
-                let done = self.store.dispatch(verb, &request.body, &args, &mut mount);
-                let changed = done.rc == 0 && verb.mutates();
+                let done = self.store.dispatch(kind, &request.body, &args, &mut mount);
+                let changed = done.rc == 0 && kind.mutates();
                 Answer {
                     rc: done.rc,
                     body: done.body,
@@ -770,8 +770,8 @@ impl SceneHost {
     }
 
     /// Send a scene event to a document's citizen (see [`Port::emit`]).
-    pub fn emit(&self, citizen: &str, verb: &str, body: Value) -> bool {
-        self.port.emit(citizen, verb, body)
+    pub fn emit(&self, citizen: &str, kind: &str, body: Value) -> bool {
+        self.port.emit(citizen, kind, body)
     }
 
     /// Drain everything the worker and the surfaces delivered. Called from
@@ -942,7 +942,7 @@ impl SceneHost {
                 Inbound::Refused(reason) => self.refused = Some(reason),
                 Inbound::Request(request) => {
                     let generation = self.port.connection_generation();
-                    if request.verb == SceneVerb::Layout
+                    if request.kind == SceneCommand::Layout
                         && verify_caller_provenance(&request).is_ok()
                         && generation.is_none_or(|live| live == request.generation)
                     {
@@ -994,11 +994,11 @@ impl SceneHost {
         for extra in self.host.menu_calls.drain(..) {
             if !self
                 .port
-                .emit(&extra.target, &extra.verb, json!({"args":extra.args}))
+                .emit(&extra.target, &extra.kind, json!({"args":extra.args}))
             {
                 tracing::warn!(
                     "scene host: corner menu Bus call {} to {} not queued",
-                    extra.verb,
+                    extra.kind,
                     extra.target
                 );
             }
@@ -1407,11 +1407,11 @@ mod tests {
 
     const EDGE: &str = "---\nscene: 1\nname: notes\ncitizen: notes-citizen\nwindow: {\"kind\":\"edge\",\"edge\":\"right\"}\n---\n```mix\nroot: {widget: \"column\", children: []}\n```\n";
 
-    fn request(verb: SceneVerb, from: &str, headers: &[(&str, &str)], body: Value) -> Request {
+    fn request(kind: SceneCommand, from: &str, headers: &[(&str, &str)], body: Value) -> Request {
         Request {
-            verb,
+            kind,
             from: from.into(),
-            command: format!("shell.{verb:?}").to_lowercase(),
+            command: format!("shell.{kind:?}").to_lowercase(),
             id: Some("1".into()),
             body: body.to_string(),
             headers: headers
@@ -1438,7 +1438,7 @@ mod tests {
             (Some("settings"), json!(evidence)),
             (Some("settings.binding.instance"), json!("fixture")),
         ] {
-            let request = request(SceneVerb::PropsGet, "agent", LOCAL, json!({"path": path}));
+            let request = request(SceneCommand::PropsGet, "agent", LOCAL, json!({"path": path}));
             let answer = host.answer_with_settings(
                 &request,
                 "DP-1",
@@ -1460,7 +1460,7 @@ mod tests {
         }
         let receipt = host.receipt;
         let bad = request(
-            SceneVerb::PropsGet,
+            SceneCommand::PropsGet,
             "agent",
             &[],
             json!({"path":"settings"}),
@@ -1471,7 +1471,7 @@ mod tests {
             10
         );
         let stale = request(
-            SceneVerb::PropsGet,
+            SceneCommand::PropsGet,
             "agent",
             LOCAL,
             json!({"path":"settings"}),
@@ -1495,7 +1495,7 @@ mod tests {
     fn arguments_use_caller_headers_but_never_transport_headers() {
         let args = json!({"edge":"left", "id":"scene-notes", "thickness_px":240});
         let request = request(
-            SceneVerb::PanelResize,
+            SceneCommand::PanelResize,
             "x",
             &[("edge", "right"), ("id", "99"), ("thickness_px", "360")],
             args.clone(),
@@ -1527,7 +1527,7 @@ mod tests {
             json!(10),
         ] {
             let request = request(
-                SceneVerb::PanelResize,
+                SceneCommand::PanelResize,
                 "x",
                 LOCAL,
                 json!({"edge":"bottom", "thickness_px":value}),
@@ -1542,7 +1542,7 @@ mod tests {
             );
         }
         let missing = request(
-            SceneVerb::PanelResize,
+            SceneCommand::PanelResize,
             "x",
             &[("broker_origin", "local"), ("edge", "bottom")],
             Value::Null,
@@ -1564,15 +1564,15 @@ mod tests {
         let mut host = Host::default();
         host.panels.ensure("DP-1", (1280.0, 800.0));
         host.answer(
-            &request(SceneVerb::Load, "loader", LOCAL, json!({"source":EDGE})),
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source":EDGE})),
             "DP-1",
             Some(1),
             &mut no_layout,
         );
         host.panels.sync(&host.store);
         let pin = request(
-            SceneVerb::Panel {
-                verb: crate::panels::PanelVerb::Pin,
+            SceneCommand::Panel {
+                kind: crate::panels::PanelCommand::Pin,
                 corner: false,
             },
             "x",
@@ -1595,14 +1595,14 @@ mod tests {
         let mut host = Host::default();
         host.panels.ensure("DP-1", (1280.0, 800.0));
         host.answer(
-            &request(SceneVerb::Load, "loader", LOCAL, json!({"source":EDGE})),
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source":EDGE})),
             "DP-1",
             Some(1),
             &mut no_layout,
         );
         host.panels.sync(&host.store);
         let open = request(
-            SceneVerb::MenuOpen,
+            SceneCommand::MenuOpen,
             "agent",
             LOCAL,
             json!({"corner":"bottom-right"}),
@@ -1614,7 +1614,7 @@ mod tests {
         assert_eq!(body["menu"]["items"][2]["checked"], true);
         let serial = body["menu"]["serial"].as_u64().unwrap();
         let props = host.answer(
-            &request(SceneVerb::PropsGet, "agent", LOCAL, json!({"path":"menu"})),
+            &request(SceneCommand::PropsGet, "agent", LOCAL, json!({"path":"menu"})),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -1624,7 +1624,7 @@ mod tests {
             body["menu"]
         );
         let choose = request(
-            SceneVerb::MenuChoose,
+            SceneCommand::MenuChoose,
             "agent",
             LOCAL,
             json!({"serial":serial, "index":1}),
@@ -1636,7 +1636,7 @@ mod tests {
         host.answer(&open, "DP-1", Some(1), &mut no_layout);
         let serial = host.panels.menu().unwrap().serial;
         let close = request(
-            SceneVerb::MenuClose,
+            SceneCommand::MenuClose,
             "agent",
             LOCAL,
             json!({"serial":serial}),
@@ -1659,7 +1659,7 @@ mod tests {
             host.panels.ensure("DP-1", (1280.0, 800.0));
             let source = EDGE.replace("notes", name).replace("right", edge);
             let answer = host.answer(
-                &request(SceneVerb::Load, "scenes", LOCAL, json!({"source":source})),
+                &request(SceneCommand::Load, "scenes", LOCAL, json!({"source":source})),
                 "DP-1",
                 Some(1),
                 &mut no_layout,
@@ -1692,7 +1692,7 @@ mod tests {
         let mut host = Host::default();
         host.panels.ensure("DP-1", (1280.0, 800.0));
         host.answer(
-            &request(SceneVerb::Load, "loader", LOCAL, json!({"source": EDGE})),
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source": EDGE})),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -1711,7 +1711,7 @@ mod tests {
         let calendar = EDGE.replace("notes", "calendar");
         host.answer(
             &request(
-                SceneVerb::Load,
+                SceneCommand::Load,
                 "loader",
                 LOCAL,
                 json!({"source": calendar}),
@@ -1732,7 +1732,7 @@ mod tests {
         assert_eq!(host.mapped_output("calendar").as_deref(), Some("DP-1"));
         host.answer(
             &request(
-                SceneVerb::Unload,
+                SceneCommand::Unload,
                 "loader",
                 LOCAL,
                 json!({"scene":"calendar"}),
@@ -1751,7 +1751,7 @@ mod tests {
     #[test]
     fn provenance_is_one_broker_origin_mesh_open() {
         let ok = |headers: &[(&str, &str)]| {
-            verify_caller_provenance(&request(SceneVerb::Get, "a", headers, Value::Null))
+            verify_caller_provenance(&request(SceneCommand::Get, "a", headers, Value::Null))
         };
         assert!(ok(LOCAL).is_ok());
         assert!(ok(&[("broker_origin", "mesh")]).is_ok());
@@ -1768,7 +1768,7 @@ mod tests {
     fn a_refused_provenance_spends_no_receipt_and_changes_nothing() {
         let mut host = Host::default();
         let answer = host.answer(
-            &request(SceneVerb::Load, "loader", &[], json!({"source": EDGE})),
+            &request(SceneCommand::Load, "loader", &[], json!({"source": EDGE})),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -1786,7 +1786,7 @@ mod tests {
     fn owners_are_attested_and_each_request_takes_a_receipt() {
         let mut host = Host::default();
         let answer = host.answer(
-            &request(SceneVerb::Load, "loader", LOCAL, json!({"source": EDGE})),
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source": EDGE})),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -1804,16 +1804,16 @@ mod tests {
             ("broker_service", "editor"),
         ];
         assert_eq!(
-            attested_owner(&request(SceneVerb::Get, "editor", &mesh, Value::Null), 9),
+            attested_owner(&request(SceneCommand::Get, "editor", &mesh, Value::Null), 9),
             "editor@beta"
         );
         assert_eq!(
-            attested_owner(&request(SceneVerb::Get, "", LOCAL, Value::Null), 9),
+            attested_owner(&request(SceneCommand::Get, "", LOCAL, Value::Null), 9),
             "anonymous@9"
         );
         // Reads take a receipt but change nothing.
         let list = host.answer(
-            &request(SceneVerb::List, "x", LOCAL, Value::Null),
+            &request(SceneCommand::List, "x", LOCAL, Value::Null),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -1829,7 +1829,7 @@ mod tests {
     #[test]
     fn a_request_from_an_earlier_connection_is_refused_unapplied() {
         let mut host = Host::default();
-        let load = request(SceneVerb::Load, "loader", LOCAL, json!({"source": EDGE}));
+        let load = request(SceneCommand::Load, "loader", LOCAL, json!({"source": EDGE}));
         let stale = host.answer(&load, "DP-1", Some(2), &mut no_layout);
         assert_eq!(stale.rc, 10);
         assert_eq!(
@@ -1845,11 +1845,11 @@ mod tests {
     #[test]
     fn dialog_show_and_hide_answer_the_frozen_bodies() {
         let frozen: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/shell-verbs.json")).unwrap();
+            serde_json::from_str(include_str!("../tests/fixtures/shell-commands.json")).unwrap();
         let body = |answer: &Answer| serde_json::from_str::<Value>(&answer.body).unwrap();
         let mut host = Host::default();
         let missing = host.answer(
-            &request(SceneVerb::DialogShow, "x", LOCAL, json!({"scene":"editor"})),
+            &request(SceneCommand::DialogShow, "x", LOCAL, json!({"scene":"editor"})),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -1860,13 +1860,13 @@ mod tests {
         );
         let panel = EDGE.replace("name: notes", "name: panel");
         host.answer(
-            &request(SceneVerb::Load, "loader", LOCAL, json!({"source": panel})),
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source": panel})),
             "DP-1",
             Some(1),
             &mut no_layout,
         );
         let edge = host.answer(
-            &request(SceneVerb::DialogHide, "x", LOCAL, json!({"scene":"panel"})),
+            &request(SceneCommand::DialogHide, "x", LOCAL, json!({"scene":"panel"})),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -1879,7 +1879,7 @@ mod tests {
             .as_str()
             .unwrap();
         host.answer(
-            &request(SceneVerb::Load, "scenes", LOCAL, json!({"source": dialog})),
+            &request(SceneCommand::Load, "scenes", LOCAL, json!({"source": dialog})),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -1888,12 +1888,12 @@ mod tests {
             !host.store.scene("editor").unwrap().visible(),
             "a loaded dialog waits unmapped"
         );
-        for (verb, name) in [
-            (SceneVerb::DialogShow, "shell.dialog.show"),
-            (SceneVerb::DialogHide, "shell.dialog.hide"),
+        for (kind, name) in [
+            (SceneCommand::DialogShow, "shell.dialog.show"),
+            (SceneCommand::DialogHide, "shell.dialog.hide"),
         ] {
             let answer = host.answer(
-                &request(verb, "x", LOCAL, json!({"scene":"editor"})),
+                &request(kind, "x", LOCAL, json!({"scene":"editor"})),
                 "HDMI-A-1",
                 Some(1),
                 &mut no_layout,
@@ -1902,7 +1902,7 @@ mod tests {
             assert_eq!(body(&answer), frozen[name]["reply"]);
             assert_eq!(
                 host.store.scene("editor").unwrap().visible(),
-                verb == SceneVerb::DialogShow
+                kind == SceneCommand::DialogShow
             );
         }
         assert_eq!(
@@ -1913,12 +1913,12 @@ mod tests {
     }
 
     #[test]
-    fn toast_verbs_show_resize_retarget_refuse_busy_and_hide() {
+    fn toast_commands_show_resize_retarget_refuse_busy_and_hide() {
         let mut host = Host::default();
         let body = |answer: &Answer| serde_json::from_str::<Value>(&answer.body).unwrap();
-        let call = |host: &mut Host, verb, args| {
+        let call = |host: &mut Host, kind, args| {
             host.answer(
-                &request(verb, "loader", LOCAL, args),
+                &request(kind, "loader", LOCAL, args),
                 "DP-1",
                 Some(1),
                 &mut no_layout,
@@ -1926,12 +1926,12 @@ mod tests {
         };
         let missing = call(
             &mut host,
-            SceneVerb::ToastShow,
+            SceneCommand::ToastShow,
             json!({"scene":"toast-probe"}),
         );
         assert_eq!(body(&missing)["error_code"], "NOT_FOUND");
-        call(&mut host, SceneVerb::Load, json!({"source":EDGE}));
-        let edge = call(&mut host, SceneVerb::ToastHide, json!({"scene":"notes"}));
+        call(&mut host, SceneCommand::Load, json!({"source":EDGE}));
+        let edge = call(&mut host, SceneCommand::ToastHide, json!({"scene":"notes"}));
         assert_eq!(body(&edge)["error_code"], "NOT_TOAST");
         let source = "---\nscene: 1\nname: toast-probe\ncitizen: c\nwindow: {\"kind\":\"toast\",\"w\":360,\"h\":120}\n---\n```mix\nroot: {widget: \"column\", children: []}\n```\n";
         for source in [
@@ -1939,13 +1939,13 @@ mod tests {
             source.replace("toast-probe", "other-toast"),
         ] {
             assert_eq!(
-                call(&mut host, SceneVerb::Load, json!({"source":source})).rc,
+                call(&mut host, SceneCommand::Load, json!({"source":source})).rc,
                 0
             );
         }
         let shown = call(
             &mut host,
-            SceneVerb::ToastShow,
+            SceneCommand::ToastShow,
             json!({"scene":"toast-probe"}),
         );
         assert_eq!((shown.rc, shown.changed), (0, true));
@@ -1958,7 +1958,7 @@ mod tests {
         assert_eq!(
             call(
                 &mut host,
-                SceneVerb::ToastShow,
+                SceneCommand::ToastShow,
                 json!({"scene":"toast-probe", "output":"DP-2", "h":280})
             )
             .rc,
@@ -1968,13 +1968,13 @@ mod tests {
         assert_eq!(host.store.toast_seat().unwrap().output, "DP-2");
         let invalid = call(
             &mut host,
-            SceneVerb::ToastShow,
+            SceneCommand::ToastShow,
             json!({"scene":"toast-probe", "h":"bad"}),
         );
         assert_eq!(body(&invalid)["error_code"], "INVALID_HEIGHT");
         let busy = call(
             &mut host,
-            SceneVerb::ToastShow,
+            SceneCommand::ToastShow,
             json!({"scene":"other-toast"}),
         );
         assert_eq!((busy.rc, busy.changed), (10, false));
@@ -1982,7 +1982,7 @@ mod tests {
         assert_eq!(host.store.toast_seat().unwrap().h, 280.0);
         let hidden = call(
             &mut host,
-            SceneVerb::ToastHide,
+            SceneCommand::ToastHide,
             json!({"scene":"toast-probe"}),
         );
         assert_eq!(
@@ -1994,7 +1994,7 @@ mod tests {
         assert_eq!(
             call(
                 &mut host,
-                SceneVerb::ToastShow,
+                SceneCommand::ToastShow,
                 json!({"scene":"other-toast"})
             )
             .rc,
@@ -2006,20 +2006,20 @@ mod tests {
     fn layout_refuses_an_unknown_scene_and_asks_the_renderer_for_a_loaded_one() {
         let mut host = Host::default();
         let missing = host.answer(
-            &request(SceneVerb::Layout, "x", LOCAL, json!({"scene":"editor"})),
+            &request(SceneCommand::Layout, "x", LOCAL, json!({"scene":"editor"})),
             "DP-1",
             Some(1),
             &mut no_layout,
         );
         let frozen: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/shell-verbs.json")).unwrap();
+            serde_json::from_str(include_str!("../tests/fixtures/shell-commands.json")).unwrap();
         assert_eq!(missing.rc, 10);
         assert_eq!(
             serde_json::from_str::<Value>(&missing.body).unwrap(),
             frozen["shell.scene.layout"]["refusals"]["NOT_FOUND"]
         );
         host.answer(
-            &request(SceneVerb::Load, "loader", LOCAL, json!({"source": EDGE})),
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source": EDGE})),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -2033,7 +2033,7 @@ mod tests {
             };
         let measured = host.answer(
             &request(
-                SceneVerb::Layout,
+                SceneCommand::Layout,
                 "x",
                 LOCAL,
                 json!({"scene":"notes","node":"root"}),
@@ -2049,7 +2049,7 @@ mod tests {
         );
         assert_eq!(asked, [("notes".to_owned(), Some("root".to_owned()))]);
         let refused = host.answer(
-            &request(SceneVerb::Layout, "x", LOCAL, json!({"scene":"notes"})),
+            &request(SceneCommand::Layout, "x", LOCAL, json!({"scene":"notes"})),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -2091,7 +2091,7 @@ mod tests {
     fn only_a_seen_owner_that_leaves_is_swept() {
         let mut host = Host::default();
         host.answer(
-            &request(SceneVerb::Load, "loader", LOCAL, json!({"source": EDGE})),
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source": EDGE})),
             "DP-1",
             Some(1),
             &mut no_layout,

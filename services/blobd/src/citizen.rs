@@ -1,4 +1,4 @@
-//! Bus citizen for the `blob.*` namespace: metadata verbs, owner-tagged
+//! Bus citizen for the `blob.*` namespace: metadata commands, owner-tagged
 //! pin events, GC sweep events and the props tree.
 //!
 //! Mesh-open per the 2026-09-15 law — no authorisation gates; quotas
@@ -51,12 +51,12 @@ pub struct Citizen {
     instance: String,
     lane_bind: Option<SocketAddr>,
     fetcher: Arc<Fetcher>,
-    /// TEST ONLY (M2): per-verb artificial dispatch latency, slept at
+    /// TEST ONLY (M2): per-command artificial dispatch latency, slept at
     /// the top of `dispatch` (on the blocking pool) so the connection
-    /// loop's concurrency test can hold one verb without a multi-GiB
+    /// loop's concurrency test can hold one command without a multi-GiB
     /// blob.
     #[cfg(test)]
-    pub(crate) slow_verbs: BTreeMap<String, Duration>,
+    pub(crate) slow_commands: BTreeMap<String, Duration>,
 }
 
 impl Citizen {
@@ -74,7 +74,7 @@ impl Citizen {
             lane_bind,
             fetcher,
             #[cfg(test)]
-            slow_verbs: BTreeMap::new(),
+            slow_commands: BTreeMap::new(),
         }
     }
 
@@ -83,7 +83,7 @@ impl Citizen {
     /// runs this on the blocking pool.
     pub fn dispatch(&self, command: &IncomingCommand) -> (u8, String, Vec<BusEvent>) {
         #[cfg(test)]
-        if let Some(delay) = self.slow_verbs.get(&command.command) {
+        if let Some(delay) = self.slow_commands.get(&command.command) {
             std::thread::sleep(*delay);
         }
         self.dispatch_inner(command)
@@ -101,18 +101,18 @@ impl Citizen {
         }
 
         match command.command.as_str() {
-            "blob.put" => self.verb_put(command, args.as_ref()),
-            "blob.stat" => self.verb_stat(args.as_ref()),
-            "blob.path" => self.verb_path(args.as_ref()),
-            "blob.url" => self.verb_url(args.as_ref()),
-            "blob.has" => self.verb_has(args.as_ref()),
-            "blob.pin" => self.verb_pin(command, args.as_ref(), true),
-            "blob.unpin" => self.verb_pin(command, args.as_ref(), false),
-            "blob.list" => self.verb_list(args.as_ref()),
-            "blob.quota" => self.verb_quota(args.as_ref()),
-            "blob.gc" => self.verb_gc(args.as_ref()),
-            "blob.info" => Ok(self.verb_info()),
-            "blob.fetch" => self.verb_fetch(command, args.as_ref()),
+            "blob.put" => self.command_put(command, args.as_ref()),
+            "blob.stat" => self.command_stat(args.as_ref()),
+            "blob.path" => self.command_path(args.as_ref()),
+            "blob.url" => self.command_url(args.as_ref()),
+            "blob.has" => self.command_has(args.as_ref()),
+            "blob.pin" => self.command_pin(command, args.as_ref(), true),
+            "blob.unpin" => self.command_pin(command, args.as_ref(), false),
+            "blob.list" => self.command_list(args.as_ref()),
+            "blob.quota" => self.command_quota(args.as_ref()),
+            "blob.gc" => self.command_gc(args.as_ref()),
+            "blob.info" => Ok(self.command_info()),
+            "blob.fetch" => self.command_fetch(command, args.as_ref()),
             "blob.upload.list" => {
                 let owner = args
                     .as_ref()
@@ -144,14 +144,14 @@ impl Citizen {
                 ))
             }
             other => Err(StoreError::BadRequest(format!(
-                "unknown blob verb: {other}"
+                "unknown blob command: {other}"
             ))),
         }
     }
 
-    // ---- Verbs ----
+    // ---- Commands ----
 
-    fn verb_put(
+    fn command_put(
         &self,
         command: &IncomingCommand,
         args: Option<&Value>,
@@ -197,7 +197,7 @@ impl Citizen {
         Ok((0, outcome.reference.to_json().to_string(), events))
     }
 
-    fn verb_stat(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
+    fn command_stat(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
         let hash = blob_arg(args)?;
         let stat = self.store.stat(&hash)?;
         let body = json!({
@@ -212,13 +212,13 @@ impl Citizen {
         Ok((0, body.to_string(), Vec::new()))
     }
 
-    fn verb_path(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
+    fn command_path(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
         let hash = blob_arg(args)?;
         let path = self.store.path(&hash)?;
         Ok((0, json!({"path": path}).to_string(), Vec::new()))
     }
 
-    fn verb_url(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
+    fn command_url(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
         let hash = blob_arg(args)?;
         let lane = self.lane_bind.as_ref().ok_or_else(|| {
             StoreError::BadRequest("lane_bind is not configured; blob.url needs it".into())
@@ -229,7 +229,7 @@ impl Citizen {
         Ok((0, json!({"url": url}).to_string(), Vec::new()))
     }
 
-    fn verb_has(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
+    fn command_has(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
         let args =
             args.ok_or_else(|| StoreError::BadRequest("blob.has requires a JSON body".into()))?;
         let ids = args
@@ -251,7 +251,7 @@ impl Citizen {
         Ok((0, body.to_string(), Vec::new()))
     }
 
-    fn verb_pin(
+    fn command_pin(
         &self,
         command: &IncomingCommand,
         args: Option<&Value>,
@@ -292,7 +292,7 @@ impl Citizen {
         ))
     }
 
-    fn verb_list(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
+    fn command_list(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
         let owner = args.and_then(|a| a.get("owner")).and_then(Value::as_str);
         let limit = args
             .and_then(|a| a.get("limit"))
@@ -324,7 +324,7 @@ impl Citizen {
         ))
     }
 
-    fn verb_quota(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
+    fn command_quota(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
         let owner = args.and_then(|a| a.get("owner")).and_then(Value::as_str);
         let report = self.store.quota_report(owner)?;
         let owners: serde_json::Map<String, Value> = report
@@ -348,7 +348,7 @@ impl Citizen {
         Ok((0, body.to_string(), Vec::new()))
     }
 
-    fn verb_gc(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
+    fn command_gc(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
         let dry_run = args
             .and_then(|a| a.get("dry_run"))
             .and_then(Value::as_bool)
@@ -384,7 +384,7 @@ impl Citizen {
     /// a full reference (the reference's `origin` — and an `instance`
     /// member, if present — drive first-try resolution; `from`
     /// overrides the node).
-    fn verb_fetch(
+    fn command_fetch(
         &self,
         command: &IncomingCommand,
         args: Option<&Value>,
@@ -479,7 +479,7 @@ impl Citizen {
         Ok((0, body.to_string(), events))
     }
 
-    fn verb_info(&self) -> (u8, String, Vec<BusEvent>) {
+    fn command_info(&self) -> (u8, String, Vec<BusEvent>) {
         let build = buildinfo::build_info!();
         let counts = self
             .store
@@ -696,11 +696,11 @@ impl ReplySink for ClientSink {
 }
 
 /// Run the reconnecting citizen loop. Does not return during normal
-/// operation; returns on SIGINT/SIGTERM. `verb_max_concurrent` bounds
-/// how many dispatches run at once; a slow verb (a multi-GiB
+/// operation; returns on SIGINT/SIGTERM. `command_max_concurrent` bounds
+/// how many dispatches run at once; a slow command (a multi-GiB
 /// `blob.put`, a CAS-walking `blob.gc`) holds one permit, not the
 /// connection (M2).
-pub async fn serve(citizen: Arc<Citizen>, verb_max_concurrent: usize) -> Result<()> {
+pub async fn serve(citizen: Arc<Citizen>, command_max_concurrent: usize) -> Result<()> {
     // The fetch dispatcher: one task per admitted download, living
     // across broker reconnects.
     citizen.fetcher.spawn_dispatcher().await;
@@ -714,7 +714,7 @@ pub async fn serve(citizen: Arc<Citizen>, verb_max_concurrent: usize) -> Result<
         buildinfo::now_rfc3339(),
     );
     let service = citizen.service.clone();
-    let permits = Arc::new(Semaphore::new(verb_max_concurrent.max(1)));
+    let permits = Arc::new(Semaphore::new(command_max_concurrent.max(1)));
 
     loop {
         let connection = tokio::time::timeout(
@@ -776,16 +776,16 @@ async fn run_connection_inner(
     .await;
 }
 
-/// Whether `verb` takes a `verb_max_concurrent` permit (M2a): the
-/// verbs whose cost scales with data — a hash+copy `blob.put`, a CAS
+/// Whether `command` takes a `command_max_concurrent` permit (M2a): the
+/// commands whose cost scales with data — a hash+copy `blob.put`, a CAS
 /// walk `blob.gc`, an inventory `blob.list`, the quota-checked pin
 /// writes. Everything else (`blob.fetch`'s early reply, `stat`,
 /// `has`, `path`, `url`, `info`, `quota`, `props.*`) is a
 /// sub-millisecond lookup or already async, and dispatches without
 /// one.
-fn takes_verb_permit(verb: &str) -> bool {
+fn takes_command_permit(command_name: &str) -> bool {
     matches!(
-        verb,
+        command_name,
         "blob.put"
             | "blob.gc"
             | "blob.list"
@@ -796,12 +796,12 @@ fn takes_verb_permit(verb: &str) -> bool {
     )
 }
 
-/// Dispatch every incoming command as its own task, the slow verbs
-/// bounded by `permits` (M2): the loop is only `recv` → spawn, so one slow verb
+/// Dispatch every incoming command as its own task, the slow commands
+/// bounded by `permits` (M2): the loop is only `recv` → spawn, so one slow command
 /// never holds the queue — `blob.fetch`'s early reply and every other
-/// verb keep answering while a multi-GiB `blob.put` or a CAS walk
-/// runs. Responding and publishing happen inside the task; no verb
-/// needs cross-verb ordering (the store serialises what must be
+/// command keep answering while a multi-GiB `blob.put` or a CAS walk
+/// runs. Responding and publishing happen inside the task; no command
+/// needs cross-command ordering (the store serialises what must be
 /// serialised under its own locks). Returns when the incoming channel
 /// closes, after draining the in-flight dispatches.
 async fn serve_commands<S: ReplySink>(
@@ -816,10 +816,10 @@ async fn serve_commands<S: ReplySink>(
         let sink = Arc::clone(&sink);
         let permits = Arc::clone(&permits);
         tasks.spawn(async move {
-            // Beyond verb_max_concurrent a slow verb waits here: its
-            // reply is late, never lost. Quick verbs take no permit,
+            // Beyond command_max_concurrent a slow command waits here: its
+            // reply is late, never lost. Quick commands take no permit,
             // so eight slow ones can never starve them (M2a).
-            let _permit = if takes_verb_permit(&command.command) {
+            let _permit = if takes_command_permit(&command.command) {
                 permits.acquire_owned().await.ok()
             } else {
                 None
@@ -943,7 +943,7 @@ mod tests {
         )
     }
 
-    fn command(verb: &str, from: &str, args: Value) -> IncomingCommand {
+    fn command(command_name: &str, from: &str, args: Value) -> IncomingCommand {
         let mut headers = BTreeMap::new();
         if !args.is_null() {
             headers.insert("args".into(), args.to_string());
@@ -951,7 +951,7 @@ mod tests {
         IncomingCommand {
             generation: 0,
             from: from.into(),
-            command: verb.into(),
+            command: command_name.into(),
             id: Some("1".into()),
             args: Value::Null,
             body: String::new(),
@@ -1002,8 +1002,8 @@ mod tests {
             c.store.upload_status(&s.id),
             Err(StoreError::UploadMissing)
         ));
-        assert!(takes_verb_permit("blob.upload.list"));
-        assert!(takes_verb_permit("blob.upload.abort"));
+        assert!(takes_command_permit("blob.upload.list"));
+        assert!(takes_command_permit("blob.upload.abort"));
     }
 
     #[test]
@@ -1242,7 +1242,7 @@ mod tests {
 
         let (rc, body, _) = c.dispatch(&command("blob.warp", "t", json!({})));
         assert_eq!(rc, 10);
-        assert!(body.contains("unknown blob verb"));
+        assert!(body.contains("unknown blob command"));
 
         let (rc, body, _) = c.dispatch(&command("blob.stat", "t", json!({"blob": "nope"})));
         assert_eq!(rc, 10);
@@ -1389,7 +1389,7 @@ mod tests {
         assert_eq!(report.orphans.len(), 1);
     }
 
-    // ---- M2: one slow verb never blocks another ----
+    // ---- M2: one slow command never blocks another ----
 
     /// Records each reply with the instant it landed.
     #[derive(Default)]
@@ -1415,12 +1415,12 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn a_slow_verb_does_not_delay_a_concurrent_blob_info() {
+    async fn a_slow_command_does_not_delay_a_concurrent_blob_info() {
         let (dir, mut c) = citizen();
-        // A 2 s blob.put (the slow-verb hook stands in for a multi-GiB
+        // A 2 s blob.put (the slow-command hook stands in for a multi-GiB
         // hash+copy+re-hash) dispatched first; blob.info arriving right
         // behind it must still answer within 200 ms.
-        c.slow_verbs
+        c.slow_commands
             .insert("blob.put".into(), Duration::from_secs(2));
         let citizen = Arc::new(c);
         let sink = Arc::new(RecordSink::default());
@@ -1445,11 +1445,11 @@ mod tests {
         assert_eq!(replies.len(), 2, "both commands answered");
         let (_, info_at) = replies
             .iter()
-            .find(|(verb, _)| verb == "blob.info")
+            .find(|(command_name, _)| command_name == "blob.info")
             .expect("blob.info replied");
         let (_, put_at) = replies
             .iter()
-            .find(|(verb, _)| verb == "blob.put")
+            .find(|(command_name, _)| command_name == "blob.put")
             .expect("blob.put replied");
         assert!(
             info_at.duration_since(start) < Duration::from_millis(200),
@@ -1458,17 +1458,17 @@ mod tests {
         );
         assert!(
             put_at.duration_since(start) >= Duration::from_secs(2),
-            "blob.put genuinely held its 2 s (measured {:?}) — the slow verb was not running",
+            "blob.put genuinely held its 2 s (measured {:?}) — the slow command was not running",
             put_at.duration_since(start)
         );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn eight_slow_verbs_holding_every_permit_do_not_starve_blob_info() {
-        // M2a: verb_max_concurrent 8, eight 2 s blob.puts hold every
+    async fn eight_slow_commands_holding_every_permit_do_not_starve_blob_info() {
+        // M2a: command_max_concurrent 8, eight 2 s blob.puts hold every
         // permit; blob.info takes none and still answers in 200 ms.
         let (dir, mut c) = citizen();
-        c.slow_verbs
+        c.slow_commands
             .insert("blob.put".into(), Duration::from_secs(2));
         let citizen = Arc::new(c);
         let sink = Arc::new(RecordSink::default());
@@ -1495,14 +1495,14 @@ mod tests {
         assert_eq!(replies.len(), 9, "every command answered");
         let (_, info_at) = replies
             .iter()
-            .find(|(verb, _)| verb == "blob.info")
+            .find(|(command_name, _)| command_name == "blob.info")
             .expect("blob.info replied");
         assert!(
             info_at.duration_since(start) < Duration::from_millis(200),
             "blob.info answered in {:?} behind eight permit-holding puts",
             info_at.duration_since(start)
         );
-        assert!(takes_verb_permit("blob.gc") && !takes_verb_permit("blob.fetch"));
+        assert!(takes_command_permit("blob.gc") && !takes_command_permit("blob.fetch"));
     }
 
     #[test]

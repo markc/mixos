@@ -45,7 +45,7 @@ Window declarations accept `kind:"edge"`, `kind:"dialog"` and
 `kind:"toast"`. Toasts are pointer-only overlays in compd, with optional
 `w`, `h`, `title` and `chrome` (false by default). The host clamps their
 geometry and manages visibility through its
-[toast verbs](../compd/README.md#toast-scenes).
+[toast commands](../compd/README.md#toast-scenes).
 
 Text accepts `wrap: true` and `max_lines: N` (default 3, integer 1–1024).
 The host wraps at word boundaries using the actual font and available pixel

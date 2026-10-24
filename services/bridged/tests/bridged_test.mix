@@ -4,9 +4,9 @@
 -- (tests/lib/private_bus.mix), a stand-in app (tests/lib/fake_app.mix, token
 -- auth) and bridged itself as a serve citizen named fakeapp, configured by
 -- the instance-config path rule (<MIXOS_ETC>/bridge/fakeapp.conf.mix) and
--- guarded by this checkout's verb registry, started the way the unit starts
+-- guarded by this checkout's command registry, started the way the unit starts
 -- it (bridged.mix --start fakeapp: checks, then the serve citizen as a child).
--- Every verb is driven with `send`, including the refusals; then the app dies
+-- Every command is driven with `send`, including the refusals; then the app dies
 -- (rc 11) and comes back (the bridge reconnects after its backoff); then the
 -- serve child is stopped and the --start parent ends with it. The start
 -- refusals run as their own processes and exit 2 with a stable code; --start
@@ -30,7 +30,7 @@ if $MIX == "" then $MIX = env("MIXOS_TEST_MIX") ?? "" end
 if $MIX == "" then $MIX = "/opt/mixos/bin/mix" end
 $citizen = realpath($here .. "/../scripts/bridged.mix")
 $fake = realpath($here .. "/lib/fake_app.mix")
-$registry = realpath($here .. "/../../../docs/docs/spec/bus/verbs.conf.mix")
+$registry = realpath($here .. "/../../../docs/docs/spec/bus/commands.conf.mix")
 -- The noded binary: --noded PATH wins, else $MIXOS_TEST_NODED, else the installed one.
 $noded = env("MIXOS_TEST_NODED") ?? ""
 if $noded == "" then $noded = "/opt/mixos/bin/noded" end
@@ -46,14 +46,14 @@ fn check($name, $ok)
 end
 
 -- One Bus call: {rc, v, text}. send decodes a JSON reply; error replies are text.
-fn call($verb, $body, $timeout)
+fn call($command, $body, $timeout)
   if $body == nil then
-    send fakeapp $verb timeout=$timeout
+    send fakeapp $command timeout=$timeout
   elif type($body) == "string" then
-    send fakeapp $verb body=$body timeout=$timeout
+    send fakeapp $command body=$body timeout=$timeout
   else
     $b = json_encode($body)
-    send fakeapp $verb body=$b timeout=$timeout
+    send fakeapp $command body=$b timeout=$timeout
   end
   $v = $result
   if type($v) == "string" then
@@ -110,12 +110,12 @@ try
   write_file($client.MIXOS_ETC .. "/bridge/fakeapp.conf.mix", join(["token_file: \"" .. $tmp .. "/app.tok\"", "port: " .. to_string($port),
     "timeout_s: 3", "backoff_s: 1", "instance: \"bridged-test\""], ",\n") .. "\n")
   -- BRIDGED_MIX reaches every bridged process, the --start parent and its serve child.
-  $env = merge($client, {BRIDGED_MIX: $MIX, BRIDGED_VERBS: $registry, BRIDGED_CONFIG: ""})
+  $env = merge($client, {BRIDGED_MIX: $MIX, BRIDGED_COMMANDS: $registry, BRIDGED_CONFIG: ""})
 
   -- Start refusals.
   $r = refused("settings", $env)
-  check("guard: a concrete verb's first segment is refused, exit 2 NAME_RESERVED", $r.exit == 2 and contains($r.err, "NAME_RESERVED"))
-  $r = refused("fakeapp", merge($env, {BRIDGED_VERBS: $tmp .. "/no-registry.conf.mix"}))
+  check("guard: a concrete command's first segment is refused, exit 2 NAME_RESERVED", $r.exit == 2 and contains($r.err, "NAME_RESERVED"))
+  $r = refused("fakeapp", merge($env, {BRIDGED_COMMANDS: $tmp .. "/no-registry.conf.mix"}))
   check("guard: a missing registry fails closed, exit 2 REGISTRY", $r.exit == 2 and contains($r.err, "REGISTRY"))
   $r = refused("otherapp", $env)
   check("config: no <etc>/bridge/otherapp.conf.mix, exit 2 CONFIG", $r.exit == 2 and contains($r.err, "CONFIG") and contains($r.err, "/bridge/otherapp.conf.mix"))
@@ -181,7 +181,7 @@ try
   check("status: registered, app not yet contacted", $s.connection == "never-connected" and $s.port == $port and $s.service == "fakeapp" and $s.instance == "bridged-test")
 
   -- The Bus registry, read behaviourally: HELP lists what fakeapp answers. The
-  -- runtime plumbing (HELP, INFO, QUIT, RELOAD and the props verbs) is not the
+  -- runtime plumbing (HELP, INFO, QUIT, RELOAD and the props commands) is not the
   -- bridge's contract and is subtracted; what remains must be exactly the six
   -- bridged family members the registry declares for an instance, no more,
   -- fewer, or duplicated.
@@ -208,7 +208,7 @@ try
   end
   check("help: the authored names are exactly the six declared bridged family members", len($declared) == 6 and deep_eq(sort($authored), sort($declared)))
 
-  $r = call("fakeapp.commands", nil, 10)
+  $r = call("fakeapp.actions", nil, 10)
   check("commands: rc 0 with the app's list", $r.rc == 0 and contains(json_encode($r.v), "engine.execute"))
   $r = call("fakeapp.execute", {command: "app.open", params: {path: "/x/y"}}, 10)
   check("execute: command and params reach the app", $r.rc == 0 and $r.v.echo.command == "app.open" and $r.v.echo.params.path == "/x/y")
@@ -305,12 +305,12 @@ try
     if not $up then sleep(0.05) end
   end
   check("key Bus: status before file creation", $up and $r.v.auth == "key" and not is_file($keyfile))
-  $r = call("fakeapp.commands", nil, 5)
+  $r = call("fakeapp.actions", nil, 5)
   check("key Bus: a missing key is rc 11", $r.rc == 11)
   $key = hash_sha256("key-bus-test " .. uuid())
   write_new($keyfile, $key, 0o600)
   sleep(0.25)
-  $r = call("fakeapp.commands", nil, 5)
+  $r = call("fakeapp.actions", nil, 5)
   check("key Bus: authenticate once with generated key", $r.rc == 0 and contains(json_encode($r.v), "engine.execute"))
   $r = call("fakeapp.call", {method: "echo", params: {phase: 1}}, 5)
   check("key Bus: method dispatch after authentication", $r.rc == 0 and $r.v.phase == 1)

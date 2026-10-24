@@ -2,14 +2,14 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Headless dopus: the same core and Bus surface, no window. Neighbours can
 //! read `dopus.state` (two panes) and drive `dopus.action` against it. The
-//! window and this loop share [`verbs::serve_command`]; only the transport
+//! window and this loop share [`commands::serve_command`]; only the transport
 //! differs.
 //!
 //! A drainer thread owns `on_event` and `tick` (laws 1 and 2) and answers
 //! every dialog at once with No (law 3), so nothing waits and no file
 //! operation starts. `OpenFile` is refused and logged (law 4). Theme and
 //! window actions are refused: there is nothing to paint. Accepted
-//! `dopus.action` runs are published on `dopus.command.executed`, origin
+//! `dopus.action` runs are published on `dopus.action.executed`, origin
 //! `bus`, as the window publishes them.
 
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -17,11 +17,11 @@ use std::time::{Duration, Instant};
 
 use dopus_core::{ConfigFile, ConfirmAnswer, CoreEvent, DOpusConfig, DopusCore};
 use futures::StreamExt;
-use toolkit::command::Origin;
+use toolkit::action::Origin;
 
 use crate::bus::{self, Delivery};
 use crate::dirs::AppDirs;
-use crate::verbs::{self, Served, ServerMeta};
+use crate::commands::{self, Served, ServerMeta};
 
 /// The drain cadence: how long a worker reply can wait, and the tick period.
 const DRAIN_TICK: Duration = Duration::from_millis(200);
@@ -68,11 +68,11 @@ pub fn run(
         theme_scheme: String::new(),
         theme_mode: String::new(),
         appearance: Default::default(),
-        actions: verbs::action_table(crate::keymap::default_keys),
-        extra_verbs: Vec::new(),
+        actions: commands::action_table(crate::keymap::default_keys),
+        extra_commands: Vec::new(),
     };
     let (mut core, receiver) = DopusCore::new(config, config_file);
-    verbs::apply_open_paths(&mut core, paths);
+    commands::apply_open_paths(&mut core, paths);
     let core = Arc::new(Mutex::new(core));
     let (bus, mut deliveries) =
         bus::spawn(service, noded_url, Arc::new(|| {})).map_err(|e| e.to_string())?;
@@ -106,7 +106,7 @@ pub fn run(
         .map_err(|e| format!("headless runtime: {e}"))?;
     // Only for its command ids and the executed journal: accepted
     // `dopus.action` runs are published as the window publishes them.
-    let commands = crate::commands::registry();
+    let commands = crate::actions::registry();
     let topic = toolkit::executed::topic(bus.service());
     tracing::info!("dopus headless as `{service}`");
     runtime.block_on(async {
@@ -119,8 +119,8 @@ pub fn run(
             };
             let mut quit = false;
             let served =
-                verbs::serve_command(&command, &mut lock(&core), &meta, &buildinfo::build_info!());
-            let ran = verbs::accepted_action(&command, &served);
+                commands::serve_command(&command, &mut lock(&core), &meta, &buildinfo::build_info!());
+            let ran = commands::accepted_action(&command, &served);
             for served in served {
                 match served {
                     Served::Reply { id, rc, body } => bus.respond(id, rc, body),

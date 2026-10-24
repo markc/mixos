@@ -13,7 +13,7 @@
 //! already has full access to whatever data the recorder holds; there
 //! is no information gain from hashing. The hash-redaction discipline
 //! applies only to the JSONL on-disk path (slice 3) and the
-//! cross-process Bus verb (slice 5), where the caller is *not*
+//! cross-process Bus command (slice 5), where the caller is *not*
 //! in-process.
 //!
 //! # Histogram percentile computation
@@ -109,7 +109,7 @@ pub(crate) fn snapshot_from_inner(inner: &Arc<RecorderInner>) -> Snapshot {
     // (`RecorderInner.built_in_gauges`), not the metrics Registry —
     // see `process_gauges.rs` for why. Surface them here as
     // no-label gauges so `local_snapshot()` callers (and v2 Bus
-    // verb slice) see the same union the roll-up driver fans out
+    // command slice) see the same union the roll-up driver fans out
     // to sinks. A missing name means the most recent rollup's
     // procfs read for that gauge failed; consumers see no series
     // rather than a stale value (Codex round-5 MAJOR fix).

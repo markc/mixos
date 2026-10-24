@@ -11,7 +11,7 @@ is [`docs/email/README.md`](../../docs/email/README.md).
   faults fixed.
 - `src/`: the egui shell — `state` (the engine: one view per account,
   the tree, the forms), `work` (what the state asks for), `shell` (the
-  effects runtime, one client per account), `verbs` (the `email` Bus
+  effects runtime, one client per account), `commands` (the `email` Bus
   port), `commands` (the registry), `writer` (account changes as fenced
   settingsd applies), `secrets` (the passwords file), `config` (window
   shape, accounts cache, schema-1 migration), `drafts` (unsent messages
@@ -67,5 +67,5 @@ cargo test -p email -p jmap
 `tests/view.rs` drives the real view over a fixture state through kittest,
 with no network, and keeps offscreen snapshots in `tests/snapshots/`
 (regenerate with `UPDATE_SNAPSHOTS=1` and look at them).
-`tests/registry.rs` checks the verbs it describes are exactly the ones
-`docs/docs/spec/bus/verbs.conf.mix` registers.
+`tests/registry.rs` checks the commands it describes are exactly the ones
+`docs/docs/spec/bus/commands.conf.mix` registers.

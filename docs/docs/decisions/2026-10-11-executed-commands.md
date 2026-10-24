@@ -13,7 +13,7 @@ Status: accepted 2026-10-11. Amends [egui applications](2026-10-09-egui-applicat
 Amended 2026-10-20 by [commands take parameters and return results](2026-10-20-commands-take-parameters.md). The body is v2; v1 events are no longer emitted.
 
 - **Every application publishes each command it runs.**
-  - The topic is `<app>.command.executed`, where `<app>` is the
+  - The topic is `<app>.action.executed`, where `<app>` is the
     application's Bus service name.
   - An event means the command registry accepted the invocation and the
     command's handler returned.
@@ -21,7 +21,7 @@ Amended 2026-10-20 by [commands take parameters and return results](2026-10-20-c
     published.
   - The event does not report the outcome of work the handler queued, such
     as a save that later fails. Outcomes travel by the application's own
-    verbs and topics.
+    commands and topics.
 - **The body:**
 
   ```text
@@ -66,7 +66,7 @@ Amended 2026-10-20 by [commands take parameters and return results](2026-10-20-c
   - `shortcut`: a key binding, including a synthetic key press;
   - `palette`: the command palette or Help search;
   - `ui`: any other control in the window, such as a toolbar button;
-  - `bus`: `<app>.execute` (or another verb whose documentation says it runs
+  - `bus`: `<app>.execute` (or another command whose documentation says it runs
     a registry command);
   - `macro`: the shared macro runner. This value is reserved until
     applications have a Macros menu.

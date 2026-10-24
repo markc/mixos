@@ -25,36 +25,36 @@ pub type Label = fn(&str, &[(&str, &str)]) -> String;
 /// Work for the shell. Nothing here has happened yet.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Effect {
-    /// Call `verb` on the releases service and report
+    /// Call `command` on the releases service and report
     /// [`Engine::released`] with `ticket`.
     Releases {
         ticket: u64,
-        verb: &'static str,
+        command: &'static str,
         body: Value,
     },
-    /// Call `verb` on settingsd and report [`Engine::settled`] with
+    /// Call `command` on settingsd and report [`Engine::settled`] with
     /// `ticket` (the Appearance panel).
     Settings {
         ticket: u64,
-        verb: &'static str,
+        command: &'static str,
         body: Value,
     },
     Backdrop {
         ticket: u64,
-        verb: &'static str,
+        command: &'static str,
         body: Value,
     },
     Browse {
         ticket: u64,
         path: Option<String>,
     },
-    /// Call `verb` on `service` (the email app, or apps to launch it) and
+    /// Call `command` on `service` (the email app, or apps to launch it) and
     /// report [`Engine::mailed`] with `ticket`. A `secret` goes into the
     /// body as `password` only as the shell sends it; it is never in `body`.
     Mail {
         ticket: u64,
         service: &'static str,
-        verb: &'static str,
+        command: &'static str,
         body: Value,
         secret: Option<crate::email::Secret>,
     },
@@ -85,16 +85,16 @@ pub enum Effect {
         command: String,
     },
     /// Answer `id` with the whole Bus surface (`app.describe`), or only its
-    /// verbs (`HELP`): the engine's and the window's drive verbs.
+    /// commands (`HELP`): the engine's and the window's drive commands.
     Describe {
         id: u64,
         help: bool,
     },
-    /// Hand the window-level verb `verb` (without the `prefs.` prefix:
+    /// Hand the window-level command `command` (without the `prefs.` prefix:
     /// `ui.click`, `window`, …) to the toolkit drive layer.
     Drive {
         id: u64,
-        verb: String,
+        command: String,
         args: Value,
     },
     /// Close: stop the Bus connection and the window.
@@ -133,7 +133,7 @@ pub enum Op {
 }
 
 impl Op {
-    fn verb(&self) -> &'static str {
+    fn command_name(&self) -> &'static str {
         match self {
             Op::List => "releases.list",
             Op::Check => "releases.check",
@@ -548,13 +548,13 @@ impl Engine {
             self.quit_settled = true;
         }
         let ticket = self.next();
-        let (verb, body) = (op.verb(), op.body());
+        let (command_name, body) = (op.command_name(), op.body());
         if !quiet {
             self.status = self.label(op.progress(), &[("app", op.app())]);
             self.failed = false;
         }
         self.job = Some(Job { ticket, op, quiet });
-        self.effects.push(Effect::Releases { ticket, verb, body });
+        self.effects.push(Effect::Releases { ticket, command: command_name, body });
     }
 
     /// Read the shown panel's service again.
@@ -725,7 +725,7 @@ impl Engine {
             self.notes_job = Some((ticket, app.to_owned()));
             self.effects.push(Effect::Releases {
                 ticket,
-                verb: "releases.notes",
+                command: "releases.notes",
                 body: json!({"app":app}),
             });
         }
@@ -821,7 +821,7 @@ impl Engine {
     /// A delivery from the Bus connection.
     pub fn delivery(&mut self, delivery: Delivery) {
         match delivery {
-            Delivery::Command { id, verb, body } => self.command(id, &verb, &body),
+            Delivery::Command { id, command: command_name, body } => self.command(id, &command_name, &body),
             // A service came or went: releases, settingsd or Email may be one.
             Delivery::Changed => {
                 self.start(Op::List);
@@ -841,7 +841,7 @@ impl Engine {
                 if topic == crate::appearance::topic() {
                     self.read_look();
                 }
-                if topic == "backdrop.command.executed" {
+                if topic == "backdrop.action.executed" {
                     self.read_wallpaper();
                 }
             }
@@ -1055,25 +1055,25 @@ impl Engine {
     }
 
     /// A command an agent sent to Preferences over the Bus.
-    pub fn command(&mut self, id: u64, verb: &str, body: &str) {
+    pub fn command(&mut self, id: u64, command_name: &str, body: &str) {
         let args = match serde_json::from_str::<Value>(body) {
             Ok(args) if args.is_object() => args,
             _ => return self.error(id, "ARGUMENT", "arguments must be a JSON object"),
         };
-        if let Some(window) = verb
+        if let Some(window) = command_name
             .strip_prefix("prefs.")
             .filter(|v| v.starts_with("ui.") || v.starts_with("window"))
         {
             return self.effects.push(Effect::Drive {
                 id,
-                verb: window.to_owned(),
+                command: window.to_owned(),
                 args,
             });
         }
-        if !model::VERBS.contains(&verb) {
-            return self.error(id, "UNKNOWN_VERB", "unknown Preferences verb");
+        if !model::COMMANDS.contains(&command_name) {
+            return self.error(id, "UNKNOWN_COMMAND", "unknown Preferences command");
         }
-        match verb {
+        match command_name {
             "prefs.ping" => self.ok(
                 id,
                 json!({"schema":"prefs.v1","version":env!("CARGO_PKG_VERSION")}),
@@ -1103,7 +1103,7 @@ impl Engine {
             "prefs.email.password" => self.email_password(id, &args),
             "HELP" => self.effects.push(Effect::Describe { id, help: true }),
             "app.describe" => self.effects.push(Effect::Describe { id, help: false }),
-            "prefs.commands" => self.effects.push(Effect::Commands { id }),
+            "prefs.actions" => self.effects.push(Effect::Commands { id }),
             "prefs.execute" => match args.get("id").and_then(Value::as_str) {
                 Some(command) => self.effects.push(Effect::Execute {
                     id,
@@ -1212,7 +1212,7 @@ impl Engine {
                 let message = self.label("busy", &[]);
                 self.error(id, "BUSY", &message);
             }
-            _ => self.error(id, "UNKNOWN_VERB", "unknown Preferences verb"),
+            _ => self.error(id, "UNKNOWN_COMMAND", "unknown Preferences command"),
         }
     }
 
@@ -1449,7 +1449,7 @@ mod tests {
         effects
             .iter()
             .filter_map(|e| match e {
-                Effect::Releases { ticket, verb, body } => Some((*ticket, *verb, body.clone())),
+                Effect::Releases { ticket, command: command_name, body } => Some((*ticket, *command_name, body.clone())),
                 _ => None,
             })
             .collect()
@@ -1646,7 +1646,7 @@ mod tests {
     }
 
     #[test]
-    fn verbs_answer_in_place_and_refuse_what_the_window_refuses() {
+    fn commands_answer_in_place_and_refuse_what_the_window_refuses() {
         let mut e = listed();
         e.command(1, "prefs.select", r#"{"app":"nope"}"#);
         e.command(2, "prefs.select", r#"{"app":"demo"}"#);
@@ -1675,15 +1675,15 @@ mod tests {
         assert!(
             effects
                 .iter()
-                .any(|x| matches!(x, Effect::Drive { id: 6, verb, .. } if verb == "ui.click"))
+                .any(|x| matches!(x, Effect::Drive { id: 6, command: command_name, .. } if command_name == "ui.click"))
         );
-        assert_eq!(reply(7).unwrap().1["error_code"], "UNKNOWN_VERB");
+        assert_eq!(reply(7).unwrap().1["error_code"], "UNKNOWN_COMMAND");
         assert_eq!(reply(8).unwrap().1["error_code"], "ARGUMENT");
     }
 
     /// prefs.theme takes every axis; null on style follows the session.
     #[test]
-    fn the_theme_verb_takes_style_and_framing_and_null_follows_the_session() {
+    fn the_theme_command_takes_style_and_framing_and_null_follows_the_session() {
         let mut e = listed();
         e.command(
             1,
@@ -2045,7 +2045,7 @@ mod tests {
     }
 
     #[test]
-    fn search_verb_is_read_only_and_works_under_a_dialog() {
+    fn search_command_is_read_only_and_works_under_a_dialog() {
         let mut e = listed();
         e.open(Dialog::About);
         e.ui.search = "existing filter".into();

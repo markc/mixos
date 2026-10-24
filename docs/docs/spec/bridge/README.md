@@ -4,13 +4,13 @@ Status: draft, version 0.2.0. Machine-checkable fixture:
 [`bridge.spec.mix`](bridge.spec.mix). Verified by
 `services/bridged/tests/bridge_core_test.mix` (the config contract against
 the fixture, the wire protocol against a stand-in app) and
-`services/bridged/tests/bridged_test.mix` (every verb over a private broker).
+`services/bridged/tests/bridged_test.mix` (every command over a private broker).
 
 `bridged` puts an external application on the Bus. The application offers a
 line-delimited JSON control channel on loopback TCP; one `bridged` instance
-per application maps six Bus verbs onto it. This page fixes the control
+per application maps six Bus commands onto it. This page fixes the control
 channel an application must offer, the instance config schema, the serve-name
-rule and the Bus verbs.
+rule and the Bus commands.
 
 ## The control channel an application offers
 
@@ -24,16 +24,16 @@ rule and the Bus verbs.
 | Request | `{"id":N,"method":"<name>","params":{...}}`, `N` a number the bridge increments per request. |
 | Reply | `{"id":N,"ok":true,"result":<any JSON>}` or `{"id":N,"ok":false,"error":"<text>"}`, matched to the request by `id`. Lines that are not JSON or carry another `id` are skipped. A reply without a boolean `ok` is a transport failure. |
 | Port squatting (residual) | Loopback TCP cannot prove who listens. If the application dies, a local process that binds its port before it returns receives the token on the bridge's next reconnect, and can then impersonate the application to the bridge and use the token on the real one. A unix-socket control channel checked by owner would close this; it is a possible future protocol option. |
-| Methods the named verbs use | `engine.commands`, `engine.execute` (`{command, params}`), `ui.inspect`, `ui.screenshot` (`{path?, focus?}`). An application without one of them answers `ok:false`; `<app>.call` reaches any other method. |
+| Methods the named commands use | `engine.commands`, `engine.execute` (`{command, params}`), `ui.inspect`, `ui.screenshot` (`{path?, focus?}`). An application without one of them answers `ok:false`; `<app>.call` reaches any other method. |
 
-## Bus verbs
+## Bus commands
 
 An instance started with `--name <app>` answers under its own name.
 
-| Verb | Body | Sends | Reply on rc 0 |
+| Command | Body | Sends | Reply on rc 0 |
 |---|---|---|---|
 | `<app>.call` | `{method, params?}` | `<method>` with `params` (default `{}`) | the app's `result` |
-| `<app>.commands` | — | `engine.commands` | the app's `result` |
+| `<app>.actions` | — | `engine.commands` | the app's `result` |
 | `<app>.execute` | `{command, params?}` | `engine.execute {command, params}` | the app's `result` |
 | `<app>.inspect` | — | `ui.inspect` | the app's `result` |
 | `<app>.screenshot` | `{path?, focus?}`, or empty | `ui.screenshot` with only those keys | the app's `result` |
@@ -73,21 +73,21 @@ The token never appears in a reply: any occurrence of it, in any letter case,
 in an app's error text, in a result, or in `last_error`, is replaced by
 `[redacted]`.
 
-**Registration.** The six verbs are an instance family, `<app>.<verb>` with
+**Registration.** The six commands are an instance family, `<app>.<command>` with
 owner `bridged` and `members: "instances"` (runtime members, not listed). They
-are declared in `docs/docs/spec/bus/verbs.conf.mix` (registry schema 3). The static
-gate `tools/verb_registry.mix` checks the family's owner and suffix;
-`tools/verb_registry.mix --instances DIR` checks private file-stem naming and
-collisions only and reads no config token. The runtime guard reads the verbs
+are declared in `docs/docs/spec/bus/commands.conf.mix` (registry schema 3). The static
+gate `tools/command_registry.mix` checks the family's owner and suffix;
+`tools/command_registry.mix --instances DIR` checks private file-stem naming and
+collisions only and reads no config token. The runtime guard reads the commands
 and families lists but does not enforce the full canonical format. Installing
 the registry is a separate deployed prerequisite: the scripts and the registry
-come from the same revision, at `/opt/mixos/share/bus/verbs.conf.mix` or the
-`BRIDGED_VERBS` override.
+come from the same revision, at `/opt/mixos/share/bus/commands.conf.mix` or the
+`BRIDGED_COMMANDS` override.
 
-**Classes.** `<app>.call` and `<app>.execute` are `intent`; `<app>.commands`,
+**Classes.** `<app>.call` and `<app>.execute` are `intent`; `<app>.actions`,
 `<app>.inspect` and `<app>.status` are `query`. `<app>.screenshot` is `intent`,
 because its `focus` option can bring the window forward, a change another
-caller sees, even though the verb otherwise only captures. The reasoning is in
+caller sees, even though the command otherwise only captures. The reasoning is in
 the [decision](../../decisions/2026-10-13-instance-verb-families.md).
 
 ## Instance config, version 0.2.0
@@ -128,20 +128,20 @@ service name, and must not start with `mixos-` (`mix --serve` strips that
 prefix before registering, so the checked name and the Bus name would
 differ). The broker's own names are refused as noded refuses them: `noded`,
 `noded-*`, and the session-name shape `<t|c><1-7 of [a-z0-9]>-<22 of
-[a-z2-7]>`. It must also not be the first segment of a verb the registry
+[a-z2-7]>`. It must also not be the first segment of a command the registry
 already gives to another component, so an instance can never answer, say,
-`settings.status`. The registry read is `$BRIDGED_VERBS`, else the installed
-`/opt/mixos/share/bus/verbs.conf.mix`:
+`settings.status`. The registry read is `$BRIDGED_COMMANDS`, else the installed
+`/opt/mixos/share/bus/commands.conf.mix`:
 
 | Registry entry | Reserves |
 |---|---|
-| `verbs: [{name, ...}]` | the first segment of `name`, whatever the status (retired names stay reserved) |
+| `commands: [{name, ...}]` | the first segment of `name`, whatever the status (retired names stay reserved) |
 | `families: [{pattern, members: "instances"}]` | nothing (runtime members, such as bridged's own family) |
 | `families: [{pattern, members: [names]}]` | each listed name |
 | `families: [{pattern}]` with a literal first segment | that segment; an `<app>` or `*` first segment reserves nothing |
 
 The guard fails closed: a missing or unreadable registry, one without a
-`verbs` list, an entry without a `name` or `pattern`, or an unknown `members`
+`commands` list, an entry without a `name` or `pattern`, or an unknown `members`
 form refuses the start. `families` is optional, so the schema-1 registry and
 later schemas with families both read.
 
@@ -170,9 +170,9 @@ runs under (default `/opt/mixos/bin/mix`); it exists for tests.
 Starting `mix --serve bridged.mix --name <app>` directly, not through
 `--start`, registers the name on the Bus before the checks run, so a
 refused name holds a free Bus name for a moment before the process exits.
-`--start` (the unit) is the supported path. The reverse collision, a verb
+`--start` (the unit) is the supported path. The reverse collision, a command
 registered later whose first segment is an instance already running, is
-the verb-registry gate's to refuse, not the bridge's: the bridge checks only
+the command-registry gate's to refuse, not the bridge's: the bridge checks only
 at start.
 
 The unit is sandboxed: no capabilities or new privileges, the file system

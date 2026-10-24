@@ -161,7 +161,7 @@ pub struct ViewDelta {
 /// correlation and deadline). `op_id` repeats the body's for correlation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outgoing {
-    pub verb: String,
+    pub command: String,
     pub body: String,
     pub op_id: Option<String>,
     /// Transport deadline in milliseconds (5 s, or 30 s for open, get and save).

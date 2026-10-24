@@ -9,9 +9,9 @@ use std::{
     time::Duration,
 };
 
-/// The verbs this lane serves on the global name (INFO and HELP aside),
+/// The commands this lane serves on the global name (INFO and HELP aside),
 /// each with whether it only reads: what `app.describe` lists for them.
-pub const VERBS: [(&str, bool); 22] = [
+pub const COMMANDS: [(&str, bool); 22] = [
     ("term.session", true),
     ("term.tabs", true),
     ("term.tab.new", false),
@@ -36,25 +36,25 @@ pub const VERBS: [(&str, bool); 22] = [
     ("term.macros.new", false),
 ];
 
-/// The window side of a frontend's Bus name: the verbs its shell answers
-/// itself (drive verbs, its command registry, `app.describe`), the topic
+/// The window side of a frontend's Bus name: the commands its shell answers
+/// itself (drive commands, its command registry, `app.describe`), the topic
 /// frames it subscribed, and the events it publishes. The lane stays the
 /// only reader of the connection; the shell answers on its own thread.
 pub struct Window {
-    /// Whether the shell answers `verb`: a canonical `term.*` name or a
-    /// protocol verb such as `app.describe`.
+    /// Whether the shell answers `command`: a canonical `term.*` name or a
+    /// protocol command such as `app.describe`.
     pub answers: fn(&str) -> bool,
-    /// Where those verbs and the topic frames go; `wake` runs after each.
+    /// Where those commands and the topic frames go; `wake` runs after each.
     /// Bounded (`std::sync::mpsc::sync_channel`): when it is full the lane
     /// answers BUSY rather than queue without limit.
     pub events: std::sync::mpsc::SyncSender<WindowEvent>,
     pub wake: crate::terminal::Wake,
-    /// The shell's topic events (`<name>.command.executed`), published
+    /// The shell's topic events (`<name>.action.executed`), published
     /// once the name is registered.
     pub outbox: Arc<citizen::outbox::Outbox>,
     /// Set once the name is registered.
     pub link: Arc<OnceLock<Link>>,
-    /// How long a window verb may wait ([`WINDOW_REPLY_TIMEOUT`]).
+    /// How long a window command may wait ([`WINDOW_REPLY_TIMEOUT`]).
     pub reply_timeout: Duration,
 }
 
@@ -71,10 +71,10 @@ pub struct Link {
 /// Something for the window from the Bus.
 #[derive(Debug)]
 pub enum WindowEvent {
-    /// A verb the window answers, in the canonical namespace; the answer
+    /// A command the window answers, in the canonical namespace; the answer
     /// is `(rc, body)`. Dropping `reply` answers that the window is closing.
     Command {
-        verb: String,
+        command: String,
         body: String,
         reply: tokio::sync::oneshot::Sender<(u8, String)>,
     },
@@ -87,16 +87,16 @@ const WINDOW_BUSY: &str =
     r#"{"error_code":"BUSY","message":"the window has too many requests waiting; retry"}"#;
 const WINDOW_TIMEOUT: &str = r#"{"error_code":"TIMEOUT","message":"the window did not answer in time (it draws only while it is on screen)"}"#;
 
-/// Window verbs waiting for an answer at most; more are refused BUSY.
+/// Window commands waiting for an answer at most; more are refused BUSY.
 pub const WINDOW_REPLIES_MAX: usize = 32;
-/// How long a window verb may wait for its answer. An expired request is
+/// How long a window command may wait for its answer. An expired request is
 /// answered TIMEOUT and the window skips it, so it never runs late.
 pub const WINDOW_REPLY_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// A window verb's command and the answer it is waiting for.
+/// A window command's command and the answer it is waiting for.
 type WindowReply = (IncomingCommand, u8, String);
 
-/// Hand `command` to the window when it is a topic frame or a verb the
+/// Hand `command` to the window when it is a topic frame or a command the
 /// window answers; otherwise give it back for this lane to serve.
 fn to_window(
     service: &str,
@@ -119,15 +119,15 @@ fn to_window(
         }
         return None;
     }
-    // The strict posture answers INFO and HELP only, window verbs included.
+    // The strict posture answers INFO and HELP only, window commands included.
     if !crate::control::mesh_open() {
         return Some(command);
     }
-    let verb = canonical_verb(service, &command.command)
+    let command_name = canonical_command(service, &command.command)
         .map(std::borrow::Cow::into_owned)
-        .filter(|verb| (window.answers)(verb))
+        .filter(|command_name| (window.answers)(command_name))
         .or_else(|| (window.answers)(&command.command).then(|| command.command.clone()));
-    let Some(verb) = verb else {
+    let Some(command_name) = command_name else {
         return Some(command);
     };
     let body = if command.body.trim().is_empty() {
@@ -142,7 +142,7 @@ fn to_window(
     let (reply, answer) = tokio::sync::oneshot::channel();
     match window
         .events
-        .try_send(WindowEvent::Command { verb, body, reply })
+        .try_send(WindowEvent::Command { command: command_name, body, reply })
     {
         Ok(()) => (window.wake)(),
         Err(std::sync::mpsc::TrySendError::Full(_)) => {
@@ -164,7 +164,7 @@ fn to_window(
     None
 }
 
-pub const HELP: &str = "term: tabbed Wayland Mix terminal\nMesh-open surface (2026-09-15 law): under the default posture (MIXOS_MESH_OPEN unset or != \"0\") this global name serves every verb below to any mesh or local caller, no grant required. Verbs are TARGETLESS — unless explicit pane/tab selectors are supplied, they act on the active tab/pane of the instance holding this name at delivery time (term.type excepted: it requires pane or tab); the frontend also starts target-bound control (instance/incarnation/pane_generation) on the allocated native-session route: list/session/tabs/panes/snapshot/type, execute, exec.result/cancel, task.submit/result/cancel, operation, props.get/set and tab/pane mutations. Use the allocated route HELP for target envelopes. These are not targetless verbs on this global name. Requires local noded >= 0.16.8 native ingress, MIXOS_RUN=/run/mixos and socket directory 0755; unavailable ingress leaves graphics working. MIXOS_MESH_OPEN=0 restores the strict diagnostic-only lane (INFO/HELP; everything else FORBIDDEN).\nINFO / HELP\nterm.tabs {}: list id, active, title, cols, rows, child_pid, revision, instance (this process's token)\nterm.tab.new {cwd?:<absolute existing directory>, title?:<string>}: open and activate a tab; the reply adds binding=granted (native launch grant delivered, enrolment async), graphics-only (no usable grant) or unavailable (no native session)\nterm.tab.select {\"id\":<integer>}: select tab\nterm.tab.close {\"id\":<integer>}: close tab; last tab quits\nterm.panes {tab?:<integer>}: list selected tab (default active tab) pane ids, focus, dimensions, child pids, logical geometry, tab, revision and instance (last layout only; hidden tabs may be stale or zero)\nterm.pane.split {\"dir\":\"h|horizontal|v|vertical\"}\nterm.pane.close {}: close active pane; last pane closes tab\nterm.pane.select {\"id\":<integer>}: select pane in active tab\nterm.snapshot {pane?:<integer>, tab?:<integer>, contents?:<boolean=true>, scrollback_lines?:<integer=0, max 10000>}: read-only selected live screen (offset zero, default active); buffered history above the live screen is capped at available lines; text has a 512 KiB encoded-byte budget, returns complete oldest-first rows with truncated and lines_returned; formatting happens after releasing capture locks; pane+tab must agree; contents=false omits text but keeps dimensions, cursor, child pid, byte counters and DIAGNOSTIC timings\nterm.scroll {pane?:<integer>, lines?:<signed integer>, page?:<signed integer>, to?:top|bottom}: exactly one of lines/page/to; positive lines or pages move up into history; pages overlap by one row; viewport only, snapshots stay live; returns JSON {pane,display_offset,history_lines}; stale pane is not-found; changed offsets publish pane.changed kind=scrolled when watching\nterm.type {pane:<integer> | tab:<integer>, instance?:<integer>, \"text\":\"<string>\"}: ASCII synthetic keys without changing focus; pane or tab is REQUIRED, neither is refused {error_code:INVALID_ARGUMENT} and never defaults to the active pane. pane is the SAFE selector; tab means that tab's active pane AT DELIVERY, so it still follows focus within the tab; both must agree. Pane/tab ids are per-process counters, so pass back the instance that term.tabs/term.panes/INFO reported: a different process refuses INVALID_ARGUMENT instead of typing into its own pane of that id. Keys go through the keyboard encoder, max 8192 bytes including JSON envelope; newline=Enter, tab, backspace, Ctrl+C/D supported; revokes any delegated control writer like real keys.\nterm.tab.title {id:<integer>, title:<string>}: pin a user title (controls stripped, max 256 UTF-8 bytes); empty after sanitising clears the pin and restores the active pane OSC title\nterm.tab.move {id:<integer>, index:<integer>}: reorder tab, clamping index to 0..len-1; focus is preserved\nterm.props.watch {}: first subscribe through noded topic.subscribe to term.tabs.changed, term.pane.changed and term.title.changed; then call this verb to enable caller-free publishing and return JSON {topics,revision}; then read current state. Bodies are {tab,pane,kind,revision}; revision is a separate monotonic event sequence, not the legacy layout revision. Bounded best-effort delivery; on a gap or reconnect read current state.\nBefore the first tab attaches, mutating verbs return non-zero rc with error starting. Retry after attach, including with the same request_id; starting refusals are not cached.\nEmpty body is {} for no-arg verbs; all term.* bodies must be JSON objects.\nAny MUTATING verb's body (tab.*, pane.*, type, scroll) may add \"request_id\":\"<string>\": a resend of the same request (same verb and arguments, key order free) replays the recorded reply instead of re-executing (last 128 remembered) — use it on every mutation you might resend. NOT recorded (the same id may be retried with the request fixed): starting, an oversized body, and every validation refusal — malformed JSON, unexpected/missing/mistyped arguments and any invalid-argument or INVALID_ARGUMENT reply (e.g. term.type without pane/tab, a pane/tab disagreement, a foreign instance). Recorded and replayed: successes and state refusals such as not-found, non-ASCII text and the tab limit. A reused id whose first attempt WAS recorded, sent with a different verb or arguments, is refused as a conflict. The replay is the recorded outcome of the ORIGINAL attempt; retrying after changing state (e.g. after freeing the tab limit) needs a fresh id. Reads never consult the cache and always answer current state.\nReplies echo the identity acted on as key=value tokens — tab=<id> pane=<id> revision=<tab-set revision> (tab.close: revision only; pane.close: tab and revision; list lines: revision, panes also tab) — so a caller can detect drift after the fact; it is detection, not binding.\nterm.macros.list {}: shared application macro list\nterm.macros.reload {}: shared application macro reload\nterm.macros.run {id}: shared application macro run\nterm.macros.status {}: shared application macro status\nterm.macros.output {}: shared application macro output\nterm.macros.stop {}: shared application macro stop\nterm.macros.new {title}: shared application macro new\nDIAGNOSTIC timings are process-side, never presented-frame evidence.";
+pub const HELP: &str = "term: tabbed Wayland Mix terminal\nMesh-open surface (2026-09-15 law): under the default posture (MIXOS_MESH_OPEN unset or != \"0\") this global name serves every command below to any mesh or local caller, no grant required. Commands are TARGETLESS — unless explicit pane/tab selectors are supplied, they act on the active tab/pane of the instance holding this name at delivery time (term.type excepted: it requires pane or tab); the frontend also starts target-bound control (instance/incarnation/pane_generation) on the allocated native-session route: list/session/tabs/panes/snapshot/type, execute, exec.result/cancel, task.submit/result/cancel, operation, props.get/set and tab/pane mutations. Use the allocated route HELP for target envelopes. These are not targetless commands on this global name. Requires local noded >= 0.16.8 native ingress, MIXOS_RUN=/run/mixos and socket directory 0755; unavailable ingress leaves graphics working. MIXOS_MESH_OPEN=0 restores the strict diagnostic-only lane (INFO/HELP; everything else FORBIDDEN).\nINFO / HELP\nterm.tabs {}: list id, active, title, cols, rows, child_pid, revision, instance (this process's token)\nterm.tab.new {cwd?:<absolute existing directory>, title?:<string>}: open and activate a tab; the reply adds binding=granted (native launch grant delivered, enrolment async), graphics-only (no usable grant) or unavailable (no native session)\nterm.tab.select {\"id\":<integer>}: select tab\nterm.tab.close {\"id\":<integer>}: close tab; last tab quits\nterm.panes {tab?:<integer>}: list selected tab (default active tab) pane ids, focus, dimensions, child pids, logical geometry, tab, revision and instance (last layout only; hidden tabs may be stale or zero)\nterm.pane.split {\"dir\":\"h|horizontal|v|vertical\"}\nterm.pane.close {}: close active pane; last pane closes tab\nterm.pane.select {\"id\":<integer>}: select pane in active tab\nterm.snapshot {pane?:<integer>, tab?:<integer>, contents?:<boolean=true>, scrollback_lines?:<integer=0, max 10000>}: read-only selected live screen (offset zero, default active); buffered history above the live screen is capped at available lines; text has a 512 KiB encoded-byte budget, returns complete oldest-first rows with truncated and lines_returned; formatting happens after releasing capture locks; pane+tab must agree; contents=false omits text but keeps dimensions, cursor, child pid, byte counters and DIAGNOSTIC timings\nterm.scroll {pane?:<integer>, lines?:<signed integer>, page?:<signed integer>, to?:top|bottom}: exactly one of lines/page/to; positive lines or pages move up into history; pages overlap by one row; viewport only, snapshots stay live; returns JSON {pane,display_offset,history_lines}; stale pane is not-found; changed offsets publish pane.changed kind=scrolled when watching\nterm.type {pane:<integer> | tab:<integer>, instance?:<integer>, \"text\":\"<string>\"}: ASCII synthetic keys without changing focus; pane or tab is REQUIRED, neither is refused {error_code:INVALID_ARGUMENT} and never defaults to the active pane. pane is the SAFE selector; tab means that tab's active pane AT DELIVERY, so it still follows focus within the tab; both must agree. Pane/tab ids are per-process counters, so pass back the instance that term.tabs/term.panes/INFO reported: a different process refuses INVALID_ARGUMENT instead of typing into its own pane of that id. Keys go through the keyboard encoder, max 8192 bytes including JSON envelope; newline=Enter, tab, backspace, Ctrl+C/D supported; revokes any delegated control writer like real keys.\nterm.tab.title {id:<integer>, title:<string>}: pin a user title (controls stripped, max 256 UTF-8 bytes); empty after sanitising clears the pin and restores the active pane OSC title\nterm.tab.move {id:<integer>, index:<integer>}: reorder tab, clamping index to 0..len-1; focus is preserved\nterm.props.watch {}: first subscribe through noded topic.subscribe to term.tabs.changed, term.pane.changed and term.title.changed; then call this command to enable caller-free publishing and return JSON {topics,revision}; then read current state. Bodies are {tab,pane,kind,revision}; revision is a separate monotonic event sequence, not the legacy layout revision. Bounded best-effort delivery; on a gap or reconnect read current state.\nBefore the first tab attaches, mutating commands return non-zero rc with error starting. Retry after attach, including with the same request_id; starting refusals are not cached.\nEmpty body is {} for no-arg commands; all term.* bodies must be JSON objects.\nAny MUTATING command's body (tab.*, pane.*, type, scroll) may add \"request_id\":\"<string>\": a resend of the same request (same command and arguments, key order free) replays the recorded reply instead of re-executing (last 128 remembered) — use it on every mutation you might resend. NOT recorded (the same id may be retried with the request fixed): starting, an oversized body, and every validation refusal — malformed JSON, unexpected/missing/mistyped arguments and any invalid-argument or INVALID_ARGUMENT reply (e.g. term.type without pane/tab, a pane/tab disagreement, a foreign instance). Recorded and replayed: successes and state refusals such as not-found, non-ASCII text and the tab limit. A reused id whose first attempt WAS recorded, sent with a different command or arguments, is refused as a conflict. The replay is the recorded outcome of the ORIGINAL attempt; retrying after changing state (e.g. after freeing the tab limit) needs a fresh id. Reads never consult the cache and always answer current state.\nReplies echo the identity acted on as key=value tokens — tab=<id> pane=<id> revision=<tab-set revision> (tab.close: revision only; pane.close: tab and revision; list lines: revision, panes also tab) — so a caller can detect drift after the fact; it is detection, not binding.\nterm.macros.list {}: shared application macro list\nterm.macros.reload {}: shared application macro reload\nterm.macros.run {id}: shared application macro run\nterm.macros.status {}: shared application macro status\nterm.macros.output {}: shared application macro output\nterm.macros.stop {}: shared application macro stop\nterm.macros.new {title}: shared application macro new\nDIAGNOSTIC timings are process-side, never presented-frame evidence.";
 /// The one spelling the handlers in this crate are written in.
 ///
 /// D1 (TODO-term, 2026-09-21): two binaries cannot both own the global Bus
@@ -176,18 +176,18 @@ pub const HELP: &str = "term: tabbed Wayland Mix terminal\nMesh-open surface (20
 /// wire namespace follows it.
 ///
 /// The 147 handler arms keep this single canonical spelling instead of being
-/// rewritten to build verb strings; [`canonical_verb`] rewrites an incoming
+/// rewritten to build command strings; [`canonical_command`] rewrites an incoming
 /// `<service>.` prefix to it at the dispatch boundary. So the wire name is a
 /// parameter while the handlers stay one implementation, which is also what
 /// keeps the two frontends behaviourally identical rather than merely
 /// similar.
 pub const CANONICAL: &str = "term";
 
-/// Rewrite a verb from the wire namespace (`<service>.foo`) into the
+/// Rewrite a command from the wire namespace (`<service>.foo`) into the
 /// canonical one (`term.foo`), or `None` when it belongs to some other
 /// namespace and this frontend must not answer it.
 ///
-/// Unprefixed verbs — `INFO`, `HELP` — pass through: they are discovery, not
+/// Unprefixed commands — `INFO`, `HELP` — pass through: they are discovery, not
 /// a namespace, and both frontends answer them.
 ///
 /// **The `None` arm is the whole point of D1, and it was missing on the first
@@ -198,24 +198,24 @@ pub const CANONICAL: &str = "term";
 /// be comparing one terminal wearing two hats.
 /// `altterm_serves_its_own_namespace_and_refuses_terms` is the gate, and it
 /// failed before this arm existed.
-fn canonical_verb<'a>(service: &str, verb: &'a str) -> Option<std::borrow::Cow<'a, str>> {
-    if let Some(rest) = verb.strip_prefix(service).and_then(|r| r.strip_prefix('.')) {
+fn canonical_command<'a>(service: &str, command_name: &'a str) -> Option<std::borrow::Cow<'a, str>> {
+    if let Some(rest) = command_name.strip_prefix(service).and_then(|r| r.strip_prefix('.')) {
         return Some(if service == CANONICAL {
-            std::borrow::Cow::Borrowed(verb)
+            std::borrow::Cow::Borrowed(command_name)
         } else {
             std::borrow::Cow::Owned(format!("{CANONICAL}.{rest}"))
         });
     }
     // A dot means the caller aimed at a namespace, and it is not ours.
-    match verb.contains('.') {
+    match command_name.contains('.') {
         true => None,
-        false => Some(std::borrow::Cow::Borrowed(verb)),
+        false => Some(std::borrow::Cow::Borrowed(command_name)),
     }
 }
 
-/// [`HELP`] rendered into `service`'s namespace, so a caller reads the verb
-/// names it can actually send. `help_renames_every_verb` pins that the
-/// rewrite is total — a future HELP edit that spells a verb some other way
+/// [`HELP`] rendered into `service`'s namespace, so a caller reads the command
+/// names it can actually send. `help_renames_every_command` pins that the
+/// rewrite is total — a future HELP edit that spells a command some other way
 /// fails that test rather than advertising an unroutable name.
 pub fn help(service: &str) -> String {
     if service == CANONICAL {
@@ -241,7 +241,7 @@ pub fn start(
     )
 }
 
-/// [`start`] for a frontend whose window answers verbs of its own
+/// [`start`] for a frontend whose window answers commands of its own
 /// ([`Window`]).
 pub fn start_with_window(
     service: &'static str,
@@ -514,7 +514,7 @@ impl Peer for Arc<SupervisedClient> {
     }
 }
 
-/// Serve verbs until the TabSet empties. Event-driven throughout: every
+/// Serve commands until the TabSet empties. Event-driven throughout: every
 /// branch is a real event (a command, a completion note, a finished send, the
 /// last tab closing), so an idle terminal never runs a turn — the loop used
 /// to tick a 100 ms sleep purely to re-check `is_empty()`. Returns the number
@@ -543,7 +543,7 @@ async fn serve(
     .await
 }
 
-/// [`serve`], handing the window its verbs and topic frames.
+/// [`serve`], handing the window its commands and topic frames.
 #[expect(clippy::too_many_arguments, reason = "serve's inputs plus the window")]
 async fn serve_with(
     service: &str,
@@ -555,10 +555,10 @@ async fn serve_with(
     peer: &impl Peer,
     window: Option<&Window>,
 ) -> usize {
-    // Window verbs waiting for the window's answer.
+    // Window commands waiting for the window's answer.
     let mut window_replies: tokio::task::JoinSet<WindowReply> = tokio::task::JoinSet::new();
     // Taken once: the TabSet signals this whichever thread closes the last
-    // tab — a Bus verb here, or the frontend (keyboard, child exit, window
+    // tab — a Bus command here, or the frontend (keyboard, child exit, window
     // close) — and the permit survives until this loop next waits.
     let emptied = terminal.lock().unwrap().emptied();
     let titles_changed = terminal.lock().unwrap().titles_changed();
@@ -568,7 +568,7 @@ async fn serve_with(
     // or closes at shutdown. `recv()` on a closed channel returns `None`
     // immediately and forever, which would spin the select; the
     // precondition retires the branch on the first `None` so it is never
-    // re-polled, while the loop keeps serving Bus verbs until the TabSet
+    // re-polled, while the loop keeps serving Bus commands until the TabSet
     // empties.
     let mut notify_open = true;
     let mut replies = ReplyCache::default();
@@ -589,7 +589,7 @@ async fn serve_with(
             _ = publishing.join_next(), if !publishing.is_empty() => {},
             note = notify_rx.recv(), if notify_open => {
                 // Sink writes can block under backpressure. Poll them in
-                // separate tracked tasks so verbs remain serviceable.
+                // separate tracked tasks so commands remain serviceable.
                 match note {
                     Some(note) => { notifications.spawn(peer.completed(note)); },
                     None => notify_open = false,
@@ -626,8 +626,8 @@ async fn serve_with(
                     None => command,
                 };
                 if crate::control::mesh_open()
-                    && let Some(verb) = canonical_verb(service, &command.command)
-                    && let Some(suffix) = verb.strip_prefix("term.macros.") {
+                    && let Some(command_name) = canonical_command(service, &command.command)
+                    && let Some(suffix) = command_name.strip_prefix("term.macros.") {
                     let caller = citizen::macros::caller(&command, service);
                     let reply = citizen::macros::request("term", caller, suffix, &command.body);
                     window_replies.spawn(async move {
@@ -651,8 +651,8 @@ async fn serve_with(
                     // The panic unwound through a held TabSet lock: the set may
                     // be half-mutated, and the frontend's next lock would panic
                     // on the poison anyway, somewhere less legible. Stop here,
-                    // saying why, rather than serve verbs over torn state.
-                    eprintln!("{service} Bus verb {:?} panicked while holding the tab set; aborting", command.command);
+                    // saying why, rather than serve commands over torn state.
+                    eprintln!("{service} Bus command {:?} panicked while holding the tab set; aborting", command.command);
                     std::process::abort();
                 };
                 let (rc, body) = match result { Ok(body) => (0, body), Err(error) => (10, error) };
@@ -662,7 +662,7 @@ async fn serve_with(
     }
     // Include final removal records. One total shutdown budget bounds a
     // stalled broker; publication stays serial to preserve event ordering.
-    // A window that quit answered its own verb before the tabs emptied:
+    // A window that quit answered its own command before the tabs emptied:
     // that answer goes out too.
     changes.close();
     let _ = tokio::time::timeout(Duration::from_secs(2), async {
@@ -681,15 +681,15 @@ async fn serve_with(
     turns
 }
 
-const HANDLER_PANICKED: &str = "internal error: verb handler panicked";
+const HANDLER_PANICKED: &str = "internal error: command handler panicked";
 
 /// A panic that unwound through the tab-set lock, poisoning it.
 #[derive(Debug, PartialEq, Eq)]
 struct Torn;
 
-/// Panic boundary for one Bus verb. Before this, a handler panic killed the
+/// Panic boundary for one Bus command. Before this, a handler panic killed the
 /// Bus thread silently (the frontend discards its join result) while every
-/// other verb went unanswered.
+/// other command went unanswered.
 ///
 /// The TabSet lock decides the outcome. Terminal, native-session and control
 /// state have locks of their own, but every one a handler takes is taken
@@ -700,7 +700,7 @@ struct Torn;
 /// unpoisoned set means the panic happened outside those nested critical
 /// sections; the caller gets an ordinary error and the lane keeps serving.
 ///
-/// Two limits. The boundary covers this one verb on this thread: panics on
+/// Two limits. The boundary covers this one command on this thread: panics on
 /// other threads, or at serve()'s own unguarded `is_empty()` lock, are
 /// outside it. And "unpoisoned" is not quite "nothing changed": `tab.close`
 /// and `pane.close` release the set lock before `cleanup.submit`, so a panic
@@ -781,13 +781,13 @@ async fn notify_complete(client: &SupervisedClient, note: &CompletionNote) {
     }
 }
 
-/// Replayed replies for retried mutations. The lane's verbs are targetless
+/// Replayed replies for retried mutations. The lane's commands are targetless
 /// and several are non-idempotent (`term.tab.new`, `term.pane.close` takes no
 /// argument at all), so a caller whose reply was lost must be able to retry
 /// without double-executing: resend the byte-identical request with the same
-/// `request_id` and the recorded reply is returned verbatim, the verb NOT
+/// `request_id` and the recorded reply is returned verbatim, the command NOT
 /// re-run. The lane has no caller identity, so the id alone cannot be the
-/// key: each entry remembers its (verb, body) and a same-id request that
+/// key: each entry remembers its (command, body) and a same-id request that
 /// differs in either is refused as a conflict rather than silently answered
 /// with another request's reply. Bounded FIFO — no clock, no TTL, eviction
 /// order is insertion order.
@@ -797,12 +797,12 @@ struct ReplyCache {
     order: std::collections::VecDeque<String>,
 }
 struct CachedReply {
-    verb: String,
+    command: String,
     body: serde_json::Value,
     reply: Result<String, String>,
 }
 const REPLY_CACHE_CAP: usize = 128;
-const REQUEST_ID_CONFLICT: &str = "request_id already used by a different request; retries must resend the identical verb and body";
+const REQUEST_ID_CONFLICT: &str = "request_id already used by a different request; retries must resend the identical command and body";
 impl ReplyCache {
     /// Some(reply) = do not execute (a replay, or the conflict refusal);
     /// None = a genuinely new id, execute and record. Bodies are compared as
@@ -811,11 +811,11 @@ impl ReplyCache {
     fn lookup(
         &self,
         id: &str,
-        verb: &str,
+        command_name: &str,
         body: &serde_json::Value,
     ) -> Option<Result<String, String>> {
         let entry = self.map.get(id)?;
-        if entry.verb == verb && entry.body == *body {
+        if entry.command == command_name && entry.body == *body {
             Some(entry.reply.clone())
         } else {
             Some(Err(REQUEST_ID_CONFLICT.into()))
@@ -824,12 +824,12 @@ impl ReplyCache {
     fn put(
         &mut self,
         id: String,
-        verb: &str,
+        command_name: &str,
         body: serde_json::Value,
         reply: Result<String, String>,
     ) {
         let entry = CachedReply {
-            verb: verb.into(),
+            command: command_name.into(),
             body,
             reply,
         };
@@ -844,14 +844,14 @@ impl ReplyCache {
     }
 }
 
-/// The verbs whose execution changes state. Only these consult or feed the
+/// The commands whose execution changes state. Only these consult or feed the
 /// replay cache: reads must always answer with CURRENT state (a caller
 /// templating one constant request_id into everything would otherwise see a
 /// frozen terminal), and read replies (whole snapshot dumps) would also be
 /// the cache's largest entries.
-fn mutates(verb: &str) -> bool {
+fn mutates(command_name: &str) -> bool {
     matches!(
-        verb,
+        command_name,
         "term.tab.new"
             | "term.tab.title"
             | "term.tab.move"
@@ -865,19 +865,19 @@ fn mutates(verb: &str) -> bool {
     )
 }
 
-/// Mesh-open law (2026-09-15): every Bus verb of every app is reachable by
+/// Mesh-open law (2026-09-15): every Bus command of every app is reachable by
 /// any mesh/local caller with no authorization gate. Under the default-open
-/// posture the global name serves the full active-tab verb set;
+/// posture the global name serves the full active-tab command set;
 /// MIXOS_MESH_OPEN=0 restores the diagnostic-only lane (protected controls
 /// native-session-route only). An optional `request_id` body field makes a
-/// retry replay the recorded reply instead of re-executing the verb.
+/// retry replay the recorded reply instead of re-executing the command.
 fn dispatch(
     open: bool,
     service: &str,
     set: &Mutex<TabSet>,
     cleanup: &Cleanup,
     replies: &mut ReplyCache,
-    wire_verb: &str,
+    wire_command: &str,
     body: &str,
 ) -> Result<String, String> {
     // Into the canonical namespace once, at the boundary, and never back out:
@@ -885,20 +885,20 @@ fn dispatch(
     // handler below all see `term.*` whatever name this frontend serves
     // under. Doing it here rather than per-handler is what keeps `altterm` and
     // `term` the same implementation instead of two that drift (D1).
-    // Posture gate first, and on the WIRE verb, so the strict lane keeps its
+    // Posture gate first, and on the WIRE command, so the strict lane keeps its
     // stated contract exactly: INFO/HELP answer, everything else is
     // FORBIDDEN — including a foreign namespace, which must not be able to
     // tell itself apart from a refused one.
     if !open {
-        return diagnostic(service, wire_verb);
+        return diagnostic(service, wire_command);
     }
-    let Some(verb) = canonical_verb(service, wire_verb) else {
+    let Some(command_name) = canonical_command(service, wire_command) else {
         // Another frontend's namespace. Refused with the same message an
-        // unknown verb in our OWN namespace gets, so the reply is not an
+        // unknown command in our OWN namespace gets, so the reply is not an
         // oracle for which other frontends exist.
-        return Err("unknown verb; use HELP".into());
+        return Err("unknown command; use HELP".into());
     };
-    let verb = verb.as_ref();
+    let command_name = command_name.as_ref();
     // The envelope size limit applies before any parse, lookup or caching:
     // an oversized body must neither hit the replay cache nor leave its
     // request_id resident in it.
@@ -906,11 +906,11 @@ fn dispatch(
         return Err("request exceeds 8192 bytes".into());
     }
     // The request_id is extracted from the raw body (not parse_args' output)
-    // so a replay never depends on the verb's own argument validation; a
+    // so a replay never depends on the command's own argument validation; a
     // malformed body simply has no request_id and falls through to handle(),
-    // whose validation answers as usual. Only mutating verbs touch the
+    // whose validation answers as usual. Only mutating commands touch the
     // cache — reads always execute against current state.
-    let parsed = if mutates(verb) {
+    let parsed = if mutates(command_name) {
         serde_json::from_str::<serde_json::Value>(body)
             .ok()
             .filter(|args| args["request_id"].is_string())
@@ -919,15 +919,15 @@ fn dispatch(
     };
     if let Some(args) = &parsed {
         let id = args["request_id"].as_str().expect("filtered as string");
-        if let Some(reply) = replies.lookup(id, verb, args) {
+        if let Some(reply) = replies.lookup(id, command_name, args) {
             return reply;
         }
     }
-    // A body its own verb refuses performed no mutation either; caching that
+    // A body its own command refuses performed no mutation either; caching that
     // refusal would turn the obvious retry (same id, argument fixed — e.g. a
     // term.type that forgot its pane) into a conflict.
-    let valid = parsed.is_some() && parse_args(verb, body).is_ok();
-    let result = handle(service, set, cleanup, verb, body);
+    let valid = parsed.is_some() && parse_args(command_name, body).is_ok();
+    let result = handle(service, set, cleanup, command_name, body);
     // Startup refusals performed no mutation: the same request may be retried.
     if result
         .as_ref()
@@ -937,7 +937,7 @@ fn dispatch(
     }
     if let Some(args) = parsed.filter(|_| valid) {
         let id = args["request_id"].as_str().expect("filtered as string");
-        replies.put(id.to_owned(), verb, args, result.clone());
+        replies.put(id.to_owned(), command_name, args, result.clone());
     }
     result
 }
@@ -974,8 +974,8 @@ fn is_invalid_argument(error: &str) -> bool {
 /// The global, self-asserted TCP name is never an authority boundary.
 /// Keep discovery/notification compatibility, but fail closed for all data and
 /// controls, including when native bootstrap is unavailable.
-fn diagnostic(service: &str, verb: &str) -> Result<String, String> {
-    match verb {
+fn diagnostic(service: &str, command_name: &str) -> Result<String, String> {
+    match command_name {
         "INFO" | "HELP" | "info" | "help" => Ok(format!(
             "{service}: diagnostic discovery only (posture=strict, MIXOS_MESH_OPEN=0); protected controls require the allocated native-session route"
         )),
@@ -987,27 +987,27 @@ fn handle(
     service: &str,
     set: &Mutex<TabSet>,
     cleanup: &Cleanup,
-    verb: &str,
+    command_name: &str,
     body: &str,
 ) -> Result<String, String> {
-    // VERIFY: every term.* verb validates its JSON contract before locking/mutation.
-    let args = parse_args(verb, body)?;
-    // Test-only verbs that drive the panic boundary through the real
+    // VERIFY: every term.* command validates its JSON contract before locking/mutation.
+    let args = parse_args(command_name, body)?;
+    // Test-only commands that drive the panic boundary through the real
     // serve() path: one panics before the set lock, one while holding it.
     #[cfg(test)]
-    if verb == "term.test.panic" {
-        panic!("test verb: panic outside the tab-set lock");
+    if command_name == "term.test.panic" {
+        panic!("test command: panic outside the tab-set lock");
     }
     let mut tabs = set.lock().unwrap();
-    if tabs.is_starting() && mutates(verb) {
+    if tabs.is_starting() && mutates(command_name) {
         return Err("starting".into());
     }
     tabs.refresh_titles();
     #[cfg(test)]
-    if verb == "term.test.panic_locked" {
-        panic!("test verb: panic holding the tab-set lock");
+    if command_name == "term.test.panic_locked" {
+        panic!("test command: panic holding the tab-set lock");
     }
-    match verb {
+    match command_name {
         // `pid` lets a caller bind to one term PROCESS (the session-control
         // resume worker checks it against the boot term unit's MainPID), which
         // `instance`, reported by that same process, cannot prove.
@@ -1019,7 +1019,7 @@ fn handle(
         )),
         "term.session" => {
             let mut status = tabs.session_status();
-            // dispatch() refuses every verb but INFO/HELP under the strict
+            // dispatch() refuses every command but INFO/HELP under the strict
             // posture before reaching here, so a handler reply is mesh-open.
             status["posture"] = crate::control::posture(true).into();
             Ok(status.to_string())
@@ -1083,7 +1083,7 @@ fn handle(
         "term.tab.select" => {
             let id = args["id"]
                 .as_u64()
-                .ok_or_else(|| "internal: term verb/args desync (id)".to_string())?;
+                .ok_or_else(|| "internal: term command/args desync (id)".to_string())?;
             // select wakes the event loop; refresh compares View.rendered_id
             // with active_id and uploads even without a PTY damage event.
             if tabs.select(id) {
@@ -1095,7 +1095,7 @@ fn handle(
         "term.tab.close" => {
             let id = args["id"]
                 .as_u64()
-                .ok_or_else(|| "internal: term verb/args desync (id)".to_string())?;
+                .ok_or_else(|| "internal: term command/args desync (id)".to_string())?;
             let (outcome, removed) = tabs.close(id);
             let revision = tabs.revision;
             drop(tabs);
@@ -1152,7 +1152,7 @@ fn handle(
             let dir = parse_dir(
                 args["dir"]
                     .as_str()
-                    .ok_or_else(|| "internal: term verb/args desync (dir)".to_string())?,
+                    .ok_or_else(|| "internal: term command/args desync (dir)".to_string())?,
             )?;
             tabs.split_active(dir).map(|id| {
                 format!(
@@ -1169,7 +1169,7 @@ fn handle(
         "term.pane.select" => {
             let id = args["id"]
                 .as_u64()
-                .ok_or_else(|| "internal: term verb/args desync (id)".to_string())?;
+                .ok_or_else(|| "internal: term command/args desync (id)".to_string())?;
             if tabs.focus(id) {
                 Ok(format!("selected id={id} {}", identity(&tabs)))
             } else {
@@ -1226,7 +1226,7 @@ fn handle(
         }
         // VERIFY: active-pane snapshot/type — selection stays under the set lock.
         "term.snapshot" | "term.type" => {
-            if verb == "term.type"
+            if command_name == "term.type"
                 && let Some(wanted) = args["instance"].as_u64()
                 && wanted != instance()
             {
@@ -1238,7 +1238,7 @@ fn handle(
             let (tab, pane) = tabs
                 .resolve(args["pane"].as_u64(), args["tab"].as_u64())
                 .map_err(|error| match error.strip_prefix("invalid-argument: ") {
-                    Some(message) if verb == "term.type" => invalid_argument(message),
+                    Some(message) if command_name == "term.type" => invalid_argument(message),
                     _ => error,
                 })?;
             let active = tabs
@@ -1246,7 +1246,7 @@ fn handle(
                 .expect("resolved pane exists under set lock");
             let identity = format!("tab={tab} pane={pane} revision={}", tabs.revision);
             let terminal = active.lock().unwrap();
-            if verb == "term.snapshot" {
+            if command_name == "term.snapshot" {
                 let snapshot = terminal.capture_snapshot(
                     args["contents"].as_bool().unwrap_or(true),
                     args["scrollback_lines"].as_u64().unwrap_or(0) as usize,
@@ -1262,7 +1262,7 @@ fn handle(
                     .bus_text(
                         args["text"]
                             .as_str()
-                            .ok_or_else(|| "internal: term verb/args desync (text)".to_string())?,
+                            .ok_or_else(|| "internal: term command/args desync (text)".to_string())?,
                     )
                     .map(|_| {
                         format!(
@@ -1271,13 +1271,13 @@ fn handle(
                     })
             }
         }
-        _ => Err("unknown verb; use HELP".into()),
+        _ => Err("unknown command; use HELP".into()),
     }
 }
 
-/// The identity a targetless verb acted on, echoed so a caller can detect
+/// The identity a targetless command acted on, echoed so a caller can detect
 /// drift after the fact (detection, not binding): the active tab and pane
-/// after the verb, and the tab-set revision. Requires a non-empty set.
+/// after the command, and the tab-set revision. Requires a non-empty set.
 fn identity(tabs: &TabSet) -> String {
     format!(
         "tab={} pane={} revision={}",
@@ -1295,11 +1295,11 @@ fn parse_dir(body: &str) -> Result<crate::panes::SplitDir, String> {
     }
 }
 
-fn parse_args(verb: &str, body: &str) -> Result<serde_json::Value, String> {
+fn parse_args(command_name: &str, body: &str) -> Result<serde_json::Value, String> {
     if body.len() > 8192 {
         return Err("request exceeds 8192 bytes".into());
     }
-    if let Some(suffix) = verb.strip_prefix("term.macros.")
+    if let Some(suffix) = command_name.strip_prefix("term.macros.")
         && citizen::macros::SUFFIXES.contains(&suffix)
     {
         // Macro argument validation belongs to the shared handler. The lane
@@ -1307,10 +1307,10 @@ fn parse_args(verb: &str, body: &str) -> Result<serde_json::Value, String> {
         return serde_json::from_str(if body.is_empty() { "{}" } else { body })
             .map_err(|e| format!("body must be JSON: {e}"));
     }
-    if !verb.starts_with("term.") {
+    if !command_name.starts_with("term.") {
         return Ok(serde_json::json!({}));
     }
-    let field = match verb {
+    let field = match command_name {
         "term.snapshot" | "term.tabs" | "term.tab.new" | "term.panes" | "term.pane.close"
         | "term.session" | "term.props.watch" | "term.scroll" => None,
         #[cfg(test)]
@@ -1319,7 +1319,7 @@ fn parse_args(verb: &str, body: &str) -> Result<serde_json::Value, String> {
         "term.tab.select" | "term.tab.close" | "term.pane.select" | "term.tab.title"
         | "term.tab.move" => Some("id"),
         "term.pane.split" => Some("dir"),
-        _ => return Err("unknown verb; use HELP".into()),
+        _ => return Err("unknown command; use HELP".into()),
     };
     let args: serde_json::Value = serde_json::from_str(if body.is_empty() && field.is_none() {
         "{}"
@@ -1328,7 +1328,7 @@ fn parse_args(verb: &str, body: &str) -> Result<serde_json::Value, String> {
     })
     .map_err(|e| format!("body must be a JSON object: {e}"))?;
     let object = args.as_object().ok_or("body must be a JSON object")?;
-    let extra: &[&str] = match verb {
+    let extra: &[&str] = match command_name {
         "term.snapshot" => &["pane", "tab", "contents", "scrollback_lines"],
         "term.type" => &["pane", "tab", "instance"],
         "term.scroll" => &["pane", "lines", "page", "to"],
@@ -1338,12 +1338,12 @@ fn parse_args(verb: &str, body: &str) -> Result<serde_json::Value, String> {
         "term.tab.move" => &["index"],
         _ => &[],
     };
-    // `request_id` rides alongside any verb's own argument: it addresses the
-    // reply-replay cache in dispatch(), never the verb itself.
+    // `request_id` rides alongside any command's own argument: it addresses the
+    // reply-replay cache in dispatch(), never the command itself.
     if object.keys().any(|key| {
         Some(key.as_str()) != field && key != "request_id" && !extra.contains(&key.as_str())
     }) {
-        return Err(format!("unexpected argument for {verb}"));
+        return Err(format!("unexpected argument for {command_name}"));
     }
     if object.contains_key("request_id") {
         args["request_id"]
@@ -1354,7 +1354,7 @@ fn parse_args(verb: &str, body: &str) -> Result<serde_json::Value, String> {
     // keystrokes landed in a Claude prompt when the active pane moved
     // under it. Typing therefore names its pane (or a tab, meaning that
     // tab's active pane); the active-pane default is gone.
-    if verb == "term.type" && !object.contains_key("pane") && !object.contains_key("tab") {
+    if command_name == "term.type" && !object.contains_key("pane") && !object.contains_key("tab") {
         return Err(invalid_argument("term.type requires pane or tab"));
     }
     if object.contains_key("instance") && args["instance"].as_u64().is_none() {
@@ -1362,7 +1362,7 @@ fn parse_args(verb: &str, body: &str) -> Result<serde_json::Value, String> {
             "instance must be a non-negative integer (u64)",
         ));
     }
-    if verb == "term.scroll" {
+    if command_name == "term.scroll" {
         if ["lines", "page", "to"]
             .iter()
             .filter(|key| object.contains_key(**key))
@@ -1420,10 +1420,10 @@ fn parse_args(verb: &str, body: &str) -> Result<serde_json::Value, String> {
     if let Some(cwd) = args["cwd"].as_str() {
         crate::terminal::validate_cwd(cwd)?;
     }
-    if verb == "term.tab.title" && !args["title"].is_string() {
+    if command_name == "term.tab.title" && !args["title"].is_string() {
         return Err("invalid-argument: title must be a string".into());
     }
-    if verb == "term.tab.move"
+    if command_name == "term.tab.move"
         && args["index"].as_u64().is_none()
         && args["index"].as_i64().is_none()
     {
@@ -1436,14 +1436,14 @@ fn parse_args(verb: &str, body: &str) -> Result<serde_json::Value, String> {
 mod tests {
     use super::*;
 
-    /// `VERBS` is exactly the set the handlers accept and HELP documents
+    /// `COMMANDS` is exactly the set the handlers accept and HELP documents
     /// (term.session is served but not in HELP).
     #[test]
     fn the_window_hand_off_is_bounded_and_expires() {
-        let command = |verb: &str| IncomingCommand {
+        let command = |command_name: &str| IncomingCommand {
             generation: 0,
             from: "caller".into(),
-            command: verb.into(),
+            command: command_name.into(),
             id: Some("1".into()),
             args: serde_json::Value::Null,
             body: "{}".into(),
@@ -1451,7 +1451,7 @@ mod tests {
         };
         let (events, received) = std::sync::mpsc::sync_channel(1);
         let window = Window {
-            answers: |verb| verb == "term.ui.tree",
+            answers: |command_name| command_name == "term.ui.tree",
             events,
             wake: Arc::new(|| {}),
             outbox: Arc::new(citizen::outbox::Outbox::default()),
@@ -1492,18 +1492,18 @@ mod tests {
     }
 
     #[test]
-    fn the_verb_list_is_the_served_surface() {
-        for (verb, _) in VERBS {
+    fn the_command_list_is_the_served_surface() {
+        for (command_name, _) in COMMANDS {
             assert_ne!(
-                parse_args(verb, "{}").err().as_deref(),
-                Some("unknown verb; use HELP"),
-                "{verb}"
+                parse_args(command_name, "{}").err().as_deref(),
+                Some("unknown command; use HELP"),
+                "{command_name}"
             );
         }
         assert!(parse_args("term.nope", "{}").is_err());
         for line in HELP.lines().filter(|l| l.starts_with("term.")) {
-            let verb = line.split([' ', ':']).next().unwrap();
-            assert!(VERBS.iter().any(|(v, _)| *v == verb), "{verb}");
+            let command_name = line.split([' ', ':']).next().unwrap();
+            assert!(COMMANDS.iter().any(|(v, _)| *v == command_name), "{command_name}");
         }
     }
 
@@ -1850,14 +1850,14 @@ mod tests {
             .contains("invalid-argument")
         );
         handle(&set, &cleanup, "term.tab.close", r#"{"id":1}"#).unwrap();
-        for (verb, body) in [
+        for (command_name, body) in [
             ("term.snapshot", format!(r#"{{"pane":{first}}}"#)),
             ("term.type", format!(r#"{{"pane":{first},"text":""}}"#)),
             ("term.panes", r#"{"tab":1}"#.into()),
             ("term.snapshot", r#"{"tab":1}"#.into()),
         ] {
             assert!(
-                handle(&set, &cleanup, verb, &body)
+                handle(&set, &cleanup, command_name, &body)
                     .unwrap_err()
                     .contains("not-found")
             );
@@ -2066,7 +2066,7 @@ mod tests {
 
     #[test]
     fn c6_optional_argument_validation() {
-        for (verb, body) in [
+        for (command_name, body) in [
             ("term.snapshot", r#"{"pane":null}"#),
             ("term.snapshot", r#"{"tab":-1}"#),
             ("term.snapshot", r#"{"contents":1}"#),
@@ -2081,7 +2081,7 @@ mod tests {
             ("term.tab.move", r#"{"id":1,"index":1.5}"#),
             ("term.tab.move", r#"{"id":1}"#),
         ] {
-            assert!(parse_args(verb, body).is_err(), "{verb} {body}");
+            assert!(parse_args(command_name, body).is_err(), "{command_name} {body}");
         }
         for n in [0, 10000] {
             assert!(parse_args("term.snapshot", &format!(r#"{{"scrollback_lines":{n}}}"#)).is_ok());
@@ -2097,23 +2097,23 @@ mod tests {
         set: &Mutex<TabSet>,
         cleanup: &Cleanup,
         replies: &mut ReplyCache,
-        verb: &str,
+        command_name: &str,
         body: &str,
     ) -> Result<String, String> {
-        super::dispatch(open, CANONICAL, set, cleanup, replies, verb, body)
+        super::dispatch(open, CANONICAL, set, cleanup, replies, command_name, body)
     }
 
-    fn diagnostic(verb: &str) -> Result<String, String> {
-        super::diagnostic(CANONICAL, verb)
+    fn diagnostic(command_name: &str) -> Result<String, String> {
+        super::diagnostic(CANONICAL, command_name)
     }
 
     fn handle(
         set: &Mutex<TabSet>,
         cleanup: &Cleanup,
-        verb: &str,
+        command_name: &str,
         body: &str,
     ) -> Result<String, String> {
-        super::handle(CANONICAL, set, cleanup, verb, body)
+        super::handle(CANONICAL, set, cleanup, command_name, body)
     }
     #[test]
     fn startup_mutations_are_retryable_and_attach_notifies_watchers() {
@@ -2126,7 +2126,7 @@ mod tests {
         let mut replies = ReplyCache::default();
         let mut events = set.lock().unwrap().observe();
         assert!(handle(&set, &cleanup, "term.props.watch", "{}").is_ok());
-        for (verb, args) in [
+        for (command_name, args) in [
             ("term.tab.new", serde_json::json!({})),
             ("term.tab.select", serde_json::json!({"id":1})),
             ("term.tab.close", serde_json::json!({"id":1})),
@@ -2139,14 +2139,14 @@ mod tests {
             ("term.tab.move", serde_json::json!({"id":1,"index":0})),
         ] {
             let mut args = args;
-            args["request_id"] = verb.into();
-            assert!(mutates(verb));
+            args["request_id"] = command_name.into();
+            assert!(mutates(command_name));
             assert_eq!(
-                dispatch(true, &set, &cleanup, &mut replies, verb, &args.to_string()),
+                dispatch(true, &set, &cleanup, &mut replies, command_name, &args.to_string()),
                 Err("starting".into()),
-                "{verb}"
+                "{command_name}"
             );
-            assert!(replies.lookup(verb, verb, &args).is_none());
+            assert!(replies.lookup(command_name, command_name, &args).is_none());
             assert!(set.lock().unwrap().is_empty());
         }
         assert!(
@@ -2199,7 +2199,7 @@ mod tests {
 
     #[test]
     fn diagnostic_lane_has_no_protected_controls() {
-        for verb in [
+        for command_name in [
             "term.session",
             "term.tabs",
             "term.panes",
@@ -2217,7 +2217,7 @@ mod tests {
             "props.watch",
         ] {
             assert_eq!(
-                diagnostic(verb).unwrap_err(),
+                diagnostic(command_name).unwrap_err(),
                 "{\"error_code\":\"FORBIDDEN\"}"
             );
         }
@@ -2233,7 +2233,7 @@ mod tests {
                 let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
                 let delivered = Arc::new(std::sync::atomic::AtomicUsize::new(0));
                 let mut tasks = tokio::task::JoinSet::new();
-                // Simulate the last reap queuing notes after the verb loop ends.
+                // Simulate the last reap queuing notes after the command loop ends.
                 tokio::spawn(async move {
                     tokio::task::yield_now().await;
                     for pane_id in 1..=3 {
@@ -2410,10 +2410,10 @@ mod tests {
         worker.join().unwrap();
     }
 
-    /// Exact replies for the tab verbs' identity echo, the no-bump rule for
+    /// Exact replies for the tab commands' identity echo, the no-bump rule for
     /// select, both tab.close forms, and the closing latch after the last tab.
     #[test]
-    fn tab_verbs_echo_exact_identity_and_the_last_close_latches() {
+    fn tab_commands_echo_exact_identity_and_the_last_close_latches() {
         if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
             eprintln!("SKIP tab identity test: Mix unavailable");
             return;
@@ -2421,9 +2421,9 @@ mod tests {
         let set = Mutex::new(TabSet::new().unwrap());
         let (cleanup, worker) = Cleanup::start().unwrap();
         let revision = || set.lock().unwrap().revision;
-        // Every structural verb must bump the revision by exactly one: the
+        // Every structural command must bump the revision by exactly one: the
         // expected values come from `before`, not a read after the call, so a
-        // verb that stopped bumping fails here.
+        // command that stopped bumping fails here.
         let before = revision();
         assert_eq!(
             handle(&set, &cleanup, "term.tab.new", "").unwrap(),
@@ -2483,7 +2483,7 @@ mod tests {
             format!("closed id=1 last revision={}", before + 1)
         );
         assert_eq!(revision(), before + 1);
-        // The last close latches: no verb can reopen a closing terminal.
+        // The last close latches: no command can reopen a closing terminal.
         assert_eq!(
             handle(&set, &cleanup, "term.tab.new", "").unwrap_err(),
             "application closing"
@@ -2543,11 +2543,11 @@ mod tests {
         }
     }
 
-    fn command(verb: &str, body: &str) -> BoundedIncomingEvent {
+    fn command(command_name: &str, body: &str) -> BoundedIncomingEvent {
         BoundedIncomingEvent::Command(IncomingCommand {
             generation: 0,
             from: "test".into(),
-            command: verb.into(),
+            command: command_name.into(),
             id: None,
             args: serde_json::Value::Null,
             body: body.into(),
@@ -2555,7 +2555,7 @@ mod tests {
         })
     }
 
-    /// Command feed, recorded (verb, rc, body) replies, and the serve thread.
+    /// Command feed, recorded (command, rc, body) replies, and the serve thread.
     type Serving = (
         tokio::sync::mpsc::Sender<BoundedIncomingEvent>,
         std::sync::mpsc::Receiver<(String, u8, String)>,
@@ -2604,14 +2604,14 @@ mod tests {
         let receive = |expected: &str| {
             let deadline = std::time::Instant::now() + Duration::from_secs(2);
             loop {
-                let (verb, rc, body) = replies
+                let (command_name, rc, body) = replies
                     .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
                     .unwrap();
-                if verb == expected {
-                    break (verb, rc, body);
+                if command_name == expected {
+                    break (command_name, rc, body);
                 }
                 assert!(matches!(
-                    verb.as_str(),
+                    command_name.as_str(),
                     "term.tabs.changed" | "term.title.changed"
                 ));
                 assert_eq!(
@@ -2623,8 +2623,8 @@ mod tests {
         commands
             .blocking_send(command("term.props.watch", ""))
             .unwrap();
-        let (verb, rc, _) = receive("term.props.watch");
-        assert_eq!((verb.as_str(), rc), ("term.props.watch", 0));
+        let (command_name, rc, _) = receive("term.props.watch");
+        assert_eq!((command_name.as_str(), rc), ("term.props.watch", 0));
         set.lock().unwrap().resized(1, 100, 30);
         let (topic, rc, body) = receive("term.pane.changed");
         assert_eq!((topic.as_str(), rc), ("term.pane.changed", 0));
@@ -2633,8 +2633,8 @@ mod tests {
         commands
             .blocking_send(command("term.tab.close", r#"{"id":1}"#))
             .unwrap();
-        let (verb, rc, _) = receive("term.tab.close");
-        assert_eq!((verb.as_str(), rc), ("term.tab.close", 0));
+        let (command_name, rc, _) = receive("term.tab.close");
+        assert_eq!((command_name.as_str(), rc), ("term.tab.close", 0));
         for expected in ["term.pane.changed", "term.tabs.changed"] {
             let (topic, _, body) = receive(expected);
             assert_eq!(topic, expected);
@@ -2646,12 +2646,12 @@ mod tests {
         worker.join().unwrap();
     }
 
-    /// Through the real serve() path: a verb that panics outside the set
+    /// Through the real serve() path: a command that panics outside the set
     /// lock answers rc 10 with the fixed message, and the NEXT command is
     /// still served. Removing the boundary kills the Bus thread and the
     /// second reply never comes.
     #[test]
-    fn a_panicking_verb_is_answered_and_the_lane_keeps_serving() {
+    fn a_panicking_command_is_answered_and_the_lane_keeps_serving() {
         if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
             eprintln!("SKIP panic continuation test: Mix unavailable");
             return;
@@ -2668,10 +2668,10 @@ mod tests {
             replies.recv_timeout(wait).unwrap(),
             ("term.test.panic".into(), 10, HANDLER_PANICKED.into())
         );
-        let (verb, rc, body) = replies
+        let (command_name, rc, body) = replies
             .recv_timeout(wait)
             .expect("lane stopped serving after a panic");
-        assert_eq!((verb.as_str(), rc), ("term.tabs", 0));
+        assert_eq!((command_name.as_str(), rc), ("term.tabs", 0));
         assert!(body.starts_with("id=1 "), "{body}");
         assert!(!set.is_poisoned());
         cleanup.submit(set.lock().unwrap().shutdown());
@@ -2682,11 +2682,11 @@ mod tests {
 
     const ABORT_CHILD: &str = "MIXOS_TERM_TEST_ABORT_CHILD";
 
-    /// A verb that panics while holding the tab-set lock must take the whole
+    /// A command that panics while holding the tab-set lock must take the whole
     /// process down by SIGABRT, not carry on over torn state. Runs itself in
     /// a child process (the abort would otherwise kill the test binary).
     #[test]
-    fn a_verb_that_poisons_the_tab_set_aborts_the_process() {
+    fn a_command_that_poisons_the_tab_set_aborts_the_process() {
         if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
             eprintln!("SKIP poison abort test: Mix unavailable");
             return;
@@ -2707,14 +2707,14 @@ mod tests {
                 .blocking_send(command("term.test.panic_locked", ""))
                 .unwrap();
             let reply = replies.recv_timeout(Duration::from_secs(10));
-            eprintln!("CHILD SURVIVED the poisoning verb; reply: {reply:?}");
+            eprintln!("CHILD SURVIVED the poisoning command; reply: {reply:?}");
             std::process::exit(3);
         }
         use std::os::unix::process::ExitStatusExt;
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "bus::tests::a_verb_that_poisons_the_tab_set_aborts_the_process",
+                "bus::tests::a_command_that_poisons_the_tab_set_aborts_the_process",
                 "--nocapture",
             ])
             .env(ABORT_CHILD, "1")
@@ -2870,7 +2870,7 @@ mod tests {
         let set = Mutex::new(TabSet::new().unwrap());
         let (cleanup, worker) = Cleanup::start().unwrap();
         let mut replies = ReplyCache::default();
-        // Strict posture: diagnostic-only, protected verbs refused.
+        // Strict posture: diagnostic-only, protected commands refused.
         assert_eq!(
             dispatch(false, &set, &cleanup, &mut replies, "term.tabs", "").unwrap_err(),
             "{\"error_code\":\"FORBIDDEN\"}"
@@ -2880,7 +2880,7 @@ mod tests {
                 .unwrap()
                 .contains("posture=strict")
         );
-        // Open posture: the full verb set answers on the global name, and
+        // Open posture: the full command set answers on the global name, and
         // term.session names the posture instead of leaving it to inference.
         assert!(dispatch(true, &set, &cleanup, &mut replies, "term.tabs", "").is_ok());
         let session: serde_json::Value = serde_json::from_str(
@@ -2927,7 +2927,7 @@ mod tests {
             dispatch(true, &set, &cleanup, &mut replies, "term.pane.select", bad).unwrap_err(),
             refusal
         );
-        // A reused id with a DIFFERENT verb or body is a conflict, never a
+        // A reused id with a DIFFERENT command or body is a conflict, never a
         // silent replay of the other request's reply — and never executes:
         // still three panes afterwards.
         assert_eq!(
@@ -3057,7 +3057,7 @@ mod tests {
             replies.lookup("id-1", "v", &reordered),
             Some(Ok("reply-1".into()))
         );
-        // A same-id lookup with a different verb or body is a conflict, not
+        // A same-id lookup with a different command or body is a conflict, not
         // a replay and not a miss.
         assert_eq!(
             replies.lookup("id-1", "other", &body),
@@ -3077,7 +3077,7 @@ mod tests {
     }
     #[test]
     fn json_contracts() {
-        for verb in [
+        for command_name in [
             "term.session",
             "term.snapshot",
             "term.tabs",
@@ -3085,15 +3085,15 @@ mod tests {
             "term.panes",
             "term.pane.close",
         ] {
-            assert!(parse_args(verb, "").is_ok());
-            assert!(parse_args(verb, "{}").is_ok());
+            assert!(parse_args(command_name, "").is_ok());
+            assert!(parse_args(command_name, "{}").is_ok());
             for body in ["null", "[]", "42", "raw", " ", r#"{"id":1}"#] {
-                assert!(parse_args(verb, body).is_err(), "{verb}: {body}");
+                assert!(parse_args(command_name, body).is_err(), "{command_name}: {body}");
             }
         }
-        for verb in ["term.tab.select", "term.tab.close", "term.pane.select"] {
-            assert_eq!(parse_args(verb, r#"{"id":42}"#).unwrap()["id"], 42);
-            assert!(parse_args(verb, r#"{"id":18446744073709551615}"#).is_ok());
+        for command_name in ["term.tab.select", "term.tab.close", "term.pane.select"] {
+            assert_eq!(parse_args(command_name, r#"{"id":42}"#).unwrap()["id"], 42);
+            assert!(parse_args(command_name, r#"{"id":18446744073709551615}"#).is_ok());
             for body in [
                 "",
                 "42",
@@ -3103,7 +3103,7 @@ mod tests {
                 r#"{"id":"42"}"#,
                 r#"{"id":18446744073709551616}"#,
             ] {
-                assert!(parse_args(verb, body).is_err(), "{verb}: {body}");
+                assert!(parse_args(command_name, body).is_err(), "{command_name}: {body}");
             }
         }
         for dir in ["h", "v", "horizontal", "vertical"] {
@@ -3118,7 +3118,7 @@ mod tests {
         for body in ["", "v", "{}", r#"{"dir":null}"#, r#"{"dir":"sideways"}"#] {
             assert!(parse_args("term.pane.split", body).is_err());
         }
-        // request_id rides alongside any verb's own argument; wrong type refused.
+        // request_id rides alongside any command's own argument; wrong type refused.
         assert!(parse_args("term.tab.new", r#"{"request_id":"r1"}"#).is_ok());
         assert!(parse_args("term.pane.split", r#"{"dir":"v","request_id":"r1"}"#).is_ok());
         assert!(parse_args("term.tab.select", r#"{"id":1,"request_id":"r1"}"#).is_ok());
@@ -3184,10 +3184,10 @@ mod tests {
     }
 
     /// D1: the wire namespace follows the frontend name, the handlers do not.
-    /// `canonical_verb` answers Some(canonical) for a verb this frontend
+    /// `canonical_command` answers Some(canonical) for a command this frontend
     /// serves, and None for a namespace it must not answer.
-    fn routed(service: &str, verb: &str) -> Option<String> {
-        canonical_verb(service, verb).map(|v| v.into_owned())
+    fn routed(service: &str, command_name: &str) -> Option<String> {
+        canonical_command(service, command_name).map(|v| v.into_owned())
     }
 
     #[test]
@@ -3200,7 +3200,7 @@ mod tests {
             routed("altterm", "altterm.pane.split").as_deref(),
             Some("term.pane.split")
         );
-        // Prefixless verbs pass through, whichever name we serve under.
+        // Prefixless commands pass through, whichever name we serve under.
         for service in ["term", "altterm"] {
             assert_eq!(routed(service, "INFO").as_deref(), Some("INFO"));
             assert_eq!(routed(service, "HELP").as_deref(), Some("HELP"));
@@ -3212,12 +3212,12 @@ mod tests {
 
     /// A caller talking to altterm must not reach a handler by sending the
     /// OTHER frontend's namespace: `term.tab.new` at altterm is an unknown
-    /// verb, not a hidden alias. Both names routing to the same instance is
+    /// command, not a hidden alias. Both names routing to the same instance is
     /// exactly the collision D1 exists to prevent.
     #[test]
     fn the_other_frontends_namespace_is_not_an_alias() {
         assert_eq!(routed("altterm", "term.tab.new"), None);
-        // …and that is rejected at the argument boundary, because a verb only
+        // …and that is rejected at the argument boundary, because a command only
         // reaches a handler after parse_args accepts it. The guard here is
         // that nothing REWRITES it into the served namespace.
         assert_eq!(routed("altterm", "termite.tab.new"), None);
@@ -3226,7 +3226,7 @@ mod tests {
 
     /// The whole D1 point, end to end through the real dispatch: a altterm
     /// frontend answers `altterm.*` and does NOT answer `term.*`. If it
-    /// answered both, the two frontends would still collide on every verb a
+    /// answered both, the two frontends would still collide on every command a
     /// mesh caller sends to the name `term`, which is exactly what the rename
     /// exists to prevent — and the A/B in T5 would be measuring one terminal
     /// wearing two hats.
@@ -3239,13 +3239,13 @@ mod tests {
         let set = Mutex::new(TabSet::new().unwrap());
         let (cleanup, worker) = Cleanup::start().unwrap();
         let mut replies = ReplyCache::default();
-        let mut call = |service: &str, verb: &str| {
-            super::dispatch(true, service, &set, &cleanup, &mut replies, verb, "")
+        let mut call = |service: &str, command_name: &str| {
+            super::dispatch(true, service, &set, &cleanup, &mut replies, command_name, "")
         };
         assert!(call("altterm", "altterm.tabs").is_ok());
         assert_eq!(
             call("altterm", "term.tabs").unwrap_err(),
-            "unknown verb; use HELP",
+            "unknown command; use HELP",
             "altterm must not answer the main frontend's namespace"
         );
         // …and the mirror image, so the guard is not one-sided: the main
@@ -3253,27 +3253,27 @@ mod tests {
         assert!(call("term", "term.tabs").is_ok());
         assert_eq!(
             call("term", "altterm.tabs").unwrap_err(),
-            "unknown verb; use HELP"
+            "unknown command; use HELP"
         );
         // HELP is prefixless, so it answers under either name — and names
-        // the verbs that name's callers can actually send.
+        // the commands that name's callers can actually send.
         assert!(call("altterm", "HELP").unwrap().contains("altterm.tab.new"));
         assert!(call("term", "HELP").unwrap().contains("term.tab.new"));
         drop(cleanup);
         let _ = worker.join();
     }
 
-    /// HELP advertises verb names a caller can actually send. The loop is the
-    /// point: it fails if a future HELP edit spells a verb in a way the
+    /// HELP advertises command names a caller can actually send. The loop is the
+    /// point: it fails if a future HELP edit spells a command in a way the
     /// rewrite misses, rather than shipping an unroutable name in the docs
     /// every agent reads first.
     #[test]
-    fn help_renames_every_verb() {
+    fn help_renames_every_command() {
         let rendered = help("altterm");
         for (at, _) in rendered.match_indices("term.") {
             assert!(
                 rendered[..at].ends_with("alt"),
-                "HELP still advertises a bare `term.` verb at byte {at}: {:?}",
+                "HELP still advertises a bare `term.` command at byte {at}: {:?}",
                 &rendered[at.saturating_sub(40)..(at + 20).min(rendered.len())]
             );
         }

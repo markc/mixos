@@ -419,11 +419,11 @@ fn click($list, $item)
 end
 $fresh = $taskbar.normal_windows($raw_busy)
 $focus = $taskbar.task_action_at($fresh, $runtime.event_args(click("tasks", $busy.tasks[0])).item, 2)
-check($focus.ok and $focus.verb == "comp.window.focus" and deep_eq($focus.args, {id: 4, generation: 1}), "unfocused task focuses with its generation")
+check($focus.ok and $focus.command == "comp.window.focus" and deep_eq($focus.args, {id: 4, generation: 1}), "unfocused task focuses with its generation")
 $restore = $taskbar.task_action_at($fresh, $runtime.event_args(click("tasks", $busy.tasks[1])).item, 2)
-check($restore.verb == "comp.window.restore" and $restore.args.generation == 7, "minimised task restores")
+check($restore.command == "comp.window.restore" and $restore.args.generation == 7, "minimised task restores")
 $minimize = $taskbar.task_action_at($fresh, $runtime.event_args(click("tasks", $busy.tasks[2])).item, 2)
-check($minimize.verb == "comp.window.minimize" and $minimize.args.id == 12, "focused task minimises")
+check($minimize.command == "comp.window.minimize" and $minimize.args.id == 12, "focused task minimises")
 $reused = $taskbar.normal_windows([window_row(12, 4, 2, "Recycled id", "example.editor", true, false)])
 check($taskbar.task_action_at($reused, $busy.tasks[2], 2).error_code == "stale_window", "a recycled window id with a new generation is refused")
 check($taskbar.task_action_at([], $busy.tasks[2], 2).error_code == "stale_window", "a closed window is refused")
@@ -447,13 +447,13 @@ check($all.tasks[4].background != nil, "a window without a workspace belongs to 
 $all_snap.tasks_scope = "current"
 check(deep_eq(map($models.panel($all_snap, $icons_busy, date_parse("2024-02-29T21:05:07Z")).tasks, fn($x) = $x.id), ["t_4", "t_9", "t_12", "t_30"]), "scope current shows this workspace only")
 $go = $taskbar.task_action_at($fresh, $runtime.event_args(click("tasks", $away)).item, 2)
-check($go.ok and $go.verb == "comp.window.focus" and deep_eq($go.args, {id: 20, generation: 1}) and not has_key($go, "workspace"), "another workspace's task focuses (comp switches, never the panel)")
+check($go.ok and $go.command == "comp.window.focus" and deep_eq($go.args, {id: 20, generation: 1}) and not has_key($go, "workspace"), "another workspace's task focuses (comp switches, never the panel)")
 $hidden_away = $taskbar.normal_windows([window_row(20, 1, 1, "Other workspace", "example.editor", false, true)])
 $go2 = $taskbar.task_action_at($hidden_away, {window: 20, generation: 1}, 2)
-check($go2.verb == "comp.window.restore", "a minimised window elsewhere restores")
+check($go2.command == "comp.window.restore", "a minimised window elsewhere restores")
 $focused_away = $taskbar.normal_windows([window_row(20, 1, 1, "Other workspace", "example.editor", true, false)])
-check($taskbar.task_action_at($focused_away, {window: 20, generation: 1}, 2).verb == "comp.window.focus", "a window elsewhere is never minimised from the panel")
-check($taskbar.task_action($focused_away, {window: 20, generation: 1}).verb == "comp.window.minimize" and $taskbar.task_action($fresh, $busy.tasks[0]).workspace == nil, "the two-argument task_action user copies call is unchanged")
+check($taskbar.task_action_at($focused_away, {window: 20, generation: 1}, 2).command == "comp.window.focus", "a window elsewhere is never minimised from the panel")
+check($taskbar.task_action($focused_away, {window: 20, generation: 1}).command == "comp.window.minimize" and $taskbar.task_action($fresh, $busy.tasks[0]).workspace == nil, "the two-argument task_action user copies call is unchanged")
 $many_all = []
 for $i = 1 to 60
   push($many_all, window_row($i, 1, ($i % 3) + 1, "Window " .. to_string($i), "example.app", false, false))
@@ -514,9 +514,9 @@ for each $id, $node in $nodes
     end
   end
 end
--- The fallback's click routing is the template's: every control names a settings verb.
+-- The fallback's click routing is the template's: every control names a settings command.
 for each $id in ["scheme_ocean", "scheme_mono", "motion_slide", "size_top_minus", "size_right_plus"]
-  check(starts_with($nodes[$id].on_click, "shell.settings."), "control routes to a settings verb: " .. $id)
+  check(starts_with($nodes[$id].on_click, "shell.settings."), "control routes to a settings command: " .. $id)
 end
 check($nodes.motion_fade.on_click == nil, "fade stays unselectable")
 $bad = $snapshot
@@ -718,32 +718,32 @@ check($hostd.link_request("hd0", {mode: "static", addresses: "192.0.2.10/24", ga
 
 -- Grants, as hostd.status held_grants reports them: only those covering
 -- net.link.apply count, and their links limit (none = any link).
-$held = [{name: "widget", verbs: ["net.link.apply", "hostd.freeze"], limits: {links: ["eth0", "hd0"]}},
-  {name: "freeze-only", verbs: ["hostd.freeze"]}, {name: "family", verbs: ["net.*"], limits: {links: ["hd0", "wg0"]}}]
+$held = [{name: "widget", commands: ["net.link.apply", "hostd.freeze"], limits: {links: ["eth0", "hd0"]}},
+  {name: "freeze-only", commands: ["hostd.freeze"]}, {name: "family", commands: ["net.*"], limits: {links: ["hd0", "wg0"]}}]
 $acc = {available: true, frozen: false, grants: ["widget", "freeze-only", "family"], held: $held}
-check($hostd.may($acc, "net.link.apply", "eth0") and $hostd.may($acc, "net.link.apply", "wg0") and not $hostd.may($acc, "net.link.apply", "wlan0"), "a verb is allowed on the links some covering grant lists")
-check($hostd.may({available: true, frozen: false, held: [{name: "any", verbs: ["net.link.apply"], limits: {}}]}, "net.link.apply", "anything"), "no links limit means any link")
+check($hostd.may($acc, "net.link.apply", "eth0") and $hostd.may($acc, "net.link.apply", "wg0") and not $hostd.may($acc, "net.link.apply", "wlan0"), "a command is allowed on the links some covering grant lists")
+check($hostd.may({available: true, frozen: false, held: [{name: "any", commands: ["net.link.apply"], limits: {}}]}, "net.link.apply", "anything"), "no links limit means any link")
 check(not $hostd.may(merge($acc, {frozen: true}), "net.link.apply", "eth0") and not $hostd.may(merge($acc, {available: false}), "net.link.apply", "eth0"), "frozen or absent hostd: nothing")
-$wifi_acc = {available: true, frozen: false, held: [{name: "w", verbs: ["net.wifi.*"], limits: {links: ["wlan0"], ssids: ["home"]}}]}
+$wifi_acc = {available: true, frozen: false, held: [{name: "w", commands: ["net.wifi.*"], limits: {links: ["wlan0"], ssids: ["home"]}}]}
 check($hostd.may($wifi_acc, "net.wifi.connect", "wlan0") and $hostd.may($wifi_acc, "net.wifi.connect", "wlan0", "home") and not $hostd.may($wifi_acc, "net.wifi.connect", "wlan0", "cafe"), "Wi-Fi: device by links, network by ssids")
-check(deep_eq($hostd.named_links($acc, "net.wg.apply"), ["hd0", "wg0"]) and deep_eq($hostd.named_links($acc, "net.link.apply"), ["eth0", "hd0", "wg0"]), "the links grants name per verb (net.* covers both)")
-check($hostd.verb_covers("net.link.*", "net.link.apply") and $hostd.verb_covers("net.*", "net.link.apply") and $hostd.verb_covers("net.link.apply", "net.link.apply"), "exact names and prefix families, as hostd matches them")
+check(deep_eq($hostd.named_links($acc, "net.wg.apply"), ["hd0", "wg0"]) and deep_eq($hostd.named_links($acc, "net.link.apply"), ["eth0", "hd0", "wg0"]), "the links grants name per command (net.* covers both)")
+check($hostd.command_covers("net.link.*", "net.link.apply") and $hostd.command_covers("net.*", "net.link.apply") and $hostd.command_covers("net.link.apply", "net.link.apply"), "exact names and prefix families, as hostd matches them")
 check($hostd.uncertain({ok: false, status: "timeout"}) and $hostd.uncertain({ok: false, status: "unavailable", sent: true}), "hostd's timeout and an unanswered sent request are unknown outcomes")
 check(not $hostd.uncertain({ok: false, status: "unavailable", sent: false}) and not $hostd.uncertain({ok: false, status: "rolled_back"}) and not $hostd.uncertain({ok: true}), "a failed connect, a rollback and a success are known")
 check($hostd.call("hostd.status", {}, 1).sent == false or $hostd.call("hostd.status", {}, 1).ok, "no hostd socket here: a failed connect reports nothing sent")
-check(not $hostd.verb_covers("net.wifi.*", "net.link.apply") and not $hostd.verb_covers("net.link", "net.link.apply") and not $hostd.verb_covers("*", "net.link.apply"), "other families, a bare prefix and a lone star do not")
-check($hostd.may({available: true, frozen: false, held: [{name: "narrow", verbs: ["net.link.*"]}]}, "net.link.apply", "x"), "a narrower family counts as a grant")
+check(not $hostd.command_covers("net.wifi.*", "net.link.apply") and not $hostd.command_covers("net.link", "net.link.apply") and not $hostd.command_covers("*", "net.link.apply"), "other families, a bare prefix and a lone star do not")
+check($hostd.may({available: true, frozen: false, held: [{name: "narrow", commands: ["net.link.*"]}]}, "net.link.apply", "x"), "a narrower family counts as a grant")
 check(not $hostd.may({available: true, frozen: false, held: []}, "net.link.apply", "x") and deep_eq($hostd.named_links(nil, "net.wg.apply"), []), "no held grants")
-$limited = {access: {available: true, frozen: false, grants: ["widget"], held: [{name: "widget", verbs: ["net.link.apply"], limits: {links: ["eth0"]}}]}}
+$limited = {access: {available: true, frozen: false, grants: ["widget"], held: [{name: "widget", commands: ["net.link.apply"], limits: {links: ["eth0"]}}]}}
 $lim = $models.network($net_snap, $limited)
 check(not $lim.rows[0].editable and $lim.rows[1].editable and $lim.rows[1].name == "eth0" and $lim.rows[0].cta == "", "Configure only on the grant's links")
 
 -- Rows offer Configure only with a live, unfrozen grant.
-$granted = {access: {available: true, frozen: false, grants: ["vt4-network-widget"], held: [{name: "vt4-network-widget", verbs: ["net.*"], limits: {}}]}, edit: nil}
+$granted = {access: {available: true, frozen: false, grants: ["vt4-network-widget"], held: [{name: "vt4-network-widget", commands: ["net.*"], limits: {}}]}, edit: nil}
 $wr = $models.network($net_snap, $granted)
 check($wr.rows[0].editable and not $wr.has_hostd_note and not $wr.edit.shown, "a grant makes rows configurable, with no read-only note")
 check(deep_eq(map($wr.rows, function ($row) = [$row.name, $row.action, $row.cta]), [["wlan0", "wifi", "Wi-Fi networks"], ["eth0", "link", "Configure"], ["wg0", "wg", "Configure tunnel"]]), "each kind opens its own editor: Wi-Fi, link, tunnel")
-$frozen_ui = {access: {available: true, frozen: true, grants: ["vt4-network-widget"], held: [{name: "vt4-network-widget", verbs: ["net.*"]}]}}
+$frozen_ui = {access: {available: true, frozen: true, grants: ["vt4-network-widget"], held: [{name: "vt4-network-widget", commands: ["net.*"]}]}}
 check(not $models.network($net_snap, $frozen_ui).rows[0].editable and $models.network($net_snap, $frozen_ui).hostd_note == "hostd is frozen: changes are off until root on the host thaws it.", "frozen: read only, and it says why")
 check($models.network($net_snap, {access: {available: true, frozen: false, grants: [], held: []}}).hostd_note == "No hostd grant for this panel: read only.", "no grant: read only, and it says why")
 check(not $models.network($net_snap).rows[0].editable and not $models.network($net_snap).has_hostd_note, "no hostd at all: read only, silently")
@@ -778,17 +778,17 @@ check($models.net_refusal("something_new", "hd0", nil) == "hostd refused the cha
 -- clicks may write.
 check($net_nodes.n_list.on_click == "net_row" and $net_nodes.e_apply.on_click == "net_apply" and $net_nodes.e_undo.on_click == "net_undo", "row, Apply and Undo are wired")
 check($net_nodes.e_addr.widget == "field" and $net_nodes.e_addr.on_change == "net_edit_addr" and $net_nodes.e_gw.on_change == "net_edit_gw" and $net_nodes.e_dns.on_change == "net_edit_dns", "fields report edits")
-for each $verb in ["net_row", "net_mode_dhcp", "net_mode_static", "net_close", "net_apply", "net_undo"]
-  $body = before(after($net_behaviour, "on " .. $verb), "\nend\n")
-  check(contains($body, "if not from_ui($event) then $r.respond(ui_only()); return end"), "a write-path handler refuses non-UI senders: " .. $verb)
+for each $command in ["net_row", "net_mode_dhcp", "net_mode_static", "net_close", "net_apply", "net_undo"]
+  $body = before(after($net_behaviour, "on " .. $command), "\nend\n")
+  check(contains($body, "if not from_ui($event) then $r.respond(ui_only()); return end"), "a write-path handler refuses non-UI senders: " .. $command)
 end
 check(contains($net_behaviour, "return type($event.headers) == \"map\" and $event.headers.from == $ctx.host"), "UI clicks are the scene host's; no headers is not a click")
 $apply_body = before(after($net_behaviour, "on net_apply\n"), "\nend\n")
 $task_body = before(after($net_behaviour, "on net.write async\n"), "\nend\n")
 check(not contains($apply_body, "$h.call(") and contains($apply_body, "start_write("), "a click is answered at once; hostd runs in the task")
 check(starts_with(trim($task_body), "if len(keys($event.headers)) != 0 then return end"), "the write task refuses any event with headers (every Bus event has them)")
-check(contains($task_body, "$state.inflight != $link") and contains($task_body, "contains($WRITE_VERBS, $verb)"), "the task only runs the write its click started, and only listed write verbs")
-check(contains($net_behaviour, "$WRITE_VERBS = [\"net.link.apply\", \"net.wg.apply\", \"net.wifi.connect\", \"hostd.undo\"]"), "the write verbs: link, tunnel, Wi-Fi connect, undo")
+check(contains($task_body, "$state.inflight != $link") and contains($task_body, "contains($WRITE_COMMANDS, $command)"), "the task only runs the write its click started, and only listed write commands")
+check(contains($net_behaviour, "$WRITE_COMMANDS = [\"net.link.apply\", \"net.wg.apply\", \"net.wifi.connect\", \"hostd.undo\"]"), "the write commands: link, tunnel, Wi-Fi connect, undo")
 check(contains($net_behaviour, "$state.receipts[$link] = $out.body.receipt") and contains($net_behaviour, "$edit.receipt = $state.receipts[$edit.link]"), "the newest receipt is kept per link, outside the editor")
 -- ── tunnels and Wi-Fi through hostd ─────────────────────────────────────
 -- Tunnel requests: one peer at most, handshake off only when asked.
@@ -803,7 +803,7 @@ check($hostd.wg_request("w", {wg_addresses: "192.0.2.101/32", peer_key: "K", pee
 check(deep_eq($hostd.wifi_request("wlan0", "home", "secret").request, {device: "wlan0", ssid: "home", window_s: 30, passphrase: "secret"}) and $hostd.wifi_request("wlan0", "cafe", nil).request.passphrase == nil, "Wi-Fi connect carries a passphrase only when given")
 
 -- New tunnels: names a net.wg.apply grant lists that don't exist yet.
-$wg_ui = {access: {available: true, frozen: false, grants: ["w"], held: [{name: "w", verbs: ["net.wg.apply"], limits: {links: ["wg0", "wgtest"]}}]}}
+$wg_ui = {access: {available: true, frozen: false, grants: ["w"], held: [{name: "w", commands: ["net.wg.apply"], limits: {links: ["wg0", "wgtest"]}}]}}
 $wgm = $models.network($net_snap, $wg_ui)
 check(deep_eq($wgm.new_tunnels, [{id: "wg_wgtest", cells: [], label: "New tunnel: wgtest"}]) and $wgm.has_new_tunnels, "an existing tunnel is not offered as new")
 check(deep_eq(map($wgm.rows, function ($row) = $row.action), ["", "", "wg"]), "only the granted tunnel row is configurable")
@@ -841,9 +841,9 @@ check($models.net_refusal("no_iwd", "wlan0", {}) == "iwd is not running, so ther
 -- The passphrase: masked, sent once on Enter, never kept.
 check($net_nodes.f_pass.password == true and $net_nodes.f_pass.on_change == nil and $net_nodes.f_pass.on_submit == "net_wifi_connect", "the passphrase field is masked and reports no keystrokes")
 check(not contains($net_behaviour, "edit.passphrase") and not contains($net_behaviour, "$state.passphrase"), "a passphrase is never kept in state")
-for each $verb in ["net_wg_new", "net_wg_handshake", "net_wifi_scan", "net_wifi_pick", "net_wifi_connect"]
-  $body = before(after($net_behaviour, "on " .. $verb .. "\n"), "\nend\n")
-  check(contains($body, "if not from_ui($event) then $r.respond(ui_only()); return end"), "a write-path handler refuses non-UI senders: " .. $verb)
+for each $command in ["net_wg_new", "net_wg_handshake", "net_wifi_scan", "net_wifi_pick", "net_wifi_connect"]
+  $body = before(after($net_behaviour, "on " .. $command .. "\n"), "\nend\n")
+  check(contains($body, "if not from_ui($event) then $r.respond(ui_only()); return end"), "a write-path handler refuses non-UI senders: " .. $command)
 end
 check(starts_with(trim(before(after($net_behaviour, "on net.scan async\n"), "\nend\n")), "if len(keys($event.headers)) != 0 then return end"), "the scan task refuses any event with headers")
 check(contains(before(after($net_behaviour, "fn typed($event, $field)\n"), "\nend\n"), "if from_ui($event) and"), "typed text is stored only from the scene host")
@@ -990,7 +990,7 @@ $fresh_vol = $models.volume(nil)
 check($fresh_vol.status == "" and not $fresh_vol.has_out, "before the first snapshot: nothing shown")
 
 -- Writes: every write handler checks the relayed click first, and the
--- popup's Bus verbs are only open/close/toggle/state.
+-- popup's Bus commands are only open/close/toggle/state.
 $vol_behaviour = read_file($vol_dir .. "/behaviour.mix")
 for each $fname in ["fn bar_click(", "fn ui_step(", "fn ui_mute(", "fn pick_default(", "on vol_stream_pick\n"]
   check(contains(before(after($vol_behaviour, $fname), "\nend\n"), "if not from_ui($event) then $r.respond(ui_only()); return end"), "a write path refuses anything but a relayed click: " .. $fname)

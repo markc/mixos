@@ -49,9 +49,9 @@ listening, and match on the id the send returned. If you were disconnected,
 
 An expired question was not answered. Treat it as "no answer", never as yes.
 
-## Verbs
+## Commands
 
-| Verb | Body | Reply |
+| Command | Body | Reply |
 |---|---|---|
 | `notify.send` | `summary`, and optionally `body`, `app`, `source`, `urgency`, `actions` (`[{id, label}]`), `timeout_ms`, `request_id`, `thread` | `{id, status}` |
 | `notify.get` | `{id}` | the notification, with `outcome` once it has one |

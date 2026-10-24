@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="mixtrayd is the data service behind the MixOS tray popup, mixtray. It registers on the noded Bus as mixtrayd and answers one verb, mixtrayd.snapshot, with four…">
+    <meta name="description" content="mixtrayd is the data service behind the MixOS tray popup, mixtray. It registers on the noded Bus as mixtrayd and answers one command, mixtrayd.snapshot, with…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -239,7 +239,7 @@
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="mixtrayd">mixtrayd</h1>
 <p><code>mixtrayd</code> is the data service behind the MixOS tray popup, <code>mixtray</code>. It
-registers on the noded Bus as <code>mixtrayd</code> and answers one verb,
+registers on the noded Bus as <code>mixtrayd</code> and answers one command,
 <code>mixtrayd.snapshot</code>, with four tabs of state:</p>
 <table><thead><tr><th>Tab</th><th>Source</th></tr></thead><tbody>
 <tr><td>COS</td><td>systemd <code>ActiveState</code> for the MixOS units (system and user managers)</td></tr>
@@ -262,7 +262,7 @@ open it keeps one wait running and starts the next as each one returns, so a
 unit's state changes on screen as systemd reports it.</p>
 <h2 id="control">Control</h2>
 <p>The COS tab can start, stop and restart a unit through the <code>mixtrayd.control</code>
-verb. A system unit goes through hostd's <code>unit.control</code> verb: hostd is root,
+command. A system unit goes through hostd's <code>unit.control</code> command: hostd is root,
 and its grant <code>mixtray-units</code> names the only units this daemon may act on, so
 no sudo or polkit prompt is involved. The daemon refuses <code>hostd.service</code> and
 its own unit, and it marks each unit it can control in the snapshot.</p>
@@ -272,7 +272,7 @@ it, since a restart has no undo.</p>
 <p>Each host is one file in <code>~/.ssh/hosts/</code>, named after its alias and holding a
 single <code>Host</code> line, which <code>~/.ssh/config</code> pulls in with
 <code>Include ~/.ssh/hosts/*</code>. Dotfiles in that directory are shared snippets, not
-hosts. The <code>mixtrayd.ssh</code> verb takes an <code>action</code>:</p>
+hosts. The <code>mixtrayd.ssh</code> command takes an <code>action</code>:</p>
 <table><thead><tr><th>Action</th><th>Fields</th><th>Effect</th></tr></thead><tbody>
 <tr><td><code>probe</code></td><td><code>ids</code> (empty for every usable host)</td><td>runs <code>ssh ALIAS true</code> in batch mode, four at a time, 10 s each</td></tr>
 <tr><td><code>create</code></td><td><code>name</code>, <code>hostname</code>, <code>port</code>, <code>user</code>, <code>key</code></td><td>writes a new owner-only host file using <code>~/.ssh/keys/KEY</code>; never overwrites one</td></tr>

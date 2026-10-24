@@ -3,7 +3,7 @@
 //! Window control on compd's real engine: the
 //! client's own maximise / minimise requests reach the host's queue, the
 //! minimise LIFO picks the restore rule's candidate, and a destroyed window
-//! takes its maximise record with it. The verbs' replies and refusals are
+//! takes its maximise record with it. The commands' replies and refusals are
 //! policy's (its own window tests), and the engine half (configure,
 //! placement, kill) is exercised by the nested smoke.
 

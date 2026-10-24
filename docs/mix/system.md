@@ -876,7 +876,7 @@ spawn(["worker"], {cwd: "/srv/app", env: {ROLE: "bg"},
   says no more — a stale one names whoever holds that pid now. To stop a
   detached daemon later, check a pidfile together with the process start time
   (field 22 of `/proc/<pid>/stat`, recorded when the pid was written), or ask a
-  Bus verb the child itself answers, rather than trusting a bare pid. Default `false` (a plain child
+  Bus command the child itself answers, rather than trusting a bare pid. Default `false` (a plain child
   in the caller's session, which stays the caller's to reap).
 - `die_with_parent: true` (Linux), without `exit_event`, → the opposite slot. The child **ends with
   this mix process**, for a helper that must not outlive the script or
@@ -2043,7 +2043,7 @@ handle: `tcp_send`, `tcp_recv`, `tcp_recv_line`, `tcp_on` and `tcp_close`
 all work on it. `nil` on timeout (default 30 s, `0` waits forever) is an
 ordinary answer and the listener stays usable. Listeners take their
 numbers from `tcp_connect`'s counter, so a number is never both: a
-connection verb given a listener raises `TCP_LISTENER`, and `tcp_accept`
+connection command given a listener raises `TCP_LISTENER`, and `tcp_accept`
 given a connection raises `TCP_ACCEPT_HANDLE`. `tcp_close` on a listener
 stops listening at once and returns `true`; `false` means it was already
 closed.
@@ -2083,7 +2083,7 @@ Errors are structured; read `$err.code` from `catch $msg, $err`:
 | `TCP_ACCEPT_ARGUMENT` | a bad option |
 | `TCP_ACCEPT_FAILED` | accept(2) failed on the listener |
 | `TCP_HANDLE_LIMIT` | 1024 live server-side sockets: every listener and accepted connection holds a slot until it closes. The limit is server-side only; `tcp_connect` is not counted or limited |
-| `TCP_LISTENER` | a connection verb was given a listener |
+| `TCP_LISTENER` | a connection command was given a listener |
 
 **Serve mode and Class C.** On unix every numeric `tcp_accept` waits on
 the async runtime, like `sleep()`: SIGTERM and Ctrl-C end it at once, and
@@ -2262,10 +2262,10 @@ source retires and a further recv raises `SOCKET_WATCH_HANDLE`.
 
 **Class C recv.** `ws_recv("ws:1"[, timeout])` (and the tcp forms) park on
 the source's FIFO through the evaluator's class-C yield — the read permit
-is released while waiting, so other verbs keep their latency targets.
+is released while waiting, so other commands keep their latency targets.
 `nil` on timeout keeps the source usable (poll again); the terminal event
 raises `SOCKET_CLOSED` and retires it. At most one recv parks per source;
-a second refuses (`SOCKET_BUSY`). A mismatched verb refuses
+a second refuses (`SOCKET_BUSY`). A mismatched command refuses
 (`SOCKET_KIND`). Because this form reads the FIFO the event pump also
 consumes, recv on a *source* is refused in serve mode
 (`SOCKET_RECV_SERVE`) — use `on <command>` there.
@@ -2325,7 +2325,7 @@ a concurrent handler tick (the pull yields the read permit — the tick
 lands while the recv is parked), same-connection send after subscribing
 with the FIFO intact, timeout-then-reuse, a second same-handle waiter
 refusing, close-while-parked retiring, and a cancelled pull leaving the
-handle intact for the next generation. The *strict* "other verbs stay
+handle intact for the next generation. The *strict* "other commands stay
 under 1 ms while a recv is parked" acceptance and the 5 s idle
 context-switch measurement remain explicit external acceptance, measured
 by the coordinator's fixture rather than asserted here; they are never

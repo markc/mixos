@@ -51,15 +51,15 @@ fn workshop_new_refreshes_global_list_immediately() {
     assert_eq!(catalogue.entries.len(), 1);
     assert_eq!(catalogue.entries[0].id, "global-new");
 }
-use crate::verbs::{self, Reply};
+use crate::commands::{self, Reply};
 use std::sync::mpsc;
 use std::time::Duration;
 
 #[test]
-fn management_verbs_refresh_tiers_and_refuse_invalid_mutations() {
+fn management_commands_refresh_tiers_and_refuse_invalid_mutations() {
     let (_dir, roots, session) = fixture();
     session.create("Managed").unwrap();
-    let ask = |suffix, body| verbs::handle(&session, verbs::Caller::Workshop, suffix, &body).wait();
+    let ask = |suffix, body| commands::handle(&session, commands::Caller::Workshop, suffix, &body).wait();
     assert_eq!(
         ask("get", json!({"id":"managed"})).unwrap()["tier"],
         "user-app"
@@ -111,9 +111,9 @@ fn management_verbs_refresh_tiers_and_refuse_invalid_mutations() {
     );
     let global = Session::with_roots("workshop", Some(roots.clone()));
     assert_eq!(
-        verbs::handle(
+        commands::handle(
             &global,
-            verbs::Caller::Workshop,
+            commands::Caller::Workshop,
             "get",
             &json!({"id":"managed"})
         )
@@ -121,9 +121,9 @@ fn management_verbs_refresh_tiers_and_refuse_invalid_mutations() {
         .unwrap()["tier"],
         "user-global"
     );
-    verbs::handle(
+    commands::handle(
         &global,
-        verbs::Caller::Workshop,
+        commands::Caller::Workshop,
         "remove",
         &json!({"id":"managed"}),
     )
@@ -173,7 +173,7 @@ fn fixture() -> (tempfile::TempDir, Roots, Session) {
 
 #[test]
 fn macro_write_authority_precedes_all_file_effects() {
-    use verbs::Caller;
+    use commands::Caller;
     for caller in [Caller::Owner, Caller::Workshop, Caller::Other] {
         for suffix in ["put", "remove", "move", "copy", "new"] {
             let (_dir, roots, session) = fixture();
@@ -194,7 +194,7 @@ fn macro_write_authority_precedes_all_file_effects() {
                 "copy" => json!({"id":"builtin"}),
                 _ => json!({"id":"test"}),
             };
-            let answer = verbs::handle(&session, caller, suffix, &body).wait();
+            let answer = commands::handle(&session, caller, suffix, &body).wait();
             if caller == Caller::Other {
                 let error = answer.unwrap_err();
                 assert_eq!(error.code, "DENIED");
@@ -219,30 +219,30 @@ fn macro_write_authority_precedes_all_file_effects() {
 
 #[test]
 fn global_and_cross_app_writes_require_workshop() {
-    use verbs::Caller;
+    use commands::Caller;
     for app in ["fixture", "workshop"] {
         for body in [
             json!({"tier":"user-global"}),
             json!({"tier":"user-app","destination":"other"}),
         ] {
             assert_eq!(
-                verbs::authorize(app, Caller::Owner, "move", &body)
+                commands::authorize(app, Caller::Owner, "move", &body)
                     .unwrap_err()
                     .code,
                 "DENIED"
             );
-            assert!(verbs::authorize(app, Caller::Workshop, "move", &body).is_ok());
+            assert!(commands::authorize(app, Caller::Workshop, "move", &body).is_ok());
         }
     }
     for suffix in ["put", "remove", "move", "copy", "new"] {
-        assert!(verbs::authorize("workshop", Caller::Owner, suffix, &json!({})).is_err());
-        assert!(verbs::authorize("workshop", Caller::Workshop, suffix, &json!({})).is_ok());
+        assert!(commands::authorize("workshop", Caller::Owner, suffix, &json!({})).is_err());
+        assert!(commands::authorize("workshop", Caller::Workshop, suffix, &json!({})).is_ok());
     }
     let (_dir, roots, _) = fixture();
     let session = Session::with_roots("workshop", Some(roots.clone()));
     for caller in [Caller::Other, Caller::Owner] {
         assert_eq!(
-            verbs::handle(&session, caller, "new", &json!({"title":"Global"}))
+            commands::handle(&session, caller, "new", &json!({"title":"Global"}))
                 .wait()
                 .unwrap_err()
                 .code,
@@ -251,7 +251,7 @@ fn global_and_cross_app_writes_require_workshop() {
         assert!(!roots.user.exists());
     }
     assert!(
-        verbs::handle(
+        commands::handle(
             &session,
             Caller::Workshop,
             "new",
@@ -264,7 +264,7 @@ fn global_and_cross_app_writes_require_workshop() {
 }
 
 #[test]
-fn read_and_run_verbs_remain_open() {
+fn read_and_run_commands_remain_open() {
     let (_dir, _roots, session) = fixture();
     session.create("Test").unwrap();
     for (suffix, body) in [
@@ -276,7 +276,7 @@ fn read_and_run_verbs_remain_open() {
         ("stop", json!({})),
         ("run", json!({"id":"missing"})),
     ] {
-        let result = verbs::handle(&session, verbs::Caller::Other, suffix, &body).wait();
+        let result = commands::handle(&session, commands::Caller::Other, suffix, &body).wait();
         if suffix == "run" {
             assert_eq!(result.unwrap_err().code, "NOT_FOUND");
         } else {
@@ -348,7 +348,7 @@ fn initial_list_and_reload_are_deferred_and_cache_the_catalogue() {
     roots
         .create("fixture", crate::Tier::UserApp, "hello", "App")
         .unwrap();
-    let reply = verbs::handle(&session, verbs::Caller::Workshop, "list", &json!({}));
+    let reply = commands::handle(&session, commands::Caller::Workshop, "list", &json!({}));
     assert!(matches!(reply, Reply::Deferred(_)));
     let body = reply.wait().unwrap();
     assert_eq!(body["scanned"], true);
@@ -370,10 +370,10 @@ fn initial_list_and_reload_are_deferred_and_cache_the_catalogue() {
         "NOT_FOUND"
     );
     assert!(matches!(
-        verbs::handle(&session, verbs::Caller::Workshop, "list", &json!({})),
+        commands::handle(&session, commands::Caller::Workshop, "list", &json!({})),
         Reply::Immediate(_)
     ));
-    let reply = verbs::handle(&session, verbs::Caller::Workshop, "reload", &json!({}));
+    let reply = commands::handle(&session, commands::Caller::Workshop, "reload", &json!({}));
     assert!(matches!(reply, Reply::Deferred(_)));
     reply.wait().unwrap();
     assert!(session.run("missing", "bus").unwrap_err().code == "NOT_FOUND");
@@ -398,9 +398,9 @@ fn completion_is_once_per_run_for_success_failure_signal_and_spawn_failure() {
         (3, "while true\nsleep(1)\nend\n", Value::Null, true),
     ] {
         std::fs::write(&path, source).unwrap();
-        let accepted = verbs::handle(
+        let accepted = commands::handle(
             &session,
-            verbs::Caller::Workshop,
+            commands::Caller::Workshop,
             "run",
             &json!({"id":"test"}),
         )
@@ -450,7 +450,7 @@ fn refusals_distinguish_arguments_availability_scan_and_channel_failures() {
         ("status", json!([])),
     ] {
         assert_eq!(
-            verbs::handle(&session, verbs::Caller::Workshop, suffix, &body)
+            commands::handle(&session, commands::Caller::Workshop, suffix, &body)
                 .wait()
                 .unwrap_err()
                 .code,
@@ -459,9 +459,9 @@ fn refusals_distinguish_arguments_availability_scan_and_channel_failures() {
     }
     let unavailable = Session::with_roots("fixture", None);
     assert_eq!(
-        verbs::handle(
+        commands::handle(
             &unavailable,
-            verbs::Caller::Workshop,
+            commands::Caller::Workshop,
             "new",
             &json!({"title":"Test"})
         )
@@ -471,7 +471,7 @@ fn refusals_distinguish_arguments_availability_scan_and_channel_failures() {
         "UNAVAILABLE"
     );
     assert_eq!(
-        verbs::handle(&unavailable, verbs::Caller::Workshop, "reload", &json!({}))
+        commands::handle(&unavailable, commands::Caller::Workshop, "reload", &json!({}))
             .wait()
             .unwrap_err()
             .code,
@@ -480,7 +480,7 @@ fn refusals_distinguish_arguments_availability_scan_and_channel_failures() {
     // Invalid app names fail root-folder resolution rather than producing diagnostics.
     let invalid = Session::with_roots("../invalid", Some(roots));
     assert_eq!(
-        verbs::handle(&invalid, verbs::Caller::Workshop, "reload", &json!({}))
+        commands::handle(&invalid, commands::Caller::Workshop, "reload", &json!({}))
             .wait()
             .unwrap_err()
             .code,
@@ -502,9 +502,9 @@ fn new_creates_in_the_user_app_tier_and_refreshes_list() {
     })
     .unwrap();
     let session = Session::with_roots("fixture", Some(roots.clone()));
-    let reply = verbs::handle(
+    let reply = commands::handle(
         &session,
-        verbs::Caller::Workshop,
+        commands::Caller::Workshop,
         "new",
         &json!({"title":"Tidy imports"}),
     );
@@ -516,15 +516,15 @@ fn new_creates_in_the_user_app_tier_and_refreshes_list() {
         body["path"],
         json!(roots.user.join("fixture/tidy-imports.mix"))
     );
-    let list = verbs::handle(&session, verbs::Caller::Workshop, "list", &json!({}))
+    let list = commands::handle(&session, commands::Caller::Workshop, "list", &json!({}))
         .wait()
         .unwrap();
     assert_eq!(list["macros"][0]["id"], body["id"]);
     assert_eq!(list["macros"][0]["tier"], "user-app");
     assert_eq!(
-        verbs::handle(
+        commands::handle(
             &session,
-            verbs::Caller::Workshop,
+            commands::Caller::Workshop,
             "new",
             &json!({"title":"   "})
         )
@@ -538,9 +538,9 @@ fn new_creates_in_the_user_app_tier_and_refreshes_list() {
     std::fs::remove_dir(&roots.user).unwrap();
     std::fs::write(&roots.user, "obstruction").unwrap();
     assert_eq!(
-        verbs::handle(
+        commands::handle(
             &session,
-            verbs::Caller::Workshop,
+            commands::Caller::Workshop,
             "new",
             &json!({"title":"Test"})
         )

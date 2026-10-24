@@ -2,18 +2,18 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Offscreen snapshots of Workshop driven through its real engine: a
 //! discovered node with one service whose descriptions failed, a selected
-//! verb, a body and a completed reply. Regenerate with `UPDATE_SNAPSHOTS=1`
+//! command, a body and a completed reply. Regenerate with `UPDATE_SNAPSHOTS=1`
 //! and look at the images before committing them.
 use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
 use inspector::bus::Reply;
-use inspector::model::Verb;
+use inspector::model::Command;
 use inspector::{Dialog, Effect, Engine, Selection, Snapshot};
 use toolkit::Theme;
-use workshop::{commands, label, strings, view::view};
+use workshop::{actions, label, strings, view::view};
 
 fn fixture() -> Snapshot {
-    let verb = |name: &str, args: &str, description: &str, read_only| Verb {
+    let command = |name: &str, args: &str, description: &str, read_only| Command {
         name: name.into(),
         args: args.into(),
         description: description.into(),
@@ -23,18 +23,18 @@ fn fixture() -> Snapshot {
     s.services.insert(
         "noded".into(),
         Ok(vec![
-            verb(
+            command(
                 "noded.list",
                 "",
                 "Registered services on this node",
                 Some(true),
             ),
-            verb("noded.peers", "", "Mesh peers and routing view", Some(true)),
+            command("noded.peers", "", "Mesh peers and routing view", Some(true)),
         ]),
     );
     s.services.insert(
         "settingsd".into(),
-        Ok(vec![verb(
+        Ok(vec![command(
             "settings.get",
             "{\"key\":\"string\"}",
             "Read one setting",
@@ -73,9 +73,9 @@ fn engine() -> Engine {
     e.discovered(ticket, fixture());
     e.ui.selected = Some(Selection {
         service: "settingsd".into(),
-        verb: "settings.get".into(),
+        command: "settings.get".into(),
     });
-    e.ui.row_key = Some("verb:local:settingsd:settings.get".into());
+    e.ui.row_key = Some("command:local:settingsd:settings.get".into());
     e.toggle("mesh");
     e.set_body("{\"key\": \"appearance.scheme\"}".into());
     e.call_selected();
@@ -101,8 +101,8 @@ fn engine() -> Engine {
     e.ui.expanded.insert("macros:ced".into());
     e.ui.expanded.insert("service:local:ced".into());
     e.workshop.observe = "redacted".into();
-    e.workshop.retain(serde_json::json!({"ts":"14:02:11.204","direction":"local","from":"workshop","service":"ced","verb":"ced.macros.run","rc":0,"ms":3}));
-    e.workshop.retain(serde_json::json!({"ts":"14:02:11.310","direction":"topic","from":"ced","service":"ced","verb":"ced.command.executed","rc":0,"ms":1,"payload":{"id":"edit.format","origin":"macro"}}));
+    e.workshop.retain(serde_json::json!({"ts":"14:02:11.204","direction":"local","from":"workshop","service":"ced","command":"ced.macros.run","rc":0,"ms":3}));
+    e.workshop.retain(serde_json::json!({"ts":"14:02:11.310","direction":"topic","from":"ced","service":"ced","command":"ced.action.executed","rc":0,"ms":1,"payload":{"id":"edit.format","origin":"macro"}}));
     e
 }
 
@@ -121,7 +121,7 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
         engine.workshop.message = "run 4 · exited 0".into();
     }
     engine.ui.dialog = dialog;
-    let registry = commands::registry();
+    let registry = actions::registry();
     let strings = strings();
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1100.0, 760.0))

@@ -319,7 +319,7 @@ async fn human_input_refuses_queued_agent_admissions() {
     let human = ingress.request_input(InputOp::Text("x".into())).unwrap();
     let sequence = ingress
         .request_long(LongOp::Sequence(vec![SequenceStep {
-            verb: "comp.input.key",
+            command: "comp.input.key",
             op: agent_key(),
             delay: Duration::ZERO,
         }]))
@@ -341,15 +341,15 @@ async fn human_input_refuses_queued_agent_admissions() {
     assert_eq!(ingress.depth(), 0);
 }
 
-/// A long verb's slot is released when the engine takes it; the reply comes
-/// through the `LongReply` whenever the verb resolves.
+/// A long command's slot is released when the engine takes it; the reply comes
+/// through the `LongReply` whenever the command resolves.
 #[tokio::test]
-async fn long_verbs_release_their_slot_and_answer_later() {
+async fn long_commands_release_their_slot_and_answer_later() {
     let (mut wiring, starter) = test_wiring("comp-nested");
     let ingress = starter.ingress().clone();
     let long = ingress
         .request_long(LongOp::Sequence(vec![SequenceStep {
-            verb: "comp.input.release_all",
+            command: "comp.input.release_all",
             op: InputOp::ReleaseAll,
             delay: Duration::from_millis(10),
         }]))
@@ -358,7 +358,7 @@ async fn long_verbs_release_their_slot_and_answer_later() {
     let mut engine = engine(&wiring.context);
     wiring.service.service(&mut engine);
     assert_eq!(engine.inner.calls, ["long true"]);
-    assert_eq!(ingress.depth(), 0, "the slot is free while the verb waits");
+    assert_eq!(ingress.depth(), 0, "the slot is free while the command waits");
     let reply = engine.inner.longs.pop().unwrap();
     assert!(!reply.is_closed());
     reply.send(ControlReply::Body(json!({"steps": []})));

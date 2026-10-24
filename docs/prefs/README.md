@@ -171,7 +171,7 @@ it gone, asks a running Email to forget the password; Preferences does not start
 Email for this, and if Email is away or refuses, the status line says the
 password may still be held. An account still being migrated comes back
 when Email next starts, by design.
-An Email too old to know these verbs is reported as such, not retried.
+An Email too old to know these commands is reported as such, not retried.
 
 ```mix
 -- What Preferences shows: accounts (with has_password), default, mail options.
@@ -225,10 +225,10 @@ tree order. It uses the same search as the sidebar and leaves the window alone.
 under Apps → Email above.
 `prefs.execute {id}` runs any command a button
 or menu would (`apps.check`, `apps.install`, `appearance.apply`,
-`appearance.revert`, …), and `prefs.commands` lists them with their
+`appearance.revert`, …), and `prefs.actions` lists them with their
 enablement. The window is drivable like every MixOS app
-(`prefs.ui.*`, `prefs.window`). The verbs are registered in
-`docs/docs/spec/bus/verbs.conf.mix`.
+(`prefs.ui.*`, `prefs.window`). The commands are registered in
+`docs/docs/spec/bus/commands.conf.mix`.
 
 For scripted work, call the services directly (`releases.*`,
 `settings.*`): Preferences is their window, not a second implementation.
@@ -256,7 +256,7 @@ state read, never automatically resent.
 Wallpaper and browser state are included in `prefs.info`, wallpaper state in
 `prefs.appearance`. Commands `wallpaper.apply`, `wallpaper.revert`,
 `wallpaper.refresh` and `wallpaper.browse` are available through
-`prefs.execute`; the normal `prefs.ui.*` verbs drive the controls and browser.
+`prefs.execute`; the normal `prefs.ui.*` commands drive the controls and browser.
 
 ## Running and testing
 
@@ -267,7 +267,7 @@ The source is [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs
 
 | Path | What |
 |---|---|
-| `crates/preferences` | the headless engine: sections, rows, notes, one operation at a time, the `prefs.*` verbs |
+| `crates/preferences` | the headless engine: sections, rows, notes, one operation at a time, the `prefs.*` commands |
 | `crates/preferences/src/navigation.rs` | the section registry, seven categories, software groups and search |
 | `crates/preferences/src/appearance.rs` | Appearance: the look, families, scale, density and motion, with drafts, fenced applies and receipts for lost replies |
 | `crates/preferences/src/email.rs` | Apps → Email: account changes planned and checked, fenced applies, passwords handed to Email |
@@ -279,14 +279,14 @@ The source is [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs
 Test with `cargo test -p preferences -p prefs`. Regenerate the snapshots
 with `UPDATE_SNAPSHOTS=1` and look at the images before committing them.
 
-## Macro Bus verbs
+## Macro Bus commands
 
-The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+The shared [macro Bus surface](/macros/#bus-commands) uses this process's
 catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
 the instance’s registered Bus name (for example `term-1234` for a second Term
-instance). Verbs keep the app’s canonical prefix, such as `prefs.macros.run`.
+instance). Commands keep the app’s canonical prefix, such as `prefs.macros.run`.
 
-| Verb | Arguments | Result |
+| Command | Arguments | Result |
 |---|---|---|
 | `prefs.macros.list` | `{}` | Catalogue and diagnostics |
 | `prefs.macros.reload` | `{}` | Catalogue and diagnostics |

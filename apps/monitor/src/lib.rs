@@ -7,7 +7,7 @@
 //! around it (AGENTS.md §4.1): [`view`] draws the engine's state, [`graph`]
 //! draws its history, [`shell`] runs its effects, and [`commands`] is the
 //! registry every action goes through, from the menu, a shortcut or the Bus.
-pub mod commands;
+pub mod actions;
 pub mod graph;
 pub mod shell;
 pub mod view;

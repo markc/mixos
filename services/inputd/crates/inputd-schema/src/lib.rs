@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! inputd's wire contract: the keymap.v1 physical rows, the `input.*` verb
+//! inputd's wire contract: the keymap.v1 physical rows, the `input.*` command
 //! names and bodies, and the fixed rule for which strokes are the user's.
 //!
 //! inputd reads evdev below the compositor, so it is the one place in the
@@ -194,17 +194,17 @@ pub fn user_keys() -> Vec<PhysicalStroke> {
     out
 }
 
-/// A physical row: a stroke fires a Bus verb.
+/// A physical row: a stroke fires a Bus command.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PhysicalBinding {
     pub stroke: PhysicalStroke,
-    /// The verb fired on press.
+    /// The command fired on press.
     pub action: ActionId,
-    /// The fired verb's body. A JSON object (checked at bind and load);
+    /// The fired command's body. A JSON object (checked at bind and load);
     /// absent fires an empty body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args: Option<serde_json::Value>,
-    /// The registered service the verb is sent to, with `action` as the
+    /// The registered service the command is sent to, with `action` as the
     /// command unchanged. Absent: the action's first dot-segment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service: Option<String>,
@@ -245,8 +245,8 @@ pub enum InputMode {
     Transparent,
 }
 
-/// The `input.*` verbs inputd answers. Frozen wire names.
-pub mod verbs {
+/// The `input.*` commands inputd answers. Frozen wire names.
+pub mod commands {
     pub const QUERY: &str = "input.query";
     pub const BIND: &str = "input.bind";
     pub const UNBIND: &str = "input.unbind";

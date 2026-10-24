@@ -120,7 +120,7 @@ buildinfo = { path = "libs/buildinfo" }
 davproto = { path = "libs/davproto" }
 bus = { path = "libs/bus", default-features = false }
 config = { path = "libs/config" }
-command = { path = "libs/command" }
+action = { path = "libs/action" }
 daemon = { path = "libs/daemon" }
 files = { path = "libs/files" }
 design = { path = "libs/design" }

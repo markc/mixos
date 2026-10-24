@@ -144,10 +144,10 @@ wallpaper textures.
 
 ## The Bus
 
-Service `backdrop` (or `--service`). Verbs (registered in
-`docs/docs/spec/bus/verbs.conf.mix`):
+Service `backdrop` (or `--service`). Commands (registered in
+`docs/docs/spec/bus/commands.conf.mix`):
 
-| Verb | Class | Body | Reply |
+| Command | Class | Body | Reply |
 |---|---|---|---|
 | `backdrop.ping` | query | `{}` | `{schema, service}` |
 | `backdrop.state` | query | `{}` | the state below |
@@ -167,7 +167,7 @@ through `config::atomic`), and then applies. Its reply is `rc 0` with
 - `SUPERSEDED`: a newer set replaced this one before it applied.
 - `BUSY`: a next arrived while a set or advance was decoding;
 - `NON_SLIDESHOW`: a next was requested with no applied slideshow;
-- `UNKNOWN`: the requested verb is not implemented.
+- `UNKNOWN`: the requested command is not implemented.
 
 `backdrop.next` advances configured slideshows without changing or storing their
 sources. It refuses a configuration with no slideshow. An advance waiting for
@@ -195,7 +195,7 @@ shows (`theme`, `colour`, `image` or `fallback`), its `error`, and
 what is on screen; `active` alone does not mean every output has presented it yet.
 
 Every applied Bus set or next is one run of its command and is published on
-`backdrop.command.executed` with origin `bus`. The command line's default is
+`backdrop.action.executed` with origin `bus`. The command line's default is
 not a run: it is the start state.
 
 ## Cost
@@ -265,4 +265,4 @@ gate runs on a build worker. `cargo build -p backdrop` enables toolkit's
 - Unit tests (`cargo test -p wallpaper`, `cargo test -p backdrop`) cover the
   document, colour, fit, decoder limits (including an oversized header and a
   FIFO), revisions, candidate and active images, the texture budget and the
-  verb registry.
+  command registry.

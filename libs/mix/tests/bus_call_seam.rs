@@ -2,12 +2,12 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `BusCallHandler` seam (`bus_call`). Mirrors the `JmapHandler` /
 //! `DbHandler` host-seam pattern: a stub handler is injected, the `bus_call`
-//! builtin dispatches to it with the verb + args, and the
+//! builtin dispatches to it with the command + args, and the
 //! `CapabilityClass::Bus` gate denies access when the policy withholds it.
 //! The mix layer's job is exactly: gate on the capability, validate the
 //! args, dispatch to the host handler, and propagate the result/error. The
-//! per-route verb allowlist + delegation envelope are the EMBEDDER's job
-//! (webd), modelled here only as a stub that refuses an unlisted verb.
+//! per-route command allowlist + delegation envelope are the EMBEDDER's job
+//! (webd), modelled here only as a stub that refuses an unlisted command.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -21,31 +21,31 @@ use mix::{
     MixResult,
 };
 
-/// Records every (verb, args) it is handed. Models an embedder that allows
-/// only `maild.vtoken.list` (a stand-in for a route's exact-verb allowlist):
-/// any other verb is an `Err` (the refusal a real handler raises before
-/// sending). The allowed verb echoes `{verb, got_args, ok}`.
+/// Records every (command, args) it is handed. Models an embedder that allows
+/// only `maild.vtoken.list` (a stand-in for a route's exact-command allowlist):
+/// any other command is an `Err` (the refusal a real handler raises before
+/// sending). The allowed command echoes `{command, got_args, ok}`.
 #[derive(Default)]
 struct StubBus {
     calls: RefCell<Vec<(String, Value)>>,
 }
 
 impl BusCallHandler for StubBus {
-    fn call<'a>(&'a self, verb: &'a str, args: &'a Value) -> BusCallFuture<'a, MixResult<Value>> {
+    fn call<'a>(&'a self, command: &'a str, args: &'a Value) -> BusCallFuture<'a, MixResult<Value>> {
         self.calls
             .borrow_mut()
-            .push((verb.to_string(), args.clone()));
-        let verb = verb.to_string();
+            .push((command.to_string(), args.clone()));
+        let command = command.to_string();
         let args = args.clone();
         Box::pin(async move {
-            if verb != "maild.vtoken.list" {
+            if command != "maild.vtoken.list" {
                 return Err(MixError::RuntimeError {
                     span: None,
-                    msg: format!("verb {verb:?} not in this route's allowlist"),
+                    msg: format!("command {command:?} not in this route's allowlist"),
                 });
             }
             let mut m = IndexMap::new();
-            m.insert("verb".to_string(), Value::String(verb));
+            m.insert("command".to_string(), Value::String(command));
             m.insert("got_args".to_string(), args);
             m.insert("ok".to_string(), Value::Bool(true));
             Ok(Value::map(m))
@@ -71,7 +71,7 @@ fn allow_bus(eval: &mut Evaluator, a: Rc<StubBus>) {
 }
 
 #[tokio::test]
-async fn bus_call_dispatches_verb_and_args_and_returns_reply() {
+async fn bus_call_dispatches_command_and_args_and_returns_reply() {
     let a = Rc::new(StubBus::default());
     let a2 = a.clone();
     let out = run_with(
@@ -85,11 +85,11 @@ async fn bus_call_dispatches_verb_and_args_and_returns_reply() {
         panic!("expected a reply map, got {out:?}")
     };
     assert_eq!(
-        m.get("verb"),
+        m.get("command"),
         Some(&Value::String("maild.vtoken.list".into()))
     );
     assert_eq!(m.get("ok"), Some(&Value::Bool(true)));
-    // The verb + args actually reached the handler.
+    // The command + args actually reached the handler.
     let calls = a.calls.borrow();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].0, "maild.vtoken.list");
@@ -151,7 +151,7 @@ async fn bus_call_raises_without_a_handler() {
 
 #[tokio::test]
 async fn bus_call_propagates_a_handler_refusal() {
-    // The stub refuses any verb other than maild.vtoken.list — the Err
+    // The stub refuses any command other than maild.vtoken.list — the Err
     // propagates as a raise (the script can try/catch it).
     let a = Rc::new(StubBus::default());
     let a2 = a.clone();
@@ -159,26 +159,26 @@ async fn bus_call_propagates_a_handler_refusal() {
         allow_bus(e, a2)
     })
     .await
-    .expect_err("a refused verb must raise");
+    .expect_err("a refused command must raise");
     assert!(err.contains("not in this route's allowlist"), "got: {err}");
 }
 
 #[tokio::test]
 async fn bus_call_rejects_bad_arguments() {
-    // Non-string verb.
+    // Non-string command.
     let a = Rc::new(StubBus::default());
     let a2 = a.clone();
     let err = run_with("bus_call(123, {})\n", move |e| allow_bus(e, a2))
         .await
-        .expect_err("non-string verb rejected");
-    assert!(err.contains("verb"), "got: {err}");
+        .expect_err("non-string command rejected");
+    assert!(err.contains("command"), "got: {err}");
 
-    // Empty verb.
+    // Empty command.
     let a = Rc::new(StubBus::default());
     let a2 = a.clone();
     let err = run_with("bus_call(\"\", {})\n", move |e| allow_bus(e, a2))
         .await
-        .expect_err("empty verb rejected");
+        .expect_err("empty command rejected");
     assert!(err.contains("non-empty"), "got: {err}");
 
     // Non-map args — the A2 contract-type gate (0.103.1) now raises
@@ -201,5 +201,5 @@ async fn bus_call_rejects_bad_arguments() {
     })
     .await
     .expect_err("extra args rejected");
-    assert!(err.contains("verb, args"), "got: {err}");
+    assert!(err.contains("command, args"), "got: {err}");
 }

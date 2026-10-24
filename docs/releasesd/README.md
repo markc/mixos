@@ -104,7 +104,7 @@ send releases releases.check
 send releases releases.install body='{"app": "example"}' timeout=600
 ```
 
-The verbs, bodies and replies are in the [releases contract](../docs/spec/releases/README.md).
+The commands, bodies and replies are in the [releases contract](../docs/spec/releases/README.md).
 After any change it asks the application registry to rescan, so the
 launcher updates by itself.
 
@@ -132,7 +132,7 @@ package, identity in `component.mx`. The source is
 | `scripts/releases.mix` | the command line, same logic in-process |
 | `units/releasesd@.service` | the session unit |
 | `tests/releases_test.mix` | offline: validation, verification, install, rollback, links |
-| `tests/releasesd_test.mix` | every verb over a private broker and a stand-in API |
+| `tests/releasesd_test.mix` | every command over a private broker and a stand-in API |
 
 Run the tests from the checkout root. The offline test needs `bsdtar` for
 two hostile fixtures (the service itself unpacks with Mix's `tar_unpack`); the Bus test
@@ -143,4 +143,4 @@ mix services/releasesd/tests/releases_test.mix
 mix services/releasesd/tests/releasesd_test.mix
 ```
 
-The verbs are registered in `docs/docs/spec/bus/verbs.conf.mix`.
+The commands are registered in `docs/docs/spec/bus/commands.conf.mix`.

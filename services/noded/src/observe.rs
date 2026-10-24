@@ -25,8 +25,8 @@ pub(crate) const BYTE_LIMIT: usize = 8 * 1024 * 1024;
 pub(crate) const PAYLOAD_LIMIT: usize = 64 * 1024;
 const MAX_CONNECTION_SUBSCRIPTIONS: usize = 4;
 const MAX_BROKER_SUBSCRIPTIONS: usize = 16;
-const MAX_VERB_FILTERS: usize = 32;
-const MAX_VERB_BYTES: usize = 128;
+const MAX_COMMAND_FILTERS: usize = 32;
+const MAX_COMMAND_BYTES: usize = 128;
 const MAX_SERVICE_FILTERS: usize = 64;
 const MAX_SERVICE_BYTES: usize = 128;
 const DRAIN_INTERVAL: Duration = Duration::from_millis(2);
@@ -124,7 +124,7 @@ impl<'a> Observation<'a> {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 struct ObserveFilter {
-    verbs: Vec<String>,
+    commands: Vec<String>,
     services: Vec<String>,
     directions: Vec<Direction>,
 }
@@ -166,7 +166,7 @@ struct EventBody {
     message_type: &'static str,
     from: Option<String>,
     to: Option<String>,
-    verb: Option<String>,
+    command: Option<String>,
     size: usize,
     correlation_id: Option<String>,
     rc: Option<i64>,
@@ -660,13 +660,13 @@ fn parse_start_request(body: &str) -> Result<StartRequest, ObserveError> {
 }
 
 fn normalise_filter(filter: &mut ObserveFilter) -> Result<(), ObserveError> {
-    if filter.verbs.len() > MAX_VERB_FILTERS || filter.services.len() > MAX_SERVICE_FILTERS {
+    if filter.commands.len() > MAX_COMMAND_FILTERS || filter.services.len() > MAX_SERVICE_FILTERS {
         return Err(ObserveError::LimitExceeded);
     }
     if filter
-        .verbs
+        .commands
         .iter()
-        .any(|pattern| !validate_glob(pattern, MAX_VERB_BYTES))
+        .any(|pattern| !validate_glob(pattern, MAX_COMMAND_BYTES))
         || filter.services.iter().any(|service| {
             service.is_empty()
                 || service.len() > MAX_SERVICE_BYTES
@@ -677,8 +677,8 @@ fn normalise_filter(filter: &mut ObserveFilter) -> Result<(), ObserveError> {
     {
         return Err(ObserveError::FilterInvalid);
     }
-    filter.verbs.sort();
-    filter.verbs.dedup();
+    filter.commands.sort();
+    filter.commands.dedup();
     filter.services.sort();
     filter.services.dedup();
     if filter.directions.is_empty() {
@@ -732,12 +732,12 @@ fn matches_filter(filter: &ObserveFilter, observation: &Observation<'_>) -> bool
     if !filter.directions.contains(&observation.direction) {
         return false;
     }
-    let verb = observation.message.command_name().unwrap_or("");
-    if !filter.verbs.is_empty()
+    let command_name = observation.message.command_name().unwrap_or("");
+    if !filter.commands.is_empty()
         && !filter
-            .verbs
+            .commands
             .iter()
-            .any(|pattern| anchored_glob_matches(pattern, verb))
+            .any(|pattern| anchored_glob_matches(pattern, command_name))
     {
         return false;
     }
@@ -791,7 +791,7 @@ fn metadata_event(observation: &Observation<'_>) -> EventBody {
                 || bus::wire::is_valid_label(to)
                 || bus::wire::BusTarget::parse(to).is_some()
         })),
-        verb: bounded(observation.message.command_name()),
+        command: bounded(observation.message.command_name()),
         size: observation
             .canonical_size
             .unwrap_or_else(|| observation.message.to_wire().len()),
@@ -867,7 +867,7 @@ fn redacted_event(observation: &Observation<'_>) -> EventBody {
 #[derive(Clone, Copy)]
 struct PayloadPolicyRule {
     service: &'static str,
-    verb: &'static str,
+    command: &'static str,
 }
 
 /// Conservative whole-payload omissions applied before field redaction.
@@ -876,101 +876,101 @@ struct PayloadPolicyRule {
 const PAYLOAD_POLICY_DENY: &[PayloadPolicyRule] = &[
     PayloadPolicyRule {
         service: "noded",
-        verb: "noded.register",
+        command: "noded.register",
     },
     PayloadPolicyRule {
         service: "noded",
-        verb: "noded.admit.*",
+        command: "noded.admit.*",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "*.register",
+        command: "*.register",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "*.register.*",
+        command: "*.register.*",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "register",
+        command: "register",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "register.*",
+        command: "register.*",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "*.registration",
+        command: "*.registration",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "*.registration.*",
+        command: "*.registration.*",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "registration",
+        command: "registration",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "registration.*",
+        command: "registration.*",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "*.auth",
+        command: "*.auth",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "*.auth.*",
+        command: "*.auth.*",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "auth",
+        command: "auth",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "auth.*",
+        command: "auth.*",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "*.login",
+        command: "*.login",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "*.login.*",
+        command: "*.login.*",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "login",
+        command: "login",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "login.*",
+        command: "login.*",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "*.token",
+        command: "*.token",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "*.token.*",
+        command: "*.token.*",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "token",
+        command: "token",
     },
     PayloadPolicyRule {
         service: "*",
-        verb: "token.*",
+        command: "token.*",
     },
 ];
 
 fn payload_policy_allows(observation: &Observation<'_>) -> bool {
-    let verb = observation.message.command_name().unwrap_or("");
+    let command_name = observation.message.command_name().unwrap_or("");
     !PAYLOAD_POLICY_DENY.iter().any(|rule| {
-        anchored_glob_matches(rule.verb, verb)
+        anchored_glob_matches(rule.command, command_name)
             && (rule.service == "*"
                 || endpoint_matches(observation.message, rule.service)
-                || verb
+                || command_name
                     .strip_prefix(rule.service)
                     .is_some_and(|suffix| suffix.starts_with('.')))
     })
@@ -1111,7 +1111,7 @@ mod tests {
         .with_class(crate::protection::TrafficClass::NativeSession);
         let event = super::metadata_event(&observation);
         assert!(event.to.is_none());
-        assert_eq!(event.verb.unwrap().len(), 126);
+        assert_eq!(event.command.unwrap().len(), 126);
     }
     use super::*;
 
@@ -1172,7 +1172,7 @@ mod tests {
         assert!(!anchored_glob_matches("maild.*", "xmaild.account.list"));
         assert!(!anchored_glob_matches("maild.*", "maild"));
         let too_many = serde_json::json!({
-            "filter": {"verbs": (0..33).map(|n| format!("svc.{n}")).collect::<Vec<_>>()}
+            "filter": {"commands": (0..33).map(|n| format!("svc.{n}")).collect::<Vec<_>>()}
         })
         .to_string();
         let mut parsed = parse_start_request(&too_many).unwrap();
@@ -1180,7 +1180,7 @@ mod tests {
             normalise_filter(&mut parsed.filter),
             Err(ObserveError::LimitExceeded)
         );
-        let invalid = r#"{"filter":{"verbs":["maild.[secret]"]}}"#;
+        let invalid = r#"{"filter":{"commands":["maild.[secret]"]}}"#;
         let mut parsed = parse_start_request(invalid).unwrap();
         assert_eq!(
             normalise_filter(&mut parsed.filter),
@@ -1205,7 +1205,7 @@ mod tests {
         let id = start(
             &manager,
             &tx,
-            r#"{"filter":{"verbs":["musicd.*"]},"capacity":64}"#,
+            r#"{"filter":{"commands":["musicd.*"]},"capacity":64}"#,
         );
         let _ack = rx.try_recv().unwrap();
         for index in 0..66 {
@@ -1425,7 +1425,7 @@ mod tests {
         manager.drain_once();
         let observed = bus::wire::parse(&rx.try_recv().unwrap()).unwrap();
         let body: Value = serde_json::from_str(&observed.body).unwrap();
-        assert_eq!(body["verb"], "noded.observe.hidden");
+        assert_eq!(body["command"], "noded.observe.hidden");
         assert!(rx.try_recv().is_err());
     }
 

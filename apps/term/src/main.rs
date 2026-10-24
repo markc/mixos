@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `term`: the Terminal window, registered on the Bus as `term`. With
-//! `--headless`, the same tab set and `term.*` verbs with no window.
+//! `--headless`, the same tab set and `term.*` commands with no window.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -21,7 +21,7 @@ use term_core::{
 };
 use wgpu::rwh::HasDisplayHandle;
 
-/// The Bus name and verb namespace this frontend owns.
+/// The Bus name and command namespace this frontend owns.
 const SERVICE: &str = "term";
 
 const HELP: &str = "term — Terminal, the MixOS terminal: tabs, split panes, a GPU-drawn grid\n\
@@ -40,10 +40,10 @@ Keys: Ctrl+Shift+T/W new/close tab, Ctrl+PageUp/PageDown change tab,\n\
 \x20     Shift+Home/End history top/bottom (primary screen only)\n\
 \x20     Input returns to bottom; single-pane Tab or Ctrl+I goes to the shell\n\
 TERM_NOTIFY=0: no desktop notification when a pane's shell exits\n\
---headless: the tab set and the term.* verbs, no window\n\
+--headless: the tab set and the term.* commands, no window\n\
 --version: print version and build hash, and nothing else\n\
 --print-config: print resolved startup settings and exit\n\
-Bus: serves `term` / `term.*`, the term.ui.* drive verbs, term.commands and term.execute";
+Bus: serves `term` / `term.*`, the term.ui.* drive commands, term.actions and term.execute";
 
 fn main() {
     // First, before the inherited-fd quarantine, the TERM probe and the
@@ -161,7 +161,7 @@ fn run(settings: config::Settings) -> Result<(), String> {
     let (events_tx, events_rx) = std::sync::mpsc::sync_channel(64);
     let outbox = Arc::new(citizen::outbox::Outbox::default());
     let link = Arc::new(OnceLock::new());
-    // The `term.*` surface, and the window's verbs on the same name. With
+    // The `term.*` surface, and the window's commands on the same name. With
     // no broker the thread says so once and returns; the terminal works.
     let bus_thread = term_core::bus::start_with_window(
         SERVICE,
@@ -235,7 +235,7 @@ fn run(settings: config::Settings) -> Result<(), String> {
     result.map_err(|error| error.to_string())
 }
 
-/// The tab set and the `term.*` verbs with no window: panes keep the size
+/// The tab set and the `term.*` commands with no window: panes keep the size
 /// they opened at, and exited shells are reaped as they go. Ends when the
 /// last tab closes (`term.tab.close`).
 fn headless(settings: config::Settings) -> Result<(), String> {

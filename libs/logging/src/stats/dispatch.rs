@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Substrate-side handler for the `<svc>.stats.snapshot` Bus verb
+//! Substrate-side handler for the `<svc>.stats.snapshot` Bus command
 //! (plan §4.2).
 //!
-//! This module is the **pure** half of the verb — it operates on an
+//! This module is the **pure** half of the command — it operates on an
 //! already-parsed [`SnapshotRequest`] and returns either the snapshot
 //! shape from `types.rs` (with sensitivity-correct label representation)
 //! or a [`SnapshotError`] capturing the cap-required / parse-rejected
@@ -14,11 +14,11 @@
 //!
 //! # The cap-gating contract (plan §4.2)
 //!
-//! Three caps shape the verb's behavior:
+//! Three caps shape the command's behavior:
 //!
 //! 1. **`stats.snapshot:<svc>`** (operator-class default) — required
-//!    to call the verb at all. Enforcement happens at the wire layer
-//!    (slice 5b) and is *not* this module's concern — it gates verb
+//!    to call the command at all. Enforcement happens at the wire layer
+//!    (slice 5b) and is *not* this module's concern — it gates command
 //!    admission, not response shape. This module assumes the caller
 //!    has cleared that bar.
 //!

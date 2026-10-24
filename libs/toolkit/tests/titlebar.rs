@@ -6,14 +6,14 @@
 use egui::{ViewportCommand, ViewportId};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use toolkit::command::{Command, Registry, always};
+use toolkit::action::{Registry, always};
 use toolkit::{Icon, Strings, Theme, titlebar};
 
 const FTL: &str = "menu-file = File\ncmd-quit = Quit\n";
 
 fn registry() -> Registry<()> {
     let mut r = Registry::new();
-    r.add(Command {
+    r.add(toolkit::Action {
         id: "file.quit",
         label: "cmd-quit",
         menu: Some("menu-file"),
@@ -103,8 +103,8 @@ fn double_clicking_the_free_bar_maximizes() {
     );
 }
 
-fn plain(id: &'static str) -> Command<bool> {
-    Command {
+fn plain(id: &'static str) -> toolkit::Action<bool> {
+    toolkit::Action {
         id,
         label: "cmd-quit",
         menu: None,
@@ -123,7 +123,7 @@ fn bar_registry() -> Registry<bool> {
     r.add(plain("help.macros"));
     r.add(plain("help.keys"));
     r.add(plain("view.search"));
-    r.add(Command {
+    r.add(toolkit::Action {
         enabled: |s| *s,
         ..plain("doc.new")
     });

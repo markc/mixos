@@ -167,14 +167,14 @@ Nothing is captured until the request is granted, in this order:
    once, one per caller; more are denied straight away. Without notifyd the
    request still waits, and can only be answered over the Bus.
 
-| Verb | Body | Does |
+| Command | Body | Does |
 |---|---|---|
 | `portald.screencast.pending` | `{}` | lists waiting requests (`request`, `app`, `owner`, `output`, `notification`), the grants, and the policy |
 | `portald.screencast.answer` | `{request, allow}` | decides a waiting request, as if the person pressed the button; withdraws the question |
 | `portald.screencast.grant` | `{app?, count?, ttl_ms?}` | covers the next `count` (default 1, at most 100) Starts by `app` (any app when absent) for `ttl_ms` (default 5 minutes, at most an hour); at most 16 grants |
 | `portald.screencast.revoke` | `{id?}` | withdraws one grant, or all of them |
 
-These verbs answer **callers on this node only**. A request with
+These commands answer **callers on this node only**. A request with
 `broker_origin` other than `local` is refused with rc 13 `FORBIDDEN`, because a
 grant hands over the whole screen. notifyd holds the same line for the
 buttons: `notify.action`, `notify.dismiss`, `notify.close` and
@@ -250,14 +250,14 @@ in a unit drop-in; its own PipeWire and compositor refresh must support it.
 
 ## Status for agents
 
-`HELP` returns the verb manifest. The bus verb `portald.status` is read-only. It reports the origin of the held
+`HELP` returns the command manifest. The bus command `portald.status` is read-only. It reports the origin of the held
 values (defaults, cache or settingsd), whether the name is owned, the identity
 of the held projection, the last fault and the counters. `gtk_settings` reports
 the last export's path, outcome (`written`, `unchanged` or `skipped`) and reason.
 Its
 `settings_generation` reports the Consumer's connection generation, or null
 while disconnected. It is registered in
-`docs/docs/spec/bus/verbs.conf.mix`.
+`docs/docs/spec/bus/commands.conf.mix`.
 
 ## Tests
 

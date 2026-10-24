@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! One capture job, over compd's verbs: hide this window (fenced
+//! One capture job, over compd's commands: hide this window (fenced
 //! minimisation, confirmed by the compositor), let the person select a
 //! region if asked, capture a fresh frame into the private captures
 //! directory, decode it, and restore the window: after success, failure and
-//! cancellation alike. Completion is each verb's final reply; nothing
+//! cancellation alike. Completion is each command's final reply; nothing
 //! sleeps or polls (the person's own delay is the only timer).
 use annotation::Document;
 use futures::future::BoxFuture;
@@ -180,7 +180,7 @@ pub fn outputs(value: &Value) -> Vec<String> {
 pub trait Comp: Send + Sync {
     fn call(
         &self,
-        verb: &'static str,
+        command_name: &'static str,
         args: Value,
         limit: Duration,
     ) -> BoxFuture<'static, Result<Value, String>>;
@@ -195,28 +195,28 @@ pub struct CompBus {
 impl Comp for CompBus {
     fn call(
         &self,
-        verb: &'static str,
+        command_name: &'static str,
         args: Value,
         limit: Duration,
     ) -> BoxFuture<'static, Result<Value, String>> {
         let (handle, service) = (self.handle.clone(), self.service.clone());
         Box::pin(async move {
             let reply = handle
-                .raw_within(&service, verb, args.to_string(), limit)
+                .raw_within(&service, command_name, args.to_string(), limit)
                 .await
-                .map_err(|e| format!("{verb}: {e}"))?;
+                .map_err(|e| format!("{command_name}: {e}"))?;
             if reply.rc != 0 {
                 let why = if reply.body.trim().is_empty() {
                     reply.error.unwrap_or_default()
                 } else {
                     reply.body
                 };
-                return Err(format!("{verb} refused (rc {}): {why}", reply.rc));
+                return Err(format!("{command_name} refused (rc {}): {why}", reply.rc));
             }
             if reply.body.trim().is_empty() {
                 return Ok(Value::Null);
             }
-            serde_json::from_str(&reply.body).map_err(|e| format!("{verb}: {e}"))
+            serde_json::from_str(&reply.body).map_err(|e| format!("{command_name}: {e}"))
         })
     }
 }
@@ -533,7 +533,7 @@ pub(crate) mod tests {
                 ..Self::default()
             })
         }
-        pub(crate) fn verbs(&self) -> Vec<String> {
+        pub(crate) fn command_names(&self) -> Vec<String> {
             self.calls
                 .lock()
                 .unwrap()
@@ -546,16 +546,16 @@ pub(crate) mod tests {
     impl Comp for Script {
         fn call(
             &self,
-            verb: &'static str,
+            command_name: &'static str,
             args: Value,
             _limit: Duration,
         ) -> BoxFuture<'static, Result<Value, String>> {
-            self.calls.lock().unwrap().push((verb.into(), args.clone()));
+            self.calls.lock().unwrap().push((command_name.into(), args.clone()));
             if let Some(on) = self.on.lock().unwrap().as_mut() {
-                on(verb);
+                on(command_name);
             }
-            // The frame verb writes the file it was asked for.
-            if verb == "comp.capture.frame"
+            // The frame command writes the file it was asked for.
+            if command_name == "comp.capture.frame"
                 && let Some(path) = args["path"].as_str()
             {
                 image::RgbaImage::from_pixel(40, 30, image::Rgba([10, 20, 30, 255]))
@@ -567,7 +567,7 @@ pub(crate) mod tests {
                 .lock()
                 .unwrap()
                 .pop_front()
-                .unwrap_or_else(|| Err(format!("unscripted {verb}")));
+                .unwrap_or_else(|| Err(format!("unscripted {command_name}")));
             Box::pin(async move { answer })
         }
     }
@@ -622,7 +622,7 @@ pub(crate) mod tests {
         assert_eq!(captured.document.dimensions(), (40, 30));
         assert!(captured.path.starts_with(dir.path()));
         assert_eq!(
-            script.verbs(),
+            script.command_names(),
             [
                 "comp.window.wait",
                 "comp.windows.list",
@@ -719,7 +719,7 @@ pub(crate) mod tests {
         .await
         .unwrap_err();
         assert_eq!(error, "acknowledgement lost");
-        assert_eq!(script.verbs().last().unwrap(), "comp.window.restore");
+        assert_eq!(script.command_names().last().unwrap(), "comp.window.restore");
     }
 
     #[tokio::test]
@@ -739,7 +739,7 @@ pub(crate) mod tests {
         ));
         tx.send(true).unwrap();
         assert_eq!(job.await.unwrap().unwrap_err(), "cancelled");
-        assert!(script.verbs().is_empty());
+        assert!(script.command_names().is_empty());
     }
 
     #[tokio::test]
@@ -751,8 +751,8 @@ pub(crate) mod tests {
         ]);
         let script = Script::new(answers);
         let (tx, rx) = channel();
-        *script.on.lock().unwrap() = Some(Box::new(move |verb| {
-            if verb == "comp.window.minimize" {
+        *script.on.lock().unwrap() = Some(Box::new(move |command_name| {
+            if command_name == "comp.window.minimize" {
                 tx.send(true).unwrap();
             }
         }));
@@ -771,7 +771,7 @@ pub(crate) mod tests {
         .unwrap_err();
         assert_eq!(error, "cancelled");
         assert_eq!(
-            script.verbs(),
+            script.command_names(),
             [
                 "comp.window.wait",
                 "comp.windows.list",
@@ -805,7 +805,7 @@ pub(crate) mod tests {
         .await
         .unwrap_err();
         assert_eq!(error, "selection cancelled");
-        assert_eq!(script.verbs().last().unwrap(), "comp.window.restore");
+        assert_eq!(script.command_names().last().unwrap(), "comp.window.restore");
     }
 
     #[tokio::test]
@@ -856,7 +856,7 @@ pub(crate) mod tests {
             Ok(Restored::Shown)
         );
         assert_eq!(
-            script.verbs(),
+            script.command_names(),
             [
                 "comp.window.restore",
                 "comp.windows.list",
@@ -912,8 +912,8 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         let script = Script::new(vec![Ok(json!({"width":40,"height":30}))]);
         let (tx, rx) = channel();
-        *script.on.lock().unwrap() = Some(Box::new(move |verb| {
-            if verb == "comp.capture.frame" {
+        *script.on.lock().unwrap() = Some(Box::new(move |command_name| {
+            if command_name == "comp.capture.frame" {
                 tx.send(true).unwrap();
             }
         }));
@@ -965,8 +965,8 @@ pub(crate) mod tests {
         answers.extend((0..2 * RESTORE_TRIES).map(|_| Err("Bus down".to_owned())));
         let script = Script::new(answers);
         let (tx, rx) = channel();
-        *script.on.lock().unwrap() = Some(Box::new(move |verb| {
-            if verb == "comp.window.minimize" {
+        *script.on.lock().unwrap() = Some(Box::new(move |command_name| {
+            if command_name == "comp.window.minimize" {
                 tx.send(true).unwrap();
             }
         }));

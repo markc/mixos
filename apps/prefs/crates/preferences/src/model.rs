@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The renderer-independent model: the rows and notes the
-//! `releases` service answers (docs/docs/spec/releases/), and Preferences' own verbs.
+//! `releases` service answers (docs/docs/spec/releases/), and Preferences' own commands.
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -82,15 +82,15 @@ pub struct Notes {
     pub notes: String,
 }
 
-/// Every verb the engine answers itself. The window-level verbs
+/// Every command the engine answers itself. The window-level commands
 /// (`prefs.ui.*`, `prefs.window*`) belong to the toolkit drive layer.
-pub const VERBS: [&str; 19] = [
+pub const COMMANDS: [&str; 19] = [
     "HELP",
     "app.describe",
     "prefs.ping",
     "prefs.info",
     "prefs.show",
-    "prefs.commands",
+    "prefs.actions",
     "prefs.execute",
     "prefs.quit",
     "prefs.search",
@@ -106,16 +106,16 @@ pub const VERBS: [&str; 19] = [
     "prefs.email.password",
 ];
 
-/// The engine's Bus surface (`HELP` / `app.describe` add the drive verbs).
+/// The engine's Bus surface (`HELP` / `app.describe` add the drive commands).
 pub fn describe() -> Value {
-    json!({"schema":"prefs.v1","app_id":APP_ID,"sections":crate::SECTIONS,"categories":crate::Category::ALL,"verbs":[
-        {"name":"HELP","description":"List every verb","read_only":true},
-        {"name":"app.describe","description":"Describe the app and every verb with its arguments","read_only":true},
+    json!({"schema":"prefs.v1","app_id":APP_ID,"sections":crate::SECTIONS,"categories":crate::Category::ALL,"commands":[
+        {"name":"HELP","description":"List every command","read_only":true},
+        {"name":"app.describe","description":"Describe the app and every command with its arguments","read_only":true},
         {"name":"prefs.ping","description":"Probe Preferences","read_only":true},
         {"name":"prefs.info","description":"The whole state: section, category, rows, selection, notes, operation in progress, status and UI","read_only":true},
         {"name":"prefs.show","description":"Restore and focus the existing window","read_only":false},
-        {"name":"prefs.commands","description":"List the app's commands with labels, shortcuts and enablement","read_only":true},
-        {"name":"prefs.execute","args":{"id":"string"},"description":"Run a command from prefs.commands, with the same enablement as its menu item, button or shortcut","read_only":false},
+        {"name":"prefs.actions","description":"List the app's commands with labels, shortcuts and enablement","read_only":true},
+        {"name":"prefs.execute","args":{"id":"string"},"description":"Run a command from prefs.actions, with the same enablement as its menu item, button or shortcut","read_only":false},
         {"name":"prefs.quit","description":"Close once the operation in progress finishes","read_only":false},
         {"name":"prefs.search","args":{"query":"string"},"description":"Find sections by title, category, alias or settings key without changing the window; returns matches with id and category in tree order","read_only":true},
         {"name":"prefs.section","args":{"name":crate::SECTIONS.iter().map(|s| s.id).collect::<Vec<_>>(),"group":crate::SoftwareGroup::ALL.map(crate::SoftwareGroup::name)},"description":"Select a section and expand its category; optional group selects a group within Software","read_only":false},
@@ -136,14 +136,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_engine_verb_is_described_once() {
-        let described: Vec<_> = describe()["verbs"]
+    fn every_engine_command_is_described_once() {
+        let described: Vec<_> = describe()["commands"]
             .as_array()
             .unwrap()
             .iter()
             .map(|v| v["name"].as_str().unwrap().to_owned())
             .collect();
-        assert_eq!(described, VERBS);
+        assert_eq!(described, COMMANDS);
     }
 
     #[test]

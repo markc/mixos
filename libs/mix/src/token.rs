@@ -116,7 +116,7 @@ pub enum Token {
     Comma,
     Dot,
     Tilde,
-    /// `@`: only meaningful as the serve-name placeholder in `on @.verb`.
+    /// `@`: only meaningful as the serve-name placeholder in `on @.command`.
     At,
 
     // Structural

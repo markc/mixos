@@ -177,8 +177,8 @@ pub struct SupervisedConnectOptions {
 }
 
 impl SupervisedConnectOptions {
-    pub fn with_verbs(mut self, verbs: Vec<crate::VerbDescriptor>) -> Self {
-        self.connection.verbs = Some(verbs);
+    pub fn with_commands(mut self, command_names: Vec<crate::CommandDescriptor>) -> Self {
+        self.connection.commands = Some(command_names);
         self
     }
 
