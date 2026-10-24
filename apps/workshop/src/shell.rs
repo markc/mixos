@@ -1014,6 +1014,37 @@ mod tests {
     use inspector::model::Verb;
     use inspector::{Selection, Snapshot};
 
+    fn test_shell() -> Shell {
+        let (_, deliveries) = futures::channel::mpsc::channel(8);
+        Shell::new(egui::Context::default(), Theme::embedded(), Handle::sink(), deliveries, "compd".into()).unwrap()
+    }
+
+    #[test]
+    fn failed_session_shutdown_still_exits_and_clears_stopping() {
+        let mut shell = test_shell();
+        shell.macro_stopping = true;
+        shell.tx.send(Event::Stopped(Err("forced shutdown failure".into()))).unwrap();
+        shell.pump();
+        assert!(shell.exiting);
+        assert!(shell.macro_stopped);
+        assert!(!shell.macro_stopping);
+        assert_eq!(shell.engine.workshop.message, "forced shutdown failure");
+    }
+
+    #[test]
+    fn failed_topic_subscriptions_are_not_committed_and_are_retried() {
+        let mut shell = test_shell();
+        for ticket in 100..102 {
+            shell.perform(Effect::Workshop { ticket, operation:"catalogues".into(), args:json!({}), reply:None });
+            let event = shell.rx.recv_timeout(std::time::Duration::from_secs(3)).unwrap();
+            assert!(matches!(event, Event::Workshop(actual, _, _, _, Err(_)) if actual == ticket));
+            assert!(shell.watched_topics.is_empty());
+        }
+        shell.tx.send(Event::Subscription("ced.macros.finished".into(), true)).unwrap();
+        shell.pump();
+        assert!(shell.watched_topics.contains("ced.macros.finished"));
+    }
+
     fn target(verb: &str) -> Selection {
         Selection {
             service: "example".into(),
