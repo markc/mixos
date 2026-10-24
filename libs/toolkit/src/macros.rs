@@ -92,6 +92,7 @@ pub struct State {
     document: Option<editor::local::Document>,
     editor_entry: Option<Entry>,
     editor_open: bool,
+    editor_owner: Option<egui::ViewportId>,
     editor_focus: Option<egui::Id>,
     retained: Option<Finished>,
 }
@@ -180,6 +181,7 @@ impl State {
             document: None,
             editor_entry: None,
             editor_open: false,
+            editor_owner: None,
             editor_focus: None,
             retained: None,
         }
@@ -710,7 +712,10 @@ impl State {
     fn show_editor(&mut self, ctx: &egui::Context) {
         let viewport = ctx.viewport_id();
         if !self.editor_open {
-            crate::drive::unregister_viewport(ctx, "macro-editor");
+            if let Some(owner) = self.editor_owner.take() {
+                let editor = egui::ViewportId::from_hash_of(("macro-editor", self.window));
+                crate::drive::unregister_viewport(ctx, owner, "macro-editor", editor);
+            }
             return;
         }
         let editor_viewport = egui::ViewportId::from_hash_of(("macro-editor", self.window));
@@ -737,7 +742,6 @@ impl State {
                     .unwrap_or(egui::vec2(760.0, 560.0));
                 egui::vec2(760.0, 560.0).min(monitor)
             }));
-        crate::drive::register_viewport(ctx, "macro-editor", editor_viewport);
         if ctx.embed_viewports() {
             ctx.show_viewport_immediate(editor_viewport, builder, |ui, _| {
                 self.editor_ui(ui, viewport, editor_viewport)
@@ -763,6 +767,11 @@ impl State {
         editor_viewport: egui::ViewportId,
     ) {
         let ctx = ui.ctx().clone();
+        // Embedded editors have no child pass to service Drive requests.
+        if ctx.viewport_id() == editor_viewport {
+            crate::drive::register_viewport(&ctx, viewport, "macro-editor", editor_viewport);
+            self.editor_owner = Some(viewport);
+        }
         let mut save = false;
         let mut run = false;
         let mut ced = false;
@@ -889,14 +898,6 @@ impl State {
                 launch(&path, false)?;
                 Ok((None, None))
             });
-        }
-        if run && self.engine.runner_status() == Status::Running {
-            let title = self
-                .editor_entry
-                .as_ref()
-                .map(|e| e.title.clone())
-                .unwrap_or_default();
-            self.run_error(&title, own("macros-already-running"), &ctx);
         }
         self.save_editor(save, run);
         if !open
@@ -1240,14 +1241,22 @@ type WindowState = Arc<Mutex<State>>;
 /// notification still owns a Context for repaint delivery. A close request
 /// alone is insufficient: applications can cancel it for unsaved documents.
 pub fn close_app(ctx: &egui::Context, app: &str) {
-    crate::drive::unregister_viewport(ctx, "macro-editor");
+    let closing = ctx.viewport_id();
+    let state_id = crate::window_id(closing, ("shared-macros", app));
+    if let Some(state) = ctx.data(|d| d.get_temp::<WindowState>(state_id)) {
+        let mut state = state.lock().unwrap();
+        if let Some(owner) = state.editor_owner.take() {
+            let editor = egui::ViewportId::from_hash_of(("macro-editor", state.window));
+            crate::drive::unregister_viewport(ctx, owner, "macro-editor", editor);
+        }
+    }
     let owners_id = egui::Id::new("macro-viewport-owners");
     ctx.data_mut(|d| {
         let mut owners = d
             .get_temp::<Vec<(egui::ViewportId, egui::Id)>>(owners_id)
             .unwrap_or_default();
         owners.retain(|(viewport, id)| {
-            let keep = *id != crate::window_id(*viewport, ("shared-macros", app));
+            let keep = *viewport != closing || *id != state_id;
             if !keep {
                 d.remove::<WindowState>(*id);
             }
@@ -2598,6 +2607,44 @@ mod tests {
                 ctx.input_mut(|i| i.raw.viewports = viewports);
             });
             out.textures_delta.clear();
+        }
+    }
+
+    #[test]
+    fn idle_second_window_does_not_cancel_the_first_windows_editor() {
+        let ctx = egui::Context::default();
+        crate::drive::install(&ctx, "dopus");
+        ctx.set_embed_viewports(false);
+        let mut a = State::new("dopus");
+        let mut b = State::new("dopus");
+        a.editor_open = true;
+        a.document = Some(editor::local::Document::new("print(1)\n", "text").unwrap());
+        let editor = egui::ViewportId::from_hash_of(("macro-editor", a.window));
+        let mut frame = |child: bool| {
+            let mut input = egui::RawInput {
+                viewport_id: if child { editor } else { egui::ViewportId::ROOT },
+                ..Default::default()
+            };
+            input.viewports.insert(editor, Default::default());
+            let mut output = ctx.run_ui(input, |ui| {
+                if child {
+                    a.editor_ui(ui, egui::ViewportId::ROOT, editor);
+                } else {
+                    ui.ctx().show_viewport_deferred(editor, egui::ViewportBuilder::default(), |_, _| {});
+                    b.show_editor(ui.ctx());
+                }
+            });
+            output.textures_delta.clear();
+        };
+        for _ in 0..3 { frame(false); frame(true); }
+        for id in 1..=3 {
+            assert!(crate::drive::request(&ctx, id, "ui.tree", &serde_json::json!({"viewport":"macro-editor"})).is_none());
+            frame(false);
+            frame(true);
+            let answers = crate::drive::logic(&ctx);
+            assert_eq!(answers.len(), 1);
+            assert_eq!(answers[0].rc, 0);
+            assert!(answers[0].body.to_string().contains("Save"));
         }
     }
 

@@ -102,6 +102,62 @@ struct ColumnWidths {
     modified: f32,
 }
 
+#[derive(Clone, PartialEq)]
+struct ColumnKey {
+    body: FontId,
+    header: FontId,
+    labels: (String, String),
+    generation: u64,
+    revision: u64,
+    sort: SortColumn,
+    ascending: bool,
+    hidden: bool,
+    expanded: std::collections::HashSet<PathBuf>,
+    rows: usize,
+}
+
+#[derive(Clone)]
+struct ColumnCache {
+    key: ColumnKey,
+    widths: ColumnWidths,
+    #[cfg(test)]
+    measured_rows: usize,
+}
+
+fn cached_column_widths(ui: &Ui, model: &dopus_core::PaneModel, rows: &[VisibleRow]) -> ColumnWidths {
+    let key = ColumnKey {
+        body: TextStyle::Body.resolve(ui.style()),
+        header: TextStyle::Small.resolve(ui.style()),
+        labels: (label("column-size"), label("column-modified")),
+        generation: model.generation,
+        revision: model.listing_revision,
+        sort: model.sort,
+        ascending: model.ascending,
+        hidden: model.show_hidden,
+        expanded: model.expanded.clone(),
+        rows: rows.len(),
+    };
+    widths_for_key(ui, key, rows)
+}
+
+fn widths_for_key(ui: &Ui, key: ColumnKey, rows: &[VisibleRow]) -> ColumnWidths {
+    let id = ui.id().with("metadata-widths");
+    let previous = ui.data(|d| d.get_temp::<ColumnCache>(id));
+    if let Some(cache) = &previous
+        && cache.key == key
+    {
+        return cache.widths;
+    }
+    let widths = column_widths(ui, rows);
+    ui.data_mut(|d| d.insert_temp(id, ColumnCache {
+        key,
+        widths,
+        #[cfg(test)]
+        measured_rows: previous.map_or(0, |c| c.measured_rows) + rows.len(),
+    }));
+    widths
+}
+
 fn column_widths(ui: &Ui, rows: &[VisibleRow]) -> ColumnWidths {
     let body = TextStyle::Body.resolve(ui.style());
     let font = FontId::new(body.size * 0.92, body.family);
@@ -145,6 +201,45 @@ const DIVIDER: f32 = 6.0;
 #[cfg(test)]
 mod column_tests {
     use super::*;
+
+    #[test]
+    fn fifty_thousand_rows_are_measured_only_when_the_cache_key_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = dopus_core::DOpusConfig::default();
+        config.left.path = dir.path().to_owned();
+        config.right.path = dir.path().to_owned();
+        let (core, _rx) = dopus_core::DopusCore::new(config, None);
+        let model = core.pane(PaneId::Left);
+        let rows: Vec<_> = (0..50_000).map(|i| VisibleRow {
+            entry: dopus_core::FileEntry {
+                path: PathBuf::from(format!("sample-{i}.mkv")),
+                name: format!("sample-{i}.mkv"),
+                is_dir: false,
+                size: Some(i * 1024 * 1024),
+                child_count: None,
+                modified: Some(std::time::SystemTime::UNIX_EPOCH),
+            }, depth: 0,
+        }).collect();
+        let ctx = egui::Context::default();
+        let mut key = None;
+        for frame in 0..5 {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                if key.is_none() {
+                    let _ = cached_column_widths(ui, model, &rows);
+                    key = Some(ui.data(|d| d.get_temp::<ColumnCache>(ui.id().with("metadata-widths"))).unwrap().key);
+                }
+                let key = key.as_mut().unwrap();
+                if frame == 2 { key.revision += 1; }
+                if frame == 3 { key.body = FontId::proportional(18.0); }
+                // Keep the model stable; exercise the exact production key
+                // lookup with controlled revision/font changes.
+                let _ = widths_for_key(ui, key.clone(), &rows);
+                let measured = ui.data(|d| d.get_temp::<ColumnCache>(ui.id().with("metadata-widths"))).unwrap().measured_rows;
+                assert_eq!(measured, match frame { 0 | 1 => 50_000, 2 => 100_000, _ => 150_000 });
+            });
+            output.textures_delta.clear();
+        }
+    }
 
     #[test]
     fn long_name_leaves_measured_size_and_modified_a_gap() {
@@ -491,7 +586,7 @@ fn pane_view(
     location_bar(ui, app, pane, active, events);
     let width = ui.available_width();
     let rows = app.core.visible_rows(pane);
-    let widths = column_widths(ui, &rows);
+    let widths = cached_column_widths(ui, model, &rows);
     let (show_size, show_modified) = (
         width >= NAME_MIN + widths.size,
         width >= NAME_MIN + widths.size + widths.modified,

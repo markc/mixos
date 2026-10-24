@@ -283,7 +283,7 @@ pub fn request(ctx: &Context, id: u64, verb: &str, args: &Value) -> Option<Answe
             return Some(refusal(id, "ARGUMENT", "viewport must be a window name"));
         };
         let target =
-            ctx.data(|d| d.get_temp::<egui::ViewportId>(egui::Id::new(("drive-viewport", name))));
+            ctx.data(|d| d.get_temp::<egui::ViewportId>(egui::Id::new(("drive-viewport", ctx.viewport_id(), name))));
         let Some(target) = target else {
             return Some(refusal(id, "NOT_FOUND", "viewport is not open"));
         };
@@ -302,7 +302,9 @@ pub fn request(ctx: &Context, id: u64, verb: &str, args: &Value) -> Option<Answe
                     return Some(refusal(id, "BUSY", "viewport request queue is full"));
                 }
                 child.requests.push_back((id, verb.into(), args.clone()));
+                child.deadlines.insert(id, Instant::now() + child.options.capture_timeout);
                 ctx.request_repaint_of(target);
+                ctx.request_repaint_after(child.options.capture_timeout);
                 None
             })
             .unwrap_or_else(|| {
@@ -329,13 +331,19 @@ pub fn request(ctx: &Context, id: u64, verb: &str, args: &Value) -> Option<Answe
 }
 
 /// Name an owned auxiliary viewport for the common drive verbs.
-pub fn register_viewport(ctx: &Context, name: &str, viewport: egui::ViewportId) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new(("drive-viewport", name)), viewport));
+pub fn register_viewport(ctx: &Context, owner: egui::ViewportId, name: &str, viewport: egui::ViewportId) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(("drive-viewport", owner, name)), viewport));
 }
 
-pub fn unregister_viewport(ctx: &Context, name: &str) {
-    let target = ctx
-        .data_mut(|d| d.remove_temp::<egui::ViewportId>(egui::Id::new(("drive-viewport", name))));
+pub fn unregister_viewport(ctx: &Context, owner: egui::ViewportId, name: &str, viewport: egui::ViewportId) {
+    let target = ctx.data_mut(|d| {
+        let key = egui::Id::new(("drive-viewport", owner, name));
+        if d.get_temp::<egui::ViewportId>(key) == Some(viewport) {
+            d.remove_temp::<egui::ViewportId>(key)
+        } else {
+            None
+        }
+    });
     if let Some(target) = target {
         ctx.with_plugin(|drive: &mut Drive| {
             if let Some(mut child) = drive.children.remove(&target) {
@@ -429,7 +437,8 @@ struct Shot(u64);
 pub struct Drive {
     children: HashMap<egui::ViewportId, Box<Drive>>,
     requests: VecDeque<(u64, String, Value)>,
-    passes: Vec<egui::ViewportId>,
+    passes: HashMap<std::thread::ThreadId, Vec<egui::ViewportId>>,
+    deadlines: HashMap<u64, Instant>,
     screenshots: Vec<Event>,
     app: String,
     options: Options,
@@ -455,7 +464,7 @@ impl egui::Plugin for Drive {
     }
 
     fn input_hook(&mut self, ctx: &Context, input: &mut RawInput) {
-        self.passes.push(input.viewport_id);
+        self.passes.entry(std::thread::current().id()).or_default().push(input.viewport_id);
         // The platform may switch AccessKit off when a screen reader leaves.
         ctx.enable_accesskit();
         let current = input.viewport_id;
@@ -538,7 +547,13 @@ impl egui::Plugin for Drive {
     }
 
     fn output_hook(&mut self, ctx: &Context, output: &mut FullOutput) {
-        let viewport = self.passes.pop().unwrap_or(egui::ViewportId::ROOT);
+        // Deferred viewports can overlap on different render threads. Only
+        // passes nested on this thread share a stack.
+        let thread = std::thread::current().id();
+        let viewport = self.passes.get_mut(&thread).and_then(Vec::pop).expect("an input hook on this thread");
+        if self.passes[&thread].is_empty() {
+            self.passes.remove(&thread);
+        }
         if viewport != egui::ViewportId::ROOT {
             if let Some(child) = self.children.get_mut(&viewport) {
                 if let Some(update) = &output.platform_output.accesskit_update {
@@ -861,6 +876,22 @@ impl Drive {
 
     /// Give up on a screenshot past its deadline.
     fn expire(&mut self) {
+        for answer in &self.answers {
+            self.deadlines.remove(&answer.id);
+        }
+        let now = Instant::now();
+        let expired: Vec<_> = self.deadlines.iter().filter_map(|(&id, &deadline)| (now >= deadline).then_some(id)).collect();
+        for id in expired {
+            self.deadlines.remove(&id);
+            self.requests.retain(|(queued, _, _)| *queued != id);
+            self.queue.retain(|(queued, _)| *queued != id);
+            self.traced.retain(|queued| *queued != id);
+            if self.running.as_ref().is_some_and(|running| running.id == id) {
+                let running = self.running.take().expect("expired input");
+                self.release(&running.down);
+            }
+            self.answers.push(refusal(id, "TIMEOUT", "the viewport did not finish the request in time"));
+        }
         let late = |r: &Running| matches!(r.steps.front(), Some(Step::Await { deadline, .. }) if Instant::now() >= *deadline);
         if self.running.as_ref().is_some_and(late) {
             let running = self.running.take().expect("a late capture");
@@ -1476,6 +1507,78 @@ mod tests {
     use super::*;
 
     #[test]
+    fn overlapping_render_threads_keep_their_pass_attribution() {
+        use egui::Plugin;
+        use std::sync::{Arc, Mutex, mpsc};
+        let ctx = Context::default();
+        let drive = Arc::new(Mutex::new(Drive::default()));
+        let child = egui::ViewportId::from_hash_of("overlapping-child");
+        let update = |id| TreeUpdate { nodes: vec![], tree: None, tree_id: egui::accesskit::TreeId::ROOT, focus: NodeId(id) };
+        drive.lock().unwrap().input_hook(&ctx, &mut RawInput::default());
+        let (begun_tx, begun_rx) = mpsc::channel();
+        let (end_tx, end_rx) = mpsc::channel();
+        let child_drive = drive.clone();
+        let child_ctx = ctx.clone();
+        let handle = std::thread::spawn(move || {
+            child_drive.lock().unwrap().input_hook(&child_ctx, &mut RawInput { viewport_id: child, ..Default::default() });
+            begun_tx.send(()).unwrap();
+            end_rx.recv().unwrap();
+            let mut output = FullOutput::default();
+            output.platform_output.accesskit_update = Some(update(22));
+            child_drive.lock().unwrap().output_hook(&child_ctx, &mut output);
+        });
+        begun_rx.recv().unwrap();
+        let mut output = FullOutput::default();
+        output.platform_output.accesskit_update = Some(update(11));
+        drive.lock().unwrap().output_hook(&ctx, &mut output);
+        end_tx.send(()).unwrap();
+        handle.join().unwrap();
+        let drive = drive.lock().unwrap();
+        assert_eq!(drive.tree.as_ref().unwrap().focus, NodeId(11));
+        assert_eq!(drive.children[&child].tree.as_ref().unwrap().focus, NodeId(22));
+        assert!(drive.passes.is_empty());
+    }
+
+    #[test]
+    fn idle_child_requests_expire_and_release_the_bus_queue() {
+        let ctx = Context::default();
+        install(&ctx, "demo");
+        let child = egui::ViewportId::from_hash_of("idle-child");
+        register_viewport(&ctx, egui::ViewportId::ROOT, "macro-editor", child);
+        assert!(request(&ctx, 70, "ui.type", &json!({"viewport":"macro-editor", "text":"hello"})).is_none());
+        assert!(pending(&ctx));
+        ctx.with_plugin(|drive: &mut Drive| {
+            drive.children.get_mut(&child).unwrap().deadlines.insert(70, Instant::now());
+        });
+        let answers = logic(&ctx);
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].body["error_code"], "TIMEOUT");
+        assert!(!pending(&ctx));
+    }
+
+    #[test]
+    fn viewport_names_are_window_local_and_removal_compares_the_target() {
+        let ctx = Context::default();
+        install(&ctx, "demo");
+        let a = egui::ViewportId::ROOT;
+        let b = egui::ViewportId::from_hash_of("window-b");
+        let editor_a = egui::ViewportId::from_hash_of("editor-a");
+        let editor_b = egui::ViewportId::from_hash_of("editor-b");
+        register_viewport(&ctx, a, "macro-editor", editor_a);
+        register_viewport(&ctx, b, "macro-editor", editor_b);
+        assert!(request(&ctx, 8, "ui.tree", &json!({"viewport":"macro-editor"})).is_none());
+        unregister_viewport(&ctx, b, "macro-editor", editor_b);
+        unregister_viewport(&ctx, a, "macro-editor", editor_b);
+        assert!(pending(&ctx));
+        ctx.with_plugin(|drive: &mut Drive| {
+            assert_eq!(drive.children[&editor_a].requests.front().unwrap().0, 8);
+        });
+        unregister_viewport(&ctx, a, "macro-editor", editor_a);
+        assert_eq!(logic(&ctx)[0].body["error_code"], "CANCELLED");
+        assert!(!pending(&ctx));
+    }
+
+    #[test]
     fn gpu_capture_delivered_to_parent_reaches_the_editor() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("editor.png");
@@ -1539,7 +1642,7 @@ mod tests {
         install(&ctx, "demo");
         ctx.set_embed_viewports(false);
         let editor = egui::ViewportId::from_hash_of("test-editor");
-        register_viewport(&ctx, "macro-editor", editor);
+        register_viewport(&ctx, egui::ViewportId::ROOT, "macro-editor", editor);
         let mut root_clicks = 0;
         let mut editor_clicks = 0;
         {
@@ -1595,7 +1698,7 @@ mod tests {
         }
         assert_eq!((root_clicks, editor_clicks), (0, 1));
         assert_eq!(logic(&ctx)[0].rc, 0);
-        unregister_viewport(&ctx, "macro-editor");
+        unregister_viewport(&ctx, egui::ViewportId::ROOT, "macro-editor", editor);
         assert_eq!(
             request(&ctx, 3, "ui.tree", &json!({"viewport":"macro-editor"}))
                 .unwrap()
