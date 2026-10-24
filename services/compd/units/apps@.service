@@ -14,6 +14,11 @@ UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_
 # A compd session is Wayland. Without this, libwebrtc (Firefox, Chromium,
 # Zoom) assumes X11, never asks the ScreenCast portal, and offers no screen.
 Environment=XDG_SESSION_TYPE=wayland
+# Name the desktop, as compd does for the processes it starts itself. Toolkit
+# apps on automatic decorations keep the MixOS title bar only when they can
+# see it; compd offers server-side decorations, so without it they hand the
+# frame to compd. A session env file that sets it still wins.
+Environment=XDG_CURRENT_DESKTOP=MixOS
 ExecStart=/opt/mixos/bin/mix --serve /opt/mixos/share/compd/scripts/apps.mix --name apps
 Delegate=yes
 KillMode=control-group
