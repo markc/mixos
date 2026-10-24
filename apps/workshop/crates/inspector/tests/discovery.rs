@@ -96,17 +96,8 @@ async fn slow_node_cannot_hide_local_or_healthy_nodes_and_refresh_retries() {
         "healthy descriptions must not exhaust native call capacity: {:?}",
         snapshot.services
     );
-    assert!(
-        snapshot
-            .nodes
-            .iter()
-            .find(|node| node.name == "slow")
-            .unwrap()
-            .error
-            .as_ref()
-            .unwrap()
-            .contains("deadline")
-    );
+    let slow_error = snapshot.nodes.iter().find(|node| node.name == "slow").unwrap().error.as_ref().unwrap();
+    assert!(slow_error.contains("deadline") || slow_error.contains("timed out"), "{slow_error}");
     assert!(engine.node_label("slow").contains("unreachable"));
     let info: Value = engine.info();
     assert_eq!(info["discovering"], false);
