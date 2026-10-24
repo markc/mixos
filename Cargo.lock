@@ -8419,6 +8419,7 @@ dependencies = [
  "dispatcher",
  "edges",
  "egui",
+ "egui_kittest",
  "image",
  "resvg",
  "scene",
