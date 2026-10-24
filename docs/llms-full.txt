@@ -33750,7 +33750,7 @@ The known defaults are the earlier installed source from `740c0c13`
 (`33a33291c676de5bd1c30cb395534e8656244f57e6771a98bd61e3669e11f235`)
 and v0.1.2 at `fe9dfa90`, last changed by `bc2faa69`
 (`34726165cf21927a700a0eb8e5770f6a374d44a7cc2f2fc09d987faf2a288ce2`).
-The published release history contains only v0.1.2; v0.1.1 is an unpublished
+As of 2026-10-24, published release history contains only v0.1.2; v0.1.1 is an unpublished
 draft and there is no v0.1.0 tag. No other shipped default is inferred from
 unreleased source edits. Init continues to pin the actual source so accepted
 revisions remain reproducible; following the running binary by reference

@@ -32,7 +32,7 @@ const MAX_STORE_BYTES: u64 = 2 * 1024 * 1024;
 /// Exact shipped defaults, never a licence to repair arbitrary authored sources.
 /// The older installed default (740c0c13) still resolves and is left pinned.
 /// v0.1.2 (fe9dfa90) shipped the source last changed by bc2faa69; 5eff67b3
-/// retired its panel tokens and tightened contrast validation.
+/// retired its panel tokens; current validation also rejects its contrast.
 const RETIRED_EMBEDDED_DEFAULTS: &[&str] = &[
     "33a33291c676de5bd1c30cb395534e8656244f57e6771a98bd61e3669e11f235", // 740c0c13
     "34726165cf21927a700a0eb8e5770f6a374d44a7cc2f2fc09d987faf2a288ce2", // bc2faa69 / v0.1.2
@@ -111,8 +111,8 @@ impl Accepted {
             self.format
         );
         // This authored migration runs only after the stored seal verifies.
-        // Keep receipt fences honest by advancing the profile revision; the
-        // resolved design is unchanged, so its revision stays as it was.
+        // Keep receipt fences honest by advancing the profile revision.
+        // A default re-pin below also advances the design revision.
         let retired_app = self.desktop.apps.remove("busviewer").is_some();
         if retired_app {
             eprintln!("settingsd: dropping retired apps.busviewer settings during profile upgrade");
