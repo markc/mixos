@@ -62,7 +62,12 @@ fn harness(app: App, theme: &Theme, size: egui::Vec2) -> Harness<'static, App> {
     let harness = Harness::builder().with_size(size).wgpu().build_ui_state(
         |ui, app: &mut App| {
             let (palette, view) = (app.palette.clone(), app.view.clone());
-            app.doc.show(ui, &palette, &view);
+            let output = app.doc.show(ui, &palette, &view);
+            for event in output.events {
+                if let editor::Event::Layout(layout) = event {
+                    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("test-editor-layout"), layout));
+                }
+            }
         },
         app,
     );
@@ -385,7 +390,8 @@ fn typing_after_a_held_click_follows_it() {
     click(&mut h, pos2(380.0, 15.0));
     chord(&mut h, Key::A, Modifiers::COMMAND);
     h.input_mut().events.push(Event::Copy);
-    press_release(&mut h, pos2(24.0, 34.0));
+    let start = line_start(&h, 1);
+    press_release(&mut h, start);
     h.input_mut().events.push(Event::Text("z".into()));
     h.run();
     assert_eq!(h.state().doc.contents(), "abc\nzdef");
@@ -410,7 +416,8 @@ fn a_held_click_hit_tests_the_edited_text() {
     key(&mut h, Key::Home, Modifiers::COMMAND);
     chord(&mut h, Key::ArrowDown, Modifiers::SHIFT);
     h.input_mut().events.push(Event::Cut);
-    press_release(&mut h, pos2(24.0, 34.0));
+    let start = line_start(&h, 1);
+    press_release(&mut h, start);
     // Each barrier waits a frame for the owner: the Cut, then the click.
     h.run_steps(8);
     assert_eq!(h.state().doc.contents(), "bbbb\ncccc");
@@ -419,6 +426,12 @@ fn a_held_click_hit_tests_the_edited_text() {
         5,
         "the start of the new line 2"
     );
+}
+
+fn line_start(h: &Harness<'_, App>, row: usize) -> Pos2 {
+    let layout = h.ctx.data(|d| d.get_temp::<editor::LayoutReport>(egui::Id::new("test-editor-layout"))).unwrap();
+    pos2(layout.editor[0] + layout.gutter_width + layout.cell_width * 0.1,
+        layout.editor[1] + layout.row_height * (row as f32 + 0.5))
 }
 
 fn pointer(h: &mut Harness<'_, App>, at: Pos2, pressed: Option<bool>) {

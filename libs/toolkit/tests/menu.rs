@@ -496,8 +496,12 @@ fn the_keyboard_enters_a_submenu_scrolled_out_of_view() {
 
 #[test]
 fn a_submenu_closes_when_its_row_scrolls_out_of_view() {
-    let mut h = short_window(Scheme::Pro);
+    let mut h = fixture::harness(
+        Harness::builder().with_size(egui::vec2(900.0, 210.0)),
+        &fixture::theme(Scheme::Pro, Mode::Light),
+    );
     open_file(&mut h);
+    assert!(h.ctx.content_rect().contains_rect(h.get_by_label("Open Recent").rect()));
     h.hover_at(h.get_by_label("Open Recent").rect().center());
     h.run();
     assert_eq!(

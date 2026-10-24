@@ -985,7 +985,7 @@ mod tests {
             filled_tokens(family, "custom", original, v2),
             filled_tokens(family, "custom", original, &v3)
         );
-        assert_eq!(compile_family(family, Scheme::Studio).unwrap(), studio());
+        assert_eq!(compile_family(family, Scheme::Studio).unwrap(), before_font_resize(studio(), 12.5));
         let DesignCompileResult::Success(compiled) = crate::compile_design(
             &source,
             DesignContext {
@@ -1230,6 +1230,25 @@ mod tests {
             radius_lg: 12,
             ..compile_family(&family(), Scheme::Studio).unwrap()
         }
+    }
+
+    fn before_font_resize(mut style: ResolvedStyle, body_size: f64) -> ResolvedStyle {
+        style.body_size = body_size;
+        style.button_link_size = 12.0;
+        style.dialog_title_size = 15.0;
+        style.heading_size = 15.0;
+        style.mono_size = 12.0;
+        style.panel_pill_size = 12.5;
+        style.panel_section_size = 11.5;
+        style.push_label_size = 13.0;
+        style.small_size = 10.5;
+        style.tabs_pro_size = 11.5;
+        style.tabs_studio_meta_size = 10.5;
+        style.tabs_studio_name_size = 12.5;
+        style.title_size = 13.0;
+        style.value_number_size = 12.0;
+        style.value_unit_size = 11.0;
+        style
     }
 
     fn breeze() -> ResolvedStyle {
@@ -1500,7 +1519,10 @@ mod tests {
                     }
                     assert_eq!(
                         old.candidate.dictionary().style,
-                        new.candidate.dictionary().style,
+                        new.candidate.dictionary().style.map(|resolved| before_font_resize(
+                            resolved,
+                            if style.is_none() && scheme == Scheme::Pro { 12.0 } else { 12.5 },
+                        )),
                         "{scheme:?}/{mode:?}/{style:?}"
                     );
                 }

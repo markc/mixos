@@ -1157,19 +1157,26 @@ fn the_right_hand_group_gives_way_link_first_then_icons_and_the_combo_shrinks() 
 
 #[test]
 fn title_bar_controls_never_overlap_the_caption_buttons() {
-    for width in [760.0, 1100.0, 1440.0] {
+    for width in [760.0, 1100.0, 1700.0] {
         let builder = Harness::builder().with_size(vec2(width, 300.0));
         let h = fixture::harness(builder, &fixture::theme(Scheme::Pro, Mode::Light));
         let minimize = h.get_by_label("Minimize").rect();
-        let combo = h.get_by_role(Role::ComboBox).rect();
+        let help = h.get_by_label("Help").rect();
+        let Some(combo) = h.query_by_role(Role::ComboBox) else {
+            assert_eq!(width, 760.0, "only the narrow fixture drops every tail control");
+            for label in ["Search commands (Ctrl+K)", "Toggle Theme", "Community"] {
+                assert!(h.query_by_label(label).is_none(), "{width}: {label} must fit before it shows");
+            }
+            assert!(help.right() < minimize.left());
+            continue;
+        };
+        let combo = combo.rect();
         assert!(
             combo.right() <= minimize.left() - 4.0 + 0.5,
             "{width}: {combo:?} vs {minimize:?}"
         );
-        let help = h.get_by_label("Help").rect();
         let mut left = combo.left();
-        // Each control that shows sits left of the one before it; at 760
-        // only the dropdown fits beside the ten menus.
+        // Each control that shows sits left of the one before it.
         for label in ["Search commands (Ctrl+K)", "Toggle Theme", "Community"] {
             let Some(node) = h.query_by_label(label) else {
                 break;
@@ -1181,10 +1188,10 @@ fn title_bar_controls_never_overlap_the_caption_buttons() {
             help.right() < left,
             "{width}: the menus stay clear of the controls"
         );
-        if width >= 1440.0 {
+        if width >= 1700.0 {
             assert!(
                 h.query_by_label("Community").is_some(),
-                "everything fits at 1440"
+                "everything fits at 1700"
             );
         }
     }
