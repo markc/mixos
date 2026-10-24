@@ -9,7 +9,10 @@ use tokio_tungstenite::tungstenite::Message;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mesh_latency_queue_and_failure_diagnostics() {
-    use std::sync::{Arc, atomic::{AtomicU8, Ordering}};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU8, Ordering},
+    };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("ws://{}/ws", listener.local_addr().unwrap());
     let failure = Arc::new(AtomicU8::new(0));
@@ -53,28 +56,50 @@ async fn mesh_latency_queue_and_failure_diagnostics() {
         }
     });
     let (handle, _events) = discovery::start("latency-test", &url, &[]).unwrap();
-    let snapshot = tokio::time::timeout(Duration::from_secs(15), discovery::discover(handle.clone())).await.unwrap();
+    let snapshot =
+        tokio::time::timeout(Duration::from_secs(15), discovery::discover(handle.clone()))
+            .await
+            .unwrap();
     assert_eq!(snapshot.nodes.len(), 9);
     assert_eq!(snapshot.services.len(), 9 * 13);
-    assert!(snapshot.services.values().all(Result::is_ok), "{:?}", snapshot.services);
+    assert!(
+        snapshot.services.values().all(Result::is_ok),
+        "{:?}",
+        snapshot.services
+    );
     failure.store(1, Ordering::SeqCst);
     let peers_failed = discovery::discover(handle.clone()).await;
     assert!(peers_failed.peer_error.is_some());
     let mut engine = Engine::new(str::to_owned);
-    let inspector::Effect::Discover { ticket } = engine.take_effects().pop().unwrap() else { panic!() };
+    let inspector::Effect::Discover { ticket } = engine.take_effects().pop().unwrap() else {
+        panic!()
+    };
     engine.discovered(ticket, peers_failed);
-    assert!(engine.rows().iter().any(|row| row["key"] == "mesh:error" && row["error"].as_str().unwrap().contains("noded.peers")));
+    assert!(
+        engine.rows().iter().any(|row| row["key"] == "mesh:error"
+            && row["error"].as_str().unwrap().contains("noded.peers"))
+    );
     assert!(engine.status.contains("noded.peers"));
     engine.snapshot = snapshot.clone();
     failure.store(2, Ordering::SeqCst);
     engine.command(99, "workshop.refresh", "{}");
-    let ticket = engine.take_effects().into_iter().find_map(|e| match e {
-        inspector::Effect::Discover { ticket } => Some(ticket), _ => None,
-    }).unwrap();
+    let ticket = engine
+        .take_effects()
+        .into_iter()
+        .find_map(|e| match e {
+            inspector::Effect::Discover { ticket } => Some(ticket),
+            _ => None,
+        })
+        .unwrap();
     discovery::discover_incremental(handle.clone(), |part| engine.discovered(ticket, part)).await;
     assert!(engine.snapshot.error.is_some());
     assert_eq!(engine.snapshot.services, snapshot.services);
-    assert!(engine.take_effects().iter().any(|effect| matches!(effect, inspector::Effect::Reply { id: 99, rc: 10, .. })));
+    assert!(
+        engine
+            .take_effects()
+            .iter()
+            .any(|effect| matches!(effect, inspector::Effect::Reply { id: 99, rc: 10, .. }))
+    );
     assert!(!engine.busy());
     handle.quit();
     handle.wait_done().unwrap();

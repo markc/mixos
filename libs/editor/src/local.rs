@@ -117,7 +117,10 @@ impl SaveSnapshot {
 
     /// Supply an application's confined storage writer while retaining the
     /// document/revision receipt used by asynchronous saves.
-    pub fn write_with(self, write: impl FnOnce(&Path, &[u8]) -> io::Result<()>) -> Result<Saved, Error> {
+    pub fn write_with(
+        self,
+        write: impl FnOnce(&Path, &[u8]) -> io::Result<()>,
+    ) -> Result<Saved, Error> {
         write(&self.path, &self.bytes)?;
         Ok(Saved {
             identity: self.identity,

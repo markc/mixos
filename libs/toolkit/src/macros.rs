@@ -946,7 +946,9 @@ impl State {
             std::thread::spawn(move || {
                 let completion = snapshot
                     .write_with(|path, bytes| {
-                        session.roots().ok_or_else(|| io::Error::other("macro roots unavailable"))?
+                        session
+                            .roots()
+                            .ok_or_else(|| io::Error::other("macro roots unavailable"))?
                             .write_path(path, bytes)
                     })
                     .map(|saved| {
@@ -1172,7 +1174,9 @@ fn path_error(key: &str, path: &Path, error: impl std::fmt::Display) -> io::Erro
 fn open_macro(roots: &::macros::Roots, path: &Path) -> io::Result<editor::local::Document> {
     ::macros::check_editable(path).map_err(|e| path_error("macros-save-error", path, e))?;
     // The read also refuses links at every component; preflight is no authority.
-    let bytes = roots.read_path(path).map_err(|e| path_error("macros-open-error", path, e))?;
+    let bytes = roots
+        .read_path(path)
+        .map_err(|e| path_error("macros-open-error", path, e))?;
     let document = editor::local::Document::open_bytes(path, &bytes)
         .map_err(|e| path_error("macros-open-error", path, e))?;
     Ok(document)

@@ -50,17 +50,30 @@ async fn json_call(probe: &Probe, service: &str, verb: &str) -> Result<Value, St
 }
 
 async fn acquire(probe: &Probe) -> Result<tokio::sync::OwnedSemaphorePermit, String> {
-    tokio::time::timeout(DISCOVERY_QUEUE_BUDGET, probe.permits.clone().acquire_owned())
-        .await.map_err(|_| "discovery capacity deadline exceeded".to_owned())?
-        .map_err(|e| e.to_string())
+    tokio::time::timeout(
+        DISCOVERY_QUEUE_BUDGET,
+        probe.permits.clone().acquire_owned(),
+    )
+    .await
+    .map_err(|_| "discovery capacity deadline exceeded".to_owned())?
+    .map_err(|e| e.to_string())
 }
 
-async fn json_call_within(probe: &Probe, service: &str, verb: &str, budget: std::time::Duration) -> Result<Value, String> {
-    let reply = tokio::time::timeout(budget,
-        probe.handle.raw_within(service, verb, String::new(), budget))
-        .await
-        .map_err(|_| format!("{service} {verb}: deadline exceeded (3 s)"))?
-        .map_err(|e| e.to_string())?;
+async fn json_call_within(
+    probe: &Probe,
+    service: &str,
+    verb: &str,
+    budget: std::time::Duration,
+) -> Result<Value, String> {
+    let reply = tokio::time::timeout(
+        budget,
+        probe
+            .handle
+            .raw_within(service, verb, String::new(), budget),
+    )
+    .await
+    .map_err(|_| format!("{service} {verb}: deadline exceeded (3 s)"))?
+    .map_err(|e| e.to_string())?;
     if reply.rc >= 10 {
         return Err(format!(
             "rc = {}: {} {}",
@@ -80,7 +93,14 @@ async fn describe(handle: &Probe, service: &str) -> Result<Vec<crate::model::Ver
     };
     match help {
         Ok(verbs) => Ok(verbs),
-        Err(help_error) => match json_call_within(handle, service, "app.describe", deadline.saturating_duration_since(tokio::time::Instant::now())).await {
+        Err(help_error) => match json_call_within(
+            handle,
+            service,
+            "app.describe",
+            deadline.saturating_duration_since(tokio::time::Instant::now()),
+        )
+        .await
+        {
             Ok(value) => crate::model::parse_verbs(&value),
             Err(error) => Err(format!("HELP: {help_error}\napp.describe: {error}")),
         },
@@ -161,7 +181,9 @@ async fn node_snapshot(handle: &Probe, name: String, local: bool) -> crate::mode
         }
         Err(error) => {
             node.error = Some(format!("noded.list: {error}"));
-            if local { snapshot.error = node.error.clone(); }
+            if local {
+                snapshot.error = node.error.clone();
+            }
         }
     }
     snapshot.nodes.push(node);
@@ -254,7 +276,9 @@ pub async fn discover_incremental(
                     Err(error) => snapshot.peer_error = Some(error),
                 },
                 Update::Node(part, done) => {
-                    if part.error.is_some() { snapshot.error = part.error.clone(); }
+                    if part.error.is_some() {
+                        snapshot.error = part.error.clone();
+                    }
                     let node = part.nodes.into_iter().next().unwrap();
                     snapshot
                         .nodes
@@ -270,7 +294,11 @@ pub async fn discover_incremental(
                     }
                 }
             }
-            changed(snapshot.clone());
+            // Until local membership has answered, an empty/remote-only update
+            // must not overwrite the engine's last good local snapshot.
+            if snapshot.nodes.iter().any(|node| node.local) {
+                changed(snapshot.clone());
+            }
         }
     };
     let work = async {

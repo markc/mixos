@@ -36,13 +36,18 @@ impl Roots {
                 let canonical = match fs::canonicalize(folder.path()) {
                     Ok(path) => path,
                     Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                        eprintln!("macro discovery: {} vanished: {error}", folder.path().display());
+                        eprintln!(
+                            "macro discovery: {} vanished: {error}",
+                            folder.path().display()
+                        );
                         continue;
                     }
                     Err(error) => return Err(error),
                 };
-                if valid_app(&name) && canonical.is_dir()
-                    && canonical.starts_with(fs::canonicalize(root)?) {
+                if valid_app(&name)
+                    && canonical.is_dir()
+                    && canonical.starts_with(fs::canonicalize(root)?)
+                {
                     apps.insert(name);
                 }
             }
@@ -83,7 +88,11 @@ impl Roots {
     }
 
     pub fn read_path(&self, path: &Path) -> io::Result<Vec<u8>> {
-        let root = if path.starts_with(&self.user) { &self.user } else { &self.builtin };
+        let root = if path.starts_with(&self.user) {
+            &self.user
+        } else {
+            &self.builtin
+        };
         crate::storage::Target::open(root, path)?.read()
     }
 
@@ -98,10 +107,14 @@ impl Roots {
         if fs::symlink_metadata(&entry.path)?.file_type().is_symlink() {
             return Err(invalid("moving a macro symlink is not supported"));
         }
-        if !valid_id(&entry.id) { return Err(invalid("invalid macro id")); }
-        let destination = self.ensure_user_folder(app, tier)?.join(format!("{}.mix", entry.id));
-        crate::storage::Target::open(&self.user, &entry.path)?.move_to(
-            &crate::storage::Target::open(&self.user, &destination)?)?;
+        if !valid_id(&entry.id) {
+            return Err(invalid("invalid macro id"));
+        }
+        let destination = self
+            .ensure_user_folder(app, tier)?
+            .join(format!("{}.mix", entry.id));
+        crate::storage::Target::open(&self.user, &entry.path)?
+            .move_to(&crate::storage::Target::open(&self.user, &destination)?)?;
         Ok(destination)
     }
     pub fn resolve() -> Option<Self> {

@@ -3,8 +3,8 @@
 
 mod catalogue;
 mod runner;
-mod storage;
 pub mod session;
+mod storage;
 pub mod verbs;
 
 pub use catalogue::{

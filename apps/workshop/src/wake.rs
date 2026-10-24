@@ -60,6 +60,9 @@ mod tests {
             passes += 1;
             wake.wait();
         }
-        assert!(passes <= 20, "idle headless loop spun {passes} passes in two seconds");
+        assert!(
+            passes <= 20,
+            "idle headless loop spun {passes} passes in two seconds"
+        );
     }
 }
