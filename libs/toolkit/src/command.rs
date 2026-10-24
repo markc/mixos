@@ -672,7 +672,7 @@ impl<S> Registry<S> {
         chosen
     }
 
-    /// The menu model: one menu per distinct `menu` key in first-use order,
+    /// The menu model: first-use order, with Help always last,
     /// rows in registry order, a submenu row where a submenu's first command
     /// is, and a separator wherever the group changes.
     pub fn model(&self, ctx: &egui::Context, state: &S, strings: &Strings) -> Vec<Menu> {

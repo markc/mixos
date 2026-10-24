@@ -388,7 +388,6 @@ impl State {
             || self.document.as_ref().is_some_and(|doc| doc.is_dirty())
         {
             self.error = Some(own("macros-save-first"));
-            self.editor_open = true;
             false
         } else {
             true
@@ -873,7 +872,11 @@ impl State {
             });
         }
         if run && self.engine.runner_status() == Status::Running {
-            let title = self.editor_entry.as_ref().map(|e| e.title.clone()).unwrap_or_default();
+            let title = self
+                .editor_entry
+                .as_ref()
+                .map(|e| e.title.clone())
+                .unwrap_or_default();
             self.run_error(&title, own("macros-already-running"), ctx);
         }
         self.save_editor(save, run);
@@ -963,7 +966,6 @@ impl State {
             || self.save_request.is_some()
         {
             self.close_after_save = true;
-            self.editor_open = true;
             if self.saving.is_none() && self.save_request.is_none() {
                 self.save_editor(true, false);
             }
@@ -974,7 +976,8 @@ impl State {
 
     fn displayed_output(&self) -> String {
         if self.engine.runner_status() == Status::Running
-            && self.engine.status()["origin"].as_str() == Some(format!("gui:{}", self.window).as_str())
+            && self.engine.status()["origin"].as_str()
+                == Some(format!("gui:{}", self.window).as_str())
         {
             self.engine.runner_output().text
         } else {
@@ -1257,6 +1260,23 @@ fn window_state(ctx: &egui::Context, app: &str, open: bool) -> Option<WindowStat
 mod tests {
     use super::*;
     use egui_kittest::kittest::Queryable;
+
+    #[test]
+    fn notification_fallback_and_failed_save_never_reopen_a_closed_editor() {
+        let mut state = State::new("ced");
+        state.loaded = true;
+        state.notify_tx.send(Finished { title: "Test".into(), output: "result".into(), status: "done".into() }).unwrap();
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |_| state.show(&ctx));
+        output.textures_delta.clear();
+        assert!(!state.editor_open);
+        state.saved(Err("read-only".into()), &ctx);
+        assert!(!state.editor_open);
+        state.editor_open = true;
+        state.saved(Err("read-only".into()), &ctx);
+        assert!(state.editor_open);
+        assert_eq!(state.error.as_deref(), Some("read-only"));
+    }
 
     #[cfg(unix)]
     fn runner_fixture() -> (tempfile::TempDir, Roots, Entry) {
@@ -2035,6 +2055,7 @@ mod tests {
         std::fs::remove_dir(&dir).unwrap();
         let mut state = State::new("ced");
         state.document = Some(doc);
+        state.editor_open = true;
         state.close_editor();
         let result = state
             .saving

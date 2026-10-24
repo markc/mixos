@@ -70,9 +70,19 @@ fn initial_list_and_reload_are_deferred_and_cache_the_catalogue() {
     assert_eq!(body["macros"][0]["shadows"], json!([]));
     let other = Session::with_roots("other", Some(roots.clone()));
     assert!(other.reload().unwrap().entries.is_empty());
-    roots.create("fixture", crate::Tier::UserGlobal, "global-only", "Global only").unwrap();
+    roots
+        .create(
+            "fixture",
+            crate::Tier::UserGlobal,
+            "global-only",
+            "Global only",
+        )
+        .unwrap();
     session.reload().unwrap();
-    assert_eq!(session.run("global-only", "bus").unwrap_err().code, "NOT_FOUND");
+    assert_eq!(
+        session.run("global-only", "bus").unwrap_err().code,
+        "NOT_FOUND"
+    );
     assert!(matches!(
         verbs::handle(&session, "list", &json!({})),
         Reply::Immediate(_)

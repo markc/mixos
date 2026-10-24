@@ -454,11 +454,6 @@ impl egui::Plugin for Drive {
                     ..Drive::default()
                 })
             });
-            while let Some((id, verb, args)) = child.requests.pop_front() {
-                if let Some(answer) = child.request(ctx, id, &verb, &args) {
-                    child.answers.push(answer);
-                }
-            }
             child.step(input);
             return;
         }
@@ -480,6 +475,11 @@ impl egui::Plugin for Drive {
     fn on_begin_pass(&mut self, ui: &mut Ui) {
         if ui.ctx().viewport_id() != egui::ViewportId::ROOT {
             if let Some(child) = self.children.get_mut(&ui.ctx().viewport_id()) {
+                while let Some((id, verb, args)) = child.requests.pop_front() {
+                    if let Some(answer) = child.request(ui.ctx(), id, &verb, &args) {
+                        child.answers.push(answer);
+                    }
+                }
                 for command in child.outbox.drain(..) {
                     ui.ctx().send_viewport_cmd(command);
                 }
@@ -1425,6 +1425,39 @@ fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auxiliary_viewport_has_its_own_tree_input_and_close() {
+        let ctx = Context::default();
+        install(&ctx, "demo");
+        let editor = egui::ViewportId::from_hash_of("test-editor");
+        register_viewport(&ctx, "macro-editor", editor);
+        let mut root_clicks = 0;
+        let mut editor_clicks = 0;
+        let mut frame = |viewport| {
+            let mut input = RawInput { viewport_id: viewport, ..Default::default() };
+            input.viewports.insert(editor, Default::default());
+            let mut output = ctx.run_ui(input, |ui| {
+                if ui.button(if viewport == editor { "Save" } else { "Root" }).clicked() {
+                    if viewport == editor { editor_clicks += 1; } else { root_clicks += 1; }
+                }
+            });
+            output.textures_delta.clear();
+        };
+        for _ in 0..3 { frame(egui::ViewportId::ROOT); frame(editor); }
+        assert!(request(&ctx, 1, "ui.tree", &json!({"viewport":"macro-editor"})).is_none());
+        frame(editor);
+        let answers = logic(&ctx);
+        assert!(answers[0].body.to_string().contains("Save"));
+        assert!(!answers[0].body.to_string().contains("Root"));
+        assert!(request(&ctx, 2, "ui.click", &json!({"viewport":"macro-editor", "label":"Save"})).is_none());
+        for _ in 0..8 { frame(egui::ViewportId::ROOT); frame(editor); }
+        drop(frame);
+        assert_eq!((root_clicks, editor_clicks), (0, 1));
+        assert_eq!(logic(&ctx)[0].rc, 0);
+        unregister_viewport(&ctx, "macro-editor");
+        assert_eq!(request(&ctx, 3, "ui.tree", &json!({"viewport":"macro-editor"})).unwrap().body["error_code"], "NOT_FOUND");
+    }
 
     #[test]
     fn every_verb_is_described_once() {

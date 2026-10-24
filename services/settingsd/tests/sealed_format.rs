@@ -23,6 +23,10 @@
 //! (clean break, theming amendment). Only the source identity moved: the
 //! snapshot length is unchanged and the bridge test still reaches the
 //! pre-modern pins once the identity fields are replaced.
+//!
+//! Re-pinned 2026-10-24 for Plasma-sized default UI and mono text. The prior
+//! source fixture keeps the pre-modern byte bridge below meaningful: the new
+//! source deliberately changes resolved typography as well as its identity.
 use settings::*;
 
 /// `settings::digest` of the default desktop's effective map.
@@ -43,8 +47,12 @@ const PRE_MODERN_SNAPSHOT_DIGEST: &str =
     "5008077faa8a239b06904d9a85f2d1c7528a007df4a7b6ea0677e12a2a09c922";
 
 fn fixed_snapshot() -> Snapshot {
+    snapshot_with_source(EMBEDDED_DEFAULT_SOURCE)
+}
+
+fn snapshot_with_source(source: &str) -> Snapshot {
     let desktop = Desktop::default();
-    let effective = resolve(&desktop).unwrap();
+    let effective = resolve_with_embedded(&desktop, source).unwrap();
     Snapshot {
         schema: SCHEMA,
         binding: Binding {
@@ -54,7 +62,7 @@ fn fixed_snapshot() -> Snapshot {
         incarnation: "00000000-0000-0000-0000-000000000001".into(),
         revision: Revision(1),
         design_revision: Revision(1),
-        source_digest: source_digest(EMBEDDED_DEFAULT_SOURCE),
+        source_digest: source_digest(source),
         desktop,
         effective,
     }
@@ -79,7 +87,7 @@ fn effective_and_snapshot_bytes_match_the_pinned_format() {
 
 #[test]
 fn modern_embedded_source_changes_identity_but_no_default_resolved_value() {
-    let mut snapshot = fixed_snapshot();
+    let mut snapshot = snapshot_with_source(include_str!("fixtures/2026-10-23-default.theme.conf.mix"));
     assert_eq!(snapshot.source_digest, MODERN_SOURCE_DIGEST);
     for effective in snapshot.effective.values_mut() {
         assert_eq!(effective.design.source, MODERN_SOURCE_DIGEST);
