@@ -349,6 +349,10 @@ impl Shell {
                 continue;
             }
             if let Event::MacroChanged = event {
+                let status = macros::Session::for_app("workshop").status();
+                if status["state"] == "running" && self.engine.workshop.subscription.is_some() {
+                    self.engine.workshop.filter = format!("macro:workshop:{}", status["id"].as_str().unwrap_or_default());
+                }
                 if !self.engine.quitting { self.engine.queue_workshop("catalogues", json!({}), None); self.settle(); }
                 continue;
             }
@@ -410,6 +414,7 @@ impl Shell {
                     let body = event["body"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()).unwrap_or(Value::Null);
                     if event["topic"].as_str().is_some_and(|topic| topic.ends_with(".macros.finished")) {
                         self.engine.workshop.message = body.to_string();
+                        self.engine.workshop.filter.clear();
                     }
                     self.engine.workshop.retain(json!({"direction":"topic","from":event["from"],"verb":event["topic"],"payload":body}));
                 }
@@ -486,6 +491,10 @@ impl Shell {
             Effect::Workshop { operation, mut args, reply } => {
                 if operation == "observe" {
                     if let Some(subscription) = &self.engine.workshop.subscription { args["subscription_id"] = json!(subscription); }
+                }
+                if operation == "macros.run" && self.engine.workshop.subscription.is_some() {
+                    let app = args["app"].as_str().filter(|app| *app != "global").unwrap_or("workshop");
+                    self.engine.workshop.filter = format!("macro:{app}:{}", args["id"].as_str().unwrap_or_default());
                 }
                 let running = self.engine.snapshot.services.iter().filter_map(|(service, verbs)| {
                     if service.ends_with(".bus") || service == self.bus.service() { return None; }

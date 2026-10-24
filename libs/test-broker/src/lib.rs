@@ -194,7 +194,7 @@ impl Broker {
                         mesh_open: false,
                         spec_dir: None,
                         admission_mode: config::node::AdmissionMode::Off,
-                        observe_allowed_services: vec!["term-policy-audit".into()],
+                        observe_allowed_services: vec!["term-policy-audit".into(), "workshop-observe-test".into()],
                     },
                     tcp,
                     tx,

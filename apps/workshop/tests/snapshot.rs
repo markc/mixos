@@ -91,6 +91,17 @@ fn engine() -> Engine {
         }),
     );
     e.take_effects();
+    e.workshop.catalogues.insert("global".into(), serde_json::json!({"macros":[{
+        "id":"mesh-ping","title":"Mesh ping","tier":"user-global","path":"/home/user/.config/mixos/macros/mesh-ping.mix","shadows":[],"targets":"any"
+    }]}));
+    e.workshop.catalogues.insert("ced".into(), serde_json::json!({"running":false,"macros":[{
+        "id":"tidy-imports","title":"Tidy imports","tier":"user-app","path":"/home/user/.config/mixos/macros/ced/tidy-imports.mix","shadows":["builtin-app"]
+    }]}));
+    e.ui.expanded.insert("macros:global".into());
+    e.ui.expanded.insert("macros:ced".into());
+    e.workshop.observe = "redacted".into();
+    e.workshop.retain(serde_json::json!({"ts":"14:02:11.204","direction":"local","from":"workshop","service":"ced","verb":"ced.macros.run","rc":0,"ms":3}));
+    e.workshop.retain(serde_json::json!({"ts":"14:02:11.310","direction":"topic","from":"ced","service":"ced","verb":"ced.command.executed","rc":0,"ms":1,"payload":{"id":"edit.format","origin":"macro"}}));
     e
 }
 
@@ -101,6 +112,12 @@ fn window(theme: Theme, name: &str) {
 /// The window, optionally with `dialog` open.
 fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     let mut engine = engine();
+    if name.starts_with("macro_") {
+        engine.workshop.selected = Some(("global".into(), "mesh-ping".into()));
+        engine.ui.row_key = Some("macro:global:mesh-ping".into());
+        engine.workshop.document = serde_json::json!({"tier":"user-global","path":"/home/user/.config/mixos/macros/mesh-ping.mix","text":"-- title: Mesh ping\n-- target: any\nsend noded noded.ping\nprint($result)\n"});
+        engine.workshop.message = "run 4 · exited 0".into();
+    }
     engine.ui.dialog = dialog;
     let registry = commands::registry();
     let strings = strings();
@@ -113,6 +130,15 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     toolkit::install(&harness.ctx, &theme);
     harness.run();
     harness.snapshot(name);
+}
+
+#[test]
+fn macro_details_themes() {
+    for (scheme, mode, name) in [
+        (Scheme::Studio, Mode::Dark, "macro_studio_dark"),
+        (Scheme::Pro, Mode::Light, "macro_pro_light"),
+        (Scheme::Breeze, Mode::Light, "macro_breeze_light"),
+    ] { window(chrome(scheme, mode), name); }
 }
 
 /// The hue scheme ocean, light.

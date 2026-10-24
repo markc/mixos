@@ -25,8 +25,9 @@ pub struct Workshop {
 }
 
 impl Workshop {
-    pub fn retain(&mut self, row: Value) {
+    pub fn retain(&mut self, mut row: Value) {
         if self.paused { return; }
+        redact(&mut row);
         let size = row.to_string().len();
         if size > TRAFFIC_BYTES { self.dropped += 1; return; }
         while self.traffic.len() >= TRAFFIC_CAPACITY || self.bytes + size > TRAFFIC_BYTES {
@@ -43,6 +44,19 @@ impl Workshop {
         self.traffic.iter().rev().filter(|row| row.to_string().contains(filter))
             .take(limit.min(TRAFFIC_CAPACITY)).cloned().collect::<Vec<_>>()
             .into_iter().rev().collect()
+    }
+}
+
+fn redact(value: &mut Value) {
+    match value {
+        Value::Object(fields) => for (key, value) in fields {
+            let key = key.to_ascii_lowercase();
+            if ["password", "token", "secret", "credential", "authorization", "cookie"].iter().any(|word| key.contains(word)) {
+                *value = json!("[redacted]");
+            } else { redact(value); }
+        },
+        Value::Array(values) => for value in values { redact(value); },
+        _ => {}
     }
 }
 
@@ -136,5 +150,13 @@ mod tests {
         state.paused = true;
         state.retain(json!({}));
         assert_eq!(state.traffic.len(), TRAFFIC_CAPACITY);
+    }
+
+    #[test]
+    fn topic_bodies_are_redacted_before_retention() {
+        let mut state = Workshop::default();
+        state.retain(json!({"payload":{"params":{"password":"never-retain","count":3}}}));
+        assert_eq!(state.traffic[0]["payload"]["params"]["password"], "[redacted]");
+        assert_eq!(state.traffic[0]["payload"]["params"]["count"], 3);
     }
 }

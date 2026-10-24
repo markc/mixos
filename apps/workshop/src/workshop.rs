@@ -107,3 +107,34 @@ pub async fn perform(bus: Handle, operation: &str, mut args: Value, running: BTr
         }
     }).await.map_err(|e| e.to_string())?
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn observation_refusal_is_visible_and_leaves_topics_available() {
+        let broker = test_broker::Broker::start();
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let (allowed, _) = inspector::bus::start("workshop-observe-test", &broker.url, &[]).unwrap();
+        let (denied, _) = inspector::bus::start("workshop-denied-test", &broker.url, &[]).unwrap();
+        runtime.block_on(async {
+            let started = perform(allowed.clone(), "observe", json!({"on":true}), BTreeMap::new()).await.unwrap();
+            assert_eq!(started["body"], "redacted");
+            assert!(started["subscription_id"].is_string());
+            let stopped = perform(allowed.clone(), "observe", json!({"on":false,"subscription_id":started["subscription_id"]}), BTreeMap::new()).await.unwrap();
+            assert_eq!(stopped["stopped"], true);
+            let refused = perform(denied.clone(), "observe", json!({"on":true}), BTreeMap::new()).await.unwrap();
+            assert_eq!(refused["error_code"], "UNAVAILABLE");
+            assert!(refused["message"].as_str().unwrap().contains("observe_unauthorised"));
+            denied.subscribe("ced.command.executed").await.unwrap();
+            denied.unsubscribe("ced.command.executed").await.unwrap();
+            for args in [json!({}),json!({"on":true,"body":"raw"}),json!({"on":true,"extra":true})] {
+                assert_eq!(perform(denied.clone(), "observe", args, BTreeMap::new()).await.unwrap()["error_code"], "INVALID_ARGUMENT");
+            }
+            let stopped_app = perform(denied.clone(), "macros.run", json!({"app":"ced","id":"test"}), BTreeMap::new()).await.unwrap();
+            assert_eq!(stopped_app, json!({"error_code":"UNAVAILABLE","message":"ced is not running"}));
+        });
+        allowed.quit(); denied.quit();
+        allowed.wait_done().unwrap(); denied.wait_done().unwrap();
+    }
+}

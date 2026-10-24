@@ -83,6 +83,30 @@ pub(crate) enum LaneKind {
     Verified,
 }
 
+/// Macro provenance is telemetry, never an authorisation credential. The
+/// runner supplies these values; ordinary scripts send no additional header.
+fn macro_headers() -> BTreeMap<String, String> {
+    macro_headers_for(std::env::var("MIXOS_MACRO_APP").ok().as_deref(), std::env::var("MIXOS_MACRO_ID").ok().as_deref())
+}
+
+fn macro_headers_for(app: Option<&str>, id: Option<&str>) -> BTreeMap<String, String> {
+    let valid = |value: &str| !value.is_empty() && value.len() <= 128 && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte));
+    match (app, id) {
+        (Some(app), Some(id)) if valid(app) && valid(id) => BTreeMap::from([("macro-origin".into(), format!("macro:{app}:{id}"))]),
+        _ => BTreeMap::new(),
+    }
+}
+
+#[cfg(test)]
+mod macro_provenance_tests {
+    #[test]
+    fn macro_headers_are_bounded_and_opt_in() {
+        assert!(super::macro_headers_for(None, Some("test")).is_empty());
+        assert!(super::macro_headers_for(Some("ced"), Some("bad\nheader")).is_empty());
+        assert_eq!(super::macro_headers_for(Some("ced"), Some("tidy"))["macro-origin"], "macro:ced:tidy");
+    }
+}
+
 impl Lane {
     pub(crate) fn kind(&self) -> LaneKind {
         match self {
@@ -820,7 +844,8 @@ impl BusHandler for MixBusHandler {
             if let Value::Map(map) = args
                 && wants_header_routing(command, map)
             {
-                let (headers, body) = split_headers_body(map)?;
+                let (mut headers, body) = split_headers_body(map)?;
+                headers.extend(macro_headers());
                 return match client
                     .call_with_headers_raw(target, command, &headers, &body)
                     .await
@@ -857,7 +882,7 @@ impl BusHandler for MixBusHandler {
             // `typed_reply` reproduces `call_typed`'s `$result`.
             let body = rpc_body(&json_args);
             match client
-                .call_with_headers_raw(target, command, &BTreeMap::new(), &body)
+                .call_with_headers_raw(target, command, &macro_headers(), &body)
                 .await
             {
                 Ok((rc, reply_body, error_header)) => Ok(typed_reply(rc, reply_body, error_header)),
