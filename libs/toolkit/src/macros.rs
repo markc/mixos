@@ -768,17 +768,38 @@ impl State {
         let mut ced = false;
         let row_height = crate::chrome::Chrome::of(&ctx).metrics.menu_row_height;
         let output = self.displayed_output();
-        let output_height = if output.is_empty() {
-            0.0
-        } else {
-            row_height * 6.0
-        };
         let dirty_before = self.document.as_ref().is_some_and(|doc| doc.is_dirty());
         let mut open = !ctx.input(|i| i.viewport().close_requested());
         if ctx.input(|i| i.viewport().focused == Some(true))
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
         {
             open = false;
+        }
+        if !output.is_empty() {
+            egui::Panel::bottom("macro-output")
+                .exact_size(row_height * 6.0)
+                .show(ui, |ui| {
+                    if self.engine.runner_status() != Status::Running
+                        && let Some(last) = &self.retained
+                    {
+                        ui.label(&last.status).on_hover_text(&last.title);
+                    }
+                    if self.engine.status()["origin"].as_str()
+                        == Some(format!("gui:{}", self.window).as_str())
+                        && let Some(title) = self.running_title()
+                    {
+                        ui.label(own_with("macros-running-title", &[("title", &title)]));
+                    }
+                    egui::ScrollArea::both()
+                        .auto_shrink(false)
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(output).monospace())
+                                    .selectable(true),
+                            );
+                        });
+                });
         }
         egui::CentralPanel::default().show(ui, |ui| {
             let ctx = &ui.ctx().clone();
@@ -825,14 +846,7 @@ impl State {
                         d.get_temp::<editor::Palette>(egui::Id::new("toolkit.editor-palette"))
                     })
                     .unwrap_or_else(|| editor::Palette::from_theme(&crate::Theme::embedded()));
-                let height = (ui.available_height()
-                    - output_height
-                    - if output.is_empty() {
-                        0.0
-                    } else {
-                        row_height * 2.0
-                    })
-                .max(0.0);
+                let height = ui.available_height().max(0.0);
                 ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
                     ui.add_enabled_ui(editor_enabled, |ui| {
                         self.editor_focus =
@@ -848,30 +862,6 @@ impl State {
                 if let Some(error) = doc.take_refusal() {
                     self.error = Some(error.to_string());
                 }
-            }
-            if !output.is_empty() {
-                ui.separator();
-                if self.engine.runner_status() != Status::Running
-                    && let Some(last) = &self.retained
-                {
-                    ui.label(&last.status).on_hover_text(&last.title);
-                }
-                if self.engine.status()["origin"].as_str()
-                    == Some(format!("gui:{}", self.window).as_str())
-                    && let Some(title) = self.running_title()
-                {
-                    ui.label(own_with("macros-running-title", &[("title", &title)]));
-                }
-                egui::ScrollArea::both()
-                    .max_height(output_height)
-                    .min_scrolled_height(output_height)
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
-                        ui.add(
-                            egui::Label::new(egui::RichText::new(output).monospace())
-                                .selectable(true),
-                        );
-                    });
             }
         });
         if !open {
