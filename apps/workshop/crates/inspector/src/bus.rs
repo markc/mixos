@@ -45,26 +45,21 @@ struct Probe {
 }
 
 async fn json_call(probe: &Probe, service: &str, verb: &str) -> Result<Value, String> {
-    // Queue outside the per-call deadline. The permit stays with the native
-    // request even if a description phase abandons its answer: cancellation
-    // must not let replacement calls overrun citizen's transport capacity.
-    let permit = probe
-        .permits
-        .clone()
-        .acquire_owned()
-        .await
-        .map_err(|e| e.to_string())?;
-    let (handle, target, command) = (probe.handle.clone(), service.to_owned(), verb.to_owned());
-    let request = tokio::spawn(async move {
-        let _permit = permit;
-        handle
-            .raw_within(&target, &command, String::new(), DISCOVERY_CALL_BUDGET)
-            .await
-    });
-    let reply = tokio::time::timeout(DISCOVERY_CALL_BUDGET, request)
+    let _permit = acquire(probe).await?;
+    json_call_within(probe, service, verb, DISCOVERY_CALL_BUDGET).await
+}
+
+async fn acquire(probe: &Probe) -> Result<tokio::sync::OwnedSemaphorePermit, String> {
+    tokio::time::timeout(DISCOVERY_QUEUE_BUDGET, probe.permits.clone().acquire_owned())
+        .await.map_err(|_| "discovery capacity deadline exceeded".to_owned())?
+        .map_err(|e| e.to_string())
+}
+
+async fn json_call_within(probe: &Probe, service: &str, verb: &str, budget: std::time::Duration) -> Result<Value, String> {
+    let reply = tokio::time::timeout(budget,
+        probe.handle.raw_within(service, verb, String::new(), budget))
         .await
         .map_err(|_| format!("{service} {verb}: deadline exceeded (3 s)"))?
-        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
     if reply.rc >= 10 {
         return Err(format!(
@@ -77,13 +72,15 @@ async fn json_call(probe: &Probe, service: &str, verb: &str) -> Result<Value, St
     serde_json::from_str(&reply.body).map_err(|e| e.to_string())
 }
 async fn describe(handle: &Probe, service: &str) -> Result<Vec<crate::model::Verb>, String> {
-    let help = match json_call(handle, service, "HELP").await {
+    let _permit = acquire(handle).await?;
+    let deadline = tokio::time::Instant::now() + DISCOVERY_CALL_BUDGET;
+    let help = match json_call_within(handle, service, "HELP", DISCOVERY_CALL_BUDGET).await {
         Ok(value) => crate::model::parse_verbs(&value),
         Err(error) => Err(error),
     };
     match help {
         Ok(verbs) => Ok(verbs),
-        Err(help_error) => match json_call(handle, service, "app.describe").await {
+        Err(help_error) => match json_call_within(handle, service, "app.describe", deadline.saturating_duration_since(tokio::time::Instant::now())).await {
             Ok(value) => crate::model::parse_verbs(&value),
             Err(error) => Err(format!("HELP: {help_error}\napp.describe: {error}")),
         },
@@ -91,6 +88,7 @@ async fn describe(handle: &Probe, service: &str) -> Result<Vec<crate::model::Ver
 }
 /// Discovery never inherits the mutation lane's 30 second deadline.
 pub const DISCOVERY_CALL_BUDGET: std::time::Duration = std::time::Duration::from_secs(3);
+pub const DISCOVERY_QUEUE_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 pub const DISCOVERY_CONCURRENCY: usize = 8;
 /// Twelve native requests across discovery leave four of citizen's sixteen
 /// slots for other work. Six are reserved locally, six shared remotely.
@@ -161,7 +159,10 @@ async fn node_snapshot(handle: &Probe, name: String, local: bool) -> crate::mode
                 snapshot.services.insert(route.clone(), Ok(Vec::new()));
             }
         }
-        Err(error) => node.error = Some(format!("noded.list: {error}")),
+        Err(error) => {
+            node.error = Some(format!("noded.list: {error}"));
+            if local { snapshot.error = node.error.clone(); }
+        }
     }
     snapshot.nodes.push(node);
     snapshot
@@ -181,8 +182,7 @@ async fn discover_node(
     use futures::{StreamExt, stream};
     let mut snapshot = node_snapshot(&handle, name, local).await;
     let _ = tx.unbounded_send(Update::Node(snapshot.clone(), false));
-    // Bound the entire description phase too: a long list cannot hold a
-    // node slot forever. Each individual read also has the call deadline.
+    // Every queued read has a bounded acquisition, then its own call budget.
     let names = snapshot.nodes[0].services.clone();
     for result in snapshot.services.values_mut() {
         *result = Err("description deadline exceeded (3 s)".into());
@@ -195,10 +195,7 @@ async fn discover_node(
         }
     }))
     .buffer_unordered(DISCOVERY_CONCURRENCY);
-    let deadline = tokio::time::Instant::now() + DISCOVERY_CALL_BUDGET;
-    while let Ok(Some((name, result))) =
-        tokio::time::timeout_at(deadline, descriptions.next()).await
-    {
+    while let Some((name, result)) = descriptions.next().await {
         snapshot.services.insert(name, result);
     }
     let _ = tx.unbounded_send(Update::Node(snapshot, true));
@@ -257,6 +254,7 @@ pub async fn discover_incremental(
                     Err(error) => snapshot.peer_error = Some(error),
                 },
                 Update::Node(part, done) => {
+                    if part.error.is_some() { snapshot.error = part.error.clone(); }
                     let node = part.nodes.into_iter().next().unwrap();
                     snapshot
                         .nodes

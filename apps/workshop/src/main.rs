@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+mod wake;
+
 use inspector::bus;
 use inspector::model::APP_ID;
 use workshop::{label, shell::Shell};
@@ -64,8 +66,7 @@ fn run(settings: &Settings) -> Result<(), String> {
         // platform integration, renderer or native window. Repaints wake the
         // logic thread; no timer polls the broker or the engine.
         let ctx = egui::Context::default();
-        let logic_thread = std::thread::current();
-        ctx.set_request_repaint_callback(move |_| logic_thread.unpark());
+        let wake = wake::Wake::install(&ctx);
         let mut shell = Shell::new(
             ctx.clone(),
             theme,
@@ -74,13 +75,14 @@ fn run(settings: &Settings) -> Result<(), String> {
             settings.comp.clone(),
         )?;
         loop {
+            wake.begin();
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| shell.logic(ui.ctx()));
             // No renderer consumes the atlas updates in headless mode.
             output.textures_delta.clear();
             if shell.exiting() {
                 break;
             }
-            std::thread::park();
+            wake.wait();
         }
         drop(shell);
         return handle.wait_done();

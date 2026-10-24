@@ -8,6 +8,80 @@ use std::time::{Duration, Instant};
 use tokio_tungstenite::tungstenite::Message;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mesh_latency_queue_and_failure_diagnostics() {
+    use std::sync::{Arc, atomic::{AtomicU8, Ordering}};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("ws://{}/ws", listener.local_addr().unwrap());
+    let failure = Arc::new(AtomicU8::new(0));
+    let mode = failure.clone();
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+        let (mut writer, mut reader) = socket.split();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        loop {
+            tokio::select! {
+                Some(message) = rx.recv() => { if writer.send(message).await.is_err() { break; } }
+                message = reader.next() => {
+                    let Some(Ok(Message::Text(wire))) = message else { break; };
+                    let request = ::bus::parse(&wire).unwrap();
+                    if request.get("type") == Some("response") { continue; }
+                    let target = request.get("to").unwrap_or_default();
+                    let command = request.get("command").unwrap_or_default();
+                    let failed = (mode.load(Ordering::SeqCst) == 1 && command == "noded.peers")
+                        || (mode.load(Ordering::SeqCst) == 2 && target == "noded" && command == "noded.list");
+                    let body = match command {
+                        "noded.info" => json!({"name":"this"}),
+                        "noded.list" => json!((0..12).map(|i| json!({"name":format!("svc-{i}")})).collect::<Vec<_>>()),
+                        "noded.peers" => json!({"peers":(0..8).map(|i| json!({"name":format!("peer-{i}")})).collect::<Vec<_>>()}),
+                        "HELP" => json!([{"name":"ping","read_only":true}]),
+                        _ => json!({}),
+                    };
+                    let mut reply = ::bus::BusMessage::new()
+                        .with_header("type", "response").with_header("from", target)
+                        .with_header("command", command)
+                        .with_header("id", request.get("id").unwrap_or_default())
+                        .with_header("rc", if failed { "10" } else { "0" });
+                    reply.body = if failed { "forced discovery failure".into() } else { body.to_string() };
+                    let tx = tx.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(200)).await;
+                        let _ = tx.send(Message::Text(reply.to_wire().into()));
+                    });
+                }
+            }
+        }
+    });
+    let (handle, _events) = discovery::start("latency-test", &url, &[]).unwrap();
+    let snapshot = tokio::time::timeout(Duration::from_secs(15), discovery::discover(handle.clone())).await.unwrap();
+    assert_eq!(snapshot.nodes.len(), 9);
+    assert_eq!(snapshot.services.len(), 9 * 13);
+    assert!(snapshot.services.values().all(Result::is_ok), "{:?}", snapshot.services);
+    failure.store(1, Ordering::SeqCst);
+    let peers_failed = discovery::discover(handle.clone()).await;
+    assert!(peers_failed.peer_error.is_some());
+    let mut engine = Engine::new(str::to_owned);
+    let inspector::Effect::Discover { ticket } = engine.take_effects().pop().unwrap() else { panic!() };
+    engine.discovered(ticket, peers_failed);
+    assert!(engine.rows().iter().any(|row| row["key"] == "mesh:error" && row["error"].as_str().unwrap().contains("noded.peers")));
+    assert!(engine.status.contains("noded.peers"));
+    engine.snapshot = snapshot.clone();
+    failure.store(2, Ordering::SeqCst);
+    engine.command(99, "workshop.refresh", "{}");
+    let ticket = engine.take_effects().into_iter().find_map(|e| match e {
+        inspector::Effect::Discover { ticket } => Some(ticket), _ => None,
+    }).unwrap();
+    discovery::discover_incremental(handle.clone(), |part| engine.discovered(ticket, part)).await;
+    assert!(engine.snapshot.error.is_some());
+    assert_eq!(engine.snapshot.services, snapshot.services);
+    assert!(engine.take_effects().iter().any(|effect| matches!(effect, inspector::Effect::Reply { id: 99, rc: 10, .. })));
+    assert!(!engine.busy());
+    handle.quit();
+    handle.wait_done().unwrap();
+    server.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn slow_node_cannot_hide_local_or_healthy_nodes_and_refresh_retries() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("ws://{}/ws", listener.local_addr().unwrap());

@@ -319,7 +319,7 @@ impl State {
                     .create(&title)
                     .map_err(|error| path_error("macros-create-error", &folder, error))?;
                 let path = answer["path"].as_str().expect("created path is a string");
-                let doc = open_macro(Path::new(path))?;
+                let doc = open_macro(&roots, Path::new(path))?;
                 let warning = answer["warning"].as_str().map(str::to_owned);
                 Ok((session.catalogue(), doc, warning))
             })()
@@ -381,7 +381,7 @@ impl State {
                     .copy_to_user(app, &entry)
                     .map_err(|e| path_error("macros-create-error", &destination, e))?
             };
-            Ok((Some(open_macro(&path)?), None))
+            Ok((Some(open_macro(roots, &path)?), None))
         });
     }
 
@@ -945,7 +945,10 @@ impl State {
             self.saving = Some(rx);
             std::thread::spawn(move || {
                 let completion = snapshot
-                    .write()
+                    .write_with(|path, bytes| {
+                        session.roots().ok_or_else(|| io::Error::other("macro roots unavailable"))?
+                            .write_path(path, bytes)
+                    })
                     .map(|saved| {
                         let catalogue = session.reload().ok();
                         (saved, catalogue, entry)
@@ -1166,9 +1169,11 @@ fn path_error(key: &str, path: &Path, error: impl std::fmt::Display) -> io::Erro
 /// Read an existing macro and check the directory used by atomic saves before
 /// offering it for editing. Probe only a new, exclusively-created scratch file;
 /// never truncate or rewrite the macro to test writability.
-fn open_macro(path: &Path) -> io::Result<editor::local::Document> {
+fn open_macro(roots: &::macros::Roots, path: &Path) -> io::Result<editor::local::Document> {
     ::macros::check_editable(path).map_err(|e| path_error("macros-save-error", path, e))?;
-    let document = editor::local::Document::open(path)
+    // The read also refuses links at every component; preflight is no authority.
+    let bytes = roots.read_path(path).map_err(|e| path_error("macros-open-error", path, e))?;
+    let document = editor::local::Document::open_bytes(path, &bytes)
         .map_err(|e| path_error("macros-open-error", path, e))?;
     Ok(document)
 }
@@ -1887,71 +1892,14 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn symlink_checks_and_saves_use_the_target_directory_in_both_directions() {
-        use std::os::unix::fs::symlink;
-        for target_readonly in [false, true] {
-            let (_temp, roots, mut entry) = runner_fixture();
-            let links = roots.folder("ced", Tier::UserApp).unwrap();
-            let targets = roots.user.join("targets");
-            std::fs::create_dir(&targets).unwrap();
-            let target = targets.join("target.mix");
-            std::fs::write(&target, "original").unwrap();
-            entry.path = links.join("linked.mix");
-            symlink(&target, &entry.path).unwrap();
-            let resolved = editor::local::save_target(&entry.path).unwrap();
-            assert_eq!(resolved.path(), target.canonicalize().unwrap().as_path());
-            assert_eq!(
-                resolved.directory(),
-                targets.canonicalize().unwrap().as_path()
-            );
-            let Some(_readonly) =
-                ReadOnlyParent::new(if target_readonly { &targets } else { &links })
-            else {
-                return;
-            };
-            if target_readonly {
-                let mut state = State::new("ced");
-                state.set_test_roots(roots);
-                state.loaded = true;
-                state.edit(entry.clone());
-                let mut h = permission_harness(state);
-                wait_until(|| {
-                    h.run_steps(1);
-                    h.state().pending.is_none()
-                });
-                let error = h.state().error.as_ref().unwrap();
-                assert!(error.contains(&entry.path.display().to_string()));
-                assert!(error.to_lowercase().contains("permission denied"));
-                let _ = h.get_by_label(error);
-                assert!(!h.state().editor_open);
-                assert!(h.state().document.is_none());
-                // Both save APIs must fail in exactly the directory the probe
-                // refused, even though the link's own directory is writable.
-                let mut doc = editor::local::Document::open(&entry.path).unwrap();
-                assert!(doc.save().is_err());
-                assert!(doc.save_snapshot().unwrap().write().is_err());
-                assert_eq!(std::fs::read_to_string(&target).unwrap(), "original");
-            } else {
-                let mut doc = open_macro(&entry.path).unwrap();
-                doc.command(
-                    editor::EditCommand::Insert("edit ".into()),
-                    &editor::View::default(),
-                )
-                .unwrap();
-                doc.save().unwrap();
-                let saved = doc.save_snapshot().unwrap().write().unwrap();
-                assert!(doc.complete_save(&saved));
-                assert_eq!(std::fs::read_to_string(&target).unwrap(), "edit original");
-                assert!(
-                    entry
-                        .path
-                        .symlink_metadata()
-                        .unwrap()
-                        .file_type()
-                        .is_symlink()
-                );
-            }
-        }
+    fn macro_editor_refuses_symlinks_without_touching_the_target() {
+        let (_temp, roots, entry) = runner_fixture();
+        let link = entry.path.with_file_name("linked.mix");
+        let before = std::fs::read(&entry.path).unwrap();
+        std::os::unix::fs::symlink(&entry.path, &link).unwrap();
+        assert!(open_macro(&roots, &link).is_err());
+        assert!(roots.write_path(&link, b"changed").is_err());
+        assert_eq!(std::fs::read(&entry.path).unwrap(), before);
     }
 
     #[cfg(unix)]
@@ -1988,7 +1936,7 @@ mod tests {
     #[test]
     fn save_permission_errors_name_the_path_and_keep_dirty_edits() {
         let (_temp, roots, entry) = runner_fixture();
-        let mut document = open_macro(&entry.path).unwrap();
+        let mut document = open_macro(&roots, &entry.path).unwrap();
         document
             .command(
                 editor::EditCommand::Insert("-- edit\n".into()),

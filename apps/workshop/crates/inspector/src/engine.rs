@@ -736,6 +736,14 @@ impl Engine {
 
     fn node_tree(&self) -> Vec<Row> {
         let mut rows = Vec::new();
+        if let Some(error) = &self.snapshot.peer_error {
+            rows.push(Row {
+                key: "mesh:error".into(),
+                kind: RowKind::Error(format!("noded.peers: {error}")),
+                expanded: false,
+                children: Vec::new(),
+            });
+        }
         for node in &self.snapshot.nodes {
             let engine = self.clone_for_node(node);
             // Reuse the service/verb filtering and selection rules.
@@ -1203,6 +1211,9 @@ impl Engine {
                 self.label("descriptions-failed")
             )
         };
+        if let Some(error) = &self.snapshot.peer_error {
+            self.status.push_str(&format!(" · noded.peers: {error}"));
+        }
         if !finished {
             return;
         }

@@ -3,6 +3,7 @@
 
 mod catalogue;
 mod runner;
+mod storage;
 pub mod session;
 pub mod verbs;
 

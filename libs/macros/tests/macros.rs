@@ -389,7 +389,7 @@ fn create_from_title_reports_obstructed_parents_without_retrying() {
 
 #[cfg(unix)]
 #[test]
-fn symlinks_may_stay_inside_but_must_never_escape_the_root() {
+fn macro_symlinks_are_refused_even_inside_the_root() {
     use std::os::unix::fs::symlink;
     let temp = tempfile::tempdir().unwrap();
     let roots = roots(temp.path());
@@ -407,8 +407,8 @@ fn symlinks_may_stay_inside_but_must_never_escape_the_root() {
     )
     .unwrap();
     let found = Catalogue::scan_globals(&roots).unwrap();
-    assert_eq!(found.entries.len(), 2);
-    assert_eq!(found.diagnostics.len(), 1);
+    assert_eq!(found.entries.len(), 1);
+    assert_eq!(found.diagnostics.len(), 2);
     symlink(temp.path(), roots.user.join("ced")).unwrap();
     assert!(roots.create("ced", Tier::UserApp, "bad", "Bad").is_err());
     assert!(!temp.path().join("bad.mix").exists());

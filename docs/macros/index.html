@@ -256,7 +256,7 @@ folders until you request a write or open a user folder.</p>
 <p>A macro's id is its file stem: <code>hello.mix</code> has id <code>hello</code>. Ids contain only
 lowercase ASCII letters, digits, hyphens and underscores. Dotfiles,
 directories and other extensions are excluded. <code>.mx</code> documents, invalid ids
-and symlinks that escape a root are reported as diagnostics. A scan is
+and macro symlinks are reported as diagnostics. A scan is
 shallow; it does not traverse another app's folder.</p>
 <p>For the same id, <strong>user per-app &gt; built-in per-app</strong>. Global macros at the
 roots belong to Workshop; apps neither list nor run them, and globals never
@@ -310,8 +310,8 @@ reason inline. Failed built-in copies show the same kind of error in the
 menu, without opening an editor. Editing reads an existing file and checks
 its atomic-save directory first. If permissions change while editing, save
 errors name the file and OS reason, and the edits remain available.
-The check and save share target resolution: a symlink's target directory
-is checked, rather than the directory holding the link. Read-only macro
+Macro paths refuse symlinks, including links within the root. Reads and saves
+walk from an opened root directory and never follow a replaced path. Read-only macro
 files are refused inline, including in writable directories.</p>
 <p>Saving keeps the document visible and editable, even during discovery.
 Closing a dirty editor saves before closing; a failed save keeps the text
@@ -366,8 +366,9 @@ before accepting a run. Without a choice the variable is removed from the
 child environment, including any inherited value. A header-free macro runs
 without a target and names its own services in its source.</p>
 <p><code>Roots::read</code>, <code>write</code>, <code>remove</code> and <code>move_to</code> share root confinement and
-regular-file checks. Writes replace the resolved file atomically in its own
-directory. Remove and move operate on the catalogue path; built-in mutations
+regular-file checks. Writes replace the directory entry atomically through an
+opened parent descriptor. Moves use an atomic no-replace rename, without an
+empty destination reservation. Built-in mutations
 and destination clashes are refused. Moving preserves the id; rescan both
 catalogues afterwards to recompute shadows.</p>
 <h2 id="library-boundaries">Library boundaries</h2>

@@ -112,8 +112,13 @@ pub struct Saved {
 
 impl SaveSnapshot {
     pub fn write(self) -> Result<Saved, Error> {
-        let target = save_target(&self.path)?;
-        write_replacing(&target, &self.bytes)?;
+        self.write_with(|path, bytes| write_replacing(&save_target(path)?, bytes))
+    }
+
+    /// Supply an application's confined storage writer while retaining the
+    /// document/revision receipt used by asynchronous saves.
+    pub fn write_with(self, write: impl FnOnce(&Path, &[u8]) -> io::Result<()>) -> Result<Saved, Error> {
+        write(&self.path, &self.bytes)?;
         Ok(Saved {
             identity: self.identity,
             revision: self.revision,
@@ -136,6 +141,11 @@ impl Document {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref();
         let bytes = fs::read(path)?;
+        Self::open_bytes(path, &bytes)
+    }
+
+    /// Open bytes already read through an application's storage authority.
+    pub fn open_bytes(path: &Path, bytes: &[u8]) -> Result<Self, Error> {
         let (mut buffer, meta) = Buffer::from_bytes(&bytes)?;
         buffer.mark_saved();
         let first_line =

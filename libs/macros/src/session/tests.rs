@@ -1,5 +1,17 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
+
+#[test]
+fn workshop_new_refreshes_global_list_immediately() {
+    let (_dir, roots, _) = fixture();
+    let session = Session::with_roots("workshop", Some(roots.clone()));
+    let created = session.create("Global new").unwrap();
+    assert_eq!(created["scanned"], true);
+    assert_eq!(created["path"], json!(roots.user.join("global-new.mix")));
+    let catalogue = session.catalogue().unwrap();
+    assert_eq!(catalogue.entries.len(), 1);
+    assert_eq!(catalogue.entries[0].id, "global-new");
+}
 use crate::verbs::{self, Reply};
 use std::sync::mpsc;
 use std::time::Duration;

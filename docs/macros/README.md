@@ -28,7 +28,7 @@ folders until you request a write or open a user folder.
 A macro's id is its file stem: `hello.mix` has id `hello`. Ids contain only
 lowercase ASCII letters, digits, hyphens and underscores. Dotfiles,
 directories and other extensions are excluded. `.mx` documents, invalid ids
-and symlinks that escape a root are reported as diagnostics. A scan is
+and macro symlinks are reported as diagnostics. A scan is
 shallow; it does not traverse another app's folder.
 
 For the same id, **user per-app > built-in per-app**. Global macros at the
@@ -91,8 +91,8 @@ reason inline. Failed built-in copies show the same kind of error in the
 menu, without opening an editor. Editing reads an existing file and checks
 its atomic-save directory first. If permissions change while editing, save
 errors name the file and OS reason, and the edits remain available.
-The check and save share target resolution: a symlink's target directory
-is checked, rather than the directory holding the link. Read-only macro
+Macro paths refuse symlinks, including links within the root. Reads and saves
+walk from an opened root directory and never follow a replaced path. Read-only macro
 files are refused inline, including in writable directories.
 
 Saving keeps the document visible and editable, even during discovery.
@@ -161,8 +161,9 @@ child environment, including any inherited value. A header-free macro runs
 without a target and names its own services in its source.
 
 `Roots::read`, `write`, `remove` and `move_to` share root confinement and
-regular-file checks. Writes replace the resolved file atomically in its own
-directory. Remove and move operate on the catalogue path; built-in mutations
+regular-file checks. Writes replace the directory entry atomically through an
+opened parent descriptor. Moves use an atomic no-replace rename, without an
+empty destination reservation. Built-in mutations
 and destination clashes are refused. Moving preserves the id; rescan both
 catalogues afterwards to recompute shadows.
 

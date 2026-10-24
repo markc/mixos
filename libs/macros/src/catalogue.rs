@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use std::collections::BTreeMap;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
-#[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Resolution is pure; missing/relative HOME cannot supply a user home.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,12 +24,25 @@ impl Roots {
                 Err(error) => return Err(error),
             };
             for folder in folders {
-                let folder = folder?;
+                let folder = match folder {
+                    Ok(folder) => folder,
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                        eprintln!("macro discovery: entry vanished: {error}");
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
                 let name = folder.file_name().to_string_lossy().into_owned();
-                if valid_app(&name)
-                    && folder.path().is_dir()
-                    && fs::canonicalize(folder.path())?.starts_with(fs::canonicalize(root)?)
-                {
+                let canonical = match fs::canonicalize(folder.path()) {
+                    Ok(path) => path,
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                        eprintln!("macro discovery: {} vanished: {error}", folder.path().display());
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
+                if valid_app(&name) && canonical.is_dir()
+                    && canonical.starts_with(fs::canonicalize(root)?) {
                     apps.insert(name);
                 }
             }
@@ -59,36 +69,22 @@ impl Roots {
             return Err(invalid("built-in macros are read-only"));
         }
         checked_file(&self.user, &entry.path)?;
-        fs::canonicalize(&entry.path)
+        Ok(entry.path.clone())
     }
 
-    /// Replace the resolved regular file atomically, preserving an in-root symlink.
+    /// Atomic replacement through an opened root; macro symlinks are refused.
     pub fn write(&self, entry: &Entry, text: &str) -> io::Result<()> {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
         self.user_target(entry)?;
-        let target = check_editable(&entry.path)?;
-        let parent = target
-            .parent()
-            .ok_or_else(|| invalid("macro has no parent"))?;
-        let temporary = parent.join(format!(
-            ".macro-save-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        let result = (|| {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temporary)?;
-            file.set_permissions(fs::metadata(&target)?.permissions())?;
-            file.write_all(text.as_bytes())?;
-            file.sync_all()?;
-            fs::rename(&temporary, &target)
-        })();
-        if result.is_err() {
-            let _ = fs::remove_file(&temporary);
-        }
-        result
+        self.write_path(&entry.path, text.as_bytes())
+    }
+
+    pub fn write_path(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        crate::storage::Target::open(&self.user, path)?.write(bytes)
+    }
+
+    pub fn read_path(&self, path: &Path) -> io::Result<Vec<u8>> {
+        let root = if path.starts_with(&self.user) { &self.user } else { &self.builtin };
+        crate::storage::Target::open(root, path)?.read()
     }
 
     pub fn remove(&self, entry: &Entry) -> io::Result<()> {
@@ -102,12 +98,10 @@ impl Roots {
         if fs::symlink_metadata(&entry.path)?.file_type().is_symlink() {
             return Err(invalid("moving a macro symlink is not supported"));
         }
-        let (destination, file) = self.new_file(app, tier, &entry.id)?;
-        drop(file);
-        if let Err(error) = fs::rename(&entry.path, &destination) {
-            let _ = fs::remove_file(&destination);
-            return Err(error);
-        }
+        if !valid_id(&entry.id) { return Err(invalid("invalid macro id")); }
+        let destination = self.ensure_user_folder(app, tier)?.join(format!("{}.mix", entry.id));
+        crate::storage::Target::open(&self.user, &entry.path)?.move_to(
+            &crate::storage::Target::open(&self.user, &destination)?)?;
         Ok(destination)
     }
     pub fn resolve() -> Option<Self> {
@@ -256,10 +250,7 @@ impl Roots {
         let path = self
             .ensure_user_folder(app, tier)?
             .join(format!("{id}.mix"));
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)?;
+        let file = crate::storage::Target::open(&self.user, &path)?.create()?;
         Ok((path, file))
     }
 }
@@ -509,63 +500,13 @@ fn valid_app(app: &str) -> bool {
 }
 
 fn checked_file(root: &Path, path: &Path) -> io::Result<fs::File> {
-    if !path.starts_with(root)
-        || path
-            .components()
-            .any(|part| part == std::path::Component::ParentDir)
-    {
-        return Err(invalid("macro path escapes its root"));
-    }
-    let target = fs::canonicalize(path)?;
-    if !target.starts_with(fs::canonicalize(root)?) {
-        return Err(invalid("macro symlink escapes its root"));
-    }
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    options.custom_flags(libc::O_NONBLOCK);
-    let file = options.open(target)?;
-    // Inspect the opened descriptor, not a path that can be swapped for a FIFO.
-    if !file.metadata()?.is_file() {
-        return Err(invalid("macro is not a regular file"));
-    }
-    Ok(file)
+    crate::storage::Target::open(root, path)?.file()
 }
 
-/// Shared editor preflight: check the resolved regular file and probe only a
-/// fresh scratch file in the directory where atomic replacement will occur.
+/// Editor preflight without following links or touching an existing file.
 pub fn check_editable(path: &Path) -> io::Result<PathBuf> {
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    let target = fs::canonicalize(path)?;
-    let metadata = fs::metadata(&target)?;
-    if !metadata.is_file() {
-        return Err(invalid("macro is not a regular file"));
-    }
-    if metadata.permissions().readonly() {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "macro is read-only",
-        ));
-    }
-    let parent = target
-        .parent()
-        .ok_or_else(|| invalid("macro has no parent"))?;
-    loop {
-        let probe = parent.join(format!(
-            ".macro-save-check-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        match OpenOptions::new().write(true).create_new(true).open(&probe) {
-            Ok(file) => {
-                drop(file);
-                fs::remove_file(probe)?;
-                return Ok(target);
-            }
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error),
-        }
-    }
+    crate::storage::Target::open(Path::new("/"), path)?.check()?;
+    Ok(path.to_path_buf())
 }
 
 fn invalid(message: &str) -> io::Error {
