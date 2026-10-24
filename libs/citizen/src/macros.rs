@@ -42,7 +42,8 @@ pub fn dispatch(app: &str, command: &IncomingCommand, client: Arc<SupervisedClie
     let Some(suffix) = command.command.strip_prefix(&format!("{app}.macros.")) else {
         return false;
     };
-    if app == "workshop"
+    let limit = if suffix == "put" { 272 * 1024 } else { REQUEST_BODY_LIMIT };
+    if app == "workshop" && command.body.len() <= limit
         && (suffix == "open"
             || serde_json::from_str::<Value>(&command.body)
                 .ok()
