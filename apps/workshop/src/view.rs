@@ -22,6 +22,8 @@ use toolkit::{Icon, Registry, Strings, bars, field, icons, panel, tooltip};
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
+    CancelDelete,
+    MacroDraft(String),
     Macro(String, serde_json::Value),
     Dock(bool),
     Pause(bool),
@@ -507,6 +509,7 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             doc.show(ui, &palette, &editor::View::default());
         },
     );
+    if doc.is_dirty() { events.push(UiEvent::MacroDraft(doc.contents())); }
     let mut target = ui.ctx().data_mut(|data| {
         data.get_temp::<String>(key.with("target"))
             .unwrap_or_default()
@@ -589,29 +592,22 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             }
         }
         if ui.button(label("macro-delete")).clicked() {
-            ui.ctx()
-                .data_mut(|data| data.insert_temp(key.with("delete"), true));
+            events.push(UiEvent::Macro("macros.remove".into(), serde_json::json!({})));
         }
     });
     ui.ctx()
         .data_mut(|data| data.insert_temp(key.with("target"), target));
-    if ui
-        .ctx()
-        .data(|data| data.get_temp::<bool>(key.with("delete")).unwrap_or(false))
-    {
+    if engine.workshop.confirm_delete {
         ui.horizontal(|ui| {
             ui.label(label("macro-delete-confirm"));
             if ui.button(label("macro-delete")).clicked() {
                 events.push(UiEvent::Macro(
                     "macros.remove".into(),
-                    serde_json::json!({}),
+                    serde_json::json!({"confirmed":true}),
                 ));
-                ui.ctx()
-                    .data_mut(|data| data.insert_temp(key.with("delete"), false));
             }
             if ui.button(label("macro-cancel")).clicked() {
-                ui.ctx()
-                    .data_mut(|data| data.insert_temp(key.with("delete"), false));
+                events.push(UiEvent::CancelDelete);
             }
         });
     }

@@ -144,6 +144,25 @@ pub fn registry() -> Registry<Engine> {
         run: Engine::toggle_mode,
     });
     // Help opens with a field that searches every command.
+    for (id, label, run) in [
+        ("macro.put", "macro-save", (|e: &mut Engine| e.macro_command("macros.put")) as fn(&mut Engine)),
+        ("macro.run", "macro-run", |e: &mut Engine| e.macro_command("macros.run")),
+        ("macro.stop", "macro-stop", |e: &mut Engine| e.macro_command("macros.stop")),
+        ("macro.copy", "macro-copy", |e: &mut Engine| e.macro_command("macros.copy")),
+        ("macro.move", "macro-move", |e: &mut Engine| e.macro_command("macros.move")),
+        ("macro.remove", "macro-delete", |e: &mut Engine| e.macro_command("macros.remove")),
+        ("macro.ced", "macro-ced", |e: &mut Engine| e.macro_command("macros.ced")),
+        ("macro.dopus", "macro-dopus", |e: &mut Engine| e.macro_command("macros.dopus")),
+    ] {
+        r.add(Command { id, label, run, menu: Some("macros-menu"), submenu: None, group: 0,
+            shortcut: if id == "macro.put" { key(Modifiers::COMMAND, Key::S) } else { None },
+            icon: None, enabled: |e| e.workshop.selected.is_some() && !e.quitting && e.ui.dialog.is_none() });
+    }
+    r.add(Command { id: "view.traffic", label: "traffic", menu: Some("view"), submenu: None, group: 1,
+        shortcut: None, icon: None, enabled: undialogued, run: |e| e.workshop.dock_open = !e.workshop.dock_open });
+    r.add(Command { id: "bus.observe", label: "observe-traffic", menu: Some("bus"), submenu: None, group: 1,
+        shortcut: None, icon: None, enabled: undialogued,
+        run: |e| e.queue_workshop("observe", serde_json::json!({"on":e.workshop.subscription.is_none()}), None) });
     r.search_menu("help");
     r
 }

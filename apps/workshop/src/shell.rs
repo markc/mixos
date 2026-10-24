@@ -67,7 +67,13 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
         .partition(|e| matches!(e, UiEvent::Command(..)));
     for event in edits.into_iter().chain(fired).chain(closed) {
         match event {
-            UiEvent::Macro(operation, args) => engine.macro_action(&operation, args, None),
+            UiEvent::CancelDelete => engine.workshop.confirm_delete = false,
+            UiEvent::Macro(operation, args) => {
+                engine.workshop.arguments = args;
+                let command = operation.replacen("macros.", "macro.", 1);
+                let _ = commands.execute(&command, engine, Origin::Ui);
+            }
+            UiEvent::MacroDraft(text) => engine.workshop.draft = Some(text),
             UiEvent::Dock(open) => engine.workshop.dock_open = open,
             UiEvent::Pause(paused) => engine.workshop.paused = paused,
             UiEvent::TrafficFilter(filter) => engine.workshop.filter = filter,
@@ -395,6 +401,7 @@ impl Shell {
                     self.engine.ui.expanded.insert(format!("macros:{app}"));
                     self.engine.workshop.selected = Some((app, id));
                     self.engine.workshop.document = body.clone();
+                    self.engine.workshop.draft = None;
                 } else if operation == "observe" {
                     self.engine.workshop.observe = if refused {
                         body["message"].as_str().unwrap_or_default().into()

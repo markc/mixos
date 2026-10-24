@@ -9,6 +9,9 @@ pub const TRAFFIC_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct Workshop {
+    pub confirm_delete: bool,
+    pub arguments: Value,
+    pub draft: Option<String>,
     pub pending: usize,
     pub catalogues: BTreeMap<String, Value>,
     pub selected: Option<(String, String)>,
@@ -91,6 +94,19 @@ fn redact(value: &mut Value) {
 }
 
 impl Engine {
+    pub fn macro_command(&mut self, operation: &str) {
+        let mut args = std::mem::replace(&mut self.workshop.arguments, json!({}));
+        if !args.is_object() { args = json!({}); }
+        if operation == "macros.remove" {
+            if args["confirmed"] != true { self.workshop.confirm_delete = true; return; }
+            self.workshop.confirm_delete = false;
+            args.as_object_mut().unwrap().remove("confirmed");
+        }
+        if operation == "macros.put" && args.get("text").is_none() {
+            args["text"] = json!(self.workshop.draft.as_deref().unwrap_or(self.workshop.document["text"].as_str().unwrap_or_default()));
+        }
+        self.macro_action(operation, args, None);
+    }
     pub fn macro_tree(&self, rows: &mut Vec<Row>) {
         fn branch(engine: &Engine, app: &str) -> Row {
             let catalogue = &engine.workshop.catalogues[app];
@@ -131,7 +147,7 @@ impl Engine {
         }
         fn insert(engine: &Engine, rows: &mut [Row], app: &str) -> bool {
             for row in rows {
-                if matches!(&row.kind, RowKind::Service(name) if name == app) {
+                if matches!(&row.kind, RowKind::Service(name) if name == app || engine.snapshot.services.get(name).and_then(|verbs| verbs.as_ref().ok()).is_some_and(|verbs| verbs.iter().any(|verb| verb.name == format!("{app}.macros.list")))) {
                     row.children.push(branch(engine, app));
                     return true;
                 }
