@@ -1507,10 +1507,7 @@ mod numeric_tests {
         toolkit::install(&h.ctx, &toolkit::Theme::embedded());
         h.run();
         let combo = h.get_by_role(Role::ComboBox);
-        assert_eq!(
-            combo.value().as_deref(),
-            Some("Missing Sans (missing)")
-        );
+        assert_eq!(combo.value().as_deref(), Some("Missing Sans (missing)"));
         combo.click();
         h.run();
         h.get_by_label("Design default (Inter)").click();
