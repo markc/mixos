@@ -479,12 +479,7 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         }
     }
     type Document = std::sync::Arc<std::sync::Mutex<editor::local::Document>>;
-    let key = egui::Id::new((
-        "workshop-document",
-        app,
-        id,
-        document["text"].as_str().unwrap_or_default(),
-    ));
+    let key = egui::Id::new(("workshop-document", app, id));
     let doc: Option<Document> = ui.ctx().data_mut(|data| {
         if let Some(doc) = data.get_temp::<Document>(key) {
             return Some(doc);
@@ -500,6 +495,9 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         return;
     };
     let mut doc = doc.lock().unwrap();
+    if doc.is_dirty() && let Some(saved) = &engine.workshop.saved_text { doc.acknowledge_saved_text(saved); }
+    let source = document["text"].as_str().unwrap_or_default();
+    if !doc.is_dirty() && doc.contents() != source && doc.set_contents(source).is_ok() { doc.acknowledge_saved_text(source); }
     let palette = ui
         .ctx()
         .data(|data| data.get_temp::<editor::Palette>(egui::Id::new("toolkit.editor-palette")))
@@ -513,7 +511,12 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             doc.show(ui, &palette, &editor::View::default());
         },
     );
-    if doc.is_dirty() { events.push(UiEvent::MacroDraft(doc.contents())); }
+    if doc.is_dirty() && let Some(saved) = &engine.workshop.saved_text { doc.acknowledge_saved_text(saved); }
+    if doc.is_dirty() {
+        ui.small(label("macro-unsaved"));
+    }
+    let contents = doc.contents();
+    if engine.workshop.draft.as_deref() != Some(contents.as_str()) { events.push(UiEvent::MacroDraft(contents)); }
     let mut target = ui.ctx().data_mut(|data| {
         data.get_temp::<String>(key.with("target"))
             .unwrap_or_default()

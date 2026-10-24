@@ -218,6 +218,14 @@ impl Document {
         self.buffer.is_dirty()
     }
 
+    /// A transport owner has saved this exact text. Preserve the cursor and
+    /// undo history; newer, different edits must remain dirty.
+    pub fn acknowledge_saved_text(&mut self, text: &str) -> bool {
+        if self.contents() != text { return false; }
+        self.buffer.mark_saved();
+        true
+    }
+
     pub fn save_snapshot(&self) -> Result<SaveSnapshot, Error> {
         Ok(SaveSnapshot {
             identity: self.identity,
@@ -778,6 +786,23 @@ mod tests {
         doc.save_as(&path).unwrap();
         assert_eq!(doc.path(), Some(path.as_path()));
         assert_eq!(fs::read_to_string(&path).unwrap(), "x");
+    }
+
+    #[test]
+    fn transport_acknowledgement_preserves_new_edits_selection_and_undo() {
+        let mut doc = Document::new("", "mix").unwrap();
+        typed(&mut doc, "first");
+        let saved = doc.contents();
+        let selection = doc.selection();
+        assert!(doc.acknowledge_saved_text(&saved));
+        assert!(!doc.is_dirty());
+        assert_eq!(doc.selection(), selection);
+        typed(&mut doc, " second");
+        let edited = doc.contents();
+        assert!(!doc.acknowledge_saved_text(&saved));
+        assert!(doc.is_dirty());
+        doc.undo().unwrap();
+        assert_ne!(doc.contents(), edited);
     }
 
     #[test]

@@ -17,6 +17,7 @@ pub struct Workshop {
     pub confirm_delete: bool,
     pub arguments: Value,
     pub draft: Option<String>,
+    pub saved_text: Option<String>,
     pub pending: usize,
     pub catalogues: BTreeMap<String, Value>,
     pub selected: Option<(String, String)>,
@@ -136,6 +137,12 @@ impl Engine {
     pub fn macro_command(&mut self, operation: &str) {
         let mut args = std::mem::replace(&mut self.workshop.arguments, json!({}));
         if !args.is_object() { args = json!({}); }
+        if operation == "macros.run" && self.workshop.draft.as_deref().is_some_and(|draft| {
+            draft != self.workshop.saved_text.as_deref().unwrap_or(self.workshop.document["text"].as_str().unwrap_or_default())
+        }) {
+            self.workshop.message = self.text("macro-save-first");
+            return;
+        }
         if operation == "macros.remove" {
             if args["confirmed"] != true { self.workshop.confirm_delete = true; return; }
             self.workshop.confirm_delete = false;

@@ -423,6 +423,7 @@ impl Shell {
                     self.engine.reveal_macro();
                     self.engine.workshop.document = body.clone();
                     self.engine.workshop.draft = None;
+                    self.engine.workshop.saved_text = None;
                 } else if operation == "observe" {
                     self.engine.workshop.observe = if refused {
                         body["message"].as_str().unwrap_or_default().into()
@@ -433,6 +434,13 @@ impl Shell {
                         body["subscription_id"].as_str().map(str::to_owned);
                 } else {
                     self.engine.workshop.message = body.to_string();
+                    if operation == "macros.put" && !refused && self.engine.workshop.selected.as_ref().is_some_and(|(app,id)| {
+                        app == args["app"].as_str().unwrap_or("global") && Some(id.as_str()) == args["id"].as_str()
+                    }) {
+                        self.engine.workshop.saved_text = args["text"].as_str().map(str::to_owned);
+                        self.engine.workshop.document["text"] = args["text"].clone();
+                        if self.engine.workshop.draft == self.engine.workshop.saved_text { self.engine.workshop.draft = None; }
+                    }
                     if !refused
                         && matches!(
                             operation.as_str(),
