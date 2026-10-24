@@ -405,19 +405,24 @@ fn start_inner(
                 .enable_all()
                 .build();
             match runtime {
-                Ok(runtime) => runtime.block_on(worker(
-                    service,
-                    url,
-                    topics,
-                    closing,
-                    send,
-                    rx,
-                    controls,
-                    ready_send,
-                    worker_outbox,
-                    macro_app,
-                    worker_events,
-                )),
+                Ok(runtime) => {
+                    runtime.block_on(worker(
+                        service,
+                        url,
+                        topics,
+                        closing,
+                        send,
+                        rx,
+                        controls,
+                        ready_send,
+                        worker_outbox,
+                        macro_app,
+                        worker_events,
+                    ));
+                    // A timed-out macro job may still own a spawn_blocking
+                    // receiver wait. Abandon it rather than parking teardown.
+                    runtime.shutdown_timeout(Duration::from_secs(2));
+                }
                 Err(error) => {
                     let _ = ready_send.send(Err(format!("Bus runtime: {error}")));
                 }
