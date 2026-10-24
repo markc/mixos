@@ -1160,6 +1160,7 @@ impl Engine {
         // A failed discovery keeps the last good snapshot and reports why.
         if snapshot.error.is_some() {
             self.snapshot.error = snapshot.error;
+            self.snapshot.peer_error = snapshot.peer_error;
         } else {
             if !self.snapshot.nodes.iter().any(|node| node.local) {
                 for node in &snapshot.nodes {
@@ -1570,6 +1571,27 @@ mod tests {
             1,
             "one coalesced refetch"
         );
+    }
+
+    #[test]
+    fn simultaneous_membership_and_peer_failures_keep_both_diagnostics() {
+        let mut e = engine();
+        e.refresh(None);
+        let Some(Effect::Discover { ticket }) = e.take_effects().pop() else {
+            panic!()
+        };
+        e.discovered(
+            ticket,
+            Snapshot {
+                error: Some("membership failed".into()),
+                peer_error: Some("peers failed".into()),
+                ..Snapshot::default()
+            },
+        );
+        assert!(e.snapshot.services.contains_key("example"));
+        assert_eq!(e.snapshot.peer_error.as_deref(), Some("peers failed"));
+        assert!(e.status.contains("membership failed"));
+        assert!(e.status.contains("noded.peers: peers failed"));
     }
 
     #[test]
