@@ -945,7 +945,8 @@ impl BusHandler for MixBusHandler {
             // the broker (no rc parsed), so any error here is transport.
             // Mark Lost (if our Arc is still the cached one) and raise.
             if let Value::Map(map) = args {
-                let (headers, body) = split_headers_body(map)?;
+                let (mut headers, body) = split_headers_body(map)?;
+                headers.extend(macro_headers());
                 return match client
                     .send_with_headers(target, command, &headers, &body)
                     .await
