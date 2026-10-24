@@ -49,6 +49,27 @@ advances the profile revision when dropping authored settings, and atomically
 re-seals both the primary and any valid backup. Other app overrides, the
 pinned design source and receipt history are preserved.
 
+An embedded default can outlive the compiler rules that accepted it. If an
+accepted desktop has no authored `appearance.source`, fails resolution, and
+its pinned source digest exactly matches a known retired package default,
+the upgrade re-pins it to this binary's embedded default. It keeps authored
+appearance choices, advances both profile and design revisions, retains
+receipts, and atomically re-seals each valid primary and backup. The retired
+embedded tokens disappear with the old package source; there is no separate
+authored token override map. A failing authored source or unknown embedded
+source still refuses with the compiler's token/rule diagnostics, without
+rewriting the store. Valid older sources stay pinned.
+
+The known defaults are the earlier installed source from `740c0c13`
+(`33a33291c676de5bd1c30cb395534e8656244f57e6771a98bd61e3669e11f235`)
+and v0.1.2 at `fe9dfa90`, last changed by `bc2faa69`
+(`34726165cf21927a700a0eb8e5770f6a374d44a7cc2f2fc09d987faf2a288ce2`).
+The published release history contains only v0.1.2; v0.1.1 is an unpublished
+draft and there is no v0.1.0 tag. No other shipped default is inferred from
+unreleased source edits. Init continues to pin the actual source so accepted
+revisions remain reproducible; following the running binary by reference
+would change settings without a revision or receipt fence.
+
 Present corrupt primary data can restore a validated backup under a new
 incarnation. A missing primary fails visibly, including when a backup
 exists. I/O faults and intact unsupported documents fail without automatic

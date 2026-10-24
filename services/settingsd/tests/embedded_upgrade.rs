@@ -108,6 +108,45 @@ fn valid_embedded_pin_is_not_replaced_and_new_init_stays_pinned() {
     assert_eq!(opened.content_digest, initial.content_digest);
 }
 
+#[test]
+fn valid_retired_embedded_source_stays_pinned() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, mut data) = Store::create(dir.path(), binding(), settings::Desktop::default()).unwrap();
+    drop(store);
+    data.embedded_source = read(&fixture("authored-legacy"), FILES[0]).embedded_source;
+    data.effective_digest = settings::digest(
+        &settings::resolve_with_embedded(&data.desktop, &data.embedded_source).unwrap(),
+    ).unwrap();
+    data.format = 3;
+    data.seal().unwrap();
+    std::fs::write(dir.path().join(FILES[0]), strict::to_string_pretty(&data).unwrap()).unwrap();
+    let (_store, opened) = Store::open(dir.path(), &binding()).unwrap();
+    assert_eq!(opened.embedded_source, data.embedded_source);
+    assert_eq!(opened.revision, data.revision);
+    assert_eq!(opened.design_revision, data.design_revision);
+    opened.effective().unwrap();
+}
+
+#[test]
+fn migration_also_checks_current_format_and_refuses_a_broken_seal() {
+    let mut data = read(&fixture("embedded-v0.1.2"), FILES[0]);
+    data.format = settingsd::store::FORMAT;
+    data.seal().unwrap();
+    data.check(&binding()).unwrap();
+    let (after, changed) = data.upgrade().unwrap();
+    assert!(changed);
+    after.effective().unwrap();
+    let dir = copy_fixture("embedded-v0.1.2");
+    for name in FILES {
+        let mut data = read(dir.path(), name);
+        data.content_digest = "0".repeat(64);
+        std::fs::write(dir.path().join(name), strict::to_string_pretty(&data).unwrap()).unwrap();
+    }
+    let bytes = FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap());
+    assert!(Store::open(dir.path(), &binding()).is_err());
+    assert_eq!(bytes, FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap()));
+}
+
 /// Run only when importing an anonymised fixture. Uses the production sealing
 /// path, without resolving or migrating the historical source/effective map.
 #[test]
