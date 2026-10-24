@@ -1,0 +1,148 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Real broker bounces and the shipped toast/runtime; host, loader and notify
+-- stand-ins use the same Bus contracts as the existing behaviour tests.
+-- No desktop or scene reset. Exercise both dependency registration orders.
+$root = realpath(dirname(realpath($0)) .. "/../../..")
+$pb = require("../../../tests/lib/private_bus.mix")
+$mix = env("MIXOS_TEST_MIX", "/opt/mixos/bin/mix")
+$noded = env("MIXOS_TEST_NODED", "/opt/mixos/bin/noded")
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/scene-reconnect.XXXXXXXX"]))
+$bus = nil
+$pids = {host: nil, loader: nil, notify: nil, toast: nil}
+$vars = {}
+
+fn check($ok, $message)
+  if not $ok then raise("SCENE_RECONNECT_TEST", $message) end
+end
+
+fn start($name, $file)
+  return spawn([$mix, "--serve", $file, "--name", $name], {
+    detach: true, clear_env: true, env: $vars,
+    stdout: {file: $tmp .. "/" .. $name .. ".log"}, stderr: "stdout"})
+end
+
+fn stop($pid)
+  if $pid == nil or not process_alive($pid) then return end
+  $_ = kill($pid, 15)
+  for $i = 1 to 40
+    if not process_alive($pid) then return end
+    sleep(0.05)
+  end
+  $_ = kill($pid, 9)
+end
+
+fn call($name, $verb)
+  return json_parse(run_argv_must([$mix, $tmp .. "/client.mix", $name, $verb], {
+    clear_env: true, env: $vars, timeout: 15}))
+end
+
+fn wait_service($name)
+  for $i = 1 to 100
+    if call($name, "INFO").rc == 0 then return end
+    sleep(0.1)
+  end
+  raise("SCENE_RECONNECT_TEST", "service missing: " .. $name)
+end
+
+fn wait_shown($id)
+  for $i = 1 to 100
+    if is_file($tmp .. "/shown") and is_file($tmp .. "/model") then
+      $model = json_parse(read_file($tmp .. "/model"))
+      if $model.id == $id then return end
+    end
+    sleep(0.1)
+  end
+  raise("SCENE_RECONNECT_TEST", "toast did not show notification " .. to_string($id))
+end
+
+try
+  write_file($tmp .. "/client.mix", 'send $1 $2 body="{}" timeout=10
+print(json_encode({rc: $rc, value: $result}))
+')
+  write_file($tmp .. "/host.mix", 'on shell.scene.describe
+  reply(0, json_encode([{path: "flow", enum: ["horizontal"]}, {path: "hidden", type: "bool"}]))
+end
+on shell.toast.show
+  write_file(env("FIXTURE_DIR") .. "/shown", "shown")
+  reply(0, "{}")
+end
+on shell.toast.hide
+  reply(0, "{}")
+end
+')
+  write_file($tmp .. "/loader.mix", 'on scenes.ready
+  reply(0, "{}")
+end
+on scenes.model
+  write_file(env("FIXTURE_DIR") .. "/model", json_encode($event.args.value))
+  reply(0, "{}")
+end
+')
+  write_file($tmp .. "/notify.mix", 'on notify.list
+  reply(0, read_file(env("FIXTURE_DIR") .. "/notes"))
+end
+on create
+  $notes = json_parse(read_file(env("FIXTURE_DIR") .. "/notes"))
+  $_ = publish("notify-stub.changed", json_encode($notes[0]), {command: "notification.created"})
+  reply(0, "{}")
+end
+')
+  write_file($tmp .. "/notes", "[]")
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "scene-reconnect-test", noded: $noded})
+  $vars = merge($pb.client_env($bus), {PATH: "/usr/bin:/bin", HOME: $tmp .. "/home",
+    MIX_STATS: "off", FIXTURE_DIR: $tmp, SCENE_NAME: "toast", SCENE_GENERATION: "1",
+    SCENE_HOST: "host-stub", SCENES_SERVICE: "loader-stub", NOTIFY_SERVICE: "notify-stub",
+    SCENES_LIB: $root .. "/share/scenes/lib"})
+  $pids.host = start("host-stub", $tmp .. "/host.mix")
+  $pids.loader = start("loader-stub", $tmp .. "/loader.mix")
+  $pids.notify = start("notify-stub", $tmp .. "/notify.mix")
+  for $name in ["host-stub", "loader-stub", "notify-stub"] wait_service($name) end
+  $pids.toast = start("scene-toast", $root .. "/share/scenes/toast/behaviour.mix")
+  wait_service("scene-toast")
+  check(call("scene-toast", "refresh").rc == 0, "initial readiness")
+
+  for $cycle = 1 to 2
+    stop($pids.host)
+    stop($pids.loader)
+    $pids.host = nil
+    $pids.loader = nil
+    $port = $bus.port
+    $pb.stop($bus)
+    $bus = $pb.start({dir: $tmp .. "/bus", name: "scene-reconnect-test", noded: $noded, port: $port})
+    -- Existing citizens stay alive and reconnect to this same endpoint.
+    wait_service("scene-toast")
+    wait_service("notify-stub")
+    $failed = call("scene-toast", "refresh")
+    check($failed.rc == 10 and $failed.value.error_code == "scene_not_ready", "missing host must fail readiness")
+    write_file($tmp .. "/notes", json_encode([{id: $cycle, summary: "Recovered", body: "after broker restart",
+      actions: [{id: "ok", label: "OK"}]}]))
+    -- Topic delivery must survive subscription replay. No direct notification
+    -- request to toast: its handler must receive this through noded.
+    check(call("notify-stub", "create").rc == 0, "notification publish")
+    if $cycle == 1 then
+      $pids.host = start("host-stub", $tmp .. "/host.mix")
+      wait_service("host-stub")
+      $failed = call("scene-toast", "refresh")
+      check($failed.rc == 10, "missing loader must still refuse readiness")
+      $pids.loader = start("loader-stub", $tmp .. "/loader.mix")
+    else
+      $pids.loader = start("loader-stub", $tmp .. "/loader.mix")
+      wait_service("loader-stub")
+      $pids.host = start("host-stub", $tmp .. "/host.mix")
+    end
+    -- Registration alone must recover and show the queued question.
+    wait_shown($cycle)
+    check(process_alive($pids.toast), "original toast citizen must survive")
+    -- With no further registrations or refresh requests, only the replayed
+    -- notification subscription can cause this next model to be shown.
+    write_file($tmp .. "/notes", json_encode([{id: $cycle + 100, summary: "Subscription replayed",
+      body: "", actions: [{id: "ok", label: "OK"}]}]))
+    check(call("notify-stub", "create").rc == 0, "notification after recovery")
+    wait_shown($cycle + 100)
+  end
+  print("PASS scene reconnect: two broker restarts, both dependency orders, toast recovered without reset")
+finally
+  for $pid in values($pids) stop($pid) end
+  if $bus != nil then $pb.stop($bus) end
+  remove_dir($tmp)
+end

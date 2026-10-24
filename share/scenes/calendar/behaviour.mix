@@ -8,6 +8,7 @@ $APPS = env("APPS_SERVICE", "apps")
 $state = {offset: 0, clock_armed: false, ready: false, model: $m.calendar(time(), 0)}
 
 fn refresh()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
   $state.model = $m.calendar(time(), $state.offset)
   return $r.publish_model($ctx, $state.model)

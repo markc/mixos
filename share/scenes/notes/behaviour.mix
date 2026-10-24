@@ -7,6 +7,7 @@ $NOTIFY = env("NOTIFY_SERVICE", "notify")
 $state = {notes: [], sequence: 0, queued: false, ready: false, model: $m.notes([])}
 
 fn schedule()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   $state.sequence = $state.sequence + 1
   if $state.ready and not $state.queued then
     $state.queued = true
@@ -20,6 +21,7 @@ fn snapshot()
   return {ok: true, rc: 0, value: $out.value}
 end
 fn refresh()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
   $sequence = $state.sequence
   $out = snapshot()

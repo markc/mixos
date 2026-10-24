@@ -25,6 +25,7 @@ $state = {ready: false, queued: false, sequence: 0, model: $m.volume(nil), snap:
   watch: nil, started: 0, retry: 5, retrying: false, unavailable: false}
 
 fn republish()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
   $state.model = $m.volume($state.snap, {selected: $state.selected, note: $state.note})
   return $r.publish_model($ctx, $state.model)
@@ -41,6 +42,7 @@ fn ui_only()
 end
 
 fn schedule()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   $state.sequence = $state.sequence + 1
   if $state.ready and not $state.queued then
     $state.queued = true
@@ -49,6 +51,7 @@ fn schedule()
 end
 
 fn refresh()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
   $sequence = $state.sequence
   $snap = $state.unavailable ? {ok: false, reason: "audio service unavailable"} : $a.snapshot($PW_RUNTIME)

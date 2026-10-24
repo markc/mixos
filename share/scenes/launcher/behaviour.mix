@@ -21,6 +21,7 @@ fn list_apps($query, $category)
 end
 
 fn schedule()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   $state.sequence = $state.sequence + 1
   if $state.ready and not $state.queued then
     $state.queued = true
@@ -29,6 +30,7 @@ fn schedule()
 end
 
 fn refresh()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
   $sequence = $state.sequence
   $query = $state.query

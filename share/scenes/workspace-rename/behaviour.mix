@@ -28,6 +28,8 @@ end
 -- {index}: publish the dialog for that workspace, with its current name,
 -- then show it. Only an index inside the live count is accepted.
 on rename.open desc "open the rename dialog for workspace {index}"
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
+  if not $state.ready then $r.respond($r.failure("scene_not_ready", "Waiting for loader readiness")); return end
   $index = $r.event_args($event).index
   $list = $r.call($COMP, "comp.workspaces.list", {})
   if not $list.ok then $r.respond($list); return end
@@ -122,11 +124,20 @@ end
 
 on bus.connected
   if len(keys($event.headers)) != 0 then return end
+  $state.ready = false
   $ready = $r.ready($ctx)
   $state.ready = $ready.ok
 end
 
+on props.changed
+  $a = $r.event_args($event)
+  if $event.headers.topic == env("NODED_SERVICE", "noded") .. ".props.changed" and $a.path == "services.registered" then
+    $state.ready = $r.ensure_ready($ctx, $state.ready)
+  end
+end
+
 subscribe($ctx.host .. ".panel.changed")
+subscribe(env("NODED_SERVICE", "noded") .. ".props.changed")
 $ready = $r.ready($ctx)
 if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
 $state.ready = true

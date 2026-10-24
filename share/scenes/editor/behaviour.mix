@@ -92,6 +92,7 @@ end
 
 -- ── one queued rebuild (dirty-state batching, as the panel does) ────────
 fn rebuild()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return end
   if $state.stale then
     $state.stale = false
@@ -116,6 +117,7 @@ end
 -- $refetch: the world may have changed (an event, an action); otherwise only
 -- the selection did and the cached inputs are rebuilt into a new model.
 fn schedule($refetch)
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   if $refetch then $state.stale = true end
   $state.dirty = true
   if $state.rebuilding or not $state.ready then return end

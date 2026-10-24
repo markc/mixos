@@ -10,6 +10,7 @@ $state = {ready: false, model: nil}
 
 -- State is truth: every notice or accepted write re-reads the snapshot.
 fn refresh()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
   $out = $r.call($ctx.host, "shell.settings.get", {})
   if not $out.ok then return $out end

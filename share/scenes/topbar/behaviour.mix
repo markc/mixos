@@ -125,6 +125,7 @@ fn build_model()
 end
 
 fn push_model()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return end
   $out = $r.publish_model($ctx, build_model())
   if not $out.ok then eprint("topbar model refused: " .. json_encode($out.value)) end
@@ -214,6 +215,13 @@ on apps.changed
   push_model()
 end
 
+on props.changed
+  $a = $r.event_args($event)
+  if $event.headers.topic == env("NODED_SERVICE", "noded") .. ".props.changed" and $a.path == "services.registered" and not $state.ready then
+    push_model()
+  end
+end
+
 on bus.connected
   if len(keys($event.headers)) != 0 then return end
   forget_icons()
@@ -272,6 +280,7 @@ on clock.deadline async
 end
 
 subscribe($APPS .. ".changed")
+subscribe(env("NODED_SERVICE", "noded") .. ".props.changed")
 $ready = $r.ready($ctx)
 if not $ready.ok then raise("SCENE_READY", json_encode($ready.value)) end
 $state.ready = true

@@ -332,6 +332,7 @@ end
 
 -- ── one queued rebuild (dirty-state batching, no debounce sleep) ────────
 fn rebuild()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return end
   fetch_windows()
   fetch_tray()
@@ -347,6 +348,7 @@ fn rebuild()
 end
 
 fn schedule()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   $state.dirty = true
   if $state.rebuilding or not $state.ready then return end
   $state.rebuilding = true

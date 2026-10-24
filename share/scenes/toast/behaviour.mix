@@ -17,6 +17,7 @@ $state = {ready: false, queued: false, sequence: 0, shown_id: 0, actions: [], vi
   flash: nil}
 
 fn schedule()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   $state.sequence = $state.sequence + 1
   if $state.ready and not $state.queued then
     $state.queued = true
@@ -136,6 +137,7 @@ fn height_of($m)
 end
 
 fn refresh()
+  $state.ready = $r.ensure_ready($ctx, $state.ready)
   if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
   $sequence = $state.sequence
   $out = $r.call($NOTIFY, "notify.list", {})
@@ -176,9 +178,13 @@ end
 -- question on screen.
 on refresh async
   $start = $state.sequence
-  $out = refresh()
-  $state.queued = false
-  if $state.sequence != $start then schedule() end
+  try
+    $out = refresh()
+  finally
+    -- A disconnect during an RPC must not leave the queue latched forever.
+    $state.queued = false
+    if $state.sequence != $start then schedule() end
+  end
   $r.respond($out)
 end
 

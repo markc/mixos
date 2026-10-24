@@ -60,6 +60,8 @@ $scripts = [
   "services/compd/tests/scene_editor_fixtures_test.mix",
   "services/compd/tests/scene_editor_test.mix",
   "services/compd/tests/scene_template_test.mix",
+  "services/compd/tests/scene_reconnect_test.mix",
+  "services/compd/tests/toast_summary_test.mix",
   "services/compd/tests/scenes_test.mix",
   "services/compd/tests/scenes_io_test.mix",
   "services/compd/tests/network_behaviour_test.mix",

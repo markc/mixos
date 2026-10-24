@@ -41,6 +41,24 @@ fn respond($outcome)
 end
 
 fn ready($ctx)
+  -- Disconnects can raise as well as return a non-zero rc. Leave the scene
+  -- alive so the next registration event can retry the handshake.
+  try
+    return ready_once($ctx)
+  catch $message
+    return failure("scene_not_ready", to_string($message))
+  end
+end
+
+-- One handshake per event/request, never a standing timer or retry loop.
+-- Both RPCs have the normal five-second bound. A successful handshake is
+-- cached by the behaviour until bus.connected invalidates it.
+fn ensure_ready($ctx, $is_ready)
+  if $is_ready then return true end
+  return ready($ctx).ok
+end
+
+fn ready_once($ctx)
   $check = call($ctx.host, "shell.scene.describe", {family: "list"})
   if not $check.ok then return $check end
   if not template_capable($check.value) then
