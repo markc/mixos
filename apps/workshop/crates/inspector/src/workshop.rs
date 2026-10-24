@@ -27,6 +27,7 @@ pub struct Workshop {
     pub traffic: VecDeque<Value>,
     pub(crate) bytes: usize,
     pub dropped: u64,
+    pub ignored_observations: u64,
     pub observe: String,
     pub subscription: Option<String>,
     pub dock_open: bool,
@@ -38,7 +39,7 @@ impl Workshop {
     /// Join native request/response observations without a second pending map:
     /// the bounded ring itself owns incomplete calls.
     pub fn observe(&mut self, mut frame: Value) {
-        self.dropped += frame["dropped_count"].as_u64().unwrap_or_default();
+        self.dropped = self.dropped.saturating_add(frame["dropped_count"].as_u64().unwrap_or_default());
         if self.paused {
             return;
         }
@@ -69,9 +70,9 @@ impl Workshop {
         self.retain(frame);
     }
 
-    pub fn retain(&mut self, mut row: Value) {
+    pub fn retain(&mut self, mut row: Value) -> bool {
         if self.paused {
-            return;
+            return false;
         }
         redact(&mut row);
         if row.get("service").is_none() {
@@ -79,17 +80,18 @@ impl Workshop {
         }
         let size = row.to_string().len();
         if size > TRAFFIC_BYTES {
-            self.dropped += 1;
-            return;
+            self.dropped = self.dropped.saturating_add(1);
+            return false;
         }
         while self.traffic.len() >= TRAFFIC_CAPACITY || self.bytes + size > TRAFFIC_BYTES {
             if let Some(old) = self.traffic.pop_front() {
                 self.bytes -= old.to_string().len();
-                self.dropped += 1;
+                self.dropped = self.dropped.saturating_add(1);
             }
         }
         self.bytes += size;
         self.traffic.push_back(row);
+        true
     }
 
     pub fn rows(&self, limit: usize, filter: &str) -> Vec<Value> {
@@ -393,7 +395,11 @@ impl Engine {
             return true;
         }
         if verb == "noded.observe.event" {
-            self.workshop.observe(args.clone());
+            if id == 0 && self.workshop.subscription.as_deref().is_some_and(|subscription| args["subscription_id"].as_str() == Some(subscription)) {
+                self.workshop.observe(args.clone());
+            } else {
+                self.workshop.ignored_observations = self.workshop.ignored_observations.saturating_add(1);
+            }
             return true;
         }
         if verb == "workshop.observe"
@@ -430,6 +436,15 @@ mod tests {
         engine.take_effects();
         assert!(engine.workshop_command(0, "noded.observe.event", &json!({"verb":"noded.ping"})));
         assert!(engine.take_effects().is_empty());
+        assert_eq!(engine.workshop.ignored_observations, 1);
+        engine.workshop.subscription = Some("live".into());
+        for (id, subscription) in [(7, "live"), (0, "old")] {
+            engine.workshop_command(id, "noded.observe.event", &json!({"subscription_id":subscription,"dropped_count":u64::MAX}));
+        }
+        assert_eq!(engine.workshop.dropped, 0);
+        engine.workshop_command(0, "noded.observe.event", &json!({"subscription_id":"live","dropped_count":u64::MAX}));
+        engine.workshop_command(0, "noded.observe.event", &json!({"subscription_id":"live","dropped_count":1}));
+        assert_eq!(engine.workshop.dropped, u64::MAX);
     }
     #[test]
     fn observations_join_replies_by_caller_and_keep_origin_and_latency() {

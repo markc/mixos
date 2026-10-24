@@ -9,6 +9,33 @@ use std::time::Duration;
 const TOPIC: &str = "pubtest.command.executed";
 
 #[test]
+fn pending_caller_receives_busy_when_citizen_closes() {
+    use futures::StreamExt;
+    let broker = test_broker::Broker::start();
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let (worker, mut deliveries) = citizen::start("closing-worker", "closing-worker", &broker.url).unwrap();
+    let (caller, _) = citizen::start("closing-caller", "closing-caller", &broker.url).unwrap();
+    runtime.block_on(async {
+        let call = caller.call("closing-worker", "closing-worker.wait", json!({}));
+        let close = async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while let Some(delivery) = deliveries.next().await {
+                    if matches!(delivery, citizen::Delivery::Command { .. }) { break; }
+                }
+            }).await.unwrap();
+            worker.quit();
+        };
+        let (reply, ()) = tokio::join!(call, close);
+        let reply = reply.unwrap();
+        assert_eq!(reply.rc, 10);
+        assert_eq!(serde_json::from_str::<Value>(&reply.body).unwrap()["error_code"], "BUSY");
+    });
+    worker.wait_done().unwrap();
+    caller.quit();
+    caller.wait_done().unwrap();
+}
+
+#[test]
 fn runtime_subscription_delivers_bodies_and_unsubscribe_stops_delivery() {
     use futures::StreamExt;
     let broker = test_broker::Broker::start();

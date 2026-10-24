@@ -905,7 +905,7 @@ impl Engine {
     /// A command an agent sent to Workshop over the Bus.
     pub fn command(&mut self, id: u64, verb: &str, body: &str) {
         if let Some(suffix) = verb.strip_prefix("workshop.macros.") {
-            let limit = if suffix == "put" { 272 * 1024 } else { 8192 };
+            let limit = if suffix == "put" { 6 * 256 * 1024 + 8192 } else { 8192 };
             if body.len() > limit {
                 return self.error(
                     id,
@@ -1290,16 +1290,18 @@ impl Engine {
         at: String,
         ms: u64,
     ) {
-        let current = self.call.as_ref().is_some_and(|call| call.ticket == ticket);
-        self.completed(ticket, result);
-        if current && !self.workshop.paused {
+        if self.completed_retained(ticket, result) {
             self.workshop.stamp_last(at, ms);
         }
     }
 
     pub fn completed(&mut self, ticket: u64, result: Result<Reply, CallError>) {
+        self.completed_retained(ticket, result);
+    }
+
+    fn completed_retained(&mut self, ticket: u64, result: Result<Reply, CallError>) -> bool {
         if self.call.as_ref().is_none_or(|call| call.ticket != ticket) {
-            return;
+            return false;
         }
         let call = self.call.take().expect("matching call");
         let (service, verb, request) = (&call.target.service, &call.target.verb, &call.body);
@@ -1314,7 +1316,7 @@ impl Engine {
             .as_str()
             .and_then(|text| serde_json::from_str::<Value>(text).ok());
         let request_body = serde_json::from_str::<Value>(request).ok();
-        self.workshop.retain(json!({"direction":"local","from":"workshop","service":service,"verb":verb,"rc":self.last_reply["rc"],"payload":payload,"request":request_body}));
+        let retained = self.workshop.retain(json!({"direction":"local","from":"workshop","service":service,"verb":verb,"rc":self.last_reply["rc"],"payload":payload,"request":request_body}));
         let rendered = if let Some(rc) = self.last_reply["rc"].as_u64() {
             let body = model::pretty(self.last_reply["body"].as_str().unwrap_or_default());
             format!("{service}  {verb}\n{} = {rc}\n\n{body}", self.label("rc"))
@@ -1346,6 +1348,7 @@ impl Engine {
             });
         }
         self.followup();
+        retained
     }
 
     /// Window activation `ticket` finished.
@@ -1570,6 +1573,20 @@ mod tests {
         );
         assert!(e.reply.contains("rc = 0"));
         assert!(!e.busy());
+    }
+
+    #[test]
+    fn oversized_completion_never_stamps_an_earlier_row() {
+        let mut e = engine();
+        e.workshop.retain(json!({"verb":"earlier","ts":"original","ms":1}));
+        e.ui.selected = Some(target());
+        e.call_selected();
+        let ticket = e.call.as_ref().unwrap().ticket;
+        e.completed_at(ticket, Ok(Reply { rc:0, body:json!({"text":"x".repeat(crate::workshop::TRAFFIC_BYTES)}).to_string(), error:None }), "new".into(), 99);
+        assert_eq!(e.workshop.traffic.len(), 1);
+        assert_eq!(e.workshop.traffic[0]["ts"], "original");
+        assert_eq!(e.workshop.traffic[0]["ms"], 1);
+        assert_eq!(e.workshop.dropped, 1);
     }
 
     #[test]

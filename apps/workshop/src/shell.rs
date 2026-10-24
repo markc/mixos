@@ -26,6 +26,7 @@ use toolkit::{Registry, Strings, Theme, drive};
 
 /// What finished off the UI thread.
 pub enum Event {
+    Subscription(String, bool),
     Measured(u64, Result<Reply, CallError>, String, u64),
     Stopped(Result<(), String>),
     MacroChanged,
@@ -50,6 +51,7 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
         // The session look is the shell's (see `Shell::looked`).
         Event::Look(..)
+        | Event::Subscription(..)
         | Event::LookRetry(_)
         | Event::Workshop(..)
         | Event::MacroChanged
@@ -375,14 +377,18 @@ impl Shell {
     /// unanswered; completions are applied at once.
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
+            if let Event::Subscription(topic, on) = event {
+                if on { self.watched_topics.insert(topic); }
+                else { self.watched_topics.remove(&topic); }
+                continue;
+            }
             if let Event::Stopped(result) = event {
-                match result {
-                    Ok(()) => {
-                        self.macro_stopped = true;
-                        self.perform(Effect::Exit);
-                    }
-                    Err(error) => self.engine.workshop.message = error,
+                if let Err(error) = result {
+                    self.engine.workshop.message = error;
                 }
+                self.macro_stopping = false;
+                self.macro_stopped = true;
+                self.perform(Effect::Exit);
                 continue;
             }
             if let Event::MacroChanged = event {
@@ -675,8 +681,8 @@ impl Shell {
                             .cloned()
                             .map(|topic| (topic, true)),
                     );
-                    self.watched_topics = topics;
                 }
+                let subscription_tx = self.tx.clone();
                 self.spawn(async move {
                     for (topic, on) in subscriptions {
                         let result = if on {
@@ -687,6 +693,7 @@ impl Shell {
                         if let Err(error) = result {
                             return Event::Workshop(ticket, operation, args, reply, Err(error));
                         }
+                        let _ = subscription_tx.send(Event::Subscription(topic, on));
                     }
                     let result =
                         crate::workshop::perform(bus, &operation, args.clone(), running).await;

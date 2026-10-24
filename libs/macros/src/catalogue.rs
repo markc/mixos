@@ -44,7 +44,7 @@ impl Roots {
                     }
                     Err(error) => return Err(error),
                 };
-                if valid_app(&name)
+                if valid_destination(&name)
                     && canonical.is_dir()
                     && canonical.starts_with(fs::canonicalize(root)?)
                 {
@@ -548,6 +548,11 @@ fn valid_app(app: &str) -> bool {
         && app
             .bytes()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+}
+
+/// App catalogue keys exclude the Library's global and Workshop namespaces.
+pub fn valid_destination(app: &str) -> bool {
+    valid_app(app) && !matches!(app, "global" | "workshop")
 }
 
 fn checked_file(root: &Path, path: &Path) -> io::Result<fs::File> {

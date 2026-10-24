@@ -262,6 +262,17 @@ fn capture(mut pipe: impl Read + Send + 'static, output: Arc<Mutex<Buffer>>) -> 
 
 fn terminate(child: &mut Child) {
     #[cfg(unix)]
+    {
+        // Give the owned group a short grace period, then escalate even if
+        // the leader exited: descendants may still hold the output pipes.
+        // SAFETY: WNOWAIT keeps the owned leader's PID reserved until reap.
+        unsafe { libc::kill(-(child.id() as i32), libc::SIGTERM); }
+        let deadline = std::time::Instant::now() + Duration::from_millis(250);
+        while matches!(exited(child), Ok(false)) && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+    #[cfg(unix)]
     // SAFETY: the child starts its own process group; a negative pid targets it.
     unsafe {
         libc::kill(-(child.id() as i32), libc::SIGKILL);
@@ -301,6 +312,22 @@ mod tests {
     use super::*;
     use crate::Tier;
     use std::time::Instant;
+
+    #[cfg(unix)]
+    #[test]
+    fn termination_escalates_and_reaps_a_group_ignoring_sigterm() {
+        let mut command = Command::new("/usr/bin/sleep");
+        command.arg("120").process_group(0);
+        // SAFETY: signal is async-signal-safe, before exec in the child.
+        unsafe { command.pre_exec(|| { libc::signal(libc::SIGTERM, libc::SIG_IGN); Ok(()) }); }
+        let mut child = command.spawn().unwrap();
+        let start = Instant::now();
+        terminate(&mut child);
+        let status = child.wait().unwrap();
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(status.signal(), Some(libc::SIGKILL));
+        assert!(start.elapsed() < Duration::from_secs(2));
+    }
 
     #[test]
     fn buffer_keeps_exactly_the_last_64_kib_across_both_streams() {

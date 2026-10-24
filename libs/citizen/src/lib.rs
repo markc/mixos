@@ -568,7 +568,18 @@ async fn worker(
                 // Native events are one-way deliveries, never pending calls.
                 // Replying to observe events would itself produce observations.
                 if command.header("type") == Some("event") {
-                    let _ = send.send(Delivery::Command {id:0,verb:command.command.clone(),body:command.body.clone()}).await;
+                    // id zero for observe is a verified broker event, never a
+                    // caller-supplied command. Preserve the envelope's live id.
+                    let body = if command.command == "noded.observe.event" {
+                        let mut body = serde_json::from_str::<Value>(&command.body).unwrap_or(Value::Null);
+                        if command.from != "noded" || !body.is_object() || command.header("subscription_id").is_none() {
+                            body = Value::Null;
+                        } else {
+                            body["subscription_id"] = json!(command.header("subscription_id"));
+                        }
+                        body.to_string()
+                    } else { command.body.clone() };
+                    let _ = send.send(Delivery::Command {id:0,verb:command.command.clone(),body}).await;
                     continue;
                 }
                 if pending.len() >= 32 {
@@ -630,7 +641,7 @@ async fn worker(
         }
     }
     macro_jobs.finish().await;
-    for command in unanswered(HashMap::new(), || incoming.recv().now_or_never().flatten()) {
+    for command in unanswered(pending, || incoming.recv().now_or_never().flatten()) {
         let _ = tokio::time::timeout(
             Duration::from_secs(2),
             client.respond(&command, 10, &closing),

@@ -34,7 +34,11 @@ pub struct Jobs(tokio::task::JoinSet<()>);
 impl Jobs {
     /// Drain accepted macro replies before closing the native connection.
     pub async fn finish(&mut self) {
-        while self.0.join_next().await.is_some() {}
+        if tokio::time::timeout(Duration::from_secs(2), async {
+            while self.0.join_next().await.is_some() {}
+        }).await.is_err() {
+            self.0.abort_all();
+        }
     }
 }
 
@@ -48,7 +52,7 @@ pub fn dispatch(
         return false;
     };
     let limit = if suffix == "put" {
-        272 * 1024
+        6 * 256 * 1024 + 8192
     } else {
         REQUEST_BODY_LIMIT
     };
@@ -98,7 +102,7 @@ pub fn dispatch(
 
 pub fn request(app: &str, suffix: &str, body: &str) -> ::macros::verbs::Reply {
     let limit = if suffix == "put" {
-        272 * 1024
+        6 * 256 * 1024 + 8192
     } else {
         REQUEST_BODY_LIMIT
     };
@@ -123,5 +127,29 @@ pub fn answer_body(answer: ::macros::verbs::Answer) -> (u8, Value) {
             10,
             json!({"error_code":refusal.code,"message":refusal.message}),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn finish_abandons_a_stalled_reply() {
+        let mut jobs = Jobs::default();
+        jobs.0.spawn(std::future::pending());
+        tokio::time::timeout(Duration::from_secs(3), jobs.finish()).await.unwrap();
+        while jobs.0.join_next().await.is_some() {}
+    }
+
+    #[test]
+    fn escape_heavy_put_reaches_decoded_text_validation() {
+        let text = "\r\n\"".repeat(70_000);
+        assert!(text.len() < 256 * 1024);
+        let body = json!({"id":"missing", "text":text}).to_string();
+        assert!(body.len() > 272 * 1024);
+        // No existing id is required to prove that the envelope was admitted.
+        let error = request("escape-heavy-test", "put", &body).wait().unwrap_err();
+        assert_ne!(error.code, "INVALID_ARGUMENT");
     }
 }

@@ -511,6 +511,20 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     type Document = std::sync::Arc<std::sync::Mutex<editor::local::Document>>;
     let key = egui::Id::new(("workshop-document", app, id));
     let doc: Option<Document> = ui.ctx().data_mut(|data| {
+        let index = egui::Id::new("workshop-documents");
+        let mut keys = data.get_temp::<Vec<egui::Id>>(index).unwrap_or_default();
+        keys.retain(|old| {
+            let keep = *old == key || data.get_temp::<Document>(*old)
+                .is_some_and(|doc| doc.lock().unwrap().is_dirty());
+            if !keep {
+                data.remove::<Document>(*old);
+                data.remove::<String>(old.with("target"));
+                data.remove::<String>(old.with("destination"));
+            }
+            keep
+        });
+        if !keys.contains(&key) { keys.push(key); }
+        data.insert_temp(index, keys);
         if let Some(doc) = data.get_temp::<Document>(key) {
             return Some(doc);
         }

@@ -9,6 +9,7 @@ pub mod verbs;
 
 pub use catalogue::{
     Catalogue, Diagnostic, Entry, Library, Roots, Targets, Tier, check_editable, valid_id,
+    valid_destination,
 };
 pub use runner::{OUTPUT_LIMIT, Output, Runner, Status};
 pub use session::Session;

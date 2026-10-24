@@ -21,6 +21,7 @@ pub async fn perform(
                 .map_err(|e| e.to_string())?;
             catalogues.insert("global".into(), global);
             for (app, catalogue) in library.apps {
+                if !macros::valid_destination(&app) { continue; }
                 let session = macros::Session::with_roots(&app, Some(roots.clone()));
                 session.replace_catalogue(catalogue);
                 let mut list = macros::verbs::handle(&session, "list", &json!({}))
@@ -35,6 +36,7 @@ pub async fn perform(
         .map_err(|error| error.to_string())??;
         let mut catalogues = local;
         for (app, service) in &running {
+            if !macros::valid_destination(app) { continue; }
             let reply = bus
                 .call(service, &format!("{app}.macros.list"), json!({}))
                 .await?;
@@ -188,15 +190,27 @@ async fn observe(bus: &Handle, args: &Value) -> Result<Value, String> {
         json!({"stopped":true})
     };
     if let Some(subscription) = args["subscription_id"].as_str() {
-        let reply = bus
+        let stopped = bus
             .call(
                 "noded",
                 "noded.observe.stop",
                 json!({"subscription_id":subscription}),
             )
-            .await?;
-        if reply.rc != 0 {
-            return Ok(json!({"error_code":"UNAVAILABLE","message":reply.body}));
+            .await;
+        let failure = match stopped {
+            Ok(reply) if reply.rc == 0 => None,
+            Ok(reply) => Some(reply.body),
+            Err(error) => Some(error.to_string()),
+        };
+        if let Some(error) = failure {
+            if on {
+                // Keep the replacement's live id rather than orphaning it
+                // when stopping the previous stream fails.
+                let mut started = started;
+                started["warning"] = json!(format!("previous observe stop failed: {error}"));
+                return Ok(started);
+            }
+            return Ok(json!({"error_code":"UNAVAILABLE","message":error}));
         }
     }
     Ok(started)

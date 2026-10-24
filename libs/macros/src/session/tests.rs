@@ -2,6 +2,24 @@
 use super::*;
 
 #[test]
+fn move_refuses_invalid_and_reserved_app_destinations() {
+    let (_dir, roots, session) = fixture();
+    session.create("Managed").unwrap();
+    for app in ["", "../escape", "Upper", "0app", "app_name", "global", "workshop"] {
+        assert_eq!(session.manage("move", &json!({"id":"managed", "tier":"user-app", "destination":app})).unwrap_err().code, "INVALID_ARGUMENT", "{app}");
+        assert!(roots.user.join("fixture/managed.mix").is_file());
+    }
+    assert!(!roots.user.join("global").exists());
+    assert!(!roots.user.join("workshop").exists());
+    for app in ["global", "workshop"] {
+        std::fs::create_dir_all(roots.user.join(app)).unwrap();
+    }
+    let library = crate::Library::scan(&roots).unwrap();
+    assert!(!library.apps.contains_key("global"));
+    assert!(!library.apps.contains_key("workshop"));
+}
+
+#[test]
 fn workshop_new_refreshes_global_list_immediately() {
     let (_dir, roots, _) = fixture();
     let session = Session::with_roots("workshop", Some(roots.clone()));

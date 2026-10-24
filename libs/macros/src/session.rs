@@ -194,8 +194,10 @@ impl Session {
                 };
                 let owner = self.0.lock().unwrap().app.clone();
                 let app = body["destination"].as_str().unwrap_or(&owner);
-                if tier == Tier::UserApp && app == "workshop" {
-                    return Err(Refusal::new("INVALID_ARGUMENT", "choose a destination app"));
+                if body.get("destination").is_some_and(|value| value.as_str().is_none_or(|app| !crate::valid_destination(app)))
+                    || (tier == Tier::UserApp && !crate::valid_destination(app))
+                {
+                    return Err(Refusal::new("INVALID_ARGUMENT", "invalid destination app"));
                 }
                 roots.move_to(entry, tier, app).map_err(storage_error)?
             }
