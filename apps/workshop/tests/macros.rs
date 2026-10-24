@@ -2,7 +2,7 @@
 #[test]
 fn macros_status_dispatch_and_surface() {
     let body =
-        inspector::bus::macros::request("workshop", macros::verbs::Caller::Other, "status", "{}")
+        inspector::bus::macros::request("workshop", inspector::bus::macros::Caller::Other, "status", "{}")
             .wait()
             .unwrap();
     assert_eq!(body["state"], "idle");
