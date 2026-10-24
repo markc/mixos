@@ -572,8 +572,10 @@ impl egui::Plugin for Drive {
             .passes
             .get_mut(&thread)
             .and_then(Vec::pop)
-            .expect("an input hook on this thread");
-        if self.passes[&thread].is_empty() {
+            // A plugin installed during the app's first frame has not seen
+            // input_hook yet. Its first output still belongs to the root.
+            .unwrap_or(egui::ViewportId::ROOT);
+        if self.passes.get(&thread).is_some_and(Vec::is_empty) {
             self.passes.remove(&thread);
         }
         if viewport != egui::ViewportId::ROOT {
