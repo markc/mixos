@@ -237,6 +237,12 @@ fn fitting_and_empty_elided_text_are_unchanged() {
         let font = paint::font(14.0, false, false);
         assert_eq!(paint::elide_end(ui, "short", &font, 220.0), "short");
         assert_eq!(paint::elide_end(ui, "", &font, 0.0), "");
+        let long = paint::elide_end(ui, &"W".repeat(120), &font, 220.0);
+        assert!(long.ends_with('…'));
+        let width = ui.fonts_mut(|fonts| {
+            fonts.layout_no_wrap(long, font, egui::Color32::WHITE).size().x
+        });
+        assert!(width <= 220.0);
     });
     harness.run();
 }
@@ -266,7 +272,7 @@ fn wrapping_packs_long_words_and_bounds_measurement_work() {
 
 #[test]
 fn crowded_button_and_icon_columns_keep_their_content_minimums() {
-    let source = "---\nscene: 1\nname: crowd\ncitizen: test\n---\n```mix\nroot: {widget: \"row\", children: [\"a\", \"b\"]}\na: {widget: \"column\", children: [\"button\"]}\nb: {widget: \"column\", children: [\"icon\"]}\nbutton: {widget: \"button\", label: \"A long button\"}\nicon: {widget: \"image\", w: 32, h: 32}\n```";
+    let source = "---\nscene: 1\nname: crowd\ncitizen: test\n---\n```mix\nroot: {widget: \"row\", children: [\"a\", \"b\"]}\na: {widget: \"column\", children: [\"button\"]}\nb: {widget: \"column\", children: [\"icon\"]}\nbutton: {widget: \"button\", label: \"A long button\"}\nicon: {widget: \"image\", src: \"\", w: 32, h: 32}\n```";
     let rt = runtime(source, (60, 100));
     assert!(rect_of(&rt, "icon").left() >= rect_of(&rt, "button").right());
     assert!(rect_of(&rt, "a").width() >= rect_of(&rt, "button").width());
@@ -288,7 +294,7 @@ fn mono_wrapping_uses_the_same_line_pitch_as_paint() {
     let rt = runtime(source, (60, 300));
     let styles = rt.program.text_styles();
     assert!(
-        (rect_of(&rt, "title").height() - 3.0 * styles.line(true, styles.mono.size)).abs() < 1.0
+        (rect_of(&rt, "title").height() - 3.0 * styles.line(true, 13.0)).abs() < 1.0
     );
 }
 
