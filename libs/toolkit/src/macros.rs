@@ -756,14 +756,15 @@ impl State {
 
     fn editor_ui(
         &mut self,
-        ctx: &mut egui::Ui,
+        ui: &mut egui::Ui,
         viewport: egui::ViewportId,
         editor_viewport: egui::ViewportId,
     ) {
+        let ctx = ui.ctx().clone();
         let mut save = false;
         let mut run = false;
         let mut ced = false;
-        let row_height = crate::chrome::Chrome::of(ctx.ctx()).metrics.menu_row_height;
+        let row_height = crate::chrome::Chrome::of(&ctx).metrics.menu_row_height;
         let output_height = row_height * 4.0;
         let dirty_before = self.document.as_ref().is_some_and(|doc| doc.is_dirty());
         let mut open = !ctx.input(|i| i.viewport().close_requested());
@@ -772,7 +773,7 @@ impl State {
         {
             open = false;
         }
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             let ctx = &ui.ctx().clone();
             if self
                 .editor_focus
@@ -857,7 +858,6 @@ impl State {
                     );
                 });
         });
-        let ctx = &ctx.ctx().clone();
         if !open {
             self.close_editor();
             if self.editor_open {
@@ -890,7 +890,7 @@ impl State {
                 .as_ref()
                 .map(|e| e.title.clone())
                 .unwrap_or_default();
-            self.run_error(&title, own("macros-already-running"), ctx);
+            self.run_error(&title, own("macros-already-running"), &ctx);
         }
         self.save_editor(save, run);
         if !open
@@ -1127,7 +1127,10 @@ fn notification(app: &str, title: &str, status: &Status, output: &str) -> serde_
     let lines: Vec<_> = output.lines().rev().take(5).collect();
     let body = lines.into_iter().rev().collect::<Vec<_>>().join("\n");
     let body = if body.is_empty() {
-        result.clone()
+        match status {
+            Status::FailedToStart(error) | Status::Failed(error) => error.clone(),
+            _ => result.clone(),
+        }
     } else {
         body
     };
@@ -1582,6 +1585,10 @@ mod tests {
         assert_eq!(
             notification("ced", "Tidy", &Status::Exited(Some(0)), "")["body"],
             "done"
+        );
+        assert_eq!(
+            notification("ced", "Tidy", &Status::FailedToStart("permission denied".into()), "")["body"],
+            "permission denied"
         );
         let payload = notification(
             "ced",

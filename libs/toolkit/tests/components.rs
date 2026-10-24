@@ -360,7 +360,7 @@ struct Asked {
 }
 
 fn dialog() -> Harness<'static, Asked> {
-    pro(
+    let mut h = pro(
         Asked {
             chosen: Vec::new(),
             dismissed: false,
@@ -377,7 +377,12 @@ fn dialog() -> Harness<'static, Asked> {
             s.dismissed |= r.dismissed;
             s.rect = r.rect;
         },
-    )
+    );
+    // The harness draws once before installing its theme. Reopen with the
+    // installed fonts so the fixture measures a newly opened themed dialog.
+    Dialog::reset(&h.ctx, "size");
+    h.run_steps(5);
+    h
 }
 
 #[test]

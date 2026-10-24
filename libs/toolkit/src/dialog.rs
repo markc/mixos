@@ -243,16 +243,9 @@ impl Dialog {
         let rect = modal.response.rect;
         if place.shown || place.at.is_some() {
             let screen = ctx.content_rect();
-            let at = place.at.unwrap_or_else(|| {
-                screen.center() - rect.size() / 2.0
-                    + Vec2::new(0.0, tokens.dialog_centre_drop as f32)
-            }) + title_drag;
+            let at = place.at.unwrap_or(rect.min) + title_drag;
             let max = (screen.max - rect.size()).max(screen.min);
-            let next = at.clamp(screen.min, max);
-            if place.at != Some(next) {
-                ctx.request_repaint();
-            }
-            place.at = Some(next);
+            place.at = Some(at.clamp(screen.min, max));
         }
         place.shown = true;
         ctx.data_mut(|d| d.insert_temp(id, place));
