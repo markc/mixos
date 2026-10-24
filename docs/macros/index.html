@@ -243,11 +243,9 @@
 application commands and Bus verbs. Listing macros never executes them.
 Macros run with your normal session authority.</p>
 <h2 id="folders-and-precedence">Folders and precedence</h2>
-<p>Every app scans four tiers, from lowest to highest precedence:</p>
+<p>Every app scans only its two per-app tiers, from lowest to highest precedence:</p>
 <table><thead><tr><th>Tier</th><th>Folder</th><th>Scope</th></tr></thead><tbody>
-<tr><td>Built-in global</td><td><code>/opt/mixos/share/macros/</code></td><td>Every app</td></tr>
 <tr><td>Built-in per-app</td><td><code>/opt/mixos/share/macros/&lt;app&gt;/</code></td><td>One app</td></tr>
-<tr><td>User global</td><td><code>~/.config/mixos/macros/</code></td><td>Every app</td></tr>
 <tr><td>User per-app</td><td><code>~/.config/mixos/macros/&lt;app&gt;/</code></td><td>One app</td></tr>
 </tbody></table>
 <p><code>&lt;app&gt;</code> is the component name, for example <code>ced</code>, <code>dopus</code> or <code>term</code>.
@@ -260,17 +258,18 @@ lowercase ASCII letters, digits, hyphens and underscores. Dotfiles,
 directories and other extensions are excluded. <code>.mx</code> documents, invalid ids
 and symlinks that escape a root are reported as diagnostics. A scan is
 shallow; it does not traverse another app's folder.</p>
-<p>For the same id, <strong>user per-app &gt; user global &gt; built-in per-app &gt; built-in
-global</strong>. The catalogue lists the winning entries by id, labels each tier
+<p>For the same id, <strong>user per-app &gt; built-in per-app</strong>. Global macros at the
+roots belong to Workshop; apps neither list nor run them, and globals never
+shadow app macros. <code>Catalogue::scan_globals</code> provides Workshop's catalogue. The catalogue lists the winning entries by id, labels each tier
 and marks entries that shadow lower tiers. Missing folders are fine.</p>
 <h2 id="using-the-menu">Using the menu</h2>
 <p>The Macros icon is the first standard icon, immediately before search when
 the app provides search. It opens a transient drop-down directly beneath
 the icon. <strong>New macro…</strong> and <strong>Open Workshop</strong> come first, followed by this
-app's macros, then global macros, in catalogue order within each group.
+app's macros in catalogue order.
 A dim dot marks built-ins. At most fifteen macros are shown; <strong>More in
 Workshop…</strong> reaches the rest. Workshop is planned; both Workshop entries
-currently open this app's user macro folder in Dopus, with <code>xdg-open</code> as
+currently create and open the global user macro folder in Dopus, with <code>xdg-open</code> as
 the fallback.</p>
 <p>The drop-down shares the menu bar's row sizes, font, padding and frame, with
 the same minimum width. Near the window's right edge it aligns to the icon's
@@ -299,8 +298,11 @@ shows the error inline so you can retry. Titles become ASCII slugs: <code>Tidy i
 letters or digits uses <code>macro</code>. Creation and copying never overwrite files.
 Editing a built-in first copies it to the matching user tier.</p>
 <p>The small editor is a non-modal floating window using the shared editor.
-Click its text to edit; the app remains usable alongside it. Ctrl+S saves
-and refreshes the menu catalogue. Ctrl+Enter saves then runs. <strong>Open in Ced</strong>
+It is a decorated, resizable OS window, titled with the macro name.
+Click its text to edit; the app remains usable alongside it. <strong>Save</strong> or Ctrl+S saves
+and refreshes the menu catalogue. <strong>Run</strong> or Ctrl+Enter saves then runs.
+An asterisk and an unsaved label mark edits. Escape in the focused editor
+or its window close button closes only the editor. <strong>Open in Ced</strong>
 hands off larger edits, with <code>xdg-open</code> as fallback. Discovery, file storage,
 launchers and notification work run on background threads.</p>
 <p>Failed creates keep the title field and show the destination path and OS
@@ -316,24 +318,20 @@ Closing a dirty editor saves before closing; a failed save keeps the text
 and error visible. Outside clicks dismiss menus with the same click-through
 behaviour as the toolkit menu bar. Catalogue changes close an open macro
 list so a stale highlight cannot select a different file.</p>
-<p>Every completed run posts a notifyd toast: title and done or failed status,
-plus the last few output lines. <strong>Show output</strong> opens that run's retained
-output in the editor's bottom strip. The runner retains the last 64 KiB of
-combined standard output and standard error. If notifyd is absent or sending
-fails, the output strip opens automatically. A successful run without output
-still reports done.</p>
-<p>One lazy native Bus client per process registers a distinct
-<code>&lt;app&gt;-macros-&lt;pid&gt;</code> service and subscribes to <code>notify.changed</code> before posting.
-There are no notification subprocesses or outcome polls. Deliveries request
-a repaint of the originating viewport. Each window retains at most eight
-notification outputs, for up to five minutes; answering, dismissing, closing,
-expiry or closing the window releases them. A Bus failure after a successful
-send drops that notification's retained output without opening the editor.
-Each viewport has its own menu, editor and runner state.
-Closing its window also withdraws outstanding notifications with
-<code>notify.close</code> and stops its runner; the background manager kills the process
-group before reaping the leader. While another run is live, the output strip
-shows that run; an older notification's output can be viewed when idle.</p>
+<p>Every completed GUI run posts a plain notifyd toast with no actions: title
+and done or failed status, plus the last few output lines. Run errors also
+post toasts. The runner retains the last 64 KiB of combined output, available
+through the output verb and the editor's output strip while it is open.
+If notification delivery fails, an open editor shows the output; otherwise
+the app logs the failure. Results and errors never open the editor. Only
+right-click, Shift+Enter or successful New macro creation opens it.</p>
+<p>One lazy native Bus client per process sends results without outcome
+subscriptions or polling. Each originating window owns its editor and
+output strip. Closing that window stops its GUI run through <code>stop_if_origin</code>;
+closing another window leaves the run alone.</p>
+<p>Drive verbs accept <code>viewport: "macro-editor"</code> to address the open editor,
+including <code>ui.tree</code>, <code>ui.click</code>, <code>ui.key</code>, <code>ui.type</code> and <code>ui.capture</code>. Omitting
+the field addresses the app window. A closed editor returns <code>NOT_FOUND</code>.</p>
 <h2 id="execution-context">Execution context</h2>
 <p>The runner starts <code>/opt/mixos/bin/mix &lt;path&gt;</code> directly, without a shell
 wrapper. An absolute <code>MIXOS_MIX</code> selects another Mix binary. Its working

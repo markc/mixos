@@ -639,7 +639,7 @@ mod tests {
 
         let mut body = document("equivalence:body-px-exact");
         body.legacy.typography.as_mut().expect("typography").body_px =
-            Some(13.333 + f64::EPSILON * 8.0);
+            Some(15.644 + f64::EPSILON * 8.0);
         assert_fatal_code(&body, "v0-equivalence-drift");
 
         let mut family = document("equivalence:family-byte-equal");

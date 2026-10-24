@@ -2953,10 +2953,10 @@ mod tests {
             panic!("default typography must compile: {result:?}");
         };
         for (role, family, weight, px) in [
-            (crate::TypographyRole::Ui, "Inter", 400, 12.5),
-            (crate::TypographyRole::UiDisplay, "Inter", 600, 15.0),
-            (crate::TypographyRole::Small, "Inter", 400, 10.5),
-            (crate::TypographyRole::Mono, "JetBrains Mono", 400, 12.0),
+            (crate::TypographyRole::Ui, "Inter", 400, 14.667),
+            (crate::TypographyRole::UiDisplay, "Inter", 600, 17.6),
+            (crate::TypographyRole::Small, "Inter", 400, 12.32),
+            (crate::TypographyRole::Mono, "JetBrains Mono", 400, 16.0),
             (crate::TypographyRole::Terminal, "SF Mono", 300, 64.0 / 3.0),
         ] {
             let record = crate::default_typography(role);

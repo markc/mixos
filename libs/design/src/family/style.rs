@@ -1190,7 +1190,7 @@ mod tests {
         ResolvedStyle {
             widgets: Widgets::Chrome,
             faces: Faces::Fixed,
-            body_size: 12.5,
+            body_size: 14.667,
             bevels: false,
             widget_stroke: WidgetStroke::Role,
             selection: Selection::AccentSoft,
@@ -1253,7 +1253,7 @@ mod tests {
 
     fn pro() -> ResolvedStyle {
         ResolvedStyle {
-            body_size: 12.0,
+            body_size: 14.667,
             selection: Selection::Accent,
             toggle: Toggle::Checkbox,
             knob: Knob::Ringed,

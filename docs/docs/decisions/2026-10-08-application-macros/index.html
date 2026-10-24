@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Every native MixOS app lists and runs ordinary Mix scripts as macros, from built-in, user-global and user per-app folders.">
+    <meta name="description" content="Every native MixOS app lists and runs ordinary Mix scripts as macros, from built-in and user per-app folders.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -237,8 +237,8 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="every-application-supports-mix-macros">Every application supports Mix macros</h1>
-<p>Status: accepted, 2026-10-08. Storage amended 2026-10-23: three tiers, with
-a user's own macros under <code>~/.config/mixos/macros</code>.</p>
+<p>Status: accepted, 2026-10-08. Amended 2026-10-24: apps list only their two per-app tiers;
+global macros belong to Workshop.</p>
 <p>Every native MixOS GUI application has macros by default. A macro is an
 ordinary Mix program (<code>.mix</code>); there is no separate workflow language or
 broker. Macros give people and agents one programming surface across the
@@ -247,16 +247,17 @@ other nodes over ABP between noded instances. Macros run with the normal
 session authority of the user who runs them.</p>
 <h2 id="where-macros-live">Where macros live</h2>
 <table><thead><tr><th>Tier</th><th>Where</th><th>Written by</th></tr></thead><tbody>
-<tr><td>Built-in global</td><td><code>/opt/mixos/share/macros/*.mix</code></td><td>releases, read-only</td></tr>
+<tr><td>Built-in global</td><td><code>/opt/mixos/share/macros/*.mix</code></td><td>releases, read-only; Workshop only</td></tr>
 <tr><td>Built-in per-app</td><td><code>/opt/mixos/share/macros/&lt;app&gt;/*.mix</code></td><td>releases, read-only</td></tr>
-<tr><td>User global</td><td><code>$XDG_CONFIG_HOME/mixos/macros/*.mix</code> (default <code>~/.config/mixos/macros/</code>)</td><td>the user; every app lists these</td></tr>
+<tr><td>User global</td><td><code>$XDG_CONFIG_HOME/mixos/macros/*.mix</code> (default <code>~/.config/mixos/macros/</code>)</td><td>the user; Workshop only</td></tr>
 <tr><td>User per-app</td><td><code>$XDG_CONFIG_HOME/mixos/macros/&lt;app&gt;/*.mix</code></td><td>the user; only that app lists these</td></tr>
 </tbody></table>
 <ul>
 <li><code>&lt;app&gt;</code> is the app's component name. A file at the top of a macros
 folder is global; a folder holds one app's macros.</li>
 <li>A macro's id is its file stem. When two tiers have the same id, user
-per-app beats user global, which beats built-in. The catalogue shows each
+per-app beats built-in per-app. Globals have independent precedence: user
+global beats built-in global, with no shadowing across app/global scopes. The catalogue shows each
 macro's tier and path, and marks one that shadows another.</li>
 <li>Listing never runs a macro. Only <code>.mix</code> files are macros; <code>.mx</code>
 documents are refused.</li>

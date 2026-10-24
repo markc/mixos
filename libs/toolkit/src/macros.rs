@@ -730,6 +730,7 @@ impl State {
                     open = false;
                 }
                 egui::CentralPanel::default().show(ctx, |ui| {
+                let ctx = &ui.ctx().clone();
                 if self
                     .editor_focus
                     .is_some_and(|id| ctx.memory(|m| m.has_focus(id)))
@@ -1489,10 +1490,7 @@ mod tests {
             assert_eq!(payload["summary"], summary);
             assert_eq!(payload["body"], "2\n3\n4\n5\n6");
             assert_eq!(payload["app"], "ced");
-            assert_eq!(
-                payload["actions"][0],
-                serde_json::json!({"id": "output", "label": "Show output"})
-            );
+            assert_eq!(payload["actions"], serde_json::json!([]));
         }
         assert_eq!(
             notification("ced", "Tidy", &Status::Exited(Some(0)), "")["body"],
@@ -1509,7 +1507,7 @@ mod tests {
     }
 
     #[test]
-    fn menu_groups_app_before_global_limits_rows_and_offers_stop() {
+    fn menu_limits_app_rows_and_offers_stop() {
         let catalogue = Catalogue {
             entries: (0..20)
                 .map(|n| Entry {
@@ -1517,7 +1515,7 @@ mod tests {
                     title: format!("Title {n}"),
                     path: format!("{n}.mix").into(),
                     tier: if n % 2 == 0 {
-                        Tier::BuiltinGlobal
+                        Tier::BuiltinApp
                     } else {
                         Tier::UserApp
                     },

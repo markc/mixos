@@ -268,15 +268,15 @@ fn symlinks_may_stay_inside_but_must_never_escape_the_root() {
         roots.user.join("escape.mix"),
     )
     .unwrap();
-    let found = Catalogue::scan(&roots, "ced").unwrap();
+    let found = Catalogue::scan_globals(&roots).unwrap();
     assert_eq!(found.entries.len(), 2);
     assert_eq!(found.diagnostics.len(), 1);
     symlink(temp.path(), roots.user.join("ced")).unwrap();
     assert!(roots.create("ced", Tier::UserApp, "bad", "Bad").is_err());
     assert!(!temp.path().join("bad.mix").exists());
     let found = Catalogue::scan(&roots, "ced").unwrap();
-    assert_eq!(found.entries.len(), 2);
-    assert_eq!(found.diagnostics.len(), 2);
+    assert_eq!(found.entries.len(), 0);
+    assert_eq!(found.diagnostics.len(), 1);
 }
 
 fn wait(runner: &Runner) -> Status {
@@ -358,7 +358,7 @@ fn fifo_macro_is_diagnosed_without_blocking() {
     // SAFETY: name is a valid C path; mkfifo creates only this test fixture.
     assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
     let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || tx.send(Catalogue::scan(&roots, "ced")).unwrap());
+    std::thread::spawn(move || tx.send(Catalogue::scan_globals(&roots)).unwrap());
     let found = rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap();
     assert!(found.entries.is_empty());
     assert_eq!(found.diagnostics.len(), 1);

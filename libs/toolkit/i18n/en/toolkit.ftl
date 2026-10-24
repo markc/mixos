@@ -93,7 +93,6 @@ macros-open-ced = Open in Ced
 macros-done = done
 macros-exit-failed = failed (exit { $code })
 macros-failed-short = failed
-macros-show-output = Show output
 macros-running-title = Running "{ $title }"
 macros-save-first = Save the current macro with Ctrl+S before opening another.
 macros-already-running = A macro is already running. Stop it before running another.

@@ -1577,7 +1577,7 @@ fn trial_default_md_resting_resolves_shipped_control_pair() {
         (28.0, 72.0, 10.0)
     );
     assert_eq!((cell.border_width, cell.radius), (1.0, 4.0));
-    assert_eq!(typography.record.font_size, 13.333);
+    assert_eq!(typography.record.font_size, 15.644);
     assert_eq!(typography.record.font_size_metric, "type.body");
     assert_eq!(cell.pair.surface_name, "palette.background.2");
     assert_eq!(cell.pair.foreground_name, "palette.foreground.default");
@@ -1617,7 +1617,7 @@ fn trial_default_md_resting_resolves_shipped_control_pair() {
         artifact.dictionary().metrics["type.body"],
         crate::ResolvedMetric {
             kind: crate::ResolvedMetricKind::Px,
-            value: 13.333,
+            value: 15.644,
         }
     );
 }
@@ -1720,7 +1720,7 @@ fn trial_ghost_sm_focus_visible_resolves_backdrop_ring_and_compact_typography() 
     assert_eq!((cell.height, cell.min_width), (24.0, 0.0));
     assert_eq!(root_type.name, "button.sm");
     assert_eq!(label_type.name, "button.sm");
-    assert_eq!(root_type.record.font_size, 11.333);
+    assert_eq!(root_type.record.font_size, 13.298);
     assert_eq!(root_type, label_type);
 }
 

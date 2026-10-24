@@ -1,12 +1,12 @@
 ---
 title: Every application supports Mix macros
-description: Every native MixOS app lists and runs ordinary Mix scripts as macros, from built-in, user-global and user per-app folders.
+description: Every native MixOS app lists and runs ordinary Mix scripts as macros, from built-in and user per-app folders.
 ---
 
 # Every application supports Mix macros
 
-Status: accepted, 2026-10-08. Storage amended 2026-10-23: three tiers, with
-a user's own macros under `~/.config/mixos/macros`.
+Status: accepted, 2026-10-08. Amended 2026-10-24: apps list only their two per-app tiers;
+global macros belong to Workshop.
 
 Every native MixOS GUI application has macros by default. A macro is an
 ordinary Mix program (`.mix`); there is no separate workflow language or
@@ -19,15 +19,16 @@ session authority of the user who runs them.
 
 | Tier | Where | Written by |
 |---|---|---|
-| Built-in global | `/opt/mixos/share/macros/*.mix` | releases, read-only |
+| Built-in global | `/opt/mixos/share/macros/*.mix` | releases, read-only; Workshop only |
 | Built-in per-app | `/opt/mixos/share/macros/<app>/*.mix` | releases, read-only |
-| User global | `$XDG_CONFIG_HOME/mixos/macros/*.mix` (default `~/.config/mixos/macros/`) | the user; every app lists these |
+| User global | `$XDG_CONFIG_HOME/mixos/macros/*.mix` (default `~/.config/mixos/macros/`) | the user; Workshop only |
 | User per-app | `$XDG_CONFIG_HOME/mixos/macros/<app>/*.mix` | the user; only that app lists these |
 
 - `<app>` is the app's component name. A file at the top of a macros
   folder is global; a folder holds one app's macros.
 - A macro's id is its file stem. When two tiers have the same id, user
-  per-app beats user global, which beats built-in. The catalogue shows each
+  per-app beats built-in per-app. Globals have independent precedence: user
+  global beats built-in global, with no shadowing across app/global scopes. The catalogue shows each
   macro's tier and path, and marks one that shadows another.
 - Listing never runs a macro. Only `.mix` files are macros; `.mx`
   documents are refused.

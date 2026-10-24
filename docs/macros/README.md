@@ -12,13 +12,11 @@ Macros run with your normal session authority.
 
 ## Folders and precedence
 
-Every app scans four tiers, from lowest to highest precedence:
+Every app scans only its two per-app tiers, from lowest to highest precedence:
 
 | Tier | Folder | Scope |
 |---|---|---|
-| Built-in global | `/opt/mixos/share/macros/` | Every app |
 | Built-in per-app | `/opt/mixos/share/macros/<app>/` | One app |
-| User global | `~/.config/mixos/macros/` | Every app |
 | User per-app | `~/.config/mixos/macros/<app>/` | One app |
 
 `<app>` is the component name, for example `ced`, `dopus` or `term`.
@@ -33,8 +31,9 @@ directories and other extensions are excluded. `.mx` documents, invalid ids
 and symlinks that escape a root are reported as diagnostics. A scan is
 shallow; it does not traverse another app's folder.
 
-For the same id, **user per-app > user global > built-in per-app > built-in
-global**. The catalogue lists the winning entries by id, labels each tier
+For the same id, **user per-app > built-in per-app**. Global macros at the
+roots belong to Workshop; apps neither list nor run them, and globals never
+shadow app macros. `Catalogue::scan_globals` provides Workshop's catalogue. The catalogue lists the winning entries by id, labels each tier
 and marks entries that shadow lower tiers. Missing folders are fine.
 
 ## Using the menu
@@ -42,10 +41,10 @@ and marks entries that shadow lower tiers. Missing folders are fine.
 The Macros icon is the first standard icon, immediately before search when
 the app provides search. It opens a transient drop-down directly beneath
 the icon. **New macro…** and **Open Workshop** come first, followed by this
-app's macros, then global macros, in catalogue order within each group.
+app's macros in catalogue order.
 A dim dot marks built-ins. At most fifteen macros are shown; **More in
 Workshop…** reaches the rest. Workshop is planned; both Workshop entries
-currently open this app's user macro folder in Dopus, with `xdg-open` as
+currently create and open the global user macro folder in Dopus, with `xdg-open` as
 the fallback.
 
 The drop-down shares the menu bar's row sizes, font, padding and frame, with
@@ -79,8 +78,11 @@ letters or digits uses `macro`. Creation and copying never overwrite files.
 Editing a built-in first copies it to the matching user tier.
 
 The small editor is a non-modal floating window using the shared editor.
-Click its text to edit; the app remains usable alongside it. Ctrl+S saves
-and refreshes the menu catalogue. Ctrl+Enter saves then runs. **Open in Ced**
+It is a decorated, resizable OS window, titled with the macro name.
+Click its text to edit; the app remains usable alongside it. **Save** or Ctrl+S saves
+and refreshes the menu catalogue. **Run** or Ctrl+Enter saves then runs.
+An asterisk and an unsaved label mark edits. Escape in the focused editor
+or its window close button closes only the editor. **Open in Ced**
 hands off larger edits, with `xdg-open` as fallback. Discovery, file storage,
 launchers and notification work run on background threads.
 
@@ -99,25 +101,22 @@ and error visible. Outside clicks dismiss menus with the same click-through
 behaviour as the toolkit menu bar. Catalogue changes close an open macro
 list so a stale highlight cannot select a different file.
 
-Every completed run posts a notifyd toast: title and done or failed status,
-plus the last few output lines. **Show output** opens that run's retained
-output in the editor's bottom strip. The runner retains the last 64 KiB of
-combined standard output and standard error. If notifyd is absent or sending
-fails, the output strip opens automatically. A successful run without output
-still reports done.
+Every completed GUI run posts a plain notifyd toast with no actions: title
+and done or failed status, plus the last few output lines. Run errors also
+post toasts. The runner retains the last 64 KiB of combined output, available
+through the output verb and the editor's output strip while it is open.
+If notification delivery fails, an open editor shows the output; otherwise
+the app logs the failure. Results and errors never open the editor. Only
+right-click, Shift+Enter or successful New macro creation opens it.
 
-One lazy native Bus client per process registers a distinct
-`<app>-macros-<pid>` service and subscribes to `notify.changed` before posting.
-There are no notification subprocesses or outcome polls. Deliveries request
-a repaint of the originating viewport. Each window retains at most eight
-notification outputs, for up to five minutes; answering, dismissing, closing,
-expiry or closing the window releases them. A Bus failure after a successful
-send drops that notification's retained output without opening the editor.
-Each viewport has its own menu, editor and runner state.
-Closing its window also withdraws outstanding notifications with
-`notify.close` and stops its runner; the background manager kills the process
-group before reaping the leader. While another run is live, the output strip
-shows that run; an older notification's output can be viewed when idle.
+One lazy native Bus client per process sends results without outcome
+subscriptions or polling. Each originating window owns its editor and
+output strip. Closing that window stops its GUI run through `stop_if_origin`;
+closing another window leaves the run alone.
+
+Drive verbs accept `viewport: "macro-editor"` to address the open editor,
+including `ui.tree`, `ui.click`, `ui.key`, `ui.type` and `ui.capture`. Omitting
+the field addresses the app window. A closed editor returns `NOT_FOUND`.
 
 ## Execution context
 
