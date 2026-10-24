@@ -1036,8 +1036,14 @@ mod tests {
         let mut shell = test_shell();
         for ticket in 100..102 {
             shell.perform(Effect::Workshop { ticket, operation:"catalogues".into(), args:json!({}), reply:None });
-            let event = shell.rx.recv_timeout(std::time::Duration::from_secs(3)).unwrap();
-            assert!(matches!(event, Event::Workshop(actual, _, _, _, Err(_)) if actual == ticket));
+            loop {
+                let event = shell.rx.recv_timeout(std::time::Duration::from_secs(3)).unwrap();
+                if let Event::Workshop(actual, _, _, _, result) = event
+                    && actual == ticket {
+                    assert!(result.is_err());
+                    break;
+                }
+            }
             assert!(shell.watched_topics.is_empty());
         }
         shell.tx.send(Event::Subscription("ced.macros.finished".into(), true)).unwrap();
