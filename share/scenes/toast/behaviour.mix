@@ -21,7 +21,12 @@ fn schedule()
   $state.sequence = $state.sequence + 1
   if $state.ready and not $state.queued then
     $state.queued = true
-    emit $ctx.citizen refresh
+    try
+      emit $ctx.citizen refresh
+    catch $message, $error
+      $state.queued = false
+      raise($error.code, $message, $error.details)
+    end
   end
 end
 
@@ -180,10 +185,18 @@ on refresh async
   $start = $state.sequence
   try
     $out = refresh()
+  catch $message
+    $out = $r.failure("scene_refresh", to_string($message))
   finally
     -- A disconnect during an RPC must not leave the queue latched forever.
     $state.queued = false
-    if $state.sequence != $start then schedule() end
+    if $state.sequence != $start then
+      try
+        schedule()
+      catch $message
+        $out = $r.failure("scene_refresh", to_string($message))
+      end
+    end
   end
   $r.respond($out)
 end

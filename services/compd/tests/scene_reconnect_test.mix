@@ -64,7 +64,8 @@ print(json_encode({rc: $rc, value: $result}))
 end
 on shell.toast.show
   $model = json_parse(read_file(env("FIXTURE_DIR") .. "/model"))
-  write_file(env("FIXTURE_DIR") .. "/shown", to_string($model.id))
+  write_file(env("FIXTURE_DIR") .. "/shown.tmp", to_string($model.id))
+  rename(env("FIXTURE_DIR") .. "/shown.tmp", env("FIXTURE_DIR") .. "/shown")
   reply(0, "{}")
 end
 on shell.toast.hide
@@ -75,7 +76,8 @@ end
   reply(0, "{}")
 end
 on scenes.model
-  write_file(env("FIXTURE_DIR") .. "/model", json_encode($event.args.value))
+  write_file(env("FIXTURE_DIR") .. "/model.tmp", json_encode($event.args.value))
+  rename(env("FIXTURE_DIR") .. "/model.tmp", env("FIXTURE_DIR") .. "/model")
   reply(0, "{}")
 end
 ')
@@ -101,6 +103,19 @@ end
   $pids.toast = start("scene-toast", $root .. "/share/scenes/toast/behaviour.mix")
   wait_service("scene-toast")
   check(call("scene-toast", "refresh").rc == 0, "initial readiness")
+
+  -- A malformed upstream summary raises inside the real refresh, rather than
+  -- returning an outcome. The caller must get a failure, and a later event
+  -- must still schedule work after the failed queued refresh.
+  write_file($tmp .. "/notes", json_encode([{id: 900, summary: {}, body: "",
+    actions: [{id: "ok", label: "OK"}]}]))
+  check(call("notify-stub", "create").rc == 0, "publish malformed notification")
+  $failed = call("scene-toast", "refresh")
+  check($failed.rc == 10 and $failed.value.error_code == "scene_refresh", "raised refresh must respond")
+  write_file($tmp .. "/notes", json_encode([{id: 901, summary: "After raised refresh", body: "",
+    actions: [{id: "ok", label: "OK"}]}]))
+  check(call("notify-stub", "create").rc == 0, "publish after raised refresh")
+  wait_shown(901)
 
   for $cycle = 1 to 2
     stop($pids.host)

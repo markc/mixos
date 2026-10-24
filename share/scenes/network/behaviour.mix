@@ -63,7 +63,12 @@ fn schedule()
   $state.sequence = $state.sequence + 1
   if $state.ready and not $state.queued then
     $state.queued = true
-    emit $ctx.citizen refresh
+    try
+      emit $ctx.citizen refresh
+    catch $message, $error
+      $state.queued = false
+      raise($error.code, $message, $error.details)
+    end
   end
 end
 
@@ -115,7 +120,7 @@ end
 
 on refresh async
   $state.queued = false
-  $r.respond(refresh())
+  $r.respond($r.refresh_result(fn() = refresh()))
 end
 
 -- A closed batch from the live handle re-subscribes after the backoff; one

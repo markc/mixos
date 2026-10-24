@@ -40,6 +40,15 @@ fn respond($outcome)
   reply($outcome.rc, json_encode($outcome.value))
 end
 
+-- Async refresh requests must answer even when an RPC raises on disconnect.
+fn refresh_result($refresh)
+  try
+    return $refresh()
+  catch $message
+    return failure("scene_refresh", to_string($message))
+  end
+end
+
 fn ready($ctx)
   -- Disconnects can raise as well as return a non-zero rc. Leave the scene
   -- alive so the next registration event can retry the handshake.
