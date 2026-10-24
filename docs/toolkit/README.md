@@ -43,7 +43,7 @@ The source is
 The apps [term](../term/README.md), [ced](../ced/README.md),
 [dopus](../dopus/README.md), [prefs](../prefs/README.md),
 [screenshot](../screenshot/README.md), [backdrop](../backdrop/README.md)
-and busviewer; the [editor](../editor/README.md) library; and four of
+and workshop; the [editor](../editor/README.md) library; and four of
 [compd](../compd/README.md)'s crates (`decor`, `ui`, `scene-host`,
 `world`). backdrop is the only one that turns on the `layer` feature.
 

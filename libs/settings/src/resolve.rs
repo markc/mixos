@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
-pub const APPS: &[&str] = &["ced", "dopus", "term", "cap", "busviewer", "scene-editor"];
+pub const APPS: &[&str] = &["ced", "dopus", "term", "cap", "workshop", "scene-editor"];
 
 pub fn describe() -> Value {
     let mut described = describe_base();
@@ -673,7 +673,7 @@ mod tests {
         let doc = app_axis_fatal_source();
         assert!(claims_app_axis(&doc));
         let context = design::DesignContext {
-            app: Some("busviewer".into()),
+            app: Some("workshop".into()),
             ..Default::default()
         };
         let own = match design::compile_design(&doc, context.clone()) {
@@ -681,7 +681,7 @@ mod tests {
             design::DesignCompileResult::Success(_) => panic!("the broken source fails"),
         };
         assert!(
-            own.iter().any(|d| d.path.contains("app=busviewer")),
+            own.iter().any(|d| d.path.contains("app=workshop")),
             "the fixture reaches the requested app: {own:#?}"
         );
         // Sharing is off for a source that uses the app axis…

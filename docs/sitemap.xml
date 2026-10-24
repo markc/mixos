@@ -14,7 +14,6 @@
   <url><loc>https://mixos.dev/bridged/</loc></url>
   <url><loc>https://mixos.dev/buildinfo/</loc></url>
   <url><loc>https://mixos.dev/bus/</loc></url>
-  <url><loc>https://mixos.dev/busviewer/</loc></url>
   <url><loc>https://mixos.dev/ced/</loc></url>
   <url><loc>https://mixos.dev/citizen/</loc></url>
   <url><loc>https://mixos.dev/command/</loc></url>
@@ -155,6 +154,7 @@
   <url><loc>https://mixos.dev/toolkit/style-guide/</loc></url>
   <url><loc>https://mixos.dev/toolsd/</loc></url>
   <url><loc>https://mixos.dev/webd/</loc></url>
+  <url><loc>https://mixos.dev/workshop/</loc></url>
   <url><loc>https://mixos.dev/bridged/changelog/</loc></url>
   <url><loc>https://mixos.dev/command/changelog/</loc></url>
   <url><loc>https://mixos.dev/compd/changelog/</loc></url>

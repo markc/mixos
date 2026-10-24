@@ -350,6 +350,26 @@ print("Hello from " .. env("MIXOS_MACRO_APP"))
 </code></pre>
 <p>The first <code>-- title:</code> in the leading comment header supplies the displayed
 title; otherwise the id is shown. Header reads are bounded to 8 KiB.</p>
+<p>Workshop scans the global tiers and uses <code>Roots::apps()</code> with the same
+per-app scan to discover every app's macros. Global user macros live directly
+in <code>~/.config/mixos/macros/</code>; built-ins live directly in
+<code>/opt/mixos/share/macros/</code>. Workshop's Session runs and creates global macros.
+App ids are scoped to their catalogue, so identical ids in different apps
+remain separate.</p>
+<p>A global macro can declare <code>-- target: any</code> or <code>-- target: ced, dopus</code> in
+its leading comment header. <code>Entry.targets</code> is absent, <code>Targets::Any</code>, or
+<code>Targets::List</code>. Empty, duplicate or malformed target headers produce a
+diagnostic and exclude the file. <code>Session::run_with(id, origin, target)</code>
+accepts an optional app component name and sets <code>MIXOS_MACRO_TARGET</code> only
+for an allowed choice. A disallowed choice returns <code>INVALID_ARGUMENT</code>
+before accepting a run. Without a choice the variable is removed from the
+child environment, including any inherited value. A header-free macro runs
+without a target and names its own services in its source.</p>
+<p><code>Roots::read</code>, <code>write</code>, <code>remove</code> and <code>move_to</code> share root confinement and
+regular-file checks. Writes replace the resolved file atomically in its own
+directory. Remove and move operate on the catalogue path; built-in mutations
+and destination clashes are refused. Moving preserves the id; rescan both
+catalogues afterwards to recompute shadows.</p>
 <h2 id="library-boundaries">Library boundaries</h2>
 <p><code>libs/macros</code> is a core library with no egui dependency. It resolves roots,
 discovers files, creates or copies user macros and owns the background
@@ -360,7 +380,7 @@ resources in the egui context while each app keeps the menu's open flag
 in its UI state. This keeps application engines below the GUI boundary in
 the application layering gate.</p>
 <h2 id="bus-verbs">Bus verbs</h2>
-<p>Email, BusViewer, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
+<p>Email, Workshop, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
 same macro surface under their component prefix. <code>list</code>, <code>status</code> and
 <code>output</code> are read-only. <code>run</code>, <code>stop</code>, <code>reload</code> and <code>new</code> have the same
 authority as executing an app command; running a macro executes user code.</p>

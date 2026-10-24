@@ -188,7 +188,7 @@ try
   end
 
   -- The live MixOS app aliases.
-  for each $app in ["term", "ced", "dopus", "cap", "screenshot", "scene-editor", "busviewer", "prefs", "media", "backdrop"]
+  for each $app in ["term", "ced", "dopus", "cap", "screenshot", "scene-editor", "workshop", "prefs", "media", "backdrop"]
     $name = "dev.mixos." .. $app .. "-symbolic"
     check(contains($aliases, $name), "the live app " .. $app .. " has no alias in the manifest")
     check(hit_of($name, 32) != nil, "the live app " .. $app .. " icon does not resolve")

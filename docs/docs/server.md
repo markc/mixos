@@ -33,7 +33,6 @@ yet. They are listed on both this page and the desktop page until they do.
 - [backdrop](../backdrop/README.md) (app): The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
 - [blobd](../blobd/README.md) (service): The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of blobd, with the store, the Bus citizen, the byte lane and the cross-node…
 - [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
-- [busviewer](../busviewer/README.md) (app): BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
 - [ced](../ced/README.md) (app): The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [compd](../compd/README.md) (service): The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.
 - [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
@@ -53,3 +52,4 @@ yet. They are listed on both this page and the desktop page until they do.
 - [settingsd](../settingsd/README.md) (service): The headless desktop settings authority, the one writer for a session profile's settings, with durable receipts and retained change publication on the Bus.
 - [system](../system/README.md) (cli): The system package builds the mix shell executable with optional noded, monitord, maild, webd and dnsd personalities selected by the name it is started under.
 - [term](../term/README.md) (app): The MixOS terminal, with tabs, split panes and a GPU-drawn grid, driven by the session settings and fully scriptable over the Bus.
+- [workshop](../workshop/README.md) (app): Workshop is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.

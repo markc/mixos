@@ -1,0 +1,33 @@
+# inspector: Workshop's headless engine (protocol model, Bus connection,
+# rules). No UI dependency: the workshop shell renders it.
+[package]
+name = "inspector"
+description = "Workshop's headless engine: ABP service discovery, verb calls and the rules around them"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "workshop"
+kind = "app"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[features]
+# The logging Bus handle (`bus::Handle::sink`) for the shell tests.
+testing = ["citizen/testing"]
+
+[dependencies]
+bus = { workspace = true, features = ["native"] }
+citizen.workspace = true
+design.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }

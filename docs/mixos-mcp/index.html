@@ -288,7 +288,7 @@ the application's command rows unchanged: <code>id</code>, <code>label</code>, <
 <code>more</code> (when present), <code>enabled</code> and <code>checked</code>, plus any further metadata.</p>
 <p><code>app_execute {service, id, params?}</code> calls <code>&lt;service&gt;.execute</code> once with
 <code>{id}</code> or <code>{id, params}</code>. <code>service</code> is a Bus service name such as
-<code>"busviewer"</code>, <code>id</code> is a dotted command id such as <code>"file.refresh"</code>, and
+<code>"workshop"</code>, <code>id</code> is a dotted command id such as <code>"file.refresh"</code>, and
 <code>params</code> is an optional JSON object. Parameters are forwarded unchanged as
 a sibling of <code>id</code>; the application owns validation and may refuse unsupported
 parameters. Successful calls return <code>{service, command, result}</code>; application

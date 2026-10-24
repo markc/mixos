@@ -56,7 +56,7 @@ current result. The window-button side can be changed whenever the effective
 title bar is drawn by the app.
 
 Each change applies to the whole session as you make it, as in GNOME's
-settings: the apps that follow the session look (Prefs itself, BusViewer,
+settings: the apps that follow the session look (Prefs itself, Workshop,
 and the portal's clients) change with it. Only the setting you changed is
 written. Changes made quickly one after another are sent in turn, never
 lost.

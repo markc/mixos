@@ -86,7 +86,7 @@ async fn application_tools_round_trip_the_registry_contract() {
     let call = |name, args: Value| {
         CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone())
     };
-    for target in ["busviewer@mesh.example", "a.b"] {
+    for target in ["workshop@mesh.example", "a.b"] {
         for name in ["app_commands", "app_execute"] {
             let mut args = json!({"service":target});
             if name == "app_execute" {

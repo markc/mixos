@@ -1,6 +1,6 @@
 ---
 title: Driving apps over the Bus
-description: How an agent drives a native MixOS app through Bus verbs, from the widget tree and injected input to window commands and captures, with BusViewer as the worked example.
+description: How an agent drives a native MixOS app through Bus verbs, from the widget tree and injected input to window commands and captures, with Workshop as the worked example.
 ---
 
 # Driving apps over the Bus
@@ -10,7 +10,7 @@ can do over the Bus. Every egui app built on the shared toolkit offers two
 sets of verbs:
 
 - **Its own verbs**, which read and change its state directly, such as
-  BusViewer's `busviewer.filter` or `busviewer.call`. These are the
+  Workshop's `workshop.filter` or `workshop.call`. These are the
   fastest and most precise way to work with an app.
 - **The drive verbs**, which are the same in every app and work the window
   the way a hand does: read the widget tree, click, type, press keys,
@@ -38,8 +38,8 @@ and a body naming the reason:
 | `CAPTURE` | A screenshot could not be taken or written. |
 | `UNAVAILABLE` | The app does not offer the drive verbs. |
 
-An app's own verbs may add codes of their own; BusViewer's are listed
-[below](#busviewer-the-worked-example).
+An app's own verbs may add codes of their own; Workshop's are listed
+[below](#workshop-the-worked-example).
 
 ## The drive verbs
 
@@ -266,7 +266,7 @@ deterministically.
   - queued input and captures: `CANCELLED`;
   - every other request, including any still arriving: `BUSY`.
 
-## BusViewer: the worked example
+## Workshop: the worked example
 
 Native `<app>.commands` responses report `shortcut` and `more` using stored
 keymap chords, with modifiers in Ctrl, Alt, Shift order. Key names follow the
@@ -277,18 +277,18 @@ Command execution returns `DENIED` for an authorisation refusal and
 `DISABLED` when the command cannot run in the current state. Authorisation
 is checked first.
 
-BusViewer browses the services and verbs on a node and calls one verb with
+Workshop browses the services and verbs on a node and calls one verb with
 a JSON body. Everything in its window is also a Bus verb.
 
 ### Reading
 
 | Verb | Arguments | Answer |
 |---|---|---|
-| `busviewer.ping` | | `{schema, version}` |
-| `busviewer.info` | | the whole state: connection, discovery snapshot, selection, body, last reply, status, and the arranged UI (`ui`) |
-| `busviewer.tree` | | `{rows}`: the rows the tree shows, depth first, each with `key`, `kind`, `label`, `depth`, `expanded`, `selected` and its child count; verb rows add `selection`, error rows `error` |
-| `busviewer.reply` | | `{text, value}`: the reply panel and the last reply |
-| `busviewer.commands` | | every menu command with its label, shortcut, further chords (`more`, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (`settings.apply` `keymaps.busviewer.<id>`) |
+| `workshop.ping` | | `{schema, version}` |
+| `workshop.info` | | the whole state: connection, discovery snapshot, selection, body, last reply, status, and the arranged UI (`ui`) |
+| `workshop.tree` | | `{rows}`: the rows the tree shows, depth first, each with `key`, `kind`, `label`, `depth`, `expanded`, `selected` and its child count; verb rows add `selection`, error rows `error` |
+| `workshop.reply` | | `{text, value}`: the reply panel and the last reply |
+| `workshop.commands` | | every menu command with its label, shortcut, further chords (`more`, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (`settings.apply` `keymaps.workshop.<id>`) |
 | `HELP`, `app.describe` | | every verb, with arguments |
 
 A row's `kind` is `service`, `verb`, `error`, `peers`, `peer` or
@@ -299,28 +299,28 @@ A row's `kind` is `service`, `verb`, `error`, `peers`, `peer` or
 
 | Verb | Arguments | Notes |
 |---|---|---|
-| `busviewer.filter` | `text` | Filters the tree, as typing in the search field does. Answers with the rows. |
-| `busviewer.expand` | `key`, `open` (bool) | Opens or closes a row that has children. |
-| `busviewer.select_row` | `key` | Selects any row. A verb row also selects its verb. |
-| `busviewer.select` | `service`, `verb` | Selects an advertised verb. |
-| `busviewer.body` | `text` | Sets the JSON body (at most 65,536 bytes). Refused while a call is using the body. |
-| `busviewer.split` | `value`, 0 to 1 | The services pane's share of the window, kept between 0.2 and 0.65. The answer reports the value in effect, to 4 places. |
-| `busviewer.dialog` | `open`: `"about"`, `"shortcuts"` or null | Opens a dialog, or closes the open one. |
-| `busviewer.call` | `service`, `verb` and `body`, each optional | Calls the selected verb once, or the given one; `service` and `verb` go together. The answer is the reply: `{service, verb, request_body, rc, body}`. A transport failure is never retried: it answers return code 10 with `transport_error` and `outcome_unknown`. |
-| `busviewer.theme` | `scheme`, `style`, `mode`, `decorations` and `caption_side`, each optional: a name, or null | Chooses the window's theme, in this window only. A present key sets that axis (null follows the session's), an absent one leaves it, and an unknown name is refused with `ARGUMENT`; nothing changes unless every axis is valid. Schemes: `ocean`, `crimson`, `stone`, `forest`, `sunset`, `mono`, `pro`, `studio`, `classic`; styles: `plain`, `pro`, `studio`, `classic`, or `own` for the scheme's own; modes: `light`, `dark`; decorations: `csd` (the app's title bar), `ssd` (the compositor's, with the menus in a menu-bar row); caption sides: `right`, `left`. The answer is `{scheme, style, mode, decorations, caption_side, effective: {…}}`: the choice, then what the window shows. Taken while a dialog is open. |
-| `busviewer.execute` | `id` | Runs one command, from the menus or the title bar: `file.refresh`, `file.quit`, `edit.format`, `edit.clear`, `edit.copy`, `bus.call`, `help.shortcuts`, `help.about`, `view.search`, `view.mode` (the light/dark switch), and View › Theme's choices `view.theme.<scheme>`, `view.theme.session`, `view.mode.light`, `view.mode.dark`, `view.mode.session`, `view.style.own`, `view.style.<style>`, `view.style.session`, `view.decorations.csd`, `view.decorations.ssd`, `view.captions.left`, `view.captions.right`. `busviewer.commands` lists them all, with each choice's `checked` tick. |
-| `busviewer.refresh` | | Discovers services again. |
-| `busviewer.show` | | Restores and focuses the window. |
-| `busviewer.quit` | | Closes once idle. |
+| `workshop.filter` | `text` | Filters the tree, as typing in the search field does. Answers with the rows. |
+| `workshop.expand` | `key`, `open` (bool) | Opens or closes a row that has children. |
+| `workshop.select_row` | `key` | Selects any row. A verb row also selects its verb. |
+| `workshop.select` | `service`, `verb` | Selects an advertised verb. |
+| `workshop.body` | `text` | Sets the JSON body (at most 65,536 bytes). Refused while a call is using the body. |
+| `workshop.split` | `value`, 0 to 1 | The services pane's share of the window, kept between 0.2 and 0.65. The answer reports the value in effect, to 4 places. |
+| `workshop.dialog` | `open`: `"about"`, `"shortcuts"` or null | Opens a dialog, or closes the open one. |
+| `workshop.call` | `service`, `verb` and `body`, each optional | Calls the selected verb once, or the given one; `service` and `verb` go together. The answer is the reply: `{service, verb, request_body, rc, body}`. A transport failure is never retried: it answers return code 10 with `transport_error` and `outcome_unknown`. |
+| `workshop.theme` | `scheme`, `style`, `mode`, `decorations` and `caption_side`, each optional: a name, or null | Chooses the window's theme, in this window only. A present key sets that axis (null follows the session's), an absent one leaves it, and an unknown name is refused with `ARGUMENT`; nothing changes unless every axis is valid. Schemes: `ocean`, `crimson`, `stone`, `forest`, `sunset`, `mono`, `pro`, `studio`, `classic`; styles: `plain`, `pro`, `studio`, `classic`, or `own` for the scheme's own; modes: `light`, `dark`; decorations: `csd` (the app's title bar), `ssd` (the compositor's, with the menus in a menu-bar row); caption sides: `right`, `left`. The answer is `{scheme, style, mode, decorations, caption_side, effective: {…}}`: the choice, then what the window shows. Taken while a dialog is open. |
+| `workshop.execute` | `id` | Runs one command, from the menus or the title bar: `file.refresh`, `file.quit`, `edit.format`, `edit.clear`, `edit.copy`, `bus.call`, `help.shortcuts`, `help.about`, `view.search`, `view.mode` (the light/dark switch), and View › Theme's choices `view.theme.<scheme>`, `view.theme.session`, `view.mode.light`, `view.mode.dark`, `view.mode.session`, `view.style.own`, `view.style.<style>`, `view.style.session`, `view.decorations.csd`, `view.decorations.ssd`, `view.captions.left`, `view.captions.right`. `workshop.commands` lists them all, with each choice's `checked` tick. |
+| `workshop.refresh` | | Discovers services again. |
+| `workshop.show` | | Restores and focuses the window. |
+| `workshop.quit` | | Closes once idle. |
 
 While a dialog is open, the window takes no edits, so neither does the
 Bus: those verbs are refused with `BUSY` until the dialog is closed.
-BusViewer's own refusals are:
+Workshop's own refusals are:
 
 - `BUSY`: a refresh or call is in flight, or a dialog is open;
 - `DISCONNECTED`: the node's broker is unreachable;
 - `ARGUMENT` and `UNKNOWN_VERB`, as above;
-- `UNKNOWN_COMMAND` and `DISABLED`, from `busviewer.execute`.
+- `UNKNOWN_COMMAND` and `DISABLED`, from `workshop.execute`.
 
 ### Driving it from Mix
 
@@ -328,8 +328,8 @@ This script opens the Help menu, closes it again, filters the tree, and
 captures the window:
 
 ```mix
--- Open BusViewer's Help menu, close it, filter the tree and capture the window.
-$app = "busviewer"
+-- Open Workshop's Help menu, close it, filter the tree and capture the window.
+$app = "workshop"
 
 fn drive($verb, $args)
   $payload = json_encode($args)
@@ -340,19 +340,19 @@ fn drive($verb, $args)
   return if type($result) == "string" then json_parse($result) else $result end
 end
 
-$opened = drive("busviewer.ui.click", {label: "Help"})
+$opened = drive("workshop.ui.click", {label: "Help"})
 print "open menu: " .. json_encode($opened.menu)
-drive("busviewer.ui.key", {key: "Escape"})
-$rows = drive("busviewer.filter", {text: "settings"}).rows
+drive("workshop.ui.key", {key: "Escape"})
+$rows = drive("workshop.filter", {text: "settings"}).rows
 print to_string(len($rows)) .. " rows match"
-$shot = drive("busviewer.ui.capture", {name: "settings.png"})
+$shot = drive("workshop.ui.capture", {name: "settings.png"})
 print "capture: " .. $shot.path
 ```
 
 Each `send` waits for its answer before the next one is sent. A longer
 scenario follows the same pattern: send a verb, check its return code,
 print the fields that matter, and stop at the first surprise. That is how
-the project's own driver checks a running BusViewer from end to end.
+the project's own driver checks a running Workshop from end to end.
 
 ## For app authors
 
@@ -374,4 +374,4 @@ wires it up in five places:
    before the Bus connection stops.
 
 `drive::describe("<app>")` lists the verbs for `HELP` and `app.describe`.
-BusViewer's shell (`apps/busviewer/src/shell.rs`) is the reference wiring.
+Workshop's shell (`apps/workshop/src/shell.rs`) is the reference wiring.

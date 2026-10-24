@@ -1601,7 +1601,7 @@ impl Shell {
                 .map(|id| UiEvent::Command(id, Origin::Shortcut)),
         );
         // Edits first, then commands, so a command sees every edit made in
-        // the same frame (the busviewer ordering contract).
+        // the same frame (the workshop ordering contract).
         let (closed, events): (Vec<_>, Vec<_>) = events
             .into_iter()
             .partition(|e| matches!(e, UiEvent::CloseMacros));

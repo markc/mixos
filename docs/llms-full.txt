@@ -338,7 +338,7 @@ can do over the Bus. Every egui app built on the shared toolkit offers two
 sets of verbs:
 
 - **Its own verbs**, which read and change its state directly, such as
-  BusViewer's `busviewer.filter` or `busviewer.call`. These are the
+  Workshop's `workshop.filter` or `workshop.call`. These are the
   fastest and most precise way to work with an app.
 - **The drive verbs**, which are the same in every app and work the window
   the way a hand does: read the widget tree, click, type, press keys,
@@ -366,8 +366,8 @@ and a body naming the reason:
 | `CAPTURE` | A screenshot could not be taken or written. |
 | `UNAVAILABLE` | The app does not offer the drive verbs. |
 
-An app's own verbs may add codes of their own; BusViewer's are listed
-[below](#busviewer-the-worked-example).
+An app's own verbs may add codes of their own; Workshop's are listed
+[below](#workshop-the-worked-example).
 
 ## The drive verbs
 
@@ -594,7 +594,7 @@ deterministically.
   - queued input and captures: `CANCELLED`;
   - every other request, including any still arriving: `BUSY`.
 
-## BusViewer: the worked example
+## Workshop: the worked example
 
 Native `<app>.commands` responses report `shortcut` and `more` using stored
 keymap chords, with modifiers in Ctrl, Alt, Shift order. Key names follow the
@@ -605,18 +605,18 @@ Command execution returns `DENIED` for an authorisation refusal and
 `DISABLED` when the command cannot run in the current state. Authorisation
 is checked first.
 
-BusViewer browses the services and verbs on a node and calls one verb with
+Workshop browses the services and verbs on a node and calls one verb with
 a JSON body. Everything in its window is also a Bus verb.
 
 ### Reading
 
 | Verb | Arguments | Answer |
 |---|---|---|
-| `busviewer.ping` | | `{schema, version}` |
-| `busviewer.info` | | the whole state: connection, discovery snapshot, selection, body, last reply, status, and the arranged UI (`ui`) |
-| `busviewer.tree` | | `{rows}`: the rows the tree shows, depth first, each with `key`, `kind`, `label`, `depth`, `expanded`, `selected` and its child count; verb rows add `selection`, error rows `error` |
-| `busviewer.reply` | | `{text, value}`: the reply panel and the last reply |
-| `busviewer.commands` | | every menu command with its label, shortcut, further chords (`more`, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (`settings.apply` `keymaps.busviewer.<id>`) |
+| `workshop.ping` | | `{schema, version}` |
+| `workshop.info` | | the whole state: connection, discovery snapshot, selection, body, last reply, status, and the arranged UI (`ui`) |
+| `workshop.tree` | | `{rows}`: the rows the tree shows, depth first, each with `key`, `kind`, `label`, `depth`, `expanded`, `selected` and its child count; verb rows add `selection`, error rows `error` |
+| `workshop.reply` | | `{text, value}`: the reply panel and the last reply |
+| `workshop.commands` | | every menu command with its label, shortcut, further chords (`more`, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (`settings.apply` `keymaps.workshop.<id>`) |
 | `HELP`, `app.describe` | | every verb, with arguments |
 
 A row's `kind` is `service`, `verb`, `error`, `peers`, `peer` or
@@ -627,28 +627,28 @@ A row's `kind` is `service`, `verb`, `error`, `peers`, `peer` or
 
 | Verb | Arguments | Notes |
 |---|---|---|
-| `busviewer.filter` | `text` | Filters the tree, as typing in the search field does. Answers with the rows. |
-| `busviewer.expand` | `key`, `open` (bool) | Opens or closes a row that has children. |
-| `busviewer.select_row` | `key` | Selects any row. A verb row also selects its verb. |
-| `busviewer.select` | `service`, `verb` | Selects an advertised verb. |
-| `busviewer.body` | `text` | Sets the JSON body (at most 65,536 bytes). Refused while a call is using the body. |
-| `busviewer.split` | `value`, 0 to 1 | The services pane's share of the window, kept between 0.2 and 0.65. The answer reports the value in effect, to 4 places. |
-| `busviewer.dialog` | `open`: `"about"`, `"shortcuts"` or null | Opens a dialog, or closes the open one. |
-| `busviewer.call` | `service`, `verb` and `body`, each optional | Calls the selected verb once, or the given one; `service` and `verb` go together. The answer is the reply: `{service, verb, request_body, rc, body}`. A transport failure is never retried: it answers return code 10 with `transport_error` and `outcome_unknown`. |
-| `busviewer.theme` | `scheme`, `style`, `mode`, `decorations` and `caption_side`, each optional: a name, or null | Chooses the window's theme, in this window only. A present key sets that axis (null follows the session's), an absent one leaves it, and an unknown name is refused with `ARGUMENT`; nothing changes unless every axis is valid. Schemes: `ocean`, `crimson`, `stone`, `forest`, `sunset`, `mono`, `pro`, `studio`, `classic`; styles: `plain`, `pro`, `studio`, `classic`, or `own` for the scheme's own; modes: `light`, `dark`; decorations: `csd` (the app's title bar), `ssd` (the compositor's, with the menus in a menu-bar row); caption sides: `right`, `left`. The answer is `{scheme, style, mode, decorations, caption_side, effective: {…}}`: the choice, then what the window shows. Taken while a dialog is open. |
-| `busviewer.execute` | `id` | Runs one command, from the menus or the title bar: `file.refresh`, `file.quit`, `edit.format`, `edit.clear`, `edit.copy`, `bus.call`, `help.shortcuts`, `help.about`, `view.search`, `view.mode` (the light/dark switch), and View › Theme's choices `view.theme.<scheme>`, `view.theme.session`, `view.mode.light`, `view.mode.dark`, `view.mode.session`, `view.style.own`, `view.style.<style>`, `view.style.session`, `view.decorations.csd`, `view.decorations.ssd`, `view.captions.left`, `view.captions.right`. `busviewer.commands` lists them all, with each choice's `checked` tick. |
-| `busviewer.refresh` | | Discovers services again. |
-| `busviewer.show` | | Restores and focuses the window. |
-| `busviewer.quit` | | Closes once idle. |
+| `workshop.filter` | `text` | Filters the tree, as typing in the search field does. Answers with the rows. |
+| `workshop.expand` | `key`, `open` (bool) | Opens or closes a row that has children. |
+| `workshop.select_row` | `key` | Selects any row. A verb row also selects its verb. |
+| `workshop.select` | `service`, `verb` | Selects an advertised verb. |
+| `workshop.body` | `text` | Sets the JSON body (at most 65,536 bytes). Refused while a call is using the body. |
+| `workshop.split` | `value`, 0 to 1 | The services pane's share of the window, kept between 0.2 and 0.65. The answer reports the value in effect, to 4 places. |
+| `workshop.dialog` | `open`: `"about"`, `"shortcuts"` or null | Opens a dialog, or closes the open one. |
+| `workshop.call` | `service`, `verb` and `body`, each optional | Calls the selected verb once, or the given one; `service` and `verb` go together. The answer is the reply: `{service, verb, request_body, rc, body}`. A transport failure is never retried: it answers return code 10 with `transport_error` and `outcome_unknown`. |
+| `workshop.theme` | `scheme`, `style`, `mode`, `decorations` and `caption_side`, each optional: a name, or null | Chooses the window's theme, in this window only. A present key sets that axis (null follows the session's), an absent one leaves it, and an unknown name is refused with `ARGUMENT`; nothing changes unless every axis is valid. Schemes: `ocean`, `crimson`, `stone`, `forest`, `sunset`, `mono`, `pro`, `studio`, `classic`; styles: `plain`, `pro`, `studio`, `classic`, or `own` for the scheme's own; modes: `light`, `dark`; decorations: `csd` (the app's title bar), `ssd` (the compositor's, with the menus in a menu-bar row); caption sides: `right`, `left`. The answer is `{scheme, style, mode, decorations, caption_side, effective: {…}}`: the choice, then what the window shows. Taken while a dialog is open. |
+| `workshop.execute` | `id` | Runs one command, from the menus or the title bar: `file.refresh`, `file.quit`, `edit.format`, `edit.clear`, `edit.copy`, `bus.call`, `help.shortcuts`, `help.about`, `view.search`, `view.mode` (the light/dark switch), and View › Theme's choices `view.theme.<scheme>`, `view.theme.session`, `view.mode.light`, `view.mode.dark`, `view.mode.session`, `view.style.own`, `view.style.<style>`, `view.style.session`, `view.decorations.csd`, `view.decorations.ssd`, `view.captions.left`, `view.captions.right`. `workshop.commands` lists them all, with each choice's `checked` tick. |
+| `workshop.refresh` | | Discovers services again. |
+| `workshop.show` | | Restores and focuses the window. |
+| `workshop.quit` | | Closes once idle. |
 
 While a dialog is open, the window takes no edits, so neither does the
 Bus: those verbs are refused with `BUSY` until the dialog is closed.
-BusViewer's own refusals are:
+Workshop's own refusals are:
 
 - `BUSY`: a refresh or call is in flight, or a dialog is open;
 - `DISCONNECTED`: the node's broker is unreachable;
 - `ARGUMENT` and `UNKNOWN_VERB`, as above;
-- `UNKNOWN_COMMAND` and `DISABLED`, from `busviewer.execute`.
+- `UNKNOWN_COMMAND` and `DISABLED`, from `workshop.execute`.
 
 ### Driving it from Mix
 
@@ -656,8 +656,8 @@ This script opens the Help menu, closes it again, filters the tree, and
 captures the window:
 
 ```mix
--- Open BusViewer's Help menu, close it, filter the tree and capture the window.
-$app = "busviewer"
+-- Open Workshop's Help menu, close it, filter the tree and capture the window.
+$app = "workshop"
 
 fn drive($verb, $args)
   $payload = json_encode($args)
@@ -668,19 +668,19 @@ fn drive($verb, $args)
   return if type($result) == "string" then json_parse($result) else $result end
 end
 
-$opened = drive("busviewer.ui.click", {label: "Help"})
+$opened = drive("workshop.ui.click", {label: "Help"})
 print "open menu: " .. json_encode($opened.menu)
-drive("busviewer.ui.key", {key: "Escape"})
-$rows = drive("busviewer.filter", {text: "settings"}).rows
+drive("workshop.ui.key", {key: "Escape"})
+$rows = drive("workshop.filter", {text: "settings"}).rows
 print to_string(len($rows)) .. " rows match"
-$shot = drive("busviewer.ui.capture", {name: "settings.png"})
+$shot = drive("workshop.ui.capture", {name: "settings.png"})
 print "capture: " .. $shot.path
 ```
 
 Each `send` waits for its answer before the next one is sent. A longer
 scenario follows the same pattern: send a verb, check its return code,
 print the fields that matter, and stop at the first surprise. That is how
-the project's own driver checks a running BusViewer from end to end.
+the project's own driver checks a running Workshop from end to end.
 
 ## For app authors
 
@@ -702,7 +702,7 @@ wires it up in five places:
    before the Bus connection stops.
 
 `drive::describe("<app>")` lists the verbs for `HELP` and `app.describe`.
-BusViewer's shell (`apps/busviewer/src/shell.rs`) is the reference wiring.
+Workshop's shell (`apps/workshop/src/shell.rs`) is the reference wiring.
 
 ---
 
@@ -724,7 +724,6 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [bridged](../bridged/README.md) · [changelog](../bridged/changelog.md) | service | unclassified | [`services/bridged`](https://github.com/markc/mixos/tree/main/services/bridged) | How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes. |
 | [buildinfo](../buildinfo/README.md) | lib | none (library) | [`libs/buildinfo`](https://github.com/markc/mixos/tree/main/libs/buildinfo) | Compile-time build provenance for MixOS binaries, and the --version contract every binary answers. |
 | [bus](../bus/README.md) | lib | none (library) | [`libs/bus`](https://github.com/markc/mixos/tree/main/libs/bus) | The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts. |
-| [busviewer](../busviewer/README.md) | app | unclassified | [`apps/busviewer`](https://github.com/markc/mixos/tree/main/apps/busviewer) | BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body. |
 | [ced](../ced/README.md) | app | unclassified | [`apps/ced`](https://github.com/markc/mixos/tree/main/apps/ced) | The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live. |
 | [citizen](../citizen/README.md) | lib | none (library) | [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/citizen) | An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore. |
 | [command](../command/README.md) · [changelog](../command/changelog.md) | lib | none (library) | [`libs/command`](https://github.com/markc/mixos/tree/main/libs/command) | UI-free command registry, typed dispatch and executed journal. |
@@ -776,6 +775,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [toolkit](../toolkit/README.md) · [changelog](../toolkit/changelog.md) | lib | none (library) | [`libs/toolkit`](https://github.com/markc/mixos/tree/main/libs/toolkit) | The shared shell for MixOS egui applications, giving every app the same theme, fonts, icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive verbs. |
 | [toolsd](../toolsd/README.md) | service | server | [`services/toolsd`](https://github.com/markc/mixos/tree/main/services/toolsd) | Runs the tools webd's admin panel queues (whois, dig, traceroute, shwho) as an unprivileged drain, outside webd's sandbox. |
 | [webd](../webd/README.md) | service | server | [`services/webd`](https://github.com/markc/mixos/tree/main/services/webd) | Virtual hosts, CMS routes, embedded Mix handlers and ACME for the MixOS web service. |
+| [workshop](../workshop/README.md) | app | unclassified | [`apps/workshop`](https://github.com/markc/mixos/tree/main/apps/workshop) | Workshop is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body. |
 
 ## Packages
 
@@ -787,8 +787,6 @@ checked separately by the layering gate.
 |---|---|---|---|---|---|
 | [backdrop](https://github.com/markc/mixos/blob/main/apps/backdrop/Cargo.toml) | backdrop | app | desktop | none | 0.1.2 |
 | [wallpaper](https://github.com/markc/mixos/blob/main/apps/backdrop/crates/wallpaper/Cargo.toml) | backdrop | app | core | none | 0.1.2 |
-| [busviewer](https://github.com/markc/mixos/blob/main/apps/busviewer/Cargo.toml) | busviewer | app | desktop | public | 0.1.2 |
-| [inspector](https://github.com/markc/mixos/blob/main/apps/busviewer/crates/inspector/Cargo.toml) | busviewer | app | core | none | 0.1.2 |
 | [ced](https://github.com/markc/mixos/blob/main/apps/ced/Cargo.toml) | ced | app | desktop | public | 0.1.2 |
 | [documents](https://github.com/markc/mixos/blob/main/apps/ced/crates/documents/Cargo.toml) | ced | app | core | none | 0.1.2 |
 | [dopus](https://github.com/markc/mixos/blob/main/apps/dopus/Cargo.toml) | dopus | app | desktop | public | 0.1.2 |
@@ -804,6 +802,8 @@ checked separately by the layering gate.
 | [term](https://github.com/markc/mixos/blob/main/apps/term/Cargo.toml) | term | app | desktop | public | 0.4.0 |
 | [term-core](https://github.com/markc/mixos/blob/main/apps/term/crates/term-core/Cargo.toml) | term | app | core | none | 0.1.2 |
 | [term-render](https://github.com/markc/mixos/blob/main/apps/term/crates/term-render/Cargo.toml) | term | app | desktop | none | 0.1.2 |
+| [workshop](https://github.com/markc/mixos/blob/main/apps/workshop/Cargo.toml) | workshop | app | desktop | public | 0.1.2 |
+| [inspector](https://github.com/markc/mixos/blob/main/apps/workshop/crates/inspector/Cargo.toml) | workshop | app | core | none | 0.1.2 |
 | [mesh-sign](https://github.com/markc/mixos/blob/main/cli/mesh-sign/Cargo.toml) | mesh-sign | cli | core | none | 0.1.2 |
 | [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.117.0 |
 | [mixos-mcp](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/Cargo.toml) | mixos-mcp | cli | core | none | 0.1.2 |
@@ -1815,227 +1815,6 @@ no noded is needed.
 
 ---
 
-<!-- page: https://mixos.dev/busviewer/ (source: https://mixos.dev/busviewer/README.md) -->
-
-# BusViewer
-
-`busviewer` (app id `dev.mixos.busviewer`) is a native window onto the Bus
-of the node it runs on. It asks noded which services are registered, asks
-each service to describe its verbs, and shows them as a tree. Select a verb
-to read its arguments and description, type a JSON body, and call it. The
-reply is shown with its return code. BusViewer also lists the mesh nodes
-this node can see.
-
-It is for people and agents who want to see what a node offers and try a
-verb by hand. It ships in the `mixos-desktop` package set. Nothing else in
-the workspace depends on it.
-
-BusViewer is also the reference app for driving a window over the Bus.
-Everything in its window is a Bus verb, and
-[Driving apps over the Bus](../docs/drive.md#busviewer-the-worked-example)
-uses it as the worked example.
-
-The source is
-[`apps/busviewer`](https://github.com/markc/mixos/tree/main/apps/busviewer).
-
-## How it is built
-
-BusViewer follows the engine-first rule in
-[AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) §4.1. It is
-two crates:
-
-- **`inspector`** (`crates/inspector`): the headless engine. No UI and no
-  I/O. It holds the protocol model, the discovery and call rules, and the
-  handling of every `busviewer.*` verb.
-- **`busviewer`**: the egui shell. It draws the engine's state, runs the
-  engine's effects on a small tokio runtime, and owns the command registry
-  that the menus, the shortcuts and the Bus all go through.
-
-The engine never does work itself. The shell feeds it events (Bus
-deliveries, finished discoveries and calls, edits made in the window), and
-the engine returns `Effect`s for the shell to carry out: `Discover`,
-`Call`, `Show`, `Reply`, `Commands`, `Execute`, `Describe`, `Drive`, `Copy`
-and `Exit`. Every effect that leaves the process carries a ticket. A
-completion whose ticket is not the one in flight is ignored, so a late
-reply can never land on a newer operation.
-
-### inspector
-
-| Module | What it holds |
-|---|---|
-| `model` | `Verb`, `Snapshot` (services, each with its verbs or an error; peers), `Selection`, the parsers for `noded.list`, `noded.peers`, `HELP` and `app.describe`, the limits, and `describe()`, the app's own verb list |
-| `engine` | `Engine`, `Effect`, `Dialog`, `Row` and `RowKind` (the services tree), `UiState` (what a person arranges), `Session` (the session theme) |
-| `bus` | the connection, through the shared [citizen](../citizen/README.md) library: `start`, `probe`, `forward`, `show`, and `discover` |
-
-Discovery calls `noded.list` and `noded.peers`, then asks every service for
-`HELP`, falling back to `app.describe`. It describes eight services at a
-time. A service that fails to describe itself shows as an error row and
-does not stop the others.
-
-The limits are fixed in `model`:
-
-- a JSON body is at most 65,536 bytes;
-- a reply is shown up to 1,000,000 bytes, then marked as truncated.
-
-### busviewer
-
-| Module | What it holds |
-|---|---|
-| `src/main.rs` | options, single-instance launch, the eframe window |
-| `src/lib.rs` | the string catalogue: `strings()`, `label()`, `label_with()` |
-| `src/shell.rs` | `Shell`: applies events, settles effects, runs Bus work, follows the desktop profile, wires the toolkit drive layer |
-| `src/view.rs` | `view()`: draws the engine's state and returns what the person did as `UiEvent`s; it never changes state itself |
-| `src/commands.rs` | `registry()`: every command, with its menu, shortcut, icon and when it is enabled |
-| `i18n/en/busviewer.ftl` | the English strings |
-
-The shell applies one event and settles its effects before it reads the
-next, so a later delivery can never change what an earlier command acts
-on. Within one frame, edits are applied before commands, so a call uses
-the body the person sees. Bus work wakes the window only when something
-finished; nothing polls.
-
-## Rules
-
-- **One operation at a time.** A refresh or a call in flight makes the
-  window busy. Bus requests that need it idle are refused with `BUSY`.
-- **A call is sent once.** BusViewer never retries. A transport failure is
-  reported as return code 10 with the outcome unknown.
-- **No call on bad input.** An unadvertised target, a body over the limit
-  or invalid JSON is refused before anything is sent. An empty body is
-  allowed.
-- **Closing answers everything.** Quit waits until accepted work is
-  finished, and every Bus request already accepted gets an answer before
-  the connection stops.
-- **One window per session.** A second launch finds the running BusViewer
-  on the Bus, asks it to show its window through compd, and exits.
-
-## Bus
-
-BusViewer registers as `busviewer` on the local broker. Its verbs are
-registered in
-[`verbs.conf.mix`](https://github.com/markc/mixos/blob/main/docs/docs/spec/bus/verbs.conf.mix)
-with owner `busviewer`.
-
-- Reading: `busviewer.ping`, `busviewer.info`, `busviewer.tree`,
-  `busviewer.reply`, `busviewer.commands`, plus `HELP` and `app.describe`.
-- Changing state: `busviewer.filter`, `busviewer.expand`,
-  `busviewer.select_row`, `busviewer.select`, `busviewer.body`,
-  `busviewer.split`, `busviewer.dialog`, `busviewer.theme`,
-  `busviewer.call`, `busviewer.execute`, `busviewer.refresh`,
-  `busviewer.show`, `busviewer.quit`.
-- The window's drive verbs, from the toolkit: `busviewer.ui.tree`,
-  `busviewer.ui.click`, `busviewer.ui.pointer`, `busviewer.ui.scroll`,
-  `busviewer.ui.key`, `busviewer.ui.type`, `busviewer.ui.menu`,
-  `busviewer.ui.menu.list`, `busviewer.ui.menu.open`,
-  `busviewer.ui.menu.close`, `busviewer.ui.capture`, `busviewer.window`
-  and `busviewer.window.state`.
-
-Arguments, answers and refusal codes (`BUSY`, `DISCONNECTED`, `ARGUMENT`,
-`UNKNOWN_VERB`, `UNKNOWN_COMMAND`, `DISABLED`) are tabled in
-[Driving apps over the Bus](../docs/drive.md#busviewer-the-worked-example).
-Tree rows are named by key, for example `service:noded` or
-`verb:noded:noded.list`.
-
-Calling a verb from Mix through BusViewer:
-
-```mix
-$body = json_encode({service: "noded", verb: "noded.list"})
-send busviewer busviewer.call body=$body timeout=30
-print $result
-```
-
-The answer is `{service, verb, request_body, rc, body}`.
-
-## Commands and keys
-
-Every menu item, shortcut and `busviewer.execute` id is one command in
-`src/commands.rs`:
-
-| Command | Menu | Key |
-|---|---|---|
-| `file.refresh` | File › Refresh services | Ctrl+R |
-| `file.quit` | File › Quit | Ctrl+Q |
-| `edit.format` | Edit › Format JSON body | Ctrl+Shift+F |
-| `edit.clear` | Edit › Clear body | |
-| `edit.copy` | Edit › Copy reply | |
-| `bus.call` | Bus › Call verb | Ctrl+Enter |
-| `help.shortcuts` | Help › Keyboard shortcuts | Ctrl+/ |
-| `help.about` | Help › About BusViewer | |
-| `view.search` | title bar search button | Ctrl+F |
-| `view.mode` | title bar light/dark button | |
-
-View › Theme adds the `view.theme.*`, `view.mode.*`, `view.style.*`,
-`view.decorations.*` and `view.captions.*` choices. They set the theme of
-this window only; the session's theme file is never written. The Help menu
-opens with a field that searches every command. The desktop profile can
-rebind the shortcuts (`keymaps.busviewer.<id>`), and `busviewer.commands`
-reports the ones in force.
-
-## Running it
-
-```text
-busviewer [--noded-url URL] [--service NAME] [--comp NAME]
-```
-
-- `--noded-url`: the broker to use. The default is the session's noded.
-- `--service`: the Bus name to register as, `busviewer` by default.
-- `--comp`: the compositor's service name, used to raise the window. The
-  default is `$MIXOS_COMP_SERVICE`, or `comp`.
-
-Service names may contain only ASCII letters, digits, `-`, `_` and `.`.
-
-The window follows the desktop profile's look and keymaps from
-[settingsd](../settingsd/README.md), through the
-[settings](../settings/README.md) follower, and updates when they change.
-With no theme chosen it starts in Studio Dark.
-
-## Testing
-
-On an authorised build worker at a pushed commit:
-
-```text
-cargo test --locked -p inspector -p busviewer
-```
-
-- The engine's unit tests (`crates/inspector/src/engine.rs`, `model.rs`)
-  cover discovery, selection, the body, calls, the Bus verbs, refusals,
-  tickets and quitting, with no UI.
-- `tests/shell.rs` runs the real `Shell` on a logging Bus handle (the
-  `inspector` `testing` feature) and checks every reply, call and the final
-  quit in order.
-- `tests/drive.rs` drives the window over its Bus verbs against the real
-  view: clicks, typing, the title bar controls, menus.
-- `tests/view.rs` checks the dialogs, the body buttons and their tooltips,
-  and the search field through kittest.
-- `tests/snapshot.rs` takes offscreen snapshots in several themes into
-  `tests/snapshots/`. Regenerate with `UPDATE_SNAPSHOTS=1` and look at the
-  images before committing them.
-- `tests/registry.rs` checks that the verb registry lists exactly the
-  verbs BusViewer describes, and that read-only verbs are class `query`
-  ([verb classes](../docs/decisions/2026-10-11-verb-classes.md)).
-- `crates/inspector/tests/native.rs` runs discovery, calls and
-  single-instance registration against an isolated real broker. It is
-  ignored by default and needs `BUSVIEWER_TEST_URL`.
-
-## Macro Bus verbs
-
-The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
-catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
-the instance’s registered Bus name (for example `term-1234` for a second Term
-instance). Verbs keep the app’s canonical prefix, such as `busviewer.macros.run`.
-
-| Verb | Arguments | Result |
-|---|---|---|
-| `busviewer.macros.list` | `{}` | Catalogue and diagnostics |
-| `busviewer.macros.reload` | `{}` | Catalogue and diagnostics |
-| `busviewer.macros.run` | `{id}` | Acceptance and run number |
-| `busviewer.macros.status` | `{}` | Current or last run |
-| `busviewer.macros.output` | `{}` | Retained output and dropped flag |
-| `busviewer.macros.stop` | `{}` | Whether termination was requested |
-| `busviewer.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
-
----
-
 <!-- page: https://mixos.dev/ced/ (source: https://mixos.dev/ced/README.md) -->
 
 # Ced
@@ -2139,7 +1918,7 @@ instance). Verbs keep the app’s canonical prefix, such as `ced.macros.run`.
 # citizen
 
 An app's supervised native Bus connection, shared by the MixOS apps
-(BusViewer, [Prefs](../prefs/README.md)). Headless: no UI dependency.
+(Workshop, [Prefs](../prefs/README.md)). Headless: no UI dependency.
 
 - `start(app, service, url)`: register as `service` and receive
   `Delivery`s: commands for the app, `Changed` (service registration),
@@ -2155,7 +1934,7 @@ An app's supervised native Bus connection, shared by the MixOS apps
 - With the `testing` feature: `Handle::sink()`, a handle with no connection
   that logs its calls, replies and quit.
 
-Promoted from BusViewer's engine when Prefs became its second owner (see
+Promoted from Workshop's engine when Prefs became its second owner (see
 [AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) §2.2). Test
 with `cargo test -p citizen`.
 
@@ -9516,6 +9295,29 @@ print("Hello from " .. env("MIXOS_MACRO_APP"))
 The first `-- title:` in the leading comment header supplies the displayed
 title; otherwise the id is shown. Header reads are bounded to 8 KiB.
 
+Workshop scans the global tiers and uses `Roots::apps()` with the same
+per-app scan to discover every app's macros. Global user macros live directly
+in `~/.config/mixos/macros/`; built-ins live directly in
+`/opt/mixos/share/macros/`. Workshop's Session runs and creates global macros.
+App ids are scoped to their catalogue, so identical ids in different apps
+remain separate.
+
+A global macro can declare `-- target: any` or `-- target: ced, dopus` in
+its leading comment header. `Entry.targets` is absent, `Targets::Any`, or
+`Targets::List`. Empty, duplicate or malformed target headers produce a
+diagnostic and exclude the file. `Session::run_with(id, origin, target)`
+accepts an optional app component name and sets `MIXOS_MACRO_TARGET` only
+for an allowed choice. A disallowed choice returns `INVALID_ARGUMENT`
+before accepting a run. Without a choice the variable is removed from the
+child environment, including any inherited value. A header-free macro runs
+without a target and names its own services in its source.
+
+`Roots::read`, `write`, `remove` and `move_to` share root confinement and
+regular-file checks. Writes replace the resolved file atomically in its own
+directory. Remove and move operate on the catalogue path; built-in mutations
+and destination clashes are refused. Moving preserves the id; rescan both
+catalogues afterwards to recompute shadows.
+
 ## Library boundaries
 
 `libs/macros` is a core library with no egui dependency. It resolves roots,
@@ -9529,7 +9331,7 @@ the application layering gate.
 
 ## Bus verbs
 
-Email, BusViewer, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
+Email, Workshop, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
 same macro surface under their component prefix. `list`, `status` and
 `output` are read-only. `run`, `stop`, `reload` and `new` have the same
 authority as executing an app command; running a macro executes user code.
@@ -32029,7 +31831,7 @@ the application's command rows unchanged: `id`, `label`, `menu`, `shortcut`,
 
 `app_execute {service, id, params?}` calls `<service>.execute` once with
 `{id}` or `{id, params}`. `service` is a Bus service name such as
-`"busviewer"`, `id` is a dotted command id such as `"file.refresh"`, and
+`"workshop"`, `id` is a dotted command id such as `"file.refresh"`, and
 `params` is an optional JSON object. Parameters are forwarded unchanged as
 a sibling of `id`; the application owns validation and may refuse unsupported
 parameters. Successful calls return `{service, command, result}`; application
@@ -32979,7 +32781,7 @@ current result. The window-button side can be changed whenever the effective
 title bar is drawn by the app.
 
 Each change applies to the whole session as you make it, as in GNOME's
-settings: the apps that follow the session look (Prefs itself, BusViewer,
+settings: the apps that follow the session look (Prefs itself, Workshop,
 and the portal's clients) change with it. Only the setting you changed is
 written. Changes made quickly one after another are sent in turn, never
 lost.
@@ -34316,7 +34118,7 @@ The source is
 The apps [term](../term/README.md), [ced](../ced/README.md),
 [dopus](../dopus/README.md), [prefs](../prefs/README.md),
 [screenshot](../screenshot/README.md), [backdrop](../backdrop/README.md)
-and busviewer; the [editor](../editor/README.md) library; and four of
+and workshop; the [editor](../editor/README.md) library; and four of
 [compd](../compd/README.md)'s crates (`decor`, `ui`, `scene-host`,
 `world`). backdrop is the only one that turns on the `layer` feature.
 
@@ -34608,7 +34410,7 @@ cargo test --locked -p toolkit --features layer
 
 An app is two crates: an engine crate under `apps/<app>/crates/<name>` that
 knows nothing about egui, and the egui shell crate `apps/<app>`. The shell
-crate's `Cargo.toml` lists, as busviewer's does:
+crate's `Cargo.toml` lists, as workshop's does:
 
 ```toml
 [dependencies]
@@ -35125,6 +34927,227 @@ required before declaring the complete transplant entry bar satisfied.
 
 No deployment, live ACME issuance or production-data rollback rehearsal
 has been performed by this source port.
+
+---
+
+<!-- page: https://mixos.dev/workshop/ (source: https://mixos.dev/workshop/README.md) -->
+
+# Workshop
+
+`workshop` (app id `dev.mixos.workshop`) is a native window onto the Bus
+of the node it runs on. It asks noded which services are registered, asks
+each service to describe its verbs, and shows them as a tree. Select a verb
+to read its arguments and description, type a JSON body, and call it. The
+reply is shown with its return code. Workshop also lists the mesh nodes
+this node can see.
+
+It is for people and agents who want to see what a node offers and try a
+verb by hand. It ships in the `mixos-desktop` package set. Nothing else in
+the workspace depends on it.
+
+Workshop is also the reference app for driving a window over the Bus.
+Everything in its window is a Bus verb, and
+[Driving apps over the Bus](../docs/drive.md#workshop-the-worked-example)
+uses it as the worked example.
+
+The source is
+[`apps/workshop`](https://github.com/markc/mixos/tree/main/apps/workshop).
+
+## How it is built
+
+Workshop follows the engine-first rule in
+[AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) §4.1. It is
+two crates:
+
+- **`inspector`** (`crates/inspector`): the headless engine. No UI and no
+  I/O. It holds the protocol model, the discovery and call rules, and the
+  handling of every `workshop.*` verb.
+- **`workshop`**: the egui shell. It draws the engine's state, runs the
+  engine's effects on a small tokio runtime, and owns the command registry
+  that the menus, the shortcuts and the Bus all go through.
+
+The engine never does work itself. The shell feeds it events (Bus
+deliveries, finished discoveries and calls, edits made in the window), and
+the engine returns `Effect`s for the shell to carry out: `Discover`,
+`Call`, `Show`, `Reply`, `Commands`, `Execute`, `Describe`, `Drive`, `Copy`
+and `Exit`. Every effect that leaves the process carries a ticket. A
+completion whose ticket is not the one in flight is ignored, so a late
+reply can never land on a newer operation.
+
+### inspector
+
+| Module | What it holds |
+|---|---|
+| `model` | `Verb`, `Snapshot` (services, each with its verbs or an error; peers), `Selection`, the parsers for `noded.list`, `noded.peers`, `HELP` and `app.describe`, the limits, and `describe()`, the app's own verb list |
+| `engine` | `Engine`, `Effect`, `Dialog`, `Row` and `RowKind` (the services tree), `UiState` (what a person arranges), `Session` (the session theme) |
+| `bus` | the connection, through the shared [citizen](../citizen/README.md) library: `start`, `probe`, `forward`, `show`, and `discover` |
+
+Discovery calls `noded.list` and `noded.peers`, then asks every service for
+`HELP`, falling back to `app.describe`. It describes eight services at a
+time. A service that fails to describe itself shows as an error row and
+does not stop the others.
+
+The limits are fixed in `model`:
+
+- a JSON body is at most 65,536 bytes;
+- a reply is shown up to 1,000,000 bytes, then marked as truncated.
+
+### workshop
+
+| Module | What it holds |
+|---|---|
+| `src/main.rs` | options, single-instance launch, the eframe window |
+| `src/lib.rs` | the string catalogue: `strings()`, `label()`, `label_with()` |
+| `src/shell.rs` | `Shell`: applies events, settles effects, runs Bus work, follows the desktop profile, wires the toolkit drive layer |
+| `src/view.rs` | `view()`: draws the engine's state and returns what the person did as `UiEvent`s; it never changes state itself |
+| `src/commands.rs` | `registry()`: every command, with its menu, shortcut, icon and when it is enabled |
+| `i18n/en/workshop.ftl` | the English strings |
+
+The shell applies one event and settles its effects before it reads the
+next, so a later delivery can never change what an earlier command acts
+on. Within one frame, edits are applied before commands, so a call uses
+the body the person sees. Bus work wakes the window only when something
+finished; nothing polls.
+
+## Rules
+
+- **One operation at a time.** A refresh or a call in flight makes the
+  window busy. Bus requests that need it idle are refused with `BUSY`.
+- **A call is sent once.** Workshop never retries. A transport failure is
+  reported as return code 10 with the outcome unknown.
+- **No call on bad input.** An unadvertised target, a body over the limit
+  or invalid JSON is refused before anything is sent. An empty body is
+  allowed.
+- **Closing answers everything.** Quit waits until accepted work is
+  finished, and every Bus request already accepted gets an answer before
+  the connection stops.
+- **One window per session.** A second launch finds the running Workshop
+  on the Bus, asks it to show its window through compd, and exits.
+
+## Bus
+
+Workshop registers as `workshop` on the local broker. Its verbs are
+registered in
+[`verbs.conf.mix`](https://github.com/markc/mixos/blob/main/docs/docs/spec/bus/verbs.conf.mix)
+with owner `workshop`.
+
+- Reading: `workshop.ping`, `workshop.info`, `workshop.tree`,
+  `workshop.reply`, `workshop.commands`, plus `HELP` and `app.describe`.
+- Changing state: `workshop.filter`, `workshop.expand`,
+  `workshop.select_row`, `workshop.select`, `workshop.body`,
+  `workshop.split`, `workshop.dialog`, `workshop.theme`,
+  `workshop.call`, `workshop.execute`, `workshop.refresh`,
+  `workshop.show`, `workshop.quit`.
+- The window's drive verbs, from the toolkit: `workshop.ui.tree`,
+  `workshop.ui.click`, `workshop.ui.pointer`, `workshop.ui.scroll`,
+  `workshop.ui.key`, `workshop.ui.type`, `workshop.ui.menu`,
+  `workshop.ui.menu.list`, `workshop.ui.menu.open`,
+  `workshop.ui.menu.close`, `workshop.ui.capture`, `workshop.window`
+  and `workshop.window.state`.
+
+Arguments, answers and refusal codes (`BUSY`, `DISCONNECTED`, `ARGUMENT`,
+`UNKNOWN_VERB`, `UNKNOWN_COMMAND`, `DISABLED`) are tabled in
+[Driving apps over the Bus](../docs/drive.md#workshop-the-worked-example).
+Tree rows are named by key, for example `service:noded` or
+`verb:noded:noded.list`.
+
+Calling a verb from Mix through Workshop:
+
+```mix
+$body = json_encode({service: "noded", verb: "noded.list"})
+send workshop workshop.call body=$body timeout=30
+print $result
+```
+
+The answer is `{service, verb, request_body, rc, body}`.
+
+## Commands and keys
+
+Every menu item, shortcut and `workshop.execute` id is one command in
+`src/commands.rs`:
+
+| Command | Menu | Key |
+|---|---|---|
+| `file.refresh` | File › Refresh services | Ctrl+R |
+| `file.quit` | File › Quit | Ctrl+Q |
+| `edit.format` | Edit › Format JSON body | Ctrl+Shift+F |
+| `edit.clear` | Edit › Clear body | |
+| `edit.copy` | Edit › Copy reply | |
+| `bus.call` | Bus › Call verb | Ctrl+Enter |
+| `help.shortcuts` | Help › Keyboard shortcuts | Ctrl+/ |
+| `help.about` | Help › About Workshop | |
+| `view.search` | title bar search button | Ctrl+F |
+| `view.mode` | title bar light/dark button | |
+
+View › Theme adds the `view.theme.*`, `view.mode.*`, `view.style.*`,
+`view.decorations.*` and `view.captions.*` choices. They set the theme of
+this window only; the session's theme file is never written. The Help menu
+opens with a field that searches every command. The desktop profile can
+rebind the shortcuts (`keymaps.workshop.<id>`), and `workshop.commands`
+reports the ones in force.
+
+## Running it
+
+```text
+workshop [--noded-url URL] [--service NAME] [--comp NAME]
+```
+
+- `--noded-url`: the broker to use. The default is the session's noded.
+- `--service`: the Bus name to register as, `workshop` by default.
+- `--comp`: the compositor's service name, used to raise the window. The
+  default is `$MIXOS_COMP_SERVICE`, or `comp`.
+
+Service names may contain only ASCII letters, digits, `-`, `_` and `.`.
+
+The window follows the desktop profile's look and keymaps from
+[settingsd](../settingsd/README.md), through the
+[settings](../settings/README.md) follower, and updates when they change.
+With no theme chosen it starts in Studio Dark.
+
+## Testing
+
+On an authorised build worker at a pushed commit:
+
+```text
+cargo test --locked -p inspector -p workshop
+```
+
+- The engine's unit tests (`crates/inspector/src/engine.rs`, `model.rs`)
+  cover discovery, selection, the body, calls, the Bus verbs, refusals,
+  tickets and quitting, with no UI.
+- `tests/shell.rs` runs the real `Shell` on a logging Bus handle (the
+  `inspector` `testing` feature) and checks every reply, call and the final
+  quit in order.
+- `tests/drive.rs` drives the window over its Bus verbs against the real
+  view: clicks, typing, the title bar controls, menus.
+- `tests/view.rs` checks the dialogs, the body buttons and their tooltips,
+  and the search field through kittest.
+- `tests/snapshot.rs` takes offscreen snapshots in several themes into
+  `tests/snapshots/`. Regenerate with `UPDATE_SNAPSHOTS=1` and look at the
+  images before committing them.
+- `tests/registry.rs` checks that the verb registry lists exactly the
+  verbs Workshop describes, and that read-only verbs are class `query`
+  ([verb classes](../docs/decisions/2026-10-11-verb-classes.md)).
+- `crates/inspector/tests/native.rs` runs discovery, calls and
+  single-instance registration against an isolated real broker. It is
+  ignored by default and needs `WORKSHOP_TEST_URL`.
+
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
+the instance’s registered Bus name (for example `term-1234` for a second Term
+instance). Verbs keep the app’s canonical prefix, such as `workshop.macros.run`.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `workshop.macros.list` | `{}` | Catalogue and diagnostics |
+| `workshop.macros.reload` | `{}` | Catalogue and diagnostics |
+| `workshop.macros.run` | `{id}` | Acceptance and run number |
+| `workshop.macros.status` | `{}` | Current or last run |
+| `workshop.macros.output` | `{}` | Retained output and dropped flag |
+| `workshop.macros.stop` | `{}` | Whether termination was requested |
+| `workshop.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
 
 ---
 
@@ -36435,7 +36458,6 @@ yet. They are listed on both this page and the server page until they do.
 - [backdrop](../backdrop/README.md) (app): The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
 - [blobd](../blobd/README.md) (service): The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of blobd, with the store, the Bus citizen, the byte lane and the cross-node…
 - [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
-- [busviewer](../busviewer/README.md) (app): BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
 - [ced](../ced/README.md) (app): The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [compd](../compd/README.md) (service): The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.
 - [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
@@ -36455,6 +36477,7 @@ yet. They are listed on both this page and the server page until they do.
 - [settingsd](../settingsd/README.md) (service): The headless desktop settings authority, the one writer for a session profile's settings, with durable receipts and retained change publication on the Bus.
 - [system](../system/README.md) (cli): The system package builds the mix shell executable with optional noded, monitord, maild, webd and dnsd personalities selected by the name it is started under.
 - [term](../term/README.md) (app): The MixOS terminal, with tabs, split panes and a GPU-drawn grid, driven by the session settings and fully scriptable over the Bus.
+- [workshop](../workshop/README.md) (app): Workshop is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
 
 ---
 
@@ -36489,7 +36512,6 @@ yet. They are listed on both this page and the desktop page until they do.
 - [backdrop](../backdrop/README.md) (app): The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
 - [blobd](../blobd/README.md) (service): The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of blobd, with the store, the Bus citizen, the byte lane and the cross-node…
 - [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
-- [busviewer](../busviewer/README.md) (app): BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
 - [ced](../ced/README.md) (app): The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [compd](../compd/README.md) (service): The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.
 - [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
@@ -36509,3 +36531,4 @@ yet. They are listed on both this page and the desktop page until they do.
 - [settingsd](../settingsd/README.md) (service): The headless desktop settings authority, the one writer for a session profile's settings, with durable receipts and retained change publication on the Bus.
 - [system](../system/README.md) (cli): The system package builds the mix shell executable with optional noded, monitord, maild, webd and dnsd personalities selected by the name it is started under.
 - [term](../term/README.md) (app): The MixOS terminal, with tabs, split panes and a GPU-drawn grid, driven by the session settings and fully scriptable over the Bus.
+- [workshop](../workshop/README.md) (app): Workshop is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.

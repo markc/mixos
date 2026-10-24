@@ -5,7 +5,7 @@
 //! back as an [`Event`] with a repaint request, so the window wakes only
 //! when something happened (no polling).
 //!
-//! **Ordering is the contract** (as in BusViewer). Each event is applied and
+//! **Ordering is the contract** (as in Workshop). Each event is applied and
 //! its effects are [`settle`]d before the next event is read, so a later
 //! delivery can never change what an earlier command acts on. Within a
 //! frame, selections are applied before commands ([`apply_ui`]), so a
@@ -221,7 +221,7 @@ pub struct Shell {
     exiting: bool,
     /// Bus commands waiting behind drive input accepted before them.
     held: VecDeque<Event>,
-    /// The Bus deliveries not yet forwarded (see BusViewer's shell: shutdown
+    /// The Bus deliveries not yet forwarded (see Workshop's shell: shutdown
     /// closes and drains it under its lock).
     inbox: Arc<Mutex<Deliveries>>,
     /// The window choice and base look installed last.

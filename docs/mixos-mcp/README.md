@@ -63,7 +63,7 @@ the application's command rows unchanged: `id`, `label`, `menu`, `shortcut`,
 
 `app_execute {service, id, params?}` calls `<service>.execute` once with
 `{id}` or `{id, params}`. `service` is a Bus service name such as
-`"busviewer"`, `id` is a dotted command id such as `"file.refresh"`, and
+`"workshop"`, `id` is a dotted command id such as `"file.refresh"`, and
 `params` is an optional JSON object. Parameters are forwarded unchanged as
 a sibling of `id`; the application owns validation and may refuse unsupported
 parameters. Successful calls return `{service, command, result}`; application

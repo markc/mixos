@@ -142,6 +142,7 @@ fn create_and_copy_never_overwrite_the_destination_tier() {
             path,
             tier,
             shadows: vec![],
+            targets: None,
         };
         let copy = roots.copy_to_user("ced", &entry).unwrap();
         assert_eq!(
@@ -288,6 +289,7 @@ fn failed_start_is_reported_asynchronously() {
         tier: Tier::UserApp,
         path: temp.path().join("test.mix"),
         shadows: vec![],
+            targets: None,
     };
     let mut runner = Runner::default();
     runner.start(&roots, "ced", &entry).unwrap();
@@ -314,6 +316,7 @@ fn real_mix_runs_with_context_bounded_output_and_stop() {
         tier: Tier::UserApp,
         path: path.clone(),
         shadows: vec![],
+            targets: None,
     };
     let mut runner = Runner::default();
     runner.start(&roots, "ced", &entry).unwrap();
@@ -393,6 +396,7 @@ fn descendant_fixture(detached: bool) {
         tier: Tier::UserApp,
         path,
         shadows: vec![],
+            targets: None,
     };
     let mut runner = Runner::default();
     runner.start(&roots, "ced", &entry).unwrap();

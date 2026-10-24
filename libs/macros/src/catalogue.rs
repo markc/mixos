@@ -5,6 +5,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Resolution is pure; missing/relative HOME cannot supply a user home.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -16,6 +17,75 @@ pub struct Roots {
 }
 
 impl Roots {
+    /// Discover app folders using the same confinement rules as catalogue scans.
+    pub fn apps(&self) -> io::Result<Vec<String>> {
+        let mut apps = std::collections::BTreeSet::new();
+        for root in [&self.user, &self.builtin] {
+            let folders = match fs::read_dir(root) {
+                Ok(folders) => folders,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            for folder in folders {
+                let folder = folder?;
+                let name = folder.file_name().to_string_lossy().into_owned();
+                if valid_app(&name) && folder.path().is_dir()
+                    && fs::canonicalize(folder.path())?.starts_with(fs::canonicalize(root)?) {
+                    apps.insert(name);
+                }
+            }
+        }
+        Ok(apps.into_iter().collect())
+    }
+
+    pub fn read(&self, entry: &Entry) -> io::Result<String> {
+        let mut text = String::new();
+        checked_file(if entry.tier.is_user() { &self.user } else { &self.builtin }, &entry.path)?
+            .read_to_string(&mut text)?;
+        Ok(text)
+    }
+
+    fn user_target(&self, entry: &Entry) -> io::Result<PathBuf> {
+        if !entry.tier.is_user() {
+            return Err(invalid("built-in macros are read-only"));
+        }
+        checked_file(&self.user, &entry.path)?;
+        fs::canonicalize(&entry.path)
+    }
+
+    /// Replace the resolved regular file atomically, preserving an in-root symlink.
+    pub fn write(&self, entry: &Entry, text: &str) -> io::Result<()> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let target = self.user_target(entry)?;
+        let parent = target.parent().ok_or_else(|| invalid("macro has no parent"))?;
+        let temporary = parent.join(format!(".macro-save-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        let result = (|| {
+            let mut file = OpenOptions::new().write(true).create_new(true).open(&temporary)?;
+            file.set_permissions(fs::metadata(&target)?.permissions())?;
+            file.write_all(text.as_bytes())?;
+            file.sync_all()?;
+            fs::rename(&temporary, &target)
+        })();
+        if result.is_err() { let _ = fs::remove_file(&temporary); }
+        result
+    }
+
+    pub fn remove(&self, entry: &Entry) -> io::Result<()> {
+        self.user_target(entry)?;
+        fs::remove_file(&entry.path)
+    }
+
+    /// Exclusive destination allocation refuses clashes, including dangling links.
+    pub fn move_to(&self, entry: &Entry, tier: Tier, app: &str) -> io::Result<PathBuf> {
+        self.user_target(entry)?;
+        let (destination, file) = self.new_file(app, tier, &entry.id)?;
+        drop(file);
+        if let Err(error) = fs::rename(&entry.path, &destination) {
+            let _ = fs::remove_file(&destination);
+            return Err(error);
+        }
+        Ok(destination)
+    }
     pub fn resolve() -> Option<Self> {
         Self::resolve_with(|key| std::env::var_os(key).map(PathBuf::from))
     }
@@ -88,6 +158,10 @@ impl Roots {
     /// Slug a title and allocate a fresh name using the same exclusive create
     /// path as `create`. Only a name clash is retried.
     pub fn create_from_title(&self, app: &str, title: &str) -> io::Result<PathBuf> {
+        self.create_from_title_in(app, Tier::UserApp, title)
+    }
+
+    pub fn create_from_title_in(&self, app: &str, tier: Tier, title: &str) -> io::Result<PathBuf> {
         if title.trim().is_empty() || title.contains(['\n', '\r']) {
             return Err(invalid("title must be a non-empty single line"));
         }
@@ -107,14 +181,14 @@ impl Roots {
         if slug.is_empty() {
             slug.push_str("macro");
         }
-        let folder = self.folder(app, Tier::UserApp)?;
+        let folder = self.folder(app, tier)?;
         for n in 1u64.. {
             let id = if n == 1 {
                 slug.clone()
             } else {
                 format!("{slug}-{n}")
             };
-            match self.create(app, Tier::UserApp, &id, title) {
+            match self.create(app, tier, &id, title) {
                 // AlreadyExists can also come from create_dir_all when a
                 // parent is a regular file. Retry only an occupied candidate,
                 // including a dangling symlink that exclusive create refuses.
@@ -205,6 +279,22 @@ pub struct Entry {
     pub tier: Tier,
     pub path: PathBuf,
     pub shadows: Vec<Tier>,
+    pub targets: Option<Targets>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Targets {
+    Any,
+    List(Vec<String>),
+}
+
+impl Targets {
+    pub fn allows(&self, app: &str) -> bool {
+        valid_app(app) && match self {
+            Self::Any => true,
+            Self::List(apps) => apps.iter().any(|name| name == app),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -301,6 +391,8 @@ impl Catalogue {
             };
             // Bound reads even for maliciously long headers; never evaluate content.
             let mut title = id.to_owned();
+            let mut targets = None;
+            let mut malformed = false;
             for line in BufReader::new(file.take(8192)).lines() {
                 let line = match line {
                     Ok(line) => line,
@@ -311,11 +403,25 @@ impl Catalogue {
                     if !value.trim().is_empty() {
                         title = value.trim().into();
                     }
-                    break;
+                    continue;
+                }
+                if let Some(value) = line.strip_prefix("-- target:") {
+                    let names: Vec<_> = value.split(',').map(str::trim).collect();
+                    if targets.is_some() || value.trim().is_empty()
+                        || (value.trim() != "any" && names.iter().any(|name| !valid_app(name) || *name == "any")) {
+                        malformed = true;
+                    } else {
+                        targets = Some(if value.trim() == "any" { Targets::Any }
+                            else { Targets::List(names.into_iter().map(str::to_owned).collect()) });
+                    }
                 }
                 if !line.is_empty() && !line.starts_with("--") {
                     break;
                 }
+            }
+            if malformed {
+                self.diagnose(path, "malformed target header".into());
+                continue;
             }
             let mut entry = Entry {
                 id: id.into(),
@@ -323,6 +429,7 @@ impl Catalogue {
                 tier,
                 path: path.clone(),
                 shadows: Vec::new(),
+                targets,
             };
             if let Some(previous) = entries.remove(id) {
                 entry.shadows = previous.shadows;

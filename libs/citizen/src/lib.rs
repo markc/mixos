@@ -7,9 +7,9 @@
 //! (`theme.changed`, service registration on `noded.props.changed`, and any
 //! the app names in [`start_with_topics`]) wake the app; nothing polls.
 //!
-//! Promoted from BusViewer's engine (`apps/busviewer/crates/inspector/src/bus.rs`)
+//! Promoted from Workshop's engine (`apps/workshop/crates/inspector/src/bus.rs`)
 //! when Prefs became its second owner (AGENTS.md §2.2). The only change is
-//! that the app's name (`busviewer`, `prefs`) is a parameter: it names the
+//! that the app's name (`workshop`, `prefs`) is a parameter: it names the
 //! worker thread, the closing refusal and the `<app>.ping` / `<app>.show`
 //! verbs used for single-instance activation.
 pub mod macros;
@@ -278,7 +278,7 @@ impl Drop for Finished {
 }
 
 /// Register `service` on the broker at `url` for the app named `app`
-/// (`busviewer`, `prefs`), and start delivering.
+/// (`workshop`, `prefs`), and start delivering.
 pub fn start(
     app: &str,
     service: &str,
@@ -727,7 +727,7 @@ mod tests {
         }
     }
 
-    /// sol final pass (BusViewer): a quit that wins the race with buffered
+    /// sol final pass (Workshop): a quit that wins the race with buffered
     /// requests still owes each of them an answer, after the pending ones.
     #[test]
     fn a_closing_worker_owes_pending_and_buffered_requests() {

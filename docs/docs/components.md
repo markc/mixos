@@ -20,7 +20,6 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [bridged](../bridged/README.md) · [changelog](../bridged/changelog.md) | service | unclassified | [`services/bridged`](https://github.com/markc/mixos/tree/main/services/bridged) | How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes. |
 | [buildinfo](../buildinfo/README.md) | lib | none (library) | [`libs/buildinfo`](https://github.com/markc/mixos/tree/main/libs/buildinfo) | Compile-time build provenance for MixOS binaries, and the --version contract every binary answers. |
 | [bus](../bus/README.md) | lib | none (library) | [`libs/bus`](https://github.com/markc/mixos/tree/main/libs/bus) | The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts. |
-| [busviewer](../busviewer/README.md) | app | unclassified | [`apps/busviewer`](https://github.com/markc/mixos/tree/main/apps/busviewer) | BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body. |
 | [ced](../ced/README.md) | app | unclassified | [`apps/ced`](https://github.com/markc/mixos/tree/main/apps/ced) | The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live. |
 | [citizen](../citizen/README.md) | lib | none (library) | [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/citizen) | An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore. |
 | [command](../command/README.md) · [changelog](../command/changelog.md) | lib | none (library) | [`libs/command`](https://github.com/markc/mixos/tree/main/libs/command) | UI-free command registry, typed dispatch and executed journal. |
@@ -72,6 +71,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [toolkit](../toolkit/README.md) · [changelog](../toolkit/changelog.md) | lib | none (library) | [`libs/toolkit`](https://github.com/markc/mixos/tree/main/libs/toolkit) | The shared shell for MixOS egui applications, giving every app the same theme, fonts, icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive verbs. |
 | [toolsd](../toolsd/README.md) | service | server | [`services/toolsd`](https://github.com/markc/mixos/tree/main/services/toolsd) | Runs the tools webd's admin panel queues (whois, dig, traceroute, shwho) as an unprivileged drain, outside webd's sandbox. |
 | [webd](../webd/README.md) | service | server | [`services/webd`](https://github.com/markc/mixos/tree/main/services/webd) | Virtual hosts, CMS routes, embedded Mix handlers and ACME for the MixOS web service. |
+| [workshop](../workshop/README.md) | app | unclassified | [`apps/workshop`](https://github.com/markc/mixos/tree/main/apps/workshop) | Workshop is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body. |
 
 ## Packages
 
@@ -83,8 +83,6 @@ checked separately by the layering gate.
 |---|---|---|---|---|---|
 | [backdrop](https://github.com/markc/mixos/blob/main/apps/backdrop/Cargo.toml) | backdrop | app | desktop | none | 0.1.2 |
 | [wallpaper](https://github.com/markc/mixos/blob/main/apps/backdrop/crates/wallpaper/Cargo.toml) | backdrop | app | core | none | 0.1.2 |
-| [busviewer](https://github.com/markc/mixos/blob/main/apps/busviewer/Cargo.toml) | busviewer | app | desktop | public | 0.1.2 |
-| [inspector](https://github.com/markc/mixos/blob/main/apps/busviewer/crates/inspector/Cargo.toml) | busviewer | app | core | none | 0.1.2 |
 | [ced](https://github.com/markc/mixos/blob/main/apps/ced/Cargo.toml) | ced | app | desktop | public | 0.1.2 |
 | [documents](https://github.com/markc/mixos/blob/main/apps/ced/crates/documents/Cargo.toml) | ced | app | core | none | 0.1.2 |
 | [dopus](https://github.com/markc/mixos/blob/main/apps/dopus/Cargo.toml) | dopus | app | desktop | public | 0.1.2 |
@@ -100,6 +98,8 @@ checked separately by the layering gate.
 | [term](https://github.com/markc/mixos/blob/main/apps/term/Cargo.toml) | term | app | desktop | public | 0.4.0 |
 | [term-core](https://github.com/markc/mixos/blob/main/apps/term/crates/term-core/Cargo.toml) | term | app | core | none | 0.1.2 |
 | [term-render](https://github.com/markc/mixos/blob/main/apps/term/crates/term-render/Cargo.toml) | term | app | desktop | none | 0.1.2 |
+| [workshop](https://github.com/markc/mixos/blob/main/apps/workshop/Cargo.toml) | workshop | app | desktop | public | 0.1.2 |
+| [inspector](https://github.com/markc/mixos/blob/main/apps/workshop/crates/inspector/Cargo.toml) | workshop | app | core | none | 0.1.2 |
 | [mesh-sign](https://github.com/markc/mixos/blob/main/cli/mesh-sign/Cargo.toml) | mesh-sign | cli | core | none | 0.1.2 |
 | [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.117.0 |
 | [mixos-mcp](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/Cargo.toml) | mixos-mcp | cli | core | none | 0.1.2 |

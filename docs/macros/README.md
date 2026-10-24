@@ -143,6 +143,29 @@ print("Hello from " .. env("MIXOS_MACRO_APP"))
 The first `-- title:` in the leading comment header supplies the displayed
 title; otherwise the id is shown. Header reads are bounded to 8 KiB.
 
+Workshop scans the global tiers and uses `Roots::apps()` with the same
+per-app scan to discover every app's macros. Global user macros live directly
+in `~/.config/mixos/macros/`; built-ins live directly in
+`/opt/mixos/share/macros/`. Workshop's Session runs and creates global macros.
+App ids are scoped to their catalogue, so identical ids in different apps
+remain separate.
+
+A global macro can declare `-- target: any` or `-- target: ced, dopus` in
+its leading comment header. `Entry.targets` is absent, `Targets::Any`, or
+`Targets::List`. Empty, duplicate or malformed target headers produce a
+diagnostic and exclude the file. `Session::run_with(id, origin, target)`
+accepts an optional app component name and sets `MIXOS_MACRO_TARGET` only
+for an allowed choice. A disallowed choice returns `INVALID_ARGUMENT`
+before accepting a run. Without a choice the variable is removed from the
+child environment, including any inherited value. A header-free macro runs
+without a target and names its own services in its source.
+
+`Roots::read`, `write`, `remove` and `move_to` share root confinement and
+regular-file checks. Writes replace the resolved file atomically in its own
+directory. Remove and move operate on the catalogue path; built-in mutations
+and destination clashes are refused. Moving preserves the id; rescan both
+catalogues afterwards to recompute shadows.
+
 ## Library boundaries
 
 `libs/macros` is a core library with no egui dependency. It resolves roots,
@@ -156,7 +179,7 @@ the application layering gate.
 
 ## Bus verbs
 
-Email, BusViewer, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
+Email, Workshop, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
 same macro surface under their component prefix. `list`, `status` and
 `output` are read-only. `run`, `stop`, `reload` and `new` have the same
 authority as executing an app command; running a macro executes user code.

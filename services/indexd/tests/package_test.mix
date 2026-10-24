@@ -12,7 +12,7 @@ mkdir($case_dir .. "/bin", {parents:true})
 try
   copy($mix_bin, $case_dir .. "/bin/mix")
   copy($binary, $case_dir .. "/bin/indexd")
-  for $name in ["mixos-mcp", "noded", "hostd", "monitord", "maild", "editd", "portald", "settingsd", "backdrop", "busviewer", "ced", "compd", "dopus", "email", "monitor", "prefs", "screenshot", "term"]
+  for $name in ["mixos-mcp", "noded", "hostd", "monitord", "maild", "editd", "portald", "settingsd", "backdrop", "workshop", "ced", "compd", "dopus", "email", "monitor", "prefs", "screenshot", "term"]
     copy("/usr/bin/true", $case_dir .. "/bin/" .. $name)
   end
   run_argv_must([$mix_bin, $root .. "/tools/package.mix", "--release", $version,

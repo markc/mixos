@@ -18,7 +18,7 @@
 
 An app is two crates: an engine crate under `apps/<app>/crates/<name>` that
 knows nothing about egui, and the egui shell crate `apps/<app>`. The shell
-crate's `Cargo.toml` lists, as busviewer's does:
+crate's `Cargo.toml` lists, as workshop's does:
 
 ```toml
 [dependencies]

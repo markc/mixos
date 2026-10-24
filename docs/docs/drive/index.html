@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="How an agent drives a native MixOS app through Bus verbs, from the widget tree and injected input to window commands and captures, with BusViewer as the worked example.">
+    <meta name="description" content="How an agent drives a native MixOS app through Bus verbs, from the widget tree and injected input to window commands and captures, with Workshop as the worked example.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -224,7 +224,7 @@
                         <a href="#appwindow" class="toc-h3">&lt;app&gt;.window</a>
                         <a href="#appwindowstate" class="toc-h3">&lt;app&gt;.window.state</a>
                         <a href="#ordering">Ordering</a>
-                        <a href="#busviewer-the-worked-example">BusViewer: the worked example</a>
+                        <a href="#workshop-the-worked-example">Workshop: the worked example</a>
                         <a href="#reading" class="toc-h3">Reading</a>
                         <a href="#changing-state" class="toc-h3">Changing state</a>
                         <a href="#driving-it-from-mix" class="toc-h3">Driving it from Mix</a>
@@ -259,7 +259,7 @@ can do over the Bus. Every egui app built on the shared toolkit offers two
 sets of verbs:</p>
 <ul>
 <li><strong>Its own verbs</strong>, which read and change its state directly, such as
-BusViewer's <code>busviewer.filter</code> or <code>busviewer.call</code>. These are the
+Workshop's <code>workshop.filter</code> or <code>workshop.call</code>. These are the
 fastest and most precise way to work with an app.</li>
 <li><strong>The drive verbs</strong>, which are the same in every app and work the window
 the way a hand does: read the widget tree, click, type, press keys,
@@ -281,8 +281,8 @@ and a body naming the reason:</p>
 <tr><td><code>CAPTURE</code></td><td>A screenshot could not be taken or written.</td></tr>
 <tr><td><code>UNAVAILABLE</code></td><td>The app does not offer the drive verbs.</td></tr>
 </tbody></table>
-<p>An app's own verbs may add codes of their own; BusViewer's are listed
-<a href="#busviewer-the-worked-example">below</a>.</p>
+<p>An app's own verbs may add codes of their own; Workshop's are listed
+<a href="#workshop-the-worked-example">below</a>.</p>
 <h2 id="the-drive-verbs">The drive verbs</h2>
 <p>Coordinates and sizes are in points, egui's logical pixels: the same space
 for every verb, at any display scale.</p>
@@ -501,7 +501,7 @@ every request it has accepted gets an answer:</p>
 </ul>
 </li>
 </ul>
-<h2 id="busviewer-the-worked-example">BusViewer: the worked example</h2>
+<h2 id="workshop-the-worked-example">Workshop: the worked example</h2>
 <p>Native <code>&lt;app&gt;.commands</code> responses report <code>shortcut</code> and <code>more</code> using stored
 keymap chords, with modifiers in Ctrl, Alt, Shift order. Key names follow the
 keymaps grammar (<code>ArrowLeft</code> or <code>Left</code>, <code>=</code>, <code>-</code>, <code>/</code>), so reported chords can
@@ -509,15 +509,15 @@ be used in keymap overrides without translating display labels.</p>
 <p>Command execution returns <code>DENIED</code> for an authorisation refusal and
 <code>DISABLED</code> when the command cannot run in the current state. Authorisation
 is checked first.</p>
-<p>BusViewer browses the services and verbs on a node and calls one verb with
+<p>Workshop browses the services and verbs on a node and calls one verb with
 a JSON body. Everything in its window is also a Bus verb.</p>
 <h3 id="reading">Reading</h3>
 <table><thead><tr><th>Verb</th><th>Arguments</th><th>Answer</th></tr></thead><tbody>
-<tr><td><code>busviewer.ping</code></td><td></td><td><code>{schema, version}</code></td></tr>
-<tr><td><code>busviewer.info</code></td><td></td><td>the whole state: connection, discovery snapshot, selection, body, last reply, status, and the arranged UI (<code>ui</code>)</td></tr>
-<tr><td><code>busviewer.tree</code></td><td></td><td><code>{rows}</code>: the rows the tree shows, depth first, each with <code>key</code>, <code>kind</code>, <code>label</code>, <code>depth</code>, <code>expanded</code>, <code>selected</code> and its child count; verb rows add <code>selection</code>, error rows <code>error</code></td></tr>
-<tr><td><code>busviewer.reply</code></td><td></td><td><code>{text, value}</code>: the reply panel and the last reply</td></tr>
-<tr><td><code>busviewer.commands</code></td><td></td><td>every menu command with its label, shortcut, further chords (<code>more</code>, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (<code>settings.apply</code> <code>keymaps.busviewer.&lt;id&gt;</code>)</td></tr>
+<tr><td><code>workshop.ping</code></td><td></td><td><code>{schema, version}</code></td></tr>
+<tr><td><code>workshop.info</code></td><td></td><td>the whole state: connection, discovery snapshot, selection, body, last reply, status, and the arranged UI (<code>ui</code>)</td></tr>
+<tr><td><code>workshop.tree</code></td><td></td><td><code>{rows}</code>: the rows the tree shows, depth first, each with <code>key</code>, <code>kind</code>, <code>label</code>, <code>depth</code>, <code>expanded</code>, <code>selected</code> and its child count; verb rows add <code>selection</code>, error rows <code>error</code></td></tr>
+<tr><td><code>workshop.reply</code></td><td></td><td><code>{text, value}</code>: the reply panel and the last reply</td></tr>
+<tr><td><code>workshop.commands</code></td><td></td><td>every menu command with its label, shortcut, further chords (<code>more</code>, when it has any) and whether it is enabled now. The shortcuts are those in force: the desktop profile can rebind them (<code>settings.apply</code> <code>keymaps.workshop.&lt;id&gt;</code>)</td></tr>
 <tr><td><code>HELP</code>, <code>app.describe</code></td><td></td><td>every verb, with arguments</td></tr>
 </tbody></table>
 <p>A row's <code>kind</code> is <code>service</code>, <code>verb</code>, <code>error</code>, <code>peers</code>, <code>peer</code> or
@@ -525,34 +525,34 @@ a JSON body. Everything in its window is also a Bus verb.</p>
 <code>service:noded</code> or <code>verb:noded:noded.list</code>.</p>
 <h3 id="changing-state">Changing state</h3>
 <table><thead><tr><th>Verb</th><th>Arguments</th><th>Notes</th></tr></thead><tbody>
-<tr><td><code>busviewer.filter</code></td><td><code>text</code></td><td>Filters the tree, as typing in the search field does. Answers with the rows.</td></tr>
-<tr><td><code>busviewer.expand</code></td><td><code>key</code>, <code>open</code> (bool)</td><td>Opens or closes a row that has children.</td></tr>
-<tr><td><code>busviewer.select_row</code></td><td><code>key</code></td><td>Selects any row. A verb row also selects its verb.</td></tr>
-<tr><td><code>busviewer.select</code></td><td><code>service</code>, <code>verb</code></td><td>Selects an advertised verb.</td></tr>
-<tr><td><code>busviewer.body</code></td><td><code>text</code></td><td>Sets the JSON body (at most 65,536 bytes). Refused while a call is using the body.</td></tr>
-<tr><td><code>busviewer.split</code></td><td><code>value</code>, 0 to 1</td><td>The services pane's share of the window, kept between 0.2 and 0.65. The answer reports the value in effect, to 4 places.</td></tr>
-<tr><td><code>busviewer.dialog</code></td><td><code>open</code>: <code>"about"</code>, <code>"shortcuts"</code> or null</td><td>Opens a dialog, or closes the open one.</td></tr>
-<tr><td><code>busviewer.call</code></td><td><code>service</code>, <code>verb</code> and <code>body</code>, each optional</td><td>Calls the selected verb once, or the given one; <code>service</code> and <code>verb</code> go together. The answer is the reply: <code>{service, verb, request_body, rc, body}</code>. A transport failure is never retried: it answers return code 10 with <code>transport_error</code> and <code>outcome_unknown</code>.</td></tr>
-<tr><td><code>busviewer.theme</code></td><td><code>scheme</code>, <code>style</code>, <code>mode</code>, <code>decorations</code> and <code>caption_side</code>, each optional: a name, or null</td><td>Chooses the window's theme, in this window only. A present key sets that axis (null follows the session's), an absent one leaves it, and an unknown name is refused with <code>ARGUMENT</code>; nothing changes unless every axis is valid. Schemes: <code>ocean</code>, <code>crimson</code>, <code>stone</code>, <code>forest</code>, <code>sunset</code>, <code>mono</code>, <code>pro</code>, <code>studio</code>, <code>classic</code>; styles: <code>plain</code>, <code>pro</code>, <code>studio</code>, <code>classic</code>, or <code>own</code> for the scheme's own; modes: <code>light</code>, <code>dark</code>; decorations: <code>csd</code> (the app's title bar), <code>ssd</code> (the compositor's, with the menus in a menu-bar row); caption sides: <code>right</code>, <code>left</code>. The answer is <code>{scheme, style, mode, decorations, caption_side, effective: {…}}</code>: the choice, then what the window shows. Taken while a dialog is open.</td></tr>
-<tr><td><code>busviewer.execute</code></td><td><code>id</code></td><td>Runs one command, from the menus or the title bar: <code>file.refresh</code>, <code>file.quit</code>, <code>edit.format</code>, <code>edit.clear</code>, <code>edit.copy</code>, <code>bus.call</code>, <code>help.shortcuts</code>, <code>help.about</code>, <code>view.search</code>, <code>view.mode</code> (the light/dark switch), and View › Theme's choices <code>view.theme.&lt;scheme&gt;</code>, <code>view.theme.session</code>, <code>view.mode.light</code>, <code>view.mode.dark</code>, <code>view.mode.session</code>, <code>view.style.own</code>, <code>view.style.&lt;style&gt;</code>, <code>view.style.session</code>, <code>view.decorations.csd</code>, <code>view.decorations.ssd</code>, <code>view.captions.left</code>, <code>view.captions.right</code>. <code>busviewer.commands</code> lists them all, with each choice's <code>checked</code> tick.</td></tr>
-<tr><td><code>busviewer.refresh</code></td><td></td><td>Discovers services again.</td></tr>
-<tr><td><code>busviewer.show</code></td><td></td><td>Restores and focuses the window.</td></tr>
-<tr><td><code>busviewer.quit</code></td><td></td><td>Closes once idle.</td></tr>
+<tr><td><code>workshop.filter</code></td><td><code>text</code></td><td>Filters the tree, as typing in the search field does. Answers with the rows.</td></tr>
+<tr><td><code>workshop.expand</code></td><td><code>key</code>, <code>open</code> (bool)</td><td>Opens or closes a row that has children.</td></tr>
+<tr><td><code>workshop.select_row</code></td><td><code>key</code></td><td>Selects any row. A verb row also selects its verb.</td></tr>
+<tr><td><code>workshop.select</code></td><td><code>service</code>, <code>verb</code></td><td>Selects an advertised verb.</td></tr>
+<tr><td><code>workshop.body</code></td><td><code>text</code></td><td>Sets the JSON body (at most 65,536 bytes). Refused while a call is using the body.</td></tr>
+<tr><td><code>workshop.split</code></td><td><code>value</code>, 0 to 1</td><td>The services pane's share of the window, kept between 0.2 and 0.65. The answer reports the value in effect, to 4 places.</td></tr>
+<tr><td><code>workshop.dialog</code></td><td><code>open</code>: <code>"about"</code>, <code>"shortcuts"</code> or null</td><td>Opens a dialog, or closes the open one.</td></tr>
+<tr><td><code>workshop.call</code></td><td><code>service</code>, <code>verb</code> and <code>body</code>, each optional</td><td>Calls the selected verb once, or the given one; <code>service</code> and <code>verb</code> go together. The answer is the reply: <code>{service, verb, request_body, rc, body}</code>. A transport failure is never retried: it answers return code 10 with <code>transport_error</code> and <code>outcome_unknown</code>.</td></tr>
+<tr><td><code>workshop.theme</code></td><td><code>scheme</code>, <code>style</code>, <code>mode</code>, <code>decorations</code> and <code>caption_side</code>, each optional: a name, or null</td><td>Chooses the window's theme, in this window only. A present key sets that axis (null follows the session's), an absent one leaves it, and an unknown name is refused with <code>ARGUMENT</code>; nothing changes unless every axis is valid. Schemes: <code>ocean</code>, <code>crimson</code>, <code>stone</code>, <code>forest</code>, <code>sunset</code>, <code>mono</code>, <code>pro</code>, <code>studio</code>, <code>classic</code>; styles: <code>plain</code>, <code>pro</code>, <code>studio</code>, <code>classic</code>, or <code>own</code> for the scheme's own; modes: <code>light</code>, <code>dark</code>; decorations: <code>csd</code> (the app's title bar), <code>ssd</code> (the compositor's, with the menus in a menu-bar row); caption sides: <code>right</code>, <code>left</code>. The answer is <code>{scheme, style, mode, decorations, caption_side, effective: {…}}</code>: the choice, then what the window shows. Taken while a dialog is open.</td></tr>
+<tr><td><code>workshop.execute</code></td><td><code>id</code></td><td>Runs one command, from the menus or the title bar: <code>file.refresh</code>, <code>file.quit</code>, <code>edit.format</code>, <code>edit.clear</code>, <code>edit.copy</code>, <code>bus.call</code>, <code>help.shortcuts</code>, <code>help.about</code>, <code>view.search</code>, <code>view.mode</code> (the light/dark switch), and View › Theme's choices <code>view.theme.&lt;scheme&gt;</code>, <code>view.theme.session</code>, <code>view.mode.light</code>, <code>view.mode.dark</code>, <code>view.mode.session</code>, <code>view.style.own</code>, <code>view.style.&lt;style&gt;</code>, <code>view.style.session</code>, <code>view.decorations.csd</code>, <code>view.decorations.ssd</code>, <code>view.captions.left</code>, <code>view.captions.right</code>. <code>workshop.commands</code> lists them all, with each choice's <code>checked</code> tick.</td></tr>
+<tr><td><code>workshop.refresh</code></td><td></td><td>Discovers services again.</td></tr>
+<tr><td><code>workshop.show</code></td><td></td><td>Restores and focuses the window.</td></tr>
+<tr><td><code>workshop.quit</code></td><td></td><td>Closes once idle.</td></tr>
 </tbody></table>
 <p>While a dialog is open, the window takes no edits, so neither does the
 Bus: those verbs are refused with <code>BUSY</code> until the dialog is closed.
-BusViewer's own refusals are:</p>
+Workshop's own refusals are:</p>
 <ul>
 <li><code>BUSY</code>: a refresh or call is in flight, or a dialog is open;</li>
 <li><code>DISCONNECTED</code>: the node's broker is unreachable;</li>
 <li><code>ARGUMENT</code> and <code>UNKNOWN_VERB</code>, as above;</li>
-<li><code>UNKNOWN_COMMAND</code> and <code>DISABLED</code>, from <code>busviewer.execute</code>.</li>
+<li><code>UNKNOWN_COMMAND</code> and <code>DISABLED</code>, from <code>workshop.execute</code>.</li>
 </ul>
 <h3 id="driving-it-from-mix">Driving it from Mix</h3>
 <p>This script opens the Help menu, closes it again, filters the tree, and
 captures the window:</p>
-<pre><code class="language-mix">-- Open BusViewer's Help menu, close it, filter the tree and capture the window.
-$app = "busviewer"
+<pre><code class="language-mix">-- Open Workshop's Help menu, close it, filter the tree and capture the window.
+$app = "workshop"
 
 fn drive($verb, $args)
   $payload = json_encode($args)
@@ -563,18 +563,18 @@ fn drive($verb, $args)
   return if type($result) == "string" then json_parse($result) else $result end
 end
 
-$opened = drive("busviewer.ui.click", {label: "Help"})
+$opened = drive("workshop.ui.click", {label: "Help"})
 print "open menu: " .. json_encode($opened.menu)
-drive("busviewer.ui.key", {key: "Escape"})
-$rows = drive("busviewer.filter", {text: "settings"}).rows
+drive("workshop.ui.key", {key: "Escape"})
+$rows = drive("workshop.filter", {text: "settings"}).rows
 print to_string(len($rows)) .. " rows match"
-$shot = drive("busviewer.ui.capture", {name: "settings.png"})
+$shot = drive("workshop.ui.capture", {name: "settings.png"})
 print "capture: " .. $shot.path
 </code></pre>
 <p>Each <code>send</code> waits for its answer before the next one is sent. A longer
 scenario follows the same pattern: send a verb, check its return code,
 print the fields that matter, and stop at the first surprise. That is how
-the project's own driver checks a running BusViewer from end to end.</p>
+the project's own driver checks a running Workshop from end to end.</p>
 <h2 id="for-app-authors">For app authors</h2>
 <p>The drive verbs come from the toolkit's <code>drive</code> module, an egui plugin. It
 switches AccessKit on, keeps each frame's widget tree, and injects input
@@ -594,7 +594,7 @@ back while earlier input is still running.</li>
 before the Bus connection stops.</li>
 </ol>
 <p><code>drive::describe("&lt;app&gt;")</code> lists the verbs for <code>HELP</code> and <code>app.describe</code>.
-BusViewer's shell (<code>apps/busviewer/src/shell.rs</code>) is the reference wiring.</p>
+Workshop's shell (<code>apps/workshop/src/shell.rs</code>) is the reference wiring.</p>
         </article>
         <p class="doc-source"><a href="/docs/drive.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

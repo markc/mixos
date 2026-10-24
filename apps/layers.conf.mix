@@ -16,7 +16,7 @@ layers: {
   "command": 0,
   "macros": 0,
   "backdrop": 1,
-  "busviewer": 1,
+  "workshop": 1,
   "ced": 1,
   "dopus": 1,
   "monitor": 1,

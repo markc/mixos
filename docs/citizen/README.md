@@ -6,7 +6,7 @@ description: An app's supervised native Bus connection, shared by the MixOS apps
 # citizen
 
 An app's supervised native Bus connection, shared by the MixOS apps
-(BusViewer, [Prefs](../prefs/README.md)). Headless: no UI dependency.
+(Workshop, [Prefs](../prefs/README.md)). Headless: no UI dependency.
 
 - `start(app, service, url)`: register as `service` and receive
   `Delivery`s: commands for the app, `Changed` (service registration),
@@ -22,7 +22,7 @@ An app's supervised native Bus connection, shared by the MixOS apps
 - With the `testing` feature: `Handle::sink()`, a handle with no connection
   that logs its calls, replies and quit.
 
-Promoted from BusViewer's engine when Prefs became its second owner (see
+Promoted from Workshop's engine when Prefs became its second owner (see
 [AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) §2.2). Test
 with `cargo test -p citizen`.
 

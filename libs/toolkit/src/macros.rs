@@ -1347,6 +1347,7 @@ mod tests {
             title: "Wait".into(),
             tier: Tier::UserApp,
             shadows: vec![],
+            targets: None,
         };
         (temp, roots, entry)
     }
@@ -1634,6 +1635,7 @@ mod tests {
                         Tier::UserApp
                     },
                     shadows: vec![],
+            targets: None,
                 })
                 .collect(),
             diagnostics: vec![],
@@ -1856,6 +1858,7 @@ mod tests {
             path: source,
             tier: Tier::BuiltinApp,
             shadows: vec![],
+            targets: None,
         };
         let destination = folder.join("builtin.mix");
         let mut state = State::new("ced");
@@ -2303,6 +2306,7 @@ mod tests {
                 path: "wide.mix".into(),
                 tier: Tier::UserApp,
                 shadows: vec![],
+            targets: None,
             });
             state.engine.replace_catalogue(state.catalogue.clone());
         }
@@ -2483,6 +2487,7 @@ mod tests {
             tier: Tier::UserApp,
             path: format!("{id}.mix").into(),
             shadows: vec![],
+            targets: None,
         };
         runtime(&h).lock().unwrap().catalogue.entries = vec![entry("alpha")];
         {

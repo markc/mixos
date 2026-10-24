@@ -28,14 +28,14 @@ pub(crate) struct NativeObservation {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ServiceTarget {
-    /// Bus service name, for example "busviewer".
+    /// Bus service name, for example "workshop".
     service: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CommandInvocation {
-    /// Bus service name, for example "busviewer".
+    /// Bus service name, for example "workshop".
     service: String,
     /// Dotted command id from app_commands, for example "file.refresh".
     id: String,
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn explicit_targets_and_waits_are_bounded() {
-        assert!(exact_target("busviewer", "service").is_ok());
+        assert!(exact_target("workshop", "service").is_ok());
         for target in ["", " ", "app\n", "app\0"] {
             assert!(exact_target(target, "service").is_err());
         }
@@ -291,13 +291,13 @@ mod tests {
     fn semantic_inputs_reject_unknown_fields() {
         assert!(
             serde_json::from_value::<ServiceTarget>(json!({
-                "service":"busviewer", "id":"file.refresh"
+                "service":"workshop", "id":"file.refresh"
             }))
             .is_err()
         );
         assert!(
             serde_json::from_value::<CommandInvocation>(json!({
-                "service":"busviewer", "id":"file.refresh", "focus":true
+                "service":"workshop", "id":"file.refresh", "focus":true
             }))
             .is_err()
         );
@@ -306,17 +306,17 @@ mod tests {
     #[test]
     fn command_invocation_distinguishes_empty_params_from_absent_or_null() {
         let absent: CommandInvocation = serde_json::from_value(json!({
-            "service":"busviewer", "id":"file.refresh"
+            "service":"workshop", "id":"file.refresh"
         }))
         .unwrap();
         assert_eq!(absent.params, None);
         let empty: CommandInvocation = serde_json::from_value(json!({
-            "service":"busviewer", "id":"file.refresh", "params":{}
+            "service":"workshop", "id":"file.refresh", "params":{}
         }))
         .unwrap();
         assert_eq!(empty.params, Some(serde_json::Map::new()));
         let null: CommandInvocation = serde_json::from_value(json!({
-            "service":"busviewer", "id":"file.refresh", "params":null
+            "service":"workshop", "id":"file.refresh", "params":null
         }))
         .unwrap();
         assert_eq!(null.params, None);

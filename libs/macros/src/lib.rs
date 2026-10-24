@@ -6,6 +6,6 @@ mod runner;
 pub mod session;
 pub mod verbs;
 
-pub use catalogue::{Catalogue, Diagnostic, Entry, Roots, Tier, valid_id};
+pub use catalogue::{Catalogue, Diagnostic, Entry, Roots, Targets, Tier, valid_id};
 pub use runner::{OUTPUT_LIMIT, Output, Runner, Status};
 pub use session::Session;

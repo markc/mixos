@@ -6,7 +6,7 @@
 //! [`INTERVAL`]: each tick asks the watched node's monitord again, and the
 //! window repaints when the answers land.
 //!
-//! **Ordering is the contract**, as in BusViewer's shell: each event is
+//! **Ordering is the contract**, as in Workshop's shell: each event is
 //! applied and its effects [`settle`]d before the next is read; within a
 //! frame, edits are applied before commands ([`apply_ui`]); Bus commands
 //! wait behind window input accepted before them (the toolkit drive layer).

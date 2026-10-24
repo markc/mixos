@@ -82,6 +82,14 @@ impl Runner {
     }
 
     pub fn start(&mut self, roots: &Roots, app: &str, entry: &Entry) -> io::Result<()> {
+        self.start_with(roots, app, entry, None)
+    }
+
+    pub fn start_with(&mut self, roots: &Roots, app: &str, entry: &Entry, target: Option<&str>) -> io::Result<()> {
+        if target.is_some_and(|target| entry.targets.as_ref().is_none_or(|allowed| !allowed.allows(target))) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "macro target is not allowed"));
+        }
+        let target = target.map(str::to_owned);
         if self.status() == Status::Running {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
@@ -102,6 +110,8 @@ impl Runner {
             .name("macro-runner".into())
             .spawn(move || {
                 let mut command = Command::new(&roots.mix);
+                command.env_remove("MIXOS_MACRO_TARGET");
+                if let Some(target) = target { command.env("MIXOS_MACRO_TARGET", target); }
                 command
                     .arg(&entry.path)
                     .current_dir(&roots.home)
@@ -320,6 +330,7 @@ mod tests {
             tier: Tier::UserApp,
             path,
             shadows: vec![],
+            targets: None,
         };
         let mut runner = Runner::default();
         let status = runner.status.clone();

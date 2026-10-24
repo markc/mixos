@@ -1002,7 +1002,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "busviewer"
+name = "workshop"
 version = "0.1.2"
 dependencies = [
  "buildinfo",

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! One catalogue and runner per application process, shared by all callers.
 use crate::verbs::Refusal;
-use crate::{Catalogue, Output, Roots, Runner, Status};
+use crate::{Catalogue, Output, Roots, Runner, Status, Tier};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
@@ -144,7 +144,8 @@ impl Session {
                 state.app.clone(),
             )
         };
-        let path = roots.create_from_title(&app, title).map_err(|error| {
+        let tier = if app == "workshop" { Tier::UserGlobal } else { Tier::UserApp };
+        let path = roots.create_from_title_in(&app, tier, title).map_err(|error| {
             Refusal::new(
                 if error.kind() == std::io::ErrorKind::InvalidInput {
                     "INVALID_ARGUMENT"
@@ -184,7 +185,8 @@ impl Session {
             )
         };
         let _scan = scan.lock().unwrap();
-        let catalogue = Catalogue::scan(&roots, &app).map_err(|e| Refusal::new("INTERNAL", e))?;
+        let catalogue = if app == "workshop" { Catalogue::scan_globals(&roots) } else { Catalogue::scan(&roots, &app) }
+            .map_err(|e| Refusal::new("INTERNAL", e))?;
         self.0.lock().unwrap().catalogue = Some(catalogue.clone());
         drop(_scan);
         self.changed();
@@ -196,6 +198,10 @@ impl Session {
     /// run gets exactly one finish callback, including a child spawn failure
     /// inside the manager, which happens after acceptance.
     pub fn run(&self, id: &str, origin: &str) -> Result<Value, Refusal> {
+        self.run_with(id, origin, None)
+    }
+
+    pub fn run_with(&self, id: &str, origin: &str, target: Option<&str>) -> Result<Value, Refusal> {
         let mut state = self.0.lock().unwrap();
         if state.active {
             return Err(Refusal::new("BUSY", "a macro is already running"));
@@ -206,6 +212,9 @@ impl Session {
             .and_then(|c| c.entries.iter().find(|e| e.id == id))
             .cloned()
             .ok_or_else(|| Refusal::new("NOT_FOUND", "unknown macro id"))?;
+        if target.is_some_and(|target| entry.targets.as_ref().is_none_or(|allowed| !allowed.allows(target))) {
+            return Err(Refusal::new("INVALID_ARGUMENT", "macro target is not allowed"));
+        }
         let roots = state
             .roots
             .clone()
@@ -242,7 +251,7 @@ impl Session {
             Session(inner).changed();
         })));
         let app = state.app.clone();
-        if let Err(error) = state.runner.start(&roots, &app, &entry) {
+        if let Err(error) = state.runner.start_with(&roots, &app, &entry, target) {
             state.active = false;
             state.run = previous_run;
             state.identity = previous_identity;

@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Desktop Entry]
+Type=Application
+Name=Workshop
+Comment=Browse and call MixOS Bus services
+Exec=/opt/mixos/bin/workshop
+TryExec=/opt/mixos/bin/workshop
+Icon=dev.mixos.workshop-symbolic
+Terminal=false
+Categories=Development;System;
+StartupWMClass=dev.mixos.workshop

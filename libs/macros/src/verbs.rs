@@ -131,7 +131,8 @@ fn defer(session: &Session, work: impl FnOnce(Session) -> Answer + Send + 'stati
 fn list(catalogue: Catalogue) -> Value {
     json!({"scanned":true,"macros":catalogue.entries.iter().map(|e| json!({
         "id":e.id,"title":e.title,"tier":e.tier.as_str(),"path":e.path,
-        "shadows":e.shadows.iter().map(|t| t.as_str()).collect::<Vec<_>>()
+        "shadows":e.shadows.iter().map(|t| t.as_str()).collect::<Vec<_>>(),
+        "targets":match &e.targets { None => Value::Null, Some(crate::Targets::Any) => json!("any"), Some(crate::Targets::List(apps)) => json!(apps) }
     })).collect::<Vec<_>>(),"diagnostics":catalogue.diagnostics.iter().map(|d|
         json!({"path":d.path,"message":d.message})).collect::<Vec<_>>()})
 }

@@ -235,7 +235,7 @@
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="citizen">citizen</h1>
 <p>An app's supervised native Bus connection, shared by the MixOS apps
-(BusViewer, <a href="/prefs/">Prefs</a>). Headless: no UI dependency.</p>
+(Workshop, <a href="/prefs/">Prefs</a>). Headless: no UI dependency.</p>
 <ul>
 <li><code>start(app, service, url)</code>: register as <code>service</code> and receive
 <code>Delivery</code>s: commands for the app, <code>Changed</code> (service registration),
@@ -251,7 +251,7 @@ through <a href="/compd/">compd</a>.</li>
 <li>With the <code>testing</code> feature: <code>Handle::sink()</code>, a handle with no connection
 that logs its calls, replies and quit.</li>
 </ul>
-<p>Promoted from BusViewer's engine when Prefs became its second owner (see
+<p>Promoted from Workshop's engine when Prefs became its second owner (see
 <a href="https://github.com/markc/mixos/blob/main/AGENTS.md">AGENTS.md</a> §2.2). Test
 with <code>cargo test -p citizen</code>.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/libs/citizen"><code>libs/citizen</code></a>.</p>

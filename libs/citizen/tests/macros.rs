@@ -47,7 +47,7 @@ fn macro_status_is_served_without_a_ui_dispatch_or_polling() {
         .unwrap();
     for app in [
         "email",
-        "busviewer",
+        "workshop",
         "monitor",
         "prefs",
         "screenshot",

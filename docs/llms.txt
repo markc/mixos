@@ -68,7 +68,6 @@ One line per component with a page: kind, then install profiles. The
   - [bridged — changelog](https://mixos.dev/bridged/changelog.md): Release notes of the bridged component, mirrored from services/bridged/CHANGELOG.md.
 - [buildinfo](https://mixos.dev/buildinfo/README.md): lib; profiles: none (library). Compile-time build provenance for MixOS binaries, and the --version contract every binary answers.
 - [bus](https://mixos.dev/bus/README.md): lib; profiles: none (library). The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts.
-- [busviewer](https://mixos.dev/busviewer/README.md): app; profiles: unclassified. BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
 - [ced](https://mixos.dev/ced/README.md): app; profiles: unclassified. The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [citizen](https://mixos.dev/citizen/README.md): lib; profiles: none (library). An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore.
 - [command](https://mixos.dev/command/README.md): lib; profiles: none (library). UI-free command registry, typed dispatch and executed journal.
@@ -181,6 +180,7 @@ One line per component with a page: kind, then install profiles. The
   - [toolkit — changelog](https://mixos.dev/toolkit/changelog.md): Release notes of the toolkit component, mirrored from libs/toolkit/CHANGELOG.md.
 - [toolsd](https://mixos.dev/toolsd/README.md): service; profiles: server. Runs the tools webd's admin panel queues (whois, dig, traceroute, shwho) as an unprivileged drain, outside webd's sandbox.
 - [webd](https://mixos.dev/webd/README.md): service; profiles: server. Virtual hosts, CMS routes, embedded Mix handlers and ACME for the MixOS web service.
+- [workshop](https://mixos.dev/workshop/README.md): app; profiles: unclassified. Workshop is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
 
 ## Docs
 
@@ -188,7 +188,7 @@ One line per component with a page: kind, then install profiles. The
 
 - [Docs](https://mixos.dev/docs/README.md): Guides, indexes, decision records and specifications for MixOS; every component's own documentation is at mixos.dev/<component>/.
 - [Try it beside your desktop](https://mixos.dev/docs/try.md): How MixOS runs as a small signed systemd-nspawn image on its own virtual terminal, next to the Linux desktop you already use, with native GPU, input and audio.
-- [Driving apps over the Bus](https://mixos.dev/docs/drive.md): How an agent drives a native MixOS app through Bus verbs, from the widget tree and injected input to window commands and captures, with BusViewer as the worked example.
+- [Driving apps over the Bus](https://mixos.dev/docs/drive.md): How an agent drives a native MixOS app through Bus verbs, from the widget tree and injected input to window commands and captures, with Workshop as the worked example.
 
 ### Indexes
 

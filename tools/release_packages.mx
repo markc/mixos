@@ -12,7 +12,7 @@
     hostd: "hostd",
     monitord: "monitord",
     backdrop: "backdrop",
-    busviewer: "busviewer",
+    workshop: "workshop",
     ced: "ced",
     compd: "compd",
     dopus: "dopus",
@@ -25,6 +25,6 @@
   },
   packages: {
     "mixos-server": ["mix", "mixos-mcp", "noded", "hostd", "monitord", "maild"],
-    "mixos-desktop": ["mix", "mixos-mcp", "noded", "hostd", "monitord", "editd", "portald", "settingsd", "backdrop", "busviewer", "ced", "compd", "dopus", "email", "monitor", "prefs", "screenshot", "term", "indexd"]
+    "mixos-desktop": ["mix", "mixos-mcp", "noded", "hostd", "monitord", "editd", "portald", "settingsd", "backdrop", "workshop", "ced", "compd", "dopus", "email", "monitor", "prefs", "screenshot", "term", "indexd"]
   }
 }

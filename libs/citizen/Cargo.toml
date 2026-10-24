@@ -1,7 +1,7 @@
 # citizen: an app's supervised Bus connection — registration, commands in,
 # replies and calls out, a drained shutdown, single-instance activation and
 # compd window activation. Headless; shared by the apps (AGENTS.md §2.2:
-# promoted from BusViewer's engine when Prefs became its second owner).
+# promoted from Workshop's engine when Prefs became its second owner).
 [package]
 name = "citizen"
 description = "An app's supervised Bus connection: commands, replies, calls, drained shutdown, activation"
