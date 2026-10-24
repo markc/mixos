@@ -115,7 +115,7 @@ pub fn show<T: AsRef<str>>(
         .height(crate::chrome::Chrome::of(ui.ctx()).style.combo_list_height as f32)
         .icon(chevron);
     if let Some(width) = width {
-        combo = combo.width(width);
+        combo = combo.width(width).truncate();
     }
     let mut response = combo
         .show_ui(ui, |ui| {

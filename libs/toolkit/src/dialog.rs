@@ -248,7 +248,11 @@ impl Dialog {
                     + Vec2::new(0.0, tokens.dialog_centre_drop as f32)
             }) + title_drag;
             let max = (screen.max - rect.size()).max(screen.min);
-            place.at = Some(at.clamp(screen.min, max));
+            let next = at.clamp(screen.min, max);
+            if place.at != Some(next) {
+                ctx.request_repaint();
+            }
+            place.at = Some(next);
         }
         place.shown = true;
         ctx.data_mut(|d| d.insert_temp(id, place));

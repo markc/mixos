@@ -496,11 +496,18 @@ fn the_keyboard_enters_a_submenu_scrolled_out_of_view() {
 
 #[test]
 fn a_submenu_closes_when_its_row_scrolls_out_of_view() {
-    let mut h = fixture::harness(
-        Harness::builder().with_size(egui::vec2(900.0, 210.0)),
-        &fixture::theme(Scheme::Pro, Mode::Light),
-    );
+    let mut h = short_window(Scheme::Pro);
     open_file(&mut h);
+    // Reveal the whole parent row before opening its submenu. Larger text
+    // puts it partly below this deliberately short viewport on first open.
+    h.hover_at(h.get_by_label("New…").rect().center());
+    h.event(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -40.0),
+        phase: egui::TouchPhase::Move,
+        modifiers: Modifiers::NONE,
+    });
+    h.run_steps(30);
     assert!(
         h.ctx
             .content_rect()

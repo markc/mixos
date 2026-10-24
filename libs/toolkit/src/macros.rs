@@ -798,11 +798,14 @@ impl State {
                         ui.label(own("macros-unsaved"));
                     }
                 });
-                ui.add(egui::Label::new(
+                ui.add(
+                    egui::Label::new(
                         doc.path()
                             .map(|p| p.display().to_string())
                             .unwrap_or_default(),
-                    ).wrap());
+                    )
+                    .wrap(),
+                );
                 let palette = ctx
                     .data(|d| {
                         d.get_temp::<editor::Palette>(egui::Id::new("toolkit.editor-palette"))
