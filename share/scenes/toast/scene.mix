@@ -3,7 +3,7 @@ scene: 1
 name: toast
 citizen: scene-toast
 window: {"chrome":false,"h":132,"kind":"toast","title":"Notification","w":360}
-model: {"app":"","body":"","has_body":false,"lines":["","","","","",""],"line_shown":[false,false,false,false,false,false],"id":0,"labels":["","","",""],"more":"","shown":[false,false,false,false],"summary":""}
+model: {"app":"","body":"","has_body":false,"lines":["","","","","",""],"line_shown":[false,false,false,false,false,false],"id":0,"labels":["","","",""],"more":"","shown":[false,false,false,false],"summary":"","summary_lines":["","",""],"summary_shown":[false,false,false]}
 ---
 ```mix
 root: {"background":"#2a2e32","children":["card"],"fill":true,"padding":14,"radius":10,"widget":"row"}
@@ -13,7 +13,10 @@ t_app: {"color":"#a1a9b1","elide":true,"size":11,"text":"= $model.app","widget":
 t_more: {"color":"#6e7680","size":11,"text":"= $model.more","widget":"text"}
 head_fill: {"widget":"spacer"}
 t_close: {"label":"×","on_click":"toast.dismiss","widget":"button"}
-t_sum: {"bold":true,"color":"#fcfcfc","elide":true,"fill":true,"size":14,"text":"= $model.summary","widget":"text"}
+t_sum: {"children":["s_l0","s_l1","s_l2"],"gap":2,"widget":"column"}
+s_l0: {"bold":true,"color":"#fcfcfc","elide":true,"fill":true,"hidden":"= not $model.summary_shown[0]","size":14,"text":"= $model.summary_lines[0]","widget":"text"}
+s_l1: {"bold":true,"color":"#fcfcfc","elide":true,"fill":true,"hidden":"= not $model.summary_shown[1]","size":14,"text":"= $model.summary_lines[1]","widget":"text"}
+s_l2: {"bold":true,"color":"#fcfcfc","elide":true,"fill":true,"hidden":"= not $model.summary_shown[2]","size":14,"text":"= $model.summary_lines[2]","widget":"text"}
 t_body: {"children":["t_l0","t_l1","t_l2","t_l3","t_l4","t_l5"],"gap":2,"hidden":"= not $model.has_body","widget":"column"}
 t_l0: {"color":"#c8ced4","elide":true,"fill":true,"hidden":"= not $model.line_shown[0]","size":12,"text":"= $model.lines[0]","widget":"text"}
 t_l1: {"color":"#c8ced4","elide":true,"fill":true,"hidden":"= not $model.line_shown[1]","size":12,"text":"= $model.lines[1]","widget":"text"}

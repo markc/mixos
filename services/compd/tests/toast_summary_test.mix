@@ -1,0 +1,34 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Test the shipped behaviour's pure title/body model without a live desktop.
+$root = realpath(dirname(realpath($0)) .. "/../../..")
+$source = read_file($root .. "/share/scenes/toast/behaviour.mix")
+$pure = "$LINE_CHARS = " .. before(after($source, "$LINE_CHARS = "), "\nfn refresh()")
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/toast-summary.XXXXXXXX"]))
+$checks = '
+fn check($ok)
+  if not $ok then raise("TOAST_TEST", "title wrapping regression") end
+end
+$note = {id: 28, summary: "Title Title Title Title Title Title Title Title Title Title Title Title Title Title Title Title Title Title Title Title Title Title Title Title", body: "Original body", actions: [{label: "Got it"}]}
+$m = model_of($note, 0)
+check($m.summary == $note.summary and $m.body == $note.body)
+check($m.summary_count == 3 and ends_with($m.summary_lines[2], "…"))
+for $l in $m.summary_lines
+  check(len($l) <= 38)
+end
+check(height_of($m) == 162)
+$m = model_of({id: 1, summary: "Short title", body: "", actions: []}, 0)
+check($m.summary_count == 1 and $m.summary_lines[0] == "Short title")
+check(not $m.summary_shown[1] and height_of($m) == 64)
+$m = model_of({id: 1, summary: "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW", body: "", actions: []}, 0)
+check($m.summary_count == 3 and len($m.summary_lines[2]) <= 38)
+check(ends_with($m.summary_lines[2], "…"))
+print("toast summary: OK")
+'
+try
+  write_file($tmp .. "/check.mix", $pure .. $checks)
+  $result = run_argv(["/opt/mixos/bin/mix", $tmp .. "/check.mix"])
+  print($result.stdout)
+  if not $result.ok then raise("TOAST_TEST", $result.stderr) end
+finally
+  run_argv_must(["rm", "-r", $tmp])
+end
