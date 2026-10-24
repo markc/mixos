@@ -85,15 +85,17 @@ fn fonts_studio_dark() {
 }
 
 #[test]
-fn size_and_motion_studio_dark() {
-    for (section, name) in [
-        (Section::Size, "size_studio_dark"),
-        (Section::Motion, "motion_studio_dark"),
-    ] {
-        let mut e = appearance_engine();
-        e.set_section(section);
-        draw(chrome(Scheme::Studio, Mode::Dark), name, e);
-    }
+fn size_studio_dark() {
+    let mut e = appearance_engine();
+    e.set_section(Section::Size);
+    draw(chrome(Scheme::Studio, Mode::Dark), "size_studio_dark", e);
+}
+
+#[test]
+fn motion_studio_dark() {
+    let mut e = appearance_engine();
+    e.set_section(Section::Motion);
+    draw(chrome(Scheme::Studio, Mode::Dark), "motion_studio_dark", e);
 }
 
 #[test]
