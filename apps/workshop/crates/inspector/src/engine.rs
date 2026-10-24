@@ -1087,7 +1087,14 @@ impl Engine {
                     "children":row.children.len(),"selected":engine.ui.row_key.as_deref() == Some(row.key.as_str())});
                 match &row.kind {
                     RowKind::Node(name) => {
-                        entry["error"] = json!(engine.snapshot.nodes.iter().find(|node| node.name == *name).and_then(|node| node.error.as_ref()));
+                        entry["error"] = json!(
+                            engine
+                                .snapshot
+                                .nodes
+                                .iter()
+                                .find(|node| node.name == *name)
+                                .and_then(|node| node.error.as_ref())
+                        );
                     }
                     RowKind::Service(name) => {
                         entry["identity"] = json!(engine.snapshot.identities.get(name))
@@ -1108,7 +1115,13 @@ impl Engine {
     }
 
     pub fn node_label(&self, name: &str) -> String {
-        match self.snapshot.nodes.iter().find(|node| node.name == name).and_then(|node| node.error.as_ref()) {
+        match self
+            .snapshot
+            .nodes
+            .iter()
+            .find(|node| node.name == name)
+            .and_then(|node| node.error.as_ref())
+        {
             Some(error) => format!("{name} — {}: {error}", self.label("unreachable")),
             None => name.to_owned(),
         }
@@ -1129,7 +1142,10 @@ impl Engine {
         if expected != ticket {
             return;
         }
-        let finished = snapshot.progress.as_ref().is_none_or(|progress| progress.finished);
+        let finished = snapshot
+            .progress
+            .as_ref()
+            .is_none_or(|progress| progress.finished);
         if finished {
             self.discovery = None;
         }
@@ -1146,11 +1162,12 @@ impl Engine {
             }
             self.snapshot = snapshot;
         }
-        let vanished = finished && self.ui.selected.as_ref().is_some_and(|target| {
-            self.snapshot.error.is_none()
-                && !matches!(self.snapshot.services.get(&target.service), Some(Err(_)))
-                && self.snapshot.verb(target).is_none()
-        });
+        let vanished = finished
+            && self.ui.selected.as_ref().is_some_and(|target| {
+                self.snapshot.error.is_none()
+                    && !matches!(self.snapshot.services.get(&target.service), Some(Err(_)))
+                    && self.snapshot.verb(target).is_none()
+            });
         if vanished {
             self.ui.selected = None;
             self.ui.row_key = None;
@@ -1160,11 +1177,20 @@ impl Engine {
         } else if let Some(error) = &self.snapshot.error {
             format!("{}: {error}", self.label("discovery-failed"))
         } else if let Some(progress) = &self.snapshot.progress {
-            format!("{} {} {} {}{}, {} {}",
-                progress.completed, self.label("of"), progress.total,
-                self.label("nodes"), if finished { "" } else { "…" },
-                self.snapshot.nodes.iter().filter(|node| node.error.is_some()).count(),
-                self.label("unreachable"))
+            format!(
+                "{} {} {} {}{}, {} {}",
+                progress.completed,
+                self.label("of"),
+                progress.total,
+                self.label("nodes"),
+                if finished { "" } else { "…" },
+                self.snapshot
+                    .nodes
+                    .iter()
+                    .filter(|node| node.error.is_some())
+                    .count(),
+                self.label("unreachable")
+            )
         } else {
             format!(
                 "{} — {} {} · {} {} · {} {}",
@@ -1177,7 +1203,9 @@ impl Engine {
                 self.label("descriptions-failed")
             )
         };
-        if !finished { return; }
+        if !finished {
+            return;
+        }
         if let Some(id) = reply {
             let rc = if self.snapshot.error.is_some() { 10 } else { 0 };
             self.effects.push(Effect::Reply {

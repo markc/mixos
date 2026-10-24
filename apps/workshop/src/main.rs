@@ -66,10 +66,18 @@ fn run(settings: &Settings) -> Result<(), String> {
         let ctx = egui::Context::default();
         let logic_thread = std::thread::current();
         ctx.set_request_repaint_callback(move |_| logic_thread.unpark());
-        let mut shell = Shell::new(ctx.clone(), theme, handle.clone(), deliveries, settings.comp.clone())?;
+        let mut shell = Shell::new(
+            ctx.clone(),
+            theme,
+            handle.clone(),
+            deliveries,
+            settings.comp.clone(),
+        )?;
         loop {
             let _ = ctx.run(egui::RawInput::default(), |ctx| shell.logic(ctx));
-            if shell.exiting() { break; }
+            if shell.exiting() {
+                break;
+            }
             std::thread::park();
         }
         drop(shell);

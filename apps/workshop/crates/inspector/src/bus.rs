@@ -38,12 +38,20 @@ pub async fn show(handle: Handle, comp: String) -> Result<Value, String> {
 }
 
 async fn json_call(handle: &Handle, service: &str, verb: &str) -> Result<Value, String> {
-    let reply = tokio::time::timeout(DISCOVERY_CALL_BUDGET, handle
-        .raw_within(service, verb, String::new(), DISCOVERY_CALL_BUDGET))
-        .await.map_err(|_| format!("{service} {verb}: deadline exceeded (3 s)"))?
-        .map_err(|e| e.to_string())?;
+    let reply = tokio::time::timeout(
+        DISCOVERY_CALL_BUDGET,
+        handle.raw_within(service, verb, String::new(), DISCOVERY_CALL_BUDGET),
+    )
+    .await
+    .map_err(|_| format!("{service} {verb}: deadline exceeded (3 s)"))?
+    .map_err(|e| e.to_string())?;
     if reply.rc >= 10 {
-        return Err(format!("rc = {}: {} {}", reply.rc, reply.error.unwrap_or_default(), reply.body));
+        return Err(format!(
+            "rc = {}: {} {}",
+            reply.rc,
+            reply.error.unwrap_or_default(),
+            reply.body
+        ));
     }
     serde_json::from_str(&reply.body).map_err(|e| e.to_string())
 }
@@ -66,36 +74,62 @@ pub const DISCOVERY_CONCURRENCY: usize = 8;
 
 async fn node_snapshot(handle: &Handle, name: String, local: bool) -> crate::model::Snapshot {
     use crate::model::{Node, Snapshot};
-    let broker = if local { "noded".to_owned() } else { format!("noded.{name}.bus") };
+    let broker = if local {
+        "noded".to_owned()
+    } else {
+        format!("noded.{name}.bus")
+    };
     let (info, listed) = futures::join!(
         json_call(handle, &broker, "noded.info"),
         json_call(handle, &broker, "noded.list")
     );
-    let mut node = Node { name, local, ..Default::default() };
+    let mut node = Node {
+        name,
+        local,
+        ..Default::default()
+    };
     match info {
         Ok(info) => {
             if local {
-                node.name = info.get("name").or_else(|| info.get("node"))
-                    .and_then(Value::as_str).unwrap_or("local").to_owned();
+                node.name = info
+                    .get("name")
+                    .or_else(|| info.get("node"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("local")
+                    .to_owned();
             }
             node.info = info;
         }
         Err(error) => node.error = Some(format!("noded.info: {error}")),
     }
     let mut snapshot = Snapshot::default();
-    match listed.and_then(|value| serde_json::from_value::<Vec<bus::ServiceInfo>>(value).map_err(|e| e.to_string())) {
+    match listed.and_then(|value| {
+        serde_json::from_value::<Vec<bus::ServiceInfo>>(value).map_err(|e| e.to_string())
+    }) {
         Ok(listed) => {
             for identity in listed {
-                let route = if local { identity.name.clone() } else { format!("{}.{name}.bus", identity.name, name = node.name) };
+                let route = if local {
+                    identity.name.clone()
+                } else {
+                    format!("{}.{name}.bus", identity.name, name = node.name)
+                };
                 node.services.push(route.clone());
                 snapshot.identities.insert(route, identity);
             }
-            if !node.services.contains(&broker) { node.services.push(broker.clone()); }
-            if let Some(identity) = node.info.get("noded").and_then(|value| serde_json::from_value(value.clone()).ok()) {
+            if !node.services.contains(&broker) {
+                node.services.push(broker.clone());
+            }
+            if let Some(identity) = node
+                .info
+                .get("noded")
+                .and_then(|value| serde_json::from_value(value.clone()).ok())
+            {
                 snapshot.identities.insert(broker, identity);
             }
             // Identity and membership are usable before descriptions finish.
-            for route in &node.services { snapshot.services.insert(route.clone(), Ok(Vec::new())); }
+            for route in &node.services {
+                snapshot.services.insert(route.clone(), Ok(Vec::new()));
+            }
         }
         Err(error) => node.error = Some(format!("noded.list: {error}")),
     }
@@ -108,7 +142,12 @@ enum Update {
     Node(crate::model::Snapshot, bool),
 }
 
-async fn discover_node(handle: Handle, name: String, local: bool, tx: futures::channel::mpsc::UnboundedSender<Update>) {
+async fn discover_node(
+    handle: Handle,
+    name: String,
+    local: bool,
+    tx: futures::channel::mpsc::UnboundedSender<Update>,
+) {
     use futures::{StreamExt, stream};
     let mut snapshot = node_snapshot(&handle, name, local).await;
     let _ = tx.unbounded_send(Update::Node(snapshot.clone(), false));
@@ -116,8 +155,13 @@ async fn discover_node(handle: Handle, name: String, local: bool, tx: futures::c
     // node slot forever. Each individual read also has the call deadline.
     let descriptions = stream::iter(snapshot.nodes[0].services.iter().cloned().map(|name| {
         let handle = handle.clone();
-        async move { let result = describe(&handle, &name).await; (name, result) }
-    })).buffer_unordered(DISCOVERY_CONCURRENCY).collect::<Vec<_>>();
+        async move {
+            let result = describe(&handle, &name).await;
+            (name, result)
+        }
+    }))
+    .buffer_unordered(DISCOVERY_CONCURRENCY)
+    .collect::<Vec<_>>();
     match tokio::time::timeout(DISCOVERY_CALL_BUDGET, descriptions).await {
         Ok(results) => snapshot.services.extend(results),
         Err(_) => {
@@ -131,42 +175,71 @@ async fn discover_node(handle: Handle, name: String, local: bool, tx: futures::c
 
 /// Publish local membership immediately, then remote results as they arrive.
 /// Local discovery owns a separate slot; remote calls can never starve it.
-pub async fn discover_incremental(handle: Handle, mut changed: impl FnMut(crate::model::Snapshot)) -> crate::model::Snapshot {
-    use futures::{StreamExt, stream};
+pub async fn discover_incremental(
+    handle: Handle,
+    mut changed: impl FnMut(crate::model::Snapshot),
+) -> crate::model::Snapshot {
     use crate::model::{Progress, Snapshot};
+    use futures::{StreamExt, stream};
     let (tx, mut rx) = futures::channel::mpsc::unbounded();
     let local = discover_node(handle.clone(), "local".into(), true, tx.clone());
     let remote_tx = tx.clone();
     let remote = async move {
         let tx = remote_tx;
-        let peers = json_call(&handle, "noded", "noded.peers").await.map(|value| crate::model::peers(&value));
+        let peers = json_call(&handle, "noded", "noded.peers")
+            .await
+            .map(|value| crate::model::peers(&value));
         let names = peers.clone().unwrap_or_default();
         let _ = tx.unbounded_send(Update::Peers(peers));
-        stream::iter(names.into_iter().map(|name| discover_node(handle.clone(), name, false, tx.clone())))
-            .buffer_unordered(DISCOVERY_CONCURRENCY).collect::<Vec<_>>().await;
+        stream::iter(
+            names
+                .into_iter()
+                .map(|name| discover_node(handle.clone(), name, false, tx.clone())),
+        )
+        .buffer_unordered(DISCOVERY_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
     };
-    let mut snapshot = Snapshot { progress: Some(Progress { total: 1, ..Default::default() }), ..Default::default() };
+    let mut snapshot = Snapshot {
+        progress: Some(Progress {
+            total: 1,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
     let collect = async {
         while let Some(update) = rx.next().await {
             match update {
                 Update::Peers(peers) => match peers {
-                    Ok(peers) => { snapshot.progress.as_mut().unwrap().total = peers.len() + 1; snapshot.peers = peers; }
+                    Ok(peers) => {
+                        snapshot.progress.as_mut().unwrap().total = peers.len() + 1;
+                        snapshot.peers = peers;
+                    }
                     Err(error) => snapshot.peer_error = Some(error),
                 },
                 Update::Node(part, done) => {
                     let node = part.nodes.into_iter().next().unwrap();
-                    snapshot.nodes.retain(|old| old.name != node.name || old.local != node.local);
+                    snapshot
+                        .nodes
+                        .retain(|old| old.name != node.name || old.local != node.local);
                     snapshot.nodes.push(node);
-                    snapshot.nodes.sort_by(|a,b| b.local.cmp(&a.local).then(a.name.cmp(&b.name)));
+                    snapshot
+                        .nodes
+                        .sort_by(|a, b| b.local.cmp(&a.local).then(a.name.cmp(&b.name)));
                     snapshot.identities.extend(part.identities);
                     snapshot.services.extend(part.services);
-                    if done { snapshot.progress.as_mut().unwrap().completed += 1; }
+                    if done {
+                        snapshot.progress.as_mut().unwrap().completed += 1;
+                    }
                 }
             }
             changed(snapshot.clone());
         }
     };
-    let work = async { futures::join!(local, remote); drop(tx); };
+    let work = async {
+        futures::join!(local, remote);
+        drop(tx);
+    };
     futures::join!(work, collect);
     snapshot.progress.as_mut().unwrap().finished = true;
     changed(snapshot.clone());

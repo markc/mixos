@@ -408,7 +408,8 @@ impl Shell {
                     bus::discover_incremental(bus, |snapshot| {
                         let _ = tx.send(Event::Discovered(ticket, snapshot));
                         ctx.request_repaint();
-                    }).await;
+                    })
+                    .await;
                 });
             }
             Effect::Call {
