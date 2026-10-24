@@ -238,6 +238,9 @@
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/services/settingsd/CHANGELOG.md"><code>services/settingsd/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/settingsd/">settingsd</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
 <h2 id="010">0.1.0</h2>
+<p>Before initial release: sealed profile format 4 re-derives the Workshop app
+context and drops retired <code>apps.busviewer</code> overrides with a diagnostic after
+seal verification, preserving unrelated overrides and history.</p>
 <p>Serve describe/get/validate/apply/reset/status through native ABP; durable
 changed/no-op receipts, target/revision fencing, exclusive writer, recoverable
 replacement and complete scoped retained publication. Package the service unit.

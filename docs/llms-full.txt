@@ -33698,10 +33698,16 @@ binding or test directory. Use an isolated broker when testing.
 Profiles pin their initial package design source. Reload checks a content
 digest; a binary upgrade cannot change effective settings within the same
 revision. An effective interpretation digest fences compiler drift for
-explicit migration. The accepted record's format (`store::FORMAT`, now 2)
+explicit migration. The accepted record's format (`store::FORMAT`, now 4)
 is that migration: an older record whose seal verifies as stored is
 re-derived and re-sealed on open by `Accepted::upgrade`, whose doc comment
 says how to add the next field.
+
+Format 4 re-derives the renamed Workshop app context. After verifying the
+stored seal, it drops any retired `apps.busviewer` override with a warning,
+advances the profile revision when dropping authored settings, and atomically
+re-seals both the primary and any valid backup. Other app overrides, the
+pinned design source and receipt history are preserved.
 
 Present corrupt primary data can restore a validated backup under a new
 incarnation. A missing primary fails visibly, including when a backup
@@ -36351,6 +36357,10 @@ validate authored app enum values before accessibility precedence.
 > Mirrored from [`services/settingsd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/settingsd/CHANGELOG.md), where releases update it. The component's page is [settingsd](README.md). This page describes the current `main` branch of MixOS.
 
 ## 0.1.0
+
+Before initial release: sealed profile format 4 re-derives the Workshop app
+context and drops retired `apps.busviewer` overrides with a diagnostic after
+seal verification, preserving unrelated overrides and history.
 
 Serve describe/get/validate/apply/reset/status through native ABP; durable
 changed/no-op receipts, target/revision fencing, exclusive writer, recoverable

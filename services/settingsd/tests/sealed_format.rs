@@ -114,15 +114,26 @@ fn modern_embedded_source_changes_identity_but_no_default_resolved_value() {
 
 fn restore_retired_context(snapshot: &mut Snapshot) {
     let effective = snapshot.effective.remove("app:workshop").unwrap();
-    assert!(snapshot.effective.insert("app:busviewer".into(), effective).is_none());
+    assert!(
+        snapshot
+            .effective
+            .insert("app:busviewer".into(), effective)
+            .is_none()
+    );
 }
 
 #[test]
 fn workshop_rename_changes_only_the_default_context_key() {
     let mut snapshot = fixed_snapshot();
     restore_retired_context(&mut snapshot);
-    assert_eq!(digest(&snapshot.effective).unwrap(), "4abaa2fffc034923ac448fc8a9f8c93e253d2781be5a40b8a1b17f0f5e6422ea");
-    assert_eq!(digest(&snapshot).unwrap(), "08d7f6778302cbefc0993e3834678be5dbc465dc1a67d10ee29d8849292efe07");
+    assert_eq!(
+        digest(&snapshot.effective).unwrap(),
+        "4abaa2fffc034923ac448fc8a9f8c93e253d2781be5a40b8a1b17f0f5e6422ea"
+    );
+    assert_eq!(
+        digest(&snapshot).unwrap(),
+        "08d7f6778302cbefc0993e3834678be5dbc465dc1a67d10ee29d8849292efe07"
+    );
     assert_eq!(serde_json::to_string(&snapshot).unwrap().len(), 529_655);
 }
 

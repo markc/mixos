@@ -232,15 +232,21 @@ fn pre_workshop_stores_drop_retired_overrides_and_reseal_both_copies() {
         drop(store);
         old.format = 3;
         if authored {
-            old.desktop.apps.insert("busviewer".into(), AppOverride {
-                mode: Some("light".into()),
-                ..Default::default()
-            });
+            old.desktop.apps.insert(
+                "busviewer".into(),
+                AppOverride {
+                    mode: Some("light".into()),
+                    ..Default::default()
+                },
+            );
         }
-        old.desktop.apps.insert("term".into(), AppOverride {
-            text_scale: Some(1.25),
-            ..Default::default()
-        });
+        old.desktop.apps.insert(
+            "term".into(),
+            AppOverride {
+                text_scale: Some(1.25),
+                ..Default::default()
+            },
+        );
         let mut effective = resolve_with_embedded(&old.desktop, &old.embedded_source).unwrap();
         let renamed = effective.remove("app:workshop").unwrap();
         if !authored {
@@ -266,15 +272,17 @@ fn pre_workshop_stores_drop_retired_overrides_and_reseal_both_copies() {
         assert!(effective.contains_key("app:workshop"));
         drop(store);
         for name in ["desktop.conf.mix", "desktop.previous.conf.mix"] {
-            let saved: settingsd::store::Accepted = strict::from_str(
-                &std::fs::read_to_string(dir.path().join(name)).unwrap()
-            ).unwrap();
+            let saved: settingsd::store::Accepted =
+                strict::from_str(&std::fs::read_to_string(dir.path().join(name)).unwrap()).unwrap();
             saved.check(&binding()).unwrap();
             saved.effective().unwrap();
             assert!(!saved.desktop.apps.contains_key("busviewer"));
         }
         let bytes = std::fs::read(dir.path().join("desktop.conf.mix")).unwrap();
         drop(Store::open(dir.path(), &binding()).unwrap());
-        assert_eq!(std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(), bytes);
+        assert_eq!(
+            std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(),
+            bytes
+        );
     }
 }

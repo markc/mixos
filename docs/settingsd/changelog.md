@@ -10,6 +10,10 @@ generated: by docs/_build/gen-site.mix from services/settingsd/CHANGELOG.md; do 
 
 ## 0.1.0
 
+Before initial release: sealed profile format 4 re-derives the Workshop app
+context and drops retired `apps.busviewer` overrides with a diagnostic after
+seal verification, preserving unrelated overrides and history.
+
 Serve describe/get/validate/apply/reset/status through native ABP; durable
 changed/no-op receipts, target/revision fencing, exclusive writer, recoverable
 replacement and complete scoped retained publication. Package the service unit.
