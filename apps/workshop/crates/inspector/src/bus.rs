@@ -166,7 +166,9 @@ async fn discover_node(
     }))
     .buffer_unordered(DISCOVERY_CONCURRENCY);
     let deadline = tokio::time::Instant::now() + DISCOVERY_CALL_BUDGET;
-    while let Ok(Some((name, result))) = tokio::time::timeout_at(deadline, descriptions.next()).await {
+    while let Ok(Some((name, result))) =
+        tokio::time::timeout_at(deadline, descriptions.next()).await
+    {
         snapshot.services.insert(name, result);
     }
     let _ = tx.unbounded_send(Update::Node(snapshot, true));

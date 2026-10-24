@@ -74,7 +74,7 @@ fn run(settings: &Settings) -> Result<(), String> {
             settings.comp.clone(),
         )?;
         loop {
-            let _ = ctx.run(egui::RawInput::default(), |ctx| shell.logic(ctx));
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| shell.logic(ui.ctx()));
             if shell.exiting() {
                 break;
             }
