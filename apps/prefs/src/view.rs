@@ -915,6 +915,11 @@ fn axis_label(axis: Axis) -> &'static str {
         Axis::Contrast => "look-contrast",
         Axis::Decorations => "look-titlebar",
         Axis::CaptionSide => "look-captions",
+        Axis::FontFamily => "fonts-family",
+        Axis::MonoFamily => "fonts-mono-family",
+        Axis::TextScale => "size-text-scale",
+        Axis::Density => "size-density",
+        Axis::ReducedMotion => "motion-reduce",
     }
 }
 
@@ -949,7 +954,7 @@ fn look_controls(
                                 if toolkit::selectable(ui, look.scheme == scheme, name).clicked()
                                     && look.scheme != scheme
                                 {
-                                    events.push(UiEvent::Look(Look { scheme, ..look }));
+                                    events.push(UiEvent::Look(Look { scheme, ..look.clone() }));
                                 }
                                 ui.add_space(8.0);
                             }
@@ -968,7 +973,7 @@ fn look_controls(
                         )
                         .collect();
                 if let Some(style) = choices(ui, look.style, &styles) {
-                    events.push(UiEvent::Look(Look { style, ..look }));
+                    events.push(UiEvent::Look(Look { style, ..look.clone() }));
                 }
                 ui.end_row();
 
@@ -978,7 +983,7 @@ fn look_controls(
                     .map(|m| (m, label(&format!("look-mode-{}", m.name()))))
                     .collect();
                 if let Some(mode) = choices(ui, look.mode, &modes) {
-                    events.push(UiEvent::Look(Look { mode, ..look }));
+                    events.push(UiEvent::Look(Look { mode, ..look.clone() }));
                 }
                 ui.end_row();
 
@@ -988,7 +993,7 @@ fn look_controls(
                     .map(|c| (c, label(&format!("look-contrast-{}", c.name()))))
                     .collect();
                 if let Some(contrast) = choices(ui, look.contrast, &contrasts) {
-                    events.push(UiEvent::Look(Look { contrast, ..look }));
+                    events.push(UiEvent::Look(Look { contrast, ..look.clone() }));
                 }
                 ui.end_row();
 
@@ -1008,7 +1013,7 @@ fn decoration_controls(ui: &mut Ui, look: Look, events: &mut Vec<UiEvent>) {
         if let Some(decorations) = choices(ui, look.decorations, &frames) {
             events.push(UiEvent::Look(Look {
                 decorations,
-                ..look
+                ..look.clone()
             }));
         }
         if look.decorations == Decorations::Auto {
@@ -1028,7 +1033,7 @@ fn decoration_controls(ui: &mut Ui, look: Look, events: &mut Vec<UiEvent>) {
             .map(|c| (c, label(&format!("look-captions-{}", c.name()))))
             .collect();
         if let Some(captions) = choices(ui, look.captions, &sides) {
-            events.push(UiEvent::Look(Look { captions, ..look }));
+            events.push(UiEvent::Look(Look { captions, ..look.clone() }));
         }
     });
     ui.end_row();
@@ -1215,7 +1220,7 @@ mod numeric_tests {
                             egui::Grid::new("test-decorations")
                                 .num_columns(2)
                                 .show(ui, |ui| {
-                                    decoration_controls(ui, *look, &mut events);
+                                    decoration_controls(ui, look.clone(), &mut events);
                                 });
                             for event in events {
                                 if let UiEvent::Look(next) = event {

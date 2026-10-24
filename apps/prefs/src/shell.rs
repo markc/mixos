@@ -530,11 +530,11 @@ impl Shell {
     /// session's theme file nor settingsd is written.
     fn install_theme(&mut self) {
         let (choice, look, custom_source) = self.wanted();
-        let base = match look {
+        let base = match &look {
             Some(look) if !custom_source => Theme::for_context(look.context()),
             _ => self.theme.clone(),
         };
-        let base = match look {
+        let base = match &look {
             Some(look) => base.framed(look.decorations, look.captions),
             None => base,
         };
