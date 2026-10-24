@@ -105,7 +105,7 @@ impl Accepted {
         // resolved design is unchanged, so its revision stays as it was.
         let retired_app = self.desktop.apps.remove("busviewer").is_some();
         if retired_app {
-            tracing::warn!("dropping retired apps.busviewer settings during profile upgrade");
+            eprintln!("settingsd: dropping retired apps.busviewer settings during profile upgrade");
         }
         let reset = self.desktop.email.reset_legacy_composer_family() || retired_app;
         if reset {
