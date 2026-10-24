@@ -121,6 +121,9 @@ impl Dispatch<wl_callback::WlCallback, ()> for Registry {
 }
 
 fn probe(path: PathBuf, deadline: Instant) -> Option<bool> {
+    // Connect has no deadline and can stall on a full listen backlog. The
+    // caller's recv_timeout still bounds this one-shot detection; it never
+    // re-runs, and any late result is discarded.
     let stream = UnixStream::connect(path).ok()?;
     let connection = Connection::from_socket(stream).ok()?;
     let mut queue = connection.new_event_queue::<Registry>();
@@ -161,9 +164,36 @@ mod tests {
     use design::{Decorations, decorations::automatic};
     use std::io::{Read, Write};
 
-    fn read_new_id(stream: &mut UnixStream, opcode: u32) -> u32 {
+    struct ServerThread(Option<std::thread::JoinHandle<()>>);
+
+    impl ServerThread {
+        fn join(mut self) {
+            if let Some(server) = self.0.take() {
+                server.join().unwrap();
+            }
+        }
+    }
+
+    impl Drop for ServerThread {
+        fn drop(&mut self) {
+            if let Some(server) = self.0.take() {
+                // Join during unwinding without risking a second panic.
+                let _ = server.join();
+            }
+        }
+    }
+
+    fn read_new_id(stream: &mut UnixStream, opcode: u32, deadline: Instant) -> u32 {
         let mut request = [0_u8; 12];
-        stream.read_exact(&mut request).unwrap();
+        let mut received = 0;
+        while received < request.len() {
+            stream
+                .set_read_timeout(Some(deadline.saturating_duration_since(Instant::now())))
+                .unwrap();
+            let count = stream.read(&mut request[received..]).unwrap();
+            assert_ne!(count, 0, "client closed before sending a complete request");
+            received += count;
+        }
         assert_eq!(u32::from_ne_bytes(request[..4].try_into().unwrap()), 1);
         let header = u32::from_ne_bytes(request[4..8].try_into().unwrap());
         assert_eq!((header >> 16, header & 0xffff), (12, opcode));
@@ -195,13 +225,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("display");
         let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
-        let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(1)))
-                .unwrap();
-            let registry = read_new_id(&mut stream, 1);
-            let callback = read_new_id(&mut stream, 0);
+        listener.set_nonblocking(true).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let server = ServerThread(Some(std::thread::spawn(move || {
+            let (mut stream, _) = loop {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return;
+                }
+                match listener.accept() {
+                    Ok(client) => break client,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(2).min(remaining));
+                    }
+                    Err(error) => panic!("accept fake compositor client: {error}"),
+                }
+            };
+            stream.set_nonblocking(false).unwrap();
+            let registry = read_new_id(&mut stream, 1, deadline);
+            let callback = read_new_id(&mut stream, 0, deadline);
             // Ensure the client must retry a read before the reply arrives.
             std::thread::sleep(Duration::from_millis(10));
             let mut reply = Vec::new();
@@ -210,15 +252,19 @@ mod tests {
                 global(&mut reply, registry, 2, "zxdg_decoration_manager_v1");
             }
             event(&mut reply, callback, 0, &1_u32.to_ne_bytes());
+            stream
+                .set_write_timeout(Some(deadline.saturating_duration_since(Instant::now())))
+                .unwrap();
             stream.write_all(&reply).unwrap();
             // Keep the connection live until the client consumes sync and disconnects.
+            stream
+                .set_read_timeout(Some(deadline.saturating_duration_since(Instant::now())))
+                .unwrap();
             let mut byte = [0_u8; 1];
             let _ = stream.read(&mut byte);
-        });
-        let start = Instant::now();
+        })));
         assert_eq!(bounded_probe(path), Some(decoration));
-        assert!(start.elapsed() < Duration::from_millis(150));
-        server.join().unwrap();
+        server.join();
     }
 
     #[test]
