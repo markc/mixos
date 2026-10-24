@@ -12,7 +12,10 @@ fn put_has_a_separate_larger_envelope_cap() {
     );
     assert_eq!(
         body["message"],
-        format!("request exceeds {} bytes", macros::verbs::PUT_ENVELOPE_LIMIT)
+        format!(
+            "request exceeds {} bytes",
+            macros::verbs::PUT_ENVELOPE_LIMIT
+        )
     );
     let text = serde_json::json!({"id":"missing","text":"x".repeat(9000)}).to_string();
     let (_, body) = citizen::macros::answer_body(

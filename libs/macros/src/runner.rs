@@ -266,7 +266,9 @@ fn terminate(child: &mut Child) {
         // Give the owned group a short grace period, then escalate even if
         // the leader exited: descendants may still hold the output pipes.
         // SAFETY: WNOWAIT keeps the owned leader's PID reserved until reap.
-        unsafe { libc::kill(-(child.id() as i32), libc::SIGTERM); }
+        unsafe {
+            libc::kill(-(child.id() as i32), libc::SIGTERM);
+        }
         let deadline = std::time::Instant::now() + Duration::from_millis(250);
         while matches!(exited(child), Ok(false)) && std::time::Instant::now() < deadline {
             thread::sleep(Duration::from_millis(5));
@@ -319,7 +321,12 @@ mod tests {
         let mut command = Command::new("/usr/bin/sleep");
         command.arg("120").process_group(0);
         // SAFETY: signal is async-signal-safe, before exec in the child.
-        unsafe { command.pre_exec(|| { libc::signal(libc::SIGTERM, libc::SIG_IGN); Ok(()) }); }
+        unsafe {
+            command.pre_exec(|| {
+                libc::signal(libc::SIGTERM, libc::SIG_IGN);
+                Ok(())
+            });
+        }
         let mut child = command.spawn().unwrap();
         let start = Instant::now();
         terminate(&mut child);

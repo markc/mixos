@@ -118,8 +118,15 @@ pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
             "invalid macro arguments",
         )));
     }
-    if suffix == "put" && body["text"].as_str().is_some_and(|text| text.len() > TEXT_LIMIT) {
-        return Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", "decoded macro text exceeds 256 KiB")));
+    if suffix == "put"
+        && body["text"]
+            .as_str()
+            .is_some_and(|text| text.len() > TEXT_LIMIT)
+    {
+        return Reply::Immediate(Err(Refusal::new(
+            "INVALID_ARGUMENT",
+            "decoded macro text exceeds 256 KiB",
+        )));
     }
     match suffix {
         "list" if session.catalogue().is_some() => {

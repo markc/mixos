@@ -5,8 +5,29 @@ use super::*;
 fn move_refuses_invalid_and_reserved_app_destinations() {
     let (_dir, roots, session) = fixture();
     session.create("Managed").unwrap();
-    for app in ["", "../escape", "Upper", "0app", "app_name", "global", "workshop"] {
-        assert_eq!(session.manage("move", &json!({"id":"managed", "tier":"user-app", "destination":app})).unwrap_err().code, "INVALID_ARGUMENT", "{app}");
+    for app in [
+        "",
+        "../escape",
+        "Upper",
+        "0app",
+        "app_name",
+        "global",
+        "workshop",
+        "any",
+        "docs",
+        "v",
+    ] {
+        assert_eq!(
+            session
+                .manage(
+                    "move",
+                    &json!({"id":"managed", "tier":"user-app", "destination":app})
+                )
+                .unwrap_err()
+                .code,
+            "INVALID_ARGUMENT",
+            "{app}"
+        );
         assert!(roots.user.join("fixture/managed.mix").is_file());
     }
     assert!(!roots.user.join("global").exists());

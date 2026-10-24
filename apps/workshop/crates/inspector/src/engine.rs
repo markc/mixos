@@ -905,7 +905,11 @@ impl Engine {
     /// A command an agent sent to Workshop over the Bus.
     pub fn command(&mut self, id: u64, verb: &str, body: &str) {
         if let Some(suffix) = verb.strip_prefix("workshop.macros.") {
-            let limit = if suffix == "put" { ::macros::verbs::PUT_ENVELOPE_LIMIT } else { 8192 };
+            let limit = if suffix == "put" {
+                ::macros::verbs::PUT_ENVELOPE_LIMIT
+            } else {
+                8192
+            };
             if body.len() > limit {
                 return self.error(
                     id,
@@ -1578,11 +1582,21 @@ mod tests {
     #[test]
     fn oversized_completion_never_stamps_an_earlier_row() {
         let mut e = engine();
-        e.workshop.retain(json!({"verb":"earlier","ts":"original","ms":1}));
+        e.workshop
+            .retain(json!({"verb":"earlier","ts":"original","ms":1}));
         e.ui.selected = Some(target());
         e.call_selected();
         let ticket = e.call.as_ref().unwrap().ticket;
-        e.completed_at(ticket, Ok(Reply { rc:0, body:json!({"text":"x".repeat(crate::workshop::TRAFFIC_BYTES)}).to_string(), error:None }), "new".into(), 99);
+        e.completed_at(
+            ticket,
+            Ok(Reply {
+                rc: 0,
+                body: json!({"text":"x".repeat(crate::workshop::TRAFFIC_BYTES)}).to_string(),
+                error: None,
+            }),
+            "new".into(),
+            99,
+        );
         assert_eq!(e.workshop.traffic.len(), 1);
         assert_eq!(e.workshop.traffic[0]["ts"], "original");
         assert_eq!(e.workshop.traffic[0]["ms"], 1);

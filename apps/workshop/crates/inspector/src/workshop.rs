@@ -39,7 +39,9 @@ impl Workshop {
     /// Join native request/response observations without a second pending map:
     /// the bounded ring itself owns incomplete calls.
     pub fn observe(&mut self, mut frame: Value) {
-        self.dropped = self.dropped.saturating_add(frame["dropped_count"].as_u64().unwrap_or_default());
+        self.dropped = self
+            .dropped
+            .saturating_add(frame["dropped_count"].as_u64().unwrap_or_default());
         if self.paused {
             return;
         }
@@ -383,7 +385,7 @@ impl Engine {
                 .is_none_or(|limit| limit.as_u64().is_some_and(|v| v <= TRAFFIC_CAPACITY as u64))
                 && args.get("filter").is_none_or(Value::is_string);
             let body = if valid {
-                json!({"rows":self.workshop.rows(args["limit"].as_u64().unwrap_or(100) as usize, args["filter"].as_str().unwrap_or("")),"dropped":self.workshop.dropped,"observe":self.workshop.observe})
+                json!({"rows":self.workshop.rows(args["limit"].as_u64().unwrap_or(100) as usize, args["filter"].as_str().unwrap_or("")),"dropped":self.workshop.dropped,"ignored_observations":self.workshop.ignored_observations,"observe":self.workshop.observe})
             } else {
                 json!({"error_code":"INVALID_ARGUMENT","message":"invalid traffic arguments"})
             };
@@ -395,10 +397,19 @@ impl Engine {
             return true;
         }
         if verb == "noded.observe.event" {
-            if id == 0 && self.workshop.subscription.as_deref().is_some_and(|subscription| args["subscription_id"].as_str() == Some(subscription)) {
+            if id == 0
+                && self
+                    .workshop
+                    .subscription
+                    .as_deref()
+                    .is_some_and(|subscription| {
+                        args["subscription_id"].as_str() == Some(subscription)
+                    })
+            {
                 self.workshop.observe(args.clone());
             } else {
-                self.workshop.ignored_observations = self.workshop.ignored_observations.saturating_add(1);
+                self.workshop.ignored_observations =
+                    self.workshop.ignored_observations.saturating_add(1);
                 if id != 0 {
                     self.push_workshop(Effect::Reply { id, rc:10, body:json!({"error_code":"INVALID_ARGUMENT","message":"observe deliveries require a live broker event"}) });
                 }
@@ -442,11 +453,23 @@ mod tests {
         assert_eq!(engine.workshop.ignored_observations, 1);
         engine.workshop.subscription = Some("live".into());
         for (id, subscription) in [(7, "live"), (0, "old")] {
-            engine.workshop_command(id, "noded.observe.event", &json!({"subscription_id":subscription,"dropped_count":u64::MAX}));
+            engine.workshop_command(
+                id,
+                "noded.observe.event",
+                &json!({"subscription_id":subscription,"dropped_count":u64::MAX}),
+            );
         }
         assert_eq!(engine.workshop.dropped, 0);
-        engine.workshop_command(0, "noded.observe.event", &json!({"subscription_id":"live","dropped_count":u64::MAX}));
-        engine.workshop_command(0, "noded.observe.event", &json!({"subscription_id":"live","dropped_count":1}));
+        engine.workshop_command(
+            0,
+            "noded.observe.event",
+            &json!({"subscription_id":"live","dropped_count":u64::MAX}),
+        );
+        engine.workshop_command(
+            0,
+            "noded.observe.event",
+            &json!({"subscription_id":"live","dropped_count":1}),
+        );
         assert_eq!(engine.workshop.dropped, u64::MAX);
     }
     #[test]

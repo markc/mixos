@@ -378,8 +378,11 @@ impl Shell {
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             if let Event::Subscription(topic, on) = event {
-                if on { self.watched_topics.insert(topic); }
-                else { self.watched_topics.remove(&topic); }
+                if on {
+                    self.watched_topics.insert(topic);
+                } else {
+                    self.watched_topics.remove(&topic);
+                }
                 continue;
             }
             if let Event::Stopped(result) = event {
@@ -455,7 +458,11 @@ impl Shell {
                     } else if args["on"] == false {
                         label("traffic-observe-off")
                     } else {
-                        body["warning"].as_str().or_else(|| body["body"].as_str()).unwrap_or("redacted").into()
+                        body["warning"]
+                            .as_str()
+                            .or_else(|| body["body"].as_str())
+                            .unwrap_or("redacted")
+                            .into()
                     };
                     if !refused {
                         self.engine.workshop.subscription =
@@ -1016,14 +1023,24 @@ mod tests {
 
     fn test_shell() -> Shell {
         let (_, deliveries) = futures::channel::mpsc::channel(8);
-        Shell::new(egui::Context::default(), Theme::embedded(), Handle::sink(), deliveries, "compd".into()).unwrap()
+        Shell::new(
+            egui::Context::default(),
+            Theme::embedded(),
+            Handle::sink(),
+            deliveries,
+            "compd".into(),
+        )
+        .unwrap()
     }
 
     #[test]
     fn failed_session_shutdown_still_exits_and_clears_stopping() {
         let mut shell = test_shell();
         shell.macro_stopping = true;
-        shell.tx.send(Event::Stopped(Err("forced shutdown failure".into()))).unwrap();
+        shell
+            .tx
+            .send(Event::Stopped(Err("forced shutdown failure".into())))
+            .unwrap();
         shell.pump();
         assert!(shell.exiting);
         assert!(shell.macro_stopped);
@@ -1035,18 +1052,30 @@ mod tests {
     fn failed_topic_subscriptions_are_not_committed_and_are_retried() {
         let mut shell = test_shell();
         for ticket in 100..102 {
-            shell.perform(Effect::Workshop { ticket, operation:"catalogues".into(), args:json!({}), reply:None });
+            shell.perform(Effect::Workshop {
+                ticket,
+                operation: "catalogues".into(),
+                args: json!({}),
+                reply: None,
+            });
             loop {
-                let event = shell.rx.recv_timeout(std::time::Duration::from_secs(3)).unwrap();
+                let event = shell
+                    .rx
+                    .recv_timeout(std::time::Duration::from_secs(3))
+                    .unwrap();
                 if let Event::Workshop(actual, _, _, _, result) = event
-                    && actual == ticket {
+                    && actual == ticket
+                {
                     assert!(result.is_err());
                     break;
                 }
             }
             assert!(shell.watched_topics.is_empty());
         }
-        shell.tx.send(Event::Subscription("ced.macros.finished".into(), true)).unwrap();
+        shell
+            .tx
+            .send(Event::Subscription("ced.macros.finished".into(), true))
+            .unwrap();
         shell.pump();
         assert!(shell.watched_topics.contains("ced.macros.finished"));
     }

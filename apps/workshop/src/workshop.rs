@@ -21,7 +21,9 @@ pub async fn perform(
                 .map_err(|e| e.to_string())?;
             catalogues.insert("global".into(), global);
             for (app, catalogue) in library.apps {
-                if !macros::valid_destination(&app) { continue; }
+                if !macros::valid_destination(&app) {
+                    continue;
+                }
                 let session = macros::Session::with_roots(&app, Some(roots.clone()));
                 session.replace_catalogue(catalogue);
                 let mut list = macros::verbs::handle(&session, "list", &json!({}))
@@ -36,7 +38,9 @@ pub async fn perform(
         .map_err(|error| error.to_string())??;
         let mut catalogues = local;
         for (app, service) in &running {
-            if !macros::valid_destination(app) { continue; }
+            if !macros::valid_destination(app) {
+                continue;
+            }
             let reply = bus
                 .call(service, &format!("{app}.macros.list"), json!({}))
                 .await?;
@@ -199,10 +203,10 @@ where
     };
     if let Some(subscription) = args["subscription_id"].as_str() {
         let stopped = call(
-                "noded.observe.stop",
-                json!({"subscription_id":subscription}),
-            )
-            .await;
+            "noded.observe.stop",
+            json!({"subscription_id":subscription}),
+        )
+        .await;
         let failure = match stopped {
             Ok(reply) if reply.rc == 0 => None,
             Ok(reply) => Some(reply.body),
@@ -210,12 +214,18 @@ where
         };
         if let Some(error) = failure {
             if on {
-                let cleanup = call("noded.observe.stop", json!({"subscription_id":started["subscription_id"]})).await;
+                let cleanup = call(
+                    "noded.observe.stop",
+                    json!({"subscription_id":started["subscription_id"]}),
+                )
+                .await;
                 if !matches!(cleanup, Ok(ref reply) if reply.rc == 0) {
                     // Transport failure can leave completion unknown. Retain
                     // the replacement id so it can still be stopped/retried.
                     let mut started = started;
-                    started["warning"] = json!(format!("observe stop and replacement cleanup failed: {error}"));
+                    started["warning"] = json!(format!(
+                        "observe stop and replacement cleanup failed: {error}"
+                    ));
                     return Ok(started);
                 }
             }
@@ -267,14 +277,24 @@ mod tests {
         let answer = observe_with(&json!({"on":true,"subscription_id":"old"}), |verb, args| {
             calls.push((verb, args.clone()));
             let reply = if verb == "noded.observe.start" {
-                Ok(inspector::bus::Reply { rc:0, body:json!({"subscription_id":"new","body":"redacted"}).to_string(), error:None })
+                Ok(inspector::bus::Reply {
+                    rc: 0,
+                    body: json!({"subscription_id":"new","body":"redacted"}).to_string(),
+                    error: None,
+                })
             } else if args["subscription_id"] == "old" {
                 Err("forced stop failure".into())
             } else {
-                Ok(inspector::bus::Reply { rc:0, body:"{}".into(), error:None })
+                Ok(inspector::bus::Reply {
+                    rc: 0,
+                    body: "{}".into(),
+                    error: None,
+                })
             };
             std::future::ready(reply)
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
         assert_eq!(answer["error_code"], "UNAVAILABLE");
         assert_eq!(calls.len(), 3);
         assert_eq!(calls[2].0, "noded.observe.stop");

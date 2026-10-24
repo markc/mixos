@@ -36,7 +36,10 @@ impl Jobs {
     pub async fn finish(&mut self) {
         if tokio::time::timeout(Duration::from_secs(2), async {
             while self.0.join_next().await.is_some() {}
-        }).await.is_err() {
+        })
+        .await
+        .is_err()
+        {
             self.0.abort_all();
         }
     }
@@ -138,7 +141,9 @@ mod tests {
     async fn finish_abandons_a_stalled_reply() {
         let mut jobs = Jobs::default();
         jobs.0.spawn(std::future::pending());
-        tokio::time::timeout(Duration::from_secs(3), jobs.finish()).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(3), jobs.finish())
+            .await
+            .unwrap();
         while jobs.0.join_next().await.is_some() {}
     }
 
@@ -149,7 +154,9 @@ mod tests {
         let body = json!({"id":"missing", "text":text}).to_string();
         assert!(body.len() > 272 * 1024);
         // No existing id is required to prove that the envelope was admitted.
-        let error = request("escape-heavy-test", "put", &body).wait().unwrap_err();
+        let error = request("escape-heavy-test", "put", &body)
+            .wait()
+            .unwrap_err();
         assert_ne!(error.code, "INVALID_ARGUMENT");
     }
 }

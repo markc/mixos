@@ -692,8 +692,10 @@ fn cached_document(ctx: &egui::Context, key: egui::Id, source: &str) -> Option<D
         let index = egui::Id::new("workshop-documents");
         let mut keys = data.get_temp::<Vec<egui::Id>>(index).unwrap_or_default();
         keys.retain(|old| {
-            let keep = *old == key || data.get_temp::<Document>(*old)
-                .is_some_and(|doc| doc.lock().unwrap().is_dirty());
+            let keep = *old == key
+                || data
+                    .get_temp::<Document>(*old)
+                    .is_some_and(|doc| doc.lock().unwrap().is_dirty());
             if !keep {
                 data.remove::<Document>(*old);
                 data.remove::<String>(old.with("target"));
@@ -701,14 +703,14 @@ fn cached_document(ctx: &egui::Context, key: egui::Id, source: &str) -> Option<D
             }
             keep
         });
-        if !keys.contains(&key) { keys.push(key); }
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
         data.insert_temp(index, keys);
         if let Some(doc) = data.get_temp::<Document>(key) {
             return Some(doc);
         }
-        let doc =
-            editor::local::Document::new(source, "mix")
-                .ok()?;
+        let doc = editor::local::Document::new(source, "mix").ok()?;
         let doc = std::sync::Arc::new(std::sync::Mutex::new(doc));
         data.insert_temp(key, doc.clone());
         Some(doc)
@@ -727,9 +729,16 @@ mod cache_tests {
         dirty.lock().unwrap().set_contents("unsaved edit").unwrap();
         assert!(dirty.lock().unwrap().is_dirty());
         for n in 0..100 {
-            cached_document(&ctx, egui::Id::new(("workshop-document", "ced", n)), "clean").unwrap();
+            cached_document(
+                &ctx,
+                egui::Id::new(("workshop-document", "ced", n)),
+                "clean",
+            )
+            .unwrap();
         }
-        let keys = ctx.data(|data| data.get_temp::<Vec<egui::Id>>(egui::Id::new("workshop-documents"))).unwrap();
+        let keys = ctx
+            .data(|data| data.get_temp::<Vec<egui::Id>>(egui::Id::new("workshop-documents")))
+            .unwrap();
         assert_eq!(keys.len(), 2);
         let restored = cached_document(&ctx, dirty_key, "original").unwrap();
         assert!(std::sync::Arc::ptr_eq(&dirty, &restored));

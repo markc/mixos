@@ -8,8 +8,8 @@ mod storage;
 pub mod verbs;
 
 pub use catalogue::{
-    Catalogue, Diagnostic, Entry, Library, Roots, Targets, Tier, check_editable, valid_id,
-    valid_destination,
+    Catalogue, Diagnostic, Entry, Library, Roots, Targets, Tier, check_editable, valid_destination,
+    valid_id,
 };
 pub use runner::{OUTPUT_LIMIT, Output, Runner, Status};
 pub use session::Session;

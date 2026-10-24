@@ -179,7 +179,7 @@ impl Roots {
     }
 
     pub fn folder(&self, app: &str, tier: Tier) -> io::Result<PathBuf> {
-        if !valid_app(app) {
+        if !valid_app(app) || (tier.is_app() && !valid_destination(app)) {
             return Err(invalid("invalid application component name"));
         }
         let root = if tier.is_user() {
@@ -552,7 +552,7 @@ fn valid_app(app: &str) -> bool {
 
 /// App catalogue keys exclude the Library's global and Workshop namespaces.
 pub fn valid_destination(app: &str) -> bool {
-    valid_app(app) && !matches!(app, "global" | "workshop")
+    valid_app(app) && !matches!(app, "global" | "workshop" | "any" | "docs" | "v")
 }
 
 fn checked_file(root: &Path, path: &Path) -> io::Result<fs::File> {
