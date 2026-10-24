@@ -285,6 +285,9 @@ pub struct Summary {
     /// profile names a design source of its own is `custom_source`.
     pub appearance: Appearance,
     pub custom_source: bool,
+    /// Session scale, density and motion, from the same fenced read.
+    #[serde(default)]
+    pub ui: CommonUi,
     /// The person's key bindings, per application; omitted while empty.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub keymaps: crate::keymap::Keymaps,
@@ -315,6 +318,7 @@ impl Summary {
             source_digest: snapshot.source_digest.clone(),
             appearance,
             custom_source,
+            ui: snapshot.desktop.ui.clone(),
             keymaps: snapshot.desktop.keymaps.clone(),
             terminal: snapshot.desktop.terminal.clone(),
             email: snapshot.desktop.email.clone(),

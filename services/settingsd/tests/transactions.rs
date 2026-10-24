@@ -26,6 +26,31 @@ fn request(authority: &Authority, id: &str, mode: &str) -> ApplyRequest {
         request_digest: None,
     }
 }
+
+#[test]
+fn summary_reads_session_scale_density_and_motion_on_the_same_revision() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let mut edit = request(&state, "ui-settings", "dark");
+    edit.changes = BTreeMap::from([
+        ("ui.text_scale".into(), json!(1.25)),
+        ("ui.density".into(), json!(0.8)),
+        ("ui.reduced_motion".into(), json!(true)),
+    ]);
+    state.apply(edit).unwrap();
+    let body = settingsd::service::dispatch(
+        &mut state,
+        "settings.get",
+        &json!({"binding":binding(),"view":"summary"}).to_string(),
+    ).unwrap();
+    let summary: Summary = serde_json::from_value(body["summary"].clone()).unwrap();
+    assert_eq!(summary.revision, state.accepted.revision);
+    assert_eq!(summary.ui, state.accepted.desktop.ui);
+    assert_eq!(summary.ui.text_scale, 1.25);
+    assert_eq!(summary.ui.density, 0.8);
+    assert!(summary.ui.reduced_motion);
+}
+
 #[test]
 fn round2_old_composer_family_loads_and_allows_later_writes() {
     let dir = tempfile::tempdir().unwrap();
