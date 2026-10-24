@@ -240,7 +240,10 @@ fn fitting_and_empty_elided_text_are_unchanged() {
         let long = paint::elide_end(ui, &"W".repeat(120), &font, 220.0);
         assert!(long.ends_with('…'));
         let width = ui.fonts_mut(|fonts| {
-            fonts.layout_no_wrap(long, font, egui::Color32::WHITE).size().x
+            fonts
+                .layout_no_wrap(long, font, egui::Color32::WHITE)
+                .size()
+                .x
         });
         assert!(width <= 220.0);
     });
@@ -293,15 +296,16 @@ fn mono_wrapping_uses_the_same_line_pitch_as_paint() {
     let source = "---\nscene: 1\nname: mono\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", children: [\"title\"]}\ntitle: {widget: \"text\", mono: true, wrap: true, max_lines: 3, text: \"one two three four five six seven eight nine ten\"}\n```";
     let rt = runtime(source, (60, 300));
     let styles = rt.program.text_styles();
-    assert!(
-        (rect_of(&rt, "title").height() - 3.0 * styles.line(true, 13.0)).abs() < 1.0
-    );
+    assert!((rect_of(&rt, "title").height() - 3.0 * styles.line(true, 13.0)).abs() < 1.0);
 }
 
 fn launcher_fixture() -> String {
     include_str!("../../../../../../share/scenes/launcher/scene.mix").replace(
         "\"rows\":[]",
-        &format!("\"rows\":[{{\"id\":\"example.desktop\",\"cells\":[\"{}\",\"Text editor\",\"\"]}}]", "Example application ".repeat(12)),
+        &format!(
+            "\"rows\":[{{\"id\":\"example.desktop\",\"cells\":[\"{}\",\"Text editor\",\"\"]}}]",
+            "Example application ".repeat(12)
+        ),
     )
 }
 
@@ -315,8 +319,20 @@ fn editor_fixture() -> String {
 #[test]
 fn shipped_launcher_and_editor_keep_long_list_text_inside_their_rows() {
     for (source, size, list, item, title) in [
-        (launcher_fixture(), (440, 700), "list", "example.desktop", "app_name"),
-        (editor_fixture(), (880, 620), "templates", "example", "tpl_row_title"),
+        (
+            launcher_fixture(),
+            (440, 700),
+            "list",
+            "example.desktop",
+            "app_name",
+        ),
+        (
+            editor_fixture(),
+            (880, 620),
+            "templates",
+            "example",
+            "tpl_row_title",
+        ),
     ] {
         let rt = runtime(&source, size);
         let row = row_of(&rt, list, item);
@@ -331,20 +347,31 @@ fn shipped_launcher_and_editor_keep_long_list_text_inside_their_rows() {
 fn launcher_and_editor_offscreen() {
     use ui::UiProgram;
     for (source, size, variable) in [
-        (launcher_fixture(), egui::vec2(440.0, 700.0), "LAUNCHER_SNAPSHOT"),
-        (editor_fixture(), egui::vec2(880.0, 620.0), "EDITOR_SNAPSHOT"),
+        (
+            launcher_fixture(),
+            egui::vec2(440.0, 700.0),
+            "LAUNCHER_SNAPSHOT",
+        ),
+        (
+            editor_fixture(),
+            egui::vec2(880.0, 620.0),
+            "EDITOR_SNAPSHOT",
+        ),
     ] {
         let mut scene = SceneUi::new(content(&source, None, false));
         let mut setup = false;
-        let mut harness = egui_kittest::Harness::builder().with_size(size).wgpu().build_ui(move |ui| {
-            if !setup {
-                scene.setup(ui.ctx());
-                setup = true;
-                ui.ctx().request_repaint();
-                return;
-            }
-            scene.show(ui, &mut Vec::new());
-        });
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(size)
+            .wgpu()
+            .build_ui(move |ui| {
+                if !setup {
+                    scene.setup(ui.ctx());
+                    setup = true;
+                    ui.ctx().request_repaint();
+                    return;
+                }
+                scene.show(ui, &mut Vec::new());
+            });
         harness.run();
         let image = harness.render().unwrap();
         if let Some(path) = std::env::var_os(variable) {
