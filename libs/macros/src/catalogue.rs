@@ -221,9 +221,18 @@ pub struct Catalogue {
 
 impl Catalogue {
     pub fn scan(roots: &Roots, app: &str) -> io::Result<Self> {
+        Self::scan_tiers(roots, app, &[Tier::BuiltinApp, Tier::UserApp])
+    }
+
+    /// Global macros belong to Workshop, independently of app catalogues.
+    pub fn scan_globals(roots: &Roots) -> io::Result<Self> {
+        Self::scan_tiers(roots, "workshop", &[Tier::BuiltinGlobal, Tier::UserGlobal])
+    }
+
+    fn scan_tiers(roots: &Roots, app: &str, tiers: &[Tier]) -> io::Result<Self> {
         let mut result = Self::default();
         let mut entries: BTreeMap<String, Entry> = BTreeMap::new();
-        for tier in Tier::ALL {
+        for &tier in tiers {
             let folder = roots.folder(app, tier)?;
             let root = if tier.is_user() {
                 &roots.user

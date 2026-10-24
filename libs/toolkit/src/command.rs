@@ -684,6 +684,7 @@ impl<S> Registry<S> {
                 keys.push(key);
             }
         }
+        keys.sort_by_key(|key| *key == "help");
         let row = |c: &Command<S>| {
             let shortcut = c.shortcut.map(|s| ctx.format_shortcut(&s));
             let label = label_text(strings, self.label_of(c.id, state).unwrap_or(c.label));
@@ -959,6 +960,20 @@ mod tests {
     }
 
     const FTL: &str = "menu-edit = Edit\ncmd-bump = Bump\ncmd-reset = Reset\n";
+
+    #[test]
+    fn help_is_last_without_reordering_other_menus() {
+        let mut registry = Registry::new();
+        for (id, menu) in [("h", "help"), ("f", "file"), ("v", "view"), ("h2", "help"), ("g", "go")] {
+            registry.add(Command {
+                id, label: id, menu: Some(menu), submenu: None, group: 0,
+                shortcut: None, icon: None, enabled: |_: &()| true, run: |_| {},
+            });
+        }
+        let model = registry.model(&egui::Context::default(), &(), &Strings::new("help = Help\nfile = File\nview = View\ngo = Go\n"));
+        assert_eq!(model.iter().map(|m| m.title.as_str()).collect::<Vec<_>>(), ["File", "View", "Go", "Help"]);
+        assert_eq!(model[3].entries.len(), 2);
+    }
 
     #[test]
     fn extras_without_an_accelerator_keep_description_and_menu_shape() {

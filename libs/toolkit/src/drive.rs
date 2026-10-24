@@ -210,7 +210,7 @@ pub fn queues(verb: &str) -> bool {
 /// they act on what the input changed.
 pub fn pending(ctx: &Context) -> bool {
     ctx.with_plugin(|drive: &mut Drive| {
-        drive.running.is_some() || !drive.queue.is_empty() || !drive.answers.is_empty()
+        drive.has_pending()
     })
     .unwrap_or(false)
 }
@@ -226,7 +226,12 @@ pub fn logic(ctx: &Context) -> Vec<Answer> {
             drive.settle(ctx, "the window was hidden before this input was read");
         }
         drive.expire();
-        std::mem::take(&mut drive.answers)
+        let mut answers = std::mem::take(&mut drive.answers);
+        for child in drive.children.values_mut() {
+            child.expire();
+            answers.append(&mut child.answers);
+        }
+        answers
     })
     .unwrap_or_default()
 }
@@ -264,6 +269,26 @@ pub fn finish(ctx: &Context) -> Vec<Answer> {
 /// inside a frame. `None` means queued: its answer comes from [`logic`]
 /// in a later frame.
 pub fn request(ctx: &Context, id: u64, verb: &str, args: &Value) -> Option<Answer> {
+    if let Some(name) = args.get("viewport") {
+        let Some(name) = name.as_str() else {
+            return Some(refusal(id, "ARGUMENT", "viewport must be a window name"));
+        };
+        let target = ctx.data(|d| d.get_temp::<egui::ViewportId>(egui::Id::new(("drive-viewport", name))));
+        let Some(target) = target else {
+            return Some(refusal(id, "NOT_FOUND", "viewport is not open"));
+        };
+        return ctx.with_plugin(|drive: &mut Drive| {
+            let app = drive.app.clone();
+            let options = drive.options.clone();
+            let child = drive.children.entry(target).or_insert_with(|| Box::new(Drive { app, options, ..Drive::default() }));
+            if child.requests.len() >= QUEUE_LIMIT {
+                return Some(refusal(id, "BUSY", "viewport request queue is full"));
+            }
+            child.requests.push_back((id, verb.into(), args.clone()));
+            ctx.request_repaint_of(target);
+            None
+        }).unwrap_or_else(|| Some(refusal(id, "UNAVAILABLE", "the drive layer is not installed")));
+    }
     let answer = ctx
         .with_plugin(|drive: &mut Drive| drive.request(ctx, id, verb, args))
         .unwrap_or_else(|| {
@@ -277,6 +302,26 @@ pub fn request(ctx: &Context, id: u64, verb: &str, args: &Value) -> Option<Answe
         ctx.request_repaint();
     }
     answer
+}
+
+/// Name an owned auxiliary viewport for the common drive verbs.
+pub fn register_viewport(ctx: &Context, name: &str, viewport: egui::ViewportId) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(("drive-viewport", name)), viewport));
+}
+
+pub fn unregister_viewport(ctx: &Context, name: &str) {
+    let target = ctx.data_mut(|d| d.remove_temp::<egui::ViewportId>(egui::Id::new(("drive-viewport", name))));
+    if let Some(target) = target {
+        ctx.with_plugin(|drive: &mut Drive| {
+            if let Some(mut child) = drive.children.remove(&target) {
+                child.settle(ctx, "the viewport closed");
+                for (id, _, _) in child.requests.drain(..) {
+                    child.answers.push(refusal(id, "CANCELLED", "the viewport closed"));
+                }
+                drive.answers.append(&mut child.answers);
+            }
+        });
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -355,6 +400,8 @@ struct Shot(u64);
 /// The plugin: the last widget tree, queued input and finished answers.
 #[derive(Default)]
 pub struct Drive {
+    children: HashMap<egui::ViewportId, Box<Drive>>,
+    requests: VecDeque<(u64, String, Value)>,
     app: String,
     options: Options,
     tree: Option<TreeUpdate>,
@@ -379,6 +426,18 @@ impl egui::Plugin for Drive {
     }
 
     fn input_hook(&mut self, ctx: &Context, input: &mut RawInput) {
+        if input.viewport_id != egui::ViewportId::ROOT {
+            let app = self.app.clone();
+            let options = self.options.clone();
+            let child = self.children.entry(input.viewport_id).or_insert_with(|| Box::new(Drive { app, options, ..Drive::default() }));
+            while let Some((id, verb, args)) = child.requests.pop_front() {
+                if let Some(answer) = child.request(ctx, id, &verb, &args) {
+                    child.answers.push(answer);
+                }
+            }
+            child.step(input);
+            return;
+        }
         // The platform may switch AccessKit off when a screen reader leaves.
         ctx.enable_accesskit();
         self.step(input);
@@ -395,12 +454,38 @@ impl egui::Plugin for Drive {
     }
 
     fn on_begin_pass(&mut self, ui: &mut Ui) {
+        if ui.ctx().viewport_id() != egui::ViewportId::ROOT {
+            if let Some(child) = self.children.get_mut(&ui.ctx().viewport_id()) {
+                for command in child.outbox.drain(..) {
+                    ui.ctx().send_viewport_cmd(command);
+                }
+            }
+            return;
+        }
         for command in self.outbox.drain(..) {
             ui.ctx().send_viewport_cmd(command);
         }
     }
 
     fn output_hook(&mut self, ctx: &Context, output: &mut FullOutput) {
+        if ctx.viewport_id() != egui::ViewportId::ROOT {
+            if let Some(child) = self.children.get_mut(&ctx.viewport_id()) {
+                child.output(ctx, output);
+                if !child.answers.is_empty() { ctx.request_repaint_of(egui::ViewportId::ROOT); }
+            }
+            return;
+        }
+        self.output(ctx, output);
+    }
+}
+
+impl Drive {
+    fn has_pending(&self) -> bool {
+        self.running.is_some() || !self.queue.is_empty() || !self.answers.is_empty()
+            || !self.requests.is_empty() || self.children.values().any(|child| child.has_pending())
+    }
+
+    fn output(&mut self, ctx: &Context, output: &mut FullOutput) {
         if let Some(update) = &output.platform_output.accesskit_update {
             self.tree = Some(update.clone());
         }

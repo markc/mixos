@@ -222,8 +222,7 @@ impl State {
 
     fn run(&mut self, entry: Entry, ctx: &egui::Context) {
         if self.engine.runner_status() == Status::Running {
-            self.run_message = Some(own("macros-already-running"));
-            self.editor_open = true;
+            self.run_error(&entry.title, own("macros-already-running"), ctx);
             return;
         }
         // Completion can race a menu click between frames. Retain and report
@@ -233,10 +232,18 @@ impl State {
         match self.engine.run(&entry.id, &format!("gui:{}", self.window)) {
             Ok(_) => self.retained = None,
             Err(error) => {
-                self.run_message = Some(error.to_string());
-                self.editor_open = true;
+                self.run_error(&entry.title, error.to_string(), ctx);
             }
         }
+    }
+
+    fn run_error(&mut self, title: &str, error: String, ctx: &egui::Context) {
+        self.run_message = Some(error.clone());
+        let payload = notification(&self.app, title, &Status::Failed(error.clone()), &error);
+        notifications::post(
+            &self.app, payload, Finished { title: title.into(), output: error, status: own("macros-failed-short") },
+            self.notify_tx.clone(), &self.lifetime, ctx,
+        );
     }
 
     fn finish_run(&mut self, ctx: &egui::Context) {
@@ -263,7 +270,6 @@ impl State {
             self.retained = Some(finished.clone());
             notifications::post(
                 &self.app,
-                self.window,
                 payload,
                 finished,
                 self.notify_tx.clone(),
@@ -383,7 +389,7 @@ impl State {
 
     fn folder(&mut self) {
         self.work(|roots, app| {
-            launch(&roots.ensure_user_folder(app, Tier::UserApp)?, true)?;
+            launch(&roots.ensure_user_folder(app, Tier::UserGlobal)?, true)?;
             Ok((None, None))
         });
     }
@@ -466,8 +472,11 @@ impl State {
         }
         self.finish_run(ctx);
         while let Ok(finished) = self.notifications.try_recv() {
-            self.retained = Some(finished);
-            self.editor_open = true;
+            if self.editor_open {
+                self.retained = Some(finished);
+            } else {
+                eprintln!("{}: {} (notification unavailable)", self.app, finished.status);
+            }
         }
         let busy = self.engine.runner_status() == Status::Running;
         let changed = ctx.data_mut(|d| {
@@ -691,6 +700,7 @@ impl State {
     fn show_editor(&mut self, ctx: &egui::Context) {
         let viewport = ctx.viewport_id();
         if !self.editor_open {
+            crate::drive::unregister_viewport(ctx, "macro-editor");
             return;
         }
         let mut open = true;
@@ -700,14 +710,26 @@ impl State {
         let chrome = crate::chrome::Chrome::of(ctx);
         let row_height = chrome.metrics.menu_row_height;
         let output_height = row_height * 4.0;
-        egui::Window::new(own("macros-editor"))
-            .id(crate::window_id(viewport, "macro-editor"))
-            .open(&mut open)
-            .default_size(egui::vec2(
+        let editor_viewport = egui::ViewportId::from_hash_of(("macro-editor", self.window));
+        let title = self.editor_entry.as_ref().map(|e| e.title.as_str()).unwrap_or_default();
+        let dirty = self.document.as_ref().is_some_and(|doc| doc.is_dirty());
+        let title = format!("{}{} — {}", title, if dirty { " *" } else { "" }, own("macros-editor"));
+        crate::drive::register_viewport(ctx, "macro-editor", editor_viewport);
+        ctx.show_viewport_immediate(editor_viewport, egui::ViewportBuilder::default()
+            .with_title(title)
+            .with_decorations(true)
+            .with_resizable(true)
+            .with_inner_size(egui::vec2(
                 chrome.style.dialog_max_width as f32,
                 row_height * 18.0,
-            ))
-            .show(ctx, |ui| {
+            )), |ctx, _class| {
+                open = !ctx.input(|i| i.viewport().close_requested());
+                if ctx.input(|i| i.viewport().focused == Some(true))
+                    && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+                {
+                    open = false;
+                }
+                egui::CentralPanel::default().show(ctx, |ui| {
                 if self
                     .editor_focus
                     .is_some_and(|id| ctx.memory(|m| m.has_focus(id)))
@@ -727,12 +749,19 @@ impl State {
                 let editor_enabled = !menu::is_open(ctx);
                 if let Some(doc) = &mut self.document {
                     ui.horizontal(|ui| {
+                        save |= ui.button(own("macros-save")).clicked();
+                        run |= ui.button(own("macros-run")).clicked();
+                        ced = ui.button(own("macros-open-ced")).clicked();
+                        if doc.is_dirty() {
+                            ui.label(own("macros-unsaved"));
+                        }
+                    });
+                    ui.horizontal(|ui| {
                         ui.label(
                             doc.path()
                                 .map(|p| p.display().to_string())
                                 .unwrap_or_default(),
                         );
-                        ced = ui.link(own("macros-open-ced")).clicked();
                     });
                     let palette = ctx
                         .data(|d| {
@@ -782,9 +811,13 @@ impl State {
                                 .selectable(true),
                         );
                     });
+                });
             });
         if !open {
             self.close_editor();
+            if self.editor_open {
+                ctx.send_viewport_cmd_to(editor_viewport, egui::ViewportCommand::CancelClose);
+            }
         }
         if !self.editor_open {
             if let Some(id) = self.editor_focus {
@@ -833,7 +866,6 @@ impl State {
                 Ok(snapshot) => snapshot,
                 Err(error) => {
                     self.error = Some(path_error("macros-save-error", &path, error).to_string());
-                    self.editor_open = true;
                     self.close_after_save = false;
                     return;
                 }
@@ -883,7 +915,6 @@ impl State {
             }
             Err(error) => {
                 self.error = Some(error);
-                self.editor_open = true;
                 self.close_after_save = false;
             }
         }
@@ -937,7 +968,6 @@ impl Drop for State {
     fn drop(&mut self) {
         self.engine.stop_if_origin(&format!("gui:{}", self.window));
         self.engine.remove_finish_hook(self.subscriber);
-        notifications::forget(self.window);
     }
 }
 
@@ -991,13 +1021,13 @@ fn macro_menu(catalogue: &Catalogue, running: Option<&str>) -> (Menu, Vec<usize>
             false,
         )));
     }
-    for app in [true, false] {
+    {
         entries.push(MenuEntry::Separator);
         for (index, entry) in catalogue
             .entries
             .iter()
             .enumerate()
-            .filter(|(_, e)| e.tier.is_app() == app)
+            .filter(|(_, e)| e.tier.is_app())
         {
             if indices.len() == SLOTS.len() {
                 continue;
@@ -1045,8 +1075,7 @@ fn notification(app: &str, title: &str, status: &Status, output: &str) -> serde_
     serde_json::json!({
         "summary": format!("{title} {result}"),
         "body": body.chars().rev().take(500).collect::<Vec<_>>().into_iter().rev().collect::<String>(),
-        "app": app, "actions": [{"id": "output", "label": own("macros-show-output")}]
-        , "timeout_ms": notifications::RETENTION.as_millis() as u64
+        "app": app, "actions": [], "timeout_ms": 5000
     })
 }
 

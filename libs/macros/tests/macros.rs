@@ -75,41 +75,46 @@ fn catalogue_precedence_titles_and_diagnostics_are_deterministic() {
         )
         .unwrap();
     }
-    fs::write(roots.user.join("z.mix"), "print(1)").unwrap();
-    fs::write(roots.user.join(".hidden.mix"), "").unwrap();
-    fs::write(roots.user.join("Bad.mix"), "").unwrap();
-    fs::write(roots.user.join("document.mx"), "").unwrap();
-    fs::create_dir(roots.user.join("directory.mix")).unwrap();
+    let folder = roots.user.join("ced");
+    fs::write(folder.join("z.mix"), "print(1)").unwrap();
+    fs::write(folder.join(".hidden.mix"), "").unwrap();
+    fs::write(folder.join("Bad.mix"), "").unwrap();
+    fs::write(folder.join("document.mx"), "").unwrap();
+    fs::create_dir(folder.join("directory.mix")).unwrap();
     let found = Catalogue::scan(&roots, "ced").unwrap();
     let ids: Vec<_> = found.entries.iter().map(|e| e.id.as_str()).collect();
     assert_eq!(
         ids,
         [
             "builtin-app",
-            "builtin-global",
             "shared",
             "user-app",
-            "user-global",
             "z"
         ]
     );
-    let shared = &found.entries[2];
+    let shared = &found.entries[1];
     assert_eq!(shared.tier, Tier::UserApp);
     assert_eq!(shared.title, "user-app");
     assert_eq!(
         shared.shadows,
-        [Tier::BuiltinGlobal, Tier::BuiltinApp, Tier::UserGlobal]
+        [Tier::BuiltinApp]
     );
-    assert_eq!(found.entries[5].title, "z");
+    assert_eq!(found.entries[3].title, "z");
     assert_eq!(found.diagnostics.len(), 3);
     // Removing each winner exposes exactly the next tier.
-    for expected in Tier::ALL.into_iter().rev() {
+    for expected in [Tier::UserApp, Tier::BuiltinApp] {
         let found = Catalogue::scan(&roots, "ced").unwrap();
         let entry = found.entries.iter().find(|e| e.id == "shared").unwrap();
         assert_eq!(entry.tier, expected);
         fs::remove_file(&entry.path).unwrap();
     }
     assert!(Catalogue::scan(&roots, "../escape").is_err());
+    let globals = Catalogue::scan_globals(&roots).unwrap();
+    let shared = globals.entries.iter().find(|e| e.id == "shared").unwrap();
+    assert_eq!(shared.tier, Tier::UserGlobal);
+    assert_eq!(shared.shadows, [Tier::BuiltinGlobal]);
+    assert!(globals.entries.iter().all(|e| !e.tier.is_app()));
+    assert!(Catalogue::scan(&roots, "dopus").unwrap().entries.is_empty());
 }
 
 #[test]
