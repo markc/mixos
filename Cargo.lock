@@ -1002,24 +1002,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "workshop"
-version = "0.1.2"
-dependencies = [
- "buildinfo",
- "bus",
- "design",
- "eframe",
- "egui",
- "egui_kittest",
- "futures",
- "inspector",
- "serde_json",
- "settings",
- "tokio",
- "toolkit",
-]
-
-[[package]]
 name = "bytemuck"
 version = "1.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11939,6 +11921,24 @@ dependencies = [
  "model",
  "serde_json",
  "wayland-client",
+]
+
+[[package]]
+name = "workshop"
+version = "0.1.2"
+dependencies = [
+ "buildinfo",
+ "bus",
+ "design",
+ "eframe",
+ "egui",
+ "egui_kittest",
+ "futures",
+ "inspector",
+ "serde_json",
+ "settings",
+ "tokio",
+ "toolkit",
 ]
 
 [[package]]

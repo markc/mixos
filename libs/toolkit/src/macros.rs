@@ -368,6 +368,7 @@ impl State {
         }
         self.work(move |roots, app| {
             let path = if entry.tier.is_user() {
+                roots.read(&entry)?;
                 entry.path
             } else {
                 let tier = if entry.tier.is_app() {
@@ -1166,9 +1167,9 @@ fn path_error(key: &str, path: &Path, error: impl std::fmt::Display) -> io::Erro
 /// offering it for editing. Probe only a new, exclusively-created scratch file;
 /// never truncate or rewrite the macro to test writability.
 fn open_macro(path: &Path) -> io::Result<editor::local::Document> {
+    ::macros::check_editable(path).map_err(|e| path_error("macros-save-error", path, e))?;
     let document = editor::local::Document::open(path)
         .map_err(|e| path_error("macros-open-error", path, e))?;
-    ::macros::check_editable(path).map_err(|e| path_error("macros-save-error", path, e))?;
     Ok(document)
 }
 
