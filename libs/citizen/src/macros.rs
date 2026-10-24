@@ -170,6 +170,11 @@ pub fn request(
     suffix: &str,
     body: &str,
 ) -> ::macros::verbs::Reply {
+    // Refuse an unauthorised write before its body is read, so the refusal
+    // is always DENIED; `handle` re-checks with the real body.
+    if let Err(refusal) = ::macros::verbs::authorize(app, caller, suffix, &Value::Null) {
+        return ::macros::verbs::Reply::Immediate(Err(refusal));
+    }
     let limit = if suffix == "put" {
         ::macros::verbs::PUT_ENVELOPE_LIMIT
     } else {

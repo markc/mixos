@@ -148,6 +148,25 @@ fn macro_body_limit_is_checked_before_parsing_and_accepts_the_boundary() {
 }
 
 #[test]
+fn unauthorised_writes_are_denied_before_the_body_is_read() {
+    for body in ["{".to_string(), " ".repeat(2 * 1024 * 1024)] {
+        for suffix in ["put", "remove", "move", "copy", "new"] {
+            let (rc, reply) = citizen::macros::answer_body(
+                citizen::macros::request(
+                    "body-limit-test",
+                    ::macros::verbs::Caller::Other,
+                    suffix,
+                    &body,
+                )
+                .wait(),
+            );
+            assert_eq!(rc, 10);
+            assert_eq!(reply["error_code"], "DENIED", "{suffix}");
+        }
+    }
+}
+
+#[test]
 fn malformed_macro_json_has_a_typed_refusal() {
     let (rc, body) = citizen::macros::answer_body(
         citizen::macros::request(
