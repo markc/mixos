@@ -10,6 +10,15 @@ use crate::{Decorations, RequestedDecorations};
 /// Desktops which keep the house title bar even with the decoration global.
 pub const CLIENT_SIDE_DESKTOPS: &[&str] = &["MixOS"];
 
+/// Whether any desktop in the colon-separated list prefers the app title bar.
+pub fn prefers_client_side(desktops: &str) -> bool {
+    desktops.split(':').any(|desktop| {
+        CLIENT_SIDE_DESKTOPS
+            .iter()
+            .any(|name| desktop.eq_ignore_ascii_case(name))
+    })
+}
+
 /// Facts about the app's backend, not the session's nominal display type.
 #[derive(Clone, Debug)]
 pub struct SessionFacts {
@@ -29,11 +38,7 @@ pub struct Resolution {
 pub fn automatic(facts: &SessionFacts) -> Resolution {
     let (mode, reason) = if !facts.wayland {
         (Decorations::Server, "rule1")
-    } else if facts.desktops.split(':').any(|desktop| {
-        CLIENT_SIDE_DESKTOPS
-            .iter()
-            .any(|name| desktop.eq_ignore_ascii_case(name))
-    }) {
+    } else if prefers_client_side(&facts.desktops) {
         (Decorations::Client, "rule2")
     } else if facts.decoration_global == Some(true) {
         (Decorations::Server, "rule3")
@@ -54,6 +59,8 @@ pub struct Resolver {
 }
 
 impl Resolver {
+    /// `detect` must itself be bounded within AD-5's time limit because
+    /// `resolve` calls it synchronously on the first winning `auto` request.
     pub fn new(
         detect: impl Fn() -> SessionFacts + Send + Sync + 'static,
         environment: impl Fn() -> Option<String> + Send + Sync + 'static,
@@ -132,6 +139,8 @@ pub fn with_resolver<T>(resolver: Arc<Resolver>, operation: impl FnOnce() -> T) 
     operation()
 }
 
+/// Without an installed resolver, reads no environment and resolves `auto`
+/// as rule 4 without detection, for headless engines and offscreen UI.
 pub fn resolve(choice: Option<RequestedDecorations>, session: RequestedDecorations) -> Resolution {
     let injected = INJECTED.with(|slot| slot.borrow().clone());
     if let Some(resolver) = injected.as_ref().or_else(|| PROCESS.get()) {

@@ -42,7 +42,6 @@ settings.workspace = true
 # decorations: an independent, bounded registry read, using the client already
 # linked by eframe. raw-window-handle identifies the backend actually in use.
 wayland-client = "=0.31.15"
-libc.workspace = true
 # thumbnail: the cache's capped reads and its size limits.
 thumbs.workspace = true
 # layer: egui on wlr-layer-shell surfaces. smithay-client-toolkit 0.19.2, the
@@ -65,6 +64,7 @@ layer = ["dep:smithay-client-toolkit", "dep:wayland-backend", "dep:wgpu", "dep:e
 
 [dev-dependencies]
 anyhow.workspace = true
+libc.workspace = true
 strict.workspace = true
 uuid.workspace = true
 egui_kittest.workspace = true

@@ -985,6 +985,7 @@ fn look_controls(
 }
 
 fn decoration_controls(ui: &mut Ui, look: Look, events: &mut Vec<UiEvent>) {
+    let resolved = look.decoration_resolution();
     panel::section_label(ui, &label("look-titlebar"));
     ui.vertical(|ui| {
         let frames: Vec<_> = Decorations::ALL
@@ -998,7 +999,6 @@ fn decoration_controls(ui: &mut Ui, look: Look, events: &mut Vec<UiEvent>) {
             }));
         }
         if look.decorations == Decorations::Auto {
-            let resolved = look.decoration_resolution();
             ui.label(label(&format!(
                 "look-titlebar-resolved-{}",
                 resolved.mode.name()
@@ -1009,18 +1009,15 @@ fn decoration_controls(ui: &mut Ui, look: Look, events: &mut Vec<UiEvent>) {
 
     // The system's title bar places its own buttons.
     panel::section_label(ui, &label("look-captions"));
-    ui.add_enabled_ui(
-        look.decoration_resolution().mode == design::Decorations::Client,
-        |ui| {
-            let sides: Vec<_> = [CaptionSide::Left, CaptionSide::Right]
-                .into_iter()
-                .map(|c| (c, label(&format!("look-captions-{}", c.name()))))
-                .collect();
-            if let Some(captions) = choices(ui, look.captions, &sides) {
-                events.push(UiEvent::Look(Look { captions, ..look }));
-            }
-        },
-    );
+    ui.add_enabled_ui(resolved.mode == design::Decorations::Client, |ui| {
+        let sides: Vec<_> = [CaptionSide::Left, CaptionSide::Right]
+            .into_iter()
+            .map(|c| (c, label(&format!("look-captions-{}", c.name()))))
+            .collect();
+        if let Some(captions) = choices(ui, look.captions, &sides) {
+            events.push(UiEvent::Look(Look { captions, ..look }));
+        }
+    });
     ui.end_row();
 }
 
