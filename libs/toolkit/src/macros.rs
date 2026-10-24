@@ -1269,7 +1269,14 @@ mod tests {
     fn notification_fallback_and_failed_save_never_reopen_a_closed_editor() {
         let mut state = State::new("ced");
         state.loaded = true;
-        state.notify_tx.send(Finished { title: "Test".into(), output: "result".into(), status: "done".into() }).unwrap();
+        state
+            .notify_tx
+            .send(Finished {
+                title: "Test".into(),
+                output: "result".into(),
+                status: "done".into(),
+            })
+            .unwrap();
         let ctx = egui::Context::default();
         let mut output = ctx.run_ui(egui::RawInput::default(), |_| state.show(&ctx));
         output.textures_delta.clear();

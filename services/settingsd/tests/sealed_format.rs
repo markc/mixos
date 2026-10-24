@@ -91,7 +91,8 @@ fn effective_and_snapshot_bytes_match_the_pinned_format() {
 
 #[test]
 fn modern_embedded_source_changes_identity_but_no_default_resolved_value() {
-    let mut snapshot = snapshot_with_source(include_str!("fixtures/2026-10-23-default.theme.conf.mix"));
+    let mut snapshot =
+        snapshot_with_source(include_str!("fixtures/2026-10-23-default.theme.conf.mix"));
     assert_eq!(snapshot.source_digest, PRE_FONT_SOURCE_DIGEST);
     for effective in snapshot.effective.values_mut() {
         assert_eq!(effective.design.source, PRE_FONT_SOURCE_DIGEST);

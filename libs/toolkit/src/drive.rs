@@ -263,7 +263,9 @@ pub fn finish(ctx: &Context) -> Vec<Answer> {
         for child in drive.children.values_mut() {
             child.settle(ctx, "the app closed before this input was read");
             for (id, _, _) in child.requests.drain(..) {
-                child.answers.push(refusal(id, "CANCELLED", "the app closed"));
+                child
+                    .answers
+                    .push(refusal(id, "CANCELLED", "the app closed"));
             }
             drive.answers.append(&mut child.answers);
         }
@@ -469,9 +471,12 @@ impl egui::Plugin for Drive {
             if let Some(running) = &mut child.running
                 && running.trace.is_some()
             {
-                running.pass_events = input.events.iter()
+                running.pass_events = input
+                    .events
+                    .iter()
                     .filter(|e| !matches!(e, Event::Screenshot { .. }))
-                    .map(|e| format!("{e:?}")).collect();
+                    .map(|e| format!("{e:?}"))
+                    .collect();
             }
             return;
         }
@@ -1465,32 +1470,65 @@ mod tests {
         let mut root_clicks = 0;
         let mut editor_clicks = 0;
         {
-        let mut frame = |viewport| {
-            let mut input = RawInput { viewport_id: viewport, ..Default::default() };
-            input.viewports.insert(editor, Default::default());
-            let mut output = ctx.run_ui(input, |ui| {
-                if viewport == egui::ViewportId::ROOT {
-                    ui.ctx().show_viewport_deferred(editor, egui::ViewportBuilder::default(), |_, _| {});
-                }
-                if ui.button(if viewport == editor { "Save" } else { "Root" }).clicked() {
-                    if viewport == editor { editor_clicks += 1; } else { root_clicks += 1; }
-                }
-            });
-            output.textures_delta.clear();
-        };
-        for _ in 0..3 { frame(egui::ViewportId::ROOT); frame(editor); }
-        assert!(request(&ctx, 1, "ui.tree", &json!({"viewport":"macro-editor"})).is_none());
-        frame(editor);
-        let answers = logic(&ctx);
-        assert!(answers[0].body.to_string().contains("Save"));
-        assert!(!answers[0].body.to_string().contains("Root"));
-        assert!(request(&ctx, 2, "ui.click", &json!({"viewport":"macro-editor", "label":"Save"})).is_none());
-        for _ in 0..8 { frame(egui::ViewportId::ROOT); frame(editor); }
+            let mut frame = |viewport| {
+                let mut input = RawInput {
+                    viewport_id: viewport,
+                    ..Default::default()
+                };
+                input.viewports.insert(editor, Default::default());
+                let mut output = ctx.run_ui(input, |ui| {
+                    if viewport == egui::ViewportId::ROOT {
+                        ui.ctx().show_viewport_deferred(
+                            editor,
+                            egui::ViewportBuilder::default(),
+                            |_, _| {},
+                        );
+                    }
+                    if ui
+                        .button(if viewport == editor { "Save" } else { "Root" })
+                        .clicked()
+                    {
+                        if viewport == editor {
+                            editor_clicks += 1;
+                        } else {
+                            root_clicks += 1;
+                        }
+                    }
+                });
+                output.textures_delta.clear();
+            };
+            for _ in 0..3 {
+                frame(egui::ViewportId::ROOT);
+                frame(editor);
+            }
+            assert!(request(&ctx, 1, "ui.tree", &json!({"viewport":"macro-editor"})).is_none());
+            frame(editor);
+            let answers = logic(&ctx);
+            assert!(answers[0].body.to_string().contains("Save"));
+            assert!(!answers[0].body.to_string().contains("Root"));
+            assert!(
+                request(
+                    &ctx,
+                    2,
+                    "ui.click",
+                    &json!({"viewport":"macro-editor", "label":"Save"})
+                )
+                .is_none()
+            );
+            for _ in 0..8 {
+                frame(egui::ViewportId::ROOT);
+                frame(editor);
+            }
         }
         assert_eq!((root_clicks, editor_clicks), (0, 1));
         assert_eq!(logic(&ctx)[0].rc, 0);
         unregister_viewport(&ctx, "macro-editor");
-        assert_eq!(request(&ctx, 3, "ui.tree", &json!({"viewport":"macro-editor"})).unwrap().body["error_code"], "NOT_FOUND");
+        assert_eq!(
+            request(&ctx, 3, "ui.tree", &json!({"viewport":"macro-editor"}))
+                .unwrap()
+                .body["error_code"],
+            "NOT_FOUND"
+        );
     }
 
     #[test]
