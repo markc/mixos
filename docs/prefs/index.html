@@ -250,7 +250,7 @@ where each setting had its own small editor.</p>
 <p>Ctrl+1 through Ctrl+7 open the first section in Overview, Appearance,
 Desktop, Input, Output, Apps and System, in that order. Empty categories
 are disabled. Section commands have no default shortcuts.</p>
-<p>Press <code>/</code> outside a text field, or choose the title bar's search icon, to
+<p>Press <code>/</code> outside a text field, or choose the magnifier in the title bar's icon bar, to
 focus search. It filters sections by title, category, extra words and
 settings keys, ignoring case. Try <code>terminal.</code> or <code>background</code>. Enter opens
 the first match. Escape clears search and releases focus. Ctrl+/ opens
@@ -447,9 +447,9 @@ state read, never automatically resent.</p>
 (<code>prefs.show</code>). The Bus connection is <a href="/citizen/">citizen</a>.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/apps/prefs"><code>apps/prefs</code></a>:</p>
 <table><thead><tr><th>Path</th><th>What</th></tr></thead><tbody>
-<tr><td><code>crates/preferences</code></td><td>the headless engine: panels, rows, notes, one operation at a time, the <code>prefs.*</code> verbs</td></tr>
+<tr><td><code>crates/preferences</code></td><td>the headless engine: sections, rows, notes, one operation at a time, the <code>prefs.*</code> verbs</td></tr>
 <tr><td><code>crates/preferences/src/navigation.rs</code></td><td>the section registry, seven categories, software groups and search</td></tr>
-<tr><td><code>crates/preferences/src/appearance.rs</code></td><td>the Appearance panel: the look, its draft, fenced applies, receipts for lost replies</td></tr>
+<tr><td><code>crates/preferences/src/appearance.rs</code></td><td>Appearance › Themes: the look, its draft, fenced applies, receipts for lost replies</td></tr>
 <tr><td><code>crates/preferences/src/email.rs</code></td><td>Apps → Email: account changes planned and checked, fenced applies, passwords handed to Email</td></tr>
 <tr><td><code>src/commands.rs</code></td><td>every action as a registered command (menus, buttons, shortcuts, <code>prefs.execute</code>)</td></tr>
 <tr><td><code>src/view.rs</code></td><td>the egui rendering; returns what the person did</td></tr>

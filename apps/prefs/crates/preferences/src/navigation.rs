@@ -145,6 +145,7 @@ pub fn search(query: &str, label: impl Fn(&str) -> String) -> Vec<&'static Secti
             [label(s.title), label(s.category.label())]
                 .iter()
                 .map(String::as_str)
+                .chain([s.id, s.category.name()])
                 .chain(s.aliases.iter().copied())
                 .chain(s.prefixes.iter().copied())
                 .any(|text| text.to_lowercase().contains(&query))
@@ -255,6 +256,8 @@ mod tests {
         };
         assert_eq!(ids("TERMINAL."), ["terminal"]);
         assert_eq!(ids("background"), ["wallpapers"]);
+        assert_eq!(ids("wallpapers"), ["wallpapers"]);
+        assert_eq!(ids("system"), ["software"]);
         assert_eq!(ids("category-apps"), ["email", "terminal", "text"]);
         assert_eq!(ids("email.reader"), ["text"]);
         assert!(ids("no such setting").is_empty());

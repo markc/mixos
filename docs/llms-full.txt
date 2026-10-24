@@ -32939,7 +32939,7 @@ Ctrl+1 through Ctrl+7 open the first section in Overview, Appearance,
 Desktop, Input, Output, Apps and System, in that order. Empty categories
 are disabled. Section commands have no default shortcuts.
 
-Press `/` outside a text field, or choose the title bar's search icon, to
+Press `/` outside a text field, or choose the magnifier in the title bar's icon bar, to
 focus search. It filters sections by title, category, extra words and
 settings keys, ignoring case. Try `terminal.` or `background`. Enter opens
 the first match. Escape clears search and releases focus. Ctrl+/ opens
@@ -33164,9 +33164,9 @@ The source is [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs
 
 | Path | What |
 |---|---|
-| `crates/preferences` | the headless engine: panels, rows, notes, one operation at a time, the `prefs.*` verbs |
+| `crates/preferences` | the headless engine: sections, rows, notes, one operation at a time, the `prefs.*` verbs |
 | `crates/preferences/src/navigation.rs` | the section registry, seven categories, software groups and search |
-| `crates/preferences/src/appearance.rs` | the Appearance panel: the look, its draft, fenced applies, receipts for lost replies |
+| `crates/preferences/src/appearance.rs` | Appearance › Themes: the look, its draft, fenced applies, receipts for lost replies |
 | `crates/preferences/src/email.rs` | Apps → Email: account changes planned and checked, fenced applies, passwords handed to Email |
 | `src/commands.rs` | every action as a registered command (menus, buttons, shortcuts, `prefs.execute`) |
 | `src/view.rs` | the egui rendering; returns what the person did |

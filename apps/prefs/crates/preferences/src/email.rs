@@ -3,7 +3,7 @@
 //! Apps → Email: the email app's accounts and mail options
 //! (`email.*`), edited in settingsd as the Terminal group edits
 //! `terminal.*`. Each change is one fenced `settings.apply` on the
-//! Appearance panel's channel carrying the whole new `email.accounts` list,
+//! session settings channel carrying the whole new `email.accounts` list,
 //! with `email.default_account` in the same batch whenever the change
 //! touches it, so no state between the two is ever stored. The values shown
 //! are the ones settingsd last read; Preferences never writes an email config

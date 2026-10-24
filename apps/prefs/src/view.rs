@@ -193,8 +193,11 @@ fn editors(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, events: &m
     let mut query = engine.ui.search.clone();
     let id = egui::Id::new("preferences-search");
     let focused = ui.memory(|m| m.has_focus(id));
-    // Escape clears a live filter even after Enter moved focus into the opened section.
-    let escape = (focused || (!engine.ui.search.is_empty() && engine.can_navigate()))
+    // Escape clears a live filter even after Enter moved focus into the opened section,
+    // but never while a dialog, the picker or the macros drawer owns it.
+    let escape = engine.can_navigate()
+        && !engine.ui.macros_open
+        && (focused || !engine.ui.search.is_empty())
         && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
     let enter = focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
     let field = ui.add_enabled(
@@ -399,7 +402,11 @@ fn applications(
 ) {
     let groups: Vec<_> = SoftwareGroup::ALL
         .into_iter()
-        .filter(|g| *g != SoftwareGroup::Other || engine.apps.iter().any(|r| g.matches(r)))
+        .filter(|g| {
+            *g != SoftwareGroup::Other
+                || *g == engine.ui.software_group
+                || engine.apps.iter().any(|r| g.matches(r))
+        })
         .map(|g| {
             let title = engine
                 .group_label(g)
