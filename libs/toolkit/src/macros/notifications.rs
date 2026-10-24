@@ -20,8 +20,14 @@ impl ToastClient for SupervisedClient {
     }
 
     async fn send(&self, payload: &serde_json::Value) -> bool {
-        self.call_with_headers_raw("notify", "notify.send", &BTreeMap::new(), &payload.to_string())
-            .await.is_ok_and(|(rc, _, _)| rc < 10)
+        self.call_with_headers_raw(
+            "notify",
+            "notify.send",
+            &BTreeMap::new(),
+            &payload.to_string(),
+        )
+        .await
+        .is_ok_and(|(rc, _, _)| rc < 10)
     }
 }
 
@@ -32,11 +38,17 @@ struct Delivery<C> {
 
 impl<C: ToastClient> Delivery<C> {
     fn new() -> Self {
-        Self { client: None, retry_after: tokio::time::Instant::now() }
+        Self {
+            client: None,
+            retry_after: tokio::time::Instant::now(),
+        }
     }
 
     async fn post<F, Fut>(&mut self, payload: &serde_json::Value, connect: F) -> bool
-    where F: FnOnce() -> Fut, Fut: std::future::Future<Output = Option<C>> {
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Option<C>>,
+    {
         if self.client.as_ref().is_some_and(ToastClient::terminal) {
             self.client = None;
             self.retry_after = tokio::time::Instant::now() + RETRY_DELAY;
@@ -52,7 +64,9 @@ impl<C: ToastClient> Delivery<C> {
                 Some(client) => client.send(payload).await,
                 None => false,
             }
-        }).await.unwrap_or(false);
+        })
+        .await
+        .unwrap_or(false);
         if !sent {
             self.client = None;
             self.retry_after = tokio::time::Instant::now() + RETRY_DELAY;
@@ -93,12 +107,18 @@ mod tests {
     }
 
     impl Drop for Fake {
-        fn drop(&mut self) { self.drops.fetch_add(1, Ordering::SeqCst); }
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::SeqCst);
+        }
     }
 
     impl ToastClient for Fake {
-        fn terminal(&self) -> bool { self.terminal }
-        async fn send(&self, _: &serde_json::Value) -> bool { self.succeeds }
+        fn terminal(&self) -> bool {
+            self.terminal
+        }
+        async fn send(&self, _: &serde_json::Value) -> bool {
+            self.succeeds
+        }
     }
 
     #[tokio::test]
@@ -106,14 +126,38 @@ mod tests {
         for terminal in [false, true] {
             let drops = Arc::new(AtomicUsize::new(0));
             let mut delivery = Delivery::new();
-            delivery.client = Some(Fake { terminal, succeeds: false, drops: drops.clone() });
+            delivery.client = Some(Fake {
+                terminal,
+                succeeds: false,
+                drops: drops.clone(),
+            });
             let payload = serde_json::json!({});
-            assert!(!delivery.post(&payload, || async { panic!("must not connect before backoff") }).await);
+            assert!(
+                !delivery
+                    .post(&payload, || async {
+                        panic!("must not connect before backoff")
+                    })
+                    .await
+            );
             assert_eq!(drops.load(Ordering::SeqCst), 1);
             assert!(delivery.client.is_none());
-            assert!(!delivery.post(&payload, || async { panic!("backoff") }).await);
+            assert!(
+                !delivery
+                    .post(&payload, || async { panic!("backoff") })
+                    .await
+            );
             delivery.retry_after = tokio::time::Instant::now();
-            assert!(delivery.post(&payload, || async { Some(Fake { terminal: false, succeeds: true, drops: drops.clone() }) }).await);
+            assert!(
+                delivery
+                    .post(&payload, || async {
+                        Some(Fake {
+                            terminal: false,
+                            succeeds: true,
+                            drops: drops.clone(),
+                        })
+                    })
+                    .await
+            );
             assert!(delivery.client.is_some());
         }
     }
@@ -148,7 +192,8 @@ pub(super) fn post(
                         if message.alive.upgrade().is_none() {
                             continue;
                         }
-                        let sent = delivery.post(&message.payload, || async {
+                        let sent = delivery
+                            .post(&message.payload, || async {
                                 let service =
                                     format!("{}-macros-{}", message.app, std::process::id());
                                 SupervisedClient::connect_options(
@@ -159,7 +204,8 @@ pub(super) fn post(
                                 .connect()
                                 .await
                                 .ok()
-                        }).await;
+                            })
+                            .await;
                         if !sent {
                             message.fallback();
                         }

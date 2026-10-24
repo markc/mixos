@@ -768,7 +768,7 @@ impl State {
     ) {
         let ctx = ui.ctx().clone();
         // Embedded editors have no child pass to service Drive requests.
-        if ctx.viewport_id() == editor_viewport {
+        if !ctx.embed_viewports() && ctx.viewport_id() == editor_viewport {
             crate::drive::register_viewport(&ctx, viewport, "macro-editor", editor_viewport);
             self.editor_owner = Some(viewport);
         }
@@ -2622,7 +2622,11 @@ mod tests {
         let editor = egui::ViewportId::from_hash_of(("macro-editor", a.window));
         let mut frame = |child: bool| {
             let mut input = egui::RawInput {
-                viewport_id: if child { editor } else { egui::ViewportId::ROOT },
+                viewport_id: if child {
+                    editor
+                } else {
+                    egui::ViewportId::ROOT
+                },
                 ..Default::default()
             };
             input.viewports.insert(editor, Default::default());
@@ -2630,15 +2634,30 @@ mod tests {
                 if child {
                     a.editor_ui(ui, egui::ViewportId::ROOT, editor);
                 } else {
-                    ui.ctx().show_viewport_deferred(editor, egui::ViewportBuilder::default(), |_, _| {});
+                    ui.ctx().show_viewport_deferred(
+                        editor,
+                        egui::ViewportBuilder::default(),
+                        |_, _| {},
+                    );
                     b.show_editor(ui.ctx());
                 }
             });
             output.textures_delta.clear();
         };
-        for _ in 0..3 { frame(false); frame(true); }
+        for _ in 0..3 {
+            frame(false);
+            frame(true);
+        }
         for id in 1..=3 {
-            assert!(crate::drive::request(&ctx, id, "ui.tree", &serde_json::json!({"viewport":"macro-editor"})).is_none());
+            assert!(
+                crate::drive::request(
+                    &ctx,
+                    id,
+                    "ui.tree",
+                    &serde_json::json!({"viewport":"macro-editor"})
+                )
+                .is_none()
+            );
             frame(false);
             frame(true);
             let answers = crate::drive::logic(&ctx);
@@ -2672,6 +2691,15 @@ mod tests {
             states[0].lock().unwrap().window,
             states[1].lock().unwrap().window
         );
+        let mut input = egui::RawInput::default();
+        input.viewports.insert(second, Default::default());
+        let mut out = ctx.run_ui(input, |_| {
+            close_app(&ctx, "ced");
+            assert!(ctx.data(|d| d.get_temp::<WindowState>(crate::window_id(egui::ViewportId::ROOT, ("shared-macros", "ced")))).is_none());
+            let remaining = ctx.data(|d| d.get_temp::<WindowState>(crate::window_id(second, ("shared-macros", "ced")))).unwrap();
+            assert!(Arc::ptr_eq(&remaining, &states[1]));
+        });
+        out.textures_delta.clear();
         let weak = Arc::downgrade(&states[1]);
         states.pop();
         let mut out = ctx.run_ui(egui::RawInput::default(), |_| {

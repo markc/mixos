@@ -223,6 +223,14 @@ Reads answer at once. Input verbs run one at a time, one step per pass,
 and answer one pass after their last step. At most 32 input requests can
 be queued. The [driving guide](../docs/drive.md) shows them in use.
 
+`viewport: "macro-editor"` addresses the editor owned by the app window
+handling the request. Names become available on the first native child
+pass; an embedded editor has no separately drivable viewport. Closing one
+window removes only its own editor. Child requests have a ten-second
+deadline by default (the configured `Options::capture_timeout`); `logic`
+returns `TIMEOUT` if the child stops rendering before completing a request,
+so later Bus commands can proceed.
+
 ### Strings, thumbnails, layer surfaces
 
 - `strings`: `Strings::new(ftl)` wraps an app's Fluent catalogue

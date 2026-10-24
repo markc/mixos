@@ -124,7 +124,11 @@ struct ColumnCache {
     measured_rows: usize,
 }
 
-fn cached_column_widths(ui: &Ui, model: &dopus_core::PaneModel, rows: &[VisibleRow]) -> ColumnWidths {
+fn cached_column_widths(
+    ui: &Ui,
+    model: &dopus_core::PaneModel,
+    rows: &[VisibleRow],
+) -> ColumnWidths {
     let key = ColumnKey {
         body: TextStyle::Body.resolve(ui.style()),
         header: TextStyle::Small.resolve(ui.style()),
@@ -149,12 +153,17 @@ fn widths_for_key(ui: &Ui, key: ColumnKey, rows: &[VisibleRow]) -> ColumnWidths 
         return cache.widths;
     }
     let widths = column_widths(ui, rows);
-    ui.data_mut(|d| d.insert_temp(id, ColumnCache {
-        key,
-        widths,
-        #[cfg(test)]
-        measured_rows: previous.map_or(0, |c| c.measured_rows) + rows.len(),
-    }));
+    ui.data_mut(|d| {
+        d.insert_temp(
+            id,
+            ColumnCache {
+                key,
+                widths,
+                #[cfg(test)]
+                measured_rows: previous.map_or(0, |c| c.measured_rows) + rows.len(),
+            },
+        )
+    });
     widths
 }
 
@@ -210,32 +219,53 @@ mod column_tests {
         config.right.path = dir.path().to_owned();
         let (core, _rx) = dopus_core::DopusCore::new(config, None);
         let model = core.pane(PaneId::Left);
-        let rows: Vec<_> = (0..50_000).map(|i| VisibleRow {
-            entry: dopus_core::FileEntry {
-                path: PathBuf::from(format!("sample-{i}.mkv")),
-                name: format!("sample-{i}.mkv"),
-                is_dir: false,
-                size: Some(i * 1024 * 1024),
-                child_count: None,
-                modified: Some(std::time::SystemTime::UNIX_EPOCH),
-            }, depth: 0,
-        }).collect();
+        let rows: Vec<_> = (0..50_000)
+            .map(|i| VisibleRow {
+                entry: dopus_core::FileEntry {
+                    path: PathBuf::from(format!("sample-{i}.mkv")),
+                    name: format!("sample-{i}.mkv"),
+                    is_dir: false,
+                    size: Some(i * 1024 * 1024),
+                    child_count: None,
+                    modified: Some(std::time::SystemTime::UNIX_EPOCH),
+                },
+                depth: 0,
+            })
+            .collect();
         let ctx = egui::Context::default();
         let mut key = None;
         for frame in 0..5 {
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 if key.is_none() {
                     let _ = cached_column_widths(ui, model, &rows);
-                    key = Some(ui.data(|d| d.get_temp::<ColumnCache>(ui.id().with("metadata-widths"))).unwrap().key);
+                    key = Some(
+                        ui.data(|d| d.get_temp::<ColumnCache>(ui.id().with("metadata-widths")))
+                            .unwrap()
+                            .key,
+                    );
                 }
                 let key = key.as_mut().unwrap();
-                if frame == 2 { key.revision += 1; }
-                if frame == 3 { key.body = FontId::proportional(18.0); }
+                if frame == 2 {
+                    key.revision += 1;
+                }
+                if frame == 3 {
+                    key.body = FontId::proportional(18.0);
+                }
                 // Keep the model stable; exercise the exact production key
                 // lookup with controlled revision/font changes.
                 let _ = widths_for_key(ui, key.clone(), &rows);
-                let measured = ui.data(|d| d.get_temp::<ColumnCache>(ui.id().with("metadata-widths"))).unwrap().measured_rows;
-                assert_eq!(measured, match frame { 0 | 1 => 50_000, 2 => 100_000, _ => 150_000 });
+                let measured = ui
+                    .data(|d| d.get_temp::<ColumnCache>(ui.id().with("metadata-widths")))
+                    .unwrap()
+                    .measured_rows;
+                assert_eq!(
+                    measured,
+                    match frame {
+                        0 | 1 => 50_000,
+                        2 => 100_000,
+                        _ => 150_000,
+                    }
+                );
             });
             output.textures_delta.clear();
         }
