@@ -495,7 +495,8 @@ fn scale_control(
                     .label(label(key)),
             );
             value = (value * 20.0).round() / 20.0;
-            if response.dragged() {
+            // Hold the value while the pointer is down; apply on release.
+            if response.dragged() || response.is_pointer_button_down_on() {
                 ui.data_mut(|d| d.insert_temp(id, value));
             } else if response.drag_stopped() || response.changed() {
                 commit = true;
@@ -1494,7 +1495,12 @@ mod numeric_tests {
             );
         toolkit::install(&h.ctx, &toolkit::Theme::embedded());
         h.run();
-        h.get_by_label("Missing Sans (missing)").click();
+        let combo = h.get_by_role(Role::ComboBox);
+        assert_eq!(
+            combo.value().as_deref(),
+            Some("Missing Sans (missing)")
+        );
+        combo.click();
         h.run();
         h.get_by_label("Design default (Inter)").click();
         h.run();
