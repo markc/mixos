@@ -23,12 +23,21 @@ pub struct Verb {
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Snapshot {
+    /// Present for live discovery; fixtures without progress are complete.
+    pub progress: Option<Progress>,
     pub nodes: Vec<Node>,
     pub identities: BTreeMap<String, bus::ServiceInfo>,
     pub services: BTreeMap<String, Result<Vec<Verb>, String>>,
     pub peers: Vec<String>,
     pub peer_error: Option<String>,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct Progress {
+    pub total: usize,
+    pub completed: usize,
+    pub finished: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]

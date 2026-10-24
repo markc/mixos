@@ -6,6 +6,7 @@ use workshop::{label, shell::Shell};
 
 #[derive(Debug, Clone)]
 struct Settings {
+    headless: bool,
     service: String,
     comp: String,
     url: String,
@@ -14,6 +15,7 @@ struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            headless: false,
             service: "workshop".into(),
             comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
             url: ::bus::client_helpers::resolve_noded_url(),
@@ -25,6 +27,10 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
     let mut settings = Settings::default();
     let mut args = args;
     while let Some(arg) = args.next() {
+        if arg == "--headless" {
+            settings.headless = true;
+            continue;
+        }
         let value = args
             .next()
             .filter(|v| !v.is_empty())
@@ -53,6 +59,22 @@ fn run(settings: &Settings) -> Result<(), String> {
     let topics = [::settings::summary_topic(::settings::follow::PROFILE)];
     let (handle, deliveries) = bus::start(&settings.service, &settings.url, &topics)?;
     let theme = toolkit::Theme::load();
+    if settings.headless {
+        // The same engine, effect runtime and delivery ordering, with no
+        // platform integration, renderer or native window. Repaints wake the
+        // logic thread; no timer polls the broker or the engine.
+        let ctx = egui::Context::default();
+        let logic_thread = std::thread::current();
+        ctx.set_request_repaint_callback(move |_| logic_thread.unpark());
+        let mut shell = Shell::new(ctx.clone(), theme, handle.clone(), deliveries, settings.comp.clone())?;
+        loop {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| shell.logic(ctx));
+            if shell.exiting() { break; }
+            std::thread::park();
+        }
+        drop(shell);
+        return handle.wait_done();
+    }
     let options = eframe::NativeOptions {
         // Client-side decorations: the toolkit title bar is the window frame.
         viewport: toolkit::titlebar::viewport(APP_ID, &label("title"))
@@ -81,13 +103,13 @@ fn main() {
     buildinfo::exit_on_version!(leading);
     if matches!(std::env::args().nth(1).as_deref(), Some("--help" | "-h")) {
         println!(
-            "workshop — native ABP service and verb browser\nUsage: workshop [--noded-url URL] [--service NAME] [--comp NAME]"
+            "workshop — native ABP service and verb browser\nUsage: workshop [--headless] [--noded-url URL] [--service NAME] [--comp NAME]"
         );
         return;
     }
     let result = parse(std::env::args().skip(1)).and_then(|settings| {
         // One window per session: a second launch raises the first.
-        if bus::probe(&settings.url, &settings.service) {
+        if !settings.headless && bus::probe(&settings.url, &settings.service) {
             match bus::forward(&settings.url, &settings.service) {
                 Ok(()) => return Ok(()),
                 Err(error) if bus::probe(&settings.url, &settings.service) => return Err(error),
@@ -95,7 +117,7 @@ fn main() {
             }
         }
         match run(&settings) {
-            Err(_) if bus::probe(&settings.url, &settings.service) => {
+            Err(_) if !settings.headless && bus::probe(&settings.url, &settings.service) => {
                 bus::forward(&settings.url, &settings.service)
             }
             result => result,

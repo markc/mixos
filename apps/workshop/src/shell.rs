@@ -291,6 +291,10 @@ impl Shell {
         &self.engine
     }
 
+    pub fn exiting(&self) -> bool {
+        self.exiting
+    }
+
     pub fn engine_mut(&mut self) -> &mut Engine {
         &mut self.engine
     }
@@ -399,7 +403,13 @@ impl Shell {
         match effect {
             Effect::Discover { ticket } => {
                 let bus = self.bus.clone();
-                self.spawn(async move { Event::Discovered(ticket, bus::discover(bus).await) });
+                let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+                self.runtime.spawn(async move {
+                    bus::discover_incremental(bus, |snapshot| {
+                        let _ = tx.send(Event::Discovered(ticket, snapshot));
+                        ctx.request_repaint();
+                    }).await;
+                });
             }
             Effect::Call {
                 ticket,

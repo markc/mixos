@@ -150,7 +150,8 @@ fn services(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
 fn row_name(engine: &Engine, row: &Row) -> String {
     match &row.kind {
         RowKind::Service(name) => engine.service_label(name),
-        RowKind::Peer(name) | RowKind::Node(name) => name.clone(),
+        RowKind::Peer(name) => name.clone(),
+        RowKind::Node(name) => engine.node_label(name),
         RowKind::Verb(target) => target.verb.clone(),
         RowKind::Error(_) => label("descriptions-failed"),
         RowKind::Peers => label("peers"),
@@ -187,7 +188,8 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
         }
         let text = match &row.kind {
             RowKind::Service(name) => RichText::new(engine.service_label(name)),
-            RowKind::Peer(name) | RowKind::Node(name) => RichText::new(name),
+            RowKind::Peer(name) => RichText::new(name),
+            RowKind::Node(name) => RichText::new(engine.node_label(name)),
             RowKind::Verb(target) => RichText::new(&target.verb).monospace(),
             RowKind::Error(_) => {
                 RichText::new(label("descriptions-failed")).color(ui.visuals().error_fg_color)

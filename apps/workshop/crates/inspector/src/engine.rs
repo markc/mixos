@@ -1075,7 +1075,7 @@ impl Engine {
         fn walk(engine: &Engine, rows: &[Row], depth: usize, out: &mut Vec<Value>) {
             for row in rows {
                 let (kind, label) = match &row.kind {
-                    RowKind::Node(name) => ("node", name.clone()),
+                    RowKind::Node(name) => ("node", engine.node_label(name)),
                     RowKind::Service(name) => ("service", engine.service_label(name)),
                     RowKind::Verb(target) => ("verb", target.verb.clone()),
                     RowKind::Error(_) => ("error", engine.label("descriptions-failed")),
@@ -1086,6 +1086,9 @@ impl Engine {
                 let mut entry = json!({"key":row.key,"kind":kind,"label":label,"depth":depth,"expanded":row.expanded,
                     "children":row.children.len(),"selected":engine.ui.row_key.as_deref() == Some(row.key.as_str())});
                 match &row.kind {
+                    RowKind::Node(name) => {
+                        entry["error"] = json!(engine.snapshot.nodes.iter().find(|node| node.name == *name).and_then(|node| node.error.as_ref()));
+                    }
                     RowKind::Service(name) => {
                         entry["identity"] = json!(engine.snapshot.identities.get(name))
                     }
@@ -1104,6 +1107,13 @@ impl Engine {
         out
     }
 
+    pub fn node_label(&self, name: &str) -> String {
+        match self.snapshot.nodes.iter().find(|node| node.name == name).and_then(|node| node.error.as_ref()) {
+            Some(error) => format!("{name} — {}: {error}", self.label("unreachable")),
+            None => name.to_owned(),
+        }
+    }
+
     /// Restore and focus the window; `reply` is the Bus command that asked.
     pub fn show(&mut self, reply: Option<u64>) {
         let ticket = self.next();
@@ -1119,12 +1129,15 @@ impl Engine {
         if expected != ticket {
             return;
         }
-        self.discovery = None;
+        let finished = snapshot.progress.as_ref().is_none_or(|progress| progress.finished);
+        if finished {
+            self.discovery = None;
+        }
         // A failed discovery keeps the last good snapshot and reports why.
         if snapshot.error.is_some() {
             self.snapshot.error = snapshot.error;
         } else {
-            if self.snapshot.nodes.is_empty() {
+            if !self.snapshot.nodes.iter().any(|node| node.local) {
                 for node in &snapshot.nodes {
                     if node.local {
                         self.ui.expanded.insert(format!("node:{}", node.name));
@@ -1133,7 +1146,7 @@ impl Engine {
             }
             self.snapshot = snapshot;
         }
-        let vanished = self.ui.selected.as_ref().is_some_and(|target| {
+        let vanished = finished && self.ui.selected.as_ref().is_some_and(|target| {
             self.snapshot.error.is_none()
                 && !matches!(self.snapshot.services.get(&target.service), Some(Err(_)))
                 && self.snapshot.verb(target).is_none()
@@ -1146,6 +1159,12 @@ impl Engine {
             self.label("disconnected")
         } else if let Some(error) = &self.snapshot.error {
             format!("{}: {error}", self.label("discovery-failed"))
+        } else if let Some(progress) = &self.snapshot.progress {
+            format!("{} {} {} {}{}, {} {}",
+                progress.completed, self.label("of"), progress.total,
+                self.label("nodes"), if finished { "" } else { "…" },
+                self.snapshot.nodes.iter().filter(|node| node.error.is_some()).count(),
+                self.label("unreachable"))
         } else {
             format!(
                 "{} — {} {} · {} {} · {} {}",
@@ -1158,6 +1177,7 @@ impl Engine {
                 self.label("descriptions-failed")
             )
         };
+        if !finished { return; }
         if let Some(id) = reply {
             let rc = if self.snapshot.error.is_some() { 10 } else { 0 };
             self.effects.push(Effect::Reply {
