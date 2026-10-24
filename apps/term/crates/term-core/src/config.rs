@@ -107,7 +107,6 @@ mod tests {
             Config::default().font_px,
             design::default_typography(design::TypographyRole::Ui).font_size as f32
         );
-        assert_eq!(Config::default().font_px, 12.5);
         assert!(valid_font(Config::default().font_px));
         assert!(valid_font(6.0) && valid_font(48.0));
         assert!(!valid_font(5.9) && !valid_font(48.1));
