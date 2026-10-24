@@ -399,6 +399,9 @@ impl Engine {
                 self.workshop.observe(args.clone());
             } else {
                 self.workshop.ignored_observations = self.workshop.ignored_observations.saturating_add(1);
+                if id != 0 {
+                    self.push_workshop(Effect::Reply { id, rc:10, body:json!({"error_code":"INVALID_ARGUMENT","message":"observe deliveries require a live broker event"}) });
+                }
             }
             return true;
         }

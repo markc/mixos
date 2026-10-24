@@ -455,7 +455,7 @@ impl Shell {
                     } else if args["on"] == false {
                         label("traffic-observe-off")
                     } else {
-                        body["body"].as_str().unwrap_or("redacted").into()
+                        body["warning"].as_str().or_else(|| body["body"].as_str()).unwrap_or("redacted").into()
                     };
                     if !refused {
                         self.engine.workshop.subscription =

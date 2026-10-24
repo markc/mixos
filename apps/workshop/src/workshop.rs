@@ -162,6 +162,14 @@ pub async fn perform(
 }
 
 async fn observe(bus: &Handle, args: &Value) -> Result<Value, String> {
+    observe_with(args, |verb, args| bus.call("noded", verb, args)).await
+}
+
+async fn observe_with<F, Fut>(args: &Value, mut call: F) -> Result<Value, String>
+where
+    F: FnMut(&'static str, Value) -> Fut,
+    Fut: Future<Output = Result<inspector::bus::Reply, String>>,
+{
     let invalid = !args["on"].is_boolean()
         || args.as_object().is_none_or(|args| {
             args.keys()
@@ -179,7 +187,7 @@ async fn observe(bus: &Handle, args: &Value) -> Result<Value, String> {
     // Establish the replacement before stopping the previous stream. Invalid
     // filters or admission refusals leave an existing observer intact.
     let started = if on {
-        let reply = bus.call("noded", "noded.observe.start", json!({"filter":args.get("filter").cloned().unwrap_or(json!({})),"body":body,"capacity":1024})).await?;
+        let reply = call("noded.observe.start", json!({"filter":args.get("filter").cloned().unwrap_or(json!({})),"body":body,"capacity":1024})).await?;
         if reply.rc != 0 {
             return Ok(
                 json!({"error_code":"UNAVAILABLE","message":format!("{} {}",reply.error.unwrap_or_default(),reply.body)}),
@@ -190,9 +198,7 @@ async fn observe(bus: &Handle, args: &Value) -> Result<Value, String> {
         json!({"stopped":true})
     };
     if let Some(subscription) = args["subscription_id"].as_str() {
-        let stopped = bus
-            .call(
-                "noded",
+        let stopped = call(
                 "noded.observe.stop",
                 json!({"subscription_id":subscription}),
             )
@@ -204,11 +210,14 @@ async fn observe(bus: &Handle, args: &Value) -> Result<Value, String> {
         };
         if let Some(error) = failure {
             if on {
-                // Keep the replacement's live id rather than orphaning it
-                // when stopping the previous stream fails.
-                let mut started = started;
-                started["warning"] = json!(format!("previous observe stop failed: {error}"));
-                return Ok(started);
+                let cleanup = call("noded.observe.stop", json!({"subscription_id":started["subscription_id"]})).await;
+                if !matches!(cleanup, Ok(ref reply) if reply.rc == 0) {
+                    // Transport failure can leave completion unknown. Retain
+                    // the replacement id so it can still be stopped/retried.
+                    let mut started = started;
+                    started["warning"] = json!(format!("observe stop and replacement cleanup failed: {error}"));
+                    return Ok(started);
+                }
             }
             return Ok(json!({"error_code":"UNAVAILABLE","message":error}));
         }
@@ -252,6 +261,25 @@ async fn request_macro(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn failed_stop_cleans_up_the_replacement() {
+        let mut calls = Vec::new();
+        let answer = observe_with(&json!({"on":true,"subscription_id":"old"}), |verb, args| {
+            calls.push((verb, args.clone()));
+            let reply = if verb == "noded.observe.start" {
+                Ok(inspector::bus::Reply { rc:0, body:json!({"subscription_id":"new","body":"redacted"}).to_string(), error:None })
+            } else if args["subscription_id"] == "old" {
+                Err("forced stop failure".into())
+            } else {
+                Ok(inspector::bus::Reply { rc:0, body:"{}".into(), error:None })
+            };
+            std::future::ready(reply)
+        }).await.unwrap();
+        assert_eq!(answer["error_code"], "UNAVAILABLE");
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[2].0, "noded.observe.stop");
+        assert_eq!(calls[2].1["subscription_id"], "new");
+    }
     #[test]
     fn observation_refusal_is_visible_and_leaves_topics_available() {
         let broker = test_broker::Broker::start();

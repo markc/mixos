@@ -52,7 +52,7 @@ pub fn dispatch(
         return false;
     };
     let limit = if suffix == "put" {
-        6 * 256 * 1024 + 8192
+        ::macros::verbs::PUT_ENVELOPE_LIMIT
     } else {
         REQUEST_BODY_LIMIT
     };
@@ -102,7 +102,7 @@ pub fn dispatch(
 
 pub fn request(app: &str, suffix: &str, body: &str) -> ::macros::verbs::Reply {
     let limit = if suffix == "put" {
-        6 * 256 * 1024 + 8192
+        ::macros::verbs::PUT_ENVELOPE_LIMIT
     } else {
         REQUEST_BODY_LIMIT
     };

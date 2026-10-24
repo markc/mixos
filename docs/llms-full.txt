@@ -9365,7 +9365,7 @@ authority as executing an app command; running a macro executes user code.
 | `copy` | `{id}` | Copy a built-in into the corresponding user tier |
 
 Refusals use rc 10 and `{error_code,message}`. Bodies are limited to 8192
-bytes before JSON parsing, except `put`: its envelope is capped at 272 KiB
+bytes before JSON parsing, except `put`: its envelope is capped at 1544 KiB
 and its text at 256 KiB. Workshop creates and runs globals; its `new` creates
 directly in the global user folder. Management replies follow the owning
 Session's rescan, so an app's menu reflects the mutation immediately.
@@ -35269,7 +35269,7 @@ offers only its allowed apps; `any` offers running apps. The chosen app is
 passed as `MIXOS_MACRO_TARGET`. Without a header, Run remains target-free.
 Each app serves the same management verbs through its own macro Session.
 Macro requests are capped at 8 KiB, except `put`: its envelope is capped at
-272 KiB and its text at 256 KiB.
+1544 KiB and its text at 256 KiB.
 
 The collapsible Traffic dock combines broker observations and native
 `<service>.command.executed` / `<service>.macros.finished` topics. It retains

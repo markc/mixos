@@ -4,6 +4,10 @@ use crate::{Catalogue, Session};
 use serde_json::{Value, json};
 use std::sync::mpsc::{self, Receiver};
 
+pub const TEXT_LIMIT: usize = 256 * 1024;
+/// JSON can encode each decoded byte as six bytes (for example \u0000).
+pub const PUT_ENVELOPE_LIMIT: usize = 6 * TEXT_LIMIT + 8192;
+
 pub const SUFFIXES: [&str; 12] = [
     "list", "reload", "run", "status", "output", "stop", "new", "get", "put", "remove", "move",
     "copy",
@@ -70,7 +74,7 @@ pub fn describe(app: &str) -> Vec<Value> {
                 "get" => ("Read macro text (at most 256 KiB)", json!({"id":"string"})),
                 "copy" => ("Copy a built-in macro into its user tier", json!({"id":"string"})),
                 "put" => (
-                    "Save a user macro; request cap 272 KiB, text cap 256 KiB",
+                    "Save a user macro; JSON envelope cap 1544 KiB, decoded text cap 256 KiB",
                     json!({"id":"string","text":"string"}),
                 ),
                 "remove" => ("Delete a user macro", json!({"id":"string"})),
@@ -113,6 +117,9 @@ pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
             "INVALID_ARGUMENT",
             "invalid macro arguments",
         )));
+    }
+    if suffix == "put" && body["text"].as_str().is_some_and(|text| text.len() > TEXT_LIMIT) {
+        return Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", "decoded macro text exceeds 256 KiB")));
     }
     match suffix {
         "list" if session.catalogue().is_some() => {

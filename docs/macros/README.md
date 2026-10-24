@@ -206,7 +206,7 @@ authority as executing an app command; running a macro executes user code.
 | `copy` | `{id}` | Copy a built-in into the corresponding user tier |
 
 Refusals use rc 10 and `{error_code,message}`. Bodies are limited to 8192
-bytes before JSON parsing, except `put`: its envelope is capped at 272 KiB
+bytes before JSON parsing, except `put`: its envelope is capped at 1544 KiB
 and its text at 256 KiB. Workshop creates and runs globals; its `new` creates
 directly in the global user folder. Management replies follow the owning
 Session's rescan, so an app's menu reflects the mutation immediately.

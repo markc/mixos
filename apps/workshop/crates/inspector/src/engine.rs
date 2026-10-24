@@ -905,7 +905,7 @@ impl Engine {
     /// A command an agent sent to Workshop over the Bus.
     pub fn command(&mut self, id: u64, verb: &str, body: &str) {
         if let Some(suffix) = verb.strip_prefix("workshop.macros.") {
-            let limit = if suffix == "put" { 6 * 256 * 1024 + 8192 } else { 8192 };
+            let limit = if suffix == "put" { ::macros::verbs::PUT_ENVELOPE_LIMIT } else { 8192 };
             if body.len() > limit {
                 return self.error(
                     id,

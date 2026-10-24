@@ -266,7 +266,7 @@ offers only its allowed apps; `any` offers running apps. The chosen app is
 passed as `MIXOS_MACRO_TARGET`. Without a header, Run remains target-free.
 Each app serves the same management verbs through its own macro Session.
 Macro requests are capped at 8 KiB, except `put`: its envelope is capped at
-272 KiB and its text at 256 KiB.
+1544 KiB and its text at 256 KiB.
 
 The collapsible Traffic dock combines broker observations and native
 `<service>.command.executed` / `<service>.macros.finished` topics. It retains

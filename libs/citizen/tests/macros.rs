@@ -6,13 +6,13 @@ use std::time::Duration;
 
 #[test]
 fn put_has_a_separate_larger_envelope_cap() {
-    let oversized = " ".repeat(272 * 1024 + 1);
+    let oversized = " ".repeat(macros::verbs::PUT_ENVELOPE_LIMIT + 1);
     let (_, body) = citizen::macros::answer_body(
         citizen::macros::request("put-limit-test", "put", &oversized).wait(),
     );
     assert_eq!(
         body["message"],
-        format!("request exceeds {} bytes", 272 * 1024)
+        format!("request exceeds {} bytes", macros::verbs::PUT_ENVELOPE_LIMIT)
     );
     let text = serde_json::json!({"id":"missing","text":"x".repeat(9000)}).to_string();
     let (_, body) = citizen::macros::answer_body(
