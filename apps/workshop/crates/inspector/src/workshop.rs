@@ -35,6 +35,35 @@ pub struct Workshop {
 }
 
 impl Workshop {
+    /// Join native request/response observations without a second pending map:
+    /// the bounded ring itself owns incomplete calls.
+    pub fn observe(&mut self, mut frame: Value) {
+        self.dropped += frame["dropped_count"].as_u64().unwrap_or_default();
+        if self.paused { return; }
+        if frame["message_type"] == "response" && frame["correlation_id"].is_string() {
+            let matching = self.traffic.iter().rposition(|request| {
+                request["pending"] == true && request["correlation_id"] == frame["correlation_id"]
+                    && request["from"] == frame["to"] && request["to"] == frame["from"]
+            });
+            if let Some(index) = matching {
+                let mut request = self.traffic.remove(index).unwrap();
+                self.bytes -= request.to_string().len();
+                request["pending"] = json!(false);
+                request["rc"] = frame["rc"].clone();
+                if let (Some(start), Some(end)) = (clock_ms(&request["ts"]), clock_ms(&frame["ts"])) {
+                    request["ms"] = json!((end + 86_400_000 - start) % 86_400_000);
+                }
+                request["response"] = frame;
+                self.retain(request);
+                return;
+            }
+            frame["service"] = frame["from"].clone();
+        } else if frame["message_type"] == "request" {
+            frame["pending"] = json!(true);
+        }
+        self.retain(frame);
+    }
+
     pub fn retain(&mut self, mut row: Value) {
         if self.paused {
             return;
@@ -79,6 +108,19 @@ impl Workshop {
             self.retain(row);
         }
     }
+}
+
+fn clock_ms(value: &Value) -> Option<u64> {
+    let value = value.as_str()?;
+    let clock = value.get(11..23).unwrap_or(value);
+    let mut parts = clock.split(':');
+    let hour: u64 = parts.next()?.parse().ok()?;
+    let minute: u64 = parts.next()?.parse().ok()?;
+    let mut seconds = parts.next()?.split('.');
+    let second: u64 = seconds.next()?.parse().ok()?;
+    let millis: u64 = seconds.next()?.parse().ok()?;
+    if hour >= 24 || minute >= 60 || second >= 60 || millis >= 1000 { return None; }
+    Some(((hour * 60 + minute) * 60 + second) * 1000 + millis)
 }
 
 fn redact(value: &mut Value) {
@@ -284,7 +326,7 @@ impl Engine {
             return true;
         }
         if verb == "noded.observe.event" {
-            self.workshop.retain(args.clone());
+            self.workshop.observe(args.clone());
             self.push_workshop(Effect::Reply {
                 id,
                 rc: 0,
@@ -320,6 +362,22 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn observations_join_replies_by_caller_and_keep_origin_and_latency() {
+        let mut state = Workshop::default();
+        for caller in ["a", "b"] {
+            state.observe(json!({"message_type":"request","correlation_id":"1","from":caller,"to":"ced","verb":"ced.execute","ts":"2026-10-24T23:59:59.997Z","payload":{"headers":{"macro-origin":"macro:ced:proof"}}}));
+        }
+        state.observe(json!({"message_type":"response","correlation_id":"1","from":"ced","to":"a","rc":10,"ts":"2026-10-25T00:00:00.005Z","payload":{"body":{"token":"hidden"}}}));
+        assert_eq!(state.traffic.len(), 2);
+        assert_eq!(state.traffic[0]["from"], "b");
+        assert_eq!(state.traffic[0]["pending"], true);
+        assert_eq!(state.traffic[1]["from"], "a");
+        assert_eq!(state.traffic[1]["ms"], 8);
+        assert_eq!(state.traffic[1]["rc"], 10);
+        assert_eq!(state.traffic[1]["payload"]["headers"]["macro-origin"], "macro:ced:proof");
+        assert_eq!(state.traffic[1]["response"]["payload"]["body"]["token"], "[redacted]");
+    }
     #[test]
     fn newer_macro_navigation_wins_and_pending_work_fences_quit() {
         let mut engine = Engine::new(str::to_owned);
