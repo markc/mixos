@@ -430,6 +430,7 @@ pub struct Drive {
     children: HashMap<egui::ViewportId, Box<Drive>>,
     requests: VecDeque<(u64, String, Value)>,
     passes: Vec<egui::ViewportId>,
+    screenshots: Vec<Event>,
     app: String,
     options: Options,
     tree: Option<TreeUpdate>,
@@ -457,6 +458,19 @@ impl egui::Plugin for Drive {
         self.passes.push(input.viewport_id);
         // The platform may switch AccessKit off when a screen reader leaves.
         ctx.enable_accesskit();
+        let current = input.viewport_id;
+        input.events.retain(|event| {
+            if let Event::Screenshot { viewport_id, .. } = event
+                && *viewport_id != current
+                && let Some(child) = self.children.get_mut(viewport_id)
+            {
+                // eframe delivers completed GPU captures to the parent input.
+                child.screenshots.push(event.clone());
+                ctx.request_repaint_of(*viewport_id);
+                return false;
+            }
+            true
+        });
         if input.viewport_id != egui::ViewportId::ROOT {
             let app = self.app.clone();
             let options = self.options.clone();
@@ -467,6 +481,7 @@ impl egui::Plugin for Drive {
                     ..Drive::default()
                 })
             });
+            input.events.append(&mut child.screenshots);
             child.step(input);
             if let Some(running) = &mut child.running
                 && running.trace.is_some()
@@ -1459,6 +1474,37 @@ fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gpu_capture_delivered_to_parent_reaches_the_editor() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("editor.png");
+        let editor = egui::ViewportId::from_hash_of("captured-editor");
+        let mut drive = Drive::default();
+        drive.children.insert(editor, Box::new(Drive {
+            running: Some(Running {
+                id: 7,
+                steps: VecDeque::from([Step::Await { tag: 7, path: path.clone(), deadline: Instant::now() + Duration::from_secs(10) }]),
+                report: Report::Ui, extra: json!({}), answer: None,
+                down: Vec::new(), trace: None, pass_events: Vec::new(),
+            }),
+            ..Drive::default()
+        }));
+        let ctx = Context::default();
+        let mut parent = RawInput::default();
+        parent.events.push(Event::Screenshot {
+            viewport_id: editor, user_data: UserData::new(Shot(7)),
+            image: std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
+        });
+        egui::Plugin::input_hook(&mut drive, &ctx, &mut parent);
+        assert!(parent.events.is_empty());
+        let mut input = RawInput { viewport_id: editor, ..Default::default() };
+        egui::Plugin::input_hook(&mut drive, &ctx, &mut input);
+        let answer = drive.children[&editor].running.as_ref().unwrap().answer.as_ref().unwrap();
+        assert_eq!(answer.rc, 0);
+        assert_eq!((answer.body["width"].as_u64(), answer.body["height"].as_u64()), (Some(4), Some(3)));
+        assert!(path.is_file());
+    }
 
     #[test]
     fn auxiliary_viewport_has_its_own_tree_input_and_close() {
