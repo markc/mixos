@@ -737,7 +737,7 @@ impl Engine {
     fn node_tree(&self) -> Vec<Row> {
         let mut rows = Vec::new();
         for node in &self.snapshot.nodes {
-            let mut engine = self.clone_for_node(node);
+            let engine = self.clone_for_node(node);
             // Reuse the service/verb filtering and selection rules.
             let mut children = engine.tree();
             children.retain(|row| row.key != "mesh");
@@ -768,6 +768,14 @@ impl Engine {
         if node.name.to_lowercase().contains(&engine.ui.filter.to_lowercase()) { engine.ui.filter.clear(); }
         engine.snapshot.services = self.snapshot.services.iter().filter(|(name, _)| node.services.contains(name)).map(|(name, verbs)| (name.clone(), verbs.clone())).collect();
         engine
+    }
+
+    pub fn service_label(&self, route: &str) -> String {
+        let Some(info) = self.snapshot.identities.get(route) else { return route.into(); };
+        let mut label = info.name.clone();
+        if let Some(version) = &info.version { label.push_str(&format!("  {version}")); }
+        if let Some(sha) = &info.git_sha { label.push_str(&format!(" · {}", sha.chars().take(8).collect::<String>())); }
+        label
     }
 
     // ---- events -----------------------------------------------------------
@@ -1017,7 +1025,7 @@ impl Engine {
             for row in rows {
                 let (kind, label) = match &row.kind {
                     RowKind::Node(name) => ("node", name.clone()),
-                    RowKind::Service(name) => ("service", name.clone()),
+                    RowKind::Service(name) => ("service", engine.service_label(name)),
                     RowKind::Verb(target) => ("verb", target.verb.clone()),
                     RowKind::Error(_) => ("error", engine.label("descriptions-failed")),
                     RowKind::Peers => ("peers", engine.label("peers")),

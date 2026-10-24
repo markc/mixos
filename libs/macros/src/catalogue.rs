@@ -56,7 +56,8 @@ impl Roots {
     /// Replace the resolved regular file atomically, preserving an in-root symlink.
     pub fn write(&self, entry: &Entry, text: &str) -> io::Result<()> {
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        let target = self.user_target(entry)?;
+        self.user_target(entry)?;
+        let target = check_editable(&entry.path)?;
         let parent = target.parent().ok_or_else(|| invalid("macro has no parent"))?;
         let temporary = parent.join(format!(".macro-save-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
         let result = (|| {
@@ -78,6 +79,9 @@ impl Roots {
     /// Exclusive destination allocation refuses clashes, including dangling links.
     pub fn move_to(&self, entry: &Entry, tier: Tier, app: &str) -> io::Result<PathBuf> {
         self.user_target(entry)?;
+        if fs::symlink_metadata(&entry.path)?.file_type().is_symlink() {
+            return Err(invalid("moving a macro symlink is not supported"));
+        }
         let (destination, file) = self.new_file(app, tier, &entry.id)?;
         drop(file);
         if let Err(error) = fs::rename(&entry.path, &destination) {
@@ -470,6 +474,27 @@ fn checked_file(root: &Path, path: &Path) -> io::Result<fs::File> {
         return Err(invalid("macro is not a regular file"));
     }
     Ok(file)
+}
+
+/// Shared editor preflight: check the resolved regular file and probe only a
+/// fresh scratch file in the directory where atomic replacement will occur.
+pub fn check_editable(path: &Path) -> io::Result<PathBuf> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let target = fs::canonicalize(path)?;
+    let metadata = fs::metadata(&target)?;
+    if !metadata.is_file() { return Err(invalid("macro is not a regular file")); }
+    if metadata.permissions().readonly() {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "macro is read-only"));
+    }
+    let parent = target.parent().ok_or_else(|| invalid("macro has no parent"))?;
+    loop {
+        let probe = parent.join(format!(".macro-save-check-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        match OpenOptions::new().write(true).create_new(true).open(&probe) {
+            Ok(file) => { drop(file); fs::remove_file(probe)?; return Ok(target); }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 fn invalid(message: &str) -> io::Error {

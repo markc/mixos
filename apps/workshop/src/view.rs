@@ -147,9 +147,10 @@ fn services(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
 }
 
 /// The text a tree row shows.
-fn row_name(row: &Row) -> String {
+fn row_name(engine: &Engine, row: &Row) -> String {
     match &row.kind {
-        RowKind::Service(name) | RowKind::Peer(name) | RowKind::Node(name) => name.clone(),
+        RowKind::Service(name) => engine.service_label(name),
+        RowKind::Peer(name) | RowKind::Node(name) => name.clone(),
         RowKind::Verb(target) => target.verb.clone(),
         RowKind::Error(_) => label("descriptions-failed"),
         RowKind::Peers => label("peers"),
@@ -175,7 +176,7 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
             // screen readers and click-by-label.
             let name = label_with(
                 if row.expanded { "collapse" } else { "expand" },
-                &[("name", &row_name(row))],
+                &[("name", &row_name(engine, row))],
             );
             toggle.widget_info(|| {
                 egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name)
@@ -185,7 +186,8 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
             }
         }
         let text = match &row.kind {
-            RowKind::Service(name) | RowKind::Peer(name) | RowKind::Node(name) => RichText::new(name),
+            RowKind::Service(name) => RichText::new(engine.service_label(name)),
+            RowKind::Peer(name) | RowKind::Node(name) => RichText::new(name),
             RowKind::Verb(target) => RichText::new(&target.verb).monospace(),
             RowKind::Error(_) => {
                 RichText::new(label("descriptions-failed")).color(ui.visuals().error_fg_color)

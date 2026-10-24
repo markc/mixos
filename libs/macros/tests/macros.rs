@@ -14,6 +14,86 @@ fn roots(dir: &Path) -> Roots {
 }
 
 #[test]
+fn workshop_management_preserves_ids_refuses_clashes_and_builtins() {
+    let temp = tempfile::tempdir().unwrap();
+    let roots = roots(temp.path());
+    roots.create("ced", Tier::UserApp, "tidy", "Tidy").unwrap();
+    roots.create("dopus", Tier::UserApp, "other", "Other").unwrap();
+    assert_eq!(roots.apps().unwrap(), ["ced", "dopus"]);
+    let mut entry = Catalogue::scan(&roots, "ced").unwrap().entries.remove(0);
+    let before = roots.read(&entry).unwrap();
+    let global = roots.move_to(&entry, Tier::UserGlobal, "ced").unwrap();
+    assert!(!entry.path.exists());
+    entry.path = global;
+    entry.tier = Tier::UserGlobal;
+    roots.create("ced", Tier::UserApp, "tidy", "Clash").unwrap();
+    assert_eq!(roots.move_to(&entry, Tier::UserApp, "ced").unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(roots.read(&entry).unwrap(), before);
+    let old = fs::File::open(&entry.path).unwrap();
+    roots.write(&entry, "-- title: Changed\nprint(42)\n").unwrap();
+    use std::io::Read;
+    let mut old_text = String::new();
+    (&old).read_to_string(&mut old_text).unwrap();
+    assert_eq!(old_text, before, "atomic replacement leaves an open reader intact");
+    assert!(roots.read(&entry).unwrap().contains("Changed"));
+    assert_eq!(fs::read_dir(entry.path.parent().unwrap()).unwrap().count(), 3);
+    let mut builtin = entry.clone();
+    builtin.tier = Tier::BuiltinGlobal;
+    assert!(roots.write(&builtin, "bad").is_err());
+    assert!(roots.remove(&builtin).is_err());
+    assert!(roots.move_to(&builtin, Tier::UserApp, "ced").is_err());
+    assert!(roots.move_to(&entry, Tier::BuiltinApp, "ced").is_err());
+    roots.remove(&entry).unwrap();
+    assert!(!entry.path.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn management_refuses_symlink_escape_without_touching_outside_file() {
+    use std::os::unix::fs::symlink;
+    let temp = tempfile::tempdir().unwrap();
+    let roots = roots(temp.path());
+    roots.create("ced", Tier::UserApp, "safe", "Safe").unwrap();
+    let mut entry = Catalogue::scan(&roots, "ced").unwrap().entries.remove(0);
+    let outside = temp.path().join("outside.mix");
+    fs::write(&outside, "original").unwrap();
+    fs::remove_file(&entry.path).unwrap();
+    symlink(&outside, &entry.path).unwrap();
+    assert!(roots.read(&entry).is_err());
+    assert!(roots.write(&entry, "bad").is_err());
+    assert!(roots.remove(&entry).is_err());
+    assert!(roots.move_to(&entry, Tier::UserGlobal, "ced").is_err());
+    assert_eq!(fs::read_to_string(&outside).unwrap(), "original");
+    entry.path = roots.user.join("ced");
+    assert!(roots.write(&entry, "directory").is_err());
+}
+
+#[test]
+fn target_headers_parse_and_refuse_before_acceptance() {
+    use macros::{Session, Targets};
+    let temp = tempfile::tempdir().unwrap();
+    let roots = roots(temp.path());
+    fs::create_dir_all(&roots.user).unwrap();
+    for (id, header) in [("any", "-- target: any\n"), ("list", "-- target: ced, dopus\n"), ("absent", ""), ("empty", "-- target:\n"), ("bad", "-- target: ced,,dopus\n"), ("duplicate", "-- target: any\n-- target: ced\n")] {
+        fs::write(roots.user.join(format!("{id}.mix")), format!("-- title: {id}\n{header}print(1)\n")).unwrap();
+    }
+    let catalogue = Catalogue::scan_globals(&roots).unwrap();
+    assert_eq!(catalogue.entries.len(), 3);
+    assert_eq!(catalogue.diagnostics.len(), 3);
+    assert_eq!(catalogue.entries[0].targets, None);
+    assert_eq!(catalogue.entries[1].targets, Some(Targets::Any));
+    assert_eq!(catalogue.entries[2].targets, Some(Targets::List(vec!["ced".into(), "dopus".into()])));
+    let session = Session::with_roots("workshop", Some(roots));
+    session.reload().unwrap();
+    for (id, target) in [("absent", "ced"), ("list", "term"), ("any", "../ced")] {
+        assert_eq!(session.run_with(id, "bus", Some(target)).unwrap_err().code, "INVALID_ARGUMENT");
+        assert_eq!(session.status()["run"], serde_json::Value::Null);
+    }
+    let created = session.create("Global new").unwrap();
+    assert_eq!(Path::new(created["path"].as_str().unwrap()).parent().unwrap(), temp.path().join("user"));
+}
+
+#[test]
 fn roots_are_pure_absolute_and_injectable() {
     let home = PathBuf::from("/home/user");
     let resolved = Roots::resolve_with(|key| match key {

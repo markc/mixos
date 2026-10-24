@@ -1168,37 +1168,7 @@ fn path_error(key: &str, path: &Path, error: impl std::fmt::Display) -> io::Erro
 fn open_macro(path: &Path) -> io::Result<editor::local::Document> {
     let document = editor::local::Document::open(path)
         .map_err(|e| path_error("macros-open-error", path, e))?;
-    let target =
-        editor::local::save_target(path).map_err(|e| path_error("macros-save-error", path, e))?;
-    let metadata =
-        std::fs::metadata(target.path()).map_err(|e| path_error("macros-save-error", path, e))?;
-    if metadata.permissions().readonly() {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            own_with("macros-read-only", &[("path", &path.display().to_string())]),
-        ));
-    }
-    let check = || -> io::Result<()> {
-        static NEXT_PROBE: AtomicU64 = AtomicU64::new(1);
-        let parent = target.directory();
-        loop {
-            let id = NEXT_PROBE.fetch_add(1, Ordering::Relaxed);
-            let probe = parent.join(format!(".macro-save-check-{}-{id}", std::process::id()));
-            match std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&probe)
-            {
-                Ok(file) => {
-                    drop(file);
-                    return std::fs::remove_file(probe);
-                }
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(error),
-            }
-        }
-    };
-    check().map_err(|e| path_error("macros-save-error", path, e))?;
+    ::macros::check_editable(path).map_err(|e| path_error("macros-save-error", path, e))?;
     Ok(document)
 }
 
