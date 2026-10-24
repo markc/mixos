@@ -98,7 +98,9 @@ macro_rules! sections {
 
 sections! {
     Themes => ("themes", Appearance, "section-themes", &["colour", "style"], &["appearance."]),
-    Fonts => ("fonts", Appearance, "section-fonts", &["typeface", "typography"], &["appearance.font"]),
+    Fonts => ("fonts", Appearance, "section-fonts", &["typeface", "typography"], &["appearance.font", "appearance.mono_family"]),
+    Size => ("size", Appearance, "section-size", &["scale", "zoom", "density", "spacing", "compact"], &["ui.text_scale", "ui.density"]),
+    Motion => ("motion", Appearance, "section-motion", &["animation", "reduce motion", "accessibility"], &["ui.reduced_motion"]),
     Wallpapers => ("wallpapers", Appearance, "section-wallpapers", &["background"], &[]),
     Email => ("email", Apps, "section-email", &["mail", "accounts"], &["email."]),
     Terminal => ("terminal", Apps, "nav-terminal", &["shell", "console"], &["terminal."]),
@@ -260,6 +262,32 @@ mod tests {
         assert_eq!(ids("system"), ["software"]);
         assert_eq!(ids("category-apps"), ["email", "terminal", "text"]);
         assert_eq!(ids("email.reader"), ["text"]);
+        for query in [
+            "size",
+            "scale",
+            "zoom",
+            "density",
+            "spacing",
+            "compact",
+            "ui.text_scale",
+            "ui.density",
+        ] {
+            assert_eq!(ids(query), ["size"], "{query}");
+        }
+        for query in [
+            "motion",
+            "animation",
+            "reduce motion",
+            "accessibility",
+            "ui.reduced_motion",
+        ] {
+            assert_eq!(ids(query), ["motion"], "{query}");
+        }
+        assert_eq!(ids("appearance.mono_family"), ["fonts"]);
+        assert_eq!(
+            ids("appearance"),
+            ["themes", "fonts", "size", "motion", "wallpapers"]
+        );
         assert!(ids("no such setting").is_empty());
         assert_eq!(ids("").len(), SECTIONS.len());
     }

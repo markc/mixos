@@ -80,6 +80,7 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::ConfirmRemove => engine.confirm_remove(),
             UiEvent::SetMode(mode) => engine.set_mode(mode),
             UiEvent::Look(look) => engine.edit_look(look),
+            UiEvent::Appearance(edit) => engine.edit_appearance(edit),
             UiEvent::Terminal(setting) => engine.edit_terminal(setting),
             UiEvent::Text(setting) => engine.edit_text(setting),
             UiEvent::Interface(edit) => engine.edit_interface_font(edit),
@@ -530,11 +531,11 @@ impl Shell {
     /// session's theme file nor settingsd is written.
     fn install_theme(&mut self) {
         let (choice, look, custom_source) = self.wanted();
-        let base = match look {
+        let base = match &look {
             Some(look) if !custom_source => Theme::for_context(look.context()),
             _ => self.theme.clone(),
         };
-        let base = match look {
+        let base = match &look {
             Some(look) => base.framed(look.decorations, look.captions),
             None => base,
         };

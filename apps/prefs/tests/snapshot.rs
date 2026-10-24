@@ -76,7 +76,26 @@ fn chrome(scheme: Scheme, mode: Mode) -> Theme {
 fn fonts_studio_dark() {
     let mut e = appearance_engine();
     e.set_section(Section::Fonts);
-    draw(chrome(Scheme::Studio, Mode::Dark), "fonts_studio_dark", e);
+    draw_at_size(
+        chrome(Scheme::Studio, Mode::Dark),
+        "fonts_studio_dark",
+        e,
+        egui::vec2(980.0, 960.0),
+    );
+}
+
+#[test]
+fn size_studio_dark() {
+    let mut e = appearance_engine();
+    e.set_section(Section::Size);
+    draw(chrome(Scheme::Studio, Mode::Dark), "size_studio_dark", e);
+}
+
+#[test]
+fn motion_studio_dark() {
+    let mut e = appearance_engine();
+    e.set_section(Section::Motion);
+    draw(chrome(Scheme::Studio, Mode::Dark), "motion_studio_dark", e);
 }
 
 #[test]
@@ -325,10 +344,10 @@ fn appearance_applying_forest_pro_light() {
         style: Some(Style::Pro),
         mode: Mode::Light,
         captions: CaptionSide::Left,
-        ..engine.look.current.expect("read")
+        ..engine.look.current.clone().expect("read")
     };
-    engine.edit_look(draft);
-    assert_eq!(engine.look.shown(), Some(draft));
+    engine.edit_look(draft.clone());
+    assert_eq!(engine.look.shown(), Some(draft.clone()));
     // As the shell installs it: the expected look over the embedded design.
     let theme = Theme::for_context(draft.context()).framed(draft.decorations, draft.captions);
     draw(theme, "appearance_applying_forest_pro_light", engine);
@@ -340,7 +359,7 @@ fn appearance_applying_forest_pro_light() {
 #[test]
 fn appearance_conflict_studio_dark() {
     let mut engine = appearance_engine();
-    let mut draft = engine.look.current.expect("read");
+    let mut draft = engine.look.current.clone().expect("read");
     draft.scheme = Scheme::Forest;
     engine.edit_look(draft);
     // Another writer was first: the apply is refused with a conflict, and

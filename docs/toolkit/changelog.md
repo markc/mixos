@@ -11,6 +11,7 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
 
 ## Unreleased — 2026-10-24
 
+- Let sliders reserve modified arrow keys for the person's bindings.
 - Give the New macro title field the drop-down's measured width, anchored
   placement and a full text-field height. Wrap inline errors within that frame.
 - Cover title entry at scale 2.5, including wider catalogues and a snapshot.

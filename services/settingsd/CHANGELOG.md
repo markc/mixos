@@ -1,5 +1,10 @@
 # settingsd contract changes
 
+## Unreleased
+
+`settings.get` 0.7.0 includes `ui` in summary reads: text scale, density and
+reduced motion on the same revision as appearance. Store format unchanged.
+
 ## 0.1.0
 
 Before initial release: sealed profile format 4 re-derives the Workshop app

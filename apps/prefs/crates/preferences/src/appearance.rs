@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The Appearance panel over settingsd (docs/docs/spec/settings/): the session's
-//! colour scheme, style, mode, contrast and window framing.
+//! colour scheme, style, mode, contrast, fonts, scale, density and motion.
 //!
 //! The panel reads the desktop profile (`settings.get`) and applies each
 //! edit at once in a fenced `settings.apply`, as GNOME's settings do. An
@@ -55,8 +55,30 @@ pub struct InterfaceFont {
     pub size: Option<f64>,
 }
 
+/// One control's change to the session appearance.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AppearanceEdit {
+    FontFamily(Option<String>),
+    MonoFamily(Option<String>),
+    TextScale(f64),
+    Density(f64),
+    ReducedMotion(bool),
+}
+
+impl AppearanceEdit {
+    fn args(&self) -> Value {
+        match self {
+            Self::FontFamily(family) => json!({"font_family":family}),
+            Self::MonoFamily(family) => json!({"mono_family":family}),
+            Self::TextScale(scale) => json!({"text_scale":scale}),
+            Self::Density(density) => json!({"density":density}),
+            Self::ReducedMotion(reduced) => json!({"reduced_motion":reduced}),
+        }
+    }
+}
+
 /// One appearance, as the panel shows and edits it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Look {
     pub scheme: Scheme,
     /// `None` is the scheme's own style.
@@ -65,6 +87,29 @@ pub struct Look {
     pub contrast: Contrast,
     pub decorations: Decorations,
     pub captions: CaptionSide,
+    pub font_family: Option<String>,
+    pub mono_family: Option<String>,
+    pub text_scale: f64,
+    pub density: f64,
+    pub reduced_motion: bool,
+}
+
+impl Default for Look {
+    fn default() -> Self {
+        Self {
+            scheme: Scheme::default(),
+            style: None,
+            mode: Mode::default(),
+            contrast: Contrast::default(),
+            decorations: Decorations::default(),
+            captions: CaptionSide::default(),
+            font_family: None,
+            mono_family: None,
+            text_scale: 1.0,
+            density: 1.0,
+            reduced_motion: false,
+        }
+    }
 }
 
 fn named<T>(what: &str, name: &str, from_name: fn(&str) -> Option<T>) -> Result<T, String> {
@@ -98,6 +143,9 @@ impl Look {
             contrast: named("contrast", &stored.contrast, Contrast::from_name)?,
             decorations: named("decorations", &stored.decorations, Decorations::from_name)?,
             captions: named("caption side", &stored.caption_side, CaptionSide::from_name)?,
+            font_family: stored.font_family.clone(),
+            mono_family: stored.mono_family.clone(),
+            ..Self::default()
         })
     }
 
@@ -147,12 +195,44 @@ impl Look {
             self.captions != base.captions,
             json!(self.captions.name()),
         );
+        put(
+            "font_family",
+            self.font_family != base.font_family,
+            json!(self.font_family),
+        );
+        put(
+            "mono_family",
+            self.mono_family != base.mono_family,
+            json!(self.mono_family),
+        );
+        for (key, differs, value) in [
+            (
+                "ui.text_scale",
+                self.text_scale != base.text_scale,
+                json!(self.text_scale),
+            ),
+            (
+                "ui.density",
+                self.density != base.density,
+                json!(self.density),
+            ),
+            (
+                "ui.reduced_motion",
+                self.reduced_motion != base.reduced_motion,
+                json!(self.reduced_motion),
+            ),
+        ] {
+            if differs {
+                out.insert(key.into(), value);
+            }
+        }
         out
     }
 
     /// This look with the axes `args` names: `scheme`, `style` (a style or
-    /// "own"), `mode`, `contrast`, `decorations`, `caption_side`. An absent
-    /// key leaves its axis; every present one is checked before any applies.
+    /// "own"), `mode`, `contrast`, `decorations`, `caption_side`, font families,
+    /// text scale, density and reduced motion. An absent key leaves its axis;
+    /// every present one is checked before any applies.
     pub fn with(&self, args: &Value) -> Result<Self, String> {
         fn axis<T>(
             args: &Value,
@@ -172,7 +252,7 @@ impl Look {
                 Style::from_name(name).map(Some)
             }
         }
-        let mut look = *self;
+        let mut look = self.clone();
         if let Some(scheme) = axis(args, "scheme", Scheme::from_name)? {
             look.scheme = scheme;
         }
@@ -191,6 +271,43 @@ impl Look {
         if let Some(captions) = axis(args, "caption_side", CaptionSide::from_name)? {
             look.captions = captions;
         }
+        for (key, family) in [
+            ("font_family", &mut look.font_family),
+            ("mono_family", &mut look.mono_family),
+        ] {
+            if let Some(value) = args.get(key) {
+                *family = match value {
+                    Value::Null => None,
+                    Value::String(name)
+                        if !name.is_empty()
+                            && name.len() <= 128
+                            && name.trim() == name.as_str()
+                            && !name.chars().any(char::is_control) =>
+                    {
+                        Some(name.clone())
+                    }
+                    _ => {
+                        return Err(format!(
+                            "{key} must be null or a plain name of up to 128 bytes"
+                        ));
+                    }
+                };
+            }
+        }
+        for (key, number, max) in [
+            ("text_scale", &mut look.text_scale, 3.0),
+            ("density", &mut look.density, 2.0),
+        ] {
+            if let Some(value) = args.get(key) {
+                *number = value
+                    .as_f64()
+                    .filter(|n| (0.5..=max).contains(n))
+                    .ok_or_else(|| format!("{key} must be a number from 0.5 to {max}"))?;
+            }
+        }
+        if let Some(value) = args.get("reduced_motion") {
+            look.reduced_motion = value.as_bool().ok_or("reduced_motion must be a boolean")?;
+        }
         Ok(look)
     }
 }
@@ -199,7 +316,9 @@ impl Serialize for Look {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         json!({"scheme":self.scheme.name(),"style":self.style.map_or("own", Style::name),
             "mode":self.mode.name(),"contrast":self.contrast.name(),
-            "decorations":self.decorations.name(),"caption_side":self.captions.name()})
+            "decorations":self.decorations.name(),"caption_side":self.captions.name(),
+            "font_family":self.font_family,"mono_family":self.mono_family,
+            "text_scale":self.text_scale,"density":self.density,"reduced_motion":self.reduced_motion})
         .serialize(s)
     }
 }
@@ -224,16 +343,26 @@ pub enum Axis {
     Contrast,
     Decorations,
     CaptionSide,
+    FontFamily,
+    MonoFamily,
+    TextScale,
+    Density,
+    ReducedMotion,
 }
 
 impl Axis {
-    pub const ALL: [Axis; 6] = [
+    pub const ALL: [Axis; 11] = [
         Axis::Scheme,
         Axis::Style,
         Axis::Mode,
         Axis::Contrast,
         Axis::Decorations,
         Axis::CaptionSide,
+        Axis::FontFamily,
+        Axis::MonoFamily,
+        Axis::TextScale,
+        Axis::Density,
+        Axis::ReducedMotion,
     ];
 
     /// `a` and `b` differ on this axis.
@@ -245,6 +374,11 @@ impl Axis {
             Axis::Contrast => a.contrast != b.contrast,
             Axis::Decorations => a.decorations != b.decorations,
             Axis::CaptionSide => a.captions != b.captions,
+            Axis::FontFamily => a.font_family != b.font_family,
+            Axis::MonoFamily => a.mono_family != b.mono_family,
+            Axis::TextScale => a.text_scale != b.text_scale,
+            Axis::Density => a.density != b.density,
+            Axis::ReducedMotion => a.reduced_motion != b.reduced_motion,
         }
     }
 
@@ -257,6 +391,11 @@ impl Axis {
             Axis::Contrast => to.contrast = from.contrast,
             Axis::Decorations => to.decorations = from.decorations,
             Axis::CaptionSide => to.captions = from.captions,
+            Axis::FontFamily => to.font_family = from.font_family.clone(),
+            Axis::MonoFamily => to.mono_family = from.mono_family.clone(),
+            Axis::TextScale => to.text_scale = from.text_scale,
+            Axis::Density => to.density = from.density,
+            Axis::ReducedMotion => to.reduced_motion = from.reduced_motion,
         }
     }
 }
@@ -264,7 +403,7 @@ impl Axis {
 /// The person's edits: the look they were made on and the look they leave.
 /// An axis is edited when the two differ there; every other axis follows
 /// settingsd.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Draft {
     pub base: Look,
     pub look: Look,
@@ -430,13 +569,16 @@ impl Appearance {
     /// The look the panel and the window show: the draft, else the
     /// expected look.
     pub fn shown(&self) -> Option<Look> {
-        self.draft.map(|d| d.look).or_else(|| self.expected())
+        self.draft
+            .as_ref()
+            .map(|d| d.look.clone())
+            .or_else(|| self.expected())
     }
 
     /// settingsd's look with the apply in flight (or awaiting its read)
     /// laid over it: what the session is about to be.
     pub fn expected(&self) -> Option<Look> {
-        let mut look = self.current?;
+        let mut look = self.current.clone()?;
         if let Some(sent) = &self.sent {
             for axis in &sent.axes {
                 axis.copy(&mut look, &sent.look);
@@ -466,12 +608,12 @@ impl Appearance {
     }
 
     fn return_sent(&mut self, pin: bool) {
-        let (Some(sent), Some(current)) = (self.sent.take(), self.current) else {
+        let (Some(sent), Some(current)) = (self.sent.take(), self.current.clone()) else {
             return;
         };
-        let mut draft = self.draft.unwrap_or(Draft {
-            base: current,
-            look: current,
+        let mut draft = self.draft.take().unwrap_or(Draft {
+            base: current.clone(),
+            look: current.clone(),
         });
         for axis in &sent.axes {
             let reedited = axis.differs(&draft.look, &draft.base);
@@ -551,7 +693,7 @@ impl Appearance {
         } else {
             self.pinned.clone()
         };
-        let Some(draft) = self.draft else {
+        let Some(draft) = self.draft.take() else {
             return;
         };
         let mut edits = draft.edits();
@@ -569,7 +711,7 @@ impl Appearance {
                 self.conflicts.push(axis);
             }
         }
-        let mut look = current;
+        let mut look = current.clone();
         for axis in &edits {
             axis.copy(&mut look, &draft.look);
         }
@@ -577,8 +719,11 @@ impl Appearance {
             base: current,
             look,
         });
-        self.conflicts
-            .retain(|a| self.draft.is_some_and(|d| a.differs(&d.base, &d.look)));
+        self.conflicts.retain(|a| {
+            self.draft
+                .as_ref()
+                .is_some_and(|d| a.differs(&d.base, &d.look))
+        });
     }
 }
 
@@ -654,11 +799,19 @@ pub(crate) fn refusal(value: &Value) -> String {
 fn snapshot(value: &Value) -> Result<(settings::Summary, Look), String> {
     let summary: settings::Summary =
         serde_json::from_value(value["summary"].clone()).map_err(|e| format!("summary: {e}"))?;
-    let look = Look::from_stored(&summary.appearance)?;
+    let mut look = Look::from_stored(&summary.appearance)?;
+    look.text_scale = summary.ui.text_scale;
+    look.density = summary.ui.density;
+    look.reduced_motion = summary.ui.reduced_motion;
     Ok((summary, look))
 }
 
 impl Engine {
+    /// Apply one control over the latest shown draft, preserving other edits.
+    pub fn edit_appearance(&mut self, edit: AppearanceEdit) {
+        let _ = self.set_look(&edit.args());
+    }
+
     /// Start the panel on the profile of settingsd `instance` (the host
     /// name; adopted from settingsd's answer when it serves another).
     pub fn start_appearance(&mut self, instance: &str) {
@@ -766,17 +919,12 @@ impl Engine {
             }
             Call::Apply(submitted) => {
                 let (incarnation, revision) = self.look.fence.clone().expect("a fenced apply");
-                let current = self.look.current.unwrap_or_default();
+                let current = self.look.current.clone().unwrap_or_default();
                 let changes = submitted
                     .look
                     .changes(&current)
                     .into_iter()
-                    .filter(|(key, _)| {
-                        submitted
-                            .axes
-                            .iter()
-                            .any(|a| key == &format!("appearance.{}", axis_key(*a)))
-                    })
+                    .filter(|(key, _)| submitted.axes.iter().any(|a| key == axis_key(*a)))
                     .collect();
                 serde_json::to_value(ApplyRequest {
                     binding: self.look.binding.clone(),
@@ -812,9 +960,13 @@ impl Engine {
         let Some(expected) = self.look.expected() else {
             return;
         };
-        let base = self.look.draft.map_or(expected, |d| d.base);
+        let base = self
+            .look
+            .draft
+            .as_ref()
+            .map_or(expected, |d| d.base.clone());
         self.look.draft = self.look.kept(Draft { base, look });
-        let draft = self.look.draft;
+        let draft = self.look.draft.as_ref();
         self.look
             .conflicts
             .retain(|a| draft.is_some_and(|d| a.differs(&d.base, &d.look)));
@@ -965,8 +1117,8 @@ impl Engine {
         self.failed = false;
         let submitted = Submitted {
             operation,
-            look: draft.look,
             axes: draft.edits(),
+            look: draft.look,
         };
         self.look.sent = Some(submitted.clone());
         self.call_settings(Call::Apply(submitted));
@@ -1051,7 +1203,7 @@ impl Engine {
                     self.look.settings = Availability::Available;
                     self.look.keymaps = summary.keymaps;
                     self.look.fence = Some((summary.incarnation, summary.revision));
-                    self.look.current = Some(look);
+                    self.look.current = Some(look.clone());
                     self.look.terminal = Some(summary.terminal);
                     self.look.ced = Some(summary.ced);
                     self.look.interface_font = Some(InterfaceFont {
@@ -1261,8 +1413,8 @@ impl Engine {
         json!({"section":self.section(),"category":self.section().category(),
             "wallpaper":self.wallpaper,"settings":self.look.settings,"binding":self.look.binding,
             "revision":self.look.revision().map(|r| r.to_string()),
-            "current":self.look.current,"draft":self.look.draft.map(|d| d.look),
-            "edits":self.look.draft.map(|d| d.edits()).unwrap_or_default(),
+            "current":self.look.current,"draft":self.look.draft.as_ref().map(|d| &d.look),
+            "edits":self.look.draft.as_ref().map(|d| d.edits()).unwrap_or_default(),
             "conflicts":self.look.conflicts,"shown":self.look.shown(),
             "effective":self.look.shown().map(|look| look.effective()),
             "expected":self.look.expected(),"sent":self.look.sent.as_ref().map(|s| &s.axes),
@@ -1288,15 +1440,20 @@ impl Engine {
     }
 }
 
-/// An axis's `settings.apply` key, after `appearance.`.
+/// An axis's full `settings.apply` key.
 fn axis_key(axis: Axis) -> &'static str {
     match axis {
-        Axis::Scheme => "scheme",
-        Axis::Style => "style",
-        Axis::Mode => "mode",
-        Axis::Contrast => "contrast",
-        Axis::Decorations => "decorations",
-        Axis::CaptionSide => "caption_side",
+        Axis::Scheme => "appearance.scheme",
+        Axis::Style => "appearance.style",
+        Axis::Mode => "appearance.mode",
+        Axis::Contrast => "appearance.contrast",
+        Axis::Decorations => "appearance.decorations",
+        Axis::CaptionSide => "appearance.caption_side",
+        Axis::FontFamily => "appearance.font_family",
+        Axis::MonoFamily => "appearance.mono_family",
+        Axis::TextScale => "ui.text_scale",
+        Axis::Density => "ui.density",
+        Axis::ReducedMotion => "ui.reduced_motion",
     }
 }
 
@@ -1412,6 +1569,150 @@ mod tests {
         e.edit_look(look);
     }
 
+    fn control_cases() -> [(AppearanceEdit, &'static str, Value, Value); 5] {
+        [
+            (
+                AppearanceEdit::FontFamily(Some("Example Sans".into())),
+                "appearance.font_family",
+                json!("Example Sans"),
+                Value::Null,
+            ),
+            (
+                AppearanceEdit::MonoFamily(Some("Example Mono".into())),
+                "appearance.mono_family",
+                json!("Example Mono"),
+                Value::Null,
+            ),
+            (
+                AppearanceEdit::TextScale(1.25),
+                "ui.text_scale",
+                json!(1.25),
+                json!(1.0),
+            ),
+            (
+                AppearanceEdit::Density(0.8),
+                "ui.density",
+                json!(0.8),
+                json!(1.0),
+            ),
+            (
+                AppearanceEdit::ReducedMotion(true),
+                "ui.reduced_motion",
+                json!(true),
+                json!(false),
+            ),
+        ]
+    }
+
+    fn stored_control(revision: &str, path: &str, value: Value) -> Value {
+        let mut body = snapshot_body(revision, "studio", "dark");
+        let (group, key) = path.split_once('.').unwrap();
+        if group == "ui" {
+            body["summary"]["ui"] = json!({"text_scale":1.0,"density":1.0,"reduced_motion":false});
+        }
+        body["summary"][group][key] = value;
+        body
+    }
+
+    #[test]
+    fn appearance_controls_apply_fenced_then_reset_on_the_next_revision() {
+        for (control, path, value, default) in control_cases() {
+            let mut e = read();
+            e.edit_appearance(control);
+            let (ticket, verb, body) = next(&mut e);
+            assert_eq!(verb, "settings.apply");
+            assert_eq!(body["expected_incarnation"], "inc-1");
+            assert_eq!(body["expected_revision"], "7");
+            assert_eq!(body["changes"], json!({path:value.clone()}));
+            e.settled(ticket, reply(0, changed()));
+            answer_next(&mut e, 0, stored_control("8", path, value));
+            let key = path.split_once('.').unwrap().1;
+            edit(&mut e, json!({key:default.clone()}));
+            let (_, verb, body) = next(&mut e);
+            assert_eq!(verb, "settings.apply");
+            assert_eq!(body["expected_revision"], "8");
+            assert_eq!(body["changes"], json!({path:default}));
+        }
+    }
+
+    #[test]
+    fn appearance_controls_keep_conflicting_drafts_until_the_person_decides() {
+        for (control, path, value, _) in control_cases() {
+            let mut e = read();
+            e.edit_appearance(control);
+            answer_next(&mut e, 10, json!({"status":"conflict"}));
+            let other = match path {
+                "appearance.font_family" | "appearance.mono_family" => json!("Other Family"),
+                "ui.text_scale" | "ui.density" => json!(1.5),
+                // A boolean has no third value: an agreeing writer retires it.
+                _ => json!(true),
+            };
+            answer_next(&mut e, 0, stored_control("8", path, other));
+            if path == "ui.reduced_motion" {
+                assert!(e.look.draft.is_none());
+                assert!(e.look.conflicts.is_empty());
+            } else {
+                assert_eq!(e.look.conflicts.len(), 1, "{path}");
+                assert!(e.look.waiting());
+                assert!(settings_calls(&mut e).is_empty());
+                e.keep_look();
+                let (_, verb, body) = next(&mut e);
+                assert_eq!(verb, "settings.apply");
+                assert_eq!(body["expected_revision"], "8");
+                assert_eq!(body["changes"], json!({path:value}));
+            }
+        }
+    }
+
+    #[test]
+    fn a_motion_edit_retries_on_a_fresh_fence_after_an_unrelated_conflict() {
+        let mut e = read();
+        e.edit_appearance(AppearanceEdit::ReducedMotion(true));
+        answer_next(&mut e, 10, json!({"status":"conflict"}));
+        answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
+        let (_, _, body) = next(&mut e);
+        assert_eq!(body["expected_revision"], "8");
+        assert_eq!(body["changes"], json!({"ui.reduced_motion":true}));
+    }
+
+    #[test]
+    fn new_controls_queue_reversals_while_an_apply_settles() {
+        for (control, path, value, default) in control_cases() {
+            let mut e = read();
+            e.edit_appearance(control);
+            let (ticket, _, _) = next(&mut e);
+            let key = path.split_once('.').unwrap().1;
+            edit(&mut e, json!({key:default.clone()}));
+            assert!(settings_calls(&mut e).is_empty());
+            e.settled(ticket, reply(0, changed()));
+            answer_next(&mut e, 0, stored_control("8", path, value));
+            let (_, _, body) = next(&mut e);
+            assert_eq!(body["expected_revision"], "8");
+            assert_eq!(body["changes"], json!({path:default}));
+            assert!(e.look.conflicts.is_empty());
+        }
+    }
+
+    #[test]
+    fn new_control_arguments_are_checked_before_any_axis_is_edited() {
+        let mut e = read();
+        for invalid in [
+            json!({"font_family":""}),
+            json!({"mono_family":" padded "}),
+            json!({"font_family":"bad\nname"}),
+            json!({"font_family":"a".repeat(129)}),
+            json!({"text_scale":3.05}),
+            json!({"density":0.45}),
+            json!({"reduced_motion":1}),
+        ] {
+            let mut args = invalid;
+            args["scheme"] = json!("forest");
+            assert!(e.set_look(&args).is_err());
+            assert!(settings_calls(&mut e).is_empty());
+            assert_eq!(e.look.shown().unwrap().scheme, Scheme::Studio);
+        }
+    }
+
     /// The one settings call now queued.
     fn next(e: &mut Engine) -> (u64, &'static str, Value) {
         let calls = settings_calls(e);
@@ -1430,7 +1731,7 @@ mod tests {
     fn the_first_read_fills_the_panel() {
         let e = read();
         assert_eq!(e.look.settings, Availability::Available);
-        assert_eq!(e.look.current.unwrap().scheme, Scheme::Studio);
+        assert_eq!(e.look.current.as_ref().unwrap().scheme, Scheme::Studio);
         assert_eq!(e.look.revision(), Some(7));
         assert!(e.look.draft.is_none() && !e.can_apply_look());
     }
@@ -1570,7 +1871,7 @@ mod tests {
             json!({"status":"validation_failed","message":"no"}),
         );
         assert!(e.look.hold && e.look.waiting() && e.failed);
-        assert_eq!(e.look.draft.unwrap().look.scheme, Scheme::Forest);
+        assert_eq!(e.look.draft.as_ref().unwrap().look.scheme, Scheme::Forest);
         assert!(settings_calls(&mut e).is_empty(), "not retried in a loop");
         assert!(e.can_apply_look() && e.can_revert_look());
         // Apply tries again; an edit would too; Revert drops it.
@@ -1592,7 +1893,7 @@ mod tests {
         answer_next(&mut e, 10, json!({"status":"validation_failed"}));
         e.read_look();
         answer_next(&mut e, 0, snapshot_body("8", "ocean", "dark"));
-        let draft = e.look.draft.unwrap();
+        let draft = e.look.draft.as_ref().unwrap();
         assert_eq!(
             draft.look.scheme,
             Scheme::Ocean,
@@ -1640,7 +1941,7 @@ mod tests {
         );
         assert!(!e.can_apply_look());
         assert_eq!(
-            e.look.draft.unwrap().look.mode,
+            e.look.draft.as_ref().unwrap().look.mode,
             Mode::Light,
             "the edit is kept"
         );
@@ -1756,7 +2057,7 @@ mod tests {
         );
         assert!(!e.quitting && e.look.hold && e.failed);
         assert_eq!(e.status, "look-kept-open");
-        assert_eq!(e.look.draft.unwrap().look.mode, Mode::Light);
+        assert_eq!(e.look.draft.as_ref().unwrap().look.mode, Mode::Light);
         e.quit();
         assert!(
             e.take_effects().contains(&Effect::Exit),
@@ -1938,7 +2239,7 @@ mod tests {
         // Still unknown: the edit is kept and Preferences stays open once.
         assert!(!e.take_effects().contains(&Effect::Exit));
         assert_eq!(e.status, "look-kept-open");
-        assert_eq!(e.look.draft.unwrap().look.scheme, Scheme::Forest);
+        assert_eq!(e.look.draft.as_ref().unwrap().look.scheme, Scheme::Forest);
         e.quit();
         assert!(e.take_effects().contains(&Effect::Exit));
     }
@@ -1965,7 +2266,7 @@ mod tests {
             e.settled(ticket, reply(0, snapshot_body("8", scheme, "dark")));
             assert_eq!(e.take_effects().contains(&Effect::Exit), exits);
             if !exits {
-                assert_eq!(e.look.draft.unwrap().look.scheme, Scheme::Forest);
+                assert_eq!(e.look.draft.as_ref().unwrap().look.scheme, Scheme::Forest);
             }
         }
         // And a failed deciding read keeps the edit and Preferences open.
@@ -1982,7 +2283,7 @@ mod tests {
         let (ticket, _, _) = next(&mut e);
         e.settled(ticket, lost());
         assert!(!e.take_effects().contains(&Effect::Exit));
-        assert_eq!(e.look.draft.unwrap().look.scheme, Scheme::Forest);
+        assert_eq!(e.look.draft.as_ref().unwrap().look.scheme, Scheme::Forest);
     }
 
     /// Studio, Forest (its reply lost), then Studio again, queued; the
@@ -2027,7 +2328,7 @@ mod tests {
         // held for Try again, not a conflict.
         e.settled(ticket, reply(0, snapshot_body("8", "forest", "dark")));
         assert!(settings_calls(&mut e).is_empty(), "held, not retried");
-        let draft = e.look.draft.unwrap();
+        let draft = e.look.draft.as_ref().unwrap();
         assert_eq!(
             (draft.base.scheme, draft.look.scheme),
             (Scheme::Forest, Scheme::Studio)
@@ -2074,7 +2375,7 @@ mod tests {
             answer_next(&mut e, 0, snapshot_body("8", landed, "dark"));
             assert_eq!(e.look.draft.is_some(), kept, "{landed}");
             if kept {
-                let draft = e.look.draft.unwrap();
+                let draft = e.look.draft.as_ref().unwrap();
                 assert_eq!(
                     (draft.base.scheme, draft.look.scheme),
                     (Scheme::Forest, Scheme::Studio)
@@ -2127,7 +2428,7 @@ mod tests {
         e.ui.section = crate::Section::Themes;
         e.refresh();
         answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
-        let draft = e.look.draft.unwrap();
+        let draft = e.look.draft.as_ref().unwrap();
         assert_eq!(
             (draft.base.scheme, draft.look.scheme),
             (Scheme::Forest, Scheme::Studio)

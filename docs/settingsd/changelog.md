@@ -8,6 +8,11 @@ generated: by docs/_build/gen-site.mix from services/settingsd/CHANGELOG.md; do 
 
 > Mirrored from [`services/settingsd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/settingsd/CHANGELOG.md), where releases update it. The component's page is [settingsd](README.md). This page describes the current `main` branch of MixOS.
 
+## Unreleased
+
+`settings.get` 0.7.0 includes `ui` in summary reads: text scale, density and
+reduced motion on the same revision as appearance. Store format unchanged.
+
 ## 0.1.0
 
 Before initial release: sealed profile format 4 re-derives the Workshop app

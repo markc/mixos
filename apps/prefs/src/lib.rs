@@ -11,6 +11,7 @@
 //! through, from the menu, a button, a shortcut or the Bus.
 mod browser;
 pub mod commands;
+mod font_families;
 pub mod shell;
 pub mod view;
 

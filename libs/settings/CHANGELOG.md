@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+`Summary.ui` carries the session's text scale, density and reduced motion on
+the summary's revision. Store format unchanged; `settings.get` is 0.7.0.
+
 Additive, store format unchanged: the mail options `email.mail.quote_on_reply`
 (boolean, default true) and `email.mail.reply_position` (`"above"` or `"below"`,
 default `"above"`), which the email app's Reply now reads instead of fixed

@@ -6,8 +6,8 @@ description: MixOS's preferences window — Appearance sets the session's look, 
 # Preferences
 
 Preferences holds MixOS's preference editors in one window. A resizable tree
-on the left opens sections on the right. Appearance contains Themes, Fonts
-and Wallpapers. Apps contains Email, Terminal and Text. System contains
+on the left opens sections on the right. Appearance contains Themes, Fonts,
+Size & Density, Motion and Wallpapers. Apps contains Email, Terminal and Text. System contains
 Software. Overview, Desktop, Input and Output have no sections yet, so the
 tree hides them. The window takes its cue from the Prefs drawer of AmigaOS,
 where each setting had its own small editor.
@@ -84,8 +84,29 @@ applied (**Check again** asks now); if settingsd no longer holds one, the
 session's current state decides what the status line says.
 
 **Appearance → Fonts** shows the interface, heading and monospace faces currently
-installed on the window, with previews. Font family and size selection is not
-available yet; these faces follow the session design.
+installed on the window, with previews. Interface and monospace family pickers
+list installed families, sorted without duplicates; the monospace picker lists
+only families with monospaced faces. The font list is read once in the background.
+The first row restores the design default (Inter or JetBrains Mono), stored as
+null. A stored family absent from the list stays visible, marked **missing**.
+Interface weight and size controls sit beside the family choices.
+
+Family choices use the same fenced drafts and conflict handling as Themes.
+The note names the families settingsd holds. The toolkit currently installs
+bundled Inter and JetBrains Mono regardless of those stored names, including
+after a theme reload or restart. Other families take effect when the toolkit
+supports loading them; this stage adds no font loader. The faces grid and
+previews show the actual egui font stacks, rather than the saved request.
+
+**Appearance → Size & Density** sets text scale (50–300%, in 5% steps) and
+density (0.5–2.0, in 0.05 steps). Each **Reset** restores 1.0. A drag applies
+once when released; keyboard and wheel steps apply individually. Search also
+finds this section with `scale`, `zoom`, `density`, `spacing` or `compact`.
+
+**Appearance → Motion** sets **Reduce motion**, which apps and the compositor
+honour. Search also accepts `animation`, `reduce motion` and `accessibility`.
+Both sections use Appearance's fenced applies, queued drafts, receipts and
+conflict recovery controls.
 
 ## Apps
 
@@ -187,7 +208,12 @@ Preferences answers on the Bus as `prefs`. `prefs.info` reports the whole state;
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; `prefs.appearance.set`
 changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
-`contrast`, `decorations`, `caption_side`).
+`contrast`, `decorations`, `caption_side`, `font_family`, `mono_family`,
+`text_scale`, `density`, `reduced_motion`). Family values are strings or null;
+text scale and density reset with 1.0, and reduced motion takes a boolean.
+The new section ids are `size` and `motion`. Search includes their `ui.*`
+keys and both font-family keys. `prefs.appearance` and `prefs.appearance.set`
+are version 0.2.0; `prefs.info`, which embeds appearance, is 0.3.0.
 `prefs.section {name[, group]}` opens a registry section and expands its
 category. `app.describe` lists the section ids and their searchable metadata.
 For Software, `group` selects `mixos-desktop`, `mixos-server`, `creative` or
@@ -243,7 +269,7 @@ The source is [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs
 |---|---|
 | `crates/preferences` | the headless engine: sections, rows, notes, one operation at a time, the `prefs.*` verbs |
 | `crates/preferences/src/navigation.rs` | the section registry, seven categories, software groups and search |
-| `crates/preferences/src/appearance.rs` | Appearance › Themes: the look, its draft, fenced applies, receipts for lost replies |
+| `crates/preferences/src/appearance.rs` | Appearance: the look, families, scale, density and motion, with drafts, fenced applies and receipts for lost replies |
 | `crates/preferences/src/email.rs` | Apps → Email: account changes planned and checked, fenced applies, passwords handed to Email |
 | `src/commands.rs` | every action as a registered command (menus, buttons, shortcuts, `prefs.execute`) |
 | `src/view.rs` | the egui rendering; returns what the person did |

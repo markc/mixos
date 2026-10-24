@@ -7230,6 +7230,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_kittest",
+ "fontdb",
  "futures",
  "preferences",
  "serde_json",

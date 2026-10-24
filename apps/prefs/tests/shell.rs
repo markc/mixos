@@ -230,3 +230,32 @@ fn search_verb_uses_translated_titles_and_leaves_the_window_alone() {
             if body["section"] == "software" && body["ui"]["search"] == ""
     )));
 }
+
+#[test]
+fn every_registry_section_opens_through_the_shell() {
+    let mut rig = rig();
+    for (index, section) in preferences::SECTIONS.iter().enumerate() {
+        let id = 100 + index as u64;
+        send(&mut rig, id, "prefs.section", json!({"name":section.id}));
+        wait(&mut rig, &[id]);
+        assert!(
+            rig.bus.log().iter().any(|entry| matches!(entry,
+                Logged::Reply { id: reply_id, rc: 0, body } if *reply_id == id
+                    && body["section"] == section.id
+                    && body["category"] == section.category.name()
+            )),
+            "{}: {:?}",
+            section.id,
+            rig.bus.log()
+        );
+    }
+    send(&mut rig, 200, "prefs.search", json!({"query":"compact"}));
+    send(&mut rig, 201, "prefs.search", json!({"query":"animation"}));
+    wait(&mut rig, &[200, 201]);
+    for (id, section) in [(200, "size"), (201, "motion")] {
+        assert!(rig.bus.log().iter().any(|entry| matches!(entry,
+            Logged::Reply { id: reply_id, rc: 0, body } if *reply_id == id
+                && body["matches"] == json!([{"id":section,"category":"appearance"}])
+        )));
+    }
+}
