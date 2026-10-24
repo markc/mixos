@@ -56,11 +56,28 @@ fn long_toast() -> String {
 
 fn guarded_toast() -> String {
     include_str!("../../../../../../share/scenes/toast/scene.mix")
-        .replace("\"summary_lines\":[\"\",\"\",\"\"]", &format!("\"summary_lines\":[\"{}\",\"{}\",\"{}…\"]", "W".repeat(38), "W".repeat(38), "W".repeat(37)))
-        .replace("\"summary_shown\":[false,false,false]", "\"summary_shown\":[true,true,true]")
+        .replace(
+            "\"summary_lines\":[\"\",\"\",\"\"]",
+            &format!(
+                "\"summary_lines\":[\"{}\",\"{}\",\"{}…\"]",
+                "W".repeat(38),
+                "W".repeat(38),
+                "W".repeat(37)
+            ),
+        )
+        .replace(
+            "\"summary_shown\":[false,false,false]",
+            "\"summary_shown\":[true,true,true]",
+        )
         .replace("\"app\":\"\"", &format!("\"app\":\"{}\"", "W".repeat(120)))
-        .replace("\"shown\":[false,false,false,false]", "\"shown\":[true,false,false,false]")
-        .replace("\"labels\":[\"\",\"\",\"\",\"\"]", "\"labels\":[\"Got it\",\"\",\"\",\"\"]")
+        .replace(
+            "\"shown\":[false,false,false,false]",
+            "\"shown\":[true,false,false,false]",
+        )
+        .replace(
+            "\"labels\":[\"\",\"\",\"\",\"\"]",
+            "\"labels\":[\"Got it\",\"\",\"\",\"\"]",
+        )
 }
 
 #[test]
@@ -68,7 +85,12 @@ fn guarded_toast_fits_the_behaviour_seat_height() {
     let rt = runtime(&guarded_toast(), (360, 154));
     let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 154.0));
     for placed in &rt.program.layout().placed {
-        assert!(bounds.contains_rect(placed.rect), "{}: {:?}", placed.id, placed.rect);
+        assert!(
+            bounds.contains_rect(placed.rect),
+            "{}: {:?}",
+            placed.id,
+            placed.rect
+        );
     }
 }
 

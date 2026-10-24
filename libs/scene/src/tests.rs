@@ -21,10 +21,26 @@ fn doc(b: &str) -> SceneDocument {
 #[test]
 fn text_wrapping_ports_are_validated() {
     for ports in ["wrap: true, max_lines: 3", "wrap: false, max_lines: 1"] {
-        assert!(resolve(&doc(&format!("root: {{widget: \"text\", text: \"title\", {ports}}}"))).is_ok());
+        assert!(
+            resolve(&doc(&format!(
+                "root: {{widget: \"text\", text: \"title\", {ports}}}"
+            )))
+            .is_ok()
+        );
     }
-    for ports in ["wrap: 1", "max_lines: 0", "max_lines: 1.5", "max_lines: 1025", "max_lines: \"3\""] {
-        assert!(resolve(&doc(&format!("root: {{widget: \"text\", text: \"title\", {ports}}}"))).is_err());
+    for ports in [
+        "wrap: 1",
+        "max_lines: 0",
+        "max_lines: 1.5",
+        "max_lines: 1025",
+        "max_lines: \"3\"",
+    ] {
+        assert!(
+            resolve(&doc(&format!(
+                "root: {{widget: \"text\", text: \"title\", {ports}}}"
+            )))
+            .is_err()
+        );
     }
 }
 

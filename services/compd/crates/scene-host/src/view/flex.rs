@@ -23,7 +23,7 @@
 //! - A fixed-height container keeps its children's intrinsic height and
 //!   gives up vertical padding to fit, as Quoin does.
 //! - Leaves are measured: `text` with the installed fonts (one line; `elide`
-//!   lets it shrink below its width, the painter elides the middle),
+//!   lets it shrink below its width, the painter elides the end),
 //!   `button` as its label plus padding, `field` as a line plus padding and
 //!   160 wide unless sized, `toggle` as a switch plus its label, `image` at
 //!   its `w` x `h` (16 by default), a sized `spacer` at its size.
@@ -357,7 +357,7 @@ impl<'a> Builder<'a> {
                 style.size.width = len(160.0);
             }
             "text" if flag(node, "elide") || flag(node, "wrap") => {
-                // May shrink below its text; the painter elides the middle.
+                // May shrink below its text; painting uses the assigned width.
                 style.min_size.width = lpa(0.0);
                 style.max_size.width = LengthPercentageAuto::percent(1.0);
                 if flag(node, "wrap") {
