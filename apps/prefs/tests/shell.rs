@@ -194,10 +194,14 @@ fn slash_focuses_search_enter_opens_first_match_and_escape_clears_and_unfocuses(
     rig.h.run_steps(3);
     send(&mut rig, 11, "prefs.info", json!({}));
     wait(&mut rig, &[11]);
-    assert!(rig.bus.log().iter().any(|entry| matches!(entry,
-        Logged::Reply { id: 11, rc: 0, body }
-            if body["section"] == "wallpapers" && body["category"] == "appearance"
-    )), "{:?}", rig.bus.log());
+    assert!(
+        rig.bus.log().iter().any(|entry| matches!(entry,
+            Logged::Reply { id: 11, rc: 0, body }
+                if body["section"] == "wallpapers" && body["category"] == "appearance"
+        )),
+        "{:?}",
+        rig.bus.log()
+    );
     rig.h.key_press(egui::Key::Escape);
     rig.h.run_steps(3);
     assert!(!rig.h.ctx.memory(|m| m.has_focus(search)));
