@@ -98,7 +98,7 @@ impl Roots {
 
     pub fn remove(&self, entry: &Entry) -> io::Result<()> {
         self.user_target(entry)?;
-        fs::remove_file(&entry.path)
+        crate::storage::Target::open(&self.user, &entry.path)?.remove()
     }
 
     /// Exclusive destination allocation refuses clashes, including dangling links.

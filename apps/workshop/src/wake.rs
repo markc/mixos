@@ -60,6 +60,7 @@ mod tests {
             passes += 1;
             wake.wait();
         }
+        eprintln!("idle focused text field: {passes} passes over two seconds");
         assert!(
             passes <= 20,
             "idle headless loop spun {passes} passes in two seconds"

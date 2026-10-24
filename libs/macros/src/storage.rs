@@ -166,6 +166,14 @@ impl Target {
         self.directory.sync_all()
     }
 
+    pub(crate) fn remove(&self) -> io::Result<()> {
+        // SAFETY: unlink only the named entry in the opened parent directory.
+        syscall(unsafe {
+            libc::unlinkat(self.directory.as_raw_fd(), self.name.as_ptr(), 0)
+        })?;
+        self.directory.sync_all()
+    }
+
     pub(crate) fn write(&self, bytes: &[u8]) -> io::Result<()> {
         self.write_with_hook(bytes, || {})
     }
