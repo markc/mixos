@@ -42,6 +42,7 @@ foundational ones:
 - [Source layout and naming](decisions/2026-10-04-source-layout.md)
 - [egui applications, engine first](decisions/2026-10-09-egui-applications.md)
 - [Commands take parameters and return results](decisions/2026-10-20-commands-take-parameters.md)
+- [Bus commands and app actions](decisions/2026-10-24-bus-commands-and-actions.md)
 - [One repository, install profiles](decisions/2026-10-12-one-repository-install-profiles.md)
 - [One system binary](decisions/2026-10-12-one-system-binary.md)
 - [Site URL layout](decisions/2026-10-16-site-url-layout.md)
@@ -902,6 +903,8 @@ checked separately by the layering gate.
 # Decision — egui applications, engine first
 
 Status: accepted 2026-10-09.
+
+Amended 2026-10-24 by [Bus commands and app actions](2026-10-24-bus-commands-and-actions.md): the names below are now command, command class, command family and action.
 
 ## The decision
 
@@ -3158,6 +3161,8 @@ self-named module files (`foo/foo.rs`, each the file of a module `foo::foo`).
 Status: accepted 2026-10-11. Amends [egui applications](2026-10-09-egui-applications.md)
 (AGENTS.md §4.1).
 
+Amended 2026-10-24 by [Bus commands and app actions](2026-10-24-bus-commands-and-actions.md): the names below are now command, command class, command family and action.
+
 ## The decision
 
 Amended 2026-10-20 by [commands take parameters and return results](2026-10-20-commands-take-parameters.md). The body is v2; v1 events are no longer emitted.
@@ -3656,6 +3661,8 @@ order.
 
 Status: accepted 2026-10-11. Amends AGENTS.md §5 (Bus verbs are wire
 contracts).
+
+Amended 2026-10-24 by [Bus commands and app actions](2026-10-24-bus-commands-and-actions.md): the names below are now command, command class, command family and action.
 
 Amended 2026-10-20 by [commands take parameters and return results](2026-10-20-commands-take-parameters.md).
 Registry schema 4 adds a trailing `schema` field to every verb and family:
@@ -4558,6 +4565,8 @@ binary. Those land with the implementation.
 
 Status: accepted, 2026-10-13.
 
+Amended 2026-10-24 by [Bus commands and app actions](2026-10-24-bus-commands-and-actions.md): the names below are now command, command class, command family and action.
+
 ## Context
 
 Some Bus verbs are not one name. A bridge serves one service per instance it
@@ -5436,6 +5445,8 @@ prefix archive, alongside the system binary.
 
 Status: accepted 2026-10-20. Amends [egui applications](2026-10-09-egui-applications.md), [executed commands](2026-10-11-executed-commands.md) and [command classes](2026-10-11-verb-classes.md).
 
+Amended 2026-10-24 by [Bus commands and app actions](2026-10-24-bus-commands-and-actions.md): the names below are now command, command class, command family and action.
+
 ## The decision
 
 - **A command has typed parameters and a result.** Its parameter type is a serde struct that refuses unknown fields and derives a JSON Schema; `<app>.actions` reports the schema, enablement and the disabled reason; `<app>.execute { id, params }` runs it and returns the result.
@@ -6065,6 +6076,55 @@ must use a reviewed native privilege and activation path before it can claim
 to update the system.
 
 Implementation and operator steps: [Releasing MixOS](../dev/releasing.md).
+
+---
+
+<!-- page: https://mixos.dev/docs/decisions/2026-10-24-bus-commands-and-actions/ (source: https://mixos.dev/docs/decisions/2026-10-24-bus-commands-and-actions.md) -->
+
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
+
+# Decision — Bus commands and app actions
+
+Status: accepted 2026-10-24. Amends [verb classes](2026-10-11-verb-classes.md),
+[instance verb families](2026-10-13-instance-verb-families.md),
+[executed commands](2026-10-11-executed-commands.md),
+[egui applications](2026-10-09-egui-applications.md) and
+[commands take parameters](2026-10-20-commands-take-parameters.md).
+
+## The decision
+
+- **A dotted name a service answers is a Bus command.** The command
+  registry, command classes and command families keep the meaning the verb
+  registry, classes and families had. Payloads say `command`, as the frame
+  header already does.
+- **An app's registry entry is an action.** `<app>.actions` lists them,
+  `<app>.execute` runs one, `<app>.action.executed` publishes each run, and
+  the registry crate is `libs/action`. The MCP edge tools are `app_actions`
+  and `app_execute`.
+- **One refusal per kind:** rc 10 with `UNKNOWN_COMMAND` for an unknown Bus
+  command, from every component; `UNKNOWN_ACTION` for an unknown action.
+- **"Verb" is retired** outside history (superseded decisions and
+  changelogs). `tools/terminology_gate.mix` refuses it elsewhere.
+
+## Why
+
+Most command names are not verbs, the wire and Mix already say "command",
+and ARexx, whose model Mix follows, sends commands to ports. Readers who
+know HTTP take "verb" to mean a closed method set, which in MixOS is the
+command class. Agents read these docs cold, so one concept gets one word,
+and one word means one concept.
+
+## Consequences
+
+- Command registry schema 5: [`commands.conf.mix`](../spec/bus/commands.conf.mix),
+  gate `tools/command_registry.mix`.
+- Every component's unknown-name refusal is renamed; tests and pages follow.
+- Names other systems own keep their words: the generic bridge protocol's
+  `engine.commands` and `engine.execute`, and polkit's `action.lookup("verb")`.
+- Stored state moves with the code: the props store renames its events
+  column on open, and an install migrates hostd's standing grants
+  (`commands:`) and receipts (`"command"`).
+- No aliases: the change is wire-breaking and ships in one release.
 
 ---
 

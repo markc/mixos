@@ -8,6 +8,8 @@ description: Every MixOS application publishes each command it runs as a Bus top
 Status: accepted 2026-10-11. Amends [egui applications](2026-10-09-egui-applications.md)
 (AGENTS.md §4.1).
 
+Amended 2026-10-24 by [Bus commands and app actions](2026-10-24-bus-commands-and-actions.md): the names below are now command, command class, command family and action.
+
 ## The decision
 
 Amended 2026-10-20 by [commands take parameters and return results](2026-10-20-commands-take-parameters.md). The body is v2; v1 events are no longer emitted.

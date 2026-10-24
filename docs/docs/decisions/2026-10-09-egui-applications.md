@@ -7,6 +7,8 @@ description: MixOS applications and desktop furniture are built on egui and wgpu
 
 Status: accepted 2026-10-09.
 
+Amended 2026-10-24 by [Bus commands and app actions](2026-10-24-bus-commands-and-actions.md): the names below are now command, command class, command family and action.
+
 ## The decision
 
 Commands take parameters and return results; see [the amendment](2026-10-20-commands-take-parameters.md).

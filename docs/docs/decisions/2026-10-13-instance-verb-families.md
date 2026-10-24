@@ -2,6 +2,8 @@
 
 Status: accepted, 2026-10-13.
 
+Amended 2026-10-24 by [Bus commands and app actions](2026-10-24-bus-commands-and-actions.md): the names below are now command, command class, command family and action.
+
 ## Context
 
 Some Bus verbs are not one name. A bridge serves one service per instance it

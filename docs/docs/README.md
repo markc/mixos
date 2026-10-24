@@ -35,6 +35,7 @@ foundational ones:
 - [Source layout and naming](decisions/2026-10-04-source-layout.md)
 - [egui applications, engine first](decisions/2026-10-09-egui-applications.md)
 - [Commands take parameters and return results](decisions/2026-10-20-commands-take-parameters.md)
+- [Bus commands and app actions](decisions/2026-10-24-bus-commands-and-actions.md)
 - [One repository, install profiles](decisions/2026-10-12-one-repository-install-profiles.md)
 - [One system binary](decisions/2026-10-12-one-system-binary.md)
 - [Site URL layout](decisions/2026-10-16-site-url-layout.md)

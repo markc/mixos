@@ -8,6 +8,8 @@ description: Typed parameters, returned results and one UI-free command registry
 
 Status: accepted 2026-10-20. Amends [egui applications](2026-10-09-egui-applications.md), [executed commands](2026-10-11-executed-commands.md) and [command classes](2026-10-11-verb-classes.md).
 
+Amended 2026-10-24 by [Bus commands and app actions](2026-10-24-bus-commands-and-actions.md): the names below are now command, command class, command family and action.
+
 ## The decision
 
 - **A command has typed parameters and a result.** Its parameter type is a serde struct that refuses unknown fields and derives a JSON Schema; `<app>.actions` reports the schema, enablement and the disabled reason; `<app>.execute { id, params }` runs it and returns the result.

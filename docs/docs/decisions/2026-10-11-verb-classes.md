@@ -8,6 +8,8 @@ description: Every registered Bus verb declares a class (intent, query, input or
 Status: accepted 2026-10-11. Amends AGENTS.md §5 (Bus verbs are wire
 contracts).
 
+Amended 2026-10-24 by [Bus commands and app actions](2026-10-24-bus-commands-and-actions.md): the names below are now command, command class, command family and action.
+
 Amended 2026-10-20 by [commands take parameters and return results](2026-10-20-commands-take-parameters.md).
 Registry schema 4 adds a trailing `schema` field to every verb and family:
 `none` for no body or an empty object, `pending` through 2026-11-30 inclusive

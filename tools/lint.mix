@@ -43,6 +43,7 @@ $checks = [
   {name: "component-index", argv: ["tools/component_index.mix", "--check"]},
   {name: "units", argv: ["tools/unit_gate.mix"]},
   {name: "style", argv: ["tools/style_gate.mix", "--toolkit"]},
+  {name: "terminology", argv: ["tools/terminology_gate.mix"]},
   -- The site build subsets pinned fonts from an installed asset set with
   -- hb-subset and woff2_compress. Where those are absent (a bare CI runner)
   -- it is skipped; the pre-commit hook runs it on every commit.

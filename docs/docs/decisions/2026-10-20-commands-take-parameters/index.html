@@ -238,6 +238,7 @@
 &lt;!-- SPDX-License-Identifier: MIT OR Apache-2.0 --&gt;
 <h1 id="decision--commands-take-parameters-and-return-results">Decision — commands take parameters and return results</h1>
 <p>Status: accepted 2026-10-20. Amends <a href="/docs/decisions/2026-10-09-egui-applications/">egui applications</a>, <a href="/docs/decisions/2026-10-11-executed-commands/">executed commands</a> and <a href="/docs/decisions/2026-10-11-verb-classes/">command classes</a>.</p>
+<p>Amended 2026-10-24 by <a href="/docs/decisions/2026-10-24-bus-commands-and-actions/">Bus commands and app actions</a>: the names below are now command, command class, command family and action.</p>
 <h2 id="the-decision">The decision</h2>
 <ul>
 <li><strong>A command has typed parameters and a result.</strong> Its parameter type is a serde struct that refuses unknown fields and derives a JSON Schema; <code>&lt;app&gt;.actions</code> reports the schema, enablement and the disabled reason; <code>&lt;app&gt;.execute { id, params }</code> runs it and returns the result.</li>
