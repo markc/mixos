@@ -136,13 +136,15 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         // A secondary (right) click: the `context` event kind.
         p("on_context", "string", false, None),
     ];
-    static TEXT: [Port; 10] = [
+    static TEXT: [Port; 12] = [
         p("text", "string", true, None),
         pnd("size", "13", Some(0.0)),
         p("bold", "bool", false, Some("false")),
         p("mono", "bool", false, Some("false")),
         p("color", "string", false, None),
         p("elide", "bool", false, Some("false")),
+        p("wrap", "bool", false, Some("false")),
+        pnd("max_lines", "3", Some(1.0)),
         pn("width", false, None),
         p("fill", "bool", false, Some("false")),
         p("hidden", "bool", false, Some("false")),
@@ -305,6 +307,9 @@ pub(crate) fn check_port_value(
     out: &mut Vec<Diagnostic>,
 ) {
     let k = p.name;
+    if k == "max_lines" && v.as_f64().is_some_and(|n| n.fract() != 0.0 || n > 1024.0) {
+        out.push(Diagnostic::error("port-range", line, format!("port {k} on {id} must be an integer from 1 to 1024")));
+    }
     if !type_matches(v, p.ty) {
         out.push(Diagnostic::error(
             "port-type",

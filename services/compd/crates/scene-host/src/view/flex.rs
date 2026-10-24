@@ -136,6 +136,8 @@ enum Leaf {
         mono: bool,
         bold: bool,
         elide: bool,
+        wrap: bool,
+        max_lines: usize,
     },
     Button {
         label: String,
@@ -185,7 +187,7 @@ fn lpa(v: f32) -> LengthPercentageAuto {
 fn width_floor(node: &Node) -> f32 {
     let height = number(node, "height");
     let square = matches!(port_text(node, "width"), "height" | "square") || flag(node, "square");
-    let elides = node.family == "text" && flag(node, "elide");
+    let elides = node.family == "text" && (flag(node, "elide") || flag(node, "wrap"));
     if let Some(min) = number(node, "min_width") {
         // An explicit minimum wins over a maximum, as in flexbox.
         return min;
@@ -354,10 +356,22 @@ impl<'a> Builder<'a> {
             "field" if !node.ports.contains_key("width") && !flag(node, "fill") => {
                 style.size.width = len(160.0);
             }
-            "text" if flag(node, "elide") => {
+            "text" if flag(node, "elide") || flag(node, "wrap") => {
                 // May shrink below its text; the painter elides the middle.
                 style.min_size.width = lpa(0.0);
                 style.max_size.width = Dimension::percent(1.0);
+                if flag(node, "wrap") {
+                    // Fill in a column means horizontal space, never a zero
+                    // vertical basis: the measured lines own their height.
+                    if parent.main == Axis::Vertical && flag(node, "fill") {
+                        style.flex_grow = 0.0;
+                        style.flex_basis = Dimension::auto();
+                        style.align_self = Some(AlignSelf::STRETCH);
+                    }
+                    if parent.main == Axis::Vertical {
+                        style.flex_shrink = 0.0;
+                    }
+                }
             }
             _ => {}
         }
@@ -504,6 +518,8 @@ impl<'a> Builder<'a> {
                     mono,
                     bold: flag(node, "bold"),
                     elide: flag(node, "elide"),
+                    wrap: flag(node, "wrap"),
+                    max_lines: number(node, "max_lines").unwrap_or(3.0) as usize,
                 };
                 self.tree
                     .new_leaf_with_context(style, meta(Some(leaf)))
@@ -704,8 +720,25 @@ fn leaf_size(
             mono,
             bold,
             elide,
+            wrap,
+            max_lines,
         } => {
             let w = measure(text, *size, *mono, *bold).x;
+            let bound = known.width.or(match available.width {
+                AvailableSpace::Definite(width) => Some(width.max(0.0)),
+                AvailableSpace::MinContent => Some(0.0),
+                AvailableSpace::MaxContent => None,
+            });
+            if *wrap {
+                let width = bound.unwrap_or(w.ceil());
+                let lines = wrap_text(text, width, *max_lines, &|s| {
+                    measure(s, *size, *mono, *bold).x
+                });
+                return Size {
+                    width: known.width.unwrap_or(w.ceil().min(width)),
+                    height: known.height.unwrap_or(line(*mono, *size) * lines.len() as f32),
+                };
+            }
             Size {
                 width: if *elide {
                     match available.width {
@@ -748,6 +781,52 @@ fn leaf_size(
         width: known.width.unwrap_or(measured.width),
         height: known.height.unwrap_or(measured.height),
     }
+}
+
+/// Pixel-measured wrapping shared by layout and paint. Break words when a
+/// single word is wider than the box; only the last allowed line elides.
+pub(super) fn wrap_text(
+    text: &str,
+    width: f32,
+    max_lines: usize,
+    measure: &dyn Fn(&str) -> f32,
+) -> Vec<String> {
+    let max_lines = max_lines.max(1);
+    let mut lines = Vec::new();
+    for paragraph in text.split('\n') {
+        let mut current = String::new();
+        for word in paragraph.split_whitespace() {
+            let candidate = if current.is_empty() { word.to_owned() } else { format!("{current} {word}") };
+            if measure(&candidate) <= width {
+                current = candidate;
+                continue;
+            }
+            if !current.is_empty() {
+                lines.push(std::mem::take(&mut current));
+            }
+            for ch in word.chars() {
+                let candidate = format!("{current}{ch}");
+                if !current.is_empty() && measure(&candidate) > width {
+                    lines.push(std::mem::take(&mut current));
+                }
+                current.push(ch);
+            }
+        }
+        lines.push(current);
+    }
+    if lines.len() > max_lines {
+        lines.truncate(max_lines);
+        let last = lines.last_mut().unwrap();
+        while !last.is_empty() && measure(&format!("{}…", last.trim_end())) > width {
+            last.pop();
+        }
+        *last = if measure("…") <= width { format!("{}…", last.trim_end()) } else { String::new() };
+    }
+    // A box narrower than a glyph cannot paint even that glyph safely.
+    for line in &mut lines {
+        if measure(line) > width { line.clear(); }
+    }
+    lines
 }
 
 /// Lay `content` out on a surface of `size` points.

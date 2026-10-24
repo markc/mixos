@@ -45,10 +45,36 @@ fn row_of(rt: &UiRuntime<SceneUi>, list: &str, item: &str) -> egui::Rect {
 
 fn long_toast() -> String {
     include_str!("../../../../../../share/scenes/toast/scene.mix")
+        // Exercise the original single title too: the behaviour guard must
+        // not mask the renderer regression.
+        .replace("t_sum: {\"children\":[\"s_l0\",\"s_l1\",\"s_l2\"],\"gap\":2,\"widget\":\"column\"}", "t_sum: {\"bold\":true,\"elide\":true,\"fill\":true,\"size\":14,\"text\":\"= $model.summary\",\"widget\":\"text\"}")
         .replace("\"summary\":\"\"", &format!("\"summary\":\"{}\"", "W".repeat(120)))
         .replace("\"app\":\"\"", &format!("\"app\":\"{}\"", "W".repeat(120)))
         .replace("\"shown\":[false,false,false,false]", "\"shown\":[true,false,false,false]")
         .replace("\"labels\":[\"\",\"\",\"\",\"\"]", "\"labels\":[\"Got it\",\"\",\"\",\"\"]")
+}
+
+#[test]
+fn wrapped_text_bounds_lines_and_grows_nested_parents() {
+    for axis in ["row", "column"] {
+        for fill in [false, true] {
+            let source = format!("---\nscene: 1\nname: wrap\ncitizen: test\n---\n```mix\nroot: {{widget: \"row\", children: [\"outer\"]}}\nouter: {{widget: \"column\", children: [\"inner\", \"button\"]}}\ninner: {{widget: \"{axis}\", children: [\"title\"]}}\ntitle: {{widget: \"text\", text: \"{}\", size: 14, wrap: true, max_lines: 3, fill: {fill}}}\nbutton: {{widget: \"button\", label: \"Got it\"}}\n```", "Wide title ".repeat(30));
+            let rt = runtime(&source, (180, 300));
+            let title = rect_of(&rt, "title");
+            assert!(title.width() <= 180.0, "{axis}/{fill}: {title:?}");
+            assert!((title.height() - 50.4).abs() < 1.0, "{axis}/{fill}: {title:?}");
+            assert!(rect_of(&rt, "inner").height() >= title.height());
+            assert!(rect_of(&rt, "button").top() >= title.bottom());
+            assert!(rect_of(&rt, "outer").width() <= 180.0);
+        }
+    }
+    let measure = |s: &str| s.chars().count() as f32 * 10.0;
+    let lines = flex::wrap_text("one two three four five six", 70.0, 2, &measure);
+    assert_eq!(lines.len(), 2);
+    assert!(lines[1].ends_with('…'));
+    assert!(lines.iter().all(|line| measure(line) <= 70.0));
+    assert_eq!(flex::wrap_text("short", 70.0, 3, &measure), ["short"]);
+    assert!(flex::wrap_text(&"W".repeat(120), 70.0, 3, &measure).iter().all(|line| measure(line) <= 70.0));
 }
 
 #[test]

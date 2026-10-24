@@ -225,6 +225,22 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 let font = font(size, mono, flag(&node, "bold"));
                 let colour = hex(port_text(&node, "color")).unwrap_or(ink);
                 let mut text = port_text(&node, "text").to_owned();
+                if flag(&node, "wrap") {
+                    let lines = super::flex::wrap_text(
+                        &text, rect.width(), number(&node, "max_lines").unwrap_or(3.0) as usize,
+                        &|s| ui.fonts_mut(|fonts| fonts.layout_no_wrap(s.to_owned(), font.clone(), colour).size().x),
+                    );
+                    let line_height = style.line(size);
+                    for (i, line) in lines.iter().enumerate() {
+                        let (align, x) = match port_text(&node, "align") {
+                            "center" => (Align2::CENTER_CENTER, rect.center().x),
+                            "right" => (Align2::RIGHT_CENTER, rect.right()),
+                            _ => (Align2::LEFT_CENTER, rect.left()),
+                        };
+                        painter.text(pos2(x, rect.top() + (i as f32 + 0.5) * line_height), align, line, font.clone(), colour);
+                    }
+                    continue;
+                }
                 if flag(&node, "elide") {
                     text = elide_end(ui, &text, &font, rect.width());
                 }
