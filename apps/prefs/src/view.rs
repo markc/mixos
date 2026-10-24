@@ -193,8 +193,9 @@ fn editors(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, events: &m
     let mut query = engine.ui.search.clone();
     let id = egui::Id::new("preferences-search");
     let focused = ui.memory(|m| m.has_focus(id));
-    let escape =
-        focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    // Escape clears a live filter even after Enter moved focus into the opened section.
+    let escape = (focused || (!engine.ui.search.is_empty() && engine.can_navigate()))
+        && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
     let enter = focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
     let field = ui.add_enabled(
         engine.can_navigate(),
