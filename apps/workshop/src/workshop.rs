@@ -52,69 +52,14 @@ pub async fn perform(
         }
         return Ok(Value::Object(catalogues));
     }
-    if operation == "observe" {
-        if !args["on"].is_boolean()
-            || args.as_object().is_none_or(|args| {
-                args.keys().any(|key| {
-                    !matches!(key.as_str(), "on" | "filter" | "body" | "subscription_id")
-                })
-            })
-        {
-            return Ok(
-                json!({"error_code":"INVALID_ARGUMENT","message":"expected on, optional filter and body"}),
-            );
-        }
-        let on = args["on"] == true;
-        if let Some(subscription) = args["subscription_id"].as_str() {
-            let reply = bus
-                .call(
-                    "noded",
-                    "noded.observe.stop",
-                    json!({"subscription_id":subscription}),
-                )
-                .await?;
-            if reply.rc != 0 {
-                return Ok(json!({"error_code":"UNAVAILABLE","message":reply.body}));
-            }
-        }
-        if !on {
-            return Ok(json!({"stopped":true}));
-        }
-        let body = args["body"].as_str().unwrap_or("redacted");
-        if !matches!(body, "none" | "redacted") {
-            return Ok(
-                json!({"error_code":"INVALID_ARGUMENT","message":"body must be none or redacted"}),
-            );
-        }
-        let request = if on {
-            json!({"filter":args.get("filter").cloned().unwrap_or(json!({})),"body":body,"capacity":1024})
-        } else {
-            json!({"subscription_id":args["subscription_id"]})
-        };
-        let reply = bus
-            .call(
-                "noded",
-                if on {
-                    "noded.observe.start"
-                } else {
-                    "noded.observe.stop"
-                },
-                request,
-            )
-            .await?;
-        if reply.rc != 0 {
-            return Ok(
-                json!({"error_code":"UNAVAILABLE","message":format!("{} {}",reply.error.unwrap_or_default(),reply.body)}),
-            );
-        }
-        return serde_json::from_str(&reply.body).map_err(|e| e.to_string());
+    if operation == "observe" { return observe(&bus, &args).await; }
+    if args.get("app").is_some_and(|app| !app.is_string()) {
+        return Ok(json!({"error_code":"INVALID_ARGUMENT","message":"app must be a component name or global"}));
     }
     let app = args["app"].as_str().unwrap_or("global").to_owned();
     if app != "global"
-        && (app.is_empty()
-            || !app
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "-_".contains(c)))
+        && (!app.as_bytes().first().is_some_and(|byte| byte.is_ascii_lowercase())
+            || !app.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'))
     {
         return Ok(json!({"error_code":"INVALID_ARGUMENT","message":"invalid app"}));
     }
@@ -122,6 +67,9 @@ pub async fn perform(
         .strip_prefix("macros.")
         .unwrap_or(operation)
         .to_owned();
+    if suffix == "open" && (!args["app"].is_string() || args.as_object().is_none_or(|args| args.keys().any(|key| !matches!(key.as_str(), "app"|"id")))) {
+        return Ok(json!({"error_code":"INVALID_ARGUMENT","message":"expected app and optional macro id"}));
+    }
     if suffix == "open" && args["id"].is_null() {
         return Ok(json!({"branch":app}));
     }
@@ -187,6 +135,32 @@ pub async fn perform(
     Ok(answer)
 }
 
+async fn observe(bus: &Handle, args: &Value) -> Result<Value, String> {
+    let invalid = !args["on"].is_boolean()
+        || args.as_object().is_none_or(|args| args.keys().any(|key| !matches!(key.as_str(), "on" | "filter" | "body" | "subscription_id")))
+        || args.get("body").is_some_and(|body| !body.is_string())
+        || args.get("filter").is_some_and(|filter| !filter.is_object());
+    let body = args["body"].as_str().unwrap_or("redacted");
+    if invalid || !matches!(body, "none" | "redacted") {
+        return Ok(json!({"error_code":"INVALID_ARGUMENT","message":"expected on, optional filter object and body none or redacted"}));
+    }
+    let on = args["on"] == true;
+    // Establish the replacement before stopping the previous stream. Invalid
+    // filters or admission refusals leave an existing observer intact.
+    let started = if on {
+        let reply = bus.call("noded", "noded.observe.start", json!({"filter":args.get("filter").cloned().unwrap_or(json!({})),"body":body,"capacity":1024})).await?;
+        if reply.rc != 0 {
+            return Ok(json!({"error_code":"UNAVAILABLE","message":format!("{} {}",reply.error.unwrap_or_default(),reply.body)}));
+        }
+        serde_json::from_str::<Value>(&reply.body).map_err(|error| error.to_string())?
+    } else { json!({"stopped":true}) };
+    if let Some(subscription) = args["subscription_id"].as_str() {
+        let reply = bus.call("noded", "noded.observe.stop", json!({"subscription_id":subscription})).await?;
+        if reply.rc != 0 { return Ok(json!({"error_code":"UNAVAILABLE","message":reply.body})); }
+    }
+    Ok(started)
+}
+
 async fn request_macro(bus: &Handle, app: &str, suffix: &str, args: Value, running: &BTreeMap<String, String>) -> Result<Value, String> {
     if app != "global" && running.contains_key(app) {
         let reply = bus
@@ -238,6 +212,8 @@ mod tests {
             .unwrap();
             assert_eq!(started["body"], "redacted");
             assert!(started["subscription_id"].is_string());
+            let invalid = perform(allowed.clone(), "observe", json!({"on":true,"body":true,"subscription_id":started["subscription_id"]}), BTreeMap::new()).await.unwrap();
+            assert_eq!(invalid["error_code"], "INVALID_ARGUMENT");
             allowed.call("noded", "noded.ping", json!({})).await.unwrap();
             use futures::StreamExt;
             let event = tokio::time::timeout(std::time::Duration::from_secs(5), async {
@@ -252,10 +228,12 @@ mod tests {
                 }
             }).await.unwrap();
             assert_eq!(event["verb"], "noded.ping");
+            let replacement = perform(allowed.clone(), "observe", json!({"on":true,"body":"none","subscription_id":started["subscription_id"]}), BTreeMap::new()).await.unwrap();
+            assert_eq!(replacement["body"], "none");
             let stopped = perform(
                 allowed.clone(),
                 "observe",
-                json!({"on":false,"subscription_id":started["subscription_id"]}),
+                json!({"on":false,"subscription_id":replacement["subscription_id"]}),
                 BTreeMap::new(),
             )
             .await
@@ -282,6 +260,8 @@ mod tests {
                 json!({}),
                 json!({"on":true,"body":"raw"}),
                 json!({"on":true,"extra":true}),
+                json!({"on":false,"body":false}),
+                json!({"on":true,"filter":false}),
             ] {
                 assert_eq!(
                     perform(denied.clone(), "observe", args, BTreeMap::new())
@@ -302,6 +282,9 @@ mod tests {
                 stopped_app,
                 json!({"error_code":"UNAVAILABLE","message":"ced is not running"})
             );
+            for args in [json!({}),json!({"app":true}),json!({"app":"Ced","id":"x"}),json!({"app":"ced","extra":true})] {
+                assert_eq!(perform(denied.clone(),"macros.open",args,BTreeMap::new()).await.unwrap()["error_code"],"INVALID_ARGUMENT");
+            }
         });
         allowed.quit();
         denied.quit();

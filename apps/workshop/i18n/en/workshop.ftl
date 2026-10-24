@@ -57,6 +57,7 @@ command-disabled = That command is not available right now
 about-body = Browse native ABP services, inspect verb descriptions and mesh membership, and send a JSON body once. Replies retain their return code and plain-text errors.
 traffic = Traffic
 traffic-pause = Pause
+traffic-observe-off = observe off
 traffic-filter = Filter traffic
 traffic-dropped = dropped
 traffic-columns = time (UTC) · direction · from · service · verb · rc · ms

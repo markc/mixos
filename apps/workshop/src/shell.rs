@@ -427,11 +427,14 @@ impl Shell {
                 } else if operation == "observe" {
                     self.engine.workshop.observe = if refused {
                         body["message"].as_str().unwrap_or_default().into()
+                    } else if args["on"] == false {
+                        label("traffic-observe-off")
                     } else {
-                        "redacted".into()
+                        body["body"].as_str().unwrap_or("redacted").into()
                     };
-                    self.engine.workshop.subscription =
-                        body["subscription_id"].as_str().map(str::to_owned);
+                    if !refused {
+                        self.engine.workshop.subscription = body["subscription_id"].as_str().map(str::to_owned);
+                    }
                 } else {
                     self.engine.workshop.message = body.to_string();
                     if operation == "macros.put" && !refused && self.engine.workshop.selected.as_ref().is_some_and(|(app,id)| {
