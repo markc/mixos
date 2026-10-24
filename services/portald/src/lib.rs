@@ -36,6 +36,8 @@ pub async fn run(
             tracing::warn!(%error, "settings source unavailable; serving last-good values");
         }
     });
+    let config_home = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+    let home = std::env::var_os("HOME").map(PathBuf::from);
     let result = live::serve(
         live::Config {
             address,
@@ -43,6 +45,7 @@ pub async fn run(
             binding,
             screencast,
             screencast_max_framerate,
+            gtk_settings: gtk_settings::Exporter::new(config_home.as_deref(), home.as_deref()),
         },
         received,
         status,
