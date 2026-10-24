@@ -70,6 +70,12 @@ impl TextStyle {
     }
 }
 
+impl TextStyles {
+    pub fn line(&self, mono: bool, size: f32) -> f32 {
+        if mono { self.mono } else { self.ui }.line(size)
+    }
+}
+
 /// Measures one line of text: `(text, size, mono, bold) -> (width, height)`.
 pub(crate) type Measurer<'a> = &'a dyn Fn(&str, f32, bool, bool) -> Vec2;
 
@@ -180,6 +186,16 @@ fn lpa(v: f32) -> LengthPercentageAuto {
     LengthPercentageAuto::length(v)
 }
 
+fn bounded_text(nodes: Nodes<'_>, node: &Node, depth: usize) -> bool {
+    if depth > 64 || flag(node, "hidden") {
+        return false;
+    }
+    (node.family == "text" && (flag(node, "elide") || flag(node, "wrap")))
+        || children(node).any(|id| {
+            nodes.get(id).is_some_and(|child| bounded_text(nodes, child, depth + 1))
+        })
+}
+
 /// How narrow a row instance in a crowded horizontal list may get: its
 /// explicit minimum, else its fixed width (equal `min_`/`max_` bounds, a
 /// number, or square on a fixed height, as `sizing` fixes them),
@@ -255,12 +271,6 @@ impl<'a> Builder<'a> {
     /// The node's own box: size, growth and bounds, against its parent.
     fn sizing(node: &Node, parent: Parent) -> Style {
         let mut style = Style::default();
-        // Auto min-content widths propagate through nested flex containers.
-        // A scene is bounded by its surface, even with start alignment.
-        if matches!(node.family.as_str(), "row" | "column") {
-            style.min_size.width = lpa(0.0);
-            style.max_size.width = LengthPercentageAuto::percent(1.0);
-        }
         let fill =
             flag(node, "fill") || (node.family == "spacer" && number(node, "size").is_none());
         let grow = number(node, "grow").filter(|g| *g > 0.0);
@@ -358,8 +368,12 @@ impl<'a> Builder<'a> {
             }
             "text" if flag(node, "elide") || flag(node, "wrap") => {
                 // May shrink below its text; painting uses the assigned width.
-                style.min_size.width = lpa(0.0);
-                style.max_size.width = LengthPercentageAuto::percent(1.0);
+                if !node.ports.contains_key("min_width") && !node.ports.contains_key("width") {
+                    style.min_size.width = lpa(0.0);
+                }
+                if !node.ports.contains_key("max_width") {
+                    style.max_size.width = LengthPercentageAuto::percent(1.0);
+                }
                 if flag(node, "wrap") {
                     // Fill in a column means horizontal space, never a zero
                     // vertical basis: the measured lines own their height.
@@ -385,6 +399,16 @@ impl<'a> Builder<'a> {
         mut style: Style,
         main: Axis,
     ) -> Style {
+        // Only bounded text needs its ancestors to release min-content width.
+        // Ordinary button/icon groups must keep their content minimums.
+        if bounded_text(nodes, node, 0) && !node.ports.contains_key("width") {
+            if !node.ports.contains_key("min_width") {
+                style.min_size.width = lpa(0.0);
+            }
+            if !node.ports.contains_key("max_width") {
+                style.max_size.width = LengthPercentageAuto::percent(1.0);
+            }
+        }
         style.display = Display::Flex;
         style.flex_direction = match main {
             Axis::Horizontal => FlexDirection::Row,
@@ -709,10 +733,7 @@ fn leaf_size(
     styles: TextStyles,
     measure: Measurer<'_>,
 ) -> Size<f32> {
-    let line = |mono: bool, size: f32| {
-        let style = if mono { styles.mono } else { styles.ui };
-        style.line(size)
-    };
+    let line = |mono: bool, size: f32| styles.line(mono, size);
     let measured = match leaf {
         Leaf::Text {
             text,
@@ -795,30 +816,44 @@ pub(super) fn wrap_text(
 ) -> Vec<String> {
     let max_lines = max_lines.max(1);
     let mut lines = Vec::new();
-    for paragraph in text.split('\n') {
+    'paragraphs: for paragraph in text.split('\n') {
         let mut current = String::new();
         for word in paragraph.split_whitespace() {
-            let candidate = if current.is_empty() {
-                word.to_owned()
-            } else {
-                format!("{current} {word}")
-            };
-            if measure(&candidate) <= width {
-                current = candidate;
-                continue;
+            // Probe only until this word exceeds a line. Never measure or
+            // allocate a whole multi-megabyte word to produce a few lines.
+            let mut probe = String::new();
+            let mut long = false;
+            for ch in word.chars() {
+                probe.push(ch);
+                if measure(&probe) > width {
+                    long = true;
+                    break;
+                }
             }
             if !current.is_empty() {
-                lines.push(std::mem::take(&mut current));
+                let candidate = format!("{current} {probe}");
+                if !long && measure(&candidate) <= width {
+                    current = candidate;
+                    continue;
+                }
+                if long && measure(&format!("{current} {}", word.chars().next().unwrap())) <= width {
+                    current.push(' ');
+                } else {
+                    lines.push(std::mem::take(&mut current));
+                    if lines.len() > max_lines { break 'paragraphs; }
+                }
             }
             for ch in word.chars() {
                 let candidate = format!("{current}{ch}");
                 if !current.is_empty() && measure(&candidate) > width {
                     lines.push(std::mem::take(&mut current));
+                    if lines.len() > max_lines { break 'paragraphs; }
                 }
                 current.push(ch);
             }
         }
         lines.push(current);
+        if lines.len() > max_lines { break; }
     }
     if lines.len() > max_lines {
         lines.truncate(max_lines);

@@ -173,6 +173,7 @@ fn long_toast_keeps_controls_visible_and_clickable() {
 }
 
 #[test]
+#[ignore = "offscreen snapshot requires a wgpu adapter; layout and pointer tests run headless"]
 fn long_toast_offscreen() {
     use ui::UiProgram;
     let mut scene = SceneUi::new(content(&long_toast(), None, false));
@@ -206,6 +207,7 @@ fn long_toast_offscreen() {
 }
 
 #[test]
+#[ignore = "offscreen snapshot requires a wgpu adapter; layout and pointer tests run headless"]
 fn guarded_toast_offscreen() {
     use ui::UiProgram;
     let mut scene = SceneUi::new(content(&guarded_toast(), None, false));
@@ -227,6 +229,85 @@ fn guarded_toast_offscreen() {
     if let Some(path) = std::env::var_os("TOAST_GUARD_SNAPSHOT") {
         image.save(path).unwrap();
     }
+}
+
+#[test]
+fn fitting_and_empty_elided_text_are_unchanged() {
+    let mut harness = egui_kittest::Harness::builder().build_ui(|ui| {
+        let font = paint::font(14.0, false, false);
+        assert_eq!(paint::elide_end(ui, "short", &font, 220.0), "short");
+        assert_eq!(paint::elide_end(ui, "", &font, 0.0), "");
+    });
+    harness.run();
+}
+
+#[test]
+fn wrapping_packs_long_words_and_bounds_measurement_work() {
+    use std::cell::Cell;
+    let calls = Cell::new(0);
+    let measure = |s: &str| {
+        calls.set(calls.get() + 1);
+        assert!(s.len() <= 32, "unbounded measurement: {} bytes", s.len());
+        s.chars().count() as f32
+    };
+    assert_eq!(flex::wrap_text("hi abcdefghijk", 6.0, 4, &measure), ["hi abc", "defghi", "jk"]);
+    let huge = "x".repeat(1024 * 1024);
+    calls.set(0);
+    let start = std::time::Instant::now();
+    let lines = flex::wrap_text(&huge, 20.0, 3, &measure);
+    assert_eq!(lines.len(), 3);
+    assert!(lines[2].ends_with('…'));
+    assert!(calls.get() < 150, "{} measurements", calls.get());
+    assert!(start.elapsed() < std::time::Duration::from_secs(1));
+}
+
+#[test]
+fn crowded_button_and_icon_columns_keep_their_content_minimums() {
+    let source = "---\nscene: 1\nname: crowd\ncitizen: test\n---\n```mix\nroot: {widget: \"row\", children: [\"a\", \"b\"]}\na: {widget: \"column\", children: [\"button\"]}\nb: {widget: \"column\", children: [\"icon\"]}\nbutton: {widget: \"button\", label: \"A long button\"}\nicon: {widget: \"image\", w: 32, h: 32}\n```";
+    let rt = runtime(source, (60, 100));
+    assert!(rect_of(&rt, "icon").left() >= rect_of(&rt, "button").right());
+    assert!(rect_of(&rt, "a").width() >= rect_of(&rt, "button").width());
+}
+
+#[test]
+fn toast_app_respects_its_explicit_cap_and_parent_width() {
+    for width in [180, 360, 800] {
+        let rt = runtime(&long_toast(), (width, 154));
+        let app = rect_of(&rt, "t_app");
+        assert!(app.width() <= 220.0, "{width}: {app:?}");
+        assert!(app.right() <= width as f32, "{width}: {app:?}");
+    }
+}
+
+#[test]
+fn mono_wrapping_uses_the_same_line_pitch_as_paint() {
+    let source = "---\nscene: 1\nname: mono\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", children: [\"title\"]}\ntitle: {widget: \"text\", mono: true, wrap: true, max_lines: 3, text: \"one two three four five six seven eight nine ten\"}\n```";
+    let rt = runtime(source, (60, 300));
+    let styles = rt.program.text_styles();
+    assert!((rect_of(&rt, "title").height() - 3.0 * styles.line(true, styles.mono.size)).abs() < 1.0);
+}
+
+#[test]
+#[ignore = "offscreen snapshot requires a wgpu adapter; crowded panel assertions run headless"]
+fn crowded_panel_offscreen() {
+    use ui::UiProgram;
+    let mut scene = SceneUi::new(content(include_str!("../../tests/fixtures/panel-render.scene.mix"), None, false));
+    let mut setup = false;
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(450.0, 52.0))
+        .wgpu()
+        .build_ui(move |ui| {
+            if !setup {
+                scene.setup(ui.ctx());
+                setup = true;
+                ui.ctx().request_repaint();
+                return;
+            }
+            scene.show(ui, &mut Vec::new());
+        });
+    harness.run();
+    let image = harness.render().unwrap();
+    if let Some(path) = std::env::var_os("PANEL_SNAPSHOT") { image.save(path).unwrap(); }
 }
 
 /// The placed text node `id` inside list `list`'s row `item`.
