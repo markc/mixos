@@ -628,7 +628,8 @@ async fn serve_with(
                 if crate::control::mesh_open()
                     && let Some(verb) = canonical_verb(service, &command.command)
                     && let Some(suffix) = verb.strip_prefix("term.macros.") {
-                    let reply = citizen::macros::request("term", suffix, &command.body);
+                    let caller = citizen::macros::caller(&command, service);
+                    let reply = citizen::macros::request("term", caller, suffix, &command.body);
                     window_replies.spawn(async move {
                         let answer = tokio::task::spawn_blocking(move || reply.wait()).await
                             .unwrap_or_else(|e| Err(citizen::macros::Refusal::new("INTERNAL", e)));

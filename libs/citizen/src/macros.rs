@@ -57,6 +57,7 @@ pub fn dispatch(
         && serde_json::from_str::<Value>(&command.body)
             .ok()
             .is_some_and(|body| match command.command.as_str() {
+                "workshop.ui.click" | "workshop.ui.pointer" | "workshop.ui.key" | "workshop.ui.type" => true,
                 "workshop.execute" => body["id"].as_str().is_some_and(|id| {
                     id == "bus.call"
                         || id
@@ -66,7 +67,7 @@ pub fn dispatch(
                 "workshop.call" => body["verb"].as_str().is_none_or(|verb| {
                     verb.rsplit_once(".macros.")
                         .is_some_and(|(_, suffix)| ::macros::verbs::mutates(suffix))
-                        || matches!(verb, "workshop.call" | "workshop.execute")
+                        || matches!(verb, "workshop.call" | "workshop.execute" | "workshop.ui.click" | "workshop.ui.pointer" | "workshop.ui.key" | "workshop.ui.type")
                 }),
                 _ => false,
             });
@@ -84,12 +85,16 @@ pub fn dispatch(
         REQUEST_BODY_LIMIT
     };
     let caller = caller(command, service);
-    let authority = ::macros::verbs::authorize(app, caller, suffix, &Value::Null).map_err(|mut error| {
-        if proxy_write {
-            error.message = format!("{}: macro-file writes through Workshop require Workshop", command.command);
-        }
-        error
-    });
+    let authority =
+        ::macros::verbs::authorize(app, caller, suffix, &Value::Null).map_err(|mut error| {
+            if proxy_write {
+                error.message = format!(
+                    "{}: macro-file writes through Workshop require Workshop",
+                    command.command
+                );
+            }
+            error
+        });
     if proxy_write && authority.is_ok() {
         return false;
     }
@@ -140,7 +145,7 @@ pub fn dispatch(
     true
 }
 
-fn caller(command: &IncomingCommand, service: &str) -> ::macros::verbs::Caller {
+pub fn caller(command: &IncomingCommand, service: &str) -> ::macros::verbs::Caller {
     if command.header("broker_origin") == Some("local") {
         ::macros::verbs::Caller::local(&command.from, service)
     } else {
@@ -193,19 +198,30 @@ mod tests {
     fn macro_authority_requires_local_broker_origin_and_exact_owner_service() {
         use ::macros::verbs::Caller;
         let mut command = IncomingCommand {
-            generation: 0, from: "ced-instance".into(), command: "ced.macros.put".into(),
-            id: None, args: Value::Null, body: "{}".into(), headers: Default::default(),
+            generation: 0,
+            from: "ced-instance".into(),
+            command: "ced.macros.put".into(),
+            id: None,
+            args: Value::Null,
+            body: "{}".into(),
+            headers: Default::default(),
         };
         assert_eq!(caller(&command, "ced-instance"), Caller::Other);
-        command.headers.insert("broker_origin".into(), "local".into());
+        command
+            .headers
+            .insert("broker_origin".into(), "local".into());
         assert_eq!(caller(&command, "ced-instance"), Caller::Owner);
         assert_eq!(caller(&command, "ced-other"), Caller::Other);
         for name in ["workshop", "workshop-instance"] {
             command.from = name.into();
             assert_eq!(caller(&command, "ced-instance"), Caller::Workshop);
-            command.headers.insert("broker_origin".into(), "mesh".into());
+            command
+                .headers
+                .insert("broker_origin".into(), "mesh".into());
             assert_eq!(caller(&command, "ced-instance"), Caller::Other);
-            command.headers.insert("broker_origin".into(), "local".into());
+            command
+                .headers
+                .insert("broker_origin".into(), "local".into());
         }
         command.from = "workshopper".into();
         assert_eq!(caller(&command, "ced-instance"), Caller::Other);

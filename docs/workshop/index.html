@@ -495,6 +495,11 @@ file effects. Read/run/status/output/stop/reload remain open.</p>
 refused. Local service registration is not executable authentication: a
 client able to register an unused Workshop service name gains its authority.
 This is a Bus access rule, not filesystem or same-user code isolation.</p>
+<p>Workshop’s Bus <code>execute</code> for mutating <code>macro.*</code> actions and <code>bus.call</code>,
+implicit-target <code>call</code>, calls forwarding macro mutations or these proxy
+operations, and UI click/pointer/key/type injection require Workshop too.
+These paths can otherwise turn an untrusted caller into the manager.
+Explicit <code>call</code> requests for read/run verbs and UI inspection remain open.</p>
         </article>
         <p class="doc-source"><a href="/workshop/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

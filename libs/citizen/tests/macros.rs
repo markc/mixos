@@ -62,6 +62,8 @@ fn bus_macro_writes_refuse_other_services_and_workshop_deputy_calls() {
                 r#"{"service":"ced","verb":"ced.macros.put"}"#,
             ),
             ("workshop.call", r#"{}"#),
+            ("workshop.ui.key", r#"{"key":"S","modifiers":["ctrl"]}"#),
+            ("workshop.ui.click", r#"{"label":"Save"}"#),
         ] {
             let reply = caller
                 .call_with_headers_raw("workshop-acl-test", verb, &BTreeMap::new(), body)

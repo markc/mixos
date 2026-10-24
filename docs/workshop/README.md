@@ -295,3 +295,9 @@ The broker stamps service identity and local/mesh origin; mesh writes are
 refused. Local service registration is not executable authentication: a
 client able to register an unused Workshop service name gains its authority.
 This is a Bus access rule, not filesystem or same-user code isolation.
+
+Workshop’s Bus `execute` for mutating `macro.*` actions and `bus.call`,
+implicit-target `call`, calls forwarding macro mutations or these proxy
+operations, and UI click/pointer/key/type injection require Workshop too.
+These paths can otherwise turn an untrusted caller into the manager.
+Explicit `call` requests for read/run verbs and UI inspection remain open.

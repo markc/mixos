@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 #[test]
 fn macros_status_dispatch_and_surface() {
-    let body = citizen::macros::request("monitor", "status", "{}")
+    let body = citizen::macros::request("monitor", macros::verbs::Caller::Other, "status", "{}")
         .wait()
         .unwrap();
     assert_eq!(body["state"], "idle");
