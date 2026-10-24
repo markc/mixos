@@ -77,6 +77,9 @@ fn run(settings: &Settings) -> Result<(), String> {
         loop {
             wake.begin();
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| shell.logic(ui.ctx()));
+            for viewport in output.viewport_output.values() {
+                wake.schedule(viewport.repaint_delay);
+            }
             // No renderer consumes the atlas updates in headless mode.
             output.textures_delta.clear();
             if shell.exiting() {

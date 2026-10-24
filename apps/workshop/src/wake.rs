@@ -26,6 +26,17 @@ impl Wake {
         *self.0.lock().unwrap() = None;
     }
 
+    /// egui may retain a delayed request without calling the callback again.
+    /// Every completed pass therefore also supplies its authoritative delay.
+    pub fn schedule(&self, delay: std::time::Duration) {
+        let mut deadline = self.0.lock().unwrap();
+        if let Some(at) = Instant::now().checked_add(delay)
+            && deadline.is_none_or(|old| at < old)
+        {
+            *deadline = Some(at);
+        }
+    }
+
     pub fn wait(&self) {
         loop {
             let deadline = *self.0.lock().unwrap();
@@ -57,6 +68,9 @@ mod tests {
                 // Also ensures the test eventually terminates if egui stops blinking.
                 ui.ctx().request_repaint_after(Duration::from_millis(500));
             });
+            for viewport in output.viewport_output.values() {
+                wake.schedule(viewport.repaint_delay);
+            }
             output.textures_delta.clear();
             passes += 1;
             wake.wait();
