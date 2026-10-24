@@ -168,9 +168,7 @@ impl Target {
 
     pub(crate) fn remove(&self) -> io::Result<()> {
         // SAFETY: unlink only the named entry in the opened parent directory.
-        syscall(unsafe {
-            libc::unlinkat(self.directory.as_raw_fd(), self.name.as_ptr(), 0)
-        })?;
+        syscall(unsafe { libc::unlinkat(self.directory.as_raw_fd(), self.name.as_ptr(), 0) })?;
         self.directory.sync_all()
     }
 
@@ -244,7 +242,10 @@ mod tests {
         assert!(Target::open(&root, &path).is_err());
         assert_eq!(target.read().unwrap(), b"old");
         target.write(b"saved").unwrap();
-        assert_eq!(std::fs::read(outside.join("safe.mix")).unwrap(), b"untouched");
+        assert_eq!(
+            std::fs::read(outside.join("safe.mix")).unwrap(),
+            b"untouched"
+        );
         assert_eq!(std::fs::read(root.join("held/safe.mix")).unwrap(), b"saved");
     }
 
