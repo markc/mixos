@@ -106,7 +106,10 @@ pub struct Exporter {
 
 impl Exporter {
     pub fn new(config_home: Option<&Path>, home: Option<&Path>) -> Self {
-        let target = destination(config_home, home);
+        // HOME may be a link even when the config path is plain.
+        let resolved_home = home.and_then(|home| home.canonicalize().ok());
+        let target = destination(config_home, home)
+            .and_then(|_| destination(config_home, resolved_home.as_deref()));
         if let Err(reason) = &target {
             tracing::info!(reason, "GTK settings export skipped");
         }
@@ -299,5 +302,23 @@ mod tests {
         let exporter = Exporter::new(Some(&config), None);
         assert_eq!(exporter.export(Some(CaptionSide::Left)).outcome, "skipped");
         assert!(!host.join("gtk-3.0").exists());
+    }
+
+    #[test]
+    fn skips_host_config_when_home_is_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = dir.path().join("host");
+        std::fs::create_dir(&host).unwrap();
+        let home = dir.path().join("home");
+        std::os::unix::fs::symlink(&host, &home).unwrap();
+        let config = host.join(".config");
+        let exporter = Exporter::new(Some(&config), Some(&home));
+        let report = exporter.export(Some(CaptionSide::Left));
+        assert_eq!(report.outcome, "skipped");
+        assert_eq!(
+            report.reason.as_deref(),
+            Some("XDG_CONFIG_HOME is HOME/.config")
+        );
+        assert!(!config.exists());
     }
 }
