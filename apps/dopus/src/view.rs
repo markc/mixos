@@ -106,7 +106,10 @@ fn column_widths(ui: &Ui, rows: &[VisibleRow]) -> ColumnWidths {
     let body = TextStyle::Body.resolve(ui.style());
     let font = FontId::new(body.size * 0.92, body.family);
     let measure = |text: String, font: FontId| {
-        ui.painter().layout_no_wrap(text, font, ui.visuals().text_color()).size().x
+        ui.painter()
+            .layout_no_wrap(text, font, ui.visuals().text_color())
+            .size()
+            .x
     };
     let header = TextStyle::Small.resolve(ui.style());
     let mut widths = ColumnWidths {
@@ -118,11 +121,15 @@ fn column_widths(ui: &Ui, rows: &[VisibleRow]) -> ColumnWidths {
         let size = if entry.is_dir {
             dopus_core::format_child_count(entry.child_count)
         } else {
-            entry.size.map_or_else(|| "—".to_owned(), dopus_core::format_size)
+            entry
+                .size
+                .map_or_else(|| "—".to_owned(), dopus_core::format_size)
         };
         widths.size = widths.size.max(measure(size, font.clone()));
         widths.modified = widths.modified.max(measure(
-            entry.modified.map_or_else(|| "—".to_owned(), dopus_core::format_modified_at),
+            entry
+                .modified
+                .map_or_else(|| "—".to_owned(), dopus_core::format_modified_at),
             font.clone(),
         ));
     }
@@ -143,7 +150,9 @@ mod column_tests {
     fn long_name_leaves_measured_size_and_modified_a_gap() {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
-            ui.style_mut().text_styles.insert(TextStyle::Body, FontId::proportional(14.667));
+            ui.style_mut()
+                .text_styles
+                .insert(TextStyle::Body, FontId::proportional(14.667));
             let rows = vec![VisibleRow {
                 entry: dopus_core::FileEntry {
                     path: PathBuf::from("Blue Murder Motel extended episode name.mkv"),
@@ -157,16 +166,25 @@ mod column_tests {
             }];
             let widths = column_widths(ui, &rows);
             let font = FontId::proportional(14.667 * 0.92);
-            let measure = |text: &str| ui.painter().layout_no_wrap(text.into(), font.clone(), ui.visuals().text_color()).size().x;
+            let measure = |text: &str| {
+                ui.painter()
+                    .layout_no_wrap(text.into(), font.clone(), ui.visuals().text_color())
+                    .size()
+                    .x
+            };
             for modified in [false, true] {
                 let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(360.0, 24.0));
                 let (name, size, date) = column_rects(rect, widths, true, modified);
                 let size = size.unwrap();
                 let name_x = 44.0;
-                let text = crate::elide::fit(ui, &rows[0].entry.name, &font, name.right() - name_x - 4.0);
+                let text =
+                    crate::elide::fit(ui, &rows[0].entry.name, &font, name.right() - name_x - 4.0);
                 let name_right = name_x + measure(&text);
                 let size_left = size.right() - 6.0 - measure("565.0 MiB");
-                assert!(size_left - name_right >= 6.0, "name overlaps size: {name_right} / {size_left}");
+                assert!(
+                    size_left - name_right >= 6.0,
+                    "name overlaps size: {name_right} / {size_left}"
+                );
                 if let Some(date) = date {
                     let text = dopus_core::format_modified_at(std::time::SystemTime::UNIX_EPOCH);
                     assert!(date.right() - 6.0 - measure(&text) >= size.right() + 6.0);
@@ -302,7 +320,7 @@ fn places_panel(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
                 let icon = crate::icons::place_icon(name);
                 let colour = ui.visuals().weak_text_color();
                 ui.add(icons::image_of(ui.ctx(), icon, ICON, colour));
-                let width = ui.available_width();
+                let width = (ui.available_width() - 2.0 * ui.spacing().button_padding.x).max(0.0);
                 let text = crate::elide::fit(ui, name, &font, width);
                 let row = toolkit::selectable(ui, active == path, text)
                     .on_hover_text(dopus_core::sanitise_display_path(path));
@@ -671,7 +689,10 @@ fn column_rects(
         cell
     });
     let size = show_size.then(|| {
-        let cell = Rect::from_min_max(pos2(right - widths.size, rect.top()), pos2(right, rect.bottom()));
+        let cell = Rect::from_min_max(
+            pos2(right - widths.size, rect.top()),
+            pos2(right, rect.bottom()),
+        );
         right -= widths.size;
         cell
     });
@@ -743,7 +764,8 @@ fn row(
     } else {
         visuals.text_color()
     };
-    let (name_cell, size_cell, modified_cell) = column_rects(rect, widths, show_size, show_modified);
+    let (name_cell, size_cell, modified_cell) =
+        column_rects(rect, widths, show_size, show_modified);
     let mut x = name_cell.left() + 4.0 + visible.depth as f32 * INDENT;
     let mid = rect.center().y;
     // The chevron opens a folder in place.

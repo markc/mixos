@@ -731,7 +731,10 @@ impl State {
             .with_decorations(true)
             .with_resizable(true)
             .with_inner_size(ctx.input(|i| {
-                let monitor = i.viewport().monitor_size.unwrap_or(egui::vec2(760.0, 560.0));
+                let monitor = i
+                    .viewport()
+                    .monitor_size
+                    .unwrap_or(egui::vec2(760.0, 560.0));
                 egui::vec2(760.0, 560.0).min(monitor)
             }));
         crate::drive::register_viewport(ctx, "macro-editor", editor_viewport);
@@ -765,7 +768,11 @@ impl State {
         let mut ced = false;
         let row_height = crate::chrome::Chrome::of(&ctx).metrics.menu_row_height;
         let output = self.displayed_output();
-        let output_height = if output.is_empty() { 0.0 } else { row_height * 6.0 };
+        let output_height = if output.is_empty() {
+            0.0
+        } else {
+            row_height * 6.0
+        };
         let dirty_before = self.document.as_ref().is_some_and(|doc| doc.is_dirty());
         let mut open = !ctx.input(|i| i.viewport().close_requested());
         if ctx.input(|i| i.viewport().focused == Some(true))
@@ -790,6 +797,12 @@ impl State {
                 .data_mut(|d| d.remove_temp::<bool>(crate::window_id(viewport, "macro-save-run")))
                 .unwrap_or(false);
             let editor_enabled = !menu::is_open(ctx);
+            if let Some(error) = &self.error {
+                ui.label(error);
+            }
+            if let Some(message) = &self.run_message {
+                ui.label(message);
+            }
             if let Some(doc) = &mut self.document {
                 ui.horizontal(|ui| {
                     save |= ui.button(own("macros-save")).clicked();
@@ -812,9 +825,14 @@ impl State {
                         d.get_temp::<editor::Palette>(egui::Id::new("toolkit.editor-palette"))
                     })
                     .unwrap_or_else(|| editor::Palette::from_theme(&crate::Theme::embedded()));
-                let height = (ui.available_height() - output_height
-                    - if output.is_empty() { 0.0 } else { row_height * 2.0 })
-                    .max(0.0);
+                let height = (ui.available_height()
+                    - output_height
+                    - if output.is_empty() {
+                        0.0
+                    } else {
+                        row_height * 2.0
+                    })
+                .max(0.0);
                 ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
                     ui.add_enabled_ui(editor_enabled, |ui| {
                         self.editor_focus =
@@ -831,34 +849,29 @@ impl State {
                     self.error = Some(error.to_string());
                 }
             }
-            if let Some(error) = &self.error {
-                ui.label(error);
-            }
             if !output.is_empty() {
-            ui.separator();
-            if let Some(message) = &self.run_message {
-                ui.label(message);
-            }
-            if self.engine.runner_status() != Status::Running
-                && let Some(last) = &self.retained
-            {
-                ui.label(&last.status).on_hover_text(&last.title);
-            }
-            if self.engine.status()["origin"].as_str()
-                == Some(format!("gui:{}", self.window).as_str())
-                && let Some(title) = self.running_title()
-            {
-                ui.label(own_with("macros-running-title", &[("title", &title)]));
-            }
-            egui::ScrollArea::both()
-                .max_height(output_height)
-                .min_scrolled_height(output_height)
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(output).monospace()).selectable(true),
-                    );
-                });
+                ui.separator();
+                if self.engine.runner_status() != Status::Running
+                    && let Some(last) = &self.retained
+                {
+                    ui.label(&last.status).on_hover_text(&last.title);
+                }
+                if self.engine.status()["origin"].as_str()
+                    == Some(format!("gui:{}", self.window).as_str())
+                    && let Some(title) = self.running_title()
+                {
+                    ui.label(own_with("macros-running-title", &[("title", &title)]));
+                }
+                egui::ScrollArea::both()
+                    .max_height(output_height)
+                    .min_scrolled_height(output_height)
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(output).monospace())
+                                .selectable(true),
+                        );
+                    });
             }
         });
         if !open {
@@ -1676,9 +1689,12 @@ mod tests {
             });
             let mut h = egui_kittest::Harness::builder()
                 .with_size(egui::vec2(760.0, 560.0))
-                .build_ui_state(|ui, state: &mut State| {
-                    state.editor_ui(ui, egui::ViewportId::ROOT, egui::ViewportId::ROOT);
-                }, state);
+                .build_ui_state(
+                    |ui, state: &mut State| {
+                        state.editor_ui(ui, egui::ViewportId::ROOT, egui::ViewportId::ROOT);
+                    },
+                    state,
+                );
             crate::install(&h.ctx, &crate::Theme::embedded());
             h.run_steps(5);
             let editor = h.get_by_role(egui::accesskit::Role::TextInput).rect();
