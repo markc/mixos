@@ -74,7 +74,9 @@ fn run(settings: &Settings) -> Result<(), String> {
             settings.comp.clone(),
         )?;
         loop {
-            let _ = ctx.run_ui(egui::RawInput::default(), |ui| shell.logic(ui.ctx()));
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| shell.logic(ui.ctx()));
+            // No renderer consumes the atlas updates in headless mode.
+            output.textures_delta.clear();
             if shell.exiting() {
                 break;
             }
