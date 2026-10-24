@@ -1177,7 +1177,7 @@ fn dialogs(
 mod numeric_tests {
     use super::*;
     use egui::accesskit::Role;
-    use egui_kittest::{Harness, kittest::Queryable};
+    use egui_kittest::{Harness, kittest::NodeT, kittest::Queryable};
 
     #[test]
     fn automatic_titlebar_shows_effective_mode_and_gates_caption_side() {
