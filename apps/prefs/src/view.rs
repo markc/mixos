@@ -477,7 +477,7 @@ fn scale_control(
     panel::section_label(ui, &label(key));
     ui.horizontal(|ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.add(PushButton::new(label("size-reset"))).clicked() {
+            if ui.add(PushButton::secondary(label("size-reset"))).clicked() {
                 value = 1.0;
                 commit = true;
             }
