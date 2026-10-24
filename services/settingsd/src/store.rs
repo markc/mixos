@@ -29,6 +29,14 @@ use std::path::{Path, PathBuf};
 pub const FORMAT: u32 = 4;
 
 const MAX_STORE_BYTES: u64 = 2 * 1024 * 1024;
+/// Exact shipped defaults, never a licence to repair arbitrary authored sources.
+/// The older installed default (740c0c13) still resolves and is left pinned.
+/// v0.1.2 (fe9dfa90) shipped the source last changed by bc2faa69; 5eff67b3
+/// retired its panel tokens; current validation also rejects its contrast.
+const RETIRED_EMBEDDED_DEFAULTS: &[&str] = &[
+    "33a33291c676de5bd1c30cb395534e8656244f57e6771a98bd61e3669e11f235", // 740c0c13
+    "34726165cf21927a700a0eb8e5770f6a374d44a7cc2f2fc09d987faf2a288ce2", // bc2faa69 / v0.1.2
+];
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Accepted {
@@ -80,7 +88,9 @@ impl Accepted {
     /// and whether anything changed.
     ///
     /// An older record keeps its authored settings, pinned source and history,
-    /// except that a legacy prose composer font resets to the mono default.
+    /// except that a legacy prose composer font resets to the mono default,
+    /// and an unresolvable known embedded default is explicitly re-pinned.
+    /// Authored sources are never rewritten or replaced by this migration.
     /// What is derived from them, the effective
     /// interpretation, is never trusted across formats: it is resolved again
     /// from the authored desktop and pinned source, and both digests are
@@ -101,14 +111,36 @@ impl Accepted {
             self.format
         );
         // This authored migration runs only after the stored seal verifies.
-        // Keep receipt fences honest by advancing the profile revision; the
-        // resolved design is unchanged, so its revision stays as it was.
+        // Keep receipt fences honest by advancing the profile revision.
+        // A default re-pin below also advances the design revision.
         let retired_app = self.desktop.apps.remove("busviewer").is_some();
         if retired_app {
             eprintln!("settingsd: dropping retired apps.busviewer settings during profile upgrade");
         }
         let reset = self.desktop.email.reset_legacy_composer_family() || retired_app;
-        if reset {
+        let resolved = settings::resolve_with_embedded(&self.desktop, &self.embedded_source);
+        let repin = resolved.is_err()
+            && self.desktop.appearance.source.is_none()
+            && RETIRED_EMBEDDED_DEFAULTS
+                .contains(&settings::source_digest(&self.embedded_source).as_str());
+        let effective = if repin {
+            self.embedded_source = settings::EMBEDDED_DEFAULT_SOURCE.into();
+            let effective = settings::resolve_with_embedded(&self.desktop, &self.embedded_source)
+                .map_err(|e| {
+                anyhow::anyhow!(
+                    "accepted desktop cannot migrate to current embedded default: {e:?}"
+                )
+            })?;
+            eprintln!(
+                "settingsd: re-pinning retired embedded default; dropping retired embedded tokens; preserving authored appearance overrides"
+            );
+            effective
+        } else {
+            resolved.map_err(|e| {
+                anyhow::anyhow!("accepted desktop no longer resolves (authored sources require explicit repair): {e:?}")
+            })?
+        };
+        if reset || repin {
             self.revision = Revision(
                 self.revision
                     .0
@@ -116,11 +148,12 @@ impl Accepted {
                     .ok_or_else(|| anyhow::anyhow!("accepted revision exhausted"))?,
             );
         }
-        if self.format == FORMAT && !reset {
+        if repin {
+            self.design_revision = self.revision;
+        }
+        if self.format == FORMAT && !reset && !repin {
             return Ok((self, false));
         }
-        let effective = settings::resolve_with_embedded(&self.desktop, &self.embedded_source)
-            .map_err(|e| anyhow::anyhow!("accepted desktop no longer resolves: {e:?}"))?;
         self.effective_digest = settings::digest(&effective)?;
         self.format = FORMAT;
         self.seal()?;

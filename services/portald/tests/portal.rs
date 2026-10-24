@@ -79,6 +79,7 @@ impl Drop for PrivateBus {
 fn projection(incarnation: &str, revision: u64, mode: &str) -> AppearanceProjection {
     AppearanceProjection {
         schema: APPEARANCE_SCHEMA,
+        caption_side: "right".into(),
         binding: Binding {
             instance: "host".into(),
             profile: "default".into(),
@@ -109,6 +110,7 @@ fn spawn_portal(
             binding: projection("a", 1, "dark").binding,
             screencast: None,
             screencast_max_framerate: Default::default(),
+            gtk_settings: portald::gtk_settings::Exporter::new(None, None),
         },
         received,
         shared.clone(),
@@ -439,7 +441,9 @@ async fn production_process_answers_read_within_250_ms_with_a_silent_authority()
         .await
         .ok_or_else(|| anyhow::anyhow!("authority incoming already taken"))?;
     let dir = tempfile::tempdir()?;
-    portald::cache::save(dir.path(), &projection("cached", 3, "light"))?;
+    let mut cached = projection("cached", 3, "light");
+    cached.caption_side = "left".into();
+    portald::cache::save(dir.path(), &cached)?;
     let alternate = Binding {
         instance: "host".into(),
         profile: "alternate".into(),
@@ -458,6 +462,7 @@ async fn production_process_answers_read_within_250_ms_with_a_silent_authority()
         ("switched", true, 1),
         ("alternate", true, 1),
     ] {
+        let gtk_home = dir.path().join(format!("gtk-{profile}-{cache}"));
         let bus = PrivateBus::start()?;
         let connection = client(&bus).await?;
         let proxy = portal_proxy(&connection).await?;
@@ -466,6 +471,7 @@ async fn production_process_answers_read_within_250_ms_with_a_silent_authority()
             .args(["serve", "--instance", "host", "--profile", profile])
             .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
             .env("MIXOS_NODED_URL", &broker.url)
+            .env("XDG_CONFIG_HOME", &gtk_home)
             .env_remove("STATE_DIRECTORY")
             .stdin(Stdio::null());
         if cache {
@@ -490,6 +496,18 @@ async fn production_process_answers_read_within_250_ms_with_a_silent_authority()
         assert!(started.elapsed() < Duration::from_millis(250));
         assert_eq!(innermost(&value), &Value::U32(expected));
         assert_eq!(depth(&value), 1, "Read remains double-boxed on the wire");
+        let gtk_path = gtk_home.join("gtk-3.0/settings.ini");
+        if expected == 2 {
+            assert_eq!(
+                std::fs::read_to_string(gtk_path)?,
+                "[Settings]\ngtk-decoration-layout=close,minimize,maximize:menu\ngtk-icon-theme-name=mixos\n"
+            );
+        } else {
+            assert!(
+                !gtk_path.exists(),
+                "unvalidated defaults must not be exported"
+            );
+        }
         // Prove this is a hung registered authority, not a missing route.
         let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
             .await?
@@ -553,6 +571,7 @@ async fn losing_the_session_bus_exits_non_zero_for_the_restart() -> anyhow::Resu
             .args(["serve", "--instance", "host", "--profile", "default"])
             .env("DBUS_SESSION_BUS_ADDRESS", &bus.address)
             .env("MIXOS_NODED_URL", &broker.url)
+            .env_remove("XDG_CONFIG_HOME")
             .env_remove("STATE_DIRECTORY")
             .stdin(Stdio::null())
             .spawn()?,
@@ -615,6 +634,10 @@ struct NativePortal {
 }
 impl NativePortal {
     fn start(bus: &PrivateBus, url: &str) -> Self {
+        Self::with_gtk(bus, url, None)
+    }
+
+    fn with_gtk(bus: &PrivateBus, url: &str, config_home: Option<&std::path::Path>) -> Self {
         let (projections, received) = mpsc::channel(8);
         let shared = status::shared();
         let binding = projection("a", 1, "dark").binding;
@@ -631,6 +654,7 @@ impl NativePortal {
                 binding,
                 screencast: None,
                 screencast_max_framerate: Default::default(),
+                gtk_settings: portald::gtk_settings::Exporter::new(config_home, None),
             },
             received,
             shared.clone(),
@@ -719,7 +743,8 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
     authority_store(root.path(), "light")?;
     let mut authority = AuthorityTask::start(root.path(), &broker.url);
     let bus = PrivateBus::start()?;
-    let mut portal = NativePortal::start(&bus, &broker.url);
+    let gtk_home = root.path().join("config");
+    let mut portal = NativePortal::with_gtk(&bus, &broker.url, Some(&gtk_home));
     wait_for_name(&mut portal.live, &portal.shared).await?;
     wait_source(&portal, 1, 0).await?;
     let operator = NodedClient::connect("portal-test", &broker.url).await?;
@@ -730,6 +755,8 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
         2,
         "initial authority fetched"
     );
+    let gtk_path = gtk_home.join("gtk-3.0/settings.ini");
+    assert!(std::fs::read_to_string(&gtk_path)?.contains("menu:minimize,maximize,close"));
     let owner: zbus::names::OwnedUniqueName = zbus::fdo::DBusProxy::new(&connection)
         .await?
         .get_name_owner(zbus::names::BusName::try_from(BUS_NAME)?)
@@ -762,12 +789,13 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
                 "binding": projection("a", 1, "dark").binding,
                 "expected_incarnation": initial["snapshot"]["incarnation"],
                 "expected_revision": "1", "operation_id": "portal-live-dark",
-                "changes": {"appearance.mode": "dark"}
+                "changes": {"appearance.mode": "dark", "appearance.caption_side": "left"}
             }),
         )
         .await?;
     assert_eq!(changed["status"], "changed");
     wait_source(&portal, 2, 0).await?;
+    assert!(std::fs::read_to_string(&gtk_path)?.contains("close,minimize,maximize:menu"));
     // The live change arrived as a broker delivery stamped by THIS tree's noded.
     // A refusal here means the broker stopped stamping settingsd as the owner.
     assert_eq!(

@@ -1,7 +1,7 @@
 #!/opt/mixos/bin/mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
--- Install the Lucide icon bundle, drawn at stroke 1.5, as the MixOS icon theme.
+-- Install Lucide icons at stroke 1.5 and original MixOS caption glyphs.
 --
 --   mix share/icons/install.mix [--root /absolute/share]
 --   mix share/icons/install.mix --check    validate the bundle; write nothing
@@ -12,6 +12,7 @@
 -- Outputs, all under <root>/icons/mixos (the theme apps.mix selects by default):
 --   scalable/apps/<alias>.svg, scalable/status/<alias>.svg, scalable/actions/<alias>.svg
 --       one per alias in manifest.conf.mix: its upstream SVG with stroke-width 1.5
+--   scalable/actions/window-*-symbolic.svg   original 16-unit caption glyphs, unchanged
 --   LICENSE-lucide.txt   the Lucide licence text, beside the icons it covers
 --   index.theme          the three native directories, then the legacy symbolic/apps
 --
@@ -129,6 +130,20 @@ fn want_context($d)
   return "Applications"
 end
 
+fn check_caption_svg($name, $svg)
+  -- Original hairline glyphs on a 16-unit canvas, with square corners and caps.
+  if count_of($svg, '<svg') != 1 or count_of($svg, 'viewBox="0 0 16 16"') != 1 then
+    raise("ICON_SVG", $name .. ": needs one 16-unit <svg> element")
+  end
+  for each $trait in ['fill="none"', 'stroke="currentColor"', 'stroke-width="1"', 'stroke-linecap="butt"', 'stroke-linejoin="miter"']
+    if count_of($svg, $trait) != 1 then raise("ICON_SVG", $name .. ": needs exactly one " .. $trait) end
+  end
+  if count_of($svg, 'stroke-width="') != 1 then raise("ICON_SVG", $name .. ": unexpected stroke override") end
+  for each $banned in ['<script', '<!ENTITY', '<!DOCTYPE', '<image', '<style', 'href', 'round', 'fill="black"']
+    if count_of($svg, $banned) != 0 then raise("ICON_SVG", $name .. ": contains " .. $banned) end
+  end
+end
+
 fn check_index($text)
   -- The three native directories in this order, then symbolic/apps. Each listed
   -- section is scalable, has a positive Size inside its MinSize..MaxSize bounds, and
@@ -223,6 +238,31 @@ fn bundle_items($here)
     end
     $data = replace($svgs[$icon.source], 'stroke-width="2"', 'stroke-width="1.5"')
     push($items, {rel: "scalable/" .. $icon.context .. "/" .. $name .. ".svg", data: $data})
+  end
+
+  $originals = get_or($m, "originals", [])
+  if type($originals) != "list" then raise("ICON_MANIFEST", "originals must be a list") end
+  for each $icon in $originals
+    if type($icon) != "map" or not has_key($icon, "name") or not has_key($icon, "file") or not has_key($icon, "sha256") then
+      raise("ICON_SOURCE", "every original needs name, file and sha256")
+    end
+    $name = $icon.name
+    if not contains(["window-minimize-symbolic", "window-maximize-symbolic", "window-restore-symbolic", "window-close-symbolic"], $name) then
+      raise("ICON_SOURCE", "unknown caption glyph " .. to_string($name))
+    end
+    if has_key($seen, $name) then raise("ICON_ALIAS", "duplicate alias " .. $name) end
+    $seen[$name] = true
+    $want = "scalable/actions/" .. $name .. ".svg"
+    if $icon.file != $want then raise("ICON_SOURCE", $name .. ": file must be " .. $want) end
+    if type($icon.sha256) != "string" or not re_match($icon.sha256, $HEX_RE) then
+      raise("ICON_HASH", $name .. ": sha256 must be 64 lowercase hex digits")
+    end
+    $path = $here .. "/" .. $want
+    if not plain_file($path) then raise("ICON_SOURCE", $name .. ": source is missing or not a plain file") end
+    if hash_file($path, "sha256") != $icon.sha256 then raise("ICON_HASH", $name .. ": source does not match its sha256") end
+    $svg = read_file($path)
+    check_caption_svg($name, $svg)
+    push($items, {rel: $want, data: $svg})
   end
 
   $licence = $here .. "/LICENSE-lucide.txt"

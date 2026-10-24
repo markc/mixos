@@ -18,6 +18,7 @@ export XDG_DATA_HOME=$data
 $apps = require($repo .. "/services/compd/scripts/lib/apps.mix")
 $models = require($repo .. "/share/scenes/lib/models.mix")
 $SIZES = [16, 22, 24, 32, 48, 128]
+$CAPTIONS = ["window-minimize-symbolic", "window-maximize-symbolic", "window-restore-symbolic", "window-close-symbolic"]
 
 fn check($condition, $message)
   if not $condition then raise("ICON_TEST", $message) end
@@ -94,6 +95,9 @@ fn owned_paths($theme, $m)
   for each $icon in $m.icons
     push($out, $theme .. "/scalable/" .. $icon.context .. "/" .. $icon.name .. ".svg")
   end
+  for each $icon in $m.originals
+    push($out, $theme .. "/" .. $icon.file)
+  end
   push($out, $theme .. "/LICENSE-lucide.txt")
   push($out, $theme .. "/index.theme")
   return $out
@@ -164,6 +168,20 @@ try
   $ini = ini_parse(read_file($index_path))
   check(deep_eq(split($ini["Icon Theme"].Directories, ","), ["scalable/apps", "scalable/status", "scalable/actions", "symbolic/apps"]), "native directories must come before the legacy symbolic/apps")
   check(not contains(read_file($index_path), "symbolic/status"), "index.theme indexes an old Material status directory")
+  check(has_key($ini, "scalable/actions"), "caption directory is not indexed")
+  $captions = []
+  for each $icon in $m.originals
+    push($captions, $icon.name)
+    check($icon.file == "scalable/actions/" .. $icon.name .. ".svg", "caption is outside the indexed directory")
+    check(is_file($bundle .. "/" .. $icon.file), "caption source is missing: " .. $icon.name)
+    check(read_file($share .. "/icons/mixos/" .. $icon.file) == read_file($bundle .. "/" .. $icon.file), "caption bytes changed: " .. $icon.name)
+    for each $size in $SIZES
+      $hit = hit_of($icon.name, $size)
+      check($hit != nil, "lookup misses caption " .. $icon.name)
+      check($hit.path == out_path("actions", $icon.name), "lookup chose another caption " .. $icon.name)
+    end
+  end
+  check(deep_eq(sort($captions), sort($CAPTIONS)), "the four caption glyphs must be in the manifest")
   must_pass(run_mix([$mix, $bundle .. "/install.mix", "--verify", "--root", $share], nil), "--verify after install")
 
   -- 3. The real lookup: every manifest alias at several sizes resolves to its output.
@@ -234,6 +252,15 @@ try
   check(len(changed($kept)) == 0, "the repair changed pre-existing files")
 
   -- 7. Corrupt bundles are refused before anything is written.
+  $fx = fixture("missing-caption")
+  remove($fx .. "/scalable/actions/window-close-symbolic.svg")
+  refuse($fx, "missing-caption", "ICON_SOURCE")
+
+  $fx = fixture("caption-hash")
+  $caption_path = $fx .. "/scalable/actions/window-close-symbolic.svg"
+  write_file($caption_path, read_file($caption_path) .. " ")
+  refuse($fx, "caption-hash", "ICON_HASH")
+
   $fx = fixture("hash")
   put($fx .. "/lucide/terminal.svg", read_file($fx .. "/lucide/terminal.svg") .. " ")
   refuse($fx, "hash", "ICON_HASH")

@@ -192,6 +192,7 @@ async fn screencast_contract() {
             },
             screencast: Some(portald::screencast::consent::Policy::Prompt),
             screencast_max_framerate: Default::default(),
+            gtk_settings: portald::gtk_settings::Exporter::new(None, None),
         },
         received,
         status::shared(),

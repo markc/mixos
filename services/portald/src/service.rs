@@ -108,14 +108,20 @@ async fn fetch(client: &SupervisedClient, binding: &Binding) -> Result<Read, Dia
         ));
     }
     let expected = AppearanceProjection::from_snapshot(&snapshot, appearance.accent)?;
-    if expected != appearance {
+    let matches = if appearance.schema == settings::appearance::LEGACY_APPEARANCE_SCHEMA {
+        expected.clone().legacy() == appearance
+    } else {
+        expected == appearance
+    };
+    if !matches {
         return Err(fault(
             "Appearance differs from its atomic snapshot evidence",
         ));
     }
     Ok(Read {
         snapshot: Some(snapshot),
-        appearance: Some(appearance),
+        // Keep caption placement from this read's snapshot.
+        appearance: Some(expected),
     })
 }
 
