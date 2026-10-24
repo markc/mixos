@@ -4,8 +4,6 @@
 //! its delivery channel and its effect runtime, exactly as from noded, and
 //! every reply, call and the final quit is read back from the handle in the
 //! order the shell made them.
-use workshop::label;
-use workshop::shell::{APP, Shell};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use futures::channel::mpsc;
@@ -16,6 +14,8 @@ use serde_json::{Value, json};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use toolkit::{Theme, drive};
+use workshop::label;
+use workshop::shell::{APP, Shell};
 
 struct Rig {
     h: Harness<'static, Option<Shell>>,
@@ -163,12 +163,7 @@ fn published(rig: &Rig) -> Vec<Value> {
 fn executed_commands_are_published_with_their_origin() {
     let mut rig = rig();
     send(&mut rig, 1, "workshop.execute", json!({"id": "nope"}));
-    send(
-        &mut rig,
-        2,
-        "workshop.execute",
-        json!({"id": "edit.clear"}),
-    );
+    send(&mut rig, 2, "workshop.execute", json!({"id": "edit.clear"}));
     wait(&mut rig, &[1, 2]);
     rig.h
         .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Slash);
@@ -243,12 +238,7 @@ fn a_call_after_typed_input_sends_the_typed_body() {
     wait(&mut rig, &[1]);
     let editor = body_editor(&mut rig);
     send(&mut rig, 2, "workshop.ui.click", json!({"id":editor}));
-    send(
-        &mut rig,
-        3,
-        "workshop.ui.type",
-        json!({"text":"{\"n\":2}"}),
-    );
+    send(&mut rig, 3, "workshop.ui.type", json!({"text":"{\"n\":2}"}));
     send(&mut rig, 4, "workshop.call", json!({}));
     send(&mut rig, 5, "workshop.info", json!({}));
     wait(&mut rig, &[2, 3, 4, 5]);

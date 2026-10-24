@@ -4,15 +4,15 @@
 //! command enters the engine, is settled, and window-level verbs go to the
 //! toolkit drive layer, against the real view. What an agent clicks and
 //! types lands in the engine as a person's input would.
-use workshop::shell::{apply_ui, settle};
-use workshop::view::{UiEvent, view};
-use workshop::{commands, label, strings};
 use egui_kittest::Harness;
 use inspector::model::Verb;
 use inspector::{Effect, Engine, Snapshot};
 use serde_json::{Value, json};
 use toolkit::Theme;
 use toolkit::drive::{self, Answer};
+use workshop::shell::{apply_ui, settle};
+use workshop::view::{UiEvent, view};
+use workshop::{commands, label, strings};
 
 struct Window {
     engine: Engine,

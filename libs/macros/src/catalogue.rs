@@ -29,8 +29,10 @@ impl Roots {
             for folder in folders {
                 let folder = folder?;
                 let name = folder.file_name().to_string_lossy().into_owned();
-                if valid_app(&name) && folder.path().is_dir()
-                    && fs::canonicalize(folder.path())?.starts_with(fs::canonicalize(root)?) {
+                if valid_app(&name)
+                    && folder.path().is_dir()
+                    && fs::canonicalize(folder.path())?.starts_with(fs::canonicalize(root)?)
+                {
                     apps.insert(name);
                 }
             }
@@ -40,8 +42,15 @@ impl Roots {
 
     pub fn read(&self, entry: &Entry) -> io::Result<String> {
         let mut text = String::new();
-        checked_file(if entry.tier.is_user() { &self.user } else { &self.builtin }, &entry.path)?
-            .read_to_string(&mut text)?;
+        checked_file(
+            if entry.tier.is_user() {
+                &self.user
+            } else {
+                &self.builtin
+            },
+            &entry.path,
+        )?
+        .read_to_string(&mut text)?;
         Ok(text)
     }
 
@@ -58,16 +67,27 @@ impl Roots {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         self.user_target(entry)?;
         let target = check_editable(&entry.path)?;
-        let parent = target.parent().ok_or_else(|| invalid("macro has no parent"))?;
-        let temporary = parent.join(format!(".macro-save-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        let parent = target
+            .parent()
+            .ok_or_else(|| invalid("macro has no parent"))?;
+        let temporary = parent.join(format!(
+            ".macro-save-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
         let result = (|| {
-            let mut file = OpenOptions::new().write(true).create_new(true).open(&temporary)?;
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)?;
             file.set_permissions(fs::metadata(&target)?.permissions())?;
             file.write_all(text.as_bytes())?;
             file.sync_all()?;
             fs::rename(&temporary, &target)
         })();
-        if result.is_err() { let _ = fs::remove_file(&temporary); }
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
         result
     }
 
@@ -294,10 +314,11 @@ pub enum Targets {
 
 impl Targets {
     pub fn allows(&self, app: &str) -> bool {
-        valid_app(app) && match self {
-            Self::Any => true,
-            Self::List(apps) => apps.iter().any(|name| name == app),
-        }
+        valid_app(app)
+            && match self {
+                Self::Any => true,
+                Self::List(apps) => apps.iter().any(|name| name == app),
+            }
     }
 }
 
@@ -411,12 +432,18 @@ impl Catalogue {
                 }
                 if let Some(value) = line.strip_prefix("-- target:") {
                     let names: Vec<_> = value.split(',').map(str::trim).collect();
-                    if targets.is_some() || value.trim().is_empty()
-                        || (value.trim() != "any" && names.iter().any(|name| !valid_app(name) || *name == "any")) {
+                    if targets.is_some()
+                        || value.trim().is_empty()
+                        || (value.trim() != "any"
+                            && names.iter().any(|name| !valid_app(name) || *name == "any"))
+                    {
                         malformed = true;
                     } else {
-                        targets = Some(if value.trim() == "any" { Targets::Any }
-                            else { Targets::List(names.into_iter().map(str::to_owned).collect()) });
+                        targets = Some(if value.trim() == "any" {
+                            Targets::Any
+                        } else {
+                            Targets::List(names.into_iter().map(str::to_owned).collect())
+                        });
                     }
                 }
                 if !line.is_empty() && !line.starts_with("--") {
@@ -482,15 +509,30 @@ pub fn check_editable(path: &Path) -> io::Result<PathBuf> {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let target = fs::canonicalize(path)?;
     let metadata = fs::metadata(&target)?;
-    if !metadata.is_file() { return Err(invalid("macro is not a regular file")); }
-    if metadata.permissions().readonly() {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "macro is read-only"));
+    if !metadata.is_file() {
+        return Err(invalid("macro is not a regular file"));
     }
-    let parent = target.parent().ok_or_else(|| invalid("macro has no parent"))?;
+    if metadata.permissions().readonly() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "macro is read-only",
+        ));
+    }
+    let parent = target
+        .parent()
+        .ok_or_else(|| invalid("macro has no parent"))?;
     loop {
-        let probe = parent.join(format!(".macro-save-check-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        let probe = parent.join(format!(
+            ".macro-save-check-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
         match OpenOptions::new().write(true).create_new(true).open(&probe) {
-            Ok(file) => { drop(file); fs::remove_file(probe)?; return Ok(target); }
+            Ok(file) => {
+                drop(file);
+                fs::remove_file(probe)?;
+                return Ok(target);
+            }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(error),
         }

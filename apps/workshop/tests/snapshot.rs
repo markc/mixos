@@ -4,13 +4,13 @@
 //! discovered node with one service whose descriptions failed, a selected
 //! verb, a body and a completed reply. Regenerate with `UPDATE_SNAPSHOTS=1`
 //! and look at the images before committing them.
-use workshop::{commands, label, strings, view::view};
 use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
 use inspector::bus::Reply;
 use inspector::model::Verb;
 use inspector::{Dialog, Effect, Engine, Selection, Snapshot};
 use toolkit::Theme;
+use workshop::{commands, label, strings, view::view};
 
 fn fixture() -> Snapshot {
     let verb = |name: &str, args: &str, description: &str, read_only| Verb {
@@ -47,11 +47,16 @@ fn fixture() -> Snapshot {
     );
     s.peers = vec!["alpha".into(), "beta".into()];
     s.nodes.push(inspector::model::Node {
-        name: "local".into(), local: true,
-        services: s.services.keys().cloned().collect(), ..Default::default()
+        name: "local".into(),
+        local: true,
+        services: s.services.keys().cloned().collect(),
+        ..Default::default()
     });
     for name in &s.peers {
-        s.nodes.push(inspector::model::Node { name: name.clone(), ..Default::default() });
+        s.nodes.push(inspector::model::Node {
+            name: name.clone(),
+            ..Default::default()
+        });
     }
     let mut identity = bus::ServiceInfo::from_name("settingsd");
     identity.version = Some("0.1.2".into());

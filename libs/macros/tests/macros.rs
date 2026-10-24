@@ -18,7 +18,9 @@ fn workshop_management_preserves_ids_refuses_clashes_and_builtins() {
     let temp = tempfile::tempdir().unwrap();
     let roots = roots(temp.path());
     roots.create("ced", Tier::UserApp, "tidy", "Tidy").unwrap();
-    roots.create("dopus", Tier::UserApp, "other", "Other").unwrap();
+    roots
+        .create("dopus", Tier::UserApp, "other", "Other")
+        .unwrap();
     assert_eq!(roots.apps().unwrap(), ["ced", "dopus"]);
     let mut entry = Catalogue::scan(&roots, "ced").unwrap().entries.remove(0);
     let before = roots.read(&entry).unwrap();
@@ -27,16 +29,30 @@ fn workshop_management_preserves_ids_refuses_clashes_and_builtins() {
     entry.path = global;
     entry.tier = Tier::UserGlobal;
     roots.create("ced", Tier::UserApp, "tidy", "Clash").unwrap();
-    assert_eq!(roots.move_to(&entry, Tier::UserApp, "ced").unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(
+        roots
+            .move_to(&entry, Tier::UserApp, "ced")
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::AlreadyExists
+    );
     assert_eq!(roots.read(&entry).unwrap(), before);
     let old = fs::File::open(&entry.path).unwrap();
-    roots.write(&entry, "-- title: Changed\nprint(42)\n").unwrap();
+    roots
+        .write(&entry, "-- title: Changed\nprint(42)\n")
+        .unwrap();
     use std::io::Read;
     let mut old_text = String::new();
     (&old).read_to_string(&mut old_text).unwrap();
-    assert_eq!(old_text, before, "atomic replacement leaves an open reader intact");
+    assert_eq!(
+        old_text, before,
+        "atomic replacement leaves an open reader intact"
+    );
     assert!(roots.read(&entry).unwrap().contains("Changed"));
-    assert_eq!(fs::read_dir(entry.path.parent().unwrap()).unwrap().count(), 3);
+    assert_eq!(
+        fs::read_dir(entry.path.parent().unwrap()).unwrap().count(),
+        3
+    );
     let mut builtin = entry.clone();
     builtin.tier = Tier::BuiltinGlobal;
     assert!(roots.write(&builtin, "bad").is_err());
@@ -74,23 +90,45 @@ fn target_headers_parse_and_refuse_before_acceptance() {
     let temp = tempfile::tempdir().unwrap();
     let roots = roots(temp.path());
     fs::create_dir_all(&roots.user).unwrap();
-    for (id, header) in [("any", "-- target: any\n"), ("list", "-- target: ced, dopus\n"), ("absent", ""), ("empty", "-- target:\n"), ("bad", "-- target: ced,,dopus\n"), ("duplicate", "-- target: any\n-- target: ced\n")] {
-        fs::write(roots.user.join(format!("{id}.mix")), format!("-- title: {id}\n{header}print(1)\n")).unwrap();
+    for (id, header) in [
+        ("any", "-- target: any\n"),
+        ("list", "-- target: ced, dopus\n"),
+        ("absent", ""),
+        ("empty", "-- target:\n"),
+        ("bad", "-- target: ced,,dopus\n"),
+        ("duplicate", "-- target: any\n-- target: ced\n"),
+    ] {
+        fs::write(
+            roots.user.join(format!("{id}.mix")),
+            format!("-- title: {id}\n{header}print(1)\n"),
+        )
+        .unwrap();
     }
     let catalogue = Catalogue::scan_globals(&roots).unwrap();
     assert_eq!(catalogue.entries.len(), 3);
     assert_eq!(catalogue.diagnostics.len(), 3);
     assert_eq!(catalogue.entries[0].targets, None);
     assert_eq!(catalogue.entries[1].targets, Some(Targets::Any));
-    assert_eq!(catalogue.entries[2].targets, Some(Targets::List(vec!["ced".into(), "dopus".into()])));
+    assert_eq!(
+        catalogue.entries[2].targets,
+        Some(Targets::List(vec!["ced".into(), "dopus".into()]))
+    );
     let session = Session::with_roots("workshop", Some(roots));
     session.reload().unwrap();
     for (id, target) in [("absent", "ced"), ("list", "term"), ("any", "../ced")] {
-        assert_eq!(session.run_with(id, "bus", Some(target)).unwrap_err().code, "INVALID_ARGUMENT");
+        assert_eq!(
+            session.run_with(id, "bus", Some(target)).unwrap_err().code,
+            "INVALID_ARGUMENT"
+        );
         assert_eq!(session.status()["run"], serde_json::Value::Null);
     }
     let created = session.create("Global new").unwrap();
-    assert_eq!(Path::new(created["path"].as_str().unwrap()).parent().unwrap(), temp.path().join("user"));
+    assert_eq!(
+        Path::new(created["path"].as_str().unwrap())
+            .parent()
+            .unwrap(),
+        temp.path().join("user")
+    );
 }
 
 #[test]
@@ -369,7 +407,7 @@ fn failed_start_is_reported_asynchronously() {
         tier: Tier::UserApp,
         path: temp.path().join("test.mix"),
         shadows: vec![],
-            targets: None,
+        targets: None,
     };
     let mut runner = Runner::default();
     runner.start(&roots, "ced", &entry).unwrap();
@@ -396,7 +434,7 @@ fn real_mix_runs_with_context_bounded_output_and_stop() {
         tier: Tier::UserApp,
         path: path.clone(),
         shadows: vec![],
-            targets: None,
+        targets: None,
     };
     let mut runner = Runner::default();
     runner.start(&roots, "ced", &entry).unwrap();
@@ -476,7 +514,7 @@ fn descendant_fixture(detached: bool) {
         tier: Tier::UserApp,
         path,
         shadows: vec![],
-            targets: None,
+        targets: None,
     };
     let mut runner = Runner::default();
     runner.start(&roots, "ced", &entry).unwrap();

@@ -255,10 +255,19 @@ fn description(engine: &Engine) -> String {
         .and_then(|key| find(&engine.tree(), key));
     match row.map(|r| r.kind) {
         Some(RowKind::Error(error)) => error,
-        Some(RowKind::Service(name)) => engine.snapshot.identities.get(&name)
-            .and_then(|info| serde_json::to_string_pretty(info).ok()).unwrap_or(name),
-        Some(RowKind::Node(name)) => engine.snapshot.nodes.iter().find(|node| node.name == name)
-            .and_then(|node| serde_json::to_string_pretty(&node.info).ok()).unwrap_or(name),
+        Some(RowKind::Service(name)) => engine
+            .snapshot
+            .identities
+            .get(&name)
+            .and_then(|info| serde_json::to_string_pretty(info).ok())
+            .unwrap_or(name),
+        Some(RowKind::Node(name)) => engine
+            .snapshot
+            .nodes
+            .iter()
+            .find(|node| node.name == name)
+            .and_then(|node| serde_json::to_string_pretty(&node.info).ok())
+            .unwrap_or(name),
         Some(RowKind::Peer(name)) => format!("{}: {name}", label("peer-membership")),
         _ => label("select"),
     }

@@ -881,11 +881,7 @@ mod tests {
         for command in commands.iter() {
             let mut e = engine();
             e.ui.selected = Some(target("a"));
-            e.command(
-                1,
-                "workshop.execute",
-                &json!({"id":command.id}).to_string(),
-            );
+            e.command(1, "workshop.execute", &json!({"id":command.id}).to_string());
             let effects = settle(&mut e, &commands, &strings);
             assert!(
                 effects

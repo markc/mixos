@@ -1605,7 +1605,7 @@ mod tests {
                         Tier::UserApp
                     },
                     shadows: vec![],
-            targets: None,
+                    targets: None,
                 })
                 .collect(),
             diagnostics: vec![],
@@ -2276,7 +2276,7 @@ mod tests {
                 path: "wide.mix".into(),
                 tier: Tier::UserApp,
                 shadows: vec![],
-            targets: None,
+                targets: None,
             });
             state.engine.replace_catalogue(state.catalogue.clone());
         }

@@ -64,9 +64,15 @@ async fn describe(handle: &Handle, service: &str) -> Result<Vec<crate::model::Ve
 pub async fn discover(handle: Handle) -> crate::model::Snapshot {
     use futures::{StreamExt, stream};
     let mut snapshot = crate::model::Snapshot::default();
-    let local_info = json_call(&handle, "noded", "noded.info").await.unwrap_or_default();
-    let local = local_info.get("name").or_else(|| local_info.get("node"))
-        .and_then(Value::as_str).unwrap_or("local").to_owned();
+    let local_info = json_call(&handle, "noded", "noded.info")
+        .await
+        .unwrap_or_default();
+    let local = local_info
+        .get("name")
+        .or_else(|| local_info.get("node"))
+        .and_then(Value::as_str)
+        .unwrap_or("local")
+        .to_owned();
     match json_call(&handle, "noded", "noded.peers").await {
         Ok(value) => snapshot.peers = crate::model::peers(&value),
         Err(error) => snapshot.peer_error = Some(error),
@@ -74,37 +80,69 @@ pub async fn discover(handle: Handle) -> crate::model::Snapshot {
     let mut nodes = vec![(local, true)];
     nodes.extend(snapshot.peers.iter().cloned().map(|name| (name, false)));
     for (name, local) in nodes {
-        let broker = if local { "noded".to_owned() } else { format!("noded.{name}.bus") };
-        let mut node = crate::model::Node { name: name.clone(), local, ..Default::default() };
-        node.info = json_call(&handle, &broker, "noded.info").await.unwrap_or_default();
-        let listed = match json_call(&handle, &broker, "noded.list").await
-            .and_then(|value| serde_json::from_value::<Vec<bus::ServiceInfo>>(value).map_err(|e| e.to_string())) {
+        let broker = if local {
+            "noded".to_owned()
+        } else {
+            format!("noded.{name}.bus")
+        };
+        let mut node = crate::model::Node {
+            name: name.clone(),
+            local,
+            ..Default::default()
+        };
+        node.info = json_call(&handle, &broker, "noded.info")
+            .await
+            .unwrap_or_default();
+        let listed = match json_call(&handle, &broker, "noded.list")
+            .await
+            .and_then(|value| {
+                serde_json::from_value::<Vec<bus::ServiceInfo>>(value).map_err(|e| e.to_string())
+            }) {
             Ok(listed) => listed,
-            Err(error) => { node.error = Some(error); snapshot.nodes.push(node); continue; }
+            Err(error) => {
+                node.error = Some(error);
+                snapshot.nodes.push(node);
+                continue;
+            }
         };
         let mut names = Vec::new();
         for identity in listed {
-            let route = if local { identity.name.clone() } else { format!("{}.{name}.bus", identity.name) };
+            let route = if local {
+                identity.name.clone()
+            } else {
+                format!("{}.{name}.bus", identity.name)
+            };
             node.services.push(route.clone());
             names.push(route.clone());
             snapshot.identities.insert(route, identity);
         }
-        let route = if local { "noded".into() } else { format!("noded.{name}.bus") };
-        if !node.services.contains(&route) { node.services.push(route.clone()); names.push(route.clone()); }
-        if let Some(identity) = node.info.get("noded").and_then(|value| serde_json::from_value(value.clone()).ok()) {
+        let route = if local {
+            "noded".into()
+        } else {
+            format!("noded.{name}.bus")
+        };
+        if !node.services.contains(&route) {
+            node.services.push(route.clone());
+            names.push(route.clone());
+        }
+        if let Some(identity) = node
+            .info
+            .get("noded")
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+        {
             snapshot.identities.insert(route, identity);
         }
         let results = stream::iter(names.into_iter().map(|name| {
-        let handle = handle.clone();
-        async move {
-            let result = describe(&handle, &name).await;
-            (name, result)
-        }
-    }))
-    .buffer_unordered(8)
-    .collect::<Vec<_>>()
-    .await;
-    snapshot.services.extend(results);
+            let handle = handle.clone();
+            async move {
+                let result = describe(&handle, &name).await;
+                (name, result)
+            }
+        }))
+        .buffer_unordered(8)
+        .collect::<Vec<_>>()
+        .await;
+        snapshot.services.extend(results);
         snapshot.nodes.push(node);
     }
     snapshot

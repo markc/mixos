@@ -4,8 +4,6 @@
 //! Shortcuts dialogs close from their button and from Esc, the body's push
 //! buttons run their commands and carry "Label (Shortcut)" tooltips, and
 //! the search field reports the filter.
-use workshop::view::{UiEvent, view};
-use workshop::{commands, label, strings};
 use design::{DesignContext, Mode, Scheme};
 use egui::Key;
 use egui_kittest::Harness;
@@ -13,6 +11,8 @@ use egui_kittest::kittest::Queryable;
 use inspector::model::Verb;
 use inspector::{Dialog, Effect, Engine, Selection, Snapshot};
 use toolkit::Theme;
+use workshop::view::{UiEvent, view};
+use workshop::{commands, label, strings};
 
 fn engine(dialog: Option<Dialog>) -> Engine {
     let mut s = Snapshot::default();

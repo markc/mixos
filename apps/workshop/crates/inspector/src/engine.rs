@@ -743,7 +743,12 @@ impl Engine {
             children.retain(|row| row.key != "mesh");
             for row in &mut children {
                 if let RowKind::Service(route) = &row.kind {
-                    let name = self.snapshot.identities.get(route).map(|info| info.name.as_str()).unwrap_or(route);
+                    let name = self
+                        .snapshot
+                        .identities
+                        .get(route)
+                        .map(|info| info.name.as_str())
+                        .unwrap_or(route);
                     row.key = format!("service:{}:{name}", node.name);
                     row.expanded |= self.ui.expanded.contains(&row.key);
                     for child in &mut row.children {
@@ -754,10 +759,20 @@ impl Engine {
                 }
             }
             if let Some(error) = &node.error {
-                children.push(Row { key: format!("node:{}:error", node.name), kind: RowKind::Error(error.clone()), expanded: false, children: Vec::new() });
+                children.push(Row {
+                    key: format!("node:{}:error", node.name),
+                    kind: RowKind::Error(error.clone()),
+                    expanded: false,
+                    children: Vec::new(),
+                });
             }
             let key = format!("node:{}", node.name);
-            rows.push(Row { expanded: self.ui.expanded.contains(&key) || !self.ui.filter.is_empty(), key, kind: RowKind::Node(node.name.clone()), children });
+            rows.push(Row {
+                expanded: self.ui.expanded.contains(&key) || !self.ui.filter.is_empty(),
+                key,
+                kind: RowKind::Node(node.name.clone()),
+                children,
+            });
         }
         rows
     }
@@ -765,16 +780,34 @@ impl Engine {
     fn clone_for_node(&self, node: &model::Node) -> Self {
         let mut engine = Self::new(self.label);
         engine.ui = self.ui.clone();
-        if node.name.to_lowercase().contains(&engine.ui.filter.to_lowercase()) { engine.ui.filter.clear(); }
-        engine.snapshot.services = self.snapshot.services.iter().filter(|(name, _)| node.services.contains(name)).map(|(name, verbs)| (name.clone(), verbs.clone())).collect();
+        if node
+            .name
+            .to_lowercase()
+            .contains(&engine.ui.filter.to_lowercase())
+        {
+            engine.ui.filter.clear();
+        }
+        engine.snapshot.services = self
+            .snapshot
+            .services
+            .iter()
+            .filter(|(name, _)| node.services.contains(name))
+            .map(|(name, verbs)| (name.clone(), verbs.clone()))
+            .collect();
         engine
     }
 
     pub fn service_label(&self, route: &str) -> String {
-        let Some(info) = self.snapshot.identities.get(route) else { return route.into(); };
+        let Some(info) = self.snapshot.identities.get(route) else {
+            return route.into();
+        };
         let mut label = info.name.clone();
-        if let Some(version) = &info.version { label.push_str(&format!("  {version}")); }
-        if let Some(sha) = &info.git_sha { label.push_str(&format!(" · {}", sha.chars().take(8).collect::<String>())); }
+        if let Some(version) = &info.version {
+            label.push_str(&format!("  {version}"));
+        }
+        if let Some(sha) = &info.git_sha {
+            label.push_str(&format!(" · {}", sha.chars().take(8).collect::<String>()));
+        }
         label
     }
 
@@ -1035,7 +1068,9 @@ impl Engine {
                 let mut entry = json!({"key":row.key,"kind":kind,"label":label,"depth":depth,"expanded":row.expanded,
                     "children":row.children.len(),"selected":engine.ui.row_key.as_deref() == Some(row.key.as_str())});
                 match &row.kind {
-                    RowKind::Service(name) => entry["identity"] = json!(engine.snapshot.identities.get(name)),
+                    RowKind::Service(name) => {
+                        entry["identity"] = json!(engine.snapshot.identities.get(name))
+                    }
                     RowKind::Verb(target) => entry["selection"] = json!(target),
                     RowKind::Error(error) => entry["error"] = json!(error),
                     _ => {}
@@ -1073,7 +1108,9 @@ impl Engine {
         } else {
             if self.snapshot.nodes.is_empty() {
                 for node in &snapshot.nodes {
-                    if node.local { self.ui.expanded.insert(format!("node:{}", node.name)); }
+                    if node.local {
+                        self.ui.expanded.insert(format!("node:{}", node.name));
+                    }
                 }
             }
             self.snapshot = snapshot;
@@ -1469,11 +1506,7 @@ mod tests {
             [Effect::Reply { id: 7, rc: 10, .. }]
         ));
         assert_eq!(calls(&effects), 0);
-        e.command(
-            8,
-            "workshop.call",
-            r#"{"service":"example","verb":"nope"}"#,
-        );
+        e.command(8, "workshop.call", r#"{"service":"example","verb":"nope"}"#);
         assert!(
             matches!(&e.take_effects()[..], [Effect::Reply { id: 8, rc: 10, body }] if body["error_code"] == "ARGUMENT")
         );
@@ -1839,11 +1872,7 @@ mod tests {
             json!({"service":"example","verb":"echo"})
         );
         assert_eq!(e.ui.selected, Some(target()));
-        let (_, body) = ask(
-            &mut e,
-            "workshop.select_row",
-            json!({"key":"error:broken"}),
-        );
+        let (_, body) = ask(&mut e, "workshop.select_row", json!({"key":"error:broken"}));
         assert_eq!(
             (body["row_key"].as_str(), &body["selection"]),
             (Some("error:broken"), &Value::Null)
