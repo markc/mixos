@@ -52,11 +52,12 @@ mod tests {
         let mut text = String::from("focused");
         while Instant::now() < end {
             wake.begin();
-            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 ui.text_edit_singleline(&mut text).request_focus();
                 // Also ensures the test eventually terminates if egui stops blinking.
                 ui.ctx().request_repaint_after(Duration::from_millis(500));
             });
+            output.textures_delta.clear();
             passes += 1;
             wake.wait();
         }
