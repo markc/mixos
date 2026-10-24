@@ -116,6 +116,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "action"
+version = "0.3.0"
+dependencies = [
+ "fluent-bundle",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "uuid",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -225,8 +237,8 @@ dependencies = [
 name = "annotation"
 version = "0.1.2"
 dependencies = [
+ "action",
  "chrono",
- "command",
  "cosmic-text",
  "image",
  "libc",
@@ -1431,18 +1443,6 @@ checksum = "cfc320937d09e6de266b31b9afb480f197d7a861be86be7cb2ea7e5d1bfffc5e"
 dependencies = [
  "bytes",
  "memchr",
-]
-
-[[package]]
-name = "command"
-version = "0.3.0"
-dependencies = [
- "fluent-bundle",
- "schemars",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "uuid",
 ]
 
 [[package]]
@@ -8519,11 +8519,11 @@ dependencies = [
 name = "screenshot"
 version = "0.1.2"
 dependencies = [
+ "action",
  "annotation",
  "buildinfo",
  "bus",
  "citizen",
- "command",
  "design",
  "eframe",
  "egui",
@@ -10003,10 +10003,10 @@ checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 name = "toolkit"
 version = "0.1.2"
 dependencies = [
+ "action",
  "anyhow",
  "assets",
  "bus",
- "command",
  "config",
  "design",
  "editor",
