@@ -35195,6 +35195,47 @@ instance). Verbs keep the app’s canonical prefix, such as `workshop.macros.run
 | `workshop.macros.output` | `{}` | Retained output and dropped flag |
 | `workshop.macros.stop` | `{}` | Whether termination was requested |
 | `workshop.macros.new` | `{title}` | Create a global user macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
+| `workshop.macros.get` | `{id, app?}` | Read `{id,tier,path,text}`, at most 256 KiB |
+| `workshop.macros.put` | `{id,text,app?}` | Save a user macro atomically and refresh its owning Session |
+| `workshop.macros.remove` | `{id,app?}` | Delete a user macro; built-ins refuse with `DENIED` |
+| `workshop.macros.move` | `{id,tier,app?,destination?}` | Move between user tiers; refuse a destination clash |
+| `workshop.macros.copy` | `{id,app?}` | Copy a built-in into its corresponding user tier |
+| `workshop.macros.open` | `{app,id?}` | Select a macro in Details, or expand the app's branch |
+| `workshop.traffic` | `{limit?,filter?}` | Read up to 1,024 retained rows and the dropped count |
+| `workshop.observe` | `{on,filter?,body?}` | Start or stop observation; body defaults to `redacted` |
+
+The global branch has the stable key `macros:global`. Global user files live
+directly in the user macro root, for example
+`/home/user/.config/mixos/macros/mesh-ping.mix`. Workshop owns their Session.
+App branches prefer the running app's catalogue and use the Library only when
+the app is stopped, with a “not running” label. Running an app macro while its
+app is stopped refuses with `UNAVAILABLE`. `app` selects the source app;
+omit it or use `global` for globals. Moving a global into an app requires
+`tier: "user-app"` and `destination: "ced"`, for example.
+
+Details uses the shared editor document. Save (Ctrl+S), Run (Ctrl+Enter),
+Stop, Copy to user, Move, Delete with confirmation, Open in Ced and Show in
+Dopus dispatch through Workshop's command registry. A `-- target:` header
+offers only its allowed apps; `any` offers running apps. The chosen app is
+passed as `MIXOS_MACRO_TARGET`. Without a header, Run remains target-free.
+Each app serves the same management verbs through its own macro Session.
+Macro requests are capped at 8 KiB, except `put`: its envelope is capped at
+272 KiB and its text at 256 KiB.
+
+The collapsible Traffic dock combines broker observations and native
+`<service>.command.executed` / `<service>.macros.finished` topics. It retains
+at most 1,024 rows and 8 MiB, reports dropped rows and redacts sensitive
+topic fields before retaining them. Broker observation defaults to redacted
+bodies; `none` is also supported. A refused observer leaves the reason in
+the dock and keeps topic deliveries available. The host must explicitly
+admit `workshop*` in `observe.allowed_services`. Run
+`mix --serve tools/workshop_observe.mix --name workshop-probe` to check
+the advertised observe extension and open and close a probe stream.
+
+Open Workshop in an app's macro menu launches or focuses Workshop; a launch
+with `--app ced --id tidy-imports` selects that macro. The global folder in
+Dopus is the fallback when Workshop is not installed. Headless instances
+use the same management and traffic verbs.
 
 ---
 

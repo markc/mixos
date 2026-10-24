@@ -26,9 +26,10 @@ use toolkit::{Registry, Strings, Theme, drive};
 
 /// What finished off the UI thread.
 pub enum Event {
+    Measured(u64, Result<Reply, CallError>, String, u64),
     Stopped(Result<(), String>),
     MacroChanged,
-    Workshop(String, Value, Option<u64>, Result<Value, String>),
+    Workshop(u64, String, Value, Option<u64>, Result<Value, String>),
     Delivery(Delivery),
     Discovered(u64, Snapshot),
     Completed(u64, Result<Reply, CallError>),
@@ -45,6 +46,7 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Delivery(delivery) => engine.delivery(delivery),
         Event::Discovered(ticket, snapshot) => engine.discovered(ticket, snapshot),
         Event::Completed(ticket, result) => engine.completed(ticket, result),
+        Event::Measured(ticket, result, at, ms) => engine.completed_at(ticket, result, at, ms),
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
         // The session look is the shell's (see `Shell::looked`).
         Event::Look(..)
@@ -67,6 +69,7 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
         .partition(|e| matches!(e, UiEvent::Command(..)));
     for event in edits.into_iter().chain(fired).chain(closed) {
         match event {
+            UiEvent::MacroTarget(target) => engine.workshop.target = target,
             UiEvent::CancelDelete => engine.workshop.confirm_delete = false,
             UiEvent::Macro(operation, args) => {
                 engine.workshop.arguments = args;
@@ -165,6 +168,7 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
 pub struct Shell {
     watched_topics: std::collections::BTreeSet<String>,
     macro_stopping: bool,
+    macro_stopped: bool,
     _macro_change: macros::session::ChangeHook,
     engine: Engine,
     commands: Registry<Engine>,
@@ -207,6 +211,12 @@ fn hostname() -> String {
 
 /// How long one settings read may take.
 const LOOK_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn timestamp() -> String {
+    let time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let seconds = time.as_secs() % 86_400;
+    format!("{:02}:{:02}:{:02}.{:03}", seconds / 3600, seconds / 60 % 60, seconds % 60, time.subsec_millis())
+}
 
 /// What the engine shows for an unchosen axis: the session theme's.
 fn session_of(theme: &Theme) -> inspector::Session {
@@ -283,6 +293,7 @@ impl Shell {
         let mut shell = Self {
             watched_topics: Default::default(),
             macro_stopping: false,
+            macro_stopped: false,
             _macro_change: macro_change,
             engine: Engine::new(label),
             commands: crate::commands::registry(),
@@ -357,7 +368,7 @@ impl Shell {
         while let Ok(event) = self.rx.try_recv() {
             if let Event::Stopped(result) = event {
                 match result {
-                    Ok(()) => self.perform(Effect::Exit),
+                    Ok(()) => { self.macro_stopped = true; self.perform(Effect::Exit); }
                     Err(error) => self.engine.workshop.message = error,
                 }
                 continue;
@@ -376,8 +387,12 @@ impl Shell {
                 }
                 continue;
             }
-            if let Event::Workshop(operation, args, reply, result) = event {
-                self.engine.workshop.pending = self.engine.workshop.pending.saturating_sub(1);
+            if let Event::Workshop(ticket, operation, args, reply, result) = event {
+                if !self.engine.workshop_completion(ticket, &operation) {
+                    if let Some(id) = reply { self.bus.reply(id, 10, json!({"error_code":"BUSY","message":"superseded by a newer selection"})); }
+                    self.engine.workshop_settled(); self.settle();
+                    continue;
+                }
                 let body = result.unwrap_or_else(
                     |message| json!({"error_code":"UNAVAILABLE","message":message}),
                 );
@@ -394,12 +409,16 @@ impl Shell {
                         if let Some(id) = reply {
                             self.bus.reply(id, 0, body);
                         }
+                        self.engine.workshop_settled();
+                        self.settle();
                         continue;
                     }
                     let id = args["id"].as_str().unwrap_or_default().to_owned();
+                    if let Some(catalogue) = body.get("catalogue") { self.engine.workshop.catalogues.insert(app.clone(), catalogue.clone()); }
                     self.engine.ui.row_key = Some(format!("macro:{app}:{id}"));
                     self.engine.ui.expanded.insert(format!("macros:{app}"));
                     self.engine.workshop.selected = Some((app, id));
+                    self.engine.reveal_macro();
                     self.engine.workshop.document = body.clone();
                     self.engine.workshop.draft = None;
                 } else if operation == "observe" {
@@ -428,9 +447,7 @@ impl Shell {
                 if let Some(id) = reply {
                     self.bus.reply(id, if refused { 10 } else { 0 }, body);
                 }
-                if self.engine.quitting {
-                    self.engine.quit();
-                }
+                self.engine.workshop_settled();
                 self.settle();
                 continue;
             }
@@ -470,7 +487,7 @@ impl Shell {
                         self.engine.workshop.message = body.to_string();
                         self.engine.workshop.filter.clear();
                     }
-                    self.engine.workshop.retain(json!({"direction":"topic","from":event["from"],"verb":event["topic"],"payload":body}));
+                    self.engine.workshop.retain(json!({"ts":timestamp(),"direction":"topic","from":event["from"],"service":event["from"],"verb":event["topic"],"payload":body}));
                 }
                 if *topic == self.follower.topic() {
                     self.read_look();
@@ -482,7 +499,7 @@ impl Shell {
                 self.read_look();
             }
             if let Event::Delivery(Delivery::Command { id, .. }) = event
-                && self.exiting
+                && (self.exiting || self.engine.quitting)
             {
                 self.refuse_closing(id);
                 continue;
@@ -512,7 +529,7 @@ impl Shell {
     fn release(&mut self) {
         while let Some(Event::Delivery(Delivery::Command { verb, .. })) = self.held.front() {
             let joins_queue = verb.strip_prefix("workshop.").is_some_and(drive::queues);
-            if self.exiting || (drive::pending(&self.ctx) && !joins_queue) {
+            if self.exiting || self.engine.quitting || (drive::pending(&self.ctx) && !joins_queue) {
                 return;
             }
             let event = self.held.pop_front().expect("a held command");
@@ -543,6 +560,7 @@ impl Shell {
     fn perform(&mut self, effect: Effect) {
         match effect {
             Effect::Workshop {
+                ticket,
                 operation,
                 mut args,
                 reply,
@@ -595,11 +613,11 @@ impl Shell {
                 self.spawn(async move {
                     for (topic, on) in subscriptions {
                         let result = if on { bus.subscribe(&topic).await } else { bus.unsubscribe(&topic).await };
-                        if let Err(error) = result { return Event::Workshop(operation, args, reply, Err(error)); }
+                        if let Err(error) = result { return Event::Workshop(ticket, operation, args, reply, Err(error)); }
                     }
                     let result =
                         crate::workshop::perform(bus, &operation, args.clone(), running).await;
-                    Event::Workshop(operation, args, reply, result)
+                    Event::Workshop(ticket, operation, args, reply, result)
                 });
             }
             Effect::Discover { ticket } => {
@@ -620,7 +638,9 @@ impl Shell {
             } => {
                 let bus = self.bus.clone();
                 self.spawn(async move {
-                    Event::Completed(ticket, bus.raw(&target.service, &target.verb, body).await)
+                    let start = std::time::Instant::now();
+                    let result = bus.raw(&target.service, &target.verb, body).await;
+                    Event::Measured(ticket, result, timestamp(), start.elapsed().as_millis() as u64)
                 });
             }
             Effect::Show { ticket, reply } => {
@@ -635,9 +655,10 @@ impl Shell {
             }
             Effect::Copy(text) => self.ctx.copy_text(text),
             Effect::Exit => {
-                if !self.macro_stopping {
-                    self.macro_stopping = true;
-                    self.spawn(async {
+                if !self.macro_stopped {
+                    if !self.macro_stopping {
+                        self.macro_stopping = true;
+                        self.spawn(async {
                         let result = tokio::task::spawn_blocking(|| {
                             macros::Session::for_app("workshop").shutdown()
                         })
@@ -645,7 +666,8 @@ impl Shell {
                         .map_err(|e| e.to_string())
                         .and_then(|result| result.map_err(|e| e.to_string()));
                         Event::Stopped(result)
-                    });
+                        });
+                    }
                     return;
                 }
                 self.exiting = true;
@@ -1062,6 +1084,7 @@ mod tests {
             .map(|v| v["name"].as_str().unwrap().into())
             .collect();
         let mut expected: Vec<String> = model::VERBS.iter().map(|v| (*v).to_owned()).collect();
+        expected.extend(["workshop.traffic", "workshop.observe", "workshop.macros.open"].map(str::to_owned));
         expected.extend(drive::VERBS.iter().map(|v| format!("{APP}.{v}")));
         expected.extend(
             inspector::bus::macros::describe(APP)
@@ -1106,6 +1129,10 @@ mod tests {
         for command in commands.iter() {
             let mut e = engine();
             e.ui.selected = Some(target("a"));
+            if command.id.starts_with("macro.") {
+                e.workshop.selected = Some(("global".into(), "test".into()));
+                e.workshop.document = json!({"text":"print(1)\n"});
+            }
             e.command(1, "workshop.execute", &json!({"id":command.id}).to_string());
             let effects = settle(&mut e, &commands, &strings);
             assert!(

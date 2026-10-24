@@ -69,6 +69,15 @@ impl Roots {
         Ok(text)
     }
 
+    /// A bounded transport read, through the same confined descriptor checks.
+    pub fn read_bounded(&self, entry: &Entry, limit: usize) -> io::Result<String> {
+        let root = if entry.tier.is_user() { &self.user } else { &self.builtin };
+        let mut bytes = Vec::new();
+        checked_file(root, &entry.path)?.take(limit as u64 + 1).read_to_end(&mut bytes)?;
+        if bytes.len() > limit { return Err(io::Error::new(io::ErrorKind::InvalidData, "macro exceeds text limit")); }
+        String::from_utf8(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+    }
+
     fn user_target(&self, entry: &Entry) -> io::Result<PathBuf> {
         if !entry.tier.is_user() {
             return Err(invalid("built-in macros are read-only"));

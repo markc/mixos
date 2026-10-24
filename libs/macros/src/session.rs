@@ -143,13 +143,22 @@ impl Session {
             )
         };
         if operation == "get" {
-            let text = roots.read(entry).map_err(storage_error)?;
+            let text = roots.read_bounded(entry, 256 * 1024).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::InvalidData { Refusal::new("RESOURCE_EXHAUSTED", error) }
+                else { storage_error(error) }
+            })?;
             if text.len() > 256 * 1024 {
                 return Err(Refusal::new("RESOURCE_EXHAUSTED", "macro exceeds 256 KiB"));
             }
             return Ok(
                 json!({"id":entry.id,"tier":entry.tier.as_str(),"path":entry.path,"text":text}),
             );
+        }
+        if operation == "copy" {
+            let app = self.0.lock().unwrap().app.clone();
+            let path = roots.copy_to_user(&app, entry).map_err(storage_error)?;
+            self.reload()?;
+            return Ok(json!({"id":entry.id,"path":path,"changed":true}));
         }
         if !entry.tier.is_user() {
             return Err(Refusal::new("DENIED", "built-in macros are read-only"));
@@ -279,8 +288,14 @@ impl Session {
             Catalogue::scan(&roots, &app)
         }
         .map_err(|e| Refusal::new("INTERNAL", e))?;
+        let changed = {
+            let mut state = self.0.lock().unwrap();
+            let changed = state.catalogue.as_ref().is_none_or(|old| old.entries != catalogue.entries);
+            state.catalogue = Some(catalogue.clone());
+            changed
+        };
         drop(_scan);
-        self.replace_catalogue(catalogue.clone());
+        if changed { self.changed(); }
         Ok(catalogue)
     }
 

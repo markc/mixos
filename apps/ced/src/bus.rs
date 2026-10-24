@@ -326,6 +326,7 @@ async fn run(
     let mut commands: HashMap<u64, IncomingCommand> = HashMap::new();
     let mut replies = tokio::task::JoinSet::new();
     let mut next_command = 0u64;
+    let mut macro_jobs = citizen::macros::Jobs::default();
     let mut session = None;
     loop {
         tokio::select! {
@@ -354,7 +355,7 @@ async fn run(
                 if cmd.command.is_empty() {
                     continue;
                 }
-                if citizen::macros::dispatch("ced", &cmd, client.clone()) { continue; }
+                if citizen::macros::dispatch("ced", &cmd, client.clone(), &mut macro_jobs) { continue; }
                 next_command += 1;
                 let delivery = Delivery::Command(BusCommand {
                     id: next_command,
@@ -573,6 +574,7 @@ async fn run(
             _ => faults.push("session drain timed out or failed".into()),
         }
     }
+    macro_jobs.finish().await;
     if tokio::time::timeout_at(until, client.close())
         .await
         .is_err()

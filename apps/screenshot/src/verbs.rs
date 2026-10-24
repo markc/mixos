@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 pub const SCHEMA: &str = "screenshot.v1";
 
 /// Every verb the app answers itself, in description order.
-pub const VERBS: [&str; 30] = [
+pub const VERBS: [&str; 35] = [
     "HELP",
     "app.describe",
     "screenshot.ping",
@@ -45,6 +45,11 @@ pub const VERBS: [&str; 30] = [
     "screenshot.macros.output",
     "screenshot.macros.stop",
     "screenshot.macros.new",
+    "screenshot.macros.get",
+    "screenshot.macros.put",
+    "screenshot.macros.remove",
+    "screenshot.macros.move",
+    "screenshot.macros.copy",
 ];
 
 /// Verbs that change the document (refused under a dialog or a job).

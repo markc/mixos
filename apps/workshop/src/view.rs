@@ -22,6 +22,7 @@ use toolkit::{Icon, Registry, Strings, bars, field, icons, panel, tooltip};
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
+    MacroTarget(String),
     CancelDelete,
     MacroDraft(String),
     Macro(String, serde_json::Value),
@@ -146,6 +147,7 @@ fn services(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     panel::group(ui, "services", &[title.as_str()], |ui, _| {
         let mut filter = engine.ui.filter.clone();
         let search = field::search(ui, &mut filter, &label("search"), ui.available_width());
+        search.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, ui.is_enabled(), label("search")));
         if search.changed() {
             events.push(UiEvent::Filter(filter));
         }
@@ -412,10 +414,14 @@ fn traffic(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     if !engine.workshop.dock_open {
         return;
     }
-    ScrollArea::vertical()
+    ScrollArea::both()
         .id_salt("traffic-rows")
+        .auto_shrink(false)
+        .stick_to_bottom(true)
         .show(ui, |ui| {
-            ui.monospace(label("traffic-columns"));
+            egui::Grid::new("traffic-grid").show(ui, |ui| {
+            for key in ["traffic-time", "traffic-direction", "traffic-from", "traffic-service", "traffic-verb", "traffic-rc", "traffic-ms"] { ui.small(label(key)); }
+            ui.end_row();
             for (index, row) in engine
                 .workshop
                 .rows(100, &engine.workshop.filter)
@@ -431,22 +437,18 @@ fn traffic(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                         }
                     })
                 };
-                let title = format!(
-                    "{}  {}  {}  {}  {}  {}  {}",
-                    text("ts"),
-                    text("direction"),
-                    text("from"),
-                    text("service"),
-                    text("verb"),
-                    text("rc"),
-                    text("ms")
-                );
-                egui::CollapsingHeader::new(RichText::new(title).monospace())
-                    .id_salt(index)
+                for key in ["ts", "direction", "from", "service"] { ui.monospace(text(key)); }
+                egui::CollapsingHeader::new(RichText::new(text("verb")).monospace())
+                    .id_salt(("traffic-body", index))
                     .show(ui, |ui| {
-                        ui.monospace(serde_json::to_string_pretty(row).unwrap_or_default());
+                        ui.set_max_width(420.0);
+                        ui.add(egui::Label::new(RichText::new(serde_json::to_string_pretty(row).unwrap_or_default()).monospace()).wrap());
                     });
+                ui.monospace(text("rc"));
+                ui.monospace(text("ms"));
+                ui.end_row();
             }
+            });
         });
 }
 
@@ -597,6 +599,8 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     });
     ui.ctx()
         .data_mut(|data| data.insert_temp(key.with("target"), target));
+    let target = ui.ctx().data(|data| data.get_temp::<String>(key.with("target")).unwrap_or_default());
+    if target != engine.workshop.target { events.push(UiEvent::MacroTarget(target)); }
     if engine.workshop.confirm_delete {
         ui.horizontal(|ui| {
             ui.label(label("macro-delete-confirm"));

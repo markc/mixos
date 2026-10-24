@@ -99,6 +99,7 @@ fn engine() -> Engine {
     }]}));
     e.ui.expanded.insert("macros:global".into());
     e.ui.expanded.insert("macros:ced".into());
+    e.ui.expanded.insert("service:local:ced".into());
     e.workshop.observe = "redacted".into();
     e.workshop.retain(serde_json::json!({"ts":"14:02:11.204","direction":"local","from":"workshop","service":"ced","verb":"ced.macros.run","rc":0,"ms":3}));
     e.workshop.retain(serde_json::json!({"ts":"14:02:11.310","direction":"topic","from":"ced","service":"ced","verb":"ced.command.executed","rc":0,"ms":1,"payload":{"id":"edit.format","origin":"macro"}}));
@@ -133,15 +134,13 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
 }
 
 #[test]
-fn macro_details_themes() {
-    for (scheme, mode, name) in [
-        (Scheme::Studio, Mode::Dark, "macro_studio_dark"),
-        (Scheme::Pro, Mode::Light, "macro_pro_light"),
-        (Scheme::Breeze, Mode::Light, "macro_breeze_light"),
-    ] {
-        window(chrome(scheme, mode), name);
-    }
-}
+fn macro_studio_dark() { window(chrome(Scheme::Studio, Mode::Dark), "macro_studio_dark"); }
+
+#[test]
+fn macro_pro_light() { window(chrome(Scheme::Pro, Mode::Light), "macro_pro_light"); }
+
+#[test]
+fn macro_breeze_light() { window(chrome(Scheme::Breeze, Mode::Light), "macro_breeze_light"); }
 
 /// The hue scheme ocean, light.
 #[test]

@@ -406,11 +406,14 @@ impl State {
     }
 
     fn folder(&mut self) {
-        self.work(|roots, app| {
+        let id = self.editor_entry.as_ref().map(|entry| entry.id.clone());
+        self.work(move |roots, app| {
             let workshop = Path::new("/opt/mixos/bin/workshop");
             if workshop.is_file() {
-                let mut child = Command::new(workshop)
-                    .args(["--app", app])
+                let mut command = Command::new(workshop);
+                command.args(["--app", if app == "workshop" { "global" } else { app }]);
+                if let Some(id) = id { command.args(["--id", &id]); }
+                let mut child = command
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())

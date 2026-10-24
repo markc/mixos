@@ -258,6 +258,7 @@ async fn run(
     // Commands awaiting a reply from the host.
     let mut commands: HashMap<u64, IncomingCommand> = HashMap::new();
     let mut next_command = 0u64;
+    let mut macro_jobs = citizen::macros::Jobs::default();
     loop {
         tokio::select! {
             cmd = incoming.recv() => {
@@ -269,7 +270,7 @@ async fn run(
                 if cmd.command.is_empty() {
                     continue;
                 }
-                if citizen::macros::dispatch("dopus", &cmd, client.clone()) { continue; }
+                if citizen::macros::dispatch("dopus", &cmd, client.clone(), &mut macro_jobs) { continue; }
                 next_command += 1;
                 let delivery = Delivery::Command(Command {
                     id: next_command,
@@ -364,6 +365,7 @@ async fn run(
     for (_, cmd) in commands.drain() {
         respond(&client, &cmd, 10, closing).await;
     }
+    macro_jobs.finish().await;
     let _ = tokio::time::timeout(REPLY_TIMEOUT, client.close()).await;
     out.send(Delivery::Stopped);
 }

@@ -462,6 +462,7 @@ async fn worker(
     let _ = ready.send(Ok(()));
     let mut pending: HashMap<u64, IncomingCommand> = HashMap::new();
     let mut next_id = 0;
+    let mut macro_jobs = macros::Jobs::default();
     let permits = Arc::new(tokio::sync::Semaphore::new(16));
     loop {
         tokio::select! {
@@ -534,7 +535,7 @@ async fn worker(
                 }
                 next_id += 1;
                 if let Some(app) = &macro_app
-                    && macros::dispatch(app, &command, client.clone()) {
+                    && macros::dispatch(app, &command, client.clone(), &mut macro_jobs) {
                     continue;
                 }
                 let delivery = Delivery::Command {id:next_id,verb:command.command.clone(),body:if command.body.trim().is_empty(){"{}".into()}else{command.body.clone()}};
@@ -585,6 +586,10 @@ async fn worker(
                 if let Some(event) = event { let _ = send.send(event).await; }
             }
         }
+    }
+    macro_jobs.finish().await;
+    for command in unanswered(HashMap::new(), || incoming.recv().now_or_never().flatten()) {
+        let _ = tokio::time::timeout(Duration::from_secs(2), client.respond(&command, 10, &closing)).await;
     }
     let _ = send.try_send(Delivery::Disconnected);
     let _ = tokio::time::timeout(Duration::from_secs(2), client.close()).await;

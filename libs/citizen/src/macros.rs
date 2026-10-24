@@ -28,7 +28,17 @@ pub fn install(app: &str, service: &str, outbox: Arc<Outbox>) {
 
 /// Intercept only the named app's macro namespace. Blocking completion waits
 /// run on the runtime's blocking pool; the Bus lane keeps accepting requests.
-pub fn dispatch(app: &str, command: &IncomingCommand, client: Arc<SupervisedClient>) -> bool {
+#[derive(Default)]
+pub struct Jobs(tokio::task::JoinSet<()>);
+
+impl Jobs {
+    /// Drain accepted macro replies before closing the native connection.
+    pub async fn finish(&mut self) {
+        while self.0.join_next().await.is_some() {}
+    }
+}
+
+pub fn dispatch(app: &str, command: &IncomingCommand, client: Arc<SupervisedClient>, jobs: &mut Jobs) -> bool {
     let Some(suffix) = command.command.strip_prefix(&format!("{app}.macros.")) else {
         return false;
     };
@@ -40,7 +50,10 @@ pub fn dispatch(app: &str, command: &IncomingCommand, client: Arc<SupervisedClie
     {
         return false;
     }
-    let reply = request(app, suffix, &command.body);
+    while jobs.0.try_join_next().is_some() {}
+    let reply = if jobs.0.len() >= 32 {
+        ::macros::verbs::Reply::Immediate(Err(Refusal::new("BUSY", "macro request capacity exhausted")))
+    } else { request(app, suffix, &command.body) };
     let command = IncomingCommand {
         generation: command.generation,
         from: command.from.clone(),
@@ -50,7 +63,7 @@ pub fn dispatch(app: &str, command: &IncomingCommand, client: Arc<SupervisedClie
         body: command.body.clone(),
         headers: command.headers.clone(),
     };
-    tokio::spawn(async move {
+    jobs.0.spawn(async move {
         let answer = match reply {
             ::macros::verbs::Reply::Immediate(answer) => answer,
             deferred => tokio::task::spawn_blocking(move || deferred.wait())

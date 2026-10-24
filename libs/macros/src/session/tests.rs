@@ -88,6 +88,7 @@ fn management_verbs_refresh_tiers_and_refuse_invalid_mutations() {
     )
     .unwrap();
     assert!(ask("get", json!({"id":"builtin"})).is_ok());
+    assert_eq!(ask("copy", json!({"id":"managed"})).unwrap_err().code, "NOT_FOUND");
     for (suffix, body) in [
         ("put", json!({"id":"builtin","text":"x"})),
         ("remove", json!({"id":"builtin"})),
@@ -95,6 +96,9 @@ fn management_verbs_refresh_tiers_and_refuse_invalid_mutations() {
     ] {
         assert_eq!(ask(suffix, body).unwrap_err().code, "DENIED");
     }
+    ask("copy", json!({"id":"builtin"})).unwrap();
+    assert_eq!(ask("get", json!({"id":"builtin"})).unwrap()["tier"], "user-app");
+    assert_eq!(ask("copy", json!({"id":"builtin"})).unwrap_err().code, "DENIED");
 }
 
 fn fixture() -> (tempfile::TempDir, Roots, Session) {
@@ -107,6 +111,18 @@ fn fixture() -> (tempfile::TempDir, Roots, Session) {
     };
     let session = Session::with_roots("fixture", Some(roots.clone()));
     (dir, roots, session)
+}
+
+#[test]
+fn shutdown_reaps_a_run_and_fences_new_acceptance() {
+    let (_dir, roots, session) = fixture();
+    let path = roots.create("fixture", Tier::UserApp, "waiting", "Waiting").unwrap();
+    std::fs::write(path, "while true\nsleep(1)\nend\n").unwrap();
+    session.reload().unwrap();
+    session.run("waiting", "test").unwrap();
+    session.shutdown().unwrap();
+    assert_eq!(session.status()["state"], "exited");
+    assert_eq!(session.run("waiting", "test").unwrap_err().code, "UNAVAILABLE");
 }
 
 #[test]

@@ -125,7 +125,7 @@ pub async fn perform(
     if suffix == "open" && args["id"].is_null() {
         return Ok(json!({"branch":app}));
     }
-    if matches!(suffix.as_str(), "copy" | "ced" | "dopus") {
+    if matches!(suffix.as_str(), "ced" | "dopus") {
         let owner = if app == "global" { "workshop" } else { &app }.to_owned();
         let id = args["id"].as_str().unwrap_or_default().to_owned();
         let operation = suffix.clone();
@@ -137,13 +137,6 @@ pub async fn perform(
                 .iter()
                 .find(|entry| entry.id == id)
                 .ok_or("unknown macro id")?;
-            let roots = session.roots().ok_or("macro roots unavailable")?;
-            if operation == "copy" {
-                let path = roots
-                    .copy_to_user(&owner, entry)
-                    .map_err(|e| e.to_string())?;
-                return Ok::<_, String>(json!({"path":path,"changed":true}));
-            }
             let program = if operation == "ced" {
                 "/opt/mixos/bin/ced"
             } else {
@@ -164,30 +157,30 @@ pub async fn perform(
             std::thread::spawn(move || {
                 let _ = child.wait();
             });
-            Ok(json!({"opened":true}))
+            Ok::<_, String>(json!({"opened":true}))
         })
         .await
         .map_err(|e| e.to_string())??;
-        if suffix == "copy" {
-            if let Some(service) = running.get(&app) {
-                let _ = bus
-                    .call(service, &format!("{app}.macros.reload"), json!({}))
-                    .await;
-            } else if app == "global" {
-                macros::Session::for_app("workshop")
-                    .reload()
-                    .map_err(|e| e.to_string())?;
-            }
-        }
         return Ok(result);
     }
     if let Some(object) = args.as_object_mut() {
         object.remove("app");
     }
-    let suffix = if suffix == "open" { "get" } else { &suffix };
-    if app != "global" && running.contains_key(&app) {
+    if suffix == "open" {
+        let mut document = request_macro(&bus, &app, "get", args, &running).await?;
+        if document.get("error_code").is_none() {
+            document["catalogue"] = request_macro(&bus, &app, "list", json!({}), &running).await?;
+            document["catalogue"]["running"] = json!(running.contains_key(&app));
+        }
+        return Ok(document);
+    }
+    request_macro(&bus, &app, &suffix, args, &running).await
+}
+
+async fn request_macro(bus: &Handle, app: &str, suffix: &str, args: Value, running: &BTreeMap<String, String>) -> Result<Value, String> {
+    if app != "global" && running.contains_key(app) {
         let reply = bus
-            .call(&running[&app], &format!("{app}.macros.{suffix}"), args)
+            .call(&running[app], &format!("{app}.macros.{suffix}"), args)
             .await?;
         return serde_json::from_str(&reply.body).map_err(|e| format!("{}: {e}", reply.body));
     }
@@ -195,6 +188,7 @@ pub async fn perform(
         return Ok(json!({"error_code":"UNAVAILABLE","message":format!("{app} is not running")}));
     }
     let suffix = suffix.to_owned();
+    let app = app.to_owned();
     tokio::task::spawn_blocking(move || {
         let session = if app == "global" {
             macros::Session::for_app("workshop")

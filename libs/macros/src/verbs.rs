@@ -4,8 +4,8 @@ use crate::{Catalogue, Session};
 use serde_json::{Value, json};
 use std::sync::mpsc::{self, Receiver};
 
-pub const SUFFIXES: [&str; 11] = [
-    "list", "reload", "run", "status", "output", "stop", "new", "get", "put", "remove", "move",
+pub const SUFFIXES: [&str; 12] = [
+    "list", "reload", "run", "status", "output", "stop", "new", "get", "put", "remove", "move", "copy",
 ];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refusal {
@@ -58,7 +58,7 @@ pub fn describe(app: &str) -> Vec<Value> {
                 "reload" => ("Rescan the macro catalogue", json!({})),
                 "run" => (
                     "Start a macro by id; answers acceptance, not completion",
-                    json!({"id":"string"}),
+                    json!({"id":"string","target":"optional app allowed by the target header"}),
                 ),
                 "status" => ("Read the current or last macro run status", json!({})),
                 "output" => ("Read the retained 64 KiB output tail", json!({})),
@@ -67,6 +67,7 @@ pub fn describe(app: &str) -> Vec<Value> {
                     json!({}),
                 ),
                 "get" => ("Read macro text (at most 256 KiB)", json!({"id":"string"})),
+                "copy" => ("Copy a built-in macro into its user tier", json!({"id":"string"})),
                 "put" => (
                     "Save a user macro; request cap 272 KiB, text cap 256 KiB",
                     json!({"id":"string","text":"string"}),
@@ -74,7 +75,7 @@ pub fn describe(app: &str) -> Vec<Value> {
                 "remove" => ("Delete a user macro", json!({"id":"string"})),
                 "move" => (
                     "Move a user macro between user tiers",
-                    json!({"id":"string","tier":"user-app or user-global"}),
+                    json!({"id":"string","tier":"user-app or user-global","destination":"optional destination app for user-app"}),
                 ),
                 _ => (
                     "Create a user per-app macro without opening an editor",
@@ -91,7 +92,7 @@ pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
     let valid = body.as_object().is_some_and(|object| {
         let (required, allowed): (&[&str], &[&str]) = match suffix {
             "run" => (&["id"], &["id", "target"]),
-            "get" | "remove" => (&["id"], &["id"]),
+            "get" | "remove" | "copy" => (&["id"], &["id"]),
             "put" => (&["id", "text"], &["id", "text"]),
             "move" => (&["id", "tier"], &["id", "tier", "destination"]),
             "new" => (&["title"], &["title"]),
@@ -117,7 +118,7 @@ pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
             Reply::Immediate(Ok(list(session.catalogue().unwrap())))
         }
         "list" | "reload" => defer(session, |s| s.reload().map(list)),
-        "get" | "put" | "remove" | "move" => {
+        "get" | "put" | "remove" | "move" | "copy" => {
             let operation = suffix.to_owned();
             let body = body.clone();
             defer(session, move |s| s.manage(&operation, &body))

@@ -7,8 +7,12 @@ use std::collections::{BTreeMap, VecDeque};
 pub const TRAFFIC_CAPACITY: usize = 1024;
 pub const TRAFFIC_BYTES: usize = 8 * 1024 * 1024;
 
-#[derive(Default)]
+#[derive(Default, serde::Serialize)]
 pub struct Workshop {
+    pub next_ticket: u64,
+    pub latest_open: u64,
+    pub latest_catalogues: u64,
+    pub target: String,
     pub confirm_delete: bool,
     pub arguments: Value,
     pub draft: Option<String>,
@@ -17,6 +21,7 @@ pub struct Workshop {
     pub selected: Option<(String, String)>,
     pub document: Value,
     pub message: String,
+    #[serde(skip)]
     pub traffic: VecDeque<Value>,
     pub(crate) bytes: usize,
     pub dropped: u64,
@@ -33,6 +38,7 @@ impl Workshop {
             return;
         }
         redact(&mut row);
+        if row.get("service").is_none() { row["service"] = row["to"].clone(); }
         let size = row.to_string().len();
         if size > TRAFFIC_BYTES {
             self.dropped += 1;
@@ -59,6 +65,17 @@ impl Workshop {
             .into_iter()
             .rev()
             .collect()
+    }
+}
+
+impl Workshop {
+    pub fn stamp_last(&mut self, ts: String, ms: u64) {
+        if let Some(mut row) = self.traffic.pop_back() {
+            self.bytes -= row.to_string().len();
+            row["ts"] = json!(ts);
+            row["ms"] = json!(ms);
+            self.retain(row);
+        }
     }
 }
 
@@ -94,6 +111,27 @@ fn redact(value: &mut Value) {
 }
 
 impl Engine {
+    pub fn workshop_completion(&mut self, ticket: u64, operation: &str) -> bool {
+        self.workshop.pending = self.workshop.pending.saturating_sub(1);
+        (operation != "macros.open" || ticket == self.workshop.latest_open)
+            && (operation != "catalogues" || ticket == self.workshop.latest_catalogues)
+    }
+    pub fn reveal_macro(&mut self) {
+        fn ancestors(rows: &[Row], key: &str, path: &mut Vec<String>) -> bool {
+            for row in rows {
+                if row.key == key { return true; }
+                path.push(row.key.clone());
+                if ancestors(&row.children, key, path) { return true; }
+                path.pop();
+            }
+            false
+        }
+        let mut path = Vec::new();
+        if let Some(key) = &self.ui.row_key {
+            ancestors(&self.tree(), key, &mut path);
+            self.ui.expanded.extend(path);
+        }
+    }
     pub fn macro_command(&mut self, operation: &str) {
         let mut args = std::mem::replace(&mut self.workshop.arguments, json!({}));
         if !args.is_object() { args = json!({}); }
@@ -104,6 +142,10 @@ impl Engine {
         }
         if operation == "macros.put" && args.get("text").is_none() {
             args["text"] = json!(self.workshop.draft.as_deref().unwrap_or(self.workshop.document["text"].as_str().unwrap_or_default()));
+        }
+        if operation == "macros.run" && args.get("target").is_none() && !self.workshop.target.is_empty()
+            && self.workshop.selected.as_ref().and_then(|(app, id)| self.workshop.catalogues.get(app)?.get("macros")?.as_array()?.iter().find(|entry| entry["id"] == *id)).is_some_and(|entry| !entry["targets"].is_null()) {
+            args["target"] = json!(self.workshop.target);
         }
         self.macro_action(operation, args, None);
     }
@@ -158,8 +200,15 @@ impl Engine {
             false
         }
         for app in self.workshop.catalogues.keys() {
-            if app == "global" || !insert(self, rows, app) {
+            if app == "global" {
                 rows.push(branch(self, app));
+            } else if !insert(self, rows, app) {
+                if let Some(node) = self.snapshot.nodes.iter().find(|node| node.local)
+                    && let Some(parent) = rows.iter_mut().find(|row| row.key == format!("node:{}", node.name)) {
+                    let key = format!("service:{}:{app}", node.name);
+                    parent.children.push(Row { expanded: self.ui.expanded.contains(&key), key,
+                        kind: RowKind::Service(app.clone()), children: vec![branch(self, app)] });
+                } else { rows.push(branch(self, app)); }
             }
         }
     }
@@ -187,7 +236,12 @@ impl Engine {
 
     pub fn queue_workshop(&mut self, operation: &str, args: Value, reply: Option<u64>) {
         self.workshop.pending += 1;
+        self.workshop.next_ticket += 1;
+        let ticket = self.workshop.next_ticket;
+        if operation == "macros.open" { self.workshop.latest_open = ticket; }
+        if operation == "catalogues" { self.workshop.latest_catalogues = ticket; }
         self.push_workshop(Effect::Workshop {
+            ticket,
             operation: operation.into(),
             args,
             reply,
@@ -252,6 +306,31 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn newer_macro_navigation_wins_and_pending_work_fences_quit() {
+        let mut engine = Engine::new(str::to_owned);
+        engine.take_effects();
+        engine.queue_workshop("macros.open", json!({"app":"ced","id":"first"}), None);
+        let first = engine.workshop.latest_open;
+        engine.queue_workshop("macros.open", json!({"app":"ced","id":"second"}), None);
+        let second = engine.workshop.latest_open;
+        assert!(!engine.workshop_completion(first, "macros.open"));
+        assert_eq!(engine.workshop.pending, 1);
+        assert!(engine.workshop_completion(second, "macros.open"));
+        assert_eq!(engine.workshop.pending, 0);
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn traffic_verb_bounds_filter_and_refusals() {
+        let mut engine = Engine::new(str::to_owned);
+        engine.take_effects();
+        engine.workshop.retain(json!({"verb":"ced.execute"}));
+        for (args, rc) in [(json!({"limit":1,"filter":"ced"}),0), (json!({"limit":1025}),10), (json!({"filter":true}),10), (json!({"extra":0}),10)] {
+            engine.command(7, "workshop.traffic", &args.to_string());
+            assert!(matches!(&engine.take_effects()[..], [Effect::Reply { id:7, rc:actual, .. }] if *actual == rc));
+        }
+    }
     #[test]
     fn traffic_bounds_count_bytes_and_rows() {
         let mut state = Workshop::default();

@@ -446,7 +446,44 @@ instance). Verbs keep the app’s canonical prefix, such as <code>workshop.macro
 <tr><td><code>workshop.macros.output</code></td><td><code>{}</code></td><td>Retained output and dropped flag</td></tr>
 <tr><td><code>workshop.macros.stop</code></td><td><code>{}</code></td><td>Whether termination was requested</td></tr>
 <tr><td><code>workshop.macros.new</code></td><td><code>{title}</code></td><td>Create a global user macro; <code>{id,title,path,scanned}</code>, without opening an editor; scan failures add <code>warning</code> and preserve the file</td></tr>
+<tr><td><code>workshop.macros.get</code></td><td><code>{id, app?}</code></td><td>Read <code>{id,tier,path,text}</code>, at most 256 KiB</td></tr>
+<tr><td><code>workshop.macros.put</code></td><td><code>{id,text,app?}</code></td><td>Save a user macro atomically and refresh its owning Session</td></tr>
+<tr><td><code>workshop.macros.remove</code></td><td><code>{id,app?}</code></td><td>Delete a user macro; built-ins refuse with <code>DENIED</code></td></tr>
+<tr><td><code>workshop.macros.move</code></td><td><code>{id,tier,app?,destination?}</code></td><td>Move between user tiers; refuse a destination clash</td></tr>
+<tr><td><code>workshop.macros.copy</code></td><td><code>{id,app?}</code></td><td>Copy a built-in into its corresponding user tier</td></tr>
+<tr><td><code>workshop.macros.open</code></td><td><code>{app,id?}</code></td><td>Select a macro in Details, or expand the app's branch</td></tr>
+<tr><td><code>workshop.traffic</code></td><td><code>{limit?,filter?}</code></td><td>Read up to 1,024 retained rows and the dropped count</td></tr>
+<tr><td><code>workshop.observe</code></td><td><code>{on,filter?,body?}</code></td><td>Start or stop observation; body defaults to <code>redacted</code></td></tr>
 </tbody></table>
+<p>The global branch has the stable key <code>macros:global</code>. Global user files live
+directly in the user macro root, for example
+<code>/home/user/.config/mixos/macros/mesh-ping.mix</code>. Workshop owns their Session.
+App branches prefer the running app's catalogue and use the Library only when
+the app is stopped, with a “not running” label. Running an app macro while its
+app is stopped refuses with <code>UNAVAILABLE</code>. <code>app</code> selects the source app;
+omit it or use <code>global</code> for globals. Moving a global into an app requires
+<code>tier: "user-app"</code> and <code>destination: "ced"</code>, for example.</p>
+<p>Details uses the shared editor document. Save (Ctrl+S), Run (Ctrl+Enter),
+Stop, Copy to user, Move, Delete with confirmation, Open in Ced and Show in
+Dopus dispatch through Workshop's command registry. A <code>-- target:</code> header
+offers only its allowed apps; <code>any</code> offers running apps. The chosen app is
+passed as <code>MIXOS_MACRO_TARGET</code>. Without a header, Run remains target-free.
+Each app serves the same management verbs through its own macro Session.
+Macro requests are capped at 8 KiB, except <code>put</code>: its envelope is capped at
+272 KiB and its text at 256 KiB.</p>
+<p>The collapsible Traffic dock combines broker observations and native
+<code>&lt;service&gt;.command.executed</code> / <code>&lt;service&gt;.macros.finished</code> topics. It retains
+at most 1,024 rows and 8 MiB, reports dropped rows and redacts sensitive
+topic fields before retaining them. Broker observation defaults to redacted
+bodies; <code>none</code> is also supported. A refused observer leaves the reason in
+the dock and keeps topic deliveries available. The host must explicitly
+admit <code>workshop*</code> in <code>observe.allowed_services</code>. Run
+<code>mix --serve tools/workshop_observe.mix --name workshop-probe</code> to check
+the advertised observe extension and open and close a probe stream.</p>
+<p>Open Workshop in an app's macro menu launches or focuses Workshop; a launch
+with <code>--app ced --id tidy-imports</code> selects that macro. The global folder in
+Dopus is the fallback when Workshop is not installed. Headless instances
+use the same management and traffic verbs.</p>
         </article>
         <p class="doc-source"><a href="/workshop/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

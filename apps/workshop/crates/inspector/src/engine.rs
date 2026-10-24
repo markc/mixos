@@ -26,6 +26,7 @@ pub type Label = fn(&str) -> String;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Effect {
     Workshop {
+        ticket: u64,
         operation: String,
         args: Value,
         reply: Option<u64>,
@@ -361,7 +362,7 @@ impl Engine {
         json!({"schema":"workshop.v1","app_id":APP_ID,"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),
             "connected":self.connected,"busy":self.busy(),"discovering":self.discovery.is_some(),"calling":self.call.is_some(),
             "selection":self.ui.selected,"body":self.ui.body,"reply":self.last_reply,"status":self.status,"snapshot":self.snapshot,
-            "ui":self.ui})
+            "ui":self.ui,"workshop":self.workshop})
     }
 
     /// `workshop.theme`: a present `scheme`, `style`, `mode`, `decorations`
@@ -903,6 +904,10 @@ impl Engine {
 
     /// A command an agent sent to Workshop over the Bus.
     pub fn command(&mut self, id: u64, verb: &str, body: &str) {
+        if let Some(suffix) = verb.strip_prefix("workshop.macros.") {
+            let limit = if suffix == "put" { 272 * 1024 } else { 8192 };
+            if body.len() > limit { return self.error(id, "INVALID_ARGUMENT", &format!("request exceeds {limit} bytes")); }
+        }
         let args = match serde_json::from_str::<Value>(body) {
             Ok(args) if args.is_object() => args,
             _ => return self.error(id, "ARGUMENT", "arguments must be a JSON object"),
@@ -1272,6 +1277,12 @@ impl Engine {
     }
 
     /// Call `ticket` finished.
+    pub fn completed_at(&mut self, ticket: u64, result: Result<Reply, CallError>, at: String, ms: u64) {
+        let current = self.call.as_ref().is_some_and(|call| call.ticket == ticket);
+        self.completed(ticket, result);
+        if current && !self.workshop.paused { self.workshop.stamp_last(at, ms); }
+    }
+
     pub fn completed(&mut self, ticket: u64, result: Result<Reply, CallError>) {
         if self.call.as_ref().is_none_or(|call| call.ticket != ticket) {
             return;
@@ -1337,6 +1348,10 @@ impl Engine {
             }
         }
         self.followup();
+    }
+
+    pub fn workshop_settled(&mut self) {
+        if !self.busy() { self.followup(); }
     }
 
     fn followup(&mut self) {
