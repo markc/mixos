@@ -4422,6 +4422,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-tungstenite 0.26.2",
 ]
 
 [[package]]
@@ -11937,6 +11938,8 @@ dependencies = [
  "inspector",
  "serde_json",
  "settings",
+ "tempfile",
+ "test-broker",
  "tokio",
  "toolkit",
 ]
