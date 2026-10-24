@@ -42,7 +42,8 @@ fn summary_reads_session_scale_density_and_motion_on_the_same_revision() {
         &mut state,
         "settings.get",
         &json!({"binding":binding(),"view":"summary"}).to_string(),
-    ).unwrap();
+    )
+    .unwrap();
     let summary: Summary = serde_json::from_value(body["summary"].clone()).unwrap();
     assert_eq!(summary.revision, state.accepted.revision);
     assert_eq!(summary.ui, state.accepted.desktop.ui);

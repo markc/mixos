@@ -238,11 +238,16 @@ fn every_registry_section_opens_through_the_shell() {
         let id = 100 + index as u64;
         send(&mut rig, id, "prefs.section", json!({"name":section.id}));
         wait(&mut rig, &[id]);
-        assert!(rig.bus.log().iter().any(|entry| matches!(entry,
-            Logged::Reply { id: reply_id, rc: 0, body } if *reply_id == id
-                && body["section"] == section.id
-                && body["category"] == section.category.name()
-        )), "{}: {:?}", section.id, rig.bus.log());
+        assert!(
+            rig.bus.log().iter().any(|entry| matches!(entry,
+                Logged::Reply { id: reply_id, rc: 0, body } if *reply_id == id
+                    && body["section"] == section.id
+                    && body["category"] == section.category.name()
+            )),
+            "{}: {:?}",
+            section.id,
+            rig.bus.log()
+        );
     }
     send(&mut rig, 200, "prefs.search", json!({"query":"compact"}));
     send(&mut rig, 201, "prefs.search", json!({"query":"animation"}));

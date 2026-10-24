@@ -10,8 +10,8 @@
 //! runs its effects, and [`commands`] is the registry every action goes
 //! through, from the menu, a button, a shortcut or the Bus.
 mod browser;
-mod font_families;
 pub mod commands;
+mod font_families;
 pub mod shell;
 pub mod view;
 

@@ -451,10 +451,13 @@ fn size(
             return;
         };
         ui.add_enabled_ui(engine.can_edit_look(), |ui| {
-            if let Some(scale) = scale_control(ui, "size-text-scale", look.text_scale, 0.5..=3.0, true) {
+            if let Some(scale) =
+                scale_control(ui, "size-text-scale", look.text_scale, 0.5..=3.0, true)
+            {
                 events.push(UiEvent::Appearance(AppearanceEdit::TextScale(scale)));
             }
-            if let Some(density) = scale_control(ui, "size-density", look.density, 0.5..=2.0, false) {
+            if let Some(density) = scale_control(ui, "size-density", look.density, 0.5..=2.0, false)
+            {
                 events.push(UiEvent::Appearance(AppearanceEdit::Density(density)));
             }
         });
@@ -817,9 +820,7 @@ fn appearance_state(
                 .map(|a| label(axis_label(*a)))
                 .collect();
             let text = label_with("look-conflicts", &[("axes", &axes.join(", "))]);
-            ui.add(
-                egui::Label::new(RichText::new(text).color(ui.visuals().warn_fg_color)).wrap(),
-            );
+            ui.add(egui::Label::new(RichText::new(text).color(ui.visuals().warn_fg_color)).wrap());
         }
         if engine.look.custom_source {
             note(ui, "look-custom", None);
@@ -1153,7 +1154,10 @@ fn look_controls(
                                 if toolkit::selectable(ui, look.scheme == scheme, name).clicked()
                                     && look.scheme != scheme
                                 {
-                                    events.push(UiEvent::Look(Look { scheme, ..look.clone() }));
+                                    events.push(UiEvent::Look(Look {
+                                        scheme,
+                                        ..look.clone()
+                                    }));
                                 }
                                 ui.add_space(8.0);
                             }
@@ -1172,7 +1176,10 @@ fn look_controls(
                         )
                         .collect();
                 if let Some(style) = choices(ui, look.style, &styles) {
-                    events.push(UiEvent::Look(Look { style, ..look.clone() }));
+                    events.push(UiEvent::Look(Look {
+                        style,
+                        ..look.clone()
+                    }));
                 }
                 ui.end_row();
 
@@ -1182,7 +1189,10 @@ fn look_controls(
                     .map(|m| (m, label(&format!("look-mode-{}", m.name()))))
                     .collect();
                 if let Some(mode) = choices(ui, look.mode, &modes) {
-                    events.push(UiEvent::Look(Look { mode, ..look.clone() }));
+                    events.push(UiEvent::Look(Look {
+                        mode,
+                        ..look.clone()
+                    }));
                 }
                 ui.end_row();
 
@@ -1192,7 +1202,10 @@ fn look_controls(
                     .map(|c| (c, label(&format!("look-contrast-{}", c.name()))))
                     .collect();
                 if let Some(contrast) = choices(ui, look.contrast, &contrasts) {
-                    events.push(UiEvent::Look(Look { contrast, ..look.clone() }));
+                    events.push(UiEvent::Look(Look {
+                        contrast,
+                        ..look.clone()
+                    }));
                 }
                 ui.end_row();
 
@@ -1232,7 +1245,10 @@ fn decoration_controls(ui: &mut Ui, look: Look, events: &mut Vec<UiEvent>) {
             .map(|c| (c, label(&format!("look-captions-{}", c.name()))))
             .collect();
         if let Some(captions) = choices(ui, look.captions, &sides) {
-            events.push(UiEvent::Look(Look { captions, ..look.clone() }));
+            events.push(UiEvent::Look(Look {
+                captions,
+                ..look.clone()
+            }));
         }
     });
     ui.end_row();

@@ -263,12 +263,23 @@ mod tests {
         assert_eq!(ids("category-apps"), ["email", "terminal", "text"]);
         assert_eq!(ids("email.reader"), ["text"]);
         for query in [
-            "size", "scale", "zoom", "density", "spacing", "compact", "ui.text_scale", "ui.density",
+            "size",
+            "scale",
+            "zoom",
+            "density",
+            "spacing",
+            "compact",
+            "ui.text_scale",
+            "ui.density",
         ] {
             assert_eq!(ids(query), ["size"], "{query}");
         }
         for query in [
-            "motion", "animation", "reduce motion", "accessibility", "ui.reduced_motion",
+            "motion",
+            "animation",
+            "reduce motion",
+            "accessibility",
+            "ui.reduced_motion",
         ] {
             assert_eq!(ids(query), ["motion"], "{query}");
         }

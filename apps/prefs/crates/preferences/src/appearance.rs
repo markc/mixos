@@ -211,7 +211,11 @@ impl Look {
                 self.text_scale != base.text_scale,
                 json!(self.text_scale),
             ),
-            ("ui.density", self.density != base.density, json!(self.density)),
+            (
+                "ui.density",
+                self.density != base.density,
+                json!(self.density),
+            ),
             (
                 "ui.reduced_motion",
                 self.reduced_motion != base.reduced_motion,
@@ -278,9 +282,14 @@ impl Look {
                         if !name.is_empty()
                             && name.len() <= 128
                             && name.trim() == name.as_str()
-                            && !name.chars().any(char::is_control) => Some(name.clone()),
+                            && !name.chars().any(char::is_control) =>
+                    {
+                        Some(name.clone())
+                    }
                     _ => {
-                        return Err(format!("{key} must be null or a plain name of up to 128 bytes"));
+                        return Err(format!(
+                            "{key} must be null or a plain name of up to 128 bytes"
+                        ));
                     }
                 };
             }
@@ -297,9 +306,7 @@ impl Look {
             }
         }
         if let Some(value) = args.get("reduced_motion") {
-            look.reduced_motion = value
-                .as_bool()
-                .ok_or("reduced_motion must be a boolean")?;
+            look.reduced_motion = value.as_bool().ok_or("reduced_motion must be a boolean")?;
         }
         Ok(look)
     }
@@ -712,8 +719,11 @@ impl Appearance {
             base: current,
             look,
         });
-        self.conflicts
-            .retain(|a| self.draft.as_ref().is_some_and(|d| a.differs(&d.base, &d.look)));
+        self.conflicts.retain(|a| {
+            self.draft
+                .as_ref()
+                .is_some_and(|d| a.differs(&d.base, &d.look))
+        });
     }
 }
 
@@ -914,12 +924,7 @@ impl Engine {
                     .look
                     .changes(&current)
                     .into_iter()
-                    .filter(|(key, _)| {
-                        submitted
-                            .axes
-                            .iter()
-                            .any(|a| key == axis_key(*a))
-                    })
+                    .filter(|(key, _)| submitted.axes.iter().any(|a| key == axis_key(*a)))
                     .collect();
                 serde_json::to_value(ApplyRequest {
                     binding: self.look.binding.clone(),
@@ -955,7 +960,11 @@ impl Engine {
         let Some(expected) = self.look.expected() else {
             return;
         };
-        let base = self.look.draft.as_ref().map_or(expected, |d| d.base.clone());
+        let base = self
+            .look
+            .draft
+            .as_ref()
+            .map_or(expected, |d| d.base.clone());
         self.look.draft = self.look.kept(Draft { base, look });
         let draft = self.look.draft.as_ref();
         self.look
@@ -1580,7 +1589,12 @@ mod tests {
                 json!(1.25),
                 json!(1.0),
             ),
-            (AppearanceEdit::Density(0.8), "ui.density", json!(0.8), json!(1.0)),
+            (
+                AppearanceEdit::Density(0.8),
+                "ui.density",
+                json!(0.8),
+                json!(1.0),
+            ),
             (
                 AppearanceEdit::ReducedMotion(true),
                 "ui.reduced_motion",
