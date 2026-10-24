@@ -1,13 +1,17 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- Accepted Bus command registry, schema 4. Each component registers its commands
+-- Accepted Bus command registry, schema 5. Each component registers its commands
 -- here when it enters the tree (AGENTS.md §5). tools/command_registry.mix keeps
 -- it canonical: one entry per line, fields in the order name, owner,
 -- version, status, class, schema, with no comments inside the commands list. Status is
 -- accepted, draft or deprecated; versions are release versions
 -- (MAJOR.MINOR.PATCH).
 --
--- Schema 4 adds `schema` to every command and family, last: a serde request
+-- Schema 5 (docs/docs/decisions/2026-10-24-bus-commands-and-actions.md) is
+-- schema 4 renamed: the list is `commands` and the registry is the command
+-- registry. The fields are unchanged.
+--
+-- Schema 4 added `schema` to every command and family, last: a serde request
 -- type deriving JsonSchema (crate::Type), none (no body or {}), or pending
 -- through 2026-11-30 inclusive in UTC. The gate refuses pending after that date.
 -- A row may name action::ExecuteRequest only when its command body is exactly {id, params?}; term and the bridged family migrate in later steps.
@@ -28,7 +32,7 @@
 -- HELP and app.describe are protocol commands every service answers; they are
 -- not registered per component.
 {
-  schema: 4,
+  schema: 5,
   commands: [
     {name:"maild.submit", owner:"maild", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"maild.props.get", owner:"maild", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
@@ -93,7 +97,7 @@
     {name:"workshop.select", owner:"workshop", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"workshop.call", owner:"workshop", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"workshop.actions", owner:"workshop", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"workshop.execute", owner:"workshop", version:"0.2.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
+    {name:"workshop.execute", owner:"workshop", version:"0.2.0", status:"accepted", class:"intent", schema:"action::ExecuteRequest"},
     {name:"workshop.quit", owner:"workshop", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"workshop.tree", owner:"workshop", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"workshop.reply", owner:"workshop", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
@@ -137,7 +141,7 @@
     {name:"monitor.show", owner:"monitor", version:"0.1.0", status:"draft", class:"system", schema:"none"},
     {name:"monitor.refresh", owner:"monitor", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
     {name:"monitor.actions", owner:"monitor", version:"0.2.0", status:"draft", class:"query", schema:"pending"},
-    {name:"monitor.execute", owner:"monitor", version:"0.2.0", status:"draft", class:"intent", schema:"command::ExecuteRequest"},
+    {name:"monitor.execute", owner:"monitor", version:"0.2.0", status:"draft", class:"intent", schema:"action::ExecuteRequest"},
     {name:"monitor.quit", owner:"monitor", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
     {name:"monitor.node", owner:"monitor", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
     {name:"monitor.tab", owner:"monitor", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
@@ -201,7 +205,7 @@
     {name:"prefs.info", owner:"prefs", version:"0.3.0", status:"accepted", class:"query", schema:"pending"},
     {name:"prefs.show", owner:"prefs", version:"0.1.0", status:"accepted", class:"system", schema:"none"},
     {name:"prefs.actions", owner:"prefs", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"prefs.execute", owner:"prefs", version:"0.2.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
+    {name:"prefs.execute", owner:"prefs", version:"0.2.0", status:"accepted", class:"intent", schema:"action::ExecuteRequest"},
     {name:"prefs.quit", owner:"prefs", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"prefs.search", owner:"prefs", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"prefs.section", owner:"prefs", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
@@ -331,7 +335,7 @@
     {name:"email.contact.get", owner:"email", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"email.show", owner:"email", version:"0.1.0", status:"accepted", class:"system", schema:"none"},
     {name:"email.quit", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"email.execute", owner:"email", version:"0.2.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
+    {name:"email.execute", owner:"email", version:"0.2.0", status:"accepted", class:"intent", schema:"action::ExecuteRequest"},
     {name:"email.mode", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.refresh", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.account.set", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
@@ -407,7 +411,7 @@
     {name:"screenshot.recent", owner:"screenshot", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"screenshot.select", owner:"screenshot", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"screenshot.actions", owner:"screenshot", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"screenshot.execute", owner:"screenshot", version:"0.2.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
+    {name:"screenshot.execute", owner:"screenshot", version:"0.2.0", status:"accepted", class:"intent", schema:"action::ExecuteRequest"},
     {name:"screenshot.show", owner:"screenshot", version:"0.1.1", status:"accepted", class:"system", schema:"none"},
     {name:"screenshot.quit", owner:"screenshot", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"screenshot.theme", owner:"screenshot", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},

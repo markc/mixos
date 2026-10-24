@@ -145,7 +145,7 @@ fn reg2($commands_text)
 end
 
 -- A declaration handler as the instance code writes it, and the six of them.
-$suffixes = ["call", "commands", "execute", "inspect", "screenshot", "status"]
+$suffixes = ["call", "actions", "execute", "inspect", "screenshot", "status"]
 
 fn handler($suffix)
   return "on @." .. $suffix .. " desc \"fixture\"\n  reply(0, \"ok\")\nend\n"
@@ -231,7 +231,7 @@ try
   $real_reg = load_data($real)
   $want_classes = {}
   $want_classes["call"] = "intent"
-  $want_classes["commands"] = "query"
+  $want_classes["actions"] = "query"
   $want_classes["execute"] = "intent"
   $want_classes["inspect"] = "query"
   $want_classes["screenshot"] = "intent"
@@ -320,12 +320,12 @@ try
   -- Lint reads both and runs neither.
   $c = case_dir("source-chained-piped")
   $reg = put($c .. "/registry.conf.mix", reg3($commands, six()))
-  put($c .. "/apps/fakeapp/scripts/fakeapp.mix", "-- fixture\n" .. 'on @.call reply(0, "ok") end && print("registered")' .. "\n" .. 'on @.actions reply(0, "ok") end | cat' .. "\n" .. handlers_for(without(without($suffixes, "call"), "commands")))
+  put($c .. "/apps/fakeapp/scripts/fakeapp.mix", "-- fixture\n" .. 'on @.call reply(0, "ok") end && print("registered")' .. "\n" .. 'on @.actions reply(0, "ok") end | cat' .. "\n" .. handlers_for(without(without($suffixes, "call"), "actions")))
   expect("chained call and piped commands declare their families", [$reg, "--source", $c], true)
 
   $c = case_dir("source-nested")
   $reg = put($c .. "/registry.conf.mix", reg3($commands, six()))
-  put($c .. "/apps/fakeapp/scripts/fakeapp.mix", "-- fixture\non @.call desc \"fixture\"\n  on @.actions desc \"nested\"\n    reply(0, \"ok\")\n  end\n  reply(0, \"ok\")\nend\n" .. handlers_for(without(without($suffixes, "call"), "commands")))
+  put($c .. "/apps/fakeapp/scripts/fakeapp.mix", "-- fixture\non @.call desc \"fixture\"\n  on @.actions desc \"nested\"\n    reply(0, \"ok\")\n  end\n  reply(0, \"ok\")\nend\n" .. handlers_for(without(without($suffixes, "call"), "actions")))
   expect("nested declaration: on @.actions inside on @.call counts for its owner", [$reg, "--source", $c], true)
 
   $c = case_dir("source-duplicate")
@@ -336,7 +336,7 @@ try
   $c = case_dir("source-other-owner-extra")
   $reg = put($c .. "/registry.conf.mix", reg3($commands, six()))
   put($c .. "/apps/fakeapp/scripts/fakeapp.mix", full_app())
-  put($c .. "/apps/otherd/scripts/otherd.mix", handler("commands"))
+  put($c .. "/apps/otherd/scripts/otherd.mix", handler("actions"))
   expect("another owner's extra on @.actions is refused", [$reg, "--source", $c], false)
 
   $c = case_dir("source-file-symlink")

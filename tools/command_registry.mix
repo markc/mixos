@@ -3,7 +3,8 @@
 -- version: 0.5.0
 -- The Bus command registry gate (AGENTS.md §5) for docs/docs/spec/bus/commands.conf.mix:
 --
--- - schema 2, 3 or 4 (the repository must use 4);
+-- - schema 2, 3, 4 or 5 (the repository must use 5; 5 is 4 under the
+--   command registry's names);
 -- - schema 4 adds a trailing schema string to every command and family: none,
 --   pending (through 2026-11-30 inclusive in UTC), or a Rust request type path
 --   deriving JsonSchema, matching ^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$;
@@ -42,14 +43,14 @@
 --
 --   mix tools/command_registry.mix [FILE] [--source ROOT] [--instances DIR] [--today YYYY-MM-DD]
 --
--- With no FILE the repository registry must be schema 4, and its source is checked
+-- With no FILE the repository registry must be schema 5, and its source is checked
 -- against the repository root unless --source names another root. With an
 -- explicit FILE and no --source the check is data only. Exit 0 when clean,
 -- 1 when any check fails, 2 on a usage error.
 $root = dirname(dirname(realpath($0)))
 $src = require("lib/command_registry_source.mix")
 
-$USAGE = "usage: mix tools/command_registry.mix [FILE] [--source ROOT] [--instances DIR] [--today YYYY-MM-DD]\n  FILE: the registry (default docs/docs/spec/bus/commands.conf.mix; repository must be schema 4)\n  schema 4: trailing schema field is none, pending, or a Rust request type path matching ^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$\n  --source ROOT: check the component sources under ROOT (default with no FILE: the repository)\n  --instances DIR: check the instance config names in DIR against the registry\n  --today YYYY-MM-DD: override today's UTC date for the pending cutoff (2026-11-30 inclusive)\n  --help: this text"
+$USAGE = "usage: mix tools/command_registry.mix [FILE] [--source ROOT] [--instances DIR] [--today YYYY-MM-DD]\n  FILE: the registry (default docs/docs/spec/bus/commands.conf.mix; repository must be schema 5)\n  schema 4 and 5: trailing schema field is none, pending, or a Rust request type path matching ^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$\n  --source ROOT: check the component sources under ROOT (default with no FILE: the repository)\n  --instances DIR: check the instance config names in DIR against the registry\n  --today YYYY-MM-DD: override today's UTC date for the pending cutoff (2026-11-30 inclusive)\n  --help: this text"
 -- A listed family member is a Bus service name, as the instance names are.
 $_MEMBER = "^[a-z][a-z0-9-]{1,30}$"
 
@@ -159,13 +160,13 @@ if $read_failed then
 end
 $schema = nil
 if type($registry) == "map" and has_key($registry, "schema") then $schema = $registry.schema end
-if type($schema) != "number" or ($schema != 2 and $schema != 3 and $schema != 4) then
+if type($schema) != "number" or ($schema != 2 and $schema != 3 and $schema != 4 and $schema != 5) then
   push($problems, "schema must be 2, 3 or 4")
 end
-if $file == nil and $schema != 4 then
-  push($problems, "repository registry must be schema 4")
+if $file == nil and $schema != 5 then
+  push($problems, "repository registry must be schema 5")
 end
-if $schema == 4 then
+if $schema >= 4 then
   push($fields, "schema")
   push($family_fields, "schema")
 end
@@ -174,7 +175,7 @@ if $schema == 2 and $has_families then
   push($problems, "schema 2 takes no families; a families list needs schema 3")
 end
 $families = []
-if $schema == 3 or $schema == 4 then
+if $schema >= 3 then
   if $has_families and type($registry.families) == "list" then
     $families = $registry.families
   else
@@ -231,7 +232,7 @@ for each $command in $commands
     if $ok then
       $name = $command.name
       $where = $name
-      if $schema == 4 then
+      if $schema >= 4 then
         $problem = body_schema_problem($command, $today)
         if $problem != nil then push($problems, $where .. ": " .. $problem) end
       end
@@ -279,7 +280,7 @@ for each $f in $families
     push($problems, $where .. ": not a map")
   else
     if has_key($f, "pattern") and type($f.pattern) == "string" then $where = $f.pattern end
-    if $schema == 4 then
+    if $schema >= 4 then
       $problem = body_schema_problem($f, $today)
       if $problem != nil then push($problems, $where .. ": " .. $problem) end
     end
@@ -392,7 +393,7 @@ else
       $command = $commands[$i]
       if type($command) == "map" and has_key($command, "name") then
         $expected = "    {name:\"" .. to_string($command.name) .. "\", owner:\"" .. to_string($command.owner) .. "\", version:\"" .. to_string($command.version) .. "\", status:\"" .. to_string($command.status) .. "\", class:\"" .. to_string($command.class) .. "\"}"
-        if $schema == 4 then
+        if $schema >= 4 then
           $expected = strip_suffix($expected, "}") .. ", schema:\"" .. to_string($command.schema) .. "\"}"
         end
         if $i < len($commands) - 1 then
@@ -407,7 +408,7 @@ else
   end
 end
 
-if $schema == 3 or $schema == 4 then
+if $schema >= 3 then
   $fblock = find_block($lines, "families")
   if $fblock.start < 0 or $fblock.end_at < 0 then
     push($problems, "no `families: [` … `]` block on lines of their own")
@@ -423,7 +424,7 @@ if $schema == 3 or $schema == 4 then
           $mem = "\"instances\""
           if type($f.members) == "list" then $mem = quoted_list($f.members) end
           $expected = "    {pattern:\"" .. to_string($f.pattern) .. "\", owner:\"" .. to_string($f.owner) .. "\", members:" .. $mem .. ", version:\"" .. to_string($f.version) .. "\", status:\"" .. to_string($f.status) .. "\", class:\"" .. to_string($f.class) .. "\"}"
-          if $schema == 4 then
+          if $schema >= 4 then
             $expected = strip_suffix($expected, "}") .. ", schema:\"" .. to_string($f.schema) .. "\"}"
           end
           if $i < len($families) - 1 then
