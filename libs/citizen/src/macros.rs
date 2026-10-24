@@ -54,22 +54,28 @@ pub fn dispatch(
 ) -> bool {
     // Workshop's generic dispatch must not bypass its macro mutation gate.
     let proxy_write = app == "workshop"
-        && serde_json::from_str::<Value>(&command.body).ok().is_some_and(|body| {
-            match command.command.as_str() {
+        && serde_json::from_str::<Value>(&command.body)
+            .ok()
+            .is_some_and(|body| match command.command.as_str() {
                 "workshop.execute" => body["id"].as_str().is_some_and(|id| {
-                    id == "bus.call" || id.strip_prefix("macro.").is_some_and(::macros::verbs::mutates)
+                    id == "bus.call"
+                        || id
+                            .strip_prefix("macro.")
+                            .is_some_and(::macros::verbs::mutates)
                 }),
                 "workshop.call" => body["verb"].as_str().is_none_or(|verb| {
-                    verb.rsplit_once(".macros.").is_some_and(|(_, suffix)| ::macros::verbs::mutates(suffix))
+                    verb.rsplit_once(".macros.")
+                        .is_some_and(|(_, suffix)| ::macros::verbs::mutates(suffix))
                         || matches!(verb, "workshop.call" | "workshop.execute")
                 }),
                 _ => false,
-            }
-        });
-    let suffix = if proxy_write { "put" } else {
-    let Some(suffix) = command.command.strip_prefix(&format!("{app}.macros.")) else {
-        return false;
-    };
+            });
+    let suffix = if proxy_write {
+        "put"
+    } else {
+        let Some(suffix) = command.command.strip_prefix(&format!("{app}.macros.")) else {
+            return false;
+        };
         suffix
     };
     let limit = if suffix == "put" {
@@ -78,7 +84,12 @@ pub fn dispatch(
         REQUEST_BODY_LIMIT
     };
     let caller = caller(command, service);
-    let authority = ::macros::verbs::authorize(app, caller, suffix, &Value::Null);
+    let authority = ::macros::verbs::authorize(app, caller, suffix, &Value::Null).map_err(|mut error| {
+        if proxy_write {
+            error.message = format!("{}: macro-file writes through Workshop require Workshop", command.command);
+        }
+        error
+    });
     if proxy_write && authority.is_ok() {
         return false;
     }
@@ -137,7 +148,12 @@ fn caller(command: &IncomingCommand, service: &str) -> ::macros::verbs::Caller {
     }
 }
 
-pub fn request(app: &str, caller: ::macros::verbs::Caller, suffix: &str, body: &str) -> ::macros::verbs::Reply {
+pub fn request(
+    app: &str,
+    caller: ::macros::verbs::Caller,
+    suffix: &str,
+    body: &str,
+) -> ::macros::verbs::Reply {
     let limit = if suffix == "put" {
         ::macros::verbs::PUT_ENVELOPE_LIMIT
     } else {
@@ -150,7 +166,9 @@ pub fn request(app: &str, caller: ::macros::verbs::Caller, suffix: &str, body: &
         )));
     }
     match serde_json::from_str::<Value>(if body.trim().is_empty() { "{}" } else { body }) {
-        Ok(body) => ::macros::verbs::handle(&::macros::Session::for_app(app), caller, suffix, &body),
+        Ok(body) => {
+            ::macros::verbs::handle(&::macros::Session::for_app(app), caller, suffix, &body)
+        }
         Err(error) => {
             ::macros::verbs::Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", error)))
         }
@@ -171,6 +189,28 @@ pub fn answer_body(answer: ::macros::verbs::Answer) -> (u8, Value) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn macro_authority_requires_local_broker_origin_and_exact_owner_service() {
+        use ::macros::verbs::Caller;
+        let mut command = IncomingCommand {
+            generation: 0, from: "ced-instance".into(), command: "ced.macros.put".into(),
+            id: None, args: Value::Null, body: "{}".into(), headers: Default::default(),
+        };
+        assert_eq!(caller(&command, "ced-instance"), Caller::Other);
+        command.headers.insert("broker_origin".into(), "local".into());
+        assert_eq!(caller(&command, "ced-instance"), Caller::Owner);
+        assert_eq!(caller(&command, "ced-other"), Caller::Other);
+        for name in ["workshop", "workshop-instance"] {
+            command.from = name.into();
+            assert_eq!(caller(&command, "ced-instance"), Caller::Workshop);
+            command.headers.insert("broker_origin".into(), "mesh".into());
+            assert_eq!(caller(&command, "ced-instance"), Caller::Other);
+            command.headers.insert("broker_origin".into(), "local".into());
+        }
+        command.from = "workshopper".into();
+        assert_eq!(caller(&command, "ced-instance"), Caller::Other);
+    }
+
     #[tokio::test]
     async fn finish_abandons_a_stalled_reply() {
         let mut jobs = Jobs::default();
@@ -188,9 +228,14 @@ mod tests {
         let body = json!({"id":"missing", "text":text}).to_string();
         assert!(body.len() > 272 * 1024);
         // No existing id is required to prove that the envelope was admitted.
-        let error = request("escape-heavy-test", ::macros::verbs::Caller::Workshop, "put", &body)
-            .wait()
-            .unwrap_err();
+        let error = request(
+            "escape-heavy-test",
+            ::macros::verbs::Caller::Workshop,
+            "put",
+            &body,
+        )
+        .wait()
+        .unwrap_err();
         assert_ne!(error.code, "INVALID_ARGUMENT");
     }
 }

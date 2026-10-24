@@ -43,7 +43,9 @@ pub fn authorize(app: &str, caller: Caller, suffix: &str, body: &Value) -> Resul
     {
         return Err(Refusal::new(
             "DENIED",
-            format!("{app}.macros.{suffix}: macro-file writes require the owning service or Workshop; global and cross-app writes require Workshop"),
+            format!(
+                "{app}.macros.{suffix}: macro-file writes require the owning service or Workshop; global and cross-app writes require Workshop"
+            ),
         ));
     }
     Ok(())
