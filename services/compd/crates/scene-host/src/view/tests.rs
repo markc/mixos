@@ -136,13 +136,15 @@ fn long_toast_keeps_controls_visible_and_clickable() {
 fn long_toast_offscreen() {
     use ui::UiProgram;
     let mut scene = SceneUi::new(content(&long_toast(), None, false));
-    let ctx = egui::Context::default();
-    scene.setup(&ctx);
+    let mut setup = false;
     let mut harness = egui_kittest::Harness::builder()
-        .with_context(ctx)
         .with_size(egui::vec2(360.0, 132.0))
         .wgpu()
         .build_ui(move |ui| {
+            if !setup {
+                scene.setup(ui.ctx());
+                setup = true;
+            }
             scene.show(ui, &mut Vec::new());
             for (id, size, bold) in [("t_sum", 14.0, true), ("t_app", 11.0, false)] {
                 let text = paint::elide_end(
@@ -155,8 +157,9 @@ fn long_toast_offscreen() {
             }
         });
     harness.run();
-    if std::env::var_os("UPDATE_SNAPSHOTS").is_some() {
-        harness.snapshot("toast_long");
+    let image = harness.render().unwrap();
+    if let Some(path) = std::env::var_os("TOAST_SNAPSHOT") {
+        image.save(path).unwrap();
     }
 }
 

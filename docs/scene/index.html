@@ -271,6 +271,15 @@ at compile time with <code>binding-policy</code>.</p>
 <code>w</code>, <code>h</code>, <code>title</code> and <code>chrome</code> (false by default). The host clamps their
 geometry and manages visibility through its
 <a href="/compd/#toast-scenes">toast verbs</a>.</p>
+<p>Text accepts <code>wrap: true</code> and <code>max_lines: N</code> (default 3, integer 1–1024).
+The host wraps at word boundaries using the actual font and available pixel
+width, breaks overlong words, and adds an ellipsis to the last allowed line
+when more text remains. Its measured height includes every displayed line,
+so rows and columns grow around it. <code>elide: true</code> without wrapping keeps a
+single line bounded by its parent and elides at the end.</p>
+<p>These wrapping ports require a host that supports them. The shipped toast
+keeps separate character-wrapped summary nodes for compatibility with older
+hosts; its body is independent of its bold title.</p>
 <p>Test: <code>cargo test -p scene</code>.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/libs/scene"><code>libs/scene</code></a>.</p>
         </article>

@@ -309,7 +309,7 @@ pub(crate) fn check_port_value(
     let k = p.name;
     if k == "max_lines" && v.as_f64().is_some_and(|n| n.fract() != 0.0 || n > 1024.0) {
         out.push(Diagnostic::error(
-            "port-range",
+            "port-type",
             line,
             format!("port {k} on {id} must be an integer from 1 to 1024"),
         ));

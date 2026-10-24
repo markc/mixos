@@ -33308,6 +33308,17 @@ Window declarations accept `kind:"edge"`, `kind:"dialog"` and
 geometry and manages visibility through its
 [toast verbs](../compd/README.md#toast-scenes).
 
+Text accepts `wrap: true` and `max_lines: N` (default 3, integer 1–1024).
+The host wraps at word boundaries using the actual font and available pixel
+width, breaks overlong words, and adds an ellipsis to the last allowed line
+when more text remains. Its measured height includes every displayed line,
+so rows and columns grow around it. `elide: true` without wrapping keeps a
+single line bounded by its parent and elides at the end.
+
+These wrapping ports require a host that supports them. The shipped toast
+keeps separate character-wrapped summary nodes for compatibility with older
+hosts; its body is independent of its bold title.
+
 Test: `cargo test -p scene`.
 
 The source is [`libs/scene`](https://github.com/markc/mixos/tree/main/libs/scene).

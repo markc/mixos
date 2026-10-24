@@ -259,7 +259,7 @@ impl<'a> Builder<'a> {
         // A scene is bounded by its surface, even with start alignment.
         if matches!(node.family.as_str(), "row" | "column") {
             style.min_size.width = lpa(0.0);
-            style.max_size.width = Dimension::percent(1.0);
+            style.max_size.width = LengthPercentageAuto::percent(1.0);
         }
         let fill =
             flag(node, "fill") || (node.family == "spacer" && number(node, "size").is_none());
@@ -359,7 +359,7 @@ impl<'a> Builder<'a> {
             "text" if flag(node, "elide") || flag(node, "wrap") => {
                 // May shrink below its text; the painter elides the middle.
                 style.min_size.width = lpa(0.0);
-                style.max_size.width = Dimension::percent(1.0);
+                style.max_size.width = LengthPercentageAuto::percent(1.0);
                 if flag(node, "wrap") {
                     // Fill in a column means horizontal space, never a zero
                     // vertical basis: the measured lines own their height.
