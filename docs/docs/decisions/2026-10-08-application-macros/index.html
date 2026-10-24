@@ -268,10 +268,13 @@ macros through the shared home; an isolated desk's user keeps their own.</li>
 </ul>
 <h2 id="where-macros-appear">Where macros appear</h2>
 <p>Every app's icon bar has the standard Macros icon. It opens the app's
-macros: run, edit, new, open folder and reload, with the running macro's
-output and a stop action. The shared discovery, runner and panel live in
-shared libraries; apps supply only their command registration and any
-domain context.</p>
+macro menu: left-click runs, right-click or Shift+Enter opens a normal
+floating editor window, and New creates a per-app macro. The editor has
+Save, Run and Open in Ced controls; results and errors never open it.
+Runs finish with plain, action-free toasts. Open Workshop opens the global
+user macro folder in Dopus until Workshop exists. Shared libraries own
+discovery, execution, the menu and editor; apps supply their registration
+and domain context.</p>
 <h2 id="bus-verbs">Bus verbs</h2>
 <p>Agents use <code>&lt;app&gt;.macros.list</code>, <code>run</code>, <code>status</code>, <code>stop</code>, <code>output</code>, <code>new</code>
 and <code>reload</code>. The session shares one catalogue and runner per app process.

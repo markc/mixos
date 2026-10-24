@@ -2932,10 +2932,13 @@ session authority of the user who runs them.
 ## Where macros appear
 
 Every app's icon bar has the standard Macros icon. It opens the app's
-macros: run, edit, new, open folder and reload, with the running macro's
-output and a stop action. The shared discovery, runner and panel live in
-shared libraries; apps supply only their command registration and any
-domain context.
+macro menu: left-click runs, right-click or Shift+Enter opens a normal
+floating editor window, and New creates a per-app macro. The editor has
+Save, Run and Open in Ced controls; results and errors never open it.
+Runs finish with plain, action-free toasts. Open Workshop opens the global
+user macro folder in Dopus until Workshop exists. Shared libraries own
+discovery, execution, the menu and editor; apps supply their registration
+and domain context.
 
 ## Bus verbs
 

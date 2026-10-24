@@ -1459,6 +1459,7 @@ mod tests {
     fn auxiliary_viewport_has_its_own_tree_input_and_close() {
         let ctx = Context::default();
         install(&ctx, "demo");
+        ctx.set_embed_viewports(false);
         let editor = egui::ViewportId::from_hash_of("test-editor");
         register_viewport(&ctx, "macro-editor", editor);
         let mut root_clicks = 0;
@@ -1468,6 +1469,9 @@ mod tests {
             let mut input = RawInput { viewport_id: viewport, ..Default::default() };
             input.viewports.insert(editor, Default::default());
             let mut output = ctx.run_ui(input, |ui| {
+                if viewport == egui::ViewportId::ROOT {
+                    ui.ctx().show_viewport_deferred(editor, egui::ViewportBuilder::default(), |_, _| {});
+                }
                 if ui.button(if viewport == editor { "Save" } else { "Root" }).clicked() {
                     if viewport == editor { editor_clicks += 1; } else { root_clicks += 1; }
                 }
