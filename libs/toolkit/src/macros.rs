@@ -39,7 +39,7 @@ type Work = Box<
     dyn FnOnce(&Roots, &str) -> io::Result<(Option<editor::local::Document>, Option<Entry>)> + Send,
 >;
 type Creation = Result<(Option<Catalogue>, editor::local::Document, Option<String>), String>;
-type SaveCompletion = Result<(editor::local::Saved, Option<Catalogue>, Option<Entry>), String>;
+type SaveCompletion = Result<(editor::local::Saved, Option<Catalogue>, Option<Entry>, Option<String>), String>;
 static NEXT_WINDOW: AtomicU64 = AtomicU64::new(1);
 
 pub fn command<S>(enabled: fn(&S) -> bool, run: fn(&mut S)) -> crate::Command<S> {
@@ -944,16 +944,18 @@ impl State {
             let (tx, rx) = mpsc::channel();
             self.saving = Some(rx);
             std::thread::spawn(move || {
+                let mut warning = None;
                 let completion = snapshot
                     .write_with(|path, bytes| {
                         session
                             .roots()
                             .ok_or_else(|| io::Error::other("macro roots unavailable"))?
-                            .write_path(path, bytes)
+                            .write_path_outcome(path, bytes)
+                            .map(|outcome| warning = outcome.warning)
                     })
                     .map(|saved| {
                         let catalogue = session.reload().ok();
-                        (saved, catalogue, entry)
+                        (saved, catalogue, entry, warning)
                     })
                     .map_err(|error| path_error("macros-save-error", &path, error).to_string());
                 let _ = tx.send(completion);
@@ -964,7 +966,7 @@ impl State {
     fn saved(&mut self, result: SaveCompletion, ctx: &egui::Context) {
         self.saving = None;
         match result {
-            Ok((saved, catalogue, run)) => {
+            Ok((saved, catalogue, run, warning)) => {
                 if let Some(catalogue) = catalogue {
                     self.replace_catalogue(catalogue, ctx);
                     self.reload();
@@ -972,7 +974,7 @@ impl State {
                 if let Some(doc) = &mut self.document {
                     doc.complete_save(&saved);
                 }
-                self.error = None;
+                self.error = warning;
                 if let Some(entry) = run {
                     self.run(entry, ctx);
                 }

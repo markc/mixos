@@ -84,6 +84,11 @@ impl Roots {
     }
 
     pub fn write_path(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        self.write_path_outcome(path, bytes).map(|_| ())
+    }
+
+    /// Save succeeded even if the returned warning reports uncertain durability.
+    pub fn write_path_outcome(&self, path: &Path, bytes: &[u8]) -> io::Result<crate::MutationOutcome> {
         crate::storage::Target::open(&self.user, path)?.write(bytes)
     }
 
@@ -103,6 +108,10 @@ impl Roots {
 
     /// Exclusive destination allocation refuses clashes, including dangling links.
     pub fn move_to(&self, entry: &Entry, tier: Tier, app: &str) -> io::Result<PathBuf> {
+        self.move_to_outcome(entry, tier, app).map(|(path, _)| path)
+    }
+
+    pub fn move_to_outcome(&self, entry: &Entry, tier: Tier, app: &str) -> io::Result<(PathBuf, crate::MutationOutcome)> {
         self.user_target(entry)?;
         if fs::symlink_metadata(&entry.path)?.file_type().is_symlink() {
             return Err(invalid("moving a macro symlink is not supported"));
@@ -113,9 +122,9 @@ impl Roots {
         let destination = self
             .ensure_user_folder(app, tier)?
             .join(format!("{}.mix", entry.id));
-        crate::storage::Target::open(&self.user, &entry.path)?
+        let outcome = crate::storage::Target::open(&self.user, &entry.path)?
             .move_to(&crate::storage::Target::open(&self.user, &destination)?)?;
-        Ok(destination)
+        Ok((destination, outcome))
     }
     pub fn resolve() -> Option<Self> {
         Self::resolve_with(|key| std::env::var_os(key).map(PathBuf::from))

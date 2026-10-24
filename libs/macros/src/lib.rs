@@ -12,3 +12,4 @@ pub use catalogue::{
 };
 pub use runner::{OUTPUT_LIMIT, Output, Runner, Status};
 pub use session::Session;
+pub use storage::MutationOutcome;

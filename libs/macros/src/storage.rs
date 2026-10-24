@@ -13,6 +13,20 @@ pub(crate) struct Target {
     name: CString,
 }
 
+/// The namespace change succeeded; a warning concerns crash durability only.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MutationOutcome {
+    pub warning: Option<String>,
+}
+
+fn durability(sync: io::Result<()>) -> MutationOutcome {
+    let warning = sync.err().map(|error| format!("macro changed, but directory sync failed: {error}"));
+    if let Some(warning) = &warning {
+        eprintln!("{warning}");
+    }
+    MutationOutcome { warning }
+}
+
 fn name(path: &Path) -> io::Result<CString> {
     CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)
 }
@@ -148,7 +162,11 @@ impl Target {
         Ok(())
     }
 
-    pub(crate) fn move_to(&self, destination: &Self) -> io::Result<()> {
+    pub(crate) fn move_to(&self, destination: &Self) -> io::Result<MutationOutcome> {
+        self.move_with_sync(destination, |directory| directory.sync_all())
+    }
+
+    fn move_with_sync(&self, destination: &Self, sync: impl Fn(&File) -> io::Result<()>) -> io::Result<MutationOutcome> {
         self.file()?;
         // renameat2 publishes the complete source with no empty reservation and
         // atomically refuses existing destinations, including dangling links.
@@ -162,8 +180,9 @@ impl Target {
                 libc::RENAME_NOREPLACE,
             )
         })?;
-        destination.directory.sync_all()?;
-        self.directory.sync_all()
+        let destination_sync = sync(&destination.directory);
+        let source_sync = sync(&self.directory);
+        Ok(durability(destination_sync.and(source_sync)))
     }
 
     pub(crate) fn remove(&self) -> io::Result<()> {
@@ -172,11 +191,15 @@ impl Target {
         self.directory.sync_all()
     }
 
-    pub(crate) fn write(&self, bytes: &[u8]) -> io::Result<()> {
+    pub(crate) fn write(&self, bytes: &[u8]) -> io::Result<MutationOutcome> {
         self.write_with_hook(bytes, || {})
     }
 
-    fn write_with_hook(&self, bytes: &[u8], hook: impl FnOnce()) -> io::Result<()> {
+    fn write_with_hook(&self, bytes: &[u8], hook: impl FnOnce()) -> io::Result<MutationOutcome> {
+        self.write_with_sync(bytes, hook, |directory| directory.sync_all())
+    }
+
+    fn write_with_sync(&self, bytes: &[u8], hook: impl FnOnce(), sync: impl FnOnce(&File) -> io::Result<()>) -> io::Result<MutationOutcome> {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let permissions = self.file()?.metadata()?.permissions();
         if permissions.readonly() {
@@ -211,7 +234,7 @@ impl Target {
             // renameat replaces a swapped final symlink itself, never its target.
             // SAFETY: both names are relative to the same live directory.
             syscall(unsafe { libc::renameat(dir, temporary.as_ptr(), dir, self.name.as_ptr()) })?;
-            self.directory.sync_all()
+            Ok(durability(sync(&self.directory)))
         })();
         if result.is_err() {
             // SAFETY: temporary belongs to this operation in the live directory.
@@ -226,6 +249,22 @@ impl Target {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn committed_save_and_move_survive_directory_sync_failure() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("source.mix");
+        let destination = temp.path().join("destination.mix");
+        std::fs::write(&path, b"old").unwrap();
+        let source = Target::open(temp.path(), &path).unwrap();
+        let outcome = source.write_with_sync(b"saved", || {}, |_| Err(io::Error::other("injected sync failure"))).unwrap();
+        assert!(outcome.warning.unwrap().contains("injected sync failure"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"saved");
+        let target = Target::open(temp.path(), &destination).unwrap();
+        let outcome = source.move_with_sync(&target, |_| Err(io::Error::other("injected sync failure"))).unwrap();
+        assert!(outcome.warning.unwrap().contains("injected sync failure"));
+        assert!(!path.exists());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"saved");
+    }
     #[test]
     fn swapped_parent_cannot_redirect_reads_or_saves() {
         let temp = tempfile::tempdir().unwrap();

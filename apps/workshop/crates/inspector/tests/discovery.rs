@@ -35,7 +35,8 @@ async fn mesh_latency_queue_and_failure_diagnostics() {
                         || (mode.load(Ordering::SeqCst) == 2 && target == "noded" && command == "noded.list");
                     let body = match command {
                         "noded.info" => json!({"name":"this"}),
-                        "noded.list" => json!((0..12).map(|i| json!({"name":format!("svc-{i}")})).collect::<Vec<_>>()),
+                        "noded.list" => json!((0..if mode.load(Ordering::SeqCst) == 3 { 1000 } else { 12 }).map(|i| json!({"name":format!("svc-{i}")})).collect::<Vec<_>>()),
+                        "noded.peers" if mode.load(Ordering::SeqCst) == 3 => json!({"peers":[]}),
                         "noded.peers" => json!({"peers":(0..8).map(|i| json!({"name":format!("peer-{i}")})).collect::<Vec<_>>()}),
                         "HELP" => json!([{"name":"ping","read_only":true}]),
                         _ => json!({}),
@@ -101,6 +102,12 @@ async fn mesh_latency_queue_and_failure_diagnostics() {
             .any(|effect| matches!(effect, inspector::Effect::Reply { id: 99, rc: 10, .. }))
     );
     assert!(!engine.busy());
+    failure.store(3, Ordering::SeqCst);
+    let large = tokio::time::timeout(Duration::from_secs(15), discovery::discover(handle.clone())).await.unwrap();
+    assert!(large.progress.unwrap().finished);
+    assert_eq!(large.services.len(), 1001);
+    assert_eq!(large.services.values().filter(|result| result.is_ok()).count(), discovery::MAX_DESCRIBED_SERVICES_PER_NODE);
+    assert_eq!(large.services.values().filter(|result| matches!(result, Err(error) if error == "not described (limit)")).count(), 1001 - discovery::MAX_DESCRIBED_SERVICES_PER_NODE);
     handle.quit();
     handle.wait_done().unwrap();
     server.abort();

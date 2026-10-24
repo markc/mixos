@@ -45,8 +45,28 @@ struct Probe {
 }
 
 async fn json_call(probe: &Probe, service: &str, verb: &str) -> Result<Value, String> {
-    let _permit = acquire(probe).await?;
-    json_call_within(probe, service, verb, DISCOVERY_CALL_BUDGET).await
+    let permit = acquire(probe).await?;
+    let probe = probe.clone();
+    let service = service.to_owned();
+    let verb = verb.to_owned();
+    owned_call(permit, async move {
+        json_call_within(&probe, &service, &verb, DISCOVERY_CALL_BUDGET).await
+    }).await
+}
+
+async fn owned_call<T: Send + 'static>(
+    permit: tokio::sync::OwnedSemaphorePermit,
+    call: impl std::future::Future<Output = Result<T, String>> + Send + 'static,
+) -> Result<T, String> {
+    let deadline = tokio::time::Instant::now() + DISCOVERY_CALL_BUDGET;
+    let task = tokio::spawn(async move {
+        let _permit = permit;
+        call.await
+    });
+    // Dropping a JoinHandle detaches it: the native request retains its permit.
+    tokio::time::timeout_at(deadline, task).await
+        .map_err(|_| "discovery deadline exceeded (3 s)".to_owned())?
+        .map_err(|error| error.to_string())?
 }
 
 async fn acquire(probe: &Probe) -> Result<tokio::sync::OwnedSemaphorePermit, String> {
@@ -65,14 +85,10 @@ async fn json_call_within(
     verb: &str,
     budget: std::time::Duration,
 ) -> Result<Value, String> {
-    let reply = tokio::time::timeout(
-        budget,
-        probe
+    let reply = probe
             .handle
-            .raw_within(service, verb, String::new(), budget),
-    )
+            .raw_within(service, verb, String::new(), budget)
     .await
-    .map_err(|_| format!("{service} {verb}: deadline exceeded (3 s)"))?
     .map_err(|e| e.to_string())?;
     if reply.rc >= 10 {
         return Err(format!(
@@ -85,17 +101,21 @@ async fn json_call_within(
     serde_json::from_str(&reply.body).map_err(|e| e.to_string())
 }
 async fn describe(handle: &Probe, service: &str) -> Result<Vec<crate::model::Verb>, String> {
-    let _permit = acquire(handle).await?;
+    let permit = acquire(handle).await?;
+    let handle = handle.clone();
+    let service = service.to_owned();
     let deadline = tokio::time::Instant::now() + DISCOVERY_CALL_BUDGET;
-    let help = match json_call_within(handle, service, "HELP", DISCOVERY_CALL_BUDGET).await {
+    owned_call(permit, async move {
+    let help = match json_call_within(&handle, &service, "HELP", DISCOVERY_CALL_BUDGET).await {
         Ok(value) => crate::model::parse_verbs(&value),
         Err(error) => Err(error),
     };
     match help {
         Ok(verbs) => Ok(verbs),
+        Err(help_error) if tokio::time::Instant::now() >= deadline => Err(help_error),
         Err(help_error) => match json_call_within(
-            handle,
-            service,
+            &handle,
+            &service,
             "app.describe",
             deadline.saturating_duration_since(tokio::time::Instant::now()),
         )
@@ -105,6 +125,7 @@ async fn describe(handle: &Probe, service: &str) -> Result<Vec<crate::model::Ver
             Err(error) => Err(format!("HELP: {help_error}\napp.describe: {error}")),
         },
     }
+    }).await
 }
 /// Discovery never inherits the mutation lane's 30 second deadline.
 pub const DISCOVERY_CALL_BUDGET: std::time::Duration = std::time::Duration::from_secs(3);
@@ -114,6 +135,10 @@ pub const DISCOVERY_CONCURRENCY: usize = 8;
 /// slots for other work. Six are reserved locally, six shared remotely.
 pub const LOCAL_CALL_CONCURRENCY: usize = 6;
 pub const REMOTE_CALL_CONCURRENCY: usize = 6;
+pub const MAX_DESCRIBED_SERVICES_PER_NODE: usize = 64;
+pub const DESCRIPTION_PHASE_BUDGET: std::time::Duration = std::time::Duration::from_secs(
+    MAX_DESCRIBED_SERVICES_PER_NODE.div_ceil(REMOTE_CALL_CONCURRENCY) as u64 * 3 + 10,
+);
 // Shared across refresh generations, including abandoned description reads.
 static LOCAL_PERMITS: LazyLock<Arc<tokio::sync::Semaphore>> =
     LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(LOCAL_CALL_CONCURRENCY)));
@@ -206,10 +231,15 @@ async fn discover_node(
     let _ = tx.unbounded_send(Update::Node(snapshot.clone(), false));
     // Every queued read has a bounded acquisition, then its own call budget.
     let names = snapshot.nodes[0].services.clone();
-    for result in snapshot.services.values_mut() {
-        *result = Err("description deadline exceeded (3 s)".into());
+    for (index, name) in names.iter().enumerate() {
+        snapshot.services.insert(name.clone(), Err(if index < MAX_DESCRIBED_SERVICES_PER_NODE {
+            "description phase deadline exceeded".into()
+        } else {
+            "not described (limit)".into()
+        }));
     }
-    let mut descriptions = stream::iter(names.into_iter().map(|name| {
+    let deadline = tokio::time::Instant::now() + DESCRIPTION_PHASE_BUDGET;
+    let mut descriptions = stream::iter(names.into_iter().take(MAX_DESCRIBED_SERVICES_PER_NODE).map(|name| {
         let handle = handle.clone();
         async move {
             let result = describe(&handle, &name).await;
@@ -217,7 +247,7 @@ async fn discover_node(
         }
     }))
     .buffer_unordered(DISCOVERY_CONCURRENCY);
-    while let Some((name, result)) = descriptions.next().await {
+    while let Ok(Some((name, result))) = tokio::time::timeout_at(deadline, descriptions.next()).await {
         snapshot.services.insert(name, result);
     }
     let _ = tx.unbounded_send(Update::Node(snapshot, true));
@@ -314,4 +344,25 @@ pub async fn discover_incremental(
 /// Compatibility for callers that only need the final result.
 pub async fn discover(handle: Handle) -> crate::model::Snapshot {
     discover_incremental(handle, |_| {}).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn timeout_keeps_permit_until_native_completion() {
+        let permits = Arc::new(tokio::sync::Semaphore::new(1));
+        let permit = permits.clone().acquire_owned().await.unwrap();
+        let (finish, finished) = tokio::sync::oneshot::channel::<()>();
+        let result = owned_call(permit, async move {
+            finished.await.unwrap();
+            Ok(())
+        }).await;
+        assert!(result.unwrap_err().contains("deadline"));
+        assert_eq!(permits.available_permits(), 0);
+        assert!(permits.clone().try_acquire_owned().is_err());
+        finish.send(()).unwrap();
+        let _permit = tokio::time::timeout(std::time::Duration::from_secs(1), permits.acquire()).await.unwrap().unwrap();
+    }
 }
