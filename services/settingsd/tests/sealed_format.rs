@@ -31,12 +31,12 @@ use settings::*;
 
 /// `settings::digest` of the default desktop's effective map.
 const EFFECTIVE_DIGEST_PINNED: &str =
-    "aaa4abe1fac5594e8af756f77048f7be3ad147ee2ec348971852916285fa8dcc";
+    "4abaa2fffc034923ac448fc8a9f8c93e253d2781be5a40b8a1b17f0f5e6422ea";
 /// `settings::digest` of the fixed default-desktop `Snapshot`.
 const SNAPSHOT_DIGEST_PINNED: &str =
-    "a35b6110f9a4701e10165c3109379cda758ffb88aff4766c7e4aeb6953c4e484";
+    "08d7f6778302cbefc0993e3834678be5dbc465dc1a67d10ee29d8849292efe07";
 /// Serialised byte length of that `Snapshot`.
-const SNAPSHOT_JSON_LEN_PINNED: usize = 529_634;
+const SNAPSHOT_JSON_LEN_PINNED: usize = 529_655;
 const PRE_MODERN_SOURCE_DIGEST: &str =
     "b69369a6e36b10fd44a418df78cb1f2a99a40649e78027ce057af9993f648630";
 const MODERN_SOURCE_DIGEST: &str =

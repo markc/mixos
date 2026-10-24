@@ -427,6 +427,7 @@ struct Shot(u64);
 pub struct Drive {
     children: HashMap<egui::ViewportId, Box<Drive>>,
     requests: VecDeque<(u64, String, Value)>,
+    passes: Vec<egui::ViewportId>,
     app: String,
     options: Options,
     tree: Option<TreeUpdate>,
@@ -451,6 +452,9 @@ impl egui::Plugin for Drive {
     }
 
     fn input_hook(&mut self, ctx: &Context, input: &mut RawInput) {
+        self.passes.push(input.viewport_id);
+        // The platform may switch AccessKit off when a screen reader leaves.
+        ctx.enable_accesskit();
         if input.viewport_id != egui::ViewportId::ROOT {
             let app = self.app.clone();
             let options = self.options.clone();
@@ -462,10 +466,15 @@ impl egui::Plugin for Drive {
                 })
             });
             child.step(input);
+            if let Some(running) = &mut child.running
+                && running.trace.is_some()
+            {
+                running.pass_events = input.events.iter()
+                    .filter(|e| !matches!(e, Event::Screenshot { .. }))
+                    .map(|e| format!("{e:?}")).collect();
+            }
             return;
         }
-        // The platform may switch AccessKit off when a screen reader leaves.
-        ctx.enable_accesskit();
         self.step(input);
         if let Some(running) = &mut self.running
             && running.trace.is_some()
@@ -498,10 +507,23 @@ impl egui::Plugin for Drive {
         }
     }
 
+    fn on_end_pass(&mut self, ui: &mut Ui) {
+        if ui.ctx().viewport_id() != egui::ViewportId::ROOT
+            && let Some(child) = self.children.get_mut(&ui.ctx().viewport_id())
+        {
+            // egui pops the viewport before output_hook. Finish reports while
+            // the editor's input, menu and window state are still current.
+            child.output(ui.ctx(), &mut FullOutput::default());
+        }
+    }
+
     fn output_hook(&mut self, ctx: &Context, output: &mut FullOutput) {
-        if ctx.viewport_id() != egui::ViewportId::ROOT {
-            if let Some(child) = self.children.get_mut(&ctx.viewport_id()) {
-                child.output(ctx, output);
+        let viewport = self.passes.pop().unwrap_or(egui::ViewportId::ROOT);
+        if viewport != egui::ViewportId::ROOT {
+            if let Some(child) = self.children.get_mut(&viewport) {
+                if let Some(update) = &output.platform_output.accesskit_update {
+                    child.tree = Some(update.clone());
+                }
                 if !child.answers.is_empty() {
                     ctx.request_repaint_of(egui::ViewportId::ROOT);
                 }
