@@ -22,7 +22,7 @@ use ledger::presentation_stats::{OutputStats, PresentationLeaves};
 
 use crate::observation::{CornerConfig, HOLDER_PLANE_AVAILABLE, SetValidationError};
 use crate::prop_path::PropPath;
-use crate::reply::{ControlReply, MAX_REPLY_BODY_BYTES, error, too_large};
+use crate::reply::{ControlReply, MAX_REPLY_BODY_BYTES, error, too_large, unknown_command};
 
 pub const BROKER_RETRYING: u8 = 0;
 pub const BROKER_CONNECTED: u8 = 1;
@@ -2379,7 +2379,7 @@ pub fn dispatch_read_with_limit(
         command,
         "comp.props.get" | "comp.props.list" | "comp.props.describe"
     ) {
-        return error("UNKNOWN_COMMAND");
+        return unknown_command(command);
     }
     if command == "comp.props.get" {
         match optional_path(args, "path") {
@@ -2582,7 +2582,7 @@ fn dispatch_selected_read(snapshot: &CompSnapshot, command: &str, args: &Value) 
                 .map_or_else(|| error("unknown_path"), |body| (0, Arc::from(body))),
             Err(()) => error("unknown_path"),
         },
-        _ => error("UNKNOWN_COMMAND"),
+        _ => unknown_command(command),
     }
 }
 

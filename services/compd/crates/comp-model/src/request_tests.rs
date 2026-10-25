@@ -1609,7 +1609,11 @@ fn classify_routes_every_family_and_keeps_commands_literal() {
     ] {
         assert_eq!(
             refused_body(classify(unknown, &Value::Null, false).unwrap_err()),
-            json!({"error": "UNKNOWN_COMMAND"}),
+            json!({
+                "error_code": "UNKNOWN_COMMAND",
+                "message": format!("unknown command {unknown}"),
+                "command": unknown,
+            }),
             "{unknown}"
         );
     }

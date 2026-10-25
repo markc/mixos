@@ -437,7 +437,7 @@ pub fn handle_command(command: &IncomingCommand) -> (u8, serde_json::Value) {
     let Some(consent) = installed() else {
         return (
             10,
-            json!({"status": "UNKNOWN_COMMAND", "command": command.command, "message": "portald runs without --screencast"}),
+            json!({"error_code": "UNKNOWN_COMMAND", "command": command.command, "message": "portald runs without --screencast"}),
         );
     };
     if command.header("broker_origin") != Some("local") {
@@ -522,7 +522,7 @@ pub fn handle_command(command: &IncomingCommand) -> (u8, serde_json::Value) {
             tracing::info!(%caller, ?id, revoked, "screencast grants revoked");
             (0, json!({"revoked": revoked}))
         }
-        other => (10, json!({"status": "UNKNOWN_COMMAND", "command": other})),
+        other => (10, json!({"error_code": "UNKNOWN_COMMAND", "message": format!("unknown command {other}"), "command": other})),
     }
 }
 
@@ -827,6 +827,24 @@ mod tests {
             let (rc, _) = handle_command(&command("portald.screencast.grant", json!({}), origin));
             assert_eq!(rc, FORBIDDEN);
         }
+
+        // An unknown screencast command gets the shared refusal.
+        let (rc, refused) = handle_command(&command(
+            "portald.screencast.nope",
+            json!({}),
+            Some("local"),
+        ));
+        assert_eq!(
+            (rc, refused),
+            (
+                10,
+                json!({
+                    "error_code": "UNKNOWN_COMMAND",
+                    "message": "unknown command portald.screencast.nope",
+                    "command": "portald.screencast.nope",
+                })
+            )
+        );
 
         // A grant covers the next Start by that app without asking.
         let (rc, grant) = handle_command(&command(

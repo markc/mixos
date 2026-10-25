@@ -24,7 +24,7 @@ use crate::observation::{
     PanelRequest, SetValidationError, WORKSPACE_COUNT_MAX, parse_window_leaf_path,
     validate_set_request,
 };
-use crate::reply::{ControlReply, error};
+use crate::reply::{ControlReply, error, unknown_command};
 
 /// The longest a long command may run before its reply is due.
 pub const LONG_COMMAND_MAX: Duration = Duration::from_secs(60);
@@ -1890,7 +1890,7 @@ pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request,
         .copied()
         .find(|known| *known == command)
     else {
-        return Err(error("UNKNOWN_COMMAND"));
+        return Err(unknown_command(command));
     };
     if malformed {
         return Err(error("unknown_path"));

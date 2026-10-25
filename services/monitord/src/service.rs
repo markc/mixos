@@ -116,7 +116,11 @@ pub async fn dispatch(
                 .await
                 .map_err(failed)?
         }
-        other => Err(json!({"status": "UNKNOWN_COMMAND", "command": other})),
+        other => Err(json!({
+            "error_code": "UNKNOWN_COMMAND",
+            "message": format!("unknown command {other}"),
+            "command": other,
+        })),
     }
 }
 

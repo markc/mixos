@@ -288,3 +288,18 @@ fn breeze_and_adwaita_choices_apply_and_survive_a_sealed_reopen() {
         assert_eq!(stored_bytes(), before);
     }
 }
+
+#[test]
+fn unknown_commands_get_the_shared_refusal() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut authority = authority(dir.path());
+    let refused = service::dispatch(&mut authority, "settings.nope", "{}").unwrap_err();
+    assert_eq!(
+        refused,
+        json!({
+            "error_code": "UNKNOWN_COMMAND",
+            "message": "unknown command settings.nope",
+            "command": "settings.nope",
+        })
+    );
+}

@@ -129,7 +129,7 @@ fn reason($r)
     return ""
   end
   if type($r["result"]) == "map" then
-    return to_string($r["result"]["reason"] ?? $r["result"]["error"] ?? "")
+    return to_string($r["result"]["reason"] ?? $r["result"]["error"] ?? $r["result"]["error_code"] ?? "")
   end
   return to_string($r["result"])
 end

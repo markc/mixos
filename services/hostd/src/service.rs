@@ -214,6 +214,15 @@ fn refuse(status: &str, command_name: &str) -> Value {
     json!({"status": status, "command": command_name})
 }
 
+/// The one refusal every component gives a command it does not serve.
+fn unknown_command(command_name: &str) -> Value {
+    json!({
+        "error_code": "UNKNOWN_COMMAND",
+        "message": format!("unknown command {command_name}"),
+        "command": command_name,
+    })
+}
+
 /// Requests are bounded in size before they reach dispatch, and in time here.
 pub async fn dispatch(
     host: &Host,
@@ -255,7 +264,7 @@ async fn serve(
         return Ok(json!(manifest()));
     }
     let Some(command_name) = command_name(name) else {
-        return Err(refuse("UNKNOWN_COMMAND", name));
+        return Err(unknown_command(name));
     };
     if command_name.tier != Tier::Read && *origin == Origin::Bus {
         // Mesh writes arrive later, signed by a listed controller.
@@ -408,7 +417,7 @@ async fn serve(
             .await
         }
         "hostd.undo" => undo_command(host, body, origin, peer).await,
-        _ => Err(refuse("UNKNOWN_COMMAND", name)),
+        _ => Err(unknown_command(name)),
     }
 }
 
@@ -767,7 +776,8 @@ mod tests {
         let err = dispatch(&host, "net.exec", &json!({}), &Origin::Bus)
             .await
             .unwrap_err();
-        assert_eq!(err["status"], "UNKNOWN_COMMAND");
+        assert_eq!(err["error_code"], "UNKNOWN_COMMAND");
+        assert_eq!(err["command"], "net.exec");
     }
 
     #[test]

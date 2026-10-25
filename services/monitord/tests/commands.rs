@@ -222,5 +222,5 @@ async fn status_names_the_component_and_its_database() {
     assert!(s["history"]["error"].is_null(), "{s}");
     assert_eq!(s["history"]["retention"]["minute_days"], 7);
     let unknown = dispatch(&engine, "monitord.reboot", &json!({})).await;
-    assert_eq!(unknown.unwrap_err()["status"], "UNKNOWN_COMMAND");
+    assert_eq!(unknown.unwrap_err()["error_code"], "UNKNOWN_COMMAND");
 }

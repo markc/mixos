@@ -27,7 +27,8 @@ send monitord.alpha.bus monitord.processes sort=memory limit=5
 
 Every command is a query: it changes nothing. A refusal comes back with `rc`
 10 and a body whose `status` says why: `bad_request`, `not_found`,
-`unknown_command`, `failed` or `busy`.
+`failed` or `busy`. An unknown command gets the refusal every component
+gives: `error_code` `UNKNOWN_COMMAND`, with `message` and `command`.
 
 | Command | Body | Returns |
 |---|---|---|

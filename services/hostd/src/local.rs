@@ -176,7 +176,7 @@ mod tests {
         let (rc, body) = call(&socket, "net.exec", json!({"cmd":"id"}))
             .await
             .unwrap();
-        assert_eq!((rc, &body["status"]), (10, &json!("UNKNOWN_COMMAND")));
+        assert_eq!((rc, &body["error_code"]), (10, &json!("UNKNOWN_COMMAND")));
     }
 
     /// Callers that pipeline requests and never read the replies take

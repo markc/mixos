@@ -258,7 +258,8 @@ send monitord.alpha.bus monitord.processes sort=memory limit=5
 </code></pre>
 <p>Every command is a query: it changes nothing. A refusal comes back with <code>rc</code>
 10 and a body whose <code>status</code> says why: <code>bad_request</code>, <code>not_found</code>,
-<code>unknown_command</code>, <code>failed</code> or <code>busy</code>.</p>
+<code>failed</code> or <code>busy</code>. An unknown command gets the refusal every component
+gives: <code>error_code</code> <code>UNKNOWN_COMMAND</code>, with <code>message</code> and <code>command</code>.</p>
 <table><thead><tr><th>Command</th><th>Body</th><th>Returns</th></tr></thead><tbody>
 <tr><td><code>monitord.status</code></td><td>—</td><td>Version, uptime, sample interval, whether the process sampler is running, and the history database's size and retention</td></tr>
 <tr><td><code>monitord.snapshot</code></td><td>—</td><td>The system now (below)</td></tr>

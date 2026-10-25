@@ -961,7 +961,7 @@ fn info_and_windows_list_bodies_are_comps() {
     );
     assert_eq!(
         dispatch_read(&snapshot, "comp.props.set", &Value::Null),
-        crate::reply::error("UNKNOWN_COMMAND")
+        crate::reply::unknown_command("comp.props.set")
     );
     assert_eq!(
         dispatch_read(&snapshot, "comp.props.get", &json!({"path": "Bad Path"})),

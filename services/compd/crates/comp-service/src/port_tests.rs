@@ -759,7 +759,7 @@ async fn panel_commands_dispatch_by_literal_command_under_a_non_default_service(
         refusals.insert(reply.id.clone().unwrap(), (reply.rc, body));
     }
     assert_eq!(refusals["1"].0, 10);
-    assert_eq!(refusals["1"].1["error"], "UNKNOWN_COMMAND");
+    assert_eq!(refusals["1"].1["error_code"], "UNKNOWN_COMMAND");
     assert_eq!(refusals["2"].0, 10);
     assert_eq!(refusals["2"].1["error"], "invalid_args");
     assert_eq!(refusals["2"].1["field"], "sticky");
@@ -979,7 +979,7 @@ async fn input_commands_cross_ingress_in_order_and_long_commands_release_their_s
         );
     }
     assert_eq!(refusals["3"]["error"], "busy");
-    assert_eq!(refusals["5"]["error"], "UNKNOWN_COMMAND");
+    assert_eq!(refusals["5"]["error_code"], "UNKNOWN_COMMAND");
     assert_eq!(refusals["6"]["error"], "invalid_args");
 
     // The long reply waits for its own budget, not the 2 s snapshot one.

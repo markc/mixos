@@ -423,7 +423,7 @@ fn handle_event(
                 command_name if command_name.starts_with("portald.screencast.") => {
                     crate::screencast::consent::handle_command(&command)
                 }
-                other => (10, json!({"status": "UNKNOWN_COMMAND", "command": other})),
+                other => (10, json!({"error_code": "UNKNOWN_COMMAND", "message": format!("unknown command {other}"), "command": other})),
             };
             let body = serde_json::to_string(&value)?;
             if lane.replies.len() == REPLY_QUEUE_LIMIT {

@@ -85,16 +85,21 @@ pub async fn execute_until(
                             .as_ref()
                             .and_then(|v| v.get("status"))
                             .and_then(|s| s.as_str());
-                        let code = if matches!(
-                            status,
-                            Some(
-                                "wrong_target"
-                                    | "validation_failed"
-                                    | "unsupported_schema"
-                                    | "snapshot_too_large"
-                                    | "UNKNOWN_COMMAND"
-                            )
-                        ) {
+                        let unknown = structured
+                            .as_ref()
+                            .and_then(|v| v.get("error_code"))
+                            .and_then(|s| s.as_str())
+                            == Some("UNKNOWN_COMMAND");
+                        let code = if unknown
+                            || matches!(
+                                status,
+                                Some(
+                                    "wrong_target"
+                                        | "validation_failed"
+                                        | "unsupported_schema"
+                                        | "snapshot_too_large"
+                                )
+                            ) {
                             "authority_refused"
                         } else {
                             "read_failed"

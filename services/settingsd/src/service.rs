@@ -70,7 +70,11 @@ pub fn dispatch(authority: &mut Authority, command_name: &str, body: &str) -> Re
             }
             authority.apply(req)
         }
-        _ => Err(json!({"status":"UNKNOWN_COMMAND","command":command_name})),
+        _ => Err(json!({
+            "error_code": "UNKNOWN_COMMAND",
+            "message": format!("unknown command {command_name}"),
+            "command": command_name,
+        })),
     }
 }
 /// Publish the retained snapshot in schema 1 (consumers not yet on schema 2)

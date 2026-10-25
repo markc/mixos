@@ -46,6 +46,17 @@ pub fn error(reason: &'static str) -> (u8, Arc<str>) {
     (RC_REFUSED, Arc::from(json!({"error": reason}).to_string()))
 }
 
+/// The one refusal every component gives a command it does not serve
+/// (rc 10, `error_code` `UNKNOWN_COMMAND`).
+pub fn unknown_command(command: &str) -> (u8, Arc<str>) {
+    let body = json!({
+        "error_code": "UNKNOWN_COMMAND",
+        "message": format!("unknown command {command}"),
+        "command": command,
+    });
+    (RC_REFUSED, Arc::from(body.to_string()))
+}
+
 /// The reply that replaces a body over the limit.
 pub fn too_large(limit_bytes: usize) -> (u8, Arc<str>) {
     (
