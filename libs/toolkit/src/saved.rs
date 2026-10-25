@@ -97,19 +97,30 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
     /// Data suitable for an app's `info`/describe response, without its path.
     pub fn describe(&self) -> Value {
         match serde_json::to_value(self.envelope()) {
-            Ok(mut value) => { value["writable"] = json!(self.writable); value }
-            Err(_) => json!({"schema_version":1,"writable":self.writable,"error":"saved state could not be serialised"}),
+            Ok(mut value) => {
+                value["writable"] = json!(self.writable);
+                value
+            }
+            Err(_) => {
+                json!({"schema_version":1,"writable":self.writable,"error":"saved state could not be serialised"})
+            }
         }
     }
 
     fn envelope(&self) -> Envelope<'_, A> {
-        Envelope { schema_version: 1, window: &self.window, widgets: &self.widgets,
-            app: AppSection { version: self.version, value: &self.app } }
+        Envelope {
+            schema_version: 1,
+            window: &self.window,
+            widgets: &self.widgets,
+            app: AppSection {
+                version: self.version,
+                value: &self.app,
+            },
+        }
     }
 
     fn serialise(&self) -> Result<String, String> {
-        strict::to_string_pretty(&self.envelope())
-        .map_err(|e| e.to_string())
+        strict::to_string_pretty(&self.envelope()).map_err(|e| e.to_string())
     }
 
     /// Coalesce changes; never write while any pointer button is held.
