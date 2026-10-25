@@ -26,6 +26,18 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
     let mut rig = rig();
     let ctx = rig.h.ctx.clone();
     let pass = ctx.cumulative_pass_nr();
+    // Consume egui's initial settling requests before observing new work.
+    for _ in 0..2 {
+        let _output = ctx.run_logic(&egui::RawInput::default(), |_| {});
+    }
+    let (requests, incoming) = std::sync::mpsc::channel();
+    ctx.set_request_repaint_callback(move |request| {
+        if request.viewport_id == egui::ViewportId::ROOT
+            && let Some(when) = std::time::Instant::now().checked_add(request.delay)
+        {
+            let _ = requests.send(when);
+        }
+    });
     send(&mut rig, 7001, "workshop.ping", json!({}));
     send(&mut rig, 7002, "HELP", json!({}));
     rig.h.state().as_ref().unwrap().forward_pending();
@@ -35,10 +47,17 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
     assert!(reply(&rig, 7001).is_none());
     assert!(reply(&rig, 7002).is_none());
 
-    let now = std::time::Instant::now();
+    // The Bus forwarder requests a repaint from another thread. Explicitly
+    // wake too, so the inbox drain used for deterministic ordering cannot
+    // race the forwarder's wake in this test.
+    let repaint = ctx.clone();
+    std::thread::spawn(move || repaint.request_repaint())
+        .join()
+        .unwrap();
+    let when = incoming.recv_timeout(Duration::from_secs(1)).unwrap();
     let mut wake = logic_wake::LogicWake::default();
-    wake.request(now);
-    assert!(!wake.take_due(now));
+    wake.request(when);
+    assert!(!wake.take_due(when));
     let deadline = wake.deadline().unwrap();
     assert!(wake.take_due(deadline));
     // This is eframe's existing logic-only path: no run_ui, no painter.
@@ -50,6 +69,24 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
     assert_eq!(ctx.cumulative_pass_nr(), pass);
     assert_eq!(wake.deadline(), None);
     assert!(!wake.take_due(deadline + Duration::from_secs(60)));
+
+    // egui may ask once more to settle an immediate repaint. Serve genuine
+    // callbacks, but never manufacture a periodic tick. It must become idle.
+    for _ in 0..8 {
+        for when in incoming.try_iter() {
+            wake.request(when);
+        }
+        let Some(deadline) = wake.deadline() else {
+            break;
+        };
+        assert!(wake.take_due(deadline));
+        let _output = ctx.run_logic(&egui::RawInput::default(), |ctx| {
+            rig.h.state_mut().as_mut().unwrap().logic(ctx);
+        });
+    }
+    assert_eq!(wake.deadline(), None);
+    assert!(incoming.try_recv().is_err(), "idle logic kept requesting wakes");
+    assert_eq!(ctx.cumulative_pass_nr(), pass);
 }
 
 struct Rig {
