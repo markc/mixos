@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Default templates changed on purpose since the relocation baseline
+# (f91c2a1f). Each entry pins the SHA-256 of the default-layout rendering and
+# says why; tests/layout_templates_test.mix checks these instead of the
+# baseline bytes. Update the hash only with an intended unit change.
+{
+  "services/noded/units/noded.service": {
+    "sha256": "0f78b7273989f45446ce9cf0777197e49e38fbe455378c8c757938a8ac0b4a17",
+    "reason": "environment discovery: runs as noded, pins MIXOS_RUN"
+  },
+  "services/noded/units/sysusers.conf": {
+    "sha256": "ae7ef8d4ed0a2a48967e2ec1930646171aa33a58c4f32d9c9a041386c836b68d",
+    "reason": "environment discovery: creates the noded system account"
+  }
+}

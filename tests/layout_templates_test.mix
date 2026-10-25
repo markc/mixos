@@ -5,6 +5,7 @@ $repo = dirname(dirname(realpath($0)))
 $renderer = require($repo .. "/share/layout/render.mix")
 $roots = {prefix: "/opt/mixos", share: "/opt/mixos/share", etc: "/etc/mixos", var: "/var/lib/mixos", cache: "/var/cache/mixos", run: "/run/mixos"}
 $manifest = load_data($repo .. "/share/layout/templates.mx")
+$changed = load_data($repo .. "/tests/layout_templates_changed.mx")
 $different = []
 $live = []
 $compared = []
@@ -13,8 +14,12 @@ for $entry in $manifest.files
   $source = read_file($path)
   $rendered = $renderer.external($source, $roots, $entry.kind)
   $rel = strip_prefix(realpath($path), $repo .. "/")
-  $original = run_argv(["git", "-C", $repo, "show", "f91c2a1f:" .. $rel])
-  if not $original.ok or $rendered != $original.stdout then push($different, $rel) end
+  if has_key($changed, $rel) then
+    if hash_sha256($rendered) != $changed[$rel].sha256 then push($different, $rel) end
+  else
+    $original = run_argv(["git", "-C", $repo, "show", "f91c2a1f:" .. $rel])
+    if not $original.ok or $rendered != $original.stdout then push($different, $rel) end
+  end
   $installed = $renderer.render($entry.target, $roots)
   if not starts_with($installed, $roots.prefix .. "/") then raise("LAYOUT_TARGET", "template leaves prefix") end
   if any(["bridged", "notifyd", "releasesd", "toolsd"], fn($owner) = contains($entry.source, "/" .. $owner .. "/")) then
