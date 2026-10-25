@@ -165,7 +165,8 @@ impl EtcEnvironment {
             exe: self.exe,
             ..config::Environment::default()
         };
-        let dirs = config::Dirs::from_environment(&environment).expect("invalid MixOS startup layout");
+        let dirs =
+            config::Dirs::from_environment(&environment).expect("invalid MixOS startup layout");
         (dirs.get(config::Dir::Etc).to_owned(), isolated)
     }
 }

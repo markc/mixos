@@ -1223,7 +1223,11 @@ fn launch(path: &Path, folder: bool) -> io::Result<()> {
     } else {
         ::paths::bin("ced")
     };
-    let program = if native.is_file() { native } else { std::path::PathBuf::from("xdg-open") };
+    let program = if native.is_file() {
+        native
+    } else {
+        std::path::PathBuf::from("xdg-open")
+    };
     let mut child = Command::new(program)
         .arg(path)
         .stdin(Stdio::null())

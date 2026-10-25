@@ -77,7 +77,13 @@ impl UnixConnectOptions {
             .or(self.configured_endpoint.as_deref())
             .unwrap_or_else(|| {
                 static ENDPOINT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-                ENDPOINT.get_or_init(|| paths::system_default(paths::Root::Run).expect("built-in system run default").join("noded/bus.sock")).as_path()
+                ENDPOINT
+                    .get_or_init(|| {
+                        paths::system_default(paths::Root::Run)
+                            .expect("built-in system run default")
+                            .join("noded/bus.sock")
+                    })
+                    .as_path()
             })
     }
 }

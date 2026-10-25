@@ -12,73 +12,161 @@ pub const DEFAULT_PREFIX: &str = "/opt/mixos";
 pub const DEFAULT_SHARE: &str = "/opt/mixos/share";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub enum Root { Prefix, Share, Etc, Var, Run, Cache }
+pub enum Root {
+    Prefix,
+    Share,
+    Etc,
+    Var,
+    Run,
+    Cache,
+}
 impl Root {
-    pub const ALL: [Self; 6] = [Self::Prefix, Self::Share, Self::Etc, Self::Var, Self::Run, Self::Cache];
+    pub const ALL: [Self; 6] = [
+        Self::Prefix,
+        Self::Share,
+        Self::Etc,
+        Self::Var,
+        Self::Run,
+        Self::Cache,
+    ];
     pub const fn name(self) -> &'static str {
-        match self { Self::Prefix => "prefix", Self::Share => "share", Self::Etc => "etc", Self::Var => "var", Self::Run => "run", Self::Cache => "cache" }
+        match self {
+            Self::Prefix => "prefix",
+            Self::Share => "share",
+            Self::Etc => "etc",
+            Self::Var => "var",
+            Self::Run => "run",
+            Self::Cache => "cache",
+        }
     }
     pub const fn env_var(self) -> &'static str {
-        match self { Self::Prefix => "MIXOS_PREFIX", Self::Share => "MIXOS_SHARE", Self::Etc => "MIXOS_ETC", Self::Var => "MIXOS_VAR", Self::Run => "MIXOS_RUN", Self::Cache => "MIXOS_CACHE" }
+        match self {
+            Self::Prefix => "MIXOS_PREFIX",
+            Self::Share => "MIXOS_SHARE",
+            Self::Etc => "MIXOS_ETC",
+            Self::Var => "MIXOS_VAR",
+            Self::Run => "MIXOS_RUN",
+            Self::Cache => "MIXOS_CACHE",
+        }
     }
     pub fn parse(name: &str) -> Result<Self> {
-        Self::ALL.into_iter().find(|r| r.name() == name).ok_or_else(|| format!("unknown MixOS root: {name}"))
+        Self::ALL
+            .into_iter()
+            .find(|r| r.name() == name)
+            .ok_or_else(|| format!("unknown MixOS root: {name}"))
     }
 }
 
 /// Original four-directory API. ALL and env_var retain main's contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Dir { Etc, Var, Run, Share }
+pub enum Dir {
+    Etc,
+    Var,
+    Run,
+    Share,
+}
 impl Dir {
     pub const ALL: [Self; 4] = [Self::Etc, Self::Var, Self::Run, Self::Share];
-    pub const fn env_var(self) -> &'static str { self.root().env_var() }
+    pub const fn env_var(self) -> &'static str {
+        self.root().env_var()
+    }
     pub const fn root(self) -> Root {
-        match self { Self::Etc => Root::Etc, Self::Var => Root::Var, Self::Run => Root::Run, Self::Share => Root::Share }
+        match self {
+            Self::Etc => Root::Etc,
+            Self::Var => Root::Var,
+            Self::Run => Root::Run,
+            Self::Share => Root::Share,
+        }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tier { System, User }
+pub enum Tier {
+    System,
+    User,
+}
 impl Tier {
     pub fn parse(value: &str) -> Result<Self> {
-        match value { "system" => Ok(Self::System), "user" => Ok(Self::User), _ => Err("tier must be system or user".into()) }
+        match value {
+            "system" => Ok(Self::System),
+            "user" => Ok(Self::User),
+            _ => Err("tier must be system or user".into()),
+        }
     }
-    pub const fn uid(self) -> u32 { match self { Self::System => 0, Self::User => 1000 } }
+    pub const fn uid(self) -> u32 {
+        match self {
+            Self::System => 0,
+            Self::User => 1000,
+        }
+    }
 }
 
 /// Only consumed keys are read, using var_os. Empty variables are unset.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Environment {
-    pub root: Option<PathBuf>, pub etc: Option<PathBuf>, pub var: Option<PathBuf>,
-    pub run: Option<PathBuf>, pub share: Option<PathBuf>, pub prefix: Option<PathBuf>, pub cache: Option<PathBuf>,
-    pub xdg_config_home: Option<PathBuf>, pub xdg_data_home: Option<PathBuf>,
-    pub xdg_runtime_dir: Option<PathBuf>, pub xdg_cache_home: Option<PathBuf>,
-    pub home: Option<PathBuf>, pub uid: u32,
+    pub root: Option<PathBuf>,
+    pub etc: Option<PathBuf>,
+    pub var: Option<PathBuf>,
+    pub run: Option<PathBuf>,
+    pub share: Option<PathBuf>,
+    pub prefix: Option<PathBuf>,
+    pub cache: Option<PathBuf>,
+    pub xdg_config_home: Option<PathBuf>,
+    pub xdg_data_home: Option<PathBuf>,
+    pub xdg_runtime_dir: Option<PathBuf>,
+    pub xdg_cache_home: Option<PathBuf>,
+    pub home: Option<PathBuf>,
+    pub uid: u32,
     /// Explicit executable input for pure tests. None preserves the historical
     /// install prefix in the legacy Dirs::resolve compatibility API.
     pub exe: Option<PathBuf>,
 }
 impl Environment {
-    pub fn from_lookup(get: impl Fn(&str) -> Option<PathBuf>, uid: u32, exe: Option<PathBuf>) -> Self {
+    pub fn from_lookup(
+        get: impl Fn(&str) -> Option<PathBuf>,
+        uid: u32,
+        exe: Option<PathBuf>,
+    ) -> Self {
         let var = |key: &str| -> Option<PathBuf> { get(key).filter(|p| !p.as_os_str().is_empty()) };
-        Self { root: var(ROOT_VAR), etc: var("MIXOS_ETC"), var: var("MIXOS_VAR"), run: var("MIXOS_RUN"),
-            share: var("MIXOS_SHARE"), prefix: var("MIXOS_PREFIX"), cache: var("MIXOS_CACHE"),
-            xdg_config_home: var("XDG_CONFIG_HOME"), xdg_data_home: var("XDG_DATA_HOME"),
-            xdg_runtime_dir: var("XDG_RUNTIME_DIR"), xdg_cache_home: var("XDG_CACHE_HOME"), home: var("HOME"), uid, exe }
+        Self {
+            root: var(ROOT_VAR),
+            etc: var("MIXOS_ETC"),
+            var: var("MIXOS_VAR"),
+            run: var("MIXOS_RUN"),
+            share: var("MIXOS_SHARE"),
+            prefix: var("MIXOS_PREFIX"),
+            cache: var("MIXOS_CACHE"),
+            xdg_config_home: var("XDG_CONFIG_HOME"),
+            xdg_data_home: var("XDG_DATA_HOME"),
+            xdg_runtime_dir: var("XDG_RUNTIME_DIR"),
+            xdg_cache_home: var("XDG_CACHE_HOME"),
+            home: var("HOME"),
+            uid,
+            exe,
+        }
     }
     pub fn current() -> Self {
-        Self::from_lookup(|name| std::env::var_os(name).map(PathBuf::from), current_uid(),
-            std::fs::read_link("/proc/self/exe").or_else(|_| std::env::current_exe()).ok())
+        Self::from_lookup(
+            |name| std::env::var_os(name).map(PathBuf::from),
+            current_uid(),
+            std::fs::read_link("/proc/self/exe")
+                .or_else(|_| std::env::current_exe())
+                .ok(),
+        )
     }
 }
 pub fn current_uid() -> u32 {
-    unsafe extern "C" { fn getuid() -> u32; }
+    unsafe extern "C" {
+        fn getuid() -> u32;
+    }
     // SAFETY: getuid has no arguments, cannot fail, and does not mutate state.
     unsafe { getuid() }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Dirs { roots: BTreeMap<Root, PathBuf> }
+pub struct Dirs {
+    roots: BTreeMap<Root, PathBuf>,
+}
 pub type Layout = Dirs;
 impl Dirs {
     /// Main's pure API. Invalid new prefix/layout input is a startup error;
@@ -92,54 +180,147 @@ impl Dirs {
         let settings = parse_layout(source)?;
         let prefix = match &env.prefix {
             Some(p) => p.clone(),
-            None => match &env.exe { Some(exe) => prefix_from_exe(exe)?, None => PathBuf::from(DEFAULT_PREFIX) },
+            None => match &env.exe {
+                Some(exe) => prefix_from_exe(exe)?,
+                None => PathBuf::from(DEFAULT_PREFIX),
+            },
         };
         absolute(&prefix)?;
         let home = env.home.clone().unwrap_or_else(|| PathBuf::from("/root"));
-        let xdg = |base: &Option<PathBuf>, default: &str| base.clone().filter(|p| p.is_absolute())
-            .unwrap_or_else(|| home.join(default)).join("mixos");
+        let xdg = |base: &Option<PathBuf>, default: &str| {
+            base.clone()
+                .filter(|p| p.is_absolute())
+                .unwrap_or_else(|| home.join(default))
+                .join("mixos")
+        };
         let choose = |root: Root, direct: &Option<PathBuf>, suffix: &str, fallback: PathBuf| {
-            direct.clone().or_else(|| env.root.as_ref().map(|r| r.join(suffix)))
-                .or_else(|| settings.get(&root).cloned()).unwrap_or(fallback)
+            direct
+                .clone()
+                .or_else(|| env.root.as_ref().map(|r| r.join(suffix)))
+                .or_else(|| settings.get(&root).cloned())
+                .unwrap_or(fallback)
         };
         let user = env.uid != 0;
-        let etc = choose(Root::Etc, &env.etc, "etc", if user { xdg(&env.xdg_config_home, ".config") } else { "/etc/mixos".into() });
-        let var = choose(Root::Var, &env.var, "var", if user { xdg(&env.xdg_data_home, ".local/share") } else { "/var/lib/mixos".into() });
-        let run = choose(Root::Run, &env.run, "run", if user {
-            env.xdg_runtime_dir.clone().filter(|p| p.is_absolute()).map(|p| p.join("mixos")).unwrap_or_else(|| "/tmp/mixos-run".into())
-        } else { "/run/mixos".into() });
-        let cache = choose(Root::Cache, &env.cache, "cache", if user { xdg(&env.xdg_cache_home, ".cache") } else { "/var/cache/mixos".into() });
-        let share = env.share.clone().filter(|p| p.is_absolute()).or_else(|| settings.get(&Root::Share).cloned())
+        let etc = choose(
+            Root::Etc,
+            &env.etc,
+            "etc",
+            if user {
+                xdg(&env.xdg_config_home, ".config")
+            } else {
+                "/etc/mixos".into()
+            },
+        );
+        let var = choose(
+            Root::Var,
+            &env.var,
+            "var",
+            if user {
+                xdg(&env.xdg_data_home, ".local/share")
+            } else {
+                "/var/lib/mixos".into()
+            },
+        );
+        let run = choose(
+            Root::Run,
+            &env.run,
+            "run",
+            if user {
+                env.xdg_runtime_dir
+                    .clone()
+                    .filter(|p| p.is_absolute())
+                    .map(|p| p.join("mixos"))
+                    .unwrap_or_else(|| "/tmp/mixos-run".into())
+            } else {
+                "/run/mixos".into()
+            },
+        );
+        let cache = choose(
+            Root::Cache,
+            &env.cache,
+            "cache",
+            if user {
+                xdg(&env.xdg_cache_home, ".cache")
+            } else {
+                "/var/cache/mixos".into()
+            },
+        );
+        let share = env
+            .share
+            .clone()
+            .filter(|p| p.is_absolute())
+            .or_else(|| settings.get(&Root::Share).cloned())
             .unwrap_or_else(|| prefix.join("share"));
-        Ok(Self { roots: BTreeMap::from([(Root::Prefix, prefix), (Root::Share, share), (Root::Etc, etc), (Root::Var, var), (Root::Run, run), (Root::Cache, cache)]) })
+        Ok(Self {
+            roots: BTreeMap::from([
+                (Root::Prefix, prefix),
+                (Root::Share, share),
+                (Root::Etc, etc),
+                (Root::Var, var),
+                (Root::Run, run),
+                (Root::Cache, cache),
+            ]),
+        })
     }
     /// Explicit env, uid and executable inputs. from_source does no file I/O.
     pub fn from_environment(env: &Environment) -> Result<Self> {
         let mut env = env.clone();
-        if let Some(exe) = &env.exe { env.exe = Some(exe.canonicalize().unwrap_or_else(|_| exe.clone())); }
+        if let Some(exe) = &env.exe {
+            env.exe = Some(exe.canonicalize().unwrap_or_else(|_| exe.clone()));
+        }
         let prefix = Self::from_source(&env, "")?.try_root(Root::Prefix)?;
         Self::from_source(&env, &read_layout(&prefix)?)
     }
     pub fn from_lookup(get: impl Fn(&str) -> Option<PathBuf>) -> Result<Self> {
-        let exe = std::fs::read_link("/proc/self/exe").or_else(|_| std::env::current_exe()).map_err(|e| e.to_string())?;
+        let exe = std::fs::read_link("/proc/self/exe")
+            .or_else(|_| std::env::current_exe())
+            .map_err(|e| e.to_string())?;
         Self::from_environment(&Environment::from_lookup(get, current_uid(), Some(exe)))
     }
     /// Installer defaults ignore self-location, all MIXOS overrides and files.
     pub fn defaults(tier: &str, prefix: Option<&Path>, inputs: &Environment) -> Result<Self> {
         let uid = Tier::parse(tier)?.uid();
-        let prefix = match (prefix, uid) { (Some(p), _) => p.to_path_buf(), (None, 0) => DEFAULT_PREFIX.into(), _ => return Err("user installation defaults require --prefix".into()) };
-        Self::from_source(&Environment { uid, prefix: Some(prefix), home: inputs.home.clone(),
-            xdg_config_home: inputs.xdg_config_home.clone(), xdg_data_home: inputs.xdg_data_home.clone(),
-            xdg_runtime_dir: inputs.xdg_runtime_dir.clone(), xdg_cache_home: inputs.xdg_cache_home.clone(), ..Environment::default() }, "")
+        let prefix = match (prefix, uid) {
+            (Some(p), _) => p.to_path_buf(),
+            (None, 0) => DEFAULT_PREFIX.into(),
+            _ => return Err("user installation defaults require --prefix".into()),
+        };
+        Self::from_source(
+            &Environment {
+                uid,
+                prefix: Some(prefix),
+                home: inputs.home.clone(),
+                xdg_config_home: inputs.xdg_config_home.clone(),
+                xdg_data_home: inputs.xdg_data_home.clone(),
+                xdg_runtime_dir: inputs.xdg_runtime_dir.clone(),
+                xdg_cache_home: inputs.xdg_cache_home.clone(),
+                ..Environment::default()
+            },
+            "",
+        )
     }
-    pub fn get(&self, dir: Dir) -> &Path { &self.roots[&dir.root()] }
-    pub fn try_root(&self, root: Root) -> Result<PathBuf> { self.roots.get(&root).cloned().ok_or_else(|| format!("unresolved root: {}", root.name())) }
+    pub fn get(&self, dir: Dir) -> &Path {
+        &self.roots[&dir.root()]
+    }
+    pub fn try_root(&self, root: Root) -> Result<PathBuf> {
+        self.roots
+            .get(&root)
+            .cloned()
+            .ok_or_else(|| format!("unresolved root: {}", root.name()))
+    }
     /// Startup convenience, with the same explicit expect contract as path().
-    pub fn root(&self, root: Root) -> PathBuf { self.try_root(root).expect("unresolved MixOS startup root") }
+    pub fn root(&self, root: Root) -> PathBuf {
+        self.try_root(root).expect("unresolved MixOS startup root")
+    }
     pub fn path(&self, root: Root, rel: impl AsRef<Path>) -> Result<PathBuf> {
         let mut tail = PathBuf::new();
         for part in rel.as_ref().components() {
-            match part { Component::Normal(s) => tail.push(s), Component::CurDir => {}, Component::ParentDir if tail.pop() => {}, _ => return Err("MixOS relative path escapes its root".into()) }
+            match part {
+                Component::Normal(s) => tail.push(s),
+                Component::CurDir => {}
+                Component::ParentDir if tail.pop() => {}
+                _ => return Err("MixOS relative path escapes its root".into()),
+            }
         }
         Ok(self.try_root(root)?.join(tail))
     }
@@ -147,21 +328,39 @@ impl Dirs {
         if let Some(logical) = value.strip_prefix("mixos:") {
             let (root, rel) = logical.split_once('/').unwrap_or((logical, ""));
             self.path(Root::parse(root)?, rel)
-        } else { Ok(value.into()) }
+        } else {
+            Ok(value.into())
+        }
     }
 }
 
 /// Pure derivation from an already canonical executable. from_environment
 /// canonicalises explicit inputs; current() obtains the real /proc target.
 pub fn prefix_from_exe(exe: &Path) -> Result<PathBuf> {
-    let prefix = exe.parent().and_then(Path::parent).ok_or("executable has no prefix parent")?.to_path_buf();
+    let prefix = exe
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("executable has no prefix parent")?
+        .to_path_buf();
     absolute(&prefix)?;
     Ok(prefix)
 }
 fn absolute(path: &Path) -> Result<()> {
-    if !path.is_absolute() || path.components().any(|c| c == Component::ParentDir) || path.as_os_str().as_encoded_bytes().iter().any(|c| c.is_ascii_control()) {
-        Err(format!("MixOS root must be an absolute path without '..' or controls: {}", path.display()))
-    } else { Ok(()) }
+    if !path.is_absolute()
+        || path.components().any(|c| c == Component::ParentDir)
+        || path
+            .as_os_str()
+            .as_encoded_bytes()
+            .iter()
+            .any(|c| c.is_ascii_control())
+    {
+        Err(format!(
+            "MixOS root must be an absolute path without '..' or controls: {}",
+            path.display()
+        ))
+    } else {
+        Ok(())
+    }
 }
 fn read_layout(prefix: &Path) -> Result<String> {
     use std::io::Read;
@@ -173,54 +372,109 @@ fn read_layout(prefix: &Path) -> Result<String> {
     };
     let mut bytes = Vec::new();
     input.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-    if bytes.len() > 65536 { return Err("layout.mx exceeds 64 KiB".into()); }
+    if bytes.len() > 65536 {
+        return Err("layout.mx exceeds 64 KiB".into());
+    }
     String::from_utf8(bytes).map_err(|_| "layout.mx is not UTF-8".into())
 }
 
-struct Snapshot { process: Layout, user: Layout, system: Layout }
+struct Snapshot {
+    process: Layout,
+    user: Layout,
+    system: Layout,
+}
 static SNAPSHOT: OnceLock<Result<Snapshot>> = OnceLock::new();
 fn snapshot() -> Result<&'static Snapshot> {
-    SNAPSHOT.get_or_init(|| {
-        let env = Environment::current();
-        if env.prefix.is_none() && env.exe.is_none() { return Err("cannot locate the running executable".into()); }
-        let prefix = Layout::from_source(&env, "")?.try_root(Root::Prefix)?;
-        let source = read_layout(&prefix)?;
-        let process = Layout::from_source(&env, &source)?;
-        let user = Layout::from_source(&Environment { uid: 1000, ..env.clone() }, &source)?;
-        let system = Layout::from_source(&Environment { uid: 0, ..env }, &source)?;
-        Ok(Snapshot { process, user, system })
-    }).as_ref().map_err(Clone::clone)
+    SNAPSHOT
+        .get_or_init(|| {
+            let env = Environment::current();
+            if env.prefix.is_none() && env.exe.is_none() {
+                return Err("cannot locate the running executable".into());
+            }
+            let prefix = Layout::from_source(&env, "")?.try_root(Root::Prefix)?;
+            let source = read_layout(&prefix)?;
+            let process = Layout::from_source(&env, &source)?;
+            let user = Layout::from_source(
+                &Environment {
+                    uid: 1000,
+                    ..env.clone()
+                },
+                &source,
+            )?;
+            let system = Layout::from_source(&Environment { uid: 0, ..env }, &source)?;
+            Ok(Snapshot {
+                process,
+                user,
+                system,
+            })
+        })
+        .as_ref()
+        .map_err(Clone::clone)
 }
 impl Layout {
-    pub fn discover() -> Result<Self> { Ok(snapshot()?.process.clone()) }
+    pub fn discover() -> Result<Self> {
+        Ok(snapshot()?.process.clone())
+    }
     pub fn for_tier(tier: Tier) -> Result<Self> {
         let snapshot = snapshot()?;
-        Ok(match tier { Tier::System => &snapshot.system, Tier::User => &snapshot.user }.clone())
+        Ok(match tier {
+            Tier::System => &snapshot.system,
+            Tier::User => &snapshot.user,
+        }
+        .clone())
     }
 }
-pub fn try_root(root: Root) -> Result<PathBuf> { snapshot()?.process.try_root(root) }
-pub fn try_system(root: Root) -> Result<PathBuf> { snapshot()?.system.try_root(root) }
+pub fn try_root(root: Root) -> Result<PathBuf> {
+    snapshot()?.process.try_root(root)
+}
+pub fn try_system(root: Root) -> Result<PathBuf> {
+    snapshot()?.system.try_root(root)
+}
 /// A historical fixed FHS fallback, explicitly independent of process
 /// overrides. APIs that promised to ignore MIXOS_RUN (native bus fallback)
 /// or kept storage at a fixed system path use this rather than moving data.
 pub fn system_default(root: Root) -> Result<PathBuf> {
-    if matches!(root, Root::Prefix | Root::Share) { return Err("installed roots require self-location".into()); }
+    if matches!(root, Root::Prefix | Root::Share) {
+        return Err("installed roots require self-location".into());
+    }
     static DEFAULTS: OnceLock<Result<Layout>> = OnceLock::new();
-    DEFAULTS.get_or_init(|| Layout::defaults("system", None, &Environment::default())).as_ref().map_err(Clone::clone)?.try_root(root)
+    DEFAULTS
+        .get_or_init(|| Layout::defaults("system", None, &Environment::default()))
+        .as_ref()
+        .map_err(Clone::clone)?
+        .try_root(root)
 }
 /// Startup convenience. Invalid layout is a startup error; fallible operations
 /// should use try_root/try_system/resolve instead.
-pub fn root(root: Root) -> PathBuf { try_root(root).expect("invalid MixOS startup layout") }
+pub fn root(root: Root) -> PathBuf {
+    try_root(root).expect("invalid MixOS startup layout")
+}
 /// Explicit system tier, retaining per-root override/MIXOS/layout precedence.
-pub fn system(root: Root) -> PathBuf { try_system(root).expect("invalid MixOS system startup layout") }
-pub fn path(dir: Dir) -> PathBuf { root(dir.root()) }
-pub fn bin(rel: impl AsRef<Path>) -> PathBuf { snapshot().and_then(|s| s.process.path(Root::Prefix, Path::new("bin").join(rel))).expect("invalid MixOS startup binary path") }
-pub fn share(rel: impl AsRef<Path>) -> PathBuf { snapshot().and_then(|s| s.process.path(Root::Share, rel)).expect("invalid MixOS startup shared path") }
-pub fn resolve(value: impl AsRef<str>) -> Result<PathBuf> { snapshot()?.process.resolve_path(value.as_ref()) }
+pub fn system(root: Root) -> PathBuf {
+    try_system(root).expect("invalid MixOS system startup layout")
+}
+pub fn path(dir: Dir) -> PathBuf {
+    root(dir.root())
+}
+pub fn bin(rel: impl AsRef<Path>) -> PathBuf {
+    snapshot()
+        .and_then(|s| s.process.path(Root::Prefix, Path::new("bin").join(rel)))
+        .expect("invalid MixOS startup binary path")
+}
+pub fn share(rel: impl AsRef<Path>) -> PathBuf {
+    snapshot()
+        .and_then(|s| s.process.path(Root::Share, rel))
+        .expect("invalid MixOS startup shared path")
+}
+pub fn resolve(value: impl AsRef<str>) -> Result<PathBuf> {
+    snapshot()?.process.resolve_path(value.as_ref())
+}
 
 mod document;
 /// Strict, bounded data, exported for cross-parser contract tests.
-pub fn parse_layout(source: &str) -> Result<BTreeMap<Root, PathBuf>> { document::parse(source) }
+pub fn parse_layout(source: &str) -> Result<BTreeMap<Root, PathBuf>> {
+    document::parse(source)
+}
 
 #[cfg(test)]
 mod layout_tests;

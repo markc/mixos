@@ -732,7 +732,10 @@ fn layout_defaults(args: &[String]) -> Result<std::collections::BTreeMap<String,
     for root in ::paths::Root::ALL {
         // All roots are present, including main's user runtime fallback.
         if let Ok(value) = layout.try_root(root) {
-            let value = value.into_os_string().into_string().map_err(|_| format!("{} default is not UTF-8", root.name()))?;
+            let value = value
+                .into_os_string()
+                .into_string()
+                .map_err(|_| format!("{} default is not UTF-8", root.name()))?;
             out.insert(root.name().to_string(), value);
         }
     }

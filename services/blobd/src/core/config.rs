@@ -318,7 +318,11 @@ pub type ByteSize = u64;
 
 /// The documented default root, used when neither `root:` nor the
 /// unit's `$STATE_DIRECTORY` names one.
-fn default_system_root() -> PathBuf { paths::system_default(paths::Root::Var).expect("built-in system var default").join("blobd") }
+fn default_system_root() -> PathBuf {
+    paths::system_default(paths::Root::Var)
+        .expect("built-in system var default")
+        .join("blobd")
+}
 
 /// The root when the config sets none (m10): systemd's
 /// `$STATE_DIRECTORY` (the unit's `StateDirectory`, a named instance's

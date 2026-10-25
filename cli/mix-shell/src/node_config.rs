@@ -170,7 +170,8 @@ fn parse_native_endpoint(contents: &str) -> Result<Option<PathBuf>, &'static str
 fn paths_from_etc(etc: PathBuf, mixos_etc_set: bool) -> Vec<PathBuf> {
     let mut dirs = vec![etc];
     if !mixos_etc_set {
-        let system = ::paths::system_default(::paths::Root::Etc).expect("built-in system etc default");
+        let system =
+            ::paths::system_default(::paths::Root::Etc).expect("built-in system etc default");
         if !dirs.contains(&system) {
             dirs.push(system);
         }

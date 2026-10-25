@@ -226,9 +226,11 @@ impl Default for NodedConfig {
 impl NodedConfig {
     /// Client resolution must never derive the system endpoint from user XDG.
     pub fn unix_endpoint(&self) -> std::path::PathBuf {
-        self.unix_socket
-            .clone()
-            .unwrap_or_else(|| paths::system_default(paths::Root::Run).expect("built-in system run default").join("noded/bus.sock"))
+        self.unix_socket.clone().unwrap_or_else(|| {
+            paths::system_default(paths::Root::Run)
+                .expect("built-in system run default")
+                .join("noded/bus.sock")
+        })
     }
 
     /// A broker publishes its resolved endpoint through noded.ping. System
@@ -289,7 +291,8 @@ fn has_override(value: Option<std::ffi::OsString>) -> bool {
 fn build_search_paths(primary_dir: &Path, mixos_etc_set: bool) -> Vec<PathBuf> {
     let mut dirs = vec![primary_dir.to_path_buf()];
     if !mixos_etc_set {
-        let system = ::paths::system_default(::paths::Root::Etc).expect("built-in system etc default");
+        let system =
+            ::paths::system_default(::paths::Root::Etc).expect("built-in system etc default");
         if !dirs.contains(&system) {
             dirs.push(system);
         }

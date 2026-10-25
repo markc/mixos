@@ -48,7 +48,9 @@ pub(super) fn parse(source: &str) -> Result<BTreeMap<Root, PathBuf>> {
             s
         };
         let root = Root::parse(&key)?;
-        if root == Root::Prefix { return Err("layout.mx refuses a prefix key; use MIXOS_PREFIX".into()); }
+        if root == Root::Prefix {
+            return Err("layout.mx refuses a prefix key; use MIXOS_PREFIX".into());
+        }
         p.space();
         if p.chars.next() != Some(':') {
             return Err("expected ':' in layout.mx".into());

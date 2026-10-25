@@ -13904,7 +13904,9 @@ pub(crate) fn canonicalize_path(path: &str) -> Option<String> {
 fn builtin_mixos_path(args: Vec<Value>) -> MixResult<Option<Value>> {
     let error = |msg: String| MixError::RuntimeError { span: None, msg };
     if !(1..=3).contains(&args.len()) {
-        return Err(error("mixos_path expects root[, rel[, {tier: system|user}]]".into()));
+        return Err(error(
+            "mixos_path expects root[, rel[, {tier: system|user}]]".into(),
+        ));
     }
     let Value::String(name) = &args[0] else {
         return Err(error("mixos_path root must be a string".into()));
@@ -13912,15 +13914,25 @@ fn builtin_mixos_path(args: Vec<Value>) -> MixResult<Option<Value>> {
     let layout = match args.get(2) {
         None => paths::Layout::discover(),
         Some(Value::Map(options)) => {
-            if options.len() != 1 { return Err(error("mixos_path opts accepts only tier".into())); }
-            let Some(Value::String(tier)) = options.get("tier") else { return Err(error("mixos_path tier must be system or user".into())); };
+            if options.len() != 1 {
+                return Err(error("mixos_path opts accepts only tier".into()));
+            }
+            let Some(Value::String(tier)) = options.get("tier") else {
+                return Err(error("mixos_path tier must be system or user".into()));
+            };
             paths::Layout::for_tier(paths::Tier::parse(tier).map_err(error)?)
         }
         _ => return Err(error("mixos_path opts must be a map".into())),
-    }.map_err(error)?;
+    }
+    .map_err(error)?;
     let path = if name.starts_with("mixos:") {
-        if args.get(1).is_some_and(|v| !matches!(v, Value::String(s) if s.is_empty())) {
-            return Err(error("a logical path cannot have an additional relative path".into()));
+        if args
+            .get(1)
+            .is_some_and(|v| !matches!(v, Value::String(s) if s.is_empty()))
+        {
+            return Err(error(
+                "a logical path cannot have an additional relative path".into(),
+            ));
         }
         layout.resolve_path(name).map_err(error)?
     } else {

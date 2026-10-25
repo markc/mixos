@@ -20,7 +20,9 @@ pub const DEFAULT_NODED_URL: &str = "ws://127.0.0.1:4200/ws";
 const URL_VAR: &str = "MIXOS_NODED_URL";
 const CONFIG_VAR: &str = "MIXOS_NODE_CONFIG";
 const CONFIG_FILE: &str = "node.conf.mix";
-fn system_etc() -> PathBuf { ::paths::system_default(::paths::Root::Etc).expect("built-in system etc default") }
+fn system_etc() -> PathBuf {
+    ::paths::system_default(::paths::Root::Etc).expect("built-in system etc default")
+}
 const DEFAULT_PORT: u16 = 4200;
 
 /// The broker WebSocket URL for this node.
