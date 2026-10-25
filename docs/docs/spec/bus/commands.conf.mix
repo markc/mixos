@@ -209,7 +209,8 @@
     {name:"prefs.execute", owner:"prefs", version:"0.2.0", status:"accepted", class:"intent", schema:"action::ExecuteRequest"},
     {name:"prefs.quit", owner:"prefs", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"prefs.search", owner:"prefs", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"prefs.section", owner:"prefs", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"}, -- pages: appearance, text_and_fonts, windows, apps_email, apps_term, apps_ced, accessibility, software, wallpaper
+    -- Pages: appearance, text_and_fonts, windows, apps_email, apps_term, apps_ced, accessibility, software, wallpaper.
+    {name:"prefs.section", owner:"prefs", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"prefs.select", owner:"prefs", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"prefs.apps", owner:"prefs", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
     {name:"prefs.appearance", owner:"prefs", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},

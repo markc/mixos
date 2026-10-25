@@ -151,6 +151,7 @@ pub fn search(query: &str, label: impl Fn(&str) -> String) -> Vec<&'static Secti
                 .chain(s.aliases.iter().copied())
                 .chain(s.prefixes.iter().copied())
                 .any(|text| text.to_lowercase().contains(&query))
+                || s.prefixes.iter().any(|prefix| query.starts_with(prefix))
         })
         .collect()
 }

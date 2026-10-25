@@ -578,6 +578,7 @@ fn motion(
             }
         });
         ui.add(egui::Label::new(RichText::new(label("motion-note")).weak()).wrap());
+        panel::section_label(ui, &label("related-contrast"));
         command_button(
             ui,
             engine,
@@ -587,6 +588,7 @@ fn motion(
             false,
             events,
         );
+        panel::section_label(ui, &label("related-text-size"));
         command_button(
             ui,
             engine,
@@ -828,6 +830,7 @@ fn appearance(
     let title = label("section-appearance");
     panel::group(ui, "appearance", &[title.as_str()], |ui, _| {
         if let Some(look) = appearance_state(ui, engine, commands, strings, events) {
+            panel::section_label(ui, &label("appearance-theme"));
             look_controls(ui, engine, strings, look.clone(), events);
             ui.weak(label("look-style-note"));
             density(ui, engine, &look, events);
