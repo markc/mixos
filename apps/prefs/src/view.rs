@@ -540,20 +540,6 @@ fn font_family_controls(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut 
             });
         }
     });
-    if let Some(stored) = &engine.look.current {
-        let family = stored
-            .font_family
-            .clone()
-            .unwrap_or_else(|| label("fonts-family-design"));
-        let mono = stored
-            .mono_family
-            .clone()
-            .unwrap_or_else(|| label("fonts-mono-family-design"));
-        let note = label_with("fonts-stored", &[("family", &family), ("mono", &mono)]);
-        row(ui, "fonts-stored-note", "", |ui| {
-            ui.add(egui::Label::new(RichText::new(note).weak()).wrap());
-        });
-    }
     row(ui, "fonts-family-help", "", |ui| {
         ui.add(egui::Label::new(RichText::new(label("fonts-family-note")).weak()).wrap());
     });
@@ -762,13 +748,7 @@ fn interface_font_controls(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEven
                 events.push(UiEvent::Interface(InterfaceEdit::Size(Some(value))));
             }
             row(ui, "interface-size-default", "", |ui| {
-                if font.size.is_none() {
-                    ui.weak(label_with(
-                        "fonts-size-unset",
-                        &[("value", &format!("{design:.2}"))],
-                    ));
-                }
-                let text = label_with("fonts-size-design", &[("value", &format!("{design:.2}"))]);
+                let text = label("fonts-size-design");
                 if ui
                     .add_enabled(font.size.is_some(), PushButton::secondary(text))
                     .clicked()
@@ -954,6 +934,45 @@ fn choices<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, String)]
         }
     });
     picked
+}
+
+/// Equal-width columns, with choices spread evenly across the required rows.
+fn choice_grid<T>(
+    ui: &mut Ui,
+    options: &[(T, String)],
+    extra_width: f32,
+    mut render: impl FnMut(&mut Ui, &T, &str),
+) {
+    let gap = ui.spacing().item_spacing.x;
+    let widest = options.iter().fold(0.0_f32, |width, (_, text)| {
+        let galley = ui.painter().layout_no_wrap(
+            text.clone(),
+            egui::TextStyle::Button.resolve(ui.style()),
+            ui.visuals().text_color(),
+        );
+        width.max(galley.size().x + 2.0 * ui.spacing().button_padding.x + extra_width)
+    });
+    let available = ui.available_width();
+    let columns = (((available + gap) / (widest + gap)).floor() as usize)
+        .clamp(1, options.len());
+    let rows = options.len().div_ceil(columns);
+    let width = ((available - gap * (columns - 1) as f32) / columns as f32).max(0.0);
+    let mut start = 0;
+    ui.vertical(|ui| {
+        for row in 0..rows {
+            let count = options.len() / rows + usize::from(row < options.len() % rows);
+            ui.horizontal(|ui| {
+                for (value, text) in &options[start..start + count] {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(width, ui.spacing().interact_size.y),
+                        Layout::left_to_right(Align::Center),
+                        |ui| render(ui, value, text),
+                    );
+                }
+            });
+            start += count;
+        }
+    });
 }
 
 /// The Appearance editor: the session's look, edited as a draft the window
@@ -1387,49 +1406,28 @@ fn look_controls(
     events: &mut Vec<UiEvent>,
 ) {
     ui.add_enabled_ui(engine.can_edit_look(), |ui| {
-        // Two rows, as the Theme menu groups them: the hue schemes,
-        // then the chrome schemes.
         row(ui, "look-scheme", &label("look-scheme"), |ui| {
-            ui.vertical(|ui| {
-                for row in Scheme::ALL.chunks(6) {
-                    ui.horizontal_wrapped(|ui| {
-                        for &scheme in row {
-                            ui.spacing_mut().item_spacing.x = 6.0;
-                            let name = toolkit::action::label_text(
-                                strings,
-                                &format!("toolkit-theme-{}", scheme.name()),
-                            );
-                            let galley = ui.painter().layout_no_wrap(
-                                name.clone(),
-                                egui::TextStyle::Button.resolve(ui.style()),
-                                ui.visuals().text_color(),
-                            );
-                            let width = SWATCH
-                                + galley.size().x
-                                + ui.spacing().item_spacing.x
-                                + 2.0 * ui.spacing().button_padding.x;
-                            let clicked = ui
-                                .allocate_ui_with_layout(
-                                    egui::vec2(width, ui.spacing().interact_size.y),
-                                    Layout::left_to_right(Align::Center),
-                                    |ui| {
-                                        if let Some(swatch) = swatch(scheme, look.mode) {
-                                            paint_swatch(ui, swatch);
-                                        }
-                                        toolkit::selectable(ui, look.scheme == scheme, name)
-                                            .clicked()
-                                    },
-                                )
-                                .inner;
-                            if clicked && look.scheme != scheme {
-                                events.push(UiEvent::Look(Look {
-                                    scheme,
-                                    ..look.clone()
-                                }));
-                            }
-                            ui.add_space(8.0);
-                        }
-                    });
+            let schemes: Vec<_> = Scheme::ALL
+                .into_iter()
+                .map(|scheme| {
+                    let name = toolkit::action::label_text(
+                        strings,
+                        &format!("toolkit-theme-{}", scheme.name()),
+                    );
+                    (scheme, name)
+                })
+                .collect();
+            choice_grid(ui, &schemes, SWATCH + ui.spacing().item_spacing.x, |ui, &scheme, name| {
+                if let Some(swatch) = swatch(scheme, look.mode) {
+                    paint_swatch(ui, swatch);
+                }
+                if toolkit::selectable(ui, look.scheme == scheme, name).clicked()
+                    && look.scheme != scheme
+                {
+                    events.push(UiEvent::Look(Look {
+                        scheme,
+                        ..look.clone()
+                    }));
                 }
             });
         });
@@ -1468,12 +1466,16 @@ fn look_controls(
                             .map(|s| (Some(s), label(&format!("look-style-{}", s.name())))),
                     )
                     .collect();
-            if let Some(style) = choices(ui, look.style, &styles) {
-                events.push(UiEvent::Look(Look {
-                    style,
-                    ..look.clone()
-                }));
-            }
+            choice_grid(ui, &styles, 0.0, |ui, &style, text| {
+                if toolkit::selectable(ui, look.style == style, text).clicked()
+                    && look.style != style
+                {
+                    events.push(UiEvent::Look(Look {
+                        style,
+                        ..look.clone()
+                    }));
+                }
+            });
         });
     });
 }
@@ -1722,9 +1724,7 @@ mod numeric_tests {
             h.key_press(egui::Key::Tab);
             h.run();
             assert!(h.state().1.is_empty(), "viewing and tabbing write nothing");
-            if size.is_none() {
-                h.get_by_label("14.67 px · design default");
-            }
+            h.get_by_label("Use design default");
         }
     }
 
@@ -1746,7 +1746,7 @@ mod numeric_tests {
             );
         toolkit::install(&h.ctx, &toolkit::Theme::embedded());
         h.run();
-        h.get_by_label("Design default (14.67 px)").click();
+        h.get_by_label("Use design default").click();
         h.run();
         assert_eq!(h.state().1, [UiEvent::Interface(InterfaceEdit::Size(None))]);
         assert_eq!(
