@@ -157,7 +157,12 @@ pub fn view(
                 ui.small(&engine.release_status);
             }
         } else {
-            ui.add(icons::image_of(ui.ctx(), Icon::Plug, ICON, ui.visuals().weak_text_color()));
+            ui.add(icons::image_of(
+                ui.ctx(),
+                Icon::Plug,
+                ICON,
+                ui.visuals().weak_text_color(),
+            ));
         }
     });
     egui::Panel::left("editors")
@@ -264,17 +269,28 @@ fn problem_feedback(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
 const LABEL_WIDTH: f32 = 144.0;
 
 fn field_label(ui: &mut Ui, text: &str) -> egui::Response {
-    ui.allocate_ui_with_layout(egui::vec2(LABEL_WIDTH, ui.spacing().interact_size.y),
-        Layout::left_to_right(Align::Center), |ui| {
+    ui.allocate_ui_with_layout(
+        egui::vec2(LABEL_WIDTH, ui.spacing().interact_size.y),
+        Layout::left_to_right(Align::Center),
+        |ui| {
             ui.set_min_width(LABEL_WIDTH);
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
             ui.label(text)
-        }).inner
+        },
+    )
+    .inner
 }
 
 fn toggle(ui: &mut Ui, value: &mut bool, key: &str) -> bool {
     let response = ui.add(Toggle::new(value, ""));
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *value, label(key)));
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::Checkbox,
+            ui.is_enabled(),
+            *value,
+            label(key),
+        )
+    });
     response.changed()
 }
 
@@ -301,7 +317,11 @@ fn group_heading(ui: &mut Ui, key: &str, first: bool) {
         bars::hairline(ui);
     }
     ui.add_space(ui.spacing().item_spacing.y);
-    ui.label(RichText::new(label(key)).family(egui::FontFamily::Name(toolkit::fonts::HEADING.into())).strong());
+    ui.label(
+        RichText::new(label(key))
+            .family(egui::FontFamily::Name(toolkit::fonts::HEADING.into()))
+            .strong(),
+    );
     ui.add_space(ui.spacing().item_spacing.y);
 }
 
@@ -690,8 +710,7 @@ fn motion(
             });
             row(ui, "reduced-motion", &label("motion-reduce"), |ui| {
                 let mut reduced = look.reduced_motion;
-                if toggle(ui, &mut reduced, "motion-reduce")
-                {
+                if toggle(ui, &mut reduced, "motion-reduce") {
                     events.push(UiEvent::Appearance(AppearanceEdit::ReducedMotion(reduced)));
                 }
                 ui.add(egui::Label::new(RichText::new(label("motion-note")).weak()).wrap());
@@ -1173,8 +1192,7 @@ fn terminal_controls(
         &label("terminal-cursor-blink"),
         |ui| {
             let mut blink = term.cursor.blink;
-            if toggle(ui, &mut blink, "terminal-cursor-blink")
-            {
+            if toggle(ui, &mut blink, "terminal-cursor-blink") {
                 events.push(UiEvent::Terminal(Setting::CursorBlink(blink)));
             }
         },
@@ -1186,8 +1204,7 @@ fn terminal_controls(
         &label("terminal-copy-on-select"),
         |ui| {
             let mut copy = term.mouse.copy_on_select;
-            if toggle(ui, &mut copy, "terminal-copy-on-select")
-            {
+            if toggle(ui, &mut copy, "terminal-copy-on-select") {
                 events.push(UiEvent::Terminal(Setting::CopyOnSelect(copy)));
             }
         },
@@ -1373,76 +1390,76 @@ fn look_controls(
 ) {
     ui.add_enabled_ui(engine.can_edit_look(), |ui| {
         // Two rows, as the Theme menu groups them: the hue schemes,
-                // then the chrome schemes.
-                row(ui, "look-scheme", &label("look-scheme"), |ui| {
-                ui.vertical(|ui| {
-                    for row in Scheme::ALL.chunks(6) {
-                        ui.horizontal_wrapped(|ui| {
-                            for &scheme in row {
-                                ui.spacing_mut().item_spacing.x = 6.0;
-                                if let Some(swatch) = swatch(scheme, look.mode) {
-                                    paint_swatch(ui, swatch);
-                                }
-                                let name = toolkit::action::label_text(
-                                    strings,
-                                    &format!("toolkit-theme-{}", scheme.name()),
-                                );
-                                if toolkit::selectable(ui, look.scheme == scheme, name).clicked()
-                                    && look.scheme != scheme
-                                {
-                                    events.push(UiEvent::Look(Look {
-                                        scheme,
-                                        ..look.clone()
-                                    }));
-                                }
-                                ui.add_space(8.0);
+        // then the chrome schemes.
+        row(ui, "look-scheme", &label("look-scheme"), |ui| {
+            ui.vertical(|ui| {
+                for row in Scheme::ALL.chunks(6) {
+                    ui.horizontal_wrapped(|ui| {
+                        for &scheme in row {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            if let Some(swatch) = swatch(scheme, look.mode) {
+                                paint_swatch(ui, swatch);
                             }
-                        });
-                    }
-                });
-                });
+                            let name = toolkit::action::label_text(
+                                strings,
+                                &format!("toolkit-theme-{}", scheme.name()),
+                            );
+                            if toolkit::selectable(ui, look.scheme == scheme, name).clicked()
+                                && look.scheme != scheme
+                            {
+                                events.push(UiEvent::Look(Look {
+                                    scheme,
+                                    ..look.clone()
+                                }));
+                            }
+                            ui.add_space(8.0);
+                        }
+                    });
+                }
+            });
+        });
 
-                row(ui, "look-mode", &label("look-mode"), |ui| {
-                let modes: Vec<_> = Mode::ALL
-                    .into_iter()
-                    .map(|m| (m, label(&format!("look-mode-{}", m.name()))))
-                    .collect();
-                if let Some(mode) = choices(ui, look.mode, &modes) {
-                    events.push(UiEvent::Look(Look {
-                        mode,
-                        ..look.clone()
-                    }));
-                }
-                });
+        row(ui, "look-mode", &label("look-mode"), |ui| {
+            let modes: Vec<_> = Mode::ALL
+                .into_iter()
+                .map(|m| (m, label(&format!("look-mode-{}", m.name()))))
+                .collect();
+            if let Some(mode) = choices(ui, look.mode, &modes) {
+                events.push(UiEvent::Look(Look {
+                    mode,
+                    ..look.clone()
+                }));
+            }
+        });
 
-                row(ui, "look-contrast", &label("look-contrast"), |ui| {
-                let contrasts: Vec<_> = Contrast::ALL
-                    .into_iter()
-                    .map(|c| (c, label(&format!("look-contrast-{}", c.name()))))
+        row(ui, "look-contrast", &label("look-contrast"), |ui| {
+            let contrasts: Vec<_> = Contrast::ALL
+                .into_iter()
+                .map(|c| (c, label(&format!("look-contrast-{}", c.name()))))
+                .collect();
+            if let Some(contrast) = choices(ui, look.contrast, &contrasts) {
+                events.push(UiEvent::Look(Look {
+                    contrast,
+                    ..look.clone()
+                }));
+            }
+        });
+        row(ui, "look-style", &label("look-style"), |ui| {
+            let styles: Vec<(Option<Style>, String)> =
+                std::iter::once((None, label("look-style-own")))
+                    .chain(
+                        Style::ALL
+                            .into_iter()
+                            .map(|s| (Some(s), label(&format!("look-style-{}", s.name())))),
+                    )
                     .collect();
-                if let Some(contrast) = choices(ui, look.contrast, &contrasts) {
-                    events.push(UiEvent::Look(Look {
-                        contrast,
-                        ..look.clone()
-                    }));
-                }
-                });
-                row(ui, "look-style", &label("look-style"), |ui| {
-                let styles: Vec<(Option<Style>, String)> =
-                    std::iter::once((None, label("look-style-own")))
-                        .chain(
-                            Style::ALL
-                                .into_iter()
-                                .map(|s| (Some(s), label(&format!("look-style-{}", s.name())))),
-                        )
-                        .collect();
-                if let Some(style) = choices(ui, look.style, &styles) {
-                    events.push(UiEvent::Look(Look {
-                        style,
-                        ..look.clone()
-                    }));
-                }
-                });
+            if let Some(style) = choices(ui, look.style, &styles) {
+                events.push(UiEvent::Look(Look {
+                    style,
+                    ..look.clone()
+                }));
+            }
+        });
     });
 }
 
@@ -1780,16 +1797,24 @@ mod numeric_tests {
             engine.set_section(Section::Wallpapers);
             engine.ui.search = query.into();
             let commands = crate::actions::registry();
-            let mut h = Harness::builder().with_size(egui::vec2(300.0, 600.0)).build_ui(move |ui| {
-                editors(ui, &engine, &commands, &mut Vec::new());
-            });
+            let mut h = Harness::builder()
+                .with_size(egui::vec2(300.0, 600.0))
+                .build_ui(move |ui| {
+                    editors(ui, &engine, &commands, &mut Vec::new());
+                });
             toolkit::install(&h.ctx, &toolkit::Theme::embedded());
             h.run();
             if query.is_empty() {
                 assert!(h.query_by_label("Wallpaper").is_none());
-                assert_eq!(h.get_by_label("Appearance").accesskit_node().is_selected(), Some(true));
+                assert_eq!(
+                    h.get_by_label("Appearance").accesskit_node().toggled(),
+                    Some(egui::accesskit::Toggled::True)
+                );
             } else {
-                assert_eq!(h.get_by_label("Wallpaper").accesskit_node().is_selected(), Some(true));
+                assert_eq!(
+                    h.get_by_label("Wallpaper").accesskit_node().toggled(),
+                    Some(egui::accesskit::Toggled::True)
+                );
             }
         }
     }

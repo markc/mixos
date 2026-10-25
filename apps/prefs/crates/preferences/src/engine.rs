@@ -1334,6 +1334,21 @@ fn summary(label: Label, value: &Value) -> String {
 mod tests {
     use super::*;
     use crate::Category;
+
+    #[test]
+    fn software_feedback_never_adopts_settings_status_even_after_a_quiet_read() {
+        let mut e = listed();
+        let release = e.release_status.clone();
+        e.edit_terminal(crate::terminal::Setting::Term("BAD".into()));
+        assert_ne!(e.status, release);
+        assert_eq!(e.release_status, release);
+        e.start_with(Op::List, true);
+        let ticket = e.job.as_ref().unwrap().ticket;
+        e.released(ticket, ok(json!([])));
+        assert_eq!(e.release_status, release);
+        assert!(!e.release_failed);
+        assert_eq!(e.look.problem_source, Some(crate::Section::Terminal));
+    }
     #[test]
     fn bus_auto_first_detects_once_with_bounded_reply() {
         use design::decorations::{Resolver, SessionFacts, with_resolver};

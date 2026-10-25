@@ -111,7 +111,11 @@ pub fn controls(
                     }
                 });
             });
-            let fill_label = match kind { Kind::Colour => label("wallpaper-hex"), Kind::Image => label("wallpaper-path"), Kind::Theme => String::new() };
+            let fill_label = match kind {
+                Kind::Colour => label("wallpaper-hex"),
+                Kind::Image => label("wallpaper-path"),
+                Kind::Theme => String::new(),
+            };
             row(ui, "wallpaper-fill-row", &fill_label, |ui| match kind {
                 Kind::Theme => {
                     ui.label(
