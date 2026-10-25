@@ -354,17 +354,36 @@ impl Shell {
         saved.app.apply(&mut self.engine);
         self.restore = Some(crate::saved::Pending::new(&saved.app));
         crate::actions::set_choice(&mut self.engine, saved.window.theme.choice());
-        self.engine.ui.split = toolkit::saved::widgets::panel_share(&saved.widgets, "services", self.engine.ui.split);
-        self.engine.ui.dock_width = toolkit::saved::widgets::panel_share(&saved.widgets, "traffic-right", self.engine.ui.dock_width);
-        self.engine.ui.dock_height = toolkit::saved::widgets::panel_share(&saved.widgets, "traffic-bottom", self.engine.ui.dock_height);
+        self.engine.ui.split =
+            toolkit::saved::widgets::panel_share(&saved.widgets, "services", self.engine.ui.split);
+        self.engine.ui.dock_width = toolkit::saved::widgets::panel_share(
+            &saved.widgets,
+            "traffic-right",
+            self.engine.ui.dock_width,
+        );
+        self.engine.ui.dock_height = toolkit::saved::widgets::panel_share(
+            &saved.widgets,
+            "traffic-bottom",
+            self.engine.ui.dock_height,
+        );
         saved.widgets.install(&self.ctx);
-        let frame = saved.window.clone(); let bus = self.bus.clone(); let comp = self.comp.clone();
+        let frame = saved.window.clone();
+        let bus = self.bus.clone();
+        let comp = self.comp.clone();
         self.runtime.spawn(async move {
-            frame.restore(inspector::model::APP_ID, |command, args| {
-                let bus = bus.clone(); let comp = comp.clone();
-                async move { let reply = bus.call(&comp, command, args).await.ok()?;
-                    if reply.rc != 0 { return None; } serde_json::from_str(&reply.body).ok() }
-            }).await;
+            frame
+                .restore(inspector::model::APP_ID, |command, args| {
+                    let bus = bus.clone();
+                    let comp = comp.clone();
+                    async move {
+                        let reply = bus.call(&comp, command, args).await.ok()?;
+                        if reply.rc != 0 {
+                            return None;
+                        }
+                        serde_json::from_str(&reply.body).ok()
+                    }
+                })
+                .await;
         });
         self.saved = saved;
         self
@@ -372,34 +391,66 @@ impl Shell {
 
     fn save_state(&mut self, final_flush: bool) {
         self.saved.app = crate::saved::Arrangement::capture(&self.engine);
-        if let Some(restore) = &self.restore { restore.preserve_pending(&mut self.saved.app); }
+        if let Some(restore) = &self.restore {
+            restore.preserve_pending(&mut self.saved.app);
+        }
         self.saved.window.theme = self.choice().into();
         self.saved.window.capture(&self.ctx);
         self.saved.widgets.collect(&self.ctx);
         // Bus commands may change shares without rendering another frame.
-        self.saved.widgets.panels.insert("services".into(), self.engine.ui.split);
-        self.saved.widgets.panels.insert("traffic-right".into(), self.engine.ui.dock_width);
-        self.saved.widgets.panels.insert("traffic-bottom".into(), self.engine.ui.dock_height);
-        let result = if final_flush { self.saved.flush() } else {
-            self.saved.tick(std::time::Instant::now(), self.ctx.input(|i| i.pointer.any_down()))
+        self.saved
+            .widgets
+            .panels
+            .insert("services".into(), self.engine.ui.split);
+        self.saved
+            .widgets
+            .panels
+            .insert("traffic-right".into(), self.engine.ui.dock_width);
+        self.saved
+            .widgets
+            .panels
+            .insert("traffic-bottom".into(), self.engine.ui.dock_height);
+        let result = if final_flush {
+            self.saved.flush()
+        } else {
+            self.saved.tick(
+                std::time::Instant::now(),
+                self.ctx.input(|i| i.pointer.any_down()),
+            )
         };
-        if let Err(error) = result { eprintln!("workshop: saving window state: {error}"); }
+        if let Err(error) = result {
+            eprintln!("workshop: saving window state: {error}");
+        }
     }
 
     fn finish_saved(&mut self) {
         // Read before the Bus is stopped. This is bounded and read-only; other
         // Wayland desktops simply have no compd catalogue to answer.
         if self.restore.is_some() {
-            let bus = self.bus.clone(); let comp = self.comp.clone();
+            let bus = self.bus.clone();
+            let comp = self.comp.clone();
             let window = self.runtime.block_on(async move {
-                tokio::time::timeout(std::time::Duration::from_millis(700),
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(700),
                     toolkit::saved::Frame::own_window(inspector::model::APP_ID, |command, args| {
-                        let bus = bus.clone(); let comp = comp.clone();
-                        async move { let reply = bus.call(&comp, command, args).await.ok()?;
-                            if reply.rc != 0 { return None; } serde_json::from_str(&reply.body).ok() }
-                    })).await.ok().flatten()
+                        let bus = bus.clone();
+                        let comp = comp.clone();
+                        async move {
+                            let reply = bus.call(&comp, command, args).await.ok()?;
+                            if reply.rc != 0 {
+                                return None;
+                            }
+                            serde_json::from_str(&reply.body).ok()
+                        }
+                    }),
+                )
+                .await
+                .ok()
+                .flatten()
             });
-            if let Some(window) = window { self.saved.window.capture_comp(&window); }
+            if let Some(window) = window {
+                self.saved.window.capture_comp(&window);
+            }
         }
         self.save_state(true);
     }
@@ -1060,7 +1111,9 @@ impl Shell {
             self.bus.reply(answer.id, answer.rc, answer.body);
         }
         self.pump();
-        if let Some(restore) = &mut self.restore { restore.reconcile(&mut self.engine); }
+        if let Some(restore) = &mut self.restore {
+            restore.reconcile(&mut self.engine);
+        }
         self.follow_theme();
         // Closing waits for accepted work: the engine quits once it is idle.
         if ctx.input(|i| i.viewport().close_requested()) && !self.exiting {
@@ -1074,10 +1127,14 @@ impl Shell {
     /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         if let Some(restore) = &mut self.restore {
-            if restore.show_selection { toolkit::saved::widgets::forget_scroll(ui.ctx(), "services"); }
+            if restore.show_selection {
+                toolkit::saved::widgets::forget_scroll(ui.ctx(), "services");
+            }
             ui.ctx().data_mut(|d| {
                 d.insert_temp(egui::Id::new("workshop-restore-ready"), restore.ready());
-                if std::mem::take(&mut restore.show_selection) { d.insert_temp(egui::Id::new("workshop-restore-selection"), true); }
+                if std::mem::take(&mut restore.show_selection) {
+                    d.insert_temp(egui::Id::new("workshop-restore-selection"), true);
+                }
             });
         }
         if std::mem::take(&mut self.engine.split_requested) {
@@ -1104,7 +1161,10 @@ impl Shell {
         // A command this frame may have been the last thing holding others.
         self.release();
         self.save_state(false);
-        if self.saved.pending() { ui.ctx().request_repaint_after(std::time::Duration::from_secs(1)); }
+        if self.saved.pending() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs(1));
+        }
         // A theme change is installed by the next frame's logic, before any
         // drawing: never midway through the frame that saw the click.
         if self.choice() != self.installed {
