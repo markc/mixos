@@ -21,7 +21,19 @@ end
 fn external($text, $roots, $kind)
   $out = []
   for $line in lines($text)
-    if ($kind == "unit" or ($kind == "desktop" and starts_with($line, "Exec="))) and not starts_with(trim($line), "#") and contains($line, "@{") then
+    $unquotes = true
+    if $kind == "unit" and not starts_with(trim($line), "#") and contains($line, "@{") then
+      $key = split($line, "=")[0]
+      $unquotes = starts_with($key, "Exec") or $key == "Environment"
+      if not $unquotes then
+        for $name in keys($roots)
+          if contains($line, "@{" .. $name .. "}") and re_match($roots[$name], "\\s") then
+            raise("LAYOUT_WHITESPACE", $key .. " does not unquote paths; root " .. $name .. " contains whitespace")
+          end
+        end
+      end
+    end
+    if (($kind == "unit" and $unquotes) or ($kind == "desktop" and starts_with($line, "Exec="))) and not starts_with(trim($line), "#") and contains($line, "@{") then
       -- Quote each template-bearing argv word before expanding spaces in roots.
       $words = split($line, " ")
       for $i = 0 to len($words) - 1

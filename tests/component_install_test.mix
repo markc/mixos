@@ -46,7 +46,7 @@ fn version($v, $with_unit)
   write_file($comp .. "/scripts/lib/util.mix", "fn v()\n  return \"" .. $v .. "\"\nend\n")
   if $with_unit then
     mkdir($comp .. "/units", {parents: true})
-    write_file($comp .. "/units/demod@.service", ("[Service]\nExecStart=" .. $prefix .. "/bin/mix " .. $prefix .. "/lib/demod/demod.mix # ") .. $v .. "\n")
+    write_file($comp .. "/units/demod@.service", "[Service]\nExecStart=@{prefix}/bin/mix @{prefix}/lib/demod/demod.mix # " .. $v .. "\n")
   else
     remove_dir($comp .. "/units")
   end
@@ -103,6 +103,9 @@ try
   check("install: reported", $r.exit_code == 0 and contains($r.stdout, "demod: installed 1.0") and contains($r.stdout, "daemon-reload"))
   check(("install: scripts tree at " .. $prefix .. "/lib/demod"), read_file($lib .. "/demod/demod.mix") == "print(\"demod 1.0\")\n" and is_file($lib .. "/demod/lib/util.mix"))
   check("install: unit in etc/systemd/system", contains(read_file($unit), "# 1.0"))
+  check("install: component owns rendered unit bytes", contains(read_file($unit), 'ExecStart="/fixture prefix/bin/mix" "/fixture prefix/lib/demod/demod.mix"') and
+    not contains(read_file($unit), "@{") and
+    json_parse(read_file($lib .. "/demod/.installed.json")).units["demod@.service"] == hash_file($unit, "sha256"))
   $rec = json_parse(read_file($lib .. "/demod/.installed.json"))
   check("install: record has version, commit and hashes", $rec.version == "1.0" and len($rec.source) == 40 and $rec.dirty == false and $rec.files["demod.mix"] == hash_file($comp .. "/scripts/demod.mix", "sha256"))
   check("install: files 0644", band(stat($lib .. "/demod/demod.mix").perm, 0o777) == 0o644)

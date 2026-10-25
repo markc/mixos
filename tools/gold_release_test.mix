@@ -36,7 +36,10 @@ if not deep_eq($g.rest, ["layout", "defaults"]) or $g.opts.tier != "system" or n
   raise("FIXTURE_DEFAULTS", "unexpected staged defaults query")
 end
 $fixture = @LAYOUT@
-if $g.opts.prefix != nil then $fixture.prefix = $g.opts.prefix end
+if $g.opts.prefix != nil then
+  $fixture.prefix = $g.opts.prefix
+  $fixture.share = $g.opts.prefix .. "/share"
+end
 write_file(@TRACE@, json_encode(args()))
 print(json_encode($fixture))
 DEFAULTS
@@ -109,7 +112,7 @@ try
   need(read_link($root .. "/bin/alias") == "mock", "gold link missing")
   need(read_file($root .. "/lib/libinput.so.10") == "mock-library\n", "runtime library missing")
   need(is_file($root .. "/share/scenes/test.mix"), "gold scene missing")
-  need(deep_eq(load_data($root .. "/layout.mx"), delete($layout, "prefix")), "resolved non-prefix target layout was not persisted")
+  need(not exists($root .. "/layout.mx"), "default layout left a system override file for user processes")
   $lines = split(trim($apply.stdout), "\n")
   $last = $lines[len($lines) - 1]
   $id = replace(fields($last)[1], "receipt=", "")
@@ -182,6 +185,106 @@ try
   need($unsafe_id.exit_code != 0 and contains($unsafe_id.stdout, "GOLD_RECEIPT"),
     "unsafe receipt id was accepted: " .. $unsafe_id.stdout)
   remove($state .. "/pending.mx")
+  -- A default install removes the old full map; an override persists only
+  -- the difference and rollback journals that file like every other target.
+  $custom = run_argv(concat(concat($base_argv, ["apply", "--etc", $base .. "/custom-etc"]), $opts), {timeout: 30, stderr: "stdout"})
+  need($custom.ok and deep_eq(load_data($root .. "/layout.mx"), {etc: $base .. "/custom-etc"}), "layout.mx did not retain just the non-default root: " .. $custom.stdout)
+  $custom_lines = lines(trim($custom.stdout))
+  $custom_id = replace(fields($custom_lines[len($custom_lines) - 1])[1], "receipt=", "")
+  $custom_back = run_argv(concat($base_argv, ["rollback", "--receipt-file", $state .. "/receipts/" .. $custom_id .. ".mx"]), {stderr: "stdout"})
+  need($custom_back.ok and read_file($root .. "/layout.mx") == "{}\n", "rollback did not restore the prior layout bytes: " .. $custom_back.stdout)
+
+  -- Public-safe fixture with main v0.1.2's receipt shape: absolute root and
+  -- backup, no layout. Keep its shape while reading, ordering and rollback.
+  $current = run_argv(concat(concat($base_argv, ["apply"]), $opts), {timeout: 30, stderr: "stdout"})
+  need($current.ok, $current.stdout)
+  $current_lines = lines(trim($current.stdout))
+  $current_id = replace(fields($current_lines[len($current_lines) - 1])[1], "receipt=", "")
+  $legacy_id = "main-shaped-7e47eb81"
+  $legacy_backup = $state .. "/backups/" .. $legacy_id
+  mkdir($legacy_backup .. "/bin", {parents: true})
+  write_file($legacy_backup .. "/bin/legacy", "before main\n")
+  write_file($root .. "/bin/legacy", "after main\n")
+  $legacy = {schema: 1, id: $legacy_id, sequence: 999, status: "applied", root: $root, backup: $legacy_backup,
+    files: [{rel: "bin/legacy", before: {kind: "file", sha256: hash_file($legacy_backup .. "/bin/legacy", "sha256")},
+      after: {kind: "file", sha256: hash_file($root .. "/bin/legacy", "sha256")}, same: false}]}
+  $legacy_path = $state .. "/receipts/" .. $legacy_id .. ".mx"
+  write_file($legacy_path, data_encode($legacy))
+  $ordered = run_argv(concat($base_argv, ["rollback", "--receipt-file", $state .. "/receipts/" .. $current_id .. ".mx"]), {stderr: "stdout"})
+  need(not $ordered.ok and contains($ordered.stdout, "GOLD_ORDER"), "main-shaped newer receipt was invisible to ordering: " .. $ordered.stdout)
+  remove($base .. "/defaults-query.json")
+  $legacy_back = run_argv(concat($base_argv, ["rollback", "--receipt-file", $legacy_path]), {stderr: "stdout"})
+  need($legacy_back.ok and read_file($root .. "/bin/legacy") == "before main\n" and not is_file($base .. "/defaults-query.json"), "main-shaped offline rollback failed: " .. $legacy_back.stdout)
+  $legacy_read = load_data($legacy_path)
+  need(not has_key($legacy_read, "layout") and $legacy_read.root == $root and $legacy_read.backup == $legacy_backup, "legacy receipt shape was rewritten")
+  $current_back = run_argv(concat($base_argv, ["rollback", "--receipt-file", $state .. "/receipts/" .. $current_id .. ".mx"]), {stderr: "stdout"})
+  need($current_back.ok, "rollback after main receipt failed: " .. $current_back.stdout)
+  -- Exercise the real packager's two different template selections together.
+  -- Only executable payloads and release trust metadata are fixture data.
+  $package_bins = $base .. "/package-bins"
+  mkdir($package_bins)
+  $packages = load_data($repo .. "/tools/release_packages.mx").packages
+  for $package in keys($packages)
+    for $bin in $packages[$package]
+      if $bin == "mix" then write_file($package_bins .. "/mix", $defaults_program)
+      else write_file($package_bins .. "/" .. $bin, "fixture " .. $bin .. "\n") end
+      chmod($package_bins .. "/" .. $bin, 0o755)
+    end
+  end
+  $package_dist = $base .. "/package-dist"
+  $head = trim(run_argv_must(["git", "-C", $repo, "rev-parse", "HEAD"]))
+  $packaged = run_argv([$mix, $repo .. "/tools/package.mix", "--fixture-binaries", "--package", "all", "--release", "0.1.2",
+    "--commit", $head, "--bin-dir", $package_bins, "--out", $package_dist], {timeout: 120, stderr: "stdout"})
+  need($packaged.ok, "package all failed: " .. $packaged.stdout)
+  $package_manifest = $package_dist .. "/release.manifest.mx"
+  $package_doc = load_data($package_manifest)
+  $package_doc.fixture = false
+  $package_doc.glibc_floor = "2.39"
+  write_file($package_manifest, data_encode($package_doc))
+  $package_root = $base .. "/package-gold"
+  mkdir($package_root .. "/share/units", {parents: true})
+  write_file($package_root .. "/share/units/hostd.service", "hand-placed; keep\n")
+  $package_var = $base .. "/package-var"
+  $package_args = concat($base_argv, ["apply", "--root", $package_root, "--var", $package_var, "--manifest", $package_manifest,
+    "--manifest-sha256", hash_file($package_manifest, "sha256"), "--archive-dir", $package_dist, "--package", "all"])
+  mkdir($package_root .. "/share/hostd/units", {parents: true})
+  write_file($base .. "/foreign-unit", "foreign\n")
+  symlink($base .. "/foreign-unit", $package_root .. "/share/hostd/units/hostd.service")
+  $linked = run_argv($package_args, {timeout: 120, stderr: "stdout"})
+  need(not $linked.ok and contains($linked.stdout, "LAYOUT_TARGET") and read_file($base .. "/foreign-unit") == "foreign\n" and
+    not exists($package_root .. "/bin/mix"), "gold followed a render-target symlink or half-installed files: " .. $linked.stdout)
+  remove($package_root .. "/share/hostd/units/hostd.service")
+  if uid() != 0 then
+    chmod($package_root .. "/share/hostd/units", 0o555)
+    $denied = run_argv($package_args, {timeout: 120, stderr: "stdout"})
+    chmod($package_root .. "/share/hostd/units", 0o755)
+    need(not $denied.ok and contains($denied.stdout, "GOLD_WRITABLE") and not exists($package_root .. "/bin/mix"), "gold writability failure half-installed files: " .. $denied.stdout)
+  else print("SKIP gold permission preflight denial: uid 0 can write read-only fixture directories") end
+  $both = run_argv($package_args, {timeout: 120, stderr: "stdout"})
+  need($both.ok, "installing both actual packages conflicted: " .. $both.stdout)
+  for $package in ["mixos-desktop", "mixos-server"]
+    need(is_file($package_root .. "/share/layout/manifests/" .. $package .. ".mx"), "per-package template manifest missing")
+  end
+  need(not is_file($package_root .. "/share/layout/templates.mx"), "package manifests still overwrite one shared path")
+  need(read_file($package_root .. "/share/units/hostd.service") == "hand-placed; keep\n", "gold changed an unmanaged flat unit")
+  need(contains(read_file($package_root .. "/share/hostd/units/hostd.service"), "ExecStart=" .. $package_root .. "/bin/hostd") and
+    contains(read_file($package_root .. "/share/applications/dev.mixos.term.desktop"), "Exec=" .. $package_root .. "/bin/term"), "shipped unit/desktop did not render in place")
+  $both_lines = lines(trim($both.stdout))
+  $both_id = replace(fields($both_lines[len($both_lines) - 1])[1], "receipt=", "")
+  $both_path = $package_var .. "/releases/receipts/" .. $both_id .. ".mx"
+  $both_record = load_data($both_path)
+  $installed_files = require($package_root .. "/share/layout/files.mix")
+  $union = $installed_files.plan($package_root .. "/share/layout", $both_record.layout)
+  need(any($union, fn($entry) = ends_with($entry.path, "/share/maild/units/maild.service")) and
+    any($union, fn($entry) = ends_with($entry.path, "/share/applications/dev.mixos.term.desktop")), "installed renderer did not load both package manifests")
+  for $entry in $union need(read_file($entry.path) == $entry.text, "installed renderer would change receipt bytes: " .. $entry.path) end
+  for $file in $both_record.files
+    if $file.after.kind == "file" then need(hash_file($package_root .. "/" .. $file.rel, "sha256") == $file.after.sha256, "receipt hashes precede rendering: " .. $file.rel) end
+  end
+  $both_back = run_argv(concat($base_argv, ["rollback", "--receipt-file", $both_path]), {timeout: 120, stderr: "stdout"})
+  need($both_back.ok and not exists($package_root .. "/share/hostd/units/hostd.service") and
+    read_file($package_root .. "/share/units/hostd.service") == "hand-placed; keep\n", "rendered package rollback failed: " .. $both_back.stdout)
+  print("PASS package all: both manifests, in-prefix rendered bytes in receipts, rollback, unmanaged flat units untouched")
   $bad_manifest = $dist .. "/bad.manifest.mx"
   $bad_doc = load_data($manifest)
   $bad_doc.archives[0].libraries[0].sha256 = "0000000000000000000000000000000000000000000000000000000000000000"

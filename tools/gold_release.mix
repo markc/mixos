@@ -27,12 +27,17 @@ if $g.opts.root != nil then
   if $g.opts.prefix != nil or not starts_with($g.opts.root, "/tmp/mixos-gold-test-") or contains($g.opts.root, "/../") then
     raise("GOLD_ROOT", "--root accepts only a canonical /tmp/mixos-gold-test-* fixture; use --prefix for a live install")
   end
+  $canonical = realpath($g.opts.root)
+  if $canonical == nil or not starts_with($canonical, "/tmp/mixos-gold-test-") then raise("GOLD_ROOT", "fixture root must resolve under /tmp/mixos-gold-test-*") end
+  $g.opts.root = $canonical
   $g.opts.prefix = $g.opts.root
 end
 $saved = {}
+$saved_record = nil
 if $g.opts["receipt-file"] != nil then
   if not contains(["rollback", "recover"], $mode) then raise("GOLD_ARGS", "--receipt-file is only for rollback/recover") end
-  $saved = load_data($g.opts["receipt-file"]).layout ?? {}
+  $saved_record = load_data($g.opts["receipt-file"])
+  $saved = $saved_record.layout ?? {}
 elif contains(["rollback", "recover"], $mode) and $g.opts.var != nil then
   $targets.checked({var: $g.opts.var})
   $rp = $g.opts.var .. "/releases/pending.mx"
@@ -41,7 +46,10 @@ elif contains(["rollback", "recover"], $mode) and $g.opts.var != nil then
     if not re_match($rid, "^[a-z0-9-]{8,100}$") then raise("GOLD_ARGS", "rollback needs --receipt ID") end
     $rp = $g.opts.var .. "/releases/receipts/" .. $rid .. ".mx"
   end
-  if is_file($rp) then $saved = load_data($rp).layout ?? {} end
+  if is_file($rp) then
+    $saved_record = load_data($rp)
+    $saved = $saved_record.layout ?? {}
+  end
 end
 -- A pinned release is unpacked into an owned temporary tree before any
 -- target/state write. Its binary supplies defaults even under mix-static.
@@ -56,7 +64,20 @@ try
     -- Resolve rollback solely from a receipt or the explicit target layout.
     $record_opts = $g.opts
     $record_opts["record-only"] = true
-    $layout = $targets.resolve($record_opts, nil, "", $saved)
+    if $saved_record != nil and not has_key($saved_record, "layout") then
+      -- Main receipts predate layout overrides. Only prefix and var are used
+      -- by rollback; both are recorded as absolute paths. Do not invent the
+      -- other defaults in Mix or execute the target (mix-static recovery).
+      $suffix = "/releases/backups/" .. ($saved_record.id ?? "")
+      if type($saved_record.backup) != "string" or not ends_with($saved_record.backup, $suffix) then
+        raise("GOLD_RECEIPT", "invalid legacy receipt backup")
+      end
+      $layout = $targets.checked({prefix: $saved_record.root,
+        var: substr($saved_record.backup, 0, len($saved_record.backup) - len($suffix))})
+      if ($g.opts.prefix != nil and $g.opts.prefix != $layout.prefix) or ($g.opts.var != nil and $g.opts.var != $layout.var) then
+        raise("GOLD_RECEIPT", "legacy receipt does not describe the selected target")
+      end
+    else $layout = $targets.resolve($record_opts, nil, "", $saved) end
   end
 catch $message, $err
   if $prepared != nil then remove_dir($prepared.stage) end
@@ -156,10 +177,14 @@ try
   end
 
   fn verify_receipt($rec)
-    if not deep_eq($targets.checked($rec.layout ?? {}), $layout) then raise("GOLD_RECEIPT", "receipt layout does not describe the selected target") end
+    if has_key($rec, "layout") and not deep_eq($targets.checked($rec.layout), $layout) then raise("GOLD_RECEIPT", "receipt layout does not describe the selected target") end
     if (type($rec.id) != "string" or not re_match($rec.id, "^[a-z0-9-]{8,100}$") or
-        $rec.backup != "mixos:var/releases/backups/" .. $rec.id or type($rec.files) != "list") then
+        not contains(["mixos:var/releases/backups/" .. $rec.id, $state .. "/backups/" .. $rec.id], $rec.backup) or type($rec.files) != "list" or
+        not contains(["mixos:prefix/", $root], $rec.root)) then
       raise("GOLD_RECEIPT", "invalid receipt identity or backup path")
+    end
+    if not has_key($rec, "layout") and ($rec.root != $root or $rec.backup != $state .. "/backups/" .. $rec.id) then
+      raise("GOLD_RECEIPT", "legacy receipt needs absolute target and backup paths")
     end
   end
 
@@ -202,7 +227,7 @@ try
     if not is_file($pending) then raise("GOLD_PENDING", "there is no interrupted update") end
     $rec = load_data($pending)
     verify_receipt($rec)
-    if $rec.root != "mixos:prefix/" or not contains(["pending", "applied", "recovered"], $rec.status) then
+    if not contains(["pending", "applied", "recovered"], $rec.status) then
       raise("GOLD_RECEIPT", "pending receipt does not describe this root")
     end
     if $rec.status == "recovered" then
@@ -230,14 +255,14 @@ try
     if not is_file($path) then raise("GOLD_RECEIPT", "no receipt " .. $id) end
     $rec = load_data($path)
     verify_receipt($rec)
-    if $rec.id != $id or $rec.root != "mixos:prefix/" or $rec.status != "applied" then
+    if $rec.id != $id or $rec.status != "applied" then
       raise("GOLD_RECEIPT", "receipt does not describe an applied update to this root")
     end
     if type($rec.sequence) != "number" then raise("GOLD_ORDER", "receipt has no release sequence") end
     for $other_path in glob($receipt_dir .. "/*.mx")
       if $other_path == $path then continue end
       $other = load_data($other_path)
-      if $other.root == "mixos:prefix/" and $other.status == "applied" then
+      if ($other.root == $root or ($other.root == "mixos:prefix/" and $other.layout.prefix == $root)) and $other.status == "applied" then
         if type($other.sequence) != "number" or $other.sequence >= $rec.sequence then
           raise("GOLD_ORDER", "roll back newer applied release first: " .. $other.id)
         end
@@ -261,6 +286,15 @@ try
   $files = []
   $seen = []
   $dirs = []
+  -- Render verified owned archives before comparing or hashing install bytes.
+  -- Package manifests have distinct names and are loaded together after install.
+  $layout_files = require($source .. "/share/layout/files.mix")
+  $rendered = []
+  for $top in $prepared.tops
+    $rendered = concat($rendered, $layout_files.staged($top .. "/share/layout", $layout, $top))
+  end
+  $layout_files.apply($rendered, false)
+  $render_targets = map($rendered, fn($e) = substr($e.path, 1))
   for $top in $prepared.tops
     for $p in walk($top, {include_dirs: true, follow_symlinks: false})
       if $p == $top then continue end
@@ -296,6 +330,9 @@ try
       push($seen, $rel)
       $dest = $root .. "/" .. $rel
       safe_parent($dest)
+      if contains($render_targets, $rel) and exists($dest, {follow_symlinks: false}) and stat($dest, {follow_symlinks: false}).is_symlink then
+        raise("LAYOUT_TARGET", "refusing symlink render target " .. $dest)
+      end
       $before = existing_state($dest)
       push($files, {rel: $rel, source: $p, before: $before, after: $after,
         same: matches($dest, $after)})
@@ -304,14 +341,41 @@ try
   -- The selected roots must survive the installer's environment. Journal
   -- layout.mx like every shipped file so recovery/rollback restores it too.
   $layout_source = $stage .. "/target-layout.mx"
-  write_file($layout_source, data_encode(delete($layout, "prefix")) .. "\n")
-  $layout_after = {kind: "file", sha256: hash_file($layout_source, "sha256")}
+  $default_layout = $targets.defaults($prepared.tops[0] .. "/bin/mix", "system", $root)
+  $different_roots = {}
+  for $name in keys($layout)
+    if $name != "prefix" and $layout[$name] != $default_layout[$name] then $different_roots[$name] = $layout[$name] end
+  end
+  $layout_after = {kind: "absent"}
+  if len(keys($different_roots)) != 0 then
+    write_file($layout_source, data_encode($different_roots) .. "\n")
+    chmod($layout_source, 0o644)
+    $layout_after = {kind: "file", sha256: hash_file($layout_source, "sha256")}
+  end
   push($files, {rel: "layout.mx", source: $layout_source, before: existing_state($root .. "/layout.mx"),
     after: $layout_after, same: matches($root .. "/layout.mx", $layout_after)})
   $changed = len(filter($files, fn($f) = not $f.same))
   print("PLAN source=" .. $manifest.source .. " version=" .. $manifest.version ..
     " packages=" .. join($want, ",") .. " files=" .. len($files) .. " changed=" .. $changed)
   if $mode == "plan" then exit(0) end
+  -- Check every install destination before backup/journal publication. The
+  -- same kernel access checks include ACLs, rather than guessing from modes.
+  for $file in $files
+    if $file.same then continue end
+    $dest = $root .. "/" .. $file.rel
+    $parent = dirname($dest)
+    while not exists($parent, {follow_symlinks: false}) $parent = dirname($parent) end
+    if not access($parent, "wx") then raise("GOLD_WRITABLE", "target parent is not writable: " .. $parent) end
+  end
+  $entrance = []
+  if is_file($prepared.tops[0] .. "/share/layout/apply.mix") then
+    $entry_opts = {}
+    if not $live then
+      mkdir($root .. "/.layout-root", {parents: true})
+      $entry_opts.root = $root .. "/.layout-root"
+    end
+    $entrance = $layout_files.entrance($layout, $entry_opts)
+  end
   $backup = $state .. "/backups/" .. $id
   mkdir($backup, {parents: true})
   for $f in $files
@@ -344,6 +408,10 @@ try
       if $f.same then continue end
       $dest = $root .. "/" .. $f.rel
       safe_parent($dest)
+      if $f.after.kind == "absent" then
+        remove($dest)
+        continue
+      end
       mkdir(dirname($dest), {parents: true})
       $tmp = $dest .. ".new-" .. $id
       run_argv_must(["cp", "-a", "--", $f.source, $tmp], {timeout: 30})
@@ -353,6 +421,7 @@ try
     for $f in $files
       if not matches($root .. "/" .. $f.rel, $f.after) then raise("GOLD_VERIFY", "installed file differs: " .. $f.rel) end
     end
+    $layout_files.apply($entrance, false)
     $record.status = "applied"
     $record.finished_at = now_iso()
     write_atomic($pending, data_encode($record) .. "\n")
@@ -363,14 +432,6 @@ try
     restore($record)
     remove($pending)
     raise($err.code ?? "GOLD_APPLY", $msg)
-  end
-  if is_file($root .. "/share/layout/apply.mix") then
-    $layout_args = [$root .. "/bin/mix", "layout", "apply"]
-    if not $live then
-      mkdir($root .. "/.layout-root", {parents: true})
-      $layout_args = concat($layout_args, ["--root", $root .. "/.layout-root"])
-    end
-    print(run_argv_must($layout_args, {timeout: 120, env: $targets.environment($layout)}))
   end
 finally
   if $prepared != nil then remove_dir($prepared.stage) end

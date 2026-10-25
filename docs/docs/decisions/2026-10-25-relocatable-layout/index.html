@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Status: accepted, 2026-10-25; amended the same day to preserve main&#x27;s uid and directory rules.">
+    <meta name="description" content="Status: accepted, 2026-10-25; amended the same day to preserve main&#x27;s uid, directory and installation rules.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -234,8 +234,8 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="relocatable-layout">Relocatable layout</h1>
-<p>Status: accepted, 2026-10-25; amended the same day to preserve main's uid and
-directory rules.</p>
+<p>Status: accepted, 2026-10-25; amended the same day to preserve main's uid,
+directory and installation rules.</p>
 <ol>
 <li>MixOS asks for installation roots rather than embedding locations.
 Existing environment names and per-caller directory policies are retained.</li>
@@ -253,13 +253,31 @@ accepts only an absolute override. Prefix comes from <code>MIXOS_PREFIX</code>, 
 canonical <code>/proc/self/exe</code> and the parent of <code>bin/</code>; it never selects tier.
 The bounded strict-data layout has at most <code>etc</code>, <code>var</code>, <code>run</code>, <code>share</code>,
 <code>cache</code>, and refuses a prefix key. The <a href="/paths/">paths manual</a>
-gives the complete table and explicit system/user APIs.</li>
+gives the complete table and explicit system/user APIs.
+A root stored in layout.mx applies to every uid, like <code>$MIXOS</code>. Installers
+persist only differences from the system defaults for the target prefix;
+the default installation has no layout.mx and preserves each user's XDG roots.</li>
 <li><code>libs/paths</code> owns the implementation without workspace dependencies;
 <code>config::dir</code> re-exports the original API. Rust and <code>mixos_path</code> share it.
 Process helpers resolve once; pure explicit inputs support tests.</li>
 <li>External files use <code>@{prefix}</code>, <code>@{share}</code>, <code>@{etc}</code>, <code>@{var}</code>, <code>@{run}</code>,
 <code>@{cache}</code>. <code>mix layout apply</code> renders idempotently and prints changes.
-Unit templates remain with their components and ship in <code>share/layout</code>.</li>
+Templates render to the existing packaged places inside the prefix:
+<code>share/&lt;component&gt;/units/</code>, <code>share/applications/</code> and other shipped paths.
+Template sources remain with their components and ship in <code>share/layout</code>.
+Gold renders while staging, before hashing and recording receipt bytes.
+Enabling services remains the operator's step. Layout apply never installs
+systemd, sysusers, tmpfiles or polkit files outside the prefix and never
+touches unmanaged flat <code>share/units/</code> copies. Mix component units remain
+owned and rendered by component_install, outside the global manifest.
+Only the ruling 9 link and, on a host, its line in <code>/etc/shells</code> are managed
+outside the prefix. There is no mixrc management. With <code>--root</code>, <code>/etc/shells</code>
+is touched only inside that root and only with <code>--image</code>, which requires
+<code>--root</code>. The root is canonicalised; symlinks below it and symlink render
+targets refuse. All targets are checked for writability before writing;
+existing modes and owners are preserved, and new rendered files are 0644.
+Paths containing whitespace refuse in systemd keys that do not unquote
+(including EnvironmentFile, ConditionPathExists and LoadCredential).</li>
 <li>Saved MixOS references use <code>mixos:&lt;root&gt;/&lt;relative&gt;</code>. Root escapes refuse;
 user-owned paths retain their meaning. Offline migration keeps originals;
 live migration is a separate operator action.</li>
@@ -287,7 +305,11 @@ per-host table when one exists, then <code>mix</code> on PATH.</li>
 <p>N-1 tooling remains usable before a new binary is installed. Installers get
 target defaults by invoking the verified staged binary's <code>mix layout defaults</code>
 command. They do not select a target from their own interpreter. Rollback can
-read the receipt or target layout without running the installed target.</p>
+read the receipt or target layout without running the installed target.
+Main receipts with an absolute target and backup and no layout are read in
+their original shape; the absent layout means the default layout. Their
+recorded prefix and var backup path suffice for offline rollback. They also
+participate in release ordering alongside logical receipts.</p>
 <p>This decision does not deploy or migrate a live installation, move app data,
 introduce hot relocation, generations or a versioned store.</p>
         </article>

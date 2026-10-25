@@ -275,7 +275,9 @@ end
 
 fn write_journal($name, $j)
   no_link(journal_path($name))
-  write_atomic(journal_path($name), json_encode($j), {durability: "full", mode: 0o644})
+  $options = {durability: "full"}
+  if not lexists(journal_path($name)) then $options.mode = 0o644 end
+  write_atomic(journal_path($name), json_encode($j), $options)
 end
 
 -- Mix has no fsync for a directory tree yet (TODO-mix): sync the
@@ -365,7 +367,9 @@ fn apply_units($name, $tree, $new_units, $old_units)
       -- Before the write: a durable write can replace the file and then fail.
       $RUN.reload = true
       crash("unit-writing")
-      write_atomic($path, read_file($tree .. "/units/" .. $u), {mode: 0o644, durability: "full"})
+      $options = {durability: "full"}
+      if not lexists($path) then $options.mode = 0o644 end
+      write_atomic($path, read_file($tree .. "/units/" .. $u), $options)
       $changed = true
       crash("unit-written")
     end

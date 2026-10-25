@@ -39,8 +39,7 @@ for $pkg in keys($PACKAGES)
 end
 -- Desktop entries ship with their app: a packaged binary NAME with an
 -- apps/NAME/assets/dev.mixos.NAME.desktop carries it, so binary and entry
--- always travel as a pair. Exec and TryExec lose the system path so
--- releasesd points them at the installed binary.
+-- always travel as a pair. Gold renders them at staging time.
 fn entries_for($root, $bins)
   $out = []
   for each $b in $bins
@@ -155,18 +154,16 @@ for $pkg in $selected
   end
   for $e in entries_for($source, $PACKAGES[$pkg])
     mkdir($top .. "/share/applications", {parents: true})
-    -- replace() covers every Exec= and TryExec= line, actions included.
-    $text = replace(read_file($source .. "/" .. $e), "Exec=@{prefix}/bin/", "Exec=")
-    write_file($top .. "/share/applications/" .. basename($e), $text)
+    copy($source .. "/" .. $e, $top .. "/share/applications/" .. basename($e))
     chmod($top .. "/share/applications/" .. basename($e), 0o644)
   end
   mkdir($top .. "/share/doc/" .. $pkg, {parents: true})
   -- Ship the renderer with component-owned templates copied into share.
   add_tree($source .. "/share/layout", $top .. "/share/layout")
+  remove($top .. "/share/layout/templates.mx")
   $layout_manifest = load_data($source .. "/share/layout/templates.mx")
   $layout_files = []
-  $layout_owners = concat($PACKAGES[$pkg], if $pkg == "mixos-desktop" then
-    ["notifyd", "releasesd"] else [] end)
+  $layout_owners = $PACKAGES[$pkg]
   for $entry in $layout_manifest.files
     $rel = strip_prefix($entry.source, "../../")
     if (starts_with($rel, "apps/") or starts_with($rel, "services/")) and not contains($layout_owners, split($rel, "/")[1]) then continue end
@@ -176,7 +173,8 @@ for $pkg in $selected
     $entry.source = $template_rel
     push($layout_files, $entry)
   end
-  write_file($top .. "/share/layout/templates.mx", data_encode({schema: 1, files: $layout_files}) .. "\n")
+  mkdir($top .. "/share/layout/manifests", {parents: true})
+  write_file($top .. "/share/layout/manifests/" .. $pkg .. ".mx", data_encode({schema: 1, files: $layout_files}) .. "\n")
   for $d in $DOCS
     copy($source .. "/" .. $d, $top .. "/share/doc/" .. $pkg .. "/" .. $d)
     chmod($top .. "/share/doc/" .. $pkg .. "/" .. $d, 0o644)

@@ -693,7 +693,7 @@ pub fn run_layout(args: &[String]) -> i32 {
         return 2;
     }
     match std::process::Command::new(std::env::current_exe().expect("self location"))
-        .arg(::paths::share("layout/apply.mix"))
+        .arg(::paths::root(::paths::Root::Prefix).join("share/layout/apply.mix"))
         .args(&args[1..])
         .status()
     {

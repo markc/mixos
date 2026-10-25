@@ -13,27 +13,35 @@ for $entry in $manifest.files
   $source = read_file($path)
   $rendered = $renderer.external($source, $roots, $entry.kind)
   $rel = strip_prefix(realpath($path), $repo .. "/")
-  $original = run_argv(["git", "-C", $repo, "show", "32650ae5a05f21c996e617e27a5de0863d119608:" .. $rel])
+  $original = run_argv(["git", "-C", $repo, "show", "f91c2a1f:" .. $rel])
   if not $original.ok or $rendered != $original.stdout then push($different, $rel) end
-  $installed = "/opt/mixos/share/units/" .. basename($path)
-  if not is_file($installed) and contains($rel, "/units/") then
-    $owner = split($rel, "/")[1]
-    $installed = "/opt/mixos/share/units/" .. $owner .. "." .. basename($path)
+  $installed = $renderer.render($entry.target, $roots)
+  if not starts_with($installed, $roots.prefix .. "/") then raise("LAYOUT_TARGET", "template leaves prefix") end
+  if any(["bridged", "notifyd", "releasesd", "toolsd"], fn($owner) = contains($entry.source, "/" .. $owner .. "/")) then
+    raise("LAYOUT_TARGET", "component-owned unit in global manifest")
   end
   if contains(args(), "--installed") and is_file($installed) then
-    push($compared, basename($installed))
+    push($compared, $installed)
     if $rendered != read_file($installed) then push($live, $rel) end
   end
 end
 if len($different) > 0 then raise("LAYOUT_BYTES", "default templates differ from baseline: " .. join($different, ", ")) end
 print("layout: " .. to_string(len($manifest.files)) .. " default templates byte-identical to baseline")
-if contains(args(), "--installed") and is_dir("/opt/mixos/share/units") then
-  for $path in glob("/opt/mixos/share/units/*")
-    if is_file($path) and not contains($compared, basename($path)) then push($live, "unmatched installed unit " .. basename($path)) end
+$component_count = 0
+for $owner in ["bridged", "notifyd", "releasesd", "toolsd"]
+  for $path in sort(glob($repo .. "/services/" .. $owner .. "/units/*"))
+    if not is_file($path) then continue end
+    $rel = strip_prefix($path, $repo .. "/")
+    $original = run_argv(["git", "-C", $repo, "show", "f91c2a1f:" .. $rel])
+    if not $original.ok or $renderer.external(read_file($path), $roots, "unit") != $original.stdout then raise("LAYOUT_BYTES", "component unit differs: " .. $rel) end
+    $component_count = $component_count + 1
   end
+end
+print("layout: " .. to_string($component_count) .. " component-owned templates byte-identical to baseline")
+if contains(args(), "--installed") then
   if len($live) != 0 then raise("LAYOUT_BYTES", "installed units differ: " .. join($live, ", ")) end
-  print("layout: all " .. to_string(len($compared)) .. " installed share/units files byte-identical")
-elif contains(args(), "--installed") then print("SKIP installed-unit comparison: installed share/units is absent") end
+  print("layout: " .. to_string(len($compared)) .. " existing packaged targets byte-identical; flat share/units is unmanaged")
+end
 $roots.prefix = "/tmp/moved tree"
 $line = $renderer.external("ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/test.mix\n", $roots, "unit")
 if $line != 'ExecStart="/tmp/moved tree/bin/mix" --serve "/tmp/moved tree/lib/test.mix"' .. "\n" then raise("LAYOUT_QUOTE", $line) end
@@ -44,3 +52,81 @@ catch $message, $error
   if $error.code != "LAYOUT_TEMPLATE" then raise($error.code, $message) end
 end
 print("layout: moved executable and argv paths are quoted")
+$packages = load_data($repo .. "/tools/release_packages.mx").packages
+$owners = concat($packages["mixos-desktop"], $packages["mixos-server"])
+$moved_roots = $roots
+$moved_roots.share = $moved_roots.prefix .. "/share"
+for $entry in $manifest.files
+  $owner = split(strip_prefix($entry.source, "../../"), "/")[1]
+  if contains($owners, $owner) then
+    $_ = $renderer.external(read_file($repo .. "/share/layout/" .. $entry.source), $moved_roots, $entry.kind)
+  end
+end
+print("layout: every selected desktop/server template accepts the moved prefix with a space")
+
+fn need($ok, $message)
+  if not $ok then raise("LAYOUT_TEST", $message) end
+end
+fn refuses($thunk, $code)
+  try $thunk(); return false catch $message, $error return $error.code == $code end
+end
+for $key in ["ConditionPathExists", "EnvironmentFile", "LoadCredential"]
+  need(refuses(fn() = $renderer.external($key .. "=@{prefix}/file\n", $roots, "unit"), "LAYOUT_WHITESPACE"), $key .. " accepted a whitespace path")
+end
+$environment = $renderer.external("Environment=MIXOS_PREFIX=@{prefix}\n", $roots, "unit")
+need($environment == 'Environment="MIXOS_PREFIX=/tmp/moved tree"' .. "\n", "Environment quoting differs")
+
+-- Exercise the shipped writer under N-1 Mix using explicit fixture roots.
+$files = require($repo .. "/share/layout/files.mix")
+$tmp = "/tmp/mixos-layout-files-" .. uuid()
+$here = $tmp .. "/templates"
+$stage = $tmp .. "/stage"
+mkdir($here, {parents: true})
+mkdir($stage)
+try
+  $roots = {prefix: "/fixture prefix", share: "/elsewhere/share", etc: "/fixture-etc", var: "/fixture-var", run: "/fixture-run", cache: "/fixture-cache"}
+  write_file($here .. "/unit", "ExecStart=@{prefix}/bin/mix\n")
+  write_file($here .. "/templates.mx", data_encode({schema: 1, files: [
+    {source: "unit", target: "@{prefix}/share/demod/units/demod.service", kind: "unit"}]}))
+  $target = $stage .. $roots.prefix .. "/share/demod/units/demod.service"
+  $home_before = if env("HOME") != "" and is_file(env("HOME") .. "/.mixrc") then hash_file(env("HOME") .. "/.mixrc", "sha256") else nil end
+  $host_shells = if is_file("/etc/shells") then hash_file("/etc/shells", "sha256") else nil end
+  need(refuses(fn() = $files.application($here, $roots, {image: true}), "LAYOUT_ARGS"), "--image without --root accepted")
+  $files.apply($files.application($here, $roots, {root: $stage}), true)
+  need(len(walk($stage)) == 0, "dry-run wrote files")
+  symlink($stage, $tmp .. "/stage-link")
+  $files.apply($files.application($here, $roots, {root: $tmp .. "/stage-link"}), false)
+  need(is_file($target) and stat($target).perm == 0o644, "canonical staging root or new-file mode differs")
+  need(not exists($stage .. "/etc") and not exists($stage .. "/elsewhere"), "--root wrote shells or followed share outside prefix")
+  need(read_link($stage .. "/usr/local/bin/mix") == $roots.prefix .. "/bin/mix", "staged host link differs")
+  need($home_before == (if env("HOME") != "" and is_file(env("HOME") .. "/.mixrc") then hash_file(env("HOME") .. "/.mixrc", "sha256") else nil end), "layout changed the running user's mixrc")
+  need($host_shells == (if is_file("/etc/shells") then hash_file("/etc/shells", "sha256") else nil end), "--root changed host shells")
+  chmod($target, 0o640)
+  $owner = stat($target).uid
+  write_file($here .. "/unit", "ExecStart=@{prefix}/bin/mix --new\n")
+  $files.apply($files.application($here, $roots, {root: $stage}), false)
+  need(stat($target).perm == 0o640 and stat($target).uid == $owner, "existing mode or owner changed")
+  $files.apply($files.application($here, $roots, {root: $stage, image: true}), false)
+  need(read_file($stage .. "/etc/shells") == "/usr/bin/mix\n" and read_link($stage .. "/usr/bin/mix") == $roots.prefix .. "/bin/mix", "image entrance differs")
+  remove($target)
+  write_file($tmp .. "/outside", "keep\n")
+  symlink($tmp .. "/outside", $target)
+  need(refuses(fn() = $files.application($here, $roots, {root: $stage}), "LAYOUT_TARGET") and read_file($tmp .. "/outside") == "keep\n", "render followed a final symlink")
+  remove($target)
+  write_file($target, "before\n")
+  remove($stage .. "/usr/local/bin/mix")
+  write_file($stage .. "/usr/local/bin/mix", "foreign\n")
+  need(refuses(fn() = $files.application($here, $roots, {root: $stage}), "LAYOUT_LINK") and read_file($target) == "before\n", "link conflict half-applied templates")
+  remove($stage .. "/usr/local/bin/mix")
+  mkdir($stage .. "/blocked")
+  chmod($stage .. "/blocked", 0o555)
+  $pending = [{stage: $stage, path: "/first", text: "new\n"}, {stage: $stage, path: "/blocked/last", text: "new\n"}]
+  if uid() == 0 then print("SKIP permission preflight denial: uid 0 can write read-only fixture directories")
+  else need(refuses(fn() = $files.apply($pending, false), "LAYOUT_WRITABLE") and not exists($stage .. "/first"), "permission failure half-applied files") end
+  chmod($stage .. "/blocked", 0o755)
+  symlink($tmp, $stage .. "/linked")
+  need(refuses(fn() = $files.apply([{stage: $stage, path: "/linked/escape", text: "bad"}], false), "LAYOUT_TARGET") and not exists($tmp .. "/escape"), "symlink parent escaped stage")
+  print("PASS prefix-only rendering, canonical sysroot, host/image entrance, no HOME writes, preflight, symlinks and mode preservation under N-1 Mix")
+finally
+  remove_dir($tmp)
+end

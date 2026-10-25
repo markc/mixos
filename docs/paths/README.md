@@ -24,6 +24,10 @@ then `<prefix>/layout.mx`, then the uid default. Prefix itself comes only from
 `layout.mx` is bounded strict data with at most five keys: `etc`, `var`, `run`,
 `share`, `cache`. A `prefix` key is refused. Root values in that file must be
 absolute paths without `..` or control bytes. Unknown and duplicate keys refuse.
+A root in layout.mx applies to every uid, like `$MIXOS`; it is not a system-tier
+override. Gold writes only roots differing from system defaults for the target
+prefix and removes layout.mx when there are no differences. A default install
+therefore retains user XDG directories even with the system prefix.
 
 ```text
 etc: "/srv/example/etc"
@@ -66,11 +70,21 @@ The macro catalogue keeps its own XDG config directory and `MIXOS_MIX` override.
 These policies do not switch to the directory resolver's XDG data default.
 
 External files use `@{prefix}`, `@{share}`, `@{etc}`, `@{var}`, `@{run}` and
-`@{cache}` templates. Component-owned units ship under `share/layout/`.
+`@{cache}` templates. Template sources ship under `share/layout/`; output stays
+in its packaged place inside the prefix, including `share/<component>/units/`
+and `share/applications/`. The unmanaged flat `share/units/` tree is never changed.
 `mix layout apply [--root SYSROOT] [--dry-run] [--image]` renders them
-idempotently, prints changed files and manages the PATH block, `/etc/shells`
-and a single link to `<prefix>/bin/mix`: `/usr/local/bin/mix` on hosts,
-`/usr/bin/mix` only in a MixOS-owned image. A non-symlink at the link refuses.
+idempotently, prints changed files and manages a single link to
+`<prefix>/bin/mix`: `/usr/local/bin/mix` on hosts, `/usr/bin/mix` only in a
+MixOS-owned image. On a host it adds the link to `/etc/shells`. It does not
+manage mixrc or enable services. `--image` requires `--root`; with `--root`,
+no host or HOME files are touched, and only `--image` adds staged `/etc/shells`.
+A non-symlink at the link refuses. The staging root is canonicalised before
+checking its children. Symlink parents below it and symlink render targets
+refuse. Every target is checked before the first write. Existing file modes
+and owners survive; new files are 0644. Exec and Environment paths are quoted
+when needed; whitespace in a path used by a systemd key that does not unquote
+(such as EnvironmentFile, ConditionPathExists or LoadCredential) refuses.
 `mix-static` is never linked. Host Elixir installs do not rename this entry.
 
 Installers select a target independently of their interpreter. The staged binary
@@ -90,9 +104,14 @@ Explicit target flags precede its layout file, then the staged binary's
 defaults. They do not inherit the installer's ambient layout overrides.
 Component `--root` is a staging sysroot; `--mix STAGED_MIX` supplies defaults
 before a target binary exists. Gold verifies the release before querying its
-binary, journals the five-key layout document and saves all six target roots
-in receipts. Release records are beneath `var/releases`. Rollback/recovery
+binary, renders the owned staged files before hashing, journals any non-default
+layout document and saves all six target roots in receipts. Per-package template
+manifests coexist, so desktop and server install together. Component_install
+continues to render and record its own units, excluded from the global manifest.
+Release records are beneath `var/releases`. Rollback/recovery
 can use `--receipt-file FILE` without invoking a target binary.
+Main's earlier absolute root/backup receipts without a layout are also readable,
+including release ordering; their shapes are retained during rollback.
 
 Repository tools work under the previous release and `mix-static`. Docs resolve
 logical paths against the checkout: `mixos:share/x` names `<repo>/share/x`.
@@ -105,15 +124,22 @@ in `layout.mx`, render again and restart. Existing processes retain their cached
 snapshot. This implementation does not migrate live data.
 `tools/layout_migrate_saved.mix --source COPY --from-prefix OLD_PREFIX
 --from-layout OLD_LAYOUT` previews offline changes by default; `--apply` keeps
-originals. The old layout supplies the five non-prefix roots. SQLite stores
+originals. Token boundaries prevent replacing roots embedded inside other paths.
+An interrupted apply can resume when the retained original still equals the
+unmigrated file; a different original refuses. Dry-run never removes temporaries.
+The old layout supplies the five non-prefix roots. SQLite stores
 must first be exported by their owner so revisions and audit chains survive.
 
 The gate rejects literal roots outside resolver defaults, templates, default
 assertions and documentation. The release proof uses a prefix with a space and
 a private mount namespace hiding the old roots. Installer, scene, nested desk
 and SSH loopback tests use disposable roots; unavailable privileges report a
-clear skip. The template proof compares 45 rendered files byte-for-byte with
-main; `--installed` additionally reports drift in the installed unit collection.
+clear skip. The template proof compares 37 global and 8 component-owned templates
+byte-for-byte with main; `--installed` additionally reports drift in existing packaged targets.
+It does not inspect or change unmanaged flat unit copies. Templates not included
+in a selected release, such as dnsd's EnvironmentFile with a prefix path, can
+require a prefix without whitespace even though the desktop/server bundle works
+under a prefix with a space.
 
 Three fixed-FHS Mix defaults remain as exact path-gate deferrals: bridged's
 system config fallback, scene-sync's session environment file, and topbar's

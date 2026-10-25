@@ -30,6 +30,26 @@ for $name in keys($old)
   push($pairs, {path: $old[$name], name: $name})
 end
 $pairs = reverse(sort_by($pairs, fn($p) = len($p.path)))
+fn logical_paths($text, $pair)
+  $out = ""
+  $cursor = 0
+  while $cursor < len($text)
+    $found = index_of(substr($text, $cursor), $pair.path)
+    if $found < 0 then return $out .. substr($text, $cursor) end
+    $at = $cursor + $found
+    $after = $at + len($pair.path)
+    $left = if $at == 0 then "" else substr($text, $at - 1, 1) end
+    $right = substr($text, $after, 1)
+    $start = $at == 0 or contains(["\"", "'", "=", ":", "(", "[", ","], $left) or re_match($left, "\\s")
+    $end = $after == len($text) or contains(["\"", "'", ")", "]", "}", ",", ";"], $right) or re_match($right, "\\s")
+    $out = $out .. substr($text, $cursor, $at - $cursor)
+    if $start and ($right == "/" or $end) then
+      $out = $out .. "mixos:" .. $pair.name .. (if $right == "/" then "" else "/" end)
+    else $out = $out .. $pair.path end
+    $cursor = $after
+  end
+  return $out
+end
 $pending = []
 for $path in walk($copy, {follow_symlinks: false})
   $st = stat($path, {follow_symlinks: false})
@@ -44,19 +64,28 @@ for $path in walk($copy, {follow_symlinks: false})
   $text = read_file($path)
   $next = $text
   for $pair in $pairs
-    -- Boundary-aware replacement avoids matching a sibling installation name.
-    $next = replace($next, $pair.path .. "/", "mixos:" .. $pair.name .. "/")
-    $next = replace($next, '"' .. $pair.path .. '"', '"mixos:' .. $pair.name .. '/"')
-    $next = replace($next, "'" .. $pair.path .. "'", "'mixos:" .. $pair.name .. "/'")
+    $next = logical_paths($next, $pair)
   end
   if $next == $text then continue end
-  if exists($path .. ".layout-original", {follow_symlinks: false}) then raise("MIGRATE_BACKUP", "original already exists for " .. $path) end
+  if exists($path .. ".layout-original", {follow_symlinks: false}) then
+    $backup = stat($path .. ".layout-original", {follow_symlinks: false})
+    if $backup.is_symlink or not $backup.is_file or read_file($path .. ".layout-original") != $text then
+      raise("MIGRATE_BACKUP", "original differs from the unmigrated file: " .. $path)
+    end
+  end
+  if exists($path .. ".layout-new", {follow_symlinks: false}) then
+    $stale = stat($path .. ".layout-new", {follow_symlinks: false})
+    if $stale.is_symlink or not $stale.is_file then raise("MIGRATE_BACKUP", "non-regular migration temporary: " .. $path) end
+  end
   push($pending, {path: $path, old: $text, text: $next, mode: $st.perm})
 end
 for $entry in $pending
   print((if $g.opts.apply then "migrate " else "would migrate " end) .. $entry.path)
   if $g.opts.apply then
-    write_new($entry.path .. ".layout-original", $entry.old, $entry.mode)
+    if not exists($entry.path .. ".layout-original", {follow_symlinks: false}) then
+      write_new($entry.path .. ".layout-original", $entry.old, $entry.mode)
+    end
+    if exists($entry.path .. ".layout-new", {follow_symlinks: false}) then remove($entry.path .. ".layout-new") end
     write_new($entry.path .. ".layout-new", $entry.text, $entry.mode)
     rename($entry.path .. ".layout-new", $entry.path)
   end

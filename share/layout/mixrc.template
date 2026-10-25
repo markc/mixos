@@ -1,3 +1,0 @@
-# SPDX-License-Identifier: MIT OR Apache-2.0
-# MixOS PATH; rendered by mix layout apply.
-export PATH = "@{prefix}/bin:" .. env("PATH")

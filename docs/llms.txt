@@ -241,7 +241,7 @@ One line per component with a page: kind, then install profiles. The
 - [Weekly CBC releases, starting with Linux x86_64](https://mixos.dev/docs/decisions/2026-10-22-weekly-cbc-releases.md): MixOS release builds run on designated CBC workers at an exact source commit; GitHub hosts the verified result.
 - [Decision — Bus commands and app actions](https://mixos.dev/docs/decisions/2026-10-24-bus-commands-and-actions.md): A dotted name a service answers is a Bus command and an app's registry entry is an action; "verb" is retired, and each kind of unknown name has one refusal.
 - [Macro-file write authority](https://mixos.dev/docs/decisions/2026-10-24-macro-file-write-authority.md): Status: accepted, 2026-10-24.
-- [Relocatable layout](https://mixos.dev/docs/decisions/2026-10-25-relocatable-layout.md): Status: accepted, 2026-10-25; amended the same day to preserve main's uid and directory rules.
+- [Relocatable layout](https://mixos.dev/docs/decisions/2026-10-25-relocatable-layout.md): Status: accepted, 2026-10-25; amended the same day to preserve main's uid, directory and installation rules.
 
 ### Specs
 

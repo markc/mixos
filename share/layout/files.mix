@@ -1,0 +1,158 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- N-1 compatible renderer and writer. Roots are explicit, never discovered here.
+$renderer = require("render.mix")
+
+fn entries($here)
+  $paths = sort(glob($here .. "/manifests/*.mx"))
+  if is_file($here .. "/templates.mx") then push($paths, $here .. "/templates.mx") end
+  $files = []
+  for $path in $paths
+    $manifest = load_data($path)
+    if $manifest.schema != 1 or type($manifest.files) != "list" then raise("LAYOUT_SCHEMA", "unsupported template manifest: " .. $path) end
+    $files = concat($files, $manifest.files)
+  end
+  return $files
+end
+
+fn plan($here, $roots)
+  $pending = []
+  $seen = {}
+  for $entry in entries($here)
+    if not starts_with($entry.target, "@{prefix}/") then raise("LAYOUT_TARGET", "template target must stay inside the prefix") end
+    $path = $renderer.render($entry.target, $roots)
+    bounded($path)
+    $source = $here .. "/" .. $entry.source
+    if not is_file($source) then raise("LAYOUT_SOURCE", "missing template " .. $source) end
+    $text = $renderer.external(read_file($source), $roots, $entry.kind)
+    if has_key($seen, $path) then
+      if $seen[$path] != $text then raise("LAYOUT_TARGET", "conflicting templates for " .. $path) end
+      continue
+    end
+    $seen[$path] = $text
+    push($pending, {path: $path, text: $text})
+  end
+  return $pending
+end
+
+fn bounded($path)
+  if not starts_with($path, "/") or any(slice(split($path, "/"), 1), fn($p) = contains(["", ".", ".."], $p)) then
+    raise("LAYOUT_TARGET", "target must be a canonical absolute path: " .. $path)
+  end
+end
+
+-- stage is canonical before checking components. Its ancestors may be links;
+-- only components below it belong to this operation.
+fn destination($stage, $path)
+  bounded($path)
+  $part = $stage
+  for $piece in slice(split(dirname($path), "/"), 1)
+    if $piece == "" then continue end
+    $part = $part .. "/" .. $piece
+    if exists($part, {follow_symlinks: false}) then
+      $st = stat($part, {follow_symlinks: false})
+      if $st.is_symlink or not $st.is_dir then raise("LAYOUT_TARGET", "non-directory parent " .. $part) end
+    end
+  end
+  return $stage .. $path
+end
+
+fn preflight($pending)
+  for $entry in $pending
+    $dest = destination($entry.stage, $entry.path)
+    $present = exists($dest, {follow_symlinks: false})
+    if $present then
+      $st = stat($dest, {follow_symlinks: false})
+      if has_key($entry, "link") then
+        if not $st.is_symlink then raise("LAYOUT_LINK", "refusing to overwrite non-symlink " .. $dest) end
+        if read_link($dest) == $entry.link then continue end
+      else
+        if $st.is_symlink then raise("LAYOUT_TARGET", "refusing symlink render target " .. $dest) end
+        if not $st.is_file then raise("LAYOUT_TARGET", "refusing non-regular file " .. $dest) end
+        if read_file($dest) == $entry.text then continue end
+        if not access($dest, "w") or (uid() != 0 and $st.uid != uid()) then
+          raise("LAYOUT_WRITABLE", "cannot preserve and replace " .. $dest)
+        end
+      end
+    end
+    $parent = dirname($dest)
+    while not exists($parent, {follow_symlinks: false}) $parent = dirname($parent) end
+    if not access($parent, "wx") then raise("LAYOUT_WRITABLE", "target parent is not writable: " .. $parent) end
+  end
+end
+
+fn apply($pending, $dry)
+  preflight($pending)
+  for $entry in $pending
+    $dest = destination($entry.stage, $entry.path)
+    $present = exists($dest, {follow_symlinks: false})
+    if has_key($entry, "link") then
+      if $present and read_link($dest) == $entry.link then continue end
+      print($dest .. " -> " .. $entry.link)
+      if not $dry then
+        mkdir(dirname($dest), {parents: true})
+        if $present then remove($dest) end
+        symlink($entry.link, $dest)
+      end
+    else
+      if $present and read_file($dest) == $entry.text then continue end
+      print($dest)
+      if not $dry then
+        mkdir(dirname($dest), {parents: true})
+        $options = {durability: "full"}
+        if not $present then $options.mode = 0o644 end
+        write_atomic($dest, $entry.text, $options)
+      end
+    end
+  end
+end
+
+fn application($here, $roots, $opts)
+  $pending = entrance($roots, $opts)
+  $stage = $pending[0].stage
+  for $entry in plan($here, $roots)
+    $entry.stage = $stage
+    push($pending, $entry)
+  end
+  preflight($pending)
+  return $pending
+end
+
+-- The only writes outside the prefix. Also used by gold after staged rendering.
+fn entrance($roots, $opts)
+  if $opts.image and $opts.root == nil then raise("LAYOUT_ARGS", "--image requires --root") end
+  $stage = ""
+  if $opts.root != nil then
+    if not starts_with($opts.root, "/") or not is_dir($opts.root) then raise("LAYOUT_ROOT", "--root must be an existing absolute directory") end
+    $stage = realpath($opts.root)
+    if $stage == "/" then $stage = "" end
+  end
+  $pending = []
+  $shell = if $opts.image then "/usr/bin/mix" else "/usr/local/bin/mix" end
+  push($pending, {stage: $stage, path: $shell, link: $roots.prefix .. "/bin/mix"})
+  -- A staging root never causes a host shells or HOME write. Images opt in.
+  if $opts.root == nil or $opts.image then
+    $dest = destination($stage, "/etc/shells")
+    $shells = ""
+    if exists($dest, {follow_symlinks: false}) then
+      $st = stat($dest, {follow_symlinks: false})
+      if $st.is_symlink or not $st.is_file then raise("LAYOUT_TARGET", "refusing non-regular shells file " .. $dest) end
+      $shells = read_file($dest)
+    end
+    if not contains(lines($shells), $shell) then
+      push($pending, {stage: $stage, path: "/etc/shells", text: $shells .. (if $shells != "" and not ends_with($shells, "\n") then "\n" else "" end) .. $shell .. "\n"})
+    end
+  end
+  preflight($pending)
+  return $pending
+end
+
+-- Render only the owned unpacked archive. Hashing follows this operation.
+fn staged($here, $roots, $top)
+  $pending = []
+  for $entry in plan($here, $roots)
+    $entry.path = strip_prefix($entry.path, $roots.prefix)
+    $entry.stage = realpath($top)
+    push($pending, $entry)
+  end
+  return $pending
+end

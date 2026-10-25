@@ -67,6 +67,36 @@ PROGRAM
     "--source", $copy, "--from-prefix", $prefix, "--from-layout", $tmp .. "/old-layout.mx"], {timeout: 30, stderr: "stdout"})
   need($migration.ok and contains($migration.stdout, "would migrate") and read_file($copy .. "/saved.json") == $saved_text and
     not is_file($copy .. "/saved.json.layout-original"), "N-1 migration dry-run changed its offline input")
+  -- Left and right boundaries: these embedded/sibling roots must stay intact.
+  $negative = ["/srv/backup/opt/mixos/share/x", "/srv/backup/etc/mixos/x", "/srv/backup/var/lib/mixos/x",
+    "/opt/mixos-old/share/x", "/etc/mixos-old/x"]
+  $public_old = {share: "/opt/mixos/share", etc: "/etc/mixos", var: "/var/lib/mixos", run: "/run/mixos", cache: "/var/cache/mixos"}
+  write_file($tmp .. "/public-layout.mx", data_encode($public_old))
+  $boundary_copy = $tmp .. "/boundary-copy"
+  mkdir($boundary_copy)
+  $before = join($negative, "\n") .. "\n" .. '"/opt/mixos/share/x" =/etc/mixos/x :/var/lib/mixos/x (/run/mixos/x [/var/cache/mixos/x ,/opt/mixos/bin/mix' .. "\n/opt/mixos\n"
+  $boundary_file = $boundary_copy .. "/paths.mix"
+  write_file($boundary_file, $before)
+  $argv = [realpath("/proc/self/exe"), $repo .. "/tools/layout_migrate_saved.mix", "--source", $boundary_copy,
+    "--from-prefix", "/opt/mixos", "--from-layout", $tmp .. "/public-layout.mx"]
+  -- Model a kill after the backup write and before the rename.
+  write_file($boundary_file .. ".layout-original", $before)
+  write_file($boundary_file .. ".layout-new", "interrupted\n")
+  $preview = run_argv($argv, {stderr: "stdout"})
+  need($preview.ok and read_file($boundary_file) == $before and read_file($boundary_file .. ".layout-new") == "interrupted\n", "resumable dry-run wrote files")
+  $resumed = run_argv(concat($argv, ["--apply"]), {stderr: "stdout"})
+  need($resumed.ok, "interrupted migration could not resume: " .. $resumed.stdout)
+  $after = read_file($boundary_file)
+  for $path in $negative need(contains($after, $path), "migration corrupted embedded or sibling root " .. $path) end
+  for $path in ["mixos:share/x", "mixos:etc/x", "mixos:var/x", "mixos:run/x", "mixos:cache/x", "mixos:prefix/bin/mix", "mixos:prefix/"]
+    need(contains($after, $path), "migration missed a token boundary: " .. $path)
+  end
+  need(read_file($boundary_file .. ".layout-original") == $before and not exists($boundary_file .. ".layout-new"), "migration lost its original or left a temporary")
+  $again = run_argv(concat($argv, ["--apply"]), {stderr: "stdout"})
+  need($again.ok and contains($again.stdout, "0 files"), "migration was not idempotent")
+  write_file($boundary_file, $before .. "drift\n")
+  $drift = run_argv(concat($argv, ["--apply"]), {stderr: "stdout"})
+  need(not $drift.ok and contains($drift.stdout, "MIGRATE_BACKUP"), "migration overwrote a drifted original")
   print("PASS target defaults, per-root precedence, receipt-only rollback, sysroot, strict layout, docs source paths and offline migration dry-run under N-1 Mix")
 finally
   remove_dir($tmp)

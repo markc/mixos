@@ -2,6 +2,30 @@
 use super::*;
 
 #[test]
+fn default_prefix_without_layout_keeps_user_xdg_roots() {
+    let env = Environment {
+        uid: 1000,
+        home: Some("/home/user".into()),
+        exe: Some("/opt/mixos/bin/x".into()),
+        xdg_runtime_dir: Some("/run/user/1000".into()),
+        ..Environment::default()
+    };
+    // An absent layout file supplies no overrides. Prefix location never
+    // changes the uid tier; installing defaults must not write a system map.
+    let layout = Layout::from_source(&env, "").unwrap();
+    assert_eq!(layout.root(Root::Prefix), Path::new("/opt/mixos"));
+    assert_eq!(layout.root(Root::Etc), Path::new("/home/user/.config/mixos"));
+    assert_eq!(layout.root(Root::Var), Path::new("/home/user/.local/share/mixos"));
+    assert_eq!(layout.root(Root::Run), Path::new("/run/user/1000/mixos"));
+    assert_eq!(layout.root(Root::Cache), Path::new("/home/user/.cache/mixos"));
+    assert_eq!(layout.root(Root::Share), Path::new("/opt/mixos/share"));
+    // A root explicitly stored in layout.mx applies to every uid, like MIXOS.
+    let explicit = Layout::from_source(&env, "etc: '/etc/mixos'").unwrap();
+    assert_eq!(explicit.root(Root::Etc), Path::new("/etc/mixos"));
+    assert_eq!(explicit.root(Root::Var), layout.root(Root::Var));
+}
+
+#[test]
 fn public_live_environments_match_main_for_both_uids_and_prefixes() {
     // Expected Etc/Var/Run values were transcribed by applying the match arms
     // of 32650ae5:libs/config/src/dir.rs by hand, not by a second resolver.

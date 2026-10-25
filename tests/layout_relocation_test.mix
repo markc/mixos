@@ -20,12 +20,39 @@ if $g.opts.child then
   $oracle = run_argv_must([$mix, "-c", 'print(mixos_path("prefix"))'], {env: $envmap})
   if trim($oracle) != $scratch .. "/moved prefix" then raise("RELOCATION_PREFIX", $oracle) end
   $apply = [$mix, "layout", "apply", "--root", $scratch .. "/sysroot"]
+  $home_rc = if env("HOME") != "" and is_file(env("HOME") .. "/.mixrc") then hash_file(env("HOME") .. "/.mixrc", "sha256") else nil end
+  $host_shells = if is_file("/etc/shells") then hash_file("/etc/shells", "sha256") else nil end
   $first = run_argv_must($apply, {env: $envmap})
   $second = run_argv_must($apply, {env: $envmap})
   if trim($second) != "" then raise("RELOCATION_IDEMPOTENCE", $second) end
+  $other_share = $envmap
+  $other_share.MIXOS_SHARE = $scratch .. "/external-share"
+  $share_apply = run_argv(concat($apply, ["--dry-run"]), {env: $other_share})
+  if not $share_apply.ok then raise("RELOCATION_SHARE", "renderer must load from the prefix even with MIXOS_SHARE: " .. $share_apply.stderr) end
   print("relocation: renderer is idempotent; " .. to_string(len(lines($first))) .. " changes on first apply")
   $link = $scratch .. "/sysroot/usr/local/bin/mix"
   if read_link($link) != $mix then raise("RELOCATION_LINK", "managed link target differs") end
+  $staged_prefix = $scratch .. "/sysroot" .. $scratch .. "/moved prefix"
+  for $path in walk($scratch .. "/sysroot", {follow_symlinks: false})
+    if $path != $link and not starts_with($path, $staged_prefix .. "/") then raise("RELOCATION_WRITES", "unexpected outside-prefix write: " .. $path) end
+  end
+  if exists($scratch .. "/sysroot/etc/shells") then raise("RELOCATION_WRITES", "--root wrote shells without --image") end
+  if ($home_rc != (if env("HOME") != "" and is_file(env("HOME") .. "/.mixrc") then hash_file(env("HOME") .. "/.mixrc", "sha256") else nil end) or
+    $host_shells != (if is_file("/etc/shells") then hash_file("/etc/shells", "sha256") else nil end)) then
+    raise("RELOCATION_WRITES", "--root changed host shells or the running user's mixrc")
+  end
+  $bad_image = run_argv([$mix, "layout", "apply", "--image"], {env: $envmap})
+  if $bad_image.ok or not contains($bad_image.stderr, "--image requires --root") then raise("RELOCATION_IMAGE", "--image without --root was accepted") end
+  mkdir($scratch .. "/image")
+  print(run_argv_must([$mix, "layout", "apply", "--root", $scratch .. "/image", "--image"], {env: $envmap}))
+  if read_file($scratch .. "/image/etc/shells") != "/usr/bin/mix\n" then raise("RELOCATION_IMAGE", "image shells differs") end
+  for $path in walk($scratch .. "/image", {follow_symlinks: false})
+    if (not starts_with($path, $scratch .. "/image" .. $scratch .. "/moved prefix/") and
+      not contains([$scratch .. "/image/usr/bin/mix", $scratch .. "/image/etc/shells"], $path)) then
+      raise("RELOCATION_WRITES", "unexpected image write: " .. $path)
+    end
+  end
+  print("relocation: writes stay inside the prefix except the link and explicit image shells")
   $logical = run_argv_must([$mix, "-c", 'print(mixos_path("mixos:share/scenes/editor/scene.mix"))'], {env: $envmap})
   if trim($logical) != $scratch .. "/moved prefix/share/scenes/editor/scene.mix" then raise("RELOCATION_LOGICAL", $logical) end
   $escape = run_argv([$mix, "-c", 'print(mixos_path("mixos:prefix/../escape"))'], {env: $envmap})
@@ -77,9 +104,14 @@ try
   copy_tree($repo .. "/share/layout", $scratch .. "/first prefix/share/layout")
   copy_tree($repo .. "/share/scenes", $scratch .. "/first prefix/share/scenes")
   $manifest = load_data($repo .. "/share/layout/templates.mx")
+  $packages = load_data($repo .. "/tools/release_packages.mx").packages
+  $owners = concat($packages["mixos-desktop"], $packages["mixos-server"])
   $files = []
   for $entry in $manifest.files
     $rel = strip_prefix($entry.source, "../../")
+    -- Match what the two actual packages ship. Unpackaged dnsd has an
+    -- EnvironmentFile prefix path and correctly refuses whitespace there.
+    if not contains($owners, split($rel, "/")[1]) then continue end
     $to = "templates/" .. $rel
     mkdir(dirname($scratch .. "/first prefix/share/layout/" .. $to), {parents: true})
     copy($repo .. "/" .. $rel, $scratch .. "/first prefix/share/layout/" .. $to)
