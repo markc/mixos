@@ -8,6 +8,9 @@ enters the tree. Per-file licensing is recorded in REUSE.toml.
 Third-party vendored code under vendor/ keeps its own licence files, and each
 directory records its upstream base and local patches (vendor/README.md).
 
+eframe 0.36.2, vendor/eframe, Emil Ernerfeldt and egui contributors,
+MIT OR Apache-2.0; see its LICENSE-MIT, LICENSE-APACHE and PATCHES.md.
+
 The wlcs callback structure in services/compd/crates/wlcs/src/lib.rs was informed
 by Smithay 0.7 wlcs_anvil, Victor Berger, Victoria Brekenfeld and contributors,
 MIT (vendor/smithay/LICENSE.txt). Small client/surface lookup fragments in

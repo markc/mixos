@@ -224,6 +224,8 @@ input = { path = "vendor/input" }
 pipewire = { path = "vendor/pipewire" }
 # Ctrl+V sends a paste even with no text on the clipboard. See vendor/egui-winit/PATCHES.md.
 egui-winit = { path = "vendor/egui-winit" }
+# Logic-only wakeups when Wayland withholds frame callbacks.
+eframe = { path = "vendor/eframe" }
 
 # Term's PTY with the child-only session-descriptor handoff
 # (vendor/teletypewriter/PATCHES.md).

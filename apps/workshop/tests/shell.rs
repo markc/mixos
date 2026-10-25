@@ -17,6 +17,40 @@ use toolkit::{Theme, drive};
 use workshop::label;
 use workshop::shell::{APP, Shell};
 
+// Exercise the actual vendored scheduling policy as a re-vendor guard.
+#[path = "../../../vendor/eframe/src/native/logic_wake.rs"]
+mod logic_wake;
+
+#[test]
+fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
+    let mut rig = rig();
+    let ctx = rig.h.ctx.clone();
+    let pass = ctx.cumulative_pass_nr();
+    send(&mut rig, 7001, "workshop.ping", json!({}));
+    send(&mut rig, 7002, "HELP", json!({}));
+
+    // Reproduce the old scheduler: request_redraw has no frame callback,
+    // therefore no UI pass and no call to Shell::logic. Work remains queued.
+    assert!(reply(&rig, 7001).is_none());
+    assert!(reply(&rig, 7002).is_none());
+
+    let now = std::time::Instant::now();
+    let mut wake = logic_wake::LogicWake::default();
+    wake.request(now);
+    assert!(!wake.take_due(now));
+    let deadline = wake.deadline().unwrap();
+    assert!(wake.take_due(deadline));
+    // This is eframe's existing logic-only path: no run_ui, no painter.
+    let _output = ctx.run_logic(&egui::RawInput::default(), |ctx| {
+        rig.h.state_mut().as_mut().unwrap().logic(ctx);
+    });
+    assert_eq!(reply(&rig, 7001).unwrap().1, 0);
+    assert_eq!(reply(&rig, 7002).unwrap().1, 0);
+    assert_eq!(ctx.cumulative_pass_nr(), pass);
+    assert_eq!(wake.deadline(), None);
+    assert!(!wake.take_due(deadline + Duration::from_secs(60)));
+}
+
 struct Rig {
     h: Harness<'static, Option<Shell>>,
     bus: Handle,
