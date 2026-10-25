@@ -111,7 +111,8 @@ pub fn controls(
                     }
                 });
             });
-            row(ui, "wallpaper-fill-row", "", |ui| match kind {
+            let fill_label = match kind { Kind::Colour => label("wallpaper-hex"), Kind::Image => label("wallpaper-path"), Kind::Theme => String::new() };
+            row(ui, "wallpaper-fill-row", &fill_label, |ui| match kind {
                 Kind::Theme => {
                     ui.label(
                         RichText::new(label(if editor.target.is_some() {
@@ -136,14 +137,13 @@ pub fn controls(
                             text = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
                             events.push(UiEvent::WallpaperColour(text.clone()));
                         }
-                        let caption = ui.label(label("wallpaper-hex"));
                         if ui
                             .add(
                                 egui::TextEdit::singleline(&mut text)
                                     .desired_width(ui.spacing().interact_size.x * 3.0)
                                     .hint_text("#RRGGBB"),
                             )
-                            .labelled_by(caption.id)
+                            .on_hover_text(label("wallpaper-hex"))
                             .changed()
                         {
                             events.push(UiEvent::WallpaperColour(text));

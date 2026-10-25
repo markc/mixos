@@ -156,10 +156,8 @@ pub fn view(
             } else {
                 ui.small(&engine.release_status);
             }
-        } else if engine.section() == Section::Email && engine.email.task.is_some() {
-            ui.small(&engine.status);
-        } else if let Some(status) = &engine.look.settings_status {
-            ui.small(status);
+        } else {
+            ui.add(icons::image_of(ui.ctx(), Icon::Plug, ICON, ui.visuals().weak_text_color()));
         }
     });
     egui::Panel::left("editors")
@@ -173,6 +171,16 @@ pub fn view(
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| {
             page_header(ui, engine.section());
+            if let Some(task) = &engine.email.task {
+                let key = match task.stage {
+                    preferences::email::Stage::Sending => "email-task-sending",
+                    preferences::email::Stage::Launching => "email-launching",
+                    preferences::email::Stage::Waiting => "email-waiting",
+                };
+                ui.small(RichText::new(label(key)).weak());
+            } else if let Some(status) = &engine.look.settings_status {
+                ui.small(RichText::new(status).weak());
+            }
             problem_feedback(ui, engine, &mut events);
             match engine.section() {
                 Section::Software => applications(ui, engine, commands, strings, &mut events),
@@ -256,10 +264,18 @@ fn problem_feedback(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
 const LABEL_WIDTH: f32 = 144.0;
 
 fn field_label(ui: &mut Ui, text: &str) -> egui::Response {
-    ui.add_sized(
-        [LABEL_WIDTH, ui.spacing().interact_size.y],
-        egui::Label::new(text).wrap(),
-    )
+    ui.allocate_ui_with_layout(egui::vec2(LABEL_WIDTH, ui.spacing().interact_size.y),
+        Layout::left_to_right(Align::Center), |ui| {
+            ui.set_min_width(LABEL_WIDTH);
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+            ui.label(text)
+        }).inner
+}
+
+fn toggle(ui: &mut Ui, value: &mut bool, key: &str) -> bool {
+    let response = ui.add(Toggle::new(value, ""));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *value, label(key)));
+    response.changed()
 }
 
 fn row<R>(ui: &mut Ui, key: &str, text: &str, control: impl FnOnce(&mut Ui) -> R) -> R {
@@ -285,7 +301,7 @@ fn group_heading(ui: &mut Ui, key: &str, first: bool) {
         bars::hairline(ui);
     }
     ui.add_space(ui.spacing().item_spacing.y);
-    ui.strong(label(key));
+    ui.label(RichText::new(label(key)).family(egui::FontFamily::Name(toolkit::fonts::HEADING.into())).strong());
     ui.add_space(ui.spacing().item_spacing.y);
 }
 
@@ -674,9 +690,7 @@ fn motion(
             });
             row(ui, "reduced-motion", &label("motion-reduce"), |ui| {
                 let mut reduced = look.reduced_motion;
-                if ui
-                    .add(Toggle::new(&mut reduced, label("motion-reduce")))
-                    .changed()
+                if toggle(ui, &mut reduced, "motion-reduce")
                 {
                     events.push(UiEvent::Appearance(AppearanceEdit::ReducedMotion(reduced)));
                 }
@@ -939,7 +953,7 @@ fn appearance(
             group_heading(ui, "appearance-theme", true);
             look_controls(ui, engine, strings, look.clone(), events);
             row(ui, "style-note", "", |ui| {
-                ui.weak(label("look-style-note"));
+                ui.add(egui::Label::new(RichText::new(label("look-style-note")).weak()).wrap());
             });
             density(ui, engine, &look, events);
             signpost(ui, engine, "related-wallpaper", Section::Wallpapers, events);
@@ -1159,9 +1173,7 @@ fn terminal_controls(
         &label("terminal-cursor-blink"),
         |ui| {
             let mut blink = term.cursor.blink;
-            if ui
-                .add(Toggle::new(&mut blink, label("terminal-cursor-blink")))
-                .changed()
+            if toggle(ui, &mut blink, "terminal-cursor-blink")
             {
                 events.push(UiEvent::Terminal(Setting::CursorBlink(blink)));
             }
@@ -1174,9 +1186,7 @@ fn terminal_controls(
         &label("terminal-copy-on-select"),
         |ui| {
             let mut copy = term.mouse.copy_on_select;
-            if ui
-                .add(Toggle::new(&mut copy, label("terminal-copy-on-select")))
-                .changed()
+            if toggle(ui, &mut copy, "terminal-copy-on-select")
             {
                 events.push(UiEvent::Terminal(Setting::CopyOnSelect(copy)));
             }
@@ -1362,16 +1372,12 @@ fn look_controls(
     events: &mut Vec<UiEvent>,
 ) {
     ui.add_enabled_ui(engine.can_edit_look(), |ui| {
-        egui::Grid::new("look-grid")
-            .num_columns(2)
-            .spacing([24.0, 14.0])
-            .show(ui, |ui| {
-                // Two rows, as the Theme menu groups them: the hue schemes,
+        // Two rows, as the Theme menu groups them: the hue schemes,
                 // then the chrome schemes.
-                field_label(ui, &label("look-scheme"));
+                row(ui, "look-scheme", &label("look-scheme"), |ui| {
                 ui.vertical(|ui| {
                     for row in Scheme::ALL.chunks(6) {
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             for &scheme in row {
                                 ui.spacing_mut().item_spacing.x = 6.0;
                                 if let Some(swatch) = swatch(scheme, look.mode) {
@@ -1394,9 +1400,9 @@ fn look_controls(
                         });
                     }
                 });
-                ui.end_row();
+                });
 
-                field_label(ui, &label("look-mode"));
+                row(ui, "look-mode", &label("look-mode"), |ui| {
                 let modes: Vec<_> = Mode::ALL
                     .into_iter()
                     .map(|m| (m, label(&format!("look-mode-{}", m.name()))))
@@ -1407,9 +1413,9 @@ fn look_controls(
                         ..look.clone()
                     }));
                 }
-                ui.end_row();
+                });
 
-                field_label(ui, &label("look-contrast"));
+                row(ui, "look-contrast", &label("look-contrast"), |ui| {
                 let contrasts: Vec<_> = Contrast::ALL
                     .into_iter()
                     .map(|c| (c, label(&format!("look-contrast-{}", c.name()))))
@@ -1420,8 +1426,8 @@ fn look_controls(
                         ..look.clone()
                     }));
                 }
-                ui.end_row();
-                field_label(ui, &label("look-style"));
+                });
+                row(ui, "look-style", &label("look-style"), |ui| {
                 let styles: Vec<(Option<Style>, String)> =
                     std::iter::once((None, label("look-style-own")))
                         .chain(
@@ -1436,8 +1442,7 @@ fn look_controls(
                         ..look.clone()
                     }));
                 }
-                ui.end_row();
-            });
+                });
     });
 }
 
@@ -1770,6 +1775,23 @@ mod numeric_tests {
                     .position(|s| s.section == Section::Windows)
                     .unwrap()
         );
+        for query in ["", "wallpapers", "appearance"] {
+            let mut engine = ready_engine();
+            engine.set_section(Section::Wallpapers);
+            engine.ui.search = query.into();
+            let commands = crate::actions::registry();
+            let mut h = Harness::builder().with_size(egui::vec2(300.0, 600.0)).build_ui(move |ui| {
+                editors(ui, &engine, &commands, &mut Vec::new());
+            });
+            toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+            h.run();
+            if query.is_empty() {
+                assert!(h.query_by_label("Wallpaper").is_none());
+                assert_eq!(h.get_by_label("Appearance").accesskit_node().is_selected(), Some(true));
+            } else {
+                assert_eq!(h.get_by_label("Wallpaper").accesskit_node().is_selected(), Some(true));
+            }
+        }
     }
 
     #[test]

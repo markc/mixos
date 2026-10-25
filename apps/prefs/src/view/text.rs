@@ -84,9 +84,7 @@ fn surface_card(ui: &mut Ui, engine: &Engine, surface: Surface, events: &mut Vec
 
     row(ui, "text-light-row", &label("text-light"), |ui| {
         let mut light = style.light;
-        if ui
-            .add(Toggle::new(&mut light, label("text-light")))
-            .changed()
+        if toggle(ui, &mut light, "text-light")
         {
             events.push(UiEvent::Text(Setting::Light(surface, light)));
         }

@@ -873,7 +873,14 @@ impl Engine {
     pub(crate) fn email_answered(&mut self, answer: Answer) {
         match answer {
             Answer::Ok(value) => {
-                self.status = self.label(if value["status"] == "unchanged" { "email-unchanged" } else { "applied-email" }, &[]);
+                self.status = self.label(
+                    if value["status"] == "unchanged" {
+                        "email-unchanged"
+                    } else {
+                        "applied-email"
+                    },
+                    &[],
+                );
                 self.failed = false;
                 self.record_settings_status();
             }
@@ -2811,7 +2818,13 @@ mod tests {
         e.edit_email_password(Secret::new("example-password"));
         e.set_email_password();
         let calls = mail_calls(&e.take_effects());
-        e.mailed(calls[0].0, reply(10, json!({"error_code":"REJECTED","message":"Password rejected"})));
+        e.mailed(
+            calls[0].0,
+            reply(
+                10,
+                json!({"error_code":"REJECTED","message":"Password rejected"}),
+            ),
+        );
         assert!(e.email.outcome.as_ref().is_some_and(|(_, failed)| *failed));
         assert!(e.look.problem.is_none());
         assert!(e.appearance_view()["problem"].is_null());

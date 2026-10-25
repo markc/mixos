@@ -4,7 +4,7 @@
 //! form, its password and connection, then the mail options. The values
 //! are settingsd's as last read; the form is the person's typing until
 //! Save. Each list action and option applies at once.
-use super::{Numeric, UiEvent, command_button, field_label, group_heading, number, row};
+use super::{Numeric, UiEvent, command_button, field_label, group_heading, number, row, toggle};
 use crate::{label, label_with};
 use egui::{Align, Layout, RichText, Ui};
 use preferences::Engine;
@@ -13,7 +13,6 @@ use preferences::email::{
     AccountEntry, Change, Email, Field, Form, PAGE_SIZE_MAX, PAGE_SIZE_MIN, ReplyPosition, Secret,
     Service,
 };
-use toolkit::toggle::Toggle;
 use toolkit::{Registry, Strings, bars, field, panel};
 
 /// The account list's width beside the form.
@@ -197,9 +196,7 @@ fn account(
                 if let Some(saved) = saved {
                     field_label(ui, &label("email-enabled"));
                     let mut on = saved.enabled;
-                    if ui
-                        .add(Toggle::new(&mut on, label("email-enabled-note")))
-                        .changed()
+                    if toggle(ui, &mut on, "email-enabled-note")
                     {
                         events.push(UiEvent::EmailChange(Change::Enable(saved.id.clone(), on)));
                     }
@@ -263,62 +260,23 @@ fn identities(ui: &mut Ui, engine: &Engine, width: f32, events: &mut Vec<UiEvent
         }
     });
     if let Some(row) = draft.rows.get(draft.selected) {
-        let mut name = row.name.clone();
-        if ui
-            .add(field::text_edit(
-                &mut name,
-                &label("email-identity-name"),
-                width,
-            ))
-            .changed()
-        {
-            events.push(UiEvent::EmailIdentityEdit(
-                preferences::email::IdentityField::Name,
-                name,
-            ));
-        }
-        let mut address = row.address.clone();
-        if ui
-            .add(field::text_edit(
-                &mut address,
-                &label("email-identity-address"),
-                width,
-            ))
-            .changed()
-        {
-            events.push(UiEvent::EmailIdentityEdit(
-                preferences::email::IdentityField::Address,
-                address,
-            ));
-        }
-        let mut reply_to = row.reply_to.clone().unwrap_or_default();
-        if ui
-            .add(field::text_edit(
-                &mut reply_to,
-                &label("email-identity-reply-to"),
-                width,
-            ))
-            .changed()
-        {
-            events.push(UiEvent::EmailIdentityEdit(
-                preferences::email::IdentityField::ReplyTo,
-                reply_to,
-            ));
-        }
-        let mut signature = row.signature.clone();
-        if ui
-            .add(
-                egui::TextEdit::multiline(&mut signature)
-                    .hint_text(label("email-identity-signature"))
-                    .desired_rows(SIGNATURE_ROWS)
-                    .desired_width(width),
-            )
-            .changed()
-        {
-            events.push(UiEvent::EmailIdentityEdit(
-                preferences::email::IdentityField::Signature,
-                signature,
-            ));
+        use preferences::email::IdentityField;
+        for (field, key, mut value) in [
+            (IdentityField::Name, "email-identity-name", row.name.clone()),
+            (IdentityField::Address, "email-identity-address", row.address.clone()),
+            (IdentityField::ReplyTo, "email-identity-reply-to", row.reply_to.clone().unwrap_or_default()),
+            (IdentityField::Signature, "email-identity-signature", row.signature.clone()),
+        ] {
+            super::row(ui, key, &label(key), |ui| {
+                let response = if field == IdentityField::Signature {
+                    ui.add(egui::TextEdit::multiline(&mut value).desired_rows(SIGNATURE_ROWS).desired_width(width))
+                } else {
+                    ui.add(field::text_edit(&mut value, &label(key), width))
+                };
+                if response.changed() {
+                    events.push(UiEvent::EmailIdentityEdit(field, value));
+                }
+            });
         }
     }
     if let Some(error) = &draft.error {
@@ -426,13 +384,6 @@ fn task_feedback(ui: &mut Ui, engine: &Engine) {
             RichText::new(text).weak()
         };
         ui.add(egui::Label::new(text).wrap());
-    } else if let Some(task) = &engine.email.task {
-        let key = match task.stage {
-            preferences::email::Stage::Sending => "email-task-sending",
-            preferences::email::Stage::Launching => "email-launching",
-            preferences::email::Stage::Waiting => "email-waiting",
-        };
-        ui.label(RichText::new(label(key)).weak());
     }
 }
 
@@ -467,9 +418,7 @@ fn mail_options(ui: &mut Ui, engine: &Engine, email: &Email, events: &mut Vec<Ui
             }
             row(ui, "email-mark-read-row", &label("email-mark-read"), |ui| {
                 let mut read = mail.mark_read_on_open;
-                if ui
-                    .add(Toggle::new(&mut read, label("email-mark-read")))
-                    .changed()
+                if toggle(ui, &mut read, "email-mark-read")
                 {
                     events.push(UiEvent::EmailChange(Change::MarkReadOnOpen(read)));
                 }
@@ -480,9 +429,7 @@ fn mail_options(ui: &mut Ui, engine: &Engine, email: &Email, events: &mut Vec<Ui
                 &label("email-confirm-delete"),
                 |ui| {
                     let mut confirm = mail.confirm_delete;
-                    if ui
-                        .add(Toggle::new(&mut confirm, label("email-confirm-delete")))
-                        .changed()
+                    if toggle(ui, &mut confirm, "email-confirm-delete")
                     {
                         events.push(UiEvent::EmailChange(Change::ConfirmDelete(confirm)));
                     }
@@ -494,9 +441,7 @@ fn mail_options(ui: &mut Ui, engine: &Engine, email: &Email, events: &mut Vec<Ui
                 &label("email-quote-on-reply"),
                 |ui| {
                     let mut quote = mail.quote_on_reply;
-                    if ui
-                        .add(Toggle::new(&mut quote, label("email-quote-on-reply")))
-                        .changed()
+                    if toggle(ui, &mut quote, "email-quote-on-reply")
                     {
                         events.push(UiEvent::EmailChange(Change::QuoteOnReply(quote)));
                     }
