@@ -244,6 +244,14 @@ mod tests {
             "creative",
             "other",
             "unknown",
+            "themes",
+            "fonts",
+            "size",
+            "motion",
+            "text",
+            "email",
+            "terminal",
+            "wallpapers",
         ] {
             assert_eq!(Section::from_name(id), None);
         }
