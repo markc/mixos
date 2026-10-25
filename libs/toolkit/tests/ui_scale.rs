@@ -90,9 +90,12 @@ fn density_scales_spacing_rows_and_buttons_without_text_or_icons() {
             chrome.style.space_md as f32 * density as f32,
         );
     }
-    assert_eq!(toolkit::ui_scale::nearest_density(0.9), 0);
-    assert_eq!(toolkit::ui_scale::nearest_density(1.08), 1);
-    assert_eq!(toolkit::ui_scale::nearest_density(1.7), 2);
+    assert_eq!(toolkit::ui_scale::density_step(0.85), Some(0));
+    assert_eq!(toolkit::ui_scale::density_step(1.0), Some(1));
+    assert_eq!(toolkit::ui_scale::density_step(1.2), Some(2));
+    assert_eq!(toolkit::ui_scale::density_step(0.9), None);
+    assert_eq!(toolkit::ui_scale::density_step(1.5), None);
+    assert_eq!(toolkit::ui_scale::density_step(f64::NAN), None);
 }
 
 #[test]
@@ -105,8 +108,12 @@ fn live_install_replaces_rather_than_compounds_and_clamps() {
         ctx.global_style().text_styles[&TextStyle::Body].size,
         original.text_styles[&TextStyle::Body].size * 1.5,
     );
+    let once = ctx.global_style();
     toolkit::install(&ctx, &theme(1.5, 0.85));
     assert_eq!(toolkit::ui_scale::of(&ctx).text_scale, 1.5);
+    // The same values again install the same style: nothing compounds.
+    assert_eq!(ctx.global_style().text_styles, once.text_styles);
+    assert_eq!(ctx.global_style().spacing, once.spacing);
     toolkit::install(&ctx, &theme(1.0, 1.0));
     assert_eq!(ctx.global_style().text_styles, original.text_styles);
     assert_eq!(ctx.global_style().spacing, original.spacing);

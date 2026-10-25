@@ -57,6 +57,7 @@ size-text-scale-note = Scales all text in every app, including editors and reade
 size-compact = Compact
 size-comfortable = Comfortable
 size-spacious = Spacious
+size-custom = Custom ({ $value })
 size-density = Density
 size-reset = Reset
 motion-reduce = Reduce motion

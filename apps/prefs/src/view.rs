@@ -459,16 +459,20 @@ fn size(
             ui.label(label("size-text-scale-note"));
             panel::section_label(ui, &label("size-density"));
             ui.horizontal(|ui| {
-                let nearest = toolkit::ui_scale::nearest_density(look.density);
+                let step = toolkit::ui_scale::density_step(look.density);
                 for (index, key) in ["size-compact", "size-comfortable", "size-spacious"]
                     .into_iter()
                     .enumerate()
                 {
-                    if toolkit::selectable(ui, index == nearest, label(key)).clicked() {
+                    if toolkit::selectable(ui, step == Some(index), label(key)).clicked() {
                         events.push(UiEvent::Appearance(AppearanceEdit::Density(
                             toolkit::ui_scale::DENSITY_STEPS[index],
                         )));
                     }
+                }
+                if step.is_none() {
+                    let value = format!("{:.2}", look.density);
+                    ui.weak(label_with("size-custom", &[("value", &value)]));
                 }
             });
         });

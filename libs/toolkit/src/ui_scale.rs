@@ -6,12 +6,13 @@ pub use settings::model::CommonUi;
 /// The named density choices; other stored values remain continuous.
 pub const DENSITY_STEPS: [f64; 3] = [0.85, 1.0, 1.2];
 
-pub fn nearest_density(value: f64) -> usize {
+/// The named step a stored density is, if any. Another value (set over the
+/// Bus or by hand) is no step, so a chooser shows it as custom instead of
+/// claiming a step it would overwrite.
+pub fn density_step(value: f64) -> Option<usize> {
     DENSITY_STEPS
         .iter()
-        .enumerate()
-        .min_by(|(_, a), (_, b)| (value - **a).abs().total_cmp(&(value - **b).abs()))
-        .map_or(1, |(index, _)| index)
+        .position(|step| (value - step).abs() < 1e-6)
 }
 
 pub(crate) fn clamped(mut ui: CommonUi) -> CommonUi {
