@@ -113,6 +113,11 @@ fn window(theme: Theme, name: &str) {
 /// The window, optionally with `dialog` open.
 fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     let mut engine = engine();
+    let size = if name == "traffic_right" {
+        egui::vec2(1920.0, 1080.0)
+    } else {
+        egui::vec2(1100.0, 760.0)
+    };
     if name.starts_with("macro_") {
         engine.ui.selected = None;
         engine.workshop.selected = Some(("global".into(), "mesh-ping".into()));
@@ -124,7 +129,7 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     let registry = actions::registry();
     let strings = strings();
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(1100.0, 760.0))
+        .with_size(size)
         .wgpu()
         .build_ui(move |ui| {
             let _ = view(ui, &engine, &registry, &strings);
@@ -132,6 +137,11 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     toolkit::install(&harness.ctx, &theme);
     harness.run();
     harness.snapshot(name);
+}
+
+#[test]
+fn traffic_right() {
+    window(chrome(Scheme::Studio, Mode::Dark), "traffic_right");
 }
 
 #[test]

@@ -14,7 +14,7 @@ use crate::{label, label_with};
 use egui::{Align, Layout, RichText, ScrollArea, TextEdit, Ui};
 use inspector::{Dialog, DockSide, Engine, Row, RowKind};
 use toolkit::action::Origin;
-use toolkit::button::PushButton;
+use toolkit::button::{IconButton, PushButton};
 use toolkit::dialog::{self, Choice};
 use toolkit::titlebar::{self, Action};
 use toolkit::{Icon, Registry, Strings, bars, field, icons, panel, tooltip};
@@ -432,13 +432,7 @@ fn traffic(ui: &mut Ui, engine: &Engine, side: DockSide, events: &mut Vec<UiEven
             events.push(UiEvent::Dock(!engine.workshop.dock_open));
         }
         if ui
-            .add(egui::Button::image(icons::image_of(
-                ui.ctx(),
-                Icon::PanelRight,
-                ICON,
-                ui.visuals().text_color(),
-            )))
-            .on_hover_text(label("traffic-switch-side"))
+            .add(IconButton::new(Icon::PanelRight).tooltip(label("traffic-switch-side")))
             .clicked()
         {
             events.push(UiEvent::DockSide(if side == DockSide::Right {

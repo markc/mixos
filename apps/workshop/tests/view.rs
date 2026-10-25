@@ -71,6 +71,9 @@ fn auto_dock_is_right_when_wide_and_bottom_when_narrow() {
         let details = h.get_by_label(&label("details")).rect();
         if right {
             assert!(traffic.left() > details.right(), "{traffic:?} {details:?}");
+            let panel = |name| egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new(name)).unwrap().outer_rect;
+            assert!((panel("traffic-right").top() - panel("services").top()).abs() < 1.0);
+            assert!((panel("traffic-right").bottom() - panel("services").bottom()).abs() < 1.0);
         } else {
             assert!(traffic.top() > details.bottom(), "{traffic:?} {details:?}");
         }
