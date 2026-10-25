@@ -440,6 +440,35 @@ mod tests {
         });
     }
     #[test]
+    fn tree_scroll_retains_pending_and_restored_offsets_then_records_user_scrolling() {
+        let ctx = egui::Context::default();
+        let mut widgets = Widgets::default();
+        widgets.scrolls.insert("services".into(), Scroll { key: None, offset: [0.0, 300.0] });
+        widgets.install(&ctx);
+        draw(&ctx, |ui| {
+            scroll(ui, "services", None, false, egui::ScrollArea::vertical().max_height(100.0), |_| {});
+        });
+        widgets.collect(&ctx);
+        assert_eq!(widgets.scrolls["services"].offset[1], 300.0, "quitting during discovery retains the known offset");
+        let mut id = egui::Id::NULL;
+        for _ in 0..2 {
+            draw(&ctx, |ui| {
+                let out = scroll(ui, "services", None, true, egui::ScrollArea::vertical().max_height(100.0), |ui| { ui.allocate_space(egui::vec2(100.0, 1000.0)); });
+                id = out.id;
+            });
+        }
+        widgets.collect(&ctx);
+        assert_eq!(widgets.scrolls["services"].offset[1], 300.0);
+        let mut user = egui::scroll_area::State::load(&ctx, id).unwrap();
+        user.offset.y = 80.0;
+        user.store(&ctx, id);
+        draw(&ctx, |ui| {
+            scroll(ui, "services", None, true, egui::ScrollArea::vertical().max_height(100.0), |ui| { ui.allocate_space(egui::vec2(100.0, 1000.0)); });
+        });
+        widgets.collect(&ctx);
+        assert_eq!(widgets.scrolls["services"].offset[1], 80.0, "quitting before discovery completes retains the user's newer offset");
+    }
+    #[test]
     fn group_and_collapsing_state_survive_a_new_context() {
         let ctx = egui::Context::default();
         let mut widgets = Widgets::default();

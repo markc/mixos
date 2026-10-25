@@ -97,7 +97,9 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context
         let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() else { return; };
         runtime.block_on(async {
             let service = format!("{app}-saved-{}", std::process::id());
-            let Ok(Ok(client)) = tokio::time::timeout(Duration::from_millis(700), ::bus::client_helpers::connect_default(&service)).await else { return; };
+            let url = ::bus::client_helpers::resolve_noded_url();
+            let options = ::bus::native_client::SupervisedClient::connect_options(&service, &url).fatal_on_registration_rejection(true);
+            let Ok(Ok(client)) = tokio::time::timeout(Duration::from_millis(700), options.connect()).await else { return; };
             let comp = std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into());
             let topic = format!("{comp}.props.changed");
             let _ = client.subscribe_topic(&topic).await;
