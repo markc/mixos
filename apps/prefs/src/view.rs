@@ -953,8 +953,7 @@ fn choice_grid<T>(
         width.max(galley.size().x + 2.0 * ui.spacing().button_padding.x + extra_width)
     });
     let available = ui.available_width();
-    let columns = (((available + gap) / (widest + gap)).floor() as usize)
-        .clamp(1, options.len());
+    let columns = (((available + gap) / (widest + gap)).floor() as usize).clamp(1, options.len());
     let rows = options.len().div_ceil(columns);
     let width = ((available - gap * (columns - 1) as f32) / columns as f32).max(0.0);
     let mut start = 0;
@@ -1417,19 +1416,24 @@ fn look_controls(
                     (scheme, name)
                 })
                 .collect();
-            choice_grid(ui, &schemes, SWATCH + ui.spacing().item_spacing.x, |ui, &scheme, name| {
-                if let Some(swatch) = swatch(scheme, look.mode) {
-                    paint_swatch(ui, swatch);
-                }
-                if toolkit::selectable(ui, look.scheme == scheme, name).clicked()
-                    && look.scheme != scheme
-                {
-                    events.push(UiEvent::Look(Look {
-                        scheme,
-                        ..look.clone()
-                    }));
-                }
-            });
+            choice_grid(
+                ui,
+                &schemes,
+                SWATCH + ui.spacing().item_spacing.x,
+                |ui, &scheme, name| {
+                    if let Some(swatch) = swatch(scheme, look.mode) {
+                        paint_swatch(ui, swatch);
+                    }
+                    if toolkit::selectable(ui, look.scheme == scheme, name).clicked()
+                        && look.scheme != scheme
+                    {
+                        events.push(UiEvent::Look(Look {
+                            scheme,
+                            ..look.clone()
+                        }));
+                    }
+                },
+            );
         });
 
         row(ui, "look-mode", &label("look-mode"), |ui| {
