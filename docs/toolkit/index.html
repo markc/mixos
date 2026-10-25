@@ -353,7 +353,10 @@ Replace a panel's <code>show</code> call with <code>saved::widgets::panel</code>
 <code>show</code> with <code>saved::widgets::scroll</code>, and a <code>panel::group</code> with
 <code>saved::widgets::group</code>. Give each a stable app-chosen name. Panel shares
 restore independently of pixels; the helper reports user resizing without
-feeding layout minimums back into saved shares. Scroll offsets apply once,
+feeding layout minimums back into saved shares. Bus panel commands use
+<code>saved::widgets::set_panel(ctx, name, share)</code>, which
+updates the remembered share and drops egui's pixel state even before the
+first layout. Scroll offsets apply once,
 after content lays out, clamped to its bounds; an optional content key
 prevents applying another selection's offset. Live trees pass <code>ready: false</code>
 until restoration is meaningful. Use <code>forget_scroll</code> when keeping a restored
