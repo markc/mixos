@@ -1332,6 +1332,14 @@ mod tests {
     use crate::Category;
 
     #[test]
+    fn navigation_clears_quiet_settings_feedback() {
+        let mut e = listed();
+        e.look.settings_status = Some("Saved".into());
+        e.set_section(Section::Terminal);
+        assert!(e.look.settings_status.is_none());
+    }
+
+    #[test]
     fn software_feedback_never_adopts_settings_status_even_after_a_quiet_read() {
         let mut e = listed();
         let release = e.release_status.clone();

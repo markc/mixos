@@ -1231,10 +1231,13 @@ impl Engine {
         self.look.pinned.clear();
         self.look.conflicts.clear();
         self.look.hold = false;
-        self.status = self.label("reverted-look", &[]);
         self.clear_look_problem();
-        self.failed = false;
-        self.record_settings_status();
+        if self.look.problem.is_none() {
+            self.look.status_source = self.section();
+            self.status = self.label("reverted-look", &[]);
+            self.failed = false;
+            self.record_settings_status();
+        }
     }
 
     /// Keep the edits over the other writer's change, and apply them.

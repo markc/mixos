@@ -872,6 +872,15 @@ mod tests {
     }
 
     #[test]
+    fn local_edit_refusal_is_not_a_cross_page_problem() {
+        let mut editor = loaded(config());
+        editor.read(1).unwrap();
+        assert_eq!(editor.edit_colour("#445566".into()), Err("status.busy"));
+        assert!(editor.failed);
+        assert!(!editor.has_problem());
+    }
+
+    #[test]
     fn an_already_applied_draft_does_not_conflict_or_resend() {
         let mut editor = loaded(config());
         editor.edit_colour("#445566".into()).unwrap();
