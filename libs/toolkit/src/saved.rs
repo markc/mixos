@@ -19,6 +19,20 @@ use std::{
 };
 pub use widgets::Widgets;
 
+#[derive(Serialize)]
+struct Envelope<'a, A> {
+    schema_version: u32,
+    window: &'a Frame,
+    widgets: &'a Widgets,
+    app: AppSection<'a, A>,
+}
+
+#[derive(Serialize)]
+struct AppSection<'a, A> {
+    version: u32,
+    value: &'a A,
+}
+
 /// One window kind's persistence target and live state.
 pub struct Store<A> {
     pub window: Frame,
@@ -82,13 +96,19 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
 
     /// Data suitable for an app's `info`/describe response, without its path.
     pub fn describe(&self) -> Value {
-        json!({"schema_version":1,"window":self.window,"widgets":self.widgets,
-            "app":{"version":self.version,"value":self.app},"writable":self.writable})
+        match serde_json::to_value(self.envelope()) {
+            Ok(mut value) => { value["writable"] = json!(self.writable); value }
+            Err(_) => json!({"schema_version":1,"writable":self.writable,"error":"saved state could not be serialised"}),
+        }
+    }
+
+    fn envelope(&self) -> Envelope<'_, A> {
+        Envelope { schema_version: 1, window: &self.window, widgets: &self.widgets,
+            app: AppSection { version: self.version, value: &self.app } }
     }
 
     fn serialise(&self) -> Result<String, String> {
-        strict::to_string_pretty(&json!({"schema_version":1,"window":self.window,
-            "widgets":self.widgets,"app":{"version":self.version,"value":self.app}}))
+        strict::to_string_pretty(&self.envelope())
         .map_err(|e| e.to_string())
     }
 
@@ -216,5 +236,20 @@ mod tests {
         memory.flush().unwrap();
         assert_eq!(memory.writes(), 0);
         assert!(memory.path.is_none());
+    }
+    #[test]
+    fn serialisation_errors_do_not_panic_or_write() {
+        #[derive(Default, serde::Deserialize)]
+        struct Refuses;
+        impl Serialize for Refuses {
+            fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+                Err(serde::ser::Error::custom("refused"))
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::<Refuses>::load(Some(dir.path().into()), 1);
+        assert!(store.flush().is_err());
+        assert!(!dir.path().join("window.conf.mix").exists());
+        assert!(store.describe()["error"].is_string());
     }
 }
