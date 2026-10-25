@@ -34,9 +34,8 @@ $DATA_MIX = [
 $GATE_TIMEOUT = 300
 $site_needs = []
 if has_builtin("mixos_path") then
-  push($site_needs, mixos_path("prefix", "share/assets/sets/2026-10-04-core-3"))
   $site_paths = require($root .. "/docs/_build/source_paths.mix")
-  push($site_needs, $site_paths.resolve($root, load_data($root .. "/docs/_build/site.conf.mix").site.fonts.asset_set))
+  push($site_needs, $site_paths.installed(load_data($root .. "/docs/_build/site.conf.mix").site.fonts.asset_set))
 end
 
 $checks = [

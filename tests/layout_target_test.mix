@@ -55,6 +55,11 @@ PROGRAM
   need($source_paths.resolve($repo, "mixos:prefix/share/x") == $repo .. "/share/x" and
     $source_paths.resolve($repo, "mixos:share/x") == $repo .. "/share/x", "docs resolved outside the checkout")
   need(refuses(fn() = $source_paths.resolve($repo, "mixos:prefix/../outside")), "docs accepted a source escape")
+  $installed_share = env("MIXOS_SHARE", env("MIXOS", dirname(dirname(realpath("/proc/self/exe")))) .. "/share")
+  if has_builtin("mixos_path") then $installed_share = mixos_path("share") end
+  need($source_paths.installed("mixos:share/assets/x") == $installed_share .. "/assets/x",
+    "an installed asset did not resolve against the installed share root")
+  need(refuses(fn() = $source_paths.installed("mixos:share/../../outside")), "an installed asset escaped its root")
   for $name in ["config", "state", "runtime", "bin", "lib"]
     need(refuses(fn() = $source_paths.resolve($repo, "mixos:" .. $name .. "/x")), "docs accepted an unknown root")
   end

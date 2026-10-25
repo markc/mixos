@@ -1,8 +1,8 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Build inputs belong to the checkout, independently of the installed Mix.
--- This is a source-tree mapping, not the runtime defaults table.
-fn resolve($repo, $value)
-  if not starts_with($value, "mixos:") then return $value end
+-- This is a source-tree mapping, not the runtime defaults table. Installed
+-- assets the site pins (font sets) resolve against the installed layout.
+fn split_root($value)
   $parts = split(substr($value, 6), "/")
   $name = $parts[0]
   if not contains(["prefix", "share", "etc", "var", "run", "cache"], $name) then
@@ -17,6 +17,26 @@ fn resolve($repo, $value)
       push($tail, $part)
     end
   end
-  $base = if $name == "prefix" then $repo else $repo .. "/" .. $name end
-  return $base .. (if len($tail) == 0 then "" else "/" .. join($tail, "/") end)
+  return {name: $name, tail: join($tail, "/")}
+end
+
+fn resolve($repo, $value)
+  if not starts_with($value, "mixos:") then return $value end
+  $p = split_root($value)
+  $base = if $p.name == "prefix" then $repo else $repo .. "/" .. $p.name end
+  return $base .. (if $p.tail == "" then "" else "/" .. $p.tail end)
+end
+
+-- An installed asset: the running Mix's layout. A Mix older than mixos_path
+-- finds its prefix the way libs/paths does, from its own binary.
+fn installed($value)
+  if not starts_with($value, "mixos:") then return $value end
+  $p = split_root($value)
+  if has_builtin("mixos_path") then return mixos_path($p.name, $p.tail) end
+  if $p.name != "prefix" and $p.name != "share" then
+    raise("SITE_PATH", "this mix has no mixos_path; only prefix and share resolve: " .. $p.name)
+  end
+  $prefix = env("MIXOS", dirname(dirname(realpath("/proc/self/exe"))))
+  $base = if $p.name == "prefix" then $prefix else env("MIXOS_SHARE", $prefix .. "/share") end
+  return $base .. (if $p.tail == "" then "" else "/" .. $p.tail end)
 end

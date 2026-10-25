@@ -93,7 +93,7 @@ end
 -- ---------------------------------------------------------------- config
 $cfg = load_data($build .. "/site.conf.mix").site
 $source_paths = require($build .. "/source_paths.mix")
-$cfg.fonts.asset_set = $source_paths.resolve($repo, $cfg.fonts.asset_set)
+$cfg.fonts.asset_set = $source_paths.installed($cfg.fonts.asset_set)
 for each $k in ["url", "name", "home_title", "description", "llms_summary", "icons", "fonts", "left_panels", "home_toc", "redirects", "missing_pages"]
   if not has_key($cfg, $k) then
     raise("SITE_CONFIG", "site.conf.mix is missing site." .. $k)
