@@ -178,6 +178,20 @@ async fn two_production_brokers_route_verified_native_clients() {
         );
         assert_eq!(one.unwrap(), json!({"tag":"one"}));
         assert_eq!(two.unwrap(), json!({"tag":"two"}));
+        // Alpha's outgoing transport is registered on beta as bridge-alpha.
+        // It is visible in discovery but is not a command-serving endpoint.
+        for command in ["HELP", "x.ping"] {
+            let reply = tokio::time::timeout(Duration::from_millis(250),
+                service.client().call_typed("bridge-alpha", command, json!({})))
+                .await.expect("link refusal must be immediate").unwrap();
+            match reply {
+                bus::PortReply::AppError { rc, message } => {
+                    assert_eq!(rc, 10);
+                    assert!(message.contains("UNKNOWN_COMMAND"), "{message}");
+                }
+                reply => panic!("expected link refusal, got {reply:?}"),
+            }
+        }
         let drain = async {
             let delivery = service.recv_shared().await.unwrap();
             let command = delivery.command();

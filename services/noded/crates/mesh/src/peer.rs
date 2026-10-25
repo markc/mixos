@@ -982,6 +982,8 @@ async fn connect_and_publish(
     let peer_name = peer.name.clone();
     let connected_read = connected.clone();
     let state_read = state.clone();
+    let link_name = format!("bridge-{node_name}");
+    let link_tx = connection.tx.clone();
     tokio::spawn(async move {
         loop {
             let next = tokio::select! {
@@ -1002,6 +1004,29 @@ async fn connect_and_publish(
             let Ok(bus_msg) = bus::parse(&text) else {
                 continue;
             };
+
+            // This registration is a transport endpoint, not a command
+            // service. Broker calls use the node address, never the link's
+            // registration name. Do not drop a correlated request into mesh
+            // ingress, which has no local recipient for this identity.
+            if bus_msg.to_addr() == Some(link_name.as_str())
+                && bus_msg.get("type") != Some("response")
+                && let Some(id) = bus_msg.get("id")
+            {
+                let command = bus_msg.command_name().unwrap_or("");
+                let reply = BusMessage::new()
+                    .with_header("type", "response")
+                    .with_header("id", id)
+                    .with_header("rc", "10")
+                    .with_header("command", command)
+                    .with_body(&serde_json::json!({
+                        "error_code": "UNKNOWN_COMMAND",
+                        "message": "mesh links do not serve commands; address the remote node instead",
+                        "command": command,
+                    }).to_string());
+                let _ = link_tx.send(reply.to_wire());
+                continue;
+            }
 
             // Only responses can satisfy a call. An event or inbound request
             // may legitimately carry an ID matching an unrelated request.
@@ -1707,6 +1732,43 @@ mod tests {
             assert_eq!(reply.body, expected);
         }
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn link_registration_refuses_commands_immediately() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let beta = peer("beta", listener.local_addr().unwrap());
+        let (mesh, mut incoming) = test_mesh_with_peer(beta.clone());
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut websocket = tokio_tungstenite::accept_async(stream).await.unwrap();
+            websocket.send(tungstenite::Message::Ping(Vec::new().into())).await.unwrap();
+            let registration = next_bus_frame(&mut websocket).await;
+            assert_eq!(registration.command_name(), Some("noded.register"));
+            let name = registration.from_addr().unwrap();
+            assert_eq!(name, "bridge-alpha");
+            for command in ["HELP", "x.ping"] {
+                let request = BusMessage::new()
+                    .with_header("to", name)
+                    .with_header("type", "request")
+                    .with_header("command", command)
+                    .with_header("id", command);
+                websocket.send(tungstenite::Message::Text(request.to_wire().into())).await.unwrap();
+                let reply = tokio::time::timeout(Duration::from_millis(250), next_bus_frame(&mut websocket))
+                    .await.expect("link must refuse well under one second");
+                assert_eq!(reply.get("type"), Some("response"));
+                assert_eq!(reply.get("rc"), Some("10"));
+                assert_eq!(reply.get("id"), Some(command));
+                let body: serde_json::Value = serde_json::from_str(&reply.body).unwrap();
+                assert_eq!(body["error_code"], "UNKNOWN_COMMAND");
+                assert_eq!(body["command"], command);
+                assert!(body["message"].as_str().unwrap().contains("mesh links"));
+            }
+        });
+        mesh.ensure_connected(&beta).await.unwrap();
+        server.await.unwrap();
+        assert!(incoming.try_recv().is_err(), "link requests must not enter mesh ingress");
+        mesh.reconcile_endpoints(HashMap::new(), AuthorityRevision::default()).await;
     }
 
     #[tokio::test]

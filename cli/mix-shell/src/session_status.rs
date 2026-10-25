@@ -12,6 +12,26 @@ use std::time::Duration;
 const MAX_REQUEST: usize = 2048;
 const ADMISSION: Duration = Duration::from_secs(2);
 pub(crate) const COMMAND: &str = "shell.status";
+
+/// Discovery is static public metadata: never serialise session state here.
+fn manifest() -> Vec<::bus::CommandDescriptor> {
+    use crate::session_execute::*;
+    [
+        ("HELP", "List served commands", true),
+        (COMMAND, "Read shell status", true),
+        (SUBMIT, "Submit shell evaluation", false),
+        (RESULT, "Read evaluation result", true),
+        (CANCEL, "Cancel shell evaluation", false),
+        (TASK_SUBMIT, "Submit isolated task", false),
+        (TASK_RESULT, "Read isolated task result", true),
+        (TASK_CANCEL, "Cancel isolated task", false),
+    ]
+    .into_iter()
+    .map(|(name, description, read_only)| {
+        ::bus::CommandDescriptor::new(name, &[], description, read_only)
+    })
+    .collect()
+}
 /// Concurrent status dispatches the resident will carry at once, and the share
 /// of them any caller other than this pane's own Term may hold.
 const DISPATCH_SLOTS: usize = 4;
@@ -200,6 +220,15 @@ pub(crate) async fn dispatch(
     if command.id.is_none() {
         return;
     }
+    if command.command == "HELP" {
+        let body = serde_json::to_string(&manifest()).expect("static descriptors serialise");
+        let _ = tokio::time::timeout(
+            ADMISSION,
+            connection.client().respond(command, 0, &body),
+        )
+        .await;
+        return;
+    }
     let Some(principal) = event.trusted_context() else {
         refuse(connection, event).await;
         return;
@@ -309,6 +338,33 @@ pub(crate) async fn refuse(connection: &VerifiedConnection, event: &VerifiedComm
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn help_contains_only_public_command_metadata() {
+        let commands = manifest();
+        assert_eq!(commands[0].name, "HELP");
+        assert_eq!(commands.len(), 8);
+        let value = serde_json::to_value(&commands).unwrap();
+        let body = value.to_string();
+        for secret in [
+            "grant", "seed", "token", "public_key", "parent_key_hash",
+            "record_id", "instance_id", "incarnation", "pane_id",
+            "pane_generation", "binding_generation", "broker_epoch",
+        ] {
+            assert!(!body.contains(secret), "HELP exposed {secret}");
+        }
+        for command in value.as_array().unwrap() {
+            let fields = command.as_object().unwrap();
+            assert_eq!(fields.len(), 4);
+            for field in ["name", "args", "description", "read_only"] {
+                assert!(fields.contains_key(field));
+            }
+            assert!(command["args"].as_array().unwrap().is_empty());
+        }
+        assert_eq!(commands.iter().filter(|command| command.read_only)
+            .map(|command| command.name.as_str()).collect::<Vec<_>>(),
+            ["HELP", COMMAND, crate::session_execute::RESULT, crate::session_execute::TASK_RESULT]);
+    }
     fn target() -> SessionRecord {
         SessionRecord {
             name: "test-pane".into(),

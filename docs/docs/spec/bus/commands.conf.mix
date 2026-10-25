@@ -40,6 +40,13 @@
 {
   schema: 5,
   commands: [
+    {name:"shell.status", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"shell.execute", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"shell.execute.result", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"shell.execute.cancel", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"shell.task.submit", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"shell.task.result", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"shell.task.cancel", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"blob.put", owner:"blobd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"blob.stat", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"blob.path", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},

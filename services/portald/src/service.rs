@@ -27,6 +27,10 @@ pub const FETCH_TIMEOUT: Duration = Duration::from_secs(1);
 const DEREGISTER_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub fn manifest() -> Vec<bus::CommandDescriptor> {
+    manifest_for_screencast(crate::screencast::consent::installed().is_some())
+}
+
+fn manifest_for_screencast(screencast: bool) -> Vec<bus::CommandDescriptor> {
     std::iter::once(bus::CommandDescriptor::new(
         "HELP",
         &[],
@@ -36,7 +40,7 @@ pub fn manifest() -> Vec<bus::CommandDescriptor> {
     .chain(COMMANDS.iter().map(|command_name| {
         bus::CommandDescriptor::new(command_name, &[], "Settings portal status", true)
     }))
-    .chain(crate::screencast::consent::COMMANDS.iter().map(
+    .chain(crate::screencast::consent::COMMANDS.iter().filter(|_| screencast).map(
         |(command_name, description, read_only)| {
             bus::CommandDescriptor::new(command_name, &[], description, *read_only)
         },
@@ -656,12 +660,28 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
 
+    #[test]
+    fn help_only_lists_commands_enabled_for_this_instance() {
+        for enabled in [false, true] {
+            let commands = manifest_for_screencast(enabled);
+            assert_eq!(commands[0].name, "HELP");
+            assert!(commands[0].read_only);
+            for (name, _, _) in crate::screencast::consent::COMMANDS {
+                assert_eq!(commands.iter().any(|command| command.name == *name), enabled);
+            }
+            if !enabled {
+                assert_eq!(commands.len(), 2);
+                assert_eq!(commands[1].name, "portald.status");
+            }
+        }
+    }
+
     /// The Settings side never writes. The only mutating commands are the
     /// ScreenCast consent ones (answer, grant, revoke), which change consent
     /// state and nothing in settings.
     #[test]
     fn the_manifest_is_read_only_but_for_screencast_consent() {
-        let manifest = manifest();
+        let manifest = manifest_for_screencast(true);
         let writers: Vec<_> = manifest
             .iter()
             .filter(|command_name| !command_name.read_only)
