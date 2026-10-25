@@ -41,6 +41,12 @@ SPDX-FileCopyrightText = "2017 Victor Brekenfeld"
 SPDX-License-Identifier = "MIT"
 
 [[annotations]]
+path = "vendor/eframe/**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2020 Emil Ernerfeldt and egui contributors"
+SPDX-License-Identifier = "MIT OR Apache-2.0"
+
+[[annotations]]
 path = ["**"]
 precedence = "closest"
 SPDX-FileCopyrightText = "2026 Mark Constable <mc@mixos.dev>"

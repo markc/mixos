@@ -28,6 +28,7 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
     let pass = ctx.cumulative_pass_nr();
     send(&mut rig, 7001, "workshop.ping", json!({}));
     send(&mut rig, 7002, "HELP", json!({}));
+    rig.h.state().as_ref().unwrap().forward_pending();
 
     // Reproduce the old scheduler: request_redraw has no frame callback,
     // therefore no UI pass and no call to Shell::logic. Work remains queued.
