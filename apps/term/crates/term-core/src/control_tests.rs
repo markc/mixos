@@ -5,9 +5,9 @@
 use super::*;
 use crate::control::Target;
 use crate::tabs::{Cleanup, TabSet};
+use ::bus::native_client::BrokerAccount;
 use serde_json::{Value, json};
 use std::sync::Mutex;
-use ::bus::native_client::BrokerAccount;
 use test_broker::Broker;
 
 const REQUIRE_MIX: &str = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only";
@@ -321,7 +321,8 @@ impl Fixture {
                 "expired" => shared.ready.as_mut().unwrap().deadline = 0,
                 "broken_fd" | "quota" => {
                     shared.ready.as_mut().unwrap().fd =
-                        crate::session_fd::LaunchFd::invalid_fixture().unwrap()
+                        crate::session_fd::LaunchFd::invalid_fixture()
+                            .unwrap()
                             .with_endpoint(&broker.endpoint)
                 }
                 "wrong_grant" => {

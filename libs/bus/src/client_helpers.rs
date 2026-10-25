@@ -303,6 +303,11 @@ impl BrokerEnvironment {
             &paths::system_default(paths::Root::Run).expect("built-in system run default"),
         )
         .map_err(anyhow::Error::msg)?;
+        // A placed process never pings: the URL may name the host broker,
+        // which would advertise a socket outside the process's environment.
+        options.discover_by_ping =
+            paths::run_root_is_tier_default(&self.directories, &directories)
+                .map_err(anyhow::Error::msg)?;
         let url = self
             .url
             .or_else(|| {
@@ -565,10 +570,11 @@ pub(crate) mod tests {
         let system = paths::system_default(paths::Root::Run)
             .unwrap()
             .join("noded/bus.sock");
-        for (directories, expected) in [
+        for (directories, expected, pings) in [
             (
                 user.clone(),
                 vec![dir.0.join("xdg/mixos/noded/bus.sock"), system.clone()],
+                true,
             ),
             (
                 config::Environment {
@@ -576,6 +582,7 @@ pub(crate) mod tests {
                     ..user.clone()
                 },
                 vec![dir.0.join("session-run/noded/bus.sock")],
+                false,
             ),
             (
                 config::Environment {
@@ -583,6 +590,7 @@ pub(crate) mod tests {
                     ..user.clone()
                 },
                 vec![dir.0.join("desk/run/noded/bus.sock")],
+                false,
             ),
             (
                 config::Environment {
@@ -590,6 +598,7 @@ pub(crate) mod tests {
                     ..user.clone()
                 },
                 vec![system],
+                true,
             ),
         ] {
             let environment = BrokerEnvironment {
@@ -604,6 +613,7 @@ pub(crate) mod tests {
             };
             let configuration = environment.configuration().unwrap();
             assert_eq!(configuration.options.default_endpoints, expected);
+            assert_eq!(configuration.options.discover_by_ping, pings);
             assert_eq!(configuration.endpoint_candidates().unwrap(), expected);
         }
         std::fs::write(
@@ -613,14 +623,12 @@ pub(crate) mod tests {
         .unwrap();
         let mut environment = captured_environment(&dir);
         environment.directories = user;
+        let options = environment.configuration().unwrap().options;
         assert_eq!(
-            environment
-                .configuration()
-                .unwrap()
-                .options
-                .default_endpoints,
+            options.default_endpoints,
             vec![dir.0.join("layout-run/noded/bus.sock")]
         );
+        assert!(!options.discover_by_ping, "a layout-placed process must not ping");
     }
 
     #[tokio::test]
