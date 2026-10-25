@@ -9,7 +9,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::{Arc, Mutex}, time::{Durat
 struct Windows {
     path: Option<PathBuf>,
     frames: BTreeMap<String, Frame>,
-    workers: BTreeMap<String, tokio::sync::mpsc::Sender<()>>,
+    workers: BTreeMap<String, CaptureSender>,
     captured: BTreeMap<String, (Instant, Frame, Option<egui::Rect>)>,
 }
 type Shared = Arc<Mutex<Windows>>;
@@ -41,10 +41,9 @@ pub fn builder(ctx: &egui::Context, app: &str, name: &str, builder: egui::Viewpo
     let app_id = format!("dev.mixos.{app}.{name}");
     let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
     let frame = windows.frames.entry(name.into()).or_default().clone();
-    if !windows.workers.contains_key(name) {
-        if let Some(worker) = worker(app, name, &app_id, state.clone(), ctx.clone()) {
-            windows.workers.insert(name.into(), worker);
-        }
+    if let std::collections::btree_map::Entry::Vacant(entry) = windows.workers.entry(name.into())
+        && let Some(worker) = worker(app, name, &app_id, state.clone(), ctx.clone()) {
+        entry.insert(worker);
     }
     frame.viewport(builder.with_app_id(app_id))
 }
@@ -67,11 +66,12 @@ pub fn capture(ctx: &egui::Context, app: &str, name: &str) {
         ctx.request_repaint_of(egui::ViewportId::ROOT);
         windows.captured.insert(name.into(), (now, frame, rect));
         persist(&windows, name);
-        if let Some(worker) = windows.workers.get(name) { let _ = worker.try_send(()); }
-        if closing { windows.workers.remove(name); }
+        if !closing && let Some(worker) = windows.workers.get(name) { let _ = worker.try_send(None); }
     } else if changed {
         ctx.request_repaint_after(Duration::from_secs(1));
     }
+    drop(windows);
+    if closing { finish(ctx, app, name); }
 }
 
 fn persist(windows: &Windows, name: &str) {
@@ -89,8 +89,10 @@ fn persist(windows: &Windows, name: &str) {
     if let Err(error) = store.flush() { eprintln!("toolkit: saving secondary window: {error}"); }
 }
 
-fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context) -> Option<tokio::sync::mpsc::Sender<()>> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+type CaptureSender = tokio::sync::mpsc::Sender<Option<std::sync::mpsc::Sender<()>>>;
+
+fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context) -> Option<CaptureSender> {
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Option<std::sync::mpsc::Sender<()>>>(2);
     let (app, name, app_id) = (app.to_owned(), name.to_owned(), app_id.to_owned());
     let state = Arc::downgrade(&state);
     std::thread::Builder::new().name("saved-viewport".into()).spawn(move || {
@@ -131,7 +133,7 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context
                     false
                 }).await.unwrap_or(false)
             }).await;
-            while rx.recv().await.is_some() {
+            while let Some(done) = rx.recv().await {
                 frame = state.lock().unwrap_or_else(|e| e.into_inner()).frames.get(&name).cloned().unwrap_or_default();
                 let _ = tokio::time::timeout(Duration::from_millis(700), frame.capture_exit(&app_id, call)).await;
                 let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -140,6 +142,8 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context
                 latest.placement = frame.placement;
                 persist(&windows, &name);
                 ctx.request_repaint_of(egui::ViewportId::ROOT);
+                drop(windows);
+                if let Some(done) = done { let _ = done.send(()); }
             }
         });
         runtime.shutdown_timeout(Duration::from_millis(100));
@@ -154,9 +158,24 @@ fn reply_value(rc: u8, body: &str) -> Option<Value> {
 
 /// Drop senders at root shutdown so compositor readers cannot outlive the app.
 pub fn close(ctx: &egui::Context, app: &str) {
-    if let Some(state) = ctx.data(|d| d.get_temp::<Shared>(key(app))) {
-        state.lock().unwrap_or_else(|e| e.into_inner()).workers.clear();
+    if let Some(windows) = collect(ctx, app) {
+        for name in windows.keys() { finish(ctx, app, name); }
     }
+}
+
+/// Finish before the native viewport is destroyed, also for Escape or a
+/// save-and-close dialog. Never create a store for an unopened editor.
+pub fn finish(ctx: &egui::Context, app: &str, name: &str) {
+    let Some(state) = ctx.data(|d| d.get_temp::<Shared>(key(app))) else { return; };
+    let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
+    if windows.captured.remove(name).is_none() && !windows.workers.contains_key(name) { return; }
+    persist(&windows, name);
+    let worker = windows.workers.remove(name);
+    let (done, finished) = std::sync::mpsc::channel();
+    let waiting = worker.is_some_and(|worker| worker.try_send(Some(done)).is_ok());
+    drop(windows);
+    if waiting { let _ = finished.recv_timeout(Duration::from_millis(750)); }
+    ctx.request_repaint_of(egui::ViewportId::ROOT);
 }
 
 #[cfg(test)]
@@ -169,6 +188,20 @@ mod tests {
         assert_eq!(reply_value(10, body).unwrap()["field"], "output");
         assert_eq!(reply_value(10, "{}").unwrap()["error"], "refused");
         assert!(reply_value(20, "unparseable transport error").is_none());
+    }
+
+    #[test]
+    fn closing_flushes_the_latest_size_before_the_debounce_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = egui::Context::default();
+        let frame = Frame { size: Some([840.0, 620.0]), ..Default::default() };
+        install(&ctx, "example", Some(dir.path().join("window.conf.mix")), [("macro-editor".into(), frame.clone())].into());
+        let shared = shared(&ctx, "example");
+        shared.lock().unwrap().captured.insert("macro-editor".into(), (Instant::now(), Frame::default(), None));
+        finish(&ctx, "example", "macro-editor");
+        let back = Store::<Value>::load(Some(dir.path().into()), 1);
+        assert_eq!(back.windows["macro-editor"], frame);
+        assert!(shared.lock().unwrap().captured.is_empty());
     }
 
     #[test]

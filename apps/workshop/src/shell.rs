@@ -1197,8 +1197,8 @@ impl Shell {
 
 impl eframe::App for Shell {
     fn on_exit(&mut self) {
-        self.save_state(true);
         toolkit::macros::close_app(&self.ctx, "workshop");
+        self.save_state(true);
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {

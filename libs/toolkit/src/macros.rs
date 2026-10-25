@@ -739,6 +739,7 @@ impl State {
     fn show_editor(&mut self, ctx: &egui::Context) {
         let viewport = ctx.viewport_id();
         if !self.editor_open {
+            crate::saved::secondary::finish(ctx, &self.app, "macro-editor");
             if let Some(owner) = self.editor_owner.take() {
                 let editor = egui::ViewportId::from_hash_of(("macro-editor", self.window));
                 crate::drive::unregister_viewport(ctx, owner, "macro-editor", editor);
@@ -909,6 +910,7 @@ impl State {
             }
         }
         if !self.editor_open {
+            crate::saved::secondary::finish(&ctx, &self.app, "macro-editor");
             if let Some(id) = self.editor_focus {
                 ctx.memory_mut(|m| m.surrender_focus(id));
             }

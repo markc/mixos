@@ -295,9 +295,10 @@ struct Call {
     reply: Option<u64>,
 }
 
-/// Workshop's state and rules.
+/// The services panel and Bus command share one admissible range.
 pub const SERVICES_SPLIT: std::ops::RangeInclusive<f32> = 0.1..=0.8;
 
+/// Workshop's state and rules.
 pub struct Engine {
     pub workshop: crate::workshop::Workshop,
     label: Label,

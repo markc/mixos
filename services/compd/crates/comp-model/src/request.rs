@@ -868,6 +868,7 @@ pub fn parse_window_command(
             };
             if window.id.is_some()
                 && (window.app_id.is_some()
+                    || window.pid.is_some()
                     || window.title.is_some()
                     || window.title_contains.is_some())
             {
