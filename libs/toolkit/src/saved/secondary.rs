@@ -9,7 +9,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::{Arc, Mutex}, time::{Durat
 struct Windows {
     path: Option<PathBuf>,
     frames: BTreeMap<String, Frame>,
-    workers: BTreeMap<String, std::sync::mpsc::SyncSender<()>>,
+    workers: BTreeMap<String, tokio::sync::mpsc::Sender<()>>,
     captured: BTreeMap<String, (Instant, Frame, Option<egui::Rect>)>,
 }
 type Shared = Arc<Mutex<Windows>>;
@@ -89,8 +89,8 @@ fn persist(windows: &Windows, name: &str) {
     if let Err(error) = store.flush() { eprintln!("toolkit: saving secondary window: {error}"); }
 }
 
-fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context) -> Option<std::sync::mpsc::SyncSender<()>> {
-    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context) -> Option<tokio::sync::mpsc::Sender<()>> {
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
     let (app, name, app_id) = (app.to_owned(), name.to_owned(), app_id.to_owned());
     let state = Arc::downgrade(&state);
     std::thread::Builder::new().name("saved-viewport".into()).spawn(move || {
@@ -108,11 +108,12 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context
                 let client = &client;
                 let comp = &comp;
                 async move {
-                    let reply = tokio::time::timeout(Duration::from_secs(11), client.call_typed(comp, command, args)).await.ok()?.ok()?;
-                    match reply {
-                        ::bus::PortReply::Ok { value, .. } => Some(value),
-                        ::bus::PortReply::AppError { message, .. } => serde_json::from_str(&message).ok(),
-                    }
+                    // The typed error lane is a display message and loses
+                    // refusal fields. Preserve the raw body for feature probes.
+                    let headers = BTreeMap::new();
+                    let body = args.to_string();
+                    let (rc, body, _) = tokio::time::timeout(Duration::from_secs(11), client.call_with_headers_raw(comp, command, &headers, &body)).await.ok()?.ok()?;
+                    reply_value(rc, &body)
                 }
             };
             // Probe once. A desktop without compd must not generate catalogue
@@ -130,7 +131,7 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context
                     false
                 }).await.unwrap_or(false)
             }).await;
-            while rx.recv().is_ok() {
+            while rx.recv().await.is_some() {
                 frame = state.lock().unwrap_or_else(|e| e.into_inner()).frames.get(&name).cloned().unwrap_or_default();
                 let _ = tokio::time::timeout(Duration::from_millis(700), frame.capture_exit(&app_id, call)).await;
                 let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -145,6 +146,12 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context
     }).ok().map(|_| tx)
 }
 
+fn reply_value(rc: u8, body: &str) -> Option<Value> {
+    let mut value: Value = serde_json::from_str(body).ok()?;
+    if rc >= 10 && value.get("error").is_none() { value = serde_json::json!({"error":"refused"}); }
+    Some(value)
+}
+
 /// Drop senders at root shutdown so compositor readers cannot outlive the app.
 pub fn close(ctx: &egui::Context, app: &str) {
     if let Some(state) = ctx.data(|d| d.get_temp::<Shared>(key(app))) {
@@ -155,6 +162,14 @@ pub fn close(ctx: &egui::Context, app: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secondary_transport_retains_feature_refusal_fields() {
+        let body = r#"{"error":"invalid_args","field":"output","allowed":["id","generation"]}"#;
+        assert_eq!(reply_value(10, body).unwrap()["field"], "output");
+        assert_eq!(reply_value(10, "{}").unwrap()["error"], "refused");
+        assert!(reply_value(20, "unparseable transport error").is_none());
+    }
 
     #[test]
     fn macro_editor_size_and_maximised_state_round_trip_as_a_named_window() {
