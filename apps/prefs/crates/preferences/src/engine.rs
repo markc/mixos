@@ -910,7 +910,8 @@ impl Engine {
                 // It may have happened: settle it from a listing before
                 // anything else is allowed to change.
                 let app = self.subject(&op);
-                self.release_status = self.label("uncertain", &[("app", &app), ("message", &message)]);
+                self.release_status =
+                    self.label("uncertain", &[("app", &app), ("message", &message)]);
                 self.release_failed = true;
                 self.uncertain = Some(op);
                 self.relist = true;
@@ -1555,7 +1556,10 @@ mod tests {
             call[0].0,
             ok(json!([{"app":"demo","action":"installed","version":"2.0","previous":"1.0"}])),
         );
-        assert_eq!(e.release_status, "result app=demo action=installed version=2.0");
+        assert_eq!(
+            e.release_status,
+            "result app=demo action=installed version=2.0"
+        );
         let relist = releases(&e.take_effects());
         assert_eq!(
             relist[0].1, "releases.list",
@@ -1904,7 +1908,10 @@ mod tests {
         );
         assert_eq!(e.releases, Availability::Available);
         assert_eq!(e.apps.len(), 2, "rows kept");
-        assert_eq!(e.release_status, "failed message=Service 'releases' is overloaded");
+        assert_eq!(
+            e.release_status,
+            "failed message=Service 'releases' is overloaded"
+        );
         e.refresh();
         let call = releases(&e.take_effects());
         e.released(

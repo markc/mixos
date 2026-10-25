@@ -1707,7 +1707,11 @@ mod tests {
         let mut e = read();
         edit(&mut e, json!({"scheme":"forest"}));
         answer_next(&mut e, 10, json!({"status":"validation_failed"}));
-        e.look.status_source = crate::Section::Terminal;
+        e.edit_terminal(crate::terminal::Setting::Padding(8));
+        answer_next(&mut e, 0, changed());
+        answer_next(&mut e, 0, snapshot_body("8", "studio", "dark"));
+        assert_eq!(e.look.status_source, crate::Section::Terminal);
+        assert_eq!(e.look.problem_source, Some(crate::Section::Appearance));
         e.revert_look();
         assert!(e.look.problem.is_none());
     }
@@ -1718,8 +1722,11 @@ mod tests {
             let mut e = read();
             edit(&mut e, json!({"scheme":"forest"}));
             answer_next(&mut e, 10, json!({"status":"validation_failed"}));
-            e.look.problem_source = Some(source);
-            e.look.status_source = crate::Section::Terminal;
+            if source == crate::Section::Terminal {
+                e.edit_terminal(crate::terminal::Setting::Term("BAD".into()));
+            } else {
+                e.look.status_source = crate::Section::Terminal;
+            }
             e.read_look();
             answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
             assert_eq!(e.look.problem.is_some(), source == crate::Section::Terminal);
