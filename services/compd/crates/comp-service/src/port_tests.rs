@@ -13,7 +13,7 @@ use comp_model::request::SequenceStep;
 
 #[tokio::test]
 async fn help_is_a_descriptor_list_of_answered_commands() {
-    let (ingress, _source, _) = test_ingress();
+    let (ingress, source, _) = test_ingress();
     let mut responders = JoinSet::new();
     let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
     let (sender, mut replies) = tokio_mpsc::channel(2);
@@ -34,11 +34,38 @@ async fn help_is_a_descriptor_list_of_answered_commands() {
         assert_eq!(entries[0].name, "HELP");
         let registry = include_str!("../../../../../docs/docs/spec/bus/commands.conf.mix");
         for entry in entries {
-            if matches!(entry.name.as_str(), "HELP" | "app.describe" | TRUTH_COMMAND) {
-                continue;
+            // Malformed arguments avoid mutations while still exercising the
+            // real dispatcher and each family's command recognition.
+            let mut request = command(&entry.name, 2);
+            request.body = "{".into();
+            handle_incoming(
+                &ingress,
+                &mut responders,
+                &permits,
+                &sender,
+                &timeouts,
+                "comp-nested",
+                request,
+            );
+            if entry.name == TRUTH_COMMAND {
+                let PortCommand::Truth(request) = source.try_recv().unwrap() else {
+                    panic!("truth command was not admitted")
+                };
+                request.reply.send(ControlReply::Body(json!({}))).unwrap();
             }
-            if let Err((_, body)) = classify(&entry.name, &Value::Null, true) {
-                assert!(!body.contains("UNKNOWN_COMMAND"), "{}: {body}", entry.name);
+            let reply = tokio::time::timeout(Duration::from_secs(1), replies.recv())
+                .await
+                .expect("every advertised command answers")
+                .unwrap();
+            assert!(
+                !reply.body.contains("UNKNOWN_COMMAND"),
+                "{}: {}",
+                entry.name,
+                reply.body
+            );
+            if matches!(entry.name.as_str(), "HELP" | "app.describe") {
+                assert_eq!(reply.rc, 0);
+                continue;
             }
             let row = registry
                 .lines()
