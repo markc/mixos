@@ -10,7 +10,7 @@ struct Windows {
     path: Option<PathBuf>,
     frames: BTreeMap<String, Frame>,
     workers: BTreeMap<String, std::sync::mpsc::SyncSender<()>>,
-    captured: BTreeMap<String, Instant>,
+    captured: BTreeMap<String, (Instant, Frame, Option<egui::Rect>)>,
 }
 type Shared = Arc<Mutex<Windows>>;
 
@@ -42,7 +42,7 @@ pub fn builder(ctx: &egui::Context, app: &str, name: &str, builder: egui::Viewpo
     let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
     let frame = windows.frames.entry(name.into()).or_default().clone();
     if !windows.workers.contains_key(name) {
-        if let Some(worker) = worker(app, name, &app_id, state.clone()) {
+        if let Some(worker) = worker(app, name, &app_id, state.clone(), ctx.clone()) {
             windows.workers.insert(name.into(), worker);
         }
     }
@@ -56,13 +56,21 @@ pub fn capture(ctx: &egui::Context, app: &str, name: &str) {
     let state = shared(ctx, app);
     let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
     windows.frames.entry(name.into()).or_default().capture(ctx);
-    ctx.request_repaint_of(egui::ViewportId::ROOT);
     let now = Instant::now();
     let closing = ctx.input(|i| i.viewport().close_requested());
-    if closing || windows.captured.get(name).is_none_or(|last| now.duration_since(*last) >= Duration::from_secs(1)) {
-        windows.captured.insert(name.into(), now);
+    let pointer_down = ctx.input(|i| i.pointer.any_down());
+    let rect = ctx.input(|i| i.viewport().outer_rect);
+    let frame = windows.frames[name].clone();
+    let changed = windows.captured.get(name).is_none_or(|(_, saved, old_rect)| *saved != frame || *old_rect != rect);
+    let due = windows.captured.get(name).is_none_or(|(last, _, _)| now.duration_since(*last) >= Duration::from_secs(1));
+    if closing || (changed && due && !pointer_down) {
+        ctx.request_repaint_of(egui::ViewportId::ROOT);
+        windows.captured.insert(name.into(), (now, frame, rect));
         persist(&windows, name);
         if let Some(worker) = windows.workers.get(name) { let _ = worker.try_send(()); }
+        if closing { windows.workers.remove(name); }
+    } else if changed {
+        ctx.request_repaint_after(Duration::from_secs(1));
     }
 }
 
@@ -81,7 +89,7 @@ fn persist(windows: &Windows, name: &str) {
     if let Err(error) = store.flush() { eprintln!("toolkit: saving secondary window: {error}"); }
 }
 
-fn worker(app: &str, name: &str, app_id: &str, state: Shared) -> Option<std::sync::mpsc::SyncSender<()>> {
+fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context) -> Option<std::sync::mpsc::SyncSender<()>> {
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     let (app, name, app_id) = (app.to_owned(), name.to_owned(), app_id.to_owned());
     let state = Arc::downgrade(&state);
@@ -91,6 +99,9 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared) -> Option<std::syn
             let service = format!("{app}-saved-{}", std::process::id());
             let Ok(Ok(client)) = tokio::time::timeout(Duration::from_millis(700), ::bus::client_helpers::connect_default(&service)).await else { return; };
             let comp = std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into());
+            let topic = format!("{comp}.props.changed");
+            let _ = client.subscribe_topic(&topic).await;
+            let incoming = tokio::sync::Mutex::new(client.incoming());
             let call = |command: &'static str, args: Value| {
                 let client = &client;
                 let comp = &comp;
@@ -104,10 +115,19 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared) -> Option<std::syn
             };
             // Probe once. A desktop without compd must not generate catalogue
             // requests on every editor repaint or portable save.
-            if !call("comp.windows.list", serde_json::json!({})).await.is_some_and(|v| v["windows"].is_array()) { return; }
+            if !tokio::time::timeout(Duration::from_millis(700), call("comp.windows.list", serde_json::json!({}))).await.ok().flatten().is_some_and(|v| v["windows"].is_array()) { return; }
             let Some(state) = state.upgrade() else { return; };
             let mut frame = state.lock().unwrap_or_else(|e| e.into_inner()).frames.get(&name).cloned().unwrap_or_default();
-            frame.restore(&app_id, call).await;
+            frame.restore_with_events(&app_id, call, || async {
+                tokio::time::timeout(Duration::from_secs(1), async {
+                    let mut incoming = incoming.lock().await;
+                    let Some(incoming) = incoming.as_mut() else { return false; };
+                    while let Some(message) = incoming.recv().await {
+                        if message.headers.get("topic") == Some(&topic) { return true; }
+                    }
+                    false
+                }).await.unwrap_or(false)
+            }).await;
             while rx.recv().is_ok() {
                 frame = state.lock().unwrap_or_else(|e| e.into_inner()).frames.get(&name).cloned().unwrap_or_default();
                 let _ = tokio::time::timeout(Duration::from_millis(700), frame.capture_exit(&app_id, call)).await;
@@ -116,6 +136,7 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared) -> Option<std::syn
                 let latest = windows.frames.entry(name.clone()).or_default();
                 latest.placement = frame.placement;
                 persist(&windows, &name);
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
             }
         });
         runtime.shutdown_timeout(Duration::from_millis(100));
@@ -126,5 +147,61 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared) -> Option<std::syn
 pub fn close(ctx: &egui::Context, app: &str) {
     if let Some(state) = ctx.data(|d| d.get_temp::<Shared>(key(app))) {
         state.lock().unwrap_or_else(|e| e.into_inner()).workers.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn macro_editor_size_and_maximised_state_round_trip_as_a_named_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("window.conf.mix");
+        let mut root = Store::<Value>::load(Some(dir.path().into()), 1);
+        root.app = serde_json::json!({"keep":"root"});
+        root.window.size = Some([1200.0, 800.0]);
+        root.flush().unwrap();
+        let frame = Frame { size: Some([700.0, 480.0]), maximised: true, ..Default::default() };
+        let windows = Windows { path: Some(path), frames: [("macro-editor".into(), frame.clone())].into(), ..Default::default() };
+        persist(&windows, "macro-editor");
+        let back = Store::<Value>::load(Some(dir.path().into()), 1);
+        assert_eq!(back.windows["macro-editor"], frame);
+        assert_eq!(back.window.size, Some([1200.0, 800.0]));
+        assert_eq!(back.app["keep"], "root");
+    }
+
+    #[test]
+    fn embedded_editor_creates_no_store_or_compositor_worker() {
+        let ctx = egui::Context::default();
+        ctx.set_embed_viewports(true);
+        let original = egui::ViewportBuilder::default().with_inner_size([760.0, 560.0]);
+        let built = builder(&ctx, "example", "macro-editor", original);
+        capture(&ctx, "example", "macro-editor");
+        assert_eq!(built.inner_size, Some(egui::vec2(760.0, 560.0)));
+        assert!(collect(&ctx, "example").is_none());
+    }
+
+    #[test]
+    fn secondary_comp_restore_uses_its_own_app_id_and_fenced_bodies() {
+        let frame = Frame { placement: Some(super::super::frame::Placement { output:"o_main".into(), workspace:3, x:10.0, y:20.0, width:700, height:480 }), ..Default::default() };
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut calls = Vec::new();
+        runtime.block_on(frame.restore("dev.mixos.example.macro-editor", |command, args| {
+            calls.push((command, args));
+            std::future::ready(Some(if command == "comp.windows.list" {
+                serde_json::json!({"windows":[
+                    {"app_id":"dev.mixos.example","pid":std::process::id(),"id":1,"generation":1},
+                    {"app_id":"dev.mixos.example.macro-editor","pid":std::process::id(),"id":2,"generation":4}
+                ]})
+            } else { serde_json::json!({}) }))
+        }));
+        assert_eq!(calls[3].1, serde_json::json!({"id":2,"generation":4,"index":3,"follow":false}));
+        assert_eq!(calls[4].1, serde_json::json!({"id":2,"generation":4,"output":"o_main","x":10.0,"y":20.0,"width":700,"height":480}));
+        calls.clear();
+        runtime.block_on(frame.restore("dev.mixos.example.macro-editor", |command, args| {
+            calls.push((command, args)); std::future::ready(None)
+        }));
+        assert_eq!(calls.len(), 1, "absent compd allows only the catalogue probe");
     }
 }

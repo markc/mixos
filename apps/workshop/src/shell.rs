@@ -187,6 +187,7 @@ pub struct Shell {
     theme: Theme,
     bus: Handle,
     comp: String,
+    comp_changed: Arc<tokio::sync::Notify>,
     runtime: tokio::runtime::Runtime,
     tx: mpsc::Sender<Event>,
     rx: mpsc::Receiver<Event>,
@@ -289,12 +290,18 @@ impl Shell {
         let wake = ctx.clone();
         let inbox = Arc::new(Mutex::new(deliveries));
         let source = inbox.clone();
+        let comp_changed = Arc::new(tokio::sync::Notify::new());
+        let mapping_changed = comp_changed.clone();
+        let comp_topic = format!("{comp}.props.changed");
         runtime.spawn(async move {
             loop {
                 // Take one delivery and hand it on under the inbox lock.
                 let next =
                     futures::future::poll_fn(|cx| match locked(&source).poll_next_unpin(cx) {
                         Poll::Ready(Some(delivery)) => {
+                            if matches!(&delivery, Delivery::Topic(topic) if *topic == comp_topic) {
+                                mapping_changed.notify_one();
+                            }
                             Poll::Ready(Some(forward.send(Event::Delivery(delivery)).is_ok()))
                         }
                         Poll::Ready(None) => Poll::Ready(None),
@@ -324,6 +331,7 @@ impl Shell {
             theme,
             bus,
             comp,
+            comp_changed,
             runtime,
             tx,
             rx,
@@ -380,15 +388,19 @@ impl Shell {
         let frame = saved.window.clone();
         let bus = self.bus.clone();
         let comp = self.comp.clone();
+        let comp_changed = self.comp_changed.clone();
         self.runtime.spawn(async move {
+            let _ = bus.subscribe(&format!("{comp}.props.changed")).await;
             frame
-                .restore(inspector::model::APP_ID, |command, args| {
+                .restore_with_events(inspector::model::APP_ID, |command, args| {
                     let bus = bus.clone();
                     let comp = comp.clone();
                     async move {
                         let reply = bus.call(&comp, command, args).await.ok()?;
                         serde_json::from_str(&reply.body).ok()
                     }
+                }, || async {
+                    tokio::time::timeout(std::time::Duration::from_secs(1), comp_changed.notified()).await.is_ok()
                 })
                 .await;
         });
@@ -1214,6 +1226,17 @@ mod tests {
             "compd".into(),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn saved_window_width_resolves_auto_dock_before_the_first_layout() {
+        let mut saved = toolkit::saved::Store::load(None, 1);
+        saved.window.size = Some([1920.0, 900.0]);
+        let mut shell = test_shell().with_saved(saved);
+        assert_eq!(shell.engine.dock_window_width, 1920.0);
+        assert_eq!(shell.engine.dock_effective, inspector::DockSide::Right);
+        shell.engine.set_dock_size(inspector::DockSide::Auto, 0.44);
+        assert_eq!(shell.engine.ui.dock_width, 0.44);
     }
 
     #[test]

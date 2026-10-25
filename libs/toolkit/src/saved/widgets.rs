@@ -239,6 +239,33 @@ pub fn group<R>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn saved_shares_and_scroll_bounds_compose_with_text_scale_and_density() {
+        for density in [0.85, 1.0, 1.2] {
+            let ctx = egui::Context::default();
+            let theme = crate::Theme::embedded().with_ui(crate::ui_scale::CommonUi {
+                text_scale: 1.5, density, ..Default::default()
+            });
+            crate::install(&ctx, &theme);
+            let mut widgets = Widgets::default();
+            widgets.panels.insert("left".into(), 0.4);
+            widgets.scrolls.insert("text".into(), Scroll { key: None, offset: [0.0, 100_000.0] });
+            widgets.install(&ctx);
+            let mut max_y = 0.0;
+            draw(&ctx, |ui| {
+                panel(ui, "left", egui::Panel::left("left"), 1000.0, 0.4, 0.1..=0.8, true, |ui| {
+                    let out = scroll(ui, "text", None, true, egui::ScrollArea::vertical().max_height(100.0), |ui| {
+                        for _ in 0..50 { ui.label("Larger text increases the laid out content height"); }
+                    });
+                    max_y = (out.content_size.y - out.inner_rect.height()).max(0.0);
+                });
+            });
+            widgets.collect(&ctx);
+            assert_eq!(widgets.panels["left"], 0.4);
+            assert!(max_y > 100.0);
+            assert!((widgets.scrolls["text"].offset[1] - max_y).abs() < 0.1);
+        }
+    }
     fn draw(ctx: &egui::Context, body: impl FnMut(&mut egui::Ui)) {
         let mut out = ctx.run_ui(
             egui::RawInput {

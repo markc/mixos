@@ -2,6 +2,9 @@
 
 ## 0.2.0
 
+- `comp.window.wait` accepts `match.pid` alongside the app ID and title
+  filters, so a mapping wait cannot resolve to another instance of an app.
+
 - `comp.window.maximize` accepts optional `output` (key or native name),
   including retargeting an already maximised window. Normal restore geometry
   survives, and focus and workspace stay unchanged. Unknown outputs refuse

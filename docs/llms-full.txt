@@ -34442,8 +34442,9 @@ let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke,
 Use `toolkit::saved::Store<MyArrangement>` for each window kind. The app
 struct derives `Serialize`, `Deserialize` and `Default` and contains only
 passive app choices: selection, expanded tree keys, filters and view modes.
-Pass its own version to `Store::load`; a different app version resets only
-that section. Keep drafts, credentials, replies and live data out of it.
+Pass its own version to `Store::load`; an older app version resets only
+that section. Newer or undecodable sections retain their raw value on save.
+Keep drafts, credentials, replies and live data out of it.
 
 For a native window, pass `AppDirs::resolve(app).map(|d| d.state())` as the
 directory. It already identifies the app: the file is
@@ -34451,7 +34452,7 @@ directory. It already identifies the app: the file is
 subdirectory. Tests and headless runs pass an injected directory or `None`
 for memory only. Loading never creates directories.
 
-Toolkit owns the `window` and `widgets` sections. Apply
+Toolkit owns the `window`, `windows` and `widgets` sections. Apply
 `store.window.viewport(builder)` before starting eframe; restore the five
 theme axes with `store.window.theme.choice()`, preserving `None` as follow
 session. After each frame, call `window.capture(ctx)`, update the app value
@@ -34477,21 +34478,34 @@ until restoration is meaningful. Use `forget_scroll` when keeping a restored
 selection in view should win. `collapsing` saves a CollapsingState's openness.
 
 On compd, pass the app's existing Bus call adapter to `Frame::restore` after
-the window appears. The adapter returns `None` for transport errors or any
-non-zero return code. Toolkit probes the catalogue, matches app ID and PID,
+the window appears. The adapter returns `None` for transport errors and the
+parsed reply body for both success and application refusals. Toolkit probes the catalogue, matches app ID and PID,
 and sends generation-fenced workspace then placement/maximise requests.
 Maximise includes the saved output, using compd's additive output selector.
-It stops silently at a refusal and restores the prior workspace if placement
-failed after moving it; it never focuses or switches workspace. Before
+Only an `invalid_args` refusal of `output` retries a plain maximise request.
+Workspace and geometry restore independently: neither refusal undoes an
+accepted operation. It never focuses or switches workspace. The wait matches
+PID on current compd; with an older compd use `restore_with_events`, subscribing
+to its `props.changed` topic first, for bounded event-driven catalogue retries. Before
 disconnecting at exit, use `Frame::capture_exit` to remember output, position
-and workspace. It reads the output origin and window geometry, so client
+and workspace. Maximised captures retain the last normal geometry. It reads the output origin and window geometry, so client
 shadows and multiple outputs do not shift the restored position. Other Wayland desktops restore only size
 and maximised state; no position is invented.
 
 The strict-data envelope has `schema_version: 1`. Malformed files and unknown
 envelopes load defaults and are never overwritten. A section that fails
-decoding resets only itself. `Store::describe()` exposes the current saved
+decoding supplies defaults in memory but retains its raw value on disk.
+`Store::describe()` exposes the current saved
 values to the app's info/describe Bus response without exposing file paths.
+
+Named secondary frames live in `windows.<name>` in the same envelope. Call
+`store.install_windows(ctx, app)` once and `store.collect_windows(ctx, app)`
+before saving. The shared macro editor adopts `windows.macro-editor` in every
+app automatically, including apps without root-window persistence. Its distinct
+Wayland app ID (`dev.mixos.<app>.macro-editor`) and process ID distinguish it
+from the root and other processes. Embedded editors create no native store or
+compositor worker. The native Bus worker probes compd once and exits if absent;
+other desktops still retain portable size and maximised state.
 
 ### Theme and look
 
@@ -35740,6 +35754,9 @@ written in Mix on `tcp_listen`.
 > Mirrored from [`services/compd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/compd/CHANGELOG.md), where releases update it. The component's page is [compd](README.md). This page describes the current `main` branch of MixOS.
 
 ## 0.2.0
+
+- `comp.window.wait` accepts `match.pid` alongside the app ID and title
+  filters, so a mapping wait cannot resolve to another instance of an app.
 
 - `comp.window.maximize` accepts optional `output` (key or native name),
   including retargeting an already maximised window. Normal restore geometry

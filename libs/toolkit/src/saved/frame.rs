@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Portable frame state and optional compd placement. The caller supplies its
 //! existing Bus transport; this module never starts a connection or switches
-//! the current workspace. Refusals stop the restore sequence silently.
+//! the current workspace. Workspace and geometry refusals are independent.
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -123,36 +123,54 @@ impl Frame {
         F: FnMut(&'static str, Value) -> Fut,
         Fut: Future<Output = Option<Value>>,
     {
+        self.restore_with_events(app_id, &mut call, || std::future::ready(false)).await;
+    }
+
+    /// Old compositors have no PID wait selector. Subscribe to their
+    /// `props.changed` topic before calling this method; `changed` consumes a
+    /// bounded event wait. Catalogue retries then follow events, never a timer.
+    pub async fn restore_with_events<F, Fut, W, Wait>(&self, app_id: &str, mut call: F, mut changed: W)
+    where
+        F: FnMut(&'static str, Value) -> Fut,
+        Fut: Future<Output = Option<Value>>,
+        W: FnMut() -> Wait,
+        Wait: Future<Output = bool>,
+    {
         let Some(p) = &self.placement else {
             return;
         };
         if call("comp.windows.list", json!({})).await.is_none() {
             return;
         }
-        if call(
+        let wait = call(
             "comp.window.wait",
             json!({"match":{"app_id":app_id,"pid":std::process::id()},"until":"mapped","timeout_ms":10000}),
         )
-        .await
-        .filter(succeeded)
-        .is_none()
-        {
+        .await;
+        let legacy = wait.as_ref().is_some_and(|r| r["error"] == "invalid_args" && r["field"] == "match.pid");
+        if legacy {
+            let _ = call("comp.props.watch", json!({})).await;
+            if !call("comp.window.wait", json!({"match":{"app_id":app_id},"until":"mapped","timeout_ms":10000})).await.is_some_and(|r| succeeded(&r)) { return; }
+        } else if !wait.is_some_and(|r| succeeded(&r)) {
             return;
         }
-        let Some(w) = Self::own_window(app_id, &mut call).await else {
+        let mut own = Self::own_window(app_id, &mut call).await;
+        if legacy {
+            for _ in 0..8 {
+                if own.is_some() || !changed().await { break; }
+                own = Self::own_window(app_id, &mut call).await;
+            }
+        }
+        let Some(w) = own else {
             return;
         };
         let target = json!({"id":w["id"],"generation":w["generation"]});
         let mut workspace = target.clone();
         workspace["index"] = json!(p.workspace);
         workspace["follow"] = json!(false);
-        if call("comp.window.send_to_workspace", workspace)
-            .await
-            .filter(succeeded)
-            .is_none()
-        {
-            return;
-        }
+        // Each operation is generation-fenced and stands on its own. Neither
+        // a workspace nor a geometry refusal undoes an accepted operation.
+        let _ = call("comp.window.send_to_workspace", workspace).await;
         if self.maximised {
             let mut maximize = target.clone();
             maximize["output"] = json!(p.output);
@@ -293,6 +311,27 @@ mod tests {
             std::future::ready(Some(if command == "comp.windows.list" { json!({"windows":[other,window()]}) } else { json!({}) }))
         }));
     }
+    #[test]
+    fn legacy_wait_retries_catalogue_on_events_until_this_instance_maps() {
+        use std::cell::Cell;
+        let mapped = Cell::new(false);
+        let mut other = window();
+        other["pid"] = json!(u64::from(std::process::id()) + 1);
+        other["id"] = json!(99);
+        let mut placed = false;
+        runtime().block_on(frame().restore_with_events("dev.mixos.example", |command, args| {
+            let reply = if command == "comp.windows.list" {
+                json!({"windows": if mapped.get() { vec![other.clone(), window()] } else { vec![other.clone()] }})
+            } else if command == "comp.window.wait" && args["match"].get("pid").is_some() {
+                json!({"error":"invalid_args","field":"match.pid"})
+            } else {
+                if command == "comp.window.place" { assert_eq!(args["id"], 7); placed = true; }
+                json!({})
+            };
+            std::future::ready(Some(reply))
+        }, || { mapped.set(true); std::future::ready(true) }));
+        assert!(placed);
+    }
     fn frame() -> Frame {
         Frame {
             size: Some([900.0, 600.0]),
@@ -384,7 +423,7 @@ mod tests {
                         })
                     })
                 }));
-                assert_eq!(count, refused + 1);
+                assert_eq!(count, if refused == 3 { 5 } else { refused + 1 });
             }
         }
     }

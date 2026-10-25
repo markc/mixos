@@ -331,14 +331,15 @@ let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke,
 <p>Use <code>toolkit::saved::Store&lt;MyArrangement&gt;</code> for each window kind. The app
 struct derives <code>Serialize</code>, <code>Deserialize</code> and <code>Default</code> and contains only
 passive app choices: selection, expanded tree keys, filters and view modes.
-Pass its own version to <code>Store::load</code>; a different app version resets only
-that section. Keep drafts, credentials, replies and live data out of it.</p>
+Pass its own version to <code>Store::load</code>; an older app version resets only
+that section. Newer or undecodable sections retain their raw value on save.
+Keep drafts, credentials, replies and live data out of it.</p>
 <p>For a native window, pass <code>AppDirs::resolve(app).map(|d| d.state())</code> as the
 directory. It already identifies the app: the file is
 <code>&lt;AppDirs::state()&gt;/window.conf.mix</code>. For another window kind, use a named
 subdirectory. Tests and headless runs pass an injected directory or <code>None</code>
 for memory only. Loading never creates directories.</p>
-<p>Toolkit owns the <code>window</code> and <code>widgets</code> sections. Apply
+<p>Toolkit owns the <code>window</code>, <code>windows</code> and <code>widgets</code> sections. Apply
 <code>store.window.viewport(builder)</code> before starting eframe; restore the five
 theme axes with <code>store.window.theme.choice()</code>, preserving <code>None</code> as follow
 session. After each frame, call <code>window.capture(ctx)</code>, update the app value
@@ -362,20 +363,32 @@ prevents applying another selection's offset. Live trees pass <code>ready: false
 until restoration is meaningful. Use <code>forget_scroll</code> when keeping a restored
 selection in view should win. <code>collapsing</code> saves a CollapsingState's openness.</p>
 <p>On compd, pass the app's existing Bus call adapter to <code>Frame::restore</code> after
-the window appears. The adapter returns <code>None</code> for transport errors or any
-non-zero return code. Toolkit probes the catalogue, matches app ID and PID,
+the window appears. The adapter returns <code>None</code> for transport errors and the
+parsed reply body for both success and application refusals. Toolkit probes the catalogue, matches app ID and PID,
 and sends generation-fenced workspace then placement/maximise requests.
 Maximise includes the saved output, using compd's additive output selector.
-It stops silently at a refusal and restores the prior workspace if placement
-failed after moving it; it never focuses or switches workspace. Before
+Only an <code>invalid_args</code> refusal of <code>output</code> retries a plain maximise request.
+Workspace and geometry restore independently: neither refusal undoes an
+accepted operation. It never focuses or switches workspace. The wait matches
+PID on current compd; with an older compd use <code>restore_with_events</code>, subscribing
+to its <code>props.changed</code> topic first, for bounded event-driven catalogue retries. Before
 disconnecting at exit, use <code>Frame::capture_exit</code> to remember output, position
-and workspace. It reads the output origin and window geometry, so client
+and workspace. Maximised captures retain the last normal geometry. It reads the output origin and window geometry, so client
 shadows and multiple outputs do not shift the restored position. Other Wayland desktops restore only size
 and maximised state; no position is invented.</p>
 <p>The strict-data envelope has <code>schema_version: 1</code>. Malformed files and unknown
 envelopes load defaults and are never overwritten. A section that fails
-decoding resets only itself. <code>Store::describe()</code> exposes the current saved
+decoding supplies defaults in memory but retains its raw value on disk.
+<code>Store::describe()</code> exposes the current saved
 values to the app's info/describe Bus response without exposing file paths.</p>
+<p>Named secondary frames live in <code>windows.&lt;name&gt;</code> in the same envelope. Call
+<code>store.install_windows(ctx, app)</code> once and <code>store.collect_windows(ctx, app)</code>
+before saving. The shared macro editor adopts <code>windows.macro-editor</code> in every
+app automatically, including apps without root-window persistence. Its distinct
+Wayland app ID (<code>dev.mixos.&lt;app&gt;.macro-editor</code>) and process ID distinguish it
+from the root and other processes. Embedded editors create no native store or
+compositor worker. The native Bus worker probes compd once and exits if absent;
+other desktops still retain portable size and maximised state.</p>
 <h3 id="theme-and-look">Theme and look</h3>
 <ul>
 <li><code>theme</code>: <code>Theme</code> holds a resolved design together with the context it
