@@ -155,14 +155,17 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
             let parent = path.parent().ok_or("missing saved-state directory")?;
             let held = config::atomic::create_directory(parent).map_err(|e| e.to_string())?;
             if let Err(error) = config::atomic::replace(path, content.as_bytes()) {
-                let landed = error.may_have_replaced && path.file_name().is_some_and(|name| {
-                    config::atomic::read_in(&held, name, content.len())
-                        .is_ok_and(|actual| actual.as_slice() == content.as_bytes())
-                });
+                let landed = error.may_have_replaced
+                    && path.file_name().is_some_and(|name| {
+                        config::atomic::read_in(&held, name, content.len())
+                            .is_ok_and(|actual| actual.as_slice() == content.as_bytes())
+                    });
                 if landed {
                     self.written = content;
                     self.writes += 1;
-                    return Err(format!("{error} (replacement confirmed on disk; directory durability is unconfirmed)"));
+                    return Err(format!(
+                        "{error} (replacement confirmed on disk; directory durability is unconfirmed)"
+                    ));
                 }
                 return Err(error.to_string());
             }
