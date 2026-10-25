@@ -97,6 +97,15 @@ pub fn view(
         ui.small(&engine.status);
     });
     let window = ui.max_rect().size();
+    ui.ctx().data_mut(|data| {
+        let key = egui::Id::new("workshop-dock-window");
+        if data.get_temp::<egui::Vec2>(key).is_some_and(|old| old != window) {
+            for name in ["traffic-bottom", "traffic-right"] {
+                data.remove::<egui::containers::panel::PanelState>(egui::Id::new(name));
+            }
+        }
+        data.insert_temp(key, window);
+    });
     let side = engine.ui.dock_side.effective(window.x);
     events.push(UiEvent::DockViewport(window.x));
     if !engine.workshop.dock_open {
