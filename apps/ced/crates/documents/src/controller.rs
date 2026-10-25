@@ -2945,14 +2945,7 @@ impl Controller {
                     }),
                 );
             }
-            "INFO" | "HELP" => {
-                let command_names: Vec<&str> = commands::COMMANDS.iter().map(|(v, _)| *v).collect();
-                reply(
-                    fx,
-                    json!({"service": commands::SERVICE, "schema": commands::SCHEMA, "commands": command_names})
-                        .to_string(),
-                );
-            }
+            "HELP" => reply(fx, json!(commands::manifest()).to_string()),
             other => refuse(
                 fx,
                 code::UNKNOWN_COMMAND,
@@ -3515,6 +3508,24 @@ mod tests {
             matches!(effects.as_slice(), [Effect::ClipboardWrite { text, primary: true }] if text == "e\u{301}中")
         );
         assert_eq!(c.stats.keys, 0);
+    }
+
+    #[test]
+    fn help_is_a_descriptor_list_of_answered_commands() {
+        let (rc, body) = response(&ctl().on_bus_command(cmd("HELP", json!({}))));
+        assert_eq!(rc, 0);
+        let entries: Vec<bus::CommandDescriptor> = serde_json::from_value(body).unwrap();
+        assert_eq!(entries[0].name, "HELP");
+        for entry in entries {
+            let effects = ctl().on_bus_command(cmd(&entry.name, json!({})));
+            assert!(!effects.is_empty(), "{} was not answered or admitted", entry.name);
+            for effect in effects {
+                if let Effect::Respond { body, .. } = effect {
+                    let body: Value = serde_json::from_str(&body).unwrap();
+                    assert_ne!(body["error_code"], "UNKNOWN_COMMAND", "{}", entry.name);
+                }
+            }
+        }
     }
 
     #[test]

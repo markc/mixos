@@ -104,6 +104,9 @@ pub fn run(service: &str, url: &str, config: Config, paths: &[String]) -> Result
             };
             work = match delivery {
                 Delivery::Incoming(i) => ctl.on_incoming(i),
+                Delivery::Command(c) if c.command == "HELP" => vec![Effect::Respond {
+                    id: c.id, rc: 0, body: serde_json::json!(bus::help(false)).to_string(),
+                }],
                 Delivery::Command(c) => ctl.on_bus_command(c),
                 // No window, no look: headless never reads one.
                 Delivery::NotificationFailed { .. }

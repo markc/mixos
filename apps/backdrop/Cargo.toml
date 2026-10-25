@@ -21,6 +21,7 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+bus.workspace = true
 buildinfo.workspace = true
 # The Bus connection: commands, replies, topics (AGENTS.md §5).
 citizen.workspace = true

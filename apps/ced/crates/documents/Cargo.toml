@@ -18,6 +18,7 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+bus.workspace = true
 blake3.workspace = true
 buildinfo.workspace = true
 config.workspace = true

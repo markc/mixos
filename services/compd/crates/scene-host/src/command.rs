@@ -59,6 +59,21 @@ pub enum SceneCommand {
 }
 
 impl SceneCommand {
+    /// Stable protocol discovery; watch and validate are registry queries too.
+    pub fn manifest(service: &str) -> Vec<bus::CommandDescriptor> {
+        use bus::CommandDescriptor;
+        [
+            CommandDescriptor::new("HELP", &[], "List every command", true),
+            CommandDescriptor::new("app.describe", &[], "Describe the service commands", true),
+        ]
+        .into_iter()
+        .chain(Self::names(service).into_iter().map(|name| {
+            let kind = Self::parse(service, &name).expect("catalogued scene command");
+            CommandDescriptor::new(&name, &[], &format!("Scene host {}", name.split_once('.').unwrap().1), !kind.mutates())
+        }))
+        .collect()
+    }
+
     /// The command for a request's `command`: `shell.<command>` (the contract's
     /// spelling, which loaders send whatever the host registered as), or
     /// `<service>.<command>` under an override name.

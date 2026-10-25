@@ -374,4 +374,6 @@ wires it up in five places:
    before the Bus connection stops.
 
 `drive::describe("<app>")` lists the commands for `HELP` and `app.describe`.
+The [Bus command registry](spec/bus/commands.conf.mix) defines the common
+`HELP` reply contract.
 Workshop's shell (`apps/workshop/src/shell.rs`) is the reference wiring.

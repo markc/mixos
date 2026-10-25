@@ -381,6 +381,7 @@ impl Delivery {
 /// Where one incoming frame goes.
 #[derive(Debug, PartialEq)]
 pub enum Route {
+    Describe,
     Scene(SceneCommand),
     Live(BTreeSet<String>),
     /// A registry claim not from the local broker; dropped, logged.
@@ -411,6 +412,9 @@ pub fn route(service: &str, command: &IncomingCommand) -> Route {
     }
     if command.is_topic_delivery() || command.command.is_empty() {
         return Route::Ignore;
+    }
+    if matches!(command.command.as_str(), "HELP" | "app.describe") {
+        return Route::Describe;
     }
     match SceneCommand::parse(service, &command.command) {
         Some(kind) => Route::Scene(kind),
@@ -844,6 +848,7 @@ fn admit(
     command: IncomingCommand,
 ) -> Option<(IncomingCommand, u8, Value)> {
     match route(service, &command) {
+        Route::Describe => return Some((command, 0, json!(SceneCommand::manifest(service)))),
         Route::Scene(kind) => {
             let request = Request {
                 kind,
@@ -947,6 +952,29 @@ async fn send(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn help_is_a_descriptor_list_of_answered_commands() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let delivery = Delivery { sender, waker: Arc::new(|| {}) };
+        for service in ["shell", "example-shell"] {
+            let request = incoming("tester", "HELP", Some("1"), &[], "{}");
+            let (_, rc, body) = admit(service, &delivery, request).unwrap();
+            assert_eq!(rc, 0);
+            let entries: Vec<bus::CommandDescriptor> = serde_json::from_value(body.clone()).unwrap();
+            assert_eq!(entries[0].name, "HELP");
+            let request = incoming("tester", "app.describe", Some("1"), &[], "{}");
+            assert_eq!(admit(service, &delivery, request).unwrap().2, body);
+            for entry in entries {
+                let request = incoming("tester", &entry.name, Some("2"), &[], "{}");
+                if let Some((_, rc, body)) = admit(service, &delivery, request) {
+                    assert_eq!(rc, 0, "{}: {body}", entry.name);
+                } else {
+                    assert!(matches!(receiver.try_recv().unwrap(), Inbound::Request(_)));
+                }
+            }
+        }
+    }
 
     fn install_settings_fonts() {
         // egui contexts carry their own fonts; nothing is installed process-wide.

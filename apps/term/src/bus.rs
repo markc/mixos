@@ -35,7 +35,7 @@ const LOOK_BUDGET: Duration = Duration::from_secs(30);
 pub fn answers(command_name: &str) -> bool {
     matches!(
         command_name,
-        "app.describe" | "term.actions" | "term.execute"
+        "HELP" | "app.describe" | "term.actions" | "term.execute"
     ) || command_name
         .strip_prefix("term.")
         .is_some_and(|v| drive::COMMANDS.contains(&v))
@@ -43,9 +43,26 @@ pub fn answers(command_name: &str) -> bool {
 
 /// The HELP line for `command`, after the command and its argument shape.
 fn help_line(command_name: &str) -> Option<&'static str> {
-    term_core::bus::HELP
+    term_core::bus::INFO
         .lines()
         .find(|line| line.split([' ', ':']).next() == Some(command_name))
+}
+
+/// The full window service HELP reply, in the protocol descriptor shape.
+pub fn help() -> Vec<::bus::CommandDescriptor> {
+    let mut entries = term_core::bus::manifest(APP, true);
+    let mut hosted = drive::describe(APP);
+    hosted.extend([
+        json!({"name":"term.actions","description":"List window actions","read_only":true}),
+        json!({"name":"term.execute","args":{"id":"action id","tab":"optional tab","pane":"optional pane"},"description":"Execute a window action","read_only":false}),
+    ]);
+    entries.extend(hosted.into_iter().map(|value| ::bus::CommandDescriptor {
+        name: value["name"].as_str().unwrap().to_owned(),
+        args: value["args"].as_object().map(|args| args.keys().cloned().collect()).unwrap_or_default(),
+        description: value["description"].as_str().unwrap().to_owned(),
+        read_only: value["read_only"].as_bool().unwrap_or(false),
+    }));
+    entries
 }
 
 /// The whole Bus surface: the terminal's commands, the window's command commands
@@ -63,6 +80,7 @@ pub fn describe() -> Value {
             "term.session" => {
                 "term.session {}: this process's pid, instance and native session status"
             }
+            "term.info" => "Read terminal diagnostics and usage",
             _ => name,
         });
         command_names.push(json!({"name":name,"description":description,"read_only":read_only}));
@@ -304,7 +322,7 @@ mod tests {
         for (command_name, _) in term_core::bus::COMMANDS {
             assert!(!answers(command_name), "{command_name} is the lane's");
         }
-        assert!(!answers("HELP") && !answers("ced.ui.tree"));
+        assert!(answers("HELP") && !answers("ced.ui.tree"));
     }
 
     #[test]

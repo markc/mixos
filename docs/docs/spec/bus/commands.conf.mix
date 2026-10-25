@@ -31,9 +31,34 @@
 -- by the app that answers them. Schema 3 added the families list below.
 -- HELP and app.describe are protocol commands every service answers; they are
 -- not registered per component.
+-- HELP succeeds at rc 0 with a JSON list of bus::CommandDescriptor objects:
+-- {name: string, args: [string], description: string, read_only: boolean}.
+-- HELP itself is first; every served command follows once in stable order.
+-- read_only is true exactly for registry queries (and protocol discovery).
+-- app.describe returns the same list, unless the service documents a richer
+-- describe object. Capability discovery does not grant invocation authority.
 {
   schema: 5,
   commands: [
+    {name:"blob.put", owner:"blobd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"blob.stat", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"blob.path", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"blob.url", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"blob.has", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"blob.pin", owner:"blobd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"blob.unpin", owner:"blobd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"blob.list", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"blob.quota", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"blob.gc", owner:"blobd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"blob.info", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"blob.fetch", owner:"blobd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"blob.upload.list", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"blob.upload.abort", owner:"blobd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"blob.props.get", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"blob.props.list", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"blob.props.describe", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"blob.props.watch", owner:"blobd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"term.info", owner:"term", version:"0.3.5", status:"accepted", class:"query", schema:"none"},
     {name:"maild.submit", owner:"maild", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"maild.props.get", owner:"maild", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"maild.props.list", owner:"maild", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},

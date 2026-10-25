@@ -11,6 +11,33 @@ use std::future;
 use comp_model::observation::PropValue;
 use comp_model::request::SequenceStep;
 
+#[tokio::test]
+async fn help_is_a_descriptor_list_of_answered_commands() {
+    let (ingress, _source, _) = test_ingress();
+    let mut responders = JoinSet::new();
+    let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
+    let (sender, mut replies) = tokio_mpsc::channel(2);
+    let timeouts = Arc::new(AtomicU64::new(0));
+    for discovery in ["HELP", "app.describe"] {
+        handle_incoming(&ingress, &mut responders, &permits, &sender, &timeouts, "comp-nested", command(discovery, 1));
+        let reply = replies.recv().await.unwrap();
+        assert_eq!(reply.rc, 0);
+        let entries: Vec<bus::CommandDescriptor> = serde_json::from_str(&reply.body).unwrap();
+        assert_eq!(entries[0].name, "HELP");
+        let registry = include_str!("../../../../../docs/docs/spec/bus/commands.conf.mix");
+        for entry in entries {
+            if matches!(entry.name.as_str(), "HELP" | "app.describe" | TRUTH_COMMAND) {
+                continue;
+            }
+            if let Err((_, body)) = classify(&entry.name, &Value::Null, true) {
+                assert!(!body.contains("UNKNOWN_COMMAND"), "{}: {body}", entry.name);
+            }
+            let row = registry.lines().find(|row| row.contains(&format!("name:\"{}\"", entry.name))).unwrap();
+            assert_eq!(entry.read_only, row.contains("class:\"query\""), "{}", entry.name);
+        }
+    }
+}
+
 type PublishedMessages = Arc<Mutex<Vec<(BTreeMap<String, String>, String)>>>;
 type SentMessages = Arc<Mutex<Vec<(String, String, Value)>>>;
 

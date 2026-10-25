@@ -65,6 +65,23 @@ pub const PORT_QUEUE_CAPACITY: usize = 16;
 /// focus, beside (not inside) the frozen `comp.*` surface, for the Bus-truth
 /// comparator. Answered in control order, so it is fenced like a mutation.
 pub const TRUTH_COMMAND: &str = "compd.truth";
+
+/// Every command this port serves, in catalogue order. The scene host has a
+/// separate port; toolkit drive commands are not served on this one.
+pub fn manifest() -> Vec<bus::CommandDescriptor> {
+    use bus::CommandDescriptor;
+    use comp_model::catalogue;
+    [
+        CommandDescriptor::new("HELP", &[], "List every command", true),
+        CommandDescriptor::new("app.describe", &[], "Describe the service commands", true),
+        CommandDescriptor::new(TRUTH_COMMAND, &[], "Read compositor registry and focus truth", true),
+    ]
+    .into_iter()
+    .chain(catalogue::all_commands().map(|name| {
+        CommandDescriptor::new(name, &[], &format!("Compositor {}", name.trim_start_matches("comp.")), catalogue::read_only(name))
+    }))
+    .collect()
+}
 const PORT_REPLY_CAPACITY: usize = 16;
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(2);
 /// Commands that reply after a wait hold their own permits, so a few long
@@ -1345,6 +1362,14 @@ fn dispatch_incoming(
     // registry topic stamped by another service would otherwise fall through
     // to command dispatch and be answered `unknown_command`).
     if command.is_topic_delivery() {
+        return;
+    }
+    if matches!(command.command.as_str(), "HELP" | "app.describe") {
+        queue_reply(
+            reply_sender,
+            reply_timeouts,
+            PendingReply::new(command, (0, Arc::from(json!(manifest()).to_string()))),
+        );
         return;
     }
     // compd's truth command is not part of the frozen `comp.*` surface, so it is

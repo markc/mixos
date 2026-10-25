@@ -11,7 +11,8 @@ use std::{
 
 /// The commands this lane serves on the global name (INFO and HELP aside),
 /// each with whether it only reads: what `app.describe` lists for them.
-pub const COMMANDS: [(&str, bool); 22] = [
+pub const COMMANDS: [(&str, bool); 23] = [
+    ("term.info", true),
     ("term.session", true),
     ("term.tabs", true),
     ("term.tab.new", false),
@@ -35,6 +36,34 @@ pub const COMMANDS: [(&str, bool); 22] = [
     ("term.macros.stop", false),
     ("term.macros.new", false),
 ];
+
+/// Stable discovery for the lane. Strict posture advertises discovery only;
+/// an open frontend adds its window commands to this list.
+pub fn manifest(service: &str, open: bool) -> Vec<::bus::CommandDescriptor> {
+    use ::bus::CommandDescriptor;
+    let mut entries = vec![
+        CommandDescriptor::new("HELP", &[], "List every command", true),
+        CommandDescriptor::new("app.describe", &[], "Describe the service commands", true),
+        CommandDescriptor::new("INFO", &[], "Read terminal diagnostics and usage", true),
+        CommandDescriptor::new("info", &[], "Read terminal diagnostics and usage", true),
+        CommandDescriptor::new("help", &[], "List every command", true),
+    ];
+    if !open {
+        return entries;
+    }
+    entries.extend(COMMANDS.iter().filter(|(name, _)| !name.starts_with("term.macros.")).map(|(name, read_only)| {
+        let rendered = name.replacen("term.", &format!("{service}."), 1);
+        let description = INFO.lines().find(|line| line.split([' ', ':']).next() == Some(name)).unwrap_or("Read terminal identity and diagnostics");
+        CommandDescriptor::new(&rendered, &[], description, *read_only)
+    }));
+    entries.extend(citizen::macros::describe(service).into_iter().map(|value| CommandDescriptor {
+        name: value["name"].as_str().unwrap().to_owned(),
+        args: value["args"].as_object().map(|args| args.keys().cloned().collect()).unwrap_or_default(),
+        description: value["description"].as_str().unwrap().to_owned(),
+        read_only: value["read_only"].as_bool().unwrap_or(false),
+    }));
+    entries
+}
 
 /// The window side of a frontend's Bus name: the commands its shell answers
 /// itself (drive commands, its command registry, `app.describe`), the topic
@@ -165,7 +194,7 @@ fn to_window(
     None
 }
 
-pub const HELP: &str = "term: tabbed Wayland Mix terminal\nMesh-open surface (2026-09-15 law): under the default posture (MIXOS_MESH_OPEN unset or != \"0\") this global name serves every command below to any mesh or local caller, no grant required. Commands are TARGETLESS — unless explicit pane/tab selectors are supplied, they act on the active tab/pane of the instance holding this name at delivery time (term.type excepted: it requires pane or tab); the frontend also starts target-bound control (instance/incarnation/pane_generation) on the allocated native-session route: list/session/tabs/panes/snapshot/type, execute, exec.result/cancel, task.submit/result/cancel, operation, props.get/set and tab/pane mutations. Use the allocated route HELP for target envelopes. These are not targetless commands on this global name. Requires local noded >= 0.16.8 native ingress, the resolved runtime root and socket directory 0755; unavailable ingress leaves graphics working. MIXOS_MESH_OPEN=0 restores the strict diagnostic-only lane (INFO/HELP; everything else FORBIDDEN).\nINFO / HELP\nterm.tabs {}: list id, active, title, cols, rows, child_pid, revision, instance (this process's token)\nterm.tab.new {cwd?:<absolute existing directory>, title?:<string>}: open and activate a tab; the reply adds binding=granted (native launch grant delivered, enrolment async), graphics-only (no usable grant) or unavailable (no native session)\nterm.tab.select {\"id\":<integer>}: select tab\nterm.tab.close {\"id\":<integer>}: close tab; last tab quits\nterm.panes {tab?:<integer>}: list selected tab (default active tab) pane ids, focus, dimensions, child pids, logical geometry, tab, revision and instance (last layout only; hidden tabs may be stale or zero)\nterm.pane.split {\"dir\":\"h|horizontal|v|vertical\"}\nterm.pane.close {}: close active pane; last pane closes tab\nterm.pane.select {\"id\":<integer>}: select pane in active tab\nterm.snapshot {pane?:<integer>, tab?:<integer>, contents?:<boolean=true>, scrollback_lines?:<integer=0, max 10000>}: read-only selected live screen (offset zero, default active); buffered history above the live screen is capped at available lines; text has a 512 KiB encoded-byte budget, returns complete oldest-first rows with truncated and lines_returned; formatting happens after releasing capture locks; pane+tab must agree; contents=false omits text but keeps dimensions, cursor, child pid, byte counters and DIAGNOSTIC timings\nterm.scroll {pane?:<integer>, lines?:<signed integer>, page?:<signed integer>, to?:top|bottom}: exactly one of lines/page/to; positive lines or pages move up into history; pages overlap by one row; viewport only, snapshots stay live; returns JSON {pane,display_offset,history_lines}; stale pane is not-found; changed offsets publish pane.changed kind=scrolled when watching\nterm.type {pane:<integer> | tab:<integer>, instance?:<integer>, \"text\":\"<string>\"}: ASCII synthetic keys without changing focus; pane or tab is REQUIRED, neither is refused {error_code:INVALID_ARGUMENT} and never defaults to the active pane. pane is the SAFE selector; tab means that tab's active pane AT DELIVERY, so it still follows focus within the tab; both must agree. Pane/tab ids are per-process counters, so pass back the instance that term.tabs/term.panes/INFO reported: a different process refuses INVALID_ARGUMENT instead of typing into its own pane of that id. Keys go through the keyboard encoder, max 8192 bytes including JSON envelope; newline=Enter, tab, backspace, Ctrl+C/D supported; revokes any delegated control writer like real keys.\nterm.tab.title {id:<integer>, title:<string>}: pin a user title (controls stripped, max 256 UTF-8 bytes); empty after sanitising clears the pin and restores the active pane OSC title\nterm.tab.move {id:<integer>, index:<integer>}: reorder tab, clamping index to 0..len-1; focus is preserved\nterm.props.watch {}: first subscribe through noded topic.subscribe to term.tabs.changed, term.pane.changed and term.title.changed; then call this command to enable caller-free publishing and return JSON {topics,revision}; then read current state. Bodies are {tab,pane,kind,revision}; revision is a separate monotonic event sequence, not the legacy layout revision. Bounded best-effort delivery; on a gap or reconnect read current state.\nBefore the first tab attaches, mutating commands return non-zero rc with error starting. Retry after attach, including with the same request_id; starting refusals are not cached.\nEmpty body is {} for no-arg commands; all term.* bodies must be JSON objects.\nAny MUTATING command's body (tab.*, pane.*, type, scroll) may add \"request_id\":\"<string>\": a resend of the same request (same command and arguments, key order free) replays the recorded reply instead of re-executing (last 128 remembered) — use it on every mutation you might resend. NOT recorded (the same id may be retried with the request fixed): starting, an oversized body, and every validation refusal — malformed JSON, unexpected/missing/mistyped arguments and any invalid-argument or INVALID_ARGUMENT reply (e.g. term.type without pane/tab, a pane/tab disagreement, a foreign instance). Recorded and replayed: successes and state refusals such as not-found, non-ASCII text and the tab limit. A reused id whose first attempt WAS recorded, sent with a different command or arguments, is refused as a conflict. The replay is the recorded outcome of the ORIGINAL attempt; retrying after changing state (e.g. after freeing the tab limit) needs a fresh id. Reads never consult the cache and always answer current state.\nReplies echo the identity acted on as key=value tokens — tab=<id> pane=<id> revision=<tab-set revision> (tab.close: revision only; pane.close: tab and revision; list lines: revision, panes also tab) — so a caller can detect drift after the fact; it is detection, not binding.\nterm.macros.list {}: shared application macro list\nterm.macros.reload {}: shared application macro reload\nterm.macros.run {id}: shared application macro run\nterm.macros.status {}: shared application macro status\nterm.macros.output {}: shared application macro output\nterm.macros.stop {}: shared application macro stop\nterm.macros.new {title}: shared application macro new\nDIAGNOSTIC timings are process-side, never presented-frame evidence.";
+pub const INFO: &str = "term: tabbed Wayland Mix terminal\nMesh-open surface (2026-09-15 law): under the default posture (MIXOS_MESH_OPEN unset or != \"0\") this global name serves every command below to any mesh or local caller, no grant required. Commands are TARGETLESS — unless explicit pane/tab selectors are supplied, they act on the active tab/pane of the instance holding this name at delivery time (term.type excepted: it requires pane or tab); the frontend also starts target-bound control (instance/incarnation/pane_generation) on the allocated native-session route: list/session/tabs/panes/snapshot/type, execute, exec.result/cancel, task.submit/result/cancel, operation, props.get/set and tab/pane mutations. Use the allocated route HELP for target envelopes. These are not targetless commands on this global name. Requires local noded >= 0.16.8 native ingress, the resolved runtime root and socket directory 0755; unavailable ingress leaves graphics working. MIXOS_MESH_OPEN=0 restores the strict diagnostic-only lane (INFO/HELP; everything else FORBIDDEN).\nINFO / HELP\nterm.tabs {}: list id, active, title, cols, rows, child_pid, revision, instance (this process's token)\nterm.tab.new {cwd?:<absolute existing directory>, title?:<string>}: open and activate a tab; the reply adds binding=granted (native launch grant delivered, enrolment async), graphics-only (no usable grant) or unavailable (no native session)\nterm.tab.select {\"id\":<integer>}: select tab\nterm.tab.close {\"id\":<integer>}: close tab; last tab quits\nterm.panes {tab?:<integer>}: list selected tab (default active tab) pane ids, focus, dimensions, child pids, logical geometry, tab, revision and instance (last layout only; hidden tabs may be stale or zero)\nterm.pane.split {\"dir\":\"h|horizontal|v|vertical\"}\nterm.pane.close {}: close active pane; last pane closes tab\nterm.pane.select {\"id\":<integer>}: select pane in active tab\nterm.snapshot {pane?:<integer>, tab?:<integer>, contents?:<boolean=true>, scrollback_lines?:<integer=0, max 10000>}: read-only selected live screen (offset zero, default active); buffered history above the live screen is capped at available lines; text has a 512 KiB encoded-byte budget, returns complete oldest-first rows with truncated and lines_returned; formatting happens after releasing capture locks; pane+tab must agree; contents=false omits text but keeps dimensions, cursor, child pid, byte counters and DIAGNOSTIC timings\nterm.scroll {pane?:<integer>, lines?:<signed integer>, page?:<signed integer>, to?:top|bottom}: exactly one of lines/page/to; positive lines or pages move up into history; pages overlap by one row; viewport only, snapshots stay live; returns JSON {pane,display_offset,history_lines}; stale pane is not-found; changed offsets publish pane.changed kind=scrolled when watching\nterm.type {pane:<integer> | tab:<integer>, instance?:<integer>, \"text\":\"<string>\"}: ASCII synthetic keys without changing focus; pane or tab is REQUIRED, neither is refused {error_code:INVALID_ARGUMENT} and never defaults to the active pane. pane is the SAFE selector; tab means that tab's active pane AT DELIVERY, so it still follows focus within the tab; both must agree. Pane/tab ids are per-process counters, so pass back the instance that term.tabs/term.panes/INFO reported: a different process refuses INVALID_ARGUMENT instead of typing into its own pane of that id. Keys go through the keyboard encoder, max 8192 bytes including JSON envelope; newline=Enter, tab, backspace, Ctrl+C/D supported; revokes any delegated control writer like real keys.\nterm.tab.title {id:<integer>, title:<string>}: pin a user title (controls stripped, max 256 UTF-8 bytes); empty after sanitising clears the pin and restores the active pane OSC title\nterm.tab.move {id:<integer>, index:<integer>}: reorder tab, clamping index to 0..len-1; focus is preserved\nterm.props.watch {}: first subscribe through noded topic.subscribe to term.tabs.changed, term.pane.changed and term.title.changed; then call this command to enable caller-free publishing and return JSON {topics,revision}; then read current state. Bodies are {tab,pane,kind,revision}; revision is a separate monotonic event sequence, not the legacy layout revision. Bounded best-effort delivery; on a gap or reconnect read current state.\nBefore the first tab attaches, mutating commands return non-zero rc with error starting. Retry after attach, including with the same request_id; starting refusals are not cached.\nEmpty body is {} for no-arg commands; all term.* bodies must be JSON objects.\nAny MUTATING command's body (tab.*, pane.*, type, scroll) may add \"request_id\":\"<string>\": a resend of the same request (same command and arguments, key order free) replays the recorded reply instead of re-executing (last 128 remembered) — use it on every mutation you might resend. NOT recorded (the same id may be retried with the request fixed): starting, an oversized body, and every validation refusal — malformed JSON, unexpected/missing/mistyped arguments and any invalid-argument or INVALID_ARGUMENT reply (e.g. term.type without pane/tab, a pane/tab disagreement, a foreign instance). Recorded and replayed: successes and state refusals such as not-found, non-ASCII text and the tab limit. A reused id whose first attempt WAS recorded, sent with a different command or arguments, is refused as a conflict. The replay is the recorded outcome of the ORIGINAL attempt; retrying after changing state (e.g. after freeing the tab limit) needs a fresh id. Reads never consult the cache and always answer current state.\nReplies echo the identity acted on as key=value tokens — tab=<id> pane=<id> revision=<tab-set revision> (tab.close: revision only; pane.close: tab and revision; list lines: revision, panes also tab) — so a caller can detect drift after the fact; it is detection, not binding.\nterm.macros.list {}: shared application macro list\nterm.macros.reload {}: shared application macro reload\nterm.macros.run {id}: shared application macro run\nterm.macros.status {}: shared application macro status\nterm.macros.output {}: shared application macro output\nterm.macros.stop {}: shared application macro stop\nterm.macros.new {title}: shared application macro new\nDIAGNOSTIC timings are process-side, never presented-frame evidence.";
 /// The one spelling the handlers in this crate are written in.
 ///
 /// D1 (TODO-term, 2026-09-21): two binaries cannot both own the global Bus
@@ -220,15 +249,15 @@ fn canonical_command<'a>(
     }
 }
 
-/// [`HELP`] rendered into `service`'s namespace, so a caller reads the command
+/// [`INFO`] rendered into `service`'s namespace, so a caller reads the command
 /// names it can actually send. `help_renames_every_command` pins that the
 /// rewrite is total — a future HELP edit that spells a command some other way
 /// fails that test rather than advertising an unroutable name.
-pub fn help(service: &str) -> String {
+pub fn info(service: &str) -> String {
     if service == CANONICAL {
-        return HELP.to_string();
+        return INFO.to_string();
     }
-    HELP.replace(&format!("{CANONICAL}."), &format!("{service}."))
+    INFO.replace(&format!("{CANONICAL}."), &format!("{service}."))
         .replace(&format!("{CANONICAL}:"), &format!("{service}:"))
 }
 
@@ -983,7 +1012,8 @@ fn is_invalid_argument(error: &str) -> bool {
 /// controls, including when native bootstrap is unavailable.
 fn diagnostic(service: &str, command_name: &str) -> Result<String, String> {
     match command_name {
-        "INFO" | "HELP" | "info" | "help" => Ok(format!(
+        "HELP" | "help" | "app.describe" => Ok(serde_json::json!(manifest(service, false)).to_string()),
+        "INFO" | "info" => Ok(format!(
             "{service}: diagnostic discovery only (posture=strict, MIXOS_MESH_OPEN=0); protected controls require the allocated native-session route"
         )),
         _ => Err("{\"error_code\":\"FORBIDDEN\"}".into()),
@@ -1018,9 +1048,10 @@ fn handle(
         // `pid` lets a caller bind to one term PROCESS (the session-control
         // resume worker checks it against the boot term unit's MainPID), which
         // `instance`, reported by that same process, cannot prove.
-        "INFO" | "HELP" | "info" | "help" => Ok(format!(
+        "HELP" | "help" | "app.describe" => Ok(serde_json::json!(manifest(service, true)).to_string()),
+        "INFO" | "info" | "term.info" => Ok(format!(
             "{}\n{service}.session {{}}: native identity and per-pane binding diagnostics (not live authority)\ninstance={} pid={}",
-            help(service),
+            info(service),
             instance(),
             std::process::id()
         )),
@@ -1319,7 +1350,7 @@ fn parse_args(command_name: &str, body: &str) -> Result<serde_json::Value, Strin
     }
     let field = match command_name {
         "term.snapshot" | "term.tabs" | "term.tab.new" | "term.panes" | "term.pane.close"
-        | "term.session" | "term.props.watch" | "term.scroll" => None,
+        | "term.session" | "term.info" | "term.props.watch" | "term.scroll" => None,
         #[cfg(test)]
         "term.test.panic" | "term.test.panic_locked" => None,
         "term.type" => Some("text"),
@@ -1443,6 +1474,24 @@ fn parse_args(command_name: &str, body: &str) -> Result<serde_json::Value, Strin
 mod tests {
     use super::*;
 
+    #[test]
+    fn help_is_a_descriptor_list_of_answered_commands() {
+        let strict = super::diagnostic("term", "HELP").unwrap();
+        let entries: Vec<::bus::CommandDescriptor> = serde_json::from_str(&strict).unwrap();
+        assert_eq!(entries[0].name, "HELP");
+        for entry in entries {
+            assert!(super::diagnostic("term", &entry.name).is_ok());
+        }
+        for service in ["term", "altterm"] {
+            let entries = manifest(service, true);
+            assert_eq!(entries[0].name, "HELP");
+            for entry in entries {
+                let canonical = canonical_command(service, &entry.name).unwrap();
+                assert_ne!(parse_args(&canonical, "{}").err().as_deref(), Some("unknown command; use HELP"), "{}", entry.name);
+            }
+        }
+    }
+
     /// `COMMANDS` is exactly the set the handlers accept and HELP documents
     /// (term.session is served but not in HELP).
     #[test]
@@ -1508,7 +1557,7 @@ mod tests {
             );
         }
         assert!(parse_args("term.nope", "{}").is_err());
-        for line in HELP.lines().filter(|l| l.starts_with("term.")) {
+        for line in INFO.lines().filter(|l| l.starts_with("term.")) {
             let command_name = line.split([' ', ':']).next().unwrap();
             assert!(
                 COMMANDS.iter().any(|(v, _)| *v == command_name),
@@ -2907,7 +2956,7 @@ mod tests {
             "{\"error_code\":\"FORBIDDEN\"}"
         );
         assert!(
-            dispatch(false, &set, &cleanup, &mut replies, "HELP", "")
+            dispatch(false, &set, &cleanup, &mut replies, "INFO", "")
                 .unwrap()
                 .contains("posture=strict")
         );
@@ -3315,7 +3364,7 @@ mod tests {
     /// every agent reads first.
     #[test]
     fn help_renames_every_command() {
-        let rendered = help("altterm");
+        let rendered = info("altterm");
         for (at, _) in rendered.match_indices("term.") {
             assert!(
                 rendered[..at].ends_with("alt"),
@@ -3326,9 +3375,9 @@ mod tests {
         assert!(rendered.contains("altterm.tab.new"));
         assert!(rendered.starts_with("altterm: "));
         // Serving as `term` renders the canonical text unchanged.
-        assert_eq!(help(CANONICAL), HELP);
+        assert_eq!(info(CANONICAL), INFO);
         for service in ["term", "altterm"] {
-            let rendered = help(service);
+            let rendered = info(service);
             for suffix in [
                 "snapshot",
                 "scroll",

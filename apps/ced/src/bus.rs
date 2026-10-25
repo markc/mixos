@@ -34,6 +34,22 @@ use editor_model::types::{Incoming, ParsedBody};
 use futures::FutureExt;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
+/// The commands this host answers: engine, shared macros, then window drive.
+pub fn help(window: bool) -> Vec<::bus::CommandDescriptor> {
+    let mut entries = documents::commands::manifest();
+    let mut hosted = citizen::macros::describe("ced");
+    if window {
+        hosted.extend(toolkit::drive::describe("ced"));
+    }
+    entries.extend(hosted.into_iter().map(|value| ::bus::CommandDescriptor {
+        name: value["name"].as_str().unwrap().to_owned(),
+        args: value["args"].as_object().map(|args| args.keys().cloned().collect()).unwrap_or_default(),
+        description: value["description"].as_str().unwrap().to_owned(),
+        read_only: value["read_only"].as_bool().unwrap_or(false),
+    }));
+    entries
+}
+
 /// Everything the Bus thread delivers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Delivery {

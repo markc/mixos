@@ -56,6 +56,22 @@ pub const COMMANDS: &[(&str, &str)] = &[
     (SET, "intent"),
     (NEXT, "intent"),
 ];
+
+fn manifest() -> Vec<bus::CommandDescriptor> {
+    [
+        ("HELP", &[][..], "List every command", true),
+        ("app.describe", &[][..], "Describe the service commands", true),
+        ("backdrop.ping", &[][..], "Read service identity", true),
+        ("backdrop.state", &[][..], "Read wallpaper and output state", true),
+        (SET, &["document"][..], "Apply and store a wallpaper document", false),
+        (NEXT, &[][..], "Advance the slideshow", false),
+    ]
+    .into_iter()
+    .map(|(name, args, description, read_only)| {
+        bus::CommandDescriptor::new(name, args, description, read_only)
+    })
+    .collect()
+}
 /// Messages the controller's inbox holds before a sender waits.
 const INBOX: usize = 64;
 /// Decoded RGBA the controller may hold at once: the applied images and the
@@ -253,6 +269,8 @@ pub fn start(setup: Setup) -> Result<(), String> {
         .name("backdrop-control".into())
         .spawn(move || {
             let controller = Controller {
+                #[cfg(test)]
+                replies: Default::default(),
                 handle: Some(handle),
                 service,
                 store,
@@ -317,6 +335,8 @@ fn registry() -> Registry<Engine> {
 }
 
 struct Controller {
+    #[cfg(test)]
+    replies: std::cell::RefCell<Vec<(u64, u8, Value)>>,
     handle: Option<Handle>,
     service: String,
     store: Option<PathBuf>,
@@ -394,6 +414,7 @@ impl Controller {
 
     fn command(&mut self, id: u64, command_name: &str, body: &str) {
         match command_name {
+            "HELP" | "app.describe" => self.reply(id, 0, json!(manifest())),
             "backdrop.ping" => self.reply(
                 id,
                 0,
@@ -861,6 +882,8 @@ impl Controller {
     }
 
     fn reply(&self, id: u64, rc: u8, body: Value) {
+        #[cfg(test)]
+        self.replies.borrow_mut().push((id, rc, body.clone()));
         if let Some(handle) = &self.handle {
             handle.reply(id, rc, body);
         }
@@ -990,6 +1013,24 @@ mod tests {
     use super::*;
     use wallpaper::Wallpaper;
 
+    #[test]
+    fn help_is_a_descriptor_list_of_answered_commands() {
+        let mut c = controller();
+        c.command(1, "HELP", "{}");
+        let (_, rc, body) = c.replies.borrow_mut().pop().unwrap();
+        assert_eq!(rc, 0);
+        let entries: Vec<bus::CommandDescriptor> = serde_json::from_value(body).unwrap();
+        assert_eq!(entries[0].name, "HELP");
+        for entry in entries {
+            c.command(2, &entry.name, "{}");
+            let (_, _, body) = c.replies.borrow_mut().pop().expect("command answered");
+            assert_ne!(body["error_code"], "UNKNOWN", "{}", entry.name);
+            if let Some((_, class)) = COMMANDS.iter().find(|(name, _)| *name == entry.name) {
+                assert_eq!(entry.read_only, *class == "query");
+            }
+        }
+    }
+
     const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
 
     /// A field of one registry line: `key:"value"`.
@@ -1004,6 +1045,7 @@ mod tests {
     fn controller() -> Controller {
         let (results, _inbox) = mpsc::sync_channel(INBOX);
         Controller {
+            replies: Default::default(),
             handle: None,
             service: "test".into(),
             store: None,
