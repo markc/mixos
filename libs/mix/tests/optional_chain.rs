@@ -135,6 +135,31 @@ async fn interpolation_and_heredocs_accept_question_dot() {
     );
 }
 
+// The rewrite touches path separators only: a quoted key or a call argument
+// containing `?.` inside a suffix keeps its exact text, in strings and heredocs.
+#[tokio::test]
+async fn interpolation_keeps_question_dot_inside_suffixes() {
+    let map = "$m = {\"what?.no\": 1, \"what.no\": 2}\n";
+    assert_eq!(
+        out(&format!("{map}print(\"${{m['what?.no']}}\")\n")).await,
+        "1"
+    );
+    assert_eq!(
+        out(&format!("{map}$s = <<EOF\n${{m['what?.no']}}\nEOF\nprint(trim($s))\n")).await,
+        "1"
+    );
+    // A call argument: the string reaches the function as written.
+    assert_eq!(
+        out("fn id($x) = $x\nprint(\"${id('a?.b')}\")\n").await,
+        "a?.b"
+    );
+    // A path separator after a suffix is still rewritten.
+    assert_eq!(
+        out("$m = {k: {b: 5}}\n$key = \"k\"\nprint(\"${m[$key]?.b}\")\n").await,
+        "5"
+    );
+}
+
 #[tokio::test]
 async fn assignment_through_question_dot_is_a_parse_error() {
     for src in [

@@ -105,19 +105,57 @@ pub struct SourceToken {
 /// `${a?.b}` in a string or heredoc. Every step of an interpolation path
 /// already reads nil from a nil (or non-map) value, so there `?.` means the
 /// same as `.` and is rewritten to it here, once, before any evaluator,
-/// classifier or lint sees the spec. Only the path before a `??` / `?:`
-/// default is touched, so default text such as `"what?.no"` stays as written.
+/// classifier or lint sees the spec.
+///
+/// Only a top-level path separator is rewritten: never inside quotes or a
+/// `[…]` / `(…)` suffix (`${m['what?.no']}` keeps its key; a suffix
+/// expression is lexed again on its own, where `?.` is the real operator),
+/// and never past the first `??` / `?:`, where the default begins (the same
+/// split point the evaluator uses), so default text stays as written.
 fn interp_spec_optional_dots(spec: String) -> String {
-    let end = spec
-        .as_bytes()
-        .windows(2)
-        .position(|w| w[0] == b'?' && matches!(w[1], b'?' | b':'))
-        .unwrap_or(spec.len());
-    if !spec[..end].contains("?.") {
+    if !spec.contains("?.") {
         return spec;
     }
-    let mut out = spec[..end].replace("?.", ".");
-    out.push_str(&spec[end..]);
+    let chars: Vec<char> = spec.chars().collect();
+    let mut out = String::with_capacity(spec.len());
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let next = chars.get(i + 1).copied();
+        if let Some(q) = quote {
+            out.push(c);
+            if c == '\\' {
+                if let Some(n) = next {
+                    out.push(n);
+                    i += 1;
+                }
+            } else if c == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            '?' if matches!(next, Some('?' | ':')) => {
+                // The default starts here: copy the rest untouched.
+                out.extend(&chars[i..]);
+                return out;
+            }
+            '?' if depth == 0 && next == Some('.') => {
+                out.push('.');
+                i += 2;
+                continue;
+            }
+            '"' | '\'' => quote = Some(c),
+            '[' | '(' => depth += 1,
+            ']' | ')' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        out.push(c);
+        i += 1;
+    }
     out
 }
 
