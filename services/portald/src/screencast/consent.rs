@@ -522,7 +522,14 @@ pub fn handle_command(command: &IncomingCommand) -> (u8, serde_json::Value) {
             tracing::info!(%caller, ?id, revoked, "screencast grants revoked");
             (0, json!({"revoked": revoked}))
         }
-        other => (10, json!({"error_code": "UNKNOWN_COMMAND", "message": format!("unknown command {other}"), "command": other})),
+        other => (
+            10,
+            json!({
+                "error_code": "UNKNOWN_COMMAND",
+                "message": format!("unknown command {other}"),
+                "command": other,
+            }),
+        ),
     }
 }
 
