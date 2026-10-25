@@ -101,18 +101,6 @@ pub fn view(
         ui.small(&engine.status);
     });
     let window = ui.max_rect().size();
-    ui.ctx().data_mut(|data| {
-        let key = egui::Id::new("workshop-dock-window");
-        if data
-            .get_temp::<egui::Vec2>(key)
-            .is_some_and(|old| old != window)
-        {
-            for name in ["traffic-bottom", "traffic-right"] {
-                data.remove::<egui::containers::panel::PanelState>(egui::Id::new(name));
-            }
-        }
-        data.insert_temp(key, window);
-    });
     let side = engine.ui.dock_side.effective(window.x);
     if ui.ctx().data_mut(|d| {
         let key = egui::Id::new("workshop-dock-viewport-width");
@@ -152,18 +140,7 @@ pub fn view(
         }
     }
     let total = ui.available_width();
-    // Keep the services share when Traffic or the window changes the space left.
-    ui.ctx().data_mut(|data| {
-        let key = egui::Id::new("workshop-services-width");
-        if data
-            .get_temp::<f32>(key)
-            .is_some_and(|old| (old - total).abs() > 0.5)
-        {
-            data.remove::<egui::containers::panel::PanelState>(egui::Id::new("services"));
-        }
-        data.insert_temp(key, total);
-    });
-    let (_, changed) = toolkit::saved::widgets::panel(ui, "split",
+    let (_, changed) = toolkit::saved::widgets::panel(ui, "services",
         egui::Panel::left("services").frame(bars::dock_frame(ui.ctx())), total,
         engine.ui.split, 0.1..=0.8, true, |ui| services(ui, engine, &mut events));
     if let Some(split) = changed {
@@ -385,6 +362,21 @@ fn details(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
+    let height = ui.available_height();
+    toolkit::saved::widgets::scroll(ui, "details", engine.ui.row_key.as_deref(), true,
+        ScrollArea::vertical().auto_shrink(false).max_height(height), |ui| {
+            ui.set_max_height(height);
+            details_content(ui, engine, commands, strings, events);
+        });
+}
+
+fn details_content(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
     if engine.workshop.selected.is_some() {
         macro_details(ui, engine, events);
         return;
@@ -392,9 +384,9 @@ fn details(
     let title = label("details");
     toolkit::saved::widgets::group(ui, "details", &[title.as_str()], |ui, _| {
         let rows = ui.text_style_height(&egui::TextStyle::Body) * 6.0;
-        toolkit::saved::widgets::scroll(ui, "details", engine.ui.row_key.as_deref(), true, ScrollArea::vertical()
+        ScrollArea::vertical()
             .id_salt("description")
-            .max_height(rows), |ui| {
+            .max_height(rows).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.label(description(engine));
             });

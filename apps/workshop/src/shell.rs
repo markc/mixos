@@ -354,7 +354,7 @@ impl Shell {
         saved.app.apply(&mut self.engine);
         self.restore = Some(crate::saved::Pending::new(&saved.app));
         crate::actions::set_choice(&mut self.engine, saved.window.theme.choice());
-        self.engine.ui.split = toolkit::saved::widgets::panel_share(&saved.widgets, "split", self.engine.ui.split);
+        self.engine.ui.split = toolkit::saved::widgets::panel_share(&saved.widgets, "services", self.engine.ui.split);
         self.engine.ui.dock_width = toolkit::saved::widgets::panel_share(&saved.widgets, "traffic-right", self.engine.ui.dock_width);
         self.engine.ui.dock_height = toolkit::saved::widgets::panel_share(&saved.widgets, "traffic-bottom", self.engine.ui.dock_height);
         saved.widgets.install(&self.ctx);
@@ -377,7 +377,7 @@ impl Shell {
         self.saved.window.capture(&self.ctx);
         self.saved.widgets.collect(&self.ctx);
         // Bus commands may change shares without rendering another frame.
-        self.saved.widgets.panels.insert("split".into(), self.engine.ui.split);
+        self.saved.widgets.panels.insert("services".into(), self.engine.ui.split);
         self.saved.widgets.panels.insert("traffic-right".into(), self.engine.ui.dock_width);
         self.saved.widgets.panels.insert("traffic-bottom".into(), self.engine.ui.dock_height);
         let result = if final_flush { self.saved.flush() } else {

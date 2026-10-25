@@ -36,6 +36,8 @@ fn with<R>(ctx: &egui::Context, f: impl FnOnce(&mut Widgets) -> R) -> Option<R> 
 
 /// A panel's size share. `share` is also the app's Bus-controlled value. Only
 /// dragging records a changed size, so content minimums cannot feed back.
+/// Construct the egui Panel with the same `name` as its ID. The resize handle
+/// ID below follows pinned egui 0.36; the drag regression test guards it.
 #[expect(clippy::too_many_arguments, reason = "thin adapter retains the panel builder and size policy")]
 pub fn panel<R>(ui: &mut egui::Ui, name: &str, panel: egui::Panel, extent: f32,
     share: f32, limits: std::ops::RangeInclusive<f32>, horizontal: bool,
@@ -43,10 +45,20 @@ pub fn panel<R>(ui: &mut egui::Ui, name: &str, panel: egui::Panel, extent: f32,
     let share = with(ui.ctx(), |w| {
         if w.applied.insert(format!("panel:{name}")) { panel_share(w, name, share) } else { share }
     }).unwrap_or(share);
+    // egui remembers pixels. Invalidate them only when the available extent
+    // changes, retaining the saved share when a window or adjacent dock resizes.
+    ui.ctx().data_mut(|d| {
+        let key = egui::Id::new(("saved-panel-extent", name));
+        if d.get_temp::<f32>(key).is_some_and(|old| (old - extent).abs() > 0.5) {
+            d.remove::<egui::containers::panel::PanelState>(egui::Id::new(name));
+        }
+        d.insert_temp(key, extent);
+    });
     let shown = panel.resizable(true).default_size(extent * share.clamp(*limits.start(), *limits.end()))
         .size_range(extent * limits.start()..=extent * limits.end()).show(ui, body);
     let size = if horizontal { shown.response.rect.width() } else { shown.response.rect.height() };
-    let changed = ui.input(|i| i.pointer.any_down())
+    let changed = ui.read_response(egui::Id::new(name).with("__resize"))
+        .is_some_and(|r| r.dragged() || r.drag_stopped())
         .then_some((size / extent.max(1.0)).clamp(*limits.start(), *limits.end()))
         .filter(|v| (*v - share).abs() > 0.005);
     with(ui.ctx(), |w| { w.panels.insert(name.into(), changed.unwrap_or(share)); });
@@ -129,6 +141,25 @@ mod tests {
                 assert!(changed.is_none(), "layout measurements never become user changes");
             });
         }
+    }
+    #[test]
+    fn panel_drag_records_the_share_and_unrelated_clicks_do_not() {
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1000.0, 600.0))
+            .build_ui_state(|ui, share: &mut f32| {
+                let (_, changed) = panel(ui, "left", egui::Panel::left("left"), 1000.0,
+                    *share, 0.1..=0.8, true, |ui| { ui.label("content"); });
+                if let Some(value) = changed { *share = value; }
+            }, 0.3);
+        h.run();
+        let edge = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new("left")).unwrap().size().x;
+        h.hover_at(egui::pos2(edge, 250.0)); h.run();
+        h.drag_at(egui::pos2(edge, 250.0)); h.run();
+        h.hover_at(egui::pos2(edge + 100.0, 250.0)); h.run();
+        h.drop_at(egui::pos2(edge + 100.0, 250.0)); h.run();
+        assert!((*h.state() - 0.4).abs() < 0.02, "{}", h.state());
+        let share = *h.state();
+        h.hover_at(egui::pos2(50.0, 50.0)); h.run(); h.drag_at(egui::pos2(50.0, 50.0)); h.run();
+        h.drop_at(egui::pos2(50.0, 50.0)); h.run(); assert_eq!(*h.state(), share);
     }
     #[test]
     fn scroll_applies_once_after_layout_clamped_and_only_for_its_key() {

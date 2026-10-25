@@ -37,7 +37,7 @@ variable. AppDirs overrides are honoured.
 It saves the selected command and row key, expanded tree rows, services
 search, macro-window visibility, Traffic side, open and paused state and
 filter, the services and Traffic panel shares, services scroll and the
-Details description scroll keyed by selection. The five window theme
+Details outer scroll keyed by selection. The five window theme
 choices remain independent; following the session stays following it.
 Inner size and maximised state are restored on every desktop. On compd,
 output, position and workspace are also remembered, without changing the
