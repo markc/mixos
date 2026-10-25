@@ -152,10 +152,16 @@ async fn assignment_through_question_dot_is_a_parse_error() {
 #[test]
 fn lint_reads_question_dot_like_dot() {
     use mix::analyzer::{AnalyzerConfig, analyze};
+    // The token-level checks (the null bareword among them) run only when
+    // the analyzer is given the source text, as `mix lint` does.
     let codes = |src: &str| -> Vec<String> {
         let tokens = Lexer::new(src).tokenize().expect("lexes");
         let stmts = Parser::new(tokens, src).parse_program().expect("parses");
-        analyze(&stmts, Some("test.mix"), &AnalyzerConfig::default())
+        let cfg = AnalyzerConfig {
+            source: Some(src.to_string()),
+            ..AnalyzerConfig::default()
+        };
+        analyze(&stmts, Some("test.mix"), &cfg)
             .diagnostics
             .into_iter()
             .map(|d| d.code.to_string())
