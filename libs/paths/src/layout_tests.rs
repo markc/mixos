@@ -338,7 +338,12 @@ fn a_cargo_build_tree_is_not_an_install() {
     std::fs::create_dir_all(profile.join(".fingerprint")).unwrap();
     std::fs::create_dir_all(profile.join("deps")).unwrap();
     for exe in [profile.join("term"), profile.join("deps/term-0123")] {
-        assert_eq!(prefix_from_exe(&exe).unwrap(), Path::new(DEFAULT_PREFIX), "{}", exe.display());
+        assert_eq!(
+            prefix_from_exe(&exe).unwrap(),
+            Path::new(DEFAULT_PREFIX),
+            "{}",
+            exe.display()
+        );
     }
     // MIXOS_PREFIX still wins over the build-tree default.
     let env = Environment {
