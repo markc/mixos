@@ -335,7 +335,7 @@ pub fn default_root(state_directory: Option<&str>) -> PathBuf {
         .and_then(|dirs| dirs.split(':').next())
         .filter(|dir| !dir.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| default_system_root())
+        .unwrap_or_else(default_system_root)
 }
 
 #[cfg(test)]
