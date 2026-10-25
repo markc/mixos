@@ -329,8 +329,16 @@ mod tests {
                 assert!(entry.read_only);
                 continue;
             }
-            let row = registry.lines().find(|row| row.contains(&format!("name:\"{}\"", entry.name))).unwrap();
-            assert_eq!(entry.read_only, row.contains("class:\"query\""), "{}", entry.name);
+            let row = registry
+                .lines()
+                .find(|row| row.contains(&format!("name:\"{}\"", entry.name)))
+                .unwrap();
+            assert_eq!(
+                entry.read_only,
+                row.contains("class:\"query\""),
+                "{}",
+                entry.name
+            );
         }
         for suffix in drive::COMMANDS {
             assert!(names.contains(&format!("term.{suffix}")));

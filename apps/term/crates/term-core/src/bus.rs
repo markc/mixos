@@ -3375,9 +3375,14 @@ mod tests {
         // HELP is prefixless, so it answers under either name — and names
         // the commands that name's callers can actually send.
         for service in ["term", "altterm"] {
-            let entries: Vec<::bus::CommandDescriptor> = serde_json::from_str(&call(service, "HELP").unwrap()).unwrap();
+            let entries: Vec<::bus::CommandDescriptor> =
+                serde_json::from_str(&call(service, "HELP").unwrap()).unwrap();
             assert_eq!(entries[0].name, "HELP");
-            assert!(entries.iter().any(|entry| entry.name == format!("{service}.tab.new")));
+            assert!(
+                entries
+                    .iter()
+                    .any(|entry| entry.name == format!("{service}.tab.new"))
+            );
         }
         drop(cleanup);
         let _ = worker.join();

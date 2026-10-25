@@ -238,8 +238,16 @@ mod tests {
         assert_eq!(entries, SceneCommand::manifest("shell"));
         let registry = include_str!("../../../../../docs/docs/spec/bus/commands.conf.mix");
         for entry in entries.into_iter().skip(2) {
-            let row = registry.lines().find(|row| row.contains(&format!("name:\"{}\"", entry.name))).unwrap();
-            assert_eq!(entry.read_only, row.contains("class:\"query\""), "{}", entry.name);
+            let row = registry
+                .lines()
+                .find(|row| row.contains(&format!("name:\"{}\"", entry.name)))
+                .unwrap();
+            assert_eq!(
+                entry.read_only,
+                row.contains("class:\"query\""),
+                "{}",
+                entry.name
+            );
         }
     }
 

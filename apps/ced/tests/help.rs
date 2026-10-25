@@ -15,8 +15,16 @@ fn help_lists_each_hosted_command_once_with_registry_query_flags() {
                 assert!(entry.read_only);
                 continue;
             }
-            let row = registry.lines().find(|row| row.contains(&format!("name:\"{}\"", entry.name))).unwrap();
-            assert_eq!(entry.read_only, row.contains("class:\"query\""), "{}", entry.name);
+            let row = registry
+                .lines()
+                .find(|row| row.contains(&format!("name:\"{}\"", entry.name)))
+                .unwrap();
+            assert_eq!(
+                entry.read_only,
+                row.contains("class:\"query\""),
+                "{}",
+                entry.name
+            );
         }
         for suffix in citizen::macros::SUFFIXES {
             assert!(names.contains(&format!("ced.macros.{suffix}")));
