@@ -660,7 +660,10 @@ pub fn parse_window_command(
         | "comp.window.unmaximize"
         | "comp.window.fullscreen"
         | "comp.window.unfullscreen" => {
-            let allowed: &'static [&'static str] = if matches!(command_name, "comp.window.fullscreen" | "comp.window.maximize") {
+            let allowed: &'static [&'static str] = if matches!(
+                command_name,
+                "comp.window.fullscreen" | "comp.window.maximize"
+            ) {
                 &["id", "generation", "output"]
             } else {
                 &["id", "generation"]

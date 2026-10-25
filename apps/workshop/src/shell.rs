@@ -395,7 +395,9 @@ impl Shell {
     }
 
     fn save_state(&mut self, final_flush: bool) {
-        if let Some(restore) = &mut self.restore { restore.reconcile(&mut self.engine); }
+        if let Some(restore) = &mut self.restore {
+            restore.reconcile(&mut self.engine);
+        }
         self.saved.app = crate::saved::Arrangement::capture(&self.engine);
         if let Some(restore) = &self.restore {
             restore.preserve_pending(&mut self.saved.app);

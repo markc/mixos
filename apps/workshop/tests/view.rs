@@ -145,7 +145,8 @@ fn the_header_button_flips_the_effective_side() {
             "traffic-switch-bottom"
         } else {
             "traffic-switch-right"
-        })).click();
+        }))
+        .click();
         h.run();
         assert!(h.state().contains(&UiEvent::DockSide(target)));
     }

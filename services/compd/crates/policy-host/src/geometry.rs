@@ -65,19 +65,25 @@ fn target_on(
     // An explicit output disappearing must leave placement alone, never fall
     // back to an unrelated display between policy validation and execution.
     let explicit = match preferred {
-        Some(name) => Some(space.outputs().find(|o| o.name() == name && space.output_geometry(o).is_some())?.clone()),
-        None => None,
-    };
-    let output = explicit.or_else(|| owner
-        .as_ref()
-        .and_then(|restore| {
+        Some(name) => Some(
             space
                 .outputs()
-                .find(|output| {
-                    output.name() == restore.output && space.output_geometry(output).is_some()
-                })
-                .cloned()
-        }))
+                .find(|o| o.name() == name && space.output_geometry(o).is_some())?
+                .clone(),
+        ),
+        None => None,
+    };
+    let output = explicit
+        .or_else(|| {
+            owner.as_ref().and_then(|restore| {
+                space
+                    .outputs()
+                    .find(|output| {
+                        output.name() == restore.output && space.output_geometry(output).is_some()
+                    })
+                    .cloned()
+            })
+        })
         // Overlap membership can still contain a just-unmapped output until
         // Space refreshes. It must not prevent an available-output fallback.
         .or_else(|| {

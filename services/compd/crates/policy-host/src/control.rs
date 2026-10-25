@@ -1408,7 +1408,12 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
                     shell::close(&window);
                 }
             }
-            Effect::RequestWindowState { id, state, enabled, output } => {
+            Effect::RequestWindowState {
+                id,
+                state,
+                enabled,
+                output,
+            } => {
                 match state {
                     WindowState::Maximized => maximize_on(lp, id, enabled, output.as_deref()),
                     // Applied now, not queued to the frame hook (the engine's
