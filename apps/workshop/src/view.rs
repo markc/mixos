@@ -525,7 +525,7 @@ fn details_content(
         panel::section_label(ui, &label("reply"));
         ScrollArea::vertical()
             .id_salt("reply")
-            .auto_shrink(false)
+            .auto_shrink([false, true])
             .show(ui, |ui| {
                 let mut reply = engine.reply.as_str();
                 ui.add(

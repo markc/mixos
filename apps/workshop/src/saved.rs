@@ -88,7 +88,8 @@ impl Pending {
         }
         let mut keys = BTreeSet::new();
         let filter = std::mem::take(&mut engine.ui.filter);
-        collect(&engine.tree(), &mut keys);
+        let rows = engine.tree();
+        collect(&rows, &mut keys);
         engine.ui.filter = filter;
         if let Some(expanded) = &self.expanded {
             for node in &engine.snapshot.nodes {
@@ -108,6 +109,9 @@ impl Pending {
             self.selected = None;
         }
         if self.row_key.as_ref().is_some_and(|k| keys.contains(k)) {
+            let mut parents = Vec::new();
+            reveal(&rows, self.row_key.as_deref().unwrap_or_default(), &mut parents);
+            engine.ui.expanded.extend(parents);
             engine.ui.row_key = self.row_key.take();
             engine.ui.selected = self
                 .selected
@@ -144,6 +148,14 @@ fn collect(rows: &[Row], keys: &mut BTreeSet<String>) {
         keys.insert(row.key.clone());
         collect(&row.children, keys);
     }
+}
+
+fn reveal(rows: &[Row], key: &str, parents: &mut Vec<String>) -> bool {
+    for row in rows {
+        if row.key == key { return true; }
+        if reveal(&row.children, key, parents) { parents.push(row.key.clone()); return true; }
+    }
+    false
 }
 
 #[cfg(test)]
