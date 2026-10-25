@@ -1161,7 +1161,10 @@ mod tests {
     fn help_covers_dispatcher_arms() {
         let entries = manifest(&meta(true));
         let source = include_str!("commands.rs");
-        let dispatcher = source.split("match command.command.as_str() {").nth(1).unwrap();
+        let dispatcher = source
+            .split("match command.command.as_str() {")
+            .nth(1)
+            .unwrap();
         let dispatcher = dispatcher.split("#[cfg(test)]").next().unwrap();
         for line in dispatcher.lines() {
             let line = line.trim();

@@ -196,7 +196,11 @@ fn the_window_answers_its_commands_over_a_real_broker() {
         // argument refusals still prove the advertised name reached a handler.
         let (_, body) = call(&entry.name, json!({"_help_conformance":true}));
         assert!(!body.contains("UNKNOWN_COMMAND"), "{}: {body}", entry.name);
-        assert!(!body.contains("unknown command; use HELP"), "{}: {body}", entry.name);
+        assert!(
+            !body.contains("unknown command; use HELP"),
+            "{}: {body}",
+            entry.name
+        );
     }
     let (rc, body) = call("term-12345.tabs", json!({}));
     assert_eq!(rc, 0, "{body}");

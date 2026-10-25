@@ -55,7 +55,10 @@ pub fn manifest() -> Vec<bus::CommandDescriptor> {
         true,
     ))
     .chain(std::iter::once(bus::CommandDescriptor::new(
-        "INFO", &[], "Describe the editor service and commands", true,
+        "INFO",
+        &[],
+        "Describe the editor service and commands",
+        true,
     )))
     .chain(
         COMMANDS

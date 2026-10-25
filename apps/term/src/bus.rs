@@ -333,9 +333,12 @@ mod tests {
             assert!(!entry.name.starts_with("term."));
             assert!(
                 answers(&name)
-                    || term_core::bus::COMMANDS.iter().any(|(command, _)| *command == name)
+                    || term_core::bus::COMMANDS
+                        .iter()
+                        .any(|(command, _)| *command == name)
                     || matches!(name.as_str(), "INFO" | "info" | "help"),
-                "{} has no handler", entry.name
+                "{} has no handler",
+                entry.name
             );
         }
         let surface = describe(service);

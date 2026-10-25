@@ -1054,7 +1054,10 @@ mod tests {
         c.command(1, "backdrop.missing", "{}");
         let (_, rc, body) = c.replies.borrow_mut().pop().unwrap();
         assert_eq!(rc, 10);
-        assert_eq!(body, json!({"error_code":"UNKNOWN_COMMAND", "message":"unknown command backdrop.missing", "command":"backdrop.missing"}));
+        assert_eq!(
+            body,
+            json!({"error_code":"UNKNOWN_COMMAND", "message":"unknown command backdrop.missing", "command":"backdrop.missing"})
+        );
     }
 
     /// A field of one registry line: `key:"value"`.

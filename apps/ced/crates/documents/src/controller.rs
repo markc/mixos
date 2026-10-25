@@ -3540,20 +3540,30 @@ mod tests {
         assert_eq!(body["service"], "ced");
         assert_eq!(body["schema"], "ced.v1");
         assert_eq!(body["commands"], json!(commands::manifest()));
-        assert!(commands::manifest().iter().any(|entry| entry.name == "INFO" && entry.read_only));
+        assert!(
+            commands::manifest()
+                .iter()
+                .any(|entry| entry.name == "INFO" && entry.read_only)
+        );
     }
 
     #[test]
     fn help_covers_dispatcher_arms() {
         let entries = commands::manifest();
         let source = include_str!("controller.rs");
-        let dispatcher = source.split("match cmd.command.as_str() {").nth(1).unwrap();
+        let dispatcher = source
+            .split("match cmd.command.as_str() {")
+            .nth(1)
+            .unwrap();
         let dispatcher = dispatcher.split("fn tab_name").next().unwrap();
         for line in dispatcher.lines() {
             let line = line.trim();
             if line.starts_with('"') && line.contains("=>") {
                 for name in line.split('"').skip(1).step_by(2) {
-                    if name.starts_with("ced.") || name.starts_with("app.") || matches!(name, "INFO" | "HELP") {
+                    if name.starts_with("ced.")
+                        || name.starts_with("app.")
+                        || matches!(name, "INFO" | "HELP")
+                    {
                         assert!(entries.iter().any(|entry| entry.name == name), "{name}");
                     }
                 }
