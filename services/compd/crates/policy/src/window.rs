@@ -516,10 +516,11 @@ pub fn start_wait<H: Clone + Eq + Hash>(
 
 /// The app id / title filters of a wait.
 pub fn names_match<H>(filter: &WindowMatch, record: &SurfaceRecord<H>) -> bool {
-    filter.pid.is_none_or(|pid| record.pid() == Some(pid)) && filter
-        .app_id
-        .as_deref()
-        .is_none_or(|app_id| record.app_id().map(|value| &**value) == Some(app_id))
+    filter.pid.is_none_or(|pid| record.pid() == Some(pid))
+        && filter
+            .app_id
+            .as_deref()
+            .is_none_or(|app_id| record.app_id().map(|value| &**value) == Some(app_id))
         && filter
             .title
             .as_deref()

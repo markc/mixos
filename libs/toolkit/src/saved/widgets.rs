@@ -244,21 +244,47 @@ mod tests {
         for density in [0.85, 1.0, 1.2] {
             let ctx = egui::Context::default();
             let theme = crate::Theme::embedded().with_ui(crate::ui_scale::CommonUi {
-                text_scale: 1.5, density, ..Default::default()
+                text_scale: 1.5,
+                density,
+                ..Default::default()
             });
             crate::install(&ctx, &theme);
             let mut widgets = Widgets::default();
             widgets.panels.insert("left".into(), 0.4);
-            widgets.scrolls.insert("text".into(), Scroll { key: None, offset: [0.0, 100_000.0] });
+            widgets.scrolls.insert(
+                "text".into(),
+                Scroll {
+                    key: None,
+                    offset: [0.0, 100_000.0],
+                },
+            );
             widgets.install(&ctx);
             let mut max_y = 0.0;
             draw(&ctx, |ui| {
-                panel(ui, "left", egui::Panel::left("left"), 1000.0, 0.4, 0.1..=0.8, true, |ui| {
-                    let out = scroll(ui, "text", None, true, egui::ScrollArea::vertical().max_height(100.0), |ui| {
-                        for _ in 0..50 { ui.label("Larger text increases the laid out content height"); }
-                    });
-                    max_y = (out.content_size.y - out.inner_rect.height()).max(0.0);
-                });
+                panel(
+                    ui,
+                    "left",
+                    egui::Panel::left("left"),
+                    1000.0,
+                    0.4,
+                    0.1..=0.8,
+                    true,
+                    |ui| {
+                        let out = scroll(
+                            ui,
+                            "text",
+                            None,
+                            true,
+                            egui::ScrollArea::vertical().max_height(100.0),
+                            |ui| {
+                                for _ in 0..50 {
+                                    ui.label("Larger text increases the laid out content height");
+                                }
+                            },
+                        );
+                        max_y = (out.content_size.y - out.inner_rect.height()).max(0.0);
+                    },
+                );
             });
             widgets.collect(&ctx);
             assert_eq!(widgets.panels["left"], 0.4);
@@ -443,17 +469,42 @@ mod tests {
     fn tree_scroll_retains_pending_and_restored_offsets_then_records_user_scrolling() {
         let ctx = egui::Context::default();
         let mut widgets = Widgets::default();
-        widgets.scrolls.insert("services".into(), Scroll { key: None, offset: [0.0, 300.0] });
+        widgets.scrolls.insert(
+            "services".into(),
+            Scroll {
+                key: None,
+                offset: [0.0, 300.0],
+            },
+        );
         widgets.install(&ctx);
         draw(&ctx, |ui| {
-            scroll(ui, "services", None, false, egui::ScrollArea::vertical().max_height(100.0), |_| {});
+            scroll(
+                ui,
+                "services",
+                None,
+                false,
+                egui::ScrollArea::vertical().max_height(100.0),
+                |_| {},
+            );
         });
         widgets.collect(&ctx);
-        assert_eq!(widgets.scrolls["services"].offset[1], 300.0, "quitting during discovery retains the known offset");
+        assert_eq!(
+            widgets.scrolls["services"].offset[1], 300.0,
+            "quitting during discovery retains the known offset"
+        );
         let mut id = egui::Id::NULL;
         for _ in 0..2 {
             draw(&ctx, |ui| {
-                let out = scroll(ui, "services", None, true, egui::ScrollArea::vertical().max_height(100.0), |ui| { ui.allocate_space(egui::vec2(100.0, 1000.0)); });
+                let out = scroll(
+                    ui,
+                    "services",
+                    None,
+                    true,
+                    egui::ScrollArea::vertical().max_height(100.0),
+                    |ui| {
+                        ui.allocate_space(egui::vec2(100.0, 1000.0));
+                    },
+                );
                 id = out.id;
             });
         }
@@ -463,10 +514,22 @@ mod tests {
         user.offset.y = 80.0;
         user.store(&ctx, id);
         draw(&ctx, |ui| {
-            scroll(ui, "services", None, true, egui::ScrollArea::vertical().max_height(100.0), |ui| { ui.allocate_space(egui::vec2(100.0, 1000.0)); });
+            scroll(
+                ui,
+                "services",
+                None,
+                true,
+                egui::ScrollArea::vertical().max_height(100.0),
+                |ui| {
+                    ui.allocate_space(egui::vec2(100.0, 1000.0));
+                },
+            );
         });
         widgets.collect(&ctx);
-        assert_eq!(widgets.scrolls["services"].offset[1], 80.0, "quitting before discovery completes retains the user's newer offset");
+        assert_eq!(
+            widgets.scrolls["services"].offset[1], 80.0,
+            "quitting before discovery completes retains the user's newer offset"
+        );
     }
     #[test]
     fn group_and_collapsing_state_survive_a_new_context() {

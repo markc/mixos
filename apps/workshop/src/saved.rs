@@ -256,7 +256,10 @@ mod tests {
         assert!(pending.show_selection);
         assert!(pending.ready());
         pending.show_selection = false;
-        assert!(pending.ready(), "consuming the reveal must not suspend scroll recording");
+        assert!(
+            pending.ready(),
+            "consuming the reveal must not suspend scroll recording"
+        );
         assert!(
             e.take_effects().is_empty(),
             "restoration never runs a command"

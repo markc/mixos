@@ -837,7 +837,14 @@ pub fn parse_window_command(
         }
         "comp.window.wait" => {
             const ALLOWED: &[&str] = &["match", "until", "width", "height", "timeout_ms"];
-            const MATCH: &[&str] = &["id", "generation", "app_id", "title", "title_contains", "pid"];
+            const MATCH: &[&str] = &[
+                "id",
+                "generation",
+                "app_id",
+                "title",
+                "title_contains",
+                "pid",
+            ];
             let object = args_object(args, &empty, ALLOWED)?;
             let filters = match present(object, "match") {
                 Some(Value::Object(filters)) => filters,
