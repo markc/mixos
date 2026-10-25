@@ -115,8 +115,8 @@ fn source_token_kind(token: &Token, first: Option<&char>) -> &'static str {
         Plus | Minus | Star | Slash | Percent | Power | Eq | NotEq | Gt | Lt | GtEq | LtEq
         | StrEq | StrNe | DotDot | NilCoalesce | Question | Pipe | AndAnd | OrOr | Assign
         | Bang => "operator",
-        LParen | RParen | LBracket | RBracket | LBrace | RBrace | Colon | Comma | Dot | QuestionDot
-        | Tilde | At | Semicolon => "punct",
+        LParen | RParen | LBracket | RBracket | LBrace | RBrace | Colon | Comma | Dot
+        | QuestionDot | Tilde | At | Semicolon => "punct",
         Newline => "newline",
         Eof => "eof",
         _ => "keyword",

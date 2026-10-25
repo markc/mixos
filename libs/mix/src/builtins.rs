@@ -40228,7 +40228,11 @@ mod loud_numeric_argument_tests {
             ("a", Value::list(vec![inner, Value::String("q\"\n".into())])),
         ]);
         assert_eq!(
-            encode(vec![v, Value::Bool(false), sort_keys_opts(Value::Bool(false))]),
+            encode(vec![
+                v,
+                Value::Bool(false),
+                sort_keys_opts(Value::Bool(false))
+            ]),
             r#"{"b":1.5,"a":[{"z":null,"m":true},"q\"\n"]}"#
         );
     }
@@ -40238,7 +40242,10 @@ mod loud_numeric_argument_tests {
     #[test]
     fn json_encode_ordered_layout_matches_serde_json() {
         let v = ordered_map(&[
-            ("a", Value::list(vec![Value::Number(1.0), Value::Number(2.0)])),
+            (
+                "a",
+                Value::list(vec![Value::Number(1.0), Value::Number(2.0)]),
+            ),
             ("b", ordered_map(&[])),
             ("c", Value::list(vec![])),
             ("d", ordered_map(&[("e", Value::String("é ☃".into()))])),
@@ -40269,8 +40276,14 @@ mod loud_numeric_argument_tests {
     #[test]
     fn json_encode_refuses_bad_options() {
         let cases = [
-            (ordered_map(&[("order", Value::Bool(false))]), "OPTION_INVALID"),
-            (sort_keys_opts(Value::String("false".into())), "TYPE_MISMATCH"),
+            (
+                ordered_map(&[("order", Value::Bool(false))]),
+                "OPTION_INVALID",
+            ),
+            (
+                sort_keys_opts(Value::String("false".into())),
+                "TYPE_MISMATCH",
+            ),
             (Value::Bool(false), "TYPE_MISMATCH"),
         ];
         for (opts, code) in cases {
@@ -40343,11 +40356,8 @@ mod loud_numeric_argument_tests {
             (Value::Bool(true), "TYPE_MISMATCH"),
         ];
         for (opts, code) in cases {
-            let err = call_builtin(
-                "date_format",
-                vec![Value::Number(0.0), Value::Nil, opts],
-            )
-            .unwrap_err();
+            let err = call_builtin("date_format", vec![Value::Number(0.0), Value::Nil, opts])
+                .unwrap_err();
             assert_eq!(err.info().expect("structured").code, code);
         }
         let too_many = vec![Value::Number(0.0), Value::Nil, Value::Nil, Value::Nil];

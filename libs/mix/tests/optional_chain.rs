@@ -59,7 +59,10 @@ async fn each_step_guards_only_itself() {
 async fn only_nil_is_forgiven() {
     for src in ["$s = \"text\"\nprint($s?.b)\n", "$l = [1]\nprint($l?.b)\n"] {
         let err = run(src).await.expect_err("a wrong shape must still raise");
-        assert!(err.contains("cannot access field 'b'"), "{src:?} got: {err}");
+        assert!(
+            err.contains("cannot access field 'b'"),
+            "{src:?} got: {err}"
+        );
     }
 }
 
@@ -92,7 +95,11 @@ async fn method_calls_are_refused_at_parse_time() {
 async fn ternary_and_coalesce_are_unchanged() {
     assert_eq!(out("$c = true\nprint($c ? 1 : 2)\n").await, "1");
     // `? .x` with a space is not `?.`: still a parse error, as it always was.
-    assert!(run("$c = true\n$m = {x: 1}\nprint($c ? .x : 2)\n").await.is_err());
+    assert!(
+        run("$c = true\n$m = {x: 1}\nprint($c ? .x : 2)\n")
+            .await
+            .is_err()
+    );
     assert_eq!(out("$a = nil\nprint($a ?? 3)\n").await, "3");
 }
 
