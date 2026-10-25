@@ -317,11 +317,9 @@ fn group_heading(ui: &mut Ui, key: &str, first: bool) {
         bars::hairline(ui);
     }
     ui.add_space(ui.spacing().item_spacing.y);
-    ui.label(
-        RichText::new(label(key))
-            .family(egui::FontFamily::Name(toolkit::fonts::HEADING.into()))
-            .strong(),
-    );
+    let size = egui::TextStyle::Body.resolve(ui.style()).size;
+    let font = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::heading(size * 1.1));
+    ui.label(RichText::new(label(key)).font(font).strong());
     ui.add_space(ui.spacing().item_spacing.y);
 }
 
