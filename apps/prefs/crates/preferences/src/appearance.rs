@@ -1758,7 +1758,8 @@ mod tests {
     #[test]
     fn refusal_survives_read_and_can_be_dismissed_with_page_id() {
         let mut e = read();
-        e.edit_terminal(crate::terminal::Setting::Term("BAD".into()));
+        e.edit_terminal(crate::terminal::Setting::Padding(8));
+        answer_next(&mut e, 10, json!({"status":"validation_failed"}));
         e.read_look();
         answer_next(&mut e, 0, snapshot_body("8", "studio", "dark"));
         assert_eq!(e.appearance_view()["problem_source"], "apps_term");

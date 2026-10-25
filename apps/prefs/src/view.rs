@@ -251,7 +251,8 @@ fn problem_feedback(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                     events.push(UiEvent::DismissSettingsProblem);
                 }
                 ui.add(
-                    egui::Label::new(RichText::new(problem).color(ui.visuals().error_fg_color)).wrap(),
+                    egui::Label::new(RichText::new(problem).color(ui.visuals().error_fg_color))
+                        .wrap(),
                 );
             });
         } else {
