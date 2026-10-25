@@ -166,7 +166,9 @@ fn fixture() -> (tempfile::TempDir, Roots, Session) {
         home: dir.path().into(),
         builtin: dir.path().join("builtin"),
         user: dir.path().join("user"),
-        mix: ::paths::root(::paths::Root::Prefix).join("bin/mix"),
+        mix: crate::test_mix::select()
+            .expect("invalid test Mix selection")
+            .unwrap_or_else(|| dir.path().join("missing-mix")),
     };
     let session = Session::with_roots("fixture", Some(roots.clone()));
     (dir, roots, session)
@@ -331,6 +333,21 @@ fn created_file_survives_failed_or_incomplete_rescan() {
 
 #[test]
 fn process_handles_share_the_same_state() {
+    const CHILD: &str = "MIXOS_MACRO_SESSION_SHARING_TEST";
+    if std::env::var_os(CHILD).is_none() {
+        let prefix = tempfile::tempdir().unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "session::tests::process_handles_share_the_same_state", "--nocapture"])
+            .env(CHILD, "1")
+            .env("MIXOS_PREFIX", prefix.path())
+            .env("HOME", prefix.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success() && String::from_utf8_lossy(&output.stdout).contains("test result: ok. 1 passed"),
+            "session-sharing child failed:\n{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        return;
+    }
+    assert!(std::env::var_os("MIXOS_PREFIX").is_some(), "session-sharing test needs an explicit prefix");
     let a = Session::for_app("session-sharing-test");
     let b = Session::for_app("session-sharing-test");
     assert!(Arc::ptr_eq(&a.0, &b.0));

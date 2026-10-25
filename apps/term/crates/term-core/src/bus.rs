@@ -1517,12 +1517,8 @@ mod tests {
         }
     }
 
-    fn c6_fixture() -> Option<(Mutex<TabSet>, Cleanup, std::thread::JoinHandle<()>)> {
-        if !::paths::root(::paths::Root::Prefix)
-            .join("bin/mix")
-            .is_file()
-        {
-            eprintln!("SKIP C6 PTY test: Mix unavailable");
+    fn c6_fixture(test: &str) -> Option<(Mutex<TabSet>, Cleanup, std::thread::JoinHandle<()>)> {
+        if !crate::test_support::with_mix(test) {
             return None;
         }
         let (cleanup, worker) = Cleanup::start().unwrap();
@@ -1816,7 +1812,7 @@ mod tests {
 
     #[test]
     fn c6_selectors_cross_tabs_and_type_preserves_focus() {
-        let Some((set, cleanup, worker)) = c6_fixture() else {
+        let Some((set, cleanup, worker)) = c6_fixture("bus::tests::c6_selectors_cross_tabs_and_type_preserves_focus") else {
             return;
         };
         let first = set.lock().unwrap().active_tab().active_pane;
@@ -1882,7 +1878,7 @@ mod tests {
 
     #[test]
     fn c6_tab_new_cwd_title_and_refusal_are_atomic() {
-        let Some((set, cleanup, worker)) = c6_fixture() else {
+        let Some((set, cleanup, worker)) = c6_fixture("bus::tests::c6_tab_new_cwd_title_and_refusal_are_atomic") else {
             return;
         };
         for cwd in [
@@ -1920,7 +1916,7 @@ mod tests {
     #[test]
     fn c6_title_move_and_replays() {
         use rio_vt::event::{EventListener, RioEvent, WindowId};
-        let Some((set, cleanup, worker)) = c6_fixture() else {
+        let Some((set, cleanup, worker)) = c6_fixture("bus::tests::c6_title_move_and_replays") else {
             return;
         };
         let mut replies = ReplyCache::default();
@@ -1997,7 +1993,7 @@ mod tests {
 
     #[test]
     fn c6_watch_events_cover_local_mutations_and_noops() {
-        let Some((set, cleanup, worker)) = c6_fixture() else {
+        let Some((set, cleanup, worker)) = c6_fixture("bus::tests::c6_watch_events_cover_local_mutations_and_noops") else {
             return;
         };
         let mut events = set.lock().unwrap().observe();
@@ -2350,11 +2346,7 @@ mod tests {
     /// one the last-tab close causes, and that close must end the loop.
     #[test]
     fn idle_bus_loop_takes_no_turns_until_the_last_tab_closes() {
-        if !::paths::root(::paths::Root::Prefix)
-            .join("bin/mix")
-            .is_file()
-        {
-            eprintln!("SKIP idle Bus loop test: Mix unavailable");
+        if !crate::test_support::with_mix("bus::tests::idle_bus_loop_takes_no_turns_until_the_last_tab_closes") {
             return;
         }
         let set = Arc::new(Mutex::new(TabSet::new().unwrap()));
@@ -2405,11 +2397,7 @@ mod tests {
     /// A set already empty when the loop starts is never waited on.
     #[test]
     fn bus_loop_on_an_empty_set_returns_without_a_turn() {
-        if !::paths::root(::paths::Root::Prefix)
-            .join("bin/mix")
-            .is_file()
-        {
-            eprintln!("SKIP empty Bus loop test: Mix unavailable");
+        if !crate::test_support::with_mix("bus::tests::bus_loop_on_an_empty_set_returns_without_a_turn") {
             return;
         }
         let set = Mutex::new(TabSet::new().unwrap());
@@ -2443,11 +2431,7 @@ mod tests {
     /// select, both tab.close forms, and the closing latch after the last tab.
     #[test]
     fn tab_commands_echo_exact_identity_and_the_last_close_latches() {
-        if !::paths::root(::paths::Root::Prefix)
-            .join("bin/mix")
-            .is_file()
-        {
-            eprintln!("SKIP tab identity test: Mix unavailable");
+        if !crate::test_support::with_mix("bus::tests::tab_commands_echo_exact_identity_and_the_last_close_latches") {
             return;
         }
         let set = Mutex::new(TabSet::new().unwrap());
@@ -2530,11 +2514,7 @@ mod tests {
     /// starts afterwards completes at once instead of sleeping forever.
     #[test]
     fn a_close_before_the_wait_is_not_lost() {
-        if !::paths::root(::paths::Root::Prefix)
-            .join("bin/mix")
-            .is_file()
-        {
-            eprintln!("SKIP emptied permit test: Mix unavailable");
+        if !crate::test_support::with_mix("bus::tests::a_close_before_the_wait_is_not_lost") {
             return;
         }
         let set = Mutex::new(TabSet::new().unwrap());
@@ -2629,7 +2609,7 @@ mod tests {
 
     #[test]
     fn c6_serve_publishes_local_changes_and_drains_last_close() {
-        let Some((set, cleanup, worker)) = c6_fixture() else {
+        let Some((set, cleanup, worker)) = c6_fixture("bus::tests::c6_serve_publishes_local_changes_and_drains_last_close") else {
             return;
         };
         let set = Arc::new(set);
@@ -2687,11 +2667,7 @@ mod tests {
     /// second reply never comes.
     #[test]
     fn a_panicking_command_is_answered_and_the_lane_keeps_serving() {
-        if !::paths::root(::paths::Root::Prefix)
-            .join("bin/mix")
-            .is_file()
-        {
-            eprintln!("SKIP panic continuation test: Mix unavailable");
+        if !crate::test_support::with_mix("bus::tests::a_panicking_command_is_answered_and_the_lane_keeps_serving") {
             return;
         }
         let set = Arc::new(Mutex::new(TabSet::new().unwrap()));
@@ -2725,11 +2701,7 @@ mod tests {
     /// a child process (the abort would otherwise kill the test binary).
     #[test]
     fn a_command_that_poisons_the_tab_set_aborts_the_process() {
-        if !::paths::root(::paths::Root::Prefix)
-            .join("bin/mix")
-            .is_file()
-        {
-            eprintln!("SKIP poison abort test: Mix unavailable");
+        if !crate::test_support::with_mix("bus::tests::a_command_that_poisons_the_tab_set_aborts_the_process") {
             return;
         }
         if std::env::var_os(ABORT_CHILD).is_some() {
@@ -2812,11 +2784,7 @@ mod tests {
     }
     #[test]
     fn pane_handlers_and_active_snapshot() {
-        if !::paths::root(::paths::Root::Prefix)
-            .join("bin/mix")
-            .is_file()
-        {
-            eprintln!("SKIP pane Bus test: Mix unavailable");
+        if !crate::test_support::with_mix("bus::tests::pane_handlers_and_active_snapshot") {
             return;
         }
         let set = Mutex::new(TabSet::new().unwrap());
@@ -2907,11 +2875,7 @@ mod tests {
     }
     #[test]
     fn dispatch_posture_gate_and_request_id_replay() {
-        if !::paths::root(::paths::Root::Prefix)
-            .join("bin/mix")
-            .is_file()
-        {
-            eprintln!("SKIP dispatch Bus test: Mix unavailable");
+        if !crate::test_support::with_mix("bus::tests::dispatch_posture_gate_and_request_id_replay") {
             return;
         }
         let set = Mutex::new(TabSet::new().unwrap());
@@ -3285,11 +3249,7 @@ mod tests {
     /// wearing two hats.
     #[test]
     fn altterm_serves_its_own_namespace_and_refuses_terms() {
-        if !::paths::root(::paths::Root::Prefix)
-            .join("bin/mix")
-            .is_file()
-        {
-            eprintln!("SKIP altterm namespace test: Mix unavailable");
+        if !crate::test_support::with_mix("bus::tests::altterm_serves_its_own_namespace_and_refuses_terms") {
             return;
         }
         let set = Mutex::new(TabSet::new().unwrap());

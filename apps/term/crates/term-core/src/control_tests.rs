@@ -236,10 +236,13 @@ impl Fixture {
         let program = super::production_e2e::current_mix();
         Self::with_program(policy, fault, program)
     }
-    // Admission does not exercise Mix's execute/task protocol. Use the canonical
-    // installed shell for a real PTY, independently of the explicit S4 build gate.
+    // Admission does not exercise Mix's execute/task protocol. Select a real
+    // interpreter explicitly or on PATH, independently of the S4 build gate.
     fn admission(policy: Policy) -> Self {
-        Self::with_program(policy, "none", ::paths::bin("mix"))
+        let program = crate::test_support::mix_binary::select()
+            .expect("invalid test Mix selection")
+            .expect("admission PTY needs mix on PATH or MIXOS_E2E_MIX_BIN");
+        Self::with_program(policy, "none", program)
     }
     fn with_program(policy: Policy, fault: &str, program: std::path::PathBuf) -> Self {
         let broker = if fault == "quota" {
@@ -831,6 +834,9 @@ fn p0i_08_queued_input_human_revoke_and_deadline() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_10_unbound_pane_has_no_control() {
+    if !crate::test_support::with_mix("native_session::enforcement_tests::p0i_10_unbound_pane_has_no_control") {
+        return;
+    }
     if in_posture("p0i_10_unbound_pane_has_no_control", Some("0")) {
         return;
     }

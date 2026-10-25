@@ -49,6 +49,9 @@ fn replace(tabs: &TabSet, id: u64, text: &str) {
 
 #[test]
 fn two_tabs_and_a_split_studio_dark() {
+    if !term_core::test_support::with_mix("two_tabs_and_a_split_studio_dark") {
+        return;
+    }
     let settings = Settings {
         config: Config::default(),
         term: "xterm-256color".into(),

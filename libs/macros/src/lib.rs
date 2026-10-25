@@ -14,3 +14,6 @@ pub use catalogue::{
 pub use runner::{OUTPUT_LIMIT, Output, Runner, Status};
 pub use session::Session;
 pub use storage::MutationOutcome;
+#[cfg(test)]
+#[path = "../../../tests/lib/mix_binary.rs"]
+mod test_mix;

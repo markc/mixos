@@ -563,11 +563,12 @@ fn print_help() {
     );
 }
 
-/// Resolve installed Term only; the injected lookup keeps tests independent of
-/// the host installation and environment. An explicit override fails closed.
+/// Resolve installed Term only; injected installation and lookup inputs keep
+/// tests independent of their executable. An explicit override fails closed.
 fn resolve_term(
     override_bin: Option<std::ffi::OsString>,
     mixos: Option<std::ffi::OsString>,
+    installed_bin: impl FnOnce() -> std::path::PathBuf,
     mut lookup: impl FnMut(&Path) -> Option<std::path::PathBuf>,
 ) -> Result<std::path::PathBuf, String> {
     if let Some(path) = override_bin {
@@ -584,8 +585,9 @@ fn resolve_term(
             return Ok(path);
         }
     }
+    let installed_bin = installed_bin();
     for name in TERM_FRONTENDS {
-        if let Some(path) = lookup(&::paths::root(::paths::Root::Prefix).join("bin").join(name)) {
+        if let Some(path) = lookup(&installed_bin.join(name)) {
             return Ok(path);
         }
     }
@@ -659,6 +661,7 @@ fn run_gui() -> i32 {
     let frontend = match resolve_term(
         env::var_os("MIXOS_TERM_BIN"),
         env::var_os("MIXOS"),
+        || ::paths::bin(""),
         term_lookup,
     ) {
         Ok(path) => path,
@@ -2681,7 +2684,7 @@ mod gui_tests {
     #[test]
     fn path_tier_candidates_reach_which_as_bare_names() {
         let mut seen = Vec::new();
-        let _ = resolve_term(None, Some("/test-root".into()), |path| {
+        let _ = resolve_term(None, Some("/test-root".into()), || "/test-install/bin".into(), |path| {
             seen.push(path.to_path_buf());
             None
         });
@@ -2698,9 +2701,7 @@ mod gui_tests {
             );
         }
         // And a qualified path is still absolutised rather than PATH-searched.
-        assert!(!is_bare_frontend_name(
-            &::paths::root(::paths::Root::Prefix).join("bin/bterm")
-        ));
+        assert!(!is_bare_frontend_name(Path::new("/test-install/bin/bterm")));
         assert!(!is_bare_frontend_name(Path::new("./term")));
         assert!(!is_bare_frontend_name(Path::new("bterm")));
     }
@@ -2708,7 +2709,7 @@ mod gui_tests {
     #[test]
     fn resolution_order_and_missing_frontend() {
         let mut seen = Vec::new();
-        let error = resolve_term(None, Some("/test-root".into()), |path| {
+        let error = resolve_term(None, Some("/test-root".into()), || "/test-install/bin".into(), |path| {
             seen.push(path.to_path_buf());
             None
         })
@@ -2716,7 +2717,7 @@ mod gui_tests {
         // Development builds precede installed and PATH copies of Term.
         assert_eq!(
             seen,
-            ["/test-root/bin/term", "/opt/mixos/bin/term", "term",].map(std::path::PathBuf::from)
+            ["/test-root/bin/term", "/test-install/bin/term", "term",].map(std::path::PathBuf::from)
         );
         assert!(error.starts_with("mix --gui: no MixOS terminal frontend is installed"));
         assert!(error.ends_with("Install the desktop package."));
@@ -2730,7 +2731,7 @@ mod gui_tests {
         );
         for (winner, expected) in seen.iter().enumerate() {
             let mut index = 0;
-            let found = resolve_term(None, Some("/test-root".into()), |path| {
+            let found = resolve_term(None, Some("/test-root".into()), || "/test-install/bin".into(), |path| {
                 let selected = index == winner;
                 index += 1;
                 selected.then(|| path.to_path_buf())
@@ -2750,13 +2751,13 @@ mod gui_tests {
         fs::write(&file, b"test fixture, never executed").unwrap();
         fs::set_permissions(&file, fs::Permissions::from_mode(0o700)).unwrap();
         assert_eq!(
-            resolve_term(Some(file.clone().into_os_string()), None, term_lookup).unwrap(),
+            resolve_term(Some(file.clone().into_os_string()), None, || panic!("override must bypass installed lookup"), term_lookup).unwrap(),
             file
         );
         fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
         for path in [&file, dir.path(), &dir.path().join("missing")] {
             let error =
-                resolve_term(Some(path.as_os_str().to_owned()), None, term_lookup).unwrap_err();
+                resolve_term(Some(path.as_os_str().to_owned()), None, || panic!("override must bypass installed lookup"), term_lookup).unwrap_err();
             assert!(error.contains("MIXOS_TERM_BIN must name an executable"));
         }
     }

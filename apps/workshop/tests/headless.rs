@@ -32,6 +32,7 @@ async fn headless_binary_serves_local_tree_and_quits_without_a_display() {
                 &broker.url,
             ])
             .env("HOME", directory.path())
+            .env("MIXOS_PREFIX", directory.path())
             .env("XDG_STATE_HOME", directory.path())
             .env("MIXOS_APP_HOME", directory.path().join("app"))
             .env_remove("WAYLAND_DISPLAY")

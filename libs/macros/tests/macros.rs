@@ -4,12 +4,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+#[path = "../../../tests/lib/mix_binary.rs"]
+mod mix_binary;
+
 fn roots(dir: &Path) -> Roots {
     Roots {
         builtin: dir.join("builtin"),
         user: dir.join("user"),
         home: dir.into(),
-        mix: PathBuf::from("/opt/mixos/bin/mix"),
+        mix: mix_binary::select()
+            .expect("invalid test Mix selection")
+            .unwrap_or_else(|| dir.join("missing-mix")),
     }
 }
 
@@ -164,10 +169,11 @@ fn real_mix_receives_only_an_explicit_allowed_target() {
 #[test]
 fn roots_are_pure_absolute_and_injectable() {
     let home = PathBuf::from("/home/user");
-    let prefix = paths::prefix_from_exe(&std::env::current_exe().unwrap()).unwrap();
+    let fixture = tempfile::tempdir().unwrap();
+    let prefix = fixture.path().join("fixture prefix");
     let resolved = Roots::resolve_with(|key| match key {
         "HOME" => Some(home.clone()),
-        "MIXOS_PREFIX" => None,
+        "MIXOS_PREFIX" => Some(prefix.clone()),
         _ => Some("relative".into()),
     })
     .unwrap();
@@ -175,6 +181,7 @@ fn roots_are_pure_absolute_and_injectable() {
     assert_eq!(resolved.user, home.join(".config/mixos/macros"));
     assert_eq!(resolved.mix, prefix.join("bin/mix"));
     let resolved = Roots::resolve_with(|key| {
+        if key == "MIXOS_PREFIX" { return Some(fixture.path().join("another prefix")); }
         Some(PathBuf::from(match key {
             "HOME" => "/home/user",
             "MIXOS_SHARE" => "/share",
@@ -460,16 +467,12 @@ fn failed_start_is_reported_asynchronously() {
 
 #[test]
 fn real_mix_runs_with_context_bounded_output_and_stop() {
-    let Some(mut roots) = Roots::resolve() else {
-        eprintln!("skip: no absolute HOME");
-        return;
-    };
-    if !roots.mix.is_file() {
-        eprintln!("skip: real Mix binary absent at {}", roots.mix.display());
+    let temp = tempfile::tempdir().unwrap();
+    let roots = roots(temp.path());
+    if !mix_binary::executable(&roots.mix) {
+        eprintln!("SKIP macro runner: no executable mix on PATH; set MIXOS_E2E_MIX_BIN to select one");
         return;
     }
-    let temp = tempfile::tempdir().unwrap();
-    roots.home = temp.path().into();
     let path = temp.path().join("real.mix");
     fs::write(&path, "print(env(\"MIXOS_MACRO_APP\"))\nprint(env(\"MIXOS_MACRO_ID\"))\nprint(env(\"MIXOS_MACRO_TIER\"))\nprint(env(\"MIXOS_MACRO_PATH\"))\nprint(run_argv_must([\"pwd\"]))\n").unwrap();
     let entry = Entry {
@@ -522,12 +525,10 @@ fn fifo_macro_is_diagnosed_without_blocking() {
 
 #[cfg(target_os = "linux")]
 fn descendant_fixture(detached: bool) {
-    let Some(mut roots) = Roots::resolve() else {
-        eprintln!("skip: no absolute HOME");
-        return;
-    };
-    if !roots.mix.is_file() {
-        eprintln!("skip: real Mix binary absent");
+    let temp = tempfile::tempdir().unwrap();
+    let roots = roots(temp.path());
+    if !mix_binary::executable(&roots.mix) {
+        eprintln!("SKIP macro descendants: no executable mix on PATH; set MIXOS_E2E_MIX_BIN to select one");
         return;
     }
     if detached
@@ -537,8 +538,6 @@ fn descendant_fixture(detached: bool) {
         eprintln!("skip: setsid absent");
         return;
     }
-    let temp = tempfile::tempdir().unwrap();
-    roots.home = temp.path().into();
     fs::write(temp.path().join("child.mix"),
         "write_file(\"child.pid\", to_string(pid()))\n$deadline = time() + 30\nwhile not exists(\"release\") and time() < $deadline\nsleep(0.01)\nend\nprint(\"old output\")\n").unwrap();
     let mix = format!("{:?}", roots.mix.to_str().unwrap());

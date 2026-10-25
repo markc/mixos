@@ -29,19 +29,9 @@ struct Holder {
     shell: Option<Shell>,
 }
 
-fn mix_available() -> bool {
-    let available = &::paths::root(::paths::Root::Prefix)
-        .join("bin/mix")
-        .is_file();
-    if !available {
-        eprintln!("skipping: the PTY tests need Mix at /opt/mixos/bin/mix");
-    }
-    available
-}
-
 #[test]
 fn the_window_answers_its_commands_over_a_real_broker() {
-    if !mix_available() {
+    if !term_core::test_support::with_mix("the_window_answers_its_commands_over_a_real_broker") {
         return;
     }
     let broker = test_broker::Broker::start();

@@ -1033,7 +1033,7 @@ mod tests {
 
     #[test]
     fn split_close_and_last_pane_outcomes() {
-        let Some(mut tabs) = fixture() else {
+        let Some(mut tabs) = fixture("tabs::tests::split_close_and_last_pane_outcomes") else {
             return;
         };
         let first_tab = tabs.active_id();
@@ -1067,7 +1067,7 @@ mod tests {
     }
     #[test]
     fn cap_spans_tabs_panes_and_pending_cleanup() {
-        let Some(mut tabs) = fixture() else {
+        let Some(mut tabs) = fixture("tabs::tests::cap_spans_tabs_panes_and_pending_cleanup") else {
             return;
         };
         for _ in 0..15 {
@@ -1093,7 +1093,7 @@ mod tests {
     }
     #[test]
     fn directional_focus_uses_geometry_and_rejects_other_tabs() {
-        let Some(mut tabs) = fixture() else {
+        let Some(mut tabs) = fixture("tabs::tests::directional_focus_uses_geometry_and_rejects_other_tabs") else {
             return;
         };
         let left = tabs.active_tab().active_pane;
@@ -1146,7 +1146,7 @@ mod tests {
     }
     #[test]
     fn close_then_focus_discards_old_rectangles_without_refresh() {
-        let Some(mut tabs) = fixture() else {
+        let Some(mut tabs) = fixture("tabs::tests::close_then_focus_discards_old_rectangles_without_refresh") else {
             return;
         };
         let left = tabs.active_tab().active_pane;
@@ -1186,7 +1186,7 @@ mod tests {
     }
     #[test]
     fn exited_pane_preserves_live_sibling() {
-        let Some(mut tabs) = fixture() else {
+        let Some(mut tabs) = fixture("tabs::tests::exited_pane_preserves_live_sibling") else {
             return;
         };
         let original = tabs.active_tab().active_pane;
@@ -1211,7 +1211,7 @@ mod tests {
     #[test]
     fn retitles_advance_events_without_invalidating_layout() {
         use rio_vt::event::{EventListener, RioEvent, WindowId};
-        let Some(mut tabs) = fixture() else {
+        let Some(mut tabs) = fixture("tabs::tests::retitles_advance_events_without_invalidating_layout") else {
             return;
         };
         let id = tabs.active_id();
@@ -1240,19 +1240,15 @@ mod tests {
         drop(tabs.shutdown());
     }
 
-    fn fixture() -> Option<TabSet> {
-        if !::paths::root(::paths::Root::Prefix)
-            .join("bin/mix")
-            .is_file()
-        {
-            eprintln!("SKIP tab PTY test: /opt/mixos/bin/mix unavailable");
+    fn fixture(test: &str) -> Option<TabSet> {
+        if !crate::test_support::with_mix(test) {
             return None;
         }
         Some(TabSet::new().expect("real Mix PTY"))
     }
     #[test]
     fn cap_includes_pending_close_and_recovers() {
-        let Some(mut tabs) = fixture() else {
+        let Some(mut tabs) = fixture("tabs::tests::cap_includes_pending_close_and_recovers") else {
             return;
         };
         for _ in 1..MAX_TABS {
@@ -1268,7 +1264,7 @@ mod tests {
     }
     #[test]
     fn startup_panic_does_not_poison_set() {
-        let Some(tabs) = fixture() else {
+        let Some(tabs) = fixture("tabs::tests::startup_panic_does_not_poison_set") else {
             return;
         };
         let set = Mutex::new(tabs);
@@ -1283,7 +1279,7 @@ mod tests {
     }
     #[test]
     fn metadata_does_not_lock_terminal_and_tracks_resize() {
-        let Some(mut tabs) = fixture() else {
+        let Some(mut tabs) = fixture("tabs::tests::metadata_does_not_lock_terminal_and_tracks_resize") else {
             return;
         };
         let id = tabs.active_id();
@@ -1296,7 +1292,7 @@ mod tests {
     }
     #[test]
     fn close_releases_set_before_teardown() {
-        let Some(tabs) = fixture() else {
+        let Some(tabs) = fixture("tabs::tests::close_releases_set_before_teardown") else {
             return;
         };
         let set = Mutex::new(tabs);
@@ -1315,7 +1311,7 @@ mod tests {
     }
     #[test]
     fn cleanup_queue_returns_without_waiting_for_terminal_lock() {
-        let Some(tabs) = fixture() else {
+        let Some(tabs) = fixture("tabs::tests::cleanup_queue_returns_without_waiting_for_terminal_lock") else {
             return;
         };
         let set = Mutex::new(tabs);
@@ -1333,7 +1329,7 @@ mod tests {
     }
     #[test]
     fn open_list_and_select() {
-        let Some(mut tabs) = fixture() else {
+        let Some(mut tabs) = fixture("tabs::tests::open_list_and_select") else {
             return;
         };
         let first = tabs.active_id();
@@ -1350,7 +1346,7 @@ mod tests {
     }
     #[test]
     fn close_non_active_preserves_selection() {
-        let Some(mut tabs) = fixture() else {
+        let Some(mut tabs) = fixture("tabs::tests::close_non_active_preserves_selection") else {
             return;
         };
         let first = tabs.active_id();
@@ -1363,7 +1359,7 @@ mod tests {
     }
     #[test]
     fn close_active_selects_neighbour_and_last_is_empty() {
-        let Some(mut tabs) = fixture() else {
+        let Some(mut tabs) = fixture("tabs::tests::close_active_selects_neighbour_and_last_is_empty") else {
             return;
         };
         let first = tabs.active_id();

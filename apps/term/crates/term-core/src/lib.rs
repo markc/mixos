@@ -24,6 +24,8 @@ pub mod raster;
 pub mod session_fd;
 pub mod tabs;
 pub mod terminal;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 pub mod version;
 pub mod wake;
 

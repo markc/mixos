@@ -13,6 +13,9 @@ use term_core::tabs::{Cleanup, TabSet};
 
 #[test]
 fn weight_only_settings_change_rebuilds_the_raster() {
+    if !term_core::test_support::with_mix("weight_only_settings_change_rebuilds_the_raster") {
+        return;
+    }
     let tabs = Arc::new(Mutex::new(
         TabSet::with_session(
             Settings {
