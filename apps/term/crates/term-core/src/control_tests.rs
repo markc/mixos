@@ -1326,6 +1326,9 @@ fn p0i_10_parent_bootstrap_outage_has_only_diagnostic_lane() {
     let broker = Broker::start();
     let mut options = broker.options();
     options.endpoint = Some(broker.endpoint.with_file_name("absent.sock"));
+    // A real outage: the missing socket is skipped, so no other route may
+    // find the fixture broker (its ping would advertise the live socket).
+    options.discover_by_ping = false;
     let mut supervisor = Supervisor::with_options(options, broker.url.clone()).unwrap();
     supervisor.wait_startup();
     let settings = crate::config::Settings {
