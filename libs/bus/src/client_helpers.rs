@@ -305,9 +305,8 @@ impl BrokerEnvironment {
         .map_err(anyhow::Error::msg)?;
         // A placed process never pings: the URL may name the host broker,
         // which would advertise a socket outside the process's environment.
-        options.discover_by_ping =
-            paths::run_root_is_tier_default(&self.directories, &directories)
-                .map_err(anyhow::Error::msg)?;
+        options.discover_by_ping = paths::run_root_is_tier_default(&self.directories, &directories)
+            .map_err(anyhow::Error::msg)?;
         let url = self
             .url
             .or_else(|| {
@@ -628,7 +627,10 @@ pub(crate) mod tests {
             options.default_endpoints,
             vec![dir.0.join("layout-run/noded/bus.sock")]
         );
-        assert!(!options.discover_by_ping, "a layout-placed process must not ping");
+        assert!(
+            !options.discover_by_ping,
+            "a layout-placed process must not ping"
+        );
     }
 
     #[tokio::test]
