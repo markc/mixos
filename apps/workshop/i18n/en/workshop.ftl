@@ -93,6 +93,5 @@ traffic-auto = Auto
 traffic-bottom = Bottom
 traffic-right = Right
 traffic-placement = Traffic placement
-traffic-switch-side = Switch Traffic between bottom and right
 traffic-switch-bottom = Move Traffic to the bottom
 traffic-switch-right = Move Traffic to the right

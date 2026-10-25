@@ -141,7 +141,11 @@ fn the_header_button_flips_the_effective_side() {
         (egui::vec2(900.0, 700.0), inspector::DockSide::Right),
     ] {
         let mut h = sized_harness(engine(None), size);
-        h.get_by_label(&label("traffic-switch-side")).click();
+        h.get_by_label(&label(if target == inspector::DockSide::Bottom {
+            "traffic-switch-bottom"
+        } else {
+            "traffic-switch-right"
+        })).click();
         h.run();
         assert!(h.state().contains(&UiEvent::DockSide(target)));
     }
