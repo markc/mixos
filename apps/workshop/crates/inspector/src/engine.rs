@@ -2112,7 +2112,7 @@ mod tests {
         assert_eq!((rc, body["split"].as_f64()), (0, Some(0.5)));
         assert_eq!(
             ask(&mut e, "workshop.split", json!({"value":0.9})).1["split"].as_f64(),
-            Some(0.65)
+            Some(rounded(*SERVICES_SPLIT.end()))
         );
         assert_eq!(
             ask(&mut e, "workshop.split", json!({"value":0.4})).1["split"].as_f64(),

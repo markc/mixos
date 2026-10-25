@@ -225,7 +225,7 @@ pub fn describe() -> Value {
         {"name":"workshop.reply","description":"The reply panel's text and the last reply's value","read_only":true},
         {"name":"workshop.filter","args":{"text":"string"},"description":"Set the services filter, as typing in the search field does","read_only":false},
         {"name":"workshop.body","args":{"text":format!("string, at most {BODY_LIMIT} bytes")},"description":"Set the JSON body; refused while a call holds it","read_only":false},
-        {"name":"workshop.split","args":{"value":"number from 0 to 1 (kept within 0.2 to 0.65)"},"description":"Set the services pane's share of the window","read_only":false},
+        {"name":"workshop.split","args":{"value":format!("number from 0 to 1 (kept within {} to {})", crate::engine::SERVICES_SPLIT.start(), crate::engine::SERVICES_SPLIT.end())},"description":"Set the services pane's share of the window","read_only":false},
         {"name":"workshop.dock","args":{"side":"auto, bottom or right","size":"optional number 0..1, clamped to pane limits","open":"optional bool"},"description":"Set the Traffic dock placement and share of the window","read_only":false},
         {"name":"workshop.expand","args":{"key":"row key","open":"bool"},"description":"Open or close a tree row that has children","read_only":false},
         {"name":"workshop.select_row","args":{"key":"row key"},"description":"Select any tree row; a command row also selects its command","read_only":false},
