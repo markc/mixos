@@ -131,6 +131,19 @@ try
   chmod($stage .. "/blocked", 0o755)
   symlink($tmp, $stage .. "/linked")
   need(refuses(fn() = $files.apply([{stage: $stage, path: "/linked/escape", text: "bad"}], false), "LAYOUT_TARGET") and not exists($tmp .. "/escape"), "symlink parent escaped stage")
+  mkdir($tmp .. "/hostile/bin", {parents: true})
+  write_file($tmp .. "/hostile/bin/mix", "foreign regular file\n")
+  need(not $files.writable_target($tmp .. "/hostile/bin/mix", false), "optional host integration accepted a regular link occupant")
+  remove($tmp .. "/hostile/bin/mix")
+  symlink("/previous/mix", $tmp .. "/hostile/bin/mix")
+  need($files.writable_target($tmp .. "/hostile/bin/mix", false), "writable symlink was rejected")
+  symlink($tmp .. "/hostile/bin", $tmp .. "/hostile/linked-bin")
+  need(not $files.writable_target($tmp .. "/hostile/linked-bin/mix", false), "optional host integration followed a symlinked parent")
+  -- Standalone layout apply also appends to fresh shells bytes.
+  $fresh_entry = $files.entrance_plan($roots, $stage, true, true)
+  write_file($stage .. "/etc/shells", read_file($stage .. "/etc/shells") .. "/usr/bin/added-after-plan\n")
+  $files.apply($fresh_entry, false)
+  need(contains(read_file($stage .. "/etc/shells"), "/usr/bin/added-after-plan\n"), "standalone apply overwrote a later shells edit")
   if uid() != 0 and (not $files.writable_target("/usr/local/bin/mix", false) or not $files.writable_target("/etc/shells", true)) then
     $user_roots = $roots
     $user_roots.prefix = $tmp .. "/user-prefix"

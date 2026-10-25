@@ -96,6 +96,8 @@ previous release; it does not trigger repeated rebuilds on every push.
 
 ## Install the system gold tree
 
+Release note: a first install made by round-4 code has no entrance journal and cannot remove its link on rollback; that shape never reached gold.
+
 The operator supplies the manifest hash from the verified GitHub asset
 digest. `plan` makes no gold changes. `apply` needs one explicit privileged
 invocation, and prints a receipt ID for `rollback`. The installer refuses

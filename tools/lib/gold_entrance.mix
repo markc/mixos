@@ -12,6 +12,15 @@ fn stage($root, $live)
   return $path
 end
 
+-- A plan validates a missing fixture root without creating it.
+fn planning_stage($root, $live)
+  if $live then return "" end
+  $path = $root .. "/.layout-root"
+  if exists($path, {follow_symlinks: false}) then return stage($root, $live) end
+  $files.destination("", $path .. "/check")
+  return $path
+end
+
 fn state($path)
   if not exists($path, {follow_symlinks: false}) then return {kind: "absent"} end
   $st = stat($path, {follow_symlinks: false})
@@ -37,6 +46,7 @@ fn verify($record, $root, $live)
   if type($record) != "map" or $record.schema != 1 or $record.sysroot != $where or type($record.files) != "list" or len($record.files) > 2 then
     raise("GOLD_RECEIPT", "invalid entrance journal")
   end
+  if has_key($record, "started") and type($record.started) != "bool" then raise("GOLD_RECEIPT", "invalid entrance started flag") end
   $seen = []
   for $entry in $record.files
     if type($entry.name) != "string" or not has_key($PATHS, $entry.name) or contains($seen, $entry.name) or type($entry.same) != "bool" then raise("GOLD_RECEIPT", "invalid entrance target") end
@@ -49,7 +59,7 @@ end
 
 -- Back up prior bytes/metadata before the pending receipt is published.
 fn capture($pending, $root, $live, $backup)
-  $record = {schema: 1, sysroot: if $live then "host" else "mixos:prefix/.layout-root" end, files: []}
+  $record = {schema: 1, sysroot: if $live then "host" else "mixos:prefix/.layout-root" end, started: false, files: []}
   $stage = stage($root, $live)
   $files.preflight($pending)
   for $entry in $pending
@@ -57,6 +67,11 @@ fn capture($pending, $root, $live, $backup)
     if $name == "" or $entry.stage != $stage then raise("GOLD_ENTRANCE", "unexpected entrance plan target") end
     $dest = $files.destination($stage, $PATHS[$name])
     $before = state($dest)
+    if $name == "shells" then
+      $text = $files.shells_contents($stage)
+      if $before.kind == "file" and hash_sha256($text) != $before.sha256 then raise("GOLD_ENTRANCE_CHANGED", "shells changed during capture") end
+      $entry.text = $files.shells_text($text, $PATHS.link)
+    end
     $after = if $name == "link" then {kind: "link", target: $entry.link} else {kind: "file", sha256: hash_sha256($entry.text)} end
     $same = deep_eq($before, $after)
     if not $same and $before.kind != "absent" then
@@ -69,6 +84,30 @@ fn capture($pending, $root, $live, $backup)
   end
   verify($record, $root, $live)
   return $record
+end
+
+-- Validate the entire entrance immediately before its first write. Read
+-- shells again and compose from these bytes, never from the earlier plan.
+fn prepare_apply($record, $root, $live)
+  verify($record, $root, $live)
+  if $record == nil then return [] end
+  $stage = stage($root, $live)
+  $pending = []
+  for $entry in $record.files
+    $dest = $files.destination($stage, $PATHS[$entry.name])
+    if not deep_eq(state($dest), $entry.before) then raise("GOLD_ENTRANCE_CHANGED", "entrance changed after capture: " .. $dest) end
+    if $entry.name == "link" then
+      push($pending, {stage: $stage, path: $PATHS.link, link: $entry.after.target})
+    else
+      $text = $files.shells_contents($stage)
+      if $entry.before.kind == "file" and hash_sha256($text) != $entry.before.sha256 then raise("GOLD_ENTRANCE_CHANGED", "shells changed before append") end
+      $text = $files.shells_text($text, $PATHS.link)
+      if hash_sha256($text) != $entry.after.sha256 then raise("GOLD_ENTRANCE_CHANGED", "shells no longer matches the captured append") end
+      push($pending, {stage: $stage, path: $PATHS.shells, text: $text})
+    end
+  end
+  $files.preflight($pending)
+  return $pending
 end
 
 -- The only change gold ever makes to /etc/shells is appending the link's
@@ -84,7 +123,7 @@ end
 
 fn assert_restored($record, $root, $live)
   verify($record, $root, $live)
-  if $record == nil then return end
+  if $record == nil or $record.started == false then return end
   $stage = stage($root, $live)
   for $entry in $record.files
     -- An unchanged entry was never touched by this receipt.
@@ -98,7 +137,7 @@ end
 
 fn restore($record, $root, $live, $backup, $id)
   verify($record, $root, $live)
-  if $record == nil then return end
+  if $record == nil or $record.started == false then return end
   if not re_match($id, "^[a-z0-9-]{8,100}$") then raise("GOLD_RECEIPT", "invalid entrance receipt id") end
   $stage = stage($root, $live)
   -- Validate all states and backups before undoing the first entrance target.
@@ -130,7 +169,7 @@ fn restore($record, $root, $live, $backup, $id)
     elif $entry.before.kind == "absent" then remove($entry.path)
     else
       $temp = $entry.path .. ".rollback-" .. $id
-      if exists($temp, {follow_symlinks: false}) then raise("GOLD_ENTRANCE", "occupied entrance restore temporary: " .. $temp) end
+      if exists($temp, {follow_symlinks: false}) then remove($temp) end
       try
         run_argv_must(["cp", "-a", "--", $entry.copy, $temp], {timeout: 30})
         rename($temp, $entry.path)

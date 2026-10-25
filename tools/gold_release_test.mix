@@ -308,6 +308,45 @@ try
     need(not $denied.ok and contains($denied.stdout, "GOLD_WRITABLE") and not exists($package_root .. "/bin/mix"), "gold writability failure half-installed files: " .. $denied.stdout)
   else print("SKIP gold permission preflight denial: uid 0 can write read-only fixture directories") end
   $entry_stage = $package_root .. "/.layout-root"
+  $package_plan_args = $package_args
+  $package_plan_args[2] = "plan"
+  $entry_plan = run_argv($package_plan_args, {timeout: 120, stderr: "stdout"})
+  need($entry_plan.ok and contains($entry_plan.stdout, "PLAN entrance=link path=/usr/local/bin/mix") and
+    contains($entry_plan.stdout, "PLAN entrance=shells path=/etc/shells") and not exists($entry_stage) and
+    not is_file($package_var .. "/releases/pending.mx") and not is_file($package_var .. "/releases/sequence.mx"),
+    "plan did not preflight/report the entrance without creating its root or journal: " .. $entry_plan.stdout)
+  mkdir($entry_stage .. "/usr/local/bin", {parents: true})
+  write_file($entry_stage .. "/usr/local/bin/mix", "foreign\n")
+  $bad_entry_plan = run_argv($package_plan_args, {timeout: 120, stderr: "stdout"})
+  need(not $bad_entry_plan.ok and contains($bad_entry_plan.stdout, "LAYOUT_LINK") and read_file($entry_stage .. "/usr/local/bin/mix") == "foreign\n" and
+    not is_file($package_var .. "/releases/pending.mx"), "plan ignored a foreign entrance occupant: " .. $bad_entry_plan.stdout)
+  remove($entry_stage .. "/usr/local/bin/mix")
+  remove_dir($entry_stage .. "/usr/local")
+  mkdir($base .. "/outside-entrance")
+  symlink($base .. "/outside-entrance", $entry_stage .. "/usr/local")
+  $linked_entry_plan = run_argv($package_plan_args, {timeout: 120, stderr: "stdout"})
+  need(not $linked_entry_plan.ok and contains($linked_entry_plan.stdout, "LAYOUT_TARGET") and len(walk($base .. "/outside-entrance")) == 0,
+    "plan followed a symlinked entrance parent: " .. $linked_entry_plan.stdout)
+  remove($entry_stage .. "/usr/local")
+  for $name in ["shells", "link"]
+    $raced = run_argv($package_args, {timeout: 120, stderr: "stdout", env: {MIXOS_GOLD_RELEASE_EDIT_ENTRANCE: $name}})
+    $pending_entry = $package_var .. "/releases/pending.mx"
+    need(not $raced.ok and contains($raced.stdout, "GOLD_ENTRANCE_CHANGED") and is_file($pending_entry) and
+      load_data($pending_entry).entrance.started == false, "concurrent entrance edit was not refused while pending: " .. $raced.stdout)
+    if $name == "shells" then
+      need(read_file($entry_stage .. "/etc/shells") == "/usr/bin/concurrent-shell\n" and not exists($entry_stage .. "/usr/local/bin/mix", {follow_symlinks: false}), "race refusal overwrote shells or wrote the link")
+    else need(read_link($entry_stage .. "/usr/local/bin/mix") == "/concurrent/tree/bin/mix", "race refusal replaced the concurrent link") end
+    $race_recover = run_argv(concat($base_argv, ["recover", "--root", $package_root, "--var", $package_var]), {timeout: 120, stderr: "stdout"})
+    need($race_recover.ok and not is_file($pending_entry) and not exists($package_root .. "/bin/mix"), "concurrent edit recovery failed: " .. $race_recover.stdout)
+    if $name == "shells" then
+      need(read_file($entry_stage .. "/etc/shells") == "/usr/bin/concurrent-shell\n", "recover lost the concurrent shells edit")
+      remove($entry_stage .. "/etc/shells")
+    else
+      need(read_link($entry_stage .. "/usr/local/bin/mix") == "/concurrent/tree/bin/mix", "recover lost the concurrent link edit")
+      remove($entry_stage .. "/usr/local/bin/mix")
+    end
+  end
+  print("PASS entrance plan preflight without writes, late shells/link race refusal, pending receipt and clean recovery")
   for $point in ["entrance-link", "entrance-shells"]
     $failed_first = run_argv($package_args, {timeout: 120, stderr: "stdout", env: {MIXOS_GOLD_RELEASE_FAIL: $point}})
     need(not $failed_first.ok and contains($failed_first.stdout, "GOLD_TEST") and not exists($package_root .. "/bin/mix") and

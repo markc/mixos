@@ -86,6 +86,10 @@ fn apply($pending, $dry)
   for $entry in $pending
     if has_key($entry, "notice") then print($entry.notice); continue end
     $dest = destination($entry.stage, $entry.path)
+    if has_key($entry, "shells_line") then
+      $entry.text = shells_text(shells_contents($entry.stage), $entry.shells_line)
+      preflight([$entry])
+    end
     $present = exists($dest, {follow_symlinks: false})
     if has_key($entry, "link") then
       if $present and read_link($dest) == $entry.link then continue end
@@ -139,12 +143,17 @@ fn stage_root($opts)
 end
 
 fn writable_target($path, $preserve)
+  -- Treat hostile shapes as unavailable to optional non-root integration.
+  -- destination() lstat-checks every parent without following symlinks.
+  try destination("", $path) catch $message return false end
   $parent = dirname($path)
   while not exists($parent, {follow_symlinks: false}) $parent = dirname($parent) end
   if not access($parent, "wx") then return false end
   if $preserve and exists($path, {follow_symlinks: false}) then
     $st = stat($path, {follow_symlinks: false})
     if not $st.is_file or $st.is_symlink or not access($path, "rw") or (uid() != 0 and $st.uid != uid()) then return false end
+  elif not $preserve and exists($path, {follow_symlinks: false}) then
+    if not stat($path, {follow_symlinks: false}).is_symlink then return false end
   end
   return true
 end
@@ -155,10 +164,23 @@ fn entrance($roots, $opts)
   $stage = stage_root($opts)
   if uid() != 0 and $opts.root == nil then
     if not writable_target("/usr/local/bin/mix", false) or not writable_target("/etc/shells", true) then
-      return [{notice: "SKIP managed link and /etc/shells: no host write access; prefix rendering remains available"}]
+      return [{notice: "SKIP managed link and /etc/shells: host targets unavailable or unwritable; prefix rendering remains available"}]
     end
   end
   return entrance_plan($roots, $stage, $opts.image == true, $opts.root == nil or $opts.image == true)
+end
+
+fn shells_contents($stage)
+  $dest = destination($stage, "/etc/shells")
+  if not exists($dest, {follow_symlinks: false}) then return "" end
+  $st = stat($dest, {follow_symlinks: false})
+  if $st.is_symlink or not $st.is_file then raise("LAYOUT_TARGET", "refusing non-regular shells file " .. $dest) end
+  return read_file($dest)
+end
+
+fn shells_text($text, $shell)
+  if contains(lines($text), $shell) then return $text end
+  return $text .. (if $text != "" and not ends_with($text, "\n") then "\n" else "" end) .. $shell .. "\n"
 end
 
 -- Explicit mapping for gold's journal and its isolated host fixtures.
@@ -169,16 +191,8 @@ fn entrance_plan($roots, $stage, $image, $shells_line)
   push($pending, {stage: $stage, path: $shell, link: $roots.prefix .. "/bin/mix"})
   -- A staging root never causes a host shells or HOME write. Images opt in.
   if $shells_line then
-    $dest = destination($stage, "/etc/shells")
-    $shells = ""
-    if exists($dest, {follow_symlinks: false}) then
-      $st = stat($dest, {follow_symlinks: false})
-      if $st.is_symlink or not $st.is_file then raise("LAYOUT_TARGET", "refusing non-regular shells file " .. $dest) end
-      $shells = read_file($dest)
-    end
-    if not contains(lines($shells), $shell) then
-      push($pending, {stage: $stage, path: "/etc/shells", text: $shells .. (if $shells != "" and not ends_with($shells, "\n") then "\n" else "" end) .. $shell .. "\n"})
-    end
+    $shells = shells_contents($stage)
+    push($pending, {stage: $stage, path: "/etc/shells", text: shells_text($shells, $shell), shells_line: $shell})
   end
   preflight($pending)
   return $pending

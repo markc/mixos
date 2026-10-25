@@ -313,6 +313,7 @@ is still pending. Enable immutable releases before public publication.</p>
 <p>After the initial release, cut one candidate each week. Failure holds the
 previous release; it does not trigger repeated rebuilds on every push.</p>
 <h2 id="install-the-system-gold-tree">Install the system gold tree</h2>
+<p>Release note: a first install made by round-4 code has no entrance journal and cannot remove its link on rollback; that shape never reached gold.</p>
 <p>The operator supplies the manifest hash from the verified GitHub asset
 digest. <code>plan</code> makes no gold changes. <code>apply</code> needs one explicit privileged
 invocation, and prints a receipt ID for <code>rollback</code>. The installer refuses

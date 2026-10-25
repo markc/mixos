@@ -142,18 +142,22 @@ try
     end
     root_owned_path($present)
   end
-  mkdir($state, {parents: true})
-  if $live then
-    root_owned_path($state)
-    chmod($state, 0o700)
+  if $mode != "plan" then
+    mkdir($state, {parents: true})
+    if $live then
+      root_owned_path($state)
+      chmod($state, 0o700)
+    end
+    if not flock($state .. "/.lock", {wait: 0}) then raise("GOLD_BUSY", "another gold release operation is running") end
   end
-  if not flock($state .. "/.lock", {wait: 0}) then raise("GOLD_BUSY", "another gold release operation is running") end
   $pending = $state .. "/pending.mx"
   $receipt_dir = $state .. "/receipts"
   $sequence_path = $state .. "/sequence.mx"
-  if $live then root_owned_path($state) end
-  mkdir($receipt_dir, {parents: true})
-  if $live then root_owned_path($receipt_dir) end
+  if $mode != "plan" then
+    if $live then root_owned_path($state) end
+    mkdir($receipt_dir, {parents: true})
+    if $live then root_owned_path($receipt_dir) end
+  end
 
   fn existing_state($path)
     if not exists($path, {follow_symlinks: false}) then return {kind: "absent"} end
@@ -382,9 +386,6 @@ try
   push($files, {rel: "layout.mx", source: $layout_source, before: existing_state($root .. "/layout.mx"),
     after: $layout_after, same: matches($root .. "/layout.mx", $layout_after)})
   $changed = len(filter($files, fn($f) = not $f.same))
-  print("PLAN source=" .. $manifest.source .. " version=" .. $manifest.version ..
-    " packages=" .. join($want, ",") .. " files=" .. len($files) .. " changed=" .. $changed)
-  if $mode == "plan" then exit(0) end
   -- Check every install destination before backup/journal publication. The
   -- same kernel access checks include ACLs, rather than guessing from modes.
   for $file in $files
@@ -395,13 +396,19 @@ try
     if not access($parent, "wx") then raise("GOLD_WRITABLE", "target parent is not writable: " .. $parent) end
   end
   $entrance = []
+  $entry_stage = ""
   if is_file($prepared.tops[0] .. "/share/layout/apply.mix") then
-    if not $live then
-      if exists($root .. "/.layout-root", {follow_symlinks: false}) and stat($root .. "/.layout-root", {follow_symlinks: false}).is_symlink then raise("GOLD_ROOT", "fixture entrance root must not be a symlink") end
-      mkdir($root .. "/.layout-root", {parents: true})
-    end
-    $entrance = $layout_files.entrance_plan($layout, $entrance_journal.stage($root, $live), false, true)
+    $entry_stage = $entrance_journal.planning_stage($root, $live)
+    $entrance = $layout_files.entrance_plan($layout, $entry_stage, false, true)
   end
+  print("PLAN source=" .. $manifest.source .. " version=" .. $manifest.version ..
+    " packages=" .. join($want, ",") .. " files=" .. len($files) .. " changed=" .. $changed .. " entrance=" .. len($entrance))
+  for $entry in $entrance
+    print("PLAN entrance=" .. (if has_key($entry, "link") then "link" else "shells" end) .. " path=" .. $entry.path ..
+      (if has_key($entry, "link") then " -> " .. $entry.link else "" end))
+  end
+  if $mode == "plan" then exit(0) end
+  if len($entrance) != 0 and not $live then mkdir($entry_stage, {parents: true}) end
   $backup = $state .. "/backups/" .. $id
   mkdir($backup, {parents: true})
   for $f in $files
@@ -448,6 +455,20 @@ try
     for $f in $files
       if not matches($root .. "/" .. $f.rel, $f.after) then raise("GOLD_VERIFY", "installed file differs: " .. $f.rel) end
     end
+    if len($entrance) != 0 then
+      -- Fixture-only interference at the capture/apply boundary.
+      if not $live and env("MIXOS_GOLD_RELEASE_EDIT_ENTRANCE") == "shells" then
+        mkdir($entry_stage .. "/etc", {parents: true})
+        write_file($entry_stage .. "/etc/shells", $layout_files.shells_contents($entry_stage) .. "/usr/bin/concurrent-shell\n")
+      elif not $live and env("MIXOS_GOLD_RELEASE_EDIT_ENTRANCE") == "link" then
+        mkdir($entry_stage .. "/usr/local/bin", {parents: true})
+        if exists($entry_stage .. "/usr/local/bin/mix", {follow_symlinks: false}) then remove($entry_stage .. "/usr/local/bin/mix") end
+        symlink("/concurrent/tree/bin/mix", $entry_stage .. "/usr/local/bin/mix")
+      end
+      $entrance = $entrance_journal.prepare_apply($record.entrance, $root, $live)
+      $record.entrance.started = true
+      write_atomic($pending, data_encode($record) .. "\n")
+    end
     for $entry in $entrance
       $layout_files.apply([$entry], false)
       $point = if has_key($entry, "link") then "entrance-link" else "entrance-shells" end
@@ -460,11 +481,15 @@ try
     print("APPLIED receipt=" .. $id .. " source=" .. $manifest.source .. " changed=" .. $changed)
   catch $msg, $err
     print("APPLY_FAILED " .. $msg)
+    if $err.code == "GOLD_ENTRANCE_CHANGED" then
+      print("Pending receipt retained; run recover to restore prefix files without undoing the concurrent entrance edit")
+      raise($err.code, $msg)
+    end
     restore($record)
     remove($pending)
     raise($err.code ?? "GOLD_APPLY", $msg)
   end
 finally
   if $prepared != nil then remove_dir($prepared.stage) end
-  funlock($state .. "/.lock")
+  if $mode != "plan" then funlock($state .. "/.lock") end
 end
