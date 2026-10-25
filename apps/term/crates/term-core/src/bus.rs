@@ -263,8 +263,8 @@ fn canonical_command<'a>(
 }
 
 /// [`INFO`] rendered into `service`'s namespace, so a caller reads the command
-/// names it can actually send. `help_renames_every_command` pins that the
-/// rewrite is total — a future HELP edit that spells a command some other way
+/// names it can actually send. `info_renames_every_command` pins that the
+/// rewrite is total — a future INFO edit that spells a command some other way
 /// fails that test rather than advertising an unroutable name.
 pub fn info(service: &str) -> String {
     if service == CANONICAL {
@@ -3374,8 +3374,11 @@ mod tests {
         );
         // HELP is prefixless, so it answers under either name — and names
         // the commands that name's callers can actually send.
-        assert!(call("altterm", "HELP").unwrap().contains("altterm.tab.new"));
-        assert!(call("term", "HELP").unwrap().contains("term.tab.new"));
+        for service in ["term", "altterm"] {
+            let entries: Vec<::bus::CommandDescriptor> = serde_json::from_str(&call(service, "HELP").unwrap()).unwrap();
+            assert_eq!(entries[0].name, "HELP");
+            assert!(entries.iter().any(|entry| entry.name == format!("{service}.tab.new")));
+        }
         drop(cleanup);
         let _ = worker.join();
     }
@@ -3385,7 +3388,7 @@ mod tests {
     /// rewrite misses, rather than shipping an unroutable name in the docs
     /// every agent reads first.
     #[test]
-    fn help_renames_every_command() {
+    fn info_renames_every_command() {
         let rendered = info("altterm");
         for (at, _) in rendered.match_indices("term.") {
             assert!(

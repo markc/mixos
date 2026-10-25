@@ -317,6 +317,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn help_lists_the_whole_service_with_registry_query_flags() {
+        let entries = help();
+        assert_eq!(entries[0].name, "HELP");
+        assert_eq!(entries, help(), "stable order");
+        let registry = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
+        let mut names = std::collections::BTreeSet::new();
+        for entry in entries {
+            assert!(names.insert(entry.name.clone()), "duplicate {}", entry.name);
+            if !entry.name.starts_with("term.") {
+                assert!(entry.read_only);
+                continue;
+            }
+            let row = registry.lines().find(|row| row.contains(&format!("name:\"{}\"", entry.name))).unwrap();
+            assert_eq!(entry.read_only, row.contains("class:\"query\""), "{}", entry.name);
+        }
+        for suffix in drive::COMMANDS {
+            assert!(names.contains(&format!("term.{suffix}")));
+        }
+        for suffix in citizen::macros::SUFFIXES {
+            assert!(names.contains(&format!("term.macros.{suffix}")));
+        }
+        assert!(names.contains("term.actions") && names.contains("term.execute"));
+    }
+
+    #[test]
     fn the_window_answers_exactly_its_own_commands() {
         for command_name in drive::COMMANDS {
             assert!(answers(&format!("term.{command_name}")), "{command_name}");

@@ -1158,6 +1158,29 @@ mod tests {
     }
 
     #[test]
+    fn help_lists_window_commands_with_registry_query_flags() {
+        let mut meta = meta(false);
+        meta.extra_commands = toolkit::drive::COMMANDS.iter().map(|suffix| format!("dopus.{suffix}")).collect();
+        let entries = manifest(&meta);
+        assert_eq!(entries[0].name, "HELP");
+        assert_eq!(entries, manifest(&meta), "stable order");
+        let registry = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
+        let mut names = std::collections::BTreeSet::new();
+        for entry in entries {
+            assert!(names.insert(entry.name.clone()), "duplicate {}", entry.name);
+            if !entry.name.starts_with("dopus.") {
+                assert!(entry.read_only);
+                continue;
+            }
+            let row = registry.lines().find(|row| row.contains(&format!("name:\"{}\"", entry.name))).unwrap();
+            assert_eq!(entry.read_only, row.contains("class:\"query\""), "{}", entry.name);
+        }
+        for suffix in toolkit::drive::COMMANDS {
+            assert!(names.contains(&format!("dopus.{suffix}")));
+        }
+    }
+
+    #[test]
     fn every_action_is_served_or_refused_by_rule() {
         for (action, _) in ACTIONS {
             let (_dir, mut core) = core();

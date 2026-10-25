@@ -261,12 +261,14 @@ toolkit registry, published on <code>term.action.executed</code>.</p>
 it) and answers:</p>
 <ul>
 <li>the terminal's commands, served by term-core (<code>HELP</code> lists them):
-<code>term.session</code>, <code>term.tabs</code>, <code>term.tab.*</code>, <code>term.panes</code>, <code>term.pane.*</code>,
+<code>term.info</code>, <code>term.session</code>, <code>term.tabs</code>, <code>term.tab.*</code>, <code>term.panes</code>, <code>term.pane.*</code>,
 <code>term.snapshot</code>, <code>term.scroll</code>, <code>term.type</code>, <code>term.props.watch</code>;</li>
 <li>the window's own: <code>term.actions</code>, <code>term.execute</code>, <code>app.describe</code>, and the
 toolkit drive commands (<code>term.ui.*</code>, <code>term.window</code>, <code>term.window.state</code>).</li>
 </ul>
-<p><code>term --headless</code> serves the terminal's commands with no window.</p>
+<p><code>term --headless</code> serves the terminal's commands with no window.
+<code>term.info</code> returns the prose usage and diagnostic notes. <code>app.describe</code>
+keeps its richer <code>{schema, app_id, commands}</code> object on the window service.</p>
 <h2 id="configuration">Configuration</h2>
 <p>The desktop profile's <code>terminal.*</code> settings, held by
 <a href="/settingsd/">settingsd</a> and edited in <a href="/prefs/">Preferences</a>:

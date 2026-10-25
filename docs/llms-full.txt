@@ -34732,12 +34732,14 @@ The window registers `term` (or `term-<pid>` when another instance holds
 it) and answers:
 
 - the terminal's commands, served by term-core (`HELP` lists them):
-  `term.session`, `term.tabs`, `term.tab.*`, `term.panes`, `term.pane.*`,
+  `term.info`, `term.session`, `term.tabs`, `term.tab.*`, `term.panes`, `term.pane.*`,
   `term.snapshot`, `term.scroll`, `term.type`, `term.props.watch`;
 - the window's own: `term.actions`, `term.execute`, `app.describe`, and the
   toolkit drive commands (`term.ui.*`, `term.window`, `term.window.state`).
 
 `term --headless` serves the terminal's commands with no window.
+`term.info` returns the prose usage and diagnostic notes. `app.describe`
+keeps its richer `{schema, app_id, commands}` object on the window service.
 
 ## Configuration
 
