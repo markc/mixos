@@ -399,8 +399,8 @@ mod tests {
             s
         });
         widgets.collect(&ctx);
-        let raw = config::to_conf_mix_string(&widgets).unwrap();
-        let restored: Widgets = config::from_conf_mix_str(&raw).unwrap();
+        let raw = strict::to_string_pretty(&widgets).unwrap();
+        let restored: Widgets = strict::from_str(&raw).unwrap();
         assert_eq!(restored.groups["group"].selected, 1);
         assert!(restored.open["branch"]);
         assert!(restored.applied.is_empty());

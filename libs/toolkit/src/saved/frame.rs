@@ -385,8 +385,8 @@ mod tests {
         f.maximised = true;
         f.theme = choice.into();
         f.capture_comp(&window(), &json!({"x":1920,"y":0}));
-        let raw = config::to_conf_mix_string(&f).unwrap();
-        let back: Frame = config::from_conf_mix_str(&raw).unwrap();
+        let raw = strict::to_string_pretty(&f).unwrap();
+        let back: Frame = strict::from_str(&raw).unwrap();
         assert_eq!(back, f);
         assert_eq!(back.theme.choice(), choice);
         let viewport = back.viewport(egui::ViewportBuilder::default());

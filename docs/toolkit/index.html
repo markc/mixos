@@ -345,7 +345,9 @@ session. After each frame, call <code>window.capture(ctx)</code>, update the app
 and theme choice, and call <code>tick(Instant::now(), pointer.any_down())</code>.
 Only changed serialised values are written, at most once per second and
 never while a pointer button is down. Schedule another pass only when
-<code>pending()</code> is true. Call <code>flush()</code> at exit. Writes use <code>config::atomic</code>.</p>
+<code>pending()</code> is true. Call <code>flush()</code> at exit. Writes use <code>config::atomic</code>.
+The codec uses the existing workspace <code>strict</code> library directly; config's
+only roles in the saved-state path are <code>AppDirs</code> and <code>atomic</code>.</p>
 <p>Call <code>widgets.install(ctx)</code> once, then <code>widgets.collect(ctx)</code> before saving.
 Replace a panel's <code>show</code> call with <code>saved::widgets::panel</code>, a ScrollArea's
 <code>show</code> with <code>saved::widgets::scroll</code>, and a <code>panel::group</code> with
@@ -528,7 +530,7 @@ only when something changes, so an idle surface costs nothing.</li>
 <h2 id="features-and-dependencies">Features and dependencies</h2>
 <p>The default build has no features. <code>layer</code> adds smithay-client-toolkit
 0.19.2 (the version eframe's winit already links), wayland-backend, wgpu,
-egui-wgpu and xkbcommon. Workspace dependencies: <code>assets</code>, <code>config</code>,
+egui-wgpu and xkbcommon. Workspace dependencies: <code>assets</code>, <code>config</code>, <code>strict</code>,
 <code>design</code>, <code>settings</code> (data types only, no Bus) and <code>thumbs</code>.</p>
 <h2 id="assets-and-licences">Assets and licences</h2>
 <p><code>assets/fonts/</code> holds static Inter (Light, Regular, Medium, SemiBold) and

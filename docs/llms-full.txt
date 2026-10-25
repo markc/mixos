@@ -34459,6 +34459,8 @@ and theme choice, and call `tick(Instant::now(), pointer.any_down())`.
 Only changed serialised values are written, at most once per second and
 never while a pointer button is down. Schedule another pass only when
 `pending()` is true. Call `flush()` at exit. Writes use `config::atomic`.
+The codec uses the existing workspace `strict` library directly; config's
+only roles in the saved-state path are `AppDirs` and `atomic`.
 
 Call `widgets.install(ctx)` once, then `widgets.collect(ctx)` before saving.
 Replace a panel's `show` call with `saved::widgets::panel`, a ScrollArea's
@@ -34651,7 +34653,7 @@ so later Bus commands can proceed.
 
 The default build has no features. `layer` adds smithay-client-toolkit
 0.19.2 (the version eframe's winit already links), wayland-backend, wgpu,
-egui-wgpu and xkbcommon. Workspace dependencies: `assets`, `config`,
+egui-wgpu and xkbcommon. Workspace dependencies: `assets`, `config`, `strict`,
 `design`, `settings` (data types only, no Bus) and `thumbs`.
 
 ## Assets and licences

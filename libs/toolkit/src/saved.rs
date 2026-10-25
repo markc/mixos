@@ -52,7 +52,7 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
         };
         if let Some(path) = &store.path {
             match std::fs::read_to_string(path) {
-                Ok(raw) => match config::from_conf_mix_str::<Value>(&raw) {
+                Ok(raw) => match strict::from_str::<Value>(&raw) {
                     Ok(value)
                         if value.is_object() && value["schema_version"].as_f64() == Some(1.0) =>
                     {
@@ -87,7 +87,7 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
     }
 
     fn serialise(&self) -> Result<String, String> {
-        config::to_conf_mix_string(&json!({"schema_version":1,"window":self.window,
+        strict::to_string_pretty(&json!({"schema_version":1,"window":self.window,
             "widgets":self.widgets,"app":{"version":self.version,"value":self.app}}))
         .map_err(|e| e.to_string())
     }
@@ -150,9 +150,9 @@ fn decode<T: DeserializeOwned + Default>(value: &Value) -> T {
 fn try_decode<T: DeserializeOwned>(value: &Value) -> Option<T> {
     // Strict data represents numbers as f64; decode typed integers through its
     // checked integer deserialiser rather than serde_json's f64 rejection.
-    config::to_conf_mix_string(value)
+    strict::to_string_pretty(value)
         .ok()
-        .and_then(|raw| config::from_conf_mix_str(&raw).ok())
+        .and_then(|raw| strict::from_str(&raw).ok())
 }
 
 #[cfg(test)]

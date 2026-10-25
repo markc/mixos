@@ -24,6 +24,7 @@ assets.workspace = true
 bus = { workspace = true, features = ["native"] }
 tokio.workspace = true
 config.workspace = true
+strict.workspace = true
 design.workspace = true
 macros.workspace = true
 editor.workspace = true
@@ -65,7 +66,6 @@ layer = ["dep:smithay-client-toolkit", "dep:wayland-backend", "dep:wgpu", "dep:e
 [dev-dependencies]
 anyhow.workspace = true
 libc.workspace = true
-strict.workspace = true
 uuid.workspace = true
 egui_kittest.workspace = true
 tempfile.workspace = true
