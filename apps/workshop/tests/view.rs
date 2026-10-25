@@ -71,9 +71,15 @@ fn auto_dock_is_right_when_wide_and_bottom_when_narrow() {
         let details = h.get_by_label(&label("details")).rect();
         if right {
             assert!(traffic.left() > details.right(), "{traffic:?} {details:?}");
-            let panel = |name| egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new(name)).unwrap().outer_rect;
+            let panel = |name| {
+                egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new(name))
+                    .unwrap()
+                    .outer_rect
+            };
             assert!((panel("traffic-right").top() - panel("services").top()).abs() < 1.0);
-            assert!((panel("traffic-right").bottom() - panel("toolkit-status-bar").top()).abs() < 1.0);
+            assert!(
+                (panel("traffic-right").bottom() - panel("toolkit-status-bar").top()).abs() < 1.0
+            );
         } else {
             assert!(traffic.top() > details.bottom(), "{traffic:?} {details:?}");
         }
@@ -108,8 +114,10 @@ fn explicit_bottom_and_saved_sizes_are_honoured() {
 
 #[test]
 fn dock_sizes_remain_proportional_when_the_window_resizes() {
-    for (side, id) in [(inspector::DockSide::Right, "traffic-right"),
-        (inspector::DockSide::Bottom, "traffic-bottom")] {
+    for (side, id) in [
+        (inspector::DockSide::Right, "traffic-right"),
+        (inspector::DockSide::Bottom, "traffic-bottom"),
+    ] {
         let mut e = engine(None);
         e.ui.dock_side = side;
         e.set_dock_size(side, 0.4);
@@ -117,16 +125,21 @@ fn dock_sizes_remain_proportional_when_the_window_resizes() {
         h.set_size(egui::vec2(1400.0, 800.0));
         h.run();
         let panel = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new(id)).unwrap();
-        let share = if side == inspector::DockSide::Right { panel.size().x / 1400.0 }
-            else { panel.size().y / 800.0 };
+        let share = if side == inspector::DockSide::Right {
+            panel.size().x / 1400.0
+        } else {
+            panel.size().y / 800.0
+        };
         assert!((share - 0.4).abs() < 0.02, "{share}");
     }
 }
 
 #[test]
 fn the_header_button_flips_the_effective_side() {
-    for (size, target) in [(egui::vec2(1920.0, 1080.0), inspector::DockSide::Bottom),
-        (egui::vec2(900.0, 700.0), inspector::DockSide::Right)] {
+    for (size, target) in [
+        (egui::vec2(1920.0, 1080.0), inspector::DockSide::Bottom),
+        (egui::vec2(900.0, 700.0), inspector::DockSide::Right),
+    ] {
         let mut h = sized_harness(engine(None), size);
         h.get_by_label(&label("traffic-switch-side")).click();
         h.run();

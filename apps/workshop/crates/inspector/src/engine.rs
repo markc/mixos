@@ -2335,7 +2335,10 @@ mod tests {
 
     #[test]
     fn auto_dock_changes_at_the_wide_window_threshold() {
-        assert_eq!(DockSide::Auto.effective(DOCK_RIGHT_WIDTH - 1.0), DockSide::Bottom);
+        assert_eq!(
+            DockSide::Auto.effective(DOCK_RIGHT_WIDTH - 1.0),
+            DockSide::Bottom
+        );
         assert_eq!(DockSide::Auto.effective(DOCK_RIGHT_WIDTH), DockSide::Right);
         assert_eq!(DockSide::Bottom.effective(1920.0), DockSide::Bottom);
         assert_eq!(DockSide::Right.effective(900.0), DockSide::Right);

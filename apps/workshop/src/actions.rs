@@ -271,8 +271,11 @@ mod tests {
     fn traffic_placement_actions_set_and_tick_the_saved_side() {
         let r = registry();
         let mut e = Engine::new(crate::label);
-        for (id, side) in [("view.traffic.right", DockSide::Right),
-            ("view.traffic.bottom", DockSide::Bottom), ("view.traffic.auto", DockSide::Auto)] {
+        for (id, side) in [
+            ("view.traffic.right", DockSide::Right),
+            ("view.traffic.bottom", DockSide::Bottom),
+            ("view.traffic.auto", DockSide::Auto),
+        ] {
             r.execute(id, &mut e, toolkit::action::Origin::Bus).unwrap();
             assert_eq!(e.ui.dock_side, side);
             assert_eq!(r.checked(id, &e), Some(true));

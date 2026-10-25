@@ -99,7 +99,10 @@ pub fn view(
     let window = ui.max_rect().size();
     ui.ctx().data_mut(|data| {
         let key = egui::Id::new("workshop-dock-window");
-        if data.get_temp::<egui::Vec2>(key).is_some_and(|old| old != window) {
+        if data
+            .get_temp::<egui::Vec2>(key)
+            .is_some_and(|old| old != window)
+        {
             for name in ["traffic-bottom", "traffic-right"] {
                 data.remove::<egui::containers::panel::PanelState>(egui::Id::new(name));
             }
@@ -150,7 +153,10 @@ pub fn view(
     // Keep the services share when Traffic or the window changes the space left.
     ui.ctx().data_mut(|data| {
         let key = egui::Id::new("workshop-services-width");
-        if data.get_temp::<f32>(key).is_some_and(|old| (old - total).abs() > 0.5) {
+        if data
+            .get_temp::<f32>(key)
+            .is_some_and(|old| (old - total).abs() > 0.5)
+        {
             data.remove::<egui::containers::panel::PanelState>(egui::Id::new("services"));
         }
         data.insert_temp(key, total);
@@ -505,8 +511,13 @@ fn traffic_body(ui: &mut Ui, engine: &Engine, side: DockSide) {
                         })
                     };
                     let route = RichText::new(format!(
-                        "{} → {} · {}", text("from"), text("service"), text("direction")
-                    )).small().weak();
+                        "{} → {} · {}",
+                        text("from"),
+                        text("service"),
+                        text("direction")
+                    ))
+                    .small()
+                    .weak();
                     let response = egui::CollapsingHeader::new(
                         RichText::new(format!(
                             "{} · {} · {} · {}",
@@ -522,7 +533,9 @@ fn traffic_body(ui: &mut Ui, engine: &Engine, side: DockSide) {
                         ui.label(route.clone());
                         traffic_row_body(ui, row);
                     });
-                    if response.body_response.is_none() { ui.label(route); }
+                    if response.body_response.is_none() {
+                        ui.label(route);
+                    }
                 }
                 return;
             }
