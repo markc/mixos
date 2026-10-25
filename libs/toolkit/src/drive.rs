@@ -1591,7 +1591,9 @@ mod tests {
                 },
             ));
         });
-        assert!(logic_at(&ctx, now + INPUT_QUIET_PERIOD - Duration::from_millis(1)).is_empty());
+        let deadline = now + INPUT_QUIET_PERIOD;
+        let before = deadline.checked_sub(Duration::from_millis(1)).unwrap();
+        assert!(logic_at(&ctx, before).is_empty());
         assert!(pending(&ctx));
         let answers = logic_at(&ctx, now + INPUT_QUIET_PERIOD);
         assert_eq!(answers.len(), 1);

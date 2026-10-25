@@ -85,7 +85,9 @@ mod tests {
         let redraw = now + Duration::from_secs(5);
         wake.request(redraw);
         assert_eq!(wake.deadline(), Some(redraw + GRACE));
-        assert!(!wake.take_due(redraw + GRACE - Duration::from_millis(1)));
+        let deadline = redraw + GRACE;
+        let before = deadline.checked_sub(Duration::from_millis(1)).unwrap();
+        assert!(!wake.take_due(before));
         assert!(wake.take_due(redraw + GRACE));
     }
 }
