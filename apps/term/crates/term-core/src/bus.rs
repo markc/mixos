@@ -1502,7 +1502,7 @@ mod tests {
         for entry in entries {
             assert!(super::diagnostic("term", &entry.name).is_ok());
         }
-        for service in ["term", "altterm"] {
+        for service in ["term", "altterm", "term-12345"] {
             let entries = manifest(service, true);
             assert_eq!(entries[0].name, "HELP");
             for entry in entries {
@@ -1637,7 +1637,7 @@ mod tests {
             )
         };
         // Both service names use the same targetless implementation.
-        for service in ["term", "altterm"] {
+        for service in ["term", "altterm", "term-12345"] {
             call(service, r#"{"to":"top"}"#, &mut replies).unwrap();
             let reply = call(service, r#"{"to":"bottom"}"#, &mut replies).unwrap();
             assert_eq!(
@@ -3312,7 +3312,7 @@ mod tests {
             Some("term.pane.split")
         );
         // Prefixless commands pass through, whichever name we serve under.
-        for service in ["term", "altterm"] {
+        for service in ["term", "altterm", "term-12345"] {
             assert_eq!(routed(service, "INFO").as_deref(), Some("INFO"));
             assert_eq!(routed(service, "HELP").as_deref(), Some("HELP"));
         }
@@ -3377,7 +3377,7 @@ mod tests {
         );
         // HELP is prefixless, so it answers under either name — and names
         // the commands that name's callers can actually send.
-        for service in ["term", "altterm"] {
+        for service in ["term", "altterm", "term-12345"] {
             let entries: Vec<::bus::CommandDescriptor> =
                 serde_json::from_str(&call(service, "HELP").unwrap()).unwrap();
             assert_eq!(entries[0].name, "HELP");
@@ -3409,7 +3409,7 @@ mod tests {
         assert!(rendered.starts_with("altterm: "));
         // Serving as `term` renders the canonical text unchanged.
         assert_eq!(info(CANONICAL), INFO);
-        for service in ["term", "altterm"] {
+        for service in ["term", "altterm", "term-12345"] {
             let rendered = info(service);
             for suffix in [
                 "snapshot",

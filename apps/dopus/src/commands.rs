@@ -1158,6 +1158,24 @@ mod tests {
     }
 
     #[test]
+    fn help_covers_dispatcher_arms() {
+        let entries = manifest(&meta(true));
+        let source = include_str!("commands.rs");
+        let dispatcher = source.split("match command.command.as_str() {").nth(1).unwrap();
+        let dispatcher = dispatcher.split("#[cfg(test)]").next().unwrap();
+        for line in dispatcher.lines() {
+            let line = line.trim();
+            if line.starts_with('"') && line.contains("=>") {
+                for name in line.split('"').skip(1).step_by(2) {
+                    if name.starts_with("dopus.") || name.starts_with("app.") || name == "HELP" {
+                        assert!(entries.iter().any(|entry| entry.name == name), "{name}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn help_lists_window_commands_with_registry_query_flags() {
         let mut meta = meta(false);
         meta.extra_commands = toolkit::drive::COMMANDS

@@ -167,7 +167,7 @@ through `config::atomic`), and then applies. Its reply is `rc 0` with
 - `SUPERSEDED`: a newer set replaced this one before it applied.
 - `BUSY`: a next arrived while a set or advance was decoding;
 - `NON_SLIDESHOW`: a next was requested with no applied slideshow;
-- `UNKNOWN`: the requested command is not implemented.
+- `UNKNOWN_COMMAND`: the requested command is unknown; the reply includes its `command` name.
 
 `backdrop.next` advances configured slideshows without changing or storing their
 sources. It refuses a configuration with no slideshow. An advance waiting for

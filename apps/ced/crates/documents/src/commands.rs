@@ -54,6 +54,9 @@ pub fn manifest() -> Vec<bus::CommandDescriptor> {
         "List every command",
         true,
     ))
+    .chain(std::iter::once(bus::CommandDescriptor::new(
+        "INFO", &[], "Describe the editor service and commands", true,
+    )))
     .chain(
         COMMANDS
             .iter()

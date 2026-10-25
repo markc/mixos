@@ -386,7 +386,7 @@ stored but its durability is not confirmed (applied; the reply says so);</li>
 <li><code>SUPERSEDED</code>: a newer set replaced this one before it applied.</li>
 <li><code>BUSY</code>: a next arrived while a set or advance was decoding;</li>
 <li><code>NON_SLIDESHOW</code>: a next was requested with no applied slideshow;</li>
-<li><code>UNKNOWN</code>: the requested command is not implemented.</li>
+<li><code>UNKNOWN_COMMAND</code>: the requested command is unknown; the reply includes its <code>command</code> name.</li>
 </ul>
 <p><code>backdrop.next</code> advances configured slideshows without changing or storing their
 sources. It refuses a configuration with no slideshow. An advance waiting for

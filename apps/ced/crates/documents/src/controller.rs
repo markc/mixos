@@ -2946,6 +2946,7 @@ impl Controller {
                 );
             }
             "HELP" => reply(fx, json!(commands::manifest()).to_string()),
+            "INFO" => reply(fx, json!({"service":commands::SERVICE,"schema":commands::SCHEMA,"commands":commands::manifest()}).to_string()),
             other => refuse(
                 fx,
                 code::UNKNOWN_COMMAND,
@@ -3527,6 +3528,34 @@ mod tests {
                 if let Effect::Respond { body, .. } = effect {
                     let body: Value = serde_json::from_str(&body).unwrap();
                     assert_ne!(body["error_code"], "UNKNOWN_COMMAND", "{}", entry.name);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn info_keeps_the_service_schema_and_commands() {
+        let (rc, body) = response(&ctl().on_bus_command(cmd("INFO", json!({}))));
+        assert_eq!(rc, 0);
+        assert_eq!(body["service"], "ced");
+        assert_eq!(body["schema"], "ced.v1");
+        assert_eq!(body["commands"], json!(commands::manifest()));
+        assert!(commands::manifest().iter().any(|entry| entry.name == "INFO" && entry.read_only));
+    }
+
+    #[test]
+    fn help_covers_dispatcher_arms() {
+        let entries = commands::manifest();
+        let source = include_str!("controller.rs");
+        let dispatcher = source.split("\"ced.ping\" =>").nth(1).unwrap();
+        let dispatcher = dispatcher.split("fn tab_name").next().unwrap();
+        for line in std::iter::once("\"ced.ping\" =>").chain(dispatcher.lines()) {
+            let line = line.trim();
+            if line.starts_with('"') && line.contains("=>") {
+                for name in line.split('"').skip(1).step_by(2) {
+                    if name.starts_with("ced.") || name.starts_with("app.") || matches!(name, "INFO" | "HELP") {
+                        assert!(entries.iter().any(|entry| entry.name == name), "{name}");
+                    }
                 }
             }
         }

@@ -455,7 +455,7 @@ impl Controller {
                 }
                 Ok(()) => self.advance(self.schedules.keys().cloned().collect(), Owed::Next(id)),
             },
-            other => self.reply(id, 10, refusal("UNKNOWN", format!("no command {other:?}"))),
+            other => self.reply(id, 10, json!({"error_code":"UNKNOWN_COMMAND", "message":format!("unknown command {other}"), "command":other})),
         }
     }
 
@@ -1039,7 +1039,7 @@ mod tests {
         for entry in entries {
             c.command(2, &entry.name, "{}");
             let (_, _, body) = c.replies.borrow_mut().pop().expect("command answered");
-            assert_ne!(body["error_code"], "UNKNOWN", "{}", entry.name);
+            assert_ne!(body["error_code"], "UNKNOWN_COMMAND", "{}", entry.name);
             if let Some((_, class)) = COMMANDS.iter().find(|(name, _)| *name == entry.name) {
                 assert_eq!(entry.read_only, *class == "query");
             }
@@ -1047,6 +1047,15 @@ mod tests {
     }
 
     const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
+
+    #[test]
+    fn unknown_command_has_the_protocol_refusal() {
+        let mut c = controller();
+        c.command(1, "backdrop.missing", "{}");
+        let (_, rc, body) = c.replies.borrow_mut().pop().unwrap();
+        assert_eq!(rc, 10);
+        assert_eq!(body, json!({"error_code":"UNKNOWN_COMMAND", "message":"unknown command backdrop.missing", "command":"backdrop.missing"}));
+    }
 
     /// A field of one registry line: `key:"value"`.
     fn field<'a>(line: &'a str, key: &str) -> Option<&'a str> {

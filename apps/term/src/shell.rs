@@ -285,8 +285,8 @@ impl Shell {
     /// The window's own commands, other than drive.
     fn command(&mut self, command_name: &str, args: &Value) -> (u8, Value) {
         match command_name {
-            "HELP" => (0, json!(crate::bus::help())),
-            "app.describe" => (0, crate::bus::describe()),
+            "HELP" => (0, json!(crate::bus::help(self.bus.name()))),
+            "app.describe" => (0, crate::bus::describe(self.bus.name())),
             "term.actions" => (
                 0,
                 json!({

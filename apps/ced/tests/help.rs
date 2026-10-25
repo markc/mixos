@@ -11,7 +11,7 @@ fn help_lists_each_hosted_command_once_with_registry_query_flags() {
         let mut names = std::collections::BTreeSet::new();
         for entry in entries {
             assert!(names.insert(entry.name.clone()), "duplicate {}", entry.name);
-            if matches!(entry.name.as_str(), "HELP" | "app.describe") {
+            if matches!(entry.name.as_str(), "HELP" | "INFO" | "app.describe") {
                 assert!(entry.read_only);
                 continue;
             }

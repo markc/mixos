@@ -49,12 +49,12 @@ fn help_line(command_name: &str) -> Option<&'static str> {
 }
 
 /// The full window service HELP reply, in the protocol descriptor shape.
-pub fn help() -> Vec<::bus::CommandDescriptor> {
-    let mut entries = term_core::bus::manifest(APP, true);
-    let mut hosted = drive::describe(APP);
+pub fn help(service: &str) -> Vec<::bus::CommandDescriptor> {
+    let mut entries = term_core::bus::manifest(service, true);
+    let mut hosted = drive::describe(service);
     hosted.extend([
-        json!({"name":"term.actions","description":"List window actions","read_only":true}),
-        json!({"name":"term.execute","args":{"id":"action id","tab":"optional tab","pane":"optional pane"},"description":"Execute a window action","read_only":false}),
+        json!({"name":format!("{service}.actions"),"description":"List window actions","read_only":true}),
+        json!({"name":format!("{service}.execute"),"args":{"id":"action id","tab":"optional tab","pane":"optional pane"},"description":"Execute a window action","read_only":false}),
     ]);
     entries.extend(hosted.into_iter().map(|value| {
         ::bus::CommandDescriptor {
@@ -72,7 +72,7 @@ pub fn help() -> Vec<::bus::CommandDescriptor> {
 
 /// The whole Bus surface: the terminal's commands, the window's command commands
 /// and the drive commands.
-pub fn describe() -> Value {
+pub fn describe(service: &str) -> Value {
     let mut command_names = vec![
         json!({"name":"HELP","description":"List every command","read_only":true}),
         json!({"name":"app.describe","description":"Describe the app and every command with its arguments","read_only":true}),
@@ -94,6 +94,11 @@ pub fn describe() -> Value {
     command_names.push(json!({"name":"term.execute","args":{"id":"string","tab":"optional tab id: the tab tab.select or tab.close acts on (default the active one)","pane":"optional pane id: the pane pane.focus focuses"},"description":"Run one window command by id, as its menu item or shortcut would (tab.new, pane.split_right, view.zoom_in, edit.paste, app.quit, …; term.actions lists them)","read_only":false}));
     command_names.extend(drive::describe(APP));
     command_names.extend(citizen::macros::describe(APP));
+    for entry in &mut command_names {
+        if let Some(suffix) = entry["name"].as_str().unwrap().strip_prefix("term.") {
+            entry["name"] = json!(format!("{service}.{suffix}"));
+        }
+    }
     json!({"schema":"term.v1","app_id":crate::APP_ID,"commands":command_names})
 }
 
@@ -317,10 +322,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fallback_name_covers_every_help_and_described_command() {
+        let service = "term-12345";
+        let entries = help(service);
+        let canonical = help(APP);
+        assert_eq!(entries.len(), canonical.len());
+        for (entry, original) in entries.iter().zip(&canonical) {
+            let name = entry.name.replacen(&format!("{service}."), "term.", 1);
+            assert_eq!(name, original.name);
+            assert!(!entry.name.starts_with("term."));
+            assert!(
+                answers(&name)
+                    || term_core::bus::COMMANDS.iter().any(|(command, _)| *command == name)
+                    || matches!(name.as_str(), "INFO" | "info" | "help"),
+                "{} has no handler", entry.name
+            );
+        }
+        let surface = describe(service);
+        for entry in surface["commands"].as_array().unwrap() {
+            let name = entry["name"].as_str().unwrap();
+            assert!(!name.starts_with("term."));
+            assert!(entries.iter().any(|entry| entry.name == name), "{name}");
+        }
+    }
+
+    #[test]
     fn help_lists_the_whole_service_with_registry_query_flags() {
-        let entries = help();
+        let entries = help(APP);
         assert_eq!(entries[0].name, "HELP");
-        assert_eq!(entries, help(), "stable order");
+        assert_eq!(entries, help(APP), "stable order");
         let registry = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
         let mut names = std::collections::BTreeSet::new();
         for entry in entries {
@@ -365,7 +395,7 @@ mod tests {
 
     #[test]
     fn every_described_command_has_a_description() {
-        let surface = describe();
+        let surface = describe(APP);
         for command_name in surface["commands"].as_array().unwrap() {
             let name = command_name["name"].as_str().unwrap();
             let description = command_name["description"].as_str().unwrap();
