@@ -913,6 +913,7 @@ impl Parser {
                             PathSeg::Field(field) => Expr::FieldAccess {
                                 object: Box::new(expr),
                                 field,
+                                optional: false,
                             },
                             PathSeg::Index(index) => Expr::Index {
                                 object: Box::new(expr),
@@ -2501,8 +2502,27 @@ impl Parser {
                         expr = Expr::FieldAccess {
                             object: Box::new(expr),
                             field,
+                            optional: false,
                         };
                     }
+                }
+                Token::QuestionDot => {
+                    self.advance();
+                    let field = self.expect_field_name()?;
+                    if self.check(&Token::LParen) {
+                        return Err(MixError::ParseError {
+                            msg: format!(
+                                "`?.{field}(` is not supported: `?.` reads a field only; \
+                                 guard the call instead (`if $x != nil then $x.{field}(…) end`)"
+                            ),
+                            span: self.peek_span(),
+                        });
+                    }
+                    expr = Expr::FieldAccess {
+                        object: Box::new(expr),
+                        field,
+                        optional: true,
+                    };
                 }
                 Token::LBracket => {
                     self.advance();

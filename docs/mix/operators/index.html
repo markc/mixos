@@ -220,6 +220,7 @@
                         <a href="#boolean-and-or-not-and-">Boolean: and or not (and !)</a>
                         <a href="#not---and-truthiness" class="toc-h3">not / ! and truthiness</a>
                         <a href="#nil-coalesce-">Nil-coalesce: ??</a>
+                        <a href="#optional-field-access-">Optional field access: ?.</a>
                         <a href="#ternary-cond--a--b">Ternary: cond ? a : b</a>
                         <a href="#quick-reference">Quick reference</a>
                         <a href="#see-also">See also</a>
@@ -656,6 +657,31 @@ x = d
 </code></pre>
 <p>The other direction reads naturally: <code>??</code> binds tighter than comparison, so
 <code>$a ?? 0 &lt; 5</code> is <code>($a ?? 0) &lt; 5</code>.</p>
+<h2 id="optional-field-access-">Optional field access: <code>?.</code></h2>
+<p><code>$a?.b</code> reads field <code>b</code> like <code>$a.b</code>, except that a <strong>nil</strong> <code>$a</code> gives <code>nil</code>
+instead of raising <code>cannot access field 'b' on nil</code>. It is the tool for API
+data with optional parts (a GitHub PR with no author, a release with no
+assets), and it pairs with <code>??</code> for a default.</p>
+<pre><code class="language-mix">$pr = {author: nil, commits: {nodes: []}}
+print($pr.author?.login ?? "unknown")
+print(type($pr.commits?.nodes[0]?.commit))
+</code></pre>
+<pre><code class="language-text">unknown
+nil
+</code></pre>
+<p>The rules:</p>
+<ul>
+<li><strong>Each <code>?.</code> guards one step.</strong> <code>$a?.b.c</code> still raises when <code>b</code> is nil; write
+<code>$a?.b?.c</code> for a chain. Nothing short-circuits invisibly.</li>
+<li><strong>Only nil is forgiven.</strong> <code>?.</code> on a string, list or number still raises, so a
+value of the wrong shape is never silently read as nil.</li>
+<li><strong>An out-of-range index is already nil</strong> (<code>[][0]</code> is <code>nil</code>), so
+<code>$n.nodes[0]?.x</code> covers an empty list. Indexing <code>nil</code> itself still raises;
+there is no <code>?[ ]</code> (it would collide with the ternary, <code>$c ?[1] : [2]</code>).</li>
+<li><strong>Reads only.</strong> <code>$a?.b = 1</code> is refused, and so is a method call
+(<code>$a?.len()</code> is a parse error that says how to guard it).</li>
+<li><code>?.</code> must touch the field name: <code>$c ? .x : y</code>, with a space, is not <code>?.</code>.</li>
+</ul>
 <h2 id="ternary-cond--a--b">Ternary: <code>cond ? a : b</code></h2>
 <p>The C-style conditional expression (since 0.20.0). It evaluates <code>cond</code>, then
 <strong>only the taken branch</strong> — <code>a</code> if <code>cond</code> is truthy, else <code>b</code>. It is the

@@ -88,6 +88,77 @@ pub fn mix_to_json(v: &Value) -> Result<serde_json::Value, String> {
     })
 }
 
+/// JSON text with map keys in the Mix map's own (insertion) order, for
+/// `json_encode(v, pretty, {sort_keys: false})`. The workspace's
+/// `serde_json::Value` always sorts (it must never gain `preserve_order`), so
+/// this walks lists and maps itself. Every leaf and key is still rendered by
+/// serde_json from [`mix_to_json`], so escaping, numbers and the non-finite
+/// refusal are identical, and the layout matches serde_json's compact and
+/// pretty output byte for byte.
+pub fn mix_to_json_ordered(v: &Value, pretty: bool) -> Result<String, String> {
+    let mut out = String::new();
+    write_ordered(v, pretty, 0, &mut out)?;
+    Ok(out)
+}
+
+fn write_ordered(v: &Value, pretty: bool, depth: usize, out: &mut String) -> Result<(), String> {
+    let indent = |out: &mut String, depth: usize| {
+        out.push('\n');
+        for _ in 0..depth {
+            out.push_str("  ");
+        }
+    };
+    match v {
+        Value::List(items) => {
+            if items.is_empty() {
+                out.push_str("[]");
+                return Ok(());
+            }
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                if pretty {
+                    indent(out, depth + 1);
+                }
+                write_ordered(item, pretty, depth + 1, out)?;
+            }
+            if pretty {
+                indent(out, depth);
+            }
+            out.push(']');
+        }
+        Value::Map(map) => {
+            if map.is_empty() {
+                out.push_str("{}");
+                return Ok(());
+            }
+            out.push('{');
+            for (i, (k, item)) in map.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                if pretty {
+                    indent(out, depth + 1);
+                }
+                out.push_str(&serde_json::to_string(k).map_err(|e| e.to_string())?);
+                out.push_str(if pretty { ": " } else { ":" });
+                write_ordered(item, pretty, depth + 1, out)?;
+            }
+            if pretty {
+                indent(out, depth);
+            }
+            out.push('}');
+        }
+        leaf => {
+            let json = mix_to_json(leaf)?;
+            out.push_str(&serde_json::to_string(&json).map_err(|e| e.to_string())?);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

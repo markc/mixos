@@ -372,6 +372,7 @@ logical      and  or  not                  (keywords, not && / ! in expressions)
 nil-coalesce ??                            ($x ?? "default")
 ternary      ?  :                          ($n > 0 ? "pos" : "neg")
 field/index  .  []                         ($m.key  /  $m["key"])
+optional     ?.                            ($m?.key: nil when $m is nil, see operators)
 grouping     (  )   [  ]   {  }
 statement    ;                              (hard statement boundary; see above)
 misc         :  ,  =  ~                     (: in maps, = assignment, ~ path tilde)

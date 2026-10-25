@@ -544,6 +544,36 @@ x = d
 The other direction reads naturally: `??` binds tighter than comparison, so
 `$a ?? 0 < 5` is `($a ?? 0) < 5`.
 
+## Optional field access: `?.`
+
+`$a?.b` reads field `b` like `$a.b`, except that a **nil** `$a` gives `nil`
+instead of raising `cannot access field 'b' on nil`. It is the tool for API
+data with optional parts (a GitHub PR with no author, a release with no
+assets), and it pairs with `??` for a default.
+
+```mix
+$pr = {author: nil, commits: {nodes: []}}
+print($pr.author?.login ?? "unknown")
+print(type($pr.commits?.nodes[0]?.commit))
+```
+```text
+unknown
+nil
+```
+
+The rules:
+
+- **Each `?.` guards one step.** `$a?.b.c` still raises when `b` is nil; write
+  `$a?.b?.c` for a chain. Nothing short-circuits invisibly.
+- **Only nil is forgiven.** `?.` on a string, list or number still raises, so a
+  value of the wrong shape is never silently read as nil.
+- **An out-of-range index is already nil** (`[][0]` is `nil`), so
+  `$n.nodes[0]?.x` covers an empty list. Indexing `nil` itself still raises;
+  there is no `?[ ]` (it would collide with the ternary, `$c ?[1] : [2]`).
+- **Reads only.** `$a?.b = 1` is refused, and so is a method call
+  (`$a?.len()` is a parse error that says how to guard it).
+- `?.` must touch the field name: `$c ? .x : y`, with a space, is not `?.`.
+
 ## Ternary: `cond ? a : b`
 
 The C-style conditional expression (since 0.20.0). It evaluates `cond`, then

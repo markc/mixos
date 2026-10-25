@@ -689,7 +689,12 @@ fn expr_as_lvalue(expr: &Expr) -> Option<(&str, Vec<LvSeg<'_>>)> {
             segs.push(LvSeg::Index(index));
             Some((root, segs))
         }
-        Expr::FieldAccess { object, field } => {
+        // `$a?.b` is never an assignment target: it reads nil from nothing.
+        Expr::FieldAccess {
+            object,
+            field,
+            optional: false,
+        } => {
             let (root, mut segs) = expr_as_lvalue(object)?;
             segs.push(LvSeg::Field(field.as_str()));
             Some((root, segs))
@@ -753,12 +758,14 @@ fn expr_eq_sync(a: &Expr, b: &Expr) -> bool {
             Expr::FieldAccess {
                 object: o1,
                 field: f1,
+                optional: q1,
             },
             Expr::FieldAccess {
                 object: o2,
                 field: f2,
+                optional: q2,
             },
-        ) => f1 == f2 && expr_eq_sync(o1, o2),
+        ) => f1 == f2 && q1 == q2 && expr_eq_sync(o1, o2),
         _ => false,
     }
 }
@@ -15231,7 +15238,11 @@ impl Evaluator {
                     Self::index_value_clone(&obj, &idx)
                 }
 
-                Expr::FieldAccess { object, field } => {
+                Expr::FieldAccess {
+                    object,
+                    field,
+                    optional,
+                } => {
                     let obj = self.eval_expr(object).await?;
                     match &obj {
                         Value::Map(map) => Ok(map
@@ -15239,6 +15250,9 @@ impl Evaluator {
                             .or_else(|| map.get("*"))
                             .cloned()
                             .unwrap_or(Value::Nil)),
+                        // `$a?.b`: only nil is forgiven. A string or a list on the
+                        // left still raises, so a wrong shape is never silent.
+                        Value::Nil if *optional => Ok(Value::Nil),
                         _ => Err(MixError::RuntimeError {
                             span: None,
                             msg: format!("cannot access field '{}' on {}", field, obj.type_name()),

@@ -86,6 +86,9 @@ pub enum Expr {
     FieldAccess {
         object: Box<Expr>,
         field: String,
+        /// `$a?.b`: nil when `object` is nil instead of raising. Guards this
+        /// step only (`$a?.b?.c` for a chain), and is never an assignment target.
+        optional: bool,
     },
     ListLiteral(Vec<Expr>),
     MapLiteral(Vec<(String, Expr)>),

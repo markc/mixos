@@ -14232,17 +14232,24 @@ print(json_encode($m, true))
 
 A Mix `Map` is insertion-ordered, but the JSON doorway is not — **in either
 direction**. `json_encode` goes through `serde_json` **without** `preserve_order`,
-so it emits keys **sorted alphabetically**; `json_parse` returns object keys
-sorted the same way, **not** in document order. If byte-stable, order-preserving
-output matters (a generated config a human will diff, a signed canonical form),
-use [`data_encode`](#strict-data-mix--the-substrate-format) instead — it
-preserves insertion order.
+so by default it emits keys **sorted alphabetically**; `json_parse` returns
+object keys sorted the same way, **not** in document order.
+
+When the JSON should keep the order a map was written in (a file a human will
+read or diff), pass `{sort_keys: false}` as the third argument:
+`json_encode($m, $pretty, {sort_keys: false})`. Layout, escaping and the
+non-finite refusal are unchanged; only key order differs. It cannot restore an
+order `json_parse` already lost: a parsed map is sorted, a map built in Mix keeps
+its order. For a non-JSON round-trippable form,
+[`data_encode`](#strict-data-mix--the-substrate-format) also preserves insertion
+order.
 
 ```mix
 $m = { zebra: 1, apple: 2, mango: 3 }
 print("literal:     " .. ("" .. $m))   -- map literal: insertion order
 print("data_encode: " .. data_encode($m))
 print("json_encode: " .. json_encode($m))
+print("unsorted:    " .. json_encode($m, false, {sort_keys: false}))
 print("json_parse:  " .. data_encode(json_parse("{\"zebra\":1,\"apple\":2}")))
 ```
 
@@ -14250,6 +14257,7 @@ print("json_parse:  " .. data_encode(json_parse("{\"zebra\":1,\"apple\":2}")))
 literal:     {zebra: 1, apple: 2, mango: 3}
 data_encode: {"zebra": 1, "apple": 2, "mango": 3}
 json_encode: {"apple":2,"mango":3,"zebra":1}
+unsorted:    {"zebra":1,"apple":2,"mango":3}
 json_parse:  {"apple": 2, "zebra": 1}
 ```
 
@@ -23693,6 +23701,36 @@ x = d
 The other direction reads naturally: `??` binds tighter than comparison, so
 `$a ?? 0 < 5` is `($a ?? 0) < 5`.
 
+## Optional field access: `?.`
+
+`$a?.b` reads field `b` like `$a.b`, except that a **nil** `$a` gives `nil`
+instead of raising `cannot access field 'b' on nil`. It is the tool for API
+data with optional parts (a GitHub PR with no author, a release with no
+assets), and it pairs with `??` for a default.
+
+```mix
+$pr = {author: nil, commits: {nodes: []}}
+print($pr.author?.login ?? "unknown")
+print(type($pr.commits?.nodes[0]?.commit))
+```
+```text
+unknown
+nil
+```
+
+The rules:
+
+- **Each `?.` guards one step.** `$a?.b.c` still raises when `b` is nil; write
+  `$a?.b?.c` for a chain. Nothing short-circuits invisibly.
+- **Only nil is forgiven.** `?.` on a string, list or number still raises, so a
+  value of the wrong shape is never silently read as nil.
+- **An out-of-range index is already nil** (`[][0]` is `nil`), so
+  `$n.nodes[0]?.x` covers an empty list. Indexing `nil` itself still raises;
+  there is no `?[ ]` (it would collide with the ternary, `$c ?[1] : [2]`).
+- **Reads only.** `$a?.b = 1` is refused, and so is a method call
+  (`$a?.len()` is a parse error that says how to guard it).
+- `?.` must touch the field name: `$c ? .x : y`, with a space, is not `?.`.
+
 ## Ternary: `cond ? a : b`
 
 The C-style conditional expression (since 0.20.0). It evaluates `cond`, then
@@ -28646,6 +28684,7 @@ logical      and  or  not                  (keywords, not && / ! in expressions)
 nil-coalesce ??                            ($x ?? "default")
 ternary      ?  :                          ($n > 0 ? "pos" : "neg")
 field/index  .  []                         ($m.key  /  $m["key"])
+optional     ?.                            ($m?.key: nil when $m is nil, see operators)
 grouping     (  )   [  ]   {  }
 statement    ;                              (hard statement boundary; see above)
 misc         :  ,  =  ~                     (: in maps, = assignment, ~ path tilde)
@@ -36409,6 +36448,17 @@ loads unchanged.
 
 ### Added
 
+- `?.` optional field access: `$a?.b` is nil when `$a` is nil instead of
+  raising. Each `?.` guards one step (`$a?.b?.c` for a chain); a string, list
+  or number on the left still raises; it is never an assignment target, and
+  `$a?.m()` is a parse error. `?` followed directly by `.` and a name used to
+  be a parse error, so no valid script changes meaning; the ternary `?` and
+  `??` are unchanged.
+- `json_encode(v[, pretty][, {sort_keys: false}])` keeps each map's insertion
+  order. Sorted keys stay the default (digests and golden files depend on
+  them, and `serde_json` must never gain `preserve_order`); the ordered writer
+  matches serde_json's compact and pretty layout byte for byte. An unknown
+  option raises `OPTION_INVALID`, a non-bool `sort_keys` `TYPE_MISMATCH`.
 - `date_format(ts[, fmt][, {utc: true}])` formats in UTC instead of local
   time, so an ISO 8601 `Z` stamp is no longer local wall-clock time with a
   UTC label (the only workaround was `TZ=UTC` around the whole process).

@@ -270,6 +270,17 @@
 <h2 id="unreleased">Unreleased</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><code>?.</code> optional field access: <code>$a?.b</code> is nil when <code>$a</code> is nil instead of
+raising. Each <code>?.</code> guards one step (<code>$a?.b?.c</code> for a chain); a string, list
+or number on the left still raises; it is never an assignment target, and
+<code>$a?.m()</code> is a parse error. <code>?</code> followed directly by <code>.</code> and a name used to
+be a parse error, so no valid script changes meaning; the ternary <code>?</code> and
+<code>??</code> are unchanged.</li>
+<li><code>json_encode(v[, pretty][, {sort_keys: false}])</code> keeps each map's insertion
+order. Sorted keys stay the default (digests and golden files depend on
+them, and <code>serde_json</code> must never gain <code>preserve_order</code>); the ordered writer
+matches serde_json's compact and pretty layout byte for byte. An unknown
+option raises <code>OPTION_INVALID</code>, a non-bool <code>sort_keys</code> <code>TYPE_MISMATCH</code>.</li>
 <li><code>date_format(ts[, fmt][, {utc: true}])</code> formats in UTC instead of local
 time, so an ISO 8601 <code>Z</code> stamp is no longer local wall-clock time with a
 UTC label (the only workaround was <code>TZ=UTC</code> around the whole process).

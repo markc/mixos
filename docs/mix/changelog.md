@@ -12,6 +12,17 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 
 ### Added
 
+- `?.` optional field access: `$a?.b` is nil when `$a` is nil instead of
+  raising. Each `?.` guards one step (`$a?.b?.c` for a chain); a string, list
+  or number on the left still raises; it is never an assignment target, and
+  `$a?.m()` is a parse error. `?` followed directly by `.` and a name used to
+  be a parse error, so no valid script changes meaning; the ternary `?` and
+  `??` are unchanged.
+- `json_encode(v[, pretty][, {sort_keys: false}])` keeps each map's insertion
+  order. Sorted keys stay the default (digests and golden files depend on
+  them, and `serde_json` must never gain `preserve_order`); the ordered writer
+  matches serde_json's compact and pretty layout byte for byte. An unknown
+  option raises `OPTION_INVALID`, a non-bool `sort_keys` `TYPE_MISMATCH`.
 - `date_format(ts[, fmt][, {utc: true}])` formats in UTC instead of local
   time, so an ISO 8601 `Z` stamp is no longer local wall-clock time with a
   UTC label (the only workaround was `TZ=UTC` around the whole process).

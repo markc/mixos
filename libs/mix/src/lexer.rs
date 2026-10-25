@@ -115,8 +115,8 @@ fn source_token_kind(token: &Token, first: Option<&char>) -> &'static str {
         Plus | Minus | Star | Slash | Percent | Power | Eq | NotEq | Gt | Lt | GtEq | LtEq
         | StrEq | StrNe | DotDot | NilCoalesce | Question | Pipe | AndAnd | OrOr | Assign
         | Bang => "operator",
-        LParen | RParen | LBracket | RBracket | LBrace | RBrace | Colon | Comma | Dot | Tilde
-        | At | Semicolon => "punct",
+        LParen | RParen | LBracket | RBracket | LBrace | RBrace | Colon | Comma | Dot | QuestionDot
+        | Tilde | At | Semicolon => "punct",
         Newline => "newline",
         Eof => "eof",
         _ => "keyword",
@@ -601,6 +601,16 @@ impl Lexer {
                 if self.peek() == Some('?') {
                     self.advance();
                     Ok(self.spanned(Token::NilCoalesce, line, col))
+                } else if self.peek() == Some('.')
+                    && self
+                        .peek_ahead(1)
+                        .is_some_and(|c| c.is_alphabetic() || c == '_')
+                {
+                    // `?.name` is optional field access. Only a field name may
+                    // follow, so a ternary whose branch starts with `.` or `..`
+                    // (never valid Mix) and `? .x` with a space are untouched.
+                    self.advance();
+                    Ok(self.spanned(Token::QuestionDot, line, col))
                 } else {
                     // Lone `?` is the ternary operator (`cond ? a : b`).
                     // It was a lex error before ternary existed; making it
@@ -1987,6 +1997,7 @@ fn classify(token: &Token, first: char) -> TokenClass {
         | Token::Colon
         | Token::Comma
         | Token::Dot
+        | Token::QuestionDot
         | Token::Tilde
         | Token::At
         | Token::Semicolon

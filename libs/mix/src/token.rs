@@ -99,6 +99,7 @@ pub enum Token {
     DotDot,      // ..
     NilCoalesce, // ??
     Question,    // ? (ternary conditional)
+    QuestionDot, // ?. (optional field access: nil when the left side is nil)
     Pipe,        // |
     AndAnd,      // &&
     OrOr,        // ||

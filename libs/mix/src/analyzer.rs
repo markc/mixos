@@ -2585,7 +2585,7 @@ fn check_collection_literal_traps(stmts: &[Stmt], ctx: &FileContext, a: &mut Ana
                     ));
                 }
             }
-            Expr::FieldAccess { object, field } => {
+            Expr::FieldAccess { object, field, .. } => {
                 let Expr::MapLiteral(entries) = object.as_ref() else {
                     return;
                 };
@@ -5367,7 +5367,7 @@ fn check_proven_expr(
                 check_builtin_result_key(object, key, line, ctx, a, facts);
             }
         }
-        Expr::FieldAccess { object, field } => {
+        Expr::FieldAccess { object, field, .. } => {
             check_builtin_result_key(object, field, line, ctx, a, facts);
         }
         Expr::FunctionLiteral { params, body } => {
@@ -6223,7 +6223,7 @@ impl ModuleCache {
                 let literal = roots.get(name)?;
                 self.load(&resolve_require_path(literal, base_dir), literal)
             }
-            Expr::FieldAccess { object, field } => {
+            Expr::FieldAccess { object, field, .. } => {
                 let parent = self.resolve(object, roots, base_dir)?;
                 let literal = parent.requires.get(field)?;
                 self.load(
@@ -6295,7 +6295,7 @@ fn check_require_calls(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
                 args,
             } => (object, field, args.len(), true),
             Expr::ValueCall { callee, args } => match &**callee {
-                Expr::FieldAccess { object, field } => (object, field, args.len(), false),
+                Expr::FieldAccess { object, field, .. } => (object, field, args.len(), false),
                 _ => return,
             },
             _ => return,
@@ -6530,7 +6530,7 @@ fn unambiguous_value(before: &[crate::token::SpannedToken], next: Option<&Token>
                 if matches!(
                     prev,
                     Some(Token::Variable(_) | Token::RBracket | Token::RParen)
-                ) || matches!(field, Some(Token::Dot))
+                ) || matches!(field, Some(Token::Dot | Token::QuestionDot))
                 {
                     return false;
                 }
@@ -6574,7 +6574,7 @@ fn unambiguous_value(before: &[crate::token::SpannedToken], next: Option<&Token>
         Token::LBracket => {
             if matches!(
                 before.len().checked_sub(3).map(|i| &before[i].token),
-                Some(Token::Dot)
+                Some(Token::Dot | Token::QuestionDot)
             ) {
                 return false;
             }
@@ -6709,6 +6709,7 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
                 prev,
                 Some(
                     Token::Dot
+                        | Token::QuestionDot
                         | Token::Loop
                         | Token::Break
                         | Token::Continue

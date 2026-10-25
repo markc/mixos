@@ -452,7 +452,7 @@ builtin_table! {
     ("format_number", CapabilityClass::Pure,   "format",  "Format number with thousands separators; non-numeric value/decimals arguments raise (strict since v0.55.0)", contract!((n: number, decimals?: number) -> string; failure[raises])),
 
     ("json_parse", CapabilityClass::Pure,      "json",    "Parse JSON string into Mix value", contract!((s: string) -> any; failure[raises])),
-    ("json_encode", CapabilityClass::Pure,     "json",    "Encode Mix value as JSON string", contract!((v: any, pretty?: any) -> string)),
+    ("json_encode", CapabilityClass::Pure,     "json",    "Encode Mix value as JSON string: json_encode(v[, pretty][, {sort_keys}]). Map keys are SORTED by default; {sort_keys: false} keeps each map's own insertion order (a map from json_parse is already sorted; one built in Mix keeps the order it was written). Non-finite numbers raise", contract!((v: any, pretty?: any, opts?: any_of(map("json_encode_options", {sort_keys: bool}), nil)) -> string; failure[raises])),
     ("jq", CapabilityClass::Pure,              "json",    "Run a jq filter; filter MUST yield 0 (→nil) or 1 (→value) output, >1 raises. jq(value, filter)", contract!((v: any, filter: string) -> any)),
     ("jq_all", CapabilityClass::Pure,          "json",    "Run a jq filter, collect ALL outputs as a list (the stream case). jq_all(value, filter)", contract!((v: any, filter: string) -> list)),
     ("read_json", CapabilityClass::FsRead,       "json",    "Read a single-record JSON file directly into a Mix value (v0.2.3)", contract!((path: string) -> any; failure[raises])),
@@ -16336,14 +16336,50 @@ fn builtin_read_jsonl(args: Vec<Value>) -> MixResult<Option<Value>> {
 
 #[cfg(feature = "json")]
 fn builtin_json_encode(args: Vec<Value>) -> MixResult<Option<Value>> {
-    expect_args("json_encode", &args, 1)?;
+    expect_args_between("json_encode", &args, 1, 3)?;
+    let pretty = args.get(1).map(|v| v.is_truthy()).unwrap_or(false);
+    // Keys are sorted unless {sort_keys: false}: sorted output is what every
+    // existing caller, digest and golden file was written against. A new
+    // option, so unknown keys are refused rather than silently sorting.
+    let mut sort_keys = true;
+    match args.get(2) {
+        None | Some(Value::Nil) => {}
+        Some(Value::Map(m)) => {
+            if let Some(k) = m.keys().find(|k| k.as_str() != "sort_keys") {
+                return Err(opt_invalid(
+                    "json_encode()",
+                    format!("unknown option '{k}' (the only option is 'sort_keys')"),
+                ));
+            }
+            if let Some(b) = bool_option("json_encode()", "sort_keys", m.get("sort_keys"))? {
+                sort_keys = b;
+            }
+        }
+        Some(other) => {
+            return Err(MixError::structured(
+                "TYPE_MISMATCH",
+                format!(
+                    "json_encode(): options must be a map or nil, got {}",
+                    other.type_name()
+                ),
+            ));
+        }
+    }
+    if !sort_keys {
+        let s = crate::json::mix_to_json_ordered(&args[0], pretty).map_err(|e| {
+            MixError::RuntimeError {
+                span: None,
+                msg: format!("json_encode: {}", e),
+            }
+        })?;
+        return Ok(Some(Value::String(s)));
+    }
     // Loud on non-finite numbers (NaN/±inf → error, never a silent 0),
     // matching the jq()/strict-data policy.
     let json_val = crate::json::mix_to_json(&args[0]).map_err(|e| MixError::RuntimeError {
         span: None,
         msg: format!("json_encode: {}", e),
     })?;
-    let pretty = args.get(1).map(|v| v.is_truthy()).unwrap_or(false);
     let s = if pretty {
         serde_json::to_string_pretty(&json_val)
     } else {
@@ -40155,6 +40191,96 @@ mod loud_numeric_argument_tests {
         );
     }
 
+    fn ordered_map(pairs: &[(&str, Value)]) -> Value {
+        let mut m = indexmap::IndexMap::new();
+        for (k, v) in pairs {
+            m.insert((*k).to_string(), v.clone());
+        }
+        Value::map(m)
+    }
+
+    fn sort_keys_opts(v: Value) -> Value {
+        ordered_map(&[("sort_keys", v)])
+    }
+
+    fn encode(args: Vec<Value>) -> String {
+        match call_builtin("json_encode", args).unwrap().unwrap() {
+            Value::String(s) => s,
+            other => panic!("json_encode returned {}", other.type_name()),
+        }
+    }
+
+    #[test]
+    fn json_encode_sorts_keys_by_default() {
+        let v = ordered_map(&[("b", Value::Number(1.0)), ("a", Value::Number(2.0))]);
+        assert_eq!(encode(vec![v.clone()]), r#"{"a":2,"b":1}"#);
+        assert_eq!(
+            encode(vec![v, Value::Nil, sort_keys_opts(Value::Bool(true))]),
+            r#"{"a":2,"b":1}"#
+        );
+    }
+
+    #[test]
+    fn json_encode_sort_keys_false_keeps_insertion_order() {
+        let inner = ordered_map(&[("z", Value::Nil), ("m", Value::Bool(true))]);
+        let v = ordered_map(&[
+            ("b", Value::Number(1.5)),
+            ("a", Value::list(vec![inner, Value::String("q\"\n".into())])),
+        ]);
+        assert_eq!(
+            encode(vec![v, Value::Bool(false), sort_keys_opts(Value::Bool(false))]),
+            r#"{"b":1.5,"a":[{"z":null,"m":true},"q\"\n"]}"#
+        );
+    }
+
+    // For a map whose keys are already sorted, the ordered writer must produce
+    // exactly serde_json's bytes, compact and pretty, empty containers included.
+    #[test]
+    fn json_encode_ordered_layout_matches_serde_json() {
+        let v = ordered_map(&[
+            ("a", Value::list(vec![Value::Number(1.0), Value::Number(2.0)])),
+            ("b", ordered_map(&[])),
+            ("c", Value::list(vec![])),
+            ("d", ordered_map(&[("e", Value::String("é ☃".into()))])),
+            ("f", Value::Number(-0.25)),
+        ]);
+        for pretty in [false, true] {
+            let sorted = encode(vec![v.clone(), Value::Bool(pretty)]);
+            let ordered = encode(vec![
+                v.clone(),
+                Value::Bool(pretty),
+                sort_keys_opts(Value::Bool(false)),
+            ]);
+            assert_eq!(ordered, sorted, "pretty={pretty}");
+        }
+    }
+
+    #[test]
+    fn json_encode_ordered_still_refuses_non_finite_numbers() {
+        let v = ordered_map(&[("n", Value::Number(f64::NAN))]);
+        let err = call_builtin(
+            "json_encode",
+            vec![v, Value::Nil, sort_keys_opts(Value::Bool(false))],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("non-finite"), "{err}");
+    }
+
+    #[test]
+    fn json_encode_refuses_bad_options() {
+        let cases = [
+            (ordered_map(&[("order", Value::Bool(false))]), "OPTION_INVALID"),
+            (sort_keys_opts(Value::String("false".into())), "TYPE_MISMATCH"),
+            (Value::Bool(false), "TYPE_MISMATCH"),
+        ];
+        for (opts, code) in cases {
+            let err = call_builtin("json_encode", vec![Value::Nil, Value::Nil, opts]).unwrap_err();
+            assert_eq!(err.info().expect("structured").code, code);
+        }
+        let too_many = vec![Value::Nil, Value::Nil, Value::Nil, Value::Nil];
+        assert!(call_builtin("json_encode", too_many).is_err());
+    }
+
     #[cfg(feature = "datetime")]
     fn utc_opts(v: Value) -> Value {
         let mut m = indexmap::IndexMap::new();
@@ -40784,6 +40910,7 @@ mod strict_write_and_bool_option_tests {
             ("exists", "opts"),
             ("date_format", "fmt"),
             ("date_format", "opts"),
+            ("json_encode", "opts"),
             ("run_argv", "opts"),
             ("write_atomic", "opts"),
             ("publish", "body"),
@@ -40993,6 +41120,7 @@ mod strict_write_and_bool_option_tests {
         let cases: &[(&str, &str, &[&str])] = &[
             ("exists", "opts", &["follow_symlinks"]),
             ("date_format", "opts", &["utc"]),
+            ("json_encode", "opts", &["sort_keys"]),
             ("write_atomic", "opts", &["durability", "mode", "max_bytes"]),
             ("run_argv", "opts", &["timeout", "stream"]),
             ("stat", "opts", &["follow_symlinks"]),

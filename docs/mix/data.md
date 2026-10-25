@@ -87,17 +87,24 @@ print(json_encode($m, true))
 
 A Mix `Map` is insertion-ordered, but the JSON doorway is not — **in either
 direction**. `json_encode` goes through `serde_json` **without** `preserve_order`,
-so it emits keys **sorted alphabetically**; `json_parse` returns object keys
-sorted the same way, **not** in document order. If byte-stable, order-preserving
-output matters (a generated config a human will diff, a signed canonical form),
-use [`data_encode`](#strict-data-mix--the-substrate-format) instead — it
-preserves insertion order.
+so by default it emits keys **sorted alphabetically**; `json_parse` returns
+object keys sorted the same way, **not** in document order.
+
+When the JSON should keep the order a map was written in (a file a human will
+read or diff), pass `{sort_keys: false}` as the third argument:
+`json_encode($m, $pretty, {sort_keys: false})`. Layout, escaping and the
+non-finite refusal are unchanged; only key order differs. It cannot restore an
+order `json_parse` already lost: a parsed map is sorted, a map built in Mix keeps
+its order. For a non-JSON round-trippable form,
+[`data_encode`](#strict-data-mix--the-substrate-format) also preserves insertion
+order.
 
 ```mix
 $m = { zebra: 1, apple: 2, mango: 3 }
 print("literal:     " .. ("" .. $m))   -- map literal: insertion order
 print("data_encode: " .. data_encode($m))
 print("json_encode: " .. json_encode($m))
+print("unsorted:    " .. json_encode($m, false, {sort_keys: false}))
 print("json_parse:  " .. data_encode(json_parse("{\"zebra\":1,\"apple\":2}")))
 ```
 
@@ -105,6 +112,7 @@ print("json_parse:  " .. data_encode(json_parse("{\"zebra\":1,\"apple\":2}")))
 literal:     {zebra: 1, apple: 2, mango: 3}
 data_encode: {"zebra": 1, "apple": 2, "mango": 3}
 json_encode: {"apple":2,"mango":3,"zebra":1}
+unsorted:    {"zebra":1,"apple":2,"mango":3}
 json_parse:  {"apple": 2, "zebra": 1}
 ```
 
