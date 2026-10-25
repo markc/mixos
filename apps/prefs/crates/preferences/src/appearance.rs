@@ -912,10 +912,13 @@ impl Engine {
     }
 
     pub fn dismiss_settings_problem(&mut self) {
+        if self.look.problem.as_ref() == Some(&self.status) {
+            self.status.clear();
+            self.failed = false;
+        }
         self.look.problem = None;
         self.look.problem_source = None;
         self.look.problem_missing = false;
-        self.failed = false;
     }
 
     fn clear_look_problem(&mut self) {
@@ -1073,9 +1076,11 @@ impl Engine {
             self.clear_look_problem();
             self.look.hold = false;
             self.look.discard_on_quit = false;
-            self.status = self.label("settled-look", &[]);
-            self.failed = false;
-            self.record_settings_status();
+            if self.look.problem.is_none() {
+                self.status = self.label("settled-look", &[]);
+                self.failed = false;
+                self.record_settings_status();
+            }
         }
     }
 

@@ -184,7 +184,8 @@ pub fn view(
                     preferences::email::Stage::Waiting => "email-waiting",
                 };
                 ui.small(RichText::new(label(key)).weak());
-            } else if let Some(status) = &engine.look.settings_status {
+            } else if engine.section() == engine.look.status_source
+                && let Some(status) = &engine.look.settings_status {
                 ui.small(RichText::new(status).weak());
             }
             problem_feedback(ui, engine, &mut events);
