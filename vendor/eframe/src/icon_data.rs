@@ -47,6 +47,10 @@ impl IconDataExt for IconData {
         image::RgbaImage::from_raw(width, height, rgba).ok_or_else(|| "Invalid IconData".to_owned())
     }
 
+    #[expect(
+        clippy::std_instead_of_core,
+        reason = "Preserve upstream icon encoding in the scheduler patch"
+    )]
     fn to_png_bytes(&self) -> Result<Vec<u8>, String> {
         profiling::function_scope!();
         let image = self.to_image()?;

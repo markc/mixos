@@ -39,6 +39,10 @@ Run `cargo test -p workshop --test shell` and the normal toolkit/prefs suites.
 Drop when upstream runs root logic independently of Wayland frame callbacks.
 No upstream issue has been filed by this change.
 
+Standalone Clippy on the pinned toolchain additionally flags upstream's
+`std::io::Cursor` in `IconDataExt::to_png_bytes`. A method-scoped lint
+expectation preserves that unrelated encoder implementation unchanged.
+
 For standalone upstream tests, the normalised `Cargo.toml` adds an empty
 `[workspace]` and mirrors the enclosing workspace's egui-winit, dirs-sys,
 calloop and input patches. This does not affect dependency resolution when
