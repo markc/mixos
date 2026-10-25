@@ -145,7 +145,10 @@ async fn interpolation_keeps_question_dot_inside_suffixes() {
         "1"
     );
     assert_eq!(
-        out(&format!("{map}$s = <<EOF\n${{m['what?.no']}}\nEOF\nprint(trim($s))\n")).await,
+        out(&format!(
+            "{map}$s = <<EOF\n${{m['what?.no']}}\nEOF\nprint(trim($s))\n"
+        ))
+        .await,
         "1"
     );
     // A call argument: the string reaches the function as written.
