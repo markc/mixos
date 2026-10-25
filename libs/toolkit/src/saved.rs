@@ -148,14 +148,27 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
         if content == self.written {
             return Ok(false);
         }
+        // Budget attempts as well as successes, so a full or unwritable disk
+        // cannot turn every repaint into another atomic replacement attempt.
+        self.last_write = Some(now);
         if let Some(path) = &self.path {
             let parent = path.parent().ok_or("missing saved-state directory")?;
-            config::atomic::create_directory(parent).map_err(|e| e.to_string())?;
-            config::atomic::replace(path, content.as_bytes()).map_err(|e| e.to_string())?;
+            let held = config::atomic::create_directory(parent).map_err(|e| e.to_string())?;
+            if let Err(error) = config::atomic::replace(path, content.as_bytes()) {
+                let landed = error.may_have_replaced && path.file_name().is_some_and(|name| {
+                    config::atomic::read_in(&held, name, content.len())
+                        .is_ok_and(|actual| actual.as_slice() == content.as_bytes())
+                });
+                if landed {
+                    self.written = content;
+                    self.writes += 1;
+                    return Err(format!("{error} (replacement confirmed on disk; directory durability is unconfirmed)"));
+                }
+                return Err(error.to_string());
+            }
             self.writes += 1;
         }
         self.written = content;
-        self.last_write = Some(now);
         Ok(true)
     }
 
@@ -262,5 +275,20 @@ mod tests {
         assert!(store.flush().is_err());
         assert!(!dir.path().join("window.conf.mix").exists());
         assert!(store.describe()["error"].is_string());
+    }
+    #[test]
+    fn failed_write_attempts_are_coalesced_and_retry_after_repair() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::<App>::load(Some(dir.path().into()), 1);
+        store.app.selected = "changed".into();
+        let path = dir.path().join("window.conf.mix");
+        std::fs::create_dir(&path).unwrap();
+        let now = Instant::now();
+        assert!(store.tick(now, false).is_err());
+        assert!(!store.tick(now + Duration::from_millis(999), false).unwrap());
+        assert!(store.tick(now + Duration::from_secs(1), false).is_err());
+        std::fs::remove_dir(path).unwrap();
+        assert!(store.tick(now + Duration::from_secs(2), false).unwrap());
+        assert_eq!(store.writes(), 1);
     }
 }
