@@ -264,7 +264,7 @@ try
   check(not $a.watch_relevant($apps_dir, $tmp, {changes: [{kind: "modified", path: $tmp .. "/other"}], overflow: false}), "unrelated ancestor activity is ignored")
   check($a.watch_relevant($apps_dir, $tmp, {changes: [], overflow: true}), "an overflow always rescans")
 
-  -- ── The shipped gold entries: apps/NAME/assets/dev.mixos.NAME.desktop ──
+  -- ── The shipped entry templates: apps/NAME/assets/dev.mixos.NAME.desktop ──
   -- Each names its own binary in Exec and TryExec (so an entry whose binary
   -- is gone hides itself) and uses an icon the Lucide manifest provides.
   $root = realpath(dirname(realpath($0)) .. "/../../..")
@@ -281,7 +281,8 @@ try
     for each $line in split(before(read_file($path) .. "\n[Desktop Action", "\n[Desktop Action"), "\n")
       if contains($line, "=") and not starts_with($line, "#") then $keys[before($line, "=")] = after($line, "=") end
     end
-    $bin = (mixos_path("prefix") .. "/bin/") .. $app
+    -- Sources are layout templates; mix layout apply renders @{prefix}.
+    $bin = "@{prefix}/bin/" .. $app
     check(starts_with($keys.Exec ?? "", $bin) and (($keys.Exec ?? "") == $bin or starts_with($keys.Exec, $bin .. " ")), $app .. ": Exec must run " .. $bin)
     check($keys.TryExec == $bin, $app .. ": TryExec must be " .. $bin)
     check(contains($aliases, $keys.Icon ?? ""), $app .. ": Icon is not a manifest alias: " .. to_string($keys.Icon))
