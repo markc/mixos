@@ -392,17 +392,21 @@ impl Shell {
         self.runtime.spawn(async move {
             let _ = bus.subscribe(&format!("{comp}.props.changed")).await;
             frame
-                .restore_with_events(inspector::model::APP_ID, |command, args| {
-                    let bus = bus.clone();
-                    let comp = comp.clone();
-                    async move {
-                        let reply = bus.call(&comp, command, args).await.ok()?;
-                        serde_json::from_str(&reply.body).ok()
-                    }
-                }, || async {
-                    comp_changed.notified().await;
-                    true
-                })
+                .restore_with_events(
+                    inspector::model::APP_ID,
+                    |command, args| {
+                        let bus = bus.clone();
+                        let comp = comp.clone();
+                        async move {
+                            let reply = bus.call(&comp, command, args).await.ok()?;
+                            serde_json::from_str(&reply.body).ok()
+                        }
+                    },
+                    || async {
+                        comp_changed.notified().await;
+                        true
+                    },
+                )
                 .await;
         });
         self.saved = saved;

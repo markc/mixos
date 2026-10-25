@@ -113,7 +113,9 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
                             // Older versions have no migration contract and may
                             // be replaced by current defaults. Future or broken
                             // sections belong to their writer: retain the value.
-                            if !raw["version"].as_f64().is_some_and(|v| v >= 0.0 && v.fract() == 0.0 && v < f64::from(version)) {
+                            if !raw["version"].as_f64().is_some_and(|v| {
+                                v >= 0.0 && v.fract() == 0.0 && v < f64::from(version)
+                            }) {
                                 store.preserved.insert("app".into(), raw.clone());
                             }
                         }
@@ -152,10 +154,13 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
             window: Section::new(self.preserved.get("window"), &self.window),
             widgets: Section::new(self.preserved.get("widgets"), &self.widgets),
             windows: Section::new(self.preserved.get("windows"), &self.windows),
-            app: Section::new(self.preserved.get("app"), AppSection {
-                version: self.version,
-                value: &self.app,
-            }),
+            app: Section::new(
+                self.preserved.get("app"),
+                AppSection {
+                    version: self.version,
+                    value: &self.app,
+                },
+            ),
         }
     }
 
@@ -319,8 +324,12 @@ mod tests {
         for section in ["window", "widgets", "app", "windows"] {
             let mut raw = json!({"schema_version":1,"window":{},"widgets":{},"app":{"version":2,"value":{"selected":"row"}},"windows":{}});
             raw[section] = json!({"unexpected": [false, "future"]});
-            if section == "window" { raw[section] = json!(false); }
-            if section == "widgets" { raw[section] = json!({"panels": false}); }
+            if section == "window" {
+                raw[section] = json!(false);
+            }
+            if section == "widgets" {
+                raw[section] = json!({"panels": false});
+            }
             std::fs::write(&path, strict::to_string_pretty(&raw).unwrap()).unwrap();
             let mut store = Store::<App>::load(Some(dir.path().into()), 2);
             store.window.maximised = true;
@@ -337,7 +346,10 @@ mod tests {
             store.window.maximised = true;
             store.flush().unwrap();
             let saved: Value = strict::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-            assert_eq!(saved["app"], raw["app"], "an invalid version is not an older version");
+            assert_eq!(
+                saved["app"], raw["app"],
+                "an invalid version is not an older version"
+            );
         }
     }
     #[test]
@@ -375,7 +387,11 @@ mod tests {
         assert!(store.describe()["error"].is_string());
         // A preserved section must not even attempt to serialise the older
         // app's unusable default while saving the independently owned frame.
-        std::fs::write(dir.path().join("window.conf.mix"), "schema_version: 1\napp: {version: 2, value: {future: true}}\n").unwrap();
+        std::fs::write(
+            dir.path().join("window.conf.mix"),
+            "schema_version: 1\napp: {version: 2, value: {future: true}}\n",
+        )
+        .unwrap();
         let mut preserved = Store::<Refuses>::load(Some(dir.path().into()), 1);
         preserved.window.size = Some([800.0, 500.0]);
         assert!(preserved.flush().unwrap());
