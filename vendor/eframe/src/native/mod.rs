@@ -1,8 +1,8 @@
 mod app_icon;
 mod epi_integration;
 mod event_loop_context;
-pub mod run;
 mod logic_wake;
+pub mod run;
 
 #[cfg(target_os = "macos")]
 pub(crate) mod macos;

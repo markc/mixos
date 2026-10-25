@@ -84,7 +84,10 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
         });
     }
     assert_eq!(wake.deadline(), None);
-    assert!(incoming.try_recv().is_err(), "idle logic kept requesting wakes");
+    assert!(
+        incoming.try_recv().is_err(),
+        "idle logic kept requesting wakes"
+    );
     assert_eq!(ctx.cumulative_pass_nr(), pass);
     assert_eq!(reply(&rig, 7000).unwrap().2["error_code"], "CANCELLED");
     assert_eq!(reply(&rig, 7001).unwrap().1, 0);

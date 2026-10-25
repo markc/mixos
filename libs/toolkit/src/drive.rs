@@ -231,7 +231,10 @@ pub fn logic(ctx: &Context) -> Vec<Answer> {
             .get(&std::thread::current().id())
             .is_none_or(Vec::is_empty);
         if hidden || logic_only {
-            drive.settle(ctx, "the window stopped producing UI passes before this input was read");
+            drive.settle(
+                ctx,
+                "the window stopped producing UI passes before this input was read",
+            );
         }
         drive.expire();
         let mut answers = std::mem::take(&mut drive.answers);

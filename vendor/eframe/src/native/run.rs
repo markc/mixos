@@ -9,8 +9,8 @@ use winit::{
 
 use ahash::HashMap;
 
-use super::winit_integration::{UserEvent, WinitApp};
 use super::logic_wake::LogicWake;
+use super::winit_integration::{UserEvent, WinitApp};
 use crate::{
     Result, epi,
     native::{
@@ -195,7 +195,9 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         // A one-shot fallback, cancelled by a normal root redraw. Wayland may
         // withhold frame callbacks without reporting the window as hidden.
         if self.logic_wake.take_due(now)
-            && let Some(window_id) = self.winit_app.window_id_from_viewport_id(egui::ViewportId::ROOT)
+            && let Some(window_id) = self
+                .winit_app
+                .window_id_from_viewport_id(egui::ViewportId::ROOT)
         {
             let result = self.winit_app.run_logic(event_loop, window_id);
             self.handle_event_result(event_loop, result);
@@ -237,7 +239,11 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         // RedrawRequested events on Windows. This ensures that viewport
         // commands like Visible(true) are still processed.
         for window_id in &invisible_window_ids {
-            if self.winit_app.window_id_from_viewport_id(egui::ViewportId::ROOT) == Some(*window_id) {
+            if self
+                .winit_app
+                .window_id_from_viewport_id(egui::ViewportId::ROOT)
+                == Some(*window_id)
+            {
                 self.logic_wake.cancel();
             }
             let event_result = self.winit_app.run_ui_and_paint(event_loop, *window_id);
@@ -262,8 +268,12 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         // `ControlFlow::Poll` set earlier was never undone once the last timed
         // repaint had been consumed, leaving the loop spinning.
         // See https://github.com/emilk/egui/issues/8326.
-        let next_repaint_time = self.windows_next_repaint_times.values().copied()
-            .chain(self.logic_wake.deadline()).min();
+        let next_repaint_time = self
+            .windows_next_repaint_times
+            .values()
+            .copied()
+            .chain(self.logic_wake.deadline())
+            .min();
         event_loop.set_control_flow(match next_repaint_time {
             Some(next_repaint_time) => ControlFlow::WaitUntil(next_repaint_time),
             None => ControlFlow::Wait,
@@ -391,7 +401,11 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
         event_loop_context::with_event_loop_context(event_loop, move || {
             let event_result = match event {
                 winit::event::WindowEvent::RedrawRequested => {
-                    if self.winit_app.window_id_from_viewport_id(egui::ViewportId::ROOT) == Some(window_id) {
+                    if self
+                        .winit_app
+                        .window_id_from_viewport_id(egui::ViewportId::ROOT)
+                        == Some(window_id)
+                    {
                         self.logic_wake.cancel();
                     }
                     self.winit_app.run_ui_and_paint(event_loop, window_id)

@@ -813,7 +813,11 @@ fn a_stalled_frame_callback_cancels_input_even_when_window_reports_visible() {
     h.step();
     let pass = h.ctx.cumulative_pass_nr();
     let mut input = h.input_mut().clone();
-    input.viewports.entry(ViewportId::ROOT).or_default().minimized = Some(false);
+    input
+        .viewports
+        .entry(ViewportId::ROOT)
+        .or_default()
+        .minimized = Some(false);
     let mut answers = Vec::new();
     let _ = h.ctx.run_logic(&input, |ctx| {
         assert_ne!(ctx.input(|i| i.viewport().visible()), Some(false));
