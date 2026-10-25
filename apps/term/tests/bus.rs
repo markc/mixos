@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window's own Bus commands over a real broker (libs/test-broker): the
-//! lane registers `term`, serves its terminal commands itself and hands the
+//! lane registers a non-default name, serves its terminal commands itself and hands the
 //! window `app.describe`, `term.actions`, `term.execute` and the drive commands,
 //! which the window answers between its frames. Every command run is
 //! published on `term.action.executed`.
@@ -22,7 +22,7 @@ use term_core::font::FontSize;
 use term_core::raster::Raster;
 use term_core::tabs::{Cleanup, TabSet};
 
-const EXECUTED: &str = "term.action.executed";
+const EXECUTED: &str = "term-12345.action.executed";
 
 struct Holder {
     start: Option<(App, WindowBus)>,
@@ -72,7 +72,7 @@ fn the_window_answers_its_commands_over_a_real_broker() {
     let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
     let (_notify_tx, notify_rx) = tokio::sync::mpsc::unbounded_channel();
     let lane = term_core::bus::start_with_window_at(
-        "term",
+        "term-12345",
         tabs.clone(),
         cleanup.clone(),
         notify_rx,
@@ -143,7 +143,7 @@ fn the_window_answers_its_commands_over_a_real_broker() {
             (client.clone(), command_name.to_owned(), body.to_string());
         let task = runtime.spawn(async move {
             client
-                .call_with_headers_raw("term", &command_name, &Default::default(), &body)
+                .call_with_headers_raw("term-12345", &command_name, &Default::default(), &body)
                 .await
         });
         let deadline = Instant::now() + Duration::from_secs(15);
@@ -167,11 +167,11 @@ fn the_window_answers_its_commands_over_a_real_broker() {
         .filter_map(|v| v["name"].as_str())
         .collect();
     for command_name in [
-        "term.tabs",
-        "term.execute",
-        "term.ui.tree",
-        "term.window.state",
-        "term.macros.status",
+        "term-12345.tabs",
+        "term-12345.execute",
+        "term-12345.ui.tree",
+        "term-12345.window.state",
+        "term-12345.macros.status",
     ] {
         assert!(
             names.contains(&command_name),
@@ -180,7 +180,7 @@ fn the_window_answers_its_commands_over_a_real_broker() {
     }
 
     // The lane still serves the terminal's own commands on the same name.
-    let (rc, body) = call("term.macros.status", json!({}));
+    let (rc, body) = call("term-12345.macros.status", json!({}));
     assert_eq!(rc, 0, "{body}");
     assert_eq!(
         serde_json::from_str::<Value>(&body).unwrap()["state"],
@@ -188,13 +188,22 @@ fn the_window_answers_its_commands_over_a_real_broker() {
     );
     let (rc, body) = call("HELP", json!({}));
     assert_eq!(rc, 0, "{body}");
-    assert!(body.contains("term.macros.status"));
-    let (rc, body) = call("term.tabs", json!({}));
+    assert!(body.contains("term-12345.macros.status"));
+    let entries: Vec<bus::CommandDescriptor> = serde_json::from_str(&body).unwrap();
+    for entry in entries {
+        assert!(!entry.name.starts_with("term."), "{}", entry.name);
+        // Deliberately invalid arguments keep terminal mutations from running;
+        // argument refusals still prove the advertised name reached a handler.
+        let (_, body) = call(&entry.name, json!({"_help_conformance":true}));
+        assert!(!body.contains("UNKNOWN_COMMAND"), "{}: {body}", entry.name);
+        assert!(!body.contains("unknown command; use HELP"), "{}: {body}", entry.name);
+    }
+    let (rc, body) = call("term-12345.tabs", json!({}));
     assert_eq!(rc, 0, "{body}");
     assert!(body.contains("instance="), "{body}");
 
     // Commands, by id.
-    let (rc, body) = call("term.actions", json!({}));
+    let (rc, body) = call("term-12345.actions", json!({}));
     assert_eq!(rc, 0, "{body}");
     let commands: Value = serde_json::from_str(&body).unwrap();
     assert!(
@@ -205,32 +214,32 @@ fn the_window_answers_its_commands_over_a_real_broker() {
             .any(|c| c["id"] == "tab.new" && c["enabled"] == true),
         "{body}"
     );
-    let (rc, body) = call("term.execute", json!({"id": "tab.new"}));
+    let (rc, body) = call("term-12345.execute", json!({"id": "tab.new"}));
     assert_eq!((rc, body.as_str()), (0, r#"{"executed":"tab.new"}"#));
     assert_eq!(tabs.lock().unwrap().list().len(), 2);
-    let (rc, body) = call("term.execute", json!({"id": "no.such"}));
+    let (rc, body) = call("term-12345.execute", json!({"id": "no.such"}));
     assert_eq!(rc, 10);
     assert!(body.contains("UNKNOWN_ACTION"), "{body}");
-    let (rc, body) = call("term.execute", json!({}));
+    let (rc, body) = call("term-12345.execute", json!({}));
     assert_eq!(rc, 10);
     assert!(body.contains("INVALID_ARGUMENT"), "{body}");
 
     // Drive commands: the menus, the window, and a key through the keyboard
     // path (Ctrl+PageDown, the next tab).
-    let (rc, body) = call("term.ui.menu.list", json!({}));
+    let (rc, body) = call("term-12345.ui.menu.list", json!({}));
     assert_eq!(rc, 0, "{body}");
     assert!(body.contains("tab.new"), "{body}");
-    let (rc, body) = call("term.window.state", json!({}));
+    let (rc, body) = call("term-12345.window.state", json!({}));
     assert_eq!(rc, 0, "{body}");
     let before = tabs.lock().unwrap().active_id();
     let (rc, body) = call(
-        "term.ui.key",
+        "term-12345.ui.key",
         json!({"key": "PageDown", "modifiers": ["ctrl"]}),
     );
     assert_eq!(rc, 0, "{body}");
     assert_ne!(tabs.lock().unwrap().active_id(), before, "Ctrl+PageDown");
     // A targeted command: term.execute names the tab.
-    let (rc, body) = call("term.execute", json!({"id": "tab.select", "tab": before}));
+    let (rc, body) = call("term-12345.execute", json!({"id": "tab.select", "tab": before}));
     assert_eq!(rc, 0, "{body}");
     assert_eq!(tabs.lock().unwrap().active_id(), before, "tab.select by id");
 
@@ -242,8 +251,8 @@ fn the_window_answers_its_commands_over_a_real_broker() {
         runtime.block_on(async move {
             client
                 .call_with_headers_raw(
-                    "term",
-                    "term.execute",
+                    "term-12345",
+                    "term-12345.execute",
                     &Default::default(),
                     &json!({"id": "tab.new"}).to_string(),
                 )
@@ -253,7 +262,7 @@ fn the_window_answers_its_commands_over_a_real_broker() {
     let (rc, body, _) = late.unwrap();
     assert_eq!(rc, 10);
     assert!(body.contains("TIMEOUT"), "{body}");
-    let (rc, _) = call("term.window.state", json!({}));
+    let (rc, _) = call("term-12345.window.state", json!({}));
     assert_eq!(rc, 0);
     assert_eq!(
         tabs.lock().unwrap().list().len(),
@@ -292,7 +301,7 @@ fn the_window_answers_its_commands_over_a_real_broker() {
     );
 
     // Quit over the Bus answers before the lane stops.
-    let (rc, body) = call("term.execute", json!({"id": "app.quit"}));
+    let (rc, body) = call("term-12345.execute", json!({"id": "app.quit"}));
     assert_eq!((rc, body.as_str()), (0, r#"{"executed":"app.quit"}"#));
     assert!(tabs.lock().unwrap().is_empty());
     lane.join().unwrap();
