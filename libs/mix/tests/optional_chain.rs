@@ -96,7 +96,9 @@ async fn more_receivers_and_positions() {
     // nil all the way down, guarded at every step.
     assert_eq!(out("$a = nil\nprint(type($a?.b?.c))\n").await, "nil");
     // A number is not forgiven either.
-    let err = run("$n = 5\nprint($n?.b)\n").await.expect_err("number receiver");
+    let err = run("$n = 5\nprint($n?.b)\n")
+        .await
+        .expect_err("number receiver");
     assert!(err.contains("cannot access field 'b'"), "got: {err}");
     // Inside a ternary branch: `?` then `?.` side by side.
     assert_eq!(
@@ -140,7 +142,9 @@ async fn assignment_through_question_dot_is_a_parse_error() {
         "$a = {b: {}}\n$a.b?.c = 1\n",
         "$a = {b: 1}\n$a?.b += 1\n",
     ] {
-        let err = run(src).await.expect_err("?. is never an assignment target");
+        let err = run(src)
+            .await
+            .expect_err("?. is never an assignment target");
         assert!(err.contains("Parse error"), "{src:?} got: {err}");
     }
 }

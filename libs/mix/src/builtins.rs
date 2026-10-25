@@ -40279,11 +40279,18 @@ mod loud_numeric_argument_tests {
     fn json_encode_pretty_unsorted_golden() {
         let v = ordered_map(&[
             ("z", Value::list(vec![Value::Number(1.0), ordered_map(&[])])),
-            ("a", ordered_map(&[("y", Value::Nil), ("b", Value::list(vec![]))])),
+            (
+                "a",
+                ordered_map(&[("y", Value::Nil), ("b", Value::list(vec![]))]),
+            ),
         ]);
         let want = "{\n  \"z\": [\n    1,\n    {}\n  ],\n  \"a\": {\n    \"y\": null,\n    \"b\": []\n  }\n}";
         assert_eq!(
-            encode(vec![v, Value::Bool(true), sort_keys_opts(Value::Bool(false))]),
+            encode(vec![
+                v,
+                Value::Bool(true),
+                sort_keys_opts(Value::Bool(false))
+            ]),
             want
         );
     }
@@ -40312,7 +40319,11 @@ mod loud_numeric_argument_tests {
         .unwrap_err();
         let info = err.info().expect("structured");
         assert_eq!(info.code, "TYPE_MISMATCH");
-        assert!(info.message.contains("options go third"), "{}", info.message);
+        assert!(
+            info.message.contains("options go third"),
+            "{}",
+            info.message
+        );
     }
 
     #[test]
