@@ -372,6 +372,7 @@ impl Shell {
 
     fn save_state(&mut self, final_flush: bool) {
         self.saved.app = crate::saved::Arrangement::capture(&self.engine);
+        if let Some(restore) = &self.restore { restore.preserve_pending(&mut self.saved.app); }
         self.saved.window.theme = self.choice().into();
         self.saved.window.capture(&self.ctx);
         self.saved.widgets.collect(&self.ctx);
@@ -1073,6 +1074,7 @@ impl Shell {
     /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         if let Some(restore) = &mut self.restore {
+            if restore.show_selection { toolkit::saved::widgets::forget_scroll(ui.ctx(), "services"); }
             ui.ctx().data_mut(|d| {
                 d.insert_temp(egui::Id::new("workshop-restore-ready"), restore.ready());
                 if std::mem::take(&mut restore.show_selection) { d.insert_temp(egui::Id::new("workshop-restore-selection"), true); }
@@ -1102,7 +1104,7 @@ impl Shell {
         // A command this frame may have been the last thing holding others.
         self.release();
         self.save_state(false);
-        ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+        if self.saved.pending() { ui.ctx().request_repaint_after(std::time::Duration::from_secs(1)); }
         // A theme change is installed by the next frame's logic, before any
         // drawing: never midway through the frame that saw the click.
         if self.choice() != self.installed {

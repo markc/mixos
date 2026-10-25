@@ -100,6 +100,10 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
 
     /// Successful disk replacements, useful for diagnostics and write budgets.
     pub fn writes(&self) -> usize { self.writes }
+    /// Schedule a save timer only while a changed value is waiting.
+    pub fn pending(&self) -> bool {
+        self.writable && self.serialise().is_ok_and(|s| s != self.written)
+    }
 }
 
 fn decode<T: DeserializeOwned + Default>(value: &Value) -> T {

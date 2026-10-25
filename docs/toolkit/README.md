@@ -97,6 +97,54 @@ let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke,
 
 ## Main pieces
 
+### Adopting saved window state
+
+Use `toolkit::saved::Store<MyArrangement>` for each window kind. The app
+struct derives `Serialize`, `Deserialize` and `Default` and contains only
+passive app choices: selection, expanded tree keys, filters and view modes.
+Pass its own version to `Store::load`; a different app version resets only
+that section. Keep drafts, credentials, replies and live data out of it.
+
+For a native window, pass `AppDirs::resolve(app).map(|d| d.state())` as the
+directory. It already identifies the app: the file is
+`<AppDirs::state()>/window.conf.mix`. For another window kind, use a named
+subdirectory. Tests and headless runs pass an injected directory or `None`
+for memory only. Loading never creates directories.
+
+Toolkit owns the `window` and `widgets` sections. Apply
+`store.window.viewport(builder)` before starting eframe; restore the five
+theme axes with `store.window.theme.choice()`, preserving `None` as follow
+session. After each frame, call `window.capture(ctx)`, update the app value
+and theme choice, and call `tick(Instant::now(), pointer.any_down())`.
+Only changed serialised values are written, at most once per second and
+never while a pointer button is down. Schedule another pass only when
+`pending()` is true. Call `flush()` at exit. Writes use `config::atomic`.
+
+Call `widgets.install(ctx)` once, then `widgets.collect(ctx)` before saving.
+Replace a panel's `show` call with `saved::widgets::panel`, a ScrollArea's
+`show` with `saved::widgets::scroll`, and a `panel::group` with
+`saved::widgets::group`. Give each a stable app-chosen name. Panel shares
+restore independently of pixels; the helper reports user resizing without
+feeding layout minimums back into saved shares. Scroll offsets apply once,
+after content lays out, clamped to its bounds; an optional content key
+prevents applying another selection's offset. Live trees pass `ready: false`
+until restoration is meaningful. Use `forget_scroll` when keeping a restored
+selection in view should win. `collapsing` saves a CollapsingState's openness.
+
+On compd, pass the app's existing Bus call adapter to `Frame::restore` after
+the window appears. The adapter returns `None` for transport errors or any
+non-zero return code. Toolkit probes the catalogue, matches app ID and PID,
+and sends generation-fenced workspace then placement/maximise requests.
+It stops silently at a refusal, never focuses or switches workspace. Before
+disconnecting at exit, use `Frame::own_window` and `capture_comp` to remember
+output, position and workspace. Other Wayland desktops restore only size
+and maximised state; no position is invented.
+
+The strict-data envelope has `schema_version: 1`. Malformed files and unknown
+envelopes load defaults and are never overwritten. A section that fails
+decoding resets only itself. `Store::describe()` exposes the current saved
+values to the app's info/describe Bus response without exposing file paths.
+
 ### Theme and look
 
 - `theme`: `Theme` holds a resolved design together with the context it

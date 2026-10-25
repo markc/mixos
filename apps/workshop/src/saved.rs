@@ -4,7 +4,7 @@ use inspector::{DockSide, Engine, Row, Selection};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Arrangement {
     pub selected: Option<Selection>,
@@ -16,6 +16,12 @@ pub struct Arrangement {
     pub dock_open: bool,
     pub paused: bool,
     pub traffic_filter: String,
+}
+impl Default for Arrangement {
+    fn default() -> Self {
+        Self { selected: None, row_key: None, expanded: BTreeSet::new(), filter: String::new(),
+            macros_open: false, dock_side: DockSide::Auto, dock_open: true, paused: false, traffic_filter: String::new() }
+    }
 }
 impl Arrangement {
     pub fn capture(engine: &Engine) -> Self {
@@ -49,7 +55,9 @@ impl Pending {
     pub fn reconcile(&mut self, engine: &mut Engine) {
         if self.done { return; }
         let mut keys = BTreeSet::new();
+        let filter = std::mem::take(&mut engine.ui.filter);
         collect(&engine.tree(), &mut keys);
+        engine.ui.filter = filter;
         // A user/Bus selection made during discovery wins over the old one.
         if engine.ui.row_key.is_some() { self.row_key = None; self.selected = None; }
         if self.row_key.as_ref().is_some_and(|k| keys.contains(k)) {
@@ -64,6 +72,11 @@ impl Pending {
         }
     }
     pub fn ready(&self) -> bool { self.done || self.show_selection }
+    pub fn preserve_pending(&self, app: &mut Arrangement) {
+        if !self.done && self.row_key.is_some() && app.row_key.is_none() {
+            app.row_key = self.row_key.clone(); app.selected = self.selected.clone();
+        }
+    }
 }
 fn collect(rows: &[Row], keys: &mut BTreeSet<String>) {
     for row in rows { keys.insert(row.key.clone()); collect(&row.children, keys); }
@@ -90,5 +103,30 @@ mod tests {
         assert_eq!(restored.ui.dock_side, DockSide::Right); assert!(restored.workshop.dock_open && restored.workshop.paused);
         assert_eq!(restored.workshop.filter, "query"); assert!(restored.ui.body.is_empty());
         assert!(restored.ui.dialog.is_none() && !restored.ui.focus_filter && restored.reply.is_empty());
+    }
+    #[test]
+    fn late_rows_restore_passively_and_missing_keys_drop_after_discovery() {
+        let a = Arrangement { selected: Some(Selection { service: "example".into(), command: "get".into() }),
+            row_key: Some("command:example:get".into()),
+            expanded: ["service:example".into(), "service:never".into()].into(),
+            filter: "does not match anything".into(), ..Arrangement::default() };
+        let mut e = Engine::new(crate::label); e.take_effects(); a.apply(&mut e);
+        let mut pending = Pending::new(&a); pending.reconcile(&mut e);
+        assert!(e.ui.selected.is_none()); assert!(e.ui.expanded.contains("service:never"));
+        let mut saved = Arrangement::capture(&e); pending.preserve_pending(&mut saved);
+        assert_eq!(saved.selected, a.selected);
+        e.snapshot.services.insert("example".into(), Ok(vec![inspector::model::Command {
+            name: "get".into(), args: String::new(), description: String::new(), read_only: Some(true) }]));
+        e.snapshot.progress = Some(inspector::model::Progress { total: 2, completed: 1, finished: false });
+        pending.reconcile(&mut e);
+        assert_eq!(e.ui.selected, a.selected); assert_eq!(e.ui.row_key, a.row_key); assert!(pending.show_selection);
+        assert!(e.take_effects().is_empty(), "restoration never runs a command");
+        e.snapshot.progress.as_mut().unwrap().finished = true; pending.reconcile(&mut e);
+        assert!(!e.ui.expanded.contains("service:never")); assert!(e.ui.expanded.contains("service:example"));
+        assert_eq!(e.ui.filter, a.filter, "filtering must not prune hidden live keys");
+        let mut missing = Pending::new(&Arrangement { row_key: Some("never".into()), ..Arrangement::default() });
+        let mut e = Engine::new(crate::label); e.snapshot.progress = Some(inspector::model::Progress { finished: true, ..Default::default() });
+        missing.reconcile(&mut e); let mut saved = Arrangement::capture(&e); missing.preserve_pending(&mut saved);
+        assert!(saved.row_key.is_none());
     }
 }

@@ -36,9 +36,13 @@ fn with<R>(ctx: &egui::Context, f: impl FnOnce(&mut Widgets) -> R) -> Option<R> 
 
 /// A panel's size share. `share` is also the app's Bus-controlled value. Only
 /// dragging records a changed size, so content minimums cannot feed back.
+#[expect(clippy::too_many_arguments, reason = "thin adapter retains the panel builder and size policy")]
 pub fn panel<R>(ui: &mut egui::Ui, name: &str, panel: egui::Panel, extent: f32,
     share: f32, limits: std::ops::RangeInclusive<f32>, horizontal: bool,
     body: impl FnOnce(&mut egui::Ui) -> R) -> (egui::InnerResponse<R>, Option<f32>) {
+    let share = with(ui.ctx(), |w| {
+        if w.applied.insert(format!("panel:{name}")) { panel_share(w, name, share) } else { share }
+    }).unwrap_or(share);
     let shown = panel.resizable(true).default_size(extent * share.clamp(*limits.start(), *limits.end()))
         .size_range(extent * limits.start()..=extent * limits.end()).show(ui, body);
     let size = if horizontal { shown.response.rect.width() } else { shown.response.rect.height() };
@@ -47,6 +51,11 @@ pub fn panel<R>(ui: &mut egui::Ui, name: &str, panel: egui::Panel, extent: f32,
         .filter(|v| (*v - share).abs() > 0.005);
     with(ui.ctx(), |w| { w.panels.insert(name.into(), changed.unwrap_or(share)); });
     (shown, changed)
+}
+
+/// A restored selection's visibility takes priority over the old raw offset.
+pub fn forget_scroll(ctx: &egui::Context, name: &str) {
+    with(ctx, |w| { w.scrolls.remove(name); });
 }
 
 /// Read a saved panel share on startup; sanitise before handing it to egui.
@@ -100,4 +109,49 @@ pub fn group<R>(ui: &mut egui::Ui, name: &str, tabs: &[&str], body: impl FnOnce(
     let out = crate::panel::group(ui, name, tabs, body);
     with(ui.ctx(), |w| { w.groups.insert(name.into(), out.state); });
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn draw(ctx: &egui::Context, body: impl FnOnce(&mut egui::Ui)) {
+        let mut out = ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 600.0))), ..Default::default() }, body);
+        out.textures_delta.clear();
+    }
+    #[test]
+    fn panel_share_restores_without_layout_feedback() {
+        let ctx = egui::Context::default();
+        let mut widgets = Widgets::default(); widgets.panels.insert("left".into(), 0.4); widgets.install(&ctx);
+        for _ in 0..2 {
+            draw(&ctx, |ui| {
+                let (out, changed) = panel(ui, "left", egui::Panel::left("left"), 1000.0, 0.2, 0.1..=0.8, true, |_| {});
+                assert!((out.response.rect.width() - 400.0).abs() < 2.0);
+                assert!(changed.is_none(), "layout measurements never become user changes");
+            });
+        }
+    }
+    #[test]
+    fn scroll_applies_once_after_layout_clamped_and_only_for_its_key() {
+        let ctx = egui::Context::default(); let mut widgets = Widgets::default();
+        widgets.scrolls.insert("details".into(), Scroll { key: Some("one".into()), offset: [0.0, 10000.0] });
+        widgets.install(&ctx);
+        draw(&ctx, |ui| { scroll(ui, "details", Some("one"), true, egui::ScrollArea::vertical().max_height(100.0), |ui| { ui.allocate_space(egui::vec2(100.0, 1000.0)); }); });
+        widgets.collect(&ctx); let offset = widgets.scrolls["details"].offset[1];
+        assert!(offset > 800.0 && offset < 1000.0, "clamped to actual content: {offset}");
+        with(&ctx, |w| { w.scrolls.get_mut("details").unwrap().offset[1] = 12.0; });
+        draw(&ctx, |ui| { let out = scroll(ui, "details", Some("one"), true, egui::ScrollArea::vertical().max_height(100.0), |ui| { ui.allocate_space(egui::vec2(100.0, 1000.0)); }); assert!(out.state.offset.y > 800.0); });
+        draw(&ctx, |ui| { let out = scroll(ui, "details", Some("two"), true, egui::ScrollArea::vertical().max_height(100.0), |ui| { ui.allocate_space(egui::vec2(100.0, 1000.0)); }); assert_eq!(out.state.offset.y, 0.0); });
+    }
+    #[test]
+    fn group_and_collapsing_state_survive_a_new_context() {
+        let ctx = egui::Context::default(); let mut widgets = Widgets::default();
+        widgets.groups.insert("group".into(), crate::panel::GroupState { selected: 1, collapsed: true });
+        widgets.open.insert("branch".into(), true); widgets.install(&ctx);
+        draw(&ctx, |ui| { let shown = group(ui, "group", &["one", "two"], |_, _| panic!("collapsed")); assert_eq!(shown.state.selected, 1); });
+        collapsing(&ctx, "branch", false, |s| { assert!(s.is_open()); s });
+        widgets.collect(&ctx); let raw = config::to_conf_mix_string(&widgets).unwrap();
+        let restored: Widgets = config::from_conf_mix_str(&raw).unwrap();
+        assert_eq!(restored.groups["group"].selected, 1); assert!(restored.open["branch"]);
+        assert!(restored.applied.is_empty());
+    }
 }

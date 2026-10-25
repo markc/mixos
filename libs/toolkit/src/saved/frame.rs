@@ -114,3 +114,73 @@ fn dimension(value: &Value) -> Option<u32> {
     let n = value.as_f64()?;
     (n.is_finite() && n >= 1.0 && n <= f64::from(u32::MAX)).then_some(n.round() as u32)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn frame() -> Frame {
+        Frame { size: Some([900.0, 600.0]), maximised: false,
+            placement: Some(Placement { output: "o_main".into(), workspace: 2, x: 20.0, y: 30.0, width: 900, height: 600 }),
+            ..Frame::default() }
+    }
+    fn window() -> Value {
+        json!({"id":7,"generation":3,"app_id":"dev.mixos.example","pid":std::process::id(),
+            "output":"o_main","workspace":2,"x":20.0,"y":30.0,"width":900.0,"height":600.0})
+    }
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap()
+    }
+    #[test]
+    fn comp_restore_bodies_are_fenced_ordered_and_never_follow() {
+        for maximised in [false, true] {
+            let mut frame = frame(); frame.maximised = maximised;
+            let mut calls = Vec::new();
+            runtime().block_on(frame.restore("dev.mixos.example", |command, args| {
+                calls.push((command, args));
+                std::future::ready(Some(if command == "comp.windows.list" { json!({"windows":[window()]}) } else { json!({}) }))
+            }));
+            assert_eq!(calls.iter().map(|c| c.0).collect::<Vec<_>>(), ["comp.windows.list", "comp.window.wait", "comp.windows.list", "comp.window.send_to_workspace",
+                if maximised { "comp.window.maximize" } else { "comp.window.place" }]);
+            assert_eq!(calls[3].1, json!({"id":7,"generation":3,"index":2,"follow":false}));
+            if maximised { assert_eq!(calls[4].1, json!({"id":7,"generation":3})); }
+            else { assert_eq!(calls[4].1, json!({"id":7,"generation":3,"output":"o_main","x":20.0,"y":30.0,"width":900,"height":600})); }
+        }
+    }
+    #[test]
+    fn comp_refusals_stop_without_focusing_or_switching() {
+        for refused in 0..5 {
+            for _reason in ["invalid_state", "off_output", "unknown_output", "missing_workspace"] {
+                let mut count = 0;
+                runtime().block_on(frame().restore("dev.mixos.example", |command, _| {
+                    let at = count; count += 1;
+                    std::future::ready(if at == refused { None } else { Some(if command == "comp.windows.list" { json!({"windows":[window()]}) } else { json!({}) }) })
+                }));
+                assert_eq!(count, refused + 1);
+            }
+        }
+    }
+    #[test]
+    fn no_comp_or_no_saved_placement_makes_no_mutating_calls() {
+        let mut calls = Vec::new();
+        runtime().block_on(frame().restore("dev.mixos.example", |command, _| {
+            calls.push(command); std::future::ready(None)
+        }));
+        assert_eq!(calls, ["comp.windows.list"]);
+        calls.clear();
+        runtime().block_on(Frame::default().restore("dev.mixos.example", |command, _| {
+            calls.push(command); std::future::ready(None)
+        }));
+        assert!(calls.is_empty());
+    }
+    #[test]
+    fn all_theme_axes_and_frame_round_trip_and_float_comp_dimensions_capture() {
+        let choice = crate::theme::Choice { scheme: Some(design::Scheme::Forest), style: Some(None),
+            mode: Some(design::Mode::Dark), decorations: Some(design::RequestedDecorations::Auto), captions: Some(design::CaptionSide::Left) };
+        let mut f = frame(); f.maximised = true; f.theme = choice.into(); f.capture_comp(&window());
+        let raw = config::to_conf_mix_string(&f).unwrap();
+        let back: Frame = config::from_conf_mix_str(&raw).unwrap();
+        assert_eq!(back, f); assert_eq!(back.theme.choice(), choice);
+        assert_eq!(ThemeChoice::default().choice(), crate::theme::Choice::default());
+        assert_eq!(back.placement.unwrap().width, 900);
+    }
+}

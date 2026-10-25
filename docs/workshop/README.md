@@ -26,6 +26,35 @@ The source is
 
 ## How it is built
 
+### Saved arrangement
+
+Workshop uses toolkit's shared saved-window store at
+`<AppDirs::state()>/window.conf.mix`. With the ordinary XDG defaults this is
+`$XDG_STATE_HOME/mixos/apps/workshop/state/window.conf.mix`, or
+`~/.local/state/mixos/apps/workshop/state/window.conf.mix` without that
+variable. AppDirs overrides are honoured.
+
+It saves the selected command and row key, expanded tree rows, services
+search, macro-window visibility, Traffic side, open and paused state and
+filter, the services and Traffic panel shares, services scroll and the
+Details description scroll keyed by selection. The five window theme
+choices remain independent; following the session stays following it.
+Inner size and maximised state are restored on every desktop. On compd,
+output, position and workspace are also remembered, without changing the
+user's current workspace. Plasma and other Wayland desktops do not save or
+restore position, output or workspace.
+
+Selection and expansion return as live rows appear; restoring a selection
+does not call or run anything. Keys absent after discovery are dropped.
+Keeping the selected row visible takes priority over an old scroll offset.
+Request bodies, dialogs, keyboard focus, replies and Traffic rows are not
+saved. Reply and Traffic views start empty. Headless runs and tests use
+memory only unless a test explicitly injects its own directory.
+
+Writes are atomic, changed-only and coalesced, with a final flush at exit.
+Malformed files or future store schemas load defaults and are preserved
+untouched. `workshop.info` includes the toolkit's saved-state description.
+
 Workshop follows the engine-first rule in
 [AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) §4.1. It is
 two crates:

@@ -71,6 +71,8 @@ share/licenses/toolkit, through libs/toolkit/scripts/install_licenses.mix.
 Icons, unmodified SVGs from Lucide 1.54.0 (https://github.com/lucide-icons/lucide),
 Lucide Icons and Contributors, ISC; the Feather-derived icons among them are
 also Cole Bemis (Feather), MIT. Licence in libs/toolkit/assets/icons/LICENSE-lucide.txt.
+The toolkit's panel-bottom.svg is also an unmodified Lucide 1.54.0 icon,
+under the same ISC licence and attribution.
 The screenshot app icon (apps/screenshot/assets/dev.mixos.screenshot-symbolic.svg)
 is Lucide 1.54.0 camera.svg, unmodified, under the same licence.
 
