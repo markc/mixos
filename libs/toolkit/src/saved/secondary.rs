@@ -80,7 +80,8 @@ pub fn capture(ctx: &egui::Context, app: &str, name: &str) {
         ctx.request_repaint_after(Duration::from_secs(1));
     }
     drop(windows);
-    if closing { finish(ctx, app, name); }
+    // The app may cancel the native close for unsaved work. Its accepted-close
+    // hook calls `finish`; a close request alone must not retire the worker.
 }
 
 fn persist(windows: &Windows, name: &str) {
@@ -225,6 +226,22 @@ pub fn finish(ctx: &egui::Context, app: &str, name: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn close_request_keeps_the_worker_until_the_editor_accepts_closing() {
+        let ctx = egui::Context::default();
+        ctx.set_embed_viewports(false);
+        install(&ctx, "example", None, BTreeMap::new());
+        let shared = shared(&ctx, "example");
+        let (worker, mut calls) = tokio::sync::mpsc::channel(2);
+        shared.lock().unwrap().workers.insert("macro-editor".into(), worker);
+        let mut input = egui::RawInput::default();
+        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().events.push(egui::ViewportEvent::Close);
+        let mut output = ctx.run_ui(input, |ui| capture(ui.ctx(), "example", "macro-editor"));
+        output.textures_delta.clear();
+        assert!(shared.lock().unwrap().workers.contains_key("macro-editor"));
+        assert!(calls.try_recv().is_err(), "the accepted-close hook owns final compositor capture");
+    }
 
     #[test]
     fn secondary_events_follow_only_its_window_and_output_geometry() {

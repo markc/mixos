@@ -123,14 +123,19 @@ impl Frame {
         F: FnMut(&'static str, Value) -> Fut,
         Fut: Future<Output = Option<Value>>,
     {
-        self.restore_with_events(app_id, &mut call, || std::future::ready(false)).await;
+        self.restore_with_events(app_id, &mut call, || std::future::ready(false))
+            .await;
     }
 
     /// Old compositors have no PID wait selector. Subscribe to their
     /// `props.changed` topic before calling this method; `changed` consumes a
     /// bounded event wait. Catalogue retries then follow events, never a timer.
-    pub async fn restore_with_events<F, Fut, W, Wait>(&self, app_id: &str, mut call: F, mut changed: W)
-    where
+    pub async fn restore_with_events<F, Fut, W, Wait>(
+        &self,
+        app_id: &str,
+        mut call: F,
+        mut changed: W,
+    ) where
         F: FnMut(&'static str, Value) -> Fut,
         Fut: Future<Output = Option<Value>>,
         W: FnMut() -> Wait,
@@ -147,10 +152,20 @@ impl Frame {
             json!({"match":{"app_id":app_id,"pid":std::process::id()},"until":"mapped","timeout_ms":10000}),
         )
         .await;
-        let legacy = wait.as_ref().is_some_and(|r| r["error"] == "invalid_args" && r["field"] == "match.pid");
+        let legacy = wait
+            .as_ref()
+            .is_some_and(|r| r["error"] == "invalid_args" && r["field"] == "match.pid");
         if legacy {
             let _ = call("comp.props.watch", json!({})).await;
-            if !call("comp.window.wait", json!({"match":{"app_id":app_id},"until":"mapped","timeout_ms":10000})).await.is_some_and(|r| succeeded(&r)) { return; }
+            if !call(
+                "comp.window.wait",
+                json!({"match":{"app_id":app_id},"until":"mapped","timeout_ms":10000}),
+            )
+            .await
+            .is_some_and(|r| succeeded(&r))
+            {
+                return;
+            }
         } else if !wait.is_some_and(|r| succeeded(&r)) {
             return;
         }
@@ -158,7 +173,13 @@ impl Frame {
         if legacy {
             let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
             for _ in 0..8 {
-                if own.is_some() || !tokio::time::timeout_at(deadline, changed()).await.unwrap_or(false) { break; }
+                if own.is_some()
+                    || !tokio::time::timeout_at(deadline, changed())
+                        .await
+                        .unwrap_or(false)
+                {
+                    break;
+                }
                 own = Self::own_window(app_id, &mut call).await;
             }
         }
@@ -176,7 +197,10 @@ impl Frame {
             let mut maximize = target.clone();
             maximize["output"] = json!(p.output);
             let reply = call("comp.window.maximize", maximize).await;
-            if reply.as_ref().is_some_and(|r| r["error"] == "invalid_args" && r["field"] == "output") {
+            if reply
+                .as_ref()
+                .is_some_and(|r| r["error"] == "invalid_args" && r["field"] == "output")
+            {
                 // Older compd rejects the output field. Retry only this exact
                 // refusal; disconnected outputs and policy refusals stand.
                 let _ = call("comp.window.maximize", target).await;
@@ -206,7 +230,11 @@ impl Frame {
         let _ = self.capture_identified(app_id, call).await;
     }
 
-    pub(super) async fn capture_identified<F, Fut>(&mut self, app_id: &str, mut call: F) -> Option<Value>
+    pub(super) async fn capture_identified<F, Fut>(
+        &mut self,
+        app_id: &str,
+        mut call: F,
+    ) -> Option<Value>
     where
         F: FnMut(&'static str, Value) -> Fut,
         Fut: Future<Output = Option<Value>>,
@@ -241,7 +269,8 @@ impl Frame {
         if let Some(mut p) = parsed {
             if self.maximised {
                 if let Some(normal) = &self.placement {
-                    (p.x, p.y, p.width, p.height) = (normal.x, normal.y, normal.width, normal.height);
+                    (p.x, p.y, p.width, p.height) =
+                        (normal.x, normal.y, normal.width, normal.height);
                 } else {
                     // With no previous normal position, only the portable
                     // normal size is known. Do not save maximised dimensions.
@@ -270,20 +299,31 @@ mod tests {
     use super::*;
     #[test]
     fn older_comp_maximize_retries_only_an_output_field_refusal() {
-        for error in [json!({"error":"invalid_args","field":"output"}), json!({"error":"unknown_output"}), json!({"error":"invalid_state"})] {
+        for error in [
+            json!({"error":"invalid_args","field":"output"}),
+            json!({"error":"unknown_output"}),
+            json!({"error":"invalid_state"}),
+        ] {
             let mut f = frame();
             f.maximised = true;
             let mut maxima = Vec::new();
             runtime().block_on(f.restore("dev.mixos.example", |command, args| {
-                let reply = if command == "comp.windows.list" { json!({"windows":[window()]}) }
-                else if command == "comp.window.maximize" { maxima.push(args); error.clone() }
-                else { json!({}) };
+                let reply = if command == "comp.windows.list" {
+                    json!({"windows":[window()]})
+                } else if command == "comp.window.maximize" {
+                    maxima.push(args);
+                    error.clone()
+                } else {
+                    json!({})
+                };
                 std::future::ready(Some(reply))
             }));
             if error["field"] == "output" {
                 assert_eq!(maxima.len(), 2);
                 assert_eq!(maxima[1], json!({"id":7,"generation":3}));
-            } else { assert_eq!(maxima.len(), 1); }
+            } else {
+                assert_eq!(maxima.len(), 1);
+            }
         }
     }
     #[test]
@@ -309,9 +349,17 @@ mod tests {
         other["pid"] = json!(u64::from(std::process::id()) + 1);
         other["id"] = json!(99);
         runtime().block_on(frame().restore("dev.mixos.example", |command, args| {
-            if command == "comp.window.wait" { assert_eq!(args["match"]["pid"], std::process::id()); }
-            if command == "comp.window.place" || command == "comp.window.send_to_workspace" { assert_eq!(args["id"], 7); }
-            std::future::ready(Some(if command == "comp.windows.list" { json!({"windows":[other,window()]}) } else { json!({}) }))
+            if command == "comp.window.wait" {
+                assert_eq!(args["match"]["pid"], std::process::id());
+            }
+            if command == "comp.window.place" || command == "comp.window.send_to_workspace" {
+                assert_eq!(args["id"], 7);
+            }
+            std::future::ready(Some(if command == "comp.windows.list" {
+                json!({"windows":[other,window()]})
+            } else {
+                json!({})
+            }))
         }));
     }
     #[test]
@@ -447,6 +495,7 @@ mod tests {
     }
     #[test]
     fn placement_refusals_keep_the_restored_workspace_without_following() {
+        for maximised in [false, true] {
         for reason in [
             "invalid_state",
             "off_output",
@@ -454,7 +503,10 @@ mod tests {
             "missing_workspace",
         ] {
             let mut workspace = 3;
-            runtime().block_on(frame().restore("dev.mixos.example", |command, args| {
+            let mut moves = 0;
+            let mut f = frame();
+            f.maximised = maximised;
+            runtime().block_on(f.restore("dev.mixos.example", |command, args| {
                 let answer = if command == "comp.windows.list" {
                     let mut w = window();
                     w["workspace"] = json!(3);
@@ -462,16 +514,18 @@ mod tests {
                 } else if command == "comp.window.send_to_workspace" {
                     assert_eq!(args["follow"], false);
                     workspace = args["index"].as_u64().unwrap();
+                    moves += 1;
                     Some(json!({}))
-                } else if command == "comp.window.place" {
-                    let _ = reason;
-                    None
+                } else if command == "comp.window.place" || command == "comp.window.maximize" {
+                    Some(json!({"error":reason}))
                 } else {
                     Some(json!({}))
                 };
                 std::future::ready(answer)
             }));
             assert_eq!(workspace, 2, "{reason}");
+            assert_eq!(moves, 1, "a {reason} refusal never rolls back the workspace");
+        }
         }
     }
     #[test]
