@@ -857,15 +857,7 @@ impl Engine {
             && job.ticket == ticket
         {
             self.job = None;
-            let settings_status = self.status.clone();
-            let settings_failed = self.failed;
-            self.status = self.release_status.clone();
-            self.failed = self.release_failed;
             self.finished(job.op, job.quiet, result);
-            self.release_status = self.status.clone();
-            self.release_failed = self.failed;
-            self.status = settings_status;
-            self.failed = settings_failed;
             if self.relist {
                 self.relist = false;
                 self.start_with(Op::List, true);
@@ -910,23 +902,23 @@ impl Engine {
                 self.releases = Availability::Missing;
                 self.apps.clear();
                 self.clear_selection();
-                self.status = self.label("releases-missing", &[]);
-                self.failed = true;
+                self.release_status = self.label("releases-missing", &[]);
+                self.release_failed = true;
                 return;
             }
             Err(Failure::Unknown(message)) if op.changes() => {
                 // It may have happened: settle it from a listing before
                 // anything else is allowed to change.
                 let app = self.subject(&op);
-                self.status = self.label("uncertain", &[("app", &app), ("message", &message)]);
-                self.failed = true;
+                self.release_status = self.label("uncertain", &[("app", &app), ("message", &message)]);
+                self.release_failed = true;
                 self.uncertain = Some(op);
                 self.relist = true;
                 return;
             }
             Err(Failure::Refused(message) | Failure::Unknown(message)) => {
-                self.status = self.label("failed", &[("message", &message)]);
-                self.failed = true;
+                self.release_status = self.label("failed", &[("message", &message)]);
+                self.release_failed = true;
                 if op.changes() {
                     self.relist = true;
                 }
@@ -944,8 +936,8 @@ impl Engine {
                     // uncertain change is settled, whatever it did.
                     if let Some(settled) = self.uncertain.take() {
                         let app = self.subject(&settled);
-                        self.status = self.label("settled", &[("app", &app)]);
-                        self.failed = false;
+                        self.release_status = self.label("settled", &[("app", &app)]);
+                        self.release_failed = false;
                     }
                     if self.ui.selected.is_some() && self.selected_row().is_none() {
                         self.clear_selection();
@@ -953,18 +945,18 @@ impl Engine {
                     if !quiet {
                         let count = self.apps.len().to_string();
                         let key = if op == Op::Check { "checked" } else { "listed" };
-                        self.status = self.label(key, &[("count", &count)]);
+                        self.release_status = self.label(key, &[("count", &count)]);
                     }
                     self.refresh_notes(op == Op::Check, moved);
                 }
                 Err(error) => {
-                    self.status = self.label("failed", &[("message", &error)]);
-                    self.failed = true;
+                    self.release_status = self.label("failed", &[("message", &error)]);
+                    self.release_failed = true;
                 }
             },
             _ => {
-                self.status = summary(self.label, &value);
-                self.failed = results(&value).iter().any(|r| r["action"] == "failed");
+                self.release_status = summary(self.label, &value);
+                self.release_failed = results(&value).iter().any(|r| r["action"] == "failed");
                 // The new state, as releases now sees it.
                 self.relist = true;
                 // Notes are for the latest release: unchanged by an install.
