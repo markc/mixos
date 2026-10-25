@@ -40,11 +40,14 @@ fn manifest_for_screencast(screencast: bool) -> Vec<bus::CommandDescriptor> {
     .chain(COMMANDS.iter().map(|command_name| {
         bus::CommandDescriptor::new(command_name, &[], "Settings portal status", true)
     }))
-    .chain(crate::screencast::consent::COMMANDS.iter().filter(|_| screencast).map(
-        |(command_name, description, read_only)| {
-            bus::CommandDescriptor::new(command_name, &[], description, *read_only)
-        },
-    ))
+    .chain(
+        crate::screencast::consent::COMMANDS
+            .iter()
+            .filter(|_| screencast)
+            .map(|(command_name, description, read_only)| {
+                bus::CommandDescriptor::new(command_name, &[], description, *read_only)
+            }),
+    )
     .collect()
 }
 
@@ -667,7 +670,10 @@ mod tests {
             assert_eq!(commands[0].name, "HELP");
             assert!(commands[0].read_only);
             for (name, _, _) in crate::screencast::consent::COMMANDS {
-                assert_eq!(commands.iter().any(|command| command.name == *name), enabled);
+                assert_eq!(
+                    commands.iter().any(|command| command.name == *name),
+                    enabled
+                );
             }
             if !enabled {
                 assert_eq!(commands.len(), 2);

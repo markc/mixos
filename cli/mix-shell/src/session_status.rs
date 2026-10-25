@@ -222,11 +222,8 @@ pub(crate) async fn dispatch(
     }
     if command.command == "HELP" {
         let body = serde_json::to_string(&manifest()).expect("static descriptors serialise");
-        let _ = tokio::time::timeout(
-            ADMISSION,
-            connection.client().respond(command, 0, &body),
-        )
-        .await;
+        let _ =
+            tokio::time::timeout(ADMISSION, connection.client().respond(command, 0, &body)).await;
         return;
     }
     let Some(principal) = event.trusted_context() else {
@@ -347,9 +344,18 @@ mod tests {
         let value = serde_json::to_value(&commands).unwrap();
         let body = value.to_string();
         for secret in [
-            "grant", "seed", "token", "public_key", "parent_key_hash",
-            "record_id", "instance_id", "incarnation", "pane_id",
-            "pane_generation", "binding_generation", "broker_epoch",
+            "grant",
+            "seed",
+            "token",
+            "public_key",
+            "parent_key_hash",
+            "record_id",
+            "instance_id",
+            "incarnation",
+            "pane_id",
+            "pane_generation",
+            "binding_generation",
+            "broker_epoch",
         ] {
             assert!(!body.contains(secret), "HELP exposed {secret}");
         }
@@ -361,9 +367,19 @@ mod tests {
             }
             assert!(command["args"].as_array().unwrap().is_empty());
         }
-        assert_eq!(commands.iter().filter(|command| command.read_only)
-            .map(|command| command.name.as_str()).collect::<Vec<_>>(),
-            ["HELP", COMMAND, crate::session_execute::RESULT, crate::session_execute::TASK_RESULT]);
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|command| command.read_only)
+                .map(|command| command.name.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "HELP",
+                COMMAND,
+                crate::session_execute::RESULT,
+                crate::session_execute::TASK_RESULT
+            ]
+        );
     }
     fn target() -> SessionRecord {
         SessionRecord {

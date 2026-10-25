@@ -1747,7 +1747,10 @@ mod tests {
         let server = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let mut websocket = tokio_tungstenite::accept_async(stream).await.unwrap();
-            websocket.send(tungstenite::Message::Ping(Vec::new().into())).await.unwrap();
+            websocket
+                .send(tungstenite::Message::Ping(Vec::new().into()))
+                .await
+                .unwrap();
             let registration = next_bus_frame(&mut websocket).await;
             assert_eq!(registration.command_name(), Some("noded.register"));
             let name = registration.from_addr().unwrap();
@@ -1758,9 +1761,16 @@ mod tests {
                     .with_header("type", "request")
                     .with_header("command", command)
                     .with_header("id", command);
-                websocket.send(tungstenite::Message::Text(request.to_wire().into())).await.unwrap();
-                let reply = tokio::time::timeout(Duration::from_millis(250), next_bus_frame(&mut websocket))
-                    .await.expect("link must refuse well under one second");
+                websocket
+                    .send(tungstenite::Message::Text(request.to_wire().into()))
+                    .await
+                    .unwrap();
+                let reply = tokio::time::timeout(
+                    Duration::from_millis(250),
+                    next_bus_frame(&mut websocket),
+                )
+                .await
+                .expect("link must refuse well under one second");
                 assert_eq!(reply.get("type"), Some("response"));
                 assert_eq!(reply.get("rc"), Some("10"));
                 assert_eq!(reply.get("id"), Some(command));
@@ -1772,8 +1782,12 @@ mod tests {
         });
         mesh.ensure_connected(&beta).await.unwrap();
         server.await.unwrap();
-        assert!(incoming.try_recv().is_err(), "link requests must not enter mesh ingress");
-        mesh.reconcile_endpoints(HashMap::new(), AuthorityRevision::default()).await;
+        assert!(
+            incoming.try_recv().is_err(),
+            "link requests must not enter mesh ingress"
+        );
+        mesh.reconcile_endpoints(HashMap::new(), AuthorityRevision::default())
+            .await;
     }
 
     #[tokio::test]
