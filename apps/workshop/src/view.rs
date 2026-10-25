@@ -53,6 +53,29 @@ fn non_empty(parts: &[String], separator: &str) -> String {
     parts.iter().filter(|s| !s.trim().is_empty()).map(String::as_str).collect::<Vec<_>>().join(separator)
 }
 
+#[cfg(test)]
+mod dock_tests {
+    use super::*;
+    #[test]
+    fn traffic_metadata_omits_empty_parts_and_retains_zero() {
+        assert_eq!(non_empty(&["".into(), "settings.get".into(), "0".into(), "".into()], " · "), "settings.get · 0");
+        assert_eq!(non_empty(&["".into(), "settingsd".into()], " → "), "settingsd");
+    }
+    #[test]
+    fn dock_viewport_is_emitted_only_when_the_width_changes() {
+        let ctx = egui::Context::default(); let engine = Engine::new(crate::label);
+        let commands = crate::actions::registry(); let strings = crate::strings();
+        for (index, width) in [1100.0, 1100.0, 1200.0].into_iter().enumerate() {
+            let mut events = Vec::new();
+            let mut output = ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, 760.0))), ..Default::default() }, |ui| {
+                events = view(ui, &engine, &commands, &strings);
+            });
+            output.textures_delta.clear();
+            assert_eq!(events.iter().filter(|e| matches!(e, UiEvent::DockViewport(_))).count(), usize::from(index != 1));
+        }
+    }
+}
+
 /// Draw the whole window into `ui`.
 pub fn view(
     ui: &mut Ui,

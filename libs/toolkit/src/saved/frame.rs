@@ -89,13 +89,21 @@ impl Frame {
         let mut workspace = target.clone();
         workspace["index"] = json!(p.workspace); workspace["follow"] = json!(false);
         if call("comp.window.send_to_workspace", workspace).await.is_none() { return; }
-        if self.maximised {
-            let _ = call("comp.window.maximize", target).await;
+        let restored = if self.maximised {
+            call("comp.window.maximize", target.clone()).await
         } else {
-            let mut place = target;
+            let mut place = target.clone();
             for (key, value) in [("output", json!(p.output)), ("x", json!(p.x)), ("y", json!(p.y)),
                 ("width", json!(p.width)), ("height", json!(p.height))] { place[key] = value; }
-            let _ = call("comp.window.place", place).await;
+            call("comp.window.place", place).await
+        };
+        // A placement refusal must not strand the window on a different
+        // workspace. Restore its previous workspace with the same generation
+        // fence, without following it. A newer window is never addressed.
+        if restored.is_none() && w["workspace"].as_u64() != Some(u64::from(p.workspace))
+            && let Some(index) = w["workspace"].as_u64() {
+            let mut previous = target; previous["index"] = json!(index); previous["follow"] = json!(false);
+            let _ = call("comp.window.send_to_workspace", previous).await;
         }
     }
 
@@ -171,6 +179,22 @@ mod tests {
             calls.push(command); std::future::ready(None)
         }));
         assert!(calls.is_empty());
+    }
+    #[test]
+    fn placement_refusals_restore_the_original_workspace_without_following() {
+        for reason in ["invalid_state", "off_output", "unknown_output", "missing_workspace"] {
+            let mut workspace = 3;
+            runtime().block_on(frame().restore("dev.mixos.example", |command, args| {
+                let answer = if command == "comp.windows.list" {
+                    let mut w = window(); w["workspace"] = json!(3); Some(json!({"windows":[w]}))
+                } else if command == "comp.window.send_to_workspace" {
+                    assert_eq!(args["follow"], false); workspace = args["index"].as_u64().unwrap(); Some(json!({}))
+                } else if command == "comp.window.place" { let _ = reason; None }
+                else { Some(json!({})) };
+                std::future::ready(answer)
+            }));
+            assert_eq!(workspace, 3, "{reason}");
+        }
     }
     #[test]
     fn all_theme_axes_and_frame_round_trip_and_float_comp_dimensions_capture() {
