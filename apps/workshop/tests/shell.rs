@@ -785,8 +785,12 @@ fn desktop_text_and_density_reinstall_through_the_live_follower() {
     };
     answer_look(&mut rig, reply("21", 1.5, 0.85, false));
     let scaled = rig.h.ctx.global_style();
-    assert!((scaled.text_styles[&egui::TextStyle::Body].size
-        - normal.text_styles[&egui::TextStyle::Body].size * 1.5).abs() < 0.001);
+    assert!(
+        (scaled.text_styles[&egui::TextStyle::Body].size
+            - normal.text_styles[&egui::TextStyle::Body].size * 1.5)
+            .abs()
+            < 0.001
+    );
     assert!((scaled.spacing.item_spacing.x - normal.spacing.item_spacing.x * 0.85).abs() < 0.001);
     // Custom designs still receive the independent desktop UI choices.
     answer_look(&mut rig, reply("22", 1.5, 1.2, true));

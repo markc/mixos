@@ -251,11 +251,19 @@ impl App {
     /// Larger text multiplies the raster size; zoom and saved font px stay
     /// in the terminal's unscaled units.
     pub fn set_text_scale(&mut self, scale: f32) {
-        let scale = if scale.is_nan() { 1.0 } else { scale.clamp(0.5, 3.0) };
+        let scale = if scale.is_nan() {
+            1.0
+        } else {
+            scale.clamp(0.5, 3.0)
+        };
         if self.text_scale == scale {
             return;
         }
-        let raster = self.raster.lock().unwrap().resized(self.scale, self.font.current() * scale);
+        let raster = self
+            .raster
+            .lock()
+            .expect("raster")
+            .resized(self.scale, self.font.current() * scale);
         match raster {
             Ok(raster) => {
                 self.text_scale = scale;
@@ -303,7 +311,13 @@ impl App {
         if face != self.face {
             let weight = u16::try_from(terminal.font.weight).unwrap_or(400);
             let cursor = self.raster.lock().expect("raster").cursor();
-            match Raster::with_face(self.scale, font.current() * self.text_scale, cursor, family, weight) {
+            match Raster::with_face(
+                self.scale,
+                font.current() * self.text_scale,
+                cursor,
+                family,
+                weight,
+            ) {
                 Ok(raster) => {
                     self.face = face;
                     self.face_failed = None;

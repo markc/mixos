@@ -21,7 +21,11 @@ pub(crate) fn clamped(mut ui: CommonUi) -> CommonUi {
 }
 
 fn finite(value: f64, min: f64, max: f64) -> f64 {
-    if value.is_nan() { 1.0 } else { value.clamp(min, max) }
+    if value.is_nan() {
+        1.0
+    } else {
+        value.clamp(min, max)
+    }
 }
 
 pub(crate) fn tokens(mut style: ResolvedStyle, ui: &CommonUi) -> ResolvedStyle {

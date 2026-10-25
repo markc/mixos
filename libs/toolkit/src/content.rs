@@ -61,12 +61,11 @@ fn padded(ui: &mut Ui, content: &Content, add: impl FnOnce(&mut Ui)) {
                     Some("JetBrains Mono") => FontFamily::Monospace,
                     _ => FontFamily::Proportional,
                 };
-                let size = (content.font.size as f64
-                    * crate::ui_scale::of(ui.ctx()).text_scale) as f32;
-                ui.style_mut().text_styles.insert(
-                    TextStyle::Body,
-                    FontId::new(size, family),
-                );
+                let size =
+                    (content.font.size * crate::ui_scale::of(ui.ctx()).text_scale) as f32;
+                ui.style_mut()
+                    .text_styles
+                    .insert(TextStyle::Body, FontId::new(size, family));
                 add(ui);
             });
         });
