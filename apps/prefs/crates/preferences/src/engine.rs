@@ -245,8 +245,9 @@ impl Default for UiState {
     }
 }
 
+/// The first page in the sidebar: what people reach for most.
 fn default_section() -> Section {
-    Section::Software
+    Section::Appearance
 }
 
 /// The theme choice saved by name ("forest", "dark"): the design's
@@ -2043,6 +2044,13 @@ mod tests {
         assert_eq!(e.section(), Section::Terminal);
         assert_eq!(e.section().category(), Category::Apps);
         assert!(!e.can_check() && !e.can_update_all());
+    }
+
+    #[test]
+    fn a_fresh_window_opens_on_appearance() {
+        assert_eq!(listed().section(), Section::Appearance);
+        let saved = serde_json::from_value::<UiState>(json!({})).unwrap();
+        assert_eq!(saved.section, Section::Appearance);
     }
 
     #[test]
