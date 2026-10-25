@@ -834,7 +834,9 @@ fn p0i_08_queued_input_human_revoke_and_deadline() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_10_unbound_pane_has_no_control() {
-    if !crate::test_support::with_mix("native_session::enforcement_tests::p0i_10_unbound_pane_has_no_control") {
+    if !crate::test_support::with_mix(
+        "native_session::enforcement_tests::p0i_10_unbound_pane_has_no_control",
+    ) {
         return;
     }
     if in_posture("p0i_10_unbound_pane_has_no_control", Some("0")) {

@@ -22,8 +22,16 @@ pub fn with_mix(test: &str) -> bool {
     if std::env::var(CHILD).ok().as_deref() == Some(test) {
         let prefix = std::env::var_os("MIXOS_PREFIX").expect("PTY child needs an explicit prefix");
         let program = PathBuf::from(prefix).join("bin/mix");
-        assert_eq!(::paths::bin("mix"), program, "guard and production launcher must select the same Mix");
-        assert!(mix_binary::executable(&program), "PTY target is not executable: {}", program.display());
+        assert_eq!(
+            ::paths::bin("mix"),
+            program,
+            "guard and production launcher must select the same Mix"
+        );
+        assert!(
+            mix_binary::executable(&program),
+            "PTY target is not executable: {}",
+            program.display()
+        );
         eprintln!("PTY fixture {test}: {}", program.display());
         return true;
     }
@@ -38,7 +46,16 @@ pub fn with_mix(test: &str) -> bool {
     let root = Prefix(root);
     std::fs::create_dir(root.0.join("bin")).unwrap();
     std::os::unix::fs::symlink(&mix, root.0.join("bin/mix")).unwrap();
-    for dir in ["home", "etc", "var", "run", "cache", "xdg-config", "xdg-data", "xdg-cache"] {
+    for dir in [
+        "home",
+        "etc",
+        "var",
+        "run",
+        "cache",
+        "xdg-config",
+        "xdg-data",
+        "xdg-cache",
+    ] {
         std::fs::create_dir(root.0.join(dir)).unwrap();
     }
     let share = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../share");
@@ -69,7 +86,8 @@ pub fn with_mix(test: &str) -> bool {
         output.status.success()
             && stdout.contains("test result: ok. 1 passed")
             && stderr.contains(&format!("PTY fixture {test}:")),
-        "PTY test child failed for {test} using {}:\n{stdout}\n{stderr}", mix.display()
+        "PTY test child failed for {test} using {}:\n{stdout}\n{stderr}",
+        mix.display()
     );
     false
 }

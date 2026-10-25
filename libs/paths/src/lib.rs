@@ -631,21 +631,38 @@ mod tests {
         if std::env::var_os(CHILD).is_none() {
             struct Scratch(PathBuf);
             impl Drop for Scratch {
-                fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+                fn drop(&mut self) {
+                    let _ = std::fs::remove_dir_all(&self.0);
+                }
             }
-            let prefix = Scratch(std::env::temp_dir().join(format!("mixos-path-cache-{}", std::process::id())));
+            let prefix = Scratch(
+                std::env::temp_dir().join(format!("mixos-path-cache-{}", std::process::id())),
+            );
             std::fs::create_dir(&prefix.0).unwrap();
             let output = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "tests::path_resolves_from_the_process_and_is_stable", "--nocapture"])
+                .args([
+                    "--exact",
+                    "tests::path_resolves_from_the_process_and_is_stable",
+                    "--nocapture",
+                ])
                 .env(CHILD, "1")
                 .env("MIXOS_PREFIX", &prefix.0)
                 .output()
                 .unwrap();
-            assert!(output.status.success() && String::from_utf8_lossy(&output.stdout).contains("test result: ok. 1 passed"),
-                "cache test child failed:\n{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            assert!(
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout)
+                        .contains("test result: ok. 1 passed"),
+                "cache test child failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
             return;
         }
-        assert!(std::env::var_os("MIXOS_PREFIX").is_some(), "cache test needs an explicit prefix");
+        assert!(
+            std::env::var_os("MIXOS_PREFIX").is_some(),
+            "cache test needs an explicit prefix"
+        );
         // Whatever the environment, the cached answer is the rule applied
         // to it, and the same on every call.
         let first = path(Dir::Etc);

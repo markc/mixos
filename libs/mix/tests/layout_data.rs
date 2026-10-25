@@ -43,9 +43,12 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
     if std::env::var_os(CHILD).is_none() {
         struct Scratch(std::path::PathBuf);
         impl Drop for Scratch {
-            fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
         }
-        let root = Scratch(std::env::temp_dir().join(format!("mixos-front-door-{}", std::process::id())));
+        let root =
+            Scratch(std::env::temp_dir().join(format!("mixos-front-door-{}", std::process::id())));
         std::fs::create_dir(&root.0).unwrap();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", TEST, "--nocapture"])
@@ -64,20 +67,29 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
             .env_remove("MIXOS_CACHE")
             .output()
             .unwrap();
-        assert!(output.status.success() && String::from_utf8_lossy(&output.stdout).contains("test result: ok. 1 passed"),
-            "front-door child failed:\n{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success()
+                && String::from_utf8_lossy(&output.stdout).contains("test result: ok. 1 passed"),
+            "front-door child failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
         return;
     }
     // Self-location is never used: the child received every path input before
     // the process-global resolver was first called.
-    let prefix = std::env::var_os("MIXOS_PREFIX").expect("front-door test needs an explicit prefix");
+    let prefix =
+        std::env::var_os("MIXOS_PREFIX").expect("front-door test needs an explicit prefix");
     for (tier, uid) in [("system", 0), ("user", 1000)] {
         let inputs = paths::Environment {
             uid,
             ..paths::Environment::current()
         };
         let expected = paths::Layout::from_environment(&inputs).unwrap();
-        assert_eq!(expected.root(paths::Root::Prefix), std::path::PathBuf::from(&prefix));
+        assert_eq!(
+            expected.root(paths::Root::Prefix),
+            std::path::PathBuf::from(&prefix)
+        );
         for root in paths::Root::ALL {
             let source = format!(
                 "mixos_path(\"{}\", \"sentinel\", {{tier: \"{tier}\"}})",

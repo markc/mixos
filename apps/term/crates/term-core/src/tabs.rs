@@ -1067,7 +1067,8 @@ mod tests {
     }
     #[test]
     fn cap_spans_tabs_panes_and_pending_cleanup() {
-        let Some(mut tabs) = fixture("tabs::tests::cap_spans_tabs_panes_and_pending_cleanup") else {
+        let Some(mut tabs) = fixture("tabs::tests::cap_spans_tabs_panes_and_pending_cleanup")
+        else {
             return;
         };
         for _ in 0..15 {
@@ -1093,7 +1094,9 @@ mod tests {
     }
     #[test]
     fn directional_focus_uses_geometry_and_rejects_other_tabs() {
-        let Some(mut tabs) = fixture("tabs::tests::directional_focus_uses_geometry_and_rejects_other_tabs") else {
+        let Some(mut tabs) =
+            fixture("tabs::tests::directional_focus_uses_geometry_and_rejects_other_tabs")
+        else {
             return;
         };
         let left = tabs.active_tab().active_pane;
@@ -1146,7 +1149,9 @@ mod tests {
     }
     #[test]
     fn close_then_focus_discards_old_rectangles_without_refresh() {
-        let Some(mut tabs) = fixture("tabs::tests::close_then_focus_discards_old_rectangles_without_refresh") else {
+        let Some(mut tabs) =
+            fixture("tabs::tests::close_then_focus_discards_old_rectangles_without_refresh")
+        else {
             return;
         };
         let left = tabs.active_tab().active_pane;
@@ -1211,7 +1216,9 @@ mod tests {
     #[test]
     fn retitles_advance_events_without_invalidating_layout() {
         use rio_vt::event::{EventListener, RioEvent, WindowId};
-        let Some(mut tabs) = fixture("tabs::tests::retitles_advance_events_without_invalidating_layout") else {
+        let Some(mut tabs) =
+            fixture("tabs::tests::retitles_advance_events_without_invalidating_layout")
+        else {
             return;
         };
         let id = tabs.active_id();
@@ -1279,7 +1286,9 @@ mod tests {
     }
     #[test]
     fn metadata_does_not_lock_terminal_and_tracks_resize() {
-        let Some(mut tabs) = fixture("tabs::tests::metadata_does_not_lock_terminal_and_tracks_resize") else {
+        let Some(mut tabs) =
+            fixture("tabs::tests::metadata_does_not_lock_terminal_and_tracks_resize")
+        else {
             return;
         };
         let id = tabs.active_id();
@@ -1311,7 +1320,9 @@ mod tests {
     }
     #[test]
     fn cleanup_queue_returns_without_waiting_for_terminal_lock() {
-        let Some(tabs) = fixture("tabs::tests::cleanup_queue_returns_without_waiting_for_terminal_lock") else {
+        let Some(tabs) =
+            fixture("tabs::tests::cleanup_queue_returns_without_waiting_for_terminal_lock")
+        else {
             return;
         };
         let set = Mutex::new(tabs);
@@ -1359,7 +1370,9 @@ mod tests {
     }
     #[test]
     fn close_active_selects_neighbour_and_last_is_empty() {
-        let Some(mut tabs) = fixture("tabs::tests::close_active_selects_neighbour_and_last_is_empty") else {
+        let Some(mut tabs) =
+            fixture("tabs::tests::close_active_selects_neighbour_and_last_is_empty")
+        else {
             return;
         };
         let first = tabs.active_id();

@@ -2684,10 +2684,15 @@ mod gui_tests {
     #[test]
     fn path_tier_candidates_reach_which_as_bare_names() {
         let mut seen = Vec::new();
-        let _ = resolve_term(None, Some("/test-root".into()), || "/test-install/bin".into(), |path| {
-            seen.push(path.to_path_buf());
-            None
-        });
+        let _ = resolve_term(
+            None,
+            Some("/test-root".into()),
+            || "/test-install/bin".into(),
+            |path| {
+                seen.push(path.to_path_buf());
+                None
+            },
+        );
         let path_tier = &seen[seen.len() - TERM_FRONTENDS.len()..];
         for candidate in path_tier {
             assert_eq!(
@@ -2709,15 +2714,21 @@ mod gui_tests {
     #[test]
     fn resolution_order_and_missing_frontend() {
         let mut seen = Vec::new();
-        let error = resolve_term(None, Some("/test-root".into()), || "/test-install/bin".into(), |path| {
-            seen.push(path.to_path_buf());
-            None
-        })
+        let error = resolve_term(
+            None,
+            Some("/test-root".into()),
+            || "/test-install/bin".into(),
+            |path| {
+                seen.push(path.to_path_buf());
+                None
+            },
+        )
         .unwrap_err();
         // Development builds precede installed and PATH copies of Term.
         assert_eq!(
             seen,
-            ["/test-root/bin/term", "/test-install/bin/term", "term",].map(std::path::PathBuf::from)
+            ["/test-root/bin/term", "/test-install/bin/term", "term",]
+                .map(std::path::PathBuf::from)
         );
         assert!(error.starts_with("mix --gui: no MixOS terminal frontend is installed"));
         assert!(error.ends_with("Install the desktop package."));
@@ -2731,11 +2742,16 @@ mod gui_tests {
         );
         for (winner, expected) in seen.iter().enumerate() {
             let mut index = 0;
-            let found = resolve_term(None, Some("/test-root".into()), || "/test-install/bin".into(), |path| {
-                let selected = index == winner;
-                index += 1;
-                selected.then(|| path.to_path_buf())
-            })
+            let found = resolve_term(
+                None,
+                Some("/test-root".into()),
+                || "/test-install/bin".into(),
+                |path| {
+                    let selected = index == winner;
+                    index += 1;
+                    selected.then(|| path.to_path_buf())
+                },
+            )
             .unwrap();
             assert_eq!(&found, expected);
             assert_eq!(index, winner + 1);
@@ -2751,13 +2767,24 @@ mod gui_tests {
         fs::write(&file, b"test fixture, never executed").unwrap();
         fs::set_permissions(&file, fs::Permissions::from_mode(0o700)).unwrap();
         assert_eq!(
-            resolve_term(Some(file.clone().into_os_string()), None, || panic!("override must bypass installed lookup"), term_lookup).unwrap(),
+            resolve_term(
+                Some(file.clone().into_os_string()),
+                None,
+                || panic!("override must bypass installed lookup"),
+                term_lookup
+            )
+            .unwrap(),
             file
         );
         fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
         for path in [&file, dir.path(), &dir.path().join("missing")] {
-            let error =
-                resolve_term(Some(path.as_os_str().to_owned()), None, || panic!("override must bypass installed lookup"), term_lookup).unwrap_err();
+            let error = resolve_term(
+                Some(path.as_os_str().to_owned()),
+                None,
+                || panic!("override must bypass installed lookup"),
+                term_lookup,
+            )
+            .unwrap_err();
             assert!(error.contains("MIXOS_TERM_BIN must name an executable"));
         }
     }

@@ -10,8 +10,12 @@ pub fn executable(path: &Path) -> bool {
     // SAFETY: path_c is NUL-terminated and alive for this effective-ID check.
     path.is_file()
         && unsafe {
-            libc::faccessat(libc::AT_FDCWD, path_c.as_ptr(), libc::X_OK, libc::AT_EACCESS)
-                == 0
+            libc::faccessat(
+                libc::AT_FDCWD,
+                path_c.as_ptr(),
+                libc::X_OK,
+                libc::AT_EACCESS,
+            ) == 0
         }
 }
 
@@ -21,7 +25,10 @@ pub fn select() -> Result<Option<PathBuf>, String> {
     if let Some(path) = std::env::var_os("MIXOS_E2E_MIX_BIN") {
         let path = PathBuf::from(path);
         if !executable(&path) {
-            return Err(format!("MIXOS_E2E_MIX_BIN is not an executable file: {}", path.display()));
+            return Err(format!(
+                "MIXOS_E2E_MIX_BIN is not an executable file: {}",
+                path.display()
+            ));
         }
         return path.canonicalize().map(Some).map_err(|e| e.to_string());
     }

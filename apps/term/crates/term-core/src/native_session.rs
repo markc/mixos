@@ -2214,7 +2214,9 @@ pub(crate) mod tests {
 
     #[test]
     fn lowered_pending_quota_opens_pane_with_queryable_diagnostic() {
-        if !crate::test_support::with_mix("native_session::tests::lowered_pending_quota_opens_pane_with_queryable_diagnostic") {
+        if !crate::test_support::with_mix(
+            "native_session::tests::lowered_pending_quota_opens_pane_with_queryable_diagnostic",
+        ) {
             return;
         }
         let broker = Broker::with_grant_limit(1);
@@ -2376,7 +2378,9 @@ pub(crate) mod tests {
 
     #[test]
     fn real_uds_child_exit_revokes_without_ui_reap() {
-        if !crate::test_support::with_mix("native_session::tests::real_uds_child_exit_revokes_without_ui_reap") {
+        if !crate::test_support::with_mix(
+            "native_session::tests::real_uds_child_exit_revokes_without_ui_reap",
+        ) {
             return;
         }
         let broker = Broker::start();
@@ -2406,7 +2410,9 @@ pub(crate) mod tests {
 
     #[test]
     fn real_uds_tab_close_revokes_before_pty_cleanup() {
-        if !crate::test_support::with_mix("native_session::tests::real_uds_tab_close_revokes_before_pty_cleanup") {
+        if !crate::test_support::with_mix(
+            "native_session::tests::real_uds_tab_close_revokes_before_pty_cleanup",
+        ) {
             return;
         }
         let broker = Broker::start();
