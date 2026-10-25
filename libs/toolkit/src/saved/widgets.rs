@@ -409,7 +409,7 @@ mod tests {
                 state.show_header(ui, |ui| ui.label("Branch")).body(|ui| ui.label("Contents"))
             });
         });
-        widgets.collect(&ctx); assert_eq!(widgets.open["branch"], false);
+        widgets.collect(&ctx); assert!(!widgets.open["branch"]);
         let next = egui::Context::default(); widgets.install(&next);
         collapsing(&next, "branch", true, |s| assert!(!s.is_open()));
     }
