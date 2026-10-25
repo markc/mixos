@@ -51,6 +51,13 @@ and workshop; the [editor](../editor/README.md) library; and four of
 
 Call `toolkit::install(ctx, &theme)` once on the egui context. It installs
 the image loaders the icons need and applies the theme's style and fonts.
+Apps carry `Followed::Look.ui` into `Theme::with_ui` when following settingsd.
+The desktop text scale multiplies all typography and content surface fonts;
+density multiplies spacing and control metrics. The shared `ui_scale` module
+clamps both to the settings contract ranges and names the density steps.
+Reinstalling a theme replaces these values without compounding them. A window's
+own theme choice preserves them. Per-app text overrides are not applied because
+the current settings summary carries only the desktop UI values.
 `Theme::load()` reads the shared `theme.conf.mix` from the MixOS etc
 directory (`$MIXOS_ETC`, else `$MIXOS/etc`, else `/etc/mixos` for root,
 else `$XDG_CONFIG_HOME/mixos`). It falls back to the embedded design, and

@@ -98,10 +98,16 @@ after a theme reload or restart. Other families take effect when the toolkit
 supports loading them; this stage adds no font loader. The faces grid and
 previews show the actual egui font stacks, rather than the saved request.
 
-**Appearance → Size & Density** sets text scale (50–300%, in 5% steps) and
-density (0.5–2.0, in 0.05 steps). Each **Reset** restores 1.0. A drag applies
-once when released; keyboard and wheel steps apply individually. Search also
-finds this section with `scale`, `zoom`, `density`, `spacing` or `compact`.
+**Appearance → Size & Density** sets **Larger text** (50–300%, in 5% steps).
+It multiplies interface text, editor and reader text, and the terminal grid,
+over their own saved font sizes. **Reset** restores 100%. A drag applies once
+when released; keyboard and wheel steps apply individually.
+**Density** offers Compact (0.85), Comfortable (1.0) and Spacious (1.2).
+It changes spacing and control heights without changing text or icon sizes.
+Other stored density values from 0.5 to 2.0 still apply continuously; the
+choice shows the nearest step. Changes reach running toolkit apps immediately.
+These are desktop settings; per-app Larger text overrides are not applied.
+Search also finds this section with `scale`, `zoom`, `density`, `spacing` or `compact`.
 
 **Appearance → Motion** sets **Reduce motion**, which apps and the compositor
 honour. Search also accepts `animation`, `reduce motion` and `accessibility`.

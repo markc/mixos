@@ -32991,10 +32991,16 @@ after a theme reload or restart. Other families take effect when the toolkit
 supports loading them; this stage adds no font loader. The faces grid and
 previews show the actual egui font stacks, rather than the saved request.
 
-**Appearance → Size & Density** sets text scale (50–300%, in 5% steps) and
-density (0.5–2.0, in 0.05 steps). Each **Reset** restores 1.0. A drag applies
-once when released; keyboard and wheel steps apply individually. Search also
-finds this section with `scale`, `zoom`, `density`, `spacing` or `compact`.
+**Appearance → Size & Density** sets **Larger text** (50–300%, in 5% steps).
+It multiplies interface text, editor and reader text, and the terminal grid,
+over their own saved font sizes. **Reset** restores 100%. A drag applies once
+when released; keyboard and wheel steps apply individually.
+**Density** offers Compact (0.85), Comfortable (1.0) and Spacious (1.2).
+It changes spacing and control heights without changing text or icon sizes.
+Other stored density values from 0.5 to 2.0 still apply continuously; the
+choice shows the nearest step. Changes reach running toolkit apps immediately.
+These are desktop settings; per-app Larger text overrides are not applied.
+Search also finds this section with `scale`, `zoom`, `density`, `spacing` or `compact`.
 
 **Appearance → Motion** sets **Reduce motion**, which apps and the compositor
 honour. Search also accepts `animation`, `reduce motion` and `accessibility`.
@@ -34376,6 +34382,13 @@ and workshop; the [editor](../editor/README.md) library; and four of
 
 Call `toolkit::install(ctx, &theme)` once on the egui context. It installs
 the image loaders the icons need and applies the theme's style and fonts.
+Apps carry `Followed::Look.ui` into `Theme::with_ui` when following settingsd.
+The desktop text scale multiplies all typography and content surface fonts;
+density multiplies spacing and control metrics. The shared `ui_scale` module
+clamps both to the settings contract ranges and names the density steps.
+Reinstalling a theme replaces these values without compounding them. A window's
+own theme choice preserves them. Per-app text overrides are not applied because
+the current settings summary carries only the desktop UI values.
 `Theme::load()` reads the shared `theme.conf.mix` from the MixOS etc
 directory (`$MIXOS_ETC`, else `$MIXOS/etc`, else `/etc/mixos` for root,
 else `$XDG_CONFIG_HOME/mixos`). It falls back to the embedded design, and
