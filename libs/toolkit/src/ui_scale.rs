@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Desktop text accessibility and spacing, applied after design resolution.
 use design::ResolvedStyle;
-use settings::model::CommonUi;
+pub use settings::model::CommonUi;
 
 /// The named density choices; other stored values remain continuous.
 pub const DENSITY_STEPS: [f64; 3] = [0.85, 1.0, 1.2];
@@ -38,6 +38,8 @@ pub(crate) fn tokens(mut style: ResolvedStyle, ui: &CommonUi) -> ResolvedStyle {
     style.panel_section_size *= text;
     style.push_label_size *= text;
     style.tabs_pro_size *= text;
+    style.tabs_studio_name_size *= text;
+    style.tabs_studio_meta_size *= text;
     style.title_size *= text;
     style.value_number_size *= text;
     style.value_unit_size *= text;
@@ -123,6 +125,25 @@ pub(crate) fn tokens(mut style: ResolvedStyle, ui: &CommonUi) -> ResolvedStyle {
     style.value_unit_gap *= density;
     style.window_margin *= density;
     style.bar_padding_y *= density;
+    // egui margins are whole signed bytes. Match their existing rounding
+    // and saturate before conversion so large stored density cannot wrap.
+    if density != 1.0 {
+        for margin in [
+            &mut style.menu_margin,
+            &mut style.window_margin,
+            &mut style.panel_card_margin_bottom,
+            &mut style.panel_card_margin_collapsed,
+            &mut style.panel_card_margin_left,
+            &mut style.panel_card_margin_right,
+            &mut style.panel_card_margin_top,
+            &mut style.tabs_studio_margin_bottom,
+            &mut style.tabs_studio_margin_left,
+            &mut style.tabs_studio_margin_right,
+            &mut style.tabs_studio_margin_top,
+        ] {
+            *margin = margin.round().clamp(0.0, i8::MAX as f64);
+        }
+    }
     style
 }
 

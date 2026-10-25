@@ -573,7 +573,7 @@ impl Shell {
         };
         // Desktop values only; per-app text overrides are not in Summary.
         let base = match &look {
-            Some(look) => base.with_ui(settings::model::CommonUi {
+            Some(look) => base.with_ui(toolkit::ui_scale::CommonUi {
                 text_scale: look.text_scale,
                 density: look.density,
                 reduced_motion: look.reduced_motion,

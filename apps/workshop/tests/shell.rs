@@ -769,6 +769,32 @@ fn look_reply(
     })
 }
 
+#[test]
+fn desktop_text_and_density_reinstall_through_the_live_follower() {
+    let mut rig = live_rig();
+    answer_look(&mut rig, look_reply("20", "studio"));
+    let normal = rig.h.ctx.global_style();
+    let reply = |revision: &str, text_scale, density, custom_source| {
+        let mut reply = look_reply(revision, "studio").unwrap();
+        let mut body: Value = serde_json::from_str(&reply.body).unwrap();
+        body["summary"]["ui"] = json!({"text_scale":text_scale,"density":density,
+            "reduced_motion":false});
+        body["summary"]["custom_source"] = json!(custom_source);
+        reply.body = body.to_string();
+        Ok(reply)
+    };
+    answer_look(&mut rig, reply("21", 1.5, 0.85, false));
+    let scaled = rig.h.ctx.global_style();
+    assert!((scaled.text_styles[&egui::TextStyle::Body].size
+        - normal.text_styles[&egui::TextStyle::Body].size * 1.5).abs() < 0.001);
+    assert!((scaled.spacing.item_spacing.x - normal.spacing.item_spacing.x * 0.85).abs() < 0.001);
+    // Custom designs still receive the independent desktop UI choices.
+    answer_look(&mut rig, reply("22", 1.5, 1.2, true));
+    assert_eq!(toolkit::ui_scale::of(&rig.h.ctx).density, 1.2);
+    answer_look(&mut rig, reply("23", 1.0, 1.0, false));
+    assert_eq!(*rig.h.ctx.global_style(), *normal);
+}
+
 fn effective_scheme(rig: &mut Rig, id: u64) -> Value {
     send(rig, id, "workshop.theme", json!({}));
     wait(rig, &[id]);

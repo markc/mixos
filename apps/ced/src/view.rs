@@ -393,7 +393,12 @@ fn document(
         centred(ui, &label_with("opening", &[("name", &name)]));
         return None;
     }
-    let view = app.view_for(tab);
+    let mut view = app.view_for(tab);
+    // Preserve the editor's saved size and zoom; Larger text multiplies
+    // the displayed source and preview, using the desktop value only.
+    let font_px = f32::from(app.ui.font_px)
+        * toolkit::ui_scale::of(ui.ctx()).text_scale as f32;
+    view.font_size = Some(font_px);
     let doc = Doc {
         text: m.text(),
         identity: tab.id,
@@ -414,7 +419,7 @@ fn document(
                         toolkit::markdown::first_heading_baseline(ui, document)
                     })
                 {
-                    let font = egui::FontId::monospace(f32::from(app.ui.font_px));
+                    let font = egui::FontId::monospace(font_px);
                     let galley = ui.painter().layout_no_wrap("M".into(), font, palette.text);
                     if let Some(row) = galley.rows.first()
                         && let Some(glyph) = row.glyphs.first()
@@ -445,11 +450,11 @@ fn document(
         toolkit::content::surface(ui, &app.editor_style, |ui| {
             for style in [egui::TextStyle::Body, egui::TextStyle::Monospace] {
                 if let Some(font) = ui.style_mut().text_styles.get_mut(&style) {
-                    font.size = f32::from(app.ui.font_px);
+                    font.size = font_px;
                 }
             }
             ui.set_min_size(ui.available_size());
-            let font = egui::FontId::monospace(f32::from(app.ui.font_px));
+            let font = egui::FontId::monospace(font_px);
             let metrics = ui.fonts_mut(|fonts| editor::layout::Metrics {
                 cell_w: fonts.glyph_width(&font, '0').max(1.0),
                 row_h: (font.size * view.line_height).round().max(1.0),
