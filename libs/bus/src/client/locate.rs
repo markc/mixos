@@ -4,9 +4,8 @@
 //! Where the broker is.
 //!
 //! Resolution order: `MIXOS_NODED_URL`; the node configuration file
-//! (`MIXOS_NODE_CONFIG`, else `$MIXOS_ETC/node.conf.mix` when `MIXOS_ETC`
-//! is set, else `~/.config/mixos/node.conf.mix` then
-//! `<system etc>/node.conf.mix`); and finally the loopback broker. The
+//! (the shared `config::node::NodeConfigSearch`, also used for Unix socket
+//! and account settings); and finally the loopback broker. The
 //! fallback is loopback, never another node's address: an unconfigured node
 //! must fail to reach its own broker loudly rather than dial someone else's.
 
@@ -18,11 +17,6 @@ use strict::Value;
 pub const DEFAULT_NODED_URL: &str = "ws://127.0.0.1:4200/ws";
 
 const URL_VAR: &str = "MIXOS_NODED_URL";
-const CONFIG_VAR: &str = "MIXOS_NODE_CONFIG";
-const CONFIG_FILE: &str = "node.conf.mix";
-fn system_etc() -> PathBuf {
-    ::paths::system_default(::paths::Root::Etc).expect("built-in system etc default")
-}
 const DEFAULT_PORT: u16 = 4200;
 
 /// The broker WebSocket URL for this node.
@@ -33,14 +27,11 @@ pub fn noded_url() -> String {
     {
         return url;
     }
-    let Some(path) = node_config_path() else {
-        return DEFAULT_NODED_URL.to_string();
-    };
-    let source = match std::fs::read_to_string(&path) {
-        Ok(source) => source,
+    let (path, source) = match config::node::NodeConfigSearch::capture().read() {
+        Ok(Some(source)) => source,
+        Ok(None) => return DEFAULT_NODED_URL.to_string(),
         Err(e) => {
             tracing::warn!(
-                source = %path.display(),
                 error = %e,
                 "failed to read node config; using {DEFAULT_NODED_URL}"
             );
@@ -76,46 +67,35 @@ pub fn noded_url() -> String {
 /// `MIXOS_NODE_CONFIG` names it outright (whether or not it exists, so a
 /// misconfiguration is reported rather than silently skipped).
 pub fn node_config_path() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os(CONFIG_VAR).filter(|p| !p.is_empty()) {
-        return Some(PathBuf::from(path));
-    }
-    let environment = config::Environment::current();
-    let etc = environment
-        .etc
-        .or_else(|| environment.root.map(|root| root.join("etc")));
-    if let Some(etc) = etc {
-        return Some(etc.join(CONFIG_FILE));
-    }
-    candidate_paths(
-        None,
-        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
-        std::env::var_os("HOME").map(PathBuf::from),
-    )
-    .into_iter()
-    .find(|path| path.is_file())
+    config::node::NodeConfigSearch::capture()
+        .path()
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "failed to locate node config");
+            None
+        })
 }
 
 /// The search order, the user directory ahead of the system one. When
 /// `MIXOS_ETC` is set it is the only candidate: the caller asked for an
 /// isolated tree (a test, a chroot, an alternate install) and must not fall
 /// through to the host's `<system etc>`.
+#[cfg(test)]
 fn candidate_paths(
     etc: Option<PathBuf>,
     xdg_config_home: Option<PathBuf>,
     home: Option<PathBuf>,
 ) -> Vec<PathBuf> {
-    if let Some(etc) = etc {
-        return vec![etc.join(CONFIG_FILE)];
-    }
-    let mut dirs = Vec::new();
-    if let Some(dir) = xdg_config_home
-        .filter(|d| d.is_absolute())
-        .or_else(|| home.map(|h| h.join(".config")))
-    {
-        dirs.push(dir.join("mixos"));
-    }
-    dirs.push(system_etc());
-    dirs.into_iter().map(|dir| dir.join(CONFIG_FILE)).collect()
+    let environment = config::Environment {
+        etc,
+        xdg_config_home,
+        home,
+        uid: 1000,
+        ..Default::default()
+    };
+    let dirs = config::Dirs::resolve(&environment);
+    config::node::NodeConfigSearch::from_environment(None, environment)
+        .candidate_paths_with_dirs(&dirs)
+        .unwrap()
 }
 
 /// The broker URL a node configuration describes: `ws://{wg_ip}:{port}/ws`,

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+//! Shell Bus lanes share libs/bus socket discovery and trusted account lookup.
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -524,13 +525,15 @@ impl MixBusHandler {
     /// The ordinary path may fall back to anonymous TCP. A process-local PID
     /// pin changes that policy in `probe_with_pin` below.
     fn verified_options() -> Option<::bus::native_client::UnixConnectOptions> {
-        let account = std::env::var("MIXOS_BROKER_ACCOUNT").unwrap_or_else(|_| "noded".into());
-        let (endpoint, _) = crate::node_config::NativeEnvironment::capture()
+        let (options, _) = crate::node_config::NativeEnvironment::capture()
             .resolve()
+            .map_err(
+                |error| tracing::warn!(error = %format!("{error:#}"), "broker discovery failed"),
+            )
             .ok()?;
         // The resident's own resolver, so a driver and a pane shell on one node
         // cannot disagree about which account owns the socket.
-        crate::native_session::options(account, endpoint).ok()
+        Some(crate::native_session::options(options))
     }
 
     /// Split from the config resolution above so the ABSENT-SOCKET path is
@@ -2311,7 +2314,7 @@ mod tests {
         options.expected_server_pid = Some(pid.checked_add(1).unwrap());
         assert!(matches!(
             NodedClient::connect_unix("", &broker.url, &options, None).await,
-            Err(ConnectError::ServerPidMismatch)
+            Err(error) if matches!(error.endpoint_cause(), ConnectError::ServerPidMismatch)
         ));
         // Even though unverified TCP fallback is explicitly enabled above,
         // the mismatch refused before any RPC and did not return that lane.
@@ -2814,14 +2817,8 @@ mod tests {
     /// connect timeout, every first send on every headless host would stall
     /// five seconds — a worse regression than the feature is a gain.
     ///
-    /// SCOPE, stated because the first version of this comment overclaimed:
-    /// this covers the EXPLICIT-endpoint path, where a configured socket path
-    /// does not exist and the stat fails immediately. The no-config route is
-    /// different — with neither `endpoint` nor `configured_endpoint` set, the
-    /// client runs its own discovery, and that is fast because a loopback
-    /// connection is REFUSED instantly, not because of a stat. Both are fast;
-    /// only the first is asserted here, and saying so is cheaper than a reader
-    /// later trusting a guarantee this test does not make.
+    /// The isolated candidate is missing and the loopback discovery URL
+    /// refuses immediately. General ping discovery has its own bounded wait.
     #[tokio::test(flavor = "current_thread")]
     async fn an_absent_verified_socket_falls_back_immediately() {
         let mut options =
@@ -2833,6 +2830,7 @@ mod tests {
         options.endpoint = Some(std::path::PathBuf::from(
             "/nonexistent/mixos/definitely-not-a-socket",
         ));
+        options.default_endpoints = Some(Vec::new());
         options.require_native_session = true;
         let started = std::time::Instant::now();
         let outcome = MixBusHandler::connect_verified_with("ws://127.0.0.1:1/ws", &options).await;

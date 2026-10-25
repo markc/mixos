@@ -255,13 +255,33 @@ an explicit <code>MIXOS_ETC</code>. Isolated roots never fall back to host
 configuration. Set <code>MIXOS</code> to an isolated runtime root and supply
 <code>etc/node.conf.mix</code>, for example:</p>
 <pre><code class="language-text">node: "example"
-noded: { port: 4200, unix_socket: "&lt;runtime&gt;/noded/bus.sock" }
+noded: { port: 4200, unix_socket: "&lt;runtime&gt;/noded/bus.sock", account: "noded" }
 </code></pre>
+<p>Without <code>noded.unix_socket</code>, the broker binds <code>&lt;run&gt;/noded/bus.sock</code> using
+the environment's runtime directory (<code>MIXOS_RUN</code>, <code>MIXOS</code>, installed layout,
+then the uid tier). Native clients use one shared resolver: explicit
+<code>MIXOS_BUS_SOCKET</code> or caller endpoint, <code>noded.unix_socket</code> from the same node
+file as the URL, environment runtime, system runtime, then the endpoint
+advertised by <code>noded.ping</code> on the resolved TCP URL. Missing components
+(<code>ENOENT</code> or <code>ENOTDIR</code>) are skipped with a warning. Existing candidates must
+pass every verification check; permissions, symlinks, non-sockets, ownership,
+peer credentials, version and refused connections are fatal. A server-PID
+pin disables skipping and ping discovery. Exhausted searches list all paths.</p>
+<p>Clients trust the account selected by <code>MIXOS_BROKER_ACCOUNT</code>, then
+<code>noded.account</code>, then the default <code>noded</code>. They never infer it from a socket's
+owner. Account lookup errors name the account and its configuration source.
+URL lookup uses the same node-file search and retains its loopback default
+on read or parse failure.</p>
 <h2 id="running-it">Running it</h2>
 <p>Run <code>noded serve</code>; <code>--no-monitor --no-log</code> disables its optional observation
 clients. The Unix broker endpoint verifies peer credentials before
 accepting native session proofs. The operating system supervises the
 process; application requests and node-to-node control use ABP.</p>
+<p>The system unit runs as the <code>noded</code> system user and group, created by its
+<code>sysusers.conf</code>, and pins <code>MIXOS_ETC</code>, <code>MIXOS_VAR</code> and <code>MIXOS_RUN</code>. To use
+another account, override <code>User</code> and <code>Group</code> in <code>noded.service.d/user.conf</code>
+and set <code>noded.account</code> in <code>node.conf.mix</code> to match. The desk's <code>noded@.service</code>
+continues to run as the desk user.</p>
 <h2 id="tests">Tests</h2>
 <p>Tests cover broker commands, scope isolation, replay refusal, authority
 reload, mesh admission and recovery. Run

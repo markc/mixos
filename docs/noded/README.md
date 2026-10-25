@@ -29,8 +29,25 @@ configuration. Set `MIXOS` to an isolated runtime root and supply
 
 ```text
 node: "example"
-noded: { port: 4200, unix_socket: "<runtime>/noded/bus.sock" }
+noded: { port: 4200, unix_socket: "<runtime>/noded/bus.sock", account: "noded" }
 ```
+
+Without `noded.unix_socket`, the broker binds `<run>/noded/bus.sock` using
+the environment's runtime directory (`MIXOS_RUN`, `MIXOS`, installed layout,
+then the uid tier). Native clients use one shared resolver: explicit
+`MIXOS_BUS_SOCKET` or caller endpoint, `noded.unix_socket` from the same node
+file as the URL, environment runtime, system runtime, then the endpoint
+advertised by `noded.ping` on the resolved TCP URL. Missing components
+(`ENOENT` or `ENOTDIR`) are skipped with a warning. Existing candidates must
+pass every verification check; permissions, symlinks, non-sockets, ownership,
+peer credentials, version and refused connections are fatal. A server-PID
+pin disables skipping and ping discovery. Exhausted searches list all paths.
+
+Clients trust the account selected by `MIXOS_BROKER_ACCOUNT`, then
+`noded.account`, then the default `noded`. They never infer it from a socket's
+owner. Account lookup errors name the account and its configuration source.
+URL lookup uses the same node-file search and retains its loopback default
+on read or parse failure.
 
 ## Running it
 
@@ -38,6 +55,12 @@ Run `noded serve`; `--no-monitor --no-log` disables its optional observation
 clients. The Unix broker endpoint verifies peer credentials before
 accepting native session proofs. The operating system supervises the
 process; application requests and node-to-node control use ABP.
+
+The system unit runs as the `noded` system user and group, created by its
+`sysusers.conf`, and pins `MIXOS_ETC`, `MIXOS_VAR` and `MIXOS_RUN`. To use
+another account, override `User` and `Group` in `noded.service.d/user.conf`
+and set `noded.account` in `node.conf.mix` to match. The desk's `noded@.service`
+continues to run as the desk user.
 
 ## Tests
 

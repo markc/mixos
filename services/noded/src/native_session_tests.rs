@@ -1717,6 +1717,7 @@ fn client_options(broker: &Broker) -> bus::native_client::UnixConnectOptions {
             gid: unsafe { libc::getegid() },
         });
     options.configured_endpoint = Some(broker.root.join("bus.sock"));
+    options.default_endpoints = Some(Vec::new());
     options.require_native_session = true;
     options
 }
@@ -2121,7 +2122,7 @@ async fn client_required_unix_never_downgrades_and_fallback_is_typed_unverified(
     options.allow_unverified_tcp_fallback = true;
     assert!(matches!(
         NodedClient::connect_unix("required", &broker.url, &options, None).await,
-        Err(ConnectError::Io(_))
+        Err(ConnectError::CandidatesMissing(_))
     ));
     // A TCP-only broker is alive and useful, but it cannot satisfy the profile.
     options.require_native_session = false;
@@ -2132,7 +2133,7 @@ async fn client_required_unix_never_downgrades_and_fallback_is_typed_unverified(
     else {
         panic!("TCP fallback must be explicitly unverified")
     };
-    assert!(matches!(unix_error, ConnectError::Io(_)));
+    assert!(matches!(unix_error, ConnectError::CandidatesMissing(_)));
     assert!(
         client
             .call("noded", "noded.ping", serde_json::Value::Null)
@@ -2152,13 +2153,13 @@ async fn client_rejects_wrong_endpoint_owner_and_server_credentials_without_fall
     options.broker_account.uid = options.broker_account.uid.wrapping_add(1);
     assert!(matches!(
         NodedClient::connect_unix("wrong-owner", &broker.url, &options, None).await,
-        Err(ConnectError::EndpointOwnership)
+        Err(error) if matches!(error.endpoint_cause(), ConnectError::EndpointOwnership)
     ));
     options = client_options(&broker);
     options.broker_account.gid = options.broker_account.gid.wrapping_add(1);
     assert!(matches!(
         NodedClient::connect_unix("wrong-peer", &broker.url, &options, None).await,
-        Err(ConnectError::PeerCredentials)
+        Err(error) if matches!(error.endpoint_cause(), ConnectError::PeerCredentials)
     ));
 }
 
@@ -2176,18 +2177,18 @@ async fn client_explicit_development_endpoint_requires_protected_path() {
     .unwrap();
     assert!(matches!(
         NodedClient::connect_unix("symlink", &broker.url, &options, None).await,
-        Err(ConnectError::EndpointOwnership)
+        Err(error) if matches!(error.endpoint_cause(), ConnectError::InvalidEndpoint)
     ));
     options.endpoint = Some(broker.root.join("bus.sock"));
     std::fs::set_permissions(&broker.root, std::fs::Permissions::from_mode(0o777)).unwrap();
     assert!(matches!(
         NodedClient::connect_unix("writable", &broker.url, &options, None).await,
-        Err(ConnectError::EndpointOwnership)
+        Err(error) if matches!(error.endpoint_cause(), ConnectError::EndpointOwnership)
     ));
     std::fs::set_permissions(&broker.root, std::fs::Permissions::from_mode(0o755)).unwrap();
     options.endpoint = Some("relative/bus.sock".into());
     assert!(matches!(
         NodedClient::connect_unix("relative", &broker.url, &options, None).await,
-        Err(ConnectError::InvalidEndpoint)
+        Err(error) if matches!(error.endpoint_cause(), ConnectError::InvalidEndpoint)
     ));
 }

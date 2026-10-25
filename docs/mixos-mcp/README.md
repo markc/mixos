@@ -18,11 +18,21 @@ otherwise the native client's node config discovery applies, including
 `MIXOS_NODE_CONFIG`, `MIXOS_ETC` and the user/system defaults.
 
 Set `MIXOS_BROKER_ACCOUNT` to the broker's operating-system account and
-`MIXOS_BUS_SOCKET` to the session's Unix socket. With either set, verified
-Unix ingress is required and connection failures never fall back to TCP.
-Without an explicit socket, the node config or MixOS runtime directory
-provides the endpoint. Without either variable, the native WebSocket client
-uses the discovered URL. Calls are never replayed after reconnecting.
+`MIXOS_BUS_SOCKET` to the session's Unix socket when overriding discovery.
+The account order is `MIXOS_BROKER_ACCOUNT`, node.conf `noded.account`, then
+`noded`; socket ownership never selects the trusted account.
+
+Unix candidates are tried in order: explicit `MIXOS_BUS_SOCKET`, node.conf
+`noded.unix_socket`, this environment's `<run>/noded/bus.sock`, the system
+`<run>/noded/bus.sock`, then the endpoint advertised by `noded.ping` at the
+resolved URL. Only missing path components are skipped, with a warning.
+An existing candidate must pass path, account, peer-credential and protocol
+verification; any failure is fatal. A server-PID pin forbids skipping and ping.
+
+Verified Unix ingress is required whenever any candidate exists. When all
+candidates are missing, plain TCP requires `MIXOS_MCP_ALLOW_TCP=1`; the default
+is to refuse it and list the candidates tried. Calls are never replayed after
+reconnecting.
 
 ```json
 {

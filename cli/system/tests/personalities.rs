@@ -242,6 +242,7 @@ async fn the_noded_personality_brokers_and_stops_cleanly_on_sigterm() {
             gid: unsafe { libc::getegid() },
         });
         options.endpoint = Some(root.join("run/bus.sock"));
+        options.default_endpoints = Some(Vec::new());
         options.require_native_session = true;
         let url = format!("ws://127.0.0.1:{port}/ws");
         let deadline = tokio::time::Instant::now() + Duration::from_secs(10);

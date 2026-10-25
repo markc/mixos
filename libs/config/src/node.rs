@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Typed node and broker configuration over strict data.
+//! Typed node and broker configuration over strict data. NodeConfigSearch
+//! supplies the same file search and read for URL, socket and account readers.
 pub use crate::webd::*;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -178,9 +179,12 @@ pub struct NodedConfig {
     #[serde(flatten)]
     pub extra: std::collections::BTreeMap<String, serde_json::Value>,
     pub port: u16,
-    /// Published system broker endpoint (BUS-013), independent of client XDG.
+    /// Absolute broker endpoint override (BUS-013); defaults to this environment's run directory.
     #[serde(deserialize_with = "absolute_unix_socket")]
     pub unix_socket: Option<std::path::PathBuf>,
+    /// Operating-system account trusted by local broker clients.
+    #[serde(deserialize_with = "broker_account_name")]
+    pub account: Option<String>,
     /// BROKER-019 pending grants per Term; may lower the initial cap of 32.
     pub pending_grants_per_parent: usize,
     pub mesh_config: Option<String>,
@@ -209,12 +213,32 @@ fn absolute_unix_socket<'de, D: serde::Deserializer<'de>>(
     Ok(path)
 }
 
+fn broker_account_name<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    let account = Option::<String>::deserialize(deserializer).map_err(|error| {
+        <D::Error as serde::de::Error>::custom(format!("noded.account: {error}"))
+    })?;
+    if account.as_ref().is_some_and(|name| {
+        name.is_empty()
+            || name
+                .chars()
+                .any(|c| c.is_whitespace() || c == '\0' || c == ':')
+    }) {
+        return Err(serde::de::Error::custom(
+            "noded.account must be an account name",
+        ));
+    }
+    Ok(account)
+}
+
 impl Default for NodedConfig {
     fn default() -> Self {
         Self {
             extra: Default::default(),
             port: 4200,
             unix_socket: None,
+            account: None,
             pending_grants_per_parent: 32,
             mesh_config: None,
             admission: AdmissionMode::Off,
@@ -224,13 +248,9 @@ impl Default for NodedConfig {
 }
 
 impl NodedConfig {
-    /// Client resolution must never derive the system endpoint from user XDG.
+    /// Compatibility alias for the broker's environment-relative endpoint.
     pub fn unix_endpoint(&self) -> std::path::PathBuf {
-        self.unix_socket.clone().unwrap_or_else(|| {
-            paths::system_default(paths::Root::Run)
-                .expect("built-in system run default")
-                .join("noded/bus.sock")
-        })
+        self.broker_unix_endpoint()
     }
 
     /// A broker publishes its resolved endpoint through noded.ping. System
@@ -256,38 +276,13 @@ pub struct ObserveConfig {
 
 const ENV_VAR: &str = "MIXOS_NODE_CONFIG";
 
-/// Search paths in priority order (after env var).
-///
-/// In user mode (uid != 0) `path(Etc)` resolves to
-/// `~/.config/mixos/`, which means a system daemon user (e.g.
-/// `mixos-maild`) running an unprivileged CLI would never find a
-/// node config placed at `<system etc>/`. The doc comment at the top of
-/// this file already promised user-XDG-then-system-etc; this honours
-/// that promise by appending the system directory as a secondary
-/// candidate whenever it differs from the primary (root mode
-/// dedupes naturally). Within each directory `node.conf.mix` is the
-/// sole config file.
-///
-/// `MIXOS_ETC` is the explicit isolation knob (tests, chroots,
-/// alternate installs): when it is set we honour the caller's intent
-/// and do NOT silently fall through to the host's `<system etc>/`.
-fn search_paths() -> Vec<PathBuf> {
-    let primary_dir = crate::path(crate::Dir::Etc);
-    let mixos_etc_set =
-        has_override(std::env::var_os("MIXOS_ETC")) || has_override(std::env::var_os("MIXOS"));
-    build_search_paths(&primary_dir, mixos_etc_set)
-}
-
+#[cfg(test)]
 fn has_override(value: Option<std::ffi::OsString>) -> bool {
     value.is_some_and(|value| !value.is_empty())
 }
 
-/// Pure helper extracted from `search_paths()` so the search order
-/// can be unit-tested without touching process env vars (which would
-/// poison the `OnceLock`-cached path resolver for sibling tests).
-///
-/// Emits one `node.conf.mix` per candidate directory, the user dir
-/// ahead of the system dir.
+/// User/layout etc precedes system etc. Explicit MIXOS_ETC or MIXOS isolates
+/// the search; root's primary system directory deduplicates naturally.
 fn build_search_paths(primary_dir: &Path, mixos_etc_set: bool) -> Vec<PathBuf> {
     let mut dirs = vec![primary_dir.to_path_buf()];
     if !mixos_etc_set {
@@ -320,32 +315,116 @@ pub fn load_from(path: &Path) -> Result<NodeConfig> {
 /// Returns `Ok(Some(config))` if found, `Ok(None)` if no file exists
 /// at any search path.
 pub fn load_node_config() -> Result<Option<NodeConfig>> {
-    // 1. Environment variable
-    if let Ok(path) = std::env::var(ENV_VAR) {
-        let config = load_from(Path::new(&path)).with_context(|| format!("{ENV_VAR}={path}"))?;
-        tracing::debug!(source = %path, env_var = ENV_VAR, "loaded node config");
-        return Ok(Some(config));
+    NodeConfigSearch::capture().load()
+}
+
+/// One read-only search for URL, socket and account consumers. Capturing only
+/// environment inputs lets resident clients defer filesystem reads safely.
+/// MIXOS_NODE_CONFIG is authoritative even when missing. Otherwise the
+/// environment/layout etc directory precedes system etc, with system fallback
+/// suppressed by MIXOS_ETC or MIXOS.
+pub struct NodeConfigSearch {
+    explicit: Option<PathBuf>,
+    environment: crate::Environment,
+}
+
+impl NodeConfigSearch {
+    pub fn capture() -> Self {
+        Self::from_environment(
+            std::env::var_os(ENV_VAR)
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from),
+            crate::Environment::current(),
+        )
     }
 
-    // 2. Standard search paths
-    for path in search_paths() {
-        if path.exists() {
-            let config = load_from(&path)?;
-            tracing::debug!(source = %path.display(), "loaded node config");
-            return Ok(Some(config));
+    pub fn from_environment(explicit: Option<PathBuf>, environment: crate::Environment) -> Self {
+        Self {
+            explicit,
+            environment,
         }
     }
 
-    Ok(None)
+    pub fn candidate_paths(&self) -> Result<Vec<PathBuf>> {
+        if let Some(path) = &self.explicit {
+            return Ok(vec![path.clone()]);
+        }
+        let dirs = crate::Dirs::from_environment(&self.environment).map_err(anyhow::Error::msg)?;
+        self.candidate_paths_with_dirs(&dirs)
+    }
+
+    /// Pure search order for an already resolved layout, without filesystem reads.
+    pub fn candidate_paths_with_dirs(&self, dirs: &crate::Dirs) -> Result<Vec<PathBuf>> {
+        if let Some(path) = &self.explicit {
+            return Ok(vec![path.clone()]);
+        }
+        let isolated = self.environment.etc.is_some() || self.environment.root.is_some();
+        // Without a user home, retain URL discovery's system-only default.
+        // A layout-provided etc directory still takes precedence.
+        if !isolated
+            && self.environment.uid != 0
+            && self.environment.home.is_none()
+            && self
+                .environment
+                .xdg_config_home
+                .as_ref()
+                .is_none_or(|dir| !dir.is_absolute())
+        {
+            let defaults =
+                crate::Dirs::from_source(&self.environment, "").map_err(anyhow::Error::msg)?;
+            if dirs.get(crate::Dir::Etc) == defaults.get(crate::Dir::Etc) {
+                return Ok(build_search_paths(
+                    &paths::system_default(paths::Root::Etc).expect("built-in system etc default"),
+                    false,
+                ));
+            }
+        }
+        Ok(build_search_paths(dirs.get(crate::Dir::Etc), isolated))
+    }
+
+    pub fn path(&self) -> Result<Option<PathBuf>> {
+        if let Some(path) = &self.explicit {
+            return Ok(Some(path.clone()));
+        }
+        for path in self.candidate_paths()? {
+            match std::fs::symlink_metadata(&path) {
+                Ok(_) => return Ok(Some(path)),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => {
+                    return Err(error).with_context(|| format!("node config {}", path.display()));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Preserve the source for tolerant URL parsing and typed native settings.
+    pub fn read(&self) -> Result<Option<(PathBuf, String)>> {
+        self.path()?
+            .map(|path| {
+                let source = std::fs::read_to_string(&path)
+                    .with_context(|| format!("failed to read {}", path.display()))?;
+                Ok((path, source))
+            })
+            .transpose()
+    }
+
+    pub fn load(&self) -> Result<Option<NodeConfig>> {
+        self.read()?
+            .map(|(path, source)| {
+                strict::from_str(&source)
+                    .map_err(|error| anyhow::anyhow!("failed to parse {}: {error}", path.display()))
+            })
+            .transpose()
+    }
 }
 
 /// Load node config, returning an error if not found.
 pub fn require_node_config() -> Result<NodeConfig> {
-    load_node_config()?.with_context(|| {
-        let paths: Vec<_> = search_paths()
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect();
+    let search = NodeConfigSearch::capture();
+    let candidates = search.candidate_paths()?;
+    search.load()?.with_context(|| {
+        let paths: Vec<_> = candidates.iter().map(|p| p.display().to_string()).collect();
         format!(
             "node config not found — set {ENV_VAR} or place node.conf.mix at: {}",
             paths.join(", ")
@@ -356,6 +435,63 @@ pub fn require_node_config() -> Result<NodeConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn broker_account_is_optional_and_validated() {
+        let config: NodeConfig = strict::from_str("noded: { account: 'broker-user' }").unwrap();
+        assert_eq!(config.noded.account.as_deref(), Some("broker-user"));
+        assert!(NodedConfig::default().account.is_none());
+        for source in [
+            "noded: { account: 7 }",
+            "noded: { account: '' }",
+            "noded: { account: 'bad name' }",
+            "noded: { account: 'bad:name' }",
+        ] {
+            let error = strict::from_str::<NodeConfig>(source).unwrap_err();
+            assert!(error.to_string().contains("account"));
+        }
+    }
+
+    #[test]
+    fn shared_search_reads_one_file_and_keeps_explicit_errors() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_path_buf();
+        let explicit = root.join("explicit.conf.mix");
+        let search = NodeConfigSearch::from_environment(
+            Some(explicit.clone()),
+            crate::Environment::default(),
+        );
+        assert_eq!(search.path().unwrap(), Some(explicit.clone()));
+        assert!(
+            search
+                .load()
+                .unwrap_err()
+                .to_string()
+                .contains(&explicit.display().to_string())
+        );
+        std::fs::write(&explicit, "noded: { account: 'broker-user' }").unwrap();
+        assert_eq!(
+            search.load().unwrap().unwrap().noded.account.as_deref(),
+            Some("broker-user")
+        );
+        let search = NodeConfigSearch::from_environment(
+            None,
+            crate::Environment {
+                etc: Some(root.clone()),
+                prefix: Some(root.clone()),
+                ..Default::default()
+            },
+        );
+        assert!(search.read().unwrap().is_none());
+        std::fs::write(
+            root.join("node.conf.mix"),
+            "noded: { account: 'isolated-user' }",
+        )
+        .unwrap();
+        assert_eq!(
+            search.load().unwrap().unwrap().noded.account.as_deref(),
+            Some("isolated-user")
+        );
+    }
     #[test]
     fn broker_defaults_and_explicit_native_endpoint() {
         let config: NodeConfig = strict::from_str("node: alpha\n").unwrap();
@@ -602,7 +738,7 @@ impl NodeConfig {
 #[cfg(test)]
 mod transplanted_tests {
     #[test]
-    fn native_endpoint_defaults_to_system_path_not_client_runtime() {
+    fn native_endpoint_uses_the_broker_runtime() {
         assert!(
             serde_json::from_str::<super::NodedConfig>(r#"{"unix_socket":"relative.sock"}"#)
                 .is_err()
@@ -612,10 +748,7 @@ mod transplanted_tests {
             config.broker_unix_endpoint(),
             crate::path(crate::Dir::Run).join("noded/bus.sock")
         );
-        assert_eq!(
-            config.unix_endpoint(),
-            std::path::PathBuf::from("/run/mixos/noded/bus.sock")
-        );
+        assert_eq!(config.unix_endpoint(), config.broker_unix_endpoint());
         let config: super::NodedConfig =
             serde_json::from_str(r#"{"unix_socket":"/run/example/bus.sock"}"#).unwrap();
         assert_eq!(

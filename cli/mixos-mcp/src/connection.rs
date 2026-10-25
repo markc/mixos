@@ -3,8 +3,10 @@
 
 //! Lazy native Bus connection. Reconnection only serves a new request;
 //! an in-flight command is never replayed.
+//! Unix ingress is required whenever a candidate exists. With no Unix
+//! endpoint, plain TCP requires the explicit MIXOS_MCP_ALLOW_TCP=1 opt-in.
 
-use bus::native_client::{BrokerAccount, NodedClient, UnixConnectOutcome, VerifiedConnection};
+use bus::native_client::{ConnectError, NodedClient, UnixConnectOutcome, VerifiedConnection};
 use std::sync::{Arc, Mutex};
 
 pub(crate) enum Client {
@@ -42,30 +44,19 @@ pub(crate) struct BrokerConnection {
     started_at: String,
 }
 
-fn broker_account(name: &str) -> Result<BrokerAccount, String> {
-    let name = std::ffi::CString::new(name).map_err(|_| "invalid broker account")?;
-    let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
-    let mut buffer = vec![0_u8; 65536];
-    let mut result = std::ptr::null_mut();
-    // SAFETY: the entry and backing buffer remain live until uid/gid are copied.
-    let rc = unsafe {
-        libc::getpwnam_r(
-            name.as_ptr(),
-            entry.as_mut_ptr(),
-            buffer.as_mut_ptr().cast(),
-            buffer.len(),
-            &mut result,
-        )
-    };
-    if rc != 0 || result.is_null() {
-        return Err("configured broker account is unavailable".into());
+fn allow_tcp(value: Option<&str>) -> bool {
+    value == Some("1")
+}
+
+fn tcp_permission(value: Option<&str>, paths: Vec<std::path::PathBuf>) -> Result<(), String> {
+    if allow_tcp(value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{}; TCP requires MIXOS_MCP_ALLOW_TCP=1",
+            ConnectError::CandidatesMissing(paths)
+        ))
     }
-    // SAFETY: getpwnam_r succeeded and returned a non-null result.
-    let entry = unsafe { entry.assume_init() };
-    Ok(BrokerAccount {
-        uid: entry.pw_uid,
-        gid: entry.pw_gid,
-    })
 }
 
 impl BrokerConnection {
@@ -118,42 +109,56 @@ impl BrokerConnection {
             started_at: Some(self.started_at.clone()),
             ..Default::default()
         };
+        let configuration = bus::client_helpers::BrokerEnvironment::capture()
+            .configuration()
+            .map_err(|error| format!("broker discovery failed: {error:#}; nothing was sent"))?;
+        let url = configuration.url.clone();
+        let candidates = configuration
+            .endpoint_candidates()
+            .map_err(|error| error.to_string())?
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
         let connect = async {
-            let url = bus::noded_url();
-            let socket = std::env::var_os("MIXOS_BUS_SOCKET").filter(|s| !s.is_empty());
-            let account = std::env::var("MIXOS_BROKER_ACCOUNT").ok();
-            if socket.is_some() || account.is_some() {
-                let account = broker_account(account.as_deref().unwrap_or("noded"))?;
-                let mut options = bus::client_helpers::unix_connect_options(account)
-                    .map_err(|e| e.to_string())?;
-                options.endpoint = socket.map(Into::into);
-                options.require_native_session = true;
-                options.incoming_capacity = Some(64);
-                match NodedClient::connect_unix(&self.name, &url, &options, Some(provenance))
-                    .await
-                    .map_err(|e| e.to_string())?
-                {
-                    UnixConnectOutcome::VerifiedUnix(connection) => Ok(Client::Unix {
-                        connection: Arc::new(connection),
-                        drain: Mutex::new(None),
-                    }),
-                    UnixConnectOutcome::UnverifiedTcp { .. } => {
-                        Err("native Unix connection required".into())
+            match configuration.resolve_endpoint().await {
+                Ok(endpoint) => {
+                    let mut options = configuration
+                        .into_options()
+                        .map_err(|error| format!("{error:#}"))?;
+                    options.require_native_session = true;
+                    options.incoming_capacity = Some(64);
+                    // Retain the resolved locator, including one advertised by ping.
+                    options.endpoint = Some(endpoint);
+                    match NodedClient::connect_unix(&self.name, &url, &options, Some(provenance))
+                        .await
+                        .map_err(|error| error.to_string())?
+                    {
+                        UnixConnectOutcome::VerifiedUnix(connection) => Ok(Client::Unix {
+                            connection: Arc::new(connection),
+                            drain: Mutex::new(None),
+                        }),
+                        UnixConnectOutcome::UnverifiedTcp { .. } => {
+                            Err("native Unix connection required".into())
+                        }
                     }
                 }
-            } else {
-                NodedClient::connect_with_provenance(&self.name, &url, Some(provenance))
-                    .await
-                    .map(|client| Client::Tcp(Box::new(client)))
-                    .map_err(|e| e.to_string())
+                Err(ConnectError::CandidatesMissing(paths)) => {
+                    tcp_permission(std::env::var("MIXOS_MCP_ALLOW_TCP").ok().as_deref(), paths)?;
+                    NodedClient::connect_with_provenance(&self.name, &url, Some(provenance))
+                        .await
+                        .map(|client| Client::Tcp(Box::new(client)))
+                        .map_err(|error| error.to_string())
+                }
+                Err(error) => Err(error.to_string()),
             }
         };
         let client = tokio::time::timeout(std::time::Duration::from_secs(5), connect)
             .await
             .map_err(|_| {
-                "broker connection/registration deadline elapsed; nothing was sent".to_string()
+                format!("broker connection/registration deadline elapsed; candidates tried: {candidates}; nothing was sent")
             })?
-            .map_err(|e| format!("broker connect failed: {e}; nothing was sent"))?;
+            .map_err(|e| format!("broker connect failed: {e}; candidates tried: {candidates}; nothing was sent"))?;
         let client = Arc::new(client);
         match client.as_ref() {
             Client::Unix { connection, drain } => {
@@ -205,8 +210,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn invalid_broker_accounts_fail_closed() {
-        assert!(broker_account("invalid\0account").is_err());
-        assert!(broker_account("mixos-mcp-no-such-account").is_err());
+    fn tcp_requires_explicit_opt_in_and_reports_candidates() {
+        let paths = vec![
+            "/tmp/example/first.sock".into(),
+            "/tmp/example/second.sock".into(),
+        ];
+        for value in [None, Some(""), Some("0"), Some("true")] {
+            let error = tcp_permission(value, paths.clone()).unwrap_err();
+            assert!(error.contains("MIXOS_MCP_ALLOW_TCP=1"));
+            for path in &paths {
+                assert!(error.contains(&path.display().to_string()));
+            }
+        }
+        assert!(tcp_permission(Some("1"), paths).is_ok());
     }
 }

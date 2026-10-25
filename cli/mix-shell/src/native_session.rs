@@ -9,11 +9,11 @@
 //! thread alone owns the Zeroizing seed; temporary SigningKeys zeroize on drop.
 //! A separate exec-restart signal can only stop the owner; it exposes no state.
 //! Ordinary shells without the marker return before config, allocation or I/O.
+//! Broker discovery uses libs/bus with environment inputs captured before spawn.
 
 use ::bus::native_client::session::{ChallengeResult, ExpectedScope, Hello, SessionFailure};
 use ::bus::native_client::{
-    BrokerAccount, ConnectError, Delivery, NodedClient, UnixConnectOptions, UnixConnectOutcome,
-    VerifiedConnection,
+    ConnectError, Delivery, NodedClient, UnixConnectOptions, UnixConnectOutcome, VerifiedConnection,
 };
 use ::bus::native_session::*;
 use ed25519_dalek::SigningKey;
@@ -237,7 +237,6 @@ pub(super) fn start() {
     crate::session_state::enable();
     // Snapshot every env-derived input while main is still single-threaded.
     // The evaluator may later mutate environ; the resident must never read it.
-    let account = std::env::var("MIXOS_BROKER_ACCOUNT").unwrap_or_else(|_| "noded".into());
     let environment = crate::node_config::NativeEnvironment::capture();
     let (sender, restart) = tokio::sync::mpsc::unbounded_channel();
     let _ = RESTART.set(sender);
@@ -247,20 +246,14 @@ pub(super) fn start() {
             let mut reporter = Reporter::default();
             // NSS, filesystem discovery and config reads may stall. They are
             // off the prompt path and consume only the captured env strings.
-            let (endpoint, url) = match environment.resolve() {
+            let (resolved, url) = match environment.resolve() {
                 Ok(configuration) => configuration,
                 Err(stage) => {
-                    reporter.report(stage);
+                    reporter.report(&format!("configuration: {stage:#}"));
                     return;
                 }
             };
-            let options = match options(account, endpoint) {
-                Ok(options) => options,
-                Err(stage) => {
-                    reporter.report(stage);
-                    return;
-                }
-            };
+            let options = options(resolved);
             let runtime = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -282,43 +275,12 @@ pub(super) fn start() {
     // Term's real child-exit path owns revocation; abrupt exit also closes UDS.
 }
 
-/// Shared with the `send` path's verified lane, deliberately. The credential
-/// resolution — an account NAME through `getpwnam_r`, never a uid inferred from
-/// the socket or the calling user — is the security-relevant half of this
-/// connection, and a second copy of it is a second thing to get wrong
-/// independently.
-pub(crate) fn options(
-    account: String,
-    endpoint: Option<std::path::PathBuf>,
-) -> Result<UnixConnectOptions, &'static str> {
-    let name =
-        std::ffi::CString::new(account).map_err(|_| "configuration: invalid broker account")?;
-    let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
-    let mut result = std::ptr::null_mut();
-    let mut buffer = vec![0u8; 65536];
-    // Trusted launch configuration selects an account, never a numeric UID
-    // inferred from the socket or the calling user. No cos-side dependency.
-    let rc = unsafe {
-        libc::getpwnam_r(
-            name.as_ptr(),
-            entry.as_mut_ptr(),
-            buffer.as_mut_ptr().cast(),
-            buffer.len(),
-            &mut result,
-        )
-    };
-    if rc != 0 || result.is_null() {
-        return Err("configuration: broker account unavailable");
-    }
-    let entry = unsafe { entry.assume_init() };
-    let mut options = UnixConnectOptions::new(BrokerAccount {
-        uid: entry.pw_uid,
-        gid: entry.pw_gid,
-    });
-    options.configured_endpoint = endpoint;
+/// Shared policy for the resident and the `send` path's verified lane.
+/// Discovery and account lookup have already passed through libs/bus.
+pub(crate) fn options(mut options: UnixConnectOptions) -> UnixConnectOptions {
     options.require_native_session = true;
     options.incoming_capacity = Some(64);
-    Ok(options)
+    options
 }
 
 fn loud(stage: &str) {
@@ -591,17 +553,20 @@ async fn own(
             tokio::time::timeout(RPC, NodedClient::connect_unix("", &url, &options, None)).await;
         let connection = match result {
             Ok(Ok(UnixConnectOutcome::VerifiedUnix(connection))) => connection,
-            Ok(Err(
-                ConnectError::InvalidEndpoint
-                | ConnectError::EndpointOwnership
-                | ConnectError::EndpointChanged
-                | ConnectError::PeerCredentials
-                | ConnectError::ServerPidMismatch
-                | ConnectError::UnsupportedVersion,
-            )) => {
-                reporter.report(
-                    "connect verification: broker identity/profile rejected; no retry or downgrade",
-                );
+            Ok(Err(error))
+                if matches!(
+                    error.endpoint_cause(),
+                    ConnectError::InvalidEndpoint
+                        | ConnectError::EndpointOwnership
+                        | ConnectError::EndpointChanged
+                        | ConnectError::PeerCredentials
+                        | ConnectError::ServerPidMismatch
+                        | ConnectError::UnsupportedVersion,
+                ) =>
+            {
+                reporter.report(&format!(
+                    "connect verification: {error}; no retry or downgrade"
+                ));
                 return;
             }
             _ => {

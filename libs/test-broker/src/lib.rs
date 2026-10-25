@@ -2,6 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Tests-only embedding of the real noded, with no broker source refactor.
 //! Keep module paths pointed at production sources: no simulated session RPCs.
+//! Fixture clients omit environment/system candidates when their socket is absent.
 // This crate has no tests of its own ([lib] test = false), but
 // `cargo build --all-targets` still builds its lib-test target. Under cfg(test)
 // the embedded noded and session_fd sources compile their own test modules,
@@ -140,6 +141,7 @@ impl Broker {
                 gid: unsafe { libc::getegid() },
             });
         options.endpoint = Some(self.endpoint.clone());
+        options.default_endpoints = Some(Vec::new());
         options.require_native_session = true;
         options
     }

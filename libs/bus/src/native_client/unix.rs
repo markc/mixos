@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Explicit, node-local BUS-013 transport. Ordinary `NodedClient::connect`
-//! remains TCP. Unix traffic cannot leave this node in v1; remote delegation
-//! and protected mesh transit are S5 work.
+//! Verified node-local BUS-013 transport with shared environment discovery.
+//! Missing candidates may be skipped before connecting; any failure on an
+//! existing endpoint is fatal. Ordinary `NodedClient::connect` remains TCP.
 
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::{Component, Path, PathBuf};
 
+use crate::client_helpers::{at_endpoint, resolve_unix_endpoint};
 use crate::native_session::BrokerPrincipal;
 use tokio::sync::mpsc;
 
@@ -32,19 +33,22 @@ pub struct ServerPeerCredentials {
     pub gid: u32,
 }
 
-/// Explicit Unix opt-in. Supply the node-config value from the cos layer;
-/// this crate deliberately has no dependency on config.
+/// Unix connection policy. Shared discovery supplies node-config and runtime
+/// candidates; explicit fields retain precedence for existing callers.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct UnixConnectOptions {
     pub broker_account: BrokerAccount,
     pub endpoint: Option<PathBuf>,
     pub configured_endpoint: Option<PathBuf>,
+    /// Resolved environment and system candidates. None uses shared discovery;
+    /// isolated fixtures can supply their own ordered list (including empty).
+    pub default_endpoints: Option<Vec<PathBuf>>,
     /// Hard requirement. Overrides `allow_unverified_tcp_fallback` on every
     /// failure, including permissions, ownership, peer credentials and version.
     pub require_native_session: bool,
-    /// Explicitly allow a fresh TCP connection after Unix setup fails. It
-    /// never carries trusted context, even if TCP advertises native-session.
+    /// Explicitly allow a fresh TCP connection when all Unix candidates are
+    /// missing. It never carries trusted context, even if TCP advertises native-session.
     pub allow_unverified_tcp_fallback: bool,
     /// Require this kernel-reported server PID on every Unix connection.
     /// A pin disables TCP endpoint discovery and all TCP fallback.
@@ -61,6 +65,7 @@ impl UnixConnectOptions {
             broker_account,
             endpoint: None,
             configured_endpoint: None,
+            default_endpoints: None,
             require_native_session: false,
             allow_unverified_tcp_fallback: false,
             expected_server_pid: None,
@@ -68,29 +73,20 @@ impl UnixConnectOptions {
         }
     }
 
-    /// Synchronous explicit/config/system resolution. `connect_unix` inserts
-    /// ping discovery before this system fallback when both options are absent.
-    /// Never consults XDG_RUNTIME_DIR, MIXOS_RUN or the caller's home.
-    pub fn resolved_endpoint(&self) -> &Path {
-        self.endpoint
-            .as_deref()
-            .or(self.configured_endpoint.as_deref())
-            .unwrap_or_else(|| {
-                static ENDPOINT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-                ENDPOINT
-                    .get_or_init(|| {
-                        paths::system_default(paths::Root::Run)
-                            .expect("built-in system run default")
-                            .join("noded/bus.sock")
-                    })
-                    .as_path()
-            })
+    /// Ordered explicit/config/environment/system candidates, before ping.
+    pub fn endpoint_candidates(&self) -> anyhow::Result<Vec<PathBuf>> {
+        crate::client_helpers::unix_endpoint_candidates(self)
     }
 }
 
 /// Structured connection failure. Diagnostics never include wire payloads.
 #[derive(Debug)]
 pub enum ConnectError {
+    Endpoint {
+        path: PathBuf,
+        error: Box<ConnectError>,
+    },
+    CandidatesMissing(Vec<PathBuf>),
     InvalidEndpoint,
     EndpointOwnership,
     EndpointChanged,
@@ -103,7 +99,27 @@ pub enum ConnectError {
 
 impl std::fmt::Display for ConnectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Endpoint { path, error } => {
+                return write!(f, "Unix endpoint {}: {error}", path.display());
+            }
+            Self::CandidatesMissing(paths) => {
+                return write!(
+                    f,
+                    "no Unix endpoint exists; candidates tried: {}; noded.ping discovery unavailable or disabled",
+                    paths
+                        .iter()
+                        .map(|path| path.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+            Self::Io(error) => return write!(f, "Unix endpoint I/O failed: {error}"),
+            Self::Protocol(error) => return write!(f, "broker connection setup failed: {error:#}"),
+            _ => {}
+        }
         f.write_str(match self {
+            Self::Endpoint { .. } | Self::CandidatesMissing(_) => unreachable!(),
             Self::InvalidEndpoint => {
                 "Unix endpoint must be absolute without symlinks or dot components"
             }
@@ -122,9 +138,20 @@ impl std::fmt::Display for ConnectError {
 impl std::error::Error for ConnectError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::Endpoint { error, .. } => Some(error.as_ref()),
             Self::Io(error) => Some(error),
             Self::Protocol(error) => Some(error.as_ref()),
             _ => None,
+        }
+    }
+}
+
+impl ConnectError {
+    /// The failure beneath its endpoint diagnostic, for existing policy checks.
+    pub fn endpoint_cause(&self) -> &Self {
+        match self {
+            Self::Endpoint { error, .. } => error.endpoint_cause(),
+            error => error,
         }
     }
 }
@@ -284,7 +311,7 @@ impl VerifiedCommand {
 impl NodedClient {
     /// Explicit Unix opt-in; ordinary `connect` remains unchanged. Native
     /// session clients MUST set `require_native_session`. Resolution is explicit
-    /// endpoint, config, ping-discovered locator, then system default. Every
+    /// endpoint, config, environment runtime, system runtime, then ping. Every
     /// candidate is verified; discovery never establishes authority. Unix is node-local
     /// in v1: mesh-destined traffic is refused, with no transparent TCP retry.
     pub async fn connect_unix(
@@ -293,16 +320,20 @@ impl NodedClient {
         options: &UnixConnectOptions,
         provenance: Option<crate::RegisterProvenance>,
     ) -> Result<UnixConnectOutcome, ConnectError> {
-        let mut resolved = options.clone();
-        if should_discover_endpoint(&resolved) {
-            resolved.configured_endpoint = discover_endpoint(tcp_url).await;
+        let result = async {
+            let path = resolve_unix_endpoint(options, tcp_url).await?;
+            connect_verified(service_name, &path, options, provenance.clone())
+                .await
+                .map_err(|error| at_endpoint(&path, error))
         }
-        match connect_verified(service_name, &resolved, provenance.clone()).await {
+        .await;
+        match result {
             Ok(connection) => Ok(UnixConnectOutcome::VerifiedUnix(connection)),
             Err(unix_error)
                 if !options.require_native_session
                     && options.expected_server_pid.is_none()
-                    && options.allow_unverified_tcp_fallback =>
+                    && options.allow_unverified_tcp_fallback
+                    && matches!(unix_error, ConnectError::CandidatesMissing(_)) =>
             {
                 let client = Self::connect_with_provenance(service_name, tcp_url, provenance)
                     .await
@@ -314,42 +345,12 @@ impl NodedClient {
     }
 }
 
-fn should_discover_endpoint(options: &UnixConnectOptions) -> bool {
-    options.endpoint.is_none()
-        && options.configured_endpoint.is_none()
-        && options.expected_server_pid.is_none()
-}
-
-/// TCP discovery supplies a locator only, never authority. Every discovered
-/// endpoint undergoes the same ownership/peer-credential/version verification.
-/// This read does not register a service or send any application/grant traffic.
-async fn discover_endpoint(tcp_url: &str) -> Option<PathBuf> {
-    let timeout = std::time::Duration::from_secs(2);
-    let client = tokio::time::timeout(timeout, NodedClient::connect_anonymous(tcp_url))
-        .await
-        .ok()?
-        .ok()?;
-    let ping = tokio::time::timeout(
-        timeout,
-        client.call("noded", "noded.ping", serde_json::Value::Null),
-    )
-    .await;
-    client.close().await;
-    let value = ping.ok()?.ok()?;
-    if value["extensions"]["native-session"].as_str() != Some("1") {
-        return None;
-    }
-    value["extensions"]["native-session-endpoint"]
-        .as_str()
-        .map(PathBuf::from)
-}
-
 async fn connect_verified(
     service_name: &str,
+    path: &Path,
     options: &UnixConnectOptions,
     provenance: Option<crate::RegisterProvenance>,
 ) -> Result<VerifiedConnection, ConnectError> {
-    let path = options.resolved_endpoint();
     let before = verify_path(path, options.broker_account)?;
     let socket = tokio::net::UnixStream::connect(path)
         .await
@@ -471,24 +472,82 @@ pub(crate) fn principal_header_is_unique(wire: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn endpoint_resolution_is_explicit_config_system_never_user_runtime() {
-        let mut options = UnixConnectOptions::new(BrokerAccount { uid: 123, gid: 123 });
-        assert_eq!(
-            options.resolved_endpoint(),
-            Path::new("/run/mixos/noded/bus.sock")
+    use crate::client_helpers::tests::{TestDir, options};
+    use std::os::unix::fs::symlink;
+    use std::os::unix::net::UnixListener;
+
+    #[tokio::test]
+    async fn existing_wrong_owner_socket_is_fatal_without_fallback() {
+        let dir = TestDir::new();
+        let path = dir.0.join("wrong-owner.sock");
+        let _socket = UnixListener::bind(&path).unwrap();
+        let mut options = options(std::slice::from_ref(&path));
+        options.broker_account.uid = options.broker_account.uid.wrapping_add(1);
+        options.require_native_session = false;
+        options.allow_unverified_tcp_fallback = true;
+        let error = NodedClient::connect_unix("", "ws://127.0.0.1:1/ws", &options, None)
+            .await
+            .err()
+            .unwrap();
+        assert!(matches!(
+            error.endpoint_cause(),
+            ConnectError::EndpointOwnership
+        ));
+        assert!(error.to_string().contains(&path.display().to_string()));
+    }
+
+    #[tokio::test]
+    async fn symlinks_and_existing_non_sockets_are_fatal() {
+        let dir = TestDir::new();
+        let file = dir.0.join("file");
+        std::fs::write(&file, "not a socket").unwrap();
+        let alias = dir.0.join("alias");
+        symlink(&file, &alias).unwrap();
+        let broken = dir.0.join("broken");
+        symlink(dir.0.join("missing"), &broken).unwrap();
+        let later = dir.0.join("later.sock");
+        let _socket = UnixListener::bind(&later).unwrap();
+        for (path, symlink) in [(file, false), (alias, true), (broken.join("socket"), true)] {
+            let mut options = options(&[path.clone(), later.clone()]);
+            options.require_native_session = false;
+            options.allow_unverified_tcp_fallback = true;
+            let error = NodedClient::connect_unix("", "ws://127.0.0.1:1/ws", &options, None)
+                .await
+                .err()
+                .unwrap();
+            if symlink {
+                assert!(matches!(
+                    error.endpoint_cause(),
+                    ConnectError::InvalidEndpoint
+                ));
+            } else {
+                assert!(matches!(
+                    error.endpoint_cause(),
+                    ConnectError::EndpointOwnership
+                ));
+            }
+            assert!(error.to_string().contains(&path.display().to_string()));
+        }
+    }
+
+    #[tokio::test]
+    async fn refused_existing_socket_does_not_skip_or_fall_back() {
+        let dir = TestDir::new();
+        let path = dir.0.join("stale.sock");
+        let later = dir.0.join("later.sock");
+        drop(UnixListener::bind(&path).unwrap());
+        let _socket = UnixListener::bind(&later).unwrap();
+        let mut options = options(&[path.clone(), later]);
+        options.require_native_session = false;
+        options.allow_unverified_tcp_fallback = true;
+        let error = NodedClient::connect_unix("", "ws://127.0.0.1:1/ws", &options, None)
+            .await
+            .err()
+            .unwrap();
+        assert!(
+            matches!(error.endpoint_cause(), ConnectError::Io(error) if error.raw_os_error() == Some(libc::ECONNREFUSED))
         );
-        options.configured_endpoint = Some("/run/example/config.sock".into());
-        assert_eq!(
-            options.resolved_endpoint(),
-            Path::new("/run/example/config.sock")
-        );
-        options.endpoint = Some("/run/example/explicit.sock".into());
-        assert_eq!(
-            options.resolved_endpoint(),
-            Path::new("/run/example/explicit.sock")
-        );
-        assert!(!options.allow_unverified_tcp_fallback);
+        assert!(error.to_string().contains(&path.display().to_string()));
     }
     #[test]
     fn pinned_pid_requires_usable_matching_kernel_credential() {
@@ -503,16 +562,6 @@ mod tests {
         for pid in [None, Some(-1), Some(0)] {
             assert_eq!(verified_server_pid(pid, None).unwrap(), None);
         }
-    }
-    #[test]
-    fn pinned_connection_never_uses_tcp_endpoint_discovery() {
-        let mut options = UnixConnectOptions::new(BrokerAccount { uid: 123, gid: 123 });
-        assert!(should_discover_endpoint(&options));
-        options.expected_server_pid = Some(42);
-        assert!(!should_discover_endpoint(&options));
-        options.expected_server_pid = None;
-        options.configured_endpoint = Some("/run/example/bus.sock".into());
-        assert!(!should_discover_endpoint(&options));
     }
     #[test]
     fn principal_duplicates_are_detected_before_compatibility_parse() {

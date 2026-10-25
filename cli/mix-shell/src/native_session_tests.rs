@@ -294,7 +294,7 @@ fn resident_uses_configuration_captured_before_thread_start() {
     let spawn = start.find(".spawn(move ||").unwrap();
     assert!(start.find("NativeEnvironment::capture()").unwrap() < spawn);
     assert!(start.find("environment.resolve()").unwrap() > spawn);
-    assert!(start.find("options(account,").unwrap() > spawn);
+    assert!(start.find("options(resolved)").unwrap() > spawn);
     let worker = source.split("impl Bootstrap {").nth(1).unwrap();
     for forbidden in [
         "std::env::",
