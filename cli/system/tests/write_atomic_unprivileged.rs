@@ -84,7 +84,19 @@ impl Sandbox {
         if is_root() {
             command.uid(NOBODY).gid(NOBODY);
         }
-        let out = command.output().expect("mix must run");
+        // The other test copies its own bin/mix at the same time. A fork for
+        // its command can hold our copy's write fd until that child execs,
+        // and exec then fails with ETXTBSY; it clears within milliseconds.
+        let mut attempts = 0;
+        let out = loop {
+            match command.output() {
+                Err(e) if e.raw_os_error() == Some(libc::ETXTBSY) && attempts < 50 => {
+                    attempts += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                result => break result.expect("mix must run"),
+            }
+        };
         (
             out.status.success(),
             String::from_utf8_lossy(&out.stdout).into_owned(),

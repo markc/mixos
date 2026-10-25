@@ -243,6 +243,17 @@ mod tests {
         let _live = std::os::unix::net::UnixListener::bind(&socket).unwrap();
         assert!(listener(&socket).is_err());
         drop(_live);
+        // Another test in this binary may fork at any moment, and until its
+        // child execs it holds every fd, the listener included (CLOEXEC acts
+        // only at exec). Wait until nothing accepts, so the socket is stale.
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::os::unix::net::UnixStream::connect(&socket).is_ok() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "dropped listener still accepts"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
         // Now stale: replaced.
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()

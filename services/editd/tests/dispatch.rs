@@ -1519,7 +1519,14 @@ async fn slow_find_on_one_buffer_does_not_delay_another() {
     eprintln!("isolation: get on B answered in {fast_ms} ms while find ran on A");
 }
 
+/// A performance probe for the shipped code, so it measures release builds
+/// only: a debug build opens the 64 MiB file in about 1.7 s on CBC hosts.
+/// `tools/release_gate.mix` runs it alone with `--release`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "release-only latency probe; run with cargo test --release"
+)]
 async fn large_file_open_edit_get_latency() {
     let h = start();
     let line = format!("{}\n", "z".repeat(31));

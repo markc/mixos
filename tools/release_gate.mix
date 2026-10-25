@@ -98,10 +98,9 @@ if $mode == "check" then
     "-A", "clippy::type_complexity", "-A", "clippy::large_enum_variant",
     "-A", "clippy::mutable_key_type"], 5400)
   -- The 64 MiB editd latency ceiling is a performance probe for the shipped
-  -- code. Run it alone in release mode; debug builds need over 1 s even on
-  -- CBC hosts and do not measure the release binary's performance.
-  stage("test", ["cargo", "test", "--workspace", "--locked", "--no-fail-fast", "--",
-    "--skip", "large_file_open_edit_get_latency"], 5400)
+  -- code. Debug builds ignore it (they need over 1 s even on CBC hosts), so
+  -- it runs alone here in release mode.
+  stage("test", ["cargo", "test", "--workspace", "--locked", "--no-fail-fast"], 5400)
   stage("latency", ["cargo", "test", "--release", "-p", "editd", "--test", "dispatch", "--locked",
     "large_file_open_edit_get_latency", "--", "--exact", "--nocapture"], 3600)
   $mix = "target/debug/mix"
