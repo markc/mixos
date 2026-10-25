@@ -24,10 +24,22 @@ pub use widgets::Widgets;
 #[derive(Serialize)]
 struct Envelope<'a, A> {
     schema_version: u32,
-    window: &'a Frame,
-    widgets: &'a Widgets,
-    windows: &'a BTreeMap<String, Frame>,
-    app: AppSection<'a, A>,
+    window: Section<'a, &'a Frame>,
+    widgets: Section<'a, &'a Widgets>,
+    windows: Section<'a, &'a BTreeMap<String, Frame>>,
+    app: Section<'a, AppSection<'a, A>>,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum Section<'a, T> {
+    Raw(&'a Value),
+    Current(T),
+}
+impl<'a, T> Section<'a, T> {
+    fn new(raw: Option<&'a Value>, current: T) -> Self {
+        raw.map_or(Self::Current(current), Self::Raw)
+    }
 }
 
 #[derive(Serialize)]
@@ -137,13 +149,13 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
     fn envelope(&self) -> Envelope<'_, A> {
         Envelope {
             schema_version: 1,
-            window: &self.window,
-            widgets: &self.widgets,
-            windows: &self.windows,
-            app: AppSection {
+            window: Section::new(self.preserved.get("window"), &self.window),
+            widgets: Section::new(self.preserved.get("widgets"), &self.widgets),
+            windows: Section::new(self.preserved.get("windows"), &self.windows),
+            app: Section::new(self.preserved.get("app"), AppSection {
                 version: self.version,
                 value: &self.app,
-            },
+            }),
         }
     }
 
@@ -152,11 +164,7 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
     }
 
     fn value(&self) -> Result<Value, String> {
-        let mut value = serde_json::to_value(self.envelope()).map_err(|e| e.to_string())?;
-        for (name, raw) in &self.preserved {
-            value[name] = raw.clone();
-        }
-        Ok(value)
+        serde_json::to_value(self.envelope()).map_err(|e| e.to_string())
     }
 
     /// Share secondary frames with toolkit viewports in this root context.
@@ -356,6 +364,13 @@ mod tests {
         assert!(store.flush().is_err());
         assert!(!dir.path().join("window.conf.mix").exists());
         assert!(store.describe()["error"].is_string());
+        // A preserved section must not even attempt to serialise the older
+        // app's unusable default while saving the independently owned frame.
+        std::fs::write(dir.path().join("window.conf.mix"), "schema_version: 1\napp: {version: 2, value: {future: true}}\n").unwrap();
+        let mut preserved = Store::<Refuses>::load(Some(dir.path().into()), 1);
+        preserved.window.size = Some([800.0, 500.0]);
+        assert!(preserved.flush().unwrap());
+        assert_eq!(preserved.describe()["app"]["value"]["future"], true);
     }
     #[test]
     fn failed_write_attempts_are_coalesced_and_retry_after_repair() {
