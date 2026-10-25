@@ -7,9 +7,9 @@
 -- /forum ("New topic"); THIS surface is for moderation/cleanup, mirroring
 -- /admin/posts. Scoped to kind='forum' via a derived table handed to dt_sql (a
 -- handler literal — never user input — so no injection).
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
 
 -- The forum-topics scope as a derived table (dt_sql/dt_all_ids splice this into
 -- FROM; dt_where/dt_order_by reference the inner columns by name, unprefixed).

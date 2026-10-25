@@ -285,14 +285,14 @@ to <code>mix</code>. The standalone development binary runs the same library ent
 <code>tools/package.mix</code> includes that symlink, the template service and sysusers
 declaration, and the vendored parser's licences in the server archive.</p>
 <p><code>maild@INSTANCE.service</code> requires <code>noded@INSTANCE.service</code> and reads the same
-<code>/etc/mixos/session/INSTANCE.env</code> file, including its <code>MIXOS_NODE_CONFIG</code> broker
+<code>&lt;config&gt;/session/INSTANCE.env</code> file, including its <code>MIXOS_NODE_CONFIG</code> broker
 configuration. It runs as the <code>maild</code> account. The unit uses
-<code>/etc/mixos/maild/config.conf.mix</code>, creates <code>StateDirectory=maild</code>, and sets
-<code>MIXOS_VAR=/var/lib/maild</code>; configured TLS material must be readable by maild.
+<code>&lt;config&gt;/maild/config.conf.mix</code>, creates <code>StateDirectory=maild</code>, and sets
+<code>MIXOS_STATE=/var/lib/maild</code>; configured TLS material must be readable by maild.
 The unit documentation URL points to this manual.</p>
 <p><code>maild.service</code> is the plain per-host form, for a host that runs the plain
 <code>noded.service</code> rather than per-session brokers. It reads the node config
-from <code>/etc/mixos</code>, creates <code>StateDirectory=mixos/maild</code>, and takes its data
+from <code>&lt;config&gt;</code>, creates <code>StateDirectory=mixos/maild</code>, and takes its data
 paths from the maild config. The sysusers declaration adds maild to the
 <code>mixos-tls</code> group (gid 510), which it shares with webd for the TLS keys.</p>
         </article>

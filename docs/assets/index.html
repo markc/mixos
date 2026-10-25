@@ -352,7 +352,7 @@ apart from the core the way <a href="/bus/">bus</a> keeps <code>noded_url()</cod
 <table><thead><tr><th>Order</th><th>Root</th></tr></thead><tbody>
 <tr><td>1</td><td><code>$XDG_DATA_HOME/mixos/assets</code> (<code>~/.local/share/mixos/assets</code>)</td></tr>
 <tr><td>2</td><td>each <code>$XDG_DATA_DIRS</code> entry's <code>mixos/assets</code> (<code>/usr/local/share</code>, <code>/usr/share</code>)</td></tr>
-<tr><td>3</td><td><code>assets</code> under <code>config::path(Dir::Share)</code>: <code>$MIXOS_SHARE/assets</code>, default <code>/opt/mixos/share/assets</code></td></tr>
+<tr><td>3</td><td><code>assets</code> under <code>config::path(Dir::Share)</code>: <code>$MIXOS_SHARE/assets</code>, default <code>&lt;prefix&gt;/share/assets</code></td></tr>
 </tbody></table>
 <pre><code class="language-rust">let set = assets::mixos::discover()?;              // once, at startup, hashes verified
 let set = assets::mixos::select()?;                // once, at startup, no hashing (compd)
@@ -362,7 +362,7 @@ let lookup = assets::mixos::lookup_in(&amp;xdg, &amp;share); // explicit inputs
 <p>The lock and installer for the MixOS set live in
 <a href="https://github.com/markc/mixos/tree/main/share/assets"><code>share/assets/</code></a>
 (<code>core.conf.mix</code>, <code>install.mix</code>), which publishes to
-<code>/opt/mixos/share/assets</code>.</p>
+<code>&lt;prefix&gt;/share/assets</code>.</p>
 <h2 id="testing">Testing</h2>
 <p><code>cargo test -p assets</code>. The unit tests cover the validators, the catalogue
 parser, the read limits and the lookup order; <code>tests/sets.rs</code> the public

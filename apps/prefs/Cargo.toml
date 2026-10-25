@@ -20,6 +20,7 @@ contract = "public"
 mod_module_files = "deny"
 
 [dependencies]
+paths = { path = "../../libs/paths" }
 buildinfo.workspace = true
 citizen.workspace = true
 design.workspace = true

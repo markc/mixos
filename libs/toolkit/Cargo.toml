@@ -20,6 +20,7 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+paths = { path = "../../libs/paths" }
 assets.workspace = true
 bus = { workspace = true, features = ["native"] }
 tokio.workspace = true

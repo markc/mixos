@@ -41,7 +41,7 @@ Available to a handler whose route declares `capabilities = ["db"]`:
 ## Deploy it
 
 1. **Give the vhost a database.** In the vhost's `[[webd.vhost]]` config
-   block set `cms_db_path = "/var/lib/mixos/webd/<fqdn>/cms.db"` (any
+   block set `cms_db_path = "<state>/webd/<fqdn>/cms.db"` (any
    path webd can write); restart webd. (Runtime provisioning via the
    `webd.vhosts` namespace is a planned follow-up.)
 

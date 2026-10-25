@@ -63,7 +63,7 @@ async fn async_main() -> anyhow::Result<()> {
     };
 
     // Default root: the unit's StateDirectory as systemd hands it over
-    // ($STATE_DIRECTORY), else /var/lib/mixos/blobd. Not the XDG
+    // ($STATE_DIRECTORY), else mixos:state/blobd. Not the XDG
     // resolver: under the unit's HOME redirect a non-root uid resolves
     // that inside the state dir, not to it.
     let root = cfg.root.clone().unwrap_or_else(|| {

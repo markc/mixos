@@ -2,7 +2,7 @@
 -- Sync this checkout's shared scene catalogue into the one a session reads,
 -- then reload the enabled scenes that use a changed shared helper.
 -- usage: mix share/scenes/sync.mix [--env FILE] [--apply]
---   --env FILE  session environment file (default /etc/mixos/session/4.env);
+--   --env FILE  session environment file (default <config>/session/4.env);
 --               its SCENES_TEMPLATES is the catalogue that gets written.
 --   --apply     write the files and reload. Without it, only the plan prints.
 -- A changed lib/ file reloads every enabled scene, because each one loads
@@ -12,7 +12,7 @@
 $here = dirname(realpath($0))
 $argv = args()
 $apply = contains($argv, "--apply")
-$env_path = "/etc/mixos/session/4.env"
+$env_path = (mixos_path("config") .. "/session/4.env")
 if contains($argv, "--env") then
   $env_path = $argv[index_of($argv, "--env") + 1]
 end
@@ -88,7 +88,7 @@ if not $lib_changed then
 end
 
 $cli = realpath($here .. "/../../services/compd/scripts/scenes_cli.mix")
-$listed = run_argv(["/opt/mixos/bin/mix", $cli, "list", "--json"], {env: $envmap})
+$listed = run_argv([(mixos_path("prefix") .. "/bin/mix"), $cli, "list", "--json"], {env: $envmap})
 if $listed["exit_code"] != 0 then
   raise("SCENES_LIST", "could not list scenes", {stderr: $listed["stderr"]})
 end
@@ -100,7 +100,7 @@ end
 
 for $n in $names
   if $apply then
-    $r = run_argv(["/opt/mixos/bin/mix", $cli, "reload", $n], {env: $envmap})
+    $r = run_argv([(mixos_path("prefix") .. "/bin/mix"), $cli, "reload", $n], {env: $envmap})
     print("reload " .. $n .. " -> rc=" .. to_string($r["exit_code"]) .. " " .. $r["stdout"])
   else
     print("would reload " .. $n)

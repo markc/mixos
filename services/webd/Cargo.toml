@@ -29,6 +29,7 @@ name = "webd"
 path = "src/main.rs"
 
 [dependencies]
+paths = { path = "../../libs/paths" }
 assets.workspace = true
 files.workspace = true
 config.workspace = true

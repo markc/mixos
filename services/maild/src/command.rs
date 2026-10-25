@@ -2241,7 +2241,7 @@ async fn async_main() -> Result<()> {
 
     // Config search order (first match wins):
     //   1. `--config <path>` from the command line
-    //   2. `/etc/mixos/maild/config.conf.mix` — the system-wide config
+    //   2. `mixos:config/maild/config.conf.mix` — the system-wide config
     //      the systemd unit reads. Putting this *ahead* of the XDG user
     //      path means a non-root caller (e.g. `markc` running
     //      `maild account list`) resolves to the daemon's actual

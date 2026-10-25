@@ -17,8 +17,8 @@
 -- drain is cookieless and has no session (webd's CSRF gate allows a both-absent
 -- Origin/cookie request precisely so machine callers work).
 
-include "/opt/mixos/vhosts/shared/apps/tools_lib.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/apps/tools_lib.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
 
 -- The poll cadence: fast first, then backing off.
 --

@@ -21,6 +21,7 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+paths = { path = "../../../../libs/paths" }
 action.workspace = true
 schemars.workspace = true
 chrono = { workspace = true, features = ["clock"] }

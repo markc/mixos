@@ -25,6 +25,7 @@ default = []
 tls = ["dep:rustls", "dep:rustls-pemfile", "dep:tokio-rustls"]
 
 [dependencies]
+paths = { path = "../../libs/paths" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

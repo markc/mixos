@@ -9,7 +9,7 @@
 -- Run from the checkout root: mix tests/command_registry_test.mix
 
 $tool = realpath(dirname(realpath($0)) .. "/../tools/command_registry.mix")
-$tmp = "/var/tmp/command-registry-test." .. uuid()
+$tmp = "/tmp/command-registry-test." .. uuid()
 mkdir($tmp, {parents: true})
 $results = []
 
@@ -19,7 +19,7 @@ fn check($name, $ok)
 end
 
 fn gate($file)
-  $argv = ["/opt/mixos/bin/mix", $tool]
+  $argv = [realpath("/proc/self/exe"), $tool]
   if $file != nil then
     push($argv, $file)
   end
@@ -81,13 +81,13 @@ expect("schema 4 family bad schema", replace($with_family, 'schema:"action::Exec
 fn expect_today($name, $text, $today, $pass, $needle)
   $file = $tmp .. "/" .. $name .. ".conf.mix"
   write_file($file, $text)
-  $r = run_argv(["/opt/mixos/bin/mix", $tool, $file, "--today", $today], {timeout: 30, stderr: "stdout"})
+  $r = run_argv([realpath("/proc/self/exe"), $tool, $file, "--today", $today], {timeout: 30, stderr: "stdout"})
   $ok = ($r.exit_code == 0) == $pass and ($needle == "" or contains($r.stdout, $needle))
   check($name, $ok)
   if not $ok then print($r.stdout) end
 end
 $pending = registry(replace($b4, 'schema:"none"', 'schema:"pending"'), 4)
-$malformed_today = run_argv(["/opt/mixos/bin/mix", $tool, "--today", "not-a-date"], {timeout: 30, stderr: "stdout"})
+$malformed_today = run_argv([realpath("/proc/self/exe"), $tool, "--today", "not-a-date"], {timeout: 30, stderr: "stdout"})
 check("malformed --today is a usage error", $malformed_today.exit_code == 2 and contains($malformed_today.stdout, "usage:") and contains($malformed_today.stdout, "--today needs YYYY-MM-DD"))
 expect_today("pending at cutoff", $pending, "2026-11-30", true, "")
 expect_today("pending expired names command", $pending, "2026-12-01", false, "demo.open: pending schema expired")

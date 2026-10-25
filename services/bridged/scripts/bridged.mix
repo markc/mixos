@@ -11,13 +11,13 @@
 --
 -- The serve name must be one Bus service-name segment ([a-z][a-z0-9-]{1,30})
 -- that no registered Bus command already starts with (registry: $BRIDGED_COMMANDS,
--- else /opt/mixos/share/bus/commands.conf.mix; missing or unreadable refuses).
+-- else <prefix>/share/bus/commands.conf.mix; missing or unreadable refuses).
 -- mix --serve registers the name before this file runs, so a refusal in
 -- serve mode comes just after registration. --start runs the checks first,
 -- in this process, and only then starts the serve citizen as its child, so a
 -- refused name never reaches the Bus.
 -- Config: $BRIDGED_CONFIG, else <etc>/bridge/<app>.conf.mix with <etc> =
--- $MIXOS_ETC or /etc/mixos. Keys: host, port, auth, token_file, timeout_s,
+-- $MIXOS_CONFIG or <config>. Keys: host, port, auth, token_file, timeout_s,
 -- connect_timeout_s, backoff_s, max_line, instance (docs/docs/spec/bridge/).
 -- auth "key" reads token_file on every connect, not here: the app writes that
 -- file after it starts, so a key path that does not exist yet is not refused.
@@ -84,10 +84,10 @@ if $svc == nil then
   -- control-group kill reaches both; Mix then records the SIGTERM this process
   -- got and exits 143 whatever the child returned (the unit's clean-stop
   -- status). There is no parent-death protection outside the unit. BRIDGED_MIX
-  -- names the mix binary for the child (default /opt/mixos/bin/mix); it exists
+  -- names the mix binary for the child (default <prefix>/bin/mix); it exists
   -- for tests and must come from administrator-controlled environment only.
   $mix = env("BRIDGED_MIX") ?? ""
-  if $mix == "" then $mix = "/opt/mixos/bin/mix" end
+  if $mix == "" then $mix = (mixos_path("prefix") .. "/bin/mix") end
   $code = 3
   try
     $code = run_stream([$mix, "--serve", realpath($0), "--name", $app])

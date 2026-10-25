@@ -336,7 +336,7 @@ fn man_with_files(args: &[&str], local: bool, files: &[(&str, &str)]) -> std::pr
         .args(args)
         .env("HOME", home.path())
         .env("MIXOS", &root)
-        .env("MIXOS_SHARE", home.path().join("no-share"))
+        .env("MIXOS_PREFIX", home.path().join("no-prefix"))
         .env("XDG_CACHE_HOME", home.path().join("no-cache"))
         .env("MIX_STATS", "off")
         .env_remove("MIXRC")

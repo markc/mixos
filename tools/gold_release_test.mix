@@ -5,7 +5,9 @@ $repo = dirname(dirname(realpath($0)))
 $mix = realpath("/proc/self/exe")
 $base = "/tmp/mixos-gold-test-" .. uuid()
 $root = $base .. "/gold"
-$state = $base .. "/state"
+$state_root = $base .. "/state"
+$state = $state_root .. "/releases"
+$layout = {prefix: $root, config: $base .. "/config", state: $state_root, cache: $base .. "/cache", runtime: $base .. "/runtime"}
 $dist = $base .. "/dist"
 $name = "mixos-desktop-0.1.2-linux-x86_64"
 $server_name = "mixos-server-0.1.2-linux-x86_64"
@@ -17,6 +19,7 @@ end
 
 mkdir($root .. "/bin", {parents: true})
 mkdir($dist, {parents: true})
+write_file($root .. "/layout.mx", data_encode({prefix: $root}) .. "\n")
 write_file($root .. "/bin/mock", "previous\n")
 -- An empty directory that predates the install must survive its rollback.
 mkdir($root .. "/share", {parents: true})
@@ -24,6 +27,22 @@ mkdir($base .. "/pack/" .. $name .. "/bin", {parents: true})
 mkdir($base .. "/pack/" .. $name .. "/lib", {parents: true})
 mkdir($base .. "/pack/" .. $name .. "/share/scenes", {parents: true})
 write_file($base .. "/pack/" .. $name .. "/bin/mock", "new\n")
+-- A native Mix fixture models only the staged-binary defaults contract.
+-- Its five test roots deliberately differ from the running interpreter.
+$defaults_program = <<DEFAULTS
+#!/usr/bin/env mix
+$g = getopt(args(), {tier: {arg: true}, prefix: {arg: true}, json: {}})
+if not deep_eq($g.rest, ["layout", "defaults"]) or $g.opts.tier != "system" or not $g.opts.json then
+  raise("FIXTURE_DEFAULTS", "unexpected staged defaults query")
+end
+$fixture = @LAYOUT@
+if $g.opts.prefix != nil then $fixture.prefix = $g.opts.prefix end
+write_file(@TRACE@, json_encode(args()))
+print(json_encode($fixture))
+DEFAULTS
+$defaults_program = replace(replace($defaults_program, "@LAYOUT@", json_encode($layout)), "@TRACE@", json_encode($base .. "/defaults-query.json"))
+write_file($base .. "/pack/" .. $name .. "/bin/mix", $defaults_program)
+chmod($base .. "/pack/" .. $name .. "/bin/mix", 0o755)
 write_file($base .. "/pack/" .. $name .. "/lib/libinput.so.10", "mock-library\n")
 chmod($base .. "/pack/" .. $name .. "/bin/mock", 0o755)
 write_file($base .. "/pack/" .. $name .. "/share/scenes/test.mix", "print(1)\n")
@@ -33,6 +52,8 @@ run_argv_must(["tar", "-czf", $tar, "-C", $base .. "/pack", $name], {timeout: 30
 mkdir($base .. "/pack/" .. $server_name .. "/bin", {parents: true})
 mkdir($base .. "/pack/" .. $server_name .. "/share/server", {parents: true})
 copy($base .. "/pack/" .. $name .. "/bin/mock", $base .. "/pack/" .. $server_name .. "/bin/mock")
+copy($base .. "/pack/" .. $name .. "/bin/mix", $base .. "/pack/" .. $server_name .. "/bin/mix")
+chmod($base .. "/pack/" .. $server_name .. "/bin/mix", 0o755)
 write_file($base .. "/pack/" .. $server_name .. "/share/server/test.mix", "print(2)\n")
 $server_tar = $dist .. "/" .. $server_name .. ".tar.gz"
 run_argv_must(["tar", "-czf", $server_tar, "-C", $base .. "/pack", $server_name], {timeout: 30})
@@ -41,33 +62,45 @@ write_file($manifest, data_encode({schema: 1, version: "0.1.2", source: $source,
   platform: "linux-x86_64-glibc", glibc_floor: "2.39", fixture: false,
   archives: [{name: "mixos-desktop", asset: basename($tar),
   sha256: hash_file($tar, "sha256"),
-  binaries: [{name: "mock", sha256: hash_file($base .. "/pack/" .. $name .. "/bin/mock", "sha256")}],
+  binaries: [{name: "mock", sha256: hash_file($base .. "/pack/" .. $name .. "/bin/mock", "sha256")},
+    {name: "mix", sha256: hash_file($base .. "/pack/" .. $name .. "/bin/mix", "sha256")}],
   libraries: [{name: "libinput.so.10", sha256: hash_file($base .. "/pack/" .. $name .. "/lib/libinput.so.10", "sha256")}]},
   {name: "mixos-server", asset: basename($server_tar), sha256: hash_file($server_tar, "sha256"),
-   binaries: [{name: "mock", sha256: hash_file($base .. "/pack/" .. $server_name .. "/bin/mock", "sha256")}],
+   binaries: [{name: "mock", sha256: hash_file($base .. "/pack/" .. $server_name .. "/bin/mock", "sha256")},
+     {name: "mix", sha256: hash_file($base .. "/pack/" .. $server_name .. "/bin/mix", "sha256")}],
    libraries: []}]}) .. "\n")
 $sha = hash_file($manifest, "sha256")
 $base_argv = [$mix, $repo .. "/tools/gold_release.mix"]
-$opts = ["--root", $root, "--state", $state, "--manifest", $manifest,
+$opts = ["--root", $root, "--state", $state_root, "--manifest", $manifest,
   "--manifest-sha256", $sha, "--archive-dir", $dist, "--package", "desktop"]
 try
   $alias_root = $root .. "/../gold"
-  $alias = run_argv(concat($base_argv, ["plan", "--root", $alias_root, "--state", $state,
+  $alias = run_argv(concat($base_argv, ["plan", "--root", $alias_root, "--state", $state_root,
     "--manifest", $manifest, "--manifest-sha256", $sha, "--archive-dir", $dist,
     "--package", "desktop"]), {timeout: 30, stderr: "stdout"})
   need($alias.exit_code != 0 and contains($alias.stdout, "GOLD_ROOT"),
     "noncanonical root was accepted: " .. $alias.stdout)
   $bad = run_argv(concat(concat($base_argv, ["plan"]),
-    ["--root", $root, "--state", $state, "--manifest", $manifest,
+    ["--root", $root, "--state", $state_root, "--manifest", $manifest,
      "--manifest-sha256", "0000000000000000000000000000000000000000000000000000000000000000",
      "--archive-dir", $dist, "--package", "desktop"]), {timeout: 30, stderr: "stdout"})
   need($bad.exit_code != 0 and contains($bad.stdout, "GOLD_DIGEST"), "wrong manifest digest refusal differs: " .. $bad.stdout)
+  need(not is_file($base .. "/defaults-query.json"), "unverified release binary was executed")
+  mkdir($base .. "/outside-state")
+  symlink($base .. "/outside-state", $base .. "/state-link")
+  $state_link = run_argv(concat($base_argv, ["plan", "--root", $root, "--state", $base .. "/state-link",
+    "--manifest", $manifest, "--manifest-sha256", $sha, "--archive-dir", $dist, "--package", "desktop"]),
+    {timeout: 30, stderr: "stdout"})
+  need($state_link.exit_code != 0 and contains($state_link.stdout, "GOLD_STATE") and
+    not is_dir($base .. "/outside-state/releases"), "target state symlink was followed")
   $plan = run_argv(concat(concat($base_argv, ["plan"]), $opts), {timeout: 30, stderr: "stdout"})
-  need($plan.exit_code == 0 and contains($plan.stdout, "changed=4"), "plan failed: " .. $plan.stdout)
-  $all_opts = ["--root", $root, "--state", $state, "--manifest", $manifest,
+  need($plan.exit_code == 0 and contains($plan.stdout, "changed=6"), "plan failed: " .. $plan.stdout)
+  need(deep_eq(json_parse(read_file($base .. "/defaults-query.json")),
+    ["layout", "defaults", "--tier", "system", "--json", "--prefix", $root]), "defaults were not queried from the staged binary for the explicit target")
+  $all_opts = ["--root", $root, "--state", $state_root, "--manifest", $manifest,
     "--manifest-sha256", $sha, "--archive-dir", $dist, "--package", "all"]
   $all_plan = run_argv(concat(concat($base_argv, ["plan"]), $all_opts), {timeout: 30, stderr: "stdout"})
-  need($all_plan.exit_code == 0 and contains($all_plan.stdout, "changed=5"),
+  need($all_plan.exit_code == 0 and contains($all_plan.stdout, "changed=7"),
     "identical shared binary was not accepted: " .. $all_plan.stdout)
   need(read_file($root .. "/bin/mock") == "previous\n", "plan changed gold")
   $apply = run_argv(concat(concat($base_argv, ["apply"]), $opts), {timeout: 30, stderr: "stdout"})
@@ -76,6 +109,7 @@ try
   need(read_link($root .. "/bin/alias") == "mock", "gold link missing")
   need(read_file($root .. "/lib/libinput.so.10") == "mock-library\n", "runtime library missing")
   need(is_file($root .. "/share/scenes/test.mix"), "gold scene missing")
+  need(deep_eq(load_data($root .. "/layout.mx"), $layout), "resolved target layout was not persisted")
   $lines = split(trim($apply.stdout), "\n")
   $last = $lines[len($lines) - 1]
   $id = replace(fields($last)[1], "receipt=", "")
@@ -83,17 +117,20 @@ try
   need($later.exit_code == 0, "identical later apply failed: " .. $later.stdout)
   $later_lines = split(trim($later.stdout), "\n")
   $later_id = replace(fields($later_lines[len($later_lines) - 1])[1], "receipt=", "")
-  $stale = run_argv(concat($base_argv, ["rollback", "--root", $root, "--state", $state,
+  -- Recovery must not execute the target binary (it may be broken or absent).
+  remove($base .. "/defaults-query.json")
+  $stale = run_argv(concat($base_argv, ["rollback", "--root", $root, "--state", $state_root,
     "--receipt", $id]), {timeout: 30, stderr: "stdout"})
   need($stale.exit_code != 0 and contains($stale.stdout, "GOLD_ORDER"),
     "older receipt rollback was accepted: " .. $stale.stdout)
-  $later_rollback = run_argv(concat($base_argv, ["rollback", "--root", $root, "--state", $state,
+  $later_rollback = run_argv(concat($base_argv, ["rollback", "--root", $root, "--state", $state_root,
     "--receipt", $later_id]), {timeout: 30, stderr: "stdout"})
   need($later_rollback.exit_code == 0, "newer receipt rollback failed: " .. $later_rollback.stdout)
-  $rollback = run_argv(concat($base_argv, ["rollback", "--root", $root, "--state", $state,
-    "--receipt", $id]), {timeout: 30, stderr: "stdout"})
+  $rollback = run_argv(concat($base_argv, ["rollback", "--receipt-file", $state .. "/receipts/" .. $id .. ".mx"]),
+    {timeout: 30, stderr: "stdout"})
   need($rollback.exit_code == 0 and contains($rollback.stdout, "ROLLBACK"), "rollback failed: " .. $rollback.stdout)
   need(read_file($root .. "/bin/mock") == "previous\n", "rollback did not restore gold")
+  need(not is_file($base .. "/defaults-query.json"), "rollback queried a binary instead of reading the receipt")
   need(not exists($root .. "/bin/alias", {follow_symlinks: false}), "rollback left new link")
   need(not exists($root .. "/lib/libinput.so.10", {follow_symlinks: false}), "rollback left runtime library")
   need(not is_file($root .. "/share/scenes/test.mix"), "rollback left new scene")
@@ -110,21 +147,21 @@ try
   $rec2.status = "pending"
   write_file($state .. "/pending.mx", data_encode($rec2) .. "\n")
   remove($receipt2)
-  $recover = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state]),
+  $recover = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state_root]),
     {timeout: 30, stderr: "stdout"})
   need($recover.exit_code == 0 and read_file($root .. "/bin/mock") == "previous\n",
     "interrupted apply recovery failed: " .. $recover.stdout)
   $recovered = load_data($receipt2)
   write_file($state .. "/pending.mx", data_encode($recovered) .. "\n")
   remove($receipt2)
-  $recover_again = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state]),
+  $recover_again = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state_root]),
     {timeout: 30, stderr: "stdout"})
   need($recover_again.exit_code == 0 and not is_file($state .. "/pending.mx"),
     "recovered pending receipt did not finish: " .. $recover_again.stdout)
   $attack = $rec2
   $attack.files[len($attack.files) - 1].rel = "bin/../../outside"
   write_file($state .. "/pending.mx", data_encode($attack) .. "\n")
-  $unsafe = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state]),
+  $unsafe = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state_root]),
     {timeout: 30, stderr: "stdout"})
   need($unsafe.exit_code != 0 and contains($unsafe.stdout, "GOLD_PATH"),
     "unsafe receipt path was accepted: " .. $unsafe.stdout)
@@ -132,7 +169,7 @@ try
   $dir_attack = $rec2
   $dir_attack.created_dirs = ["share/../../outside"]
   write_file($state .. "/pending.mx", data_encode($dir_attack) .. "\n")
-  $unsafe_dir = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state]),
+  $unsafe_dir = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state_root]),
     {timeout: 30, stderr: "stdout"})
   need($unsafe_dir.exit_code != 0 and contains($unsafe_dir.stdout, "GOLD_PATH"),
     "unsafe receipt directory was accepted: " .. $unsafe_dir.stdout)
@@ -140,7 +177,7 @@ try
   $id_attack = $rec2
   $id_attack.id = "../../escape"
   write_file($state .. "/pending.mx", data_encode($id_attack) .. "\n")
-  $unsafe_id = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state]),
+  $unsafe_id = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state_root]),
     {timeout: 30, stderr: "stdout"})
   need($unsafe_id.exit_code != 0 and contains($unsafe_id.stdout, "GOLD_RECEIPT"),
     "unsafe receipt id was accepted: " .. $unsafe_id.stdout)
@@ -149,7 +186,7 @@ try
   $bad_doc = load_data($manifest)
   $bad_doc.archives[0].libraries[0].sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
   write_file($bad_manifest, data_encode($bad_doc) .. "\n")
-  $bad_library = run_argv(concat($base_argv, ["plan", "--root", $root, "--state", $state,
+  $bad_library = run_argv(concat($base_argv, ["plan", "--root", $root, "--state", $state_root,
     "--manifest", $bad_manifest, "--manifest-sha256", hash_file($bad_manifest, "sha256"),
     "--archive-dir", $dist, "--package", "desktop"]), {timeout: 30, stderr: "stdout"})
   need($bad_library.exit_code != 0 and contains($bad_library.stdout, "GOLD_LIBRARY"),
@@ -158,7 +195,7 @@ try
   $tampered = run_argv(concat(concat($base_argv, ["plan"]), $opts), {timeout: 30, stderr: "stdout"})
   need($tampered.exit_code != 0 and contains($tampered.stdout, "GOLD_DIGEST"),
     "tampered archive was accepted: " .. $tampered.stdout)
-  print("PASS gold release plan, apply, rollback, recovery, path, library and archive digest refusals")
+  print("PASS gold release staged defaults, explicit target, receipt-only rollback, recovery, path, library and archive digest refusals")
 finally
   remove_dir($base)
 end

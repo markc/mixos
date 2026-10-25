@@ -52,8 +52,8 @@ hypervisors.
 
 | Source | Installed as |
 |---|---|
-| `services/toolsd/scripts/` | `/opt/mixos/lib/toolsd/` (root-owned, not writable) |
-| `services/webd/vhosts/apps/tools_registry.mix` | `/opt/mixos/lib/toolsd/lib/tools_registry.mix` |
+| `services/toolsd/scripts/` | `<prefix>/lib/toolsd/` (root-owned, not writable) |
+| `services/webd/vhosts/apps/tools_registry.mix` | `<prefix>/lib/toolsd/lib/tools_registry.mix` |
 | `services/toolsd/units/*.service`, `*.timer` | `/etc/systemd/system/` |
 | `services/toolsd/units/toolsd.tmpfiles.conf` | `/etc/tmpfiles.d/toolsd.conf` |
 | `services/toolsd/units/49-toolsd-wake.rules` | `/etc/polkit-1/rules.d/` |
@@ -65,10 +65,10 @@ the drain checks its owner and mode before every run.
 Each host also needs:
 
 - the system users `toolsd` and `toolsd-wake`;
-- `/etc/mixos/toolsd/env` with `TOOLS_BASE_URL` (the webd vhost to claim
+- `<config>/toolsd/env` with `TOOLS_BASE_URL` (the webd vhost to claim
   from, for example `https://admin.example.com`) and `TOOLS_CA_FILE` (the
   certificate chain to verify it with);
-- `/etc/mixos/toolsd/secret`, `0400 root`, matching the vhost's tools
+- `<config>/toolsd/secret`, `0400 root`, matching the vhost's tools
   secret;
 - a drop-in, `/etc/systemd/system/toolsd-drain.service.d/webd.conf`, with
   `IPAddressAllow=<webd address>/32`.

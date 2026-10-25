@@ -240,14 +240,14 @@
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="mixos-mcp">mixos-mcp</h1>
 <p><code>mixos-mcp</code> is an MCP stdio server for agents. Install the binary at
-<code>/opt/mixos/bin/mixos-mcp</code> and register the MCP server as <code>mixos</code>.
+<code>&lt;prefix&gt;/bin/mixos-mcp</code> and register the MCP server as <code>mixos</code>.
 It ships in the server prefix archive. Its package, binary and component
 are the <a href="/docs/decisions/2026-10-19-mcp-program-name/">single naming exception</a>.</p>
 <h2 id="connection">Connection</h2>
 <p>The server starts without a Bus connection. The first Bus tool connects
 using <code>libs/bus</code>. <code>MIXOS_NODED_URL</code> overrides the node configuration URL;
 otherwise the native client's node config discovery applies, including
-<code>MIXOS_NODE_CONFIG</code>, <code>MIXOS_ETC</code> and the user/system defaults.</p>
+<code>MIXOS_NODE_CONFIG</code>, <code>MIXOS_CONFIG</code> and the user/system defaults.</p>
 <p>Set <code>MIXOS_BROKER_ACCOUNT</code> to the broker's operating-system account and
 <code>MIXOS_BUS_SOCKET</code> to the session's Unix socket. With either set, verified
 Unix ingress is required and connection failures never fall back to TCP.
@@ -257,11 +257,11 @@ uses the discovered URL. Calls are never replayed after reconnecting.</p>
 <pre><code class="language-json">{
   "mcpServers": {
     "mixos": {
-      "command": "/opt/mixos/bin/mixos-mcp",
+      "command": "&lt;prefix&gt;/bin/mixos-mcp",
       "env": {
         "MIXOS_NODED_URL": "ws://192.0.2.10:4200/ws",
         "MIXOS_BROKER_ACCOUNT": "user",
-        "MIXOS_BUS_SOCKET": "/run/mixos/session/4/noded/bus.sock"
+        "MIXOS_BUS_SOCKET": "&lt;runtime&gt;/session/4/noded/bus.sock"
       }
     }
   }
@@ -307,15 +307,15 @@ the selected Bus. An absent backend returns an explicit tool error.
 Skill refinement also needs a configured LLM backend. Settings are MixOS strict-data files:
 <code>knowledge.conf.mix</code>, <code>domains.conf.mix</code>, <code>skills.conf.mix</code> and <code>llm.conf.mix</code>.
 LLM Bus providers use the same broker. <code>api_key_cmd</code> is Mix source, executed
-by <code>/opt/mixos/bin/mix -c</code>.</p>
+by <code>&lt;prefix&gt;/bin/mix -c</code>.</p>
 <h3 id="host-indexd-from-a-desk">Host indexd from a desk</h3>
 <p>When a desk cannot reach the host's Bus, select SSH in
-<code>$MIXOS_ETC/knowledge.conf.mix</code> (normally <code>~/.config/mixos/knowledge.conf.mix</code>):</p>
+<code>$MIXOS_CONFIG/knowledge.conf.mix</code> (normally <code>~/.config/mixos/knowledge.conf.mix</code>):</p>
 <pre><code class="language-text">indexd: {
     transport: "ssh",
     target: "indexd",
     ssh_host: "user@host.example",
-    ssh_command: ["/opt/mixos/bin/indexd", "bridge"],
+    ssh_command: ["&lt;prefix&gt;/bin/indexd", "bridge"],
     call_timeout_secs: 120
 }
 </code></pre>

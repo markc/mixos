@@ -126,7 +126,7 @@ fn function_names($mix, $path)
   end
   $doc = json_parse($r.stdout)
   if type($doc) != "map" or get_or($doc, "schema_version", nil) != 3 or get_or($doc, "tool", nil) != "mix lint" then
-    _fail("requires mix lint schema_version 3 with function metadata; install the CBC-built mix from this branch into /opt/mixos/bin/mix with the merge (reported schema: " .. to_string(get_or($doc, "schema_version", nil)) .. ")")
+    _fail("requires mix lint schema_version 3 with function metadata; install the CBC-built mix with the merge (reported schema: " .. to_string(get_or($doc, "schema_version", nil)) .. ")")
   end
   if not deep_eq(get_or($doc, "files", nil), [$path]) then _fail("context lint file attribution failed") end
   if type(get_or($doc, "functions", nil)) != "list" then _fail("context lint lacks functions list") end

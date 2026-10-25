@@ -62,6 +62,7 @@
   <url><loc>https://mixos.dev/docs/decisions/2026-10-22-weekly-cbc-releases/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-24-bus-commands-and-actions/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-24-macro-file-write-authority/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-25-relocatable-layout/</loc></url>
   <url><loc>https://mixos.dev/docs/dev/2026-10-21-source-and-build-map/</loc></url>
   <url><loc>https://mixos.dev/docs/dev/releasing/</loc></url>
   <url><loc>https://mixos.dev/docs/spec/bridge/</loc></url>
@@ -138,6 +139,7 @@
   <url><loc>https://mixos.dev/monitord/</loc></url>
   <url><loc>https://mixos.dev/noded/</loc></url>
   <url><loc>https://mixos.dev/notifyd/</loc></url>
+  <url><loc>https://mixos.dev/paths/</loc></url>
   <url><loc>https://mixos.dev/portald/</loc></url>
   <url><loc>https://mixos.dev/prefs/</loc></url>
   <url><loc>https://mixos.dev/props/</loc></url>

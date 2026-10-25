@@ -12,10 +12,10 @@
 -- Maps are by-value; build an override map then `$m[$k] = v` (top-level assign is fine).
 -- Size + time are formatted CLIENT-SIDE (data-bytes / data-mtime + files_script) so
 -- they are timezone/locale-correct like Dolphin and need no webd-mix time/float math.
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/reader.mix"
-include "/opt/mixos/vhosts/shared/widgets/treeview.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/reader.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/treeview.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
 
 -- The single wrapped filesd-fs seam: bus_call raises on any failure (gate denied,
 -- daemon down, command error), so every call goes through here and degrades gracefully.

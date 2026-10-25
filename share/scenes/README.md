@@ -115,11 +115,11 @@ different route.
 | A scene's own `scene.mix`, `behaviour.mix` or `template.conf.mix` | The user copy under `$SCENES_DIR/<name>/` | Reload re-reads the user copy. A template edit needs `reset` or a fresh install first |
 | Loader code (`services/compd/scripts/`) | The compd scenes service | Restart that service; reload does not run new loader code |
 
-The environment fixes the paths. On the VT4 session (`/etc/mixos/session/4.env`):
+The environment fixes the paths. On the VT4 session (`<config>/session/4.env`):
 
-- `SCENES_DIR=/var/lib/mixos/vt4/scenes` holds the user copies. The panel is
+- `SCENES_DIR=<state>/vt4/scenes` holds the user copies. The panel is
   `panel/`.
-- `SCENES_TEMPLATES=/opt/mixos/share/scenes` is the catalogue. Its `lib/` is
+- `SCENES_TEMPLATES=<prefix>/share/scenes` is the catalogue. Its `lib/` is
   the one the panel's `behaviour.mix` loads (`$LIB`) when it starts.
 
 Steps for a change to shared helpers, such as `lib/data.mix`:

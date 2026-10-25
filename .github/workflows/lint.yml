@@ -65,10 +65,9 @@ jobs:
           member="${archive%.tar.gz}/bin/mix"
           tar -xzf "$dir/$archive" -C "$dir" "$member"
           [ -f "$dir/$member" ] && [ ! -L "$dir/$member" ]
-          # Some tools name /opt/mixos/bin/mix directly (AGENTS.md §3.4).
-          sudo install -D -m 0755 "$dir/$member" /opt/mixos/bin/mix
-          echo "/opt/mixos/bin" >> "$GITHUB_PATH"
-          /opt/mixos/bin/mix --version
+          install -D -m 0755 "$dir/$member" "$RUNNER_TEMP/mixos/bin/mix"
+          echo "$RUNNER_TEMP/mixos/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/mixos/bin/mix" --version
 
       - name: Lint
         if: ${{ !cancelled() && steps.fetch-mix.outcome == 'success' }}

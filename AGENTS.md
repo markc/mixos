@@ -8,6 +8,14 @@ The rationale, the alternatives weighed and the precedents are in
 [`docs/docs/decisions/2026-10-04-source-layout.md`](docs/docs/decisions/2026-10-04-source-layout.md).
 Change this file only through a new decision there.
 
+The [relocatable layout decision](docs/docs/decisions/2026-10-25-relocatable-layout.md)
+governs locations: code uses `libs/paths` or `mixos_path`, saved data uses
+`mixos:<root>/<relative>`, and external files use `@{root}` templates.
+`mix layout apply` renders installed files and manages the stable entry link.
+Component-owned unit templates stay with their component and ship in `share/layout`.
+Only resolver defaults, templates, default assertions and documentation may
+contain literal MixOS roots.
+
 ## 0. The ground rules
 
 - **One Cargo workspace, one pinned toolchain** (`rust-toolchain.toml`).
@@ -163,7 +171,7 @@ services/releasesd/
 ```
 
 - A directory with both `Cargo.toml` and `component.mx` is refused.
-- `scripts/` installs to `/opt/mixos/lib/<component>/` and `units/` to
+- `scripts/` installs to `<prefix>/lib/<component>/` and `units/` to
   `/etc/systemd/system`, with `mix tools/component_install.mix [--root DIR]
   [component...]`. It records what it wrote (`.installed.json`), keeps the
   previous tree for `--rollback`, reports drift with `--check`, and never
@@ -209,13 +217,13 @@ services/releasesd/
    [decision](docs/docs/decisions/2026-10-11-rec-and-play.md)) and
    `screenshot` (nwg-shell,
    [decision](docs/docs/decisions/2026-10-12-screenshot.md)). MixOS installs
-   to `/opt/mixos/bin`, which comes first in its PATH, and units and scripts
+   to `<prefix>/bin`, which comes first in its PATH, and units and scripts
    call these binaries by absolute path.
 5. **Never reuse a name.** Retired package, binary, app and Bus command names
    are recorded in `docs/docs/spec/names/retired.conf.mix` and stay reserved
    forever. A gate refuses reuse.
 6. **The brand lives in one layer only:** Wayland app IDs and desktop files
-   (`dev.mixos.<app>`), plus the paths `/opt/mixos`, `/var/lib/mixos`,
+   (`dev.mixos.<app>`), plus the paths `<prefix>`, `<state>`,
    `$MIXOS` and the `mixos` XDG directories.
 7. **Frozen wire constants are never renamed.** A byte string inside a
    signature, transcript or cross-process contract keeps its bytes, even if

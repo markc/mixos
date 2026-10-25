@@ -31,10 +31,10 @@
 --
 -- IMPORTANT (webd-embedded mix): NO mix-0.20 syntax (?? / ?:) — use if/else + fm_or. A
 -- reserved word (`label`, `to`) MUST be a string map key ("label":). Concatenation is `..`.
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
 
 -- Call one vtoken command. bus_call RAISES on any failure (the gate denied it,
 -- maild replied rc>=10, or transport) — catch it and surface the message rather

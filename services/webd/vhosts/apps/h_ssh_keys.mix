@@ -9,12 +9,12 @@
 -- key; trash the .pub; delete the mirror row + audit). Keys aren't editable
 -- (type/bits/fingerprint come from the worker). ?view= = detail (pub + used-by).
 
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/detail.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
-include "/opt/mixos/vhosts/shared/apps/ssh_lib.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/detail.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/ssh_lib.mix")
 
 function ssh_keys_spec()
   return [

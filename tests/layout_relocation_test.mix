@@ -1,0 +1,101 @@
+#!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Run with the CBC-built binary. All writes stay below an owned temp root.
+$g = getopt(args(), {bin: {arg: true}, child: {}, "fixture-root": {arg: true}})
+if len($g.errors) != 0 then raise("RELOCATION_ARGS", join($g.errors, "; ")) end
+$repo = dirname(dirname(realpath($0)))
+
+if $g.opts.child then
+  $scratch = $g.opts["fixture-root"]
+  if $scratch == nil or not starts_with($scratch, "/tmp/mixos-relocation-") then raise("RELOCATION_ROOT", "invalid fixture root") end
+  -- A new mount namespace only. Never mount over host paths in the parent.
+  if is_dir("/opt/mixos") then run_argv_must(["mount", "-t", "tmpfs", "tmpfs", "/opt/mixos"]) end
+  if is_dir("/etc/mixos") then run_argv_must(["mount", "-t", "tmpfs", "tmpfs", "/etc/mixos"]) end
+  if exists("/opt/mixos/bin/mix") or exists("/etc/mixos/node.conf.mix") then raise("RELOCATION_HIDE", "old roots are still visible") end
+  print("relocation: old prefix and config are hidden")
+  $mix = $scratch .. "/moved prefix/bin/mix"
+  $envmap = {MIXOS_CONFIG: $scratch .. "/config", MIXOS_STATE: $scratch .. "/state", MIXOS_CACHE: $scratch .. "/cache", MIXOS_RUNTIME: $scratch .. "/runtime"}
+  -- No MIXOS_PREFIX override: this must come from /proc/self/exe.
+  $oracle = run_argv_must([$mix, "-c", 'print(mixos_path("prefix"))'], {env: $envmap})
+  if trim($oracle) != $scratch .. "/moved prefix" then raise("RELOCATION_PREFIX", $oracle) end
+  $apply = [$mix, "layout", "apply", "--root", $scratch .. "/sysroot"]
+  $first = run_argv_must($apply, {env: $envmap})
+  $second = run_argv_must($apply, {env: $envmap})
+  if trim($second) != "" then raise("RELOCATION_IDEMPOTENCE", $second) end
+  print("relocation: renderer is idempotent; " .. to_string(len(lines($first))) .. " changes on first apply")
+  $link = $scratch .. "/sysroot/usr/local/bin/mix"
+  if read_link($link) != $mix then raise("RELOCATION_LINK", "managed link target differs") end
+  $logical = run_argv_must([$mix, "-c", 'print(mixos_path("mixos:prefix/share/scenes/editor/scene.mix"))'], {env: $envmap})
+  if trim($logical) != $scratch .. "/moved prefix/share/scenes/editor/scene.mix" then raise("RELOCATION_LOGICAL", $logical) end
+  $escape = run_argv([$mix, "-c", 'print(mixos_path("mixos:prefix/../escape"))'], {env: $envmap})
+  if $escape.ok then raise("RELOCATION_ESCAPE", "root escape accepted") end
+  -- Native component installer tests and scene loader tests use owned fixtures.
+  for $test in ["tests/component_install_test.mix", "services/compd/tests/scenes_io_test.mix", "services/compd/tests/scenes_test.mix"]
+    print(run_argv_must([$mix, $repo .. "/" .. $test], {env: $envmap, timeout: 300}))
+  end
+  -- Parse/resolve scenes with the native scene reader, already covered by the
+  -- scene-host and scene library tests in the worker's cargo test stage.
+  for $scene in glob($scratch .. "/moved prefix/share/scenes/*/scene.mix")
+    if not contains(read_file($scene), "mixos:prefix/") and contains(read_file($scene), "/opt/mixos") then raise("RELOCATION_SCENE", $scene) end
+  end
+  $loop = ssh_mix("localhost", 'print(mixos_path("prefix"))', {mix_bin: $mix, connect_timeout: 3, timeout: 10})
+  if $loop.ok then
+    if trim($loop.stdout) != $scratch .. "/moved prefix" then raise("RELOCATION_SSH", "loopback resolved another prefix") end
+    print("relocation: ssh_mix loopback passed")
+  else
+    print("SKIP ssh_mix loopback: " .. ($loop.stderr ?? $loop.error ?? "loopback SSH unavailable"))
+  end
+  -- Existing desktop helpers need nspawn, the nested compositor and an owned
+  -- bus. Refuse to substitute a host desk when that isolated path is absent.
+  $bin = $g.opts.bin ?? ($repo .. "/target/debug")
+  if which("systemd-nspawn") == nil or which("weston") == nil or which("weston-simple-shm") == nil or not is_file($scratch .. "/moved prefix/bin/compd") then
+    print("SKIP nested desk: systemd-nspawn, Weston fixtures or CBC-built compd unavailable")
+  else
+    $desk = run_argv([$mix, $repo .. "/tests/desktop/nested_smoke.mix", $scratch .. "/moved prefix/bin/compd", "--secs", "3"], {env: $envmap, timeout: 300})
+    if not $desk.ok then raise("RELOCATION_DESK", $desk.stderr .. $desk.stdout) end
+    print($desk.stdout)
+  end
+  exit(0)
+end
+
+$scratch = "/tmp/mixos-relocation-" .. uuid()
+mkdir($scratch .. "/first prefix/bin", {parents: true})
+try
+  $binary = realpath("/proc/self/exe")
+  copy($binary, $scratch .. "/first prefix/bin/mix")
+  chmod($scratch .. "/first prefix/bin/mix", 0o755)
+  symlink("mix", $scratch .. "/first prefix/bin/noded")
+  $bin = $g.opts.bin ?? ($repo .. "/target/debug")
+  for $name in ["compd", "testkit-layer-client", "testkit-screenshot"]
+    if is_file($bin .. "/" .. $name) then
+      copy($bin .. "/" .. $name, $scratch .. "/first prefix/bin/" .. $name)
+      chmod($scratch .. "/first prefix/bin/" .. $name, 0o755)
+    end
+  end
+  mkdir($scratch .. "/first prefix/share", {parents: true})
+  copy_tree($repo .. "/share/layout", $scratch .. "/first prefix/share/layout")
+  copy_tree($repo .. "/share/scenes", $scratch .. "/first prefix/share/scenes")
+  $manifest = load_data($repo .. "/share/layout/templates.mx")
+  $files = []
+  for $entry in $manifest.files
+    $rel = strip_prefix($entry.source, "../../")
+    $to = "templates/" .. $rel
+    mkdir(dirname($scratch .. "/first prefix/share/layout/" .. $to), {parents: true})
+    copy($repo .. "/" .. $rel, $scratch .. "/first prefix/share/layout/" .. $to)
+    $entry.source = $to
+    push($files, $entry)
+  end
+  write_file($scratch .. "/first prefix/share/layout/templates.mx", data_encode({schema: 1, files: $files}))
+  rename($scratch .. "/first prefix", $scratch .. "/moved prefix")
+  mkdir($scratch .. "/sysroot", {parents: true})
+  -- Probe namespace support without touching either old root.
+  $probe = run_argv(["unshare", "-rm", $binary, "-c", "print(1)"], {timeout: 10})
+  if not $probe.ok then
+    print("SKIP relocation isolation: worker cannot create user/mount namespace: " .. $probe.stderr)
+    exit(0)
+  end
+  print(run_argv_must(["unshare", "-rm", $binary, $0, "--child", "--fixture-root", $scratch, "--bin", $g.opts.bin ?? ($repo .. "/target/debug")], {timeout: 1500}))
+finally
+  remove_dir($scratch)
+end

@@ -393,7 +393,7 @@ through the classifier), `mix -` parses the whole program up front.
 
 ## Running as a login shell and over SSH
 
-When `/opt/mixos/bin/mix` is **root's login shell** on a host, `ssh host
+When `<prefix>/bin/mix` is **root's login shell** on a host, `ssh host
 '<cmd>'` is evaluated by Mix, not bash. The universal shell `-c` contract still
 holds because the login path runs through the same shell-first classifier:
 
@@ -410,7 +410,7 @@ hostname is: node1
 
 From a Mix script, drive a remote mix through the ssh builtins instead of raw
 `ssh`: `ssh_run($host, $cmd)` for a one-liner, and `ssh_mix($host, $source)` —
-which ships whole Mix source over ssh stdin into `/opt/mixos/bin/mix -`,
+which ships whole Mix source over ssh stdin into `<prefix>/bin/mix -`,
 bypassing every shell-quoting layer — for anything with quoting. A remote
 whose mix lives elsewhere takes the `mix_bin` option, or set
 `MIX_REMOTE_BIN` locally for every call (see
@@ -420,7 +420,7 @@ shows the interpolation and bindings rules.
 
 Two PATH gotchas to remember on the remote side:
 
-- Inside `run` / `run_rc` (which spawn `/bin/sh` with a **minimal PATH**), call binaries by **full path** — `/opt/mixos/bin/mix`, not bare `mix`. See [running commands](system.md).
+- Inside `run` / `run_rc` (which spawn `/bin/sh` with a **minimal PATH**), call binaries by **full path** — `<prefix>/bin/mix`, not bare `mix`. See [running commands](system.md).
 - A non-interactive `ssh host '<mix>'` has **no aliases** (it's the `mix -c` path, not `mix -i`).
 
 For Mix-as-a-shell language facts (`&&`/`||`/`;` chaining, pipes, redirects,

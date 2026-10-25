@@ -151,7 +151,7 @@ pub struct Config {
     /// `maild.domains.tls_identity_name = "<name>"` rows to PEM paths
     /// at `<tls_key_root>/<name>.cert.pem` +
     /// `<tls_key_root>/<name>.key.pem`. Unset = default
-    /// (`/var/lib/mixos/maild/tls`). `[[tls.identity]]` config rows
+    /// (`mixos:state/maild/tls`). `[[tls.identity]]` config rows
     /// ignore this and read their `cert` / `key` paths directly.
     pub tls_key_root: Option<PathBuf>,
 
@@ -250,7 +250,7 @@ pub struct DkimSubsection {
     /// Filesystem root for substrate-managed signer PEMs. The Phase 4
     /// commands (`maild.dkim.{generate,rotate,retire}`) write keys here
     /// as `<key_root>/<domain>/<selector>.pem`. Unset = default
-    /// (`/var/lib/mixos/maild/dkim`). Operator-managed
+    /// (`mixos:state/maild/dkim`). Operator-managed
     /// `[[dkim.domain]]` rows ignore this and read their `key_path`
     /// directly.
     pub key_root: Option<PathBuf>,
@@ -551,7 +551,7 @@ impl Config {
         ::config::path(::config::Dir::Etc).join("jmap.conf.mix")
     }
 
-    /// System-wide config path: `/etc/mixos/maild/config.conf.mix`.
+    /// System-wide config path: `mixos:config/maild/config.conf.mix`.
     ///
     /// This is the location the systemd unit reads from on a real
     /// deployment. Searched ahead of the XDG user path so a non-root

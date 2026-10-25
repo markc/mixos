@@ -104,7 +104,7 @@ impl Citizen {
         cmd.args(["--serve", script.to_str().unwrap(), "--name", SVC])
             .env("HOME", &dir.0)
             .env("MIXOS_NODE_CONFIG", node_conf)
-            .env("MIXOS_ETC", &dir.0)
+            .env("MIXOS_CONFIG", &dir.0)
             .env("HONEST_TRACE", dir.0.join("trace"))
             .env("MIX_STATS", "off")
             .env_remove("MIXOS_SESSION_FD")

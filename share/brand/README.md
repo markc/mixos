@@ -41,7 +41,7 @@ and vector/raster consistency, but not on physical Apple devices.
 
 ## Using it on the desktop
 
-`mix share/brand/install.mix --root /opt/mixos/share` installs
+`mix share/brand/install.mix --root <prefix>/share` installs
 `logos/alien-cyclops.svg` as the full-colour `dev.mixos` (in `scalable/apps`) and the
 transparent M as `dev.mixos-symbolic` (in `symbolic/apps`), in MixOS and hicolor.
 `--check` validates the sources and indexes and writes nothing. A fresh image

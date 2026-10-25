@@ -1,0 +1,48 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Pure template operations: no environment reads and no filesystem writes.
+fn render($text, $roots)
+  for $name in keys($roots)
+    if not contains(["prefix", "config", "state", "cache", "runtime"], $name) then
+      raise("LAYOUT_ROOT", "unknown root " .. $name)
+    end
+    $value = $roots[$name]
+    if type($value) != "string" or not starts_with($value, "/") or re_match($value, '[\x00-\x1f\x7f]') then
+      raise("LAYOUT_ROOT", "invalid absolute root " .. $name)
+    end
+    $text = replace($text, "@{" .. $name .. "}", $value)
+  end
+  if re_match($text, '@\{[^}]*\}') then raise("LAYOUT_TEMPLATE", "unresolved template placeholder") end
+  return $text
+end
+
+-- External parsers need quoting only for a relocated path with special bytes.
+-- Keeping simple paths unchanged makes the default output byte-identical.
+fn external($text, $roots, $kind)
+  $out = []
+  for $line in lines($text)
+    if ($kind == "unit" or ($kind == "desktop" and starts_with($line, "Exec="))) and not starts_with(trim($line), "#") and contains($line, "@{") then
+      -- Quote each template-bearing argv word before expanding spaces in roots.
+      $words = split($line, " ")
+      for $i = 0 to len($words) - 1
+        $word = $words[$i]
+        if contains($word, "@{") then
+          $expanded = render($word, $roots)
+          if re_match($expanded, '[\s"\\\\]') then
+            $at = index_of($expanded, "=")
+            $lead = if $i == 0 and $at >= 0 then substr($expanded, 0, $at + 1) else "" end
+            $arg = substr($expanded, len($lead))
+            if starts_with($arg, '"') and ends_with($arg, '"') then $arg = substr($arg, 1, len($arg) - 2) end
+            $arg = replace(replace($arg, "\\", "\\\\"), '"', '\\"')
+            $words[$i] = $lead .. '"' .. $arg .. '"'
+          else $words[$i] = $expanded end
+        end
+      end
+      $line = join($words, " ")
+    else
+      $line = render($line, $roots)
+    end
+    push($out, $line)
+  end
+  return join($out, "\n") .. (if ends_with($text, "\n") then "\n" else "" end)
+end

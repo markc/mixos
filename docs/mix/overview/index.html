@@ -294,7 +294,7 @@ is silently dropped — and it lights up unchanged when a broker appears (more i
 <ul>
 <li><strong>A Bus-native shell + scripting language.</strong> <code>send</code>, <code>emit</code>, <code>address</code>, and <code>on … end</code> are language keywords that reach peer services over the <a href="https://github.com/markc/mixos">Bus</a> mesh. No client library, no boilerplate — remote orchestration reads like a local script. See <a href="/mix/bus/">Bus messaging</a>.</li>
 <li><strong>A real scripting language.</strong> First-class functions and terse lambdas, higher-order builtins (<code>map</code> / <code>filter</code> / <code>reduce</code> / <code>sort_by</code> / …), structured values (string, number, bool, bytes, list, map), <code>try</code>/<code>catch</code>, closures. See <a href="/mix/functions/">functions</a> and the <a href="/mix/builtins/">builtins index</a>.</li>
-<li><strong>A shell.</strong> It runs external commands, has a REPL with meta-commands (<code>mix status</code>, <code>mix help</code>, <code>mix what NAME</code>), and serves as a daily-driver login shell (<code>chsh -s /opt/mixos/bin/mix</code>). Command results are <strong>structured</strong> — <code>run_rc("cmd")</code> returns <code>{rc, stdout, stderr, timed_out, interrupted}</code>, not exit-code soup. See <a href="/mix/system/">running commands</a>, the <a href="/mix/shell-mode/">shell</a> page, and <a href="/mix/cli/">the <code>mix</code> meta-command</a>.</li>
+<li><strong>A shell.</strong> It runs external commands, has a REPL with meta-commands (<code>mix status</code>, <code>mix help</code>, <code>mix what NAME</code>), and serves as a daily-driver login shell (<code>chsh -s /usr/local/bin/mix</code>). Command results are <strong>structured</strong> — <code>run_rc("cmd")</code> returns <code>{rc, stdout, stderr, timed_out, interrupted}</code>, not exit-code soup. See <a href="/mix/system/">running commands</a>, the <a href="/mix/shell-mode/">shell</a> page, and <a href="/mix/cli/">the <code>mix</code> meta-command</a>.</li>
 <li><strong>A structured-data format.</strong> Strict-data <code>.*.mix</code> files (<code>.conf.mix</code>, <code>.spec.mix</code>, …) are parsed without executing anything — the substrate's config/state format. See <a href="/mix/data/">data &amp; serialization</a>.</li>
 <li><strong>A Bus citizen.</strong> <code>mix --serve service.mix</code> runs a script as a supervised, mesh-registered daemon. A script with one <code>on</code> handler is a complete service. See <a href="/mix/serve/">serving as a citizen</a>.</li>
 </ul>
@@ -332,7 +332,7 @@ parity. Mix now occupies that role exclusively across the mixos stack.</p>
 <p>It ships as two crates that version in lockstep (a third workspace member,
 <code>mix-bench</code>, is a development-only benchmark harness):</p>
 <table><thead><tr><th>Crate</th><th>What it is</th></tr></thead><tbody>
-<tr><td><strong><code>mixos-lib-mix</code></strong></td><td>The interpreter library — lexer, parser, evaluator, builtins, value model. Pure Rust, no internal deps; feature-gated capabilities (<code>json</code>, <code>regex</code>, <code>toml</code>, <code>datetime</code>, <code>url</code>, <code>crypto</code>, <code>http</code>, <code>sqlite</code>, <code>dkim</code>, <code>markdown</code>, <code>datastar</code>).</td></tr>
+<tr><td><strong><code>mixos-lib-mix</code></strong></td><td>The interpreter library — lexer, parser, evaluator, builtins, value model. Pure Rust, with the shared paths resolver; feature-gated capabilities (<code>json</code>, <code>regex</code>, <code>toml</code>, <code>datetime</code>, <code>url</code>, <code>crypto</code>, <code>http</code>, <code>sqlite</code>, <code>dkim</code>, <code>markdown</code>, <code>datastar</code>).</td></tr>
 <tr><td><strong><code>mix-shell</code></strong></td><td>The shell behind the <code>mix</code> binary (built by <code>cli/system</code>) — REPL, shell layer, Bus wiring, the <code>--serve</code> supervised-citizen runtime, and the <code>mix man</code>/<code>help</code>/<code>what</code> meta-commands.</td></tr>
 </tbody></table>
 <p>A standalone <code>mix</code> install runs as a normal scripting shell. When a Bus broker
@@ -340,6 +340,15 @@ parity. Mix now occupies that role exclusively across the mixos stack.</p>
 on the host, the <strong>same binary</strong> becomes mesh-viable on next invocation — no
 reinstall, no recompile, no script edits. A runtime lazy-probe decides
 bare-vs-mesh at execution time.</p>
+<p>MixOS locations use <code>mixos_path(root[, rel])</code>, backed by the shared
+<a href="/paths/">paths resolver</a>. For example,
+<code>mix -c 'print(mixos_path("prefix"))'</code> prints the current installation prefix.</p>
+<p>Before installation, a staged binary can print target defaults independently
+of its own location: <code>mix layout defaults --tier system --json</code>, with an
+optional <code>--prefix DIR</code>. The <code>user</code> tier requires <code>--prefix</code>. Installers run
+that staged command even when their own interpreter is the previous release
+or <code>mix-static</code>; <a href="/paths/">relocatable paths</a> describes the target
+flags and receipt-based rollback.</p>
 <h2 id="how-to-run-it">How to run it</h2>
 <pre><code class="language-sh">mix                          # interactive REPL
 mix script.mix arg1 arg2     # run a file; args land in $1, $2, args()
@@ -368,7 +377,7 @@ most of the surprises disappear:</p>
 <li><strong>Concatenation is <code>..</code></strong>, never <code>+</code> or <code>.</code>: <code>"a" .. $x .. "b"</code>. (<code>+</code> <em>adds</em> when both sides look numeric — <code>"5" + "5"</code> is <code>10</code>, not <code>"55"</code> — and <code>.</code> is field access.)</li>
 <li><strong>Statements use newline or <code>;</code>.</strong> Prefer newlines in files; use <code>;</code> for compact <code>mix -c</code> / generated source. On shell-dispatch lines the same glyph remains the shell command-list operator; classification is whole-line, never mixed. See <a href="/mix/syntax/">syntax</a>.</li>
 <li><strong><code>${...}</code> interpolates, bare <code>$name</code> is literal</strong> inside double quotes; <code>'single quotes'</code> are fully raw; <code>$(...)</code> is literal in a Mix string. See <a href="/mix/strings/">strings</a>.</li>
-<li><strong><code>run</code> / <code>run_rc</code> spawn <code>/bin/sh</code> with a minimal <code>PATH</code></strong> — inside scripts, call binaries by full path (<code>/opt/mixos/bin/mix</code>, never bare <code>mix</code>). See <a href="/mix/system/">running commands</a>.</li>
+<li><strong><code>run</code> / <code>run_rc</code> spawn <code>/bin/sh</code> with a minimal <code>PATH</code></strong> — inside scripts, call binaries by full path (<code>&lt;prefix&gt;/bin/mix</code>, never bare <code>mix</code>). See <a href="/mix/system/">running commands</a>.</li>
 </ol>
 <p>Close behind those five: blocks close with <code>end</code> (there is no <code>do</code> keyword);
 <code>push()</code> mutates in place and returns <code>nil</code>; and <code>pos()</code> is 1-based (0 = not

@@ -74,7 +74,7 @@ pub struct MeshConfig {
     /// SPEC 13 §9a D2 admission seed (2-c-1c) — this node's `kind:"d2"` private
     /// seed, used by the bridge prover to sign the admission transcript. NOT in
     /// `mesh.conf.mix`; injected at startup by noded from
-    /// `/etc/mixos/noded/d2.seed`. `None` ⇒ the node cannot prove itself
+    /// `mixos:config/noded/d2.seed`. `None` ⇒ the node cannot prove itself
     /// (prover-incapable; the broker logs `unproven:no-proof`).
     #[serde(skip)]
     pub d2_seed: Option<[u8; 32]>,

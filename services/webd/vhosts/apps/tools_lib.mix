@@ -22,7 +22,7 @@
 -- Tables live in the `tools.` ATTACHed schema, so they survive a cms.db re-clone (the
 -- staging rig is periodically re-cloned from production) — same reasoning as sshm.
 
-include "/opt/mixos/vhosts/shared/apps/tools_registry.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/apps/tools_registry.mix")
 
 -- Fixed lease. A tool run is bounded by its registry timeout (max 40s today), so a
 -- 5-minute lease is generous; it exists to reclaim runs from a drain that died mid-exec,

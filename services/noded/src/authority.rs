@@ -4,11 +4,11 @@
 //! SPEC 13 1b-c — the authority plane: load + verify the signed inventory.
 //!
 //! On start, noded reads its locally-cached signed inventory
-//! (`/var/lib/mixos/noded/inventory.signed`, the plane-A cache, INV-5),
+//! (`mixos:state/noded/inventory.signed`, the plane-A cache, INV-5),
 //! verifies it against the out-of-band-provisioned genesis verify key
-//! (`/etc/mixos/noded/genesis.pub`, §7.4), enforces epoch monotonicity
+//! (`mixos:config/noded/genesis.pub`, §7.4), enforces epoch monotonicity
 //! against the persisted `(epoch, recovery_generation, canonical hash)` baseline
-//! (`/var/lib/mixos/noded/inventory.baseline`, wipe-surviving, §6.4), and
+//! (`mixos:state/noded/inventory.baseline`, wipe-surviving, §6.4), and
 //! exposes the accepted member set + posture (the `noded.inventory` command).
 //!
 //! **Fail closed (§7.7) — but NON-FATAL.** A missing / unsigned / malformed

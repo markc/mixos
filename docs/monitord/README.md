@@ -159,7 +159,7 @@ command signals or renices anything: acting across users or nodes is
 
 ## Running it
 
-`monitord.service` runs `/opt/mixos/bin/monitord serve` as the user
+`monitord.service` runs `<prefix>/bin/monitord serve` as the user
 `monitord`, with no capabilities and a strict sandbox. The history
 database is `/var/lib/monitord/history.db`; it is a cache, and deleting it
 loses history and nothing else.

@@ -242,8 +242,8 @@ Lookup order, with no `MIXOS_MAN_*` variable set:
 
 1. **The built-in manual.**
 2. **Files on disk**, for a page this binary does not carry: the installed
-   share tree (`$MIXOS_SHARE/mix/man`), then a checkout's `docs/mix`
-   (`$MIXOS`, else the root found above the running binary, else
+   share tree (`<prefix>/share/mix/man`), then a checkout's `docs/mix`
+   (`$MIXOS_SRC`, else the root found above the running binary, else
    `~/Projects/mixos`).
 3. **The online copy**, as in `auto` mode below.
 
@@ -300,12 +300,12 @@ for i in 1 2 3; do                 for each $i in [1, 2, 3]
 ## Build — rebuild the interpreter from itself
 
 The build family wraps `cargo` against the Mix source tree (`$MIXOS_SRC`,
-default `$MIXOS`) so the REPL can rebuild and re-exec into a fresh binary —
+default the discovered source checkout) so the REPL can rebuild and re-exec into a fresh binary —
 the self-reconstruction surface. Point `$MIXOS_SRC` at the directory holding
 the workspace `Cargo.toml` (in a clone of the public repo that is `mix/src`).
 
 ```
-mix build       cargo build --release, then install target/release/mix → $MIXOS_BIN/mix
+mix build       cargo build --release, then install target/release/mix → <prefix>/bin/mix
 mix clean       cargo clean (removes the target/ tree)
 mix update      git pull, then build + install
 mix test        cargo test, streaming output
@@ -921,7 +921,7 @@ stdin-feeding task is a named future field rather than a silent absence.
 **The environment is enumerated, not inherited.** A task starts from exactly:
 
     HOME  USER  PATH  LANG  TERM=dumb
-    MIXOS  MIXOS_SRC  MIXOS_BIN  MIXOS_ETC
+    MIXOS_PREFIX  MIXOS_CONFIG  MIXOS_STATE  MIXOS_CACHE  MIXOS_RUNTIME  MIXOS_SRC
     MIXOS_NODE_CONFIG  MIXOS_BROKER_ACCOUNT
 
 plus the caller's `env` overlay, which WINS on a name collision. Those values
@@ -1100,7 +1100,7 @@ back.
 - `mix` is intercepted by the shell, so it never sees `$`-sigil arguments — write `mix what round`, not `mix what $name`.
 - The introspection family (`vars`/`aliases`/`functions`/`all`/`context`) is most useful **inside a REPL**, where the session has accumulated state; from a one-shot OS-shell invocation it reports only the freshly-loaded prelude.
 - The diagnostics family (`time`/`trace`/`history`/`reload`/`diagnose`) is REPL-only — those names are not on the OS-shell allowlist, so `mix trace on` there is read as a script filename. The one exception is `mix stats`, which has a dedicated one-shot OS-shell path against the same on-disk data.
-- Paths follow the MixOS layout: source at `$MIXOS_SRC` (default `$MIXOS`), installed binaries at `$MIXOS_BIN` (default `~/.local/bin`, or `/usr/local/bin` when running as root).
+- Paths follow the MixOS layout: source at `$MIXOS_SRC` (default the discovered source checkout), installed binaries at `<prefix>/bin` (derived from the binary's prefix).
 
 ## See also
 

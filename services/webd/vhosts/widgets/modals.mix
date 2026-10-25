@@ -6,7 +6,7 @@
 -- Visual target: Filament 5 Modals (filamentphp.com/docs; screenshots deleted 2026-07-23, git history — anatomy ONLY, never its
 -- palette). Sibling of widgets/datatable.mix + widgets/forms.mix; same conventions.
 --
--- ONE copy at /opt/mixos/vhosts/shared/widgets/modals.mix; `include`-d by a handler
+-- ONE copy at <prefix>/vhosts/shared/widgets/modals.mix; `include`-d by a handler
 -- AFTER lib.mix (so esc() resolves at call-time). Self-contained — does NOT depend on
 -- forms.mix or datatable.mix (but composes with them: put fm_* fields in the body, and
 -- a datatable header/row action can open a modal via its `modal` field, see datatable's

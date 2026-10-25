@@ -16,14 +16,14 @@
 -- prove the calls ran on this Mix, not on the replacement or a PATH fallback.
 --
 -- Run from the checkout root: mix services/compd/tests/scenes_io_test.mix
--- Needs cp, mv and a noded binary (MIXOS_TEST_NODED, else /opt/mixos/bin/noded).
+-- Needs cp, mv and a noded binary (MIXOS_TEST_NODED, else <prefix>/bin/noded).
 
 $repo = dirname(dirname(dirname(dirname(realpath($0)))))
 $pb = require("../../../tests/lib/private_bus.mix")
 -- This test's own interpreter, the same reference the loader now uses.
 $SELF = "/proc/" .. to_string(pid()) .. "/exe"
 $noded = env("MIXOS_TEST_NODED", "")
-if $noded == "" then $noded = "/opt/mixos/bin/noded" end
+if $noded == "" then $noded = (mixos_path("prefix") .. "/bin/noded") end
 
 fn check($ok, $message)
   if not $ok then raise("SCENES_IO_TEST", $message) end

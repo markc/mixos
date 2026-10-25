@@ -86,7 +86,7 @@ fn tool($name)
   end
   return $p
 end
-$comp = $n.require_binary("compd", $BIN, ["/opt/mixos/bin"])
+$comp = $n.require_binary("compd", $BIN, [(mixos_path("prefix") .. "/bin")])
 $firefox = tool("firefox")
 $wl_copy = tool("wl-copy")
 $wl_paste = tool("wl-paste")

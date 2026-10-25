@@ -5,7 +5,7 @@
 -- BOTH forum topics AND blog comments — one submit path for the whole substrate. Login-to-post;
 -- validates the root exists with the matching kind and is visible to the poster before insert;
 -- guards the return against open-redirect. Plan: _plan/2026-06-28-unified-message-surfaces.md §5.
-include "/opt/mixos/vhosts/shared/widgets/thread.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/thread.mix")
 
 -- A safe local return path: must start with a single "/" (not "//", no scheme, no CRLF).
 function reply_safe_return($ret)

@@ -81,7 +81,7 @@ gate `tools/command_registry.mix` checks the family's owner and suffix;
 collisions only and reads no config token. The runtime guard reads the commands
 and families lists but does not enforce the full canonical format. Installing
 the registry is a separate deployed prerequisite: the scripts and the registry
-come from the same revision, at `/opt/mixos/share/bus/commands.conf.mix` or the
+come from the same revision, at `<prefix>/share/bus/commands.conf.mix` or the
 `BRIDGED_COMMANDS` override.
 
 **Classes.** `<app>.call` and `<app>.execute` are `intent`; `<app>.actions`,
@@ -95,7 +95,7 @@ the [decision](../../decisions/2026-10-13-instance-verb-families.md).
 A strict-data document (`load_data`; never executed).
 
 **Path:** `$BRIDGED_CONFIG` when set; otherwise `<etc>/bridge/<app>.conf.mix`,
-where `<etc>` is `$MIXOS_ETC` when set, else `/etc/mixos`. The file stem is
+where `<etc>` is `$MIXOS_CONFIG` when set, else `<config>`. The file stem is
 the serve name.
 
 ```text
@@ -131,7 +131,7 @@ differ). The broker's own names are refused as noded refuses them: `noded`,
 [a-z2-7]>`. It must also not be the first segment of a command the registry
 already gives to another component, so an instance can never answer, say,
 `settings.status`. The registry read is `$BRIDGED_COMMANDS`, else the installed
-`/opt/mixos/share/bus/commands.conf.mix`:
+`<prefix>/share/bus/commands.conf.mix`:
 
 | Registry entry | Reserves |
 |---|---|
@@ -165,7 +165,7 @@ restarted under `Restart=on-failure` and rate-limited by
 systemd signals both processes, and Mix records the SIGTERM the parent gets
 and exits 143 whatever the child returned, so the unit lists
 `SuccessExitStatus=143`. `$BRIDGED_MIX` overrides the mix binary the child
-runs under (default `/opt/mixos/bin/mix`); it exists for tests.
+runs under (default `<prefix>/bin/mix`); it exists for tests.
 
 Starting `mix --serve bridged.mix --name <app>` directly, not through
 `--start`, registers the name on the Bus before the checks run, so a

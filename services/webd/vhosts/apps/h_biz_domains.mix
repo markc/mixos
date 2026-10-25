@@ -9,11 +9,11 @@
 --   GET  /biz/domains?edit=<id>       → edit form (full page; &modal=1 → md fragment)
 --   POST action=save                  → create (no id) / update (id; domain immutable)
 --   POST action=delete / row:delete   → remove (refused while invoice_items reference it)
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
-include "/opt/mixos/vhosts/shared/apps/biz.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
 
 -- Is the toolsd surface available on THIS vhost? Explicit opt-in, DEFAULT OFF —
 -- deliberately not feature()/features.tools, because feature() defaults a MISSING key to

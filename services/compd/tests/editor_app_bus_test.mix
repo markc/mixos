@@ -4,8 +4,8 @@
 -- Renderer/Ced/apps fixtures are boundaries; loader I/O and files are real.
 $here=dirname(realpath($0))
 $repo=realpath($here .. "/../../..")
-$mix=env("MIXOS_TEST_MIX","/opt/mixos/bin/mix")
-$noded=env("MIXOS_TEST_NODED","/opt/mixos/bin/noded")
+$mix=env("MIXOS_TEST_MIX",(mixos_path("prefix") .. "/bin/mix"))
+$noded=env("MIXOS_TEST_NODED",(mixos_path("prefix") .. "/bin/noded"))
 $tmp="/tmp/editor-app-bus-" .. uuid()
 mkdir($tmp)
 $node=$tmp .. "/node.conf.mix"

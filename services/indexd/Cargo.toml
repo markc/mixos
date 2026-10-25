@@ -25,6 +25,7 @@ name = "indexd"
 path = "src/main.rs"
 
 [dependencies]
+paths = { path = "../../libs/paths" }
 candle-core.workspace = true
 candle-nn.workspace = true
 candle-transformers.workspace = true

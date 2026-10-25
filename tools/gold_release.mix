@@ -8,272 +8,260 @@
 --     --archive-dir DIR --package desktop|server|all
 -- mix tools/gold_release.mix rollback --receipt ID
 -- mix tools/gold_release.mix recover  (put back an interrupted apply)
--- Tests may pass --root /tmp/mixos-gold-test-N --state DIR.
+-- Target flags: --prefix DIR [--tier system|user] and optional --config,
+-- --state, --cache, --runtime roots. State receipts live under state/releases.
+-- Tests may pass --root /tmp/mixos-gold-test-N. Rollback/recover require
+-- an explicit --prefix with layout.mx, or --receipt-file FILE with saved roots.
 
 $g = getopt(args(), {manifest: {arg: true}, "manifest-sha256": {arg: true},
   "archive-dir": {arg: true}, package: {arg: true}, receipt: {arg: true},
-  root: {arg: true}, state: {arg: true}})
+  root: {arg: true}, prefix: {arg: true}, config: {arg: true}, state: {arg: true}, cache: {arg: true}, runtime: {arg: true}, tier: {arg: true}, "receipt-file": {arg: true}})
 if len($g.errors) != 0 or len($g.rest) != 1 or not contains(["plan", "apply", "rollback", "recover"], $g.rest[0]) then
   raise("GOLD_ARGS", "usage: gold_release.mix plan|apply|rollback|recover [--manifest FILE --manifest-sha256 HEX --archive-dir DIR --package desktop|server|all] [--receipt ID]")
 end
 $mode = $g.rest[0]
-$root = $g.opts.root ?? "/opt/mixos"
-$state = $g.opts.state ?? "/var/lib/mixos/releases"
-if $root != "/opt/mixos" and not starts_with($root, "/tmp/mixos-gold-test-") then
-  raise("GOLD_ROOT", "only /opt/mixos or a /tmp/mixos-gold-test-* fixture is allowed")
-end
-if not is_dir($root) or stat($root, {follow_symlinks: false}).is_symlink then
-  raise("GOLD_ROOT", $root .. " must be an existing real directory")
-end
-if $root != realpath($root) then raise("GOLD_ROOT", "root must be a canonical path") end
-if $root == "/opt/mixos" and uid() != 0 then raise("GOLD_ROOT", "live gold install needs one explicit sudo invocation") end
-if not starts_with($state, "/") or $state == $root or starts_with($state, $root .. "/") then
-  raise("GOLD_STATE", "state must be an absolute directory outside gold")
-end
-for $part in split($state, "/")
-  if $part == "." or $part == ".." then raise("GOLD_STATE", "state path must be canonical") end
-end
-fn root_owned_path($path)
-  $p = $path
-  while $p != "/"
-    $s = stat($p, {follow_symlinks: false})
-    if $s.is_symlink or not $s.is_dir or $s.uid != 0 or band($s.perm, 0o022) != 0 then
-      raise("GOLD_STATE", "state path is not a root-owned, non-writable directory: " .. $p)
-    end
-    $p = dirname($p)
-  end
-end
-if $root == "/opt/mixos" then
-  if stat($root, {follow_symlinks: false}).uid != 0 then raise("GOLD_ROOT", "live gold must be root-owned") end
-  $present = $state
-  while not exists($present, {follow_symlinks: false})
-    $present = dirname($present)
-  end
-  root_owned_path($present)
-end
-mkdir($state, {parents: true})
-if $root == "/opt/mixos" then
-  root_owned_path($state)
-  chmod($state, 0o700)
-end
-if not flock($state .. "/.lock", {wait: 0}) then raise("GOLD_BUSY", "another gold release operation is running") end
-$pending = $state .. "/pending.mx"
-$receipt_dir = $state .. "/receipts"
-$sequence_path = $state .. "/sequence.mx"
-if $root == "/opt/mixos" then root_owned_path($state) end
-mkdir($receipt_dir, {parents: true})
-if $root == "/opt/mixos" then root_owned_path($receipt_dir) end
-
-fn existing_state($path)
-  if not exists($path, {follow_symlinks: false}) then return {kind: "absent"} end
-  $s = stat($path, {follow_symlinks: false})
-  if $s.is_file then return {kind: "file", sha256: hash_file($path, "sha256")} end
-  if $s.is_symlink then return {kind: "link", target: read_link($path)} end
-  raise("GOLD_LAYOUT", "release path is occupied by a directory or special file: " .. $path)
-end
-
-fn matches($path, $want)
-  $got = existing_state($path)
-  if $want.kind != $got.kind then return false end
-  if $want.kind == "file" then return $want.sha256 == $got.sha256 end
-  if $want.kind == "link" then return $want.target == $got.target end
-  return true
-end
-
-fn safe_rel($rel)
-  if type($rel) != "string" or $rel == "" or starts_with($rel, "/") then
-    raise("GOLD_PATH", "invalid release path")
-  end
-  for $part in split($rel, "/")
-    if $part == "" or $part == "." or $part == ".." then
-      raise("GOLD_PATH", "invalid release path: " .. $rel)
-    end
-  end
-end
-
-fn safe_parent($path)
-  $p = dirname($path)
-  while $p != $root
-    if not starts_with($p, $root .. "/") then raise("GOLD_PATH", "path escapes gold: " .. $path) end
-    if exists($p, {follow_symlinks: false}) and stat($p, {follow_symlinks: false}).is_symlink then
-      raise("GOLD_PATH", "symlink in gold parent: " .. $p)
-    end
-    $p = dirname($p)
-  end
-end
-
-fn verify_receipt($rec)
-  if (type($rec.id) != "string" or not re_match($rec.id, "^[a-z0-9-]{8,100}$") or
-      $rec.backup != $state .. "/backups/" .. $rec.id or type($rec.files) != "list") then
-    raise("GOLD_RECEIPT", "invalid receipt identity or backup path")
-  end
-end
-
-fn restore($rec)
-  for $item in reverse($rec.files)
-    safe_rel($item.rel)
-    if $item.same then continue end
-    $dest = $root .. "/" .. $item.rel
-    safe_parent($dest)
-    $tmp = $dest .. ".new-" .. $rec.id
-    if exists($tmp, {follow_symlinks: false}) then remove($tmp) end
-    $old = $item.before
-    if matches($dest, $old) then continue end
-    if not matches($dest, $item.after) then
-      raise("GOLD_ROLLBACK_FOREIGN", $dest .. " changed since the release operation")
-    end
-    if $old.kind == "absent" then
-      remove($dest)
-    else
-      $backup = $rec.backup .. "/" .. $item.rel
-      if not matches($backup, $old) then raise("GOLD_BACKUP", "backup differs: " .. $backup) end
-      $tmp = $dest .. ".rollback-" .. $rec.id
-      run_argv_must(["cp", "-a", "--", $backup, $tmp], {timeout: 30})
-      rename($tmp, $dest)
-    end
-  end
-  -- Only directories this install created are listed; rmdir leaves any that
-  -- still hold content. Receipts from before created_dirs listed every
-  -- archive directory (`dirs`), so they remove none: leaving an empty
-  -- directory behind is the safe direction.
-  for $d in reverse($rec.created_dirs ?? [])
-    safe_rel($d)
-    safe_parent($root .. "/" .. $d)
-    $_ = run_argv(["rmdir", "--", $root .. "/" .. $d], {timeout: 10})
-  end
-  print("ROLLBACK " .. $rec.id .. " restored gold files")
-end
-
-if $mode == "recover" then
-  if not is_file($pending) then raise("GOLD_PENDING", "there is no interrupted update") end
-  $rec = load_data($pending)
-  verify_receipt($rec)
-  if $rec.root != $root or not contains(["pending", "applied", "recovered"], $rec.status) then
-    raise("GOLD_RECEIPT", "pending receipt does not describe this root")
-  end
-  if $rec.status == "recovered" then
-    for $item in $rec.files
-      safe_rel($item.rel)
-      if not matches($root .. "/" .. $item.rel, $item.before) then
-        raise("GOLD_ROLLBACK_FOREIGN", "recovered gold path changed: " .. $item.rel)
-      end
-    end
-  else
-    restore($rec)
-    $rec.status = "recovered"
-    $rec.rolled_back_at = now_iso()
-    write_atomic($pending, data_encode($rec) .. "\n")
-  end
-  rename($pending, $receipt_dir .. "/" .. $rec.id .. ".mx")
-  exit(0)
-end
-
-if $mode == "rollback" then
-  if is_file($pending) then raise("GOLD_PENDING", "recover the interrupted update before rolling back another release") end
-  $id = $g.opts.receipt ?? ""
-  if not re_match($id, "^[a-z0-9-]{8,100}$") then raise("GOLD_ARGS", "rollback needs --receipt ID") end
-  $path = $receipt_dir .. "/" .. $id .. ".mx"
-  if not is_file($path) then raise("GOLD_RECEIPT", "no receipt " .. $id) end
-  $rec = load_data($path)
-  verify_receipt($rec)
-  if $rec.id != $id or $rec.root != $root or $rec.status != "applied" then
-    raise("GOLD_RECEIPT", "receipt does not describe an applied update to this root")
-  end
-  if type($rec.sequence) != "number" then raise("GOLD_ORDER", "receipt has no release sequence") end
-  for $other_path in glob($receipt_dir .. "/*.mx")
-    if $other_path == $path then continue end
-    $other = load_data($other_path)
-    if $other.root == $root and $other.status == "applied" then
-      if type($other.sequence) != "number" or $other.sequence >= $rec.sequence then
-        raise("GOLD_ORDER", "roll back newer applied release first: " .. $other.id)
-      end
-    end
-  end
-  restore($rec)
-  $rec.status = "rolled_back"
-  $rec.rolled_back_at = now_iso()
-  write_atomic($path, data_encode($rec) .. "\n")
-  exit(0)
-end
-
-if is_file($pending) then
-  raise("GOLD_PENDING", "an interrupted gold update has a pending receipt at " .. $pending .. "; run recover before another install")
-end
-$manifest_path = $g.opts.manifest ?? ""
-$expect = lower($g.opts["manifest-sha256"] ?? "")
-$archive_dir = $g.opts["archive-dir"] ?? ""
-$selection = $g.opts.package ?? ""
-if (not is_file($manifest_path) or not re_match($expect, "^[0-9a-f]{64}$") or
-    not is_dir($archive_dir) or not contains(["desktop", "server", "all"], $selection)) then
-  raise("GOLD_ARGS", "plan/apply need --manifest FILE --manifest-sha256 HEX --archive-dir DIR --package desktop|server|all")
-end
-$id = replace(uuid(), "_", "-")
-$stage = $state .. "/stage-" .. $id
-mkdir($stage, {parents: true})
-if $root == "/opt/mixos" then chmod($stage, 0o700) end
 $source = dirname(dirname(realpath($0)))
-$releases = require($source .. "/services/releasesd/scripts/lib/releases.mix")
+$targets = require($source .. "/tools/lib/layout_target.mix")
+-- --root is confined to disposable fixtures; --prefix selects a live target.
+if $g.opts.root != nil then
+  if $g.opts.prefix != nil or not starts_with($g.opts.root, "/tmp/mixos-gold-test-") or contains($g.opts.root, "/../") then
+    raise("GOLD_ROOT", "--root accepts only a canonical /tmp/mixos-gold-test-* fixture; use --prefix for a live install")
+  end
+  $g.opts.prefix = $g.opts.root
+end
+$saved = {}
+if $g.opts["receipt-file"] != nil then
+  if not contains(["rollback", "recover"], $mode) then raise("GOLD_ARGS", "--receipt-file is only for rollback/recover") end
+  $saved = load_data($g.opts["receipt-file"]).layout ?? {}
+elif contains(["rollback", "recover"], $mode) and $g.opts.state != nil then
+  $targets.checked({state: $g.opts.state})
+  $rp = $g.opts.state .. "/releases/pending.mx"
+  if $mode == "rollback" then
+    $rid = $g.opts.receipt ?? ""
+    if not re_match($rid, "^[a-z0-9-]{8,100}$") then raise("GOLD_ARGS", "rollback needs --receipt ID") end
+    $rp = $g.opts.state .. "/releases/receipts/" .. $rid .. ".mx"
+  end
+  if is_file($rp) then $saved = load_data($rp).layout ?? {} end
+end
+-- A pinned release is unpacked into an owned temporary tree before any
+-- target/state write. Its binary supplies defaults even under mix-static.
+$prepared = nil
+$layout = {}
 try
-  -- Copy first, then check the root-owned copies: a writable input cannot
-  -- change between hash verification and extraction.
-  copy($manifest_path, $stage .. "/release.manifest.mx")
-  if hash_file($stage .. "/release.manifest.mx", "sha256") != $expect then
-    raise("GOLD_DIGEST", "release manifest differs from the trusted digest")
+  if contains(["plan", "apply"], $mode) then
+    $stager = require($source .. "/tools/lib/gold_stage.mix")
+    $prepared = $stager.prepare($g.opts, $source)
+    $layout = $targets.resolve($g.opts, $prepared.tops[0] .. "/bin/mix", "", {})
+  else
+    -- Resolve rollback solely from a receipt or the explicit target layout.
+    $record_opts = $g.opts
+    $record_opts["record-only"] = true
+    $layout = $targets.resolve($record_opts, nil, "", $saved)
   end
-  $manifest = load_data($stage .. "/release.manifest.mx")
-  if ($manifest.schema != 1 or not re_match($manifest.source ?? "", "^[0-9a-f]{40}$") or
-      not re_match($manifest.version ?? "", "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$") or
-      $manifest.platform != "linux-x86_64-glibc" or $manifest.glibc_floor != "2.39" or
-      $manifest.fixture != false or
-      type($manifest.archives) != "list") then
-    raise("GOLD_MANIFEST", "unsupported or incomplete x86_64 release manifest")
+catch $message, $err
+  if $prepared != nil then remove_dir($prepared.stage) end
+  raise($err.code ?? "GOLD_LAYOUT", $message)
+end
+$root = $layout.prefix
+$state = $layout.state .. "/releases"
+$live = not starts_with($root, "/tmp/mixos-gold-test-")
+try
+  if not is_dir($root) or stat($root, {follow_symlinks: false}).is_symlink then
+    raise("GOLD_ROOT", $root .. " must be an existing real directory")
   end
-  if platform().arch != "x86_64" then raise("GOLD_ARCH", "this release is for x86_64") end
-  $libc = trim(run_argv_must(["getconf", "GNU_LIBC_VERSION"], {timeout: 10}))
-  if not re_match($libc, "^glibc [0-9]+\\.[0-9]+$") then
-    raise("GOLD_GLIBC", "cannot read host glibc version: " .. $libc)
+  if $root != realpath($root) then raise("GOLD_ROOT", "root must be a canonical path") end
+  if $live and uid() != 0 then raise("GOLD_ROOT", "live gold install needs one explicit sudo invocation") end
+  if not $live and not starts_with($state, "/tmp/mixos-gold-test-") then raise("GOLD_STATE", "fixture release state must stay under /tmp/mixos-gold-test-*") end
+  if not starts_with($state, "/") or $state == $root or starts_with($state, $root .. "/") then
+    raise("GOLD_STATE", "state must be an absolute directory outside gold")
   end
-  $parts = split(strip_prefix($libc, "glibc "), ".")
-  if to_number($parts[0]) < 2 or (to_number($parts[0]) == 2 and to_number($parts[1]) < 39) then
-    raise("GOLD_GLIBC", "release needs glibc 2.39 or newer; host has " .. $libc)
+  for $part in split($state, "/")
+    if $part == "." or $part == ".." then raise("GOLD_STATE", "state path must be canonical") end
   end
-  $want = if $selection == "all" then ["mixos-desktop", "mixos-server"]
-    elif $selection == "desktop" then ["mixos-desktop"] else ["mixos-server"] end
+  $ancestor = $state
+  while $ancestor != "/"
+    if exists($ancestor, {follow_symlinks: false}) then
+      $st = stat($ancestor, {follow_symlinks: false})
+      if $st.is_symlink or not $st.is_dir then raise("GOLD_STATE", "state parent is not a plain directory: " .. $ancestor) end
+    end
+    $ancestor = dirname($ancestor)
+  end
+  fn root_owned_path($path)
+    $p = $path
+    while $p != "/"
+      $s = stat($p, {follow_symlinks: false})
+      if $s.is_symlink or not $s.is_dir or $s.uid != 0 or band($s.perm, 0o022) != 0 then
+        raise("GOLD_STATE", "state path is not a root-owned, non-writable directory: " .. $p)
+      end
+      $p = dirname($p)
+    end
+  end
+  if $live then
+    if stat($root, {follow_symlinks: false}).uid != 0 then raise("GOLD_ROOT", "live gold must be root-owned") end
+    $present = $state
+    while not exists($present, {follow_symlinks: false})
+      $present = dirname($present)
+    end
+    root_owned_path($present)
+  end
+  mkdir($state, {parents: true})
+  if $live then
+    root_owned_path($state)
+    chmod($state, 0o700)
+  end
+  if not flock($state .. "/.lock", {wait: 0}) then raise("GOLD_BUSY", "another gold release operation is running") end
+  $pending = $state .. "/pending.mx"
+  $receipt_dir = $state .. "/receipts"
+  $sequence_path = $state .. "/sequence.mx"
+  if $live then root_owned_path($state) end
+  mkdir($receipt_dir, {parents: true})
+  if $live then root_owned_path($receipt_dir) end
+
+  fn existing_state($path)
+    if not exists($path, {follow_symlinks: false}) then return {kind: "absent"} end
+    $s = stat($path, {follow_symlinks: false})
+    if $s.is_file then return {kind: "file", sha256: hash_file($path, "sha256")} end
+    if $s.is_symlink then return {kind: "link", target: read_link($path)} end
+    raise("GOLD_LAYOUT", "release path is occupied by a directory or special file: " .. $path)
+  end
+
+  fn matches($path, $want)
+    $got = existing_state($path)
+    if $want.kind != $got.kind then return false end
+    if $want.kind == "file" then return $want.sha256 == $got.sha256 end
+    if $want.kind == "link" then return $want.target == $got.target end
+    return true
+  end
+
+  fn safe_rel($rel)
+    if type($rel) != "string" or $rel == "" or starts_with($rel, "/") then
+      raise("GOLD_PATH", "invalid release path")
+    end
+    for $part in split($rel, "/")
+      if $part == "" or $part == "." or $part == ".." then
+        raise("GOLD_PATH", "invalid release path: " .. $rel)
+      end
+    end
+  end
+
+  fn safe_parent($path)
+    $p = dirname($path)
+    while $p != $root
+      if not starts_with($p, $root .. "/") then raise("GOLD_PATH", "path escapes gold: " .. $path) end
+      if exists($p, {follow_symlinks: false}) and stat($p, {follow_symlinks: false}).is_symlink then
+        raise("GOLD_PATH", "symlink in gold parent: " .. $p)
+      end
+      $p = dirname($p)
+    end
+  end
+
+  fn verify_receipt($rec)
+    if not deep_eq($targets.checked($rec.layout ?? {}), $layout) then raise("GOLD_RECEIPT", "receipt layout does not describe the selected target") end
+    if (type($rec.id) != "string" or not re_match($rec.id, "^[a-z0-9-]{8,100}$") or
+        $rec.backup != "mixos:state/releases/backups/" .. $rec.id or type($rec.files) != "list") then
+      raise("GOLD_RECEIPT", "invalid receipt identity or backup path")
+    end
+  end
+
+  fn restore($rec)
+    for $item in reverse($rec.files)
+      safe_rel($item.rel)
+      if $item.same then continue end
+      $dest = $root .. "/" .. $item.rel
+      safe_parent($dest)
+      $tmp = $dest .. ".new-" .. $rec.id
+      if exists($tmp, {follow_symlinks: false}) then remove($tmp) end
+      $old = $item.before
+      if matches($dest, $old) then continue end
+      if not matches($dest, $item.after) then
+        raise("GOLD_ROLLBACK_FOREIGN", $dest .. " changed since the release operation")
+      end
+      if $old.kind == "absent" then
+        remove($dest)
+      else
+        $backup = $state .. "/backups/" .. $rec.id .. "/" .. $item.rel
+        if not matches($backup, $old) then raise("GOLD_BACKUP", "backup differs: " .. $backup) end
+        $tmp = $dest .. ".rollback-" .. $rec.id
+        run_argv_must(["cp", "-a", "--", $backup, $tmp], {timeout: 30})
+        rename($tmp, $dest)
+      end
+    end
+    -- Only directories this install created are listed; rmdir leaves any that
+    -- still hold content. Receipts from before created_dirs listed every
+    -- archive directory (`dirs`), so they remove none: leaving an empty
+    -- directory behind is the safe direction.
+    for $d in reverse($rec.created_dirs ?? [])
+      safe_rel($d)
+      safe_parent($root .. "/" .. $d)
+      $_ = run_argv(["rmdir", "--", $root .. "/" .. $d], {timeout: 10})
+    end
+    print("ROLLBACK " .. $rec.id .. " restored gold files")
+  end
+
+  if $mode == "recover" then
+    if not is_file($pending) then raise("GOLD_PENDING", "there is no interrupted update") end
+    $rec = load_data($pending)
+    verify_receipt($rec)
+    if $rec.root != "mixos:prefix/" or not contains(["pending", "applied", "recovered"], $rec.status) then
+      raise("GOLD_RECEIPT", "pending receipt does not describe this root")
+    end
+    if $rec.status == "recovered" then
+      for $item in $rec.files
+        safe_rel($item.rel)
+        if not matches($root .. "/" .. $item.rel, $item.before) then
+          raise("GOLD_ROLLBACK_FOREIGN", "recovered gold path changed: " .. $item.rel)
+        end
+      end
+    else
+      restore($rec)
+      $rec.status = "recovered"
+      $rec.rolled_back_at = now_iso()
+      write_atomic($pending, data_encode($rec) .. "\n")
+    end
+    rename($pending, $receipt_dir .. "/" .. $rec.id .. ".mx")
+    exit(0)
+  end
+
+  if $mode == "rollback" then
+    if is_file($pending) then raise("GOLD_PENDING", "recover the interrupted update before rolling back another release") end
+    $id = $g.opts.receipt ?? (if $g.opts["receipt-file"] != nil then load_data($g.opts["receipt-file"]).id else "" end)
+    if not re_match($id, "^[a-z0-9-]{8,100}$") then raise("GOLD_ARGS", "rollback needs --receipt ID") end
+    $path = $receipt_dir .. "/" .. $id .. ".mx"
+    if not is_file($path) then raise("GOLD_RECEIPT", "no receipt " .. $id) end
+    $rec = load_data($path)
+    verify_receipt($rec)
+    if $rec.id != $id or $rec.root != "mixos:prefix/" or $rec.status != "applied" then
+      raise("GOLD_RECEIPT", "receipt does not describe an applied update to this root")
+    end
+    if type($rec.sequence) != "number" then raise("GOLD_ORDER", "receipt has no release sequence") end
+    for $other_path in glob($receipt_dir .. "/*.mx")
+      if $other_path == $path then continue end
+      $other = load_data($other_path)
+      if $other.root == "mixos:prefix/" and $other.status == "applied" then
+        if type($other.sequence) != "number" or $other.sequence >= $rec.sequence then
+          raise("GOLD_ORDER", "roll back newer applied release first: " .. $other.id)
+        end
+      end
+    end
+    restore($rec)
+    $rec.status = "rolled_back"
+    $rec.rolled_back_at = now_iso()
+    write_atomic($path, data_encode($rec) .. "\n")
+    exit(0)
+  end
+
+  if is_file($pending) then
+    raise("GOLD_PENDING", "an interrupted gold update has a pending receipt at " .. $pending .. "; run recover before another install")
+  end
+  $id = replace(uuid(), "_", "-")
+  $stage = $prepared.stage
+  $manifest = $prepared.manifest
+  $expect = $prepared.expect
+  $want = $prepared.want
   $files = []
   $seen = []
   $dirs = []
-  for $pkg in $want
-    $rows = filter($manifest.archives, fn($r) = $r.name == $pkg)
-    if len($rows) != 1 then raise("GOLD_MANIFEST", "expected exactly one " .. $pkg .. " archive") end
-    $row = $rows[0]
-    $asset = $pkg .. "-" .. $manifest.version .. "-linux-x86_64.tar.gz"
-    if ($row.asset != $asset or not re_match($row.sha256 ?? "", "^[0-9a-f]{64}$") or
-        type($row.binaries) != "list" or type($row.libraries ?? []) != "list") then
-      raise("GOLD_MANIFEST", "invalid archive record for " .. $pkg)
-    end
-    copy($archive_dir .. "/" .. $asset, $stage .. "/" .. $asset)
-    if hash_file($stage .. "/" .. $asset, "sha256") != $row.sha256 then
-      raise("GOLD_DIGEST", $asset .. " differs from the release manifest")
-    end
-    $extract = $stage .. "/extract-" .. $pkg
-    $_ = tar_unpack($stage .. "/" .. $asset, $extract, {codec: "gzip", numeric_owner: false, xattrs: false})
-    $top = $extract .. "/" .. replace($asset, ".tar.gz", "")
-    if not is_dir($top) or len(glob($extract .. "/*")) != 1 then raise("GOLD_LAYOUT", $asset .. " needs one prefix") end
-    $releases.validate_prefix($top)
-    for $b in $row.binaries
-      if (type($b.name) != "string" or not re_match($b.name, "^[a-z0-9-]+$") or
-          not re_match($b.sha256 ?? "", "^[0-9a-f]{64}$") or
-          hash_file($top .. "/bin/" .. $b.name, "sha256") != $b.sha256) then
-        raise("GOLD_BINARY", $pkg .. " has a missing or different binary")
-      end
-    end
-    for $lib in $row.libraries ?? []
-      if (type($lib.name) != "string" or not re_match($lib.name, "^lib[a-z0-9.-]+\\.so\\.[0-9]+$") or
-          not re_match($lib.sha256 ?? "", "^[0-9a-f]{64}$") or
-          hash_file($top .. "/lib/" .. $lib.name, "sha256") != $lib.sha256) then
-        raise("GOLD_LIBRARY", $pkg .. " has a missing or different runtime library")
-      end
-    end
+  for $top in $prepared.tops
     for $p in walk($top, {include_dirs: true, follow_symlinks: false})
       if $p == $top then continue end
       $rel = slice($p, len($top) + 1, len($p))
@@ -313,6 +301,13 @@ try
         same: matches($dest, $after)})
     end
   end
+  -- The selected roots must survive the installer's environment. Journal
+  -- layout.mx like every shipped file so recovery/rollback restores it too.
+  $layout_source = $stage .. "/target-layout.mx"
+  write_file($layout_source, data_encode($layout) .. "\n")
+  $layout_after = {kind: "file", sha256: hash_file($layout_source, "sha256")}
+  push($files, {rel: "layout.mx", source: $layout_source, before: existing_state($root .. "/layout.mx"),
+    after: $layout_after, same: matches($root .. "/layout.mx", $layout_after)})
   $changed = len(filter($files, fn($f) = not $f.same))
   print("PLAN source=" .. $manifest.source .. " version=" .. $manifest.version ..
     " packages=" .. join($want, ",") .. " files=" .. len($files) .. " changed=" .. $changed)
@@ -336,9 +331,9 @@ try
   end
   $next = $last.last + 1
   write_atomic($sequence_path, data_encode({schema: 1, last: $next}) .. "\n")
-  $record = {schema: 1, id: $id, sequence: $next, status: "pending", root: $root,
-    source: $manifest.source, version: $manifest.version, packages: $want,
-    manifest_sha256: $expect, backup: $backup, started_at: now_iso(), files: []}
+  $record = {schema: 1, id: $id, sequence: $next, status: "pending", root: "mixos:prefix/",
+    layout: $layout, source: $manifest.source, version: $manifest.version, packages: $want,
+    manifest_sha256: $expect, backup: "mixos:state/releases/backups/" .. $id, started_at: now_iso(), files: []}
   for $f in $files
     $record.files = push($record.files, {rel: $f.rel, before: $f.before, after: $f.after, same: $f.same})
   end
@@ -369,7 +364,15 @@ try
     remove($pending)
     raise($err.code ?? "GOLD_APPLY", $msg)
   end
+  if is_file($root .. "/share/layout/apply.mix") then
+    $layout_args = [$root .. "/bin/mix", "layout", "apply"]
+    if not $live then
+      mkdir($root .. "/.layout-root", {parents: true})
+      $layout_args = concat($layout_args, ["--root", $root .. "/.layout-root"])
+    end
+    print(run_argv_must($layout_args, {timeout: 120, env: $targets.environment($layout)}))
+  end
 finally
-  remove_dir($stage)
+  if $prepared != nil then remove_dir($prepared.stage) end
   funlock($state .. "/.lock")
 end

@@ -8,7 +8,7 @@
 -- conditional-UPDATE CAS in ssh_lib.mix (no multi-statement tx). All three
 -- endpoints route here and dispatch by path (mirrors h_biz_provision.mix).
 
-include "/opt/mixos/vhosts/shared/apps/ssh_lib.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/apps/ssh_lib.mix")
 
 function ssh_jobs_main()
   -- Create + seed the sshm.* tables (incl. the secret) idempotently; needs the

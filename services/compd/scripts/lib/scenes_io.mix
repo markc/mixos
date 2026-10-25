@@ -37,14 +37,7 @@ end
 
 fn templates($script)
   if env("SCENES_TEMPLATES") != "" then return env("SCENES_TEMPLATES") end
-  if env("MIXOS_SHARE") != "" then return env("MIXOS_SHARE") .. "/scenes" end
-  if env("MIXOS") != "" then return env("MIXOS") .. "/share/scenes" end
-  $path = dirname(realpath($script))
-  while dirname($path) != $path
-    if is_file($path .. "/Cargo.toml") and is_dir($path .. "/share/scenes") then return $path .. "/share/scenes" end
-    $path = dirname($path)
-  end
-  raise("SCENES_TEMPLATES", "set SCENES_TEMPLATES or MIXOS for this installation", {})
+  return mixos_path("prefix", "share/scenes")
 end
 
 -- check($path, {lint:"deny"|"report"}) -> {ok, problems}. mix --check is a

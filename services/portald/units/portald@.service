@@ -13,9 +13,9 @@ StartLimitIntervalSec=0
 Type=simple
 User=mixos
 # Keeps DBUS_SESSION_BUS_ADDRESS: the portal serves the session bus itself.
-EnvironmentFile=/etc/mixos/session/%i.env
+EnvironmentFile=@{config}/session/%i.env
 StateDirectory=portald
-ExecStart=/opt/mixos/bin/portald serve --instance %H --screencast
+ExecStart=@{prefix}/bin/portald serve --instance %H --screencast
 KillMode=control-group
 TimeoutStopSec=10
 Restart=on-failure

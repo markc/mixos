@@ -13,13 +13,13 @@
 --   POST action=save                     → create (no id) / update (id) → PRG to ?view=<id>
 --   POST action=delete / row:delete:<id> → remove — REFUSED while services/domains/invoices
 --                                          reference the customer (close it instead)
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/lib/resource_engine.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
-include "/opt/mixos/vhosts/shared/widgets/detail.mix"
-include "/opt/mixos/vhosts/shared/apps/biz.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/lib/resource_engine.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/detail.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
 
 -- nil-safe stringify ("" for SQL NULL — `"" .. nil` would print the literal "nil").
 function bc_str($v)

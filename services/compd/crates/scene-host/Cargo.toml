@@ -21,6 +21,7 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+paths = { path = "../../../../libs/paths" }
 # The session look: the shared consumer on the host's own connection, with
 # its offline cache, read through `crate::lane`.
 settings = { workspace = true, features = ["native", "cache"] }

@@ -6,7 +6,7 @@
 -- Visual target: Filament 5 Forms (filamentphp.com/docs; screenshots deleted 2026-07-23, git history — anatomy ONLY, never
 -- its palette). Sibling of widgets/datatable.mix; same conventions.
 --
--- ONE copy at /opt/mixos/vhosts/shared/widgets/forms.mix; `include`-d by a
+-- ONE copy at <prefix>/vhosts/shared/widgets/forms.mix; `include`-d by a
 -- handler AFTER lib.mix (so esc()/html_escape() resolve at call-time, exactly like
 -- datatable.mix). No stub change — pulled in by the handlers that use it.
 --

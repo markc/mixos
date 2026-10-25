@@ -12,8 +12,8 @@
 -- shell (md_panel) + the tools-* CSS + the adaptive-poll pattern. The host is an OPAQUE id
 -- resolved server-side through sshm.ssh_hosts (ssh_tool_enqueue), never a caller hostname.
 
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
-include "/opt/mixos/vhosts/shared/apps/ssh_lib.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/ssh_lib.mix")
 
 $SSHT_POLL_FIRST_MS = 200
 $SSHT_POLL_MAX_MS = 700

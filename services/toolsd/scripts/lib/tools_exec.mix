@@ -2,7 +2,7 @@
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- tools_exec.mix — the DAEMON-SIDE half of the tool registry: the argv templates and the
 -- fail-closed exec preconditions. Lives ONLY on the toolsd node
--- (/opt/mixos/lib/toolsd/lib/tools_exec.mix); webd never sees it.
+-- (<prefix>/lib/toolsd/lib/tools_exec.mix); webd never sees it.
 --
 -- The split is the security boundary (Codex 019f5bc3): webd knows tool NAMES, PARAMS and
 -- ROLES (tools_registry.mix — shared) but has no idea what binary a tool maps to. Only
@@ -17,10 +17,10 @@
 -- FAIL-CLOSED: if the file is missing, world-writable, or has been swapped for a symlink,
 -- the run errors instead of executing.
 
-include "/opt/mixos/lib/toolsd/lib/tools_registry.mix"
+include (mixos_path("prefix") .. "/lib/toolsd/lib/tools_registry.mix")
 
-$TOOLS_MIX = "/opt/mixos/bin/mix"
-$TOOLS_ASSET_DIR = "/opt/mixos/lib/toolsd/tools"
+$TOOLS_MIX = (mixos_path("prefix") .. "/bin/mix")
+$TOOLS_ASSET_DIR = (mixos_path("prefix") .. "/lib/toolsd/tools")
 $TOOLS_WHOIS = "/usr/bin/whois"
 $TOOLS_DIG = "/usr/bin/dig"
 $TOOLS_TRACEROUTE = "/usr/bin/traceroute"

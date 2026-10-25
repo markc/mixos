@@ -11,7 +11,7 @@ $pb = require("../../../tests/lib/private_bus.mix")
 $here = dirname(realpath($0))
 $citizen = realpath($here .. "/../scripts/notifyd.mix")
 $listener = realpath($here .. "/fixtures/listener.mix")
-$noded = "/opt/mixos/bin/noded"
+$noded = (mixos_path("prefix") .. "/bin/noded")
 $a = args()
 if len($a) == 2 and $a[0] == "--noded" then $noded = $a[1] end
 $tmp = "/var/tmp/notifyd-test." .. uuid()
@@ -52,7 +52,7 @@ fn wait_for($command, $body)
 end
 
 fn start_notifyd($env)
-  return spawn(["/opt/mixos/bin/mix", "--serve", $citizen, "--name", "notify"],
+  return spawn([(mixos_path("prefix") .. "/bin/mix"), "--serve", $citizen, "--name", "notify"],
     {detach: true, env: $env, stdout: {file: $tmp .. "/notifyd.log", append: true}, stderr: "stdout"})
 end
 
@@ -75,7 +75,7 @@ mkdir($tmp, {parents: true})
 try
   $bus = $pb.start({dir: $tmp .. "/bus", name: "notifyd-test", noded: $noded})
   $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_NOTIFYD_STATE: $tmp .. "/state/state.json"})
-  push($pids, spawn(["/opt/mixos/bin/mix", "--serve", $listener, "--name", "listener"],
+  push($pids, spawn([(mixos_path("prefix") .. "/bin/mix"), "--serve", $listener, "--name", "listener"],
     {detach: true, env: merge($env, {NOTIFY_EVENTS: $tmp .. "/events"}), stdout: {file: $tmp .. "/listener.log"}, stderr: "stdout"}))
   push($pids, start_notifyd($env))
   send listener listener.ready timeout=2

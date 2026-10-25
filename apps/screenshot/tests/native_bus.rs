@@ -120,7 +120,7 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
                 &broker.url,
             ])
             .env("HOME", directory.path())
-            .env("MIXOS_APP_HOME", directory.path().join("state"))
+            .env("MIXOS_STATE", directory.path().join("state"))
             .env("MIXOS_SCREENSHOTS_DIR", &shots)
             .env_remove("WAYLAND_DISPLAY")
             .env_remove("DISPLAY")
@@ -150,7 +150,7 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
             "--noded-url",
             &broker.url,
         ])
-        .env("MIXOS_APP_HOME", directory.path().join("duplicate"))
+        .env("MIXOS_STATE", directory.path().join("duplicate"))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()

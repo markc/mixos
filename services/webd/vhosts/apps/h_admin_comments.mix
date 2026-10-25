@@ -7,9 +7,9 @@
 -- 'spam' | 'deleted'. Approve→visible, Unapprove→pending, Spam→spam, Delete→hard remove.
 -- Replies arrive via the public /reply path — there is NO admin compose/editor here.
 -- Plan: _plan/2026-06-28-unified-message-surfaces.md §5.
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
 
 -- Link to the root a reply hangs off (forum topic or blog post); both are cms_posts rows.
 function acm_root_href($kind, $slug)

@@ -157,7 +157,7 @@ enum Cmd {
         against_authored: Option<PathBuf>,
     },
     /// Print the genesis PUBLIC verify key (base64) — the value to
-    /// provision out-of-band to each node as `/opt/mixos/etc/noded/genesis.pub`
+    /// provision out-of-band to each node as `mixos:prefix/etc/noded/genesis.pub`
     /// (§7.4). Reads the signing key from the secrets DB.
     Pubkey,
     /// Generate a node's `kind:"d2"` admission keypair (§9a / slice 2-d) and

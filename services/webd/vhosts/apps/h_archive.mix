@@ -9,7 +9,7 @@
 -- unknown term renders a clean "nothing here" card (200, not a 404/500) so a stale or
 -- mistyped /tag/<slug> URL degrades gracefully. A signed-in viewer also sees their own
 -- private posts in the term (mirrors h_home's visibility scope); the public sees public.
-include "/opt/mixos/vhosts/shared/apps/h_home.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/apps/h_home.mix")
 
 function archive_main()
 cms_init()

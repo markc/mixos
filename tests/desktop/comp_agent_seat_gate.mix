@@ -207,7 +207,7 @@ try
   $probe = binary("testkit-input-probe", $OPT.probe, $n.probe_dirs($OPT.bin))
   demand("probe-binary", $probe != "", $probe)
   check("probe-version", true, $n.probe_version($probe))
-  $comp = binary("compd", $OPT.bin, ["/opt/mixos/bin"])
+  $comp = binary("compd", $OPT.bin, [(mixos_path("prefix") .. "/bin")])
   demand("compositor-binary", $comp != "", $comp)
   $CLEANUP.run = $n.new_run("/tmp/compd-seat-" .. to_string(pid()))
   $RUN.session = $n.start({bin: $comp, tag: "seat", run: $CLEANUP.run, config: $OPT["config-file"],

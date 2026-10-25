@@ -19,11 +19,11 @@
 -- returns a full total + orders by start; Email/get-style reorder to query id order.
 
 -- esc'd event field, "" when absent.
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
-include "/opt/mixos/vhosts/shared/widgets/reader.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/reader.mix")
 
 -- Datatable cell: the event title as a link to its detail view, "(untitled)"
 -- fallback. The widget supplies no row link (no row_href), so this owns its <a>.

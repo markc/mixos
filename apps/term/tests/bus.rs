@@ -30,7 +30,7 @@ struct Holder {
 }
 
 fn mix_available() -> bool {
-    let available = std::path::Path::new("/opt/mixos/bin/mix").is_file();
+    let available = &::paths::root(::paths::Root::Prefix).join("bin/mix").is_file();
     if !available {
         eprintln!("skipping: the PTY tests need Mix at /opt/mixos/bin/mix");
     }

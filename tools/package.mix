@@ -51,6 +51,10 @@ fn entries_for($root, $bins)
 end
 fn add_tree($from, $to)
   if not is_dir($from) then raise("PACKAGE_MISSING", "runtime tree " .. $from .. " is missing") end
+  -- Docs stage pinned source fonts here. They are build inputs, while the
+  -- server ships the asset installer and its lock, not a local asset cache.
+  $asset_sources = $from == $source .. "/share/assets"
+  $asset_cache = ["sets", "current", ".install.lock"]
   -- git status does not list ignored files, but cp -a would ship them, so the
   -- clean-source check alone cannot vouch for a copied tree.
   if not $fixture then
@@ -60,12 +64,22 @@ fn add_tree($from, $to)
     $rel = strip_prefix($from, $source .. "/")
     $ignored = trim(run_argv_must(["git", "-C", $source, "ls-files", "--others", "--ignored",
       "--exclude-standard", "--directory", "--no-empty-directory", "--", $rel], {timeout: 30}))
+    if $asset_sources then
+      $ignored = join(filter(lines($ignored), fn($p) = not any($asset_cache,
+        fn($name) = $p == $rel .. "/" .. $name or starts_with($p, $rel .. "/" .. $name .. "/"))), "\n")
+    end
     if $ignored != "" then
       raise("PACKAGE_SOURCE", "runtime tree " .. $rel .. " holds gitignored files: " .. replace($ignored, "\n", ", "))
     end
   end
   mkdir($to, {parents: true})
-  run_argv_must(["cp", "-a", $from .. "/.", $to], {timeout: 120})
+  if $asset_sources then
+    for $name in sort(ls($from))
+      if not contains($asset_cache, $name) then run_argv_must(["cp", "-a", "--", $from .. "/" .. $name, $to .. "/" .. $name], {timeout: 120}) end
+    end
+  else
+    run_argv_must(["cp", "-a", $from .. "/.", $to], {timeout: 120})
+  end
 end
 $DOCS = ["README.md", "LICENSE-MIT", "LICENSE-APACHE", "NOTICE"]
 
@@ -142,11 +156,27 @@ for $pkg in $selected
   for $e in entries_for($source, $PACKAGES[$pkg])
     mkdir($top .. "/share/applications", {parents: true})
     -- replace() covers every Exec= and TryExec= line, actions included.
-    $text = replace(read_file($source .. "/" .. $e), "Exec=/opt/mixos/bin/", "Exec=")
+    $text = replace(read_file($source .. "/" .. $e), "Exec=@{prefix}/bin/", "Exec=")
     write_file($top .. "/share/applications/" .. basename($e), $text)
     chmod($top .. "/share/applications/" .. basename($e), 0o644)
   end
   mkdir($top .. "/share/doc/" .. $pkg, {parents: true})
+  -- Ship the renderer with component-owned templates copied into share.
+  add_tree($source .. "/share/layout", $top .. "/share/layout")
+  $layout_manifest = load_data($source .. "/share/layout/templates.mx")
+  $layout_files = []
+  $layout_owners = concat($PACKAGES[$pkg], if $pkg == "mixos-desktop" then
+    ["notifyd", "releasesd"] else [] end)
+  for $entry in $layout_manifest.files
+    $rel = strip_prefix($entry.source, "../../")
+    if (starts_with($rel, "apps/") or starts_with($rel, "services/")) and not contains($layout_owners, split($rel, "/")[1]) then continue end
+    $template_rel = "templates/" .. $rel
+    mkdir(dirname($top .. "/share/layout/" .. $template_rel), {parents: true})
+    copy($source .. "/" .. $rel, $top .. "/share/layout/" .. $template_rel)
+    $entry.source = $template_rel
+    push($layout_files, $entry)
+  end
+  write_file($top .. "/share/layout/templates.mx", data_encode({schema: 1, files: $layout_files}) .. "\n")
   for $d in $DOCS
     copy($source .. "/" .. $d, $top .. "/share/doc/" .. $pkg .. "/" .. $d)
     chmod($top .. "/share/doc/" .. $pkg .. "/" .. $d, 0o644)

@@ -8,10 +8,10 @@
 -- (ISO strings compare safely). One bound query per number; customer names are
 -- prefetched once into a map.
 --   GET /biz → dashboard (no POST actions; everything links into /biz/* pages)
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
-include "/opt/mixos/vhosts/shared/apps/biz.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
 
 -- Customer display name from the prefetched id→name map ("#id" if unknown).
 function bd_name($names, $cid)

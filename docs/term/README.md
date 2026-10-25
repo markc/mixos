@@ -76,7 +76,7 @@ cargo build --locked --profile release-fast -p term
 
 `tests/window.rs` takes an offscreen snapshot of the window with two tabs
 and a split; regenerate it with `UPDATE_SNAPSHOTS=1` and look at it. The
-PTY tests need the Mix binary at `/opt/mixos/bin/mix`.
+PTY tests need the Mix binary at `<prefix>/bin/mix`.
 
 ## Macro Bus commands
 

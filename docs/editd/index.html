@@ -255,7 +255,7 @@ revision CAS, per-origin undo, anchors, atomic save, external-change
 detection and a recoverable change feed. This service owns its actors,
 filesystem watching and the recovery writer.</p>
 <p>Discovery uses the shared node configuration. Recovery defaults beneath
-<code>MIXOS_VAR/edit/recovery</code>, following the MixOS Var directory rule.
+<code>MIXOS_STATE/edit/recovery</code>, following the MixOS Var directory rule.
 <code>MIXOS_EDIT_RECOVERY_DIR</code> selects an absolute recovery directory, and
 <code>MIXOS_EDIT_RECOVERY=0</code> disables durable recovery. The session supplies its
 own state root.</p>

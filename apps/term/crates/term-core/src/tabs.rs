@@ -1241,7 +1241,7 @@ mod tests {
     }
 
     fn fixture() -> Option<TabSet> {
-        if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
             eprintln!("SKIP tab PTY test: /opt/mixos/bin/mix unavailable");
             return None;
         }

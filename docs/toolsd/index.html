@@ -276,8 +276,8 @@ servers directly. So code running as <code>toolsd</code> cannot probe the mesh o
 hypervisors.</p>
 <h2 id="installing">Installing</h2>
 <table><thead><tr><th>Source</th><th>Installed as</th></tr></thead><tbody>
-<tr><td><code>services/toolsd/scripts/</code></td><td><code>/opt/mixos/lib/toolsd/</code> (root-owned, not writable)</td></tr>
-<tr><td><code>services/webd/vhosts/apps/tools_registry.mix</code></td><td><code>/opt/mixos/lib/toolsd/lib/tools_registry.mix</code></td></tr>
+<tr><td><code>services/toolsd/scripts/</code></td><td><code>&lt;prefix&gt;/lib/toolsd/</code> (root-owned, not writable)</td></tr>
+<tr><td><code>services/webd/vhosts/apps/tools_registry.mix</code></td><td><code>&lt;prefix&gt;/lib/toolsd/lib/tools_registry.mix</code></td></tr>
 <tr><td><code>services/toolsd/units/*.service</code>, <code>*.timer</code></td><td><code>/etc/systemd/system/</code></td></tr>
 <tr><td><code>services/toolsd/units/toolsd.tmpfiles.conf</code></td><td><code>/etc/tmpfiles.d/toolsd.conf</code></td></tr>
 <tr><td><code>services/toolsd/units/49-toolsd-wake.rules</code></td><td><code>/etc/polkit-1/rules.d/</code></td></tr>
@@ -288,10 +288,10 @@ the drain checks its owner and mode before every run.</p>
 <p>Each host also needs:</p>
 <ul>
 <li>the system users <code>toolsd</code> and <code>toolsd-wake</code>;</li>
-<li><code>/etc/mixos/toolsd/env</code> with <code>TOOLS_BASE_URL</code> (the webd vhost to claim
+<li><code>&lt;config&gt;/toolsd/env</code> with <code>TOOLS_BASE_URL</code> (the webd vhost to claim
 from, for example <code>https://admin.example.com</code>) and <code>TOOLS_CA_FILE</code> (the
 certificate chain to verify it with);</li>
-<li><code>/etc/mixos/toolsd/secret</code>, <code>0400 root</code>, matching the vhost's tools
+<li><code>&lt;config&gt;/toolsd/secret</code>, <code>0400 root</code>, matching the vhost's tools
 secret;</li>
 <li>a drop-in, <code>/etc/systemd/system/toolsd-drain.service.d/webd.conf</code>, with
 <code>IPAddressAllow=&lt;webd address&gt;/32</code>.</li>

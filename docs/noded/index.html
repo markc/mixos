@@ -251,11 +251,11 @@ inspect the package version and build provenance. noded is one of the
 personalities of the <a href="/system/">system</a> binary.</p>
 <h2 id="configuration">Configuration</h2>
 <p>Configuration is strict data in <code>node.conf.mix</code>, resolved beneath <code>MIXOS</code> or
-an explicit <code>MIXOS_ETC</code>. Isolated roots never fall back to host
+an explicit <code>MIXOS_CONFIG</code>. Isolated roots never fall back to host
 configuration. Set <code>MIXOS</code> to an isolated runtime root and supply
 <code>etc/node.conf.mix</code>, for example:</p>
 <pre><code class="language-text">node: "example"
-noded: { port: 4200, unix_socket: "/run/mixos/noded/bus.sock" }
+noded: { port: 4200, unix_socket: "&lt;runtime&gt;/noded/bus.sock" }
 </code></pre>
 <h2 id="running-it">Running it</h2>
 <p>Run <code>noded serve</code>; <code>--no-monitor --no-log</code> disables its optional observation

@@ -67,7 +67,7 @@ struct Args {
     grab_timeout: Option<u64>,
 
     /// The keymap file to load and write rebinds to. Default: keymap.json
-    /// in $STATE_DIRECTORY, else /var/lib/mixos/inputd/keymap.json (root)
+    /// in $STATE_DIRECTORY, else mixos:state/inputd/keymap.json (root)
     /// or ~/.local/share/mixos/inputd/keymap.json.
     #[arg(long, value_name = "PATH")]
     keymap: Option<PathBuf>,

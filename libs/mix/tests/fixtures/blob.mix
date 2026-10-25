@@ -11,7 +11,7 @@
 --
 -- Load beside the daemon:
 --   $b = require("…/blobd/mix/blob.mix")
---   $r = $b.blob_put("/var/lib/mixos/capture/shot.png", {owner: "capture"})
+--   $r = $b.blob_put("<state>/capture/shot.png", {owner: "capture"})
 --   if not $r.ok then die $r.result end
 --
 -- Paths the daemon can see: blob.put reads the path as the blobd

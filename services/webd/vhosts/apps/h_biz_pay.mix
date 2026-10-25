@@ -15,9 +15,9 @@
 -- amount+currency+mode+open); per-token rate limits; and the txn dedupe index.
 -- The webhook paths ("stripe"/"paypal" in the token slot) are reserved words —
 -- real tokens are 64 hex chars and can never collide.
-include "/opt/mixos/vhosts/shared/apps/biz.mix"
-include "/opt/mixos/vhosts/shared/apps/stripe.mix"
-include "/opt/mixos/vhosts/shared/apps/paypal.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/stripe.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/paypal.mix")
 
 -- ---------------------------------------------------------------- helpers
 

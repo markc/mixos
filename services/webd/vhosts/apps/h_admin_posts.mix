@@ -6,11 +6,11 @@
 --   GET  /admin/posts?edit=<slug>→ editor for that post
 --   POST action=save             → create/update
 --   POST action=delete           → remove
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
-include "/opt/mixos/vhosts/shared/widgets/reader.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/reader.mix")
 
 -- slug shape gate for delete ids (bulk_id is the slug — untrusted): trimmed,
 -- nonblank, bounded. nil = invalid (counts as a skip in bulk).

@@ -23,8 +23,8 @@
 --
 --   mix tests/desktop/comp_presentation_smoke.mix [--bin PATH] --config-file PATH [--gate g1|g1plus] [--frames N] [--burst N] [--hold-s N]
 --
--- Defaults: compd /opt/mixos/bin/compd, the probe testkit-presentation-probe
--- from compd's bin dir (beside a compd --bin, then /opt/mixos/bin); its path
+-- Defaults: compd <prefix>/bin/compd, the probe testkit-presentation-probe
+-- from compd's bin dir (beside a compd --bin, then <prefix>/bin); its path
 -- and --version are printed.
 
 $n = require("nested_host_lib.mix")
@@ -111,7 +111,7 @@ if $hold == nil then
     $hold = 8
   end
 end
-$comp_bin = $n.require_binary("compd", $comp_src, ["/opt/mixos/bin"])
+$comp_bin = $n.require_binary("compd", $comp_src, [(mixos_path("prefix") .. "/bin")])
 $probe_bin = $n.require_probe("testkit-presentation-probe", $probe_src, $comp_bin)
 -- The probe holds the window open for the Bus reads.
 $probe_timeout = 90 + $hold

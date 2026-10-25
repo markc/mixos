@@ -3,7 +3,7 @@
 //! Shared Quoin state: <var>/quoin.state.mix, v3 connector keys.
 //! v1 pinned=true migrates to docked; v1/v2's `default` is claimed once.
 //! Invalid/unreadable state disables writing rather than destroying it.
-//! MIXOS_VAR selects both reads and writes; no fallback after a failure.
+//! MIXOS_STATE selects both reads and writes; no fallback after a failure.
 //! State and its atomic temporary file stay in that directory, without
 //! following a linked state file (unlike the editable conf.mix).
 

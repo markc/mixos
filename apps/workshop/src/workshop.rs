@@ -118,9 +118,9 @@ pub async fn perform(
                 .find(|entry| entry.id == id)
                 .ok_or("unknown macro id")?;
             let program = if operation == "ced" {
-                "/opt/mixos/bin/ced"
+                ::paths::bin("ced")
             } else {
-                "/opt/mixos/bin/dopus"
+                ::paths::bin("dopus")
             };
             let path = if operation == "ced" {
                 entry.path.as_path()

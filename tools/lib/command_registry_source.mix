@@ -45,7 +45,7 @@ $embed = require("command_registry_embed.mix")
 -- installed one.
 fn mix_bin()
   $m = env("MIXOS_TEST_MIX") ?? ""
-  if $m == "" then return "/opt/mixos/bin/mix" end
+  if $m == "" then return realpath("/proc/self/exe") end
   return $m
 end
 
@@ -172,7 +172,10 @@ fn _lint($path, $flags)
   $r = nil
   $err = ""
   try
-    $r = run_argv(concat([mix_bin(), "lint", "--json"], $flags, [$path]), {timeout: 60})
+    -- N-1 parses runtime source for handler metadata without executing it.
+    -- The next release's sole new builtin is an explicit external contract
+    -- to the older linter; every other undefined name still fails the gate.
+    $r = run_argv(concat([mix_bin(), "lint", "--json", "--allow-function", "mixos_path"], $flags, [$path]), {timeout: 60})
   catch $m
     $err = $m
   end

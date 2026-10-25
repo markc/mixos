@@ -240,13 +240,13 @@
 <code>inventory.signed</code>, and checks a signed inventory against the genesis public
 key. The signing and verifying code is the same code the mesh daemon <code>noded</code>
 uses, so the two cannot disagree about the bytes a signature covers.</p>
-<p>Install the binary at <code>/opt/mixos/bin/mesh-sign</code>.</p>
+<p>Install the binary at <code>&lt;prefix&gt;/bin/mesh-sign</code>.</p>
 <h2 id="subcommands">Subcommands</h2>
 <table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody>
 <tr><td><code>genesis</code></td><td>Create the genesis Ed25519 key and store its signing half in the secrets database. It refuses to overwrite an existing key unless <code>--force</code> is given.</td></tr>
 <tr><td><code>sign INVENTORY --out PATH</code></td><td>Sign an authored inventory and verify the result before reporting success. <code>--valid-days</code> sets an advisory horizon. <code>--recovery N</code> and <code>--recovery-generation N</code> set the recovery fields and are mutually exclusive.</td></tr>
 <tr><td><code>verify SIGNED</code></td><td>Check a signed inventory against the genesis key. It takes <code>--genesis-pub PATH</code> or <code>--genesis-pub-base64 B64</code>, or else reads the key from the secrets database. <code>--expected-mesh NAME</code> pins the mesh name, and <code>--against-authored PATH</code> checks the signed payload against an authored file. <code>--json</code> prints one versioned JSON object.</td></tr>
-<tr><td><code>pubkey</code></td><td>Print the genesis public key, which is provisioned to each node as <code>/opt/mixos/etc/noded/genesis.pub</code>.</td></tr>
+<tr><td><code>pubkey</code></td><td>Print the genesis public key, which is provisioned to each node as <code>&lt;prefix&gt;/etc/noded/genesis.pub</code>.</td></tr>
 <tr><td><code>d2-gen NODE</code> / <code>d2-pubkey NODE</code></td><td>Create or print a node's admission key.</td></tr>
 <tr><td><code>wg-gen --private-file PATH</code></td><td>Create a node-local WireGuard key in a new mode-0600 file and print only the public key.</td></tr>
 <tr><td><code>wg-pubkey --private-file PATH</code></td><td>Print the public key of an existing protected node key.</td></tr>

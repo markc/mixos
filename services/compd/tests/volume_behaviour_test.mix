@@ -15,12 +15,12 @@
 --   mix services/compd/tests/volume_behaviour_test.mix
 --
 -- Needs a fresh mix and noded: MIXOS_TEST_MIX and MIXOS_TEST_NODED when set,
--- else /opt/mixos/bin/mix and /opt/mixos/bin/noded.
+-- else <prefix>/bin/mix and <prefix>/bin/noded.
 
 $root = env("MIXOS") != "" ? env("MIXOS") : realpath(dirname(realpath($0)) .. "/../../..")
 $pb = require("../../../tests/lib/private_bus.mix")
-$mix = env("MIXOS_TEST_MIX") != "" ? env("MIXOS_TEST_MIX") : "/opt/mixos/bin/mix"
-$noded = env("MIXOS_TEST_NODED") != "" ? env("MIXOS_TEST_NODED") : "/opt/mixos/bin/noded"
+$mix = env("MIXOS_TEST_MIX") != "" ? env("MIXOS_TEST_MIX") : (mixos_path("prefix") .. "/bin/mix")
+$noded = env("MIXOS_TEST_NODED") != "" ? env("MIXOS_TEST_NODED") : (mixos_path("prefix") .. "/bin/noded")
 $behaviour = $root .. "/share/scenes/volume/behaviour.mix"
 $tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-volume-behaviour-test.XXXXXXXX"]))
 $bus = nil

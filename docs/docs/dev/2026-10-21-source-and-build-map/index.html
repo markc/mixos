@@ -268,8 +268,8 @@ Mix site generator, including this index and <code>llms-full.txt</code>.</li>
 <p>In the designated Rust build environment,
 <code>cargo build --locked --profile release-fast -p system --bin mix</code> produces
 <code>target/release-fast/mix</code>. <code>cargo build -p mix</code> builds the language library,
-not the shell executable. Installed binaries belong under <code>/opt/mixos/bin</code>.
-Mix programs run directly with <code>/opt/mixos/bin/mix script.mix</code>; editing a
+not the shell executable. Installed binaries belong under <code>&lt;prefix&gt;/bin</code>.
+Mix programs run directly with <code>&lt;prefix&gt;/bin/mix script.mix</code>; editing a
 program does not require compiling Rust. Use <code>mix builtins NAME</code> for builtin
 contracts, <code>run_argv</code> or <code>run_argv_must</code> for processes and <code>ssh_mix</code> for remote
 Mix programs.</p>

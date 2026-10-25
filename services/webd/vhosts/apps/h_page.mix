@@ -7,11 +7,11 @@
 -- posts_page_slug, the page becomes the relocated BLOG INDEX — its own body renders as an
 -- intro ABOVE the post feed (Mark's choice, NOT WordPress's discard). The feed view lives
 -- in h_home.mix (blog_feed_view); include it (load-once, script-relative) like h_posts.mix.
-include "/opt/mixos/vhosts/shared/apps/h_home.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/apps/h_home.mix")
 -- The standalone /page/<slug> viewer renders through the shared rd_view reader widget.
-include "/opt/mixos/vhosts/shared/widgets/reader.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/reader.mix")
 -- Pages support comments too (same threaded substrate as posts/forum), per-page toggled.
-include "/opt/mixos/vhosts/shared/widgets/thread.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/thread.mix")
 
 function page_main()
 cms_init()

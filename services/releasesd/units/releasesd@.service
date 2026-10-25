@@ -10,8 +10,8 @@ Type=simple
 User=mixos
 # The session's HOME and XDG directories: installs go to the session user's
 # ~/.local, the catalogue is ~/.config/mixos/releases.mx.
-EnvironmentFile=/etc/mixos/session/%i.env
-ExecStart=/opt/mixos/bin/mix --serve /opt/mixos/lib/releasesd/releasesd.mix --name releases
+EnvironmentFile=@{config}/session/%i.env
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/releasesd/releasesd.mix --name releases
 KillMode=control-group
 TimeoutStopSec=10
 Restart=on-failure

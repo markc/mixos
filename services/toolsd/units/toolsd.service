@@ -8,7 +8,7 @@ Wants=noded.service
 Type=simple
 User=toolsd-wake
 Group=toolsd-wake
-ExecStart=/opt/mixos/bin/mix --serve /opt/mixos/lib/toolsd/toolsd.mix --name toolsd
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/toolsd/toolsd.mix --name toolsd
 Restart=on-failure
 RestartSec=2
 

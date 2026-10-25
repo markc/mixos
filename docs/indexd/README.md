@@ -65,12 +65,12 @@ Deletion updates the durable vectors and in-memory index in one operation.
 
 ## CLI and bridge
 
-`indexd -c /etc/mixos/indexd/config.conf.mix call indexd.stats` opens the
+`indexd -c <config>/indexd/config.conf.mix call indexd.stats` opens the
 configured engine in-process and prints one JSON reply, with exit status 0
 for success or 1 for an error. Bare command names also work. For example:
 
 ```text
-indexd -c /etc/mixos/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
+indexd -c <config>/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
 ```
 
 Writes (`store`, `update`, `delete`, `feedback`, `supersede`, `index_file`)
@@ -81,10 +81,10 @@ index would desynchronise. Read commands need no flag. `call` always refuses
 `indexd bridge` connects to the local node's Bus once and forwards one call
 per stdin line, flushing each reply immediately. It does not open the index
 or require model configuration. Keep one process alive for repeated requests,
-including through `ssh -T user@example.test /opt/mixos/bin/indexd bridge`.
+including through `ssh -T user@example.test <prefix>/bin/indexd bridge`.
 The bridge honours non-empty `MIXOS_NODED_URL` first. Otherwise it reads
 `--node-config PATH`, then non-empty `MIXOS_NODE_CONFIG`, defaulting to
-`/opt/mixos/etc/node.conf.mix`, the same file pinned by the system unit.
+`<prefix>/etc/node.conf.mix`, the same file pinned by the system unit.
 It derives the broker address from that file rather than user config discovery.
 
 ```json
@@ -107,13 +107,13 @@ become JSON `null`; Bus error headers are forwarded as the top-level `error`.
 `indexd serve` registers service `indexd` using the standard Bus connection
 helper, advertises the eleven commands above, and reconnects with backoff.
 `MIXOS_NODE_CONFIG` selects the system broker, as for dnsd. The supplied unit
-pins `/opt/mixos/etc/node.conf.mix`; no broker URL is embedded in indexd.
+pins `<prefix>/etc/node.conf.mix`; no broker URL is embedded in indexd.
 SIGTERM stops admission and completes accepted Bus calls before exit.
 The model loads lazily on the blocking pool under the inference permit and
 unloads after the configured idle interval (300 seconds by default).
 
 Configuration lookup is `-c/--config`, then
-`/etc/mixos/indexd/config.conf.mix`, then
+`<config>/indexd/config.conf.mix`, then
 `$XDG_CONFIG_HOME/mixos/indexd.conf.mix` (or the equivalent under `$HOME/.config`).
 `indexd -c FILE check-config` validates the local `config.json`,
 `tokenizer.json` and `model.safetensors` before loading any weights. HF snapshot
@@ -144,9 +144,9 @@ The component owns `indexd.service` and `sysusers.conf`; the desktop release
 bundle carries the standalone binary and these files under `share/indexd/units/`,
 with the sample config under `share/indexd/examples/config.conf.mix`,
 following the component-owned maild packaging pattern. Install the binary
-under `/opt/mixos/bin`, the unit under `/etc/systemd/system`, sysusers under
+under `<prefix>/bin`, the unit under `/etc/systemd/system`, sysusers under
 `/usr/lib/sysusers.d/indexd.conf`, and a customised config under
-`/etc/mixos/indexd/config.conf.mix`. Apply sysusers before starting the service.
+`<config>/indexd/config.conf.mix`. Apply sysusers before starting the service.
 The unit wants system `noded.service`, runs as `indexd:indexd`, limits memory
 to 2 GiB, sets `MALLOC_ARENA_MAX=2`, and hardens filesystem, devices and kernel
 access. TCP address families remain available for the configured broker.
@@ -160,7 +160,7 @@ ownership from the legacy account; the new account does not reuse its UID.
 On a CBC worker, `cargo test -p indexd` runs the engine tests, registry checks,
 real daemon/bridge pipe tests, and `services/indexd/tests/bus_test.mix` against
 `libs/test-broker`. Set `MIXOS_TEST_MIX` if Mix is not installed at
-`/opt/mixos/bin/mix`. Embeddings are deterministic cache fixtures; no model
+`<prefix>/bin/mix`. Embeddings are deterministic cache fixtures; no model
 is needed. The tokenizer parity test compares 0.22.2 token IDs against the
 committed legacy 0.21.4/onig golden; it stays ignored unless
 `INDEXD_TEST_TOKENIZER` names the staged tokenizer file.

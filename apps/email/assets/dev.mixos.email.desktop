@@ -3,8 +3,8 @@
 Type=Application
 Name=Email
 Comment=JMAP mail reader and composer
-Exec=/opt/mixos/bin/email
-TryExec=/opt/mixos/bin/email
+Exec=@{prefix}/bin/email
+TryExec=@{prefix}/bin/email
 Icon=dev.mixos.email-symbolic
 Terminal=false
 Categories=Network;Email;

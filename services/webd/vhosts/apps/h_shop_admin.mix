@@ -6,13 +6,13 @@
 -- manages them (record-payment, refunds) — Codex ruling 7.
 -- Prices are entered in CENTS (integer) — resource/1 owns no money
 -- conversion by contract, and cents is the storage truth everywhere else.
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/lib/resource_engine.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
-include "/opt/mixos/vhosts/shared/apps/biz.mix"
-include "/opt/mixos/vhosts/shared/apps/shop.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/lib/resource_engine.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/shop.mix")
 
 function sp_get_one($id)
   $r = db_query("SELECT * FROM products WHERE id = ?1", [$id])

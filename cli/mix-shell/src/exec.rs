@@ -1880,7 +1880,7 @@ pub enum PipelineResult {
 /// Execute a pipeline.
 /// Build a `Command` for a segment's program, self-resolving the `mix`
 /// command to THIS executable. A mix-login-shell node runs ssh commands via
-/// `mix -c`, and `/opt/mixos/bin` is not always on the non-interactive PATH
+/// `mix -c`, and `mixos:prefix/bin` is not always on the non-interactive PATH
 /// (e.g. a node whose sshd has `UsePAM` off, so `/etc/environment` is not
 /// applied), so a bare `mix` would not be found. Resolving to current_exe
 /// makes `ssh host 'mix status'` / `mix --version` re-enter this binary

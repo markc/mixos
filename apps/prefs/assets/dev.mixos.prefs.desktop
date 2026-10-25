@@ -3,8 +3,8 @@
 Type=Application
 Name=Preferences
 Comment=MixOS desktop preferences
-Exec=/opt/mixos/bin/prefs
-TryExec=/opt/mixos/bin/prefs
+Exec=@{prefix}/bin/prefs
+TryExec=@{prefix}/bin/prefs
 Icon=dev.mixos.prefs-symbolic
 Terminal=false
 Categories=Settings;

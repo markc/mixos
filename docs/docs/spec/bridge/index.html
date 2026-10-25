@@ -306,7 +306,7 @@ gate <code>tools/command_registry.mix</code> checks the family's owner and suffi
 collisions only and reads no config token. The runtime guard reads the commands
 and families lists but does not enforce the full canonical format. Installing
 the registry is a separate deployed prerequisite: the scripts and the registry
-come from the same revision, at <code>/opt/mixos/share/bus/commands.conf.mix</code> or the
+come from the same revision, at <code>&lt;prefix&gt;/share/bus/commands.conf.mix</code> or the
 <code>BRIDGED_COMMANDS</code> override.</p>
 <p><strong>Classes.</strong> <code>&lt;app&gt;.call</code> and <code>&lt;app&gt;.execute</code> are <code>intent</code>; <code>&lt;app&gt;.actions</code>,
 <code>&lt;app&gt;.inspect</code> and <code>&lt;app&gt;.status</code> are <code>query</code>. <code>&lt;app&gt;.screenshot</code> is <code>intent</code>,
@@ -316,7 +316,7 @@ the <a href="/docs/decisions/2026-10-13-instance-verb-families/">decision</a>.</
 <h2 id="instance-config-version-020">Instance config, version 0.2.0</h2>
 <p>A strict-data document (<code>load_data</code>; never executed).</p>
 <p><strong>Path:</strong> <code>$BRIDGED_CONFIG</code> when set; otherwise <code>&lt;etc&gt;/bridge/&lt;app&gt;.conf.mix</code>,
-where <code>&lt;etc&gt;</code> is <code>$MIXOS_ETC</code> when set, else <code>/etc/mixos</code>. The file stem is
+where <code>&lt;etc&gt;</code> is <code>$MIXOS_CONFIG</code> when set, else <code>&lt;config&gt;</code>. The file stem is
 the serve name.</p>
 <pre><code class="language-text">port: 47801,
 token_file: "/home/user/.config/fakeapp/control.token",
@@ -345,7 +345,7 @@ differ). The broker's own names are refused as noded refuses them: <code>noded</
 <code>noded-*</code>, and the session-name shape <code>&lt;t|c&gt;&lt;1-7 of [a-z0-9]&gt;-&lt;22 of [a-z2-7]&gt;</code>. It must also not be the first segment of a command the registry
 already gives to another component, so an instance can never answer, say,
 <code>settings.status</code>. The registry read is <code>$BRIDGED_COMMANDS</code>, else the installed
-<code>/opt/mixos/share/bus/commands.conf.mix</code>:</p>
+<code>&lt;prefix&gt;/share/bus/commands.conf.mix</code>:</p>
 <table><thead><tr><th>Registry entry</th><th>Reserves</th></tr></thead><tbody>
 <tr><td><code>commands: [{name, ...}]</code></td><td>the first segment of <code>name</code>, whatever the status (retired names stay reserved)</td></tr>
 <tr><td><code>families: [{pattern, members: "instances"}]</code></td><td>nothing (runtime members, such as bridged's own family)</td></tr>
@@ -375,7 +375,7 @@ restarted under <code>Restart=on-failure</code> and rate-limited by
 systemd signals both processes, and Mix records the SIGTERM the parent gets
 and exits 143 whatever the child returned, so the unit lists
 <code>SuccessExitStatus=143</code>. <code>$BRIDGED_MIX</code> overrides the mix binary the child
-runs under (default <code>/opt/mixos/bin/mix</code>); it exists for tests.</p>
+runs under (default <code>&lt;prefix&gt;/bin/mix</code>); it exists for tests.</p>
 <p>Starting <code>mix --serve bridged.mix --name &lt;app&gt;</code> directly, not through
 <code>--start</code>, registers the name on the Bus before the checks run, so a
 refused name holds a free Bus name for a moment before the process exits.

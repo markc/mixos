@@ -1,6 +1,6 @@
 # MixOS blob store daemon (blobd). The same identities as the previous unit it
 # replaces: uid blobd, group blob (522), the same state root
-# /var/lib/mixos/blobd and config /etc/mixos/blobd/config.conf.mix, so the
+# @{state}/blobd and config @{config}/blobd/config.conf.mix, so the
 # store is read in place. Stop blobd before starting this one: both
 # register as the Bus service "blobd" and both hold the lane port.
 
@@ -23,7 +23,7 @@ RuntimeDirectoryMode=0750
 ConfigurationDirectory=mixos/blobd
 ConfigurationDirectoryMode=0755
 WorkingDirectory=%S/mixos/blobd
-ExecStart=/opt/mixos/bin/blobd -c %E/mixos/blobd/config.conf.mix
+ExecStart=@{prefix}/bin/blobd -c %E/mixos/blobd/config.conf.mix
 Restart=on-failure
 RestartSec=30s
 Environment=RUST_LOG=blobd=info

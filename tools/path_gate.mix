@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Ruling 7: only resolver defaults, external templates, default assertions
+-- and documentation may spell out a MixOS root. Scan new files as well.
+$repo = dirname(dirname(realpath($0)))
+$pattern = '/(opt|etc|var/lib|var/cache|run)/mixos\b'
+$listed = run_argv_must(["git", "-C", $repo, "ls-files", "--cached", "--others", "--exclude-standard"])
+$bad = []
+for $rel in sort(unique(lines(trim($listed))))
+  if not is_file($repo .. "/" .. $rel) then continue end
+  if starts_with($rel, "libs/paths/") or ends_with($rel, ".md") or starts_with($rel, "docs/") then continue end
+  if starts_with($rel, "share/") and any([".template", ".service", ".desktop", ".nspawn", ".conf"], fn($ext) = ends_with($rel, $ext)) then continue end
+  -- Default assertions and their fixtures. Executable relocation coverage
+  -- separately hides the old roots, so a test exemption cannot prove relocation.
+  $test_file = contains($rel, "/tests/") or starts_with($rel, "tests/") or ends_with($rel, "_tests.rs")
+  $in_tests = $test_file
+  $n = 0
+  $text = ""
+  try
+    $text = read_file($repo .. "/" .. $rel)
+  catch $message, $error
+    if contains($message, "valid UTF-8") then continue end
+    raise($error.code, $message)
+  end
+  for $line in lines($text)
+    $n = $n + 1
+    if starts_with(trim($line), "#[cfg(test)]") then $in_tests = true end
+    if re_match($line, $pattern) and not $in_tests then
+      push($bad, $rel .. ":" .. to_string($n) .. ": " .. trim($line))
+    end
+  end
+end
+if len($bad) != 0 then
+  for $line in $bad print("path: " .. $line) end
+  exit(1)
+end
+print("path: no literal MixOS roots outside ruling 7")

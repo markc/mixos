@@ -107,7 +107,7 @@ grab.
 
 ## The keymap file
 
-`/var/lib/mixos/inputd/keymap.json` (the unit's state directory), in the
+`<state>/inputd/keymap.json` (the unit's state directory), in the
 keymap.v1 format:
 
 ```json

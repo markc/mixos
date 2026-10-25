@@ -11,7 +11,11 @@ if $g.opts.help then
   print("usage: install_licenses.mix [--root SHARE] [--check | --verify]")
   exit(0)
 end
-$share = $g.opts.root ?? "/opt/mixos/share"
+$share = $g.opts.root
+if $share == nil then
+  if not has_builtin("mixos_path") then raise("LICENSE_ROOT", "N-1 bootstrap: specify --root TARGET_SHARE") end
+  $share = mixos_path("prefix", "share")
+end
 if not starts_with($share,"/") then raise("ARGS","--root must be absolute") end
 $assets = dirname(dirname(realpath($0))) .. "/assets"
 $manifest = load_data($assets .. "/licenses.conf.mix")

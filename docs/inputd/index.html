@@ -328,7 +328,7 @@ grab on with a drop-in, after a supervised run with <code>--grab-timeout</code> 
 shell that can kill it. Any exit of inputd, SIGKILL included, releases the
 grab.</p>
 <h2 id="the-keymap-file">The keymap file</h2>
-<p><code>/var/lib/mixos/inputd/keymap.json</code> (the unit's state directory), in the
+<p><code>&lt;state&gt;/inputd/keymap.json</code> (the unit's state directory), in the
 keymap.v1 format:</p>
 <pre><code class="language-json">{"version": 1, "physical": [
   {"stroke": {"code": 106, "modifiers": {"right_ctrl": true}},

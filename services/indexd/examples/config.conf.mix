@@ -1,9 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- Copy to /etc/mixos/indexd/config.conf.mix and set the local snapshot path.
+-- Copy to mixos:config/indexd/config.conf.mix and set the local snapshot path.
 schema_version: 1
 service: {
-  vectors_db: "/var/lib/mixos/indexd/vectors.db",
-  model_dir: "/var/lib/mixos/indexd/model",
+  vectors_db: "mixos:state/indexd/vectors.db",
+  model_dir: "mixos:state/indexd/model",
   dtype: "f16",
   idle_timeout_secs: 300
 }

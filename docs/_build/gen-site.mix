@@ -1,4 +1,4 @@
-#!/opt/mixos/bin/mix
+#!/usr/bin/env mix
 -- version: 0.2.0
 -- gen-site.mix — build mixos.dev as a prerendered static site.
 --
@@ -38,7 +38,7 @@
 -- asset set, + their licences), and the favicons from share/brand
 -- (_web/favicon.svg, favicon.ico, _web/brand/*).
 --
--- Runs locally with /opt/mixos/bin/mix; GitHub Pages only serves the
+-- Runs locally with the running mix; GitHub Pages only serves the
 -- committed result, so there is no CI step. External tools: git, hb-subset
 -- (harfbuzz-utils) and woff2_compress (woff2) for the fonts. Icons need none.
 --
@@ -77,12 +77,12 @@ if $install then
     print("refusing: " .. $hook .. " exists and is not the mixos site gate")
     exit(2)
   end
-  $body = "#!/opt/mixos/bin/mix\n" ..
+  $body = "#!/usr/bin/env mix\n" ..
        $HOOK_MARK .. " — installed by docs/_build/gen-site.mix --install-hook.\n" ..
        "-- The hygiene hook chains this as pre-commit.pre-hygiene and runs it first.\n" ..
        "-- Refuses a commit whose generated site is stale or has a broken link.\n" ..
        "$top = trim(run_argv_must([\"git\", \"rev-parse\", \"--show-toplevel\"]))\n" ..
-       "exit(run_stream([\"/opt/mixos/bin/mix\", $top .. \"/docs/_build/gen-site.mix\", \"--check\"]))\n"
+       "exit(run_stream([realpath(\"/proc/self/exe\"), $top .. \"/docs/_build/gen-site.mix\", \"--check\"]))\n"
   mkdir($hooks)
   write_file($hook, $body)
   run_argv_must(["chmod", "+x", $hook])
@@ -92,6 +92,8 @@ end
 
 -- ---------------------------------------------------------------- config
 $cfg = load_data($build .. "/site.conf.mix").site
+$source_paths = require($build .. "/source_paths.mix")
+$cfg.fonts.asset_set = $source_paths.resolve($repo, $cfg.fonts.asset_set)
 for each $k in ["url", "name", "home_title", "description", "llms_summary", "icons", "fonts", "left_panels", "home_toc", "redirects", "missing_pages"]
   if not has_key($cfg, $k) then
     raise("SITE_CONFIG", "site.conf.mix is missing site." .. $k)
@@ -252,7 +254,7 @@ end
 -- ---------------------------------------------------------------- components
 -- tools/component_index.mix owns the metadata (and refuses a bad identity);
 -- this script owns every page built from it.
-$packages = json_parse(run_argv_must(["/opt/mixos/bin/mix", $repo .. "/tools/component_index.mix", "--json"]))
+$packages = json_parse(run_argv_must([realpath("/proc/self/exe"), $repo .. "/tools/component_index.mix", "--json"]))
 $components = []
 $comp_by = {}
 for each $e in $packages

@@ -19,6 +19,7 @@ profiles = ["base"]
 mod_module_files = "deny"
 
 [dependencies]
+paths = { path = "../../libs/paths" }
 anyhow.workspace = true
 directories.workspace = true
 reqwest.workspace = true

@@ -27,7 +27,7 @@ mix share/icons/install.mix --check
 mix share/icons/install.mix --verify
 ```
 
-The default root is `$MIXOS_SHARE`, otherwise `/opt/mixos/share`. The installer
+The default root is `$MIXOS_SHARE`, otherwise `<prefix>/share`. The installer
 makes no network access.
 
 - **`--check`** validates the bundle and writes nothing, not even the root. It
@@ -135,7 +135,7 @@ decoded image cache.
   labels and state markers are ordinary text, with no icon substitutes.
 
 The 26 editor, calendar and settings controls refer directly to their installed
-assets under `/opt/mixos/share/icons/mixos/scalable/actions`. These replace
+assets under `<prefix>/share/icons/mixos/scalable/actions`. These replace
 controls previously drawn as text glyphs. They do not rely on a distro theme
 or change a user's desktop theme selection. Test fixtures point these paths at
 their temporary share directory.

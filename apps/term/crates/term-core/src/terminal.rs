@@ -655,7 +655,7 @@ fn reap_child(pid: i32, timeout: Duration) {
 }
 /// The canonical system Mix — the only shell Term spawns (mandate: Mix is the
 /// shell). Probed for executability before spawn; see `Terminal::start_session`.
-const MIX_BIN: &str = "/opt/mixos/bin/mix";
+
 
 struct LaunchSettings<'a> {
     program: &'a str,
@@ -820,7 +820,7 @@ impl Terminal {
             native,
             pane_id,
             LaunchSettings {
-                program: MIX_BIN,
+                program: &::paths::bin("mix").to_string_lossy(),
                 // Explicit cwd must never silently fall back to HOME, even
                 // when a directory disappears between validation and chdir.
                 home: if explicit_cwd {

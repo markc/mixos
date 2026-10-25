@@ -3,8 +3,8 @@
 Type=Application
 Name=Monitor
 Comment=Processes and performance for this node and the mesh
-Exec=/opt/mixos/bin/monitor
-TryExec=/opt/mixos/bin/monitor
+Exec=@{prefix}/bin/monitor
+TryExec=@{prefix}/bin/monitor
 Icon=dev.mixos.monitor-symbolic
 Terminal=false
 Categories=System;Monitor;

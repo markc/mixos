@@ -277,7 +277,7 @@ bundles the 1.26.2 shared library and its licence; compd's relative
 runtime library path makes that copy take precedence over the host copy.
 After installing the listed build dependencies in the root, the CBC worker
 can provision the pinned library with:</p>
-<pre><code class="language-text">/opt/mixos/bin/mix tools/libinput_compat.mix \
+<pre><code class="language-text">&lt;prefix&gt;/bin/mix tools/libinput_compat.mix \
   --rootfs /srv/ubuntu-24.04-root --target-dir /srv/mixos-target
 </code></pre>
 <p>The script verifies the upstream commit and installed ABI. It is safe to
@@ -318,11 +318,11 @@ digest. <code>plan</code> makes no gold changes. <code>apply</code> needs one ex
 invocation, and prints a receipt ID for <code>rollback</code>. The installer refuses
 a missing or changed archive, wrong source or architecture, a glibc floor
 above the host, and unsafe archive paths.</p>
-<pre><code class="language-text">sudo /opt/mixos/bin/mix tools/gold_release.mix plan \
+<pre><code class="language-text">sudo &lt;prefix&gt;/bin/mix tools/gold_release.mix plan \
   --manifest /path/to/release.manifest.mx --manifest-sha256 TRUSTED_SHA256 \
   --archive-dir /path/to/assets --package desktop
 
-sudo /opt/mixos/bin/mix tools/gold_release.mix apply \
+sudo &lt;prefix&gt;/bin/mix tools/gold_release.mix apply \
   --manifest /path/to/release.manifest.mx --manifest-sha256 TRUSTED_SHA256 \
   --archive-dir /path/to/assets --package desktop
 </code></pre>

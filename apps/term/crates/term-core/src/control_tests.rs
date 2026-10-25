@@ -239,7 +239,7 @@ impl Fixture {
     // Admission does not exercise Mix's execute/task protocol. Use the canonical
     // installed shell for a real PTY, independently of the explicit S4 build gate.
     fn admission(policy: Policy) -> Self {
-        Self::with_program(policy, "none", "/opt/mixos/bin/mix".into())
+        Self::with_program(policy, "none", ::paths::bin("mix"))
     }
     fn with_program(policy: Policy, fault: &str, program: std::path::PathBuf) -> Self {
         let broker = if fault == "quota" {

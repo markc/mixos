@@ -140,7 +140,7 @@ apart from the core the way [bus](../bus/README.md) keeps `noded_url()`:
 |---|---|
 | 1 | `$XDG_DATA_HOME/mixos/assets` (`~/.local/share/mixos/assets`) |
 | 2 | each `$XDG_DATA_DIRS` entry's `mixos/assets` (`/usr/local/share`, `/usr/share`) |
-| 3 | `assets` under `config::path(Dir::Share)`: `$MIXOS_SHARE/assets`, default `/opt/mixos/share/assets` |
+| 3 | `assets` under `config::path(Dir::Share)`: `$MIXOS_SHARE/assets`, default `<prefix>/share/assets` |
 
 ```rust
 let set = assets::mixos::discover()?;              // once, at startup, hashes verified
@@ -152,7 +152,7 @@ let lookup = assets::mixos::lookup_in(&xdg, &share); // explicit inputs
 The lock and installer for the MixOS set live in
 [`share/assets/`](https://github.com/markc/mixos/tree/main/share/assets)
 (`core.conf.mix`, `install.mix`), which publishes to
-`/opt/mixos/share/assets`.
+`<prefix>/share/assets`.
 
 ## Testing
 

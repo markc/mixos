@@ -227,7 +227,7 @@ try
   check($a.resolve_exec("", "") == nil, "resolve_exec accepted an empty argv[0]")
   -- With a display it is set; without one it is removed by native spawn.
   $s = $a.launch_spawn(["xapp", "--flag"], "/usr/bin/xapp", ":4")
-  check(deep_eq($s.argv, ["xapp", "--flag"]) and $s.env.DISPLAY == ":4", "launch_spawn with a display wrong")
+  check(deep_eq($s.argv, ["/usr/bin/xapp", "--flag"]) and $s.env.DISPLAY == ":4", "launch_spawn with a display wrong")
   -- Unset path: the resolved program and explicit nil environment entry.
   $s = $a.launch_spawn(["xapp", "--flag"], "/usr/bin/xapp", nil)
   check(deep_eq($s.argv, ["/usr/bin/xapp", "--flag"]) and has_key($s.env, "DISPLAY") and $s.env.DISPLAY == nil,
@@ -281,7 +281,7 @@ try
     for each $line in split(before(read_file($path) .. "\n[Desktop Action", "\n[Desktop Action"), "\n")
       if contains($line, "=") and not starts_with($line, "#") then $keys[before($line, "=")] = after($line, "=") end
     end
-    $bin = "/opt/mixos/bin/" .. $app
+    $bin = (mixos_path("prefix") .. "/bin/") .. $app
     check(starts_with($keys.Exec ?? "", $bin) and (($keys.Exec ?? "") == $bin or starts_with($keys.Exec, $bin .. " ")), $app .. ": Exec must run " .. $bin)
     check($keys.TryExec == $bin, $app .. ": TryExec must be " .. $bin)
     check(contains($aliases, $keys.Icon ?? ""), $app .. ": Icon is not a manifest alias: " .. to_string($keys.Icon))

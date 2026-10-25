@@ -60,7 +60,7 @@ impl Citizen {
         .env("HOME", dir)
         .env("XDG_STATE_HOME", dir)
         .env("MIXOS_NODE_CONFIG", node_conf)
-        .env("MIXOS_ETC", dir)
+        .env("MIXOS_CONFIG", dir)
         .env_remove("MIX_STATS")
         .env_remove("MIXOS_SESSION_FD")
         .stdin(Stdio::null())

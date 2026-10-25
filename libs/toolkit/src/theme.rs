@@ -28,8 +28,8 @@ use design::{
 pub const THEME_FILE: &str = "theme.conf.mix";
 
 /// Where [`Theme::load`] reads the shared theme: `theme.conf.mix` under
-/// `config::path(Dir::Etc)` (`$MIXOS_ETC`, else `$MIXOS/etc`, else
-/// `/etc/mixos` for root, else `$XDG_CONFIG_HOME/mixos`).
+/// `config::path(Dir::Etc)` (`$MIXOS_CONFIG`, else `$MIXOS/etc`, else
+/// `mixos:config` for root, else `$XDG_CONFIG_HOME/mixos`).
 pub fn theme_path() -> PathBuf {
     config::path(config::Dir::Etc).join(THEME_FILE)
 }

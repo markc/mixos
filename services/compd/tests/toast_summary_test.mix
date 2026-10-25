@@ -30,7 +30,7 @@ print("toast summary: OK")
 '
 try
   write_file($tmp .. "/check.mix", $pure .. $checks)
-  $result = run_argv(["/opt/mixos/bin/mix", $tmp .. "/check.mix"])
+  $result = run_argv([(mixos_path("prefix") .. "/bin/mix"), $tmp .. "/check.mix"])
   print($result.stdout)
   if not $result.ok then raise("TOAST_TEST", $result.stderr) end
 finally

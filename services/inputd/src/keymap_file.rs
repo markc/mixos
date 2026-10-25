@@ -25,7 +25,7 @@ struct PersistedKeymap {
 /// The keymap path when `--keymap` is not given: `keymap.json` in
 /// `$STATE_DIRECTORY` (set by the unit's `StateDirectory=mixos/inputd`),
 /// else in `inputd/` under the MixOS state directory, which for root is
-/// the same `/var/lib/mixos/inputd`. A manual root run and the service so
+/// the same `mixos:state/inputd`. A manual root run and the service so
 /// agree on where the keymap lives. Never `$HOME` for a root daemon: it is
 /// wrong for state and unwritable under the unit's `ProtectHome`.
 pub fn default_path() -> PathBuf {
@@ -946,10 +946,10 @@ pub(crate) mod tests {
 
     #[test]
     fn the_default_path_follows_the_state_directory() {
-        let var = Path::new("/var/lib/mixos");
+        let var = &::paths::root(::paths::Root::State);
         assert_eq!(
             state_path(Some("/var/lib/mixos/inputd".as_ref()), var),
-            Path::new("/var/lib/mixos/inputd/keymap.json")
+            &::paths::root(::paths::Root::State).join("inputd/keymap.json")
         );
         assert_eq!(
             state_path(Some("/state/a:/state/b".as_ref()), var),
@@ -958,7 +958,7 @@ pub(crate) mod tests {
         for unset in [None, Some("".as_ref())] {
             assert_eq!(
                 state_path(unset, var),
-                Path::new("/var/lib/mixos/inputd/keymap.json")
+                &::paths::root(::paths::Root::State).join("inputd/keymap.json")
             );
         }
     }

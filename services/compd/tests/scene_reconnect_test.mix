@@ -4,8 +4,8 @@
 -- No desktop or scene reset. Exercise both dependency registration orders.
 $root = realpath(dirname(realpath($0)) .. "/../../..")
 $pb = require("../../../tests/lib/private_bus.mix")
-$mix = env("MIXOS_TEST_MIX", "/opt/mixos/bin/mix")
-$noded = env("MIXOS_TEST_NODED", "/opt/mixos/bin/noded")
+$mix = env("MIXOS_TEST_MIX", (mixos_path("prefix") .. "/bin/mix"))
+$noded = env("MIXOS_TEST_NODED", (mixos_path("prefix") .. "/bin/noded"))
 $tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/scene-reconnect.XXXXXXXX"]))
 $bus = nil
 $pids = {host: nil, loader: nil, notify: nil, toast: nil}

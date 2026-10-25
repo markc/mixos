@@ -10,7 +10,7 @@ description: Signs and verifies the mesh inventory, the trust root of a MixOS me
 key. The signing and verifying code is the same code the mesh daemon `noded`
 uses, so the two cannot disagree about the bytes a signature covers.
 
-Install the binary at `/opt/mixos/bin/mesh-sign`.
+Install the binary at `<prefix>/bin/mesh-sign`.
 
 ## Subcommands
 
@@ -19,7 +19,7 @@ Install the binary at `/opt/mixos/bin/mesh-sign`.
 | `genesis` | Create the genesis Ed25519 key and store its signing half in the secrets database. It refuses to overwrite an existing key unless `--force` is given. |
 | `sign INVENTORY --out PATH` | Sign an authored inventory and verify the result before reporting success. `--valid-days` sets an advisory horizon. `--recovery N` and `--recovery-generation N` set the recovery fields and are mutually exclusive. |
 | `verify SIGNED` | Check a signed inventory against the genesis key. It takes `--genesis-pub PATH` or `--genesis-pub-base64 B64`, or else reads the key from the secrets database. `--expected-mesh NAME` pins the mesh name, and `--against-authored PATH` checks the signed payload against an authored file. `--json` prints one versioned JSON object. |
-| `pubkey` | Print the genesis public key, which is provisioned to each node as `/opt/mixos/etc/noded/genesis.pub`. |
+| `pubkey` | Print the genesis public key, which is provisioned to each node as `<prefix>/etc/noded/genesis.pub`. |
 | `d2-gen NODE` / `d2-pubkey NODE` | Create or print a node's admission key. |
 | `wg-gen --private-file PATH` | Create a node-local WireGuard key in a new mode-0600 file and print only the public key. |
 | `wg-pubkey --private-file PATH` | Print the public key of an existing protected node key. |

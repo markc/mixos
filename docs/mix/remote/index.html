@@ -275,7 +275,7 @@ from RFC 5737). In real use, substitute an alias from your <code>~/.ssh/config</
 </blockquote>
 <h2 id="headline-idiom-ssh_mix--heredoc">Headline idiom: <code>ssh_mix</code> + heredoc</h2>
 <p>For multi-line remote Mix, pass a heredoc directly as the <code>source</code> argument to
-<code>ssh_mix</code>. The bytes travel over ssh stdin into <code>/opt/mixos/bin/mix -</code> (or the
+<code>ssh_mix</code>. The bytes travel over ssh stdin into <code>&lt;prefix&gt;/bin/mix -</code> (or the
 <a href="#ssh_mixhost-source-opts--map"><code>mix_bin</code></a> you name); no
 shell parses the source on the way.</p>
 <pre><code class="language-mix">$r = ssh_mix("alpha", &lt;&lt;EOF
@@ -330,7 +330,7 @@ stdout_truncated  stderr_truncated
 <h3 id="why-not-ssh_run-for-mix-source">Why not <code>ssh_run</code> for Mix source?</h3>
 <p><code>ssh_run</code> sends a command string for the remote shell to parse. Nesting Mix in
 that string creates escape ladders:</p>
-<pre><code class="language-mix">ssh_run("alpha", "print(run(\"/opt/mixos/bin/mix -c 'print(which(\\\"sh\\\"))'\"))")
+<pre><code class="language-mix">ssh_run("alpha", "print(run(\"&lt;prefix&gt;/bin/mix -c 'print(which(\\\"sh\\\"))'\"))")
 </code></pre>
 <p>The heredoc form ships the intended program directly:</p>
 <pre><code class="language-mix">ssh_mix("alpha", &lt;&lt;EOF
@@ -451,7 +451,7 @@ end
 <p><strong>Pick the right one:</strong> <code>ssh_must</code> when failure is genuinely fatal and a <code>try</code>/<code>catch</code> would just be noise; <code>ssh_run</code> whenever you need finer control than "succeed or abort" — e.g. a <code>test -f</code> that returns 1 for "absent" is a perfectly valid answer, not an error.</p>
 <hr />
 <h2 id="ssh_mixhost-source-opts--map"><code>ssh_mix(host, source[, opts])</code> → map</h2>
-<p>Runs Mix <strong>source</strong> on a remote node with zero quoting pain. It ships <code>source</code> over ssh's <strong>stdin</strong> byte-channel into <code>/opt/mixos/bin/mix -</code>, so the source never becomes an argv word and bypasses <em>every</em> shell-quoting layer — the local shell, ssh, and the remote login-shell classifier. Arbitrary quotes, <code>$</code>, backslashes, and newlines survive intact. It is the discoverable, first-class form of the <code>ssh_run(host, "mix -", { stdin: $source })</code> idiom.</p>
+<p>Runs Mix <strong>source</strong> on a remote node with zero quoting pain. It ships <code>source</code> over ssh's <strong>stdin</strong> byte-channel into <code>&lt;prefix&gt;/bin/mix -</code>, so the source never becomes an argv word and bypasses <em>every</em> shell-quoting layer — the local shell, ssh, and the remote login-shell classifier. Arbitrary quotes, <code>$</code>, backslashes, and newlines survive intact. It is the discoverable, first-class form of the <code>ssh_run(host, "mix -", { stdin: $source })</code> idiom.</p>
 <p>Start with the <a href="#headline-idiom-ssh_mix--heredoc">headline <code>ssh_mix</code> + heredoc pattern</a>
 above. This section supplies the remaining option and decoding contract.</p>
 <blockquote>
@@ -514,9 +514,9 @@ $r = ssh_mix("example.com", $source, {
 <p><strong><code>env</code> works and is secret-safe:</strong> the values are translated into hidden <code>export KEY = "value"</code> lines (strict-data-escaped) <em>prepended to the shipped source</em>, so they travel on stdin and never touch <code>ps</code> argv on either end.</p>
 </li>
 <li>
-<p><strong>The remote binary is configurable</strong> (0.116.0). In order: the <strong><code>mix_bin</code></strong> option, else the <strong>local</strong> environment variable <strong><code>MIX_REMOTE_BIN</code></strong> (an empty value counts as unset), else the default <strong><code>/opt/mixos/bin/mix</code></strong> (the canonical MixOS install dir; it was the legacy <code>/opt/mixos/bin/mix</code> up to 0.116.0, so pass <code>mix_bin</code> or set <code>MIX_REMOTE_BIN</code> for a not-yet-migrated host). The same resolution serves every builtin that drives a remote mix: <code>ssh_mix</code>, <code>ssh_mix_many</code>, <code>ssh_exec</code> (which also keeps its older name <code>remote_mix</code>), <code>ssh_run</code>'s default <code>env_transport: "mix"</code>, and <code>send_mail</code>'s <code>host</code> hop. The value lands in the remote command string, so it must be an absolute path (<code>/opt/mixos/bin/mix</code>) or a bare name the remote PATH resolves (<code>mix</code>), using only <code>[A-Za-z0-9_./+-]</code>; anything else (a space, <code>;</code>, <code>$</code>, a leading <code>-</code>, a relative path) raises <code>OPTION_INVALID</code> locally before ssh runs. Prefer a full path: a bare <code>mix</code> is often not on the remote's non-interactive PATH. <code>ssh_mix</code> is for nodes with mix installed, not arbitrary POSIX hosts.</p>
-<pre><code class="language-mix">$r = ssh_mix("node1", "print(1+1)", {mix_bin: "/opt/mixos/bin/mix"})
--- or once for the whole script's environment:  MIX_REMOTE_BIN=/opt/mixos/bin/mix mix script.mix
+<p><strong>The remote binary is configurable</strong> (0.116.0). In order: the <strong><code>mix_bin</code></strong> option, else the <strong>local</strong> environment variable <strong><code>MIX_REMOTE_BIN</code></strong> (an empty value counts as unset), else the default <strong><code>&lt;prefix&gt;/bin/mix</code></strong> (the canonical MixOS install dir; it was the legacy <code>&lt;prefix&gt;/bin/mix</code> up to 0.116.0, so pass <code>mix_bin</code> or set <code>MIX_REMOTE_BIN</code> for a not-yet-migrated host). The same resolution serves every builtin that drives a remote mix: <code>ssh_mix</code>, <code>ssh_mix_many</code>, <code>ssh_exec</code> (which also keeps its older name <code>remote_mix</code>), <code>ssh_run</code>'s default <code>env_transport: "mix"</code>, and <code>send_mail</code>'s <code>host</code> hop. The value lands in the remote command string, so it must be an absolute path (<code>&lt;prefix&gt;/bin/mix</code>) or a bare name the remote PATH resolves (<code>mix</code>), using only <code>[A-Za-z0-9_./+-]</code>; anything else (a space, <code>;</code>, <code>$</code>, a leading <code>-</code>, a relative path) raises <code>OPTION_INVALID</code> locally before ssh runs. Prefer a full path: a bare <code>mix</code> is often not on the remote's non-interactive PATH. <code>ssh_mix</code> is for nodes with mix installed, not arbitrary POSIX hosts.</p>
+<pre><code class="language-mix">$r = ssh_mix("node1", "print(1+1)", {mix_bin: "&lt;prefix&gt;/bin/mix"})
+-- or once for the whole script's environment:  MIX_REMOTE_BIN=&lt;prefix&gt;/bin/mix mix script.mix
 </code></pre>
 </li>
 <li>
@@ -605,7 +605,7 @@ whole batch, because the call waits for every worker.</li>
 <li><strong><code>mix lint</code> reads the body</strong> exactly as it does for <code>ssh_mix</code>, including
 the <code>bindings</code>/<code>env</code> names.</li>
 </ul>
-<p>This is the sugar over <code>run_parallel</code> + hand-built <code>["ssh", host, "/opt/mixos/bin/mix", "-"]</code>
+<p>This is the sugar over <code>run_parallel</code> + hand-built <code>["ssh", host, "&lt;prefix&gt;/bin/mix", "-"]</code>
 jobs: those lose <code>bindings</code>, <code>decode</code> and the <code>host</code>/<code>ok</code> result shape.</p>
 <hr />
 <h2 id="ssh_exechost-argv-opts--map-v0300"><code>ssh_exec(host, argv[, opts])</code> → map (v0.30.0)</h2>
@@ -629,7 +629,7 @@ default 30 s, <code>0</code> = unbounded which also lifts the auto transport cei
 <code>cwd</code>, <code>env</code>, <code>clear_env</code>, <code>max_output</code>, plus the protocol-safe stdio routes
 below — are encoded into the driver and applied to the remote <code>run_argv</code>
 call. <code>env</code>/<code>stdin</code> never appear in argv on either end.</li>
-<li><strong>SSH transport options</strong> — <code>connect_timeout</code>, <code>transport_timeout</code> (the ssh wall-clock deadline, default = remote <code>timeout</code> + <code>connect_timeout</code> + 5 s), <code>batch</code>, <code>strict_host_key</code>, <code>multiplex</code>, <code>extra_ssh_args</code>, and <code>mix_bin</code> (the remote binary path; older name <code>remote_mix</code>, still accepted; resolved and validated exactly as for <a href="#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>: <code>mix_bin</code> &gt; local <code>MIX_REMOTE_BIN</code> &gt; <code>/opt/mixos/bin/mix</code>).</li>
+<li><strong>SSH transport options</strong> — <code>connect_timeout</code>, <code>transport_timeout</code> (the ssh wall-clock deadline, default = remote <code>timeout</code> + <code>connect_timeout</code> + 5 s), <code>batch</code>, <code>strict_host_key</code>, <code>multiplex</code>, <code>extra_ssh_args</code>, and <code>mix_bin</code> (the remote binary path; older name <code>remote_mix</code>, still accepted; resolved and validated exactly as for <a href="#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>: <code>mix_bin</code> &gt; local <code>MIX_REMOTE_BIN</code> &gt; <code>&lt;prefix&gt;/bin/mix</code>).</li>
 </ul>
 <p>The remote stdio allowlist is deliberately narrower than local <code>run_argv</code>:</p>
 <ul>
@@ -693,7 +693,7 @@ locally; <code>ssh_mix</code> remains the path for arbitrary multi-step remote M
 <tr><td><code>cwd</code></td><td>string</td><td>—</td><td>Prepends <code>cd '&lt;cwd&gt;' &amp;&amp; </code> to the remote command (quoted for you).</td></tr>
 <tr><td><code>stdin</code></td><td>string</td><td>—</td><td>Fed to the remote command's stdin over the local ssh pipe. May contain NULs (binary payloads). Conflicts with <code>env</code> under the secure transports (§"Remote env").</td></tr>
 <tr><td><code>extra_ssh_args</code></td><td>list of strings</td><td><code>[]</code></td><td>Extra argv inserted before the host: <code>["-p", "2222"]</code>, <code>["-J", "jump"]</code>, <code>["-o", "IdentitiesOnly=yes"]</code>. Always followed by the <code>--</code> host guard.</td></tr>
-<tr><td><code>mix_bin</code></td><td>string</td><td>local <code>MIX_REMOTE_BIN</code>, else <code>/opt/mixos/bin/mix</code></td><td>The remote mix binary for <code>env_transport: "mix"</code> (and for <code>ssh_mix</code>, which always pipes into it). Absolute path or bare name, <code>[A-Za-z0-9_./+-]</code> only; see <a href="#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>. (0.116.0)</td></tr>
+<tr><td><code>mix_bin</code></td><td>string</td><td>local <code>MIX_REMOTE_BIN</code>, else <code>&lt;prefix&gt;/bin/mix</code></td><td>The remote mix binary for <code>env_transport: "mix"</code> (and for <code>ssh_mix</code>, which always pipes into it). Absolute path or bare name, <code>[A-Za-z0-9_./+-]</code> only; see <a href="#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>. (0.116.0)</td></tr>
 </tbody></table>
 <p>Omitting <code>max_output</code> preserves unbounded local capture. The truncation flags
 are also true when capture is abandoned at a deadline, even without a limit.
@@ -726,7 +726,7 @@ ssh_run("node1", "echo hi", { env: { K: "v" }, stdin: "x" })
 
 ssh_mix("node1", "print(1)", { mix_bin: "mix; rm" })
 -- OPTION_INVALID: ssh_mix: mix_bin "mix; rm" contains ';', which is not allowed (want an absolute
---   path like "/opt/mixos/bin/mix" or a bare name like "mix", using only [A-Za-z0-9_./+-])
+--   path like "&lt;prefix&gt;/bin/mix" or a bare name like "mix", using only [A-Za-z0-9_./+-])
 
 ssh_run("", "echo hi")
 -- Runtime error: ssh_run: host must not be empty
@@ -758,7 +758,7 @@ under 3s? true
 <h2 id="remote-env-without-the-ps-leak-env--env_transport">Remote env without the ps leak (<code>env</code> + <code>env_transport</code>)</h2>
 <p>Naively, remote env means prefixing <code>export K='v'; </code> onto the command string — which makes the value one argv element of the local <code>ssh</code> <em>and</em> of the remote shell, so a secret is visible in <code>ps</code> output <strong>on both ends</strong>. That is now the opt-in legacy path, not the default. <code>env_transport</code> selects how <code>env</code> values travel (it is inert when <code>env</code> is empty):</p>
 <table><thead><tr><th>Transport</th><th>Mechanism</th><th>Visible in <code>ps</code>?</th><th>For</th></tr></thead><tbody>
-<tr><td><code>"mix"</code> (default)</td><td>A generated Mix driver ships over ssh <strong>stdin</strong> into <code>&lt;mix_bin&gt; -</code>: strict-data-escaped <code>export</code> lines, then <code>exit(run_stream(["sh", "-c", &lt;command&gt;]))</code>.</td><td><strong>No</strong> — local <code>ps</code> shows only <code>ssh … &lt;mix_bin&gt; -</code>; remote <code>ps</code> shows <code>sh -c &lt;command&gt;</code> (the command, never the env).</td><td>Every mixos-managed node, regardless of login shell. Requires mix on the remote at the <code>mix_bin</code> option, else local <code>MIX_REMOTE_BIN</code>, else <code>/opt/mixos/bin/mix</code> (see <a href="#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>).</td></tr>
+<tr><td><code>"mix"</code> (default)</td><td>A generated Mix driver ships over ssh <strong>stdin</strong> into <code>&lt;mix_bin&gt; -</code>: strict-data-escaped <code>export</code> lines, then <code>exit(run_stream(["sh", "-c", &lt;command&gt;]))</code>.</td><td><strong>No</strong> — local <code>ps</code> shows only <code>ssh … &lt;mix_bin&gt; -</code>; remote <code>ps</code> shows <code>sh -c &lt;command&gt;</code> (the command, never the env).</td><td>Every mixos-managed node, regardless of login shell. Requires mix on the remote at the <code>mix_bin</code> option, else local <code>MIX_REMOTE_BIN</code>, else <code>&lt;prefix&gt;/bin/mix</code> (see <a href="#ssh_mixhost-source-opts--map"><code>ssh_mix</code></a>).</td></tr>
 <tr><td><code>"sh"</code></td><td>A POSIX driver (<code>export K='v'</code> lines + the command) ships over stdin into <code>sh -s</code>.</td><td><strong>No</strong> — the script travels on stdin.</td><td>Arbitrary <strong>non-mixos</strong> POSIX hosts. <strong>Broken on mix-login-shell nodes</strong> — the remote <code>sh -s</code> misroutes through the Mix classifier.</td></tr>
 <tr><td><code>"argv"</code></td><td>The legacy <code>export K='v'; </code> command-string prefix.</td><td><strong>Yes, on both ends.</strong></td><td>Compatibility only. Never for secrets.</td></tr>
 </tbody></table>
@@ -806,7 +806,7 @@ $r    = ssh_run("node1", $cmd)
 <p>For threading a <em>Mix value</em> (a map/list, not a shell string) to a remote Mix interpreter safely, see <a href="/mix/data/"><code>data_encode</code></a> — it produces inert Mix source the remote lexer rebuilds, never shell commands. And for shipping whole Mix <em>programs</em>, <code>ssh_mix</code> sidesteps quoting entirely (the source travels as stdin bytes, not argv).</p>
 <hr />
 <h2 id="when-the-remote-login-shell-is-mix">When the remote login shell is Mix</h2>
-<p>If a host runs <code>/opt/mixos/bin/mix</code> as the login shell, then the snippet you send is evaluated by <strong>Mix</strong>, not by a POSIX shell. Two distinct modes:</p>
+<p>If a host runs <code>&lt;prefix&gt;/bin/mix</code> as the login shell, then the snippet you send is evaluated by <strong>Mix</strong>, not by a POSIX shell. Two distinct modes:</p>
 <ul>
 <li><strong>Send Mix source for Mix behaviour.</strong> The remote evaluates it as a Mix program.</li>
 </ul>
@@ -821,7 +821,7 @@ ssh_run("node1", "mix status")                          -- bare `mix` self-resol
 <p>Things to remember on a Mix-shell host:</p>
 <ol>
 <li><strong>For anything with quoting, prefer <code>ssh_mix</code>.</strong> A one-liner as above is fine inline; the moment the payload has nested quotes, <code>$</code>, or newlines, ship it as source over stdin instead of fighting three quoting layers.</li>
-<li><strong>No aliases on the non-interactive path.</strong> <code>~/.mixrc</code> (aliases, PATH tweaks, prompt) loads only for <em>interactive</em> logins. <code>ssh_run</code> is non-interactive, so the remote sees no <code>~/.mixrc</code> — call binaries by full path (<code>/opt/mixos/bin/...</code>), don't rely on a remote alias.</li>
+<li><strong>No aliases on the non-interactive path.</strong> <code>~/.mixrc</code> (aliases, PATH tweaks, prompt) loads only for <em>interactive</em> logins. <code>ssh_run</code> is non-interactive, so the remote sees no <code>~/.mixrc</code> — call binaries by full path (<code>&lt;prefix&gt;/bin/...</code>), don't rely on a remote alias.</li>
 <li><strong>Watch your local quoting.</strong> The snippet is a Mix <em>string</em> on your side first. Prefer <code>'single quotes'</code> for the snippet so a <code>${...}</code> or <code>..</code> inside it isn't eaten by <em>local</em> interpolation, then escape only the inner double quotes you need.</li>
 <li><strong>POSIX subshell grouping <code>( … )</code> doesn't survive the remote classifier</strong> — a remote <code>(cmd; cmd) | sort</code> hits the same shell-dispatch limits as a local one (see <a href="/mix/shell-mode/">shell-mode.md</a>). Wrap it: <code>ssh_run("node1", "run_rc(\"(cmd; cmd) | sort\")")</code>.</li>
 </ol>

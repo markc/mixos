@@ -9,7 +9,7 @@
 --   mix tools/mix_tests.mix [--bin DIR] [NAME...]
 --
 -- --bin is the directory holding the freshly built mix, noded, editd and
--- dopus (default target/debug). Scripts that still name /opt/mixos/bin
+-- dopus (default target/debug). Scripts that still name <prefix>/bin
 -- directly need those binaries installed there too; CI does that. NAME
 -- runs only the scripts whose path contains it.
 --

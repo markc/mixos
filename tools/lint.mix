@@ -32,6 +32,12 @@ $DATA_MIX = [
   "services/webd/vhosts/lib/foundation_registry.mix"
 ]
 $GATE_TIMEOUT = 300
+$site_needs = []
+if has_builtin("mixos_path") then
+  push($site_needs, mixos_path("prefix", "share/assets/sets/2026-10-04-core-3"))
+  $site_paths = require($root .. "/docs/_build/source_paths.mix")
+  push($site_needs, $site_paths.resolve($root, load_data($root .. "/docs/_build/site.conf.mix").site.fonts.asset_set))
+end
 
 $checks = [
   {name: "closure", argv: ["tools/closure_gate.mix", "--locked"]},
@@ -44,15 +50,19 @@ $checks = [
   {name: "units", argv: ["tools/unit_gate.mix"]},
   {name: "style", argv: ["tools/style_gate.mix", "--toolkit"]},
   {name: "terminology", argv: ["tools/terminology_gate.mix"]},
+  {name: "paths", argv: ["tools/path_gate.mix"]},
   -- The site build subsets pinned fonts from an installed asset set with
   -- hb-subset and woff2_compress. Where those are absent (a bare CI runner)
   -- it is skipped; the pre-commit hook runs it on every commit.
   {name: "site", argv: ["docs/_build/gen-site.mix", "--check"],
-    needs: ["/opt/mixos/share/assets/sets/2026-10-04-core-3"], tools: ["hb-subset", "woff2_compress"]}
+    needs: $site_needs, tools: ["hb-subset", "woff2_compress"], resolver: true}
 ]
 
 -- A check's prerequisites, or "" when they are all present.
 fn missing($c)
+  if $c.resolver ?? false then
+    if not has_builtin("mixos_path") then return "mix with mixos_path (installed asset-set check; N-1 bootstrap skipped)" end
+  end
   $gone = []
   for $p in $c.needs ?? []
     if not exists($p) then push($gone, $p) end

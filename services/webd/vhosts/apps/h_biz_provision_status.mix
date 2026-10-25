@@ -3,8 +3,8 @@
 -- biz_provision_status.mix — admin JSON poll endpoint for CT provision jobs.
 -- GET /biz/provision-status?service=<id>. Session/admin gated like the other
 -- /biz pages; D9-safe because this is a read-only webd handler.
-include "/opt/mixos/vhosts/shared/lib/lib.mix"
-include "/opt/mixos/vhosts/shared/apps/biz.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/lib/lib.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
 
 function bps_label($status, $step)
   $st = "" .. $status

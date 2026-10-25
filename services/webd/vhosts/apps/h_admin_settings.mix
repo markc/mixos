@@ -8,8 +8,8 @@
 -- reset-to-defaults action that re-asserts the site.conf.mix baseline.
 -- Theming is owned by the dcs.spa Appearance sidebar (per visitor) — no CMS theme
 -- setting. See _decisions/2026-06-20-settings-two-tier-model.md.
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
 
 -- Upsert one settings row (key→value). Field names below match the parse_form keys.
 function as_set($k, $v)

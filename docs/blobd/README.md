@@ -19,5 +19,5 @@ and the state root.
 
 - **Storage:** the store runs on the `mds` library (`libs/mds`).
 - **Identity kept on disk:** the cas group `blob` and the state root
-  `/var/lib/mixos/blobd` are unchanged, so the port reads the live store on
+  `<state>/blobd` are unchanged, so the port reads the live store on
   the existing nodes without moving data.

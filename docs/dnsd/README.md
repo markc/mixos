@@ -11,12 +11,12 @@ authority and does not recurse. The private `dns-core` crate owns the zone
 model, parsing, snapshots, persistence, resolver and wire codec.
 
 ```text
-/opt/mixos/bin/dnsd --zones /opt/mixos/etc/dnsd/zones.mix --state /var/lib/mixos/dnsd/state --listen 127.0.0.1:5353
+<prefix>/bin/dnsd --zones <prefix>/etc/dnsd/zones.mix --state <state>/dnsd/state --listen 127.0.0.1:5353
 ```
 
 All three arguments are required. Repeat `--listen` to bind more than one
 address. Wildcard binds are refused. The default `mixos` feature reads
-`node.conf.mix` using `config` (including `MIXOS_ETC` and
+`node.conf.mix` using `config` (including `MIXOS_CONFIG` and
 `MIXOS_NODE_CONFIG`) and accepts the configured WireGuard IP or loopback.
 If node configuration is absent or invalid, non-loopback binds require
 `--allow-non-loopback-listen`, with a warning. The standalone build
@@ -39,14 +39,14 @@ The `dnsd` Bus service exposes two read-only queries:
 DNS serving continues while the broker is unavailable. Registration
 retries with bounded exponential backoff. Mutation commands are rejected.
 
-`services/dnsd/units/dnsd.service` runs `/opt/mixos/bin/dnsd` as `dnsd`,
+`services/dnsd/units/dnsd.service` runs `<prefix>/bin/dnsd` as `dnsd`,
 with UID and GID 506, `CAP_NET_BIND_SERVICE` and the original hardening.
-Its config root is `MIXOS_ETC=/opt/mixos/etc`, with `dnsd/zones.mix` and
+Its config root is `MIXOS_CONFIG=<prefix>/etc`, with `dnsd/zones.mix` and
 `dnsd/service.env` (`LISTEN=192.0.2.10:53`). Its state root is
-`MIXOS_VAR=/var/lib/mixos`, with `dnsd/state`. The unit sets those roots
+`MIXOS_STATE=<state>`, with `dnsd/state`. The unit sets those roots
 explicitly; changing the roots also requires overriding its argument and
 environment-file paths. Node identity comes from
-`/opt/mixos/etc/node.conf.mix`. The sysusers and tmpfiles fragments are
+`<prefix>/etc/node.conf.mix`. The sysusers and tmpfiles fragments are
 owned by the component. Installing these files does not activate DNS.
 
 ```text

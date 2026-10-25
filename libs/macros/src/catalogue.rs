@@ -162,18 +162,11 @@ impl Roots {
     pub fn resolve_with(get: impl Fn(&str) -> Option<PathBuf>) -> Option<Self> {
         let absolute = |p: PathBuf| p.is_absolute().then_some(p);
         let home = get("HOME").and_then(absolute)?;
+        let layout = paths::Layout::from_lookup(get).ok()?;
         Some(Self {
-            builtin: get("MIXOS_SHARE")
-                .and_then(absolute)
-                .unwrap_or_else(|| PathBuf::from("/opt/mixos/share"))
-                .join("macros"),
-            user: get("XDG_CONFIG_HOME")
-                .and_then(absolute)
-                .unwrap_or_else(|| home.join(".config"))
-                .join("mixos/macros"),
-            mix: get("MIXOS_MIX")
-                .and_then(absolute)
-                .unwrap_or_else(|| PathBuf::from("/opt/mixos/bin/mix")),
+            builtin: layout.root(paths::Root::Prefix).join("share/macros"),
+            user: layout.root(paths::Root::Config).join("macros"),
+            mix: layout.root(paths::Root::Prefix).join("bin/mix"),
             home,
         })
     }

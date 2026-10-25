@@ -17,13 +17,13 @@ StateDirectoryMode=0750
 RuntimeDirectory=mixos/dnsd
 RuntimeDirectoryMode=0750
 WorkingDirectory=%S/mixos/dnsd
-EnvironmentFile=/opt/mixos/etc/dnsd/service.env
-Environment=MIXOS_ETC=/opt/mixos/etc
-Environment=MIXOS_VAR=/var/lib/mixos
-Environment=MIXOS_NODE_CONFIG=/opt/mixos/etc/node.conf.mix
+EnvironmentFile=@{prefix}/etc/dnsd/service.env
+Environment=MIXOS_ETC=@{prefix}/etc
+Environment=MIXOS_VAR=@{state}
+Environment=MIXOS_NODE_CONFIG=@{prefix}/etc/node.conf.mix
 Environment=RUST_LOG=dnsd=info
 Environment=HOME=%S/mixos/dnsd
-ExecStart=/opt/mixos/bin/dnsd --zones /opt/mixos/etc/dnsd/zones.mix --state %S/mixos/dnsd/state --listen ${LISTEN}
+ExecStart=@{prefix}/bin/dnsd --zones @{prefix}/etc/dnsd/zones.mix --state %S/mixos/dnsd/state --listen ${LISTEN}
 Restart=on-failure
 RestartSec=5s
 StandardOutput=journal

@@ -54,7 +54,7 @@ Craft apps use this file on the `MixOS` desktop with `CRAFT_TITLEBAR=app`. They
 resolve `window-minimize-symbolic`, `window-maximize-symbolic`,
 `window-restore-symbolic` and `window-close-symbolic` through the MixOS icon
 theme in `$XDG_DATA_DIRS/icons`. The original 16-unit hairline SVGs install from
-`share/icons` into `/opt/mixos/share/icons/mixos/scalable/actions`.
+`share/icons` into `<prefix>/share/icons/mixos/scalable/actions`.
 
 The export runs only when `XDG_CONFIG_HOME` is set, absolute and different from
 `$HOME/.config`; otherwise it logs once at info level and skips. Parent segments

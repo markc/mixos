@@ -14,9 +14,9 @@
 -- Customer LOGIN itself (email+password) is a separate webd auth change
 -- (Codex ruling A); these pages work the moment a customer session exists,
 -- and are previewable by an admin whose email matches a customer row.
-include "/opt/mixos/vhosts/shared/apps/biz.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/lib/lib.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/lib/lib.mix")
 
 -- Resolve the signed-in user's customer row from the session email alone.
 -- Returns the row or nil.

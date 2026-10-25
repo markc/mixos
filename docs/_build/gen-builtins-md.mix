@@ -1,4 +1,4 @@
-#!/opt/mixos/bin/mix
+#!/usr/bin/env mix
 -- version: 0.1.0
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
@@ -8,7 +8,7 @@
 --   mix docs/_build/gen-builtins-md.mix [--mix BIN]           rewrite the page
 --   mix docs/_build/gen-builtins-md.mix [--mix BIN] --check   exit 1 if it differs
 --
--- BIN is the binary whose table is documented (default /opt/mixos/bin/mix).
+-- BIN is the binary whose table is documented (default the running mix).
 -- cli/system/tests/man_pages.rs runs --check with the binary it just built, so
 -- a builtin added or changed without regenerating fails the build.
 --
@@ -35,7 +35,7 @@ fn fail($msg)
   exit(2)
 end
 
-$mix = "/opt/mixos/bin/mix"
+$mix = realpath("/proc/self/exe")
 $check = false
 $argv = args()
 $i = 0

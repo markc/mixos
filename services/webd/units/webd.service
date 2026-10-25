@@ -24,14 +24,14 @@ WorkingDirectory=%S/mixos/webd
 ReadWritePaths=/srv
 # The database is pinned under the state directory. The default resolves to a
 # root-owned parent that webd cannot write.
-ExecStart=/opt/mixos/bin/webd serve --db-path %S/mixos/webd/web.db
+ExecStart=@{prefix}/bin/webd serve --db-path %S/mixos/webd/web.db
 Restart=on-failure
 RestartSec=5s
 Environment=RUST_LOG=webd=info
 Environment=HOME=%S/mixos/webd
 # Node config is pinned so that listen address, TLS paths, the JMAP upstream
 # and the noded URL come from the per-host config, not from fallbacks.
-Environment=MIXOS_ETC=/etc/mixos
+Environment=MIXOS_ETC=@{config}
 # Journald is the sink. Stray stdout and stderr also go there, and the rate
 # limit stops a crash loop from flooding the journal.
 StandardOutput=journal

@@ -294,7 +294,7 @@ Reinstalling a theme replaces these values without compounding them. A window's
 own theme choice preserves them. Per-app text overrides are not applied because
 the current settings summary carries only the desktop UI values.
 <code>Theme::load()</code> reads the shared <code>theme.conf.mix</code> from the MixOS etc
-directory (<code>$MIXOS_ETC</code>, else <code>$MIXOS/etc</code>, else <code>/etc/mixos</code> for root,
+directory (<code>$MIXOS_CONFIG</code>, else <code>$MIXOS/etc</code>, else <code>&lt;config&gt;</code> for root,
 else <code>$XDG_CONFIG_HOME/mixos</code>). It falls back to the embedded design, and
 says why on stderr, when the file is missing or unusable.</p>
 <p>A minimal window, condensed from <code>tests/snapshot.rs</code>:</p>
@@ -556,7 +556,7 @@ mixos.dev uses the same icons. <code>assets/licenses.conf.mix</code> pins each n
 by SHA-256. This includes the notices for egui's own fallback fonts, which
 are in <code>assets/fonts/fallbacks/</code>.
 <code>scripts/install_licenses.mix</code> installs them under
-<code>&lt;share&gt;/licenses/toolkit</code> (default share <code>/opt/mixos/share</code>). <code>--check</code>
+<code>&lt;share&gt;/licenses/toolkit</code> (default share <code>&lt;prefix&gt;/share</code>). <code>--check</code>
 validates only the sources, and <code>--verify</code> checks an installed tree. See
 the <a href="/docs/decisions/2026-10-13-bundled-font-licences/">bundled font licences decision</a>.</p>
 <h2 id="source-layout">Source layout</h2>

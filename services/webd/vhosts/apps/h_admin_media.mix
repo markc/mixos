@@ -14,8 +14,8 @@
 -- media.mix) is RETAINED for small/inline images and similar uses: it still
 -- works if something POSTs action=upload/delete to /admin/media directly,
 -- but the gallery's own forms now target the native disk routes.
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
 
 -- ── media render helpers (shared by the list + card views) ──────────────────
 -- media_url($m) (a row's public /img/… or /media/<id> URL) moved to lib.mix so the

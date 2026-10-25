@@ -271,7 +271,7 @@ if $SCALE != 1 then
   push($compd_argv, "--scale=" .. to_string($SCALE))
 end
 mkdir($run_dir .. "/var", {parents: true})
-$cp = spawn($compd_argv, {env: {MIXOS_VAR: $run_dir .. "/var", XDG_RUNTIME_DIR: $run_dir, LIBGL_ALWAYS_SOFTWARE: "1", WAYLAND_DISPLAY: "wl-host", COMPD_FRAME_TRACE: "1", COMPD_FRAME_TRACE_FILE: $TRACE, COMPD_FRAME_TRACE_LIMIT: "0"}, stdout: {file: $logs .. "/compositor.log"}, stderr: "stdout", detach: true})
+$cp = spawn($compd_argv, {env: {MIXOS_STATE: $run_dir .. "/var", XDG_RUNTIME_DIR: $run_dir, LIBGL_ALWAYS_SOFTWARE: "1", WAYLAND_DISPLAY: "wl-host", COMPD_FRAME_TRACE: "1", COMPD_FRAME_TRACE_FILE: $TRACE, COMPD_FRAME_TRACE_LIMIT: "0"}, stdout: {file: $logs .. "/compositor.log"}, stderr: "stdout", detach: true})
 $sock = nil
 $t = 0
 while $sock == nil and $t < 100

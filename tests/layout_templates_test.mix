@@ -1,0 +1,46 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Default layout byte contract, plus a prefix with a space.
+$repo = dirname(dirname(realpath($0)))
+$renderer = require($repo .. "/share/layout/render.mix")
+$roots = {prefix: "/opt/mixos", config: "/etc/mixos", state: "/var/lib/mixos", cache: "/var/cache/mixos", runtime: "/run/mixos"}
+$manifest = load_data($repo .. "/share/layout/templates.mx")
+$different = []
+$live = []
+$compared = []
+for $entry in $manifest.files
+  $path = $repo .. "/share/layout/" .. $entry.source
+  $source = read_file($path)
+  $rendered = $renderer.external($source, $roots, $entry.kind)
+  $rel = strip_prefix(realpath($path), $repo .. "/")
+  $original = run_argv(["git", "-C", $repo, "show", "32650ae5a05f21c996e617e27a5de0863d119608:" .. $rel])
+  if not $original.ok or $rendered != $original.stdout then push($different, $rel) end
+  $installed = "/opt/mixos/share/units/" .. basename($path)
+  if not is_file($installed) and contains($rel, "/units/") then
+    $owner = split($rel, "/")[1]
+    $installed = "/opt/mixos/share/units/" .. $owner .. "." .. basename($path)
+  end
+  if contains(args(), "--installed") and is_file($installed) then
+    push($compared, basename($installed))
+    if $rendered != read_file($installed) then push($live, $rel) end
+  end
+end
+if len($different) > 0 then raise("LAYOUT_BYTES", "default templates differ from baseline: " .. join($different, ", ")) end
+print("layout: " .. to_string(len($manifest.files)) .. " default templates byte-identical to baseline")
+if contains(args(), "--installed") and is_dir("/opt/mixos/share/units") then
+  for $path in glob("/opt/mixos/share/units/*")
+    if is_file($path) and not contains($compared, basename($path)) then push($live, "unmatched installed unit " .. basename($path)) end
+  end
+  if len($live) != 0 then raise("LAYOUT_BYTES", "installed units differ: " .. join($live, ", ")) end
+  print("layout: all " .. to_string(len($compared)) .. " installed share/units files byte-identical")
+elif contains(args(), "--installed") then print("SKIP installed-unit comparison: installed share/units is absent") end
+$roots.prefix = "/tmp/moved tree"
+$line = $renderer.external("ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/test.mix\n", $roots, "unit")
+if $line != 'ExecStart="/tmp/moved tree/bin/mix" --serve "/tmp/moved tree/lib/test.mix"' .. "\n" then raise("LAYOUT_QUOTE", $line) end
+try
+  $renderer.render("@{unknown}", $roots)
+  raise("LAYOUT_TEST", "unknown placeholder accepted")
+catch $message, $error
+  if $error.code != "LAYOUT_TEMPLATE" then raise($error.code, $message) end
+end
+print("layout: moved executable and argv paths are quoted")

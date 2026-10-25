@@ -21,8 +21,8 @@
 -- this handler pulls in forms.mix (fm_*) + modals.mix (md_*) itself, as every
 -- fm_*/md_* handler does. NO mix-0.20 syntax (?? / ?:) — webd embeds its own
 -- mixos-lib-mix (match forms.mix/modals.mix discipline).
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
 
 -- Read one key from a raw query string ($QUERY), percent-decoded; "" if absent.
 -- Minimal split on & then the FIRST = (login params carry no = in their values).

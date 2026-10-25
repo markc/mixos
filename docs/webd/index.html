@@ -237,7 +237,7 @@
 <p>The MixOS web service serves per-host static files, CMS SQLite APIs,
 embedded trusted Mix HTTP handlers, mail proxy routes and file shares.
 It registers as <code>webd</code> on the native Bus. The server profile uses
-<code>/opt/mixos/bin/webd serve --db-path /var/lib/mixos/webd/web.db</code>.</p>
+<code>&lt;prefix&gt;/bin/webd serve --db-path &lt;state&gt;/webd/web.db</code>.</p>
 <p>Node configuration is read through config's native directory rules.
 <code>webd.vhost</code> supplies hostnames, document roots, optional CMS databases,
 manual TLS identities or Let's Encrypt HTTP-01 ACME settings. Explicit

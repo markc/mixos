@@ -442,6 +442,9 @@ end
 -- and every Desktop Action must have a non-empty Exec, or the entry refuses
 -- (LAYOUT) rather than bypass the wrapper or become unlaunchable.
 fn rewrite_entry($text, $appdir, $viewdir, $wrapper)
+  -- Packaged desktop entries are external templates; prefix belongs to this
+  -- application generation, not to the interpreter running releasesd.
+  $text = replace($text, "@{prefix}", $viewdir)
   $out = []
   $group = nil
   $missing = []

@@ -63,7 +63,7 @@ while $i < len($ARGS)
   $i = $i + 1
 end
 
-$bin = $n.require_binary("compd", $BIN, ["/opt/mixos/bin"])
+$bin = $n.require_binary("compd", $BIN, [(mixos_path("prefix") .. "/bin")])
 $CLEANUP.run = $n.new_run("/tmp/" .. $KIND .. "-region-" .. to_string(pid()))
 $SESSION = $n.start({bin: $bin, tag: "region", run: $CLEANUP.run, config: $CONFIG, env: $ENV, software: $SOFTWARE})
 if not $n.wait_ready($SESSION, 30) then
@@ -139,7 +139,7 @@ fn start_selector($tag, $payload)
     "write_file(" .. json_encode($path) .. ", json_encode({rc: $rc, body: $result}))\n"
   $script = $DIR .. "/" .. $tag .. ".mix"
   write_file($script, $src)
-  spawn(["/opt/mixos/bin/mix", $script], {detach: false})
+  spawn([(mixos_path("prefix") .. "/bin/mix"), $script], {detach: false})
   return $path
 end
 

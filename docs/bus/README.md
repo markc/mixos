@@ -17,7 +17,7 @@ The Bus wire format and the broker client.
   broker restarts and which replays every recorded topic subscription before
   reporting `Connected`; `IncomingCommand`; and `noded_url()`, which finds
   the broker (`MIXOS_NODED_URL`, then `node.conf.mix` via
-  `MIXOS_NODE_CONFIG`, `$MIXOS_ETC`, `~/.config/mixos` or `/etc/mixos`, then
+  `MIXOS_NODE_CONFIG`, `$MIXOS_CONFIG`, `~/.config/mixos` or `<config>`, then
   `ws://127.0.0.1:4200/ws`).
 
 A wire-only consumer depends on `bus` with `default-features = false` and

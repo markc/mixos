@@ -8,8 +8,8 @@
 --
 --   mix tests/desktop/comp_control_smoke.mix [--bin PATH] --config-file PATH [--probe PATH]
 --
--- Defaults: compd is /opt/mixos/bin/compd, the probe is testkit-input-probe
--- from compd's bin dir (beside a compd --bin, then /opt/mixos/bin); its path
+-- Defaults: compd is <prefix>/bin/compd, the probe is testkit-input-probe
+-- from compd's bin dir (beside a compd --bin, then <prefix>/bin); its path
 -- and --version are printed.
 -- Needs weston (the host) and a reachable noded. `--env NAME=VALUE`
 -- (repeatable) passes an environment variable to the compositor only.
@@ -64,7 +64,7 @@ while $index < len($argv)
   end
 end
 
-$comp = $n.require_binary("compd", $COMP, ["/opt/mixos/bin"])
+$comp = $n.require_binary("compd", $COMP, [(mixos_path("prefix") .. "/bin")])
 $probe = $n.require_probe("testkit-input-probe", $PROBE, $comp)
 $CLEANUP.run = $n.new_run(env("TMPDIR", "/tmp") .. "/" .. $KIND .. "-control-" .. to_string(pid()))
 $log_dir = $CLEANUP.run.path

@@ -408,7 +408,7 @@ impl State {
     fn folder(&mut self) {
         let id = self.editor_entry.as_ref().map(|entry| entry.id.clone());
         self.work(move |roots, app| {
-            let workshop = Path::new("/opt/mixos/bin/workshop");
+            let workshop = &::paths::root(::paths::Root::Prefix).join("bin/workshop");
             if workshop.is_file() {
                 let mut command = Command::new(workshop);
                 command.args(["--app", if app == "workshop" { "global" } else { app }]);
@@ -1219,11 +1219,11 @@ fn open_macro(roots: &::macros::Roots, path: &Path) -> io::Result<editor::local:
 
 fn launch(path: &Path, folder: bool) -> io::Result<()> {
     let native = if folder {
-        "/opt/mixos/bin/dopus"
+        ::paths::bin("dopus")
     } else {
-        "/opt/mixos/bin/ced"
+        ::paths::bin("ced")
     };
-    let mut child = Command::new(if Path::new(native).is_file() {
+    let mut child = Command::new(if native.is_file() {
         native
     } else {
         "xdg-open"

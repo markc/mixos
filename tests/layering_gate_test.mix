@@ -1,8 +1,8 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Gate regressions: direct, indirect, optional, renamed and dev dependencies.
 $root = dirname(dirname(realpath($0)))
-$mix = env("MIXOS_TEST_MIX") ?? "/opt/mixos/bin/mix"
-if $mix == "" then $mix = "/opt/mixos/bin/mix" end
+$mix = env("MIXOS_TEST_MIX") ?? (mixos_path("prefix") .. "/bin/mix")
+if $mix == "" then $mix = (mixos_path("prefix") .. "/bin/mix") end
 $tmp = $root .. "/.layering-test-" .. uuid()
 mkdir($tmp)
 $layers_file = $tmp .. "/layers.conf.mix"

@@ -164,7 +164,7 @@ fn noded_url()
   if $set != "" then
     return $set
   end
-  for each $path in [env("HOME", "") .. "/.config/mixos/node.conf.mix", "/etc/mixos/node.conf.mix"]
+  for each $path in [env("HOME", "") .. "/.config/mixos/node.conf.mix", (mixos_path("config") .. "/node.conf.mix")]
     if is_file($path) then
       $c = load_data($path)
       $host = $c.wg_ip ?? ""
@@ -508,7 +508,7 @@ fn run_once($label, $ssd)
   $before = sockets($run)
   $svc = "compd-chrome-" .. $label .. "-" .. to_string(pid())
   mkdir($run .. "/var", {parents: true})
-  $cenv = {MIXOS_VAR: $run .. "/var", XDG_RUNTIME_DIR: $run, LIBGL_ALWAYS_SOFTWARE: "1", WAYLAND_DISPLAY: "wl-host", MIXOS_NODED_URL: $NODED}
+  $cenv = {MIXOS_STATE: $run .. "/var", XDG_RUNTIME_DIR: $run, LIBGL_ALWAYS_SOFTWARE: "1", WAYLAND_DISPLAY: "wl-host", MIXOS_NODED_URL: $NODED}
   if $debug_clip and $label == "on" then
     $cenv["COMPD_CHROME_CLIP_DEBUG"] = "1"
   end

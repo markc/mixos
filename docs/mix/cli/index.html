@@ -435,8 +435,8 @@ be ahead of it or behind it.</p>
 <ol>
 <li><strong>The built-in manual.</strong></li>
 <li><strong>Files on disk</strong>, for a page this binary does not carry: the installed
-share tree (<code>$MIXOS_SHARE/mix/man</code>), then a checkout's <code>docs/mix</code>
-(<code>$MIXOS</code>, else the root found above the running binary, else
+share tree (<code>&lt;prefix&gt;/share/mix/man</code>), then a checkout's <code>docs/mix</code>
+(<code>$MIXOS_SRC</code>, else the root found above the running binary, else
 <code>~/Projects/mixos</code>).</li>
 <li><strong>The online copy</strong>, as in <code>auto</code> mode below.</li>
 </ol>
@@ -482,10 +482,10 @@ for i in 1 2 3; do                 for each $i in [1, 2, 3]
 </code></pre>
 <h2 id="build--rebuild-the-interpreter-from-itself">Build — rebuild the interpreter from itself</h2>
 <p>The build family wraps <code>cargo</code> against the Mix source tree (<code>$MIXOS_SRC</code>,
-default <code>$MIXOS</code>) so the REPL can rebuild and re-exec into a fresh binary —
+default the discovered source checkout) so the REPL can rebuild and re-exec into a fresh binary —
 the self-reconstruction surface. Point <code>$MIXOS_SRC</code> at the directory holding
 the workspace <code>Cargo.toml</code> (in a clone of the public repo that is <code>mix/src</code>).</p>
-<pre><code>mix build       cargo build --release, then install target/release/mix → $MIXOS_BIN/mix
+<pre><code>mix build       cargo build --release, then install target/release/mix → &lt;prefix&gt;/bin/mix
 mix clean       cargo clean (removes the target/ tree)
 mix update      git pull, then build + install
 mix test        cargo test, streaming output
@@ -976,7 +976,7 @@ minutes. There is no stdin in v1: the task gets <code>/dev/null</code>, and a
 stdin-feeding task is a named future field rather than a silent absence.</p>
 <p><strong>The environment is enumerated, not inherited.</strong> A task starts from exactly:</p>
 <pre><code>HOME  USER  PATH  LANG  TERM=dumb
-MIXOS  MIXOS_SRC  MIXOS_BIN  MIXOS_ETC
+MIXOS_PREFIX  MIXOS_CONFIG  MIXOS_STATE  MIXOS_CACHE  MIXOS_RUNTIME  MIXOS_SRC
 MIXOS_NODE_CONFIG  MIXOS_BROKER_ACCOUNT
 </code></pre>
 <p>plus the caller's <code>env</code> overlay, which WINS on a name collision. Those values
@@ -1131,7 +1131,7 @@ back.</p>
 <li><code>mix</code> is intercepted by the shell, so it never sees <code>$</code>-sigil arguments — write <code>mix what round</code>, not <code>mix what $name</code>.</li>
 <li>The introspection family (<code>vars</code>/<code>aliases</code>/<code>functions</code>/<code>all</code>/<code>context</code>) is most useful <strong>inside a REPL</strong>, where the session has accumulated state; from a one-shot OS-shell invocation it reports only the freshly-loaded prelude.</li>
 <li>The diagnostics family (<code>time</code>/<code>trace</code>/<code>history</code>/<code>reload</code>/<code>diagnose</code>) is REPL-only — those names are not on the OS-shell allowlist, so <code>mix trace on</code> there is read as a script filename. The one exception is <code>mix stats</code>, which has a dedicated one-shot OS-shell path against the same on-disk data.</li>
-<li>Paths follow the MixOS layout: source at <code>$MIXOS_SRC</code> (default <code>$MIXOS</code>), installed binaries at <code>$MIXOS_BIN</code> (default <code>~/.local/bin</code>, or <code>/usr/local/bin</code> when running as root).</li>
+<li>Paths follow the MixOS layout: source at <code>$MIXOS_SRC</code> (default the discovered source checkout), installed binaries at <code>&lt;prefix&gt;/bin</code> (derived from the binary's prefix).</li>
 </ul>
 <h2 id="see-also">See also</h2>
 <ul>

@@ -172,7 +172,7 @@ the old `mix.db`.
 | `node.conf.mix` | Read-only broker address input; see [Serve mode](serve-mode.md). |
 | `MIXOS_NODE_CONFIG` | Overrides the node configuration file path. |
 | `MIXOS_SRC` | Overrides the MixOS source/documentation root used by project and manual commands. |
-| `MIXOS_ETC` | Overrides the MixOS configuration directory. |
+| `MIXOS_CONFIG` | Overrides the MixOS configuration directory. |
 | `MIXOS_BIN` | Overrides the install directory used by `mix build`. |
 | `MIXOS_MAN_SOURCE` | Selects `auto` or `local` manual resolution. |
 | `MIXOS_MAN_URL` | Overrides the canonical manual base URL. |

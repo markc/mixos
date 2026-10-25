@@ -6,7 +6,7 @@
 --
 -- Plan of record: _plan/2026-06-24-context-menu-widget.md (Codex-converged).
 --
--- ONE copy at /opt/mixos/vhosts/shared/widgets/contextmenu.mix; `include`-d by a
+-- ONE copy at <prefix>/vhosts/shared/widgets/contextmenu.mix; `include`-d by a
 -- handler AFTER lib.mix (so esc() resolves at call-time). Self-contained — composes
 -- with modals.mix (a menu item opens an md_shell dialog via md_script's fetch path)
 -- but does NOT depend on it.

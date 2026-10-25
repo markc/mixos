@@ -42,17 +42,9 @@ fn absolute_env(name: &str) -> Option<PathBuf> {
         .filter(|p| p.is_absolute())
 }
 
-/// The app's state directory: `MIXOS_APP_HOME`, else
-/// `MIXOS_APPS_HOME/screenshot`, `MIXOS_VAR/apps/screenshot`,
-/// `XDG_STATE_HOME/mixos/apps/screenshot` or
-/// `~/.local/state/mixos/apps/screenshot`.
+/// The app's state directory beneath the shared state root.
 pub fn state_dir() -> Result<PathBuf, String> {
-    absolute_env("MIXOS_APP_HOME")
-        .or_else(|| absolute_env("MIXOS_APPS_HOME").map(|p| p.join(APP)))
-        .or_else(|| absolute_env("MIXOS_VAR").map(|p| p.join("apps").join(APP)))
-        .or_else(|| absolute_env("XDG_STATE_HOME").map(|p| p.join("mixos/apps").join(APP)))
-        .or_else(|| absolute_env("HOME").map(|p| p.join(".local/state/mixos/apps").join(APP)))
-        .ok_or_else(|| "no absolute application state directory".into())
+    Ok(paths::try_root(paths::Root::State)?.join("apps").join(APP))
 }
 
 /// The private captures directory, created and secured.

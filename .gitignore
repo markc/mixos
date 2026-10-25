@@ -2,6 +2,10 @@
 target/
 # Release tarballs from tools/package.mix.
 dist/
+# Pinned build inputs populated by share/assets/install.mix --root.
+/share/assets/sets/
+/share/assets/current
+/share/assets/.install.lock
 # egui_kittest's comparison images, written beside a snapshot that changed.
 *.diff.png
 *.old.png

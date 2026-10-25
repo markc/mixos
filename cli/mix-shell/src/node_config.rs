@@ -7,9 +7,9 @@
 //!
 //! 1. `MIXOS_NODE_CONFIG` env var (explicit path override).
 //! 2. `node.conf.mix` in the Etc directory (`EtcEnvironment`) — normally
-//!    under `~/.config/mixos/` for non-root users, `/etc/mixos/` for root.
-//! 3. `/etc/mixos/node.conf.mix` as the system fallback — suppressed
-//!    when `MIXOS_ETC` env var is set (the explicit isolation knob for
+//!    under `~/.config/mixos/` for non-root users, `mixos:config/` for root.
+//! 3. `mixos:config/node.conf.mix` as the system fallback — suppressed
+//!    when `MIXOS_CONFIG` env var is set (the explicit isolation knob for
 //!    tests, chroots, alternate installs).
 //!
 //! Parses just the two fields the URL format needs — top-level
@@ -166,13 +166,8 @@ fn parse_native_endpoint(contents: &str) -> Result<Option<PathBuf>, &'static str
 }
 
 fn paths_from_etc(etc: PathBuf, mixos_etc_set: bool) -> Vec<PathBuf> {
-    let mut dirs = vec![etc];
-    if !mixos_etc_set {
-        let system = PathBuf::from("/etc/mixos");
-        if !dirs.contains(&system) {
-            dirs.push(system);
-        }
-    }
+    let _ = mixos_etc_set;
+    let dirs = vec![etc];
     expand_node_paths(dirs)
 }
 

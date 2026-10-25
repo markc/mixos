@@ -744,7 +744,7 @@ Description=statecache Mix citizen
 After=noded.service
 
 [Service]
-ExecStart=/opt/mixos/bin/mix --serve /usr/local/lib/mixos/statecache.mix
+ExecStart=<prefix>/bin/mix --serve /usr/local/lib/mixos/statecache.mix
 User=mixos-statecache
 Group=mixos-statecache
 Restart=on-failure

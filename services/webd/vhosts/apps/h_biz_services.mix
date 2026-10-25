@@ -12,12 +12,12 @@
 --   POST action=reveal      (id, cred_id) → biz_audit FIRST, then ONE render w/ the secret
 --   POST action=cred_save   (id, system/username/secret) → add credential (audited)
 --   POST action=cred_delete (id, cred_id) → remove credential (audited, confirm-guarded)
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
-include "/opt/mixos/vhosts/shared/widgets/detail.mix"
-include "/opt/mixos/vhosts/shared/apps/biz.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/detail.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
 
 -- Map a service status to a Filament badge variant.
 function svc_status_variant($s)

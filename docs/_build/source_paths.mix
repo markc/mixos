@@ -1,0 +1,22 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Build inputs belong to the checkout, independently of the installed Mix.
+-- This is a source-tree mapping, not the runtime defaults table.
+fn resolve($repo, $value)
+  if not starts_with($value, "mixos:") then return $value end
+  $parts = split(substr($value, 6), "/")
+  $name = $parts[0]
+  if not contains(["prefix", "config", "state", "cache", "runtime", "share", "bin", "lib"], $name) then
+    raise("SITE_PATH", "unknown source root: " .. $name)
+  end
+  $tail = []
+  for $part in slice($parts, 1)
+    if $part == ".." then
+      if len($tail) == 0 then raise("SITE_PATH", "source path escapes its root") end
+      pop($tail)
+    elif $part != "." and $part != "" then
+      push($tail, $part)
+    end
+  end
+  $base = if $name == "prefix" then $repo else $repo .. "/" .. $name end
+  return $base .. (if len($tail) == 0 then "" else "/" .. join($tail, "/") end)
+end

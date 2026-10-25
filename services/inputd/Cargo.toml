@@ -19,6 +19,7 @@ contract = "public"
 mod_module_files = "deny"
 
 [dependencies]
+paths = { path = "../../libs/paths" }
 inputd-core = { path = "crates/inputd-core" }
 inputd-schema = { path = "crates/inputd-schema" }
 bus = { workspace = true, features = ["native"] }

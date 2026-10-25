@@ -3,7 +3,7 @@
 -- lib.mix — SHARED CMS library for every webd Mix-SSR vhost. Vhost-agnostic:
 -- per-vhost values (title/tagline/footer) come from $SITE, set by the per-vhost
 -- site.conf.mix the entry stub includes before this file. The shell template is
--- read from the shared tree. One copy at /opt/mixos/vhosts/shared/.
+-- read from the shared tree. One copy at <prefix>/vhosts/shared/.
 -- Included by every handler: schema/seed, auth/sessions, the page() layout
 -- (the dcs.spa design-system shell, read from web/app/shell.html), and helpers.
 -- Theming is owned by dcs.spa (6 OKLCH schemes + light/dark via its Appearance
@@ -1365,7 +1365,7 @@ end
 -- (not from a handler) because build_nav_pages below is its primary consumer; esc()
 -- and priv_dot() are already defined above, which is all treeview.mix needs at call
 -- time. `include` is load-once, so a handler that also pulls it in is a no-op.
-include "/opt/mixos/vhosts/shared/widgets/treeview.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/treeview.mix")
 
 -- The shared modal widget (md_shell / md_script / md_panel …). Included HERE (not just
 -- from a handler) because the chrome's signed-OUT profile widget now opens a login
@@ -1373,7 +1373,7 @@ include "/opt/mixos/vhosts/shared/widgets/treeview.mix"
 -- every page (anon pages don't include modals.mix themselves). esc() is defined above;
 -- md_* calls resolve at call time. `include` is load-once → a handler that also pulls it
 -- in is a no-op.
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
 
 -- Arbitrary-depth page tree for the nav, in two parts: build_page_children_map preloads
 -- every published page in ONE query into a parent_key→[rows] map ("0" = top-level), and
@@ -1748,7 +1748,7 @@ function page($title, $user, $bodyhtml)
     $profile = $profile .. '<button class="profile-btn" type="button"><span class="profile-av">' .. esc($ini) .. '</span><span class="profile-name">' .. esc($dn) .. '</span></button>'
   end
 
-  $tpl = read_file("/opt/mixos/vhosts/shared/lib/shell.html")
+  $tpl = read_file((mixos_path("prefix") .. "/vhosts/shared/lib/shell.html"))
   -- Browser tab title: PLAIN text (strip any markup from site_title).
   $tpl = replace($tpl, "{{TITLE}}", tplsafe(esc($title) .. " · " .. esc(strip_tags($site))))
   -- Header brand = the site_title SETTING rendered as TRUSTED markup (admin-authored;

@@ -59,7 +59,7 @@ Reinstalling a theme replaces these values without compounding them. A window's
 own theme choice preserves them. Per-app text overrides are not applied because
 the current settings summary carries only the desktop UI values.
 `Theme::load()` reads the shared `theme.conf.mix` from the MixOS etc
-directory (`$MIXOS_ETC`, else `$MIXOS/etc`, else `/etc/mixos` for root,
+directory (`$MIXOS_CONFIG`, else `$MIXOS/etc`, else `<config>` for root,
 else `$XDG_CONFIG_HOME/mixos`). It falls back to the embedded design, and
 says why on stderr, when the file is missing or unusable.
 
@@ -342,7 +342,7 @@ mixos.dev uses the same icons. `assets/licenses.conf.mix` pins each notice
 by SHA-256. This includes the notices for egui's own fallback fonts, which
 are in `assets/fonts/fallbacks/`.
 `scripts/install_licenses.mix` installs them under
-`<share>/licenses/toolkit` (default share `/opt/mixos/share`). `--check`
+`<share>/licenses/toolkit` (default share `<prefix>/share`). `--check`
 validates only the sources, and `--verify` checks an installed tree. See
 the [bundled font licences decision](../docs/decisions/2026-10-13-bundled-font-licences.md).
 

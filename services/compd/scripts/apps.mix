@@ -18,7 +18,7 @@ $a = require("lib/apps.mix")
 $apps = $a.scan_apps($a.application_dirs(), $a.locale_id(), "MIXOS")
 $icon_ctx = $a.icon_ctx()
 $icon_theme = $a.default_theme()
-$terminal_cmd = "/opt/mixos/bin/term --"
+$terminal_cmd = "mixos:prefix/bin/term --"
 
 fn event_args()
   -- Structured args when the caller sent a JSON map body, else an empty map.

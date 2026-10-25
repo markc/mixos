@@ -11,7 +11,7 @@ use crate::ssh::Ssh;
 use crate::units;
 
 /// Where the MixOS mix binary lives in the gold copy.
-const MIX_BIN: &str = "/opt/mixos/bin/mix";
+fn mix_bin() -> String { ::paths::bin("mix").to_string_lossy().into_owned() }
 
 pub async fn build(client: &NodedClient, ssh: &Arc<Ssh>) -> Value {
     let cos = tab_cos().await;
@@ -63,20 +63,20 @@ pub fn peer_list(value: Value) -> Value {
 /// predecessor hub features with no MixOS source yet, so they are not reported.
 async fn tab_mix() -> Value {
     let result = tokio::task::spawn_blocking(|| {
-        let path = PathBuf::from(MIX_BIN);
+        let path = PathBuf::from(mix_bin());
         if !path.exists() {
-            return json!({ "path": MIX_BIN, "error": "mix is not installed" });
+            return json!({ "path": mix_bin(), "error": "mix is not installed" });
         }
         match std::process::Command::new(&path).arg("--version").output() {
             Ok(out) if out.status.success() => json!({
-                "path": MIX_BIN,
+                "path": mix_bin(),
                 "version": String::from_utf8_lossy(&out.stdout).trim(),
             }),
             Ok(out) => json!({
-                "path": MIX_BIN,
+                "path": mix_bin(),
                 "error": format!("mix --version exited {}", out.status),
             }),
-            Err(error) => json!({ "path": MIX_BIN, "error": error.to_string() }),
+            Err(error) => json!({ "path": mix_bin(), "error": error.to_string() }),
         }
     })
     .await;

@@ -136,7 +136,7 @@ The broker URL is resolved from the first applicable source:
 
 1. The file named by `MIXOS_NODE_CONFIG`.
 2. `node.conf.mix` under the resolved MixOS configuration directory.
-3. The system `node.conf.mix`, unless `MIXOS_ETC` explicitly isolates the
+3. The system `node.conf.mix`, unless `MIXOS_CONFIG` explicitly isolates the
    configuration directory.
 
 The reader consumes only these strict-data fields:

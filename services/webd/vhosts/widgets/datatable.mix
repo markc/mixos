@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- datatable.mix — SHARED SSR DataTable widget for every webd Mix-SSR list page.
--- ONE copy at /opt/mixos/vhosts/shared/; `include`-d by a list handler
+-- ONE copy at <prefix>/vhosts/shared/; `include`-d by a list handler
 -- (after lib.mix, so esc()/url_encode() resolve at call-time). Gives sortable
 -- columns + global search + numbered pagination driven ENTIRELY through the URL
 -- query string, so the dcs.spa shell SPA swap enhances it for free and it
@@ -29,8 +29,8 @@
 -- cm_menu from row_action_specs + a modal shell, which needs contextmenu.mix +
 -- modals.mix. include is load-once + script-relative, so handlers that also include
 -- them dedup. (Pure SSR HTML builders — no db/jmap/bus — safe under any handler profile.)
-include "/opt/mixos/vhosts/shared/widgets/contextmenu.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/contextmenu.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
 
 -- ─────────────────────── targeted partial patches ───────────────────────
 -- A datatable sort/page/search/size click re-renders ONLY that table's region

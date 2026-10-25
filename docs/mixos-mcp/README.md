@@ -6,7 +6,7 @@ description: MCP stdio access to the native MixOS Bus.
 # mixos-mcp
 
 `mixos-mcp` is an MCP stdio server for agents. Install the binary at
-`/opt/mixos/bin/mixos-mcp` and register the MCP server as `mixos`.
+`<prefix>/bin/mixos-mcp` and register the MCP server as `mixos`.
 It ships in the server prefix archive. Its package, binary and component
 are the [single naming exception](../docs/decisions/2026-10-19-mcp-program-name.md).
 
@@ -15,7 +15,7 @@ are the [single naming exception](../docs/decisions/2026-10-19-mcp-program-name.
 The server starts without a Bus connection. The first Bus tool connects
 using `libs/bus`. `MIXOS_NODED_URL` overrides the node configuration URL;
 otherwise the native client's node config discovery applies, including
-`MIXOS_NODE_CONFIG`, `MIXOS_ETC` and the user/system defaults.
+`MIXOS_NODE_CONFIG`, `MIXOS_CONFIG` and the user/system defaults.
 
 Set `MIXOS_BROKER_ACCOUNT` to the broker's operating-system account and
 `MIXOS_BUS_SOCKET` to the session's Unix socket. With either set, verified
@@ -28,11 +28,11 @@ uses the discovered URL. Calls are never replayed after reconnecting.
 {
   "mcpServers": {
     "mixos": {
-      "command": "/opt/mixos/bin/mixos-mcp",
+      "command": "<prefix>/bin/mixos-mcp",
       "env": {
         "MIXOS_NODED_URL": "ws://192.0.2.10:4200/ws",
         "MIXOS_BROKER_ACCOUNT": "user",
-        "MIXOS_BUS_SOCKET": "/run/mixos/session/4/noded/bus.sock"
+        "MIXOS_BUS_SOCKET": "<runtime>/session/4/noded/bus.sock"
       }
     }
   }
@@ -85,19 +85,19 @@ the selected Bus. An absent backend returns an explicit tool error.
 Skill refinement also needs a configured LLM backend. Settings are MixOS strict-data files:
 `knowledge.conf.mix`, `domains.conf.mix`, `skills.conf.mix` and `llm.conf.mix`.
 LLM Bus providers use the same broker. `api_key_cmd` is Mix source, executed
-by `/opt/mixos/bin/mix -c`.
+by `<prefix>/bin/mix -c`.
 
 ### Host indexd from a desk
 
 When a desk cannot reach the host's Bus, select SSH in
-`$MIXOS_ETC/knowledge.conf.mix` (normally `~/.config/mixos/knowledge.conf.mix`):
+`$MIXOS_CONFIG/knowledge.conf.mix` (normally `~/.config/mixos/knowledge.conf.mix`):
 
 ```text
 indexd: {
     transport: "ssh",
     target: "indexd",
     ssh_host: "user@host.example",
-    ssh_command: ["/opt/mixos/bin/indexd", "bridge"],
+    ssh_command: ["<prefix>/bin/indexd", "bridge"],
     call_timeout_secs: 120
 }
 ```

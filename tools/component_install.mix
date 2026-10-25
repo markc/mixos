@@ -9,10 +9,10 @@
 --   mix tools/component_install.mix --rollback <component> [--root /]
 --
 -- Per component:
---   <root>/opt/mixos/lib/<component>/   its scripts/ tree, component.mx, units/
+--   <root><prefix>/lib/<component>/   its scripts/ tree, component.mx, units/
 --                                       and .installed.json (version, source
 --                                       commit, the sha256 of every file)
---   <root>/opt/mixos/lib/.<component>.previous/   the tree it replaced
+--   <root><prefix>/lib/.<component>.previous/   the tree it replaced
 --   <root>/etc/systemd/system/<unit>    its units/ files
 --
 -- Safety:
@@ -22,7 +22,7 @@
 --   is repeated before every change, but it is not race-free against a
 --   writer inside the root: install into a root whose own root processes you
 --   trust, or a stopped container.
--- - One exclusive lock (<root>/opt/mixos/lib/.component-install.lock) covers
+-- - One exclusive lock (<root><prefix>/lib/.component-install.lock) covers
 --   every install and rollback. --check and --dry-run write nothing: they
 --   take it shared only when it exists and can be opened.
 -- - A unit is this installer's only when a record lists it. An existing unit
@@ -46,10 +46,12 @@
 -- MIXOS_COMPONENT_INSTALL_FAIL=<point> raises there instead.
 
 $g = getopt(args(), {help: {short: "h"}, root: {arg: true}, source: {arg: true},
+  prefix: {arg: true}, config: {arg: true}, state: {arg: true}, cache: {arg: true}, runtime: {arg: true},
+  tier: {arg: true}, mix: {arg: true},
   check: {}, rollback: {arg: true}, "dry-run": {}})
 if len($g.errors) != 0 then raise("INSTALL_ARGS", join($g.errors, "; ")) end
 if $g.opts.help then
-  print("usage: mix tools/component_install.mix [--root DIR] [--source DIR] [--check | --rollback NAME | --dry-run] [component...]")
+  print("usage: mix tools/component_install.mix [--root SYSROOT] [--prefix DIR] [--mix STAGED_MIX] [--tier system|user] [--config DIR --state DIR --cache DIR --runtime DIR] [--source DIR] [--check | --rollback NAME | --dry-run] [component...]")
   exit(0)
 end
 $root = $g.opts.root ?? "/"
@@ -58,8 +60,20 @@ if not is_dir($root) then raise("INSTALL_ROOT", $root .. " is not a directory") 
 $root = realpath($root)
 $root = if $root == "/" then "" else $root end
 $source = $g.opts.source ?? dirname(dirname(realpath($0)))
+$renderer = require(dirname(dirname(realpath($0))) .. "/share/layout/render.mix")
+$targets = require(dirname(realpath($0)) .. "/lib/layout_target.mix")
+$saved = {}
+if $g.opts.rollback != nil and $g.opts.prefix != nil then
+  if not re_match($g.opts.rollback, "^[a-z0-9][a-z0-9-]{0,63}$") then raise("INSTALL_COMPONENT", "invalid rollback component") end
+  $targets.checked({prefix: $g.opts.prefix})
+  $rp = $root .. $g.opts.prefix .. "/lib/" .. $g.opts.rollback .. "/.installed.json"
+  if is_file($rp) then $saved = json_parse(read_file($rp)).layout ?? {} end
+end
+$target_opts = $g.opts
+$target_opts["record-only"] = $g.opts.rollback != nil
+$layout = $targets.resolve($target_opts, $g.opts.mix, $root, $saved)
 $dry = $g.opts["dry-run"]
-$lib = $root .. "/opt/mixos/lib"
+$lib = $root .. $layout.prefix .. "/lib"
 $unitdir = $root .. "/etc/systemd/system"
 $KINDS = {apps: "app", services: "service", cli: "cli", libs: "lib"}
 $NAME_RE = "^[a-z0-9][a-z0-9-]{0,63}$"
@@ -85,7 +99,15 @@ end
 -- Every directory between the root and what this tool writes is a plain
 -- directory, never a symlink. Creates missing ones when $create.
 fn guard($create)
-  for $d in [$root .. "/opt", $root .. "/opt/mixos", $lib, $root .. "/etc", $root .. "/etc/systemd", $unitdir]
+  $parents = []
+  for $target in [$lib, $unitdir]
+    $d = $target
+    while $d != $root and $d != "/"
+      if not contains($parents, $d) then push($parents, $d) end
+      $d = dirname($d)
+    end
+  end
+  for $d in sort_by($parents, fn($p) = len($p))
     if lexists($d) then
       $st = stat($d, {follow_symlinks: false})
       if $st.is_symlink or not $st.is_dir then
@@ -167,6 +189,7 @@ fn shipped($c)
   $units = tree($c.dir .. "/units")
   for $u in keys($units)
     if not re_match($u, $UNIT_RE) then raise("INSTALL_FILE", $c.dir .. "/units/" .. $u .. ": units/ holds unit files only") end
+    $units[$u] = hash_sha256($renderer.external(read_file($c.dir .. "/units/" .. $u), $layout, "unit"))
   end
   return {files: $files, units: $units, version: $c.version}
 end
@@ -464,9 +487,14 @@ fn install($c)
   try
     if is_dir($c.dir .. "/scripts") then copy_tree($c.dir .. "/scripts", $stage) end
     copy($c.dir .. "/component.mx", $stage .. "/component.mx")
-    if len(keys($new.units)) > 0 then copy_tree($c.dir .. "/units", $stage .. "/units") end
+    if len(keys($new.units)) > 0 then
+      mkdir($stage .. "/units", {parents: true})
+      for $u in keys($new.units)
+        write_file($stage .. "/units/" .. $u, $renderer.external(read_file($c.dir .. "/units/" .. $u), $layout, "unit"))
+      end
+    end
     write_file($stage .. "/.installed.json", json_encode({component: $c.name, kind: $c.kind, version: $c.version,
-      source: source_commit(), dirty: dirty($c.dir), installed_at: now_iso(), files: $new.files, units: $new.units}))
+      source: source_commit(), dirty: dirty($c.dir), installed_at: now_iso(), layout: $layout, files: $new.files, units: $new.units}))
     set_modes($stage)
     -- The copy must be what was hashed.
     if not tree_matches($stage, $new) then raise("INSTALL_COPY", $c.name .. ": the staged copy differs from the checkout") end

@@ -73,7 +73,7 @@ while $ai < len($argv)
 end
 -- The backdrop built with the compd under test, else the installed one.
 if $BACKDROP == "" then
-  $BACKDROP = if $BIN != "" then dirname($BIN) .. "/backdrop" else "/opt/mixos/bin/backdrop" end
+  $BACKDROP = if $BIN != "" then dirname($BIN) .. "/backdrop" else (mixos_path("prefix") .. "/bin/backdrop") end
 end
 if not is_file($BACKDROP) then
   print("  ERROR: --backdrop must name the backdrop binary")
@@ -81,7 +81,7 @@ if not is_file($BACKDROP) then
   exit(2)
 end
 
-$comp = $n.require_binary("compd", $BIN, ["/opt/mixos/bin"])
+$comp = $n.require_binary("compd", $BIN, [(mixos_path("prefix") .. "/bin")])
 $shot = $n.require_probe("testkit-screenshot", "", $comp)
 $shm = which("weston-simple-shm")
 if $shm == nil or $shm == "" then

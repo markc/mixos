@@ -14,10 +14,10 @@ PartOf=session@%i.target
 [Service]
 Type=simple
 User=mixos
-EnvironmentFile=/etc/mixos/session/%i.env
+EnvironmentFile=@{config}/session/%i.env
 UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
-ExecStartPre=/opt/mixos/bin/settingsd seed --instance %H
-ExecStart=/opt/mixos/bin/settingsd serve --instance %H
+ExecStartPre=@{prefix}/bin/settingsd seed --instance %H
+ExecStart=@{prefix}/bin/settingsd serve --instance %H
 KillMode=control-group
 TimeoutStopSec=10
 Restart=on-failure

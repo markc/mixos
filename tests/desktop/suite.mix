@@ -14,7 +14,7 @@
 -- directory, else the directory this script is in). Gates run with the repo
 -- root (or that dir) as their working directory, so their own lookups
 -- (bus_watch.mix, fixtures) resolve as when run by hand. compd defaults to
--- one beside the gates, else /opt/mixos/bin/compd.
+-- one beside the gates, else <prefix>/bin/compd.
 --
 -- Harness gates (nested_host_lib; run once): desktop (with the waybar,
 -- fuzzel and xmessage arms), control, workspaces, workspace_commands,
@@ -129,13 +129,13 @@ if $CONFIG == "" then
   end
 end
 if $BIN == "" then
-  for each $c in [$DIR .. "/compd", "/opt/mixos/bin/compd"]
+  for each $c in [$DIR .. "/compd", (mixos_path("prefix") .. "/bin/compd")]
     if $BIN == "" and is_file($c) then
       $BIN = $c
     end
   end
 end
-$MIX = which("mix") ?? "/opt/mixos/bin/mix"
+$MIX = which("mix") ?? (mixos_path("prefix") .. "/bin/mix")
 mkdir($OUT, {parents: true})
 
 -- The gate table. `style` "harness" takes --bin/--config-file; "standalone"

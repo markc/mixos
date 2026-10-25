@@ -59,7 +59,7 @@ pub const DEFAULT_FETCH_DEADLINE_SECS: u64 = 3600;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     /// mds root. `None` means the caller's default (the unit's
-    /// `StateDirectory`, `/var/lib/mixos/blobd`).
+    /// `StateDirectory`, `mixos:state/blobd`).
     pub root: Option<PathBuf>,
     /// Instance name: the Bus service is `blobd` or `blobd-<name>`,
     /// with a root per instance.
@@ -318,7 +318,7 @@ pub type ByteSize = u64;
 
 /// The documented default root, used when neither `root:` nor the
 /// unit's `$STATE_DIRECTORY` names one.
-pub const DEFAULT_ROOT: &str = "/var/lib/mixos/blobd";
+
 
 /// The root when the config sets none (m10): systemd's
 /// `$STATE_DIRECTORY` (the unit's `StateDirectory`, a named instance's
@@ -331,7 +331,7 @@ pub fn default_root(state_directory: Option<&str>) -> PathBuf {
         .and_then(|dirs| dirs.split(':').next())
         .filter(|dir| !dir.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(DEFAULT_ROOT))
+        .unwrap_or_else(|| ::paths::root(::paths::Root::State).join("blobd"))
 }
 
 #[cfg(test)]
@@ -348,8 +348,8 @@ mod tests {
             default_root(Some("/var/lib/mixos/blobd:/var/lib/other")),
             PathBuf::from("/var/lib/mixos/blobd")
         );
-        assert_eq!(default_root(Some("")), PathBuf::from(DEFAULT_ROOT));
-        assert_eq!(default_root(None), PathBuf::from(DEFAULT_ROOT));
+        assert_eq!(default_root(Some("")), ::paths::root(::paths::Root::State).join("blobd"));
+        assert_eq!(default_root(None), ::paths::root(::paths::Root::State).join("blobd"));
     }
 
     #[test]

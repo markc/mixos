@@ -21,6 +21,7 @@ contract = "public"
 mod_module_files = "deny"
 
 [dependencies]
+paths = { path = "../../libs/paths" }
 bus = { workspace = true, features = ["native"] }
 buildinfo.workspace = true
 # The outbox for term.action.executed.

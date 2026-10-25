@@ -8,8 +8,8 @@
 --
 --   mix tests/desktop/comp_workspaces_gate.mix [--bin PATH] --config-file PATH [--probe PATH] [--pprobe PATH]
 --
--- Defaults: compd /opt/mixos/bin/compd, probes from compd's bin dir (beside
--- a compd --bin, then /opt/mixos/bin). Rule 10 (EWMH) needs xmessage and
+-- Defaults: compd <prefix>/bin/compd, probes from compd's bin dir (beside
+-- a compd --bin, then <prefix>/bin). Rule 10 (EWMH) needs xmessage and
 -- xdotool.
 --
 -- Contract under test (the workspaces contract): the
@@ -79,7 +79,7 @@ while $i < len($argv)
   end
 end
 
-$comp = $n.require_binary("compd", $COMP, ["/opt/mixos/bin"])
+$comp = $n.require_binary("compd", $COMP, [(mixos_path("prefix") .. "/bin")])
 $probe = $n.require_probe("testkit-input-probe", $PROBE, $comp)
 $pprobe = $n.require_probe("testkit-presentation-probe", $PPROBE, $comp)
 $CLEANUP.run = $n.new_run(env("TMPDIR", "/tmp") .. "/" .. $KIND .. "-ws-" .. to_string(pid()))

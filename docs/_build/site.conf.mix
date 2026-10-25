@@ -70,7 +70,7 @@ site: {
   -- _web/fonts/<role>.woff2 and GENERATES _web/fonts.css. Neither is edited
   -- by hand. CSS family names are the ones _web/base.css already uses.
   fonts: {
-    asset_set: "/opt/mixos/share/assets/sets/2026-10-04-core-3",
+    asset_set: "mixos:prefix/share/assets/sets/2026-10-04-core-3",
     -- Coverage every text face is cut to: Basic Latin + Latin-1 Supplement,
     -- Latin Extended-A, General Punctuation, Arrows, Currency Symbols, plus
     -- the trade mark, minus and division signs, ZWNBSP and U+FFFD. Nothing

@@ -8,7 +8,7 @@
 --       --cargo-home CARGO_HOME --rustup-home RUSTUP_HOME
 --
 -- The package step builds each selected Cargo package once, then packages
--- those same binaries. It never installs into /opt/mixos or publishes a release.
+-- those same binaries. It never installs into <prefix> or publishes a release.
 
 $g = getopt(args(), {commit: {arg: true}, version: {arg: true}, out: {arg: true},
   rootfs: {arg: true}, "target-dir": {arg: true},
@@ -112,6 +112,9 @@ if $mode == "check" then
   stage("smithay", [$mix, "tools/smithay_guards.mix"], 900)
   stage("index", [$mix, "tools/component_index.mix", "--check"], 900)
   stage("mix-tests", [$mix, "tools/mix_tests.mix", "--bin", "target/debug"], 5400)
+  stage("paths", [$mix, "tools/path_gate.mix"], 300)
+  stage("layout-templates", [$mix, "tests/layout_templates_test.mix"], 300)
+  stage("relocation", [$mix, "tests/layout_relocation_test.mix", "--bin", "target/debug"], 1800)
   print("GREEN exact source " .. $commit)
   exit(0)
 end

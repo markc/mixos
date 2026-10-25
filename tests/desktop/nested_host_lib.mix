@@ -9,11 +9,11 @@
 -- Rather than nesting in a live desktop session, it brings its own host, as
 -- nested_smoke does, so a build worker with no desktop can run every gate.
 -- Everything is private to one run directory: the host, the compositor's
--- socket, its Bus service name, its MIXOS_ETC, MIXOS_VAR and MIXOS_RUN.
+-- socket, its Bus service name, its MIXOS_CONFIG, MIXOS_STATE and MIXOS_RUNTIME.
 -- Nothing touches a live desktop.
 --
 -- Binaries: mix, noded, compd and the testkit probes are looked up in
--- /opt/mixos/bin (a gate's --bin names a build instead).
+-- <prefix>/bin (a gate's --bin names a build instead).
 --
 --   start({bin, tag, config, env, max_secs})
 --   wait_ready(session, seconds)   ping the session's own Bus service
@@ -82,7 +82,7 @@ fn binary($name, $override, $dirs)
     end
     return $override
   end
-  for each $dir in $dirs ?? ["/opt/mixos/bin"]
+  for each $dir in $dirs ?? [(mixos_path("prefix") .. "/bin")]
     $p = $dir .. "/" .. $name
     if is_file($p) then
       return $p
@@ -95,7 +95,7 @@ fn require_binary($name, $override, $dirs)
   $p = binary($name, $override, $dirs)
   if $p == "" then
     print("  ERROR: no " .. $name .. " — pass its path, or install it into one of " ..
-      json_encode($dirs ?? ["/opt/mixos/bin"]))
+      json_encode($dirs ?? [(mixos_path("prefix") .. "/bin")]))
     exit(2)
   end
   return $p
@@ -118,7 +118,7 @@ end
 
 -- Where a gate's testkit probes (testkit-input-probe,
 -- testkit-presentation-probe) are looked for: beside the compd `bin` a gate
--- was given, then /opt/mixos/bin. A probe is built with the compd it tests,
+-- was given, then <prefix>/bin. A probe is built with the compd it tests,
 -- so the one beside a named build wins over an installed copy (which can
 -- predate the flags a gate needs).
 fn probe_dirs($bin)
@@ -126,8 +126,8 @@ fn probe_dirs($bin)
   if $bin != nil and $bin != "" then
     push($dirs, dirname($bin))
   end
-  if not contains($dirs, "/opt/mixos/bin") then
-    push($dirs, "/opt/mixos/bin")
+  if not contains($dirs, (mixos_path("prefix") .. "/bin")) then
+    push($dirs, (mixos_path("prefix") .. "/bin"))
   end
   return $dirs
 end
@@ -176,7 +176,7 @@ fn bus_child($service, $command, $args, $send_secs, $proc_secs)
   $body = json_encode($args)
   $script = "$b = " .. json_encode($body) .. "\nsend " .. json_encode($service) ..
     " " .. $command .. " body=$b timeout=" .. to_string($send_secs) .. "\nprint($rc)\nprint(json_encode($result))\n"
-  $mix = env("MIXOS_TEST_MIX", "/opt/mixos/bin/mix")
+  $mix = env("MIXOS_TEST_MIX", (mixos_path("prefix") .. "/bin/mix"))
   $r = run_argv([$mix, "-c", $script], {timeout: $proc_secs})
   $lines = split(trim($r.stdout), "\n")
   if len($lines) < 2 then
@@ -198,7 +198,7 @@ fn noded_url()
   if $set != "" then
     return $set
   end
-  for each $path in [env("HOME", "") .. "/.config/mixos/node.conf.mix", "/etc/mixos/node.conf.mix"]
+  for each $path in [env("HOME", "") .. "/.config/mixos/node.conf.mix", (mixos_path("config") .. "/node.conf.mix")]
     if is_file($path) then
       $c = load_data($path)
       $host = $c.wg_ip ?? ""
@@ -224,7 +224,7 @@ end
 -- which another broker start may have replaced by now.
 fn _bus_env($broker)
   return {MIXOS_NODED_URL:$broker.url,MIXOS_NODE_CONFIG:$broker.conf,
-    MIXOS_RUN:$broker.dir .. "/run",MIXOS_ETC:$broker.dir .. "/etc",MIXOS_VAR:$broker.dir .. "/var",
+    MIXOS_RUNTIME:$broker.dir .. "/run",MIXOS_CONFIG:$broker.dir .. "/etc",MIXOS_STATE:$broker.dir .. "/var",
     HOME:$broker.dir .. "/home",MIXOS_BROKER_ACCOUNT:$broker.account}
 end
 
@@ -234,7 +234,7 @@ fn _call_at($broker, $service, $command, $args)
   $body = json_encode($args)
   $script = "$b = " .. json_encode($body) .. "\nsend " .. json_encode($service) ..
     " " .. $command .. " body=$b timeout=30\nprint($rc)\nprint(json_encode($result))\n"
-  $mix = env("MIXOS_TEST_MIX", "/opt/mixos/bin/mix")
+  $mix = env("MIXOS_TEST_MIX", (mixos_path("prefix") .. "/bin/mix"))
   $r = run_argv([$mix, "-c", $script], {timeout: 60, env: _bus_env($broker)})
   $lines = split(trim($r.stdout), "\n")
   if len($lines) < 2 then
@@ -292,8 +292,8 @@ end
 -- later restart never re-reads globals or exports.
 fn _spawn_owned($spec, $serve)
   $p = spawn($serve, {clear_env:true, env: {PATH:$spec.path_env, USER:$spec.user_env,
-    HOME:$spec.dir .. "/home", MIXOS_ETC:$spec.dir .. "/etc", MIXOS_VAR:$spec.dir .. "/var",
-    MIXOS_RUN:$spec.dir .. "/run", MIXOS_NODE_CONFIG:$spec.conf},
+    HOME:$spec.dir .. "/home", MIXOS_CONFIG:$spec.dir .. "/etc", MIXOS_STATE:$spec.dir .. "/var",
+    MIXOS_RUNTIME:$spec.dir .. "/run", MIXOS_NODE_CONFIG:$spec.conf},
     stdout: {file: $spec.log}, stderr: "stdout", detach: true})
   $mesh_conf = ""
   if len($spec.peers) > 0 then $mesh_conf = $spec.mesh_conf end
@@ -324,7 +324,7 @@ end
 
 -- A private broker for a gate whose citizens have FIXED Bus names (editd
 -- registers `edit`, which a host's own editd may hold). Starts noded
--- (/opt/mixos/bin, or `noded: PATH`) on a random loopback port with
+-- (<prefix>/bin, or `noded: PATH`) on a random loopback port with
 -- admission off, then EXPORTS MIXOS_NODE_CONFIG and MIXOS_NODED_URL into
 -- this process, so everything started afterwards (start()'s compositor,
 -- call()'s child mix, the gate's clients) talks to it. Call it before
@@ -348,9 +348,9 @@ end
 fn private_bus($opts)
   $dir = $opts["dir"]
   $name = $opts["name"] ?? "gate"
-  $noded = binary("noded", $opts["noded"] ?? "", ["/opt/mixos/bin"])
+  $noded = binary("noded", $opts["noded"] ?? "", [(mixos_path("prefix") .. "/bin")])
   if $noded == "" then
-    print("  ERROR: no noded for the private broker (pass --noded PATH, or install it into /opt/mixos/bin)")
+    print(("  ERROR: no noded for the private broker (pass --noded PATH, or install it into " .. mixos_path("prefix") .. "/bin)"))
     exit(2)
   end
   mkdir($dir, {parents: true})
@@ -363,7 +363,7 @@ fn private_bus($opts)
   $conf = $dir .. "/node.conf.mix"
   $log = $dir .. "/noded.log"
   export MIXOS_NODE_CONFIG=$conf
-  export MIXOS_RUN=$dir .. "/run"
+  export MIXOS_RUNTIME=$dir .. "/run"
   export MIXOS_BROKER_ACCOUNT=trim(run_argv_must(["id", "-un"]))
   $listen_ip = $opts["listen_ip"] ?? "127.0.0.1"
   $peers = $opts["peers"] ?? []
@@ -437,8 +437,8 @@ fn restart_private_bus($broker)
   end
   $log = $broker.dir .. "/noded-restart-" .. to_string(pid()) .. "-" .. to_string(random(1000, 9999)) .. ".log"
   $p = spawn($argv, {clear_env:true, env: {PATH:$broker.path_env, USER:$broker.user_env,
-    HOME:$broker.dir .. "/home", MIXOS_ETC:$broker.dir .. "/etc", MIXOS_VAR:$broker.dir .. "/var",
-    MIXOS_RUN:$broker.dir .. "/run", MIXOS_NODE_CONFIG:$broker.conf},
+    HOME:$broker.dir .. "/home", MIXOS_CONFIG:$broker.dir .. "/etc", MIXOS_STATE:$broker.dir .. "/var",
+    MIXOS_RUNTIME:$broker.dir .. "/run", MIXOS_NODE_CONFIG:$broker.conf},
     stdout: {file: $log}, stderr: "stdout", detach: true})
   $replacement = merge($broker, {pid: $p, log: $log})
   if not _broker_ready($broker.node, $p, $replacement) then
@@ -467,9 +467,9 @@ end
 fn private_bus_pair($opts)
   $dir = $opts["dir"]
   if $dir == nil then raise("BROKER_PAIR", "pair needs {dir: PATH}") end
-  $noded = binary("noded", $opts["noded"] ?? "", ["/opt/mixos/bin"])
+  $noded = binary("noded", $opts["noded"] ?? "", [(mixos_path("prefix") .. "/bin")])
   if $noded == "" then
-    print("  ERROR: no noded for the private broker pair (pass --noded PATH, or install it into /opt/mixos/bin)")
+    print(("  ERROR: no noded for the private broker pair (pass --noded PATH, or install it into " .. mixos_path("prefix") .. "/bin)"))
     exit(2)
   end
   mkdir($dir, {parents: true})
@@ -684,10 +684,10 @@ fn start($opts)
     WINIT_UNIX_BACKEND: "wayland",
     DISPLAY: "",
     RUST_LOG: "info",
-    MIXOS_ETC: $run .. "/etc",
-    MIXOS_RUN: $run .. "/run",
+    MIXOS_CONFIG: $run .. "/etc",
+    MIXOS_RUNTIME: $run .. "/run",
     MIXOS_NODED_URL: noded_url(),
-    MIXOS_NODE_CONFIG: env("MIXOS_NODE_CONFIG", "/etc/mixos/node.conf.mix"),
+    MIXOS_NODE_CONFIG: env("MIXOS_NODE_CONFIG", (mixos_path("config") .. "/node.conf.mix")),
     HOME: env("HOME", "/tmp"),
     USER: env("USER", "")
   }
@@ -711,7 +711,7 @@ fn start($opts)
   $cenv["DBUS_STARTER_BUS_TYPE"] = nil
   $cenv["DBUS_SYSTEM_BUS_ADDRESS"] = nil
   -- Persistence must stay private even when the caller supplies an env map.
-  $cenv["MIXOS_VAR"] = $run .. "/var"
+  $cenv["MIXOS_STATE"] = $run .. "/var"
   $argv = [$bin, "--nested", "--socket", $socket, "--bus-service", $service, "--config-file=" .. $opts["config"]]
   if $opts.scale != nil then push($argv, "--scale=" .. to_string($opts.scale)) end
   $cp = spawn($argv, {env: $cenv, stdout: {file: $log}, stderr: "stdout", detach: true})

@@ -350,7 +350,7 @@ fn bare_path_head_that_is_also_valid_mix_rejects_an_assignment_chain() {
 ///
 /// The head must be a name that CANNOT exist on PATH. This test used to say
 /// `mixos-comp`, which stopped being hypothetical the day mixos-comp was
-/// installed to /opt/mixos/bin: `cargo test --workspace` then launched the
+/// installed to mixos:prefix/bin: `cargo test --workspace` then launched the
 /// real nested compositor on the developer's desktop, sat there for two
 /// minutes, and failed with a wgpu `DeviceLost` instead of the expected 127.
 /// What is under test is the *routing* of a tight-hyphenated head, and a name

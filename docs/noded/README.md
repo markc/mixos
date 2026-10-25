@@ -23,13 +23,13 @@ personalities of the [system](../system/README.md) binary.
 ## Configuration
 
 Configuration is strict data in `node.conf.mix`, resolved beneath `MIXOS` or
-an explicit `MIXOS_ETC`. Isolated roots never fall back to host
+an explicit `MIXOS_CONFIG`. Isolated roots never fall back to host
 configuration. Set `MIXOS` to an isolated runtime root and supply
 `etc/node.conf.mix`, for example:
 
 ```text
 node: "example"
-noded: { port: 4200, unix_socket: "/run/mixos/noded/bus.sock" }
+noded: { port: 4200, unix_socket: "<runtime>/noded/bus.sock" }
 ```
 
 ## Running it

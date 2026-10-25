@@ -12,16 +12,16 @@ Wants=network-online.target
 Type=simple
 User=markc
 Group=markc
-EnvironmentFile=/etc/mixos/noded/service.env
+EnvironmentFile=@{config}/noded/service.env
 # A non-root user resolves etc and var under its home unless these are set.
 # Point them at the MixOS trust root and state.
-Environment=MIXOS_ETC=/etc/mixos
-Environment=MIXOS_VAR=/var/lib/mixos
+Environment=MIXOS_ETC=@{config}
+Environment=MIXOS_VAR=@{state}
 RuntimeDirectory=mixos/noded
 RuntimeDirectoryMode=0755
 StateDirectory=mixos/noded
 StateDirectoryMode=0750
-ExecStart=/opt/mixos/bin/noded serve --listen ${LISTEN} --node ${NODE} --mesh-config /etc/mixos/noded/config.conf.mix --no-monitor --no-log
+ExecStart=@{prefix}/bin/noded serve --listen ${LISTEN} --node ${NODE} --mesh-config @{config}/noded/config.conf.mix --no-monitor --no-log
 Restart=on-failure
 RestartSec=5s
 

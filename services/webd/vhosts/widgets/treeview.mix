@@ -5,7 +5,7 @@
 -- Plan of record: _plan/2026-06-23-treeview-widget.md (Codex-converged).
 -- Sibling of widgets/datatable.mix + forms.mix + modals.mix; same conventions.
 --
--- ONE copy at /opt/mixos/vhosts/shared/widgets/treeview.mix. UNLIKE the other
+-- ONE copy at <prefix>/vhosts/shared/widgets/treeview.mix. UNLIKE the other
 -- widgets it is `include`-d by lib.mix itself (right after esc()/priv_dot() are
 -- defined, before the nav builders) — because lib.mix's build_nav_pages() is the
 -- primary consumer, not a leaf handler. A handler that calls tv_* directly adds its

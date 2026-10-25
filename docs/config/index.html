@@ -239,15 +239,11 @@
 <h1 id="config">config</h1>
 <p>Where MixOS keeps its files, and how a <code>*.conf.mix</code> file is read.</p>
 <ul>
-<li><code>config::path(Dir::Etc | Var | Run | Share)</code>: one rule for every
-directory. A <code>MIXOS_ETC</code> / <code>MIXOS_VAR</code> / <code>MIXOS_RUN</code> / <code>MIXOS_SHARE</code>
-override wins; else <code>$MIXOS/etc</code>, <code>/var</code>, <code>/run</code> when a root is set; else
-the XDG directory for a user (<code>~/.config/mixos</code>, <code>~/.local/share/mixos</code>,
-<code>$XDG_RUNTIME_DIR/mixos</code>) or the system directory for root (<code>/etc/mixos</code>,
-<code>/var/lib/mixos</code>, <code>/run/mixos</code>). <code>Share</code> is installed read-only data at
-<code>/opt/mixos/share</code> whatever the root or user. Resolved once per process
-and cached; <code>Dirs::resolve(&amp;Environment)</code> applies the rule to explicit
-inputs for tests.</li>
+<li><code>config::path(Dir::Etc | Var | Run | Share)</code> delegates to the shared
+<a href="/paths/">paths resolver</a>: config, state, runtime and
+prefix/share respectively. Each root uses environment, then layout.mx,
+then defaults. The prefix location selects the system or user tier.
+<code>Dirs::resolve(&amp;Environment)</code> uses an explicit environment snapshot.</li>
 <li><code>config::parse</code> / <code>config::parse_file</code> and <code>Value</code>, <code>Map</code>, <code>Error</code>,
 <code>ErrorKind</code>: the <a href="/strict/">strict</a> crate's strict-data
 loader, re-exported so a config reader needs one dependency. Typed
@@ -256,7 +252,7 @@ loading is <code>strict::from_file</code>.</li>
 <p>No dependency on the Mix language. Test with <code>cargo test -p config</code>.</p>
 <h2 id="node-configuration-and-tls">Node configuration and TLS</h2>
 <p><code>node::NodeConfig</code> reads <code>node.conf.mix</code>, selected by <code>MIXOS_NODE_CONFIG</code>
-or the native <code>Dir::Etc</code> search paths. The optional <code>maild</code> section contains
+or the resolved config directory. The optional <code>maild</code> section contains
 typed ports, hostname, storage paths, spam settings, the legacy <code>tls_cert</code> /
 <code>tls_key</code> pair and <code>tls: { identity: [...], strict_sni: false }</code>. Mail state
 defaults to <code>path(Dir::Var)/maild/{mail.db,blobs,mds}</code>. Unknown service and
@@ -280,16 +276,11 @@ strict loader error); node search/load functions retain <code>anyhow::Result</co
 Verify TLS with <code>cargo test -p config --features tls</code>.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/libs/config"><code>libs/config</code></a>.</p>
 <h2 id="application-directories">Application directories</h2>
-<p><code>AppDirs</code> shares the existing Ced/Dopus per-application root, config, state
-and cache rules. First absolute root wins: <code>MIXOS_APP_HOME</code>, then
-<code>MIXOS_APPS_HOME/&lt;component&gt;</code>, <code>MIXOS_VAR/apps/&lt;component&gt;</code> (or
-<code>MIXOS/var/apps/&lt;component&gt;</code>), <code>XDG_STATE_HOME/mixos/apps/&lt;component&gt;</code>,
-then <code>HOME/.local/state/mixos/apps/&lt;component&gt;</code>. An invalid component or
-absent absolute root returns <code>None</code>. Resolution performs no I/O. App-owned
-filenames stay in their owners; this promotion preserves existing paths and
-lets other native settings consumers use the same isolated cache policy.
-<code>resolve_with</code> injects inputs for tests without mutating process
-environment.</p>
+<p><code>AppDirs</code> places each application's config, durable state and cache under
+<code>&lt;config&gt;/apps/&lt;component&gt;</code>, <code>&lt;state&gt;/apps/&lt;component&gt;</code> and
+<code>&lt;cache&gt;/apps/&lt;component&gt;</code>. Component names cannot escape those roots.
+<code>resolve_with</code> injects resolver inputs for tests. App-owned filenames stay
+with their owners. Existing saved data is not moved by resolution.</p>
 <h2 id="atomic-directories">Atomic directories</h2>
 <p><code>atomic::open_directory</code> refuses symlinks in every component.
 <code>atomic::create_directory</code> uses the same held-descriptor walk and provisions

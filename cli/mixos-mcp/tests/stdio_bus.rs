@@ -23,7 +23,7 @@ async fn application_tools_round_trip_the_registry_contract() {
         .env("MIXOS_BUS_SOCKET", &broker.endpoint)
         .env("MIXOS_BROKER_ACCOUNT", std::env::var("USER").unwrap())
         .env("MIXOS_NODE_CONFIG", &config)
-        .env("MIXOS_ETC", dir.path())
+        .env("MIXOS_CONFIG", dir.path())
         .env("HOME", dir.path())
         .env("MIXOS_LOG", dir.path().join("logs"))
         .current_dir(dir.path());
@@ -212,7 +212,7 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
         .env("MIXOS_BUS_SOCKET", &broker.endpoint)
         .env("MIXOS_BROKER_ACCOUNT", std::env::var("USER").unwrap())
         .env("MIXOS_NODE_CONFIG", &config)
-        .env("MIXOS_ETC", dir.path())
+        .env("MIXOS_CONFIG", dir.path())
         .env("HOME", dir.path())
         .env("MIXOS_LOG", dir.path().join("logs"))
         .current_dir(dir.path());

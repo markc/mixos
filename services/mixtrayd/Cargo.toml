@@ -24,6 +24,7 @@ name = "mixtrayd"
 path = "src/main.rs"
 
 [dependencies]
+paths = { path = "../../libs/paths" }
 anyhow.workspace = true
 bus = { workspace = true, features = ["native"] }
 futures.workspace = true

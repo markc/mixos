@@ -4,7 +4,7 @@
 -- family modes, run as a child process against throwaway trees. Every case
 -- owns a directory under one temp root, removed at the end. Nothing starts a
 -- session, a broker or an application. The gate binary is MIXOS_TEST_MIX when
--- set, else /opt/mixos/bin/mix. The source cases need that native mix to
+-- set, else <prefix>/bin/mix. The source cases need that native mix to
 -- answer `mix lint --json` with parsed handler metadata (schema 2); the fake
 -- lint cases stand in for it to prove each fail-closed path. The
 -- unreadable-directory cases lock a directory to mode 0o000 for their own
@@ -17,8 +17,8 @@
 $tool = realpath(dirname(realpath($0)) .. "/../tools/command_registry.mix")
 $real = realpath(dirname(realpath($0)) .. "/../docs/docs/spec/bus/commands.conf.mix")
 $mix = env("MIXOS_TEST_MIX") ?? ""
-if $mix == "" then $mix = "/opt/mixos/bin/mix" end
-$tmp = "/var/tmp/command-registry-families-test." .. uuid()
+if $mix == "" then $mix = realpath("/proc/self/exe") end
+$tmp = "/tmp/command-registry-families-test." .. uuid()
 mkdir($tmp, {parents: true})
 $results = []
 $skips = []

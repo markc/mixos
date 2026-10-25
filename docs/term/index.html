@@ -297,7 +297,7 @@ cargo build --locked --profile release-fast -p term
 </code></pre>
 <p><code>tests/window.rs</code> takes an offscreen snapshot of the window with two tabs
 and a split; regenerate it with <code>UPDATE_SNAPSHOTS=1</code> and look at it. The
-PTY tests need the Mix binary at <code>/opt/mixos/bin/mix</code>.</p>
+PTY tests need the Mix binary at <code>&lt;prefix&gt;/bin/mix</code>.</p>
 <h2 id="macro-bus-commands">Macro Bus commands</h2>
 <p>The shared <a href="/macros/#bus-commands">macro Bus surface</a> uses this process's
 catalogue and runner. Subscribe to <code>&lt;service&gt;.macros.finished</code> for completion, where <code>service</code> is

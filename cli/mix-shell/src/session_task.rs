@@ -175,7 +175,7 @@ const BASE_NAMES: &[&str] = &[
     "MIXOS",
     "MIXOS_SRC",
     "MIXOS_BIN",
-    "MIXOS_ETC",
+    "MIXOS_CONFIG",
     "MIXOS_NODE_CONFIG",
     "MIXOS_BROKER_ACCOUNT",
 ];
@@ -780,7 +780,7 @@ fn reap_registered(pid: libc::pid_t) {
 ///
 /// But `current_exe` reads `/proc/self/exe`, which names the ORIGINAL inode and
 /// is suffixed " (deleted)" once that inode is unlinked. A mesh deploy replaces
-/// `/opt/mixos/bin/mix` under long-lived shells, and BOTH shapes of replace do
+/// `mixos:prefix/bin/mix` under long-lived shells, and BOTH shapes of replace do
 /// unlink it — measured, not assumed: `rm`-then-write and an atomic
 /// rename-over each produce `…/mix (deleted)`, with the on-disk inode differing
 /// from the running one. Re-exec'ing that path would fail, or worse resolve to
@@ -807,7 +807,7 @@ fn interpreter_from(exe: std::io::Result<std::path::PathBuf>) -> std::path::Path
         // deploy did — so stripping the marker names the new binary, whatever
         // shape the deploy took. Deriving an install path instead would be
         // wrong twice over: with no checkout above it, the resolver answers
-        // `~/.local/bin` (or `/usr/local/bin` as root), not `/opt/mixos/bin`,
+        // `~/.local/bin` (or `/usr/local/bin` as root), not `mixos:prefix/bin`,
         // so on a canonical fleet host it names a file that does not exist —
         // and on a developer's host it names their dev build, resurrecting the
         // silently-wrong-interpreter hazard this whole function exists to kill.

@@ -163,32 +163,18 @@ fn real_mix_receives_only_an_explicit_allowed_target() {
 
 #[test]
 fn roots_are_pure_absolute_and_injectable() {
-    let home = PathBuf::from("/home/user");
     let resolved = Roots::resolve_with(|key| match key {
-        "HOME" => Some(home.clone()),
-        _ => Some("relative".into()),
-    })
-    .unwrap();
-    assert_eq!(resolved.builtin, Path::new("/opt/mixos/share/macros"));
-    assert_eq!(resolved.user, home.join(".config/mixos/macros"));
-    assert_eq!(resolved.mix, Path::new("/opt/mixos/bin/mix"));
-    let resolved = Roots::resolve_with(|key| {
-        Some(PathBuf::from(match key {
-            "HOME" => "/home/user",
-            "MIXOS_SHARE" => "/share",
-            "XDG_CONFIG_HOME" => "/config",
-            "MIXOS_MIX" => "/bin/custom-mix",
-            _ => unreachable!(),
-        }))
-    })
-    .unwrap();
-    assert_eq!(resolved.user, Path::new("/config/mixos/macros"));
-    assert_eq!(resolved.builtin, Path::new("/share/macros"));
-    assert_eq!(resolved.mix, Path::new("/bin/custom-mix"));
+        "HOME" => Some("/home/user".into()),
+        "MIXOS_PREFIX" => Some("/srv/moved tree".into()),
+        "MIXOS_CONFIG" => Some("/isolated/config".into()),
+        _ => None,
+    }).unwrap();
+    assert_eq!(resolved.builtin, Path::new("/srv/moved tree/share/macros"));
+    assert_eq!(resolved.mix, Path::new("/srv/moved tree/bin/mix"));
+    assert_eq!(resolved.user, Path::new("/isolated/config/macros"));
     assert!(Roots::resolve_with(|_| None).is_none());
     assert!(Roots::resolve_with(|_| Some("relative".into())).is_none());
 }
-
 #[test]
 fn ids_refuse_paths_dotfiles_unicode_and_uppercase() {
     for id in ["a", "a1-b_c", "123", "-"] {

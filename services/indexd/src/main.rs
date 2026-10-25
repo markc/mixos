@@ -55,7 +55,7 @@ fn main() -> Result<()> {
                     .filter(|v| !v.is_empty())
                     .map(PathBuf::from)
             })
-            .unwrap_or_else(|| PathBuf::from("/opt/mixos/etc/node.conf.mix"));
+            .unwrap_or_else(|| ::paths::root(::paths::Root::Prefix).join("etc/node.conf.mix"));
         return runtime.block_on(async {
             let client = async {
                 let url = match std::env::var("MIXOS_NODED_URL")

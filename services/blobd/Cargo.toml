@@ -27,6 +27,7 @@ name = "blobd"
 path = "src/main.rs"
 
 [dependencies]
+paths = { path = "../../libs/paths" }
 mds = { path = "../../libs/mds" }
 props = { path = "../../libs/props", features = ["bus"] }
 bus = { path = "../../libs/bus" }

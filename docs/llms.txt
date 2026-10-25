@@ -46,8 +46,8 @@ Cargo workspace and the site source. Paths below are relative to its root.
 In the designated Rust build environment,
 `cargo build --locked --profile release-fast -p system --bin mix` produces
 `target/release-fast/mix`. `cargo build -p mix` builds the language library,
-not the shell executable. Installed binaries belong under `/opt/mixos/bin`.
-Mix programs run directly with `/opt/mixos/bin/mix script.mix`; editing a
+not the shell executable. Installed binaries belong under `<prefix>/bin`.
+Mix programs run directly with `<prefix>/bin/mix script.mix`; editing a
 program does not require compiling Rust. Use `mix builtins NAME` for builtin
 contracts, `run_argv` or `run_argv_must` for processes and `ssh_mix` for remote
 Mix programs.
@@ -158,6 +158,7 @@ One line per component with a page: kind, then install profiles. The
 - [noded](https://mixos.dev/noded/README.md): service; profiles: unclassified. The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
   - [noded — changelog](https://mixos.dev/noded/changelog.md): Release notes of the noded component, mirrored from services/noded/CHANGELOG.md.
 - [notifyd](https://mixos.dev/notifyd/README.md): service; profiles: unclassified. How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
+- [paths](https://mixos.dev/paths/README.md): lib; profiles: none (library). paths resolves the five MixOS roots. It has no workspace dependencies. The running binary finds its prefix through /proc/self/exe, following the managed entry…
 - [portald](https://mixos.dev/portald/README.md): service; profiles: unclassified. How portald serves the XDG Settings and ScreenCast portals on the session bus, where the appearance values and screen frames come from, and how applications and agents use them.
 - [prefs](https://mixos.dev/prefs/README.md): app; profiles: unclassified. MixOS's preferences window — Appearance sets the session's look, fonts and wallpaper; Apps holds Email, Terminal and Text settings; System → Software follows, installs, updates, rolls back and removes upstream releases.
 - [props](https://mixos.dev/props/README.md): lib; profiles: none (library). Property read types, revisions, namespace storage and native Bus routing for MixOS services.
@@ -239,6 +240,7 @@ One line per component with a page: kind, then install profiles. The
 - [Weekly CBC releases, starting with Linux x86_64](https://mixos.dev/docs/decisions/2026-10-22-weekly-cbc-releases.md): MixOS release builds run on designated CBC workers at an exact source commit; GitHub hosts the verified result.
 - [Decision — Bus commands and app actions](https://mixos.dev/docs/decisions/2026-10-24-bus-commands-and-actions.md): A dotted name a service answers is a Bus command and an app's registry entry is an action; "verb" is retired, and each kind of unknown name has one refusal.
 - [Macro-file write authority](https://mixos.dev/docs/decisions/2026-10-24-macro-file-write-authority.md): Status: accepted, 2026-10-24.
+- [Relocatable layout](https://mixos.dev/docs/decisions/2026-10-25-relocatable-layout.md): Status: accepted, 2026-10-25.
 
 ### Specs
 

@@ -162,8 +162,8 @@ impl ChromeTheme {
 }
 
 /// The shared theme file: `theme.conf.mix` in the MixOS etc dir
-/// (`config::path(Dir::Etc)`: `$MIXOS_ETC`, else `$MIXOS/etc`, else
-/// `/etc/mixos` for root, else `$XDG_CONFIG_HOME/mixos`).
+/// (`config::path(Dir::Etc)`: `$MIXOS_CONFIG`, else `$MIXOS/etc`, else
+/// `mixos:config` for root, else `$XDG_CONFIG_HOME/mixos`).
 pub fn theme_path() -> PathBuf {
     config::path(config::Dir::Etc).join("theme.conf.mix")
 }

@@ -165,7 +165,7 @@ fn to_window(
     None
 }
 
-pub const HELP: &str = "term: tabbed Wayland Mix terminal\nMesh-open surface (2026-09-15 law): under the default posture (MIXOS_MESH_OPEN unset or != \"0\") this global name serves every command below to any mesh or local caller, no grant required. Commands are TARGETLESS — unless explicit pane/tab selectors are supplied, they act on the active tab/pane of the instance holding this name at delivery time (term.type excepted: it requires pane or tab); the frontend also starts target-bound control (instance/incarnation/pane_generation) on the allocated native-session route: list/session/tabs/panes/snapshot/type, execute, exec.result/cancel, task.submit/result/cancel, operation, props.get/set and tab/pane mutations. Use the allocated route HELP for target envelopes. These are not targetless commands on this global name. Requires local noded >= 0.16.8 native ingress, MIXOS_RUN=/run/mixos and socket directory 0755; unavailable ingress leaves graphics working. MIXOS_MESH_OPEN=0 restores the strict diagnostic-only lane (INFO/HELP; everything else FORBIDDEN).\nINFO / HELP\nterm.tabs {}: list id, active, title, cols, rows, child_pid, revision, instance (this process's token)\nterm.tab.new {cwd?:<absolute existing directory>, title?:<string>}: open and activate a tab; the reply adds binding=granted (native launch grant delivered, enrolment async), graphics-only (no usable grant) or unavailable (no native session)\nterm.tab.select {\"id\":<integer>}: select tab\nterm.tab.close {\"id\":<integer>}: close tab; last tab quits\nterm.panes {tab?:<integer>}: list selected tab (default active tab) pane ids, focus, dimensions, child pids, logical geometry, tab, revision and instance (last layout only; hidden tabs may be stale or zero)\nterm.pane.split {\"dir\":\"h|horizontal|v|vertical\"}\nterm.pane.close {}: close active pane; last pane closes tab\nterm.pane.select {\"id\":<integer>}: select pane in active tab\nterm.snapshot {pane?:<integer>, tab?:<integer>, contents?:<boolean=true>, scrollback_lines?:<integer=0, max 10000>}: read-only selected live screen (offset zero, default active); buffered history above the live screen is capped at available lines; text has a 512 KiB encoded-byte budget, returns complete oldest-first rows with truncated and lines_returned; formatting happens after releasing capture locks; pane+tab must agree; contents=false omits text but keeps dimensions, cursor, child pid, byte counters and DIAGNOSTIC timings\nterm.scroll {pane?:<integer>, lines?:<signed integer>, page?:<signed integer>, to?:top|bottom}: exactly one of lines/page/to; positive lines or pages move up into history; pages overlap by one row; viewport only, snapshots stay live; returns JSON {pane,display_offset,history_lines}; stale pane is not-found; changed offsets publish pane.changed kind=scrolled when watching\nterm.type {pane:<integer> | tab:<integer>, instance?:<integer>, \"text\":\"<string>\"}: ASCII synthetic keys without changing focus; pane or tab is REQUIRED, neither is refused {error_code:INVALID_ARGUMENT} and never defaults to the active pane. pane is the SAFE selector; tab means that tab's active pane AT DELIVERY, so it still follows focus within the tab; both must agree. Pane/tab ids are per-process counters, so pass back the instance that term.tabs/term.panes/INFO reported: a different process refuses INVALID_ARGUMENT instead of typing into its own pane of that id. Keys go through the keyboard encoder, max 8192 bytes including JSON envelope; newline=Enter, tab, backspace, Ctrl+C/D supported; revokes any delegated control writer like real keys.\nterm.tab.title {id:<integer>, title:<string>}: pin a user title (controls stripped, max 256 UTF-8 bytes); empty after sanitising clears the pin and restores the active pane OSC title\nterm.tab.move {id:<integer>, index:<integer>}: reorder tab, clamping index to 0..len-1; focus is preserved\nterm.props.watch {}: first subscribe through noded topic.subscribe to term.tabs.changed, term.pane.changed and term.title.changed; then call this command to enable caller-free publishing and return JSON {topics,revision}; then read current state. Bodies are {tab,pane,kind,revision}; revision is a separate monotonic event sequence, not the legacy layout revision. Bounded best-effort delivery; on a gap or reconnect read current state.\nBefore the first tab attaches, mutating commands return non-zero rc with error starting. Retry after attach, including with the same request_id; starting refusals are not cached.\nEmpty body is {} for no-arg commands; all term.* bodies must be JSON objects.\nAny MUTATING command's body (tab.*, pane.*, type, scroll) may add \"request_id\":\"<string>\": a resend of the same request (same command and arguments, key order free) replays the recorded reply instead of re-executing (last 128 remembered) — use it on every mutation you might resend. NOT recorded (the same id may be retried with the request fixed): starting, an oversized body, and every validation refusal — malformed JSON, unexpected/missing/mistyped arguments and any invalid-argument or INVALID_ARGUMENT reply (e.g. term.type without pane/tab, a pane/tab disagreement, a foreign instance). Recorded and replayed: successes and state refusals such as not-found, non-ASCII text and the tab limit. A reused id whose first attempt WAS recorded, sent with a different command or arguments, is refused as a conflict. The replay is the recorded outcome of the ORIGINAL attempt; retrying after changing state (e.g. after freeing the tab limit) needs a fresh id. Reads never consult the cache and always answer current state.\nReplies echo the identity acted on as key=value tokens — tab=<id> pane=<id> revision=<tab-set revision> (tab.close: revision only; pane.close: tab and revision; list lines: revision, panes also tab) — so a caller can detect drift after the fact; it is detection, not binding.\nterm.macros.list {}: shared application macro list\nterm.macros.reload {}: shared application macro reload\nterm.macros.run {id}: shared application macro run\nterm.macros.status {}: shared application macro status\nterm.macros.output {}: shared application macro output\nterm.macros.stop {}: shared application macro stop\nterm.macros.new {title}: shared application macro new\nDIAGNOSTIC timings are process-side, never presented-frame evidence.";
+pub const HELP: &str = "term: tabbed Wayland Mix terminal\nMesh-open surface (2026-09-15 law): under the default posture (MIXOS_MESH_OPEN unset or != \"0\") this global name serves every command below to any mesh or local caller, no grant required. Commands are TARGETLESS — unless explicit pane/tab selectors are supplied, they act on the active tab/pane of the instance holding this name at delivery time (term.type excepted: it requires pane or tab); the frontend also starts target-bound control (instance/incarnation/pane_generation) on the allocated native-session route: list/session/tabs/panes/snapshot/type, execute, exec.result/cancel, task.submit/result/cancel, operation, props.get/set and tab/pane mutations. Use the allocated route HELP for target envelopes. These are not targetless commands on this global name. Requires local noded >= 0.16.8 native ingress, the resolved runtime root and socket directory 0755; unavailable ingress leaves graphics working. MIXOS_MESH_OPEN=0 restores the strict diagnostic-only lane (INFO/HELP; everything else FORBIDDEN).\nINFO / HELP\nterm.tabs {}: list id, active, title, cols, rows, child_pid, revision, instance (this process's token)\nterm.tab.new {cwd?:<absolute existing directory>, title?:<string>}: open and activate a tab; the reply adds binding=granted (native launch grant delivered, enrolment async), graphics-only (no usable grant) or unavailable (no native session)\nterm.tab.select {\"id\":<integer>}: select tab\nterm.tab.close {\"id\":<integer>}: close tab; last tab quits\nterm.panes {tab?:<integer>}: list selected tab (default active tab) pane ids, focus, dimensions, child pids, logical geometry, tab, revision and instance (last layout only; hidden tabs may be stale or zero)\nterm.pane.split {\"dir\":\"h|horizontal|v|vertical\"}\nterm.pane.close {}: close active pane; last pane closes tab\nterm.pane.select {\"id\":<integer>}: select pane in active tab\nterm.snapshot {pane?:<integer>, tab?:<integer>, contents?:<boolean=true>, scrollback_lines?:<integer=0, max 10000>}: read-only selected live screen (offset zero, default active); buffered history above the live screen is capped at available lines; text has a 512 KiB encoded-byte budget, returns complete oldest-first rows with truncated and lines_returned; formatting happens after releasing capture locks; pane+tab must agree; contents=false omits text but keeps dimensions, cursor, child pid, byte counters and DIAGNOSTIC timings\nterm.scroll {pane?:<integer>, lines?:<signed integer>, page?:<signed integer>, to?:top|bottom}: exactly one of lines/page/to; positive lines or pages move up into history; pages overlap by one row; viewport only, snapshots stay live; returns JSON {pane,display_offset,history_lines}; stale pane is not-found; changed offsets publish pane.changed kind=scrolled when watching\nterm.type {pane:<integer> | tab:<integer>, instance?:<integer>, \"text\":\"<string>\"}: ASCII synthetic keys without changing focus; pane or tab is REQUIRED, neither is refused {error_code:INVALID_ARGUMENT} and never defaults to the active pane. pane is the SAFE selector; tab means that tab's active pane AT DELIVERY, so it still follows focus within the tab; both must agree. Pane/tab ids are per-process counters, so pass back the instance that term.tabs/term.panes/INFO reported: a different process refuses INVALID_ARGUMENT instead of typing into its own pane of that id. Keys go through the keyboard encoder, max 8192 bytes including JSON envelope; newline=Enter, tab, backspace, Ctrl+C/D supported; revokes any delegated control writer like real keys.\nterm.tab.title {id:<integer>, title:<string>}: pin a user title (controls stripped, max 256 UTF-8 bytes); empty after sanitising clears the pin and restores the active pane OSC title\nterm.tab.move {id:<integer>, index:<integer>}: reorder tab, clamping index to 0..len-1; focus is preserved\nterm.props.watch {}: first subscribe through noded topic.subscribe to term.tabs.changed, term.pane.changed and term.title.changed; then call this command to enable caller-free publishing and return JSON {topics,revision}; then read current state. Bodies are {tab,pane,kind,revision}; revision is a separate monotonic event sequence, not the legacy layout revision. Bounded best-effort delivery; on a gap or reconnect read current state.\nBefore the first tab attaches, mutating commands return non-zero rc with error starting. Retry after attach, including with the same request_id; starting refusals are not cached.\nEmpty body is {} for no-arg commands; all term.* bodies must be JSON objects.\nAny MUTATING command's body (tab.*, pane.*, type, scroll) may add \"request_id\":\"<string>\": a resend of the same request (same command and arguments, key order free) replays the recorded reply instead of re-executing (last 128 remembered) — use it on every mutation you might resend. NOT recorded (the same id may be retried with the request fixed): starting, an oversized body, and every validation refusal — malformed JSON, unexpected/missing/mistyped arguments and any invalid-argument or INVALID_ARGUMENT reply (e.g. term.type without pane/tab, a pane/tab disagreement, a foreign instance). Recorded and replayed: successes and state refusals such as not-found, non-ASCII text and the tab limit. A reused id whose first attempt WAS recorded, sent with a different command or arguments, is refused as a conflict. The replay is the recorded outcome of the ORIGINAL attempt; retrying after changing state (e.g. after freeing the tab limit) needs a fresh id. Reads never consult the cache and always answer current state.\nReplies echo the identity acted on as key=value tokens — tab=<id> pane=<id> revision=<tab-set revision> (tab.close: revision only; pane.close: tab and revision; list lines: revision, panes also tab) — so a caller can detect drift after the fact; it is detection, not binding.\nterm.macros.list {}: shared application macro list\nterm.macros.reload {}: shared application macro reload\nterm.macros.run {id}: shared application macro run\nterm.macros.status {}: shared application macro status\nterm.macros.output {}: shared application macro output\nterm.macros.stop {}: shared application macro stop\nterm.macros.new {title}: shared application macro new\nDIAGNOSTIC timings are process-side, never presented-frame evidence.";
 /// The one spelling the handlers in this crate are written in.
 ///
 /// D1 (TODO-term, 2026-09-21): two binaries cannot both own the global Bus
@@ -1518,7 +1518,7 @@ mod tests {
     }
 
     fn c6_fixture() -> Option<(Mutex<TabSet>, Cleanup, std::thread::JoinHandle<()>)> {
-        if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
             eprintln!("SKIP C6 PTY test: Mix unavailable");
             return None;
         }
@@ -2347,7 +2347,7 @@ mod tests {
     /// one the last-tab close causes, and that close must end the loop.
     #[test]
     fn idle_bus_loop_takes_no_turns_until_the_last_tab_closes() {
-        if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
             eprintln!("SKIP idle Bus loop test: Mix unavailable");
             return;
         }
@@ -2399,7 +2399,7 @@ mod tests {
     /// A set already empty when the loop starts is never waited on.
     #[test]
     fn bus_loop_on_an_empty_set_returns_without_a_turn() {
-        if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
             eprintln!("SKIP empty Bus loop test: Mix unavailable");
             return;
         }
@@ -2434,7 +2434,7 @@ mod tests {
     /// select, both tab.close forms, and the closing latch after the last tab.
     #[test]
     fn tab_commands_echo_exact_identity_and_the_last_close_latches() {
-        if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
             eprintln!("SKIP tab identity test: Mix unavailable");
             return;
         }
@@ -2518,7 +2518,7 @@ mod tests {
     /// starts afterwards completes at once instead of sleeping forever.
     #[test]
     fn a_close_before_the_wait_is_not_lost() {
-        if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
             eprintln!("SKIP emptied permit test: Mix unavailable");
             return;
         }
@@ -2672,7 +2672,7 @@ mod tests {
     /// second reply never comes.
     #[test]
     fn a_panicking_command_is_answered_and_the_lane_keeps_serving() {
-        if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
             eprintln!("SKIP panic continuation test: Mix unavailable");
             return;
         }
@@ -2707,7 +2707,7 @@ mod tests {
     /// a child process (the abort would otherwise kill the test binary).
     #[test]
     fn a_command_that_poisons_the_tab_set_aborts_the_process() {
-        if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
             eprintln!("SKIP poison abort test: Mix unavailable");
             return;
         }
@@ -2791,7 +2791,7 @@ mod tests {
     }
     #[test]
     fn pane_handlers_and_active_snapshot() {
-        if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
             eprintln!("SKIP pane Bus test: Mix unavailable");
             return;
         }
@@ -2883,7 +2883,7 @@ mod tests {
     }
     #[test]
     fn dispatch_posture_gate_and_request_id_replay() {
-        if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
             eprintln!("SKIP dispatch Bus test: Mix unavailable");
             return;
         }
@@ -3258,7 +3258,7 @@ mod tests {
     /// wearing two hats.
     #[test]
     fn altterm_serves_its_own_namespace_and_refuses_terms() {
-        if !std::path::Path::new("/opt/mixos/bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
             eprintln!("SKIP altterm namespace test: Mix unavailable");
             return;
         }

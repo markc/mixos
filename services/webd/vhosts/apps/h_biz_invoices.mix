@@ -16,11 +16,11 @@
 -- Guards: draft-only mutations re-check status='draft' in their SQL WHERE; legacy=1
 -- invoices refuse ALL mutations unless status='open' (the imported open ones ARE payable).
 -- Every mutation is biz_audit-ed. All POSTs answer redirect_flash (PRG).
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
-include "/opt/mixos/vhosts/shared/apps/biz.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
 
 -- ─────────────────────────────── shared helpers ───────────────────────────────
 

@@ -30,7 +30,7 @@ detection and a recoverable change feed. This service owns its actors,
 filesystem watching and the recovery writer.
 
 Discovery uses the shared node configuration. Recovery defaults beneath
-`MIXOS_VAR/edit/recovery`, following the MixOS Var directory rule.
+`MIXOS_STATE/edit/recovery`, following the MixOS Var directory rule.
 `MIXOS_EDIT_RECOVERY_DIR` selects an absolute recovery directory, and
 `MIXOS_EDIT_RECOVERY=0` disables durable recovery. The session supplies its
 own state root.

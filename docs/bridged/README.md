@@ -36,8 +36,8 @@ through. The full contract is in the
 
 ## Setting up an instance
 
-Write the instance config, `/etc/mixos/bridge/<app>.conf.mix` (or
-`$MIXOS_ETC/bridge/<app>.conf.mix` for a session). The file name is the
+Write the instance config, `<config>/bridge/<app>.conf.mix` (or
+`$MIXOS_CONFIG/bridge/<app>.conf.mix` for a session). The file name is the
 instance name:
 
 ```text
@@ -71,7 +71,7 @@ start is refused when:
 - the name belongs to the Bus broker (`noded`, `noded-*`) (`NAME_RESERVED`);
 - the name is the first segment of a command already registered to another
   component, such as `settings` (`NAME_RESERVED`);
-- the installed command registry, `/opt/mixos/share/bus/commands.conf.mix`, is
+- the installed command registry, `<prefix>/share/bus/commands.conf.mix`, is
   missing or unreadable (`REGISTRY`: the check fails closed);
 - the config or the token file is missing or wrong, or the token file is
   readable by group or other (`CONFIG`, `TOKEN`).
@@ -135,7 +135,7 @@ Read this before bridging an application.
   possible future protocol option. Until then, bridge applications only on
   machines whose local users you trust.
 - **The unit's environment is the administrator's.** Keep
-  `/etc/mixos/bridge/<app>.env` and the config writable only by root:
+  `<config>/bridge/<app>.env` and the config writable only by root:
   whoever can change them (`BRIDGED_MIX` in particular) picks the code that
   runs as `mixos`.
 - **The unit is sandboxed.** It runs without capabilities or new
@@ -161,8 +161,8 @@ command registry, `docs/docs/spec/bus/commands.conf.mix` (schema 3), as the `bri
 instance family `<app>.<command>`. The static registry gate checks the family's
 owner and suffix. Installing the registry is a separate prerequisite: the
 scripts and the registry must come from the same revision, and the registry
-must be at `/opt/mixos/share/bus/commands.conf.mix` or named by `BRIDGED_COMMANDS`
-in `/etc/mixos/bridge/<app>.env`. Otherwise every start is refused. This
+must be at `<prefix>/share/bus/commands.conf.mix` or named by `BRIDGED_COMMANDS`
+in `<config>/bridge/<app>.env`. Otherwise every start is refused. This
 source tree is not a live deployment, and nothing in it installs the
 registry for you.
 
@@ -191,15 +191,15 @@ package, identity in `component.mx`. The source is
 |---|---|
 | `scripts/lib/bridge_core.mix` | the stateless core: config, token, serve-name guard, line-JSON client |
 | `scripts/bridged.mix` | the Bus service (`mix --serve … --name <app>`); `--start <app>` (the unit: checks, then the service as a child); `--check <app>` (the checks alone) |
-| `units/bridged@.service` | one unit per application; config `/etc/mixos/bridge/<app>.conf.mix` |
+| `units/bridged@.service` | one unit per application; config `<config>/bridge/<app>.conf.mix` |
 | `tests/lib/fake_app.mix` | a stand-in application on `tcp_listen` (token, key or no auth, slow and dropping methods) |
 | `tests/bridge_core_test.mix` | offline: config, token, guard, spec fixture, the client against stand-in apps |
 | `tests/bridged_test.mix` | every command over a private broker, the start refusals, `--start` (no child on a refusal, the child's exit code passed through), the app dying and coming back |
 
 Run the tests from the checkout root with Mix 0.112.1 or later. The mix
 binary the tests run under is `BRIDGED_MIX`, else `MIXOS_TEST_MIX`, else
-`/opt/mixos/bin/mix`. The Bus test needs a `noded`: `--noded <path>`, else
-`MIXOS_TEST_NODED`, else `/opt/mixos/bin/noded`. An empty variable counts as
+`<prefix>/bin/mix`. The Bus test needs a `noded`: `--noded <path>`, else
+`MIXOS_TEST_NODED`, else `<prefix>/bin/noded`. An empty variable counts as
 unset. `tools/mix_tests.mix` sets `MIXOS_TEST_MIX`, `MIXOS_TEST_NODED` and
 `BRIDGED_MIX` to the fresh build:
 

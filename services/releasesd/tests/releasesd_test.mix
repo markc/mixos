@@ -6,12 +6,12 @@
 -- itself as a serve citizen. Every command is driven with `send`, including the
 -- refusals: a tampered digest, a bad body, an unknown app and a path tag.
 -- Run from the checkout root: mix services/releasesd/tests/releasesd_test.mix [--noded PATH]
--- Needs a noded binary (default /opt/mixos/bin/noded).
+-- Needs a noded binary (default <prefix>/bin/noded).
 
 $pb = require("../../../tests/lib/private_bus.mix")
 $here = dirname(realpath($0))
 $citizen = realpath($here .. "/../scripts/releasesd.mix")
-$noded = "/opt/mixos/bin/noded"
+$noded = (mixos_path("prefix") .. "/bin/noded")
 $a = args()
 if len($a) == 2 and $a[0] == "--noded" then $noded = $a[1] end
 $tmp = "/var/tmp/releasesd-test." .. uuid()
@@ -90,7 +90,7 @@ try
     write_file($api .. "/repos/" .. $spec[0] .. "/releases/tags/" .. $spec[1], json_encode($rel))
     write_file($api .. "/repos/" .. $spec[0] .. "/releases/latest", json_encode($rel))
   end
-  push($pids, spawn(["/opt/mixos/bin/mix", "-c", "http_serve(\"" .. $api .. "\", {port: " .. to_string($port) .. ", host: \"127.0.0.1\", duration: 300})"],
+  push($pids, spawn([(mixos_path("prefix") .. "/bin/mix"), "-c", "http_serve(\"" .. $api .. "\", {port: " .. to_string($port) .. ", host: \"127.0.0.1\", duration: 300})"],
     {detach: true, stdout: {file: $tmp .. "/http.log"}, stderr: "stdout"}))
 
   -- The broker and the citizen.
@@ -99,7 +99,7 @@ try
   $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_RELEASES_ROOT: $tmp .. "/root",
     MIXOS_RELEASES_STATE: $tmp .. "/state", MIXOS_RELEASES_CATALOGUE: $tmp .. "/releases.mx",
     MIXOS_RELEASES_API: $base, GITHUB_TOKEN: "test-token"})
-  push($pids, spawn(["/opt/mixos/bin/mix", "--serve", $citizen, "--name", "releases"],
+  push($pids, spawn([(mixos_path("prefix") .. "/bin/mix"), "--serve", $citizen, "--name", "releases"],
     {detach: true, env: $env, stdout: {file: $tmp .. "/releasesd.log"}, stderr: "stdout"}))
   $up = false
   for $i = 1 to 60
@@ -159,8 +159,8 @@ try
       MIXOS_RELEASES_SHARE: $tmp .. "/share-" .. $tag, MIXOS_RELEASES_BIN: $tmp .. "/bin-" .. $tag,
       MIXOS_RELEASES_CATALOGUE: $tmp .. "/releases.mx", MIXOS_RELEASES_API: $base, PATH: env("PATH")}
   end
-  $racer = spawn(["/opt/mixos/bin/mix", $cli, "install", "demo", "v2.0"], {detach: true, clear_env: true, env: cli_env("a"), stdout: {file: $tmp .. "/race-a.log"}, stderr: "stdout"})
-  $other = run_argv(["/opt/mixos/bin/mix", $cli, "install", "demo", "v1.0"], {clear_env: true, env: cli_env("b"), timeout: 300, stderr: "stdout"})
+  $racer = spawn([(mixos_path("prefix") .. "/bin/mix"), $cli, "install", "demo", "v2.0"], {detach: true, clear_env: true, env: cli_env("a"), stdout: {file: $tmp .. "/race-a.log"}, stderr: "stdout"})
+  $other = run_argv([(mixos_path("prefix") .. "/bin/mix"), $cli, "install", "demo", "v1.0"], {clear_env: true, env: cli_env("b"), timeout: 300, stderr: "stdout"})
   for $w = 1 to 600
     if not process_alive($racer) then break end
     sleep(0.1)

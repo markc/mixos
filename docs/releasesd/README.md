@@ -21,7 +21,7 @@ Your catalogue is `~/.config/mixos/releases.mx`. Until you write one,
 releasesd follows MixOS itself: `mixos-desktop` (the compositor and the
 apps) and `mixos-server` (`mix` and the headless services). This shows the
 latest published version and permits a **per-user** install. It does not
-replace the system's `/opt/mixos` tree or activate a running desk. Your own
+replace the system's `<prefix>` tree or activate a running desk. Your own
 catalogue replaces that list, so keep those entries if you want to follow
 MixOS releases:
 
@@ -56,7 +56,7 @@ mix releases.mix rollback example # back to the previous version
 mix releases.mix remove example
 ```
 
-(`releases.mix` lives with the service in `/opt/mixos/lib/releasesd/`;
+(`releases.mix` lives with the service in `<prefix>/lib/releasesd/`;
 `mix tools/component_install.mix releasesd` puts it there from a checkout.)
 
 `check` uses conditional requests, so asking again costs almost nothing. It
@@ -85,7 +85,7 @@ already at `~/.local/bin/example`, the install leaves it alone and says so.
 
 ## MixOS system updates
 
-An operator updates the canonical `/opt/mixos` tree from the published
+An operator updates the canonical `<prefix>` tree from the published
 `release.manifest.mx` and matching archives with `tools/gold_release.mix`.
 The installer checks the trusted manifest digest, archive and binary hashes,
 architecture and glibc floor. `plan` shows the changes; `apply` records a
@@ -136,7 +136,7 @@ package, identity in `component.mx`. The source is
 
 Run the tests from the checkout root. The offline test needs `bsdtar` for
 two hostile fixtures (the service itself unpacks with Mix's `tar_unpack`); the Bus test
-needs a `noded`, by default `/opt/mixos/bin/noded`, or `--noded <path>`:
+needs a `noded`, by default `<prefix>/bin/noded`, or `--noded <path>`:
 
 ```sh
 mix services/releasesd/tests/releases_test.mix

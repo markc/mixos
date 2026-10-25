@@ -672,6 +672,49 @@ pub fn needs_live_eval(sub: &str) -> bool {
     )
 }
 
+/// Run the shipped renderer using the same binary and layout.
+pub fn run_layout(args: &[String]) -> i32 {
+    if args.first().map(String::as_str) == Some("defaults") {
+        return match layout_defaults(&args[1..]) {
+            Ok(layout) => { println!("{}", serde_json::to_string(&layout).expect("layout JSON")); 0 }
+            Err(error) => { eprintln!("mix layout defaults: {error}"); 2 }
+        };
+    }
+    if args.first().map(String::as_str) != Some("apply") {
+        eprintln!("usage: mix layout apply [--root DIR] [--dry-run] [--image]\n       mix layout defaults --tier system|user [--prefix DIR] --json");
+        return 2;
+    }
+    match std::process::Command::new(std::env::current_exe().expect("self location"))
+        .arg(::paths::share("layout/apply.mix")).args(&args[1..]).status() {
+        Ok(status) => status.code().unwrap_or(1),
+        Err(error) => { eprintln!("mix layout apply: {error}"); 1 }
+    }
+}
+
+fn layout_defaults(args: &[String]) -> Result<std::collections::BTreeMap<String, PathBuf>, String> {
+    let mut tier = None;
+    let mut prefix = None;
+    let mut json = false;
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--tier" if tier.is_none() => tier = Some(args.next().ok_or("--tier needs a value")?),
+            "--prefix" if prefix.is_none() => prefix = Some(Path::new(args.next().ok_or("--prefix needs a value")?)),
+            "--json" if !json => json = true,
+            _ => return Err(format!("unexpected or repeated argument: {arg}")),
+        }
+    }
+    if !json { return Err("--json is required".into()); }
+    let layout = ::paths::Layout::defaults(tier.ok_or("--tier is required")?, prefix, &env::vars().collect())?;
+    let mut out = std::collections::BTreeMap::new();
+    for root in ::paths::Root::ALL {
+        // An unset user runtime is deliberately absent: an installer must
+        // supply it explicitly if its operation requires that root.
+        if let Ok(value) = layout.try_root(root) { out.insert(root.name().to_string(), value); }
+    }
+    Ok(out)
+}
+
 pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String> {
     if args.is_empty() {
         cmd_status(eval, version);
@@ -679,6 +722,10 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
     }
 
     match args[0] {
+        "layout" => {
+            let args: Vec<String> = args[1..].iter().map(|s| s.to_string()).collect();
+            if run_layout(&args) != 0 { mark_missed(); }
+        }
         "vars" => cmd_vars(eval),
         "aliases" => cmd_aliases(eval),
         "functions" => cmd_functions(eval),
@@ -1018,15 +1065,15 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
             "  ⚠ prelude    not loaded (this session ran with --no-prelude; the prelude is fine)"
         );
     }
-    // B14: a /opt/mixos binary whose prelude resolved OUTSIDE the install
+    // B14: a mixos:prefix binary whose prelude resolved OUTSIDE the install
     // tier is a mixed-tier installation (an exported MIXOS pointing at a
     // dev checkout shadows the shipped prelude). Warn, never fail — a dev
     // box doing this deliberately is a choice, not a fault.
     if let Ok(exe) = std::env::current_exe() {
         let exe_path = exe.to_string_lossy().into_owned();
-        if exe_path.starts_with("/opt/mixos/") {
+        if exe_path.starts_with(&::paths::root(::paths::Root::Prefix).to_string_lossy().to_string()) {
             let prelude_src = mixos_src_str();
-            if !prelude_src.starts_with("/opt/mixos/") {
+            if !prelude_src.starts_with(&::paths::root(::paths::Root::Prefix).to_string_lossy().to_string()) {
                 println!(
                     "  ⚠ prelude    resolved outside the install tier: {prelude_src} (binary is {exe_path}) — MIXOS points the /opt binary at a dev checkout"
                 );
@@ -1333,7 +1380,7 @@ fn cmd_config(version: &str) {
     // so beats printing a knob that does not exist.
     let argv0 = std::env::args().next().unwrap_or_default();
     // A login shell is signalled by a '-' prefix on the basename
-    // (`-mix`); a full path like /opt/mixos/bin/-mix still ends in the
+    // (`-mix`); a full path like mixos:prefix/bin/-mix still ends in the
     // prefixed name, so check the file name, not the whole argv[0].
     let login = Path::new(&argv0)
         .file_name()
@@ -1355,7 +1402,7 @@ fn cmd_config(version: &str) {
     );
 }
 
-/// `mix build`: cargo build --release, strip, install to $MIXOS_BIN/
+/// `mix build`: cargo build --release, strip, install to the resolved prefix/bin/
 /// Returns Some(path) if the REPL should save history and exec into the new binary.
 fn cmd_build() -> Option<String> {
     let mix_dir = mixos_src_str();
@@ -1392,7 +1439,7 @@ fn cmd_build() -> Option<String> {
     let dst = format!("{}/mix", bin_dir);
 
     println!("Installing {} -> {}", src, dst);
-    // Direct fs calls — no `sh -c` string, so a MIXOS_BIN/MIXOS_SRC path
+    // Direct fs calls — no `sh -c` string, so a prefix/MIXOS_SRC path
     // containing spaces or shell metacharacters can't be re-interpreted.
     // Remove-then-copy (never write in place) per the ETXTBSY note above;
     // a missing destination is the normal first-install case, not an error.

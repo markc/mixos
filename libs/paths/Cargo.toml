@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[package]
+name = "paths"
+description = "Relocatable MixOS roots and logical paths"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "paths"
+kind = "lib"
+layer = "bus"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"

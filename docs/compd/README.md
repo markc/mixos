@@ -222,7 +222,7 @@ Capture that reference in the console session environment with a running
 `editd`, no existing ced window and a scale-1 output:
 
 ```text
-/opt/mixos/bin/mix services/compd/crates/testkit/scripts/app_reference.mix /tmp/ced-reference.png --comp comp --output OUTPUT
+<prefix>/bin/mix services/compd/crates/testkit/scripts/app_reference.mix /tmp/ced-reference.png --comp comp --output OUTPUT
 ```
 
 The same helper launches the headless test window. It gives ced fresh private
@@ -241,7 +241,7 @@ threshold and 2 for invalid arguments or images, including mismatched sizes.
 
 `compd-headless@.service` runs inside a headless desk with its own noded,
 session bus, PipeWire and portald. `%i` is the session slot (for example
-`rec`), with settings in `/etc/mixos/session/%i.env` and Bus service `comp`
+`rec`), with settings in `<config>/session/%i.env` and Bus service `comp`
 inside that desk. It uses the render group, no seatd or tty, nice 10 and
 `mixos-headless.slice` (`CPUQuota=200%`). Provisioning places the desk's
 capture services and encoder in the same slice. Both units are owned by

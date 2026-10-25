@@ -10,8 +10,8 @@ Type=simple
 User=mixos
 # The session's HOME and XDG directories: state goes to the session user's
 # ~/.local/state/mixos/notifyd/state.json.
-EnvironmentFile=/etc/mixos/session/%i.env
-ExecStart=/opt/mixos/bin/mix --serve /opt/mixos/lib/notifyd/notifyd.mix --name notify
+EnvironmentFile=@{config}/session/%i.env
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/notifyd/notifyd.mix --name notify
 KillMode=control-group
 TimeoutStopSec=10
 Restart=on-failure

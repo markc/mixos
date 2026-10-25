@@ -1,0 +1,82 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Verify release input before executing its staged binary for target defaults.
+fn prepare($opts, $source)
+  $manifest_path = $opts.manifest ?? ""
+  $expect = lower($opts["manifest-sha256"] ?? "")
+  $archive_dir = $opts["archive-dir"] ?? ""
+  $selection = $opts.package ?? ""
+  if (not is_file($manifest_path) or not re_match($expect, "^[0-9a-f]{64}$") or
+      not is_dir($archive_dir) or not contains(["desktop", "server", "all"], $selection)) then
+    raise("GOLD_ARGS", "plan/apply need --manifest FILE --manifest-sha256 HEX --archive-dir DIR --package desktop|server|all")
+  end
+  $stage = "/tmp/mixos-gold-stage-" .. uuid()
+  mkdir($stage)
+  chmod($stage, 0o700)
+  $releases = require($source .. "/services/releasesd/scripts/lib/releases.mix")
+  try
+    -- Copy first, then check the owned copies: a writable input cannot
+    -- change between hash verification and extraction.
+    copy($manifest_path, $stage .. "/release.manifest.mx")
+    if hash_file($stage .. "/release.manifest.mx", "sha256") != $expect then
+      raise("GOLD_DIGEST", "release manifest differs from the trusted digest")
+    end
+    $manifest = load_data($stage .. "/release.manifest.mx")
+    if ($manifest.schema != 1 or not re_match($manifest.source ?? "", "^[0-9a-f]{40}$") or
+        not re_match($manifest.version ?? "", "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$") or
+        $manifest.platform != "linux-x86_64-glibc" or $manifest.glibc_floor != "2.39" or
+        $manifest.fixture != false or
+        type($manifest.archives) != "list") then
+      raise("GOLD_MANIFEST", "unsupported or incomplete x86_64 release manifest")
+    end
+    if platform().arch != "x86_64" then raise("GOLD_ARCH", "this release is for x86_64") end
+    $libc = trim(run_argv_must(["getconf", "GNU_LIBC_VERSION"], {timeout: 10}))
+    if not re_match($libc, "^glibc [0-9]+\\.[0-9]+$") then
+      raise("GOLD_GLIBC", "cannot read host glibc version: " .. $libc)
+    end
+    $parts = split(strip_prefix($libc, "glibc "), ".")
+    if to_number($parts[0]) < 2 or (to_number($parts[0]) == 2 and to_number($parts[1]) < 39) then
+      raise("GOLD_GLIBC", "release needs glibc 2.39 or newer; host has " .. $libc)
+    end
+    $want = if $selection == "all" then ["mixos-desktop", "mixos-server"]
+      elif $selection == "desktop" then ["mixos-desktop"] else ["mixos-server"] end
+    $tops = []
+    for $pkg in $want
+      $rows = filter($manifest.archives, fn($r) = $r.name == $pkg)
+      if len($rows) != 1 then raise("GOLD_MANIFEST", "expected exactly one " .. $pkg .. " archive") end
+      $row = $rows[0]
+      $asset = $pkg .. "-" .. $manifest.version .. "-linux-x86_64.tar.gz"
+      if ($row.asset != $asset or not re_match($row.sha256 ?? "", "^[0-9a-f]{64}$") or
+          type($row.binaries) != "list" or type($row.libraries ?? []) != "list") then
+        raise("GOLD_MANIFEST", "invalid archive record for " .. $pkg)
+      end
+      copy($archive_dir .. "/" .. $asset, $stage .. "/" .. $asset)
+      if hash_file($stage .. "/" .. $asset, "sha256") != $row.sha256 then
+        raise("GOLD_DIGEST", $asset .. " differs from the release manifest")
+      end
+      $extract = $stage .. "/extract-" .. $pkg
+      $_ = tar_unpack($stage .. "/" .. $asset, $extract, {codec: "gzip", numeric_owner: false, xattrs: false})
+      $top = $extract .. "/" .. replace($asset, ".tar.gz", "")
+      if not is_dir($top) or len(glob($extract .. "/*")) != 1 then raise("GOLD_LAYOUT", $asset .. " needs one prefix") end
+      $releases.validate_prefix($top)
+      for $b in $row.binaries
+        if (type($b.name) != "string" or not re_match($b.name, "^[a-z0-9-]+$") or
+            not re_match($b.sha256 ?? "", "^[0-9a-f]{64}$") or
+            hash_file($top .. "/bin/" .. $b.name, "sha256") != $b.sha256) then
+          raise("GOLD_BINARY", $pkg .. " has a missing or different binary")
+        end
+      end
+      for $lib in $row.libraries ?? []
+        if (type($lib.name) != "string" or not re_match($lib.name, "^lib[a-z0-9.-]+\\.so\\.[0-9]+$") or
+            not re_match($lib.sha256 ?? "", "^[0-9a-f]{64}$") or
+            hash_file($top .. "/lib/" .. $lib.name, "sha256") != $lib.sha256) then
+          raise("GOLD_LIBRARY", $pkg .. " has a missing or different runtime library")
+        end
+      end
+      push($tops, $top)
+    end
+    return {stage: $stage, manifest: $manifest, want: $want, tops: $tops, expect: $expect}
+  catch $message, $err
+    remove_dir($stage)
+    raise($err.code ?? "GOLD_STAGE", $message)
+  end
+end

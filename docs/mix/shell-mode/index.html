@@ -258,7 +258,7 @@ that looks like a command rather than Mix code — <code>git status</code>, <cod
 <code>&amp;&amp;</code> / <code>||</code> / <code>;</code> chaining, <code>|</code> pipes, brace expansion, <code>$(...)</code> command
 substitution, redirects. This is <strong>shell-dispatch mode</strong>, the shell half of the
 <code>mix -c</code> / login-shell contract.</p>
-<p>The whole point: a node that runs <code>/opt/mixos/bin/mix</code> as root's login shell
+<p>The whole point: a node that runs <code>&lt;prefix&gt;/bin/mix</code> as root's login shell
 must still honour the universal <code>sh -c</code> contract — <code>ssh host 'hostname'</code> and
 <code>ssh host 'systemctl restart foo'</code> have to <em>just work</em>, while <code>print(1 + 1)</code> and
 every other Mix statement still evaluate as <a href="/mix/overview/">Mix</a>. One classifier

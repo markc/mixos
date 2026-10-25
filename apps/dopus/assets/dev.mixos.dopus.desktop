@@ -3,8 +3,8 @@
 Type=Application
 Name=DOpus
 Comment=MixOS twin-pane file manager
-Exec=/opt/mixos/bin/dopus %F
-TryExec=/opt/mixos/bin/dopus
+Exec=@{prefix}/bin/dopus %F
+TryExec=@{prefix}/bin/dopus
 Icon=dev.mixos.dopus-symbolic
 Terminal=false
 Categories=System;FileManager;

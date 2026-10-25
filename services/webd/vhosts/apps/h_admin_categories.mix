@@ -17,10 +17,10 @@
 --   GET  /admin/categories?edit=<id>  → editor for that category (full page; modal fetch → md fragment)
 --   POST action=save                  → create (no id; slug=slugify(name)) / update (id; slug stays)
 --   POST action=delete / bulk_delete  → reparent children to grandparent, clean relations, remove
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
 
 -- The set of ids in the subtree rooted at $root_id (self + every descendant), as a map id→true
 -- (the cycle guard). MIRRORS h_admin_posts.pp_descendant_set: load the WHOLE category adjacency

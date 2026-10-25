@@ -58,7 +58,7 @@ is silently dropped — and it lights up unchanged when a broker appears (more i
 
 - **A Bus-native shell + scripting language.** `send`, `emit`, `address`, and `on … end` are language keywords that reach peer services over the [Bus](https://github.com/markc/mixos) mesh. No client library, no boilerplate — remote orchestration reads like a local script. See [Bus messaging](bus.md).
 - **A real scripting language.** First-class functions and terse lambdas, higher-order builtins (`map` / `filter` / `reduce` / `sort_by` / …), structured values (string, number, bool, bytes, list, map), `try`/`catch`, closures. See [functions](functions.md) and the [builtins index](builtins.md).
-- **A shell.** It runs external commands, has a REPL with meta-commands (`mix status`, `mix help`, `mix what NAME`), and serves as a daily-driver login shell (`chsh -s /opt/mixos/bin/mix`). Command results are **structured** — `run_rc("cmd")` returns `{rc, stdout, stderr, timed_out, interrupted}`, not exit-code soup. See [running commands](system.md), the [shell](shell-mode.md) page, and [the `mix` meta-command](cli.md).
+- **A shell.** It runs external commands, has a REPL with meta-commands (`mix status`, `mix help`, `mix what NAME`), and serves as a daily-driver login shell (`chsh -s /usr/local/bin/mix`). Command results are **structured** — `run_rc("cmd")` returns `{rc, stdout, stderr, timed_out, interrupted}`, not exit-code soup. See [running commands](system.md), the [shell](shell-mode.md) page, and [the `mix` meta-command](cli.md).
 - **A structured-data format.** Strict-data `.*.mix` files (`.conf.mix`, `.spec.mix`, …) are parsed without executing anything — the substrate's config/state format. See [data & serialization](data.md).
 - **A Bus citizen.** `mix --serve service.mix` runs a script as a supervised, mesh-registered daemon. A script with one `on` handler is a complete service. See [serving as a citizen](serve.md).
 
@@ -105,7 +105,7 @@ It ships as two crates that version in lockstep (a third workspace member,
 
 | Crate | What it is |
 |---|---|
-| **`mixos-lib-mix`** | The interpreter library — lexer, parser, evaluator, builtins, value model. Pure Rust, no internal deps; feature-gated capabilities (`json`, `regex`, `toml`, `datetime`, `url`, `crypto`, `http`, `sqlite`, `dkim`, `markdown`, `datastar`). |
+| **`mixos-lib-mix`** | The interpreter library — lexer, parser, evaluator, builtins, value model. Pure Rust, with the shared paths resolver; feature-gated capabilities (`json`, `regex`, `toml`, `datetime`, `url`, `crypto`, `http`, `sqlite`, `dkim`, `markdown`, `datastar`). |
 | **`mix-shell`** | The shell behind the `mix` binary (built by `cli/system`) — REPL, shell layer, Bus wiring, the `--serve` supervised-citizen runtime, and the `mix man`/`help`/`what` meta-commands. |
 
 A standalone `mix` install runs as a normal scripting shell. When a Bus broker
@@ -113,6 +113,17 @@ A standalone `mix` install runs as a normal scripting shell. When a Bus broker
 on the host, the **same binary** becomes mesh-viable on next invocation — no
 reinstall, no recompile, no script edits. A runtime lazy-probe decides
 bare-vs-mesh at execution time.
+
+MixOS locations use `mixos_path(root[, rel])`, backed by the shared
+[paths resolver](../paths/README.md). For example,
+`mix -c 'print(mixos_path("prefix"))'` prints the current installation prefix.
+
+Before installation, a staged binary can print target defaults independently
+of its own location: `mix layout defaults --tier system --json`, with an
+optional `--prefix DIR`. The `user` tier requires `--prefix`. Installers run
+that staged command even when their own interpreter is the previous release
+or `mix-static`; [relocatable paths](../paths/README.md) describes the target
+flags and receipt-based rollback.
 
 ## How to run it
 
@@ -154,7 +165,7 @@ most of the surprises disappear:
 2. **Concatenation is `..`**, never `+` or `.`: `"a" .. $x .. "b"`. (`+` *adds* when both sides look numeric — `"5" + "5"` is `10`, not `"55"` — and `.` is field access.)
 3. **Statements use newline or `;`.** Prefer newlines in files; use `;` for compact `mix -c` / generated source. On shell-dispatch lines the same glyph remains the shell command-list operator; classification is whole-line, never mixed. See [syntax](syntax.md).
 4. **`${...}` interpolates, bare `$name` is literal** inside double quotes; `'single quotes'` are fully raw; `$(...)` is literal in a Mix string. See [strings](strings.md).
-5. **`run` / `run_rc` spawn `/bin/sh` with a minimal `PATH`** — inside scripts, call binaries by full path (`/opt/mixos/bin/mix`, never bare `mix`). See [running commands](system.md).
+5. **`run` / `run_rc` spawn `/bin/sh` with a minimal `PATH`** — inside scripts, call binaries by full path (`<prefix>/bin/mix`, never bare `mix`). See [running commands](system.md).
 
 Close behind those five: blocks close with `end` (there is no `do` keyword);
 `push()` mutates in place and returns `nil`; and `pos()` is 1-based (0 = not

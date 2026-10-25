@@ -4,9 +4,9 @@
 //! Where the broker is.
 //!
 //! Resolution order: `MIXOS_NODED_URL`; the node configuration file
-//! (`MIXOS_NODE_CONFIG`, else `$MIXOS_ETC/node.conf.mix` when `MIXOS_ETC`
+//! (`MIXOS_NODE_CONFIG`, else `$MIXOS_CONFIG/node.conf.mix` when `MIXOS_CONFIG`
 //! is set, else `~/.config/mixos/node.conf.mix` then
-//! `/etc/mixos/node.conf.mix`); and finally the loopback broker. The
+//! `mixos:config/node.conf.mix`); and finally the loopback broker. The
 //! fallback is loopback, never another node's address: an unconfigured node
 //! must fail to reach its own broker loudly rather than dial someone else's.
 
@@ -20,7 +20,7 @@ pub const DEFAULT_NODED_URL: &str = "ws://127.0.0.1:4200/ws";
 const URL_VAR: &str = "MIXOS_NODED_URL";
 const CONFIG_VAR: &str = "MIXOS_NODE_CONFIG";
 const CONFIG_FILE: &str = "node.conf.mix";
-const SYSTEM_ETC: &str = "/etc/mixos";
+
 const DEFAULT_PORT: u16 = 4200;
 
 /// The broker WebSocket URL for this node.
@@ -77,26 +77,13 @@ pub fn node_config_path() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os(CONFIG_VAR).filter(|p| !p.is_empty()) {
         return Some(PathBuf::from(path));
     }
-    let environment = config::Environment::current();
-    let etc = environment
-        .etc
-        .or_else(|| environment.root.map(|root| root.join("etc")));
-    if let Some(etc) = etc {
-        return Some(etc.join(CONFIG_FILE));
-    }
-    candidate_paths(
-        None,
-        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
-        std::env::var_os("HOME").map(PathBuf::from),
-    )
-    .into_iter()
-    .find(|path| path.is_file())
+    Some(::paths::root(::paths::Root::Config).join(CONFIG_FILE))
 }
 
 /// The search order, the user directory ahead of the system one. When
-/// `MIXOS_ETC` is set it is the only candidate: the caller asked for an
+/// `MIXOS_CONFIG` is set it is the only candidate: the caller asked for an
 /// isolated tree (a test, a chroot, an alternate install) and must not fall
-/// through to the host's `/etc/mixos`.
+/// through to the host's `mixos:config`.
 fn candidate_paths(
     etc: Option<PathBuf>,
     xdg_config_home: Option<PathBuf>,
@@ -112,7 +99,7 @@ fn candidate_paths(
     {
         dirs.push(dir.join("mixos"));
     }
-    dirs.push(PathBuf::from(SYSTEM_ETC));
+    dirs.push(::paths::root(::paths::Root::Config));
     dirs.into_iter().map(|dir| dir.join(CONFIG_FILE)).collect()
 }
 
@@ -288,7 +275,7 @@ observe: {
             paths[0],
             PathBuf::from("/home/user/cfg/mixos/node.conf.mix")
         );
-        // MIXOS_ETC suppresses the system fallback.
+        // MIXOS_CONFIG suppresses the system fallback.
         let paths = candidate_paths(Some(PathBuf::from("/sandbox/etc/mixos")), None, None);
         assert_eq!(
             paths,

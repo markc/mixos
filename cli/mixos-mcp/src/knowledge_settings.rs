@@ -269,7 +269,7 @@ impl Default for IndexdSettings {
             transport: IndexdTransport::Bus,
             target: "indexd".into(),
             ssh_host: String::new(),
-            ssh_command: vec!["/opt/mixos/bin/indexd".into(), "bridge".into()],
+            ssh_command: vec!["mixos:prefix/bin/indexd".into(), "bridge".into()],
             call_timeout_secs: 120,
         }
     }
@@ -334,7 +334,7 @@ mod tests {
         assert_eq!(partial.indexd.call_timeout_secs, 120);
         assert_eq!(
             partial.indexd.ssh_command,
-            ["/opt/mixos/bin/indexd", "bridge"]
+            ["mixos:prefix/bin/indexd", "bridge"]
         );
         std::fs::write(
             dir.path().join("knowledge.conf.mix"),

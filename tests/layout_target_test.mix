@@ -1,0 +1,69 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Installer/bootstrap contracts under the previous Mix, with no live writes.
+$repo = dirname(dirname(realpath($0)))
+$targets = require($repo .. "/tools/lib/layout_target.mix")
+$source_paths = require($repo .. "/docs/_build/source_paths.mix")
+$tmp = "/tmp/mixos-target-test-" .. uuid()
+$prefix = $tmp .. "/target prefix"
+$binary = $tmp .. "/staged mix"
+$fixture = {prefix: $prefix, config: $tmp .. "/default-config", state: $tmp .. "/default-state",
+  cache: $tmp .. "/default-cache", runtime: $tmp .. "/default-runtime"}
+fn need($ok, $message)
+  if not $ok then raise("TARGET_TEST", $message) end
+end
+fn refuses($thunk)
+  try $thunk(); return false catch $message return true end
+end
+mkdir($prefix, {parents: true})
+try
+  write_file($tmp .. "/defaults.mx", data_encode($fixture))
+  $program = <<PROGRAM
+#!/usr/bin/env mix
+$g = getopt(args(), {tier: {arg: true}, prefix: {arg: true}, json: {}})
+if not deep_eq($g.rest, ["layout", "defaults"]) or not $g.opts.json then raise("DEFAULTS_TEST", "bad query") end
+$roots = load_data(@DOCUMENT@)
+if $g.opts.prefix != nil then $roots.prefix = $g.opts.prefix end
+print(json_encode($roots))
+PROGRAM
+  write_file($binary, replace($program, "@DOCUMENT@", json_encode($tmp .. "/defaults.mx")))
+  chmod($binary, 0o755)
+  $first = $targets.resolve({}, $binary, "", {})
+  need(deep_eq($first, $fixture), "default target came from the running interpreter")
+  write_file($prefix .. "/layout.mx", data_encode({config: $tmp .. "/file-config", cache: $tmp .. "/file-cache"}))
+  $next = $targets.resolve({prefix: $prefix, config: $tmp .. "/cli-config"}, $binary, "", {})
+  need($next.prefix == $prefix and $next.config == $tmp .. "/cli-config" and
+    $next.cache == $tmp .. "/file-cache" and $next.state == $fixture.state,
+    "per-root CLI > target layout > staged defaults precedence differs")
+  remove($prefix .. "/layout.mx")
+  $saved = $targets.resolve({"record-only": true}, nil, "", $next)
+  need(deep_eq($saved, $next), "receipt-only rollback required an installed binary")
+  need(refuses(fn() = $targets.resolve({prefix: $prefix, "record-only": true}, $binary, "", {})),
+    "incomplete rollback layout queried a binary")
+  need(refuses(fn() = $targets.resolve({}, nil, "", {})), "unidentified target used the interpreter prefix")
+  need(refuses(fn() = $targets.checked({prefix: $prefix, other: "/bad"})), "unknown target root was accepted")
+  need(refuses(fn() = $targets.checked({prefix: $prefix .. "/../escape"})), "escaping target root was accepted")
+  write_file($prefix .. "/layout.mx", "unknown: '/bad'\n")
+  need(refuses(fn() = $targets.resolve({prefix: $prefix}, $binary, "", {})), "unknown layout key was ignored")
+  remove($prefix .. "/layout.mx")
+  symlink($tmp .. "/defaults.mx", $prefix .. "/layout.mx")
+  need(refuses(fn() = $targets.resolve({prefix: $prefix}, $binary, "", {})), "symlinked target layout was followed")
+  remove($prefix .. "/layout.mx")
+  $sysroot = $tmp .. "/sysroot"
+  mkdir($sysroot .. $prefix, {parents: true})
+  write_file($sysroot .. $prefix .. "/layout.mx", data_encode($fixture))
+  need(deep_eq($targets.resolve({prefix: $prefix}, nil, $sysroot, {}), $fixture), "staging root was mistaken for a prefix")
+  need($source_paths.resolve($repo, "mixos:prefix/share/x") == $repo .. "/share/x" and
+    $source_paths.resolve($repo, "mixos:share/x") == $repo .. "/share/x", "docs resolved outside the checkout")
+  need(refuses(fn() = $source_paths.resolve($repo, "mixos:prefix/../outside")), "docs accepted a source escape")
+  $copy = $tmp .. "/saved-copy"
+  mkdir($copy)
+  $saved_text = json_encode({file: $prefix .. "/share/example"})
+  write_file($copy .. "/saved.json", $saved_text)
+  $migration = run_argv([realpath("/proc/self/exe"), $repo .. "/tools/layout_migrate_saved.mix",
+    "--source", $copy, "--from-layout", $tmp .. "/defaults.mx"], {timeout: 30, stderr: "stdout"})
+  need($migration.ok and contains($migration.stdout, "would migrate") and read_file($copy .. "/saved.json") == $saved_text and
+    not is_file($copy .. "/saved.json.layout-original"), "N-1 migration dry-run changed its offline input")
+  print("PASS target defaults, per-root precedence, receipt-only rollback, sysroot, strict layout, docs source paths and offline migration dry-run under N-1 Mix")
+finally
+  remove_dir($tmp)
+end

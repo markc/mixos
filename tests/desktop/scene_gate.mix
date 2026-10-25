@@ -129,14 +129,14 @@ if not is_file($config) then
 end
 $weston = which("weston")
 -- The citizen's interpreter: PATH, else the system install (systemd-run's
--- PATH lacks /opt/mixos/bin; nested_smoke resolves it the same way).
-$mix = which("mix") ?? "/opt/mixos/bin/mix"
+-- PATH lacks <prefix>/bin; nested_smoke resolves it the same way).
+$mix = which("mix") ?? (mixos_path("prefix") .. "/bin/mix")
 if $weston == nil then
   eprint("needs weston on PATH")
   exit(2)
 end
 if not is_file($mix) then
-  eprint("ERROR: no mix on PATH and /opt/mixos/bin/mix not installed")
+  eprint(("ERROR: no mix on PATH and " .. mixos_path("prefix") .. "/bin/mix not installed"))
   exit(2)
 end
 
@@ -166,7 +166,7 @@ fn noded_url()
   if $set != "" then
     return $set
   end
-  for each $path in [env("HOME", "") .. "/.config/mixos/node.conf.mix", "/etc/mixos/node.conf.mix"]
+  for each $path in [env("HOME", "") .. "/.config/mixos/node.conf.mix", (mixos_path("config") .. "/node.conf.mix")]
     if is_file($path) then
       $c = load_data($path)
       $host = $c.wg_ip ?? ""
@@ -341,7 +341,7 @@ $kp = spawn([$mix, "--serve", $cfile, "--name", $citizen], {env: {MIXOS_NODED_UR
 $before = sockets($root)
 -- Panel persistence belongs to this run, including scaled reruns.
 mkdir($root .. "/var", {parents: true})
-$cenv = {MIXOS_VAR: $root .. "/var", XDG_RUNTIME_DIR: $root, LIBGL_ALWAYS_SOFTWARE: "1", WAYLAND_DISPLAY: "wl-host", MIXOS_NODED_URL: $NODED, COMPD_FRAME_TRACE: "1", COMPD_FRAME_TRACE_FILE: $TRACE}
+$cenv = {MIXOS_STATE: $root .. "/var", XDG_RUNTIME_DIR: $root, LIBGL_ALWAYS_SOFTWARE: "1", WAYLAND_DISPLAY: "wl-host", MIXOS_NODED_URL: $NODED, COMPD_FRAME_TRACE: "1", COMPD_FRAME_TRACE_FILE: $TRACE}
 $compd_argv = [$bin, "--config-file=" .. $cfg .. "/smoke-settings.json", "--bus-service", $svc, "--scene-service", $override]
 if $SCALE != 1 then
   push($compd_argv, "--scale=" .. to_string($SCALE))

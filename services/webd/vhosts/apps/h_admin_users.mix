@@ -4,11 +4,11 @@
 -- panel: users_resource() declares list/form/policy and resource_engine.mix
 -- interprets it (list, md-edit modal + canvas editor, save with derived
 -- salt/pass_hash, guarded atomic deletes — never self, never the last admin).
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/admin_resource.mix"
-include "/opt/mixos/vhosts/shared/lib/resource_engine.mix"
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/admin_resource.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/lib/resource_engine.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
 
 -- Map a user role to a Filament badge variant: admin → amber (primary), else gray.
 function user_role_variant($r)

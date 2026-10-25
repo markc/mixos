@@ -759,6 +759,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [monitord](../monitord/README.md) · [changelog](../monitord/changelog.md) | service | base | [`services/monitord`](https://github.com/markc/mixos/tree/main/services/monitord) | How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read commands on the Bus, so any node's load can be read from anywhere on the… |
 | [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) | The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes. |
 | [notifyd](../notifyd/README.md) | service | unclassified | [`services/notifyd`](https://github.com/markc/mixos/tree/main/services/notifyd) | How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed. |
+| [paths](../paths/README.md) | lib | none (library) | [`libs/paths`](https://github.com/markc/mixos/tree/main/libs/paths) |  |
 | [portald](../portald/README.md) | service | unclassified | [`services/portald`](https://github.com/markc/mixos/tree/main/services/portald) | How portald serves the XDG Settings and ScreenCast portals on the session bus, where the appearance values and screen frames come from, and how applications and agents use them. |
 | [prefs](../prefs/README.md) | app | unclassified | [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs) | MixOS's preferences window — Appearance sets the session's look, fonts and wallpaper; Apps holds Email, Terminal and Text settings; System → Software follows, installs, updates, rolls back and… |
 | [props](../props/README.md) | lib | none (library) | [`libs/props`](https://github.com/markc/mixos/tree/main/libs/props) | Property read types, revisions, namespace storage and native Bus routing for MixOS services. |
@@ -828,6 +829,7 @@ checked separately by the layering gate.
 | [mds](https://github.com/markc/mixos/blob/main/libs/mds/Cargo.toml) | mds | lib | core | none | 0.1.2 |
 | [mimedb](https://github.com/markc/mixos/blob/main/libs/mimedb/Cargo.toml) | mimedb | lib | mix | none | 0.1.2 |
 | [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.117.0 |
+| [paths](https://github.com/markc/mixos/blob/main/libs/paths/Cargo.toml) | paths | lib | bus | none | 0.1.2 |
 | [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.2 |
 | [scene](https://github.com/markc/mixos/blob/main/libs/scene/Cargo.toml) | scene | lib | core | none | 0.1.2 |
 | [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.8.0 |
@@ -1266,7 +1268,7 @@ apart from the core the way [bus](../bus/README.md) keeps `noded_url()`:
 |---|---|
 | 1 | `$XDG_DATA_HOME/mixos/assets` (`~/.local/share/mixos/assets`) |
 | 2 | each `$XDG_DATA_DIRS` entry's `mixos/assets` (`/usr/local/share`, `/usr/share`) |
-| 3 | `assets` under `config::path(Dir::Share)`: `$MIXOS_SHARE/assets`, default `/opt/mixos/share/assets` |
+| 3 | `assets` under `config::path(Dir::Share)`: `$MIXOS_SHARE/assets`, default `<prefix>/share/assets` |
 
 ```rust
 let set = assets::mixos::discover()?;              // once, at startup, hashes verified
@@ -1278,7 +1280,7 @@ let lookup = assets::mixos::lookup_in(&xdg, &share); // explicit inputs
 The lock and installer for the MixOS set live in
 [`share/assets/`](https://github.com/markc/mixos/tree/main/share/assets)
 (`core.conf.mix`, `install.mix`), which publishes to
-`/opt/mixos/share/assets`.
+`<prefix>/share/assets`.
 
 ## Testing
 
@@ -1583,7 +1585,7 @@ and the state root.
 
 - **Storage:** the store runs on the `mds` library (`libs/mds`).
 - **Identity kept on disk:** the cas group `blob` and the state root
-  `/var/lib/mixos/blobd` are unchanged, so the port reads the live store on
+  `<state>/blobd` are unchanged, so the port reads the live store on
   the existing nodes without moving data.
 
 ---
@@ -1623,8 +1625,8 @@ through. The full contract is in the
 
 ## Setting up an instance
 
-Write the instance config, `/etc/mixos/bridge/<app>.conf.mix` (or
-`$MIXOS_ETC/bridge/<app>.conf.mix` for a session). The file name is the
+Write the instance config, `<config>/bridge/<app>.conf.mix` (or
+`$MIXOS_CONFIG/bridge/<app>.conf.mix` for a session). The file name is the
 instance name:
 
 ```text
@@ -1658,7 +1660,7 @@ start is refused when:
 - the name belongs to the Bus broker (`noded`, `noded-*`) (`NAME_RESERVED`);
 - the name is the first segment of a command already registered to another
   component, such as `settings` (`NAME_RESERVED`);
-- the installed command registry, `/opt/mixos/share/bus/commands.conf.mix`, is
+- the installed command registry, `<prefix>/share/bus/commands.conf.mix`, is
   missing or unreadable (`REGISTRY`: the check fails closed);
 - the config or the token file is missing or wrong, or the token file is
   readable by group or other (`CONFIG`, `TOKEN`).
@@ -1722,7 +1724,7 @@ Read this before bridging an application.
   possible future protocol option. Until then, bridge applications only on
   machines whose local users you trust.
 - **The unit's environment is the administrator's.** Keep
-  `/etc/mixos/bridge/<app>.env` and the config writable only by root:
+  `<config>/bridge/<app>.env` and the config writable only by root:
   whoever can change them (`BRIDGED_MIX` in particular) picks the code that
   runs as `mixos`.
 - **The unit is sandboxed.** It runs without capabilities or new
@@ -1748,8 +1750,8 @@ command registry, `docs/docs/spec/bus/commands.conf.mix` (schema 3), as the `bri
 instance family `<app>.<command>`. The static registry gate checks the family's
 owner and suffix. Installing the registry is a separate prerequisite: the
 scripts and the registry must come from the same revision, and the registry
-must be at `/opt/mixos/share/bus/commands.conf.mix` or named by `BRIDGED_COMMANDS`
-in `/etc/mixos/bridge/<app>.env`. Otherwise every start is refused. This
+must be at `<prefix>/share/bus/commands.conf.mix` or named by `BRIDGED_COMMANDS`
+in `<config>/bridge/<app>.env`. Otherwise every start is refused. This
 source tree is not a live deployment, and nothing in it installs the
 registry for you.
 
@@ -1778,15 +1780,15 @@ package, identity in `component.mx`. The source is
 |---|---|
 | `scripts/lib/bridge_core.mix` | the stateless core: config, token, serve-name guard, line-JSON client |
 | `scripts/bridged.mix` | the Bus service (`mix --serve … --name <app>`); `--start <app>` (the unit: checks, then the service as a child); `--check <app>` (the checks alone) |
-| `units/bridged@.service` | one unit per application; config `/etc/mixos/bridge/<app>.conf.mix` |
+| `units/bridged@.service` | one unit per application; config `<config>/bridge/<app>.conf.mix` |
 | `tests/lib/fake_app.mix` | a stand-in application on `tcp_listen` (token, key or no auth, slow and dropping methods) |
 | `tests/bridge_core_test.mix` | offline: config, token, guard, spec fixture, the client against stand-in apps |
 | `tests/bridged_test.mix` | every command over a private broker, the start refusals, `--start` (no child on a refusal, the child's exit code passed through), the app dying and coming back |
 
 Run the tests from the checkout root with Mix 0.112.1 or later. The mix
 binary the tests run under is `BRIDGED_MIX`, else `MIXOS_TEST_MIX`, else
-`/opt/mixos/bin/mix`. The Bus test needs a `noded`: `--noded <path>`, else
-`MIXOS_TEST_NODED`, else `/opt/mixos/bin/noded`. An empty variable counts as
+`<prefix>/bin/mix`. The Bus test needs a `noded`: `--noded <path>`, else
+`MIXOS_TEST_NODED`, else `<prefix>/bin/noded`. An empty variable counts as
 unset. `tools/mix_tests.mix` sets `MIXOS_TEST_MIX`, `MIXOS_TEST_NODED` and
 `BRIDGED_MIX` to the fresh build:
 
@@ -1841,7 +1843,7 @@ The Bus wire format and the broker client.
   broker restarts and which replays every recorded topic subscription before
   reporting `Connected`; `IncomingCommand`; and `noded_url()`, which finds
   the broker (`MIXOS_NODED_URL`, then `node.conf.mix` via
-  `MIXOS_NODE_CONFIG`, `$MIXOS_ETC`, `~/.config/mixos` or `/etc/mixos`, then
+  `MIXOS_NODE_CONFIG`, `$MIXOS_CONFIG`, `~/.config/mixos` or `<config>`, then
   `ws://127.0.0.1:4200/ws`).
 
 A wire-only consumer depends on `bus` with `default-features = false` and
@@ -2260,7 +2262,7 @@ Capture that reference in the console session environment with a running
 `editd`, no existing ced window and a scale-1 output:
 
 ```text
-/opt/mixos/bin/mix services/compd/crates/testkit/scripts/app_reference.mix /tmp/ced-reference.png --comp comp --output OUTPUT
+<prefix>/bin/mix services/compd/crates/testkit/scripts/app_reference.mix /tmp/ced-reference.png --comp comp --output OUTPUT
 ```
 
 The same helper launches the headless test window. It gives ced fresh private
@@ -2279,7 +2281,7 @@ threshold and 2 for invalid arguments or images, including mismatched sizes.
 
 `compd-headless@.service` runs inside a headless desk with its own noded,
 session bus, PipeWire and portald. `%i` is the session slot (for example
-`rec`), with settings in `/etc/mixos/session/%i.env` and Bus service `comp`
+`rec`), with settings in `<config>/session/%i.env` and Bus service `comp`
 inside that desk. It uses the render group, no seatd or tty, nice 10 and
 `mixos-headless.slice` (`CPUQuota=200%`). Provisioning places the desk's
 capture services and encoder in the same slice. Both units are owned by
@@ -2369,15 +2371,11 @@ mix tests/desktop/parity_suite.mix --help
 
 Where MixOS keeps its files, and how a `*.conf.mix` file is read.
 
-- `config::path(Dir::Etc | Var | Run | Share)`: one rule for every
-  directory. A `MIXOS_ETC` / `MIXOS_VAR` / `MIXOS_RUN` / `MIXOS_SHARE`
-  override wins; else `$MIXOS/etc`, `/var`, `/run` when a root is set; else
-  the XDG directory for a user (`~/.config/mixos`, `~/.local/share/mixos`,
-  `$XDG_RUNTIME_DIR/mixos`) or the system directory for root (`/etc/mixos`,
-  `/var/lib/mixos`, `/run/mixos`). `Share` is installed read-only data at
-  `/opt/mixos/share` whatever the root or user. Resolved once per process
-  and cached; `Dirs::resolve(&Environment)` applies the rule to explicit
-  inputs for tests.
+- `config::path(Dir::Etc | Var | Run | Share)` delegates to the shared
+  [paths resolver](../paths/README.md): config, state, runtime and
+  prefix/share respectively. Each root uses environment, then layout.mx,
+  then defaults. The prefix location selects the system or user tier.
+  `Dirs::resolve(&Environment)` uses an explicit environment snapshot.
 - `config::parse` / `config::parse_file` and `Value`, `Map`, `Error`,
   `ErrorKind`: the [strict](../strict/README.md) crate's strict-data
   loader, re-exported so a config reader needs one dependency. Typed
@@ -2388,7 +2386,7 @@ No dependency on the Mix language. Test with `cargo test -p config`.
 ## Node configuration and TLS
 
 `node::NodeConfig` reads `node.conf.mix`, selected by `MIXOS_NODE_CONFIG`
-or the native `Dir::Etc` search paths. The optional `maild` section contains
+or the resolved config directory. The optional `maild` section contains
 typed ports, hostname, storage paths, spam settings, the legacy `tls_cert` /
 `tls_key` pair and `tls: { identity: [...], strict_sni: false }`. Mail state
 defaults to `path(Dir::Var)/maild/{mail.db,blobs,mds}`. Unknown service and
@@ -2418,16 +2416,11 @@ The source is [`libs/config`](https://github.com/markc/mixos/tree/main/libs/conf
 
 ## Application directories
 
-`AppDirs` shares the existing Ced/Dopus per-application root, config, state
-and cache rules. First absolute root wins: `MIXOS_APP_HOME`, then
-`MIXOS_APPS_HOME/<component>`, `MIXOS_VAR/apps/<component>` (or
-`MIXOS/var/apps/<component>`), `XDG_STATE_HOME/mixos/apps/<component>`,
-then `HOME/.local/state/mixos/apps/<component>`. An invalid component or
-absent absolute root returns `None`. Resolution performs no I/O. App-owned
-filenames stay in their owners; this promotion preserves existing paths and
-lets other native settings consumers use the same isolated cache policy.
-`resolve_with` injects inputs for tests without mutating process
-environment.
+`AppDirs` places each application's config, durable state and cache under
+`<config>/apps/<component>`, `<state>/apps/<component>` and
+`<cache>/apps/<component>`. Component names cannot escape those roots.
+`resolve_with` injects resolver inputs for tests. App-owned filenames stay
+with their owners. Existing saved data is not moved by resolution.
 
 ## Atomic directories
 
@@ -2585,12 +2578,12 @@ authority and does not recurse. The private `dns-core` crate owns the zone
 model, parsing, snapshots, persistence, resolver and wire codec.
 
 ```text
-/opt/mixos/bin/dnsd --zones /opt/mixos/etc/dnsd/zones.mix --state /var/lib/mixos/dnsd/state --listen 127.0.0.1:5353
+<prefix>/bin/dnsd --zones <prefix>/etc/dnsd/zones.mix --state <state>/dnsd/state --listen 127.0.0.1:5353
 ```
 
 All three arguments are required. Repeat `--listen` to bind more than one
 address. Wildcard binds are refused. The default `mixos` feature reads
-`node.conf.mix` using `config` (including `MIXOS_ETC` and
+`node.conf.mix` using `config` (including `MIXOS_CONFIG` and
 `MIXOS_NODE_CONFIG`) and accepts the configured WireGuard IP or loopback.
 If node configuration is absent or invalid, non-loopback binds require
 `--allow-non-loopback-listen`, with a warning. The standalone build
@@ -2613,14 +2606,14 @@ The `dnsd` Bus service exposes two read-only queries:
 DNS serving continues while the broker is unavailable. Registration
 retries with bounded exponential backoff. Mutation commands are rejected.
 
-`services/dnsd/units/dnsd.service` runs `/opt/mixos/bin/dnsd` as `dnsd`,
+`services/dnsd/units/dnsd.service` runs `<prefix>/bin/dnsd` as `dnsd`,
 with UID and GID 506, `CAP_NET_BIND_SERVICE` and the original hardening.
-Its config root is `MIXOS_ETC=/opt/mixos/etc`, with `dnsd/zones.mix` and
+Its config root is `MIXOS_CONFIG=<prefix>/etc`, with `dnsd/zones.mix` and
 `dnsd/service.env` (`LISTEN=192.0.2.10:53`). Its state root is
-`MIXOS_VAR=/var/lib/mixos`, with `dnsd/state`. The unit sets those roots
+`MIXOS_STATE=<state>`, with `dnsd/state`. The unit sets those roots
 explicitly; changing the roots also requires overriding its argument and
 environment-file paths. Node identity comes from
-`/opt/mixos/etc/node.conf.mix`. The sysusers and tmpfiles fragments are
+`<prefix>/etc/node.conf.mix`. The sysusers and tmpfiles fragments are
 owned by the component. Installing these files does not activate DNS.
 
 ```text
@@ -6173,6 +6166,47 @@ a person had pressed Save.
 
 ---
 
+<!-- page: https://mixos.dev/docs/decisions/2026-10-25-relocatable-layout/ (source: https://mixos.dev/docs/decisions/2026-10-25-relocatable-layout.md) -->
+
+# Relocatable layout
+
+Status: accepted, 2026-10-25.
+
+1. MixOS code asks for a root rather than naming an installation location.
+   This is a clean break, without old-path fallbacks or location aliases.
+2. The only roots are `prefix`, `config`, `state`, `cache` and `runtime`.
+   `bin`, `lib` and `share` are children of prefix. The default table and
+   system/user tier rule are in the [paths manual](../../paths/README.md).
+3. Precedence is per root: `MIXOS_<ROOT>`, then `<prefix>/layout.mx`, then
+   defaults. Prefix self-location follows `/proc/self/exe` through symlinks.
+   A layout document has at most five unique known keys and is strict data.
+4. `libs/paths` owns resolution and depends on no workspace crate. Rust uses
+   `paths::root`, `bin`, `share` and `resolve`; Mix uses `mixos_path`.
+5. Files read by external programs are rendered from `@{root}` templates.
+   `mix layout apply` renders them idempotently. Component unit sources stay
+   with their owner; installed templates ship under `share/layout/`.
+   Moving a tree requires re-rendering and restarting affected processes.
+6. Saved MixOS references use `mixos:<root>/<relative>`. Readers resolve the
+   reference at use time. Root escapes refuse. User-owned paths stay unchanged.
+   Offline migration retains originals; live migration is a separate operation.
+7. `tools/path_gate.mix` joins lint. Literal defaults belong only in the
+   resolver, external templates, default assertions and documentation.
+   Shipped scripts use `#!/usr/bin/env mix` or are invoked with `mix`.
+8. Release proof installs to an owned temporary prefix with a space and hides
+   the old prefix and config roots in a private mount namespace. It exercises
+   installer tests, scenes, a nested desktop and SSH loopback where available.
+   Unsupported privileged fixtures report a skip rather than passing silently.
+9. One managed link is the fixed entry point: `/usr/local/bin/mix` on hosts,
+   `/usr/bin/mix` only inside a MixOS-owned image. Login shells and `/etc/shells`
+   use that link. `mix-static` remains unlinked. Host Elixir installations do
+   not change the chosen name. Remote precedence is option, environment,
+   per-host table when one exists, then bare `mix` on PATH.
+
+This changes no live installation and does not introduce hot relocation,
+generations or a versioned store. The default layout stays in place.
+
+---
+
 <!-- page: https://mixos.dev/docs/dev/2026-10-21-source-and-build-map/ (source: https://mixos.dev/docs/dev/2026-10-21-source-and-build-map.md) -->
 
 ## Read first
@@ -6211,8 +6245,8 @@ Cargo workspace and the site source. Paths below are relative to its root.
 In the designated Rust build environment,
 `cargo build --locked --profile release-fast -p system --bin mix` produces
 `target/release-fast/mix`. `cargo build -p mix` builds the language library,
-not the shell executable. Installed binaries belong under `/opt/mixos/bin`.
-Mix programs run directly with `/opt/mixos/bin/mix script.mix`; editing a
+not the shell executable. Installed binaries belong under `<prefix>/bin`.
+Mix programs run directly with `<prefix>/bin/mix script.mix`; editing a
 program does not require compiling Rust. Use `mix builtins NAME` for builtin
 contracts, `run_argv` or `run_argv_must` for processes and `ssh_mix` for remote
 Mix programs.
@@ -6273,7 +6307,7 @@ After installing the listed build dependencies in the root, the CBC worker
 can provision the pinned library with:
 
 ```text
-/opt/mixos/bin/mix tools/libinput_compat.mix \
+<prefix>/bin/mix tools/libinput_compat.mix \
   --rootfs /srv/ubuntu-24.04-root --target-dir /srv/mixos-target
 ```
 
@@ -6325,11 +6359,11 @@ a missing or changed archive, wrong source or architecture, a glibc floor
 above the host, and unsafe archive paths.
 
 ```text
-sudo /opt/mixos/bin/mix tools/gold_release.mix plan \
+sudo <prefix>/bin/mix tools/gold_release.mix plan \
   --manifest /path/to/release.manifest.mx --manifest-sha256 TRUSTED_SHA256 \
   --archive-dir /path/to/assets --package desktop
 
-sudo /opt/mixos/bin/mix tools/gold_release.mix apply \
+sudo <prefix>/bin/mix tools/gold_release.mix apply \
   --manifest /path/to/release.manifest.mx --manifest-sha256 TRUSTED_SHA256 \
   --archive-dir /path/to/assets --package desktop
 ```
@@ -6428,7 +6462,7 @@ gate `tools/command_registry.mix` checks the family's owner and suffix;
 collisions only and reads no config token. The runtime guard reads the commands
 and families lists but does not enforce the full canonical format. Installing
 the registry is a separate deployed prerequisite: the scripts and the registry
-come from the same revision, at `/opt/mixos/share/bus/commands.conf.mix` or the
+come from the same revision, at `<prefix>/share/bus/commands.conf.mix` or the
 `BRIDGED_COMMANDS` override.
 
 **Classes.** `<app>.call` and `<app>.execute` are `intent`; `<app>.actions`,
@@ -6442,7 +6476,7 @@ the [decision](../../decisions/2026-10-13-instance-verb-families.md).
 A strict-data document (`load_data`; never executed).
 
 **Path:** `$BRIDGED_CONFIG` when set; otherwise `<etc>/bridge/<app>.conf.mix`,
-where `<etc>` is `$MIXOS_ETC` when set, else `/etc/mixos`. The file stem is
+where `<etc>` is `$MIXOS_CONFIG` when set, else `<config>`. The file stem is
 the serve name.
 
 ```text
@@ -6478,7 +6512,7 @@ differ). The broker's own names are refused as noded refuses them: `noded`,
 [a-z2-7]>`. It must also not be the first segment of a command the registry
 already gives to another component, so an instance can never answer, say,
 `settings.status`. The registry read is `$BRIDGED_COMMANDS`, else the installed
-`/opt/mixos/share/bus/commands.conf.mix`:
+`<prefix>/share/bus/commands.conf.mix`:
 
 | Registry entry | Reserves |
 |---|---|
@@ -6512,7 +6546,7 @@ restarted under `Restart=on-failure` and rate-limited by
 systemd signals both processes, and Mix records the SIGTERM the parent gets
 and exits 143 whatever the child returned, so the unit lists
 `SuccessExitStatus=143`. `$BRIDGED_MIX` overrides the mix binary the child
-runs under (default `/opt/mixos/bin/mix`); it exists for tests.
+runs under (default `<prefix>/bin/mix`); it exists for tests.
 
 Starting `mix --serve bridged.mix --name <app>` directly, not through
 `--start`, registers the name on the Bus before the checks run, so a
@@ -7891,7 +7925,7 @@ detection and a recoverable change feed. This service owns its actors,
 filesystem watching and the recovery writer.
 
 Discovery uses the shared node configuration. Recovery defaults beneath
-`MIXOS_VAR/edit/recovery`, following the MixOS Var directory rule.
+`MIXOS_STATE/edit/recovery`, following the MixOS Var directory rule.
 `MIXOS_EDIT_RECOVERY_DIR` selects an absolute recovery directory, and
 `MIXOS_EDIT_RECOVERY=0` disables durable recovery. The session supplies its
 own state root.
@@ -8980,12 +9014,12 @@ Deletion updates the durable vectors and in-memory index in one operation.
 
 ## CLI and bridge
 
-`indexd -c /etc/mixos/indexd/config.conf.mix call indexd.stats` opens the
+`indexd -c <config>/indexd/config.conf.mix call indexd.stats` opens the
 configured engine in-process and prints one JSON reply, with exit status 0
 for success or 1 for an error. Bare command names also work. For example:
 
 ```text
-indexd -c /etc/mixos/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
+indexd -c <config>/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
 ```
 
 Writes (`store`, `update`, `delete`, `feedback`, `supersede`, `index_file`)
@@ -8996,10 +9030,10 @@ index would desynchronise. Read commands need no flag. `call` always refuses
 `indexd bridge` connects to the local node's Bus once and forwards one call
 per stdin line, flushing each reply immediately. It does not open the index
 or require model configuration. Keep one process alive for repeated requests,
-including through `ssh -T user@example.test /opt/mixos/bin/indexd bridge`.
+including through `ssh -T user@example.test <prefix>/bin/indexd bridge`.
 The bridge honours non-empty `MIXOS_NODED_URL` first. Otherwise it reads
 `--node-config PATH`, then non-empty `MIXOS_NODE_CONFIG`, defaulting to
-`/opt/mixos/etc/node.conf.mix`, the same file pinned by the system unit.
+`<prefix>/etc/node.conf.mix`, the same file pinned by the system unit.
 It derives the broker address from that file rather than user config discovery.
 
 ```json
@@ -9022,13 +9056,13 @@ become JSON `null`; Bus error headers are forwarded as the top-level `error`.
 `indexd serve` registers service `indexd` using the standard Bus connection
 helper, advertises the eleven commands above, and reconnects with backoff.
 `MIXOS_NODE_CONFIG` selects the system broker, as for dnsd. The supplied unit
-pins `/opt/mixos/etc/node.conf.mix`; no broker URL is embedded in indexd.
+pins `<prefix>/etc/node.conf.mix`; no broker URL is embedded in indexd.
 SIGTERM stops admission and completes accepted Bus calls before exit.
 The model loads lazily on the blocking pool under the inference permit and
 unloads after the configured idle interval (300 seconds by default).
 
 Configuration lookup is `-c/--config`, then
-`/etc/mixos/indexd/config.conf.mix`, then
+`<config>/indexd/config.conf.mix`, then
 `$XDG_CONFIG_HOME/mixos/indexd.conf.mix` (or the equivalent under `$HOME/.config`).
 `indexd -c FILE check-config` validates the local `config.json`,
 `tokenizer.json` and `model.safetensors` before loading any weights. HF snapshot
@@ -9059,9 +9093,9 @@ The component owns `indexd.service` and `sysusers.conf`; the desktop release
 bundle carries the standalone binary and these files under `share/indexd/units/`,
 with the sample config under `share/indexd/examples/config.conf.mix`,
 following the component-owned maild packaging pattern. Install the binary
-under `/opt/mixos/bin`, the unit under `/etc/systemd/system`, sysusers under
+under `<prefix>/bin`, the unit under `/etc/systemd/system`, sysusers under
 `/usr/lib/sysusers.d/indexd.conf`, and a customised config under
-`/etc/mixos/indexd/config.conf.mix`. Apply sysusers before starting the service.
+`<config>/indexd/config.conf.mix`. Apply sysusers before starting the service.
 The unit wants system `noded.service`, runs as `indexd:indexd`, limits memory
 to 2 GiB, sets `MALLOC_ARENA_MAX=2`, and hardens filesystem, devices and kernel
 access. TCP address families remain available for the configured broker.
@@ -9075,7 +9109,7 @@ ownership from the legacy account; the new account does not reuse its UID.
 On a CBC worker, `cargo test -p indexd` runs the engine tests, registry checks,
 real daemon/bridge pipe tests, and `services/indexd/tests/bus_test.mix` against
 `libs/test-broker`. Set `MIXOS_TEST_MIX` if Mix is not installed at
-`/opt/mixos/bin/mix`. Embeddings are deterministic cache fixtures; no model
+`<prefix>/bin/mix`. Embeddings are deterministic cache fixtures; no model
 is needed. The tokenizer parity test compares 0.22.2 token IDs against the
 committed legacy 0.21.4/onig golden; it stays ignored unless
 `INDEXD_TEST_TOKENIZER` names the staged tokenizer file.
@@ -9194,7 +9228,7 @@ grab.
 
 ## The keymap file
 
-`/var/lib/mixos/inputd/keymap.json` (the unit's state directory), in the
+`<state>/inputd/keymap.json` (the unit's state directory), in the
 keymap.v1 format:
 
 ```json
@@ -9280,11 +9314,11 @@ Every app scans only its two per-app tiers, from lowest to highest precedence:
 
 | Tier | Folder | Scope |
 |---|---|---|
-| Built-in per-app | `/opt/mixos/share/macros/<app>/` | One app |
+| Built-in per-app | `<prefix>/share/macros/<app>/` | One app |
 | User per-app | `~/.config/mixos/macros/<app>/` | One app |
 
 `<app>` is the component name, for example `ced`, `dopus` or `term`.
-An absolute `MIXOS_SHARE` replaces `/opt/mixos/share`. An absolute
+An absolute `MIXOS_SHARE` replaces `<prefix>/share`. An absolute
 `XDG_CONFIG_HOME` replaces `~/.config`; otherwise the configuration root is
 `$HOME/.config`. Resolution needs an absolute `HOME` and does not create
 folders until you request a write or open a user folder.
@@ -9384,7 +9418,7 @@ the field addresses the app window. A closed editor returns `NOT_FOUND`.
 
 ## Execution context
 
-The runner starts `/opt/mixos/bin/mix <path>` directly, without a shell
+The runner starts `<prefix>/bin/mix <path>` directly, without a shell
 wrapper. An absolute `MIXOS_MIX` selects another Mix binary. Its working
 directory is your home, and it receives:
 
@@ -9410,7 +9444,7 @@ title; otherwise the id is shown. Header reads are bounded to 8 KiB.
 `Library::scan` scans the global tiers and uses `Roots::apps()` with the same
 per-app scan to discover every app's macros. Global user macros live directly
 in `~/.config/mixos/macros/`; built-ins live directly in
-`/opt/mixos/share/macros/`. Workshop's Session runs and creates global macros.
+`<prefix>/share/macros/`. Workshop's Session runs and creates global macros.
 App ids are scoped to their catalogue, so identical ids in different apps
 remain separate.
 
@@ -9600,15 +9634,15 @@ to `mix`. The standalone development binary runs the same library entry point.
 declaration, and the vendored parser's licences in the server archive.
 
 `maild@INSTANCE.service` requires `noded@INSTANCE.service` and reads the same
-`/etc/mixos/session/INSTANCE.env` file, including its `MIXOS_NODE_CONFIG` broker
+`<config>/session/INSTANCE.env` file, including its `MIXOS_NODE_CONFIG` broker
 configuration. It runs as the `maild` account. The unit uses
-`/etc/mixos/maild/config.conf.mix`, creates `StateDirectory=maild`, and sets
-`MIXOS_VAR=/var/lib/maild`; configured TLS material must be readable by maild.
+`<config>/maild/config.conf.mix`, creates `StateDirectory=maild`, and sets
+`MIXOS_STATE=/var/lib/maild`; configured TLS material must be readable by maild.
 The unit documentation URL points to this manual.
 
 `maild.service` is the plain per-host form, for a host that runs the plain
 `noded.service` rather than per-session brokers. It reads the node config
-from `/etc/mixos`, creates `StateDirectory=mixos/maild`, and takes its data
+from `<config>`, creates `StateDirectory=mixos/maild`, and takes its data
 paths from the maild config. The sysusers declaration adds maild to the
 `mixos-tls` group (gid 510), which it shares with webd for the TLS keys.
 
@@ -9647,7 +9681,7 @@ The operator command-line binary is not ported yet.
 key. The signing and verifying code is the same code the mesh daemon `noded`
 uses, so the two cannot disagree about the bytes a signature covers.
 
-Install the binary at `/opt/mixos/bin/mesh-sign`.
+Install the binary at `<prefix>/bin/mesh-sign`.
 
 ## Subcommands
 
@@ -9656,7 +9690,7 @@ Install the binary at `/opt/mixos/bin/mesh-sign`.
 | `genesis` | Create the genesis Ed25519 key and store its signing half in the secrets database. It refuses to overwrite an existing key unless `--force` is given. |
 | `sign INVENTORY --out PATH` | Sign an authored inventory and verify the result before reporting success. `--valid-days` sets an advisory horizon. `--recovery N` and `--recovery-generation N` set the recovery fields and are mutually exclusive. |
 | `verify SIGNED` | Check a signed inventory against the genesis key. It takes `--genesis-pub PATH` or `--genesis-pub-base64 B64`, or else reads the key from the secrets database. `--expected-mesh NAME` pins the mesh name, and `--against-authored PATH` checks the signed payload against an authored file. `--json` prints one versioned JSON object. |
-| `pubkey` | Print the genesis public key, which is provisioned to each node as `/opt/mixos/etc/noded/genesis.pub`. |
+| `pubkey` | Print the genesis public key, which is provisioned to each node as `<prefix>/etc/noded/genesis.pub`. |
 | `d2-gen NODE` / `d2-pubkey NODE` | Create or print a node's admission key. |
 | `wg-gen --private-file PATH` | Create a node-local WireGuard key in a new mode-0600 file and print only the public key. |
 | `wg-pubkey --private-file PATH` | Print the public key of an existing protected node key. |
@@ -10252,12 +10286,12 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   shell_quote     Single-quote-wrap a string for safe interpolation into a POSIX shell command
   sql_quote       Escape a string for SQL string literals: doubles ' and escapes \ (MySQL/MariaDB-safe — the documented target; also safe for SQLite, where a literal backslash arrives doubled — use sqlexec binds for exact bytes); NUL bytes stripped
   random_password Generate an alphanumeric password (default len 16, no O/o, guaranteed upper+lower+digit)
-  ssh_run         Run a command on a remote host via ssh; returns {stdout, stderr, exit_code, ok, duration_ms, host, timed_out, interrupted, utf8_lossy, stdout_truncated, stderr_truncated}; max_output optionally caps local capture bytes per stream (omitted: unbounded; 0 is REJECTED — unlike run_argv, where 0 means unbounded — omit the key instead). A cap that cuts mid-UTF-8-sequence makes the lossy decode insert U+FFFD, so utf8_lossy: true beside stdout_truncated: true may be local truncation damage, not remote garbage. env values ship by default in a Mix driver to the remote mix binary (mix_bin opt, else local env MIX_REMOTE_BIN, else /opt/mixos/bin/mix)
+  ssh_run         Run a command on a remote host via ssh; returns {stdout, stderr, exit_code, ok, duration_ms, host, timed_out, interrupted, utf8_lossy, stdout_truncated, stderr_truncated}; max_output optionally caps local capture bytes per stream (omitted: unbounded; 0 is REJECTED — unlike run_argv, where 0 means unbounded — omit the key instead). A cap that cuts mid-UTF-8-sequence makes the lossy decode insert U+FFFD, so utf8_lossy: true beside stdout_truncated: true may be local truncation damage, not remote garbage. env values ship by default in a Mix driver to the remote mix binary (mix_bin opt, else local env MIX_REMOTE_BIN, else <prefix>/bin/mix)
   ssh_must        ssh_run wrapper: returns stdout on success, throws a Mix error otherwise
-  ssh_mix         Run Mix source on a remote host: ships the source over ssh stdin into `<mix_bin> -`, bypassing ALL shell quoting. The remote binary is the mix_bin opt, else the local env var MIX_REMOTE_BIN, else /opt/mixos/bin/mix; it must be an absolute path or a bare name using only [A-Za-z0-9_./+-] (anything else raises OPTION_INVALID locally). ssh_mix(host, source, [opts]) -> same map as ssh_run; bindings maps valid Mix identifier names to strict-data-encoded values prepended as `$name` assignments, and decode:"data"|"json" adds a parsed `.value` from stdout. max_output caps local capture per stream (0 rejected; omit for unbounded); a truncated stdout REFUSES to decode (raises) — a truncated prefix can parse as a smaller, wrong value — so omit decode and inspect stdout/stdout_truncated to work with partial output. Accepts every ssh_run opt except stdin/env_transport. Remote command failure stays in the result value; invalid arguments/options raise locally. (v0.20.4)
+  ssh_mix         Run Mix source on a remote host: ships the source over ssh stdin into `<mix_bin> -`, bypassing ALL shell quoting. The remote binary is the mix_bin opt, else the local env var MIX_REMOTE_BIN, else <prefix>/bin/mix; it must be an absolute path or a bare name using only [A-Za-z0-9_./+-] (anything else raises OPTION_INVALID locally). ssh_mix(host, source, [opts]) -> same map as ssh_run; bindings maps valid Mix identifier names to strict-data-encoded values prepended as `$name` assignments, and decode:"data"|"json" adds a parsed `.value` from stdout. max_output caps local capture per stream (0 rejected; omit for unbounded); a truncated stdout REFUSES to decode (raises) — a truncated prefix can parse as a smaller, wrong value — so omit decode and inspect stdout/stdout_truncated to work with partial output. Accepts every ssh_run opt except stdin/env_transport. Remote command failure stays in the result value; invalid arguments/options raise locally. (v0.20.4)
   ssh_mix_many    ssh_mix on many hosts at once: ssh_mix_many(hosts, source[, opts]) -> map host -> ssh_result, keyed in INPUT order. Every host gets the same source, bindings, env and decode, and each result is EXACTLY ssh_mix's ssh_result map, so per-host handling code ports unchanged. opts = every ssh_mix opt plus max (concurrency, default 8, at most 256 live workers — run_parallel's numbers, its own loop). Options are validated once (even for an empty host list) and every host is checked before any ssh spawns; a wrong argument type raises TYPE_MISMATCH. After that nothing raises — one host's failure is DATA in its own map: unreachable, nonzero exit and timeout arrive as ok:false; a local spawn/pipe failure as ok:false with error_code (`PROCESS_SPAWN`, `PROCESS_STDIO`, …) and error; a decode refusal (truncated or unparseable stdout, where ssh_mix raises) as ok:false, decode_error and no value; a host never started because of Ctrl-C as ok:false, interrupted:true. hosts must be unique strings; timeout:0 is refused (one hung host would park the batch); there is no whole-call deadline
   send_mail       Send a plain-text email through the local MTA: send_mail({to, from, subject, body[, headers]}[, {host, sendmail, timeout, mix_bin}]) -> run_argv's process_result + message_id (+ host, only with the host opt). Renders an RFC 5322 message (From, To, Subject, Date, Message-ID, MIME-Version, text/plain utf-8) and pipes it to `sendmail -t -i -f <envelope>` on stdin — never a network SMTP client; ok means the MTA accepted it, not that it was delivered. to is a string or list of strings; Cc/Bcc go in headers. from is exactly one mailbox, addr or Name <addr> (a comment, a second mailbox or <> raises); its address is the envelope sender. Long headers are folded within 78 columns (an unbreakable run over 998 raises); a non-ASCII body or one with a line over 998 bytes goes quoted-printable, else 7bit. A non-ASCII subject is RFC 2047-encoded; every other header value must be ASCII, and CR/LF/NUL in any header raises. headers adds headers or replaces the generated Date/Message-ID/MIME-Version; From/To/Subject there raise (set them in msg), and so do Content-Type/Content-Transfer-Encoding (send_mail encodes the body itself, always text/plain utf-8). sendmail is found on PATH, then /usr/sbin/sendmail, /usr/lib/sendmail, unless the sendmail opt names it. host sends from that host via ssh_exec (remote default /usr/sbin/sendmail); mix_bin (host only) names the remote mix binary, as for ssh_mix. An MTA failure or missing sendmail is DATA (ok:false, exit_code, stderr, error_code); bad input raises before anything runs: OPTION_INVALID (msg fields, options), TYPE_MISMATCH (msg not a map, arity), or ssh_exec's own validation errors with host
-  ssh_exec        Run an argv list DIRECTLY on a remote host via a strict-data driver and remote run_argv. Remote stdio allowlist: stdin nil|string|{file}|{null:true} (a stdin STRING is always data, as locally — there is no stdin "inherit" route on either side); stdout capture|null|{file}; stderr capture|null|stdout|{file}. File paths resolve remotely. stdout/stderr inherit and stream:true raise OPTION_INVALID locally before ssh because they would corrupt or bypass the result envelope. Binary stdin also raises locally. Transport/protocol failures and remote command failure are returned in the process_result plus host; a remote without run_argv returns SSH_REMOTE_UNSUPPORTED without running the command. The remote mix binary is the mix_bin opt (older name remote_mix), else local env MIX_REMOTE_BIN, else /opt/mixos/bin/mix
+  ssh_exec        Run an argv list DIRECTLY on a remote host via a strict-data driver and remote run_argv. Remote stdio allowlist: stdin nil|string|{file}|{null:true} (a stdin STRING is always data, as locally — there is no stdin "inherit" route on either side); stdout capture|null|{file}; stderr capture|null|stdout|{file}. File paths resolve remotely. stdout/stderr inherit and stream:true raise OPTION_INVALID locally before ssh because they would corrupt or bypass the result envelope. Binary stdin also raises locally. Transport/protocol failures and remote command failure are returned in the process_result plus host; a remote without run_argv returns SSH_REMOTE_UNSUPPORTED without running the command. The remote mix binary is the mix_bin opt (older name remote_mix), else local env MIX_REMOTE_BIN, else <prefix>/bin/mix
   process_alive   Test if a process exists (signal 0 check). EPERM counts as alive: existence does not imply permission to signal, including another user's process. pid must be a positive whole NUMBER; no coercion. Nonpositive, bool or string PIDs raise TYPE_MISMATCH. Reaps exited unmanaged children; controller-owned job and registered native-task PIDs use only signal 0 so their sole wait owner retains every status (zombies may briefly report alive).
   net_watch       Subscribe to Linux rtnetlink link/address changes; returns an evaluator-owned opaque handle. Delivers net.changed {watch, changes:[{kind:"link"|"addr", ifname, index, up, removed, operstate?, loopback?, wireless?, family?, address?, prefix?}], overflow, closed?} via $event.args; bursts coalesce per link/address, repeats that change nothing are dropped, overflow means re-read net_state(). opts {events: ["link","addr"]}. No polling fallback
   net_unwatch     Cancel a net_watch handle and its pending changes
@@ -11784,8 +11818,8 @@ Lookup order, with no `MIXOS_MAN_*` variable set:
 
 1. **The built-in manual.**
 2. **Files on disk**, for a page this binary does not carry: the installed
-   share tree (`$MIXOS_SHARE/mix/man`), then a checkout's `docs/mix`
-   (`$MIXOS`, else the root found above the running binary, else
+   share tree (`<prefix>/share/mix/man`), then a checkout's `docs/mix`
+   (`$MIXOS_SRC`, else the root found above the running binary, else
    `~/Projects/mixos`).
 3. **The online copy**, as in `auto` mode below.
 
@@ -11842,12 +11876,12 @@ for i in 1 2 3; do                 for each $i in [1, 2, 3]
 ## Build — rebuild the interpreter from itself
 
 The build family wraps `cargo` against the Mix source tree (`$MIXOS_SRC`,
-default `$MIXOS`) so the REPL can rebuild and re-exec into a fresh binary —
+default the discovered source checkout) so the REPL can rebuild and re-exec into a fresh binary —
 the self-reconstruction surface. Point `$MIXOS_SRC` at the directory holding
 the workspace `Cargo.toml` (in a clone of the public repo that is `mix/src`).
 
 ```
-mix build       cargo build --release, then install target/release/mix → $MIXOS_BIN/mix
+mix build       cargo build --release, then install target/release/mix → <prefix>/bin/mix
 mix clean       cargo clean (removes the target/ tree)
 mix update      git pull, then build + install
 mix test        cargo test, streaming output
@@ -12463,7 +12497,7 @@ stdin-feeding task is a named future field rather than a silent absence.
 **The environment is enumerated, not inherited.** A task starts from exactly:
 
     HOME  USER  PATH  LANG  TERM=dumb
-    MIXOS  MIXOS_SRC  MIXOS_BIN  MIXOS_ETC
+    MIXOS_PREFIX  MIXOS_CONFIG  MIXOS_STATE  MIXOS_CACHE  MIXOS_RUNTIME  MIXOS_SRC
     MIXOS_NODE_CONFIG  MIXOS_BROKER_ACCOUNT
 
 plus the caller's `env` overlay, which WINS on a name collision. Those values
@@ -12642,7 +12676,7 @@ back.
 - `mix` is intercepted by the shell, so it never sees `$`-sigil arguments — write `mix what round`, not `mix what $name`.
 - The introspection family (`vars`/`aliases`/`functions`/`all`/`context`) is most useful **inside a REPL**, where the session has accumulated state; from a one-shot OS-shell invocation it reports only the freshly-loaded prelude.
 - The diagnostics family (`time`/`trace`/`history`/`reload`/`diagnose`) is REPL-only — those names are not on the OS-shell allowlist, so `mix trace on` there is read as a script filename. The one exception is `mix stats`, which has a dedicated one-shot OS-shell path against the same on-disk data.
-- Paths follow the MixOS layout: source at `$MIXOS_SRC` (default `$MIXOS`), installed binaries at `$MIXOS_BIN` (default `~/.local/bin`, or `/usr/local/bin` when running as root).
+- Paths follow the MixOS layout: source at `$MIXOS_SRC` (default the discovered source checkout), installed binaries at `<prefix>/bin` (derived from the binary's prefix).
 
 ## See also
 
@@ -14627,7 +14661,7 @@ path, so a `try/catch` around a config read actually holds:
 ```mix
 $cfg = nil
 try
-  $cfg = load_data("/etc/mixos/app.conf.mix")
+  $cfg = load_data("<config>/app.conf.mix")
 catch $e
   print("cannot read config: " .. $e)
   exit(2)
@@ -19040,7 +19074,7 @@ through the classifier), `mix -` parses the whole program up front.
 
 ## Running as a login shell and over SSH
 
-When `/opt/mixos/bin/mix` is **root's login shell** on a host, `ssh host
+When `<prefix>/bin/mix` is **root's login shell** on a host, `ssh host
 '<cmd>'` is evaluated by Mix, not bash. The universal shell `-c` contract still
 holds because the login path runs through the same shell-first classifier:
 
@@ -19057,7 +19091,7 @@ hostname is: node1
 
 From a Mix script, drive a remote mix through the ssh builtins instead of raw
 `ssh`: `ssh_run($host, $cmd)` for a one-liner, and `ssh_mix($host, $source)` —
-which ships whole Mix source over ssh stdin into `/opt/mixos/bin/mix -`,
+which ships whole Mix source over ssh stdin into `<prefix>/bin/mix -`,
 bypassing every shell-quoting layer — for anything with quoting. A remote
 whose mix lives elsewhere takes the `mix_bin` option, or set
 `MIX_REMOTE_BIN` locally for every call (see
@@ -19067,7 +19101,7 @@ shows the interpolation and bindings rules.
 
 Two PATH gotchas to remember on the remote side:
 
-- Inside `run` / `run_rc` (which spawn `/bin/sh` with a **minimal PATH**), call binaries by **full path** — `/opt/mixos/bin/mix`, not bare `mix`. See [running commands](system.md).
+- Inside `run` / `run_rc` (which spawn `/bin/sh` with a **minimal PATH**), call binaries by **full path** — `<prefix>/bin/mix`, not bare `mix`. See [running commands](system.md).
 - A non-interactive `ssh host '<mix>'` has **no aliases** (it's the `mix -c` path, not `mix -i`).
 
 For Mix-as-a-shell language facts (`&&`/`||`/`;` chaining, pipes, redirects,
@@ -22319,7 +22353,7 @@ the old `mix.db`.
 | `node.conf.mix` | Read-only broker address input; see [Serve mode](serve-mode.md). |
 | `MIXOS_NODE_CONFIG` | Overrides the node configuration file path. |
 | `MIXOS_SRC` | Overrides the MixOS source/documentation root used by project and manual commands. |
-| `MIXOS_ETC` | Overrides the MixOS configuration directory. |
+| `MIXOS_CONFIG` | Overrides the MixOS configuration directory. |
 | `MIXOS_BIN` | Overrides the install directory used by `mix build`. |
 | `MIXOS_MAN_SOURCE` | Selects `auto` or `local` manual resolution. |
 | `MIXOS_MAN_URL` | Overrides the canonical manual base URL. |
@@ -22477,7 +22511,7 @@ The broker URL is resolved from the first applicable source:
 
 1. The file named by `MIXOS_NODE_CONFIG`.
 2. `node.conf.mix` under the resolved MixOS configuration directory.
-3. The system `node.conf.mix`, unless `MIXOS_ETC` explicitly isolates the
+3. The system `node.conf.mix`, unless `MIXOS_CONFIG` explicitly isolates the
    configuration directory.
 
 The reader consumes only these strict-data fields:
@@ -23725,7 +23759,7 @@ is silently dropped — and it lights up unchanged when a broker appears (more i
 
 - **A Bus-native shell + scripting language.** `send`, `emit`, `address`, and `on … end` are language keywords that reach peer services over the [Bus](https://github.com/markc/mixos) mesh. No client library, no boilerplate — remote orchestration reads like a local script. See [Bus messaging](bus.md).
 - **A real scripting language.** First-class functions and terse lambdas, higher-order builtins (`map` / `filter` / `reduce` / `sort_by` / …), structured values (string, number, bool, bytes, list, map), `try`/`catch`, closures. See [functions](functions.md) and the [builtins index](builtins.md).
-- **A shell.** It runs external commands, has a REPL with meta-commands (`mix status`, `mix help`, `mix what NAME`), and serves as a daily-driver login shell (`chsh -s /opt/mixos/bin/mix`). Command results are **structured** — `run_rc("cmd")` returns `{rc, stdout, stderr, timed_out, interrupted}`, not exit-code soup. See [running commands](system.md), the [shell](shell-mode.md) page, and [the `mix` meta-command](cli.md).
+- **A shell.** It runs external commands, has a REPL with meta-commands (`mix status`, `mix help`, `mix what NAME`), and serves as a daily-driver login shell (`chsh -s /usr/local/bin/mix`). Command results are **structured** — `run_rc("cmd")` returns `{rc, stdout, stderr, timed_out, interrupted}`, not exit-code soup. See [running commands](system.md), the [shell](shell-mode.md) page, and [the `mix` meta-command](cli.md).
 - **A structured-data format.** Strict-data `.*.mix` files (`.conf.mix`, `.spec.mix`, …) are parsed without executing anything — the substrate's config/state format. See [data & serialization](data.md).
 - **A Bus citizen.** `mix --serve service.mix` runs a script as a supervised, mesh-registered daemon. A script with one `on` handler is a complete service. See [serving as a citizen](serve.md).
 
@@ -23772,7 +23806,7 @@ It ships as two crates that version in lockstep (a third workspace member,
 
 | Crate | What it is |
 |---|---|
-| **`mixos-lib-mix`** | The interpreter library — lexer, parser, evaluator, builtins, value model. Pure Rust, no internal deps; feature-gated capabilities (`json`, `regex`, `toml`, `datetime`, `url`, `crypto`, `http`, `sqlite`, `dkim`, `markdown`, `datastar`). |
+| **`mixos-lib-mix`** | The interpreter library — lexer, parser, evaluator, builtins, value model. Pure Rust, with the shared paths resolver; feature-gated capabilities (`json`, `regex`, `toml`, `datetime`, `url`, `crypto`, `http`, `sqlite`, `dkim`, `markdown`, `datastar`). |
 | **`mix-shell`** | The shell behind the `mix` binary (built by `cli/system`) — REPL, shell layer, Bus wiring, the `--serve` supervised-citizen runtime, and the `mix man`/`help`/`what` meta-commands. |
 
 A standalone `mix` install runs as a normal scripting shell. When a Bus broker
@@ -23780,6 +23814,17 @@ A standalone `mix` install runs as a normal scripting shell. When a Bus broker
 on the host, the **same binary** becomes mesh-viable on next invocation — no
 reinstall, no recompile, no script edits. A runtime lazy-probe decides
 bare-vs-mesh at execution time.
+
+MixOS locations use `mixos_path(root[, rel])`, backed by the shared
+[paths resolver](../paths/README.md). For example,
+`mix -c 'print(mixos_path("prefix"))'` prints the current installation prefix.
+
+Before installation, a staged binary can print target defaults independently
+of its own location: `mix layout defaults --tier system --json`, with an
+optional `--prefix DIR`. The `user` tier requires `--prefix`. Installers run
+that staged command even when their own interpreter is the previous release
+or `mix-static`; [relocatable paths](../paths/README.md) describes the target
+flags and receipt-based rollback.
 
 ## How to run it
 
@@ -23821,7 +23866,7 @@ most of the surprises disappear:
 2. **Concatenation is `..`**, never `+` or `.`: `"a" .. $x .. "b"`. (`+` *adds* when both sides look numeric — `"5" + "5"` is `10`, not `"55"` — and `.` is field access.)
 3. **Statements use newline or `;`.** Prefer newlines in files; use `;` for compact `mix -c` / generated source. On shell-dispatch lines the same glyph remains the shell command-list operator; classification is whole-line, never mixed. See [syntax](syntax.md).
 4. **`${...}` interpolates, bare `$name` is literal** inside double quotes; `'single quotes'` are fully raw; `$(...)` is literal in a Mix string. See [strings](strings.md).
-5. **`run` / `run_rc` spawn `/bin/sh` with a minimal `PATH`** — inside scripts, call binaries by full path (`/opt/mixos/bin/mix`, never bare `mix`). See [running commands](system.md).
+5. **`run` / `run_rc` spawn `/bin/sh` with a minimal `PATH`** — inside scripts, call binaries by full path (`<prefix>/bin/mix`, never bare `mix`). See [running commands](system.md).
 
 Close behind those five: blocks close with `end` (there is no `do` keyword);
 `push()` mutates in place and returns `nil`; and `pos()` is 1-based (0 = not
@@ -24561,7 +24606,7 @@ statistics](stats.md).
 ## Headline idiom: `ssh_mix` + heredoc
 
 For multi-line remote Mix, pass a heredoc directly as the `source` argument to
-`ssh_mix`. The bytes travel over ssh stdin into `/opt/mixos/bin/mix -` (or the
+`ssh_mix`. The bytes travel over ssh stdin into `<prefix>/bin/mix -` (or the
 [`mix_bin`](#ssh_mixhost-source-opts--map) you name); no
 shell parses the source on the way.
 
@@ -24643,7 +24688,7 @@ The exit-status key is **`exit_code`**, not `rc`. Reading `$r["rc"]` yields
 that string creates escape ladders:
 
 ```mix
-ssh_run("alpha", "print(run(\"/opt/mixos/bin/mix -c 'print(which(\\\"sh\\\"))'\"))")
+ssh_run("alpha", "print(run(\"<prefix>/bin/mix -c 'print(which(\\\"sh\\\"))'\"))")
 ```
 
 The heredoc form ships the intended program directly:
@@ -24818,7 +24863,7 @@ end
 
 ## `ssh_mix(host, source[, opts])` → map
 
-Runs Mix **source** on a remote node with zero quoting pain. It ships `source` over ssh's **stdin** byte-channel into `/opt/mixos/bin/mix -`, so the source never becomes an argv word and bypasses *every* shell-quoting layer — the local shell, ssh, and the remote login-shell classifier. Arbitrary quotes, `$`, backslashes, and newlines survive intact. It is the discoverable, first-class form of the `ssh_run(host, "mix -", { stdin: $source })` idiom.
+Runs Mix **source** on a remote node with zero quoting pain. It ships `source` over ssh's **stdin** byte-channel into `<prefix>/bin/mix -`, so the source never becomes an argv word and bypasses *every* shell-quoting layer — the local shell, ssh, and the remote login-shell classifier. Arbitrary quotes, `$`, backslashes, and newlines survive intact. It is the discoverable, first-class form of the `ssh_run(host, "mix -", { stdin: $source })` idiom.
 
 Start with the [headline `ssh_mix` + heredoc pattern](#headline-idiom-ssh_mix--heredoc)
 above. This section supplies the remaining option and decoding contract.
@@ -24869,11 +24914,11 @@ $r = ssh_mix("example.com", $source, {
 - **Order of the prepended prefix is `env` exports, then `bindings`, then your source.** A binding of the same name therefore shadows the exported **variable** but not the exported **environment**: with `{env: {FOO: "x"}, bindings: {FOO: "y"}}` the remote sees `$FOO == "y"` while `env("FOO") == "x"` and any child process still inherits `FOO=x`. Your source can rebind either. Give them distinct names unless you mean exactly that.
 - **Accepts every `ssh_run` opt except two:** `stdin` (the source *is* the stdin — passing it is an error) and `env_transport` (not applicable — see below).
 - **`env` works and is secret-safe:** the values are translated into hidden `export KEY = "value"` lines (strict-data-escaped) *prepended to the shipped source*, so they travel on stdin and never touch `ps` argv on either end.
-- **The remote binary is configurable** (0.116.0). In order: the **`mix_bin`** option, else the **local** environment variable **`MIX_REMOTE_BIN`** (an empty value counts as unset), else the default **`/opt/mixos/bin/mix`** (the canonical MixOS install dir; it was the legacy `/opt/mixos/bin/mix` up to 0.116.0, so pass `mix_bin` or set `MIX_REMOTE_BIN` for a not-yet-migrated host). The same resolution serves every builtin that drives a remote mix: `ssh_mix`, `ssh_mix_many`, `ssh_exec` (which also keeps its older name `remote_mix`), `ssh_run`'s default `env_transport: "mix"`, and `send_mail`'s `host` hop. The value lands in the remote command string, so it must be an absolute path (`/opt/mixos/bin/mix`) or a bare name the remote PATH resolves (`mix`), using only `[A-Za-z0-9_./+-]`; anything else (a space, `;`, `$`, a leading `-`, a relative path) raises `OPTION_INVALID` locally before ssh runs. Prefer a full path: a bare `mix` is often not on the remote's non-interactive PATH. `ssh_mix` is for nodes with mix installed, not arbitrary POSIX hosts.
+- **The remote binary is configurable** (0.116.0). In order: the **`mix_bin`** option, else the **local** environment variable **`MIX_REMOTE_BIN`** (an empty value counts as unset), else the default **`<prefix>/bin/mix`** (the canonical MixOS install dir; it was the legacy `<prefix>/bin/mix` up to 0.116.0, so pass `mix_bin` or set `MIX_REMOTE_BIN` for a not-yet-migrated host). The same resolution serves every builtin that drives a remote mix: `ssh_mix`, `ssh_mix_many`, `ssh_exec` (which also keeps its older name `remote_mix`), `ssh_run`'s default `env_transport: "mix"`, and `send_mail`'s `host` hop. The value lands in the remote command string, so it must be an absolute path (`<prefix>/bin/mix`) or a bare name the remote PATH resolves (`mix`), using only `[A-Za-z0-9_./+-]`; anything else (a space, `;`, `$`, a leading `-`, a relative path) raises `OPTION_INVALID` locally before ssh runs. Prefer a full path: a bare `mix` is often not on the remote's non-interactive PATH. `ssh_mix` is for nodes with mix installed, not arbitrary POSIX hosts.
 
   ```mix
-  $r = ssh_mix("node1", "print(1+1)", {mix_bin: "/opt/mixos/bin/mix"})
-  -- or once for the whole script's environment:  MIX_REMOTE_BIN=/opt/mixos/bin/mix mix script.mix
+  $r = ssh_mix("node1", "print(1+1)", {mix_bin: "<prefix>/bin/mix"})
+  -- or once for the whole script's environment:  MIX_REMOTE_BIN=<prefix>/bin/mix mix script.mix
   ```
 - **Inherits every `ssh_run` host guard** (empty, NUL, leading-dash — verified: a `-oProxyCommand=` host is rejected through `ssh_mix` too, before any spawn).
 - **`timeout` is in SECONDS**, like every ssh/run timeout opt (§"Options"). The Bus `send … timeout=2000` form is the only millisecond surface in Mix — `timeout: 5000` here is 83 minutes, not 5 seconds.
@@ -24965,7 +25010,7 @@ end
 - **`mix lint` reads the body** exactly as it does for `ssh_mix`, including
   the `bindings`/`env` names.
 
-This is the sugar over `run_parallel` + hand-built `["ssh", host, "/opt/mixos/bin/mix", "-"]`
+This is the sugar over `run_parallel` + hand-built `["ssh", host, "<prefix>/bin/mix", "-"]`
 jobs: those lose `bindings`, `decode` and the `host`/`ok` result shape.
 
 ---
@@ -24995,7 +25040,7 @@ truncation/lossy flags, …) plus **`host`**. Options split into two groups:
   `cwd`, `env`, `clear_env`, `max_output`, plus the protocol-safe stdio routes
   below — are encoded into the driver and applied to the remote `run_argv`
   call. `env`/`stdin` never appear in argv on either end.
-- **SSH transport options** — `connect_timeout`, `transport_timeout` (the ssh wall-clock deadline, default = remote `timeout` + `connect_timeout` + 5 s), `batch`, `strict_host_key`, `multiplex`, `extra_ssh_args`, and `mix_bin` (the remote binary path; older name `remote_mix`, still accepted; resolved and validated exactly as for [`ssh_mix`](#ssh_mixhost-source-opts--map): `mix_bin` > local `MIX_REMOTE_BIN` > `/opt/mixos/bin/mix`).
+- **SSH transport options** — `connect_timeout`, `transport_timeout` (the ssh wall-clock deadline, default = remote `timeout` + `connect_timeout` + 5 s), `batch`, `strict_host_key`, `multiplex`, `extra_ssh_args`, and `mix_bin` (the remote binary path; older name `remote_mix`, still accepted; resolved and validated exactly as for [`ssh_mix`](#ssh_mixhost-source-opts--map): `mix_bin` > local `MIX_REMOTE_BIN` > `<prefix>/bin/mix`).
 
 The remote stdio allowlist is deliberately narrower than local `run_argv`:
 
@@ -25066,7 +25111,7 @@ Every key is optional; unknown keys raise an error. `ssh_mix` takes the same map
 | `cwd` | string | — | Prepends `cd '<cwd>' && ` to the remote command (quoted for you). |
 | `stdin` | string | — | Fed to the remote command's stdin over the local ssh pipe. May contain NULs (binary payloads). Conflicts with `env` under the secure transports (§"Remote env"). |
 | `extra_ssh_args` | list of strings | `[]` | Extra argv inserted before the host: `["-p", "2222"]`, `["-J", "jump"]`, `["-o", "IdentitiesOnly=yes"]`. Always followed by the `--` host guard. |
-| `mix_bin` | string | local `MIX_REMOTE_BIN`, else `/opt/mixos/bin/mix` | The remote mix binary for `env_transport: "mix"` (and for `ssh_mix`, which always pipes into it). Absolute path or bare name, `[A-Za-z0-9_./+-]` only; see [`ssh_mix`](#ssh_mixhost-source-opts--map). (0.116.0) |
+| `mix_bin` | string | local `MIX_REMOTE_BIN`, else `<prefix>/bin/mix` | The remote mix binary for `env_transport: "mix"` (and for `ssh_mix`, which always pipes into it). Absolute path or bare name, `[A-Za-z0-9_./+-]` only; see [`ssh_mix`](#ssh_mixhost-source-opts--map). (0.116.0) |
 
 Omitting `max_output` preserves unbounded local capture. The truncation flags
 are also true when capture is abandoned at a deadline, even without a limit.
@@ -25103,7 +25148,7 @@ ssh_run("node1", "echo hi", { env: { K: "v" }, stdin: "x" })
 
 ssh_mix("node1", "print(1)", { mix_bin: "mix; rm" })
 -- OPTION_INVALID: ssh_mix: mix_bin "mix; rm" contains ';', which is not allowed (want an absolute
---   path like "/opt/mixos/bin/mix" or a bare name like "mix", using only [A-Za-z0-9_./+-])
+--   path like "<prefix>/bin/mix" or a bare name like "mix", using only [A-Za-z0-9_./+-])
 
 ssh_run("", "echo hi")
 -- Runtime error: ssh_run: host must not be empty
@@ -25146,7 +25191,7 @@ Naively, remote env means prefixing `export K='v'; ` onto the command string —
 
 | Transport | Mechanism | Visible in `ps`? | For |
 |---|---|---|---|
-| `"mix"` (default) | A generated Mix driver ships over ssh **stdin** into `<mix_bin> -`: strict-data-escaped `export` lines, then `exit(run_stream(["sh", "-c", <command>]))`. | **No** — local `ps` shows only `ssh … <mix_bin> -`; remote `ps` shows `sh -c <command>` (the command, never the env). | Every mixos-managed node, regardless of login shell. Requires mix on the remote at the `mix_bin` option, else local `MIX_REMOTE_BIN`, else `/opt/mixos/bin/mix` (see [`ssh_mix`](#ssh_mixhost-source-opts--map)). |
+| `"mix"` (default) | A generated Mix driver ships over ssh **stdin** into `<mix_bin> -`: strict-data-escaped `export` lines, then `exit(run_stream(["sh", "-c", <command>]))`. | **No** — local `ps` shows only `ssh … <mix_bin> -`; remote `ps` shows `sh -c <command>` (the command, never the env). | Every mixos-managed node, regardless of login shell. Requires mix on the remote at the `mix_bin` option, else local `MIX_REMOTE_BIN`, else `<prefix>/bin/mix` (see [`ssh_mix`](#ssh_mixhost-source-opts--map)). |
 | `"sh"` | A POSIX driver (`export K='v'` lines + the command) ships over stdin into `sh -s`. | **No** — the script travels on stdin. | Arbitrary **non-mixos** POSIX hosts. **Broken on mix-login-shell nodes** — the remote `sh -s` misroutes through the Mix classifier. |
 | `"argv"` | The legacy `export K='v'; ` command-string prefix. | **Yes, on both ends.** | Compatibility only. Never for secrets. |
 
@@ -25217,7 +25262,7 @@ For threading a *Mix value* (a map/list, not a shell string) to a remote Mix int
 
 ## When the remote login shell is Mix
 
-If a host runs `/opt/mixos/bin/mix` as the login shell, then the snippet you send is evaluated by **Mix**, not by a POSIX shell. Two distinct modes:
+If a host runs `<prefix>/bin/mix` as the login shell, then the snippet you send is evaluated by **Mix**, not by a POSIX shell. Two distinct modes:
 
 - **Send Mix source for Mix behaviour.** The remote evaluates it as a Mix program.
 
@@ -25235,7 +25280,7 @@ ssh_run("node1", "mix status")                          -- bare `mix` self-resol
 Things to remember on a Mix-shell host:
 
 1. **For anything with quoting, prefer `ssh_mix`.** A one-liner as above is fine inline; the moment the payload has nested quotes, `$`, or newlines, ship it as source over stdin instead of fighting three quoting layers.
-2. **No aliases on the non-interactive path.** `~/.mixrc` (aliases, PATH tweaks, prompt) loads only for *interactive* logins. `ssh_run` is non-interactive, so the remote sees no `~/.mixrc` — call binaries by full path (`/opt/mixos/bin/...`), don't rely on a remote alias.
+2. **No aliases on the non-interactive path.** `~/.mixrc` (aliases, PATH tweaks, prompt) loads only for *interactive* logins. `ssh_run` is non-interactive, so the remote sees no `~/.mixrc` — call binaries by full path (`<prefix>/bin/...`), don't rely on a remote alias.
 3. **Watch your local quoting.** The snippet is a Mix *string* on your side first. Prefer `'single quotes'` for the snippet so a `${...}` or `..` inside it isn't eaten by *local* interpolation, then escape only the inner double quotes you need.
 4. **POSIX subshell grouping `( … )` doesn't survive the remote classifier** — a remote `(cmd; cmd) | sort` hits the same shell-dispatch limits as a local one (see [shell-mode.md](shell-mode.md)). Wrap it: `ssh_run("node1", "run_rc(\"(cmd; cmd) | sort\")")`.
 
@@ -26109,7 +26154,7 @@ Description=statecache Mix citizen
 After=noded.service
 
 [Service]
-ExecStart=/opt/mixos/bin/mix --serve /usr/local/lib/mixos/statecache.mix
+ExecStart=<prefix>/bin/mix --serve /usr/local/lib/mixos/statecache.mix
 User=mixos-statecache
 Group=mixos-statecache
 Restart=on-failure
@@ -26287,7 +26332,7 @@ that looks like a command rather than Mix code — `git status`, `ls -la | wc -l
 substitution, redirects. This is **shell-dispatch mode**, the shell half of the
 `mix -c` / login-shell contract.
 
-The whole point: a node that runs `/opt/mixos/bin/mix` as root's login shell
+The whole point: a node that runs `<prefix>/bin/mix` as root's login shell
 must still honour the universal `sh -c` contract — `ssh host 'hostname'` and
 `ssh host 'systemctl restart foo'` have to *just work*, while `print(1 + 1)` and
 every other Mix statement still evaluate as [Mix](overview.md). One classifier
@@ -29648,7 +29693,7 @@ end
   result carries `host` as `ssh_exec`'s does, and only then. **`mix_bin`**
   (with `host` only) names the remote mix binary the hop runs, resolved as
   for [`ssh_mix`](remote.md): `mix_bin`, else local `MIX_REMOTE_BIN`, else
-  `/opt/mixos/bin/mix`.
+  `<prefix>/bin/mix`.
 - **The result is `run_argv`'s `process_result` plus `message_id`**. `ok`
   means the MTA accepted the message for submission, not that it was
   delivered. An MTA that refuses the message, or a sendmail that is not
@@ -29713,7 +29758,7 @@ process had — non-interactively that is **minimal**, and `~/.mixrc` aliases ar
 run("mix --version")
 
 -- robust: absolute path always resolves
-print(run("/opt/mixos/bin/mix --version"))
+print(run("<prefix>/bin/mix --version"))
 ```
 ```text
 mix 0.21.2
@@ -29721,7 +29766,7 @@ mix 0.21.2
 
 `run_stream` takes the program name as `argv[0]` and resolves it against PATH the
 same way — full-path that too if you can't guarantee the environment. The rule
-of thumb: **inside scripts, always full-path** (`/opt/mixos/bin/...`). The one
+of thumb: **inside scripts, always full-path** (`<prefix>/bin/...`). The one
 context where a bare `mix` *does* resolve is as the ssh command itself
 (`ssh host 'mix status'`) — the login-shell mix self-resolves via its own
 executable path, no PATH needed ([remote](remote.md)).
@@ -31928,7 +31973,7 @@ mix keywords          list the reserved words
 # mixos-mcp
 
 `mixos-mcp` is an MCP stdio server for agents. Install the binary at
-`/opt/mixos/bin/mixos-mcp` and register the MCP server as `mixos`.
+`<prefix>/bin/mixos-mcp` and register the MCP server as `mixos`.
 It ships in the server prefix archive. Its package, binary and component
 are the [single naming exception](../docs/decisions/2026-10-19-mcp-program-name.md).
 
@@ -31937,7 +31982,7 @@ are the [single naming exception](../docs/decisions/2026-10-19-mcp-program-name.
 The server starts without a Bus connection. The first Bus tool connects
 using `libs/bus`. `MIXOS_NODED_URL` overrides the node configuration URL;
 otherwise the native client's node config discovery applies, including
-`MIXOS_NODE_CONFIG`, `MIXOS_ETC` and the user/system defaults.
+`MIXOS_NODE_CONFIG`, `MIXOS_CONFIG` and the user/system defaults.
 
 Set `MIXOS_BROKER_ACCOUNT` to the broker's operating-system account and
 `MIXOS_BUS_SOCKET` to the session's Unix socket. With either set, verified
@@ -31950,11 +31995,11 @@ uses the discovered URL. Calls are never replayed after reconnecting.
 {
   "mcpServers": {
     "mixos": {
-      "command": "/opt/mixos/bin/mixos-mcp",
+      "command": "<prefix>/bin/mixos-mcp",
       "env": {
         "MIXOS_NODED_URL": "ws://192.0.2.10:4200/ws",
         "MIXOS_BROKER_ACCOUNT": "user",
-        "MIXOS_BUS_SOCKET": "/run/mixos/session/4/noded/bus.sock"
+        "MIXOS_BUS_SOCKET": "<runtime>/session/4/noded/bus.sock"
       }
     }
   }
@@ -32007,19 +32052,19 @@ the selected Bus. An absent backend returns an explicit tool error.
 Skill refinement also needs a configured LLM backend. Settings are MixOS strict-data files:
 `knowledge.conf.mix`, `domains.conf.mix`, `skills.conf.mix` and `llm.conf.mix`.
 LLM Bus providers use the same broker. `api_key_cmd` is Mix source, executed
-by `/opt/mixos/bin/mix -c`.
+by `<prefix>/bin/mix -c`.
 
 ### Host indexd from a desk
 
 When a desk cannot reach the host's Bus, select SSH in
-`$MIXOS_ETC/knowledge.conf.mix` (normally `~/.config/mixos/knowledge.conf.mix`):
+`$MIXOS_CONFIG/knowledge.conf.mix` (normally `~/.config/mixos/knowledge.conf.mix`):
 
 ```text
 indexd: {
     transport: "ssh",
     target: "indexd",
     ssh_host: "user@host.example",
-    ssh_command: ["/opt/mixos/bin/indexd", "bridge"],
+    ssh_command: ["<prefix>/bin/indexd", "bridge"],
     call_timeout_secs: 120
 }
 ```
@@ -32418,7 +32463,7 @@ command signals or renices anything: acting across users or nodes is
 
 ## Running it
 
-`monitord.service` runs `/opt/mixos/bin/monitord serve` as the user
+`monitord.service` runs `<prefix>/bin/monitord serve` as the user
 `monitord`, with no capabilities and a strict sandbox. The history
 database is `/var/lib/monitord/history.db`; it is a cache, and deleting it
 loses history and nothing else.
@@ -32467,13 +32512,13 @@ personalities of the [system](../system/README.md) binary.
 ## Configuration
 
 Configuration is strict data in `node.conf.mix`, resolved beneath `MIXOS` or
-an explicit `MIXOS_ETC`. Isolated roots never fall back to host
+an explicit `MIXOS_CONFIG`. Isolated roots never fall back to host
 configuration. Set `MIXOS` to an isolated runtime root and supply
 `etc/node.conf.mix`, for example:
 
 ```text
 node: "example"
-noded: { port: 4200, unix_socket: "/run/mixos/noded/bus.sock" }
+noded: { port: 4200, unix_socket: "<runtime>/noded/bus.sock" }
 ```
 
 ## Running it
@@ -32610,6 +32655,124 @@ aside, never overwritten.
 
 ---
 
+<!-- page: https://mixos.dev/paths/ (source: https://mixos.dev/paths/README.md) -->
+
+# Relocatable paths
+
+`paths` resolves the five MixOS roots. It has no workspace dependencies.
+The running binary finds its prefix through `/proc/self/exe`, following the
+managed entry link to the real binary, then taking the parent of `bin/`.
+Moving that tree requires no rebuild.
+
+| Root | System default | Prefix under `$HOME` |
+|---|---|---|
+| `prefix` | Derived from the binary | Derived from the binary |
+| `config` | `/etc/mixos` | `$XDG_CONFIG_HOME/mixos`, else `~/.config/mixos` |
+| `state` | `/var/lib/mixos` | `$XDG_STATE_HOME/mixos`, else `~/.local/state/mixos` |
+| `cache` | `/var/cache/mixos` | `$XDG_CACHE_HOME/mixos`, else `~/.cache/mixos` |
+| `runtime` | `/run/mixos` | `$XDG_RUNTIME_DIR/mixos` (required) |
+
+Each root takes `MIXOS_<ROOT>` first, then its key in `<prefix>/layout.mx`,
+then the default. The environment prefix also selects where to read
+`layout.mx`; a `prefix` key inside that document does not start another lookup.
+The document is strict data, with at most five unique keys, each an absolute
+path string. Unknown keys, relative paths and executable expressions refuse.
+Empty root overrides refuse rather than falling back.
+
+```text
+config: "/srv/example/config"
+state: "/srv/example/state"
+```
+
+Rust callers use `paths::root(paths::Root::Config)`, `paths::bin("mix")`,
+`paths::share("scenes/editor")` and `paths::resolve("mixos:prefix/share/scenes")`.
+Mix callers use `mixos_path("config")`, `mixos_path("prefix", "bin/mix")` or
+`mixos_path("mixos:prefix/share/scenes")`. Relative paths cannot escape their
+root with `..`. Ordinary user paths are unchanged by `resolve`.
+
+Saved MixOS paths use `mixos:<root>/<relative>`. Programs resolve them when
+opening the file. The old `MIXOS`, `MIXOS_ETC`, `MIXOS_VAR`, `MIXOS_RUN`,
+`MIXOS_SHARE`, `MIXOS_BIN` and per-app location aliases have no layout role.
+`MIXOS_SRC` separately names a development checkout.
+
+Installers select a target independently of their interpreter. The staged
+binary exposes the defaults from `libs/paths` without self-location or
+`MIXOS_*` overrides:
+
+```text
+/path/to/staged/mix layout defaults --tier system --json
+/path/to/staged/mix layout defaults --tier user --prefix /home/user/mixos --json
+```
+
+The system installation prefix defaults to `/opt/mixos`; a user installation
+requires `--prefix`. User roots use the caller's XDG environment; an unset
+runtime is omitted from the JSON and must be supplied explicitly by the
+installer. Runtime path resolution still derives the prefix from the binary.
+
+`tools/gold_release.mix` accepts `--prefix`, `--tier`, and overrides for the
+other four roots. It verifies the release before querying its staged Mix.
+Command-line roots take precedence over the target's existing `layout.mx`,
+then the staged binary's defaults. Applying journals the selected `layout.mx`
+alongside the installed files. `--state` selects the state root; release
+records and backups live beneath its `releases/` directory. Rollback/recover
+can use `--receipt-file FILE`, or an explicit prefix and target layout (with
+`--state` and `--receipt ID` to locate a saved receipt). They need no running
+target binary and work under the previous release or `mix-static`.
+
+`tools/component_install.mix` uses the same precedence. `--root` is a staging
+system root, while `--prefix` selects the target prefix within that root.
+`--mix STAGED_MIX` supplies defaults before a target binary exists; otherwise
+it queries the target's `bin/mix`. Complete explicit roots, target layouts or
+rollback receipts need no defaults query. Component receipts retain the
+target layout. Neither installer derives the destination from its interpreter.
+
+Repository tools support the previous Mix release. Docs resolve logical paths
+against the checkout: `mixos:prefix/share/x` (or `mixos:share/x`) names
+`<repo>/share/x`. Populate pinned font inputs in the ignored
+`share/assets/sets/` with `mix share/assets/install.mix --root
+/absolute/checkout/share/assets` before building the site. Dev lint skips
+installed-asset checks when its interpreter lacks `mixos_path`.
+
+External files use templates with `@{prefix}`, `@{config}`, `@{state}`,
+`@{cache}` and `@{runtime}` placeholders. Component owners keep their unit
+templates; packages carry them beneath `share/layout/`. Apply the layout with:
+
+```text
+mix layout apply --dry-run
+mix layout apply
+mix layout apply --root /tmp/example-root
+```
+
+`--root` stages writes beneath a throwaway system root. The renderer prints
+each changed file and is idempotent. It manages the PATH block in `.mixrc`,
+the login-shell entry in `/etc/shells`, and one link to `<prefix>/bin/mix`:
+`/usr/local/bin/mix` on hosts, or `/usr/bin/mix` with `--image`. A non-symlink
+at that link path refuses before writes. It never links `mix-static`.
+On hosts with Elixir, the managed link makes `mix` mean MixOS.
+
+Remote execution selects the `mix_bin` option, then `MIX_REMOTE_BIN`, then
+bare `mix` on the remote PATH. There is no interpreter-owned mesh host table.
+Absolute remote binary paths may contain spaces; they are quoted before SSH.
+
+To relocate: stop the affected services, move the prefix, adjust `layout.mx`
+for other moved roots, run `mix layout apply`, then restart. Running processes
+keep their current paths. The implementation does not migrate live data.
+`tools/layout_migrate_saved.mix` previews changes in explicit offline copies,
+keeps originals when applied, and refuses live-root overlaps. SQLite stores
+must be exported through their owning component first so audit chains survive.
+
+The path gate runs in `tools/lint.mix`. The worker release gate also checks
+default template bytes and runs `tests/layout_relocation_test.mix`, using a
+prefix with a space and a private mount namespace. Missing namespace, nested
+desktop or loopback SSH support is reported explicitly as a skip.
+
+`mix tests/layout_templates_test.mix --installed` additionally compares the
+rendered defaults against an existing installed `share/units` tree and reports
+any deployment drift, including comments. The normal release check compares
+against the immutable source baseline.
+
+---
+
 <!-- page: https://mixos.dev/portald/ (source: https://mixos.dev/portald/README.md) -->
 
 # The desktop portal
@@ -32663,7 +32826,7 @@ Craft apps use this file on the `MixOS` desktop with `CRAFT_TITLEBAR=app`. They
 resolve `window-minimize-symbolic`, `window-maximize-symbolic`,
 `window-restore-symbolic` and `window-close-symbolic` through the MixOS icon
 theme in `$XDG_DATA_DIRS/icons`. The original 16-unit hairline SVGs install from
-`share/icons` into `/opt/mixos/share/icons/mixos/scalable/actions`.
+`share/icons` into `<prefix>/share/icons/mixos/scalable/actions`.
 
 The export runs only when `XDG_CONFIG_HOME` is set, absolute and different from
 `$HOME/.config`; otherwise it logs once at info level and skips. Parent segments
@@ -33272,7 +33435,7 @@ Your catalogue is `~/.config/mixos/releases.mx`. Until you write one,
 releasesd follows MixOS itself: `mixos-desktop` (the compositor and the
 apps) and `mixos-server` (`mix` and the headless services). This shows the
 latest published version and permits a **per-user** install. It does not
-replace the system's `/opt/mixos` tree or activate a running desk. Your own
+replace the system's `<prefix>` tree or activate a running desk. Your own
 catalogue replaces that list, so keep those entries if you want to follow
 MixOS releases:
 
@@ -33307,7 +33470,7 @@ mix releases.mix rollback example # back to the previous version
 mix releases.mix remove example
 ```
 
-(`releases.mix` lives with the service in `/opt/mixos/lib/releasesd/`;
+(`releases.mix` lives with the service in `<prefix>/lib/releasesd/`;
 `mix tools/component_install.mix releasesd` puts it there from a checkout.)
 
 `check` uses conditional requests, so asking again costs almost nothing. It
@@ -33336,7 +33499,7 @@ already at `~/.local/bin/example`, the install leaves it alone and says so.
 
 ## MixOS system updates
 
-An operator updates the canonical `/opt/mixos` tree from the published
+An operator updates the canonical `<prefix>` tree from the published
 `release.manifest.mx` and matching archives with `tools/gold_release.mix`.
 The installer checks the trusted manifest digest, archive and binary hashes,
 architecture and glibc floor. `plan` shows the changes; `apply` records a
@@ -33387,7 +33550,7 @@ package, identity in `component.mx`. The source is
 
 Run the tests from the checkout root. The offline test needs `bsdtar` for
 two hostile fixtures (the service itself unpacks with Mix's `tar_unpack`); the Bus test
-needs a `noded`, by default `/opt/mixos/bin/noded`, or `--noded <path>`:
+needs a `noded`, by default `<prefix>/bin/noded`, or `--noded <path>`:
 
 ```sh
 mix services/releasesd/tests/releases_test.mix
@@ -33973,7 +34136,7 @@ session/VT number is a supervision attribute and never a second instance
 identity. The session target wants and upholds the authority. The unit
 validates with plain seed before serving, and application and compositor
 startup does not wait for settings readiness. An image must provision its
-service account's writable `MIXOS_ETC/settings` root and explicitly seed
+service account's writable `MIXOS_CONFIG/settings` root and explicitly seed
 once during first installation. Automatic startup never receives
 `--allow-create`, so lost mounts or directories do not silently become new
 default profiles.
@@ -34268,7 +34431,7 @@ cargo build --locked --profile release-fast -p term
 
 `tests/window.rs` takes an offscreen snapshot of the window with two tabs
 and a split; regenerate it with `UPDATE_SNAPSHOTS=1` and look at it. The
-PTY tests need the Mix binary at `/opt/mixos/bin/mix`.
+PTY tests need the Mix binary at `<prefix>/bin/mix`.
 
 ## Macro Bus commands
 
@@ -34411,7 +34574,7 @@ Reinstalling a theme replaces these values without compounding them. A window's
 own theme choice preserves them. Per-app text overrides are not applied because
 the current settings summary carries only the desktop UI values.
 `Theme::load()` reads the shared `theme.conf.mix` from the MixOS etc
-directory (`$MIXOS_ETC`, else `$MIXOS/etc`, else `/etc/mixos` for root,
+directory (`$MIXOS_CONFIG`, else `$MIXOS/etc`, else `<config>` for root,
 else `$XDG_CONFIG_HOME/mixos`). It falls back to the embedded design, and
 says why on stderr, when the file is missing or unusable.
 
@@ -34694,7 +34857,7 @@ mixos.dev uses the same icons. `assets/licenses.conf.mix` pins each notice
 by SHA-256. This includes the notices for egui's own fallback fonts, which
 are in `assets/fonts/fallbacks/`.
 `scripts/install_licenses.mix` installs them under
-`<share>/licenses/toolkit` (default share `/opt/mixos/share`). `--check`
+`<share>/licenses/toolkit` (default share `<prefix>/share`). `--check`
 validates only the sources, and `--verify` checks an installed tree. See
 the [bundled font licences decision](../docs/decisions/2026-10-13-bundled-font-licences.md).
 
@@ -35201,8 +35364,8 @@ hypervisors.
 
 | Source | Installed as |
 |---|---|
-| `services/toolsd/scripts/` | `/opt/mixos/lib/toolsd/` (root-owned, not writable) |
-| `services/webd/vhosts/apps/tools_registry.mix` | `/opt/mixos/lib/toolsd/lib/tools_registry.mix` |
+| `services/toolsd/scripts/` | `<prefix>/lib/toolsd/` (root-owned, not writable) |
+| `services/webd/vhosts/apps/tools_registry.mix` | `<prefix>/lib/toolsd/lib/tools_registry.mix` |
 | `services/toolsd/units/*.service`, `*.timer` | `/etc/systemd/system/` |
 | `services/toolsd/units/toolsd.tmpfiles.conf` | `/etc/tmpfiles.d/toolsd.conf` |
 | `services/toolsd/units/49-toolsd-wake.rules` | `/etc/polkit-1/rules.d/` |
@@ -35214,10 +35377,10 @@ the drain checks its owner and mode before every run.
 Each host also needs:
 
 - the system users `toolsd` and `toolsd-wake`;
-- `/etc/mixos/toolsd/env` with `TOOLS_BASE_URL` (the webd vhost to claim
+- `<config>/toolsd/env` with `TOOLS_BASE_URL` (the webd vhost to claim
   from, for example `https://admin.example.com`) and `TOOLS_CA_FILE` (the
   certificate chain to verify it with);
-- `/etc/mixos/toolsd/secret`, `0400 root`, matching the vhost's tools
+- `<config>/toolsd/secret`, `0400 root`, matching the vhost's tools
   secret;
 - a drop-in, `/etc/systemd/system/toolsd-drain.service.d/webd.conf`, with
   `IPAddressAllow=<webd address>/32`.
@@ -35240,7 +35403,7 @@ side; webd knows tool names and parameters, never command lines.
 The MixOS web service serves per-host static files, CMS SQLite APIs,
 embedded trusted Mix HTTP handlers, mail proxy routes and file shares.
 It registers as `webd` on the native Bus. The server profile uses
-`/opt/mixos/bin/webd serve --db-path /var/lib/mixos/webd/web.db`.
+`<prefix>/bin/webd serve --db-path <state>/webd/web.db`.
 
 Node configuration is read through config's native directory rules.
 `webd.vhost` supplies hostnames, document roots, optional CMS databases,

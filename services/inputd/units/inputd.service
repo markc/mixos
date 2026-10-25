@@ -20,11 +20,11 @@ Description=MixOS input broker
 
 [Service]
 Type=simple
-ExecStart=/opt/mixos/bin/inputd
+ExecStart=@{prefix}/bin/inputd
 Restart=always
 RestartSec=500ms
 # The keymap lives at $STATE_DIRECTORY/keymap.json
-# (/var/lib/mixos/inputd/keymap.json), never in a home directory.
+# (@{state}/inputd/keymap.json), never in a home directory.
 StateDirectory=mixos/inputd
 StateDirectoryMode=0700
 Environment=RUST_LOG=inputd=info

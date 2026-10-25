@@ -118,7 +118,7 @@ if $X_KILL_RECOVER and not $X_KILL then
   exit(2)
 end
 
-$comp = $n.require_binary("compd", $BIN, ["/opt/mixos/bin"])
+$comp = $n.require_binary("compd", $BIN, [(mixos_path("prefix") .. "/bin")])
 -- Every client this run needs, refused by name before anything starts.
 fn tool($name)
   $p = which($name)
@@ -272,7 +272,7 @@ end
 try
   -- ── observation topics, subscribed before any client ──────────────────
   $watch_out = $run .. "/watch.jsonl"
-  $wp = spawn(["/opt/mixos/bin/mix", "--serve", $watch_script, "--name", $svc .. "-w"],
+  $wp = spawn([(mixos_path("prefix") .. "/bin/mix"), "--serve", $watch_script, "--name", $svc .. "-w"],
     {env: {BUS_WATCH_SERVICE: $svc, BUS_WATCH_OUT: $watch_out}, stdout: {file: $run .. "/watch.log"},
      stderr: "stdout", detach: true})
   $PIDS["watch"] = $wp

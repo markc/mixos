@@ -737,7 +737,7 @@ end
   result carries `host` as `ssh_exec`'s does, and only then. **`mix_bin`**
   (with `host` only) names the remote mix binary the hop runs, resolved as
   for [`ssh_mix`](remote.md): `mix_bin`, else local `MIX_REMOTE_BIN`, else
-  `/opt/mixos/bin/mix`.
+  `<prefix>/bin/mix`.
 - **The result is `run_argv`'s `process_result` plus `message_id`**. `ok`
   means the MTA accepted the message for submission, not that it was
   delivered. An MTA that refuses the message, or a sendmail that is not
@@ -802,7 +802,7 @@ process had — non-interactively that is **minimal**, and `~/.mixrc` aliases ar
 run("mix --version")
 
 -- robust: absolute path always resolves
-print(run("/opt/mixos/bin/mix --version"))
+print(run("<prefix>/bin/mix --version"))
 ```
 ```text
 mix 0.21.2
@@ -810,7 +810,7 @@ mix 0.21.2
 
 `run_stream` takes the program name as `argv[0]` and resolves it against PATH the
 same way — full-path that too if you can't guarantee the environment. The rule
-of thumb: **inside scripts, always full-path** (`/opt/mixos/bin/...`). The one
+of thumb: **inside scripts, always full-path** (`<prefix>/bin/...`). The one
 context where a bare `mix` *does* resolve is as the ssh command itself
 (`ssh host 'mix status'`) — the login-shell mix self-resolves via its own
 executable path, no PATH needed ([remote](remote.md)).

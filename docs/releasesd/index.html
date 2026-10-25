@@ -253,7 +253,7 @@ settings panel can drive it), and on any Linux, not only MixOS.</p>
 releasesd follows MixOS itself: <code>mixos-desktop</code> (the compositor and the
 apps) and <code>mixos-server</code> (<code>mix</code> and the headless services). This shows the
 latest published version and permits a <strong>per-user</strong> install. It does not
-replace the system's <code>/opt/mixos</code> tree or activate a running desk. Your own
+replace the system's <code>&lt;prefix&gt;</code> tree or activate a running desk. Your own
 catalogue replaces that list, so keep those entries if you want to follow
 MixOS releases:</p>
 <pre><code class="language-text">{
@@ -281,7 +281,7 @@ mix releases.mix update           # every installed app that has a newer release
 mix releases.mix rollback example # back to the previous version
 mix releases.mix remove example
 </code></pre>
-<p>(<code>releases.mix</code> lives with the service in <code>/opt/mixos/lib/releasesd/</code>;
+<p>(<code>releases.mix</code> lives with the service in <code>&lt;prefix&gt;/lib/releasesd/</code>;
 <code>mix tools/component_install.mix releasesd</code> puts it there from a checkout.)</p>
 <p><code>check</code> uses conditional requests, so asking again costs almost nothing. It
 uses <code>GITHUB_TOKEN</code>, or your <code>gh</code> login if you have one; without either,
@@ -306,7 +306,7 @@ through <code>current</code>, so an update or rollback needs no relinking.</li>
 <p>It never overwrites a file it didn't create. If something of yours is
 already at <code>~/.local/bin/example</code>, the install leaves it alone and says so.</p>
 <h2 id="mixos-system-updates">MixOS system updates</h2>
-<p>An operator updates the canonical <code>/opt/mixos</code> tree from the published
+<p>An operator updates the canonical <code>&lt;prefix&gt;</code> tree from the published
 <code>release.manifest.mx</code> and matching archives with <code>tools/gold_release.mix</code>.
 The installer checks the trusted manifest digest, archive and binary hashes,
 architecture and glibc floor. <code>plan</code> shows the changes; <code>apply</code> records a
@@ -346,7 +346,7 @@ package, identity in <code>component.mx</code>. The source is
 </tbody></table>
 <p>Run the tests from the checkout root. The offline test needs <code>bsdtar</code> for
 two hostile fixtures (the service itself unpacks with Mix's <code>tar_unpack</code>); the Bus test
-needs a <code>noded</code>, by default <code>/opt/mixos/bin/noded</code>, or <code>--noded &lt;path&gt;</code>:</p>
+needs a <code>noded</code>, by default <code>&lt;prefix&gt;/bin/noded</code>, or <code>--noded &lt;path&gt;</code>:</p>
 <pre><code class="language-sh">mix services/releasesd/tests/releases_test.mix
 mix services/releasesd/tests/releasesd_test.mix
 </code></pre>

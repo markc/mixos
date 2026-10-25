@@ -18,6 +18,7 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+paths = { path = "../../libs/paths" }
 libc.workspace = true
 serde_json.workspace = true
 

@@ -8,7 +8,7 @@
 --   GET  /biz/provision-claim  (X-Tick-Secret) -> one provision_ct job or 204
 --   POST /biz/provision-apply  (X-Tick-Secret, JSON) -> progress/success/failure
 -- No anonymous writes: every request is tick-secret gated.
-include "/opt/mixos/vhosts/shared/apps/biz.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
 
 function bp_authorized()
   -- Brick 6: the provision/reconcile worker endpoints authenticate with the

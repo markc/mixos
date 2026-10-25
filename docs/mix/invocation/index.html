@@ -567,7 +567,7 @@ name=worldarg
 to <code>"-"</code>. Unlike a pipe into bare <code>mix</code> (which the REPL consumes line by line
 through the classifier), <code>mix -</code> parses the whole program up front.</p>
 <h2 id="running-as-a-login-shell-and-over-ssh">Running as a login shell and over SSH</h2>
-<p>When <code>/opt/mixos/bin/mix</code> is <strong>root's login shell</strong> on a host, <code>ssh host '&lt;cmd&gt;'</code> is evaluated by Mix, not bash. The universal shell <code>-c</code> contract still
+<p>When <code>&lt;prefix&gt;/bin/mix</code> is <strong>root's login shell</strong> on a host, <code>ssh host '&lt;cmd&gt;'</code> is evaluated by Mix, not bash. The universal shell <code>-c</code> contract still
 holds because the login path runs through the same shell-first classifier:</p>
 <ul>
 <li><strong><code>ssh host hostname</code></strong> — bare command, dispatched natively (no Mix needed).</li>
@@ -580,7 +580,7 @@ hostname is: node1
 <p>(Locally, <code>echo '&lt;mix source&gt;' | mix -</code> runs the same script against <em>this</em> host.)</p>
 <p>From a Mix script, drive a remote mix through the ssh builtins instead of raw
 <code>ssh</code>: <code>ssh_run($host, $cmd)</code> for a one-liner, and <code>ssh_mix($host, $source)</code> —
-which ships whole Mix source over ssh stdin into <code>/opt/mixos/bin/mix -</code>,
+which ships whole Mix source over ssh stdin into <code>&lt;prefix&gt;/bin/mix -</code>,
 bypassing every shell-quoting layer — for anything with quoting. A remote
 whose mix lives elsewhere takes the <code>mix_bin</code> option, or set
 <code>MIX_REMOTE_BIN</code> locally for every call (see
@@ -589,7 +589,7 @@ whose mix lives elsewhere takes the <code>mix_bin</code> option, or set
 shows the interpolation and bindings rules.</p>
 <p>Two PATH gotchas to remember on the remote side:</p>
 <ul>
-<li>Inside <code>run</code> / <code>run_rc</code> (which spawn <code>/bin/sh</code> with a <strong>minimal PATH</strong>), call binaries by <strong>full path</strong> — <code>/opt/mixos/bin/mix</code>, not bare <code>mix</code>. See <a href="/mix/system/">running commands</a>.</li>
+<li>Inside <code>run</code> / <code>run_rc</code> (which spawn <code>/bin/sh</code> with a <strong>minimal PATH</strong>), call binaries by <strong>full path</strong> — <code>&lt;prefix&gt;/bin/mix</code>, not bare <code>mix</code>. See <a href="/mix/system/">running commands</a>.</li>
 <li>A non-interactive <code>ssh host '&lt;mix&gt;'</code> has <strong>no aliases</strong> (it's the <code>mix -c</code> path, not <code>mix -i</code>).</li>
 </ul>
 <p>For Mix-as-a-shell language facts (<code>&amp;&amp;</code>/<code>||</code>/<code>;</code> chaining, pipes, redirects,

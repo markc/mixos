@@ -166,7 +166,7 @@ fn fixture() -> (tempfile::TempDir, Roots, Session) {
         home: dir.path().into(),
         builtin: dir.path().join("builtin"),
         user: dir.path().join("user"),
-        mix: "/opt/mixos/bin/mix".into(),
+        mix: ::paths::root(::paths::Root::Prefix).join("bin/mix"),
     };
     let session = Session::with_roots("fixture", Some(roots.clone()));
     (dir, roots, session)
@@ -503,7 +503,7 @@ fn new_creates_in_the_user_app_tier_and_refreshes_list() {
     let roots = Roots::resolve_with(|key| match key {
         "HOME" => Some(dir.path().into()),
         "XDG_CONFIG_HOME" => Some(dir.path().join("xdg")),
-        "MIXOS_SHARE" => Some(dir.path().join("share")),
+        "MIXOS_PREFIX" => Some(dir.path().to_owned()),
         _ => None,
     })
     .unwrap();

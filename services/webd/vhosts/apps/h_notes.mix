@@ -22,12 +22,12 @@
 --
 -- IMPORTANT (webd-embedded mix): NO mix-0.20 syntax (?? / ?:) — use if/else + fm_or.
 -- Reserved word `label` MUST be a string key ("label":). Concatenation is `..`.
-include "/opt/mixos/vhosts/shared/widgets/forms.mix"
-include "/opt/mixos/vhosts/shared/widgets/reader.mix"
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
-include "/opt/mixos/vhosts/shared/widgets/treeview.mix"
-include "/opt/mixos/vhosts/shared/widgets/modals.mix"
-include "/opt/mixos/vhosts/shared/widgets/contextmenu.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/reader.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/treeview.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/modals.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/contextmenu.mix")
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- filesd seam — one delegated bus_call, wrapped. Returns { ok, result } | { ok:false, err }.

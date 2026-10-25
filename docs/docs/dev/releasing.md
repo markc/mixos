@@ -51,7 +51,7 @@ After installing the listed build dependencies in the root, the CBC worker
 can provision the pinned library with:
 
 ```text
-/opt/mixos/bin/mix tools/libinput_compat.mix \
+<prefix>/bin/mix tools/libinput_compat.mix \
   --rootfs /srv/ubuntu-24.04-root --target-dir /srv/mixos-target
 ```
 
@@ -103,11 +103,11 @@ a missing or changed archive, wrong source or architecture, a glibc floor
 above the host, and unsafe archive paths.
 
 ```text
-sudo /opt/mixos/bin/mix tools/gold_release.mix plan \
+sudo <prefix>/bin/mix tools/gold_release.mix plan \
   --manifest /path/to/release.manifest.mx --manifest-sha256 TRUSTED_SHA256 \
   --archive-dir /path/to/assets --package desktop
 
-sudo /opt/mixos/bin/mix tools/gold_release.mix apply \
+sudo <prefix>/bin/mix tools/gold_release.mix apply \
   --manifest /path/to/release.manifest.mx --manifest-sha256 TRUSTED_SHA256 \
   --archive-dir /path/to/assets --package desktop
 ```

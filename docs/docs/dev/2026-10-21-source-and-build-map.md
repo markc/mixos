@@ -39,8 +39,8 @@ Cargo workspace and the site source. Paths below are relative to its root.
 In the designated Rust build environment,
 `cargo build --locked --profile release-fast -p system --bin mix` produces
 `target/release-fast/mix`. `cargo build -p mix` builds the language library,
-not the shell executable. Installed binaries belong under `/opt/mixos/bin`.
-Mix programs run directly with `/opt/mixos/bin/mix script.mix`; editing a
+not the shell executable. Installed binaries belong under `<prefix>/bin`.
+Mix programs run directly with `<prefix>/bin/mix script.mix`; editing a
 program does not require compiling Rust. Use `mix builtins NAME` for builtin
 contracts, `run_argv` or `run_argv_must` for processes and `ssh_mix` for remote
 Mix programs.

@@ -9,7 +9,7 @@
 --
 -- Reuses blog_feed_doc()/blog_card_view() from h_home.mix (which transitively includes
 -- datatable.mix), so the feed rendering lives in exactly one place.
-include "/opt/mixos/vhosts/shared/apps/h_home.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/apps/h_home.mix")
 
 function posts_main()
 cms_init()

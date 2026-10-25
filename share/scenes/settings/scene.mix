@@ -45,29 +45,29 @@ size_head: {"bold":true,"color":"#fcfcfc","size":13,"text":"Panel size","widget"
 size_top: {"align":"center","children":["size_top_label","size_top_minus","size_top_value","size_top_plus"],"gap":4,"height":32,"widget":"row"}
 size_top_label: {"color":"#fcfcfc","elide":true,"fill":true,"size":12,"text":"Top height","widget":"text"}
 size_top_minus: {"align":"center","children":["size_top_minus_t"],"height":28,"hover":"#ffffff1a","justify":"center","max_width":24,"min_width":24,"on_click":"shell.settings.size","widget":"row"}
-size_top_minus_t: {"h":16,"src":"/opt/mixos/share/icons/mixos/scalable/actions/minus-symbolic.svg","w":16,"widget":"image"}
+size_top_minus_t: {"h":16,"src":"mixos:prefix/share/icons/mixos/scalable/actions/minus-symbolic.svg","w":16,"widget":"image"}
 size_top_plus: {"align":"center","children":["size_top_plus_t"],"height":28,"hover":"#ffffff1a","justify":"center","max_width":24,"min_width":24,"on_click":"shell.settings.size","widget":"row"}
-size_top_plus_t: {"h":16,"src":"/opt/mixos/share/icons/mixos/scalable/actions/plus-symbolic.svg","w":16,"widget":"image"}
+size_top_plus_t: {"h":16,"src":"mixos:prefix/share/icons/mixos/scalable/actions/plus-symbolic.svg","w":16,"widget":"image"}
 size_top_value: {"align":"right","color":"#fcfcfc","size":12,"text":"= $model.sizes.top","widget":"text","width":48}
 size_bottom: {"align":"center","children":["size_bottom_label","size_bottom_minus","size_bottom_value","size_bottom_plus"],"gap":4,"height":32,"widget":"row"}
 size_bottom_label: {"color":"#fcfcfc","elide":true,"fill":true,"size":12,"text":"Bottom height","widget":"text"}
 size_bottom_minus: {"align":"center","children":["size_bottom_minus_t"],"height":28,"hover":"#ffffff1a","justify":"center","max_width":24,"min_width":24,"on_click":"shell.settings.size","widget":"row"}
-size_bottom_minus_t: {"h":16,"src":"/opt/mixos/share/icons/mixos/scalable/actions/minus-symbolic.svg","w":16,"widget":"image"}
+size_bottom_minus_t: {"h":16,"src":"mixos:prefix/share/icons/mixos/scalable/actions/minus-symbolic.svg","w":16,"widget":"image"}
 size_bottom_plus: {"align":"center","children":["size_bottom_plus_t"],"height":28,"hover":"#ffffff1a","justify":"center","max_width":24,"min_width":24,"on_click":"shell.settings.size","widget":"row"}
-size_bottom_plus_t: {"h":16,"src":"/opt/mixos/share/icons/mixos/scalable/actions/plus-symbolic.svg","w":16,"widget":"image"}
+size_bottom_plus_t: {"h":16,"src":"mixos:prefix/share/icons/mixos/scalable/actions/plus-symbolic.svg","w":16,"widget":"image"}
 size_bottom_value: {"align":"right","color":"#fcfcfc","size":12,"text":"= $model.sizes.bottom","widget":"text","width":48}
 size_left: {"align":"center","children":["size_left_label","size_left_minus","size_left_value","size_left_plus"],"gap":4,"height":32,"widget":"row"}
 size_left_label: {"color":"#fcfcfc","elide":true,"fill":true,"size":12,"text":"Left width","widget":"text"}
 size_left_minus: {"align":"center","children":["size_left_minus_t"],"height":28,"hover":"#ffffff1a","justify":"center","max_width":24,"min_width":24,"on_click":"shell.settings.size","widget":"row"}
-size_left_minus_t: {"h":16,"src":"/opt/mixos/share/icons/mixos/scalable/actions/minus-symbolic.svg","w":16,"widget":"image"}
+size_left_minus_t: {"h":16,"src":"mixos:prefix/share/icons/mixos/scalable/actions/minus-symbolic.svg","w":16,"widget":"image"}
 size_left_plus: {"align":"center","children":["size_left_plus_t"],"height":28,"hover":"#ffffff1a","justify":"center","max_width":24,"min_width":24,"on_click":"shell.settings.size","widget":"row"}
-size_left_plus_t: {"h":16,"src":"/opt/mixos/share/icons/mixos/scalable/actions/plus-symbolic.svg","w":16,"widget":"image"}
+size_left_plus_t: {"h":16,"src":"mixos:prefix/share/icons/mixos/scalable/actions/plus-symbolic.svg","w":16,"widget":"image"}
 size_left_value: {"align":"right","color":"#fcfcfc","size":12,"text":"= $model.sizes.left","widget":"text","width":48}
 size_right: {"align":"center","children":["size_right_label","size_right_minus","size_right_value","size_right_plus"],"gap":4,"height":32,"widget":"row"}
 size_right_label: {"color":"#fcfcfc","elide":true,"fill":true,"size":12,"text":"Right width","widget":"text"}
 size_right_minus: {"align":"center","children":["size_right_minus_t"],"height":28,"hover":"#ffffff1a","justify":"center","max_width":24,"min_width":24,"on_click":"shell.settings.size","widget":"row"}
-size_right_minus_t: {"h":16,"src":"/opt/mixos/share/icons/mixos/scalable/actions/minus-symbolic.svg","w":16,"widget":"image"}
+size_right_minus_t: {"h":16,"src":"mixos:prefix/share/icons/mixos/scalable/actions/minus-symbolic.svg","w":16,"widget":"image"}
 size_right_plus: {"align":"center","children":["size_right_plus_t"],"height":28,"hover":"#ffffff1a","justify":"center","max_width":24,"min_width":24,"on_click":"shell.settings.size","widget":"row"}
-size_right_plus_t: {"h":16,"src":"/opt/mixos/share/icons/mixos/scalable/actions/plus-symbolic.svg","w":16,"widget":"image"}
+size_right_plus_t: {"h":16,"src":"mixos:prefix/share/icons/mixos/scalable/actions/plus-symbolic.svg","w":16,"widget":"image"}
 size_right_value: {"align":"right","color":"#fcfcfc","size":12,"text":"= $model.sizes.right","widget":"text","width":48}
 ```

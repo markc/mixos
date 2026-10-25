@@ -245,11 +245,11 @@ Macros run with your normal session authority.</p>
 <h2 id="folders-and-precedence">Folders and precedence</h2>
 <p>Every app scans only its two per-app tiers, from lowest to highest precedence:</p>
 <table><thead><tr><th>Tier</th><th>Folder</th><th>Scope</th></tr></thead><tbody>
-<tr><td>Built-in per-app</td><td><code>/opt/mixos/share/macros/&lt;app&gt;/</code></td><td>One app</td></tr>
+<tr><td>Built-in per-app</td><td><code>&lt;prefix&gt;/share/macros/&lt;app&gt;/</code></td><td>One app</td></tr>
 <tr><td>User per-app</td><td><code>~/.config/mixos/macros/&lt;app&gt;/</code></td><td>One app</td></tr>
 </tbody></table>
 <p><code>&lt;app&gt;</code> is the component name, for example <code>ced</code>, <code>dopus</code> or <code>term</code>.
-An absolute <code>MIXOS_SHARE</code> replaces <code>/opt/mixos/share</code>. An absolute
+An absolute <code>MIXOS_SHARE</code> replaces <code>&lt;prefix&gt;/share</code>. An absolute
 <code>XDG_CONFIG_HOME</code> replaces <code>~/.config</code>; otherwise the configuration root is
 <code>$HOME/.config</code>. Resolution needs an absolute <code>HOME</code> and does not create
 folders until you request a write or open a user folder.</p>
@@ -333,7 +333,7 @@ closing another window leaves the run alone.</p>
 including <code>ui.tree</code>, <code>ui.click</code>, <code>ui.key</code>, <code>ui.type</code> and <code>ui.capture</code>. Omitting
 the field addresses the app window. A closed editor returns <code>NOT_FOUND</code>.</p>
 <h2 id="execution-context">Execution context</h2>
-<p>The runner starts <code>/opt/mixos/bin/mix &lt;path&gt;</code> directly, without a shell
+<p>The runner starts <code>&lt;prefix&gt;/bin/mix &lt;path&gt;</code> directly, without a shell
 wrapper. An absolute <code>MIXOS_MIX</code> selects another Mix binary. Its working
 directory is your home, and it receives:</p>
 <table><thead><tr><th>Variable</th><th>Value</th></tr></thead><tbody>
@@ -353,7 +353,7 @@ title; otherwise the id is shown. Header reads are bounded to 8 KiB.</p>
 <p><code>Library::scan</code> scans the global tiers and uses <code>Roots::apps()</code> with the same
 per-app scan to discover every app's macros. Global user macros live directly
 in <code>~/.config/mixos/macros/</code>; built-ins live directly in
-<code>/opt/mixos/share/macros/</code>. Workshop's Session runs and creates global macros.
+<code>&lt;prefix&gt;/share/macros/</code>. Workshop's Session runs and creates global macros.
 App ids are scoped to their catalogue, so identical ids in different apps
 remain separate.</p>
 <p>A global macro can declare <code>-- target: any</code> or <code>-- target: ced, dopus</code> in

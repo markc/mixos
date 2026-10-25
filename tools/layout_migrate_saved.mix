@@ -1,0 +1,63 @@
+#!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Offline migration only. Never discovers or opens live saved-data roots.
+-- Supply a copy and an explicit old five-root document. Preview is the default.
+$g = getopt(args(), {source: {arg: true}, "from-layout": {arg: true}, apply: {}, help: {short: "h"}})
+if $g.opts.help then
+  print("layout_migrate_saved.mix --source COPY --from-layout OLD_LAYOUT [--apply]")
+  exit(0)
+end
+if len($g.errors) != 0 or len($g.rest) != 0 or $g.opts.source == nil or $g.opts["from-layout"] == nil then
+  raise("MIGRATE_ARGS", "requires --source COPY --from-layout FILE; dry-run unless --apply")
+end
+$copy = realpath($g.opts.source)
+if $copy == nil or not is_dir($copy) or $copy == "/" then raise("MIGRATE_SOURCE", "source must be an existing copy directory") end
+$old = load_data($g.opts["from-layout"])
+if type($old) != "map" or len(keys($old)) != 5 then raise("MIGRATE_LAYOUT", "offline migration needs all five old roots to reject live source paths") end
+$targets = require(dirname(realpath($0)) .. "/lib/layout_target.mix")
+$old = $targets.checked($old)
+$pairs = []
+for $name in keys($old)
+  if not contains(["prefix", "config", "state", "cache", "runtime"], $name) or type($old[$name]) != "string" or not starts_with($old[$name], "/") then
+    raise("MIGRATE_LAYOUT", "invalid old layout root")
+  end
+  $live = realpath($old[$name]) ?? $old[$name]
+  if $copy == $live or starts_with($copy, $live .. "/") or starts_with($live, $copy .. "/") then
+    raise("MIGRATE_LIVE", "source overlaps a supplied live MixOS root")
+  end
+  push($pairs, {path: $old[$name], name: $name})
+end
+$pairs = reverse(sort_by($pairs, fn($p) = len($p.path)))
+$pending = []
+for $path in walk($copy, {follow_symlinks: false})
+  $st = stat($path, {follow_symlinks: false})
+  if $st.is_symlink then raise("MIGRATE_LINK", "refusing symlink " .. $path) end
+  if not $st.is_file or ends_with($path, ".layout-original") then continue end
+  -- Never patch an SQLite database as bytes. Its owner must export it first,
+  -- retaining revisions and audit chains when importing the migrated document.
+  if ends_with($path, ".db") or ends_with($path, ".sqlite") or ends_with($path, ".sqlite3") then
+    raise("MIGRATE_DATABASE", "export the settings/props store through its owning component before migration: " .. $path)
+  end
+  if not any([".mix", ".mx", ".json"], fn($ext) = ends_with($path, $ext)) then continue end
+  $text = read_file($path)
+  $next = $text
+  for $pair in $pairs
+    -- Boundary-aware replacement avoids matching a sibling installation name.
+    $next = replace($next, $pair.path .. "/", "mixos:" .. $pair.name .. "/")
+    $next = replace($next, '"' .. $pair.path .. '"', '"mixos:' .. $pair.name .. '/"')
+    $next = replace($next, "'" .. $pair.path .. "'", "'mixos:" .. $pair.name .. "/'")
+  end
+  if $next == $text then continue end
+  if exists($path .. ".layout-original", {follow_symlinks: false}) then raise("MIGRATE_BACKUP", "original already exists for " .. $path) end
+  push($pending, {path: $path, old: $text, text: $next, mode: $st.perm})
+end
+for $entry in $pending
+  print((if $g.opts.apply then "migrate " else "would migrate " end) .. $entry.path)
+  if $g.opts.apply then
+    write_new($entry.path .. ".layout-original", $entry.old, $entry.mode)
+    write_new($entry.path .. ".layout-new", $entry.text, $entry.mode)
+    rename($entry.path .. ".layout-new", $entry.path)
+  end
+end
+print(to_string(len($pending)) .. " files; originals retained; live stores untouched")

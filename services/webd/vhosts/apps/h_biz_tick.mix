@@ -16,11 +16,11 @@
 -- Dunning scope: only invoices issued by THIS system (id >= 10001) get reminder/
 -- overdue mail; imported open invoices surface on the dash instead (no surprise
 -- dunning blast at migration).
-include "/opt/mixos/vhosts/shared/apps/biz.mix"
-include "/opt/mixos/vhosts/shared/apps/stripe.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/apps/stripe.mix")
 -- shop outbox + cart sweep (only ever ACTS on features.shop vhosts — see
 -- the biz_shop_enabled() gates in biz_tick_main; harmless include elsewhere)
-include "/opt/mixos/vhosts/shared/apps/shop.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/apps/shop.mix")
 
 $BIZ_NEW_INVOICE_FLOOR = 10001
 

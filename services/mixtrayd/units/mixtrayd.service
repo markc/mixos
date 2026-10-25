@@ -10,7 +10,7 @@ Wants=noded.service
 
 [Service]
 Type=simple
-ExecStart=/opt/mixos/bin/mixtrayd serve
+ExecStart=@{prefix}/bin/mixtrayd serve
 Restart=on-failure
 RestartSec=5s
 

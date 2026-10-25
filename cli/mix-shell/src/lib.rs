@@ -585,7 +585,7 @@ fn resolve_term(
         }
     }
     for name in TERM_FRONTENDS {
-        if let Some(path) = lookup(&Path::new("/opt/mixos/bin").join(name)) {
+        if let Some(path) = lookup(&::paths::root(::paths::Root::Prefix).join("bin").join(name)) {
             return Ok(path);
         }
     }
@@ -597,7 +597,7 @@ fn resolve_term(
         // changed, which is what a hand-written copy of a list does.
         .ok_or_else(|| {
             format!(
-                "mix --gui: no MixOS terminal frontend is installed (looked for {} in $MIXOS/bin, /opt/mixos/bin, and on PATH). Install the desktop package.",
+                "mix --gui: no MixOS terminal frontend is installed (looked for {} in the resolved prefix bin directory and on PATH). Install the desktop package.",
                 TERM_FRONTENDS.join(" then ")
             )
         })
@@ -738,6 +738,9 @@ fn run_stats_subcommand(sub_args: &[String]) -> i32 {
 /// `aliases`, `functions`, `type`, `context`) will show empty
 /// results, which is the correct behaviour: there IS no session.
 fn run_meta_subcommand(sub_args: &[String]) -> i32 {
+    if sub_args.first().map(String::as_str) == Some("layout") {
+        return meta::run_layout(&sub_args[1..]);
+    }
     let rt = build_runtime();
     // `mix status` reports uptime from START_TIME; the meta one-shot path
     // never went through the main-line init, so it printed "uptime: ?".
@@ -793,6 +796,7 @@ enum ScriptOutcome {
 }
 
 const META_CLI_COMMANDS: &[&str] = &[
+    "layout",
     "vars",
     "aliases",
     "functions",
@@ -2694,7 +2698,7 @@ mod gui_tests {
             );
         }
         // And a qualified path is still absolutised rather than PATH-searched.
-        assert!(!is_bare_frontend_name(Path::new("/opt/mixos/bin/bterm")));
+        assert!(!is_bare_frontend_name(&::paths::root(::paths::Root::Prefix).join("bin/bterm")));
         assert!(!is_bare_frontend_name(Path::new("./term")));
         assert!(!is_bare_frontend_name(Path::new("bterm")));
     }

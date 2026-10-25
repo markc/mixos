@@ -9,7 +9,7 @@
 -- Run from the checkout root with Mix >= 0.112.1:
 --   mix services/bridged/tests/bridge_core_test.mix
 -- The mix binary for the stand-in apps: $BRIDGED_MIX, else $MIXOS_TEST_MIX, else
--- /opt/mixos/bin/mix. An empty variable counts as unset.
+-- <prefix>/bin/mix. An empty variable counts as unset.
 -- Writes only under /var/tmp/bridge-core-test.<uuid>; the fakes die with it.
 
 $here = dirname(realpath($0))
@@ -19,7 +19,7 @@ $here = dirname(realpath($0))
 -- (the runner's fresh build), else the installed one.
 $MIX = env("BRIDGED_MIX") ?? ""
 if $MIX == "" then $MIX = env("MIXOS_TEST_MIX") ?? "" end
-if $MIX == "" then $MIX = "/opt/mixos/bin/mix" end
+if $MIX == "" then $MIX = (mixos_path("prefix") .. "/bin/mix") end
 $core = require("../scripts/lib/bridge_core.mix")
 $fake = realpath($here .. "/lib/fake_app.mix")
 $checkout = realpath($here .. "/../../..")
@@ -160,18 +160,18 @@ try
   check("runtime: a version that is not one is refused as RUNTIME", code_of(fn() = $core.check_runtime(fn() = nil)) == "RUNTIME" and contains(message_of(fn() = $core.check_runtime(fn() = nil)), "does not report"))
 
   -- Instance config and registry paths.
-  $saved = {c: env("BRIDGED_CONFIG"), e: env("MIXOS_ETC"), v: env("BRIDGED_COMMANDS")}
+  $saved = {c: env("BRIDGED_CONFIG"), e: env("MIXOS_CONFIG"), v: env("BRIDGED_COMMANDS")}
   export BRIDGED_CONFIG=""
-  export MIXOS_ETC=""
-  check("path: default /etc/mixos/bridge/<name>.conf.mix", $core.config_path("fakeapp") == "/etc/mixos/bridge/fakeapp.conf.mix")
-  export MIXOS_ETC="/home/user/session/etc"
-  check("path: MIXOS_ETC/bridge/<name>.conf.mix", $core.config_path("fakeapp") == "/home/user/session/etc/bridge/fakeapp.conf.mix")
+  export MIXOS_CONFIG=""
+  check(("path: default " .. mixos_path("config") .. "/bridge/<name>.conf.mix"), $core.config_path("fakeapp") == (mixos_path("config") .. "/bridge/fakeapp.conf.mix"))
+  export MIXOS_CONFIG="/home/user/session/etc"
+  check("path: MIXOS_CONFIG/bridge/<name>.conf.mix", $core.config_path("fakeapp") == "/home/user/session/etc/bridge/fakeapp.conf.mix")
   export BRIDGED_CONFIG="/home/user/x.conf.mix"
   check("path: BRIDGED_CONFIG wins", $core.config_path("fakeapp") == "/home/user/x.conf.mix")
   export BRIDGED_COMMANDS=""
-  check("path: installed registry by default", $core.registry_path() == "/opt/mixos/share/bus/commands.conf.mix")
+  check("path: installed registry by default", $core.registry_path() == (mixos_path("prefix") .. "/share/bus/commands.conf.mix"))
   export BRIDGED_CONFIG=$saved.c
-  export MIXOS_ETC=$saved.e
+  export MIXOS_CONFIG=$saved.e
   export BRIDGED_COMMANDS=$saved.v
 
   -- Serve-name guard against this checkout's registry.

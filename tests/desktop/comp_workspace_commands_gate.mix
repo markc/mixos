@@ -60,7 +60,7 @@ if $CONFIG == "" or not is_file($CONFIG) then
   exit(2)
 end
 
-$comp = $n.require_binary("compd", $COMP, ["/opt/mixos/bin"])
+$comp = $n.require_binary("compd", $COMP, [(mixos_path("prefix") .. "/bin")])
 $CLEANUP.run = $n.new_run(env("TMPDIR", "/tmp") .. "/compd-wsv-" .. to_string(pid()))
 $run = $CLEANUP.run.path
 $cfg_dir = $run .. "/config"
@@ -182,7 +182,7 @@ try
   -- The topic subscriber, before any change.
   $watch_out = $run .. "/bus-watch.jsonl"
   $ws_script = dirname(script_path()) .. "/bus_watch.mix"
-  $mix_bin = which("mix") ?? "/opt/mixos/bin/mix"
+  $mix_bin = which("mix") ?? (mixos_path("prefix") .. "/bin/mix")
   $watch.pid = spawn([$mix_bin, "--serve", $ws_script, "--name", "compd-wsv-watch-" .. to_string(pid())],
     {env: {BUS_WATCH_SERVICE: $svc, BUS_WATCH_OUT: $watch_out}, stdout: {file: $run .. "/bus-watch.log"}, stderr: "stdout", detach: true})
   $t = 0

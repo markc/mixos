@@ -16,11 +16,11 @@ Every app scans only its two per-app tiers, from lowest to highest precedence:
 
 | Tier | Folder | Scope |
 |---|---|---|
-| Built-in per-app | `/opt/mixos/share/macros/<app>/` | One app |
+| Built-in per-app | `<prefix>/share/macros/<app>/` | One app |
 | User per-app | `~/.config/mixos/macros/<app>/` | One app |
 
 `<app>` is the component name, for example `ced`, `dopus` or `term`.
-An absolute `MIXOS_SHARE` replaces `/opt/mixos/share`. An absolute
+An absolute `MIXOS_SHARE` replaces `<prefix>/share`. An absolute
 `XDG_CONFIG_HOME` replaces `~/.config`; otherwise the configuration root is
 `$HOME/.config`. Resolution needs an absolute `HOME` and does not create
 folders until you request a write or open a user folder.
@@ -120,7 +120,7 @@ the field addresses the app window. A closed editor returns `NOT_FOUND`.
 
 ## Execution context
 
-The runner starts `/opt/mixos/bin/mix <path>` directly, without a shell
+The runner starts `<prefix>/bin/mix <path>` directly, without a shell
 wrapper. An absolute `MIXOS_MIX` selects another Mix binary. Its working
 directory is your home, and it receives:
 
@@ -146,7 +146,7 @@ title; otherwise the id is shown. Header reads are bounded to 8 KiB.
 `Library::scan` scans the global tiers and uses `Roots::apps()` with the same
 per-app scan to discover every app's macros. Global user macros live directly
 in `~/.config/mixos/macros/`; built-ins live directly in
-`/opt/mixos/share/macros/`. Workshop's Session runs and creates global macros.
+`<prefix>/share/macros/`. Workshop's Session runs and creates global macros.
 App ids are scoped to their catalogue, so identical ids in different apps
 remain separate.
 

@@ -12,7 +12,7 @@ These gates need the compd binary (`services/compd`) and its testkit probes
 Two kinds of script:
 
 - **Harness gates** (on `nested_host_lib.mix`) take `--bin PATH` (default
-  `/opt/mixos/bin/compd`) and `--config-file PATH` (compd's settings file):
+  `<prefix>/bin/compd`) and `--config-file PATH` (compd's settings file):
   `desktop_nested_gate` (with its waybar, fuzzel and xmessage arms),
   `comp_control_smoke`, `comp_workspaces_gate`, `comp_agent_seat_gate`,
   `comp_presentation_smoke`, `comp_region_select_gate`,
@@ -34,14 +34,14 @@ HTML fixtures (`client_fixture.html`, `x_fixture.html`) and
 
 Binaries and paths the gates rely on:
 
-- `mix`, `noded` and compd in `/opt/mixos/bin`; the testkit probes
+- `mix`, `noded` and compd in `<prefix>/bin`; the testkit probes
   (`testkit-input-probe`, `testkit-presentation-probe`, `testkit-screenshot`,
   `testkit-layer-client`, `testkit-lock-client`, `testkit-ssd-client`) beside
-  the compd binary under test, else in `/opt/mixos/bin`.
+  the compd binary under test, else in `<prefix>/bin`.
 - The broker URL from `MIXOS_NODED_URL`, else `~/.config/mixos/node.conf.mix`
-  or `/etc/mixos/node.conf.mix`, else loopback. A gate with fixed Bus names
+  or `<config>/node.conf.mix`, else loopback. A gate with fixed Bus names
   starts a private `noded` (`--noded PATH` overrides the lookup).
-- compd's per-run state through `MIXOS_ETC`, `MIXOS_VAR` and `MIXOS_RUN`, and
+- compd's per-run state through `MIXOS_CONFIG`, `MIXOS_STATE` and `MIXOS_RUNTIME`, and
   its own switches `COMPD_FRAME_TRACE`, `COMPD_FRAME_TRACE_FILE`,
   `COMPD_FRAME_TRACE_LIMIT`, `COMPD_CHROME_CLIP_DEBUG`, `COMPD_XWAYLAND`.
 - Seats are `seat0` (human) and `agent`; decoration styles are `mac`, `win11`

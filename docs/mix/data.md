@@ -579,7 +579,7 @@ path, so a `try/catch` around a config read actually holds:
 ```mix
 $cfg = nil
 try
-  $cfg = load_data("/etc/mixos/app.conf.mix")
+  $cfg = load_data("<config>/app.conf.mix")
 catch $e
   print("cannot read config: " .. $e)
   exit(2)

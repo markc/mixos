@@ -416,7 +416,7 @@ to additionally compare the initial headless window with a console reference
 at the fixed 0.99 threshold; absence is explicitly reported as unmeasured.</p>
 <p>Capture that reference in the console session environment with a running
 <code>editd</code>, no existing ced window and a scale-1 output:</p>
-<pre><code class="language-text">/opt/mixos/bin/mix services/compd/crates/testkit/scripts/app_reference.mix /tmp/ced-reference.png --comp comp --output OUTPUT
+<pre><code class="language-text">&lt;prefix&gt;/bin/mix services/compd/crates/testkit/scripts/app_reference.mix /tmp/ced-reference.png --comp comp --output OUTPUT
 </code></pre>
 <p>The same helper launches the headless test window. It gives ced fresh private
 app state, places its geometry at (80,60), waits for 800×560, creates a blank
@@ -433,7 +433,7 @@ Rec.601 luma, K1=0.01, K2=0.03 and L=255; alpha is ignored. It returns 1 below
 threshold and 2 for invalid arguments or images, including mismatched sizes.</p>
 <p><code>compd-headless@.service</code> runs inside a headless desk with its own noded,
 session bus, PipeWire and portald. <code>%i</code> is the session slot (for example
-<code>rec</code>), with settings in <code>/etc/mixos/session/%i.env</code> and Bus service <code>comp</code>
+<code>rec</code>), with settings in <code>&lt;config&gt;/session/%i.env</code> and Bus service <code>comp</code>
 inside that desk. It uses the render group, no seatd or tty, nice 10 and
 <code>mixos-headless.slice</code> (<code>CPUQuota=200%</code>). Provisioning places the desk's
 capture services and encoder in the same slice. Both units are owned by

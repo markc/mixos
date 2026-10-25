@@ -168,7 +168,7 @@ impl Default for WebdConfig {
             extra: Default::default(),
             enabled: false,
             port: 443,
-            www_dir: "/var/lib/mixos/www".into(),
+            www_dir: ::paths::root(::paths::Root::State).join("www").to_string_lossy().into_owned(),
             shared_assets_dir: None,
             shared_assets_cross_origin: false,
             tls_cert: None,

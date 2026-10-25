@@ -20,9 +20,9 @@ $editd = env("MIXOS_TEST_EDITD") ?? ""
 if length($argv) >= 2 and $argv[0] == "--bin" then $editd = $argv[1] end
 if $editd == "" then $editd = $root .. "/target/release-fast/editd" end
 $mix = env("MIXOS_TEST_MIX") ?? ""
-if $mix == "" then $mix = "/opt/mixos/bin/mix" end
+if $mix == "" then $mix = (mixos_path("prefix") .. "/bin/mix") end
 $noded = env("MIXOS_TEST_NODED") ?? ""
-if $noded == "" then $noded = "/opt/mixos/bin/noded" end
+if $noded == "" then $noded = (mixos_path("prefix") .. "/bin/noded") end
 for each $bin in [$editd, $mix, $noded]
   if not exists($bin) then raise("TEST_CONFIG", "missing binary " .. $bin) end
 end

@@ -4,8 +4,8 @@
 -- widget (reader.mix). Post-specific logic (the slug lookup, the draft/private gate) stays here;
 -- the read SPEC (badges, byline, Edit action, taxonomy footer, back) is built by the shared
 -- cms_read_spec (lib.mix) — the SAME spec the editor's live preview uses, so preview === view.
-include "/opt/mixos/vhosts/shared/widgets/reader.mix"
-include "/opt/mixos/vhosts/shared/widgets/thread.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/reader.mix")
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/thread.mix")
 
 function post_main()
 cms_init()

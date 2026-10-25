@@ -288,10 +288,10 @@ the numeric type); null, arrays and objects are refused. Search retains all
 operators listed above.
 Deletion updates the durable vectors and in-memory index in one operation.</p>
 <h2 id="cli-and-bridge">CLI and bridge</h2>
-<p><code>indexd -c /etc/mixos/indexd/config.conf.mix call indexd.stats</code> opens the
+<p><code>indexd -c &lt;config&gt;/indexd/config.conf.mix call indexd.stats</code> opens the
 configured engine in-process and prints one JSON reply, with exit status 0
 for success or 1 for an error. Bare command names also work. For example:</p>
-<pre><code class="language-text">indexd -c /etc/mixos/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
+<pre><code class="language-text">indexd -c &lt;config&gt;/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
 </code></pre>
 <p>Writes (<code>store</code>, <code>update</code>, <code>delete</code>, <code>feedback</code>, <code>supersede</code>, <code>index_file</code>)
 require <code>call --offline</code> with the daemon stopped: otherwise its in-memory
@@ -300,10 +300,10 @@ index would desynchronise. Read commands need no flag. <code>call</code> always 
 <p><code>indexd bridge</code> connects to the local node's Bus once and forwards one call
 per stdin line, flushing each reply immediately. It does not open the index
 or require model configuration. Keep one process alive for repeated requests,
-including through <code>ssh -T user@example.test /opt/mixos/bin/indexd bridge</code>.
+including through <code>ssh -T user@example.test &lt;prefix&gt;/bin/indexd bridge</code>.
 The bridge honours non-empty <code>MIXOS_NODED_URL</code> first. Otherwise it reads
 <code>--node-config PATH</code>, then non-empty <code>MIXOS_NODE_CONFIG</code>, defaulting to
-<code>/opt/mixos/etc/node.conf.mix</code>, the same file pinned by the system unit.
+<code>&lt;prefix&gt;/etc/node.conf.mix</code>, the same file pinned by the system unit.
 It derives the broker address from that file rather than user config discovery.</p>
 <pre><code class="language-json">{"id":1,"command":"indexd.search","body":{"query":"service dependencies","limit":3}}
 </code></pre>
@@ -320,12 +320,12 @@ become JSON <code>null</code>; Bus error headers are forwarded as the top-level 
 <p><code>indexd serve</code> registers service <code>indexd</code> using the standard Bus connection
 helper, advertises the eleven commands above, and reconnects with backoff.
 <code>MIXOS_NODE_CONFIG</code> selects the system broker, as for dnsd. The supplied unit
-pins <code>/opt/mixos/etc/node.conf.mix</code>; no broker URL is embedded in indexd.
+pins <code>&lt;prefix&gt;/etc/node.conf.mix</code>; no broker URL is embedded in indexd.
 SIGTERM stops admission and completes accepted Bus calls before exit.
 The model loads lazily on the blocking pool under the inference permit and
 unloads after the configured idle interval (300 seconds by default).</p>
 <p>Configuration lookup is <code>-c/--config</code>, then
-<code>/etc/mixos/indexd/config.conf.mix</code>, then
+<code>&lt;config&gt;/indexd/config.conf.mix</code>, then
 <code>$XDG_CONFIG_HOME/mixos/indexd.conf.mix</code> (or the equivalent under <code>$HOME/.config</code>).
 <code>indexd -c FILE check-config</code> validates the local <code>config.json</code>,
 <code>tokenizer.json</code> and <code>model.safetensors</code> before loading any weights. HF snapshot
@@ -351,9 +351,9 @@ tilde-prefixed path even when content is supplied.</p>
 bundle carries the standalone binary and these files under <code>share/indexd/units/</code>,
 with the sample config under <code>share/indexd/examples/config.conf.mix</code>,
 following the component-owned maild packaging pattern. Install the binary
-under <code>/opt/mixos/bin</code>, the unit under <code>/etc/systemd/system</code>, sysusers under
+under <code>&lt;prefix&gt;/bin</code>, the unit under <code>/etc/systemd/system</code>, sysusers under
 <code>/usr/lib/sysusers.d/indexd.conf</code>, and a customised config under
-<code>/etc/mixos/indexd/config.conf.mix</code>. Apply sysusers before starting the service.
+<code>&lt;config&gt;/indexd/config.conf.mix</code>. Apply sysusers before starting the service.
 The unit wants system <code>noded.service</code>, runs as <code>indexd:indexd</code>, limits memory
 to 2 GiB, sets <code>MALLOC_ARENA_MAX=2</code>, and hardens filesystem, devices and kernel
 access. TCP address families remain available for the configured broker.
@@ -365,7 +365,7 @@ ownership from the legacy account; the new account does not reuse its UID.</p>
 <p>On a CBC worker, <code>cargo test -p indexd</code> runs the engine tests, registry checks,
 real daemon/bridge pipe tests, and <code>services/indexd/tests/bus_test.mix</code> against
 <code>libs/test-broker</code>. Set <code>MIXOS_TEST_MIX</code> if Mix is not installed at
-<code>/opt/mixos/bin/mix</code>. Embeddings are deterministic cache fixtures; no model
+<code>&lt;prefix&gt;/bin/mix</code>. Embeddings are deterministic cache fixtures; no model
 is needed. The tokenizer parity test compares 0.22.2 token IDs against the
 committed legacy 0.21.4/onig golden; it stays ignored unless
 <code>INDEXD_TEST_TOKENIZER</code> names the staged tokenizer file.</p>

@@ -335,7 +335,7 @@ $p20 = $e.build(data($big, $templates, $props, []), $ui).selected.problems
 check(length($p20) == 20 and $p20[19].id == "p_more" and contains($p20[19].cells[0], "11 more"), "problems capped at 20 rows")
 
 -- First run: an empty loader with first_run, templates listed.
-$fresh = {needs_setup: true, root: "/home/user/.config/mixos/scenes", templates_root: "/opt/mixos/share/scenes", state_ok: true, revision: 1, diagnostic: nil,
+$fresh = {needs_setup: true, root: "/home/user/.config/mixos/scenes", templates_root: (mixos_path("prefix") .. "/share/scenes"), state_ok: true, revision: 1, diagnostic: nil,
   editor: {user_copy: false, user_dirty: false, mounted: true, visible: true, source: "shipped", safe: true, fallback: nil, behaviour: "running",
     view: "gallery", scene: nil, first_run: true, request_seq: 1, problems: []}, scenes: []}
 $five = []
@@ -344,7 +344,7 @@ for each $t in ["panel", "launcher", "calendar", "notes", "settings"]
   push($five, {template: $t, name: $t, title: $t, description: "d", edge: "right", kind: "edge", behaviour: true, recommended: true, order: $k, requires: [], installed_as: []})
   $k = $k + 10
 end
-$fresh_t = {root: "/opt/mixos/share/scenes", templates: $five}
+$fresh_t = {root: (mixos_path("prefix") .. "/share/scenes"), templates: $five}
 $fui = $e.apply_request($e.default_ui(), $fresh.editor)
 $fm = $e.build(data($fresh, $fresh_t, nil, []), $fui)
 model_ok($fm, "first run")
@@ -456,7 +456,7 @@ check(len($long_plan.steps[0].retry.args.name) == 64 and re_match($long_plan.ste
 -- recommended: install what is missing, enable what is off, stop at the first refusal.
 $rl = $list
 $rl.scenes[0].enabled = false
-$rt = {root: "/opt/mixos/share/scenes", templates: [
+$rt = {root: (mixos_path("prefix") .. "/share/scenes"), templates: [
   {template: "panel", name: "panel", title: "Panel", recommended: true, order: 10, requires: [], installed_as: ["panel"]},
   {template: "launcher", name: "launcher", title: "Applications", recommended: true, order: 20, requires: [], installed_as: []},
   {template: "notes", name: "notes", title: "Notifications", recommended: true, order: 40, requires: [], installed_as: ["notes"]},

@@ -61,7 +61,7 @@ pub fn list(path: Option<String>) -> Result<Listing, String> {
 }
 
 fn starting_directory() -> PathBuf {
-    let wallpapers = Path::new("/opt/mixos/share/wallpapers");
+    let wallpapers = &::paths::root(::paths::Root::Prefix).join("share/wallpapers");
     if wallpapers.is_dir() {
         return wallpapers.into();
     }

@@ -2,7 +2,7 @@
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- shwho.mix — toolsd's IMMUTABLE, root-owned copy of the shwho tool.
 --
--- Deployed to /opt/mixos/lib/toolsd/tools/shwho.mix as root:root 0444, under
+-- Deployed to <prefix>/lib/toolsd/tools/shwho.mix as root:root 0444, under
 -- root-owned non-writable parents. toolsd (which runs UNPRIVILEGED) may execute it but
 -- can never modify it, and verifies ownership/mode before every exec (tools_exec.mix).
 --

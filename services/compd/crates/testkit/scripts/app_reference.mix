@@ -14,7 +14,7 @@ end
 $path = $g.rest[0]
 if not starts_with($path, "/") then raise("APP_REFERENCE_ARGS", "PNG path must be absolute") end
 $service = $g.opts.comp ?? "comp"
-$app = $g.opts.app ?? "/opt/mixos/bin/ced"
+$app = $g.opts.app ?? (mixos_path("prefix") .. "/bin/ced")
 $root = $path .. ".session"
 if exists($root) then raise("APP_REFERENCE_EXISTS", "session directory already exists: " .. $root) end
 mkdir($root)

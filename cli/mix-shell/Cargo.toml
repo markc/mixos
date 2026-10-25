@@ -23,6 +23,7 @@ doctest = false
 # `bus::MixBusHandler`, not at build time.
 
 [dependencies]
+paths = { path = "../../libs/paths" }
 # mix is a sibling crate within the mix repo — relative
 # path stays one level up.
 mix = { workspace = true, features = ["json", "regex", "toml", "datetime", "url", "crypto", "http", "sqlite", "tokio-sleep", "dkim", "serde", "markdown", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns"] }

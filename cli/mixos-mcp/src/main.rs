@@ -3,7 +3,7 @@
 
 //! mixos-mcp — MCP server bridging Claude Code to the mixos appmesh.
 //!
-//! Register with: `claude mcp add mixos -- /opt/mixos/bin/mixos-mcp`
+//! Register with: `claude mcp add mixos -- mixos:prefix/bin/mixos-mcp`
 //!
 //! Broker connection is lazy — the MCP server starts immediately and only
 //! connects to noded on the first tool call, avoiding startup timeouts.

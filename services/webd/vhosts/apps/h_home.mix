@@ -10,7 +10,7 @@
 -- bespoke (the media gallery's card-view pattern). Each post's image comes from its `cover`
 -- field (a /img/… or /media/<id> reference into the media library — never re-embedded in the
 -- markdown). Gated by feature("blog"): off ⇒ a plain landing card, never a 404.
-include "/opt/mixos/vhosts/shared/widgets/datatable.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/datatable.mix")
 
 -- blog_date() (the "Jan 8, 2026" house date format) now lives in lib.mix so the
 -- single-post byline (h_post) shares the exact same formatting as these index cards.

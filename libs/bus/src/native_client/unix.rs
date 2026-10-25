@@ -70,12 +70,13 @@ impl UnixConnectOptions {
 
     /// Synchronous explicit/config/system resolution. `connect_unix` inserts
     /// ping discovery before this system fallback when both options are absent.
-    /// Never consults XDG_RUNTIME_DIR, MIXOS_RUN or the caller's home.
-    pub fn resolved_endpoint(&self) -> &Path {
+    /// Never consults XDG_RUNTIME_DIR, MIXOS_RUNTIME or the caller's home.
+    pub fn resolved_endpoint(&self) -> PathBuf {
         self.endpoint
             .as_deref()
             .or(self.configured_endpoint.as_deref())
-            .unwrap_or_else(|| Path::new("/run/mixos/noded/bus.sock"))
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| ::paths::root(::paths::Root::Runtime).join("noded/bus.sock"))
     }
 }
 
@@ -340,7 +341,8 @@ async fn connect_verified(
     options: &UnixConnectOptions,
     provenance: Option<crate::RegisterProvenance>,
 ) -> Result<VerifiedConnection, ConnectError> {
-    let path = options.resolved_endpoint();
+    let resolved = options.resolved_endpoint();
+    let path = resolved.as_path();
     let before = verify_path(path, options.broker_account)?;
     let socket = tokio::net::UnixStream::connect(path)
         .await

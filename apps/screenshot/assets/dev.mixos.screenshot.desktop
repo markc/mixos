@@ -3,8 +3,8 @@
 Type=Application
 Name=Screenshot
 Comment=Screenshots and annotations
-Exec=/opt/mixos/bin/screenshot %f
-TryExec=/opt/mixos/bin/screenshot
+Exec=@{prefix}/bin/screenshot %f
+TryExec=@{prefix}/bin/screenshot
 Icon=dev.mixos.screenshot-symbolic
 Terminal=false
 Categories=Utility;Graphics;
@@ -14,8 +14,8 @@ Actions=Region;Screen;
 
 [Desktop Action Region]
 Name=Screenshot of a region
-Exec=/opt/mixos/bin/screenshot --capture region
+Exec=@{prefix}/bin/screenshot --capture region
 
 [Desktop Action Screen]
 Name=Screenshot of the screen
-Exec=/opt/mixos/bin/screenshot --capture screen
+Exec=@{prefix}/bin/screenshot --capture screen

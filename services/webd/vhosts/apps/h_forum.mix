@@ -5,7 +5,7 @@
 -- shared /reply endpoint (h_reply.mix), the SAME path blog comments use — one substrate
 -- (thread.mix / cms_threads). A forum topic is a cms_posts row kind='forum'; its discussion
 -- is cms_threads rooted at it (root_kind='forum'). Plan: _plan/2026-06-28-unified-message-surfaces.md.
-include "/opt/mixos/vhosts/shared/widgets/thread.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/widgets/thread.mix")
 
 -- Byline for a topic's opening post: author · date.
 function forum_byline($t)

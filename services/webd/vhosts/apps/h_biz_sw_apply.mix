@@ -14,7 +14,7 @@
 -- domain advances in the SAME transaction only on that winning flip. A worker that
 -- renewed at the registry but crashed before apply is reconciled by
 -- registry_expiry (the worker reports what domainInfo shows post-renew).
-include "/opt/mixos/vhosts/shared/apps/biz.mix"
+include (mixos_path("prefix") .. "/vhosts/shared/apps/biz.mix")
 
 function bsa_authorized()
   $secret = biz_setting("tick_secret")

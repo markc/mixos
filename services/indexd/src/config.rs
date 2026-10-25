@@ -3,8 +3,8 @@
 //! Strict-data configuration and filesystem domain policy.
 use crate::*;
 
-const SYSTEM_CFG_DIR: &str = "/etc/mixos/indexd";
-const SNAPSHOTS: &str = "/var/lib/mixos/indexd/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1.5/snapshots";
+
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -94,8 +94,8 @@ pub struct ServiceConfig {
 impl Default for ServiceConfig {
     fn default() -> Self {
         Self {
-            vectors_db: "/var/lib/mixos/indexd/vectors.db".into(),
-            model_dir: resolve_snapshot(Path::new(SNAPSHOTS))
+            vectors_db: ::paths::root(::paths::Root::State).join("indexd/vectors.db").to_string_lossy().into_owned(),
+            model_dir: resolve_snapshot(&::paths::root(::paths::Root::Cache).join("indexd/huggingface/hub/models--nomic-ai--nomic-embed-text-v1.5/snapshots"))
                 .to_string_lossy()
                 .into_owned(),
             idle_timeout_secs: 300,
@@ -191,7 +191,7 @@ pub fn load_indexd_config(cli_path: Option<&Path>) -> Result<(PathBuf, Config)> 
         let path = path.to_path_buf();
         return Ok((path.clone(), ::config::load_conf_mix_path(&path)?));
     }
-    if let Some(found) = load_system_config(Path::new(SYSTEM_CFG_DIR))? {
+    if let Some(found) = load_system_config(&::paths::root(::paths::Root::Config).join("indexd"))? {
         return Ok(found);
     }
     let user_dir = std::env::var_os("XDG_CONFIG_HOME")
@@ -204,7 +204,7 @@ pub fn load_indexd_config(cli_path: Option<&Path>) -> Result<(PathBuf, Config)> 
         }
     }
     Ok((
-        Path::new(SYSTEM_CFG_DIR).join("config.conf.mix"),
+        ::paths::root(::paths::Root::Config).join("indexd").join("config.conf.mix"),
         Config::default(),
     ))
 }

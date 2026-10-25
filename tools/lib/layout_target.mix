@@ -1,0 +1,73 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- N-1 compatible installer boundary. Defaults are supplied by the target
+-- binary's Rust resolver, never copied here or taken from this interpreter.
+$ROOTS = ["prefix", "config", "state", "cache", "runtime"]
+
+fn checked($layout)
+  if type($layout) != "map" or len(keys($layout)) > 5 then raise("INSTALL_LAYOUT", "layout must contain at most five roots") end
+  for $key in keys($layout)
+    $value = $layout[$key]
+    if not contains($ROOTS, $key) or type($value) != "string" or not starts_with($value, "/") or $value == "/" or re_match($value, "[\\x00-\\x1f\\x7f]") then
+      raise("INSTALL_LAYOUT", "invalid target root: " .. $key)
+    end
+    for $part in slice(split($value, "/"), 1)
+      if $part == "." or $part == ".." or $part == "" then raise("INSTALL_LAYOUT", "target roots must be canonical absolute paths") end
+    end
+  end
+  return $layout
+end
+
+fn document($path)
+  if not is_file($path) then return {} end
+  if stat($path, {follow_symlinks: false}).is_symlink or stat($path).size > 65536 then
+    raise("INSTALL_LAYOUT", "expected a small regular layout document: " .. $path)
+  end
+  return checked(load_data($path))
+end
+
+-- CLI roots > the target's layout.mx > the staged binary's defaults.
+-- sysroot maps guest roots for component installs; it is never a prefix.
+-- A complete receipt/layout can resolve rollback with no binary at all.
+fn resolve($opts, $binary, $sysroot, $recorded)
+  $cli = {}
+  for $name in $ROOTS
+    if $opts[$name] != nil then $cli[$name] = $opts[$name] end
+  end
+  checked($cli)
+  $saved = checked($recorded)
+  $prefix = $cli.prefix ?? $saved.prefix
+  $defaults = {}
+  $tier = $opts.tier ?? "system"
+  if not contains(["system", "user"], $tier) then raise("INSTALL_LAYOUT", "--tier must be system or user") end
+  if $prefix == nil then
+    if $binary == nil or not is_file($binary) then raise("INSTALL_LAYOUT", "specify --prefix or --mix STAGED_MIX; target defaults need the binary being installed") end
+    $defaults = defaults($binary, $tier, nil)
+    $prefix = $defaults.prefix
+  end
+  $file = document($sysroot .. $prefix .. "/layout.mx")
+  $overrides = merge(merge($saved, $file), $cli)
+  $overrides.prefix = $cli.prefix ?? $file.prefix ?? $saved.prefix ?? $prefix
+  if len(keys($overrides)) < 5 then
+    if $opts["record-only"] ?? false then raise("INSTALL_LAYOUT", "rollback needs a complete target layout.mx or receipt layout; no running interpreter defaults are used") end
+    if $binary == nil then $binary = $sysroot .. $prefix .. "/bin/mix" end
+    if not is_file($binary) then raise("INSTALL_LAYOUT", "incomplete target layout; supply --mix STAGED_MIX or all five target roots") end
+    $defaults = defaults($binary, $tier, $prefix)
+  end
+  $layout = checked(merge($defaults, $overrides))
+  if len(keys($layout)) != 5 then raise("INSTALL_LAYOUT", "target layout needs all five roots (user runtime needs --runtime or XDG_RUNTIME_DIR)") end
+  return $layout
+end
+
+fn defaults($binary, $tier, $prefix)
+  $argv = [$binary, "layout", "defaults", "--tier", $tier, "--json"]
+  if $prefix != nil then $argv = concat($argv, ["--prefix", $prefix]) end
+  $r = run_argv($argv, {timeout: 30})
+  if not $r.ok then raise("INSTALL_LAYOUT", "staged mix needs layout defaults --tier --json: " .. trim($r.stderr)) end
+  return checked(json_parse($r.stdout))
+end
+
+fn environment($layout)
+  $out = {}
+  for $name in $ROOTS $out["MIXOS_" .. upper($name)] = $layout[$name] end
+  return $out
+end
