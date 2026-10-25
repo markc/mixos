@@ -14,10 +14,19 @@ fn default_prefix_without_layout_keeps_user_xdg_roots() {
     // changes the uid tier; installing defaults must not write a system map.
     let layout = Layout::from_source(&env, "").unwrap();
     assert_eq!(layout.root(Root::Prefix), Path::new("/opt/mixos"));
-    assert_eq!(layout.root(Root::Etc), Path::new("/home/user/.config/mixos"));
-    assert_eq!(layout.root(Root::Var), Path::new("/home/user/.local/share/mixos"));
+    assert_eq!(
+        layout.root(Root::Etc),
+        Path::new("/home/user/.config/mixos")
+    );
+    assert_eq!(
+        layout.root(Root::Var),
+        Path::new("/home/user/.local/share/mixos")
+    );
     assert_eq!(layout.root(Root::Run), Path::new("/run/user/1000/mixos"));
-    assert_eq!(layout.root(Root::Cache), Path::new("/home/user/.cache/mixos"));
+    assert_eq!(
+        layout.root(Root::Cache),
+        Path::new("/home/user/.cache/mixos")
+    );
     assert_eq!(layout.root(Root::Share), Path::new("/opt/mixos/share"));
     // A root explicitly stored in layout.mx applies to every uid, like MIXOS.
     let explicit = Layout::from_source(&env, "etc: '/etc/mixos'").unwrap();
