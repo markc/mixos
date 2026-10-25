@@ -153,6 +153,12 @@ fn write_ordered(v: &Value, pretty: bool, depth: usize, out: &mut String) -> Res
         }
         leaf => {
             let json = mix_to_json(leaf)?;
+            // Lists and maps are handled above; a leaf that rendered as a JSON
+            // container would skip the pretty layout and break byte parity.
+            debug_assert!(!matches!(
+                json,
+                serde_json::Value::Array(_) | serde_json::Value::Object(_)
+            ));
             out.push_str(&serde_json::to_string(&json).map_err(|e| e.to_string())?);
         }
     }

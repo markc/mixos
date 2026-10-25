@@ -17,12 +17,17 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
   or number on the left still raises; it is never an assignment target, and
   `$a?.m()` is a parse error. `?` followed directly by `.` and a name used to
   be a parse error, so no valid script changes meaning; the ternary `?` and
-  `??` are unchanged.
+  `??` are unchanged. In `"${…}"` and heredocs `${a?.b}` means `${a.b}`
+  (interpolation paths already read nil from any non-map step); a `??`
+  default's text is left as written.
 - `json_encode(v[, pretty][, {sort_keys: false}])` keeps each map's insertion
   order. Sorted keys stay the default (digests and golden files depend on
   them, and `serde_json` must never gain `preserve_order`); the ordered writer
   matches serde_json's compact and pretty layout byte for byte. An unknown
   option raises `OPTION_INVALID`, a non-bool `sort_keys` `TYPE_MISMATCH`.
+  A map in the `pretty` slot (`json_encode($v, {sort_keys: false})`) now
+  raises `TYPE_MISMATCH` naming the third slot; it used to count as truthy and
+  silently give pretty, sorted output.
 - `date_format(ts[, fmt][, {utc: true}])` formats in UTC instead of local
   time, so an ISO 8601 `Z` stamp is no longer local wall-clock time with a
   UTC label (the only workaround was `TZ=UTC` around the whole process).

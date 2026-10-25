@@ -681,6 +681,9 @@ there is no <code>?[ ]</code> (it would collide with the ternary, <code>$c ?[1] 
 <li><strong>Reads only.</strong> <code>$a?.b = 1</code> is refused, and so is a method call
 (<code>$a?.len()</code> is a parse error that says how to guard it).</li>
 <li><code>?.</code> must touch the field name: <code>$c ? .x : y</code>, with a space, is not <code>?.</code>.</li>
+<li><strong>In <code>"${…}"</code> and heredocs</strong>, <code>${a?.b}</code> is accepted and means <code>${a.b}</code>: an
+interpolation path already reads nil from any step that is not a map, so
+<code>"${a?.b ?? "none"}"</code> works as you would expect.</li>
 </ul>
 <h2 id="ternary-cond--a--b">Ternary: <code>cond ? a : b</code></h2>
 <p>The C-style conditional expression (since 0.20.0). It evaluates <code>cond</code>, then

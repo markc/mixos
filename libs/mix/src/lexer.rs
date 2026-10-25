@@ -102,6 +102,25 @@ pub struct SourceToken {
 /// The coarse `mix_tokens()` kind of a token. `first` is its first source
 /// character: a bare word also lexes to `Token::String`, and only a quote
 /// tells a literal from a word (the test `highlight` uses).
+/// `${a?.b}` in a string or heredoc. Every step of an interpolation path
+/// already reads nil from a nil (or non-map) value, so there `?.` means the
+/// same as `.` and is rewritten to it here, once, before any evaluator,
+/// classifier or lint sees the spec. Only the path before a `??` / `?:`
+/// default is touched, so default text such as `"what?.no"` stays as written.
+fn interp_spec_optional_dots(spec: String) -> String {
+    let end = spec
+        .as_bytes()
+        .windows(2)
+        .position(|w| w[0] == b'?' && matches!(w[1], b'?' | b':'))
+        .unwrap_or(spec.len());
+    if !spec[..end].contains("?.") {
+        return spec;
+    }
+    let mut out = spec[..end].replace("?.", ".");
+    out.push_str(&spec[end..]);
+    out
+}
+
 fn source_token_kind(token: &Token, first: Option<&char>) -> &'static str {
     use Token::*;
     match token {
@@ -1230,7 +1249,7 @@ impl Lexer {
                                 }
                             }
                         }
-                        parts.push(StringPart::Variable(var_name));
+                        parts.push(StringPart::Variable(interp_spec_optional_dots(var_name)));
                     } else {
                         // `$(` is NOT command substitution in a double-quoted
                         // string — removed footgun: it used to shell out and
@@ -1574,7 +1593,7 @@ impl Lexer {
                 if i < chars.len() {
                     i += 1; // skip }
                 }
-                parts.push(StringPart::Variable(var_name));
+                parts.push(StringPart::Variable(interp_spec_optional_dots(var_name)));
             } else if chars[i] == '$' && i + 1 < chars.len() && chars[i + 1] == '(' {
                 // $(command) substitution
                 if !current.is_empty() {

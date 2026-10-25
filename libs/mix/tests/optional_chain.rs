@@ -72,18 +72,6 @@ async fn combines_with_nil_coalesce() {
 }
 
 #[tokio::test]
-async fn is_not_an_assignment_target() {
-    let err = run("$a = {b: {}}\n$a?.b = 1\n")
-        .await
-        .expect_err("?. on the left of = must be refused");
-    assert!(!err.is_empty());
-    let err = run("$a = {b: {}}\n$a.b?.c = 1\n")
-        .await
-        .expect_err("?. inside an assignment path must be refused");
-    assert!(!err.is_empty());
-}
-
-#[tokio::test]
 async fn method_calls_are_refused_at_parse_time() {
     let err = run("$a = nil\nprint($a?.len())\n")
         .await
@@ -101,6 +89,88 @@ async fn ternary_and_coalesce_are_unchanged() {
             .is_err()
     );
     assert_eq!(out("$a = nil\nprint($a ?? 3)\n").await, "3");
+}
+
+#[tokio::test]
+async fn more_receivers_and_positions() {
+    // nil all the way down, guarded at every step.
+    assert_eq!(out("$a = nil\nprint(type($a?.b?.c))\n").await, "nil");
+    // A number is not forgiven either.
+    let err = run("$n = 5\nprint($n?.b)\n").await.expect_err("number receiver");
+    assert!(err.contains("cannot access field 'b'"), "got: {err}");
+    // Inside a ternary branch: `?` then `?.` side by side.
+    assert_eq!(
+        out("$c = true\n$a = nil\nprint(type($c ? $a?.b : 1))\n").await,
+        "nil"
+    );
+    assert_eq!(
+        out("$c = false\n$a = {b: 1}\nprint($c ? 0 : $a?.b)\n").await,
+        "1"
+    );
+}
+
+#[tokio::test]
+async fn interpolation_and_heredocs_accept_question_dot() {
+    // Interpolation paths already read nil from a nil step; `?.` means `.` there.
+    assert_eq!(out("$a = {b: 7}\nprint(\"v=${a?.b}\")\n").await, "v=7");
+    assert_eq!(
+        out("$a = nil\nprint(\"v=${a?.b ?? \"dflt\"}\")\n").await,
+        "v=dflt"
+    );
+    // The default must not swallow a value that exists.
+    assert_eq!(
+        out("$a = {b: 7}\nprint(\"v=${a?.b ?? \"dflt\"}\")\n").await,
+        "v=7"
+    );
+    // Default text containing `?.` is left exactly as written.
+    assert_eq!(
+        out("$a = nil\nprint(\"${a?.b ?? \"what?.no\"}\")\n").await,
+        "what?.no"
+    );
+    assert_eq!(
+        out("$a = {b: {c: 3}}\n$s = <<EOF\nc=${a?.b?.c}\nEOF\nprint(trim($s))\n").await,
+        "c=3"
+    );
+}
+
+#[tokio::test]
+async fn assignment_through_question_dot_is_a_parse_error() {
+    for src in [
+        "$a = {b: {}}\n$a?.b = 1\n",
+        "$a = {b: {}}\n$a.b?.c = 1\n",
+        "$a = {b: 1}\n$a?.b += 1\n",
+    ] {
+        let err = run(src).await.expect_err("?. is never an assignment target");
+        assert!(err.contains("Parse error"), "{src:?} got: {err}");
+    }
+}
+
+#[test]
+fn lint_reads_question_dot_like_dot() {
+    use mix::analyzer::{AnalyzerConfig, analyze};
+    let codes = |src: &str| -> Vec<String> {
+        let tokens = Lexer::new(src).tokenize().expect("lexes");
+        let stmts = Parser::new(tokens, src).parse_program().expect("parses");
+        analyze(&stmts, Some("test.mix"), &AnalyzerConfig::default())
+            .diagnostics
+            .into_iter()
+            .map(|d| d.code.to_string())
+            .collect()
+    };
+    // `null` after `?.` is a field name, exactly as after `.`: no MIX-W2312.
+    assert!(
+        !codes("$m = {}\nprint($m?.null)\n").contains(&"MIX-W2312".to_string()),
+        "?.null flagged as the null bareword"
+    );
+    // The control: a bare `null` value still is.
+    assert!(codes("print(null)\n").contains(&"MIX-W2312".to_string()));
+    // A clean script using ?., ?? and a ternary lints with no errors.
+    let src = "$a = nil\n$c = true\nprint($a?.b ?? 1)\nprint($c ? $a?.b : 2)\n";
+    let errors: Vec<String> = codes(src)
+        .into_iter()
+        .filter(|c| c.starts_with("MIX-E"))
+        .collect();
+    assert!(errors.is_empty(), "lint errors: {errors:?}");
 }
 
 #[tokio::test]

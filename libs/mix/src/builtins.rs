@@ -16337,6 +16337,16 @@ fn builtin_read_jsonl(args: Vec<Value>) -> MixResult<Option<Value>> {
 #[cfg(feature = "json")]
 fn builtin_json_encode(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("json_encode", &args, 1, 3)?;
+    // An options map in the `pretty` slot is truthy, so json_encode($v,
+    // {sort_keys: false}) would silently give PRETTY and SORTED: both things
+    // the caller asked to avoid. Refuse it and name the right slot.
+    if let Some(Value::Map(_)) = args.get(1) {
+        return Err(MixError::structured(
+            "TYPE_MISMATCH",
+            "json_encode(): argument 2 is `pretty` (a bool); options go third: \
+             json_encode(v, false, {sort_keys: false})",
+        ));
+    }
     let pretty = args.get(1).map(|v| v.is_truthy()).unwrap_or(false);
     // Keys are sorted unless {sort_keys: false}: sorted output is what every
     // existing caller, digest and golden file was written against. A new
@@ -40261,6 +40271,48 @@ mod loud_numeric_argument_tests {
             ]);
             assert_eq!(ordered, sorted, "pretty={pretty}");
         }
+    }
+
+    // Pretty AND unsorted together, against a fixed golden string (the parity
+    // test above uses sorted keys, so it cannot see an ordering slip here).
+    #[test]
+    fn json_encode_pretty_unsorted_golden() {
+        let v = ordered_map(&[
+            ("z", Value::list(vec![Value::Number(1.0), ordered_map(&[])])),
+            ("a", ordered_map(&[("y", Value::Nil), ("b", Value::list(vec![]))])),
+        ]);
+        let want = "{\n  \"z\": [\n    1,\n    {}\n  ],\n  \"a\": {\n    \"y\": null,\n    \"b\": []\n  }\n}";
+        assert_eq!(
+            encode(vec![v, Value::Bool(true), sort_keys_opts(Value::Bool(false))]),
+            want
+        );
+    }
+
+    #[test]
+    fn json_encode_empty_options_keep_the_default() {
+        let v = ordered_map(&[("b", Value::Number(1.0)), ("a", Value::Number(2.0))]);
+        assert_eq!(
+            encode(vec![v, Value::Nil, ordered_map(&[])]),
+            r#"{"a":2,"b":1}"#
+        );
+        let err = call_builtin(
+            "json_encode",
+            vec![Value::Nil, Value::Nil, sort_keys_opts(Value::Nil)],
+        )
+        .unwrap_err();
+        assert_eq!(err.info().expect("structured").code, "TYPE_MISMATCH");
+    }
+
+    #[test]
+    fn json_encode_refuses_options_in_the_pretty_slot() {
+        let err = call_builtin(
+            "json_encode",
+            vec![Value::Nil, sort_keys_opts(Value::Bool(false))],
+        )
+        .unwrap_err();
+        let info = err.info().expect("structured");
+        assert_eq!(info.code, "TYPE_MISMATCH");
+        assert!(info.message.contains("options go third"), "{}", info.message);
     }
 
     #[test]

@@ -573,6 +573,9 @@ The rules:
 - **Reads only.** `$a?.b = 1` is refused, and so is a method call
   (`$a?.len()` is a parse error that says how to guard it).
 - `?.` must touch the field name: `$c ? .x : y`, with a space, is not `?.`.
+- **In `"${…}"` and heredocs**, `${a?.b}` is accepted and means `${a.b}`: an
+  interpolation path already reads nil from any step that is not a map, so
+  `"${a?.b ?? "none"}"` works as you would expect.
 
 ## Ternary: `cond ? a : b`
 

@@ -275,12 +275,17 @@ raising. Each <code>?.</code> guards one step (<code>$a?.b?.c</code> for a chain
 or number on the left still raises; it is never an assignment target, and
 <code>$a?.m()</code> is a parse error. <code>?</code> followed directly by <code>.</code> and a name used to
 be a parse error, so no valid script changes meaning; the ternary <code>?</code> and
-<code>??</code> are unchanged.</li>
+<code>??</code> are unchanged. In <code>"${…}"</code> and heredocs <code>${a?.b}</code> means <code>${a.b}</code>
+(interpolation paths already read nil from any non-map step); a <code>??</code>
+default's text is left as written.</li>
 <li><code>json_encode(v[, pretty][, {sort_keys: false}])</code> keeps each map's insertion
 order. Sorted keys stay the default (digests and golden files depend on
 them, and <code>serde_json</code> must never gain <code>preserve_order</code>); the ordered writer
 matches serde_json's compact and pretty layout byte for byte. An unknown
-option raises <code>OPTION_INVALID</code>, a non-bool <code>sort_keys</code> <code>TYPE_MISMATCH</code>.</li>
+option raises <code>OPTION_INVALID</code>, a non-bool <code>sort_keys</code> <code>TYPE_MISMATCH</code>.
+A map in the <code>pretty</code> slot (<code>json_encode($v, {sort_keys: false})</code>) now
+raises <code>TYPE_MISMATCH</code> naming the third slot; it used to count as truthy and
+silently give pretty, sorted output.</li>
 <li><code>date_format(ts[, fmt][, {utc: true}])</code> formats in UTC instead of local
 time, so an ISO 8601 <code>Z</code> stamp is no longer local wall-clock time with a
 UTC label (the only workaround was <code>TZ=UTC</code> around the whole process).
