@@ -156,8 +156,9 @@ impl Frame {
         }
         let mut own = Self::own_window(app_id, &mut call).await;
         if legacy {
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
             for _ in 0..8 {
-                if own.is_some() || !changed().await { break; }
+                if own.is_some() || !tokio::time::timeout_at(deadline, changed()).await.unwrap_or(false) { break; }
                 own = Self::own_window(app_id, &mut call).await;
             }
         }
@@ -254,7 +255,7 @@ impl Frame {
 }
 
 fn succeeded(reply: &Value) -> bool {
-    reply.get("error").is_none()
+    reply.get("error").is_none() && reply.get("error_code").is_none()
 }
 
 fn dimension(value: &Value) -> Option<u32> {

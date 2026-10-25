@@ -113,7 +113,7 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
                             // Older versions have no migration contract and may
                             // be replaced by current defaults. Future or broken
                             // sections belong to their writer: retain the value.
-                            if !raw["version"].as_f64().is_some_and(|v| v < f64::from(version)) {
+                            if !raw["version"].as_f64().is_some_and(|v| v >= 0.0 && v.fract() == 0.0 && v < f64::from(version)) {
                                 store.preserved.insert("app".into(), raw.clone());
                             }
                         }
@@ -329,6 +329,15 @@ mod tests {
             store.flush().unwrap();
             let saved: Value = strict::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
             assert_eq!(saved[section], raw[section], "{section}");
+        }
+        for version in [-1.0, 0.5] {
+            let raw = json!({"schema_version":1,"app":{"version":version,"value":false}});
+            std::fs::write(&path, strict::to_string_pretty(&raw).unwrap()).unwrap();
+            let mut store = Store::<App>::load(Some(dir.path().into()), 2);
+            store.window.maximised = true;
+            store.flush().unwrap();
+            let saved: Value = strict::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(saved["app"], raw["app"], "an invalid version is not an older version");
         }
     }
     #[test]

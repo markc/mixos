@@ -129,14 +129,14 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context
             let Some(state) = state.upgrade() else { return; };
             let mut frame = state.lock().unwrap_or_else(|e| e.into_inner()).frames.get(&name).cloned().unwrap_or_default();
             frame.restore_with_events(&app_id, call, || async {
-                tokio::time::timeout(Duration::from_secs(1), async {
+                async {
                     let mut incoming = incoming.lock().await;
                     let Some(incoming) = incoming.as_mut() else { return false; };
                     while let Some(message) = incoming.recv().await {
                         if message.headers.get("topic") == Some(&topic) { return true; }
                     }
                     false
-                }).await.unwrap_or(false)
+                }.await
             }).await;
             while let Some(done) = rx.recv().await {
                 frame = state.lock().unwrap_or_else(|e| e.into_inner()).frames.get(&name).cloned().unwrap_or_default();

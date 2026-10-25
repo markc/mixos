@@ -400,7 +400,8 @@ impl Shell {
                         serde_json::from_str(&reply.body).ok()
                     }
                 }, || async {
-                    tokio::time::timeout(std::time::Duration::from_secs(1), comp_changed.notified()).await.is_ok()
+                    comp_changed.notified().await;
+                    true
                 })
                 .await;
         });
