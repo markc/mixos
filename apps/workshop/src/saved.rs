@@ -66,6 +66,8 @@ pub struct Pending {
     row_key: Option<String>,
     pub show_selection: bool,
     done: bool,
+    expanded: Option<BTreeSet<String>>,
+    seen: BTreeSet<String>,
 }
 impl Pending {
     pub fn new(saved: &Arrangement) -> Self {
@@ -74,8 +76,12 @@ impl Pending {
             row_key: saved.row_key.clone(),
             show_selection: false,
             done: false,
+            expanded: Some(saved.expanded.clone()),
+            seen: BTreeSet::new(),
         }
     }
+    /// First launch uses discovery's defaults, including its open local node.
+    pub fn follow_defaults(&mut self) { self.expanded = None; }
     pub fn reconcile(&mut self, engine: &mut Engine) {
         if self.done {
             return;
@@ -84,6 +90,18 @@ impl Pending {
         let filter = std::mem::take(&mut engine.ui.filter);
         collect(&engine.tree(), &mut keys);
         engine.ui.filter = filter;
+        if let Some(expanded) = &self.expanded {
+            for node in &engine.snapshot.nodes {
+                let key = format!("node:{}", node.name);
+                if node.local && !self.seen.contains(&key) && !expanded.contains(&key) {
+                    engine.ui.expanded.remove(&key);
+                }
+            }
+            for key in keys.difference(&self.seen) {
+                if expanded.contains(key) { engine.ui.expanded.insert(key.clone()); }
+            }
+        }
+        self.seen.extend(keys.iter().cloned());
         // A user/Bus selection made during discovery wins over the old one.
         if engine.ui.row_key.is_some() {
             self.row_key = None;
@@ -98,6 +116,7 @@ impl Pending {
             self.show_selection = true;
         }
         if engine.snapshot.error.is_none()
+            && engine.workshop.pending == 0
             && engine
                 .snapshot
                 .progress

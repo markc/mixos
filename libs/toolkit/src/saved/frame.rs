@@ -382,4 +382,15 @@ mod tests {
         );
         assert_eq!(back.placement.unwrap().width, 900);
     }
+    #[test]
+    fn exit_reads_geometry_in_output_local_coordinates() {
+        let mut f = Frame::default(); let mut calls = Vec::new();
+        runtime().block_on(f.capture_exit("dev.mixos.example", |command, args| {
+            calls.push((command, args));
+            std::future::ready(Some(if command == "comp.windows.list" { json!({"windows":[window()]}) }
+                else { json!({"x":1920,"y":0}) }))
+        }));
+        assert_eq!(calls[1], ("comp.props.get", json!({"path":"outputs.o_main"})));
+        let p = f.placement.unwrap(); assert_eq!((p.x, p.y, p.width, p.height), (20.0, 30.0, 900, 600));
+    }
 }

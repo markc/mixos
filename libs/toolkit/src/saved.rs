@@ -30,6 +30,7 @@ pub struct Store<A> {
     written: String,
     last_write: Option<Instant>,
     writes: usize,
+    app_loaded: bool,
 }
 
 impl<A: Serialize + DeserializeOwned + Default> Store<A> {
@@ -47,6 +48,7 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
             written: String::new(),
             last_write: None,
             writes: 0,
+            app_loaded: false,
         };
         if let Some(path) = &store.path {
             match std::fs::read_to_string(path) {
@@ -57,7 +59,10 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
                         store.window = decode(&value["window"]);
                         store.widgets = decode(&value["widgets"]);
                         if value["app"]["version"].as_f64() == Some(f64::from(version)) {
-                            store.app = decode(&value["app"]["value"]);
+                            if let Some(app) = try_decode(&value["app"]["value"]) {
+                                store.app = app;
+                                store.app_loaded = true;
+                            }
                         }
                     }
                     _ => store.writable = false,
@@ -127,6 +132,9 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
     pub fn writes(&self) -> usize {
         self.writes
     }
+    /// Whether a compatible app section was decoded, so first-launch defaults
+    /// can differ from deliberately saved empty selections or collapsed trees.
+    pub fn app_loaded(&self) -> bool { self.app_loaded }
     /// Schedule a save timer only while a changed value is waiting.
     pub fn pending(&self) -> bool {
         self.writable && self.serialise().is_ok_and(|s| s != self.written)
@@ -134,12 +142,15 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
 }
 
 fn decode<T: DeserializeOwned + Default>(value: &Value) -> T {
+    try_decode(value).unwrap_or_default()
+}
+
+fn try_decode<T: DeserializeOwned>(value: &Value) -> Option<T> {
     // Strict data represents numbers as f64; decode typed integers through its
     // checked integer deserialiser rather than serde_json's f64 rejection.
     config::to_conf_mix_string(value)
         .ok()
         .and_then(|raw| config::from_conf_mix_str(&raw).ok())
-        .unwrap_or_default()
 }
 
 #[cfg(test)]
