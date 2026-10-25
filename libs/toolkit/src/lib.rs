@@ -62,6 +62,7 @@ pub mod macros;
 pub mod markdown;
 pub mod menu;
 pub mod panel;
+pub mod saved;
 pub mod session_look;
 pub mod slider;
 pub mod space;

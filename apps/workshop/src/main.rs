@@ -103,11 +103,13 @@ fn run(settings: &Settings) -> Result<(), String> {
         drop(shell);
         return handle.wait_done();
     }
+    let saved = toolkit::saved::Store::<workshop::saved::Arrangement>::load(
+        config::AppDirs::resolve("workshop").map(|d| d.state()), 1);
     let options = eframe::NativeOptions {
         // Client-side decorations: the toolkit title bar is the window frame.
-        viewport: toolkit::titlebar::viewport(APP_ID, &label("title"))
+        viewport: saved.window.viewport(toolkit::titlebar::viewport(APP_ID, &label("title"))
             .with_inner_size([1100.0, 760.0])
-            .with_min_inner_size([760.0, 500.0]),
+            .with_min_inner_size([760.0, 500.0])),
         ..eframe::NativeOptions::default()
     };
     let comp = settings.comp.clone();
@@ -122,7 +124,7 @@ fn run(settings: &Settings) -> Result<(), String> {
         Box::new(move |cc| {
             toolkit::decorations::initialise(cc);
             toolkit::install(&cc.egui_ctx, &theme);
-            let mut shell = Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries, comp)?;
+            let mut shell = Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries, comp)?.with_saved(saved);
             if let Some(args) = initial {
                 shell.engine_mut().queue_workshop("macros.open", args, None);
             }

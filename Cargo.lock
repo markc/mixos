@@ -11934,6 +11934,7 @@ version = "0.1.2"
 dependencies = [
  "buildinfo",
  "bus",
+ "config",
  "design",
  "editor",
  "eframe",
@@ -11942,6 +11943,7 @@ dependencies = [
  "futures",
  "inspector",
  "macros",
+ "serde",
  "serde_json",
  "settings",
  "tempfile",

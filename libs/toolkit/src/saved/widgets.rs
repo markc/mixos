@@ -1,0 +1,103 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Thin widget adapters. Stable caller names are the on-disk keys; egui IDs
+//! remain implementation details. Runtime restore flags are never serialised.
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, Mutex};
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Widgets {
+    pub panels: BTreeMap<String, f32>,
+    pub scrolls: BTreeMap<String, Scroll>,
+    pub open: BTreeMap<String, bool>,
+    pub groups: BTreeMap<String, crate::panel::GroupState>,
+    #[serde(skip)] applied: BTreeSet<String>,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Scroll { pub key: Option<String>, pub offset: [f32; 2] }
+
+impl Widgets {
+    /// Install an isolated per-window collection in the context before drawing.
+    pub fn install(&self, ctx: &egui::Context) {
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("toolkit.saved.widgets"), Arc::new(Mutex::new(self.clone()))));
+    }
+    pub fn collect(&mut self, ctx: &egui::Context) {
+        if let Some(shared) = shared(ctx) { *self = shared.lock().unwrap_or_else(|e| e.into_inner()).clone(); }
+    }
+}
+fn shared(ctx: &egui::Context) -> Option<Arc<Mutex<Widgets>>> {
+    ctx.data(|d| d.get_temp(egui::Id::new("toolkit.saved.widgets")))
+}
+fn with<R>(ctx: &egui::Context, f: impl FnOnce(&mut Widgets) -> R) -> Option<R> {
+    let shared = shared(ctx)?;
+    Some(f(&mut shared.lock().unwrap_or_else(|e| e.into_inner())))
+}
+
+/// A panel's size share. `share` is also the app's Bus-controlled value. Only
+/// dragging records a changed size, so content minimums cannot feed back.
+pub fn panel<R>(ui: &mut egui::Ui, name: &str, panel: egui::Panel, extent: f32,
+    share: f32, limits: std::ops::RangeInclusive<f32>, horizontal: bool,
+    body: impl FnOnce(&mut egui::Ui) -> R) -> (egui::InnerResponse<R>, Option<f32>) {
+    let shown = panel.resizable(true).default_size(extent * share.clamp(*limits.start(), *limits.end()))
+        .size_range(extent * limits.start()..=extent * limits.end()).show(ui, body);
+    let size = if horizontal { shown.response.rect.width() } else { shown.response.rect.height() };
+    let changed = ui.input(|i| i.pointer.any_down())
+        .then_some((size / extent.max(1.0)).clamp(*limits.start(), *limits.end()))
+        .filter(|v| (*v - share).abs() > 0.005);
+    with(ui.ctx(), |w| { w.panels.insert(name.into(), changed.unwrap_or(share)); });
+    (shown, changed)
+}
+
+/// Read a saved panel share on startup; sanitise before handing it to egui.
+pub fn panel_share(widgets: &Widgets, name: &str, fallback: f32) -> f32 {
+    widgets.panels.get(name).copied().filter(|v| v.is_finite()).unwrap_or(fallback).clamp(0.01, 0.99)
+}
+
+/// Restore once for each content identity after a first layout provides bounds.
+/// `ready` lets live trees delay restoration until their rows have appeared.
+pub fn scroll<R>(ui: &mut egui::Ui, name: &str, key: Option<&str>, ready: bool,
+    area: egui::ScrollArea, body: impl FnOnce(&mut egui::Ui) -> R) -> egui::scroll_area::ScrollAreaOutput<R> {
+    let token = format!("scroll:{name}:{key:?}");
+    let prior = with(ui.ctx(), |w| {
+        if ready && !w.applied.contains(&token) { w.scrolls.get(name).filter(|s| s.key.as_deref() == key).cloned() } else { None }
+    }).flatten();
+    // First show lays out content. Setting egui's state now applies next frame,
+    // with bounds known, rather than clamping against an empty first layout.
+    let out = area.id_salt(("saved-scroll", name, key)).show(ui, body);
+    let max = (out.content_size - out.inner_rect.size()).max(egui::Vec2::ZERO);
+    let restore = prior.map(|s| egui::vec2(s.offset[0], s.offset[1]).clamp(egui::Vec2::ZERO, max));
+    if let Some(offset) = restore {
+        let mut state = out.state; state.offset = offset; state.store(ui.ctx(), out.id);
+        ui.ctx().request_repaint();
+    }
+    with(ui.ctx(), |w| {
+        if ready {
+            w.applied.insert(token);
+            let offset = restore.unwrap_or(out.state.offset);
+            w.scrolls.insert(name.into(), Scroll { key: key.map(str::to_owned), offset: [offset.x, offset.y] });
+        }
+    });
+    out
+}
+
+/// A collapsing state whose openness belongs to a stable app name.
+pub fn collapsing(ctx: &egui::Context, name: &str, default: bool,
+    show: impl FnOnce(egui::collapsing_header::CollapsingState) -> egui::collapsing_header::CollapsingState) {
+    let open = with(ctx, |w| w.open.get(name).copied().unwrap_or(default)).unwrap_or(default);
+    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ctx, egui::Id::new(("saved-open", name)), open);
+    state.set_open(open);
+    let state = show(state);
+    with(ctx, |w| { w.open.insert(name.into(), state.is_open()); });
+    state.store(ctx);
+}
+
+/// [`crate::panel::group`] with saved selected tab and collapsed state.
+pub fn group<R>(ui: &mut egui::Ui, name: &str, tabs: &[&str], body: impl FnOnce(&mut egui::Ui, usize) -> R) -> crate::panel::GroupResponse<R> {
+    let id = ui.make_persistent_id(name);
+    let state = with(ui.ctx(), |w| w.groups.get(name).copied()).flatten();
+    if let Some(state) = state { ui.data_mut(|d| d.insert_temp(id, state)); }
+    let out = crate::panel::group(ui, name, tabs, body);
+    with(ui.ctx(), |w| { w.groups.insert(name.into(), out.state); });
+    out
+}

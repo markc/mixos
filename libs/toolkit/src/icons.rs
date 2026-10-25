@@ -118,6 +118,7 @@ icons! {
     Palette => "palette",
     PanelLeft => "panel-left",
     PanelRight => "panel-right",
+    PanelBottom => "panel-bottom",
     Paperclip => "paperclip",
     Pencil => "pencil",
     Play => "play",

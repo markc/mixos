@@ -8,6 +8,7 @@
 //! runs its effects, and [`commands`] is the registry every action goes
 //! through, from the menu, a shortcut or the Bus.
 pub mod actions;
+pub mod saved;
 pub mod shell;
 pub mod view;
 pub mod workshop;

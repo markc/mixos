@@ -175,6 +175,8 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
 }
 
 pub struct Shell {
+    saved: toolkit::saved::Store<crate::saved::Arrangement>,
+    restore: Option<crate::saved::Pending>,
     watched_topics: std::collections::BTreeSet<String>,
     macro_stopping: bool,
     macro_stopped: bool,
@@ -309,6 +311,8 @@ impl Shell {
             wake.request_repaint();
         });
         let mut shell = Self {
+            saved: toolkit::saved::Store::load(None, 1),
+            restore: None,
             watched_topics: Default::default(),
             macro_stopping: false,
             macro_stopped: false,
@@ -342,6 +346,61 @@ impl Shell {
         shell.settle();
         shell.read_look();
         Ok(shell)
+    }
+
+    /// Attach the production store explicitly; tests and headless shells keep
+    /// the memory-only store created by `new`.
+    pub fn with_saved(mut self, saved: toolkit::saved::Store<crate::saved::Arrangement>) -> Self {
+        saved.app.apply(&mut self.engine);
+        self.restore = Some(crate::saved::Pending::new(&saved.app));
+        crate::actions::set_choice(&mut self.engine, saved.window.theme.choice());
+        self.engine.ui.split = toolkit::saved::widgets::panel_share(&saved.widgets, "split", self.engine.ui.split);
+        self.engine.ui.dock_width = toolkit::saved::widgets::panel_share(&saved.widgets, "traffic-right", self.engine.ui.dock_width);
+        self.engine.ui.dock_height = toolkit::saved::widgets::panel_share(&saved.widgets, "traffic-bottom", self.engine.ui.dock_height);
+        saved.widgets.install(&self.ctx);
+        let frame = saved.window.clone(); let bus = self.bus.clone(); let comp = self.comp.clone();
+        self.runtime.spawn(async move {
+            frame.restore(inspector::model::APP_ID, |command, args| {
+                let bus = bus.clone(); let comp = comp.clone();
+                async move { let reply = bus.call(&comp, command, args).await.ok()?;
+                    if reply.rc != 0 { return None; } serde_json::from_str(&reply.body).ok() }
+            }).await;
+        });
+        self.saved = saved;
+        self
+    }
+
+    fn save_state(&mut self, final_flush: bool) {
+        self.saved.app = crate::saved::Arrangement::capture(&self.engine);
+        self.saved.window.theme = self.choice().into();
+        self.saved.window.capture(&self.ctx);
+        self.saved.widgets.collect(&self.ctx);
+        // Bus commands may change shares without rendering another frame.
+        self.saved.widgets.panels.insert("split".into(), self.engine.ui.split);
+        self.saved.widgets.panels.insert("traffic-right".into(), self.engine.ui.dock_width);
+        self.saved.widgets.panels.insert("traffic-bottom".into(), self.engine.ui.dock_height);
+        let result = if final_flush { self.saved.flush() } else {
+            self.saved.tick(std::time::Instant::now(), self.ctx.input(|i| i.pointer.any_down()))
+        };
+        if let Err(error) = result { eprintln!("workshop: saving window state: {error}"); }
+    }
+
+    fn finish_saved(&mut self) {
+        // Read before the Bus is stopped. This is bounded and read-only; other
+        // Wayland desktops simply have no compd catalogue to answer.
+        if self.restore.is_some() {
+            let bus = self.bus.clone(); let comp = self.comp.clone();
+            let window = self.runtime.block_on(async move {
+                tokio::time::timeout(std::time::Duration::from_millis(700),
+                    toolkit::saved::Frame::own_window(inspector::model::APP_ID, |command, args| {
+                        let bus = bus.clone(); let comp = comp.clone();
+                        async move { let reply = bus.call(&comp, command, args).await.ok()?;
+                            if reply.rc != 0 { return None; } serde_json::from_str(&reply.body).ok() }
+                    })).await.ok().flatten()
+            });
+            if let Some(window) = window { self.saved.window.capture_comp(&window); }
+        }
+        self.save_state(true);
     }
 
     /// Spawn `work` and send its result back as an event.
@@ -755,7 +814,13 @@ impl Shell {
                 let (bus, comp) = (self.bus.clone(), self.comp.clone());
                 self.spawn(async move { Event::Shown(ticket, reply, bus::show(bus, comp).await) });
             }
-            Effect::Reply { id, rc, body } => self.bus.reply(id, rc, body),
+            Effect::Reply { id, rc, mut body } => {
+                if body.get("snapshot").is_some() && body.get("ui").is_some() {
+                    self.save_state(false);
+                    body["saved"] = self.saved.describe();
+                }
+                self.bus.reply(id, rc, body);
+            }
             Effect::Drive {
                 id,
                 command: command_name,
@@ -782,6 +847,7 @@ impl Shell {
                     }
                     return;
                 }
+                self.finish_saved();
                 self.exiting = true;
                 // Every accepted command gets its answer before the Bus stops:
                 // drive work settled or cancelled, held commands refused.
@@ -993,6 +1059,7 @@ impl Shell {
             self.bus.reply(answer.id, answer.rc, answer.body);
         }
         self.pump();
+        if let Some(restore) = &mut self.restore { restore.reconcile(&mut self.engine); }
         self.follow_theme();
         // Closing waits for accepted work: the engine quits once it is idle.
         if ctx.input(|i| i.viewport().close_requested()) && !self.exiting {
@@ -1005,6 +1072,12 @@ impl Shell {
 
     /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        if let Some(restore) = &mut self.restore {
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(egui::Id::new("workshop-restore-ready"), restore.ready());
+                if std::mem::take(&mut restore.show_selection) { d.insert_temp(egui::Id::new("workshop-restore-selection"), true); }
+            });
+        }
         if std::mem::take(&mut self.engine.split_requested) {
             let panel = egui::Id::new(SERVICES_PANEL);
             ui.ctx()
@@ -1028,6 +1101,8 @@ impl Shell {
         self.settle();
         // A command this frame may have been the last thing holding others.
         self.release();
+        self.save_state(false);
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
         // A theme change is installed by the next frame's logic, before any
         // drawing: never midway through the frame that saw the click.
         if self.choice() != self.installed {
@@ -1038,6 +1113,7 @@ impl Shell {
 
 impl eframe::App for Shell {
     fn on_exit(&mut self) {
+        self.save_state(true);
         toolkit::macros::close_app(&self.ctx, "workshop");
     }
 

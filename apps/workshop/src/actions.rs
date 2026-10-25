@@ -255,7 +255,7 @@ pub fn choice(e: &Engine) -> toolkit::theme_menu::Choice {
 }
 
 /// Store the Theme menu's choice as the window's.
-fn set_choice(e: &mut Engine, choice: toolkit::theme_menu::Choice) {
+pub(crate) fn set_choice(e: &mut Engine, choice: toolkit::theme_menu::Choice) {
     e.ui.theme_scheme = choice.scheme;
     e.ui.theme_style = choice.style;
     e.ui.theme_mode = choice.mode;

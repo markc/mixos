@@ -29,7 +29,7 @@ use egui::{
 };
 
 /// A group's view state.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GroupState {
     pub selected: usize,
     pub collapsed: bool,

@@ -49,6 +49,10 @@ pub enum UiEvent {
 
 const ICON: f32 = 14.0;
 
+fn non_empty(parts: &[String], separator: &str) -> String {
+    parts.iter().filter(|s| !s.trim().is_empty()).map(String::as_str).collect::<Vec<_>>().join(separator)
+}
+
 /// Draw the whole window into `ui`.
 pub fn view(
     ui: &mut Ui,
@@ -110,7 +114,12 @@ pub fn view(
         data.insert_temp(key, window);
     });
     let side = engine.ui.dock_side.effective(window.x);
-    events.push(UiEvent::DockViewport(window.x));
+    if ui.ctx().data_mut(|d| {
+        let key = egui::Id::new("workshop-dock-viewport-width");
+        let changed = d.get_temp::<f32>(key) != Some(window.x);
+        d.insert_temp(key, window.x);
+        changed
+    }) { events.push(UiEvent::DockViewport(window.x)); }
     if !engine.workshop.dock_open {
         let chrome = toolkit::chrome::Chrome::of(ui.ctx());
         egui::Panel::bottom("traffic-collapsed")
@@ -134,18 +143,11 @@ pub fn view(
                 0.12..=0.5,
             )
         };
-        let panel = panel
-            .resizable(true)
-            .default_size(extent * share.clamp(*limits.start(), *limits.end()))
-            .size_range(extent * limits.start()..=extent * limits.end())
-            .frame(bars::dock_frame(ui.ctx()))
-            .show(ui, |ui| traffic(ui, engine, side, &mut events));
-        let size = if side == DockSide::Right {
-            panel.response.rect.width()
-        } else {
-            panel.response.rect.height()
-        } / extent.max(1.0);
-        if (size - share).abs() > 0.005 {
+        let name = if side == DockSide::Right { "traffic-right" } else { "traffic-bottom" };
+        let (_, changed) = toolkit::saved::widgets::panel(ui, name,
+            panel.frame(bars::dock_frame(ui.ctx())), extent, share, limits,
+            side == DockSide::Right, |ui| traffic(ui, engine, side, &mut events));
+        if let Some(size) = changed {
             events.push(UiEvent::DockSize(side, size));
         }
     }
@@ -161,13 +163,10 @@ pub fn view(
         }
         data.insert_temp(key, total);
     });
-    let left = egui::Panel::left("services")
-        .resizable(true)
-        .default_size(total * engine.ui.split)
-        .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| services(ui, engine, &mut events));
-    let split = left.response.rect.width() / total.max(1.0);
-    if (split - engine.ui.split).abs() > 0.005 {
+    let (_, changed) = toolkit::saved::widgets::panel(ui, "split",
+        egui::Panel::left("services").frame(bars::dock_frame(ui.ctx())), total,
+        engine.ui.split, 0.1..=0.8, true, |ui| services(ui, engine, &mut events));
+    if let Some(split) = changed {
         events.push(UiEvent::Split(split));
     }
     egui::CentralPanel::default()
@@ -203,7 +202,7 @@ pub fn view(
 
 fn services(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     let title = label("services");
-    panel::group(ui, "services", &[title.as_str()], |ui, _| {
+    toolkit::saved::widgets::group(ui, "services", &[title.as_str()], |ui, _| {
         let mut filter = engine.ui.filter.clone();
         let search = field::search(ui, &mut filter, &label("search"), ui.available_width());
         search.widget_info(|| {
@@ -216,7 +215,9 @@ fn services(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             search.request_focus();
             events.push(UiEvent::FilterFocused);
         }
-        ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+        let ready = ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::new("workshop-restore-ready"))).unwrap_or(true);
+        toolkit::saved::widgets::scroll(ui, "services", None, ready,
+            ScrollArea::vertical().auto_shrink(false), |ui| {
             for row in engine.tree() {
                 tree_row(ui, engine, &row, events);
             }
@@ -289,7 +290,13 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
             ));
         }
         let selected = engine.ui.row_key.as_deref() == Some(row.key.as_str());
-        if toolkit::selectable(ui, selected, text)
+        let response = toolkit::selectable(ui, selected, text);
+        if selected && ui.ctx().data_mut(|d| {
+            let key = egui::Id::new("workshop-restore-selection");
+            let show = d.get_temp::<bool>(key).unwrap_or(false);
+            if show { d.insert_temp(key, false); } show
+        }) { response.scroll_to_me(Some(Align::Center)); }
+        if response
             .on_hover_text(row_name(engine, row))
             .clicked()
         {
@@ -383,12 +390,11 @@ fn details(
         return;
     }
     let title = label("details");
-    panel::group(ui, "details", &[title.as_str()], |ui, _| {
+    toolkit::saved::widgets::group(ui, "details", &[title.as_str()], |ui, _| {
         let rows = ui.text_style_height(&egui::TextStyle::Body) * 6.0;
-        ScrollArea::vertical()
+        toolkit::saved::widgets::scroll(ui, "details", engine.ui.row_key.as_deref(), true, ScrollArea::vertical()
             .id_salt("description")
-            .max_height(rows)
-            .show(ui, |ui| {
+            .max_height(rows), |ui| {
                 ui.set_width(ui.available_width());
                 ui.label(description(engine));
             });
@@ -448,7 +454,8 @@ fn traffic(ui: &mut Ui, engine: &Engine, side: DockSide, events: &mut Vec<UiEven
             events.push(UiEvent::Dock(!engine.workshop.dock_open));
         }
         if ui
-            .add(IconButton::new(Icon::PanelRight).tooltip(label("traffic-switch-side")))
+            .add(IconButton::new(if side == DockSide::Right { Icon::PanelBottom } else { Icon::PanelRight })
+                .tooltip(label(if side == DockSide::Right { "traffic-switch-bottom" } else { "traffic-switch-right" })))
             .clicked()
         {
             events.push(UiEvent::DockSide(if side == DockSide::Right {
@@ -510,22 +517,11 @@ fn traffic_body(ui: &mut Ui, engine: &Engine, side: DockSide) {
                             }
                         })
                     };
-                    let route = RichText::new(format!(
-                        "{} → {} · {}",
-                        text("from"),
-                        text("service"),
-                        text("direction")
-                    ))
+                    let route = RichText::new(non_empty(&[non_empty(&[text("from"), text("service")], " → "), text("direction")], " · "))
                     .small()
                     .weak();
                     let response = egui::CollapsingHeader::new(
-                        RichText::new(format!(
-                            "{} · {} · {} · {}",
-                            text("ts"),
-                            text("command"),
-                            text("rc"),
-                            text("ms")
-                        ))
+                        RichText::new(non_empty(&[text("ts"), text("command"), text("rc"), text("ms")], " · "))
                         .monospace(),
                     )
                     .id_salt(("traffic-body", index))
