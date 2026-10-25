@@ -708,9 +708,9 @@ impl Engine {
 
     pub fn set_dock_size(&mut self, side: DockSide, size: f32) {
         if size.is_finite() {
-            // Before layout Auto has no reliable width. Store both axes so
-            // whichever side the first layout selects honours the command.
-            if side == DockSide::Auto && self.dock_window_width <= 0.0 {
+            // Auto stores both axes, so the request survives the first layout
+            // and later crossings of the wide-window threshold alike.
+            if side == DockSide::Auto {
                 self.ui.dock_width = size.clamp(0.2, 0.5);
                 self.ui.dock_height = size.clamp(0.12, 0.5);
                 return;
@@ -2356,13 +2356,13 @@ mod tests {
     }
 
     #[test]
-    fn auto_dock_size_before_layout_sets_both_axes_and_later_uses_known_width() {
+    fn auto_dock_size_sets_both_axes_before_and_after_layout() {
         let mut e = engine();
         ask(&mut e, "workshop.dock", json!({"side":"auto","size":0.42}));
         assert_eq!((e.ui.dock_width, e.ui.dock_height), (0.42, 0.42));
         e.dock_window_width = 1920.0;
         ask(&mut e, "workshop.dock", json!({"side":"auto","size":0.35}));
-        assert_eq!((e.ui.dock_width, e.ui.dock_height), (0.35, 0.42));
+        assert_eq!((e.ui.dock_width, e.ui.dock_height), (0.35, 0.35));
     }
 
     #[test]
