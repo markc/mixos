@@ -336,7 +336,16 @@ mod tests {
         widgets.install(&ctx);
         set_panel(&ctx, "left", 0.6);
         draw(&ctx, |ui| {
-            let (out, changed) = panel(ui, "left", egui::Panel::left("left"), 1000.0, 0.6, 0.1..=0.8, true, |_| {});
+            let (out, changed) = panel(
+                ui,
+                "left",
+                egui::Panel::left("left"),
+                1000.0,
+                0.6,
+                0.1..=0.8,
+                true,
+                |_| {},
+            );
             assert!((out.response.rect.width() - 600.0).abs() < 2.0);
             assert!(changed.is_none());
         });

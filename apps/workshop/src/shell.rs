@@ -1145,8 +1145,16 @@ impl Shell {
             toolkit::saved::widgets::set_panel(ui.ctx(), SERVICES_PANEL, self.engine.ui.split);
         }
         if std::mem::take(&mut self.engine.dock_requested) {
-            toolkit::saved::widgets::set_panel(ui.ctx(), "traffic-bottom", self.engine.ui.dock_height);
-            toolkit::saved::widgets::set_panel(ui.ctx(), "traffic-right", self.engine.ui.dock_width);
+            toolkit::saved::widgets::set_panel(
+                ui.ctx(),
+                "traffic-bottom",
+                self.engine.ui.dock_height,
+            );
+            toolkit::saved::widgets::set_panel(
+                ui.ctx(),
+                "traffic-right",
+                self.engine.ui.dock_width,
+            );
         }
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);
         let mut events = view(ui, &self.engine, &self.commands, &self.strings);
