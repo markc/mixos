@@ -906,7 +906,8 @@ fn status_pump_scenarios(editor: &str) {
             "binding_generation", "broker_epoch"] {
             assert!(!help_body.contains(private), "HELP exposed {private}");
         }
-        assert!(!help_body.contains(&grant.record.record_id.to_string()));
+        let record_id = serde_json::to_value(grant.record.record_id).unwrap();
+        assert!(!help_body.contains(record_id.as_str().unwrap()));
         let owner_view = tokio::time::timeout(
             Duration::from_secs(3),
             owner
