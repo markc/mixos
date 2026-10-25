@@ -223,8 +223,15 @@ pub fn pending(ctx: &Context) -> bool {
 pub fn logic(ctx: &Context) -> Vec<Answer> {
     let hidden = ctx.input(|i| i.viewport().visible() == Some(false));
     ctx.with_plugin(|drive: &mut Drive| {
-        if hidden {
-            drive.settle(ctx, "the window was hidden before this input was read");
+        // Wayland can withhold frame callbacks on another virtual desktop
+        // without exposing a hidden/minimized flag. A logic-only wake must
+        // also settle paint-dependent input, or it holds later Bus commands.
+        let logic_only = drive
+            .passes
+            .get(&std::thread::current().id())
+            .is_none_or(Vec::is_empty);
+        if hidden || logic_only {
+            drive.settle(ctx, "the window stopped producing UI passes before this input was read");
         }
         drive.expire();
         let mut answers = std::mem::take(&mut drive.answers);

@@ -38,6 +38,7 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
             let _ = requests.send(when);
         }
     });
+    send(&mut rig, 7000, "ui.click", json!({"label":"File"}));
     send(&mut rig, 7001, "workshop.ping", json!({}));
     send(&mut rig, 7002, "HELP", json!({}));
     rig.h.state().as_ref().unwrap().forward_pending();
@@ -64,8 +65,6 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
     let _output = ctx.run_logic(&egui::RawInput::default(), |ctx| {
         rig.h.state_mut().as_mut().unwrap().logic(ctx);
     });
-    assert_eq!(reply(&rig, 7001).unwrap().1, 0);
-    assert_eq!(reply(&rig, 7002).unwrap().1, 0);
     assert_eq!(ctx.cumulative_pass_nr(), pass);
     assert_eq!(wake.deadline(), None);
     assert!(!wake.take_due(deadline + Duration::from_secs(60)));
@@ -87,6 +86,9 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
     assert_eq!(wake.deadline(), None);
     assert!(incoming.try_recv().is_err(), "idle logic kept requesting wakes");
     assert_eq!(ctx.cumulative_pass_nr(), pass);
+    assert_eq!(reply(&rig, 7000).unwrap().2["error_code"], "CANCELLED");
+    assert_eq!(reply(&rig, 7001).unwrap().1, 0);
+    assert_eq!(reply(&rig, 7002).unwrap().1, 0);
 }
 
 struct Rig {

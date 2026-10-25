@@ -804,6 +804,36 @@ fn a_click_cancelled_before_its_press_leaves_no_button_down() {
 
 /// sol finding 3, toolkit half: closing answers every accepted request.
 #[test]
+fn a_stalled_frame_callback_cancels_input_even_when_window_reports_visible() {
+    let mut h = window();
+    h.state_mut()
+        .inbox
+        .push((91, "ui.click", json!({"label":"Count"})));
+    h.step();
+    h.step();
+    let pass = h.ctx.cumulative_pass_nr();
+    let mut input = h.input_mut().clone();
+    input.viewports.entry(ViewportId::ROOT).or_default().minimized = Some(false);
+    let mut answers = Vec::new();
+    let _ = h.ctx.run_logic(&input, |ctx| {
+        assert_ne!(ctx.input(|i| i.viewport().visible()), Some(false));
+        answers.extend(drive::logic(ctx));
+    });
+    assert_eq!(h.ctx.cumulative_pass_nr(), pass);
+    assert_eq!(answers.len(), 1);
+    assert_eq!(answers[0].id, 91);
+    assert_eq!(answers[0].body["error_code"], "CANCELLED");
+    for _ in 0..5 {
+        h.step();
+    }
+    assert_eq!(h.state().count, 0);
+    assert!(!h.ctx.input(|i| i.pointer.any_down()));
+    ok(&mut h, "ui.click", json!({"label":"Count"}));
+    assert_eq!(h.state().count, 1);
+}
+
+/// Closing answers every accepted request.
+#[test]
 fn finishing_answers_running_and_queued_work() {
     let mut h = window();
     let app = h.state_mut();

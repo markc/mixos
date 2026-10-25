@@ -567,3 +567,12 @@ priority = -1
 
 [lints.rustdoc]
 all = "warn"
+
+# Isolate upstream tests from the enclosing application workspace.
+[workspace]
+
+[patch.crates-io]
+egui-winit = { path = "../egui-winit" }
+dirs-sys = { path = "../dirs-sys" }
+calloop = { path = "../calloop" }
+input = { path = "../input" }
