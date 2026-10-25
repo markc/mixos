@@ -889,6 +889,24 @@ fn status_pump_scenarios(editor: &str) {
             .await;
         let idle = phase(&mut parent, &bound, "prompt-ready").await;
         let owner = connect(&broker).await;
+        let help = tokio::time::timeout(
+            Duration::from_secs(3),
+            owner.client().call(&bound.name, "HELP", serde_json::json!({})),
+        )
+        .await
+        .expect("pane-shell HELP deadline")
+        .expect("pane-shell HELP succeeds");
+        let descriptors: Vec<bus::CommandDescriptor> =
+            serde_json::from_value(help.clone()).unwrap();
+        assert_eq!(descriptors[0].name, "HELP");
+        assert_eq!(descriptors.len(), 8);
+        let help_body = help.to_string();
+        for private in ["grant", "seed", "token", "public_key", "parent_key_hash",
+            "record_id", "instance_id", "incarnation", "pane_id", "pane_generation",
+            "binding_generation", "broker_epoch"] {
+            assert!(!help_body.contains(private), "HELP exposed {private}");
+        }
+        assert!(!help_body.contains(&grant.record.record_id.to_string()));
         let owner_view = tokio::time::timeout(
             Duration::from_secs(3),
             owner
