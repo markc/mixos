@@ -229,7 +229,7 @@ fn search_command_uses_translated_titles_and_leaves_the_window_alone() {
     )));
     assert!(rig.bus.log().iter().any(|entry| matches!(entry,
         Logged::Reply { id: 22, rc: 0, body }
-            if body["section"] == "software" && body["ui"]["search"] == ""
+            if body["section"] == "appearance" && body["ui"]["search"] == ""
     )));
 }
 
