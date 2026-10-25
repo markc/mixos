@@ -1000,12 +1000,7 @@ fn manifest() -> Vec<bus::CommandDescriptor> {
             "Read store properties",
             true,
         ),
-        (
-            "blob.props.list",
-            &[][..],
-            "List property paths",
-            true,
-        ),
+        ("blob.props.list", &[][..], "List property paths", true),
         (
             "blob.props.describe",
             &["path"][..],
