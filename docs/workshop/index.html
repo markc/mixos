@@ -214,8 +214,8 @@
                         <a href="#rules">Rules</a>
                         <a href="#bus">Bus</a>
                         <a href="#commands-and-keys">Commands and keys</a>
+                        <a href="#traffic-dock">Traffic dock</a>
                         <a href="#running-it">Running it</a>
-                        <a href="#traffic-dock" class="toc-h3">Traffic dock</a>
                         <a href="#testing">Testing</a>
                         <a href="#macro-bus-commands">Macro Bus commands</a>
                     </nav>
@@ -393,8 +393,7 @@ this window only; the session's theme file is never written. The Help menu
 opens with a field that searches every command. The desktop profile can
 rebind the shortcuts (<code>keymaps.workshop.&lt;id&gt;</code>), and <code>workshop.actions</code>
 reports the ones in force.</p>
-<h2 id="running-it">Running it</h2>
-<h3 id="traffic-dock">Traffic dock</h3>
+<h2 id="traffic-dock">Traffic dock</h2>
 <p>Traffic uses the right pane when Auto sees a window at least 1280 logical
 pixels wide, and the bottom pane otherwise. View › Traffic placement selects
 Auto, Bottom or Right; the dock header's panel button switches between Bottom
@@ -412,6 +411,7 @@ above) and whether the dock is open. Invalid values return <code>ARGUMENT</code>
 changing state. In Auto, size applies to the side used by the current window
 (Bottom in a headless instance). <code>workshop.info</code> reports <code>ui.dock_side</code>,
 <code>ui.dock_effective</code>, <code>ui.dock_size</code>, <code>ui.dock_width</code> and <code>ui.dock_height</code>.</p>
+<h2 id="running-it">Running it</h2>
 <pre><code class="language-text">workshop [--headless] [--noded-url URL] [--service NAME] [--comp NAME]
 </code></pre>
 <ul>

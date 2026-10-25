@@ -97,8 +97,7 @@ pub struct Row {
     pub children: Vec<Row>,
 }
 
-/// The part of the state a person arranges, saved and restored as one
-/// value and readable over the Bus (`workshop.info`).
+/// The saved placement of the Traffic dock.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DockSide {
@@ -128,6 +127,8 @@ fn dock_height() -> f32 {
     0.28
 }
 
+/// The part of the state a person arranges, saved and restored as one
+/// value and readable over the Bus (`workshop.info`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UiState {
     #[serde(default)]
@@ -2325,6 +2326,14 @@ mod tests {
         let loaded: UiState = serde_json::from_value(old).unwrap();
         assert_eq!(loaded.dock_side, DockSide::Auto);
         assert_eq!((loaded.dock_width, loaded.dock_height), (0.3, 0.28));
+    }
+
+    #[test]
+    fn auto_dock_changes_at_the_wide_window_threshold() {
+        assert_eq!(DockSide::Auto.effective(DOCK_RIGHT_WIDTH - 1.0), DockSide::Bottom);
+        assert_eq!(DockSide::Auto.effective(DOCK_RIGHT_WIDTH), DockSide::Right);
+        assert_eq!(DockSide::Bottom.effective(1920.0), DockSide::Bottom);
+        assert_eq!(DockSide::Right.effective(900.0), DockSide::Right);
     }
 
     #[test]

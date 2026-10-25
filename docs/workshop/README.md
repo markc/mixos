@@ -177,9 +177,7 @@ opens with a field that searches every command. The desktop profile can
 rebind the shortcuts (`keymaps.workshop.<id>`), and `workshop.actions`
 reports the ones in force.
 
-## Running it
-
-### Traffic dock
+## Traffic dock
 
 Traffic uses the right pane when Auto sees a window at least 1280 logical
 pixels wide, and the bottom pane otherwise. View › Traffic placement selects
@@ -200,6 +198,8 @@ above) and whether the dock is open. Invalid values return `ARGUMENT` without
 changing state. In Auto, size applies to the side used by the current window
 (Bottom in a headless instance). `workshop.info` reports `ui.dock_side`,
 `ui.dock_effective`, `ui.dock_size`, `ui.dock_width` and `ui.dock_height`.
+
+## Running it
 
 ```text
 workshop [--headless] [--noded-url URL] [--service NAME] [--comp NAME]

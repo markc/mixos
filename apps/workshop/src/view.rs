@@ -100,9 +100,10 @@ pub fn view(
     let side = engine.ui.dock_side.effective(window.x);
     events.push(UiEvent::DockViewport(window.x));
     if !engine.workshop.dock_open {
+        let chrome = toolkit::chrome::Chrome::of(ui.ctx());
         egui::Panel::bottom("traffic-collapsed")
             .resizable(false)
-            .exact_size(28.0)
+            .exact_size(chrome.style.icon_button as f32 + 2.0 * chrome.metrics.dock_margin as f32)
             .frame(bars::dock_frame(ui.ctx()))
             .show(ui, |ui| traffic(ui, engine, side, &mut events));
     } else {
@@ -494,7 +495,10 @@ fn traffic_body(ui: &mut Ui, engine: &Engine, side: DockSide) {
                             }
                         })
                     };
-                    egui::CollapsingHeader::new(
+                    let route = RichText::new(format!(
+                        "{} → {} · {}", text("from"), text("service"), text("direction")
+                    )).small().weak();
+                    let response = egui::CollapsingHeader::new(
                         RichText::new(format!(
                             "{} · {} · {} · {}",
                             text("ts"),
@@ -505,17 +509,11 @@ fn traffic_body(ui: &mut Ui, engine: &Engine, side: DockSide) {
                         .monospace(),
                     )
                     .id_salt(("traffic-body", index))
-                    .show(ui, |ui| traffic_row_body(ui, row));
-                    ui.label(
-                        RichText::new(format!(
-                            "{} → {} · {}",
-                            text("from"),
-                            text("service"),
-                            text("direction")
-                        ))
-                        .small()
-                        .weak(),
-                    );
+                    .show(ui, |ui| {
+                        ui.label(route.clone());
+                        traffic_row_body(ui, row);
+                    });
+                    if response.body_response.is_none() { ui.label(route); }
                 }
                 return;
             }
