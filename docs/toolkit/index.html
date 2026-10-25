@@ -518,6 +518,13 @@ while <code>drive::pending</code> is true, and calls <code>drive::finish</code> 
 Reads answer at once. Input commands run one at a time, one step per pass,
 and answer one pass after their last step. At most 32 input requests can
 be queued. The <a href="/docs/drive/">driving guide</a> shows them in use.</p>
+<p>Bus logic also runs when Wayland withholds a window's frame callbacks (for
+example, on another virtual desktop). The eframe integration allows 100 ms
+for a normal root redraw, then runs logic without a UI pass or paint. A
+normal redraw cancels that fallback; no periodic wake is installed. Queries
+and app actions still run. Paint-dependent input that cannot progress is
+settled with the existing cancellation policy, so it cannot hold later Bus
+commands indefinitely. Restore the window before retrying that input.</p>
 <p><code>viewport: "macro-editor"</code> addresses the editor owned by the app window
 handling the request. Names become available on the first native child
 pass; an embedded editor has no separately drivable viewport. Closing one

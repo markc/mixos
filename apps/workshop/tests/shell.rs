@@ -38,7 +38,7 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
             let _ = requests.send(when);
         }
     });
-    send(&mut rig, 7000, "ui.click", json!({"label":"File"}));
+    send(&mut rig, 7000, "workshop.ui.click", json!({"label":"File"}));
     send(&mut rig, 7001, "workshop.ping", json!({}));
     send(&mut rig, 7002, "HELP", json!({}));
     rig.h.state().as_ref().unwrap().forward_pending();
