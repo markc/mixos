@@ -32665,6 +32665,13 @@ a second disappearance returns the missing-candidates error. Other existing
 endpoint failures remain fatal. The shell's ordinary send probe disables
 ping discovery so an absent local socket does not trigger TCP ping traffic.
 
+A launch handoff is bound to the broker that issued its grant. Term passes
+that broker's verified Unix endpoint alongside the launch descriptor. The
+child resident uses only that endpoint, without skipping, runtime defaults,
+ping discovery or TCP fallback, just as with a PID pin. A missing issuing
+socket reports one connection refusal while the shell remains usable.
+Term's own supervisor connection retains ordinary configured discovery.
+
 Clients trust the account selected by `MIXOS_BROKER_ACCOUNT`, then
 `noded.account`, then the default `noded`. They never infer it from a socket's
 owner. Account lookup errors name the account and its configuration source.

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! BROKER-019's private, anonymous launch handoff. Never log these contents.
+//! The issuing socket travels as parent-side metadata, outside the sealed wire payload.
 use ::bus::native_client::session::GrantResult;
 use ed25519_dalek::SigningKey;
 use std::fs::File;
 use std::io::{self, Seek, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
 pub const MARKER: &str = "MIXOS_SESSION_FD";
@@ -68,6 +70,7 @@ pub fn fresh_key() -> io::Result<SigningKey> {
 pub struct LaunchFd {
     source: File,
     target: OwnedFd,
+    endpoint: Option<PathBuf>,
 }
 
 impl LaunchFd {
@@ -81,6 +84,7 @@ impl LaunchFd {
         Ok(Self {
             source,
             target: unsafe { OwnedFd::from_raw_fd(raw) },
+            endpoint: None,
         })
     }
     pub fn new(descriptor: &GrantResult, key: &SigningKey) -> io::Result<Self> {
@@ -134,6 +138,7 @@ impl LaunchFd {
             source,
             // SAFETY: fcntl returned a newly owned descriptor.
             target: unsafe { OwnedFd::from_raw_fd(target) },
+            endpoint: None,
         })
     }
 
@@ -143,6 +148,15 @@ impl LaunchFd {
 
     pub fn marker(&self) -> (String, String) {
         (MARKER.into(), self.target.as_raw_fd().to_string())
+    }
+
+    pub(crate) fn with_endpoint(mut self, endpoint: &Path) -> Self {
+        self.endpoint = Some(endpoint.to_owned());
+        self
+    }
+
+    pub(crate) fn endpoint(&self) -> Option<&Path> {
+        self.endpoint.as_deref()
     }
 }
 

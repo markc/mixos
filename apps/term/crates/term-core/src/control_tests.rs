@@ -269,6 +269,9 @@ impl Fixture {
             ("HOME".into(), home.clone()),
             ("MIXOS_SRC".into(), home.clone()),
             ("MIXOS_NODE_CONFIG".into(), config.display().to_string()),
+            ("MIXOS_BUS_SOCKET".into(), broker.endpoint.display().to_string()),
+            ("MIXOS_NODED_URL".into(), broker.url.clone()),
+            ("MIXOS_RUN".into(), root.join("run").display().to_string()),
             (
                 "MIXOS_BROKER_ACCOUNT".into(),
                 super::production_e2e::account_name(),
@@ -337,7 +340,9 @@ impl Fixture {
                     file.read_exact_at(&mut public, 5).unwrap();
                     let mut descriptor: GrantResult = serde_json::from_slice(&public).unwrap();
                     descriptor.record.pane_id = Some(DecimalU64(777));
-                    ready.fd = crate::session_fd::LaunchFd::new(&descriptor, &ready.key).unwrap();
+                    ready.fd = crate::session_fd::LaunchFd::new(&descriptor, &ready.key)
+                        .unwrap()
+                        .with_endpoint(&broker.endpoint);
                 }
                 _ => panic!("unknown launch fault"),
             }

@@ -303,6 +303,15 @@ impl Child {
                 current_mix().parent().unwrap().display().to_string(),
             ),
             ("MIXOS_NODE_CONFIG".into(), config.display().to_string()),
+            (
+                "MIXOS_BUS_SOCKET".into(),
+                broker.endpoint.display().to_string(),
+            ),
+            ("MIXOS_NODED_URL".into(), broker.url.clone()),
+            (
+                "MIXOS_RUN".into(),
+                home.path().join("run").display().to_string(),
+            ),
             ("MIXOS_BROKER_ACCOUNT".into(), account),
             ("MIX_STATS".into(), "off".into()),
             ("MIX_EDITOR".into(), editor.into()),
@@ -651,10 +660,18 @@ fn valid_handoff_with_broker_down_does_not_delay_first_source() {
             .await;
         let launch = LaunchFd::new(&grant, &key).unwrap();
         broker.stop();
+        // A valid later runtime socket must never receive this broker's grant.
+        // This also makes the regression independent of the host's system broker.
+        let fallback = tempfile::tempdir().unwrap();
+        std::fs::create_dir(fallback.path().join("noded")).unwrap();
+        let listener = std::os::unix::net::UnixListener::bind(fallback.path().join("noded/bus.sock")).unwrap();
+        listener.set_nonblocking(true).unwrap();
         // Account NSS lookup and config-file reads are resident-only again;
         // neither name-service latency nor broker retry delays first source.
         let start = Instant::now();
-        let mut child = Child::spawn(&broker, &launch);
+        let mut child = Child::spawn_with(&broker, &launch, "owned", &[
+            ("MIXOS_RUN".into(), fallback.path().display().to_string()),
+        ]);
         drop(launch);
         drop(key);
         let mut output = child.until("RC_MARKER=[]\r\n");
@@ -665,6 +682,7 @@ fn valid_handoff_with_broker_down_does_not_delay_first_source() {
         child.send("print(\"UNBOUND_WORKS\")\n");
         output.push_str(&child.until("UNBOUND_WORKS\r\n"));
         assert_eq!(output.matches("mix native-session FAILED").count(), 1);
+        assert!(matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock));
         child.exit();
     });
 }

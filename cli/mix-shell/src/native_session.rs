@@ -10,6 +10,7 @@
 //! A separate exec-restart signal can only stop the owner; it exposes no state.
 //! Ordinary shells without the marker return before config, allocation or I/O.
 //! Broker discovery uses libs/bus with environment inputs captured before spawn.
+//! A launch grant binds this resident to its issuing endpoint without discovery.
 
 use ::bus::native_client::session::{ChallengeResult, ExpectedScope, Hello, SessionFailure};
 use ::bus::native_client::{
@@ -523,11 +524,13 @@ impl Bootstrap {
 
 async fn own(
     mut bootstrap: Bootstrap,
-    options: UnixConnectOptions,
+    mut options: UnixConnectOptions,
     url: String,
     reporter: &mut Reporter,
     mut restart: tokio::sync::mpsc::UnboundedReceiver<RestartAck>,
 ) {
+    // The launch grant belongs to this endpoint, even while its broker is down.
+    options.endpoint_only = true;
     let mut failures = 0;
     // Survives transport loss: exec restart during backoff still has a target.
     let mut last_record: Option<SessionRecord> = None;

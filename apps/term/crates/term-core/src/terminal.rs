@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+//! Terminal model and PTY launch, including the issuing endpoint for native handoffs.
 use crate::clusters::ClusterInterner;
 pub use crate::clusters::{CellWidth, Clusters};
 use crate::metrics::Metrics;
@@ -944,6 +945,12 @@ impl Terminal {
             if let Some(fd) = &fd {
                 let (name, value) = fd.marker();
                 args.push(format!("{name}={value}"));
+                if let Some(endpoint) = fd.endpoint() {
+                    let endpoint = endpoint.to_str().ok_or_else(|| {
+                        std::io::Error::other("broker endpoint is not valid UTF-8")
+                    })?;
+                    args.push(format!("MIXOS_BUS_SOCKET={endpoint}"));
+                }
             }
             args.push(program.into());
             teletypewriter::create_pty_with_spawn_fd(

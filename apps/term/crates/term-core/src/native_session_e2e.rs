@@ -106,7 +106,7 @@ fn p0i_01_production_term_spawn_enrols_real_mix_and_exit_revokes() {
         &config,
         format!(
             "noded: {{ unix_socket: {} }}\n",
-            serde_json::to_string(&broker.endpoint).unwrap()
+            serde_json::to_string(&root.join("wrong-configured.sock")).unwrap()
         ),
     )
     .unwrap();
@@ -126,6 +126,13 @@ fn p0i_01_production_term_spawn_enrols_real_mix_and_exit_revokes() {
             ("HOME".into(), home.display().to_string()),
             ("MIXOS_SRC".into(), home.display().to_string()),
             ("MIXOS_NODE_CONFIG".into(), config.display().to_string()),
+            // The production launch must override both stale socket sources.
+            (
+                "MIXOS_BUS_SOCKET".into(),
+                root.join("wrong-inherited.sock").display().to_string(),
+            ),
+            ("MIXOS_NODED_URL".into(), broker.url.clone()),
+            ("MIXOS_RUN".into(), root.join("run").display().to_string()),
             ("MIXOS_BROKER_ACCOUNT".into(), account_name()),
             ("MIX_STATS".into(), "off".into()),
             ("MIX_EDITOR".into(), "owned".into()),

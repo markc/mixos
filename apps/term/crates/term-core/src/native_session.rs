@@ -3,6 +3,7 @@
 //! Term-owned identity actor and verified recipient lane. Protected controls
 //! share its attachment, ordered lifecycle stream and reconnect lifetime.
 //! Socket candidates, broker URL and account resolve together through libs/bus.
+//! Child launch handoffs retain the verified issuing endpoint; supervisor discovery stays enabled.
 use crate::session_fd::{LaunchFd, fresh_key};
 use ::bus::native_client::session::{Deadline, ExpectedScope, GrantResult, Hello, SessionFailure};
 use ::bus::native_client::{
@@ -716,7 +717,12 @@ impl Actor {
         if std::mem::take(&mut self.faults.memfd) {
             return Err(std::io::Error::other("injected memfd allocation failure"));
         }
-        LaunchFd::new(grant, &self.pool_key.as_ref().unwrap().1)
+        let connection = self
+            .connection
+            .as_ref()
+            .ok_or_else(|| std::io::Error::other("launch grant has no issuing connection"))?;
+        Ok(LaunchFd::new(grant, &self.pool_key.as_ref().unwrap().1)?
+            .with_endpoint(connection.endpoint()))
     }
     fn diagnostic(&self, id: Option<u64>, message: impl Into<String>) {
         let message = message.into();
@@ -1676,6 +1682,18 @@ pub(crate) mod tests {
     fn prepare_ready(handle: &NativeSession, id: u64) -> (PaneSession, LaunchFd) {
         wait_ready(handle, id);
         handle.prepare(id).expect("ready launch")
+    }
+
+    #[test]
+    fn supervisor_discovers_but_handoff_names_the_issuing_endpoint() {
+        let broker = Broker::start();
+        let mut options = broker.options();
+        options.endpoint = Some(broker.endpoint.with_file_name("missing.sock"));
+        options.configured_endpoint = Some(broker.endpoint.clone());
+        assert!(!options.endpoint_only);
+        let supervisor = Supervisor::with_options(options, broker.url.clone()).unwrap();
+        let (_pane, fd) = prepare_ready(&supervisor.handle, 1);
+        assert_eq!(fd.endpoint(), Some(broker.endpoint.as_path()));
     }
 
     fn test_actor(broker: &Broker) -> Actor {

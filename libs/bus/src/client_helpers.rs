@@ -7,6 +7,8 @@
 //! A client with a server-PID pin must name its endpoint explicitly through
 //! MIXOS_BUS_SOCKET, the caller endpoint or noded.unix_socket: no candidates
 //! are skipped, so default run-root discovery stops at its first candidate.
+//! A launch handoff additionally restricts the list to its issuing endpoint;
+//! configured endpoints without a handoff retain ordinary discovery.
 
 use crate::native_client::ConnectError;
 use crate::native_client::{BrokerAccount, NodedClient, UnixConnectOptions};
@@ -64,7 +66,7 @@ fn select_endpoint(
 
 pub(crate) async fn resolve_endpoint<F, Fut>(
     mut candidates: Vec<PathBuf>,
-    expected_server_pid: Option<u32>,
+    pinned: bool,
     discover: F,
 ) -> Result<PathBuf, ConnectError>
 where
@@ -74,12 +76,10 @@ where
     let warn = |path: &Path, error: &std::io::Error| {
         tracing::warn!(path = %path.display(), %error, "skipping missing Unix endpoint candidate");
     };
-    if let Some(path) = select_endpoint(&candidates, expected_server_pid.is_some(), warn)? {
+    if let Some(path) = select_endpoint(&candidates, pinned, warn)? {
         return Ok(path);
     }
-    if expected_server_pid.is_none()
-        && let Some(path) = discover().await
-    {
+    if !pinned && let Some(path) = discover().await {
         candidates.push(path.clone());
         if let Some(path) = select_endpoint(&[path], false, warn)? {
             return Ok(path);
@@ -360,6 +360,14 @@ fn node_setting(
 /// Build the ordered list without testing existence or connecting. Callers
 /// may override the first two entries; shared defaults remain in order.
 pub fn unix_endpoint_candidates(options: &UnixConnectOptions) -> anyhow::Result<Vec<PathBuf>> {
+    if options.endpoint_only {
+        let endpoint = options
+            .endpoint
+            .as_ref()
+            .or(options.configured_endpoint.as_ref())
+            .context("a launch handoff requires an explicit broker endpoint")?;
+        return Ok(vec![endpoint.clone()]);
+    }
     let mut candidates = Vec::new();
     for path in options
         .endpoint
@@ -375,7 +383,7 @@ pub fn unix_endpoint_candidates(options: &UnixConnectOptions) -> anyhow::Result<
 }
 
 /// Locate a Unix endpoint without connecting or deriving authority from it.
-/// Only missing candidates are skipped; a PID pin forbids skipping and ping.
+/// Only missing candidates are skipped; PID and handoff pins forbid skipping and ping.
 pub async fn resolve_unix_endpoint(
     options: &UnixConnectOptions,
     tcp_url: &str,
@@ -383,7 +391,7 @@ pub async fn resolve_unix_endpoint(
     let candidates = options
         .endpoint_candidates()
         .map_err(ConnectError::Protocol)?;
-    resolve_endpoint(candidates, options.expected_server_pid, || async {
+    resolve_endpoint(candidates, options.endpoint_is_pinned(), || async {
         if options.discover_by_ping {
             discover_endpoint(tcp_url).await
         } else {
@@ -394,7 +402,7 @@ pub async fn resolve_unix_endpoint(
 }
 
 /// Re-resolve once after a selected endpoint disappears. Other failures remain
-/// fatal, and a PID pin forbids both skipping and this retry.
+/// fatal, and PID or handoff pins forbid both skipping and this retry.
 pub(crate) async fn connect_unix_candidates<T, F, Fut>(
     options: &UnixConnectOptions,
     tcp_url: &str,
@@ -412,7 +420,7 @@ where
     let mut retried = false;
     loop {
         let mut ping_used = false;
-        let path = resolve_endpoint(candidates.clone(), options.expected_server_pid, || {
+        let path = resolve_endpoint(candidates.clone(), options.endpoint_is_pinned(), || {
             ping_used = ping_available;
             async {
                 if ping_available {
@@ -443,7 +451,7 @@ where
         match connect(path.clone()).await {
             Ok(connection) => return Ok(connection),
             Err(error)
-                if options.expected_server_pid.is_none()
+                if !options.endpoint_is_pinned()
                     && matches!(error.endpoint_cause(), ConnectError::Io(error)
                     if matches!(error.raw_os_error(), Some(libc::ENOENT | libc::ENOTDIR))) =>
             {
@@ -769,7 +777,7 @@ pub(crate) mod tests {
                 .collect();
             let candidates = options(&paths).endpoint_candidates().unwrap();
             assert_eq!(candidates, paths);
-            let path = resolve_endpoint(candidates, None, || async {
+            let path = resolve_endpoint(candidates, false, || async {
                 panic!("local candidates must precede ping")
             })
             .await
@@ -820,7 +828,7 @@ pub(crate) mod tests {
         let advertised = dir.0.join("advertised");
         let socket = UnixListener::bind(&advertised).unwrap();
         assert_eq!(
-            resolve_endpoint(paths.clone(), None, || std::future::ready(Some(
+            resolve_endpoint(paths.clone(), false, || std::future::ready(Some(
                 advertised.clone()
             )))
             .await
@@ -829,7 +837,7 @@ pub(crate) mod tests {
         );
         drop(socket);
         std::fs::remove_file(&advertised).unwrap();
-        let error = resolve_endpoint(paths.clone(), None, || {
+        let error = resolve_endpoint(paths.clone(), false, || {
             std::future::ready(Some(advertised.clone()))
         })
         .await
@@ -845,7 +853,7 @@ pub(crate) mod tests {
         let dir = TestDir::new();
         let paths = vec![dir.0.join("missing"), dir.0.join("existing")];
         let _socket = UnixListener::bind(&paths[1]).unwrap();
-        let error = resolve_endpoint(paths.clone(), Some(42), || async {
+        let error = resolve_endpoint(paths.clone(), true, || async {
             panic!("PID pin must disable ping")
         })
         .await
@@ -854,14 +862,14 @@ pub(crate) mod tests {
         assert!(
             matches!(error.endpoint_cause(), ConnectError::Io(error) if error.raw_os_error() == Some(libc::ENOENT))
         );
-        let path = resolve_endpoint(vec![paths[1].clone()], Some(42), || async {
+        let path = resolve_endpoint(vec![paths[1].clone()], true, || async {
             panic!("PID pin must disable ping")
         })
         .await
         .unwrap();
         assert_eq!(path, paths[1]);
         assert!(
-            resolve_endpoint(Vec::new(), Some(42), || async {
+            resolve_endpoint(Vec::new(), true, || async {
                 panic!("PID pin must disable ping")
             })
             .await

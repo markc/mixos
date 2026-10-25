@@ -42,9 +42,13 @@ pub struct UnixConnectOptions {
     pub broker_account: BrokerAccount,
     pub endpoint: Option<PathBuf>,
     pub configured_endpoint: Option<PathBuf>,
+    /// A launch handoff is bound to its issuing endpoint. Use only the first
+    /// explicit/configured candidate, without skipping, ping or TCP fallback.
+    pub endpoint_only: bool,
     /// Environment and system candidates resolved at capture time. Empty means none.
     pub default_endpoints: Vec<PathBuf>,
-    /// Permit TCP ping discovery after local candidates are missing.
+    /// Permit TCP ping discovery after local candidates are missing. Endpoint
+    /// and PID pins override this option.
     pub discover_by_ping: bool,
     /// Hard requirement. Overrides `allow_unverified_tcp_fallback` on every
     /// failure, including permissions, ownership, peer credentials and version.
@@ -69,6 +73,7 @@ impl UnixConnectOptions {
             broker_account,
             endpoint: None,
             configured_endpoint: None,
+            endpoint_only: false,
             default_endpoints: Vec::new(),
             discover_by_ping: true,
             require_native_session: false,
@@ -81,6 +86,10 @@ impl UnixConnectOptions {
     /// Ordered explicit/config/environment/system candidates, before ping.
     pub fn endpoint_candidates(&self) -> anyhow::Result<Vec<PathBuf>> {
         crate::client_helpers::unix_endpoint_candidates(self)
+    }
+
+    pub(crate) fn endpoint_is_pinned(&self) -> bool {
+        self.endpoint_only || self.expected_server_pid.is_some()
     }
 }
 
@@ -174,6 +183,7 @@ pub enum UnixConnectOutcome {
 /// Only endpoint verification plus profile negotiation can construct this.
 pub struct VerifiedConnection {
     client: NodedClient,
+    endpoint: PathBuf,
     server_peer_credentials: ServerPeerCredentials,
     incoming: tokio::sync::Mutex<VerifiedIncoming>,
     pub(crate) session_lock: tokio::sync::Mutex<()>,
@@ -185,6 +195,11 @@ impl VerifiedConnection {
     /// is absent on this handle; trusted deliveries come only from `recv`.
     pub fn client(&self) -> &NodedClient {
         &self.client
+    }
+
+    /// The verified endpoint that issued grants on this connection.
+    pub fn endpoint(&self) -> &Path {
+        &self.endpoint
     }
 
     /// Connect-time SO_PEERCRED, retained for a caller's authority check.
@@ -319,7 +334,7 @@ impl NodedClient {
     /// endpoint, config, environment runtime, system runtime, then ping. Every
     /// candidate is verified; discovery never establishes authority. Unix is node-local
     /// in v1: mesh-destined traffic is refused, with no transparent TCP retry.
-    /// One disappearing endpoint permits re-resolution unless the server PID is pinned.
+    /// One disappearing endpoint permits re-resolution unless its endpoint or server PID is pinned.
     pub async fn connect_unix(
         service_name: &str,
         tcp_url: &str,
@@ -335,7 +350,7 @@ impl NodedClient {
             Ok(connection) => Ok(UnixConnectOutcome::VerifiedUnix(connection)),
             Err(unix_error)
                 if !options.require_native_session
-                    && options.expected_server_pid.is_none()
+                    && !options.endpoint_is_pinned()
                     && options.allow_unverified_tcp_fallback
                     && matches!(unix_error, ConnectError::CandidatesMissing(_)) =>
             {
@@ -380,6 +395,7 @@ async fn connect_verified(
             })?;
     Ok(VerifiedConnection {
         client,
+        endpoint: path.to_owned(),
         server_peer_credentials: ServerPeerCredentials {
             pid,
             uid: peer.uid(),
@@ -479,6 +495,58 @@ mod tests {
     use crate::client_helpers::tests::{TestDir, options};
     use std::os::unix::fs::symlink;
     use std::os::unix::net::UnixListener;
+
+    #[tokio::test]
+    async fn missing_handoff_endpoint_never_uses_a_verified_later_candidate() {
+        let dir = TestDir::new();
+        let missing = dir.0.join("issuing.sock");
+        let later = dir.0.join("other.sock");
+        let listener = UnixListener::bind(&later).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let tcp = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        tcp.set_nonblocking(true).unwrap();
+        let url = format!("ws://{}/ws", tcp.local_addr().unwrap());
+        for configured in [false, true] {
+            let mut options = options(&[]);
+            assert!(verify_path(&later, options.broker_account).is_ok());
+            if configured {
+                options.configured_endpoint = Some(missing.clone());
+            } else {
+                options.endpoint = Some(missing.clone());
+                options.configured_endpoint = Some(later.clone());
+            }
+            options.default_endpoints = vec![later.clone()];
+            options.endpoint_only = true;
+            options.require_native_session = false;
+            options.allow_unverified_tcp_fallback = true;
+            assert!(options.discover_by_ping);
+            assert_eq!(
+                options.endpoint_candidates().unwrap(),
+                vec![missing.clone()]
+            );
+            let error = tokio::time::timeout(
+                std::time::Duration::from_millis(500),
+                NodedClient::connect_unix("", &url, &options, None),
+            )
+            .await
+            .expect("a missing handoff endpoint must refuse immediately")
+            .err()
+            .unwrap();
+            assert!(matches!(error.endpoint_cause(), ConnectError::Io(error)
+                if error.raw_os_error() == Some(libc::ENOENT)));
+            assert!(error.to_string().contains(&missing.display().to_string()));
+        }
+        assert!(
+            matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
+        );
+        assert!(
+            matches!(tcp.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
+        );
+        let mut options = options(&[]);
+        options.endpoint_only = true;
+        options.default_endpoints = vec![later];
+        assert!(options.endpoint_candidates().is_err());
+    }
 
     #[tokio::test]
     async fn existing_wrong_owner_socket_is_fatal_without_fallback() {
