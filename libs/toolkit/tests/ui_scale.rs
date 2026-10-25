@@ -112,3 +112,18 @@ fn live_install_replaces_rather_than_compounds_and_clamps() {
     assert_eq!(theme(-1.0, 7.0).ui(), theme(0.5, 2.0).ui());
     assert_eq!(theme(f64::NAN, f64::NAN).ui(), &CommonUi::default());
 }
+
+#[test]
+fn theme_choices_and_style_overlays_preserve_desktop_scaling_once() {
+    let theme = theme(1.5, 1.2);
+    let chosen = theme
+        .with_choice(&toolkit::theme::Choice {
+            scheme: Some(design::Scheme::Forest),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(chosen.ui(), theme.ui());
+    let before = toolkit::style::style(&chosen);
+    let overlaid = chosen.with_overlay(Default::default()).unwrap();
+    assert_eq!(toolkit::style::style(&overlaid), before);
+}

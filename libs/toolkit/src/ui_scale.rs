@@ -104,6 +104,7 @@ pub(crate) fn tokens(mut style: ResolvedStyle, ui: &CommonUi) -> ResolvedStyle {
     style.panel_header *= density;
     style.panel_header_after *= density;
     style.panel_ellipsis_gap *= density;
+    style.panel_ellipsis *= density;
     style.panel_pill_gap *= density;
     style.panel_pill_pad *= density;
     style.panel_strip *= density;
