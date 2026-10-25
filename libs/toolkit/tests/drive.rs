@@ -827,7 +827,9 @@ fn logic_only_preserves_brief_stalls_and_cancels_after_the_quiet_period() {
     assert_eq!(h.ctx.cumulative_pass_nr(), pass);
     assert!(answers.is_empty(), "a brief stall preserves pending input");
     std::thread::sleep(drive::INPUT_QUIET_PERIOD + std::time::Duration::from_millis(10));
-    let _ = h.ctx.run_logic(&input, |ctx| answers.extend(drive::logic(ctx)));
+    let _ = h
+        .ctx
+        .run_logic(&input, |ctx| answers.extend(drive::logic(ctx)));
     assert_eq!(answers.len(), 1);
     assert_eq!(answers[0].id, 91);
     assert_eq!(answers[0].body["error_code"], "CANCELLED");
@@ -843,12 +845,16 @@ fn logic_only_preserves_brief_stalls_and_cancels_after_the_quiet_period() {
 #[test]
 fn input_completes_when_ui_resumes_after_a_brief_logic_only_stall() {
     let mut h = window();
-    h.state_mut().inbox.push((92, "ui.click", json!({"label":"Count"})));
+    h.state_mut()
+        .inbox
+        .push((92, "ui.click", json!({"label":"Count"})));
     h.step();
     h.step();
     let input = h.input_mut().clone();
     let mut answers = Vec::new();
-    let _ = h.ctx.run_logic(&input, |ctx| answers.extend(drive::logic(ctx)));
+    let _ = h
+        .ctx
+        .run_logic(&input, |ctx| answers.extend(drive::logic(ctx)));
     assert!(answers.is_empty());
     for _ in 0..8 {
         h.step();

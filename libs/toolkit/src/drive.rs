@@ -241,7 +241,10 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
         if logic_only && quiet >= INPUT_QUIET_PERIOD {
             drive.settle(
                 ctx,
-                &format!("the window produced no frames for {} ms before this input was read", quiet.as_millis()),
+                &format!(
+                    "the window produced no frames for {} ms before this input was read",
+                    quiet.as_millis()
+                ),
             );
         } else if logic_only && drive.has_pending() {
             ctx.request_repaint_after(INPUT_QUIET_PERIOD.saturating_sub(quiet));
@@ -1581,7 +1584,12 @@ mod tests {
         let now = Instant::now();
         ctx.with_plugin(|drive: &mut Drive| {
             drive.last_ui_pass = Some(now);
-            drive.queue.push_back((99, Job::Type { text: "hello".into() }));
+            drive.queue.push_back((
+                99,
+                Job::Type {
+                    text: "hello".into(),
+                },
+            ));
         });
         assert!(logic_at(&ctx, now + INPUT_QUIET_PERIOD - Duration::from_millis(1)).is_empty());
         assert!(pending(&ctx));
@@ -1589,7 +1597,12 @@ mod tests {
         assert_eq!(answers.len(), 1);
         assert_eq!(answers[0].id, 99);
         assert_eq!(answers[0].body["error_code"], "CANCELLED");
-        assert!(answers[0].body.to_string().contains("no frames for 1000 ms"));
+        assert!(
+            answers[0]
+                .body
+                .to_string()
+                .contains("no frames for 1000 ms")
+        );
         assert!(!pending(&ctx));
     }
 

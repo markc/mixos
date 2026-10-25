@@ -99,35 +99,69 @@ fn queued_bus_requests_answer_through_logic_without_a_ui_pass() {
 #[test]
 fn vendored_eframe_logic_wake_is_wired_to_redraw_and_both_renderers() {
     let run = include_str!("../../../vendor/eframe/src/native/run.rs");
-    let check = run.split("fn check_redraw_requests(").nth(1).unwrap()
-        .split("impl<T: WinitApp> ApplicationHandler").next().unwrap();
+    let check = run
+        .split("fn check_redraw_requests(")
+        .nth(1)
+        .unwrap()
+        .split("impl<T: WinitApp> ApplicationHandler")
+        .next()
+        .unwrap();
     assert!(check.contains("if self.checking_redraw_requests"));
     assert!(check.contains("self.checking_redraw_requests = true;"));
     assert!(check.contains("self.checking_redraw_requests = false;"));
     let redraw = check.find("window.request_redraw();").unwrap();
-    let arm = check.find("self.logic_wake.request(Instant::now());").unwrap();
+    let arm = check
+        .find("self.logic_wake.request(Instant::now());")
+        .unwrap();
     assert!(redraw < arm);
     assert!(check[redraw..arm].contains("if root_window_id == Some(*window_id)"));
-    let invisible = check.find("for window_id in &invisible_window_ids").unwrap();
+    let invisible = check
+        .find("for window_id in &invisible_window_ids")
+        .unwrap();
     let cancel = check.find("self.logic_wake.cancel();").unwrap();
-    let take = check.find("self.logic_wake.take_due(Instant::now())").unwrap();
+    let take = check
+        .find("self.logic_wake.take_due(Instant::now())")
+        .unwrap();
     assert!(invisible < cancel && cancel < take);
     assert!(check[take..].contains("self.winit_app.run_logic(event_loop, window_id)"));
     assert!(check.contains(".chain(self.logic_wake.deadline())"));
-    let redraw_event = run.split("winit::event::WindowEvent::RedrawRequested =>").nth(1).unwrap();
-    assert!(redraw_event.find("self.logic_wake.cancel();").unwrap()
-        < redraw_event.find("self.winit_app.run_ui_and_paint").unwrap());
-    let user_event = run.split("fn user_event(").nth(1).unwrap().split("fn new_events(").next().unwrap();
+    let redraw_event = run
+        .split("winit::event::WindowEvent::RedrawRequested =>")
+        .nth(1)
+        .unwrap();
+    assert!(
+        redraw_event.find("self.logic_wake.cancel();").unwrap()
+            < redraw_event
+                .find("self.winit_app.run_ui_and_paint")
+                .unwrap()
+    );
+    let user_event = run
+        .split("fn user_event(")
+        .nth(1)
+        .unwrap()
+        .split("fn new_events(")
+        .next()
+        .unwrap();
     assert!(!user_event.contains("self.logic_wake.request("));
     for (renderer, call, logic_call) in [
-        (include_str!("../../../vendor/eframe/src/native/wgpu_integration.rs"),
-        "running.run_ui_and_paint(window_id, event_loop, true)",
-        "integration.update_logic_only(app.as_mut(), raw_input)"),
-        (include_str!("../../../vendor/eframe/src/native/glow_integration.rs"),
-        "running.run_ui_and_paint(event_loop, window_id, true)",
-        ".update_logic_only(self.app.as_mut(), raw_input)"),
+        (
+            include_str!("../../../vendor/eframe/src/native/wgpu_integration.rs"),
+            "running.run_ui_and_paint(window_id, event_loop, true)",
+            "integration.update_logic_only(app.as_mut(), raw_input)",
+        ),
+        (
+            include_str!("../../../vendor/eframe/src/native/glow_integration.rs"),
+            "running.run_ui_and_paint(event_loop, window_id, true)",
+            ".update_logic_only(self.app.as_mut(), raw_input)",
+        ),
     ] {
-        let logic = renderer.split("fn run_logic(").nth(1).unwrap().split("fn resumed(").next().unwrap();
+        let logic = renderer
+            .split("fn run_logic(")
+            .nth(1)
+            .unwrap()
+            .split("fn resumed(")
+            .next()
+            .unwrap();
         assert!(logic.contains(call));
         assert!(renderer.contains(logic_call));
     }
