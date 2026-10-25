@@ -75,7 +75,7 @@ fn manifest() -> Vec<bus::CommandDescriptor> {
         ),
         (
             SET,
-            &["document"][..],
+            &["schema", "default?", "outputs?"][..],
             "Apply and store a wallpaper document",
             false,
         ),

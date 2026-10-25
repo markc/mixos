@@ -922,7 +922,7 @@ fn manifest() -> Vec<bus::CommandDescriptor> {
         ),
         (
             "blob.put",
-            &["path", "owner?"][..],
+            &["path", "owner?", "mode?", "mime?", "name?", "immutable?"][..],
             "Store and pin a file",
             false,
         ),
@@ -941,7 +941,7 @@ fn manifest() -> Vec<bus::CommandDescriptor> {
         ),
         (
             "blob.has",
-            &["blob"][..],
+            &["blobs"][..],
             "Check local blob availability",
             true,
         ),
@@ -957,7 +957,12 @@ fn manifest() -> Vec<bus::CommandDescriptor> {
             "Remove an owner's pin",
             false,
         ),
-        ("blob.list", &["owner?"][..], "List stored blobs", true),
+        (
+            "blob.list",
+            &["owner?", "limit?", "cursor?"][..],
+            "List stored blobs",
+            true,
+        ),
         (
             "blob.quota",
             &["owner?"][..],
@@ -973,7 +978,7 @@ fn manifest() -> Vec<bus::CommandDescriptor> {
         ("blob.info", &[][..], "Read store identity and status", true),
         (
             "blob.fetch",
-            &["blob"][..],
+            &["blob", "from?", "instance?", "owner?"][..],
             "Fetch a blob from a peer",
             false,
         ),
@@ -997,7 +1002,7 @@ fn manifest() -> Vec<bus::CommandDescriptor> {
         ),
         (
             "blob.props.list",
-            &["path?"][..],
+            &[][..],
             "List property paths",
             true,
         ),
