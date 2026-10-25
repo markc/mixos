@@ -168,7 +168,10 @@ pub fn view(
             if engine.section() != Section::Software
                 && let Some(problem) = &engine.look.problem
             {
-                ui.add(egui::Label::new(RichText::new(problem).color(ui.visuals().error_fg_color)).wrap());
+                ui.add(
+                    egui::Label::new(RichText::new(problem).color(ui.visuals().error_fg_color))
+                        .wrap(),
+                );
             }
             match engine.section() {
                 Section::Software => applications(ui, engine, commands, strings, &mut events),
@@ -343,8 +346,7 @@ fn fonts(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    let title = label("section-text-and-fonts");
-    panel::group(ui, "fonts", &[title.as_str()], |ui, _| {
+    ui.vertical(|ui| {
         let Some(look) = appearance_state(ui, engine, commands, strings, events) else {
             return;
         };
@@ -562,8 +564,7 @@ fn motion(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    let title = label("section-accessibility");
-    panel::group(ui, "motion", &[title.as_str()], |ui, _| {
+    ui.vertical(|ui| {
         let Some(look) = appearance_state(ui, engine, commands, strings, events) else {
             return;
         };
@@ -626,7 +627,6 @@ fn interface_font_controls(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEven
             events.push(UiEvent::Interface(InterfaceEdit::Weight(weight)));
         }
 
-        panel::section_label(ui, &label("fonts-size"));
         let design = design::default_typography(design::TypographyRole::Ui).font_size;
         {
             let size = font.size.unwrap_or(design);
@@ -832,8 +832,7 @@ fn appearance(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    let title = label("section-appearance");
-    panel::group(ui, "appearance", &[title.as_str()], |ui, _| {
+    ui.vertical(|ui| {
         if let Some(look) = appearance_state(ui, engine, commands, strings, events) {
             panel::section_label(ui, &label("appearance-theme"));
             look_controls(ui, engine, strings, look.clone(), events);
@@ -860,6 +859,7 @@ fn appearance_state(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) -> Option<Look> {
+    if engine.look.waiting() || engine.look.uncertain.is_some() {
     ui.horizontal(|ui| {
         // Changes apply as they are made; these appear only when an
         // edit waits for the person: a refused apply (Apply tries
@@ -876,6 +876,7 @@ fn appearance_state(
         }
     });
     bars::hairline(ui);
+    }
     if engine.look.settings == Settings::Missing {
         ui.add(egui::Label::new(RichText::new(label("look-missing")).weak()).wrap());
         return None;
@@ -884,6 +885,7 @@ fn appearance_state(
         ui.label(RichText::new(label("look-reading")).weak());
         return None;
     };
+    if !engine.look.conflicts.is_empty() || engine.look.custom_source || engine.look.hold {
     ui.vertical(|ui| {
         ui.set_width(ui.available_width());
         let note = |ui: &mut Ui, key: &str, colour: Option<Color32>| {
@@ -912,6 +914,7 @@ fn appearance_state(
         }
     });
     bars::hairline(ui);
+    }
     Some(look)
 }
 
@@ -924,8 +927,7 @@ fn terminal(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    let title = label("section-terminal");
-    panel::group(ui, "terminal", &[title.as_str()], |ui, _| {
+    ui.vertical(|ui| {
         ui.horizontal(|ui| {
             command_button(
                 ui,
@@ -1158,7 +1160,7 @@ fn text_field(ui: &mut Ui, key: &'static str, current: &str, hint: &str) -> Opti
     let mut text = ui
         .data(|d| d.get_temp::<String>(id))
         .unwrap_or_else(|| current.to_owned());
-    let response = toolkit::field::text(ui, &mut text, hint, 240.0);
+    let response = toolkit::field::text(ui, &mut text, hint, ui.available_width());
     if response.lost_focus() {
         ui.data_mut(|d| d.remove::<String>(id));
         let text = text.trim();
@@ -1260,23 +1262,6 @@ fn look_controls(
                 });
                 ui.end_row();
 
-                panel::section_label(ui, &label("look-style"));
-                let styles: Vec<(Option<Style>, String)> =
-                    std::iter::once((None, label("look-style-own")))
-                        .chain(
-                            Style::ALL
-                                .into_iter()
-                                .map(|s| (Some(s), label(&format!("look-style-{}", s.name())))),
-                        )
-                        .collect();
-                if let Some(style) = choices(ui, look.style, &styles) {
-                    events.push(UiEvent::Look(Look {
-                        style,
-                        ..look.clone()
-                    }));
-                }
-                ui.end_row();
-
                 panel::section_label(ui, &label("look-mode"));
                 let modes: Vec<_> = Mode::ALL
                     .into_iter()
@@ -1298,6 +1283,22 @@ fn look_controls(
                 if let Some(contrast) = choices(ui, look.contrast, &contrasts) {
                     events.push(UiEvent::Look(Look {
                         contrast,
+                        ..look.clone()
+                    }));
+                }
+                ui.end_row();
+                panel::section_label(ui, &label("look-style"));
+                let styles: Vec<(Option<Style>, String)> =
+                    std::iter::once((None, label("look-style-own")))
+                        .chain(
+                            Style::ALL
+                                .into_iter()
+                                .map(|s| (Some(s), label(&format!("look-style-{}", s.name())))),
+                        )
+                        .collect();
+                if let Some(style) = choices(ui, look.style, &styles) {
+                    events.push(UiEvent::Look(Look {
+                        style,
                         ..look.clone()
                     }));
                 }
@@ -1505,10 +1506,8 @@ mod numeric_tests {
     fn interface_size_is_always_one_pixel_control_even_at_the_design_default() {
         for size in [None, Some(16.0)] {
             let mut engine = Engine::new(crate::label_with);
-            engine.look.interface_font = Some(preferences::appearance::InterfaceFont {
-                weight: None,
-                size,
-            });
+            engine.look.interface_font =
+                Some(preferences::appearance::InterfaceFont { weight: None, size });
             let mut h = Harness::builder()
                 .with_size(egui::vec2(720.0, 300.0))
                 .build_ui(move |ui| {
@@ -1527,7 +1526,15 @@ mod numeric_tests {
         let mut h = Harness::builder()
             .with_size(egui::vec2(720.0, 200.0))
             .build_ui(move |ui| {
-                density(ui, &engine, &Look { density: 1.1, ..Look::default() }, &mut Vec::new());
+                density(
+                    ui,
+                    &engine,
+                    &Look {
+                        density: 1.1,
+                        ..Look::default()
+                    },
+                    &mut Vec::new(),
+                );
             });
         toolkit::install(&h.ctx, &toolkit::Theme::embedded());
         h.run();

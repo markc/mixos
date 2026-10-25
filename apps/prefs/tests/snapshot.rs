@@ -454,7 +454,7 @@ fn apps_email() {
         chrome(Scheme::Studio, Mode::Dark),
         "apps_email",
         e,
-        egui::vec2(980.0, 1500.0),
+        egui::vec2(980.0, 1050.0),
     );
 }
 

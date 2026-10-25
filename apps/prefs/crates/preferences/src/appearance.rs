@@ -1451,7 +1451,7 @@ impl Engine {
             "conflicts":self.look.conflicts,"shown":self.look.shown(),
             "effective":self.look.shown().map(|look| look.effective()),
             "expected":self.look.expected(),"sent":self.look.sent.as_ref().map(|s| &s.axes),
-            "hold":self.look.hold,
+            "hold":self.look.hold,"problem":self.look.problem,
             "custom_source":self.look.custom_source,
             "uncertain":self.look.uncertain.as_ref().map(|s| &s.operation),
             "working":self.look.job.as_ref().map(|(_, c)| c.command_name()),

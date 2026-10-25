@@ -29,8 +29,7 @@ pub fn controls(
             Kind::Theme
         }
     });
-    let title = label("wallpaper-title");
-    panel::group(ui, "wallpaper", &[title.as_str()], |ui, _| {
+    ui.vertical(|ui| {
         ui.horizontal(|ui| {
             command_button(
                 ui,

@@ -35,8 +35,7 @@ pub fn section(
 ) {
     // One group: a dock group fills the height left, so a second one
     // would start below the fold.
-    let title = label("section-email");
-    panel::group(ui, "email", &[title.as_str()], |ui, _| {
+    ui.vertical(|ui| {
         ui.horizontal(|ui| {
             for (id, primary) in [
                 ("email.account.add", false),
