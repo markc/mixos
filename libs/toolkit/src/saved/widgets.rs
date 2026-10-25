@@ -176,15 +176,15 @@ pub fn scroll<R>(
     out
 }
 
-/// A collapsing state whose openness belongs to a stable app name.
-pub fn collapsing(
+/// A collapsing state whose openness belongs to a stable app name. Run the
+/// native consuming `state.show_header(ui, header).body(body)` inside `show`;
+/// the helper captures the state egui stored, without changing its response.
+pub fn collapsing<R>(
     ctx: &egui::Context,
     name: &str,
     default: bool,
-    show: impl FnOnce(
-        egui::collapsing_header::CollapsingState,
-    ) -> egui::collapsing_header::CollapsingState,
-) {
+    show: impl FnOnce(egui::collapsing_header::CollapsingState) -> R,
+) -> R {
     let open = with(ctx, |w| w.open.get(name).copied().unwrap_or(default)).unwrap_or(default);
     let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
         ctx,
@@ -192,11 +192,15 @@ pub fn collapsing(
         open,
     );
     state.set_open(open);
-    let state = show(state);
+    let id = state.id();
+    state.store(ctx);
+    let out = show(state);
+    let state = egui::collapsing_header::CollapsingState::load(ctx, id)
+        .expect("the helper stored its initial state");
     with(ctx, |w| {
         w.open.insert(name.into(), state.is_open());
     });
-    state.store(ctx);
+    out
 }
 
 /// [`crate::panel::group`] with saved selected tab and collapsed state.
@@ -395,5 +399,18 @@ mod tests {
         assert_eq!(restored.groups["group"].selected, 1);
         assert!(restored.open["branch"]);
         assert!(restored.applied.is_empty());
+    }
+    #[test]
+    fn collapsing_accepts_the_native_consuming_header_and_body() {
+        let ctx = egui::Context::default(); let mut widgets = Widgets::default(); widgets.install(&ctx);
+        draw(&ctx, |ui| {
+            collapsing(&ctx, "branch", true, |mut state| {
+                state.set_open(false);
+                state.show_header(ui, |ui| ui.label("Branch")).body(|ui| ui.label("Contents"))
+            });
+        });
+        widgets.collect(&ctx); assert_eq!(widgets.open["branch"], false);
+        let next = egui::Context::default(); widgets.install(&next);
+        collapsing(&next, "branch", true, |s| assert!(!s.is_open()));
     }
 }
