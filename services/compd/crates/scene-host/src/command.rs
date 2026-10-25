@@ -53,8 +53,8 @@ pub enum SceneCommand {
         corner: bool,
     },
     /// A Quoin shell command this host does not serve yet (the settings commands):
-    /// answered `not_served`, never a
-    /// silent no-op, and never listed by `shell.info`.
+    /// refused with `UNKNOWN_COMMAND`, never a silent no-op, and never listed
+    /// by `shell.info`.
     NotServed,
 }
 

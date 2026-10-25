@@ -288,9 +288,12 @@ host itself thaws it, never root inside a container.
 
 ## Refusals
 
+An unknown command gets the refusal every component gives: rc 10 with
+`error_code` `UNKNOWN_COMMAND`, plus `message` and `command`. Every other
+refusal names its reason in `status`:
+
 | Status | Meaning |
 |---|---|
-| `not_served` | no such command |
 | `bad_request` | the body doesn't fit the command's schema |
 | `local_only` | a control or write command arrived over the Bus |
 | `caller_unverified` | hostd couldn't prove the caller's cgroup |

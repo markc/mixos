@@ -486,8 +486,10 @@ moved the device during a change, the put-back leaves it alone.</li>
 reboots. An unreadable freeze record counts as frozen. Only root on the
 host itself thaws it, never root inside a container.</p>
 <h2 id="refusals">Refusals</h2>
+<p>An unknown command gets the refusal every component gives: rc 10 with
+<code>error_code</code> <code>UNKNOWN_COMMAND</code>, plus <code>message</code> and <code>command</code>. Every other
+refusal names its reason in <code>status</code>:</p>
 <table><thead><tr><th>Status</th><th>Meaning</th></tr></thead><tbody>
-<tr><td><code>not_served</code></td><td>no such command</td></tr>
 <tr><td><code>bad_request</code></td><td>the body doesn't fit the command's schema</td></tr>
 <tr><td><code>local_only</code></td><td>a control or write command arrived over the Bus</td></tr>
 <tr><td><code>caller_unverified</code></td><td>hostd couldn't prove the caller's cgroup</td></tr>
