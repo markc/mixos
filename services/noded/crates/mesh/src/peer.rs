@@ -20,7 +20,7 @@ use tokio::sync::{RwLock, RwLockReadGuard, mpsc, oneshot, watch};
 use tokio_tungstenite::tungstenite;
 
 use base64::Engine as _;
-use bus::wire::BusMessage;
+use bus::wire::{BusMessage, BusTarget};
 use mesh_trust::admission::{AdmissionTranscript, sign_admission_transcript};
 pub use mesh_trust::routing::DEFAULT_NODED_PORT;
 
@@ -1009,7 +1009,12 @@ async fn connect_and_publish(
             // service. Broker calls use the node address, never the link's
             // registration name. Do not drop a correlated request into mesh
             // ingress, which has no local recipient for this identity.
-            if bus_msg.to_addr() == Some(link_name.as_str())
+            let addressed_to_link = bus_msg.to_addr().is_some_and(|target| {
+                target == link_name
+                    || matches!(BusTarget::parse(target), Some(BusTarget::Local(address))
+                        if address.service.as_deref() == Some(link_name.as_str()))
+            });
+            if addressed_to_link
                 && bus_msg.get("type") != Some("response")
                 && let Some(id) = bus_msg.get("id")
             {
