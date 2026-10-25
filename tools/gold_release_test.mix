@@ -362,10 +362,35 @@ try
   $both_lines = lines(trim($both_again.stdout))
   $both_id = replace(fields($both_lines[len($both_lines) - 1])[1], "receipt=", "")
   $both_path = $package_var .. "/releases/receipts/" .. $both_id .. ".mx"
+  -- A later install records the existing link as unchanged. If the link is
+  -- then legitimately re-pointed (a moved prefix), rolling that receipt
+  -- back must not refuse on a path it never changed, nor touch it.
+  $again = run_argv($package_args, {timeout: 120, stderr: "stdout"})
+  need($again.ok, "second install failed: " .. $again.stdout)
+  $again_lines = lines(trim($again.stdout))
+  $again_id = replace(fields($again_lines[len($again_lines) - 1])[1], "receipt=", "")
+  $again_path = $package_var .. "/releases/receipts/" .. $again_id .. ".mx"
+  if $again_id != $both_id and is_file($again_path) then
+    need(all(load_data($again_path).entrance.files, fn($e) = $e.same), "second install should record its entrance as unchanged")
+    $link_path = $entry_stage .. "/usr/local/bin/mix"
+    remove($link_path)
+    symlink("/elsewhere/bin/mix", $link_path)
+    $again_back = run_argv(concat($base_argv, ["rollback", "--receipt-file", $again_path]), {timeout: 120, stderr: "stdout"})
+    need($again_back.ok and read_link($link_path) == "/elsewhere/bin/mix", "rollback of an unchanged entrance refused or touched a re-pointed link: " .. $again_back.stdout)
+    remove($link_path)
+    symlink($package_root .. "/bin/mix", $link_path)
+    print("PASS an unchanged entrance never blocks rollback or touches a re-pointed link")
+  else
+    print("SKIP unchanged-entrance rollback: a repeat install wrote no new receipt")
+  end
+  -- A shell package (add-shell) or an admin edits /etc/shells after install:
+  -- rollback drops only gold's line and keeps theirs.
+  write_file($entry_stage .. "/etc/shells", read_file($entry_stage .. "/etc/shells") .. "/usr/bin/fish\n")
   $both_back = run_argv(concat($base_argv, ["rollback", "--receipt-file", $both_path]), {timeout: 120, stderr: "stdout"})
   need($both_back.ok and not exists($package_root .. "/share/hostd/units/hostd.service") and
     read_file($package_root .. "/share/units/hostd.service") == "hand-placed; keep\n", "rendered package rollback failed: " .. $both_back.stdout)
-  need(not exists($entry_stage .. "/usr/local/bin/mix", {follow_symlinks: false}) and not exists($entry_stage .. "/etc/shells"), "first-install rollback left a dangling link or stale shells line")
+  need(not exists($entry_stage .. "/usr/local/bin/mix", {follow_symlinks: false}) and read_file($entry_stage .. "/etc/shells") == "/usr/bin/fish\n", "first-install rollback left a dangling link, or did not keep a later /etc/shells line")
+  print("PASS rollback removes only gold's /etc/shells line and keeps later ones")
   print("PASS failed first installs, recover, repeated recover and rollback restore the journaled host link and shells")
   print("PASS package all: both manifests, in-prefix rendered bytes in receipts, rollback, unmanaged flat units untouched")
   $bad_manifest = $dist .. "/bad.manifest.mx"
