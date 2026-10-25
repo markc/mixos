@@ -1086,6 +1086,36 @@ fn reset_returns_to_the_profile_size_and_writes_nothing() {
     finish(app, reaper);
 }
 
+#[test]
+fn larger_text_resizes_the_grid_without_changing_saved_size_or_zoom() {
+    let (mut app, reaper) = test_app();
+    let settings = terminal_settings();
+    app.apply_terminal(&settings, None, false);
+    let original = app.cell();
+    let base = app.font().current();
+    app.set_text_scale(1.5);
+    assert!(app.cell().1 > original.1);
+    assert_eq!(app.font().current(), base);
+    assert_eq!(app.font_write, None);
+    let scaled = app.cell();
+    app.set_text_scale(1.5);
+    assert_eq!(app.cell(), scaled);
+    app.act(Action::FontIncrease);
+    assert!(app.cell().1 >= scaled.1);
+    assert_eq!(app.font_write, Some(app.font().current()));
+    app.act(Action::FontReset);
+    assert_eq!(app.font().current(), base);
+    assert_eq!(app.cell(), scaled);
+    app.rescale(2.0);
+    assert!(app.cell().1 > scaled.1);
+    app.rescale(1.0);
+    assert_eq!(app.cell(), scaled);
+    app.set_text_scale(1.0);
+    assert_eq!(app.cell(), original);
+    assert_eq!(app.font_write, None);
+    finish(app, reaper);
+}
+
 /// Blink alternates every half cycle while the window has the keyboard,
 /// and asks for no frame while it is off or the window lost the keyboard.
 #[test]
