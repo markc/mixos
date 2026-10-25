@@ -40204,8 +40204,9 @@ mod loud_numeric_argument_tests {
     }
 
     fn encode(args: Vec<Value>) -> String {
-        match call_builtin("json_encode", args).unwrap().unwrap() {
-            Value::String(s) => s,
+        let v = call_builtin("json_encode", args).unwrap().unwrap();
+        match &v {
+            Value::String(s) => s.clone(),
             other => panic!("json_encode returned {}", other.type_name()),
         }
     }
