@@ -32,7 +32,9 @@ fn shared(ctx: &egui::Context, app: &str) -> Shared {
     let directory = config::AppDirs::resolve(app).map(|d| d.state());
     #[cfg(test)]
     let directory = None;
-    let store = Store::<Value>::load(directory, 1);
+    // The child-only writer owns no app value. Version zero is an empty
+    // placeholder which a later app-owned version (starting at one) can drop.
+    let store = Store::<Value>::load(directory, 0);
     install(ctx, app, store.path, store.windows);
     ctx.data(|d| d.get_temp(key(app))).expect("installed secondary windows")
 }
@@ -54,7 +56,8 @@ pub fn builder(ctx: &egui::Context, app: &str, name: &str, builder: egui::Viewpo
 }
 
 /// Called inside the child pass, including its closing pass. Portable saves
-/// happen synchronously; bounded compositor reads never block the GUI thread.
+/// happen synchronously. Normal compositor reads run off the GUI thread;
+/// native close gives the final read a bounded 750 ms acknowledgement window.
 pub fn capture(ctx: &egui::Context, app: &str, name: &str) {
     if ctx.embed_viewports() { return; }
     let state = shared(ctx, app);
@@ -82,7 +85,7 @@ pub fn capture(ctx: &egui::Context, app: &str, name: &str) {
 
 fn persist(windows: &Windows, name: &str) {
     let Some(path) = &windows.path else { return; };
-    let mut store = Store::<Value>::load(path.parent().map(PathBuf::from), 1);
+    let mut store = Store::<Value>::load(path.parent().map(PathBuf::from), 0);
     // This writer owns only one named window. Keep the latest root/app/widget
     // values verbatim, including versions this writer cannot understand.
     if let Ok(raw) = std::fs::read_to_string(path)
@@ -111,7 +114,7 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context
             let Ok(Ok(client)) = tokio::time::timeout(Duration::from_millis(700), options.connect()).await else { return; };
             let comp = std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into());
             let topic = format!("{comp}.props.changed");
-            let _ = client.subscribe_topic(&topic).await;
+            let _ = tokio::time::timeout(Duration::from_millis(700), client.subscribe_topic(&topic)).await;
             let incoming = tokio::sync::Mutex::new(client.incoming());
             let call = |command: &'static str, args: Value| {
                 let client = &client;
