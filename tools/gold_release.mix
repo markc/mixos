@@ -6,22 +6,24 @@
 --
 -- mix tools/gold_release.mix plan|apply --manifest FILE --manifest-sha256 HEX
 --     --archive-dir DIR --package desktop|server|all
--- mix tools/gold_release.mix rollback --receipt ID
--- mix tools/gold_release.mix recover  (put back an interrupted apply)
+-- mix tools/gold_release.mix rollback --prefix PREFIX --var VAR --receipt ID
+-- mix tools/gold_release.mix recover --prefix PREFIX --var VAR
+-- Either recovery form also accepts --receipt-file FILE for offline roots.
 -- Target flags: --prefix DIR [--tier system|user] and optional --share,
 -- --etc, --var, --run, --cache roots. Receipts live under var/releases.
--- Tests may pass --root /tmp/mixos-gold-test-N. Rollback/recover require
--- an explicit --prefix with layout.mx, or --receipt-file FILE with saved roots.
+-- Tests may pass --root /tmp/mixos-gold-test-N. At the default layout there
+-- is no layout.mx: give --var to locate the receipt, or --receipt-file FILE.
 
 $g = getopt(args(), {manifest: {arg: true}, "manifest-sha256": {arg: true},
   "archive-dir": {arg: true}, package: {arg: true}, receipt: {arg: true},
   root: {arg: true}, prefix: {arg: true}, share: {arg: true}, etc: {arg: true}, var: {arg: true}, cache: {arg: true}, run: {arg: true}, tier: {arg: true}, "receipt-file": {arg: true}})
 if len($g.errors) != 0 or len($g.rest) != 1 or not contains(["plan", "apply", "rollback", "recover"], $g.rest[0]) then
-  raise("GOLD_ARGS", "usage: gold_release.mix plan|apply|rollback|recover [--manifest FILE --manifest-sha256 HEX --archive-dir DIR --package desktop|server|all] [--receipt ID]")
+  raise("GOLD_ARGS", "usage: gold_release.mix plan|apply --manifest FILE --manifest-sha256 HEX --archive-dir DIR --package desktop|server|all; rollback --prefix PREFIX --var VAR --receipt ID (or --receipt-file FILE); recover --prefix PREFIX --var VAR (or --receipt-file FILE)")
 end
 $mode = $g.rest[0]
 $source = dirname(dirname(realpath($0)))
 $targets = require($source .. "/tools/lib/layout_target.mix")
+$entrance_journal = require($source .. "/tools/lib/gold_entrance.mix")
 -- --root is confined to disposable fixtures; --prefix selects a live target.
 if $g.opts.root != nil then
   if $g.opts.prefix != nil or not starts_with($g.opts.root, "/tmp/mixos-gold-test-") or contains($g.opts.root, "/../") then
@@ -31,6 +33,18 @@ if $g.opts.root != nil then
   if $canonical == nil or not starts_with($canonical, "/tmp/mixos-gold-test-") then raise("GOLD_ROOT", "fixture root must resolve under /tmp/mixos-gold-test-*") end
   $g.opts.root = $canonical
   $g.opts.prefix = $g.opts.root
+end
+if contains(["rollback", "recover"], $mode) and $g.opts.var == nil and $g.opts["receipt-file"] == nil then
+  $target_file = {}
+  if $g.opts.prefix != nil then
+    $targets.checked({prefix: $g.opts.prefix})
+    $target_file = $targets.document($g.opts.prefix .. "/layout.mx")
+  end
+  if $target_file.var != nil then $g.opts.var = $target_file.var
+  else
+    raise("INSTALL_LAYOUT", "offline recovery needs the receipt location: gold_release.mix " .. $mode .. " --prefix " .. ($g.opts.prefix ?? "PREFIX") .. " --var VAR" ..
+      (if $mode == "rollback" then " --receipt ID" else "" end) .. "; alternatively use --receipt-file FILE. Default installs have no layout.mx")
+  end
 end
 $saved = {}
 $saved_record = nil
@@ -81,6 +95,9 @@ try
   end
 catch $message, $err
   if $prepared != nil then remove_dir($prepared.stage) end
+  if $prepared != nil and contains($message, "layout defaults") then
+    raise("GOLD_ARCHIVE_LAYOUT", "archive " .. $prepared.manifest.version .. " cannot supply layout defaults; give all six roots explicitly (--prefix --share --etc --var --run --cache). " .. $message)
+  end
   raise($err.code ?? "GOLD_LAYOUT", $message)
 end
 $root = $layout.prefix
@@ -177,6 +194,7 @@ try
   end
 
   fn verify_receipt($rec)
+    $entrance_journal.verify($rec.entrance, $root, $live)
     if has_key($rec, "layout") and not deep_eq($targets.checked($rec.layout), $layout) then raise("GOLD_RECEIPT", "receipt layout does not describe the selected target") end
     if (type($rec.id) != "string" or not re_match($rec.id, "^[a-z0-9-]{8,100}$") or
         not contains(["mixos:var/releases/backups/" .. $rec.id, $state .. "/backups/" .. $rec.id], $rec.backup) or type($rec.files) != "list" or
@@ -189,6 +207,7 @@ try
   end
 
   fn restore($rec)
+    $entrance_journal.restore($rec.entrance, $root, $live, $state .. "/backups/" .. $rec.id, $rec.id)
     for $item in reverse($rec.files)
       safe_rel($item.rel)
       if $item.same then continue end
@@ -231,6 +250,7 @@ try
       raise("GOLD_RECEIPT", "pending receipt does not describe this root")
     end
     if $rec.status == "recovered" then
+      $entrance_journal.assert_restored($rec.entrance, $root, $live)
       for $item in $rec.files
         safe_rel($item.rel)
         if not matches($root .. "/" .. $item.rel, $item.before) then
@@ -341,10 +361,17 @@ try
   -- The selected roots must survive the installer's environment. Journal
   -- layout.mx like every shipped file so recovery/rollback restores it too.
   $layout_source = $stage .. "/target-layout.mx"
-  $default_layout = $targets.defaults($prepared.tops[0] .. "/bin/mix", "system", $root)
   $different_roots = {}
-  for $name in keys($layout)
-    if $name != "prefix" and $layout[$name] != $default_layout[$name] then $different_roots[$name] = $layout[$name] end
+  try
+    $default_layout = $targets.defaults($prepared.tops[0] .. "/bin/mix", $g.opts.tier ?? "system", $root)
+    for $name in keys($layout)
+      if $name != "prefix" and $layout[$name] != $default_layout[$name] then $different_roots[$name] = $layout[$name] end
+    end
+  catch $message
+    $explicit = all($targets.ROOTS, fn($name) = $g.opts[$name] != nil)
+    if not $explicit then raise("GOLD_ARCHIVE_LAYOUT", "archive " .. $manifest.version .. " cannot supply layout defaults; give all six roots explicitly (--prefix --share --etc --var --run --cache). " .. $message) end
+    $different_roots = delete($layout, "prefix")
+    print("archive " .. $manifest.version .. " has no usable layout defaults; persisting all five explicit non-prefix roots")
   end
   $layout_after = {kind: "absent"}
   if len(keys($different_roots)) != 0 then
@@ -369,12 +396,11 @@ try
   end
   $entrance = []
   if is_file($prepared.tops[0] .. "/share/layout/apply.mix") then
-    $entry_opts = {}
     if not $live then
+      if exists($root .. "/.layout-root", {follow_symlinks: false}) and stat($root .. "/.layout-root", {follow_symlinks: false}).is_symlink then raise("GOLD_ROOT", "fixture entrance root must not be a symlink") end
       mkdir($root .. "/.layout-root", {parents: true})
-      $entry_opts.root = $root .. "/.layout-root"
     end
-    $entrance = $layout_files.entrance($layout, $entry_opts)
+    $entrance = $layout_files.entrance_plan($layout, $entrance_journal.stage($root, $live), false, true)
   end
   $backup = $state .. "/backups/" .. $id
   mkdir($backup, {parents: true})
@@ -402,6 +428,7 @@ try
     $record.files = push($record.files, {rel: $f.rel, before: $f.before, after: $f.after, same: $f.same})
   end
   $record.created_dirs = $dirs
+  if len($entrance) != 0 then $record.entrance = $entrance_journal.capture($entrance, $root, $live, $backup) end
   write_atomic($pending, data_encode($record) .. "\n")
   try
     for $f in $files
@@ -421,7 +448,11 @@ try
     for $f in $files
       if not matches($root .. "/" .. $f.rel, $f.after) then raise("GOLD_VERIFY", "installed file differs: " .. $f.rel) end
     end
-    $layout_files.apply($entrance, false)
+    for $entry in $entrance
+      $layout_files.apply([$entry], false)
+      $point = if has_key($entry, "link") then "entrance-link" else "entrance-shells" end
+      if not $live and env("MIXOS_GOLD_RELEASE_FAIL") == $point then raise("GOLD_TEST", "fixture failure after " .. $point) end
+    end
     $record.status = "applied"
     $record.finished_at = now_iso()
     write_atomic($pending, data_encode($record) .. "\n")

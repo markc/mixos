@@ -32,13 +32,16 @@ write_file($base .. "/pack/" .. $name .. "/bin/mock", "new\n")
 $defaults_program = <<DEFAULTS
 #!/usr/bin/env mix
 $g = getopt(args(), {tier: {arg: true}, prefix: {arg: true}, json: {}})
-if not deep_eq($g.rest, ["layout", "defaults"]) or $g.opts.tier != "system" or not $g.opts.json then
+if not deep_eq($g.rest, ["layout", "defaults"]) or not contains(["system", "user"], $g.opts.tier) or not $g.opts.json then
   raise("FIXTURE_DEFAULTS", "unexpected staged defaults query")
 end
 $fixture = @LAYOUT@
 if $g.opts.prefix != nil then
   $fixture.prefix = $g.opts.prefix
   $fixture.share = $g.opts.prefix .. "/share"
+end
+if $g.opts.tier == "user" then
+  for $root_name in ["etc", "var", "run", "cache"] $fixture[$root_name] = $fixture[$root_name] .. "-user" end
 end
 write_file(@TRACE@, json_encode(args()))
 print(json_encode($fixture))
@@ -113,6 +116,8 @@ try
   need(read_file($root .. "/lib/libinput.so.10") == "mock-library\n", "runtime library missing")
   need(is_file($root .. "/share/scenes/test.mix"), "gold scene missing")
   need(not exists($root .. "/layout.mx"), "default layout left a system override file for user processes")
+  $missing_var = run_argv(concat($base_argv, ["rollback", "--prefix", $root, "--receipt", "receipt-1234"]), {stderr: "stdout"})
+  need(not $missing_var.ok and contains($missing_var.stdout, "INSTALL_LAYOUT") and contains($missing_var.stdout, "--var VAR") and contains($missing_var.stdout, "--receipt-file"), "default-layout rollback advice is not actionable")
   $lines = split(trim($apply.stdout), "\n")
   $last = $lines[len($lines) - 1]
   $id = replace(fields($last)[1], "receipt=", "")
@@ -219,6 +224,48 @@ try
   need(not has_key($legacy_read, "layout") and $legacy_read.root == $root and $legacy_read.backup == $legacy_backup, "legacy receipt shape was rewritten")
   $current_back = run_argv(concat($base_argv, ["rollback", "--receipt-file", $state .. "/receipts/" .. $current_id .. ".mx"]), {stderr: "stdout"})
   need($current_back.ok, "rollback after main receipt failed: " .. $current_back.stdout)
+  $user_root = $base .. "/user-gold"
+  mkdir($user_root)
+  $user = run_argv(concat($base_argv, ["apply", "--root", $user_root, "--tier", "user", "--var", $state_root .. "-user",
+    "--etc", $base .. "/explicit-user-etc", "--manifest", $manifest, "--manifest-sha256", $sha, "--archive-dir", $dist, "--package", "desktop"]), {timeout: 30, stderr: "stdout"})
+  need($user.ok and deep_eq(load_data($user_root .. "/layout.mx"), {etc: $base .. "/explicit-user-etc"}), "user-tier baseline persisted unrelated roots: " .. $user.stdout)
+  $user_lines = lines(trim($user.stdout))
+  $user_id = replace(fields($user_lines[len($user_lines) - 1])[1], "receipt=", "")
+  $user_back = run_argv(concat($base_argv, ["rollback", "--receipt-file", $state_root .. "-user/releases/receipts/" .. $user_id .. ".mx"]), {stderr: "stdout"})
+  need($user_back.ok and not exists($user_root .. "/layout.mx"), "user-tier rollback failed: " .. $user_back.stdout)
+  print("PASS --tier user persists only the explicitly differing root")
+
+  -- Model a published v0.1.2 payload without the new defaults command.
+  mkdir($base .. "/old-pack")
+  copy_tree($base .. "/pack/" .. $name, $base .. "/old-pack/" .. $name)
+  write_file($base .. "/old-pack/" .. $name .. "/bin/mix", "#!/usr/bin/env mix\nraise(\"OLD_MIX\", \"layout defaults is unavailable\")\n")
+  chmod($base .. "/old-pack/" .. $name .. "/bin/mix", 0o755)
+  $old_dist = $base .. "/old-dist"
+  mkdir($old_dist)
+  $old_tar = $old_dist .. "/" .. $name .. ".tar.gz"
+  run_argv_must(["tar", "-czf", $old_tar, "-C", $base .. "/old-pack", $name])
+  $old_doc = load_data($manifest)
+  $old_doc.archives = [$old_doc.archives[0]]
+  $old_doc.archives[0].sha256 = hash_file($old_tar, "sha256")
+  $old_doc.archives[0].binaries[1].sha256 = hash_file($base .. "/old-pack/" .. $name .. "/bin/mix", "sha256")
+  $old_manifest = $old_dist .. "/release.manifest.mx"
+  write_file($old_manifest, data_encode($old_doc))
+  $old_root = $base .. "/old-gold"
+  mkdir($old_root)
+  $old_layout = {prefix: $old_root, share: $old_root .. "/share", etc: $base .. "/old-etc", var: $base .. "/old-var", run: $base .. "/old-run", cache: $base .. "/old-cache"}
+  $old_args = concat($base_argv, ["apply", "--root", $old_root, "--var", $old_layout.var, "--manifest", $old_manifest,
+    "--manifest-sha256", hash_file($old_manifest, "sha256"), "--archive-dir", $old_dist, "--package", "desktop"])
+  $old_partial = run_argv($old_args, {timeout: 30, stderr: "stdout"})
+  need(not $old_partial.ok and contains($old_partial.stdout, "archive 0.1.2") and contains($old_partial.stdout, "all six roots explicitly"), "old archive refusal does not explain the explicit-root escape: " .. $old_partial.stdout)
+  for $key in ["share", "etc", "run", "cache"] $old_args = concat($old_args, ["--" .. $key, $old_layout[$key]]) end
+  $old_apply = run_argv($old_args, {timeout: 30, stderr: "stdout"})
+  need($old_apply.ok and deep_eq(load_data($old_root .. "/layout.mx"), delete($old_layout, "prefix")) and
+    contains($old_apply.stdout, "persisting all five explicit non-prefix roots"), "explicit-root emergency rebuild failed: " .. $old_apply.stdout)
+  $old_lines = lines(trim($old_apply.stdout))
+  $old_id = replace(fields($old_lines[len($old_lines) - 1])[1], "receipt=", "")
+  $old_back = run_argv(concat($base_argv, ["rollback", "--receipt-file", $old_layout.var .. "/releases/receipts/" .. $old_id .. ".mx"]), {stderr: "stdout"})
+  need($old_back.ok and not exists($old_root .. "/bin/mix"), "old archive rollback executed the old target: " .. $old_back.stdout)
+  print("PASS old v0.1.2 defaults refusal, all-explicit emergency rebuild and offline rollback")
   -- Exercise the real packager's two different template selections together.
   -- Only executable payloads and release trust metadata are fixture data.
   $package_bins = $base .. "/package-bins"
@@ -260,6 +307,13 @@ try
     chmod($package_root .. "/share/hostd/units", 0o755)
     need(not $denied.ok and contains($denied.stdout, "GOLD_WRITABLE") and not exists($package_root .. "/bin/mix"), "gold writability failure half-installed files: " .. $denied.stdout)
   else print("SKIP gold permission preflight denial: uid 0 can write read-only fixture directories") end
+  $entry_stage = $package_root .. "/.layout-root"
+  for $point in ["entrance-link", "entrance-shells"]
+    $failed_first = run_argv($package_args, {timeout: 120, stderr: "stdout", env: {MIXOS_GOLD_RELEASE_FAIL: $point}})
+    need(not $failed_first.ok and contains($failed_first.stdout, "GOLD_TEST") and not exists($package_root .. "/bin/mix") and
+      not exists($entry_stage .. "/usr/local/bin/mix", {follow_symlinks: false}) and not exists($entry_stage .. "/etc/shells"),
+      "failed first install left an entrance or gold files at " .. $point .. ": " .. $failed_first.stdout)
+  end
   $both = run_argv($package_args, {timeout: 120, stderr: "stdout"})
   need($both.ok, "installing both actual packages conflicted: " .. $both.stdout)
   for $package in ["mixos-desktop", "mixos-server"]
@@ -278,12 +332,41 @@ try
   need(any($union, fn($entry) = ends_with($entry.path, "/share/maild/units/maild.service")) and
     any($union, fn($entry) = ends_with($entry.path, "/share/applications/dev.mixos.term.desktop")), "installed renderer did not load both package manifests")
   for $entry in $union need(read_file($entry.path) == $entry.text, "installed renderer would change receipt bytes: " .. $entry.path) end
+  for $path in walk($package_root .. "/share", {follow_symlinks: false})
+    if is_file($path) and not contains($path, "/share/layout/") and (contains($path, "/units/") or ends_with($path, ".desktop")) then
+      need(not contains(read_file($path), "@{"), "shipped unit/desktop contains an unrendered placeholder: " .. $path)
+    end
+  end
+  for $owner in ["notifyd", "releasesd"]
+    need(contains(read_file($package_root .. "/share/" .. $owner .. "/units/" .. $owner .. "@.service"), "ExecStart=" .. $package_root .. "/bin/mix"), "component's shipped unit copy was not rendered")
+  end
+  need($both_record.entrance.sysroot == "mixos:prefix/.layout-root" and len($both_record.entrance.files) == 2 and
+    read_link($entry_stage .. "/usr/local/bin/mix") == $package_root .. "/bin/mix" and read_file($entry_stage .. "/etc/shells") == "/usr/local/bin/mix\n", "host entrance was not journaled or applied")
   for $file in $both_record.files
     if $file.after.kind == "file" then need(hash_file($package_root .. "/" .. $file.rel, "sha256") == $file.after.sha256, "receipt hashes precede rendering: " .. $file.rel) end
   end
+  $interrupted = $both_record
+  $interrupted.status = "pending"
+  write_file($package_var .. "/releases/pending.mx", data_encode($interrupted))
+  remove($both_path)
+  $entry_recover = run_argv(concat($base_argv, ["recover", "--root", $package_root, "--var", $package_var]), {timeout: 120, stderr: "stdout"})
+  need($entry_recover.ok and not exists($package_root .. "/bin/mix") and
+    not exists($entry_stage .. "/usr/local/bin/mix", {follow_symlinks: false}) and not exists($entry_stage .. "/etc/shells"), "interrupted entrance recovery left host integration or gold files: " .. $entry_recover.stdout)
+  $recovered_entry = load_data($both_path)
+  write_file($package_var .. "/releases/pending.mx", data_encode($recovered_entry))
+  remove($both_path)
+  $entry_recover_again = run_argv(concat($base_argv, ["recover", "--root", $package_root, "--var", $package_var]), {timeout: 120, stderr: "stdout"})
+  need($entry_recover_again.ok, "recovered entrance was not idempotent: " .. $entry_recover_again.stdout)
+  $both_again = run_argv($package_args, {timeout: 120, stderr: "stdout"})
+  need($both_again.ok, "install after entrance recovery failed: " .. $both_again.stdout)
+  $both_lines = lines(trim($both_again.stdout))
+  $both_id = replace(fields($both_lines[len($both_lines) - 1])[1], "receipt=", "")
+  $both_path = $package_var .. "/releases/receipts/" .. $both_id .. ".mx"
   $both_back = run_argv(concat($base_argv, ["rollback", "--receipt-file", $both_path]), {timeout: 120, stderr: "stdout"})
   need($both_back.ok and not exists($package_root .. "/share/hostd/units/hostd.service") and
     read_file($package_root .. "/share/units/hostd.service") == "hand-placed; keep\n", "rendered package rollback failed: " .. $both_back.stdout)
+  need(not exists($entry_stage .. "/usr/local/bin/mix", {follow_symlinks: false}) and not exists($entry_stage .. "/etc/shells"), "first-install rollback left a dangling link or stale shells line")
+  print("PASS failed first installs, recover, repeated recover and rollback restore the journaled host link and shells")
   print("PASS package all: both manifests, in-prefix rendered bytes in receipts, rollback, unmanaged flat units untouched")
   $bad_manifest = $dist .. "/bad.manifest.mx"
   $bad_doc = load_data($manifest)

@@ -50,7 +50,7 @@ fn resolve($opts, $binary, $sysroot, $recorded)
   $overrides = merge(merge($saved, $file), $cli)
   $overrides.prefix = $prefix
   if len(keys($overrides)) < 6 then
-    if $opts["record-only"] ?? false then raise("INSTALL_LAYOUT", "rollback needs a complete target layout.mx or receipt layout; no running interpreter defaults are used") end
+    if $opts["record-only"] ?? false then raise("INSTALL_LAYOUT", "offline rollback needs receipt roots: gold_release.mix rollback --prefix PREFIX --var VAR --receipt ID, or --receipt-file FILE; no interpreter defaults are used") end
     if $binary == nil then $binary = $sysroot .. $prefix .. "/bin/mix" end
     if not is_file($binary) then raise("INSTALL_LAYOUT", "incomplete target layout; supply --mix STAGED_MIX or all six target roots") end
     $defaults = defaults($binary, $tier, $prefix)
@@ -64,7 +64,7 @@ fn defaults($binary, $tier, $prefix)
   $argv = [$binary, "layout", "defaults", "--tier", $tier, "--json"]
   if $prefix != nil then $argv = concat($argv, ["--prefix", $prefix]) end
   $r = run_argv($argv, {timeout: 30})
-  if not $r.ok then raise("INSTALL_LAYOUT", "staged mix needs layout defaults --tier --json: " .. trim($r.stderr)) end
+  if not $r.ok then raise("INSTALL_LAYOUT", "archive binary " .. $binary .. " needs layout defaults --tier --json: " .. trim($r.stderr)) end
   return checked(json_parse($r.stdout))
 end
 

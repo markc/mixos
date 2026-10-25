@@ -40,7 +40,7 @@ fn logical_paths($text, $pair)
     $after = $at + len($pair.path)
     $left = if $at == 0 then "" else substr($text, $at - 1, 1) end
     $right = substr($text, $after, 1)
-    $start = $at == 0 or contains(["\"", "'", "=", ":", "(", "[", ","], $left) or re_match($left, "\\s")
+    $start = $at == 0 or contains(["\"", "'", "=", "(", "[", ","], $left) or re_match($left, "\\s")
     $end = $after == len($text) or contains(["\"", "'", ")", "]", "}", ",", ";"], $right) or re_match($right, "\\s")
     $out = $out .. substr($text, $cursor, $at - $cursor)
     if $start and ($right == "/" or $end) then

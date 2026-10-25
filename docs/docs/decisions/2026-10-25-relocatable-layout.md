@@ -21,8 +21,9 @@ directory and installation rules.
    `cache`, and refuses a prefix key. The [paths manual](../../paths/README.md)
    gives the complete table and explicit system/user APIs.
    A root stored in layout.mx applies to every uid, like `$MIXOS`. Installers
-   persist only differences from the system defaults for the target prefix;
-   the default installation has no layout.mx and preserves each user's XDG roots.
+   persist only differences from the selected tier's defaults for the target
+   prefix (system by default); the default system installation has no layout.mx
+   and preserves each user's XDG roots.
 4. `libs/paths` owns the implementation without workspace dependencies;
    `config::dir` re-exports the original API. Rust and `mixos_path` share it.
    Process helpers resolve once; pure explicit inputs support tests.
@@ -36,14 +37,19 @@ directory and installation rules.
    systemd, sysusers, tmpfiles or polkit files outside the prefix and never
    touches unmanaged flat `share/units/` copies. Mix component units remain
    owned and rendered by component_install, outside the global manifest.
+   Their existing packaged share/ unit copies render through the package's own
+   manifest; this does not claim or overwrite component_install's systemd units.
    Only the ruling 9 link and, on a host, its line in `/etc/shells` are managed
    outside the prefix. There is no mixrc management. With `--root`, `/etc/shells`
    is touched only inside that root and only with `--image`, which requires
-   `--root`. The root is canonicalised; symlinks below it and symlink render
+   `--root` resolving to a directory other than `/`. A non-root host apply
+   renders its prefix and skips host integration with a notice when it cannot
+   write both host targets. The root is canonicalised; symlinks below it and symlink render
    targets refuse. All targets are checked for writability before writing;
    existing modes and owners are preserved, and new rendered files are 0644.
    Paths containing whitespace refuse in systemd keys that do not unquote
    (including EnvironmentFile, ConditionPathExists and LoadCredential).
+   Desktop TryExec has the same whitespace refusal.
 6. Saved MixOS references use `mixos:<root>/<relative>`. Root escapes refuse;
    user-owned paths retain their meaning. Offline migration keeps originals;
    live migration is a separate operator action.
@@ -62,7 +68,9 @@ directory and installation rules.
    user data moves are accepted. The relocation proof uses a disposable prefix
    with a space and hides the old roots in a private mount namespace; it runs
    installer, scene, nested desktop and SSH loopback checks where available.
-   Missing privileges are reported as skips.
+   Desktop TryExec whitespace refusal is checked before any writes; unit and
+   runtime relocation then proceed under that prefix. Missing privileges are
+   reported as skips.
 9. The stable host entry is `/usr/local/bin/mix`; `/usr/bin/mix` is managed
    only in a MixOS-owned image. Login shells and `/etc/shells` use that link.
    `mix-static` stays unlinked. Remote lookup is option, environment,
@@ -76,6 +84,13 @@ Main receipts with an absolute target and backup and no layout are read in
 their original shape; the absent layout means the default layout. Their
 recorded prefix and var backup path suffice for offline rollback. They also
 participate in release ordering alongside logical receipts.
+The default layout has no layout.mx: offline rollback/recovery names `--var`
+to locate receipts or supplies `--receipt-file`. A layout file that names var
+can locate its receipts as well. Older archives without `layout defaults` can
+be installed with all six roots explicit, persisting all five non-prefix roots;
+otherwise they refuse with an archive-specific message. Gold journals the host
+entrance as well as prefix files, backs up prior shells bytes and metadata and
+the old link, and restores them on failed install, rollback and recovery.
 
 This decision does not deploy or migrate a live installation, move app data,
 introduce hot relocation, generations or a versioned store.

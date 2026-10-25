@@ -69,12 +69,12 @@ PROGRAM
     not is_file($copy .. "/saved.json.layout-original"), "N-1 migration dry-run changed its offline input")
   -- Left and right boundaries: these embedded/sibling roots must stay intact.
   $negative = ["/srv/backup/opt/mixos/share/x", "/srv/backup/etc/mixos/x", "/srv/backup/var/lib/mixos/x",
-    "/opt/mixos-old/share/x", "/etc/mixos-old/x"]
+    "/opt/mixos-old/share/x", "/etc/mixos-old/x", "/usr/bin:/opt/mixos/bin:/bin"]
   $public_old = {share: "/opt/mixos/share", etc: "/etc/mixos", var: "/var/lib/mixos", run: "/run/mixos", cache: "/var/cache/mixos"}
   write_file($tmp .. "/public-layout.mx", data_encode($public_old))
   $boundary_copy = $tmp .. "/boundary-copy"
   mkdir($boundary_copy)
-  $before = join($negative, "\n") .. "\n" .. '"/opt/mixos/share/x" =/etc/mixos/x :/var/lib/mixos/x (/run/mixos/x [/var/cache/mixos/x ,/opt/mixos/bin/mix' .. "\n/opt/mixos\n"
+  $before = join($negative, "\n") .. "\n" .. '"/opt/mixos/share/x" =/etc/mixos/x =/var/lib/mixos/x (/run/mixos/x [/var/cache/mixos/x ,/opt/mixos/bin/mix' .. "\n/opt/mixos\n"
   $boundary_file = $boundary_copy .. "/paths.mix"
   write_file($boundary_file, $before)
   $argv = [realpath("/proc/self/exe"), $repo .. "/tools/layout_migrate_saved.mix", "--source", $boundary_copy,
@@ -97,6 +97,40 @@ PROGRAM
   write_file($boundary_file, $before .. "drift\n")
   $drift = run_argv(concat($argv, ["--apply"]), {stderr: "stdout"})
   need(not $drift.ok and contains($drift.stdout, "MIGRATE_BACKUP"), "migration overwrote a drifted original")
+  -- Journal old host-entry states in an isolated host-shaped sysroot.
+  $writer = require($repo .. "/share/layout/files.mix")
+  $journal = require($repo .. "/tools/lib/gold_entrance.mix")
+  $entry_root = $tmp .. "/entrance-prefix"
+  $entry_stage = $entry_root .. "/.layout-root"
+  mkdir($entry_stage .. "/usr/local/bin", {parents: true})
+  mkdir($entry_stage .. "/etc")
+  symlink("/previous/tree/bin/mix", $entry_stage .. "/usr/local/bin/mix")
+  write_file($entry_stage .. "/etc/shells", "/usr/bin/previous-shell\n")
+  chmod($entry_stage .. "/etc/shells", 0o640)
+  $entry_roots = $fixture
+  $entry_roots.prefix = $entry_root
+  $entry_plan = $writer.entrance_plan($entry_roots, $entry_stage, false, true)
+  $backup = $tmp .. "/entrance-backup"
+  $entry_record = $journal.capture($entry_plan, $entry_root, false, $backup)
+  need(read_file($backup .. "/.entrance/shells") == "/usr/bin/previous-shell\n" and
+    stat($backup .. "/.entrance/shells").perm == 0o640 and read_link($backup .. "/.entrance/link") == "/previous/tree/bin/mix", "entrance backups lost bytes, mode or old link")
+  $writer.apply($entry_plan, false)
+  write_file($entry_stage .. "/etc/shells", "foreign\n")
+  need(refuses(fn() = $journal.restore($entry_record, $entry_root, false, $backup, "receipt-1234")) and
+    read_link($entry_stage .. "/usr/local/bin/mix") == $entry_root .. "/bin/mix", "entrance drift partially restored the link")
+  write_file($entry_stage .. "/etc/shells", $entry_plan[1].text)
+  $journal.restore($entry_record, $entry_root, false, $backup, "receipt-1234")
+  $journal.assert_restored($entry_record, $entry_root, false)
+  $journal.restore($entry_record, $entry_root, false, $backup, "receipt-1234")
+  need(read_link($entry_stage .. "/usr/local/bin/mix") == "/previous/tree/bin/mix" and
+    read_file($entry_stage .. "/etc/shells") == "/usr/bin/previous-shell\n" and stat($entry_stage .. "/etc/shells").perm == 0o640, "entrance recovery did not restore old states")
+  $bad_entry = $entry_record
+  $bad_entry.files[0].name = "../../outside"
+  need(refuses(fn() = $journal.restore($bad_entry, $entry_root, false, $backup, "receipt-1234")), "receipt supplied an arbitrary entrance path")
+  $bad_entry = $entry_record
+  $bad_entry.sysroot = "host"
+  need(refuses(fn() = $journal.restore($bad_entry, $entry_root, false, $backup, "receipt-1234")), "fixture receipt redirected entrance restore to the host")
+  print("PASS entrance backups, prior symlink and shells bytes/mode, drift refusal, idempotent recovery and fixed receipt targets")
   print("PASS target defaults, per-root precedence, receipt-only rollback, sysroot, strict layout, docs source paths and offline migration dry-run under N-1 Mix")
 finally
   remove_dir($tmp)

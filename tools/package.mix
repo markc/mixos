@@ -164,6 +164,19 @@ for $pkg in $selected
   $layout_manifest = load_data($source .. "/share/layout/templates.mx")
   $layout_files = []
   $layout_owners = $PACKAGES[$pkg]
+  if $pkg == "mixos-desktop" then
+    -- Preserve main's shipped unit copies. These prefix copies are separate
+    -- from the /etc units owned and recorded by component_install.
+    $layout_owners = concat($layout_owners, ["notifyd", "releasesd"])
+    for $owner in ["notifyd", "releasesd"]
+      for $unit in sort(glob($source .. "/services/" .. $owner .. "/units/*"))
+        if is_file($unit) and contains(read_file($unit), "@{") then
+          $layout_manifest.files = push($layout_manifest.files, {source: "../../services/" .. $owner .. "/units/" .. basename($unit),
+            target: "@{prefix}/share/" .. $owner .. "/units/" .. basename($unit), kind: "unit"})
+        end
+      end
+    end
+  end
   for $entry in $layout_manifest.files
     $rel = strip_prefix($entry.source, "../../")
     if (starts_with($rel, "apps/") or starts_with($rel, "services/")) and not contains($layout_owners, split($rel, "/")[1]) then continue end

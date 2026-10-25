@@ -62,7 +62,7 @@ for $entry in $manifest.files
     $_ = $renderer.external(read_file($repo .. "/share/layout/" .. $entry.source), $moved_roots, $entry.kind)
   end
 end
-print("layout: every selected desktop/server template accepts the moved prefix with a space")
+print("layout: units and desktop entries accept a space prefix")
 
 fn need($ok, $message)
   if not $ok then raise("LAYOUT_TEST", $message) end
@@ -73,6 +73,8 @@ end
 for $key in ["ConditionPathExists", "EnvironmentFile", "LoadCredential"]
   need(refuses(fn() = $renderer.external($key .. "=@{prefix}/file\n", $roots, "unit"), "LAYOUT_WHITESPACE"), $key .. " accepted a whitespace path")
 end
+-- TryExec is the rest of the line, a literal path: a space needs no quoting.
+need($renderer.external("TryExec=@{prefix}/bin/mix\n", $roots, "desktop") == "TryExec=/tmp/moved tree/bin/mix\n", "TryExec must render the spaced path literally")
 $environment = $renderer.external("Environment=MIXOS_PREFIX=@{prefix}\n", $roots, "unit")
 need($environment == 'Environment="MIXOS_PREFIX=/tmp/moved tree"' .. "\n", "Environment quoting differs")
 
@@ -92,6 +94,9 @@ try
   $home_before = if env("HOME") != "" and is_file(env("HOME") .. "/.mixrc") then hash_file(env("HOME") .. "/.mixrc", "sha256") else nil end
   $host_shells = if is_file("/etc/shells") then hash_file("/etc/shells", "sha256") else nil end
   need(refuses(fn() = $files.application($here, $roots, {image: true}), "LAYOUT_ARGS"), "--image without --root accepted")
+  need(refuses(fn() = $files.application($here, $roots, {image: true, root: "/"}), "LAYOUT_ARGS"), "--image --root / accepted")
+  symlink("/", $tmp .. "/host-root")
+  need(refuses(fn() = $files.application($here, $roots, {image: true, root: $tmp .. "/host-root"}), "LAYOUT_ARGS"), "image root symlink to / accepted")
   $files.apply($files.application($here, $roots, {root: $stage}), true)
   need(len(walk($stage)) == 0, "dry-run wrote files")
   symlink($stage, $tmp .. "/stage-link")
@@ -126,6 +131,16 @@ try
   chmod($stage .. "/blocked", 0o755)
   symlink($tmp, $stage .. "/linked")
   need(refuses(fn() = $files.apply([{stage: $stage, path: "/linked/escape", text: "bad"}], false), "LAYOUT_TARGET") and not exists($tmp .. "/escape"), "symlink parent escaped stage")
+  if uid() != 0 and (not $files.writable_target("/usr/local/bin/mix", false) or not $files.writable_target("/etc/shells", true)) then
+    $user_roots = $roots
+    $user_roots.prefix = $tmp .. "/user-prefix"
+    $user_pending = $files.application($here, $user_roots, {})
+    need(any($user_pending, fn($entry) = has_key($entry, "notice")), "non-root apply did not explain skipped host integration")
+    need(all($user_pending, fn($entry) = has_key($entry, "notice") or starts_with($entry.path, $user_roots.prefix .. "/")), "user apply planned a host write")
+    $files.apply($user_pending, false)
+    need(is_file($user_roots.prefix .. "/share/demod/units/demod.service"), "host integration permissions blocked user-prefix rendering")
+    need($host_shells == (if is_file("/etc/shells") then hash_file("/etc/shells", "sha256") else nil end), "user apply changed host shells")
+  else print("SKIP unprivileged host integration: needs a non-root process without host write access") end
   print("PASS prefix-only rendering, canonical sysroot, host/image entrance, no HOME writes, preflight, symlinks and mode preservation under N-1 Mix")
 finally
   remove_dir($tmp)

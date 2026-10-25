@@ -255,8 +255,9 @@ The bounded strict-data layout has at most <code>etc</code>, <code>var</code>, <
 <code>cache</code>, and refuses a prefix key. The <a href="/paths/">paths manual</a>
 gives the complete table and explicit system/user APIs.
 A root stored in layout.mx applies to every uid, like <code>$MIXOS</code>. Installers
-persist only differences from the system defaults for the target prefix;
-the default installation has no layout.mx and preserves each user's XDG roots.</li>
+persist only differences from the selected tier's defaults for the target
+prefix (system by default); the default system installation has no layout.mx
+and preserves each user's XDG roots.</li>
 <li><code>libs/paths</code> owns the implementation without workspace dependencies;
 <code>config::dir</code> re-exports the original API. Rust and <code>mixos_path</code> share it.
 Process helpers resolve once; pure explicit inputs support tests.</li>
@@ -270,14 +271,19 @@ Enabling services remains the operator's step. Layout apply never installs
 systemd, sysusers, tmpfiles or polkit files outside the prefix and never
 touches unmanaged flat <code>share/units/</code> copies. Mix component units remain
 owned and rendered by component_install, outside the global manifest.
+Their existing packaged share/ unit copies render through the package's own
+manifest; this does not claim or overwrite component_install's systemd units.
 Only the ruling 9 link and, on a host, its line in <code>/etc/shells</code> are managed
 outside the prefix. There is no mixrc management. With <code>--root</code>, <code>/etc/shells</code>
 is touched only inside that root and only with <code>--image</code>, which requires
-<code>--root</code>. The root is canonicalised; symlinks below it and symlink render
+<code>--root</code> resolving to a directory other than <code>/</code>. A non-root host apply
+renders its prefix and skips host integration with a notice when it cannot
+write both host targets. The root is canonicalised; symlinks below it and symlink render
 targets refuse. All targets are checked for writability before writing;
 existing modes and owners are preserved, and new rendered files are 0644.
 Paths containing whitespace refuse in systemd keys that do not unquote
-(including EnvironmentFile, ConditionPathExists and LoadCredential).</li>
+(including EnvironmentFile, ConditionPathExists and LoadCredential).
+Desktop TryExec has the same whitespace refusal.</li>
 <li>Saved MixOS references use <code>mixos:&lt;root&gt;/&lt;relative&gt;</code>. Root escapes refuse;
 user-owned paths retain their meaning. Offline migration keeps originals;
 live migration is a separate operator action.</li>
@@ -296,7 +302,9 @@ for uid 0 and a user at both default and moved prefixes. No default-layout
 user data moves are accepted. The relocation proof uses a disposable prefix
 with a space and hides the old roots in a private mount namespace; it runs
 installer, scene, nested desktop and SSH loopback checks where available.
-Missing privileges are reported as skips.</li>
+Desktop TryExec whitespace refusal is checked before any writes; unit and
+runtime relocation then proceed under that prefix. Missing privileges are
+reported as skips.</li>
 <li>The stable host entry is <code>/usr/local/bin/mix</code>; <code>/usr/bin/mix</code> is managed
 only in a MixOS-owned image. Login shells and <code>/etc/shells</code> use that link.
 <code>mix-static</code> stays unlinked. Remote lookup is option, environment,
@@ -309,7 +317,14 @@ read the receipt or target layout without running the installed target.
 Main receipts with an absolute target and backup and no layout are read in
 their original shape; the absent layout means the default layout. Their
 recorded prefix and var backup path suffice for offline rollback. They also
-participate in release ordering alongside logical receipts.</p>
+participate in release ordering alongside logical receipts.
+The default layout has no layout.mx: offline rollback/recovery names <code>--var</code>
+to locate receipts or supplies <code>--receipt-file</code>. A layout file that names var
+can locate its receipts as well. Older archives without <code>layout defaults</code> can
+be installed with all six roots explicit, persisting all five non-prefix roots;
+otherwise they refuse with an archive-specific message. Gold journals the host
+entrance as well as prefix files, backs up prior shells bytes and metadata and
+the old link, and restores them on failed install, rollback and recovery.</p>
 <p>This decision does not deploy or migrate a live installation, move app data,
 introduce hot relocation, generations or a versioned store.</p>
         </article>

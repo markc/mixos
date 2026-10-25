@@ -43,6 +43,8 @@ if $g.opts.child then
   end
   $bad_image = run_argv([$mix, "layout", "apply", "--image"], {env: $envmap})
   if $bad_image.ok or not contains($bad_image.stderr, "--image requires --root") then raise("RELOCATION_IMAGE", "--image without --root was accepted") end
+  $host_image = run_argv([$mix, "layout", "apply", "--image", "--root", "/"], {env: $envmap})
+  if $host_image.ok or not contains($host_image.stderr, "other than /") then raise("RELOCATION_IMAGE", "--image --root / was accepted") end
   mkdir($scratch .. "/image")
   print(run_argv_must([$mix, "layout", "apply", "--root", $scratch .. "/image", "--image"], {env: $envmap}))
   if read_file($scratch .. "/image/etc/shells") != "/usr/bin/mix\n" then raise("RELOCATION_IMAGE", "image shells differs") end
