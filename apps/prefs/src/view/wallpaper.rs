@@ -8,7 +8,6 @@ use toolkit::action::Origin;
 use toolkit::{
     Registry, Strings, bars,
     dialog::{self, Choice},
-    panel,
 };
 
 pub fn controls(

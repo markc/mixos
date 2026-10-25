@@ -860,22 +860,22 @@ fn appearance_state(
     events: &mut Vec<UiEvent>,
 ) -> Option<Look> {
     if engine.look.waiting() || engine.look.uncertain.is_some() {
-    ui.horizontal(|ui| {
-        // Changes apply as they are made; these appear only when an
-        // edit waits for the person: a refused apply (Apply tries
-        // again), a conflict to reconcile, an uncertain apply to check.
-        for (id, primary, shown) in [
-            ("appearance.apply", true, engine.look.hold),
-            ("appearance.keep", true, !engine.look.conflicts.is_empty()),
-            ("appearance.revert", false, engine.look.waiting()),
-            ("appearance.recheck", false, engine.look.uncertain.is_some()),
-        ] {
-            if shown {
-                command_button(ui, engine, commands, strings, id, primary, events);
+        ui.horizontal(|ui| {
+            // Changes apply as they are made; these appear only when an
+            // edit waits for the person: a refused apply (Apply tries
+            // again), a conflict to reconcile, an uncertain apply to check.
+            for (id, primary, shown) in [
+                ("appearance.apply", true, engine.look.hold),
+                ("appearance.keep", true, !engine.look.conflicts.is_empty()),
+                ("appearance.revert", false, engine.look.waiting()),
+                ("appearance.recheck", false, engine.look.uncertain.is_some()),
+            ] {
+                if shown {
+                    command_button(ui, engine, commands, strings, id, primary, events);
+                }
             }
-        }
-    });
-    bars::hairline(ui);
+        });
+        bars::hairline(ui);
     }
     if engine.look.settings == Settings::Missing {
         ui.add(egui::Label::new(RichText::new(label("look-missing")).weak()).wrap());
@@ -886,34 +886,36 @@ fn appearance_state(
         return None;
     };
     if !engine.look.conflicts.is_empty() || engine.look.custom_source || engine.look.hold {
-    ui.vertical(|ui| {
-        ui.set_width(ui.available_width());
-        let note = |ui: &mut Ui, key: &str, colour: Option<Color32>| {
-            let mut text = RichText::new(label(key));
-            text = match colour {
-                Some(colour) => text.color(colour),
-                None => text.weak(),
+        ui.vertical(|ui| {
+            ui.set_width(ui.available_width());
+            let note = |ui: &mut Ui, key: &str, colour: Option<Color32>| {
+                let mut text = RichText::new(label(key));
+                text = match colour {
+                    Some(colour) => text.color(colour),
+                    None => text.weak(),
+                };
+                ui.add(egui::Label::new(text).wrap());
             };
-            ui.add(egui::Label::new(text).wrap());
-        };
-        if !engine.look.conflicts.is_empty() {
-            let axes: Vec<String> = engine
-                .look
-                .conflicts
-                .iter()
-                .map(|a| label(axis_label(*a)))
-                .collect();
-            let text = label_with("look-conflicts", &[("axes", &axes.join(", "))]);
-            ui.add(egui::Label::new(RichText::new(text).color(ui.visuals().warn_fg_color)).wrap());
-        }
-        if engine.look.custom_source {
-            note(ui, "look-custom", None);
-        }
-        if engine.look.hold {
-            note(ui, "look-held", None);
-        }
-    });
-    bars::hairline(ui);
+            if !engine.look.conflicts.is_empty() {
+                let axes: Vec<String> = engine
+                    .look
+                    .conflicts
+                    .iter()
+                    .map(|a| label(axis_label(*a)))
+                    .collect();
+                let text = label_with("look-conflicts", &[("axes", &axes.join(", "))]);
+                ui.add(
+                    egui::Label::new(RichText::new(text).color(ui.visuals().warn_fg_color)).wrap(),
+                );
+            }
+            if engine.look.custom_source {
+                note(ui, "look-custom", None);
+            }
+            if engine.look.hold {
+                note(ui, "look-held", None);
+            }
+        });
+        bars::hairline(ui);
     }
     Some(look)
 }
