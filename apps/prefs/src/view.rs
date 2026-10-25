@@ -643,7 +643,7 @@ fn applications(
                 );
             });
             bars::hairline(ui);
-            ui.add(egui::Label::new(RichText::new(label("apps-scope")).weak()).wrap());
+            ui.add(egui::Label::new(RichText::new(label_with("apps-scope", &[("prefix", &::paths::root(::paths::Root::Prefix).display().to_string())])).weak()).wrap());
             if engine.releases == Availability::Missing {
                 ui.add(egui::Label::new(RichText::new(label("missing")).weak()).wrap());
                 return;
