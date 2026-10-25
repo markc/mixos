@@ -137,7 +137,10 @@ impl Widget for IconButton {
                 ui,
                 icon,
                 rect.center(),
-                (size * crate::chrome::Chrome::of(ui.ctx()).style.button_icon_share as f32).round(),
+                // Density changes the control's bounds, never its glyph.
+                (size / crate::ui_scale::of(ui.ctx()).density as f32
+                    * crate::chrome::Chrome::of(ui.ctx()).style.button_icon_share as f32)
+                    .round(),
                 tint,
             );
         }
@@ -216,7 +219,7 @@ impl Widget for PushButton {
         let galley = ui
             .painter()
             .layout_no_wrap(self.label.clone(), font, Color32::PLACEHOLDER);
-        let height = chrome.metrics.push_height;
+        let height = chrome.metrics.push_height.max(galley.size().y);
         let size = vec2(
             (galley.size().x
                 + crate::chrome::Chrome::of(ui.ctx())

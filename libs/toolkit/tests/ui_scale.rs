@@ -41,11 +41,9 @@ fn larger_text_scales_roles_buttons_and_content_without_spacing() {
     content.font.size = 18.0;
     for light in [false, true] {
         content.light = light;
-        let _ = ctx.run(Default::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                toolkit::content::surface(ui, &content, |ui| {
-                    close(TextStyle::Body.resolve(ui.style()).size, 27.0);
-                });
+        let _ = ctx.run_ui(Default::default(), |ui| {
+            toolkit::content::surface(ui, &content, |ui| {
+                close(TextStyle::Body.resolve(ui.style()).size, 27.0);
             });
         });
     }
