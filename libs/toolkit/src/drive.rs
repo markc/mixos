@@ -217,7 +217,7 @@ pub fn pending(ctx: &Context) -> bool {
 }
 
 /// The per-frame step an app runs from its logic, which runs even while
-/// the window is hidden: when the window is hidden, settle the running job
+/// the window is hidden: when the window is hidden or no UI pass runs, settle the running job
 /// and cancel the queue (no pass would ever read their input); expire a
 /// capture past its deadline; then hand back every finished answer.
 pub fn logic(ctx: &Context) -> Vec<Answer> {

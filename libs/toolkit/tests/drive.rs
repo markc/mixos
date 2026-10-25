@@ -802,7 +802,7 @@ fn a_click_cancelled_before_its_press_leaves_no_button_down() {
     assert_eq!(h.state().count, 1, "a later click still works");
 }
 
-/// sol finding 3, toolkit half: closing answers every accepted request.
+/// A hidden virtual desktop need not be reported as minimized by Wayland.
 #[test]
 fn a_stalled_frame_callback_cancels_input_even_when_window_reports_visible() {
     let mut h = window();

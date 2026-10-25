@@ -35,3 +35,10 @@ Run `cargo test -p workshop --test shell` and the normal toolkit/prefs suites.
 
 Drop when upstream runs root logic independently of Wayland frame callbacks.
 No upstream issue has been filed by this change.
+
+For standalone upstream tests, the normalised `Cargo.toml` adds an empty
+`[workspace]` and mirrors the enclosing workspace's egui-winit, dirs-sys,
+calloop and input patches. This does not affect dependency resolution when
+eframe is built as an application dependency. The toolkit additionally
+settles paint-dependent drive input during a logic-only wake, including when
+Wayland still reports the window as visible, so it cannot block later queries.
