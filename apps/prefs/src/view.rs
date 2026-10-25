@@ -6,7 +6,7 @@
 //!
 //! The window: the toolkit title bar, a sidebar of editors (the AmigaOS
 //! Prefs drawer, one window), the selected editor, and a status bar. The
-//! registry supplies the category tree and search. Software holds the
+//! registry supplies section order and search. Software holds the
 //! followed apps, group selector and release notes. Appearance sets the
 //! session's look through settingsd, each change at once; Apps holds Email,
 //! Terminal and Text settings.
@@ -341,7 +341,7 @@ fn signpost(ui: &mut Ui, engine: &Engine, key: &str, target: Section, events: &m
     });
 }
 
-/// A tree whose selection and expansion live in the serialisable engine.
+/// The flat sidebar and its searchable section list.
 fn editors(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, events: &mut Vec<UiEvent>) {
     let mut query = engine.ui.search.clone();
     let id = egui::Id::new("preferences-search");
@@ -1399,14 +1399,29 @@ fn look_controls(
                                 strings,
                                 &format!("toolkit-theme-{}", scheme.name()),
                             );
-                            let galley = ui.painter().layout_no_wrap(name.clone(), egui::TextStyle::Button.resolve(ui.style()), ui.visuals().text_color());
-                            let width = SWATCH + galley.size().x + ui.spacing().item_spacing.x + 2.0 * ui.spacing().button_padding.x;
-                            let clicked = ui.allocate_ui_with_layout(egui::vec2(width, ui.spacing().interact_size.y), Layout::left_to_right(Align::Center), |ui| {
-                                if let Some(swatch) = swatch(scheme, look.mode) { paint_swatch(ui, swatch); }
-                                toolkit::selectable(ui, look.scheme == scheme, name).clicked()
-                            }).inner;
-                            if clicked && look.scheme != scheme
-                            {
+                            let galley = ui.painter().layout_no_wrap(
+                                name.clone(),
+                                egui::TextStyle::Button.resolve(ui.style()),
+                                ui.visuals().text_color(),
+                            );
+                            let width = SWATCH
+                                + galley.size().x
+                                + ui.spacing().item_spacing.x
+                                + 2.0 * ui.spacing().button_padding.x;
+                            let clicked = ui
+                                .allocate_ui_with_layout(
+                                    egui::vec2(width, ui.spacing().interact_size.y),
+                                    Layout::left_to_right(Align::Center),
+                                    |ui| {
+                                        if let Some(swatch) = swatch(scheme, look.mode) {
+                                            paint_swatch(ui, swatch);
+                                        }
+                                        toolkit::selectable(ui, look.scheme == scheme, name)
+                                            .clicked()
+                                    },
+                                )
+                                .inner;
+                            if clicked && look.scheme != scheme {
                                 events.push(UiEvent::Look(Look {
                                     scheme,
                                     ..look.clone()

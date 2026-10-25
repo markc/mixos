@@ -1274,7 +1274,9 @@ impl Engine {
         match answer {
             Answer::Ok(value) => match snapshot(&value) {
                 Ok((summary, look)) => {
-                    if self.look.problem_missing && let Some(source) = self.look.problem_source {
+                    if self.look.problem_missing
+                        && let Some(source) = self.look.problem_source
+                    {
                         self.clear_settings_problem(source);
                     }
                     self.look.settings = Availability::Available;

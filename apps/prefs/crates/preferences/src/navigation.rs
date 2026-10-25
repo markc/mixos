@@ -116,7 +116,8 @@ impl Section {
 }
 
 /// Match translated titles and category labels alongside aliases and keys.
-/// Filtering the registry preserves category and section order.
+/// Filtering preserves category and section order, except that an exact
+/// "system" query ranks Software & Updates before Accessibility.
 pub fn search(query: &str, label: impl Fn(&str) -> String) -> Vec<&'static SectionDescriptor> {
     let query = query.to_lowercase();
     let mut matches: Vec<_> = SECTIONS
