@@ -51,16 +51,29 @@ pub fn manifest(service: &str, open: bool) -> Vec<::bus::CommandDescriptor> {
     if !open {
         return entries;
     }
-    entries.extend(COMMANDS.iter().filter(|(name, _)| !name.starts_with("term.macros.")).map(|(name, read_only)| {
-        let rendered = name.replacen("term.", &format!("{service}."), 1);
-        let description = INFO.lines().find(|line| line.split([' ', ':']).next() == Some(name)).unwrap_or("Read terminal identity and diagnostics");
-        CommandDescriptor::new(&rendered, &[], description, *read_only)
-    }));
-    entries.extend(citizen::macros::describe(service).into_iter().map(|value| CommandDescriptor {
-        name: value["name"].as_str().unwrap().to_owned(),
-        args: value["args"].as_object().map(|args| args.keys().cloned().collect()).unwrap_or_default(),
-        description: value["description"].as_str().unwrap().to_owned(),
-        read_only: value["read_only"].as_bool().unwrap_or(false),
+    entries.extend(
+        COMMANDS
+            .iter()
+            .filter(|(name, _)| !name.starts_with("term.macros."))
+            .map(|(name, read_only)| {
+                let rendered = name.replacen("term.", &format!("{service}."), 1);
+                let description = INFO
+                    .lines()
+                    .find(|line| line.split([' ', ':']).next() == Some(name))
+                    .unwrap_or("Read terminal identity and diagnostics");
+                CommandDescriptor::new(&rendered, &[], description, *read_only)
+            }),
+    );
+    entries.extend(citizen::macros::describe(service).into_iter().map(|value| {
+        CommandDescriptor {
+            name: value["name"].as_str().unwrap().to_owned(),
+            args: value["args"]
+                .as_object()
+                .map(|args| args.keys().cloned().collect())
+                .unwrap_or_default(),
+            description: value["description"].as_str().unwrap().to_owned(),
+            read_only: value["read_only"].as_bool().unwrap_or(false),
+        }
     }));
     entries
 }
@@ -1012,7 +1025,9 @@ fn is_invalid_argument(error: &str) -> bool {
 /// controls, including when native bootstrap is unavailable.
 fn diagnostic(service: &str, command_name: &str) -> Result<String, String> {
     match command_name {
-        "HELP" | "help" | "app.describe" => Ok(serde_json::json!(manifest(service, false)).to_string()),
+        "HELP" | "help" | "app.describe" => {
+            Ok(serde_json::json!(manifest(service, false)).to_string())
+        }
         "INFO" | "info" => Ok(format!(
             "{service}: diagnostic discovery only (posture=strict, MIXOS_MESH_OPEN=0); protected controls require the allocated native-session route"
         )),
@@ -1048,7 +1063,9 @@ fn handle(
         // `pid` lets a caller bind to one term PROCESS (the session-control
         // resume worker checks it against the boot term unit's MainPID), which
         // `instance`, reported by that same process, cannot prove.
-        "HELP" | "help" | "app.describe" => Ok(serde_json::json!(manifest(service, true)).to_string()),
+        "HELP" | "help" | "app.describe" => {
+            Ok(serde_json::json!(manifest(service, true)).to_string())
+        }
         "INFO" | "info" | "term.info" => Ok(format!(
             "{}\n{service}.session {{}}: native identity and per-pane binding diagnostics (not live authority)\ninstance={} pid={}",
             info(service),
@@ -1487,7 +1504,12 @@ mod tests {
             assert_eq!(entries[0].name, "HELP");
             for entry in entries {
                 let canonical = canonical_command(service, &entry.name).unwrap();
-                assert_ne!(parse_args(&canonical, "{}").err().as_deref(), Some("unknown command; use HELP"), "{}", entry.name);
+                assert_ne!(
+                    parse_args(&canonical, "{}").err().as_deref(),
+                    Some("unknown command; use HELP"),
+                    "{}",
+                    entry.name
+                );
             }
         }
     }

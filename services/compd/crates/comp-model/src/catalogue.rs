@@ -37,9 +37,15 @@ pub const READ_COMMANDS: &[&str] = &[
 /// than reading the current snapshot. This is discovery metadata, not routing.
 pub fn read_only(command: &str) -> bool {
     READ_COMMANDS.contains(&command)
-        || matches!(command,
-            "comp.capture.frame" | "comp.ping" | "comp.props.watch"
-            | "comp.pointer.watch" | "comp.window.wait" | "comp.window.stats")
+        || matches!(
+            command,
+            "comp.capture.frame"
+                | "comp.ping"
+                | "comp.props.watch"
+                | "comp.pointer.watch"
+                | "comp.window.wait"
+                | "comp.window.stats"
+        )
 }
 
 /// The 17 commands the dispatcher answers directly (not a window or input

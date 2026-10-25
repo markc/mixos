@@ -48,11 +48,26 @@ pub const COMMANDS: &[(&str, bool)] = &[
 /// Commands answered by the controller. The host adds its macro and drive
 /// surfaces, whose handlers run outside this engine.
 pub fn manifest() -> Vec<bus::CommandDescriptor> {
-    std::iter::once(bus::CommandDescriptor::new("HELP", &[], "List every command", true))
-        .chain(COMMANDS.iter().filter(|(name, _)| !name.starts_with("ced.macros.")).map(|(name, read_only)| {
-            bus::CommandDescriptor::new(name, &[], &format!("Editor {}", name.strip_prefix("ced.").unwrap_or(name)), *read_only)
-        }))
-        .collect()
+    std::iter::once(bus::CommandDescriptor::new(
+        "HELP",
+        &[],
+        "List every command",
+        true,
+    ))
+    .chain(
+        COMMANDS
+            .iter()
+            .filter(|(name, _)| !name.starts_with("ced.macros."))
+            .map(|(name, read_only)| {
+                bus::CommandDescriptor::new(
+                    name,
+                    &[],
+                    &format!("Editor {}", name.strip_prefix("ced.").unwrap_or(name)),
+                    *read_only,
+                )
+            }),
+    )
+    .collect()
 }
 
 /// Refusal codes (`error_code`).

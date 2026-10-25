@@ -307,7 +307,11 @@ impl Shell {
             }
             let cmd = self.held.pop_front().expect("a held command");
             if cmd.command == "HELP" {
-                self.respond(drive::Answer { id: cmd.id, rc: 0, body: json!(crate::bus::help(true)) });
+                self.respond(drive::Answer {
+                    id: cmd.id,
+                    rc: 0,
+                    body: json!(crate::bus::help(true)),
+                });
                 continue;
             }
             match drive_command {

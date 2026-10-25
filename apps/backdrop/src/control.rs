@@ -60,10 +60,25 @@ pub const COMMANDS: &[(&str, &str)] = &[
 fn manifest() -> Vec<bus::CommandDescriptor> {
     [
         ("HELP", &[][..], "List every command", true),
-        ("app.describe", &[][..], "Describe the service commands", true),
+        (
+            "app.describe",
+            &[][..],
+            "Describe the service commands",
+            true,
+        ),
         ("backdrop.ping", &[][..], "Read service identity", true),
-        ("backdrop.state", &[][..], "Read wallpaper and output state", true),
-        (SET, &["document"][..], "Apply and store a wallpaper document", false),
+        (
+            "backdrop.state",
+            &[][..],
+            "Read wallpaper and output state",
+            true,
+        ),
+        (
+            SET,
+            &["document"][..],
+            "Apply and store a wallpaper document",
+            false,
+        ),
         (NEXT, &[][..], "Advance the slideshow", false),
     ]
     .into_iter()

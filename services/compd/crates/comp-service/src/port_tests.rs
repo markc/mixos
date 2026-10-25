@@ -19,7 +19,15 @@ async fn help_is_a_descriptor_list_of_answered_commands() {
     let (sender, mut replies) = tokio_mpsc::channel(2);
     let timeouts = Arc::new(AtomicU64::new(0));
     for discovery in ["HELP", "app.describe"] {
-        handle_incoming(&ingress, &mut responders, &permits, &sender, &timeouts, "comp-nested", command(discovery, 1));
+        handle_incoming(
+            &ingress,
+            &mut responders,
+            &permits,
+            &sender,
+            &timeouts,
+            "comp-nested",
+            command(discovery, 1),
+        );
         let reply = replies.recv().await.unwrap();
         assert_eq!(reply.rc, 0);
         let entries: Vec<bus::CommandDescriptor> = serde_json::from_str(&reply.body).unwrap();
@@ -32,8 +40,16 @@ async fn help_is_a_descriptor_list_of_answered_commands() {
             if let Err((_, body)) = classify(&entry.name, &Value::Null, true) {
                 assert!(!body.contains("UNKNOWN_COMMAND"), "{}: {body}", entry.name);
             }
-            let row = registry.lines().find(|row| row.contains(&format!("name:\"{}\"", entry.name))).unwrap();
-            assert_eq!(entry.read_only, row.contains("class:\"query\""), "{}", entry.name);
+            let row = registry
+                .lines()
+                .find(|row| row.contains(&format!("name:\"{}\"", entry.name)))
+                .unwrap();
+            assert_eq!(
+                entry.read_only,
+                row.contains("class:\"query\""),
+                "{}",
+                entry.name
+            );
         }
     }
 }

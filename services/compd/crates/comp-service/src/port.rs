@@ -74,11 +74,21 @@ pub fn manifest() -> Vec<bus::CommandDescriptor> {
     [
         CommandDescriptor::new("HELP", &[], "List every command", true),
         CommandDescriptor::new("app.describe", &[], "Describe the service commands", true),
-        CommandDescriptor::new(TRUTH_COMMAND, &[], "Read compositor registry and focus truth", true),
+        CommandDescriptor::new(
+            TRUTH_COMMAND,
+            &[],
+            "Read compositor registry and focus truth",
+            true,
+        ),
     ]
     .into_iter()
     .chain(catalogue::all_commands().map(|name| {
-        CommandDescriptor::new(name, &[], &format!("Compositor {}", name.trim_start_matches("comp.")), catalogue::read_only(name))
+        CommandDescriptor::new(
+            name,
+            &[],
+            &format!("Compositor {}", name.trim_start_matches("comp.")),
+            catalogue::read_only(name),
+        )
     }))
     .collect()
 }

@@ -56,11 +56,16 @@ pub fn help() -> Vec<::bus::CommandDescriptor> {
         json!({"name":"term.actions","description":"List window actions","read_only":true}),
         json!({"name":"term.execute","args":{"id":"action id","tab":"optional tab","pane":"optional pane"},"description":"Execute a window action","read_only":false}),
     ]);
-    entries.extend(hosted.into_iter().map(|value| ::bus::CommandDescriptor {
-        name: value["name"].as_str().unwrap().to_owned(),
-        args: value["args"].as_object().map(|args| args.keys().cloned().collect()).unwrap_or_default(),
-        description: value["description"].as_str().unwrap().to_owned(),
-        read_only: value["read_only"].as_bool().unwrap_or(false),
+    entries.extend(hosted.into_iter().map(|value| {
+        ::bus::CommandDescriptor {
+            name: value["name"].as_str().unwrap().to_owned(),
+            args: value["args"]
+                .as_object()
+                .map(|args| args.keys().cloned().collect())
+                .unwrap_or_default(),
+            description: value["description"].as_str().unwrap().to_owned(),
+            read_only: value["read_only"].as_bool().unwrap_or(false),
+        }
     }));
     entries
 }

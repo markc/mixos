@@ -956,12 +956,16 @@ mod tests {
     #[test]
     fn help_is_a_descriptor_list_of_answered_commands() {
         let (sender, receiver) = mpsc::sync_channel(1);
-        let delivery = Delivery { sender, waker: Arc::new(|| {}) };
+        let delivery = Delivery {
+            sender,
+            waker: Arc::new(|| {}),
+        };
         for service in ["shell", "example-shell"] {
             let request = incoming("tester", "HELP", Some("1"), &[], "{}");
             let (_, rc, body) = admit(service, &delivery, request).unwrap();
             assert_eq!(rc, 0);
-            let entries: Vec<bus::CommandDescriptor> = serde_json::from_value(body.clone()).unwrap();
+            let entries: Vec<bus::CommandDescriptor> =
+                serde_json::from_value(body.clone()).unwrap();
             assert_eq!(entries[0].name, "HELP");
             let request = incoming("tester", "app.describe", Some("1"), &[], "{}");
             assert_eq!(admit(service, &delivery, request).unwrap().2, body);

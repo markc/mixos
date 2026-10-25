@@ -914,25 +914,105 @@ async fn shutdown_signal() -> Result<()> {
 fn manifest() -> Vec<bus::CommandDescriptor> {
     [
         ("HELP", &[][..], "List every command", true),
-        ("app.describe", &[][..], "Describe the service commands", true),
-        ("blob.put", &["path", "owner?"][..], "Store and pin a file", false),
+        (
+            "app.describe",
+            &[][..],
+            "Describe the service commands",
+            true,
+        ),
+        (
+            "blob.put",
+            &["path", "owner?"][..],
+            "Store and pin a file",
+            false,
+        ),
         ("blob.stat", &["blob"][..], "Read blob metadata", true),
-        ("blob.path", &["blob"][..], "Resolve a local blob path", true),
-        ("blob.url", &["blob"][..], "Read the blob download URL", true),
-        ("blob.has", &["blob"][..], "Check local blob availability", true),
-        ("blob.pin", &["blob", "owner?"][..], "Pin a blob for an owner", false),
-        ("blob.unpin", &["blob", "owner?"][..], "Remove an owner's pin", false),
+        (
+            "blob.path",
+            &["blob"][..],
+            "Resolve a local blob path",
+            true,
+        ),
+        (
+            "blob.url",
+            &["blob"][..],
+            "Read the blob download URL",
+            true,
+        ),
+        (
+            "blob.has",
+            &["blob"][..],
+            "Check local blob availability",
+            true,
+        ),
+        (
+            "blob.pin",
+            &["blob", "owner?"][..],
+            "Pin a blob for an owner",
+            false,
+        ),
+        (
+            "blob.unpin",
+            &["blob", "owner?"][..],
+            "Remove an owner's pin",
+            false,
+        ),
         ("blob.list", &["owner?"][..], "List stored blobs", true),
-        ("blob.quota", &["owner?"][..], "Read storage quota usage", true),
-        ("blob.gc", &["dry_run?"][..], "Collect unpinned blobs", false),
+        (
+            "blob.quota",
+            &["owner?"][..],
+            "Read storage quota usage",
+            true,
+        ),
+        (
+            "blob.gc",
+            &["dry_run?"][..],
+            "Collect unpinned blobs",
+            false,
+        ),
         ("blob.info", &[][..], "Read store identity and status", true),
-        ("blob.fetch", &["blob"][..], "Fetch a blob from a peer", false),
-        ("blob.upload.list", &["owner?"][..], "List pending uploads", true),
-        ("blob.upload.abort", &["upload"][..], "Abort a pending upload", false),
-        ("blob.props.get", &["path?"][..], "Read store properties", true),
-        ("blob.props.list", &["path?"][..], "List property paths", true),
-        ("blob.props.describe", &["path"][..], "Describe a property", true),
-        ("blob.props.watch", &[][..], "Read property observation topics", true),
+        (
+            "blob.fetch",
+            &["blob"][..],
+            "Fetch a blob from a peer",
+            false,
+        ),
+        (
+            "blob.upload.list",
+            &["owner?"][..],
+            "List pending uploads",
+            true,
+        ),
+        (
+            "blob.upload.abort",
+            &["upload"][..],
+            "Abort a pending upload",
+            false,
+        ),
+        (
+            "blob.props.get",
+            &["path?"][..],
+            "Read store properties",
+            true,
+        ),
+        (
+            "blob.props.list",
+            &["path?"][..],
+            "List property paths",
+            true,
+        ),
+        (
+            "blob.props.describe",
+            &["path"][..],
+            "Describe a property",
+            true,
+        ),
+        (
+            "blob.props.watch",
+            &[][..],
+            "Read property observation topics",
+            true,
+        ),
     ]
     .into_iter()
     .map(|(name, args, description, read_only)| {
@@ -1010,15 +1090,30 @@ mod tests {
         assert_eq!(rc, 0);
         let entries: Vec<bus::CommandDescriptor> = serde_json::from_str(&body).unwrap();
         assert_eq!(entries[0].name, "HELP");
-        assert_eq!(c.dispatch(&command("app.describe", "tester", json!({}))).1, body);
+        assert_eq!(
+            c.dispatch(&command("app.describe", "tester", json!({}))).1,
+            body
+        );
         let registry = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
         for entry in entries {
             let (_, body, _) = c.dispatch(&command(&entry.name, "tester", json!({})));
-            assert!(!body.contains("unknown blob command"), "{}: {body}", entry.name);
+            assert!(
+                !body.contains("unknown blob command"),
+                "{}: {body}",
+                entry.name
+            );
             assert!(!body.contains("UNKNOWN_COMMAND"), "{}: {body}", entry.name);
             if entry.name.starts_with("blob.") {
-                let row = registry.lines().find(|row| row.contains(&format!("name:\"{}\"", entry.name))).unwrap();
-                assert_eq!(entry.read_only, row.contains("class:\"query\""), "{}", entry.name);
+                let row = registry
+                    .lines()
+                    .find(|row| row.contains(&format!("name:\"{}\"", entry.name)))
+                    .unwrap();
+                assert_eq!(
+                    entry.read_only,
+                    row.contains("class:\"query\""),
+                    "{}",
+                    entry.name
+                );
             }
         }
     }

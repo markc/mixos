@@ -69,7 +69,12 @@ impl SceneCommand {
         .into_iter()
         .chain(Self::names(service).into_iter().map(|name| {
             let kind = Self::parse(service, &name).expect("catalogued scene command");
-            CommandDescriptor::new(&name, &[], &format!("Scene host {}", name.split_once('.').unwrap().1), !kind.mutates())
+            CommandDescriptor::new(
+                &name,
+                &[],
+                &format!("Scene host {}", name.split_once('.').unwrap().1),
+                !kind.mutates(),
+            )
         }))
         .collect()
     }

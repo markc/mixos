@@ -3518,7 +3518,11 @@ mod tests {
         assert_eq!(entries[0].name, "HELP");
         for entry in entries {
             let effects = ctl().on_bus_command(cmd(&entry.name, json!({})));
-            assert!(!effects.is_empty(), "{} was not answered or admitted", entry.name);
+            assert!(
+                !effects.is_empty(),
+                "{} was not answered or admitted",
+                entry.name
+            );
             for effect in effects {
                 if let Effect::Respond { body, .. } = effect {
                     let body: Value = serde_json::from_str(&body).unwrap();

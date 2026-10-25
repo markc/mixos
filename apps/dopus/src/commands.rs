@@ -825,18 +825,39 @@ pub fn manifest(meta: &ServerMeta) -> Vec<bus::CommandDescriptor> {
         CommandDescriptor::new("HELP", &[], "List every command", true),
         CommandDescriptor::new("app.describe", &[], "Describe the application", true),
     ];
-    entries.extend(COMMANDS.iter().filter(|(name, _)| !name.starts_with("dopus.macros.")).map(|(name, read_only)| {
-        CommandDescriptor::new(name, &[], &format!("File manager {}", name.trim_start_matches("dopus.")), *read_only)
-    }));
+    entries.extend(
+        COMMANDS
+            .iter()
+            .filter(|(name, _)| !name.starts_with("dopus.macros."))
+            .map(|(name, read_only)| {
+                CommandDescriptor::new(
+                    name,
+                    &[],
+                    &format!("File manager {}", name.trim_start_matches("dopus.")),
+                    *read_only,
+                )
+            }),
+    );
     let mut hosted = citizen::macros::describe("dopus");
-    hosted.extend(toolkit::drive::describe("dopus").into_iter().filter(|value| {
-        meta.extra_commands.iter().any(|name| value["name"] == *name)
-    }));
-    entries.extend(hosted.into_iter().map(|value| CommandDescriptor {
-        name: value["name"].as_str().unwrap().to_owned(),
-        args: value["args"].as_object().map(|args| args.keys().cloned().collect()).unwrap_or_default(),
-        description: value["description"].as_str().unwrap().to_owned(),
-        read_only: value["read_only"].as_bool().unwrap_or(false),
+    hosted.extend(
+        toolkit::drive::describe("dopus")
+            .into_iter()
+            .filter(|value| {
+                meta.extra_commands
+                    .iter()
+                    .any(|name| value["name"] == *name)
+            }),
+    );
+    entries.extend(hosted.into_iter().map(|value| {
+        CommandDescriptor {
+            name: value["name"].as_str().unwrap().to_owned(),
+            args: value["args"]
+                .as_object()
+                .map(|args| args.keys().cloned().collect())
+                .unwrap_or_default(),
+            description: value["description"].as_str().unwrap().to_owned(),
+            read_only: value["read_only"].as_bool().unwrap_or(false),
+        }
     }));
     entries
 }
@@ -1109,16 +1130,29 @@ mod tests {
     fn help_is_a_descriptor_list_of_answered_commands() {
         let (_dir, mut core) = core();
         let served = serve(&mut core, true, "HELP", "{}");
-        let [Served::Reply { rc, body, .. }] = served.as_slice() else { panic!("HELP reply required") };
+        let [Served::Reply { rc, body, .. }] = served.as_slice() else {
+            panic!("HELP reply required")
+        };
         assert_eq!(*rc, 0);
         let entries: Vec<bus::CommandDescriptor> = serde_json::from_str(body).unwrap();
         assert_eq!(entries[0].name, "HELP");
         for entry in entries {
             if let Some(suffix) = entry.name.strip_prefix("dopus.macros.") {
-                let result = citizen::macros::request("dopus", citizen::macros::Caller::Other, suffix, "{}").wait();
-                assert!(!result.is_err_and(|error| error.code == "UNKNOWN_COMMAND"), "{}", entry.name);
+                let result =
+                    citizen::macros::request("dopus", citizen::macros::Caller::Other, suffix, "{}")
+                        .wait();
+                assert!(
+                    !result.is_err_and(|error| error.code == "UNKNOWN_COMMAND"),
+                    "{}",
+                    entry.name
+                );
             } else {
-                assert_ne!(refusal(&serve(&mut core, true, &entry.name, "{}")).as_deref(), Some(code::UNKNOWN_COMMAND), "{}", entry.name);
+                assert_ne!(
+                    refusal(&serve(&mut core, true, &entry.name, "{}")).as_deref(),
+                    Some(code::UNKNOWN_COMMAND),
+                    "{}",
+                    entry.name
+                );
             }
         }
     }
