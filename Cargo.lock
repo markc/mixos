@@ -242,6 +242,7 @@ dependencies = [
  "cosmic-text",
  "image",
  "libc",
+ "paths",
  "schemars",
  "serde",
  "serde_json",
@@ -894,6 +895,7 @@ dependencies = [
  "libc",
  "logging",
  "mds",
+ "paths",
  "props",
  "reqwest",
  "rusqlite",
@@ -1004,6 +1006,7 @@ dependencies = [
  "ed25519-dalek",
  "futures-util",
  "libc",
+ "paths",
  "rand 0.8.8",
  "serde",
  "serde_json",
@@ -1553,6 +1556,7 @@ version = "0.1.2"
 dependencies = [
  "anyhow",
  "libc",
+ "paths",
  "rcgen 0.13.2",
  "rustls",
  "rustls-pemfile",
@@ -4306,6 +4310,7 @@ dependencies = [
  "config",
  "libc",
  "logging",
+ "paths",
  "rusqlite",
  "serde",
  "serde_json",
@@ -4386,6 +4391,7 @@ dependencies = [
  "inputd-core",
  "inputd-schema",
  "libc",
+ "paths",
  "serde",
  "serde_json",
  "tempfile",
@@ -5180,6 +5186,7 @@ name = "macros"
 version = "0.1.2"
 dependencies = [
  "libc",
+ "paths",
  "serde_json",
  "tempfile",
 ]
@@ -5686,6 +5693,7 @@ dependencies = [
  "mimedb",
  "mix",
  "notify",
+ "paths",
  "proptest",
  "pulldown-cmark",
  "quick-xml 0.41.0",
@@ -5735,6 +5743,7 @@ dependencies = [
  "libc",
  "logging",
  "mix",
+ "paths",
  "props",
  "proptest",
  "rusqlite",
@@ -5770,6 +5779,7 @@ dependencies = [
  "libc",
  "logging",
  "mix",
+ "paths",
  "reqwest",
  "rmcp",
  "schemars",
@@ -5789,6 +5799,7 @@ dependencies = [
  "bus",
  "futures",
  "notify",
+ "paths",
  "serde",
  "serde_json",
  "tokio",
@@ -6822,6 +6833,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
+name = "paths"
+version = "0.1.2"
+
+[[package]]
 name = "pbkdf2"
 version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7233,6 +7248,7 @@ dependencies = [
  "egui_kittest",
  "fontdb",
  "futures",
+ "paths",
  "preferences",
  "serde_json",
  "tokio",
@@ -8421,6 +8437,7 @@ dependencies = [
  "egui",
  "egui_kittest",
  "image",
+ "paths",
  "resvg",
  "scene",
  "serde",
@@ -9520,6 +9537,7 @@ dependencies = [
  "egui-wgpu",
  "egui_kittest",
  "libc",
+ "paths",
  "serde_json",
  "settings",
  "smithay-client-toolkit 0.20.0",
@@ -9544,6 +9562,7 @@ dependencies = [
  "ed25519-dalek",
  "fontdb",
  "libc",
+ "paths",
  "png 0.18.1",
  "rio-vt",
  "serde",
@@ -10018,6 +10037,7 @@ dependencies = [
  "image",
  "libc",
  "macros",
+ "paths",
  "png 0.18.1",
  "pulldown-cmark",
  "raw-window-handle",
@@ -10918,6 +10938,7 @@ dependencies = [
  "logging",
  "mimalloc",
  "mix",
+ "paths",
  "props",
  "pulldown-cmark",
  "rand 0.8.8",
@@ -11943,6 +11964,7 @@ dependencies = [
  "futures",
  "inspector",
  "macros",
+ "paths",
  "serde",
  "serde_json",
  "settings",
