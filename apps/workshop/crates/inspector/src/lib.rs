@@ -8,5 +8,5 @@ pub mod engine;
 pub mod model;
 pub mod workshop;
 
-pub use engine::{Dialog, Effect, Engine, Row, RowKind, Session, UiState};
+pub use engine::{Dialog, DockSide, Effect, Engine, Row, RowKind, Session, UiState};
 pub use model::{Selection, Snapshot};

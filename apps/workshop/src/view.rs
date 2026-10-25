@@ -12,7 +12,7 @@
 //! modal dialogs.
 use crate::{label, label_with};
 use egui::{Align, Layout, RichText, ScrollArea, TextEdit, Ui};
-use inspector::{Dialog, Engine, Row, RowKind};
+use inspector::{Dialog, DockSide, Engine, Row, RowKind};
 use toolkit::action::Origin;
 use toolkit::button::PushButton;
 use toolkit::dialog::{self, Choice};
@@ -28,6 +28,9 @@ pub enum UiEvent {
     MacroDraft(String),
     Macro(String, serde_json::Value),
     Dock(bool),
+    DockSide(DockSide),
+    DockSize(DockSide, f32),
+    DockViewport(f32),
     Pause(bool),
     TrafficFilter(String),
     Command(&'static str, Origin),
@@ -93,16 +96,34 @@ pub fn view(
         ui.add(icons::image_of(ui.ctx(), icon, ICON, colour));
         ui.small(&engine.status);
     });
-    let total = ui.available_width();
-    egui::Panel::bottom("traffic")
-        .resizable(true)
-        .default_size(if engine.workshop.dock_open {
-            180.0
+    let window = ui.max_rect().size();
+    let side = engine.ui.dock_side.effective(window.x);
+    events.push(UiEvent::DockViewport(window.x));
+    if !engine.workshop.dock_open {
+        egui::Panel::bottom("traffic-collapsed")
+            .resizable(false)
+            .exact_size(28.0)
+            .frame(bars::dock_frame(ui.ctx()))
+            .show(ui, |ui| traffic(ui, engine, side, &mut events));
+    } else {
+        let (panel, extent, share, limits) = if side == DockSide::Right {
+            (egui::Panel::right("traffic-right"), window.x, engine.ui.dock_width, 0.2..=0.5)
         } else {
-            28.0
-        })
-        .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| traffic(ui, engine, &mut events));
+            (egui::Panel::bottom("traffic-bottom"), window.y, engine.ui.dock_height, 0.12..=0.5)
+        };
+        let panel = panel
+            .resizable(true)
+            .default_size(extent * share.clamp(*limits.start(), *limits.end()))
+            .size_range(extent * limits.start()..=extent * limits.end())
+            .frame(bars::dock_frame(ui.ctx()))
+            .show(ui, |ui| traffic(ui, engine, side, &mut events));
+        let size = if side == DockSide::Right { panel.response.rect.width() }
+            else { panel.response.rect.height() } / extent.max(1.0);
+        if (size - share).abs() > 0.005 {
+            events.push(UiEvent::DockSize(side, size));
+        }
+    }
+    let total = ui.available_width();
     let left = egui::Panel::left("services")
         .resizable(true)
         .default_size(total * engine.ui.split)
@@ -384,11 +405,19 @@ fn details(
     });
 }
 
-fn traffic(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
-    ui.horizontal(|ui| {
+fn traffic(ui: &mut Ui, engine: &Engine, side: DockSide, events: &mut Vec<UiEvent>) {
+    ui.horizontal_wrapped(|ui| {
         if toolkit::selectable(ui, engine.workshop.dock_open, label("traffic")).clicked() {
             events.push(UiEvent::Dock(!engine.workshop.dock_open));
         }
+        if ui.add(egui::Button::image(icons::image_of(
+            ui.ctx(), Icon::PanelRight, ICON, ui.visuals().text_color(),
+        ))).on_hover_text(label("traffic-switch-side")).clicked() {
+            events.push(UiEvent::DockSide(if side == DockSide::Right {
+                DockSide::Bottom
+            } else { DockSide::Right }));
+        }
+        if !engine.workshop.dock_open { return; }
         let mut paused = engine.workshop.paused;
         if ui.checkbox(&mut paused, label("traffic-pause")).changed() {
             events.push(UiEvent::Pause(paused));
@@ -414,11 +443,27 @@ fn traffic(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     if !engine.workshop.dock_open {
         return;
     }
+    traffic_body(ui, engine, side);
+}
+
+fn traffic_body(ui: &mut Ui, engine: &Engine, side: DockSide) {
     ScrollArea::both()
         .id_salt("traffic-rows")
         .auto_shrink(false)
         .stick_to_bottom(true)
         .show(ui, |ui| {
+            if side == DockSide::Right {
+                for (index, row) in engine.workshop.rows(100, &engine.workshop.filter).iter().enumerate() {
+                    let text = |key: &str| row[key].as_str().map(str::to_owned)
+                        .unwrap_or_else(|| if row[key].is_null() { String::new() } else { row[key].to_string() });
+                    egui::CollapsingHeader::new(RichText::new(format!("{} · {} · {} · {}",
+                        text("ts"), text("command"), text("rc"), text("ms"))).monospace())
+                        .id_salt(("traffic-body", index))
+                        .show(ui, |ui| traffic_row_body(ui, row));
+                    ui.label(RichText::new(format!("{} → {} · {}", text("from"), text("service"), text("direction"))).small().weak());
+                }
+                return;
+            }
             egui::Grid::new("traffic-grid").show(ui, |ui| {
                 for key in [
                     "traffic-time",
@@ -452,24 +497,20 @@ fn traffic(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                     }
                     egui::CollapsingHeader::new(RichText::new(text("command")).monospace())
                         .id_salt(("traffic-body", index))
-                        .show(ui, |ui| {
-                            ui.set_max_width(420.0);
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(
-                                        serde_json::to_string_pretty(row).unwrap_or_default(),
-                                    )
-                                    .monospace(),
-                                )
-                                .wrap(),
-                            );
-                        });
+                        .show(ui, |ui| traffic_row_body(ui, row));
                     ui.monospace(text("rc"));
                     ui.monospace(text("ms"));
                     ui.end_row();
                 }
             });
         });
+}
+
+fn traffic_row_body(ui: &mut Ui, row: &serde_json::Value) {
+    ui.set_max_width(ui.available_width().min(420.0));
+    ui.add(egui::Label::new(RichText::new(
+        serde_json::to_string_pretty(row).unwrap_or_default(),
+    ).monospace()).wrap());
 }
 
 fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {

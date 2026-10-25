@@ -40,6 +40,10 @@ fn engine(dialog: Option<Dialog>) -> Engine {
 
 /// The window over `engine`; the state collects every frame's events.
 fn harness(engine: Engine) -> Harness<'static, Vec<UiEvent>> {
+    sized_harness(engine, egui::vec2(980.0, 620.0))
+}
+
+fn sized_harness(engine: Engine, size: egui::Vec2) -> Harness<'static, Vec<UiEvent>> {
     let registry = actions::registry();
     let strings = strings();
     let theme = Theme::for_context(DesignContext {
@@ -48,7 +52,7 @@ fn harness(engine: Engine) -> Harness<'static, Vec<UiEvent>> {
         ..DesignContext::default()
     });
     let mut h = Harness::builder()
-        .with_size(egui::vec2(980.0, 620.0))
+        .with_size(size)
         .build_ui_state(
             move |ui, events: &mut Vec<UiEvent>| {
                 events.extend(view(ui, &engine, &registry, &strings))
@@ -58,6 +62,50 @@ fn harness(engine: Engine) -> Harness<'static, Vec<UiEvent>> {
     toolkit::install(&h.ctx, &theme);
     h.run();
     h
+}
+
+#[test]
+fn auto_dock_is_right_when_wide_and_bottom_when_narrow() {
+    for (size, right) in [(egui::vec2(1920.0, 1080.0), true), (egui::vec2(900.0, 700.0), false)] {
+        let h = sized_harness(engine(None), size);
+        let traffic = h.get_by_label(&label("traffic")).rect();
+        let details = h.get_by_label(&label("details")).rect();
+        if right { assert!(traffic.left() > details.right(), "{traffic:?} {details:?}"); }
+        else { assert!(traffic.top() > details.bottom(), "{traffic:?} {details:?}"); }
+    }
+}
+
+#[test]
+fn explicit_bottom_and_saved_sizes_are_honoured() {
+    for side in [inspector::DockSide::Bottom, inspector::DockSide::Right] {
+        let mut e = engine(None);
+        e.ui.dock_side = side;
+        e.set_dock_size(side, 0.4);
+        let h = sized_harness(e, egui::vec2(1920.0, 1080.0));
+        let traffic = h.get_by_label(&label("traffic")).rect();
+        let details = h.get_by_label(&label("details")).rect();
+        let (id, extent) = if side == inspector::DockSide::Right {
+            assert!(traffic.left() > details.right());
+            ("traffic-right", 1920.0)
+        } else {
+            assert!(traffic.top() > details.bottom());
+            ("traffic-bottom", 1080.0)
+        };
+        let panel = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new(id)).unwrap();
+        let size = if side == inspector::DockSide::Right { panel.size().x } else { panel.size().y };
+        assert!((size / extent - 0.4).abs() < 0.02, "{size} / {extent}");
+    }
+}
+
+#[test]
+fn collapsed_traffic_reopens_with_one_click() {
+    let mut e = engine(None);
+    e.ui.dock_side = inspector::DockSide::Right;
+    e.workshop.dock_open = false;
+    let mut h = sized_harness(e, egui::vec2(1920.0, 1080.0));
+    h.get_by_label(&label("traffic")).click();
+    h.run();
+    assert!(h.state().contains(&UiEvent::Dock(true)));
 }
 
 fn closed(h: &Harness<'_, Vec<UiEvent>>) -> bool {

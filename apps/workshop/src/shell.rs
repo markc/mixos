@@ -92,6 +92,12 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::Select(row) => engine.select_row(&row),
             UiEvent::Body(body) => engine.set_body(body),
             UiEvent::Split(split) => engine.set_split(split),
+            UiEvent::DockSide(side) => engine.set_dock_side(side),
+            UiEvent::DockSize(side, size) => engine.set_dock_size(side, size),
+            UiEvent::DockViewport(width) => {
+                engine.dock_window_width = width;
+                engine.dock_effective = engine.ui.dock_side.effective(width);
+            }
             UiEvent::CloseDialog => engine.close_dialog(),
             UiEvent::FilterFocused => engine.filter_focused(),
             UiEvent::SetMode(mode) => engine.set_mode(mode),
@@ -1003,6 +1009,13 @@ impl Shell {
             let panel = egui::Id::new(SERVICES_PANEL);
             ui.ctx()
                 .data_mut(|d| d.remove::<egui::containers::panel::PanelState>(panel));
+        }
+        if std::mem::take(&mut self.engine.dock_requested) {
+            ui.ctx().data_mut(|d| {
+                for name in ["traffic-bottom", "traffic-right"] {
+                    d.remove::<egui::containers::panel::PanelState>(egui::Id::new(name));
+                }
+            });
         }
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);
         let mut events = view(ui, &self.engine, &self.commands, &self.strings);

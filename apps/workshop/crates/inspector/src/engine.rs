@@ -99,8 +99,39 @@ pub struct Row {
 
 /// The part of the state a person arranges, saved and restored as one
 /// value and readable over the Bus (`workshop.info`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DockSide {
+    #[default]
+    Auto,
+    Bottom,
+    Right,
+}
+
+// Leave enough room for both the inspector and readable traffic rows.
+pub const DOCK_RIGHT_WIDTH: f32 = 1280.0;
+
+impl DockSide {
+    pub fn effective(self, width: f32) -> Self {
+        match self {
+            Self::Auto if width >= DOCK_RIGHT_WIDTH => Self::Right,
+            Self::Auto => Self::Bottom,
+            side => side,
+        }
+    }
+}
+
+fn dock_width() -> f32 { 0.3 }
+fn dock_height() -> f32 { 0.28 }
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UiState {
+    #[serde(default)]
+    pub dock_side: DockSide,
+    #[serde(default = "dock_width")]
+    pub dock_width: f32,
+    #[serde(default = "dock_height")]
+    pub dock_height: f32,
     #[serde(default)]
     pub macros_open: bool,
     pub selected: Option<Selection>,
@@ -134,6 +165,9 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self {
+            dock_side: DockSide::Auto,
+            dock_width: dock_width(),
+            dock_height: dock_height(),
             macros_open: false,
             selected: None,
             row_key: None,
@@ -271,6 +305,9 @@ pub struct Engine {
     /// `workshop.split` set the split: the shell drops the panel width
     /// egui remembers, so the window takes the new one.
     pub split_requested: bool,
+    pub dock_requested: bool,
+    pub dock_effective: DockSide,
+    pub dock_window_width: f32,
     /// The session theme, as the shell loaded it.
     pub session: Session,
     next_ticket: u64,
@@ -298,6 +335,9 @@ impl Engine {
             connected: true,
             quitting: false,
             split_requested: false,
+            dock_requested: false,
+            dock_effective: DockSide::Bottom,
+            dock_window_width: 0.0,
             session: Session::default(),
             next_ticket: 0,
             discovery: None,
@@ -359,6 +399,10 @@ impl Engine {
     pub fn info(&self) -> Value {
         let mut info = self.state();
         info["ui"]["split"] = json!(rounded(self.ui.split));
+        info["ui"]["dock_effective"] = json!(self.dock_effective);
+        info["ui"]["dock_size"] = json!(rounded(if self.dock_effective == DockSide::Right {
+            self.ui.dock_width
+        } else { self.ui.dock_height }));
         info
     }
 
@@ -643,6 +687,22 @@ impl Engine {
             self.status = self.label("body-too-large");
         } else {
             self.ui.body = body;
+        }
+    }
+
+    pub fn set_dock_side(&mut self, side: DockSide) {
+        self.ui.dock_side = side;
+        self.dock_effective = side.effective(self.dock_window_width);
+        self.dock_requested = true;
+    }
+
+    pub fn set_dock_size(&mut self, side: DockSide, size: f32) {
+        if size.is_finite() {
+            if side == DockSide::Right {
+                self.ui.dock_width = size.clamp(0.2, 0.5);
+            } else {
+                self.ui.dock_height = size.clamp(0.12, 0.5);
+            }
         }
     }
 
@@ -968,6 +1028,7 @@ impl Engine {
             | "workshop.filter"
             | "workshop.body"
             | "workshop.split"
+            | "workshop.dock"
             | "workshop.expand"
             | "workshop.select_row"
             | "workshop.dialog" => match self.edit(command_name, &args) {
@@ -1103,6 +1164,27 @@ impl Engine {
                 }
                 self.set_body(body);
                 Ok(json!({"body":self.ui.body}))
+            }
+            "workshop.dock" => {
+                let side: DockSide = args.get("side").cloned()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .ok_or(("ARGUMENT", "side must be auto, bottom or right".to_owned()))?;
+                let size = args.get("size").map(|v| v.as_f64()
+                    .filter(|v| (0.0..=1.0).contains(v))
+                    .ok_or(("ARGUMENT", "size must be a number from 0 to 1".to_owned())))
+                    .transpose()?;
+                let open = args.get("open").map(|v| v.as_bool()
+                    .ok_or(("ARGUMENT", "open must be a bool".to_owned())))
+                    .transpose()?;
+                self.set_dock_side(side);
+                if let Some(size) = size {
+                    self.set_dock_size(self.dock_effective, size as f32);
+                }
+                if let Some(open) = open { self.workshop.dock_open = open; }
+                self.dock_requested = true;
+                Ok(json!({"side":self.ui.dock_side,"effective":self.dock_effective,
+                    "width":rounded(self.ui.dock_width),"height":rounded(self.ui.dock_height),
+                    "open":self.workshop.dock_open}))
             }
             "workshop.split" => {
                 let value = args
@@ -2193,6 +2275,9 @@ mod tests {
     #[test]
     fn ui_state_round_trips() {
         let mut e = engine();
+        e.ui.dock_side = DockSide::Right;
+        e.ui.dock_width = 0.4;
+        e.ui.dock_height = 0.2;
         e.ui.selected = Some(target());
         e.ui.filter = "ex".into();
         e.toggle("mesh");
@@ -2209,6 +2294,40 @@ mod tests {
             (back.theme_scheme, back.theme_mode),
             (Some(Scheme::Forest), Some(Mode::Dark))
         );
+    }
+
+    #[test]
+    fn old_ui_states_default_to_auto_dock() {
+        let mut old = serde_json::to_value(UiState::default()).unwrap();
+        for key in ["dock_side", "dock_width", "dock_height"] {
+            old.as_object_mut().unwrap().remove(key);
+        }
+        let loaded: UiState = serde_json::from_value(old).unwrap();
+        assert_eq!(loaded.dock_side, DockSide::Auto);
+        assert_eq!((loaded.dock_width, loaded.dock_height), (0.3, 0.28));
+    }
+
+    #[test]
+    fn dock_sets_clamps_and_refuses_invalid_arguments_atomically() {
+        let mut e = engine();
+        e.dock_window_width = 1920.0;
+        let (rc, body) = ask(&mut e, "workshop.dock", json!({"side":"right","size":0.4,"open":false}));
+        assert_eq!(rc, 0);
+        assert_eq!(body["width"], 0.4);
+        assert!(!e.workshop.dock_open);
+        assert!(e.dock_requested);
+        assert_eq!(ask(&mut e, "workshop.dock", json!({"side":"right","size":0.9})).1["width"], 0.5);
+        assert_eq!(ask(&mut e, "workshop.dock", json!({"side":"bottom","size":0.0,"open":true})).1["height"], 0.12);
+        assert!(e.workshop.dock_open);
+        ask(&mut e, "workshop.dock", json!({"side":"auto","size":0.35}));
+        assert_eq!(e.dock_effective, DockSide::Right);
+        assert_eq!(e.info()["ui"]["dock_size"], 0.35);
+        for args in [json!({}), json!({"side":"left"}), json!({"side":"right","size":1.1}),
+            json!({"side":"right","size":"half"}), json!({"side":"right","open":0})] {
+            let before = e.ui.clone();
+            assert_eq!(code(ask(&mut e, "workshop.dock", args)), "ARGUMENT");
+            assert_eq!(e.ui, before);
+        }
     }
 
     #[test]
