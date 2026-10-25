@@ -121,8 +121,12 @@ impl DockSide {
     }
 }
 
-fn dock_width() -> f32 { 0.3 }
-fn dock_height() -> f32 { 0.28 }
+fn dock_width() -> f32 {
+    0.3
+}
+fn dock_height() -> f32 {
+    0.28
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UiState {
@@ -402,7 +406,9 @@ impl Engine {
         info["ui"]["dock_effective"] = json!(self.dock_effective);
         info["ui"]["dock_size"] = json!(rounded(if self.dock_effective == DockSide::Right {
             self.ui.dock_width
-        } else { self.ui.dock_height }));
+        } else {
+            self.ui.dock_height
+        }));
         info
     }
 
@@ -1166,25 +1172,39 @@ impl Engine {
                 Ok(json!({"body":self.ui.body}))
             }
             "workshop.dock" => {
-                let side: DockSide = args.get("side").cloned()
+                let side: DockSide = args
+                    .get("side")
+                    .cloned()
                     .and_then(|v| serde_json::from_value(v).ok())
                     .ok_or(("ARGUMENT", "side must be auto, bottom or right".to_owned()))?;
-                let size = args.get("size").map(|v| v.as_f64()
-                    .filter(|v| (0.0..=1.0).contains(v))
-                    .ok_or(("ARGUMENT", "size must be a number from 0 to 1".to_owned())))
+                let size = args
+                    .get("size")
+                    .map(|v| {
+                        v.as_f64()
+                            .filter(|v| (0.0..=1.0).contains(v))
+                            .ok_or(("ARGUMENT", "size must be a number from 0 to 1".to_owned()))
+                    })
                     .transpose()?;
-                let open = args.get("open").map(|v| v.as_bool()
-                    .ok_or(("ARGUMENT", "open must be a bool".to_owned())))
+                let open = args
+                    .get("open")
+                    .map(|v| {
+                        v.as_bool()
+                            .ok_or(("ARGUMENT", "open must be a bool".to_owned()))
+                    })
                     .transpose()?;
                 self.set_dock_side(side);
                 if let Some(size) = size {
                     self.set_dock_size(self.dock_effective, size as f32);
                 }
-                if let Some(open) = open { self.workshop.dock_open = open; }
+                if let Some(open) = open {
+                    self.workshop.dock_open = open;
+                }
                 self.dock_requested = true;
-                Ok(json!({"side":self.ui.dock_side,"effective":self.dock_effective,
+                Ok(
+                    json!({"side":self.ui.dock_side,"effective":self.dock_effective,
                     "width":rounded(self.ui.dock_width),"height":rounded(self.ui.dock_height),
-                    "open":self.workshop.dock_open}))
+                    "open":self.workshop.dock_open}),
+                )
             }
             "workshop.split" => {
                 let value = args
@@ -2311,19 +2331,39 @@ mod tests {
     fn dock_sets_clamps_and_refuses_invalid_arguments_atomically() {
         let mut e = engine();
         e.dock_window_width = 1920.0;
-        let (rc, body) = ask(&mut e, "workshop.dock", json!({"side":"right","size":0.4,"open":false}));
+        let (rc, body) = ask(
+            &mut e,
+            "workshop.dock",
+            json!({"side":"right","size":0.4,"open":false}),
+        );
         assert_eq!(rc, 0);
         assert_eq!(body["width"], 0.4);
         assert!(!e.workshop.dock_open);
         assert!(e.dock_requested);
-        assert_eq!(ask(&mut e, "workshop.dock", json!({"side":"right","size":0.9})).1["width"], 0.5);
-        assert_eq!(ask(&mut e, "workshop.dock", json!({"side":"bottom","size":0.0,"open":true})).1["height"], 0.12);
+        assert_eq!(
+            ask(&mut e, "workshop.dock", json!({"side":"right","size":0.9})).1["width"],
+            0.5
+        );
+        assert_eq!(
+            ask(
+                &mut e,
+                "workshop.dock",
+                json!({"side":"bottom","size":0.0,"open":true})
+            )
+            .1["height"],
+            0.12
+        );
         assert!(e.workshop.dock_open);
         ask(&mut e, "workshop.dock", json!({"side":"auto","size":0.35}));
         assert_eq!(e.dock_effective, DockSide::Right);
         assert_eq!(e.info()["ui"]["dock_size"], 0.35);
-        for args in [json!({}), json!({"side":"left"}), json!({"side":"right","size":1.1}),
-            json!({"side":"right","size":"half"}), json!({"side":"right","open":0})] {
+        for args in [
+            json!({}),
+            json!({"side":"left"}),
+            json!({"side":"right","size":1.1}),
+            json!({"side":"right","size":"half"}),
+            json!({"side":"right","open":0}),
+        ] {
             let before = e.ui.clone();
             assert_eq!(code(ask(&mut e, "workshop.dock", args)), "ARGUMENT");
             assert_eq!(e.ui, before);

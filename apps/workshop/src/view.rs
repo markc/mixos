@@ -107,9 +107,19 @@ pub fn view(
             .show(ui, |ui| traffic(ui, engine, side, &mut events));
     } else {
         let (panel, extent, share, limits) = if side == DockSide::Right {
-            (egui::Panel::right("traffic-right"), window.x, engine.ui.dock_width, 0.2..=0.5)
+            (
+                egui::Panel::right("traffic-right"),
+                window.x,
+                engine.ui.dock_width,
+                0.2..=0.5,
+            )
         } else {
-            (egui::Panel::bottom("traffic-bottom"), window.y, engine.ui.dock_height, 0.12..=0.5)
+            (
+                egui::Panel::bottom("traffic-bottom"),
+                window.y,
+                engine.ui.dock_height,
+                0.12..=0.5,
+            )
         };
         let panel = panel
             .resizable(true)
@@ -117,8 +127,11 @@ pub fn view(
             .size_range(extent * limits.start()..=extent * limits.end())
             .frame(bars::dock_frame(ui.ctx()))
             .show(ui, |ui| traffic(ui, engine, side, &mut events));
-        let size = if side == DockSide::Right { panel.response.rect.width() }
-            else { panel.response.rect.height() } / extent.max(1.0);
+        let size = if side == DockSide::Right {
+            panel.response.rect.width()
+        } else {
+            panel.response.rect.height()
+        } / extent.max(1.0);
         if (size - share).abs() > 0.005 {
             events.push(UiEvent::DockSize(side, size));
         }
@@ -410,14 +423,25 @@ fn traffic(ui: &mut Ui, engine: &Engine, side: DockSide, events: &mut Vec<UiEven
         if toolkit::selectable(ui, engine.workshop.dock_open, label("traffic")).clicked() {
             events.push(UiEvent::Dock(!engine.workshop.dock_open));
         }
-        if ui.add(egui::Button::image(icons::image_of(
-            ui.ctx(), Icon::PanelRight, ICON, ui.visuals().text_color(),
-        ))).on_hover_text(label("traffic-switch-side")).clicked() {
+        if ui
+            .add(egui::Button::image(icons::image_of(
+                ui.ctx(),
+                Icon::PanelRight,
+                ICON,
+                ui.visuals().text_color(),
+            )))
+            .on_hover_text(label("traffic-switch-side"))
+            .clicked()
+        {
             events.push(UiEvent::DockSide(if side == DockSide::Right {
                 DockSide::Bottom
-            } else { DockSide::Right }));
+            } else {
+                DockSide::Right
+            }));
         }
-        if !engine.workshop.dock_open { return; }
+        if !engine.workshop.dock_open {
+            return;
+        }
         let mut paused = engine.workshop.paused;
         if ui.checkbox(&mut paused, label("traffic-pause")).changed() {
             events.push(UiEvent::Pause(paused));
@@ -453,14 +477,43 @@ fn traffic_body(ui: &mut Ui, engine: &Engine, side: DockSide) {
         .stick_to_bottom(true)
         .show(ui, |ui| {
             if side == DockSide::Right {
-                for (index, row) in engine.workshop.rows(100, &engine.workshop.filter).iter().enumerate() {
-                    let text = |key: &str| row[key].as_str().map(str::to_owned)
-                        .unwrap_or_else(|| if row[key].is_null() { String::new() } else { row[key].to_string() });
-                    egui::CollapsingHeader::new(RichText::new(format!("{} · {} · {} · {}",
-                        text("ts"), text("command"), text("rc"), text("ms"))).monospace())
-                        .id_salt(("traffic-body", index))
-                        .show(ui, |ui| traffic_row_body(ui, row));
-                    ui.label(RichText::new(format!("{} → {} · {}", text("from"), text("service"), text("direction"))).small().weak());
+                for (index, row) in engine
+                    .workshop
+                    .rows(100, &engine.workshop.filter)
+                    .iter()
+                    .enumerate()
+                {
+                    let text = |key: &str| {
+                        row[key].as_str().map(str::to_owned).unwrap_or_else(|| {
+                            if row[key].is_null() {
+                                String::new()
+                            } else {
+                                row[key].to_string()
+                            }
+                        })
+                    };
+                    egui::CollapsingHeader::new(
+                        RichText::new(format!(
+                            "{} · {} · {} · {}",
+                            text("ts"),
+                            text("command"),
+                            text("rc"),
+                            text("ms")
+                        ))
+                        .monospace(),
+                    )
+                    .id_salt(("traffic-body", index))
+                    .show(ui, |ui| traffic_row_body(ui, row));
+                    ui.label(
+                        RichText::new(format!(
+                            "{} → {} · {}",
+                            text("from"),
+                            text("service"),
+                            text("direction")
+                        ))
+                        .small()
+                        .weak(),
+                    );
                 }
                 return;
             }
@@ -508,9 +561,12 @@ fn traffic_body(ui: &mut Ui, engine: &Engine, side: DockSide) {
 
 fn traffic_row_body(ui: &mut Ui, row: &serde_json::Value) {
     ui.set_max_width(ui.available_width().min(420.0));
-    ui.add(egui::Label::new(RichText::new(
-        serde_json::to_string_pretty(row).unwrap_or_default(),
-    ).monospace()).wrap());
+    ui.add(
+        egui::Label::new(
+            RichText::new(serde_json::to_string_pretty(row).unwrap_or_default()).monospace(),
+        )
+        .wrap(),
+    );
 }
 
 fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {

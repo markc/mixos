@@ -215,6 +215,7 @@
                         <a href="#bus">Bus</a>
                         <a href="#commands-and-keys">Commands and keys</a>
                         <a href="#running-it">Running it</a>
+                        <a href="#traffic-dock" class="toc-h3">Traffic dock</a>
                         <a href="#testing">Testing</a>
                         <a href="#macro-bus-commands">Macro Bus commands</a>
                     </nav>
@@ -344,7 +345,7 @@ with owner <code>workshop</code>.</p>
 <code>workshop.reply</code>, <code>workshop.actions</code>, plus <code>HELP</code> and <code>app.describe</code>.</li>
 <li>Changing state: <code>workshop.filter</code>, <code>workshop.expand</code>,
 <code>workshop.select_row</code>, <code>workshop.select</code>, <code>workshop.body</code>,
-<code>workshop.split</code>, <code>workshop.dialog</code>, <code>workshop.theme</code>,
+<code>workshop.split</code>, <code>workshop.dock</code>, <code>workshop.dialog</code>, <code>workshop.theme</code>,
 <code>workshop.call</code>, <code>workshop.execute</code>, <code>workshop.refresh</code>,
 <code>workshop.show</code>, <code>workshop.quit</code>.</li>
 <li>The window's drive commands, from the toolkit: <code>workshop.ui.tree</code>,
@@ -381,6 +382,10 @@ print $result
 <tr><td><code>help.about</code></td><td>Help › About Workshop</td><td></td></tr>
 <tr><td><code>view.search</code></td><td>title bar search button</td><td>Ctrl+F</td></tr>
 <tr><td><code>view.mode</code></td><td>title bar light/dark button</td><td></td></tr>
+<tr><td><code>view.traffic</code></td><td>View › Traffic</td><td></td></tr>
+<tr><td><code>view.traffic.auto</code></td><td>View › Traffic placement › Auto</td><td></td></tr>
+<tr><td><code>view.traffic.bottom</code></td><td>View › Traffic placement › Bottom</td><td></td></tr>
+<tr><td><code>view.traffic.right</code></td><td>View › Traffic placement › Right</td><td></td></tr>
 </tbody></table>
 <p>View › Theme adds the <code>view.theme.*</code>, <code>view.mode.*</code>, <code>view.style.*</code>,
 <code>view.decorations.*</code> and <code>view.captions.*</code> choices. They set the theme of
@@ -389,6 +394,24 @@ opens with a field that searches every command. The desktop profile can
 rebind the shortcuts (<code>keymaps.workshop.&lt;id&gt;</code>), and <code>workshop.actions</code>
 reports the ones in force.</p>
 <h2 id="running-it">Running it</h2>
+<h3 id="traffic-dock">Traffic dock</h3>
+<p>Traffic uses the right pane when Auto sees a window at least 1280 logical
+pixels wide, and the bottom pane otherwise. View › Traffic placement selects
+Auto, Bottom or Right; the dock header's panel button switches between Bottom
+and Right. Drag the pane boundary to resize it. Placement, right width and
+bottom height are saved in the window's <code>UiState</code>, with separate sizes for
+each side. Width is kept within 20–50% of the window, height within 12–50%.
+The services split is a share of the width left beside Traffic.</p>
+<p>Click Traffic in its header (or View › Traffic) to collapse it to a bottom
+header strip; click again to reopen it. Right-side rows show time, command,
+return code and milliseconds on the first line, with sender, service and
+direction beneath. Both layouts expand a row to show its retained JSON.</p>
+<p><code>workshop.dock {side:"auto"|"bottom"|"right", size?:number, open?:bool}</code>
+sets placement, optionally the active side's share (0–1, clamped to the limits
+above) and whether the dock is open. Invalid values return <code>ARGUMENT</code> without
+changing state. In Auto, size applies to the side used by the current window
+(Bottom in a headless instance). <code>workshop.info</code> reports <code>ui.dock_side</code>,
+<code>ui.dock_effective</code>, <code>ui.dock_size</code>, <code>ui.dock_width</code> and <code>ui.dock_height</code>.</p>
 <pre><code class="language-text">workshop [--headless] [--noded-url URL] [--service NAME] [--comp NAME]
 </code></pre>
 <ul>

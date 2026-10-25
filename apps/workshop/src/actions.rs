@@ -210,9 +210,17 @@ pub fn registry() -> Registry<Engine> {
         ("view.traffic.bottom", "traffic-bottom", DockSide::Bottom),
         ("view.traffic.right", "traffic-right", DockSide::Right),
     ] {
-        r.add_choice(toolkit::action::Place {
-            id, label, menu: Some("view"), submenu: Some("traffic-placement"), group: 1,
-        }, move |e| e.set_dock_side(side), move |e| e.ui.dock_side == side);
+        r.add_choice(
+            toolkit::action::Place {
+                id,
+                label,
+                menu: Some("view"),
+                submenu: Some("traffic-placement"),
+                group: 1,
+            },
+            move |e| e.set_dock_side(side),
+            move |e| e.ui.dock_side == side,
+        );
     }
     r.add(Action {
         id: "bus.observe",

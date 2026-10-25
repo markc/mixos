@@ -51,14 +51,10 @@ fn sized_harness(engine: Engine, size: egui::Vec2) -> Harness<'static, Vec<UiEve
         mode: Mode::Light,
         ..DesignContext::default()
     });
-    let mut h = Harness::builder()
-        .with_size(size)
-        .build_ui_state(
-            move |ui, events: &mut Vec<UiEvent>| {
-                events.extend(view(ui, &engine, &registry, &strings))
-            },
-            Vec::new(),
-        );
+    let mut h = Harness::builder().with_size(size).build_ui_state(
+        move |ui, events: &mut Vec<UiEvent>| events.extend(view(ui, &engine, &registry, &strings)),
+        Vec::new(),
+    );
     toolkit::install(&h.ctx, &theme);
     h.run();
     h
@@ -66,12 +62,18 @@ fn sized_harness(engine: Engine, size: egui::Vec2) -> Harness<'static, Vec<UiEve
 
 #[test]
 fn auto_dock_is_right_when_wide_and_bottom_when_narrow() {
-    for (size, right) in [(egui::vec2(1920.0, 1080.0), true), (egui::vec2(900.0, 700.0), false)] {
+    for (size, right) in [
+        (egui::vec2(1920.0, 1080.0), true),
+        (egui::vec2(900.0, 700.0), false),
+    ] {
         let h = sized_harness(engine(None), size);
         let traffic = h.get_by_label(&label("traffic")).rect();
         let details = h.get_by_label(&label("details")).rect();
-        if right { assert!(traffic.left() > details.right(), "{traffic:?} {details:?}"); }
-        else { assert!(traffic.top() > details.bottom(), "{traffic:?} {details:?}"); }
+        if right {
+            assert!(traffic.left() > details.right(), "{traffic:?} {details:?}");
+        } else {
+            assert!(traffic.top() > details.bottom(), "{traffic:?} {details:?}");
+        }
     }
 }
 
@@ -92,7 +94,11 @@ fn explicit_bottom_and_saved_sizes_are_honoured() {
             ("traffic-bottom", 1080.0)
         };
         let panel = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new(id)).unwrap();
-        let size = if side == inspector::DockSide::Right { panel.size().x } else { panel.size().y };
+        let size = if side == inspector::DockSide::Right {
+            panel.size().x
+        } else {
+            panel.size().y
+        };
         assert!((size / extent - 0.4).abs() < 0.02, "{size} / {extent}");
     }
 }

@@ -35312,7 +35312,7 @@ with owner `workshop`.
   `workshop.reply`, `workshop.actions`, plus `HELP` and `app.describe`.
 - Changing state: `workshop.filter`, `workshop.expand`,
   `workshop.select_row`, `workshop.select`, `workshop.body`,
-  `workshop.split`, `workshop.dialog`, `workshop.theme`,
+  `workshop.split`, `workshop.dock`, `workshop.dialog`, `workshop.theme`,
   `workshop.call`, `workshop.execute`, `workshop.refresh`,
   `workshop.show`, `workshop.quit`.
 - The window's drive commands, from the toolkit: `workshop.ui.tree`,
@@ -35357,6 +35357,10 @@ Every menu item, shortcut and `workshop.execute` id is one command in
 | `help.about` | Help › About Workshop | |
 | `view.search` | title bar search button | Ctrl+F |
 | `view.mode` | title bar light/dark button | |
+| `view.traffic` | View › Traffic | |
+| `view.traffic.auto` | View › Traffic placement › Auto | |
+| `view.traffic.bottom` | View › Traffic placement › Bottom | |
+| `view.traffic.right` | View › Traffic placement › Right | |
 
 View › Theme adds the `view.theme.*`, `view.mode.*`, `view.style.*`,
 `view.decorations.*` and `view.captions.*` choices. They set the theme of
@@ -35366,6 +35370,28 @@ rebind the shortcuts (`keymaps.workshop.<id>`), and `workshop.actions`
 reports the ones in force.
 
 ## Running it
+
+### Traffic dock
+
+Traffic uses the right pane when Auto sees a window at least 1280 logical
+pixels wide, and the bottom pane otherwise. View › Traffic placement selects
+Auto, Bottom or Right; the dock header's panel button switches between Bottom
+and Right. Drag the pane boundary to resize it. Placement, right width and
+bottom height are saved in the window's `UiState`, with separate sizes for
+each side. Width is kept within 20–50% of the window, height within 12–50%.
+The services split is a share of the width left beside Traffic.
+
+Click Traffic in its header (or View › Traffic) to collapse it to a bottom
+header strip; click again to reopen it. Right-side rows show time, command,
+return code and milliseconds on the first line, with sender, service and
+direction beneath. Both layouts expand a row to show its retained JSON.
+
+`workshop.dock {side:"auto"|"bottom"|"right", size?:number, open?:bool}`
+sets placement, optionally the active side's share (0–1, clamped to the limits
+above) and whether the dock is open. Invalid values return `ARGUMENT` without
+changing state. In Auto, size applies to the side used by the current window
+(Bottom in a headless instance). `workshop.info` reports `ui.dock_side`,
+`ui.dock_effective`, `ui.dock_size`, `ui.dock_width` and `ui.dock_height`.
 
 ```text
 workshop [--headless] [--noded-url URL] [--service NAME] [--comp NAME]

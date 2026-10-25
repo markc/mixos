@@ -414,13 +414,18 @@ fn a_bus_split_is_the_rendered_split() {
 fn a_bus_dock_size_replaces_the_remembered_panel_size() {
     let mut rig = rig();
     for (id, size) in [(1, 0.4), (2, 0.2)] {
-        send(&mut rig, id, "workshop.dock", json!({"side":"bottom","size":size}));
+        send(
+            &mut rig,
+            id,
+            "workshop.dock",
+            json!({"side":"bottom","size":size}),
+        );
         wait(&mut rig, &[id]);
         assert_eq!(reply(&rig, id).unwrap().1, 0);
         rig.h.run_steps(5);
-        let panel = egui::containers::panel::PanelState::load(
-            &rig.h.ctx, egui::Id::new("traffic-bottom"),
-        ).unwrap();
+        let panel =
+            egui::containers::panel::PanelState::load(&rig.h.ctx, egui::Id::new("traffic-bottom"))
+                .unwrap();
         assert!((panel.size().y / 620.0 - size as f32).abs() < 0.02);
         assert!((engine(&rig).ui.dock_height - size as f32).abs() < 0.02);
     }
