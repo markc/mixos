@@ -1497,6 +1497,39 @@ mod numeric_tests {
     use egui_kittest::{Harness, kittest::NodeT, kittest::Queryable};
 
     #[test]
+    fn interface_size_is_always_one_pixel_control_even_at_the_design_default() {
+        for size in [None, Some(16.0)] {
+            let mut engine = Engine::new(crate::label_with);
+            engine.look.interface_font = Some(preferences::appearance::InterfaceFont {
+                weight: None,
+                size,
+            });
+            let mut h = Harness::builder()
+                .with_size(egui::vec2(720.0, 300.0))
+                .build_ui(move |ui| {
+                    interface_font_controls(ui, &engine, &mut Vec::new());
+                });
+            toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+            h.run();
+            assert_eq!(h.get_all_by_role(Role::Slider).count(), 1);
+            assert!(h.query_by_label("Use the design's size").is_none());
+        }
+    }
+
+    #[test]
+    fn off_step_density_stays_visible_as_custom() {
+        let engine = Engine::new(crate::label_with);
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(720.0, 200.0))
+            .build_ui(move |ui| {
+                density(ui, &engine, &Look { density: 1.1, ..Look::default() }, &mut Vec::new());
+            });
+        toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+        h.run();
+        h.get_by_label("Custom (1.10)");
+    }
+
+    #[test]
     fn scale_drag_applies_once_steps_are_discrete_and_reset_restores_one() {
         struct State {
             value: f64,
