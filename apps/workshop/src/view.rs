@@ -213,7 +213,7 @@ pub fn view(
         egui::Panel::left("services").frame(bars::dock_frame(ui.ctx())),
         total,
         engine.ui.split,
-        0.1..=0.8,
+        inspector::engine::SERVICES_SPLIT,
         true,
         |ui| services(ui, engine, &mut events),
     );

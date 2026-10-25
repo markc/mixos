@@ -66,6 +66,7 @@ pub struct Pending {
     row_key: Option<String>,
     pub show_selection: bool,
     done: bool,
+    selection_shown: bool,
     expanded: Option<BTreeSet<String>>,
     seen: BTreeSet<String>,
 }
@@ -76,6 +77,7 @@ impl Pending {
             row_key: saved.row_key.clone(),
             show_selection: false,
             done: false,
+            selection_shown: false,
             expanded: Some(saved.expanded.clone()),
             seen: BTreeSet::new(),
         }
@@ -126,6 +128,7 @@ impl Pending {
                 .take()
                 .filter(|s| engine.snapshot.command_name(s).is_some());
             self.show_selection = true;
+            self.selection_shown = true;
         }
         if engine.snapshot.error.is_none()
             && engine.workshop.pending == 0
@@ -142,7 +145,7 @@ impl Pending {
         }
     }
     pub fn ready(&self) -> bool {
-        self.done || self.show_selection
+        self.done || self.selection_shown
     }
     pub fn preserve_pending(&self, app: &mut Arrangement) {
         if !self.done && self.row_key.is_some() && app.row_key.is_none() {
@@ -251,6 +254,9 @@ mod tests {
         assert_eq!(e.ui.selected, a.selected);
         assert_eq!(e.ui.row_key, a.row_key);
         assert!(pending.show_selection);
+        assert!(pending.ready());
+        pending.show_selection = false;
+        assert!(pending.ready(), "consuming the reveal must not suspend scroll recording");
         assert!(
             e.take_effects().is_empty(),
             "restoration never runs a command"

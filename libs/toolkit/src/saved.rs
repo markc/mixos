@@ -8,12 +8,14 @@
 //! Individual sections decode independently. See the toolkit adoption guide.
 
 pub mod frame;
+pub mod secondary;
 pub mod widgets;
 
 pub use frame::Frame;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     time::{Duration, Instant},
 };
@@ -24,6 +26,7 @@ struct Envelope<'a, A> {
     schema_version: u32,
     window: &'a Frame,
     widgets: &'a Widgets,
+    windows: &'a BTreeMap<String, Frame>,
     app: AppSection<'a, A>,
 }
 
@@ -38,6 +41,8 @@ pub struct Store<A> {
     pub window: Frame,
     pub widgets: Widgets,
     pub app: A,
+    pub windows: BTreeMap<String, Frame>,
+    preserved: BTreeMap<String, Value>,
     path: Option<PathBuf>,
     writable: bool,
     version: u32,
@@ -56,6 +61,8 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
             window: Frame::default(),
             widgets: Widgets::default(),
             app: A::default(),
+            windows: BTreeMap::new(),
+            preserved: BTreeMap::new(),
             path,
             writable: true,
             version,
@@ -70,13 +77,33 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
                     Ok(value)
                         if value.is_object() && value["schema_version"].as_f64() == Some(1.0) =>
                     {
-                        store.window = decode(&value["window"]);
-                        store.widgets = decode(&value["widgets"]);
+                        if let Some(window) = try_decode(&value["window"]) {
+                            store.window = window;
+                        } else if let Some(raw) = value.get("window") {
+                            store.preserved.insert("window".into(), raw.clone());
+                        }
+                        if let Some(widgets) = try_decode(&value["widgets"]) {
+                            store.widgets = widgets;
+                        } else if let Some(raw) = value.get("widgets") {
+                            store.preserved.insert("widgets".into(), raw.clone());
+                        }
+                        if let Some(windows) = try_decode(&value["windows"]) {
+                            store.windows = windows;
+                        } else if let Some(raw) = value.get("windows") {
+                            store.preserved.insert("windows".into(), raw.clone());
+                        }
                         if value["app"]["version"].as_f64() == Some(f64::from(version))
                             && let Some(app) = try_decode(&value["app"]["value"])
                         {
                             store.app = app;
                             store.app_loaded = true;
+                        } else if let Some(raw) = value.get("app") {
+                            // Older versions have no migration contract and may
+                            // be replaced by current defaults. Future or broken
+                            // sections belong to their writer: retain the value.
+                            if !raw["version"].as_f64().is_some_and(|v| v < f64::from(version)) {
+                                store.preserved.insert("app".into(), raw.clone());
+                            }
                         }
                     }
                     _ => store.writable = false,
@@ -96,7 +123,7 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
 
     /// Data suitable for an app's `info`/describe response, without its path.
     pub fn describe(&self) -> Value {
-        match serde_json::to_value(self.envelope()) {
+        match self.value() {
             Ok(mut value) => {
                 value["writable"] = json!(self.writable);
                 value
@@ -112,6 +139,7 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
             schema_version: 1,
             window: &self.window,
             widgets: &self.widgets,
+            windows: &self.windows,
             app: AppSection {
                 version: self.version,
                 value: &self.app,
@@ -120,7 +148,28 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
     }
 
     fn serialise(&self) -> Result<String, String> {
-        strict::to_string_pretty(&self.envelope()).map_err(|e| e.to_string())
+        strict::to_string_pretty(&self.value()?).map_err(|e| e.to_string())
+    }
+
+    fn value(&self) -> Result<Value, String> {
+        let mut value = serde_json::to_value(self.envelope()).map_err(|e| e.to_string())?;
+        for (name, raw) in &self.preserved {
+            value[name] = raw.clone();
+        }
+        Ok(value)
+    }
+
+    /// Share secondary frames with toolkit viewports in this root context.
+    pub fn install_windows(&self, ctx: &egui::Context, app: &str) {
+        // The root store is the sole writer when it owns persistence. Child
+        // passes wake it and publish frames through the context collection.
+        secondary::install(ctx, app, None, self.windows.clone());
+    }
+
+    pub fn collect_windows(&mut self, ctx: &egui::Context, app: &str) {
+        if let Some(windows) = secondary::collect(ctx, app) {
+            self.windows = windows;
+        }
     }
 
     /// Coalesce changes; never write while any pointer button is held.
@@ -190,10 +239,6 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
     }
 }
 
-fn decode<T: DeserializeOwned + Default>(value: &Value) -> T {
-    try_decode(value).unwrap_or_default()
-}
-
 fn try_decode<T: DeserializeOwned>(value: &Value) -> Option<T> {
     // Strict data represents numbers as f64; decode typed integers through its
     // checked integer deserialiser rather than serde_json's f64 rejection.
@@ -244,6 +289,39 @@ mod tests {
         let s = Store::<App>::load(Some(dir.path().into()), 2);
         assert_eq!(s.window, Frame::default());
         assert_eq!(s.app.selected, "kept");
+    }
+    #[test]
+    fn newer_app_section_survives_an_older_apps_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("window.conf.mix");
+        std::fs::write(&path, "schema_version: 1\nwindow: {}\nwidgets: {}\napp: {version: 3, value: {future: [1, 2]}}\n").unwrap();
+        let original: Value = strict::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let mut store = Store::<App>::load(Some(dir.path().into()), 2);
+        assert!(!store.app_loaded());
+        store.window.size = Some([800.0, 500.0]);
+        assert!(store.flush().unwrap());
+        let saved: Value = strict::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(saved["app"], original["app"]);
+        assert_eq!(saved["window"]["size"], json!([800.0, 500.0]));
+    }
+    #[test]
+    fn undecodable_sections_survive_a_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("window.conf.mix");
+        for section in ["window", "widgets", "app", "windows"] {
+            let mut raw = json!({"schema_version":1,"window":{},"widgets":{},"app":{"version":2,"value":{"selected":"row"}},"windows":{}});
+            raw[section] = json!({"unexpected": [false, "future"]});
+            if section == "window" { raw[section] = json!(false); }
+            if section == "widgets" { raw[section] = json!({"panels": false}); }
+            std::fs::write(&path, strict::to_string_pretty(&raw).unwrap()).unwrap();
+            let mut store = Store::<App>::load(Some(dir.path().into()), 2);
+            store.window.maximised = true;
+            store.app.selected = "changed".into();
+            store.widgets.panels.insert("left".into(), 0.4);
+            store.flush().unwrap();
+            let saved: Value = strict::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(saved[section], raw[section], "{section}");
+        }
     }
     #[test]
     fn pointer_and_interval_coalesce_writes_and_memory_is_isolated() {

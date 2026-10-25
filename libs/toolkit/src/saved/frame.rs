@@ -131,9 +131,10 @@ impl Frame {
         }
         if call(
             "comp.window.wait",
-            json!({"match":{"app_id":app_id},"until":"mapped","timeout_ms":10000}),
+            json!({"match":{"app_id":app_id,"pid":std::process::id()},"until":"mapped","timeout_ms":10000}),
         )
         .await
+        .filter(succeeded)
         .is_none()
         {
             return;
@@ -147,14 +148,20 @@ impl Frame {
         workspace["follow"] = json!(false);
         if call("comp.window.send_to_workspace", workspace)
             .await
+            .filter(succeeded)
             .is_none()
         {
             return;
         }
-        let restored = if self.maximised {
+        if self.maximised {
             let mut maximize = target.clone();
             maximize["output"] = json!(p.output);
-            call("comp.window.maximize", maximize).await
+            let reply = call("comp.window.maximize", maximize).await;
+            if reply.as_ref().is_some_and(|r| r["error"] == "invalid_args" && r["field"] == "output") {
+                // Older compd rejects the output field. Retry only this exact
+                // refusal; disconnected outputs and policy refusals stand.
+                let _ = call("comp.window.maximize", target).await;
+            }
         } else {
             let mut place = target.clone();
             for (key, value) in [
@@ -166,19 +173,7 @@ impl Frame {
             ] {
                 place[key] = value;
             }
-            call("comp.window.place", place).await
-        };
-        // A placement refusal must not strand the window on a different
-        // workspace. Restore its previous workspace with the same generation
-        // fence, without following it. A newer window is never addressed.
-        if restored.is_none()
-            && w["workspace"].as_u64() != Some(u64::from(p.workspace))
-            && let Some(index) = w["workspace"].as_u64()
-        {
-            let mut previous = target;
-            previous["index"] = json!(index);
-            previous["follow"] = json!(false);
-            let _ = call("comp.window.send_to_workspace", previous).await;
+            let _ = call("comp.window.place", place).await;
         }
     }
 
@@ -209,6 +204,9 @@ impl Frame {
     /// Capture window geometry relative to the owning output, excluding the
     /// client's shadows and surface margins. Incomplete reads retain old state.
     pub fn capture_comp(&mut self, w: &Value, output: &Value) {
+        if let Some(maximised) = w["maximized"].as_bool() {
+            self.maximised = maximised;
+        }
         let parsed = (|| {
             Some(Placement {
                 output: w["output"].as_str()?.into(),
@@ -219,10 +217,26 @@ impl Frame {
                 height: dimension(&w["window_height"])?,
             })
         })();
-        if let Some(p) = parsed {
+        if let Some(mut p) = parsed {
+            if self.maximised {
+                if let Some(normal) = &self.placement {
+                    (p.x, p.y, p.width, p.height) = (normal.x, normal.y, normal.width, normal.height);
+                } else {
+                    // With no previous normal position, only the portable
+                    // normal size is known. Do not save maximised dimensions.
+                    if let Some([width, height]) = self.size {
+                        p.width = width.round().max(1.0) as u32;
+                        p.height = height.round().max(1.0) as u32;
+                    }
+                }
+            }
             self.placement = Some(p);
         }
     }
+}
+
+fn succeeded(reply: &Value) -> bool {
+    reply.get("error").is_none()
 }
 
 fn dimension(value: &Value) -> Option<u32> {
@@ -233,6 +247,52 @@ fn dimension(value: &Value) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn older_comp_maximize_retries_only_an_output_field_refusal() {
+        for error in [json!({"error":"invalid_args","field":"output"}), json!({"error":"unknown_output"}), json!({"error":"invalid_state"})] {
+            let mut f = frame();
+            f.maximised = true;
+            let mut maxima = Vec::new();
+            runtime().block_on(f.restore("dev.mixos.example", |command, args| {
+                let reply = if command == "comp.windows.list" { json!({"windows":[window()]}) }
+                else if command == "comp.window.maximize" { maxima.push(args); error.clone() }
+                else { json!({}) };
+                std::future::ready(Some(reply))
+            }));
+            if error["field"] == "output" {
+                assert_eq!(maxima.len(), 2);
+                assert_eq!(maxima[1], json!({"id":7,"generation":3}));
+            } else { assert_eq!(maxima.len(), 1); }
+        }
+    }
+    #[test]
+    fn maximised_capture_preserves_normal_geometry_and_updates_output_workspace() {
+        let mut f = frame();
+        let mut w = window();
+        w["maximized"] = json!(true);
+        w["output"] = json!("o_other");
+        w["workspace"] = json!(4);
+        w["window_x"] = json!(0);
+        w["window_y"] = json!(0);
+        w["window_width"] = json!(1920);
+        w["window_height"] = json!(1080);
+        f.capture_comp(&w, &json!({"x":0,"y":0}));
+        let p = f.placement.unwrap();
+        assert!(f.maximised);
+        assert_eq!((p.x, p.y, p.width, p.height), (20.0, 30.0, 900, 600));
+        assert_eq!((p.output.as_str(), p.workspace), ("o_other", 4));
+    }
+    #[test]
+    fn restore_wait_and_catalogue_select_only_this_instance() {
+        let mut other = window();
+        other["pid"] = json!(u64::from(std::process::id()) + 1);
+        other["id"] = json!(99);
+        runtime().block_on(frame().restore("dev.mixos.example", |command, args| {
+            if command == "comp.window.wait" { assert_eq!(args["match"]["pid"], std::process::id()); }
+            if command == "comp.window.place" || command == "comp.window.send_to_workspace" { assert_eq!(args["id"], 7); }
+            std::future::ready(Some(if command == "comp.windows.list" { json!({"windows":[other,window()]}) } else { json!({}) }))
+        }));
+    }
     fn frame() -> Frame {
         Frame {
             size: Some([900.0, 600.0]),
@@ -344,7 +404,7 @@ mod tests {
         assert!(calls.is_empty());
     }
     #[test]
-    fn placement_refusals_restore_the_original_workspace_without_following() {
+    fn placement_refusals_keep_the_restored_workspace_without_following() {
         for reason in [
             "invalid_state",
             "off_output",
@@ -369,7 +429,7 @@ mod tests {
                 };
                 std::future::ready(answer)
             }));
-            assert_eq!(workspace, 3, "{reason}");
+            assert_eq!(workspace, 2, "{reason}");
         }
     }
     #[test]

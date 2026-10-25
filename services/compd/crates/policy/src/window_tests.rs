@@ -983,6 +983,19 @@ fn wait_spec(window: WindowMatch, until: WaitUntil) -> WaitSpec {
     }
 }
 
+#[test]
+fn pid_wait_distinguishes_two_instances_of_one_app() {
+    let (mut registry, (alpha, _), (beta, _)) = two_windows();
+    registry.set_app_id(SurfaceId(alpha), Some("dev.mixos.same".into())).unwrap();
+    registry.set_app_id(SurfaceId(beta), Some("dev.mixos.same".into())).unwrap();
+    registry.set_pid(SurfaceId(alpha), Some(100)).unwrap();
+    registry.set_pid(SurfaceId(beta), Some(200)).unwrap();
+    for (pid, expected) in [(100, alpha), (200, beta)] {
+        let spec = wait_spec(WindowMatch { app_id: Some("dev.mixos.same".into()), pid: Some(pid), ..Default::default() }, WaitUntil::Mapped);
+        assert_eq!(wait_outcome(&registry, &spec, false, 1, |_| facts()), Some(WaitResolution::Window(SurfaceId(expected))));
+    }
+}
+
 fn by_id(id: u64, generation: u64) -> WindowMatch {
     WindowMatch {
         id: Some(id),

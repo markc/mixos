@@ -202,6 +202,7 @@ impl WaitUntil {
 /// window matching the name filters.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WindowMatch {
+    pub pid: Option<u64>,
     pub id: Option<u64>,
     pub generation: Option<u64>,
     pub app_id: Option<String>,
@@ -836,7 +837,7 @@ pub fn parse_window_command(
         }
         "comp.window.wait" => {
             const ALLOWED: &[&str] = &["match", "until", "width", "height", "timeout_ms"];
-            const MATCH: &[&str] = &["id", "generation", "app_id", "title", "title_contains"];
+            const MATCH: &[&str] = &["id", "generation", "app_id", "title", "title_contains", "pid"];
             let object = args_object(args, &empty, ALLOWED)?;
             let filters = match present(object, "match") {
                 Some(Value::Object(filters)) => filters,
@@ -858,6 +859,7 @@ pub fn parse_window_command(
                 });
             }
             let window = WindowMatch {
+                pid: window_arg(filters, "pid")?,
                 id: window_arg(filters, "id")?,
                 generation: window_arg(filters, "generation")?,
                 app_id: string_arg(filters, "app_id")?,

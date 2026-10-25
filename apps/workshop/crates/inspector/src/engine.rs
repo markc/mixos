@@ -296,6 +296,8 @@ struct Call {
 }
 
 /// Workshop's state and rules.
+pub const SERVICES_SPLIT: std::ops::RangeInclusive<f32> = 0.1..=0.8;
+
 pub struct Engine {
     pub workshop: crate::workshop::Workshop,
     label: Label,
@@ -705,6 +707,14 @@ impl Engine {
 
     pub fn set_dock_size(&mut self, side: DockSide, size: f32) {
         if size.is_finite() {
+            // Before layout Auto has no reliable width. Store both axes so
+            // whichever side the first layout selects honours the command.
+            if side == DockSide::Auto && self.dock_window_width <= 0.0 {
+                self.ui.dock_width = size.clamp(0.2, 0.5);
+                self.ui.dock_height = size.clamp(0.12, 0.5);
+                return;
+            }
+            let side = side.effective(self.dock_window_width);
             if side == DockSide::Right {
                 self.ui.dock_width = size.clamp(0.2, 0.5);
             } else {
@@ -715,7 +725,7 @@ impl Engine {
 
     pub fn set_split(&mut self, split: f32) {
         if self.ui.dialog.is_none() {
-            self.ui.split = split.clamp(0.2, 0.65);
+            self.ui.split = split.clamp(*SERVICES_SPLIT.start(), *SERVICES_SPLIT.end());
         }
     }
 
@@ -1200,7 +1210,7 @@ impl Engine {
                     .transpose()?;
                 self.set_dock_side(side);
                 if let Some(size) = size {
-                    self.set_dock_size(self.dock_effective, size as f32);
+                    self.set_dock_size(self.ui.dock_side, size as f32);
                 }
                 if let Some(open) = open {
                     self.workshop.dock_open = open;
@@ -2342,6 +2352,25 @@ mod tests {
         assert_eq!(DockSide::Auto.effective(DOCK_RIGHT_WIDTH), DockSide::Right);
         assert_eq!(DockSide::Bottom.effective(1920.0), DockSide::Bottom);
         assert_eq!(DockSide::Right.effective(900.0), DockSide::Right);
+    }
+
+    #[test]
+    fn auto_dock_size_before_layout_sets_both_axes_and_later_uses_known_width() {
+        let mut e = engine();
+        ask(&mut e, "workshop.dock", json!({"side":"auto","size":0.42}));
+        assert_eq!((e.ui.dock_width, e.ui.dock_height), (0.42, 0.42));
+        e.dock_window_width = 1920.0;
+        ask(&mut e, "workshop.dock", json!({"side":"auto","size":0.35}));
+        assert_eq!((e.ui.dock_width, e.ui.dock_height), (0.35, 0.42));
+    }
+
+    #[test]
+    fn services_split_uses_the_same_limits_as_the_panel() {
+        let mut e = engine();
+        for share in [*SERVICES_SPLIT.start(), 0.15, 0.7, *SERVICES_SPLIT.end()] {
+            e.set_split(share);
+            assert_eq!(e.ui.split, share);
+        }
     }
 
     #[test]

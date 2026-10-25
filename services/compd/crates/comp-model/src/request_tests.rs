@@ -1457,6 +1457,13 @@ fn refused_reply_carries_code_and_detail() {
     );
 }
 
+#[test]
+fn window_wait_accepts_a_pid_filter() {
+    let parsed = parse_window_command("comp.window.wait", &json!({"match":{"app_id":"dev.mixos.example","pid":123},"until":"mapped"})).unwrap();
+    let WindowCommand::Long(LongOp::Wait(spec)) = parsed else { panic!("wait"); };
+    assert_eq!(spec.window.pid, Some(123));
+}
+
 // ---- The dispatcher's routing, lifted into `classify`. ----
 
 fn refused_body((rc, body): (u8, Arc<str>)) -> Value {

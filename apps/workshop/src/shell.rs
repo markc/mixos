@@ -352,6 +352,10 @@ impl Shell {
     /// the memory-only store created by `new`.
     pub fn with_saved(mut self, saved: toolkit::saved::Store<crate::saved::Arrangement>) -> Self {
         saved.app.apply(&mut self.engine);
+        if let Some([width, _]) = saved.window.size {
+            self.engine.dock_window_width = width;
+            self.engine.set_dock_side(self.engine.ui.dock_side);
+        }
         self.restore = Some(crate::saved::Pending::new(&saved.app));
         if !saved.app_loaded()
             && let Some(restore) = &mut self.restore
@@ -372,6 +376,7 @@ impl Shell {
             self.engine.ui.dock_height,
         );
         saved.widgets.install(&self.ctx);
+        saved.install_windows(&self.ctx, APP);
         let frame = saved.window.clone();
         let bus = self.bus.clone();
         let comp = self.comp.clone();
@@ -382,9 +387,6 @@ impl Shell {
                     let comp = comp.clone();
                     async move {
                         let reply = bus.call(&comp, command, args).await.ok()?;
-                        if reply.rc != 0 {
-                            return None;
-                        }
                         serde_json::from_str(&reply.body).ok()
                     }
                 })
@@ -405,6 +407,7 @@ impl Shell {
         self.saved.window.theme = self.choice().into();
         self.saved.window.capture(&self.ctx);
         self.saved.widgets.collect(&self.ctx);
+        self.saved.collect_windows(&self.ctx, APP);
         // Bus commands may change shares without rendering another frame.
         self.saved
             .widgets

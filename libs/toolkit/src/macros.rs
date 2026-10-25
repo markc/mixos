@@ -769,6 +769,7 @@ impl State {
                     .unwrap_or(egui::vec2(760.0, 560.0));
                 egui::vec2(760.0, 560.0).min(monitor)
             }));
+        let builder = crate::saved::secondary::builder(ctx, &self.app, "macro-editor", builder);
         if ctx.embed_viewports() {
             ctx.show_viewport_immediate(editor_viewport, builder, |ui, _| {
                 self.editor_ui(ui, viewport, editor_viewport)
@@ -794,6 +795,7 @@ impl State {
         editor_viewport: egui::ViewportId,
     ) {
         let ctx = ui.ctx().clone();
+        crate::saved::secondary::capture(&ctx, &self.app, "macro-editor");
         // Embedded editors have no child pass to service Drive requests.
         if !ctx.embed_viewports() && ctx.viewport_id() == editor_viewport {
             crate::drive::register_viewport(&ctx, viewport, "macro-editor", editor_viewport);
@@ -1252,6 +1254,7 @@ type WindowState = Arc<Mutex<State>>;
 /// notification still owns a Context for repaint delivery. A close request
 /// alone is insufficient: applications can cancel it for unsaved documents.
 pub fn close_app(ctx: &egui::Context, app: &str) {
+    crate::saved::secondary::close(ctx, app);
     let closing = ctx.viewport_id();
     let state_id = crate::window_id(closing, ("shared-macros", app));
     if let Some(state) = ctx.data(|d| d.get_temp::<WindowState>(state_id)) {
