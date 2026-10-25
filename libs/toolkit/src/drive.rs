@@ -236,8 +236,8 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
             .passes
             .get(&std::thread::current().id())
             .is_none_or(Vec::is_empty);
-        let last_ui_pass = drive.last_ui_pass.get_or_insert(now);
-        let quiet = now.saturating_duration_since(*last_ui_pass);
+        let input_quiet_since = drive.input_quiet_since.get_or_insert(now);
+        let quiet = now.saturating_duration_since(*input_quiet_since);
         if logic_only && quiet >= INPUT_QUIET_PERIOD {
             drive.settle(
                 ctx,
@@ -475,7 +475,9 @@ struct Shot(u64);
 /// The plugin: the last widget tree, queued input and finished answers.
 #[derive(Default)]
 pub struct Drive {
-    last_ui_pass: Option<Instant>,
+    /// Quiet time starts when input first waits, and restarts on root UI passes.
+    /// Idle time before a request must not shorten its tolerance for a stall.
+    input_quiet_since: Option<Instant>,
     children: HashMap<egui::ViewportId, Box<Drive>>,
     requests: VecDeque<(u64, String, Value)>,
     passes: HashMap<std::thread::ThreadId, Vec<egui::ViewportId>>,
@@ -501,12 +503,14 @@ impl egui::Plugin for Drive {
     }
 
     fn setup(&mut self, ctx: &Context) {
-        self.last_ui_pass = Some(Instant::now());
+        self.input_quiet_since = Some(Instant::now());
         ctx.enable_accesskit();
     }
 
     fn input_hook(&mut self, ctx: &Context, input: &mut RawInput) {
-        self.last_ui_pass = Some(Instant::now());
+        if input.viewport_id == egui::ViewportId::ROOT {
+            self.input_quiet_since = Some(Instant::now());
+        }
         self.passes
             .entry(std::thread::current().id())
             .or_default()
@@ -617,7 +621,7 @@ impl egui::Plugin for Drive {
             }
             return;
         }
-        self.last_ui_pass = Some(Instant::now());
+        self.input_quiet_since = Some(Instant::now());
         self.output(ctx, output);
     }
 }
@@ -746,6 +750,9 @@ impl Drive {
             None | Some(Value::Null | Value::Bool(false)) => {}
             Some(Value::Bool(true)) => self.traced.push(id),
             Some(_) => return Some(refusal(id, "ARGUMENT", "trace must be a boolean")),
+        }
+        if self.running.is_none() && self.queue.is_empty() {
+            self.input_quiet_since = Some(Instant::now());
         }
         self.queue.push_back((id, job));
         None
@@ -1583,7 +1590,7 @@ mod tests {
         install(&ctx, "demo");
         let now = Instant::now();
         ctx.with_plugin(|drive: &mut Drive| {
-            drive.last_ui_pass = Some(now);
+            drive.input_quiet_since = Some(now);
             drive.queue.push_back((
                 99,
                 Job::Type {
@@ -1606,6 +1613,19 @@ mod tests {
                 .contains("no frames for 1000 ms")
         );
         assert!(!pending(&ctx));
+    }
+
+    #[test]
+    fn idle_time_before_input_does_not_shorten_the_quiet_period() {
+        let ctx = Context::default();
+        install(&ctx, "demo");
+        let now = Instant::now();
+        ctx.with_plugin(|drive: &mut Drive| {
+            drive.input_quiet_since = now.checked_sub(Duration::from_secs(30));
+        });
+        assert!(request(&ctx, 100, "ui.type", &json!({"text":"hello"})).is_none());
+        assert!(logic_at(&ctx, now + Duration::from_millis(500)).is_empty());
+        assert!(pending(&ctx));
     }
 
     #[test]

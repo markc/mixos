@@ -527,7 +527,9 @@ a hidden app that keeps calling <code>request_repaint()</code> runs logic at rou
 is preserved across brief stalls. After <code>drive::INPUT_QUIET_PERIOD</code> (1000 ms)
 without a UI pass, pending input is settled with the existing cancellation
 policy, releasing later Bus commands. The cancellation message reports how
-many milliseconds the window produced no frames. Retry when frames resume.</p>
+many milliseconds the window produced no frames. Retry when frames resume.
+The quiet period starts when input first waits and restarts on each root UI
+pass; idle time before that input does not shorten it.</p>
 <p><code>viewport: "macro-editor"</code> addresses the editor owned by the app window
 handling the request. Names become available on the first native child
 pass; an embedded editor has no separately drivable viewport. Closing one

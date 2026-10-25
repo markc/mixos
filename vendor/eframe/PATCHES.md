@@ -65,6 +65,8 @@ without a UI pass, including when Wayland still reports the window as visible.
 Brief animations or GPU stalls preserve the input; a window producing no
 frames releases later queries after about one second. The cancellation message
 reports the elapsed milliseconds without frames, rather than advising restore.
+The quiet period starts when input first waits and restarts on each root UI
+pass, so an idle window still gets the full grace period for newly queued input.
 
 Wgpu's `initialized_all_windows` creates missing viewport windows, their winit
 input states and GPU surfaces; it is not a gate for app logic. `resumed` calls
