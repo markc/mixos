@@ -428,11 +428,23 @@ pub struct Submitted {
 
 impl Submitted {
     fn section(&self) -> crate::Section {
-        if self.axes.iter().any(|a| matches!(a, Axis::Decorations | Axis::CaptionSide)) {
+        if self
+            .axes
+            .iter()
+            .any(|a| matches!(a, Axis::Decorations | Axis::CaptionSide))
+        {
             crate::Section::Windows
-        } else if self.axes.iter().any(|a| matches!(a, Axis::TextScale | Axis::ReducedMotion)) {
+        } else if self
+            .axes
+            .iter()
+            .any(|a| matches!(a, Axis::TextScale | Axis::ReducedMotion))
+        {
             crate::Section::Accessibility
-        } else if self.axes.iter().any(|a| matches!(a, Axis::FontFamily | Axis::MonoFamily)) {
+        } else if self
+            .axes
+            .iter()
+            .any(|a| matches!(a, Axis::FontFamily | Axis::MonoFamily))
+        {
             crate::Section::TextAndFonts
         } else {
             crate::Section::Appearance
@@ -907,8 +919,12 @@ impl Engine {
     }
 
     fn clear_look_problem(&mut self) {
-        if let Some(source @ (crate::Section::Appearance | crate::Section::Windows
-            | crate::Section::TextAndFonts | crate::Section::Accessibility)) = self.look.problem_source
+        if let Some(
+            source @ (crate::Section::Appearance
+            | crate::Section::Windows
+            | crate::Section::TextAndFonts
+            | crate::Section::Accessibility),
+        ) = self.look.problem_source
         {
             self.clear_settings_problem(source);
         }
@@ -1708,8 +1724,14 @@ mod tests {
     #[test]
     fn submitted_section_uses_edit_priority() {
         let mut submitted = Submitted {
-            operation: "example".into(), look: Look::default(),
-            axes: vec![Axis::Scheme, Axis::FontFamily, Axis::TextScale, Axis::Decorations],
+            operation: "example".into(),
+            look: Look::default(),
+            axes: vec![
+                Axis::Scheme,
+                Axis::FontFamily,
+                Axis::TextScale,
+                Axis::Decorations,
+            ],
         };
         assert_eq!(submitted.section(), crate::Section::Windows);
         submitted.axes.pop();

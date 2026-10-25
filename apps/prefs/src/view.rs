@@ -1783,7 +1783,7 @@ mod numeric_tests {
                         } else if let Some(value) = scale_control(ui, "size-text-scale", if size.is_some() { 1.25 } else { 1.0 }, 0.5..=3.0, true) {
                             state.1.push(UiEvent::Appearance(AppearanceEdit::TextScale(value)));
                         }
-                        ui.button("Blur target");
+                        let _ = ui.button("Blur target");
                     }, (engine, Vec::new()));
                 toolkit::install(&h.ctx, &toolkit::Theme::embedded());
                 h.run();

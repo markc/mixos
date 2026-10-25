@@ -779,7 +779,7 @@ mod tests {
         let moved = json!({"schema": 1, "default": {"colour": "#010101"}});
         assert!(preflight(&mut editor, 10, state(moved, Value::Null)).is_none());
         assert_eq!(editor.status, "status.conflict");
-        assert!(!editor.failed);
+        assert!(editor.failed);
         assert!(!editor.can_apply());
         assert_eq!(
             editor.draft.as_ref().unwrap()["default"]["colour"],
@@ -866,7 +866,8 @@ mod tests {
         editor.read(1).unwrap();
         assert!(editor.complete(1, lost(), 2).is_none());
         assert_eq!(editor.status, "status.unavailable");
-        assert!(editor.failed);
+        assert!(!editor.failed);
+        assert!(!editor.has_problem());
         assert!(!editor.can_apply());
     }
 

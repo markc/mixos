@@ -552,9 +552,7 @@ impl Engine {
         let ticket = self.next();
         let (command_name, body) = (op.command_name(), op.body());
         if !quiet {
-            self.status = self.label(op.progress(), &[("app", op.app())]);
-            self.failed = false;
-            self.release_status = self.status.clone();
+            self.release_status = self.label(op.progress(), &[("app", op.app())]);
             self.release_failed = false;
         }
         self.job = Some(Job { ticket, op, quiet });
@@ -1497,7 +1495,7 @@ mod tests {
         let e = listed();
         assert_eq!(e.apps.len(), 2);
         assert_eq!(e.releases, Availability::Available);
-        assert_eq!(e.status, "listed count=2");
+        assert_eq!(e.release_status, "listed count=2");
         assert!(!e.busy());
     }
 
@@ -1514,7 +1512,7 @@ mod tests {
             }),
         );
         assert_eq!(e.releases, Availability::Missing);
-        assert!(e.failed && e.apps.is_empty());
+        assert!(e.release_failed && e.apps.is_empty());
         assert!(!e.can_check());
     }
 
@@ -1565,7 +1563,7 @@ mod tests {
             call[0].0,
             ok(json!([{"app":"demo","action":"installed","version":"2.0","previous":"1.0"}])),
         );
-        assert_eq!(e.status, "result app=demo action=installed version=2.0");
+        assert_eq!(e.release_status, "result app=demo action=installed version=2.0");
         let relist = releases(&e.take_effects());
         assert_eq!(
             relist[0].1, "releases.list",
@@ -1573,7 +1571,7 @@ mod tests {
         );
         e.released(relist[0].0, ok(rows()));
         assert_eq!(
-            e.status, "result app=demo action=installed version=2.0",
+            e.release_status, "result app=demo action=installed version=2.0",
             "the quiet listing leaves the result on the status line"
         );
     }
@@ -1630,9 +1628,9 @@ mod tests {
                 error: None,
             }),
         );
-        assert!(e.failed);
+        assert!(e.release_failed);
         assert_eq!(
-            e.status,
+            e.release_status,
             "failed message=NO_PREVIOUS: demo has no previous version"
         );
         assert_eq!(releases(&e.take_effects())[0].1, "releases.list");
@@ -1778,14 +1776,14 @@ mod tests {
         let call = releases(&e.take_effects());
         e.released(call[0].0, lost("Bus request timed out"));
         assert_eq!(e.uncertain, Some(Op::Rollback("demo".into())));
-        assert!(e.failed && e.status.starts_with("uncertain app=demo"));
+        assert!(e.release_failed && e.release_status.starts_with("uncertain app=demo"));
         assert!(!e.can_rollback() && !e.can_install() && !e.can_check());
         // The reconciling listing went out at once.
         let relist = releases(&e.take_effects());
         assert_eq!(relist[0].1, "releases.list");
         e.released(relist[0].0, ok(rows()));
         assert_eq!(e.uncertain, None);
-        assert_eq!(e.status, "settled app=demo");
+        assert_eq!(e.release_status, "settled app=demo");
         assert!(e.can_rollback());
     }
 
@@ -1893,7 +1891,7 @@ mod tests {
         e.check();
         let call = releases(&e.take_effects());
         e.released(call[0].0, lost("timed out"));
-        assert!(e.uncertain.is_none() && e.failed);
+        assert!(e.uncertain.is_none() && e.release_failed);
         assert_eq!(e.apps.len(), 2, "rows kept");
     }
 
@@ -1914,7 +1912,7 @@ mod tests {
         );
         assert_eq!(e.releases, Availability::Available);
         assert_eq!(e.apps.len(), 2, "rows kept");
-        assert_eq!(e.status, "failed message=Service 'releases' is overloaded");
+        assert_eq!(e.release_status, "failed message=Service 'releases' is overloaded");
         e.refresh();
         let call = releases(&e.take_effects());
         e.released(
