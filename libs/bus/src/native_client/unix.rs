@@ -42,10 +42,10 @@ pub struct UnixConnectOptions {
     pub broker_account: BrokerAccount,
     pub endpoint: Option<PathBuf>,
     pub configured_endpoint: Option<PathBuf>,
-    /// A launch handoff is bound to its issuing endpoint. Use only the first
-    /// explicit/configured candidate, without skipping, ping or TCP fallback.
+    /// A launch handoff is bound to its issuing endpoint. Use only the
+    /// parent-stamped endpoint, without config, defaults, skipping, ping or TCP fallback.
     pub endpoint_only: bool,
-    /// Environment and system candidates resolved at capture time. Empty means none.
+    /// Runtime candidates for this environment, captured before connecting. Empty means none.
     pub default_endpoints: Vec<PathBuf>,
     /// Permit TCP ping discovery after local candidates are missing. Endpoint
     /// and PID pins override this option.
@@ -331,7 +331,8 @@ impl VerifiedCommand {
 impl NodedClient {
     /// Explicit Unix opt-in; ordinary `connect` remains unchanged. Native
     /// session clients MUST set `require_native_session`. Resolution is explicit
-    /// endpoint, config, environment runtime, system runtime, then ping. Every
+    /// endpoint, config, environment runtime, then ping. The system runtime
+    /// candidate follows a uid tier default; placed run roots exclude it. Every
     /// candidate is verified; discovery never establishes authority. Unix is node-local
     /// in v1: mesh-destined traffic is refused, with no transparent TCP retry.
     /// One disappearing endpoint permits re-resolution unless its endpoint or server PID is pinned.
@@ -497,6 +498,39 @@ mod tests {
     use std::os::unix::net::UnixListener;
 
     #[tokio::test]
+    async fn missing_environment_socket_never_uses_the_system_runtime_socket() {
+        let dir = TestDir::new();
+        let run = dir.0.join("session-run");
+        let system_run = dir.0.join("system-run");
+        std::fs::create_dir_all(system_run.join("noded")).unwrap();
+        let system_socket = system_run.join("noded/bus.sock");
+        let listener = UnixListener::bind(&system_socket).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let mut options = options(&[]);
+        assert!(verify_path(&system_socket, options.broker_account).is_ok());
+        let environment = config::Environment {
+            run: Some(run.clone()),
+            ..Default::default()
+        };
+        let directories = config::Dirs::from_source(&environment, "").unwrap();
+        options.default_endpoints =
+            crate::client_helpers::default_unix_endpoints(&environment, &directories, &system_run)
+                .unwrap();
+        options.discover_by_ping = false;
+        assert!(!options.endpoint_is_pinned());
+        let candidates = vec![run.join("noded/bus.sock")];
+        assert_eq!(options.endpoint_candidates().unwrap(), candidates);
+        let error = NodedClient::connect_unix("", "ws://127.0.0.1:1/ws", &options, None)
+            .await
+            .err()
+            .unwrap();
+        assert!(matches!(error, ConnectError::CandidatesMissing(paths) if paths == candidates));
+        assert!(
+            matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
+        );
+    }
+
+    #[tokio::test]
     async fn missing_handoff_endpoint_never_uses_a_verified_later_candidate() {
         let dir = TestDir::new();
         let missing = dir.0.join("issuing.sock");
@@ -520,6 +554,13 @@ mod tests {
             options.require_native_session = false;
             options.allow_unverified_tcp_fallback = true;
             assert!(options.discover_by_ping);
+            if configured {
+                assert_eq!(
+                    options.endpoint_candidates().unwrap_err().to_string(),
+                    "a launch handoff requires the parent's broker endpoint"
+                );
+                continue;
+            }
             assert_eq!(
                 options.endpoint_candidates().unwrap(),
                 vec![missing.clone()]

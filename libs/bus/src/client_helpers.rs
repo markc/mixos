@@ -2,13 +2,17 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Shared broker discovery for native ABP clients. Explicit socket, node
-//! config, environment runtime and system runtime precede TCP ping discovery.
+//! config and environment runtime precede TCP ping discovery. A run root from
+//! MIXOS_RUN, MIXOS or layout.mx places the process in an environment and
+//! excludes the host runtime candidate. A uid tier default includes the system
+//! runtime candidate after its own, deduplicated when they coincide as root.
+//! An override equal to the tier default still counts as default.
 //! Account configuration is independent of socket ownership.
-//! A client with a server-PID pin must name its endpoint explicitly through
-//! MIXOS_BUS_SOCKET, the caller endpoint or noded.unix_socket: no candidates
-//! are skipped, so default run-root discovery stops at its first candidate.
-//! A launch handoff additionally restricts the list to its issuing endpoint;
-//! configured endpoints without a handoff retain ordinary discovery.
+//! A server-PID pin uses its endpoint alone. A launch handoff uses only the
+//! verified issuing endpoint its parent stamped into MIXOS_BUS_SOCKET: no node
+//! socket configuration, defaults or ping. A missing stamp is refused.
+//! MIXOS_BUS_SOCKET is a pin under MIXOS_SESSION_FD and a skippable override
+//! without it. Skipping never crosses from a session or desk to the host broker.
 
 use crate::native_client::ConnectError;
 use crate::native_client::{BrokerAccount, NodedClient, UnixConnectOptions};
@@ -293,12 +297,12 @@ impl BrokerEnvironment {
         let mut options = UnixConnectOptions::new(BrokerAccount { uid: 0, gid: 0 });
         options.endpoint = self.endpoint;
         options.configured_endpoint = configured_endpoint;
-        options.default_endpoints = vec![
-            directories.get(config::Dir::Run).join("noded/bus.sock"),
-            paths::system_default(paths::Root::Run)
-                .expect("built-in system run default")
-                .join("noded/bus.sock"),
-        ];
+        options.default_endpoints = default_unix_endpoints(
+            &self.directories,
+            &directories,
+            &paths::system_default(paths::Root::Run).expect("built-in system run default"),
+        )
+        .map_err(anyhow::Error::msg)?;
         let url = self
             .url
             .or_else(|| {
@@ -364,8 +368,7 @@ pub fn unix_endpoint_candidates(options: &UnixConnectOptions) -> anyhow::Result<
         let endpoint = options
             .endpoint
             .as_ref()
-            .or(options.configured_endpoint.as_ref())
-            .context("a launch handoff requires an explicit broker endpoint")?;
+            .context("a launch handoff requires the parent's broker endpoint")?;
         return Ok(vec![endpoint.clone()]);
     }
     let mut candidates = Vec::new();
@@ -380,6 +383,21 @@ pub fn unix_endpoint_candidates(options: &UnixConnectOptions) -> anyhow::Result<
         }
     }
     Ok(candidates)
+}
+
+pub(crate) fn default_unix_endpoints(
+    environment: &config::Environment,
+    directories: &config::Dirs,
+    system_run: &Path,
+) -> paths::Result<Vec<PathBuf>> {
+    let mut endpoints = vec![directories.get(config::Dir::Run).join("noded/bus.sock")];
+    if paths::run_root_is_tier_default(environment, directories)? {
+        let system = system_run.join("noded/bus.sock");
+        if !endpoints.contains(&system) {
+            endpoints.push(system);
+        }
+    }
+    Ok(endpoints)
 }
 
 /// Locate a Unix endpoint without connecting or deriving authority from it.
@@ -533,6 +551,78 @@ pub(crate) mod tests {
         }
     }
 
+    #[test]
+    fn captured_runtime_defaults_distinguish_host_logins_from_placed_environments() {
+        let dir = TestDir::new();
+        std::fs::write(dir.0.join("node.conf.mix"), "noded: {}").unwrap();
+        let user = config::Environment {
+            uid: 1000,
+            home: Some(dir.0.join("home")),
+            prefix: Some(dir.0.clone()),
+            xdg_runtime_dir: Some(dir.0.join("xdg")),
+            ..Default::default()
+        };
+        let system = paths::system_default(paths::Root::Run)
+            .unwrap()
+            .join("noded/bus.sock");
+        for (directories, expected) in [
+            (
+                user.clone(),
+                vec![dir.0.join("xdg/mixos/noded/bus.sock"), system.clone()],
+            ),
+            (
+                config::Environment {
+                    run: Some(dir.0.join("session-run")),
+                    ..user.clone()
+                },
+                vec![dir.0.join("session-run/noded/bus.sock")],
+            ),
+            (
+                config::Environment {
+                    root: Some(dir.0.join("desk")),
+                    ..user.clone()
+                },
+                vec![dir.0.join("desk/run/noded/bus.sock")],
+            ),
+            (
+                config::Environment {
+                    uid: 0,
+                    ..user.clone()
+                },
+                vec![system],
+            ),
+        ] {
+            let environment = BrokerEnvironment {
+                search: config::node::NodeConfigSearch::from_environment(
+                    Some(dir.0.join("node.conf.mix")),
+                    directories.clone(),
+                ),
+                directories,
+                endpoint: None,
+                account: None,
+                url: None,
+            };
+            let configuration = environment.configuration().unwrap();
+            assert_eq!(configuration.options.default_endpoints, expected);
+            assert_eq!(configuration.endpoint_candidates().unwrap(), expected);
+        }
+        std::fs::write(
+            dir.0.join("layout.mx"),
+            format!("run: '{}'", dir.0.join("layout-run").display()),
+        )
+        .unwrap();
+        let mut environment = captured_environment(&dir);
+        environment.directories = user;
+        assert_eq!(
+            environment
+                .configuration()
+                .unwrap()
+                .options
+                .default_endpoints,
+            vec![dir.0.join("layout-run/noded/bus.sock")]
+        );
+    }
+
     #[tokio::test]
     async fn explicit_endpoint_and_account_override_broken_node_config() {
         let dir = TestDir::new();
@@ -630,14 +720,7 @@ pub(crate) mod tests {
         let configuration = environment.configuration().unwrap();
         assert_eq!(
             configuration.endpoint_candidates().unwrap(),
-            vec![
-                explicit,
-                configured,
-                dir.0.join("run/noded/bus.sock"),
-                paths::system_default(paths::Root::Run)
-                    .unwrap()
-                    .join("noded/bus.sock"),
-            ]
+            vec![explicit, configured, dir.0.join("run/noded/bus.sock")]
         );
         let mut supplied = UnixConnectOptions::new(BrokerAccount { uid: 123, gid: 123 });
         supplied.endpoint = Some(dir.0.join("caller.sock"));

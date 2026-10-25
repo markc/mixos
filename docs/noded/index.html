@@ -261,22 +261,37 @@ noded: { port: 4200, unix_socket: "&lt;runtime&gt;/noded/bus.sock", account: "no
 the environment's runtime directory (<code>MIXOS_RUN</code>, <code>MIXOS</code>, installed layout,
 then the uid tier). Native clients use one shared resolver: explicit
 <code>MIXOS_BUS_SOCKET</code> or caller endpoint, <code>noded.unix_socket</code> from the same node
-file as the URL, environment runtime, system runtime, then the endpoint
-advertised by <code>noded.ping</code> on the resolved TCP URL. Missing components
-(<code>ENOENT</code> or <code>ENOTDIR</code>) are skipped with a warning. Existing candidates must
-pass every verification check; permissions, symlinks, non-sockets, ownership,
+file as the URL, environment runtime, then the endpoint advertised by
+<code>noded.ping</code> on the resolved TCP URL. A process is placed in an environment
+when its run root comes from <code>MIXOS_RUN</code>, <code>MIXOS</code> or a run entry in <code>layout.mx</code>.
+Its only run-root candidate is its own <code>&lt;run&gt;/noded/bus.sock</code>. If that broker
+is gone it fails naming that socket and never attaches to the host broker,
+even with matching credentials.</p>
+<p>A process using the uid tier default belongs to no session or desk. Its
+node's broker is the system one, so the system <code>&lt;run&gt;/noded/bus.sock</code> is
+appended after its own candidate. The tier default is <code>/run/mixos</code> as root,
+<code>$XDG_RUNTIME_DIR/mixos</code> as a user, or <code>/tmp/mixos-run</code> without a usable XDG
+runtime directory. The candidates coincide as root and are deduplicated.
+An override equal to the tier default also counts as default.</p>
+<p>Missing components (<code>ENOENT</code> or <code>ENOTDIR</code>) are skipped with a warning.
+Existing candidates must pass every verification check; permissions,
+symlinks, non-sockets, ownership,
 peer credentials, version and refused connections are fatal. A server-PID
-pin disables skipping and ping discovery. Exhausted searches list all paths.</p>
+pin uses its endpoint alone, without skipping or ping discovery. Exhausted
+searches list all paths.</p>
 <p>Clients capture socket candidates before connecting. If a selected endpoint
 disappears, an unpinned client retries once with the remaining candidates;
 a second disappearance returns the missing-candidates error. Other existing
 endpoint failures remain fatal. The shell's ordinary send probe disables
 ping discovery so an absent local socket does not trigger TCP ping traffic.</p>
-<p>A launch handoff is bound to the broker that issued its grant. Term passes
-that broker's verified Unix endpoint alongside the launch descriptor. The
-child resident uses only that endpoint, without skipping, runtime defaults,
-ping discovery or TCP fallback, just as with a PID pin. A missing issuing
-socket reports one connection refusal while the shell remains usable.
+<p>A launch handoff (<code>MIXOS_SESSION_FD</code>) uses alone the endpoint its parent
+stamped into <code>MIXOS_BUS_SOCKET</code>: the verified endpoint that issued the grant.
+It uses no node socket configuration, defaults, ping discovery or TCP
+fallback. A handoff without that stamp is refused, not resolved. The same
+variable is a pin under the marker and a skippable override without it.
+A missing issuing socket reports one connection refusal while the shell
+remains usable. If Term cannot stamp a handoff, it starts the pane without a
+native session and records a diagnostic.
 Term's own supervisor connection retains ordinary configured discovery.</p>
 <p>Clients trust the account selected by <code>MIXOS_BROKER_ACCOUNT</code>, then
 <code>noded.account</code>, then the default <code>noded</code>. They never infer it from a socket's

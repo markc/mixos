@@ -269,8 +269,6 @@ impl Fixture {
             ("HOME".into(), home.clone()),
             ("MIXOS_SRC".into(), home.clone()),
             ("MIXOS_NODE_CONFIG".into(), config.display().to_string()),
-            ("MIXOS_BUS_SOCKET".into(), broker.endpoint.display().to_string()),
-            ("MIXOS_NODED_URL".into(), broker.url.clone()),
             ("MIXOS_RUN".into(), root.join("run").display().to_string()),
             (
                 "MIXOS_BROKER_ACCOUNT".into(),
@@ -324,6 +322,7 @@ impl Fixture {
                 "broken_fd" | "quota" => {
                     shared.ready.as_mut().unwrap().fd =
                         crate::session_fd::LaunchFd::invalid_fixture().unwrap()
+                            .with_endpoint(&broker.endpoint)
                 }
                 "wrong_grant" => {
                     use std::os::{fd::BorrowedFd, unix::fs::FileExt};

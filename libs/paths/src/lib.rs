@@ -448,6 +448,16 @@ pub fn try_root(root: Root) -> Result<PathBuf> {
 pub fn try_system(root: Root) -> Result<PathBuf> {
     snapshot()?.system.try_root(root)
 }
+/// True when Run matches the uid tier default, ignoring MIXOS_RUN, MIXOS and layout.mx.
+/// An override equal to that default still counts as default.
+pub fn run_root_is_tier_default(env: &Environment, dirs: &Dirs) -> Result<bool> {
+    let bare = Environment {
+        run: None,
+        root: None,
+        ..env.clone()
+    };
+    Ok(Dirs::from_source(&bare, "")?.try_root(Root::Run)? == dirs.try_root(Root::Run)?)
+}
 /// A historical fixed FHS fallback, explicitly independent of process
 /// overrides. APIs that promised to ignore MIXOS_RUN (native bus fallback)
 /// or kept storage at a fixed system path use this rather than moving data.
@@ -514,6 +524,70 @@ mod tests {
             home: Some(PathBuf::from("/root")),
             uid: 0,
             ..Environment::default()
+        }
+    }
+
+    #[test]
+    fn run_root_tier_defaults_cover_root_and_user_with_or_without_xdg() {
+        for uid in [0, 1000] {
+            for xdg in [None, Some(PathBuf::from("/run/user/1000"))] {
+                let env = Environment {
+                    uid,
+                    xdg_runtime_dir: xdg.clone(),
+                    ..user()
+                };
+                let expected = if uid == 0 {
+                    PathBuf::from("/run/mixos")
+                } else {
+                    xdg.map_or_else(
+                        || PathBuf::from("/tmp/mixos-run"),
+                        |path| path.join("mixos"),
+                    )
+                };
+                let dirs = Dirs::from_source(&env, "").unwrap();
+                assert_eq!(dirs.try_root(Root::Run).unwrap(), expected);
+                assert!(run_root_is_tier_default(&env, &dirs).unwrap());
+            }
+        }
+    }
+
+    #[test]
+    fn run_root_overrides_and_layout_place_both_uid_tiers() {
+        for base in [system(), user()] {
+            let env = Environment {
+                run: Some("/session/run".into()),
+                ..base.clone()
+            };
+            let dirs = Dirs::from_source(&env, "").unwrap();
+            assert!(!run_root_is_tier_default(&env, &dirs).unwrap());
+            let env = Environment {
+                root: Some("/session".into()),
+                ..base.clone()
+            };
+            let dirs = Dirs::from_source(&env, "").unwrap();
+            assert!(!run_root_is_tier_default(&env, &dirs).unwrap());
+            let dirs = Dirs::from_source(&base, "run: '/session/run'").unwrap();
+            assert!(!run_root_is_tier_default(&base, &dirs).unwrap());
+            let dirs = Dirs::from_source(&base, "var: '/session/var'").unwrap();
+            assert!(run_root_is_tier_default(&base, &dirs).unwrap());
+        }
+    }
+
+    #[test]
+    fn run_root_overrides_equal_to_the_tier_default_still_count_as_default() {
+        for base in [system(), user()] {
+            let run = Dirs::from_source(&base, "")
+                .unwrap()
+                .try_root(Root::Run)
+                .unwrap();
+            let env = Environment {
+                run: Some(run.clone()),
+                ..base.clone()
+            };
+            let dirs = Dirs::from_source(&env, "").unwrap();
+            assert!(run_root_is_tier_default(&env, &dirs).unwrap());
+            let dirs = Dirs::from_source(&base, &format!("run: '{}'", run.display())).unwrap();
+            assert!(run_root_is_tier_default(&base, &dirs).unwrap());
         }
     }
 

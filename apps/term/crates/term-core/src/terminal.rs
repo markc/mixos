@@ -697,6 +697,13 @@ fn launch_directory(term_cwd: Option<String>, home: Option<String>) -> Result<St
         .ok_or_else(|| "HOME is required".into())
 }
 
+fn handoff_endpoint(fd: &crate::session_fd::LaunchFd) -> io::Result<&str> {
+    fd.endpoint()
+        .ok_or_else(|| io::Error::other("a launch handoff requires the parent's broker endpoint"))?
+        .to_str()
+        .ok_or_else(|| io::Error::other("broker endpoint is not valid UTF-8"))
+}
+
 /// Titles are single-line labels, bounded in UTF-8 bytes at both ingest points.
 pub(crate) fn sanitise_title(title: &str) -> String {
     let mut out = String::new();
@@ -930,7 +937,16 @@ impl Terminal {
         }
         // Explicit program + argv: native create_pty_with_spawn selects
         // setsid + TIOCSCTTY (Flatpak's non-controlling branch refused above).
-        let launch = native.and_then(|native| native.prepare(pane_id));
+        let launch = native
+            .and_then(|native| native.prepare(pane_id))
+            .and_then(|(session, fd)| {
+                if let Err(error) = handoff_endpoint(&fd) {
+                    session.reject_launch(&error.to_string());
+                    None
+                } else {
+                    Some((session, fd))
+                }
+            });
         let (session, fd) = match launch {
             Some((session, fd)) => (Some(session), Some(fd)),
             None => (None, None),
@@ -945,12 +961,8 @@ impl Terminal {
             if let Some(fd) = &fd {
                 let (name, value) = fd.marker();
                 args.push(format!("{name}={value}"));
-                if let Some(endpoint) = fd.endpoint() {
-                    let endpoint = endpoint.to_str().ok_or_else(|| {
-                        std::io::Error::other("broker endpoint is not valid UTF-8")
-                    })?;
-                    args.push(format!("MIXOS_BUS_SOCKET={endpoint}"));
-                }
+                let endpoint = handoff_endpoint(fd)?;
+                args.push(format!("MIXOS_BUS_SOCKET={endpoint}"));
             }
             args.push(program.into());
             teletypewriter::create_pty_with_spawn_fd(
@@ -1437,6 +1449,17 @@ mod tests {
     use rio_vt::crosswords::{Mode, grid::Scroll};
     use std::os::{fd::AsRawFd, unix::net::UnixStream};
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
+    #[test]
+    fn launch_handoff_requires_its_own_endpoint_stamp() {
+        let fd = crate::session_fd::LaunchFd::invalid_fixture().unwrap();
+        assert_eq!(
+            handoff_endpoint(&fd).unwrap_err().to_string(),
+            "a launch handoff requires the parent's broker endpoint"
+        );
+        let fd = fd.with_endpoint(std::path::Path::new("/tmp/issuing.sock"));
+        assert_eq!(handoff_endpoint(&fd).unwrap(), "/tmp/issuing.sock");
+    }
 
     #[test]
     fn explicit_cwd_refuses_a_directory_without_search_permission() {

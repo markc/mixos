@@ -307,7 +307,6 @@ impl Child {
                 "MIXOS_BUS_SOCKET".into(),
                 broker.endpoint.display().to_string(),
             ),
-            ("MIXOS_NODED_URL".into(), broker.url.clone()),
             (
                 "MIXOS_RUN".into(),
                 home.path().join("run").display().to_string(),

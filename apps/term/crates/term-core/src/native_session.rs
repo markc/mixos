@@ -191,6 +191,16 @@ pub struct PaneSession {
 }
 
 impl PaneSession {
+    pub(crate) fn reject_launch(self, message: &str) {
+        let id = self.state.id;
+        let handle = self.handle.clone();
+        drop(self);
+        let reason = format!("unbound (graphics-only): {message}");
+        let mut shared = handle.1.lock().unwrap();
+        shared.status.insert(id, reason.clone());
+        shared.log_diagnostic(Some(id), &reason);
+    }
+
     /// Called under the pane model's mutation lock, before cleanup is queued.
     pub fn revoke(&self) {
         self.state.live.store(false, Ordering::Release);
@@ -1694,6 +1704,38 @@ pub(crate) mod tests {
         let supervisor = Supervisor::with_options(options, broker.url.clone()).unwrap();
         let (_pane, fd) = prepare_ready(&supervisor.handle, 1);
         assert_eq!(fd.endpoint(), Some(broker.endpoint.as_path()));
+    }
+
+    #[test]
+    fn unstamped_handoff_opens_graphics_only_pane_with_diagnostic() {
+        if !crate::test_support::with_mix(
+            "native_session::tests::unstamped_handoff_opens_graphics_only_pane_with_diagnostic",
+        ) {
+            return;
+        }
+        let broker = Broker::start();
+        let supervisor = Supervisor::with_options(broker.options(), broker.url.clone()).unwrap();
+        wait_ready(&supervisor.handle, 1);
+        supervisor
+            .handle
+            .1
+            .lock()
+            .unwrap()
+            .ready
+            .as_mut()
+            .unwrap()
+            .fd = LaunchFd::invalid_fixture().unwrap();
+        let terminal =
+            crate::terminal::Terminal::start_session(settings(), Some(&supervisor.handle), 1)
+                .unwrap();
+        assert!(terminal.pid > 0);
+        assert!(!supervisor.handle.launched(1));
+        assert!(
+            supervisor.handle.status()["panes"]["1"]
+                .as_str()
+                .unwrap()
+                .contains("unbound (graphics-only): a launch handoff requires the parent's broker endpoint")
+        );
     }
 
     fn test_actor(broker: &Broker) -> Actor {
