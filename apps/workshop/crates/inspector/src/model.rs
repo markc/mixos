@@ -183,7 +183,7 @@ pub fn bounded(body: &str, marker: &str) -> String {
 
 /// Every command the engine answers itself. The window-level commands
 /// (`workshop.ui.*`, `workshop.window*`) belong to the toolkit drive layer.
-pub const COMMANDS: [&str; 20] = [
+pub const COMMANDS: [&str; 21] = [
     "HELP",
     "app.describe",
     "workshop.ping",

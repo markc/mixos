@@ -137,6 +137,14 @@ pub fn view(
         }
     }
     let total = ui.available_width();
+    // Keep the services share when Traffic or the window changes the space left.
+    ui.ctx().data_mut(|data| {
+        let key = egui::Id::new("workshop-services-width");
+        if data.get_temp::<f32>(key).is_some_and(|old| (old - total).abs() > 0.5) {
+            data.remove::<egui::containers::panel::PanelState>(egui::Id::new("services"));
+        }
+        data.insert_temp(key, total);
+    });
     let left = egui::Panel::left("services")
         .resizable(true)
         .default_size(total * engine.ui.split)

@@ -431,6 +431,21 @@ fn a_bus_dock_size_replaces_the_remembered_panel_size() {
     }
 }
 
+#[test]
+fn the_services_split_keeps_its_share_beside_the_right_dock() {
+    let mut rig = rig();
+    let split = engine(&rig).ui.split;
+    for (id, size) in [(1, 0.3), (2, 0.4)] {
+        send(&mut rig, id, "workshop.dock", json!({"side":"right","size":size}));
+        wait(&mut rig, &[id]);
+        rig.h.run_steps(5);
+        let panel = |name| egui::containers::panel::PanelState::load(&rig.h.ctx, egui::Id::new(name)).unwrap();
+        let remaining = 980.0 - panel("traffic-right").size().x;
+        assert!((panel("services").size().x / remaining - split).abs() < 0.02);
+        assert!((engine(&rig).ui.split - split).abs() < 0.02);
+    }
+}
+
 /// Ask `workshop.ui.tree` with `args` and answer its nodes.
 fn tree(rig: &mut Rig, id: u64, args: Value) -> Vec<Value> {
     send(rig, id, "workshop.ui.tree", args);
