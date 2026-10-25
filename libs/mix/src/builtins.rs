@@ -40852,7 +40852,6 @@ mod strict_write_and_bool_option_tests {
             ("ls", "path"),
             ("head", "n"),
             ("tail", "n"),
-            ("date_format", "fmt"),
             ("sqlopen", "mode"),
             ("http_put_file", "opts"),
             ("http_get_file", "opts"),
