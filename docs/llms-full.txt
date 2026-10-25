@@ -15433,7 +15433,7 @@ The seven builtins:
 | `time()` | number (float seconds) | current Unix timestamp |
 | `monotonic()` | number (float seconds) | monotonic-clock reading for measuring intervals |
 | `now_iso()` | string | current local time as ISO 8601 / RFC 3339 |
-| `date_format(ts [, fmt])` | string | render a timestamp via strftime (**local** time) |
+| `date_format(ts [, fmt] [, {utc}])` | string | render a timestamp via strftime (**local** time; `{utc: true}` for UTC) |
 | `date_parse(s)` | number | parse a date string → Unix timestamp |
 | `duration_format(secs)` | string | render a span of seconds as `1d 2h 3m 4s` |
 | `relative_time(ts)` | string | render a timestamp as `3h ago` / `in 5m` |
@@ -15501,12 +15501,24 @@ print(now_iso())
 
 The trailing `+10:00` is the machine's local UTC offset (here AEST). Use `now_iso()` for log lines and timestamps you want a human to read at a glance; use `time()` when you need a number to do arithmetic on.
 
-## date_format(ts [, fmt]) — timestamp → text
+## date_format(ts [, fmt] [, {utc}]) — timestamp → text
 
-`date_format` turns a Unix timestamp into a string using a **strftime** pattern. The timestamp is interpreted as UTC seconds, then **converted to the machine's local timezone** before formatting.
+`date_format` turns a Unix timestamp into a string using a **strftime** pattern. The timestamp is interpreted as UTC seconds, then **converted to the machine's local timezone** before formatting, unless you pass `{utc: true}`.
 
 - Argument 1: the timestamp (number; a float is truncated to whole seconds).
-- Argument 2 (optional): the strftime format string. **Default is `"%Y-%m-%d %H:%M:%S"`.**
+- Argument 2 (optional): the strftime format string. **Default is `"%Y-%m-%d %H:%M:%S"`.** `nil` also selects the default, so you can reach the options without restating it.
+- Argument 3 (optional): `{utc: true}` formats in UTC instead of local time (`%z` then prints `+0000`). `utc` must be a bool; any other key raises `OPTION_INVALID`.
+
+For an ISO 8601 stamp ending in `Z` (what GitHub, JSON APIs and most logs expect), use UTC. A `Z` typed into a local-time pattern labels local wall-clock time as UTC, which is wrong by your offset:
+
+```mix
+print(date_format(1700000000, "%Y-%m-%dT%H:%M:%SZ", {utc: true}))
+print(date_format(1700000000, nil, {utc: true}))
+```
+```text
+2023-11-14T22:13:20Z
+2023-11-14 22:13:20
+```
 
 ```mix
 print(date_format(1700000000))
@@ -36023,6 +36035,11 @@ loads unchanged.
 
 ### Added
 
+- `date_format(ts[, fmt][, {utc: true}])` formats in UTC instead of local
+  time, so an ISO 8601 `Z` stamp is no longer local wall-clock time with a
+  UTC label (the only workaround was `TZ=UTC` around the whole process).
+  `fmt` nil selects the default pattern; an unknown option key raises
+  `OPTION_INVALID`, a non-bool `utc` raises `TYPE_MISMATCH`.
 - `idle_timeout` on `http_get`, `http_post` and `http_request`, independent
   of the existing whole-call `timeout` (0 disables that cap).
 - `http_stream(method, url, on_line[, body, headers, opts])` delivers SSE

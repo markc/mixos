@@ -4,6 +4,11 @@
 
 ### Added
 
+- `date_format(ts[, fmt][, {utc: true}])` formats in UTC instead of local
+  time, so an ISO 8601 `Z` stamp is no longer local wall-clock time with a
+  UTC label (the only workaround was `TZ=UTC` around the whole process).
+  `fmt` nil selects the default pattern; an unknown option key raises
+  `OPTION_INVALID`, a non-bool `utc` raises `TYPE_MISMATCH`.
 - `idle_timeout` on `http_get`, `http_post` and `http_request`, independent
   of the existing whole-call `timeout` (0 disables that cap).
 - `http_stream(method, url, on_line[, body, headers, opts])` delivers SSE

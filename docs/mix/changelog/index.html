@@ -270,6 +270,11 @@
 <h2 id="unreleased">Unreleased</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><code>date_format(ts[, fmt][, {utc: true}])</code> formats in UTC instead of local
+time, so an ISO 8601 <code>Z</code> stamp is no longer local wall-clock time with a
+UTC label (the only workaround was <code>TZ=UTC</code> around the whole process).
+<code>fmt</code> nil selects the default pattern; an unknown option key raises
+<code>OPTION_INVALID</code>, a non-bool <code>utc</code> raises <code>TYPE_MISMATCH</code>.</li>
 <li><code>idle_timeout</code> on <code>http_get</code>, <code>http_post</code> and <code>http_request</code>, independent
 of the existing whole-call <code>timeout</code> (0 disables that cap).</li>
 <li><code>http_stream(method, url, on_line[, body, headers, opts])</code> delivers SSE

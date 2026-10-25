@@ -373,7 +373,7 @@ builtin_table! {
     ("script_version", CapabilityClass::Pure, "system",  "The running entry script's provenance: {name, version, sha, sha256, modified, mix: {version, sha, dirty}} — `version` is the `-- version: X.Y.Z` header (nil when absent or malformed), `sha` the first 12 hex of the content SHA-256, `modified` the file mtime as RFC 3339 UTC (nil for `mix -`). Always the ENTRY script (a require()d module gets its caller's record); held per evaluator, so each --serve RELOAD generation answers for its own file. Returns nil in the REPL, under `mix -c`, and in embedders that install no record. The same facts `mix SCRIPT --version` prints, as data (v0.95.0)", contract!(() -> any_of(map, nil))),
     ("mix_version", CapabilityClass::Pure,    "type",    "The language runtime version as structured data: {major, minor, patch, string} — so a version gate never parses --version text (v0.78.0)", contract!(() -> map("mix_version"))),
     ("which", CapabilityClass::Env,           "system",  "Locate an EXECUTABLE in PATH: a PATH entry is returned only if it is a regular file the kernel says this process may execute (faccessat2 X_OK, so POSIX ACLs count), never merely a file that exists, and never a directory. cmd must be a string and is not coerced. Returns nil when nothing on PATH is runnable under that name (executability enforced since v0.52.0)", contract!((cmd: string) -> any_of(string, nil); failure[raises])),
-    ("date_format", CapabilityClass::Pure,     "system",  "Format Unix timestamp with strftime pattern", contract!((ts: number, fmt?: string) -> string; failure[raises])),
+    ("date_format", CapabilityClass::Pure,     "system",  "Format Unix timestamp with strftime pattern: date_format(ts[, fmt][, {utc}]). Local time by default; {utc: true} formats in UTC (%z prints +0000), the form for ISO 8601 `Z` stamps. fmt nil selects the default \"%Y-%m-%d %H:%M:%S\"", contract!((ts: number, fmt?: any_of(string, nil), opts?: any_of(map("date_format_options", {utc: bool}), nil)) -> string; failure[raises])),
     ("date_parse", CapabilityClass::Pure,      "system",  "Parse date string with strftime pattern into Unix timestamp", contract!((s: string) -> number; failure[raises])),
     ("now_iso", CapabilityClass::Pure,         "system",  "Current time as ISO 8601 string", contract!(() -> string)),
     ("duration_format", CapabilityClass::Pure, "system",  "Format seconds as human-readable duration (e.g. \"2h 15m\")", contract!((secs: number) -> string; failure[raises])),
@@ -16974,7 +16974,7 @@ fn mix_to_toml(val: &Value, path: &str) -> MixResult<toml::Value> {
 
 #[cfg(feature = "datetime")]
 fn builtin_date_format(args: Vec<Value>) -> MixResult<Option<Value>> {
-    expect_args("date_format", &args, 1)?;
+    expect_args_between("date_format", &args, 1, 3)?;
     // datetime.md: "sub-second precision is dropped on format" -- fractional
     // timestamps TRUNCATE (date_format(time()) is the canonical composition;
     // time() returns fractional seconds). The domain gate still refuses
@@ -16984,18 +16984,51 @@ fn builtin_date_format(args: Vec<Value>) -> MixResult<Option<Value>> {
         "date_format(): argument 1",
         number_arg("date_format", &args, 0)?.trunc(),
     )?;
-    let fmt = args
-        .get(1)
-        .map(|v| v.to_mix_string())
-        .unwrap_or_else(|| "%Y-%m-%d %H:%M:%S".into());
+    // nil is the omitted-format sentinel, so a caller can reach the options
+    // without restating the default pattern: date_format($t, nil, {utc: true}).
+    let fmt = match args.get(1) {
+        None | Some(Value::Nil) => "%Y-%m-%d %H:%M:%S".into(),
+        Some(v) => v.to_mix_string(),
+    };
+    // A new option, so unknown keys are refused from day one: `{UTC: true}`
+    // or `{tz: "UTC"}` silently formatting local time would put a local
+    // wall-clock under a `Z` suffix, the exact bug this option exists to end.
+    let mut utc = false;
+    match args.get(2) {
+        None | Some(Value::Nil) => {}
+        Some(Value::Map(m)) => {
+            if let Some(k) = m.keys().find(|k| k.as_str() != "utc") {
+                return Err(opt_invalid(
+                    "date_format()",
+                    format!("unknown option '{k}' (the only option is 'utc')"),
+                ));
+            }
+            if let Some(b) = bool_option("date_format()", "utc", m.get("utc"))? {
+                utc = b;
+            }
+        }
+        Some(other) => {
+            return Err(MixError::structured(
+                "TYPE_MISMATCH",
+                format!(
+                    "date_format(): options must be a map or nil, got {}",
+                    other.type_name()
+                ),
+            ));
+        }
+    }
     let dt = chrono::DateTime::from_timestamp(ts, 0).ok_or_else(|| {
         MixError::structured(
             "VALUE_OUT_OF_RANGE",
             format!("date_format(): argument 1 timestamp {ts} is outside the supported range"),
         )
     })?;
-    let local = dt.with_timezone(&chrono::Local);
-    Ok(Some(Value::String(local.format(&fmt).to_string())))
+    let text = if utc {
+        dt.format(&fmt).to_string()
+    } else {
+        dt.with_timezone(&chrono::Local).format(&fmt).to_string()
+    };
+    Ok(Some(Value::String(text)))
 }
 
 #[cfg(feature = "datetime")]
@@ -40052,6 +40085,79 @@ mod loud_numeric_argument_tests {
             info.message
         );
     }
+
+    #[cfg(feature = "datetime")]
+    fn utc_opts(v: Value) -> Value {
+        let mut m = indexmap::IndexMap::new();
+        m.insert("utc".to_string(), v);
+        Value::map(m)
+    }
+
+    // {utc: true} must not depend on the machine's zone: these hold on an
+    // AEST desk and on a UTC CI worker alike.
+    #[cfg(feature = "datetime")]
+    #[test]
+    fn date_format_utc_formats_in_utc() {
+        let out = call_builtin(
+            "date_format",
+            vec![
+                Value::Number(1700000000.0),
+                Value::String("%Y-%m-%dT%H:%M:%SZ %z".into()),
+                utc_opts(Value::Bool(true)),
+            ],
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(out, Value::String("2023-11-14T22:13:20Z +0000".into()));
+    }
+
+    #[cfg(feature = "datetime")]
+    #[test]
+    fn date_format_nil_fmt_selects_the_default_pattern() {
+        let out = call_builtin(
+            "date_format",
+            vec![Value::Number(0.0), Value::Nil, utc_opts(Value::Bool(true))],
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(out, Value::String("1970-01-01 00:00:00".into()));
+    }
+
+    #[cfg(feature = "datetime")]
+    #[test]
+    fn date_format_utc_false_and_nil_opts_match_the_local_default() {
+        let local = call_builtin("date_format", vec![Value::Number(1700000000.0)]).unwrap();
+        for opts in [utc_opts(Value::Bool(false)), Value::Nil] {
+            let out = call_builtin(
+                "date_format",
+                vec![Value::Number(1700000000.0), Value::Nil, opts],
+            )
+            .unwrap();
+            assert_eq!(out, local);
+        }
+    }
+
+    #[cfg(feature = "datetime")]
+    #[test]
+    fn date_format_refuses_bad_options() {
+        let mut unknown = indexmap::IndexMap::new();
+        unknown.insert("tz".to_string(), Value::String("UTC".into()));
+        let cases = [
+            (Value::map(unknown), "OPTION_INVALID"),
+            (utc_opts(Value::String("true".into())), "TYPE_MISMATCH"),
+            (Value::Bool(true), "TYPE_MISMATCH"),
+        ];
+        for (opts, code) in cases {
+            let err = call_builtin(
+                "date_format",
+                vec![Value::Number(0.0), Value::Nil, opts],
+            )
+            .unwrap_err();
+            assert_eq!(err.info().expect("structured").code, code);
+        }
+        let too_many = vec![Value::Number(0.0), Value::Nil, Value::Nil, Value::Nil];
+        assert!(call_builtin("date_format", too_many).is_err());
+    }
 }
 
 #[cfg(test)]
@@ -40607,6 +40713,8 @@ mod strict_write_and_bool_option_tests {
             ("hash_file", "algo"),
             ("buffer", "init"),
             ("exists", "opts"),
+            ("date_format", "fmt"),
+            ("date_format", "opts"),
             ("run_argv", "opts"),
             ("write_atomic", "opts"),
             ("publish", "body"),
@@ -40816,6 +40924,7 @@ mod strict_write_and_bool_option_tests {
         }
         let cases: &[(&str, &str, &[&str])] = &[
             ("exists", "opts", &["follow_symlinks"]),
+            ("date_format", "opts", &["utc"]),
             ("write_atomic", "opts", &["durability", "mode", "max_bytes"]),
             ("run_argv", "opts", &["timeout", "stream"]),
             ("stat", "opts", &["follow_symlinks"]),

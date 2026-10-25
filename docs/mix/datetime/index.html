@@ -211,7 +211,7 @@
                         <a href="#time--the-current-timestamp">time() — the current timestamp</a>
                         <a href="#monotonic--the-clock-that-never-goes-backwards">monotonic() — the clock that never goes backwards</a>
                         <a href="#now_iso--current-local-time-as-a-string">now_iso() — current local time as a string</a>
-                        <a href="#date_formatts--fmt--timestamp--text">date_format(ts [, fmt]) — timestamp → text</a>
+                        <a href="#date_formatts--fmt--utc--timestamp--text">date_format(ts [, fmt] [, {utc}]) — timestamp → text</a>
                         <a href="#local-vs-utc--read-this" class="toc-h3">Local vs UTC — read this</a>
                         <a href="#date_parses--text--timestamp">date_parse(s) — text → timestamp</a>
                         <a href="#the-round-trip-gotcha-parse-then-format" class="toc-h3">The round-trip gotcha (parse-then-format)</a>
@@ -259,7 +259,7 @@ print(date_format($tomorrow, "%Y-%m-%d"))
 <tr><td><code>time()</code></td><td>number (float seconds)</td><td>current Unix timestamp</td></tr>
 <tr><td><code>monotonic()</code></td><td>number (float seconds)</td><td>monotonic-clock reading for measuring intervals</td></tr>
 <tr><td><code>now_iso()</code></td><td>string</td><td>current local time as ISO 8601 / RFC 3339</td></tr>
-<tr><td><code>date_format(ts [, fmt])</code></td><td>string</td><td>render a timestamp via strftime (<strong>local</strong> time)</td></tr>
+<tr><td><code>date_format(ts [, fmt] [, {utc}])</code></td><td>string</td><td>render a timestamp via strftime (<strong>local</strong> time; <code>{utc: true}</code> for UTC)</td></tr>
 <tr><td><code>date_parse(s)</code></td><td>number</td><td>parse a date string → Unix timestamp</td></tr>
 <tr><td><code>duration_format(secs)</code></td><td>string</td><td>render a span of seconds as <code>1d 2h 3m 4s</code></td></tr>
 <tr><td><code>relative_time(ts)</code></td><td>string</td><td>render a timestamp as <code>3h ago</code> / <code>in 5m</code></td></tr>
@@ -303,12 +303,20 @@ print("took " .. (monotonic() - $start) .. "s")
 <pre><code class="language-text">2026-07-03T14:19:54.080883176+10:00
 </code></pre>
 <p>The trailing <code>+10:00</code> is the machine's local UTC offset (here AEST). Use <code>now_iso()</code> for log lines and timestamps you want a human to read at a glance; use <code>time()</code> when you need a number to do arithmetic on.</p>
-<h2 id="date_formatts--fmt--timestamp--text">date_format(ts [, fmt]) — timestamp → text</h2>
-<p><code>date_format</code> turns a Unix timestamp into a string using a <strong>strftime</strong> pattern. The timestamp is interpreted as UTC seconds, then <strong>converted to the machine's local timezone</strong> before formatting.</p>
+<h2 id="date_formatts--fmt--utc--timestamp--text">date_format(ts [, fmt] [, {utc}]) — timestamp → text</h2>
+<p><code>date_format</code> turns a Unix timestamp into a string using a <strong>strftime</strong> pattern. The timestamp is interpreted as UTC seconds, then <strong>converted to the machine's local timezone</strong> before formatting, unless you pass <code>{utc: true}</code>.</p>
 <ul>
 <li>Argument 1: the timestamp (number; a float is truncated to whole seconds).</li>
-<li>Argument 2 (optional): the strftime format string. <strong>Default is <code>"%Y-%m-%d %H:%M:%S"</code>.</strong></li>
+<li>Argument 2 (optional): the strftime format string. <strong>Default is <code>"%Y-%m-%d %H:%M:%S"</code>.</strong> <code>nil</code> also selects the default, so you can reach the options without restating it.</li>
+<li>Argument 3 (optional): <code>{utc: true}</code> formats in UTC instead of local time (<code>%z</code> then prints <code>+0000</code>). <code>utc</code> must be a bool; any other key raises <code>OPTION_INVALID</code>.</li>
 </ul>
+<p>For an ISO 8601 stamp ending in <code>Z</code> (what GitHub, JSON APIs and most logs expect), use UTC. A <code>Z</code> typed into a local-time pattern labels local wall-clock time as UTC, which is wrong by your offset:</p>
+<pre><code class="language-mix">print(date_format(1700000000, "%Y-%m-%dT%H:%M:%SZ", {utc: true}))
+print(date_format(1700000000, nil, {utc: true}))
+</code></pre>
+<pre><code class="language-text">2023-11-14T22:13:20Z
+2023-11-14 22:13:20
+</code></pre>
 <pre><code class="language-mix">print(date_format(1700000000))
 </code></pre>
 <pre><code class="language-text">2023-11-15 08:13:20
