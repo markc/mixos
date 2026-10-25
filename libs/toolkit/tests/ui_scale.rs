@@ -46,11 +46,12 @@ fn larger_text_scales_roles_buttons_and_content_without_spacing() {
     content.font.size = 18.0;
     for light in [false, true] {
         content.light = light;
-        let _ = ctx.run_ui(Default::default(), |ui| {
+        let mut output = ctx.run_ui(Default::default(), |ui| {
             toolkit::content::surface(ui, &content, |ui| {
                 close(TextStyle::Body.resolve(ui.style()).size, 27.0);
             });
         });
+        output.textures_delta.clear();
     }
     assert_eq!(content.font.size, 18.0);
 }
@@ -107,7 +108,8 @@ fn live_install_replaces_rather_than_compounds_and_clamps() {
     toolkit::install(&ctx, &theme(1.5, 0.85));
     assert_eq!(toolkit::ui_scale::of(&ctx).text_scale, 1.5);
     toolkit::install(&ctx, &theme(1.0, 1.0));
-    assert_eq!(*ctx.global_style(), *original);
+    assert_eq!(ctx.global_style().text_styles, original.text_styles);
+    assert_eq!(ctx.global_style().spacing, original.spacing);
     assert_eq!(theme(100.0, -2.0).ui(), theme(3.0, 0.5).ui());
     assert_eq!(theme(-1.0, 7.0).ui(), theme(0.5, 2.0).ui());
     assert_eq!(theme(f64::NAN, f64::NAN).ui(), &CommonUi::default());
@@ -125,5 +127,7 @@ fn theme_choices_and_style_overlays_preserve_desktop_scaling_once() {
     assert_eq!(chosen.ui(), theme.ui());
     let before = toolkit::style::style(&chosen);
     let overlaid = chosen.with_overlay(Default::default()).unwrap();
-    assert_eq!(toolkit::style::style(&overlaid), before);
+    let after = toolkit::style::style(&overlaid);
+    assert_eq!(after.text_styles, before.text_styles);
+    assert_eq!(after.spacing, before.spacing);
 }

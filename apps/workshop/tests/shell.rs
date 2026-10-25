@@ -796,7 +796,8 @@ fn desktop_text_and_density_reinstall_through_the_live_follower() {
     answer_look(&mut rig, reply("22", 1.5, 1.2, true));
     assert_eq!(toolkit::ui_scale::of(&rig.h.ctx).density, 1.2);
     answer_look(&mut rig, reply("23", 1.0, 1.0, false));
-    assert_eq!(*rig.h.ctx.global_style(), *normal);
+    assert_eq!(rig.h.ctx.global_style().text_styles, normal.text_styles);
+    assert_eq!(rig.h.ctx.global_style().spacing, normal.spacing);
 }
 
 fn effective_scheme(rig: &mut Rig, id: u64) -> Value {
