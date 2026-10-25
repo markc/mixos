@@ -81,6 +81,7 @@ fn with_event_loop<R>(
 struct WinitAppWrapper<T: WinitApp> {
     windows_next_repaint_times: HashMap<WindowId, Instant>,
     logic_wake: LogicWake,
+    checking_redraw_requests: bool,
     winit_app: T,
     return_result: Result<(), crate::Error>,
     run_and_return: bool,
@@ -91,6 +92,7 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         Self {
             windows_next_repaint_times: HashMap::default(),
             logic_wake: LogicWake::default(),
+            checking_redraw_requests: false,
             winit_app,
             return_result: Ok(()),
             run_and_return,
@@ -190,18 +192,16 @@ impl<T: WinitApp> WinitAppWrapper<T> {
     }
 
     fn check_redraw_requests(&mut self, event_loop: &ActiveEventLoop) {
-        let now = Instant::now();
-
-        // A one-shot fallback, cancelled by a normal root redraw. Wayland may
-        // withhold frame callbacks without reporting the window as hidden.
-        if self.logic_wake.take_due(now)
-            && let Some(window_id) = self
-                .winit_app
-                .window_id_from_viewport_id(egui::ViewportId::ROOT)
-        {
-            let result = self.winit_app.run_logic(event_loop, window_id);
-            self.handle_event_result(event_loop, result);
+        // Processing logic can schedule more work through handle_event_result.
+        // Finish this iteration before checking it, including visibility throttles.
+        if self.checking_redraw_requests {
+            return;
         }
+        self.checking_redraw_requests = true;
+        let now = Instant::now();
+        let root_window_id = self
+            .winit_app
+            .window_id_from_viewport_id(egui::ViewportId::ROOT);
 
         let mut invisible_window_ids = Vec::new();
 
@@ -228,6 +228,9 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                         // busy-loops a whole CPU core.
                         // See https://github.com/emilk/egui/issues/8326.
                         window.request_redraw();
+                        if root_window_id == Some(*window_id) {
+                            self.logic_wake.request(Instant::now());
+                        }
                     }
                 } else {
                     log::trace!("No window found for {window_id:?}");
@@ -263,6 +266,15 @@ impl<T: WinitApp> WinitAppWrapper<T> {
             }
         }
 
+        // Invisible root handling above cancels the fallback, so a viewport
+        // gets at most one logic pass in this iteration.
+        if self.logic_wake.take_due(Instant::now())
+            && let Some(window_id) = root_window_id
+        {
+            let result = self.winit_app.run_logic(event_loop, window_id);
+            self.handle_event_result(event_loop, result);
+        }
+
         // Always set an explicit, sleeping control flow. Previously we only set
         // `WaitUntil` when a repaint was already scheduled, which meant that a
         // `ControlFlow::Poll` set earlier was never undone once the last timed
@@ -278,6 +290,7 @@ impl<T: WinitApp> WinitAppWrapper<T> {
             Some(next_repaint_time) => ControlFlow::WaitUntil(next_repaint_time),
             None => ControlFlow::Wait,
         });
+        self.checking_redraw_requests = false;
     }
 }
 
@@ -350,9 +363,6 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
                         if let Some(window_id) =
                             self.winit_app.window_id_from_viewport_id(viewport_id)
                         {
-                            if viewport_id == egui::ViewportId::ROOT {
-                                self.logic_wake.request(when.max(Instant::now()));
-                            }
                             // Throttle repaints for invisible windows to prevent
                             // high CPU usage on Windows.
                             // See: https://github.com/emilk/egui/issues/7776

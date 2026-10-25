@@ -17,12 +17,12 @@ use toolkit::{Theme, drive};
 use workshop::label;
 use workshop::shell::{APP, Shell};
 
-// Exercise the actual vendored scheduling policy as a re-vendor guard.
+// Exercise the actual vendored deadline policy alongside the wiring guard.
 #[path = "../../../vendor/eframe/src/native/logic_wake.rs"]
 mod logic_wake;
 
 #[test]
-fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
+fn queued_bus_requests_answer_through_logic_without_a_ui_pass() {
     let mut rig = rig();
     let ctx = rig.h.ctx.clone();
     let pass = ctx.cumulative_pass_nr();
@@ -43,11 +43,6 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
     send(&mut rig, 7002, "HELP", json!({}));
     rig.h.state().as_ref().unwrap().forward_pending();
 
-    // Reproduce the old scheduler: request_redraw has no frame callback,
-    // therefore no UI pass and no call to Shell::logic. Work remains queued.
-    assert!(reply(&rig, 7001).is_none());
-    assert!(reply(&rig, 7002).is_none());
-
     // The Bus forwarder requests a repaint from another thread. Explicitly
     // wake too, so the inbox drain used for deterministic ordering cannot
     // race the forwarder's wake in this test.
@@ -58,7 +53,6 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
     let when = incoming.recv_timeout(Duration::from_secs(1)).unwrap();
     let mut wake = logic_wake::LogicWake::default();
     wake.request(when);
-    assert!(!wake.take_due(when));
     let deadline = wake.deadline().unwrap();
     assert!(wake.take_due(deadline));
     // This is eframe's existing logic-only path: no run_ui, no painter.
@@ -66,6 +60,14 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
         rig.h.state_mut().as_mut().unwrap().logic(ctx);
     });
     assert_eq!(ctx.cumulative_pass_nr(), pass);
+    // Logic has now accepted the input. A brief stall must preserve it,
+    // keeping later deliveries ordered until the quiet period expires.
+    assert!(reply(&rig, 7000).is_none());
+    assert!(reply(&rig, 7001).is_none());
+    std::thread::sleep(drive::INPUT_QUIET_PERIOD + Duration::from_millis(10));
+    let _output = ctx.run_logic(&egui::RawInput::default(), |ctx| {
+        rig.h.state_mut().as_mut().unwrap().logic(ctx);
+    });
     assert_eq!(wake.deadline(), None);
     assert!(!wake.take_due(deadline + Duration::from_secs(60)));
 
@@ -92,6 +94,43 @@ fn queued_bus_requests_answer_without_a_frame_callback_or_paint() {
     assert_eq!(reply(&rig, 7000).unwrap().2["error_code"], "CANCELLED");
     assert_eq!(reply(&rig, 7001).unwrap().1, 0);
     assert_eq!(reply(&rig, 7002).unwrap().1, 0);
+}
+
+#[test]
+fn vendored_eframe_logic_wake_is_wired_to_redraw_and_both_renderers() {
+    let run = include_str!("../../../vendor/eframe/src/native/run.rs");
+    let check = run.split("fn check_redraw_requests(").nth(1).unwrap()
+        .split("impl<T: WinitApp> ApplicationHandler").next().unwrap();
+    assert!(check.contains("if self.checking_redraw_requests"));
+    assert!(check.contains("self.checking_redraw_requests = true;"));
+    assert!(check.contains("self.checking_redraw_requests = false;"));
+    let redraw = check.find("window.request_redraw();").unwrap();
+    let arm = check.find("self.logic_wake.request(Instant::now());").unwrap();
+    assert!(redraw < arm);
+    assert!(check[redraw..arm].contains("if root_window_id == Some(*window_id)"));
+    let invisible = check.find("for window_id in &invisible_window_ids").unwrap();
+    let cancel = check.find("self.logic_wake.cancel();").unwrap();
+    let take = check.find("self.logic_wake.take_due(Instant::now())").unwrap();
+    assert!(invisible < cancel && cancel < take);
+    assert!(check[take..].contains("self.winit_app.run_logic(event_loop, window_id)"));
+    assert!(check.contains(".chain(self.logic_wake.deadline())"));
+    let redraw_event = run.split("winit::event::WindowEvent::RedrawRequested =>").nth(1).unwrap();
+    assert!(redraw_event.find("self.logic_wake.cancel();").unwrap()
+        < redraw_event.find("self.winit_app.run_ui_and_paint").unwrap());
+    let user_event = run.split("fn user_event(").nth(1).unwrap().split("fn new_events(").next().unwrap();
+    assert!(!user_event.contains("self.logic_wake.request("));
+    for (renderer, call, logic_call) in [
+        (include_str!("../../../vendor/eframe/src/native/wgpu_integration.rs"),
+        "running.run_ui_and_paint(window_id, event_loop, true)",
+        "integration.update_logic_only(app.as_mut(), raw_input)"),
+        (include_str!("../../../vendor/eframe/src/native/glow_integration.rs"),
+        "running.run_ui_and_paint(event_loop, window_id, true)",
+        ".update_logic_only(self.app.as_mut(), raw_input)"),
+    ] {
+        let logic = renderer.split("fn run_logic(").nth(1).unwrap().split("fn resumed(").next().unwrap();
+        assert!(logic.contains(call));
+        assert!(renderer.contains(logic_call));
+    }
 }
 
 struct Rig {

@@ -216,12 +216,18 @@ pub fn pending(ctx: &Context) -> bool {
         .unwrap_or(false)
 }
 
-/// The per-frame step an app runs from its logic, which runs even while
-/// the window is hidden: when the window is hidden or no UI pass runs, settle the running job
-/// and cancel the queue (no pass would ever read their input); expire a
-/// capture past its deadline; then hand back every finished answer.
+/// No UI pass for this long means pending input cannot make progress.
+/// Keep brief desktop animations and GPU stalls (150–500 ms) intact, while
+/// releasing later Bus commands after a window stops producing frames.
+pub const INPUT_QUIET_PERIOD: Duration = Duration::from_secs(1);
+
+/// Run from app logic, including logic-only wakes. Settle pending input after
+/// [`INPUT_QUIET_PERIOD`] without a UI pass, expire captures and return answers.
 pub fn logic(ctx: &Context) -> Vec<Answer> {
-    let hidden = ctx.input(|i| i.viewport().visible() == Some(false));
+    logic_at(ctx, Instant::now())
+}
+
+fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
     ctx.with_plugin(|drive: &mut Drive| {
         // Wayland can withhold frame callbacks on another virtual desktop
         // without exposing a hidden/minimized flag. A logic-only wake must
@@ -230,11 +236,15 @@ pub fn logic(ctx: &Context) -> Vec<Answer> {
             .passes
             .get(&std::thread::current().id())
             .is_none_or(Vec::is_empty);
-        if hidden || logic_only {
+        let last_ui_pass = drive.last_ui_pass.get_or_insert(now);
+        let quiet = now.saturating_duration_since(*last_ui_pass);
+        if logic_only && quiet >= INPUT_QUIET_PERIOD {
             drive.settle(
                 ctx,
-                "the window stopped producing UI passes before this input was read",
+                &format!("the window produced no frames for {} ms before this input was read", quiet.as_millis()),
             );
+        } else if logic_only && drive.has_pending() {
+            ctx.request_repaint_after(INPUT_QUIET_PERIOD.saturating_sub(quiet));
         }
         drive.expire();
         let mut answers = std::mem::take(&mut drive.answers);
@@ -462,6 +472,7 @@ struct Shot(u64);
 /// The plugin: the last widget tree, queued input and finished answers.
 #[derive(Default)]
 pub struct Drive {
+    last_ui_pass: Option<Instant>,
     children: HashMap<egui::ViewportId, Box<Drive>>,
     requests: VecDeque<(u64, String, Value)>,
     passes: HashMap<std::thread::ThreadId, Vec<egui::ViewportId>>,
@@ -487,10 +498,12 @@ impl egui::Plugin for Drive {
     }
 
     fn setup(&mut self, ctx: &Context) {
+        self.last_ui_pass = Some(Instant::now());
         ctx.enable_accesskit();
     }
 
     fn input_hook(&mut self, ctx: &Context, input: &mut RawInput) {
+        self.last_ui_pass = Some(Instant::now());
         self.passes
             .entry(std::thread::current().id())
             .or_default()
@@ -601,6 +614,7 @@ impl egui::Plugin for Drive {
             }
             return;
         }
+        self.last_ui_pass = Some(Instant::now());
         self.output(ctx, output);
     }
 }
@@ -1559,6 +1573,25 @@ fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pending_input_survives_until_exactly_the_quiet_deadline() {
+        let ctx = Context::default();
+        install(&ctx, "demo");
+        let now = Instant::now();
+        ctx.with_plugin(|drive: &mut Drive| {
+            drive.last_ui_pass = Some(now);
+            drive.queue.push_back((99, Job::Type { text: "hello".into() }));
+        });
+        assert!(logic_at(&ctx, now + INPUT_QUIET_PERIOD - Duration::from_millis(1)).is_empty());
+        assert!(pending(&ctx));
+        let answers = logic_at(&ctx, now + INPUT_QUIET_PERIOD);
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].id, 99);
+        assert_eq!(answers[0].body["error_code"], "CANCELLED");
+        assert!(answers[0].body.to_string().contains("no frames for 1000 ms"));
+        assert!(!pending(&ctx));
+    }
 
     #[test]
     fn overlapping_render_threads_keep_their_pass_attribution() {

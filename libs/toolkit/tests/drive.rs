@@ -782,6 +782,7 @@ fn a_click_cancelled_before_its_press_leaves_no_button_down() {
         .or_default()
         .minimized = Some(true);
     let mut answers = Vec::new();
+    std::thread::sleep(drive::INPUT_QUIET_PERIOD + std::time::Duration::from_millis(10));
     let _ = h
         .ctx
         .run_logic(&hidden, |ctx| answers.extend(drive::logic(ctx)));
@@ -804,7 +805,7 @@ fn a_click_cancelled_before_its_press_leaves_no_button_down() {
 
 /// A hidden virtual desktop need not be reported as minimized by Wayland.
 #[test]
-fn a_stalled_frame_callback_cancels_input_even_when_window_reports_visible() {
+fn logic_only_preserves_brief_stalls_and_cancels_after_the_quiet_period() {
     let mut h = window();
     h.state_mut()
         .inbox
@@ -824,6 +825,9 @@ fn a_stalled_frame_callback_cancels_input_even_when_window_reports_visible() {
         answers.extend(drive::logic(ctx));
     });
     assert_eq!(h.ctx.cumulative_pass_nr(), pass);
+    assert!(answers.is_empty(), "a brief stall preserves pending input");
+    std::thread::sleep(drive::INPUT_QUIET_PERIOD + std::time::Duration::from_millis(10));
+    let _ = h.ctx.run_logic(&input, |ctx| answers.extend(drive::logic(ctx)));
     assert_eq!(answers.len(), 1);
     assert_eq!(answers[0].id, 91);
     assert_eq!(answers[0].body["error_code"], "CANCELLED");
@@ -833,6 +837,22 @@ fn a_stalled_frame_callback_cancels_input_even_when_window_reports_visible() {
     assert_eq!(h.state().count, 0);
     assert!(!h.ctx.input(|i| i.pointer.any_down()));
     ok(&mut h, "ui.click", json!({"label":"Count"}));
+    assert_eq!(h.state().count, 1);
+}
+
+#[test]
+fn input_completes_when_ui_resumes_after_a_brief_logic_only_stall() {
+    let mut h = window();
+    h.state_mut().inbox.push((92, "ui.click", json!({"label":"Count"})));
+    h.step();
+    h.step();
+    let input = h.input_mut().clone();
+    let mut answers = Vec::new();
+    let _ = h.ctx.run_logic(&input, |ctx| answers.extend(drive::logic(ctx)));
+    assert!(answers.is_empty());
+    for _ in 0..8 {
+        h.step();
+    }
     assert_eq!(h.state().count, 1);
 }
 

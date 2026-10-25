@@ -41,7 +41,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stalled_redraw_runs_once_then_sleeps() {
+    fn deadline_is_consumed_once_and_requests_coalesce() {
         let now = Instant::now();
         let mut wake = LogicWake::default();
         assert_eq!(wake.deadline(), None);
@@ -72,5 +72,20 @@ mod tests {
         wake.request(now + Duration::from_secs(30));
         assert!(!wake.take_due(now + Duration::from_secs(30)));
         assert!(wake.take_due(now + Duration::from_secs(31)));
+    }
+
+    #[test]
+    fn later_redraw_can_arm_after_an_earlier_fallback_was_consumed() {
+        let now = Instant::now();
+        let mut wake = LogicWake::default();
+        wake.request(now);
+        assert!(wake.take_due(now + GRACE));
+        // The event loop issues a previously queued delayed redraw five
+        // seconds later. Its fallback belongs to this actual redraw time.
+        let redraw = now + Duration::from_secs(5);
+        wake.request(redraw);
+        assert_eq!(wake.deadline(), Some(redraw + GRACE));
+        assert!(!wake.take_due(redraw + GRACE - Duration::from_millis(1)));
+        assert!(wake.take_due(redraw + GRACE));
     }
 }
