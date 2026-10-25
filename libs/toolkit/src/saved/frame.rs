@@ -198,26 +198,28 @@ impl Frame {
 
     /// Read the owning window and its output at exit. Place coordinates are
     /// output-local window geometry, unlike the catalogue's global surface box.
-    pub async fn capture_exit<F, Fut>(&mut self, app_id: &str, mut call: F)
+    pub async fn capture_exit<F, Fut>(&mut self, app_id: &str, call: F)
     where
         F: FnMut(&'static str, Value) -> Fut,
         Fut: Future<Output = Option<Value>>,
     {
-        let Some(window) = Self::own_window(app_id, &mut call).await else {
-            return;
-        };
-        let Some(output) = window["output"].as_str() else {
-            return;
-        };
-        let Some(output) = call(
+        let _ = self.capture_identified(app_id, call).await;
+    }
+
+    pub(super) async fn capture_identified<F, Fut>(&mut self, app_id: &str, mut call: F) -> Option<Value>
+    where
+        F: FnMut(&'static str, Value) -> Fut,
+        Fut: Future<Output = Option<Value>>,
+    {
+        let window = Self::own_window(app_id, &mut call).await?;
+        let output = window["output"].as_str()?;
+        let output = call(
             "comp.props.get",
             json!({"path":format!("outputs.{output}")}),
         )
-        .await
-        else {
-            return;
-        };
+        .await?;
         self.capture_comp(&window, &output);
+        Some(window)
     }
 
     /// Capture window geometry relative to the owning output, excluding the

@@ -11,6 +11,7 @@ struct Windows {
     frames: BTreeMap<String, Frame>,
     workers: BTreeMap<String, CaptureSender>,
     captured: BTreeMap<String, (Instant, Frame, Option<egui::Rect>)>,
+    viewports: BTreeMap<String, egui::ViewportId>,
 }
 type Shared = Arc<Mutex<Windows>>;
 
@@ -58,6 +59,7 @@ pub fn capture(ctx: &egui::Context, app: &str, name: &str) {
     if ctx.embed_viewports() { return; }
     let state = shared(ctx, app);
     let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
+    windows.viewports.insert(name.into(), ctx.viewport_id());
     windows.frames.entry(name.into()).or_default().capture(ctx);
     let now = Instant::now();
     let closing = ctx.input(|i| i.viewport().close_requested());
@@ -136,14 +138,38 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context
                     }
                     false
             }).await;
-            while let Some(done) = rx.recv().await {
+            let Some(mut incoming) = incoming.into_inner() else { return; };
+            let mut own_id = None;
+            loop {
+                let done = tokio::select! {
+                    job = rx.recv() => match job { Some(done) => done, None => break },
+                    event = incoming.recv() => {
+                        let Some(event) = event else { break; };
+                        let mut capture = capture_event(event.headers.get("path").map(String::as_str), own_id);
+                        // A native move may change several leaves in one pass.
+                        // Drain the burst, including irrelevant windows, before
+                        // one catalogue read. Never retain an unread topic queue.
+                        while let Ok(event) = incoming.try_recv() {
+                            capture |= capture_event(event.headers.get("path").map(String::as_str), own_id);
+                        }
+                        if !capture { continue; }
+                        None
+                    }
+                };
                 frame = state.lock().unwrap_or_else(|e| e.into_inner()).frames.get(&name).cloned().unwrap_or_default();
-                let _ = tokio::time::timeout(Duration::from_millis(700), frame.capture_exit(&app_id, call)).await;
+                let prior_maximised = frame.maximised;
+                if let Ok(Some(window)) = tokio::time::timeout(Duration::from_millis(700), frame.capture_identified(&app_id, call)).await {
+                    own_id = window["id"].as_u64();
+                }
                 let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
                 // Portable capture may have advanced while the Bus replied.
                 let latest = windows.frames.entry(name.clone()).or_default();
                 latest.placement = frame.placement;
-                persist(&windows, &name);
+                if done.is_some() || latest.maximised == prior_maximised { latest.maximised = frame.maximised; }
+                // Normal saves run through the child pass's debounce. A final
+                // read must reach disk before acknowledging native destruction.
+                if done.is_some() { persist(&windows, &name); }
+                if let Some(viewport) = windows.viewports.get(&name) { ctx.request_repaint_of(*viewport); }
                 ctx.request_repaint_of(egui::ViewportId::ROOT);
                 drop(windows);
                 if let Some(done) = done { let _ = done.send(()); }
@@ -151,6 +177,18 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context
         });
         runtime.shutdown_timeout(Duration::from_millis(100));
     }).ok().map(|_| tx)
+}
+
+fn capture_event(path: Option<&str>, own_id: Option<u64>) -> bool {
+    let Some(path) = path else { return false; };
+    if path == "outputs" || path.starts_with("outputs.") || path == "windows" { return true; }
+    match own_id {
+        Some(id) => {
+            let prefix = format!("windows.s{id}");
+            path == prefix || path.starts_with(&(prefix + "."))
+        }
+        None => path.starts_with("windows."),
+    }
 }
 
 fn reply_value(rc: u8, body: &str) -> Option<Value> {
@@ -184,6 +222,18 @@ pub fn finish(ctx: &egui::Context, app: &str, name: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secondary_events_follow_only_its_window_and_output_geometry() {
+        for path in ["windows.s7.window_x", "windows.s7.workspace", "windows.s7.maximized", "outputs.o_main.x", "windows.s7"] {
+            assert!(capture_event(Some(path), Some(7)), "{path}");
+        }
+        for path in ["windows.s70.window_x", "windows.s8.workspace", "decoration.style"] {
+            assert!(!capture_event(Some(path), Some(7)), "{path}");
+        }
+        assert!(!capture_event(None, Some(7)));
+        assert!(capture_event(Some("windows.s8.app_id"), None));
+    }
 
     #[test]
     fn secondary_transport_retains_feature_refusal_fields() {
