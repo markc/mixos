@@ -1173,10 +1173,15 @@ impl Engine {
                 Ok(json!({"body":self.ui.body}))
             }
             "workshop.dock" => {
-                let side: DockSide = args
+                let side = args
                     .get("side")
-                    .cloned()
-                    .and_then(|v| serde_json::from_value(v).ok())
+                    .and_then(Value::as_str)
+                    .and_then(|side| match side {
+                        "auto" => Some(DockSide::Auto),
+                        "bottom" => Some(DockSide::Bottom),
+                        "right" => Some(DockSide::Right),
+                        _ => None,
+                    })
                     .ok_or(("ARGUMENT", "side must be auto, bottom or right".to_owned()))?;
                 let size = args
                     .get("size")
@@ -2369,6 +2374,7 @@ mod tests {
         for args in [
             json!({}),
             json!({"side":"left"}),
+            json!({"side":{"right":null}}),
             json!({"side":"right","size":1.1}),
             json!({"side":"right","size":"half"}),
             json!({"side":"right","open":0}),
