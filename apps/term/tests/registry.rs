@@ -25,7 +25,7 @@ fn registered(owner: &str) -> Vec<String> {
 
 #[test]
 fn every_described_command_is_registered_and_nothing_else() {
-    let described: Vec<String> = describe()["commands"]
+    let described: Vec<String> = describe("term")["commands"]
         .as_array()
         .unwrap()
         .iter()
@@ -53,7 +53,7 @@ fn class_of(name: &str) -> Option<&'static str> {
 /// (docs/docs/decisions/2026-10-11-verb-classes.md).
 #[test]
 fn read_only_commands_are_queries() {
-    let commands = describe();
+    let commands = describe("term");
     for command in commands["commands"].as_array().unwrap() {
         let name = command["name"].as_str().unwrap();
         if matches!(name, "HELP" | "app.describe") {

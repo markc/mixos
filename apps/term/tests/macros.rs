@@ -5,7 +5,7 @@ fn macros_status_dispatch_and_surface() {
         .wait()
         .unwrap();
     assert_eq!(body["state"], "idle");
-    let surface = term::bus::describe();
+    let surface = term::bus::describe("term");
     for suffix in ["list", "reload", "run", "status", "output", "stop", "new"] {
         let name = format!("term.macros.{suffix}");
         assert!(
