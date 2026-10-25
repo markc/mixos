@@ -107,7 +107,12 @@ pub fn panel<R>(
         .filter(|v| (*v - share).abs() > 0.005)
         .or(restored);
     with(ui.ctx(), |w| {
-        w.panels.insert(name.into(), changed.unwrap_or(share));
+        // Store what is drawn: a saved share outside this panel's limits is
+        // kept clamped, not as the raw value the layout never shows.
+        let stored = changed
+            .unwrap_or(share)
+            .clamp(*limits.start(), *limits.end());
+        w.panels.insert(name.into(), stored);
     });
     (shown, changed)
 }
@@ -174,8 +179,11 @@ pub fn scroll<R>(
         state.store(ui.ctx(), out.id);
         ui.ctx().request_repaint();
     }
+    // Scrolled by the user before the rows were ready: the user's place
+    // wins, so the saved offset is never applied over it.
+    let user_scrolled = !ready && out.state.offset != egui::Vec2::ZERO;
     with(ui.ctx(), |w| {
-        if ready {
+        if ready || user_scrolled {
             w.applied.insert(token);
             let offset = restore.unwrap_or(out.state.offset);
             w.scrolls.insert(
@@ -530,6 +538,70 @@ mod tests {
             widgets.scrolls["services"].offset[1], 80.0,
             "quitting before discovery completes retains the user's newer offset"
         );
+    }
+    #[test]
+    fn a_scroll_before_the_rows_are_ready_wins_over_the_saved_offset() {
+        let ctx = egui::Context::default();
+        let mut widgets = Widgets::default();
+        widgets.scrolls.insert(
+            "services".into(),
+            Scroll {
+                key: None,
+                offset: [0.0, 300.0],
+            },
+        );
+        widgets.install(&ctx);
+        let tree = |ready: bool, id: &mut egui::Id, offset: &mut f32| {
+            draw(&ctx, |ui| {
+                let out = scroll(
+                    ui,
+                    "services",
+                    None,
+                    ready,
+                    egui::ScrollArea::vertical().max_height(100.0),
+                    |ui| {
+                        ui.allocate_space(egui::vec2(100.0, 1000.0));
+                    },
+                );
+                *id = out.id;
+                *offset = out.state.offset.y;
+            });
+        };
+        let (mut id, mut offset) = (egui::Id::NULL, 0.0);
+        tree(false, &mut id, &mut offset);
+        // The person scrolls while discovery is still running.
+        let mut user = egui::scroll_area::State::load(&ctx, id).unwrap();
+        user.offset.y = 80.0;
+        user.store(&ctx, id);
+        tree(false, &mut id, &mut offset);
+        for _ in 0..2 {
+            tree(true, &mut id, &mut offset);
+        }
+        assert_eq!(offset, 80.0, "the saved 300 must not yank the view back");
+        widgets.collect(&ctx);
+        assert_eq!(widgets.scrolls["services"].offset[1], 80.0);
+    }
+    #[test]
+    fn a_saved_share_outside_the_panel_limits_is_stored_clamped() {
+        let ctx = egui::Context::default();
+        let mut widgets = Widgets::default();
+        widgets.panels.insert("left".into(), 0.95);
+        widgets.install(&ctx);
+        draw(&ctx, |ui| {
+            let (out, _) = panel(
+                ui,
+                "left",
+                egui::Panel::left("left"),
+                1000.0,
+                0.95,
+                0.1..=0.8,
+                true,
+                |_| {},
+            );
+            assert!((out.response.rect.width() - 800.0).abs() < 2.0);
+        });
+        widgets.collect(&ctx);
+        assert_eq!(widgets.panels["left"], 0.8);
     }
     #[test]
     fn group_and_collapsing_state_survive_a_new_context() {
