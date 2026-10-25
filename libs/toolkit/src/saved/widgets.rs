@@ -288,8 +288,8 @@ mod tests {
         h.run();
         let edge = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new("left"))
             .unwrap()
-            .size()
-            .x;
+            .outer_rect
+            .right();
         h.hover_at(egui::pos2(edge, 250.0));
         h.run();
         h.drag_at(egui::pos2(edge, 250.0));
