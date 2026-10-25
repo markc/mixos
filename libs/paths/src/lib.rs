@@ -387,10 +387,10 @@ static SNAPSHOT: OnceLock<Result<Snapshot>> = OnceLock::new();
 fn snapshot() -> Result<&'static Snapshot> {
     SNAPSHOT
         .get_or_init(|| {
+            // No /proc and no MIXOS_PREFIX: from_source falls back to the
+            // default prefix, as the old resolver did, rather than failing
+            // every root.
             let env = Environment::current();
-            if env.prefix.is_none() && env.exe.is_none() {
-                return Err("cannot locate the running executable".into());
-            }
             let prefix = Layout::from_source(&env, "")?.try_root(Root::Prefix)?;
             let source = read_layout(&prefix)?;
             let process = Layout::from_source(&env, &source)?;

@@ -21,7 +21,8 @@ async fn layout_reader_and_load_data_share_a_grammar() {
             "paths reader: {name}"
         );
         if name.starts_with("ok_") {
-            let mix::value::Value::Map(map) = loaded.unwrap() else {
+            let loaded = loaded.unwrap();
+            let mix::value::Value::Map(map) = &loaded else {
                 panic!("{name}: load_data did not return a map")
             };
             let roots = resolved.unwrap();
@@ -96,7 +97,7 @@ async fn mix_front_door_selects_the_explicit_tier_and_rejects_old_root_names() {
                 root.name()
             );
             let value = mix::run(&source).await.unwrap();
-            let mix::value::Value::String(value) = value else {
+            let mix::value::Value::String(value) = &value else {
                 panic!("path builtin did not return a string")
             };
             assert_eq!(
