@@ -219,7 +219,11 @@ The section ids in tree order are `appearance`, `text_and_fonts`, `wallpaper`,
 `windows`, `apps_email`, `apps_term`, `apps_ced`, `accessibility`, and `software`.
 Navigation actions use `view.section.<id>`; retired section ids have no aliases. Search includes their `ui.*`
 keys and both font-family keys. `prefs.appearance` and `prefs.appearance.set`
-are version 0.3.0; `prefs.info`, which embeds appearance, is 0.4.0.
+are version 0.3.0. `prefs.info` version 0.5.0 and `prefs.apps` version 0.3.0
+add `release_status` (Software's progress, install result or refusal text) and
+`release_failed` (whether that outcome failed). These stay separate from
+settings feedback in `status` and `failed`; a quiet release read preserves the
+last operation's outcome.
 The reply includes `problem` (the unresolved settings failure, or null) and
 `problem_source` (its page id, or null). Problems appear on their own page,
 with a link from other pages. A refused edit stays until its owner's next

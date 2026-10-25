@@ -433,7 +433,11 @@ The section ids in tree order are <code>appearance</code>, <code>text_and_fonts<
 <code>windows</code>, <code>apps_email</code>, <code>apps_term</code>, <code>apps_ced</code>, <code>accessibility</code>, and <code>software</code>.
 Navigation actions use <code>view.section.&lt;id&gt;</code>; retired section ids have no aliases. Search includes their <code>ui.*</code>
 keys and both font-family keys. <code>prefs.appearance</code> and <code>prefs.appearance.set</code>
-are version 0.3.0; <code>prefs.info</code>, which embeds appearance, is 0.4.0.
+are version 0.3.0. <code>prefs.info</code> version 0.5.0 and <code>prefs.apps</code> version 0.3.0
+add <code>release_status</code> (Software's progress, install result or refusal text) and
+<code>release_failed</code> (whether that outcome failed). These stay separate from
+settings feedback in <code>status</code> and <code>failed</code>; a quiet release read preserves the
+last operation's outcome.
 The reply includes <code>problem</code> (the unresolved settings failure, or null) and
 <code>problem_source</code> (its page id, or null). Problems appear on their own page,
 with a link from other pages. A refused edit stays until its owner's next

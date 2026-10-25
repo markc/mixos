@@ -971,12 +971,12 @@ impl Engine {
     pub fn info(&self) -> Value {
         json!({"schema":"prefs.v1","app_id":APP_ID,"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),
             "connected":self.connected,"releases":self.releases,"busy":self.busy(),"working":self.working(),"uncertain":self.uncertain,
-            "status":self.status,"failed":self.failed,"apps":self.apps,"notes":self.notes,"notes_error":self.notes_error,
+            "status":self.status,"failed":self.failed,"release_status":self.release_status,"release_failed":self.release_failed,"apps":self.apps,"notes":self.notes,"notes_error":self.notes_error,
             "appearance":self.appearance_view(),"wallpaper":self.wallpaper,"picker":self.picker,"email":self.email_view(),"section":self.section(),"category":self.section().category(),"ui":self.ui})
     }
 
     fn apps_view(&self) -> Value {
-        json!({"apps":self.apps,"visible":self.visible_apps().collect::<Vec<_>>(),"section":self.section(),"group":self.ui.software_group,"selected":self.ui.selected,"notes":self.notes,"notes_error":self.notes_error,"releases":self.releases})
+        json!({"apps":self.apps,"visible":self.visible_apps().collect::<Vec<_>>(),"section":self.section(),"group":self.ui.software_group,"selected":self.ui.selected,"notes":self.notes,"notes_error":self.notes_error,"releases":self.releases,"release_status":self.release_status,"release_failed":self.release_failed})
     }
 
     fn error(&mut self, id: u64, code: &str, message: &str) {
@@ -1356,6 +1356,10 @@ mod tests {
         assert_eq!(e.look.problem_source, Some(crate::Section::Terminal));
         assert_eq!(e.status, settings_status);
         assert_eq!(e.failed, settings_failed);
+        for reply in [e.info(), e.apps_view()] {
+            assert_eq!(reply["release_status"], release);
+            assert_eq!(reply["release_failed"], false);
+        }
     }
     #[test]
     fn bus_auto_first_detects_once_with_bounded_reply() {
@@ -1578,6 +1582,13 @@ mod tests {
             e.release_status, "result app=demo action=installed version=2.0",
             "the quiet listing leaves the result on the status line"
         );
+        for reply in [e.info(), e.apps_view()] {
+            assert_eq!(
+                reply["release_status"],
+                "result app=demo action=installed version=2.0"
+            );
+            assert_eq!(reply["release_failed"], false);
+        }
     }
 
     #[test]
@@ -1637,6 +1648,13 @@ mod tests {
             e.release_status,
             "failed message=NO_PREVIOUS: demo has no previous version"
         );
+        for reply in [e.info(), e.apps_view()] {
+            assert_eq!(
+                reply["release_status"],
+                "failed message=NO_PREVIOUS: demo has no previous version"
+            );
+            assert_eq!(reply["release_failed"], true);
+        }
         assert_eq!(releases(&e.take_effects())[0].1, "releases.list");
     }
 

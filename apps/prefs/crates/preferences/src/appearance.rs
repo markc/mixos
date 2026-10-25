@@ -912,6 +912,9 @@ impl Engine {
     }
 
     pub fn dismiss_settings_problem(&mut self) {
+        if self.look.problem.is_some() && self.look.settings_status == self.look.problem {
+            self.look.settings_status = None;
+        }
         if self.look.problem.as_ref() == Some(&self.status) {
             self.status.clear();
             self.failed = false;
@@ -1765,7 +1768,34 @@ mod tests {
         assert_eq!(e.appearance_view()["problem_source"], "apps_term");
         e.dismiss_settings_problem();
         assert!(e.look.problem.is_none());
+        assert!(e.look.settings_status.is_none());
+        assert!(e.status.is_empty());
+        assert!(!e.failed);
         assert!(e.appearance_view()["problem_source"].is_null());
+    }
+
+    #[test]
+    fn dismiss_clears_a_refusal_copied_to_the_page_header() {
+        let mut e = read();
+        e.edit_terminal(crate::terminal::Setting::Padding(8));
+        answer_next(&mut e, 10, json!({"status":"validation_failed"}));
+        e.look.settings_status = e.look.problem.clone();
+        assert!(e.look.settings_status.is_some());
+        e.dismiss_settings_problem();
+        assert!(e.look.settings_status.is_none());
+        assert!(e.look.problem.is_none());
+        assert!(e.status.is_empty());
+        assert!(!e.failed);
+    }
+
+    #[test]
+    fn dismiss_preserves_unrelated_page_feedback() {
+        let mut e = read();
+        e.edit_terminal(crate::terminal::Setting::Padding(8));
+        answer_next(&mut e, 10, json!({"status":"validation_failed"}));
+        e.look.settings_status = Some("Saved another setting".into());
+        e.dismiss_settings_problem();
+        assert_eq!(e.look.settings_status.as_deref(), Some("Saved another setting"));
     }
 
     fn settings_calls(e: &mut Engine) -> Vec<(u64, &'static str, Value)> {

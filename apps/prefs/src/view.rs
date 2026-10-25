@@ -955,7 +955,6 @@ fn choice_grid<T>(
     if options.is_empty() {
         return;
     }
-    debug_assert!(!options.is_empty());
     let gap = ui.spacing().item_spacing.x;
     let widest = options.iter().fold(0.0_f32, |width, (_, text)| {
         let galley = ui.painter().layout_no_wrap(
