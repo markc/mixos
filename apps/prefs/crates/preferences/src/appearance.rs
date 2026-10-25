@@ -1795,7 +1795,10 @@ mod tests {
         answer_next(&mut e, 10, json!({"status":"validation_failed"}));
         e.look.settings_status = Some("Saved another setting".into());
         e.dismiss_settings_problem();
-        assert_eq!(e.look.settings_status.as_deref(), Some("Saved another setting"));
+        assert_eq!(
+            e.look.settings_status.as_deref(),
+            Some("Saved another setting")
+        );
     }
 
     fn settings_calls(e: &mut Engine) -> Vec<(u64, &'static str, Value)> {
