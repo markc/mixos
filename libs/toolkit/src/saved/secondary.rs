@@ -27,7 +27,10 @@ pub(super) fn collect(ctx: &egui::Context, app: &str) -> Option<BTreeMap<String,
 
 fn shared(ctx: &egui::Context, app: &str) -> Shared {
     if let Some(state) = ctx.data(|d| d.get_temp::<Shared>(key(app))) { return state; }
+    #[cfg(not(test))]
     let directory = config::AppDirs::resolve(app).map(|d| d.state());
+    #[cfg(test)]
+    let directory = None;
     let store = Store::<Value>::load(directory, 1);
     install(ctx, app, store.path, store.windows);
     ctx.data(|d| d.get_temp(key(app))).expect("installed secondary windows")
@@ -41,6 +44,7 @@ pub fn builder(ctx: &egui::Context, app: &str, name: &str, builder: egui::Viewpo
     let app_id = format!("dev.mixos.{app}.{name}");
     let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
     let frame = windows.frames.entry(name.into()).or_default().clone();
+    #[cfg(not(test))]
     if let std::collections::btree_map::Entry::Vacant(entry) = windows.workers.entry(name.into())
         && let Some(worker) = worker(app, name, &app_id, state.clone(), ctx.clone()) {
         entry.insert(worker);
@@ -91,6 +95,7 @@ fn persist(windows: &Windows, name: &str) {
 
 type CaptureSender = tokio::sync::mpsc::Sender<Option<std::sync::mpsc::Sender<()>>>;
 
+#[cfg(not(test))]
 fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context) -> Option<CaptureSender> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Option<std::sync::mpsc::Sender<()>>>(2);
     let (app, name, app_id) = (app.to_owned(), name.to_owned(), app_id.to_owned());
