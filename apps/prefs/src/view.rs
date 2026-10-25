@@ -965,7 +965,10 @@ fn choice_grid<T>(
                     ui.allocate_ui_with_layout(
                         egui::vec2(width, ui.spacing().interact_size.y),
                         Layout::left_to_right(Align::Center),
-                        |ui| render(ui, value, text),
+                        |ui| {
+                            ui.set_min_width(width);
+                            render(ui, value, text);
+                        },
                     );
                 }
             });
