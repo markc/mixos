@@ -89,8 +89,8 @@ refuse. Every target is checked before the first write. Existing file modes
 and owners survive; new files are 0644. Exec and Environment paths are quoted
 when needed; whitespace in a path used by a systemd key that does not unquote
 (such as EnvironmentFile, ConditionPathExists or LoadCredential) refuses.
-Desktop `TryExec` also refuses whitespace in its path, so the desktop package
-requires a prefix without whitespace.
+Desktop `TryExec` takes the rest of its line as a literal path, so a spaced
+prefix renders there unquoted.
 `mix-static` is never linked. Host Elixir installs do not rename this entry.
 
 Installers select a target independently of their interpreter. The staged binary
@@ -161,8 +161,8 @@ The gate rejects literal roots outside resolver defaults, templates, default
 assertions and documentation. The release proof uses a prefix with a space and
 a private mount namespace hiding the old roots. Installer, scene, nested desk
 and SSH loopback tests use disposable roots; unavailable privileges report a
-clear skip. The proof first asserts that desktop TryExec refuses the space
-prefix before any write, then exercises unit and runtime relocation there.
+clear skip. Units, desktop entries and runtime relocation all run under the
+spaced prefix.
 The template proof compares 37 global and 8 component-owned templates
 byte-for-byte with main; `--installed` additionally reports drift in existing packaged targets.
 It does not inspect or change unmanaged flat unit copies. Templates not included

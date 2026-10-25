@@ -283,7 +283,8 @@ targets refuse. All targets are checked for writability before writing;
 existing modes and owners are preserved, and new rendered files are 0644.
 Paths containing whitespace refuse in systemd keys that do not unquote
 (including EnvironmentFile, ConditionPathExists and LoadCredential).
-Desktop TryExec has the same whitespace refusal.</li>
+Desktop <code>TryExec</code> takes the rest of its line as a literal path, so a
+spaced prefix needs no quoting there.</li>
 <li>Saved MixOS references use <code>mixos:&lt;root&gt;/&lt;relative&gt;</code>. Root escapes refuse;
 user-owned paths retain their meaning. Offline migration keeps originals;
 live migration is a separate operator action.</li>
@@ -302,9 +303,8 @@ for uid 0 and a user at both default and moved prefixes. No default-layout
 user data moves are accepted. The relocation proof uses a disposable prefix
 with a space and hides the old roots in a private mount namespace; it runs
 installer, scene, nested desktop and SSH loopback checks where available.
-Desktop TryExec whitespace refusal is checked before any writes; unit and
-runtime relocation then proceed under that prefix. Missing privileges are
-reported as skips.</li>
+Units, desktop entries and runtime relocation all run under that spaced
+prefix. Missing privileges are reported as skips.</li>
 <li>The stable host entry is <code>/usr/local/bin/mix</code>; <code>/usr/bin/mix</code> is managed
 only in a MixOS-owned image. Login shells and <code>/etc/shells</code> use that link.
 <code>mix-static</code> stays unlinked. Remote lookup is option, environment,

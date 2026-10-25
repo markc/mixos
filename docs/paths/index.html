@@ -311,8 +311,8 @@ refuse. Every target is checked before the first write. Existing file modes
 and owners survive; new files are 0644. Exec and Environment paths are quoted
 when needed; whitespace in a path used by a systemd key that does not unquote
 (such as EnvironmentFile, ConditionPathExists or LoadCredential) refuses.
-Desktop <code>TryExec</code> also refuses whitespace in its path, so the desktop package
-requires a prefix without whitespace.
+Desktop <code>TryExec</code> takes the rest of its line as a literal path, so a spaced
+prefix renders there unquoted.
 <code>mix-static</code> is never linked. Host Elixir installs do not rename this entry.</p>
 <p>Installers select a target independently of their interpreter. The staged binary
 prints defaults from this same Rust implementation without self-location,
@@ -371,8 +371,8 @@ must first be exported by their owner so revisions and audit chains survive.</p>
 assertions and documentation. The release proof uses a prefix with a space and
 a private mount namespace hiding the old roots. Installer, scene, nested desk
 and SSH loopback tests use disposable roots; unavailable privileges report a
-clear skip. The proof first asserts that desktop TryExec refuses the space
-prefix before any write, then exercises unit and runtime relocation there.
+clear skip. Units, desktop entries and runtime relocation all run under the
+spaced prefix.
 The template proof compares 37 global and 8 component-owned templates
 byte-for-byte with main; <code>--installed</code> additionally reports drift in existing packaged targets.
 It does not inspect or change unmanaged flat unit copies. Templates not included

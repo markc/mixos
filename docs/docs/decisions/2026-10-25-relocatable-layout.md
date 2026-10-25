@@ -49,7 +49,8 @@ directory and installation rules.
    existing modes and owners are preserved, and new rendered files are 0644.
    Paths containing whitespace refuse in systemd keys that do not unquote
    (including EnvironmentFile, ConditionPathExists and LoadCredential).
-   Desktop TryExec has the same whitespace refusal.
+   Desktop `TryExec` takes the rest of its line as a literal path, so a
+   spaced prefix needs no quoting there.
 6. Saved MixOS references use `mixos:<root>/<relative>`. Root escapes refuse;
    user-owned paths retain their meaning. Offline migration keeps originals;
    live migration is a separate operator action.
@@ -68,9 +69,8 @@ directory and installation rules.
    user data moves are accepted. The relocation proof uses a disposable prefix
    with a space and hides the old roots in a private mount namespace; it runs
    installer, scene, nested desktop and SSH loopback checks where available.
-   Desktop TryExec whitespace refusal is checked before any writes; unit and
-   runtime relocation then proceed under that prefix. Missing privileges are
-   reported as skips.
+   Units, desktop entries and runtime relocation all run under that spaced
+   prefix. Missing privileges are reported as skips.
 9. The stable host entry is `/usr/local/bin/mix`; `/usr/bin/mix` is managed
    only in a MixOS-owned image. Login shells and `/etc/shells` use that link.
    `mix-static` stays unlinked. Remote lookup is option, environment,
