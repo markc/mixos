@@ -696,11 +696,8 @@ dependencies = [
 [[package]]
 name = "dirs-sys"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
 dependencies = [
  "libc",
- "option-ext",
  "redox_users",
  "windows-sys 0.61.2",
 ]
@@ -856,8 +853,6 @@ dependencies = [
 [[package]]
 name = "egui-winit"
 version = "0.36.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98466000559d66ba4db786a30448b01483946add4188e7f10f522a27b4fb89cc"
 dependencies = [
  "accesskit_winit",
  "arboard",
@@ -2197,12 +2192,6 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
-
-[[package]]
-name = "option-ext"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "orbclient"
@@ -4214,3 +4203,11 @@ dependencies = [
  "syn",
  "winnow",
 ]
+
+[[patch.unused]]
+name = "calloop"
+version = "0.14.5"
+
+[[patch.unused]]
+name = "input"
+version = "0.10.0"
