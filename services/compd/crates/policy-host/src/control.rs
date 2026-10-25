@@ -1408,9 +1408,9 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
                     shell::close(&window);
                 }
             }
-            Effect::RequestWindowState { id, state, enabled } => {
+            Effect::RequestWindowState { id, state, enabled, output } => {
                 match state {
-                    WindowState::Maximized => maximize(lp, id, enabled),
+                    WindowState::Maximized => maximize_on(lp, id, enabled, output.as_deref()),
                     // Applied now, not queued to the frame hook (the engine's
                     // `fullscreen_request`): the command reads the requested state
                     // back at once, and a queued request read as refused.
@@ -1566,6 +1566,10 @@ fn bring_into_view(lp: &mut Loop, id: SurfaceId) {
 /// server-side chrome gets the usable area less its chrome, so the titlebar
 /// stays on the output.
 pub fn maximize(lp: &mut Loop, id: SurfaceId, enabled: bool) {
+    maximize_on(lp, id, enabled, None);
+}
+
+fn maximize_on(lp: &mut Loop, id: SurfaceId, enabled: bool, output: Option<&str>) {
     let Some(window) = window_of(lp, id) else {
         return;
     };
@@ -1573,7 +1577,7 @@ pub fn maximize(lp: &mut Loop, id: SurfaceId, enabled: bool) {
         return;
     };
     let (comp, space) = lp.inner.comp_space_of_mut(owner);
-    if crate::geometry::set_maximized(comp, space, id, &window, enabled).windows {
+    if crate::geometry::set_maximized_on(comp, space, id, &window, enabled, output).windows {
         lp.state.schedule_redraw(RedrawReason::WindowState);
         crate::input::retarget_pointer(lp);
     }

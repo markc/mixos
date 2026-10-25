@@ -2058,6 +2058,15 @@ owns the frame loop, scheduling, compositing or protocol handling.
 
 ## Settings at startup
 
+### Restoring maximised windows
+
+`comp.window.maximize {id, generation, output?}` accepts an output key or
+native output name. Omitting it preserves the existing output choice. An
+explicit output retargets an already maximised window directly, without an
+intermediate unmaximise, focus, raise or workspace switch. The normal restore
+geometry is retained. An unknown output is refused before effects are applied.
+This lets toolkit restore a saved maximised frame on its original display.
+
 Quoin prepares cached or embedded settings while its existing Bus
 supervisor registers. Its persistent cache is service-owned under the
 configured variable data directory at `compd/cache/settings`; all
@@ -34466,6 +34475,7 @@ On compd, pass the app's existing Bus call adapter to `Frame::restore` after
 the window appears. The adapter returns `None` for transport errors or any
 non-zero return code. Toolkit probes the catalogue, matches app ID and PID,
 and sends generation-fenced workspace then placement/maximise requests.
+Maximise includes the saved output, using compd's additive output selector.
 It stops silently at a refusal and restores the prior workspace if placement
 failed after moving it; it never focuses or switches workspace. Before
 disconnecting at exit, use `Frame::capture_exit` to remember output, position
@@ -35725,6 +35735,11 @@ written in Mix on `tcp_listen`.
 > Mirrored from [`services/compd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/compd/CHANGELOG.md), where releases update it. The component's page is [compd](README.md). This page describes the current `main` branch of MixOS.
 
 ## 0.2.0
+
+- `comp.window.maximize` accepts optional `output` (key or native name),
+  including retargeting an already maximised window. Normal restore geometry
+  survives, and focus and workspace stay unchanged. Unknown outputs refuse
+  before effects. Toolkit uses this to restore saved maximised frames.
 
 - The user keys belong to the user. compd enforces the rule itself, ahead
   of its own bindings, because on a MixOS VT it reads the keyboard itself.

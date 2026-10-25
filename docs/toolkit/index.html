@@ -360,6 +360,7 @@ selection in view should win. <code>collapsing</code> saves a CollapsingState's 
 the window appears. The adapter returns <code>None</code> for transport errors or any
 non-zero return code. Toolkit probes the catalogue, matches app ID and PID,
 and sends generation-fenced workspace then placement/maximise requests.
+Maximise includes the saved output, using compd's additive output selector.
 It stops silently at a refusal and restores the prior workspace if placement
 failed after moving it; it never focuses or switches workspace. Before
 disconnecting at exit, use <code>Frame::capture_exit</code> to remember output, position

@@ -135,6 +135,7 @@ On compd, pass the app's existing Bus call adapter to `Frame::restore` after
 the window appears. The adapter returns `None` for transport errors or any
 non-zero return code. Toolkit probes the catalogue, matches app ID and PID,
 and sends generation-fenced workspace then placement/maximise requests.
+Maximise includes the saved output, using compd's additive output selector.
 It stops silently at a refusal and restores the prior workspace if placement
 failed after moving it; it never focuses or switches workspace. Before
 disconnecting at exit, use `Frame::capture_exit` to remember output, position

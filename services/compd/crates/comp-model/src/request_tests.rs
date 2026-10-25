@@ -68,7 +68,7 @@ fn state_commands_are_registered_fenced_and_strict() {
         let output = json!({"id":7,"generation":3,"output":"Output-1"});
         assert_eq!(
             parse_window_command(command, &output).is_ok(),
-            command == "comp.window.fullscreen"
+            matches!(command, "comp.window.fullscreen" | "comp.window.maximize")
         );
     }
     assert!(
@@ -78,6 +78,15 @@ fn state_commands_are_registered_fenced_and_strict() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn maximize_output_is_optional_and_strict() {
+    assert_eq!(parse_window_command("comp.window.maximize", &json!({"id":7,"generation":3,"output":"o_secondary"})),
+        Ok(WindowCommand::Op(WindowOp::State { id:7, generation:3, state:WindowState::Maximized, enabled:true, output:Some("o_secondary".into()) })));
+    for output in [json!(""), json!(false), json!(3)] {
+        assert!(parse_window_command("comp.window.maximize", &json!({"id":7,"generation":3,"output":output})).is_err());
+    }
 }
 
 #[test]

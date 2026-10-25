@@ -144,13 +144,16 @@ pub fn set_state<H: Clone + Eq + Hash>(
         id,
         cause: "comp.window",
     }];
+    let maximize_output = if state == WindowState::Maximized && enabled {
+        selected.as_ref().and_then(|key| outputs.get(key)).map(|row| row.name.clone())
+    } else { None };
     if state == WindowState::Fullscreen && (output.is_some() || !enabled) {
         effects.push(Effect::SetFullscreenOutput {
             id,
             output: selected,
         });
     }
-    effects.push(Effect::RequestWindowState { id, state, enabled });
+    effects.push(Effect::RequestWindowState { id, state, enabled, output: maximize_output });
     Ok(effects)
 }
 

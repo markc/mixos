@@ -152,7 +152,9 @@ impl Frame {
             return;
         }
         let restored = if self.maximised {
-            call("comp.window.maximize", target.clone()).await
+            let mut maximize = target.clone();
+            maximize["output"] = json!(p.output);
+            call("comp.window.maximize", maximize).await
         } else {
             let mut place = target.clone();
             for (key, value) in [
@@ -290,7 +292,7 @@ mod tests {
                 json!({"id":7,"generation":3,"index":2,"follow":false})
             );
             if maximised {
-                assert_eq!(calls[4].1, json!({"id":7,"generation":3}));
+                assert_eq!(calls[4].1, json!({"id":7,"generation":3,"output":"o_main"}));
             } else {
                 assert_eq!(
                     calls[4].1,

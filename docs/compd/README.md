@@ -20,6 +20,15 @@ owns the frame loop, scheduling, compositing or protocol handling.
 
 ## Settings at startup
 
+### Restoring maximised windows
+
+`comp.window.maximize {id, generation, output?}` accepts an output key or
+native output name. Omitting it preserves the existing output choice. An
+explicit output retargets an already maximised window directly, without an
+intermediate unmaximise, focus, raise or workspace switch. The normal restore
+geometry is retained. An unknown output is refused before effects are applied.
+This lets toolkit restore a saved maximised frame on its original display.
+
 Quoin prepares cached or embedded settings while its existing Bus
 supervisor registers. Its persistent cache is service-owned under the
 configured variable data directory at `compd/cache/settings`; all

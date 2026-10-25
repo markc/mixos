@@ -457,7 +457,7 @@
     {name:"comp.props.list", owner:"compd", version:"0.1.11", status:"accepted", class:"query", schema:"pending"},
     {name:"comp.props.describe", owner:"compd", version:"0.1.11", status:"accepted", class:"query", schema:"pending"},
     {name:"comp.windows.list", owner:"compd", version:"0.1.11", status:"accepted", class:"query", schema:"pending"},
-    {name:"comp.window.maximize", owner:"compd", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},
+    {name:"comp.window.maximize", owner:"compd", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.window.unmaximize", owner:"compd", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.window.fullscreen", owner:"compd", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.window.unfullscreen", owner:"compd", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},

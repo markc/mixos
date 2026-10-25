@@ -10,6 +10,11 @@ generated: by docs/_build/gen-site.mix from services/compd/CHANGELOG.md; do not 
 
 ## 0.2.0
 
+- `comp.window.maximize` accepts optional `output` (key or native name),
+  including retargeting an already maximised window. Normal restore geometry
+  survives, and focus and workspace stay unchanged. Unknown outputs refuse
+  before effects. Toolkit uses this to restore saved maximised frames.
+
 - The user keys belong to the user. compd enforces the rule itself, ahead
   of its own bindings, because on a MixOS VT it reads the keyboard itself.
   The user keys are bare F1–F12 and Right Ctrl, Right Alt or Right Shift with

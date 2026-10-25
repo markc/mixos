@@ -236,6 +236,33 @@ fn output(name: &str, size: (i32, i32)) -> Output {
 }
 
 #[test]
+fn explicit_maximise_output_retargets_without_losing_normal_geometry() {
+    let mut h = Harness::new();
+    let secondary = output("secondary", (1280, 800));
+    h.wire.inner.space.state.map_output(&secondary, (1920, 0));
+    let (surface, _, top) = h.mapped_toplevel(640, 480);
+    let (id, window) = window(&h, &surface);
+    h.wire.inner.space.state.map_element(window.clone(), (32, 24), false);
+    maximize(&mut h, id, &window, true); h.roundtrip();
+    let restore = h.comp().maximize_restore(id).unwrap();
+    let host = &mut h.wire.inner;
+    assert!(geometry::set_maximized_on(&mut host.comp, &mut host.space.state, id, &window, true, Some("secondary")).windows);
+    h.roundtrip(); configured(&h, &top, (1280, 800), true);
+    assert_eq!(h.wire.inner.space.state.element_location(&window), Some((1920, 0).into()));
+    let retargeted = h.comp().maximize_restore(id).unwrap();
+    assert_eq!((retargeted.location, retargeted.size), (restore.location, restore.size));
+    assert_eq!(retargeted.output, "secondary");
+    let before = count(&h, &top);
+    let host = &mut h.wire.inner;
+    assert_eq!(geometry::set_maximized_on(&mut host.comp, &mut host.space.state, id, &window, true, Some("missing")), GeometryChange::default());
+    h.roundtrip(); assert_eq!(count(&h, &top), before);
+    assert_eq!(h.comp().maximize_restore(id), Some(retargeted));
+    maximize(&mut h, id, &window, false); h.roundtrip();
+    configured(&h, &top, (640, 480), false);
+    assert_eq!(h.wire.inner.space.state.element_location(&window), Some((32, 24).into()));
+}
+
+#[test]
 fn only_the_owning_output_reconfigures_and_restore_survives_output_loss() {
     let mut h = Harness::new();
     let secondary = output("secondary", (1280, 800));

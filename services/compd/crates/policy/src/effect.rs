@@ -66,6 +66,9 @@ pub enum Effect {
         id: SurfaceId,
         state: WindowState,
         enabled: bool,
+        /// Explicit maximise output by native output name. Fullscreen keeps
+        /// its separately tracked selection in `SetFullscreenOutput`.
+        output: Option<String>,
     },
     /// The fullscreen output selection (`None` clears it).
     SetFullscreenOutput {

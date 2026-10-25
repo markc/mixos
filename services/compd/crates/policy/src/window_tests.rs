@@ -593,7 +593,8 @@ fn state_commands_refuse_fixed_size_and_unknown_outputs_before_any_configure() {
             Effect::RequestWindowState {
                 id: a,
                 state: WindowState::Fullscreen,
-                enabled: true
+                enabled: true,
+                output: None
             },
         ]
     );
@@ -635,7 +636,8 @@ fn state_commands_refuse_fixed_size_and_unknown_outputs_before_any_configure() {
             Effect::RequestWindowState {
                 id: a,
                 state: WindowState::Maximized,
-                enabled: true
+                enabled: true,
+                output: None
             },
         ]
     );
@@ -652,6 +654,18 @@ fn state_commands_refuse_fixed_size_and_unknown_outputs_before_any_configure() {
         ),
         (json!(true), json!(true))
     );
+}
+
+#[test]
+fn maximize_selects_output_without_focus_or_fullscreen_effects() {
+    let (registry, (id, generation), _) = two_windows();
+    for name in ["HDMI-A-1", "o_hdmi_a_1"] {
+        let effects = set_state(&registry, id, generation, WindowState::Maximized, true, Some(name), &facts(), &outputs()).unwrap();
+        assert_eq!(effects, [Effect::MarkDirty { id:SurfaceId(id), cause:"comp.window" },
+            Effect::RequestWindowState { id:SurfaceId(id), state:WindowState::Maximized, enabled:true, output:Some("HDMI-A-1".into()) }]);
+    }
+    let refusal = set_state(&registry, id, generation, WindowState::Maximized, true, Some("missing"), &facts(), &outputs()).unwrap_err();
+    assert_eq!(body(refusal), (10, json!({"error":"unknown_output","output":"missing"})));
 }
 
 fn spec(id: u64, generation: u64) -> PlaceSpec {

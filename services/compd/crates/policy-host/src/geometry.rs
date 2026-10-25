@@ -51,8 +51,24 @@ fn target(
     id: SurfaceId,
     window: &Window,
 ) -> Option<(String, Rectangle<i32, Logical>)> {
+    target_on(comp, space, id, window, None)
+}
+
+fn target_on(
+    comp: &CompState,
+    space: &Space<Window>,
+    id: SurfaceId,
+    window: &Window,
+    preferred: Option<&str>,
+) -> Option<(String, Rectangle<i32, Logical>)> {
     let owner = comp.maximize_restore(id);
-    let output = owner
+    // An explicit output disappearing must leave placement alone, never fall
+    // back to an unrelated display between policy validation and execution.
+    let explicit = match preferred {
+        Some(name) => Some(space.outputs().find(|o| o.name() == name && space.output_geometry(o).is_some())?.clone()),
+        None => None,
+    };
+    let output = explicit.or_else(|| owner
         .as_ref()
         .and_then(|restore| {
             space
@@ -61,7 +77,7 @@ fn target(
                     output.name() == restore.output && space.output_geometry(output).is_some()
                 })
                 .cloned()
-        })
+        }))
         // Overlap membership can still contain a just-unmapped output until
         // Space refreshes. It must not prevent an available-output fallback.
         .or_else(|| {
@@ -91,8 +107,21 @@ pub fn set_maximized(
     window: &Window,
     enabled: bool,
 ) -> GeometryChange {
+    set_maximized_on(comp, space, id, window, enabled, None)
+}
+
+/// Explicit native output selection for saved maximised frames. Existing
+/// restore geometry survives a retarget; neither focus nor workspace changes.
+pub fn set_maximized_on(
+    comp: &mut CompState,
+    space: &mut Space<Window>,
+    id: SurfaceId,
+    window: &Window,
+    enabled: bool,
+    output: Option<&str>,
+) -> GeometryChange {
     let area = if enabled {
-        let Some((output, area)) = target(comp, space, id, window) else {
+        let Some((output, area)) = target_on(comp, space, id, window, output) else {
             return GeometryChange::default();
         };
         if let Some(mut restore) = comp.maximize_restore(id) {
