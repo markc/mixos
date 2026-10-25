@@ -428,11 +428,14 @@ pub struct Submitted {
 
 impl Submitted {
     fn section(&self) -> crate::Section {
-        match self.axes.first() {
-            Some(Axis::Decorations | Axis::CaptionSide) => crate::Section::Windows,
-            Some(Axis::FontFamily | Axis::MonoFamily) => crate::Section::TextAndFonts,
-            Some(Axis::TextScale | Axis::ReducedMotion) => crate::Section::Accessibility,
-            _ => crate::Section::Appearance,
+        if self.axes.iter().any(|a| matches!(a, Axis::Decorations | Axis::CaptionSide)) {
+            crate::Section::Windows
+        } else if self.axes.iter().any(|a| matches!(a, Axis::TextScale | Axis::ReducedMotion)) {
+            crate::Section::Accessibility
+        } else if self.axes.iter().any(|a| matches!(a, Axis::FontFamily | Axis::MonoFamily)) {
+            crate::Section::TextAndFonts
+        } else {
+            crate::Section::Appearance
         }
     }
     /// `current` shows every axis this apply asked for.
@@ -896,6 +899,21 @@ impl Engine {
         }
     }
 
+    pub fn dismiss_settings_problem(&mut self) {
+        self.look.problem = None;
+        self.look.problem_source = None;
+        self.look.problem_missing = false;
+        self.failed = false;
+    }
+
+    fn clear_look_problem(&mut self) {
+        if let Some(source @ (crate::Section::Appearance | crate::Section::Windows
+            | crate::Section::TextAndFonts | crate::Section::Accessibility)) = self.look.problem_source
+        {
+            self.clear_settings_problem(source);
+        }
+    }
+
     pub(crate) fn call_settings(&mut self, call: Call) {
         let ticket = self.next();
         let body = match &call {
@@ -1036,7 +1054,7 @@ impl Engine {
     /// its failure status no longer describe anything, so they go.
     fn settle_if_retired(&mut self, held: bool) {
         if held && self.look.draft.is_none() {
-            self.clear_settings_problem(self.look.status_source);
+            self.clear_look_problem();
             self.look.hold = false;
             self.look.discard_on_quit = false;
             self.status = self.label("settled-look", &[]);
@@ -1193,7 +1211,7 @@ impl Engine {
         self.look.conflicts.clear();
         self.look.hold = false;
         self.status = self.label("reverted-look", &[]);
-        self.clear_settings_problem(self.look.status_source);
+        self.clear_look_problem();
         self.failed = false;
         self.record_settings_status();
     }
@@ -1513,7 +1531,7 @@ impl Engine {
             "conflicts":self.look.conflicts,"shown":self.look.shown(),
             "effective":self.look.shown().map(|look| look.effective()),
             "expected":self.look.expected(),"sent":self.look.sent.as_ref().map(|s| &s.axes),
-            "hold":self.look.hold,"problem":self.look.problem,"problem_source":self.look.problem_source,
+            "hold":self.look.hold,"problem":self.look.problem,"problem_source":self.look.problem_source.map(crate::Section::name),
             "custom_source":self.look.custom_source,
             "uncertain":self.look.uncertain.as_ref().map(|s| &s.operation),
             "working":self.look.job.as_ref().map(|(_, c)| c.command_name()),
@@ -1661,6 +1679,55 @@ mod tests {
         let ticket = settings_calls(&mut e)[0].0;
         e.settled(ticket, reply(0, changed()));
         assert!(e.look.problem.is_none());
+    }
+
+    #[test]
+    fn revert_after_cross_page_edit_clears_look_problem() {
+        let mut e = read();
+        edit(&mut e, json!({"scheme":"forest"}));
+        answer_next(&mut e, 10, json!({"status":"validation_failed"}));
+        e.look.status_source = crate::Section::Terminal;
+        e.revert_look();
+        assert!(e.look.problem.is_none());
+    }
+
+    #[test]
+    fn retired_draft_clears_its_problem_but_preserves_terminal_problem() {
+        for source in [crate::Section::Appearance, crate::Section::Terminal] {
+            let mut e = read();
+            edit(&mut e, json!({"scheme":"forest"}));
+            answer_next(&mut e, 10, json!({"status":"validation_failed"}));
+            e.look.problem_source = Some(source);
+            e.look.status_source = crate::Section::Terminal;
+            e.read_look();
+            answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
+            assert_eq!(e.look.problem.is_some(), source == crate::Section::Terminal);
+        }
+    }
+
+    #[test]
+    fn submitted_section_uses_edit_priority() {
+        let mut submitted = Submitted {
+            operation: "example".into(), look: Look::default(),
+            axes: vec![Axis::Scheme, Axis::FontFamily, Axis::TextScale, Axis::Decorations],
+        };
+        assert_eq!(submitted.section(), crate::Section::Windows);
+        submitted.axes.pop();
+        assert_eq!(submitted.section(), crate::Section::Accessibility);
+        submitted.axes.pop();
+        assert_eq!(submitted.section(), crate::Section::TextAndFonts);
+    }
+
+    #[test]
+    fn refusal_survives_read_and_can_be_dismissed_with_page_id() {
+        let mut e = read();
+        e.edit_terminal(crate::terminal::Setting::Term("BAD".into()));
+        e.read_look();
+        answer_next(&mut e, 0, snapshot_body("8", "studio", "dark"));
+        assert_eq!(e.appearance_view()["problem_source"], "apps_term");
+        e.dismiss_settings_problem();
+        assert!(e.look.problem.is_none());
+        assert!(e.appearance_view()["problem_source"].is_null());
     }
 
     fn settings_calls(e: &mut Engine) -> Vec<(u64, &'static str, Value)> {

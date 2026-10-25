@@ -117,7 +117,7 @@ pub fn describe() -> Value {
         {"name":"prefs.actions","description":"List the app's commands with labels, shortcuts and enablement","read_only":true},
         {"name":"prefs.execute","args":{"id":"string"},"description":"Run a command from prefs.actions, with the same enablement as its menu item, button or shortcut","read_only":false},
         {"name":"prefs.quit","description":"Close once the operation in progress finishes","read_only":false},
-        {"name":"prefs.search","args":{"query":"string"},"description":"Find sections by title, category, alias or settings key without changing the window; returns matches with id and category in tree order","read_only":true},
+        {"name":"prefs.search","args":{"query":"string"},"description":"Find sections by title, category, alias or settings key without changing the window; returns matches with id and category in sidebar order, except system ranks Software first","read_only":true},
         {"name":"prefs.section","args":{"name":crate::SECTIONS.iter().map(|s| s.id).collect::<Vec<_>>(),"group":crate::SoftwareGroup::ALL.map(crate::SoftwareGroup::name)},"description":"Select a section; optional group selects a group within Software","read_only":false},
         {"name":"prefs.select","args":{"app":"an app name from prefs.apps"},"description":"Open an app's Software group, select it and load its release notes","read_only":false},
         {"name":"prefs.apps","description":"Software's rows, group, selection and notes","read_only":true},

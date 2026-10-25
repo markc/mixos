@@ -325,7 +325,7 @@ The size reset restores <strong>Design default</strong>, stored as null; an unse
 labelled with the design's pixel size. Viewing or tabbing through controls
 does not save a value.</p>
 <p>Family choices use the same fenced drafts and conflict handling as Appearance.
-The note names the families settingsd holds. The toolkit currently installs
+The toolkit currently installs
 bundled Inter and JetBrains Mono regardless of those stored names, including
 after a theme reload or restart. Other families take effect when the toolkit
 supports loading them; this stage adds no font loader. The faces grid and
@@ -429,23 +429,26 @@ changes it at once (<code>scheme</code>, <code>style</code> with <code>own</code
 <code>contrast</code>, <code>decorations</code>, <code>caption_side</code>, <code>font_family</code>, <code>mono_family</code>,
 <code>text_scale</code>, <code>density</code>, <code>reduced_motion</code>). Family values are strings or null;
 text scale and density reset with 1.0, and reduced motion takes a boolean.
-The section ids are <code>appearance</code>, <code>text_and_fonts</code>, <code>windows</code>, <code>apps_email</code>,
-<code>apps_term</code>, <code>apps_ced</code>, <code>accessibility</code>, <code>software</code>, and <code>wallpaper</code>.
+The section ids in tree order are <code>appearance</code>, <code>text_and_fonts</code>, <code>wallpaper</code>,
+<code>windows</code>, <code>apps_email</code>, <code>apps_term</code>, <code>apps_ced</code>, <code>accessibility</code>, and <code>software</code>.
 Navigation actions use <code>view.section.&lt;id&gt;</code>; retired section ids have no aliases. Search includes their <code>ui.*</code>
 keys and both font-family keys. <code>prefs.appearance</code> and <code>prefs.appearance.set</code>
 are version 0.3.0; <code>prefs.info</code>, which embeds appearance, is 0.4.0.
 The reply includes <code>problem</code> (the unresolved settings failure, or null) and
 <code>problem_source</code> (its page id, or null). Problems appear on their own page,
-with a link from other pages, and clear on a successful write to the same
-owner. A settings-service outage also clears on a recovered read. Email
+with a link from other pages. A refused edit stays until its owner's next
+successful write or until the person dismisses it with × on that page.
+Reverting or retiring a look draft clears its look problem. A settings-service
+outage also clears on a recovered read. Email
 account tasks report their outcome inline and never create settings problems.
-<code>prefs.section {name[, group]}</code> opens a registry section and expands its
-category. <code>app.describe</code> lists the section ids and their searchable metadata.
+<code>prefs.section {name[, group]}</code> opens a registry section.
+<code>app.describe</code> lists the section ids and their searchable metadata.
 For Software, <code>group</code> selects <code>mixos-desktop</code>, <code>mixos-server</code>, <code>creative</code> or
 <code>other</code>. <code>prefs.select {app}</code> opens the app's group and selects its row.
 <code>prefs.info</code> and <code>prefs.appearance</code> include the current section id and category.
 <code>prefs.search {query}</code> returns <code>matches</code>, each with <code>id</code> and <code>category</code>, in
-tree order. It uses the same search as the sidebar and leaves the window alone.
+sidebar order, except that <code>system</code> ranks Software first. It uses the same
+search as the sidebar and leaves the window alone.
 <code>prefs.email</code>, <code>prefs.email.set</code> and <code>prefs.email.password</code> are described
 under Apps → Email above.
 <code>prefs.execute {id}</code> runs any command a button
@@ -466,7 +469,9 @@ them; <strong>Refresh wallpaper</strong> reads the current state again.</p>
 <p>An output's <strong>Use default</strong> removes just that override. Editing the default
 preserves every output override. Images currently crop to fill; fit controls
 and slideshows will follow when backdrop supports them.</p>
-<p>Backdrop must be running on the same session Bus. A refusal shows its reason,
+<p>Without Backdrop on the session Bus, Wallpaper shows an unavailable page state
+and creates no problem links. Local edit refusals stay on Wallpaper. A refusal
+of a submitted apply shows its reason,
 keeps the draft and leaves the last good wallpaper in place. Preferences checks for
 intervening changes before sending the whole document; conflicts require
 Revert and a fresh edit. This check is best effort: backdrop does not yet

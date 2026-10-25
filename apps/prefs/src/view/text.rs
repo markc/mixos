@@ -39,7 +39,7 @@ fn surface_card(ui: &mut Ui, engine: &Engine, surface: Surface, events: &mut Vec
         return;
     };
 
-    row(ui, "text-family-row", &label("text-family"), |ui| {
+    row(ui, &format!("{}-family-row", surface.path()), &label("text-family"), |ui| {
         let mut families: Vec<(usize, String)> = vec![(0, label("text-family-default"))];
         families.extend(
             surface
@@ -75,14 +75,14 @@ fn surface_card(ui: &mut Ui, engine: &Engine, surface: Surface, events: &mut Vec
         events.push(UiEvent::Text(Setting::Size(surface, value)));
     }
 
-    row(ui, "text-padding-row", &label("text-padding"), |ui| {
+    row(ui, &format!("{}-padding-row", surface.path()), &label("text-padding"), |ui| {
         let paddings: Vec<(u32, String)> = PADDINGS.iter().map(|&p| (p, p.to_string())).collect();
         if let Some(padding) = choices(ui, style.padding, &paddings) {
             events.push(UiEvent::Text(Setting::Padding(surface, padding)));
         }
     });
 
-    row(ui, "text-light-row", &label("text-light"), |ui| {
+    row(ui, &format!("{}-light-row", surface.path()), &label("text-light"), |ui| {
         let mut light = style.light;
         if toggle(ui, &mut light, "text-light") {
             events.push(UiEvent::Text(Setting::Light(surface, light)));

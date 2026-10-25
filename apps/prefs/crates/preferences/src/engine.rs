@@ -650,6 +650,7 @@ impl Engine {
             return;
         }
         self.ui.section = section;
+        self.look.settings_status = None;
         if self.ui.selected.is_some() && self.selected_row().is_none() {
             self.clear_selection();
         }
@@ -858,11 +859,15 @@ impl Engine {
             && job.ticket == ticket
         {
             self.job = None;
+            let settings_status = self.status.clone();
+            let settings_failed = self.failed;
             self.status = self.release_status.clone();
             self.failed = self.release_failed;
             self.finished(job.op, job.quiet, result);
             self.release_status = self.status.clone();
             self.release_failed = self.failed;
+            self.status = settings_status;
+            self.failed = settings_failed;
             if self.relist {
                 self.relist = false;
                 self.start_with(Op::List, true);
@@ -1343,11 +1348,15 @@ mod tests {
         assert_ne!(e.status, release);
         assert_eq!(e.release_status, release);
         e.start_with(Op::List, true);
+        let settings_status = e.status.clone();
+        let settings_failed = e.failed;
         let ticket = e.job.as_ref().unwrap().ticket;
         e.released(ticket, ok(json!([])));
         assert_eq!(e.release_status, release);
         assert!(!e.release_failed);
         assert_eq!(e.look.problem_source, Some(crate::Section::Terminal));
+        assert_eq!(e.status, settings_status);
+        assert_eq!(e.failed, settings_failed);
     }
     #[test]
     fn bus_auto_first_detects_once_with_bounded_reply() {

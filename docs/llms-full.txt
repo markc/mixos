@@ -33428,7 +33428,7 @@ labelled with the design's pixel size. Viewing or tabbing through controls
 does not save a value.
 
 Family choices use the same fenced drafts and conflict handling as Appearance.
-The note names the families settingsd holds. The toolkit currently installs
+The toolkit currently installs
 bundled Inter and JetBrains Mono regardless of those stored names, including
 after a theme reload or restart. Other families take effect when the toolkit
 supports loading them; this stage adds no font loader. The faces grid and
@@ -33545,23 +33545,26 @@ changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
 `contrast`, `decorations`, `caption_side`, `font_family`, `mono_family`,
 `text_scale`, `density`, `reduced_motion`). Family values are strings or null;
 text scale and density reset with 1.0, and reduced motion takes a boolean.
-The section ids are `appearance`, `text_and_fonts`, `windows`, `apps_email`,
-`apps_term`, `apps_ced`, `accessibility`, `software`, and `wallpaper`.
+The section ids in tree order are `appearance`, `text_and_fonts`, `wallpaper`,
+`windows`, `apps_email`, `apps_term`, `apps_ced`, `accessibility`, and `software`.
 Navigation actions use `view.section.<id>`; retired section ids have no aliases. Search includes their `ui.*`
 keys and both font-family keys. `prefs.appearance` and `prefs.appearance.set`
 are version 0.3.0; `prefs.info`, which embeds appearance, is 0.4.0.
 The reply includes `problem` (the unresolved settings failure, or null) and
 `problem_source` (its page id, or null). Problems appear on their own page,
-with a link from other pages, and clear on a successful write to the same
-owner. A settings-service outage also clears on a recovered read. Email
+with a link from other pages. A refused edit stays until its owner's next
+successful write or until the person dismisses it with × on that page.
+Reverting or retiring a look draft clears its look problem. A settings-service
+outage also clears on a recovered read. Email
 account tasks report their outcome inline and never create settings problems.
-`prefs.section {name[, group]}` opens a registry section and expands its
-category. `app.describe` lists the section ids and their searchable metadata.
+`prefs.section {name[, group]}` opens a registry section.
+`app.describe` lists the section ids and their searchable metadata.
 For Software, `group` selects `mixos-desktop`, `mixos-server`, `creative` or
 `other`. `prefs.select {app}` opens the app's group and selects its row.
 `prefs.info` and `prefs.appearance` include the current section id and category.
 `prefs.search {query}` returns `matches`, each with `id` and `category`, in
-tree order. It uses the same search as the sidebar and leaves the window alone.
+sidebar order, except that `system` ranks Software first. It uses the same
+search as the sidebar and leaves the window alone.
 `prefs.email`, `prefs.email.set` and `prefs.email.password` are described
 under Apps → Email above.
 `prefs.execute {id}` runs any command a button
@@ -33587,7 +33590,9 @@ An output's **Use default** removes just that override. Editing the default
 preserves every output override. Images currently crop to fill; fit controls
 and slideshows will follow when backdrop supports them.
 
-Backdrop must be running on the same session Bus. A refusal shows its reason,
+Without Backdrop on the session Bus, Wallpaper shows an unavailable page state
+and creates no problem links. Local edit refusals stay on Wallpaper. A refusal
+of a submitted apply shows its reason,
 keeps the draft and leaves the last good wallpaper in place. Preferences checks for
 intervening changes before sending the whole document; conflicts require
 Revert and a fresh edit. This check is best effort: backdrop does not yet

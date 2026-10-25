@@ -227,6 +227,10 @@ enum Step {
 }
 
 impl WallpaperEditor {
+    /// Only outcomes of submitted actions belong in cross-page feedback.
+    pub fn has_problem(&self) -> bool {
+        self.refusal || self.uncertain || self.conflict
+    }
     pub fn can_edit(&self) -> bool {
         self.current.is_some()
             && !self.working()
@@ -601,7 +605,7 @@ impl WallpaperEditor {
             "status.ready"
         };
         self.status = key.to_owned();
-        self.failed = self.unavailable || self.uncertain || self.conflict || self.refusal;
+        self.failed = self.uncertain || self.conflict || self.refusal;
     }
 }
 
@@ -775,7 +779,7 @@ mod tests {
         let moved = json!({"schema": 1, "default": {"colour": "#010101"}});
         assert!(preflight(&mut editor, 10, state(moved, Value::Null)).is_none());
         assert_eq!(editor.status, "status.conflict");
-        assert!(editor.failed);
+        assert!(!editor.failed);
         assert!(!editor.can_apply());
         assert_eq!(
             editor.draft.as_ref().unwrap()["default"]["colour"],

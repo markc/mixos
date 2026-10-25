@@ -480,6 +480,17 @@ fn email_accounts_studio_dark() {
     );
 }
 
+#[test]
+fn email_rejected_password_standard_size() {
+    let mut e = email_engine(json!({"accounts":[
+        {"id":"acct-example","name":"Work","url":"https://mail.example.com","email":"admin@example.com"}
+    ]}), Some(json!({"accounts":[{"id":"acct-example","has_password":false}]})));
+    e.select_email_account("acct-example");
+    e.email.outcome = Some(("Password rejected by Email".into(), true));
+    assert!(e.look.problem.is_none());
+    draw(chrome(Scheme::Studio, Mode::Dark), "email_rejected_password_standard_size", e);
+}
+
 /// A new account whose Save was refused before sending: the URL is not
 /// https and the address has no @; each field says why.
 #[test]

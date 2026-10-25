@@ -46,6 +46,7 @@ pub enum UiEvent {
     Search(String),
     SearchFocused,
     CloseMacros,
+    DismissSettingsProblem,
     /// Select this app in the Applications table.
     Select(String),
     CloseDialog,
@@ -243,6 +244,9 @@ fn problem_feedback(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     if let Some(problem) = &engine.look.problem {
         let source = engine.look.problem_source.unwrap_or(Section::Appearance);
         if engine.section() == source {
+            if ui.button(label("problem-dismiss")).clicked() {
+                events.push(UiEvent::DismissSettingsProblem);
+            }
             ui.add(
                 egui::Label::new(RichText::new(problem).color(ui.visuals().error_fg_color)).wrap(),
             );
@@ -253,7 +257,7 @@ fn problem_feedback(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             }
         }
     }
-    if engine.wallpaper.failed
+    if engine.wallpaper.has_problem()
         && engine.section() != Section::Wallpapers
         && ui
             .link(label_with(
@@ -943,6 +947,10 @@ fn choice_grid<T>(
     extra_width: f32,
     mut render: impl FnMut(&mut Ui, &T, &str),
 ) {
+    if options.is_empty() {
+        return;
+    }
+    debug_assert!(!options.is_empty());
     let gap = ui.spacing().item_spacing.x;
     let widest = options.iter().fold(0.0_f32, |width, (_, text)| {
         let galley = ui.painter().layout_no_wrap(
@@ -1760,6 +1768,121 @@ mod numeric_tests {
             InterfaceEdit::Size(None).edit().value,
             serde_json::Value::Null
         );
+    }
+
+    #[test]
+    fn size_fields_focus_and_blur_without_typing_emit_no_edits() {
+        for size in [None, Some(16.0)] {
+            for interface in [true, false] {
+                let mut engine = ready_engine();
+                engine.look.interface_font = Some(preferences::appearance::InterfaceFont { weight: None, size });
+                let mut h = Harness::builder().with_size(egui::vec2(720.0, 360.0))
+                    .build_ui_state(move |ui, state: &mut (Engine, Vec<UiEvent>)| {
+                        if interface {
+                            interface_font_controls(ui, &state.0, &mut state.1);
+                        } else if let Some(value) = scale_control(ui, "size-text-scale", if size.is_some() { 1.25 } else { 1.0 }, 0.5..=3.0, true) {
+                            state.1.push(UiEvent::Appearance(AppearanceEdit::TextScale(value)));
+                        }
+                        ui.button("Blur target");
+                    }, (engine, Vec::new()));
+                toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+                h.run();
+                if interface {
+                    h.get_by_role(Role::SpinButton).click();
+                    h.run();
+                    h.get_by_role(Role::TextInput);
+                } else {
+                    h.get_by_role(Role::Slider).focus();
+                    h.run();
+                }
+                h.get_by_label("Blur target").click();
+                h.run();
+                assert!(h.state().1.is_empty(), "unchanged field emitted an edit");
+            }
+        }
+    }
+
+    #[test]
+    fn writing_light_toggle_changes_only_writing() {
+        use preferences::text::{Setting, Surface};
+        let mut engine = ready_engine();
+        engine.look.email = Some(Default::default());
+        engine.look.ced = Some(Default::default());
+        let mut h = Harness::builder().with_size(egui::vec2(900.0, 900.0))
+            .build_ui_state(|ui, state: &mut (Engine, Vec<UiEvent>)| {
+                let mut events = Vec::new();
+                text::section(ui, &state.0, &[Surface::EmailReader, Surface::EmailComposer], &mut events);
+                for event in events {
+                    if let UiEvent::Text(Setting::Light(surface, value)) = event {
+                        let email = state.0.look.email.as_mut().unwrap();
+                        match surface {
+                            Surface::EmailReader => email.reader.light = value,
+                            Surface::EmailComposer => email.composer.light = value,
+                            _ => unreachable!(),
+                        }
+                    }
+                    state.1.push(event);
+                }
+            }, (engine, Vec::new()));
+        toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+        h.run();
+        let reading = h.state().0.look.email.as_ref().unwrap().reader.light;
+        let writing = h.state().0.look.email.as_ref().unwrap().composer.light;
+        h.get_all_by_role(Role::CheckBox).nth(1).unwrap().click();
+        h.run();
+        assert_eq!(h.state().1, [UiEvent::Text(Setting::Light(Surface::EmailComposer, !writing))]);
+        let email = h.state().0.look.email.as_ref().unwrap();
+        assert_eq!(email.reader.light, reading);
+        assert_eq!(email.composer.light, !writing);
+    }
+
+    #[test]
+    fn empty_choice_grid_is_safe() {
+        let mut h = Harness::builder().build_ui(|ui| {
+            choice_grid::<()>(ui, &[], 0.0, |_, _, _| panic!("empty choice rendered"));
+        });
+        h.run();
+    }
+
+    #[test]
+    fn settings_problem_banner_emits_dismiss() {
+        let mut engine = ready_engine();
+        engine.set_section(Section::Terminal);
+        engine.look.problem = Some("Refused terminal edit".into());
+        engine.look.problem_source = Some(Section::Terminal);
+        let mut h = Harness::builder().build_ui_state(|ui, state: &mut (Engine, Vec<UiEvent>)| {
+            problem_feedback(ui, &state.0, &mut state.1);
+        }, (engine, Vec::new()));
+        h.run();
+        h.get_by_label("×").click();
+        h.run();
+        assert_eq!(h.state().1, [UiEvent::DismissSettingsProblem]);
+    }
+
+    #[test]
+    fn absent_backdrop_has_no_links_but_apply_refusal_does() {
+        for section in preferences::SECTIONS {
+            for refused in [false, true] {
+                let mut engine = ready_engine();
+                engine.set_section(section.section);
+                engine.wallpaper.read(100);
+                engine.wallpaper.complete(100, Err(citizen::CallError { message: "absent".into(), outcome_unknown: false }), 101);
+                if refused {
+                    let state = || Ok(citizen::Reply { rc: 0, body: serde_json::json!({"schema":"backdrop.v1", "config":{"schema":1}, "pending":null, "outputs":[]}).to_string(), error: None });
+                    engine.wallpaper.read(102);
+                    engine.wallpaper.complete(102, state(), 103);
+                    engine.wallpaper.edit_colour("#123456".into()).unwrap();
+                    engine.wallpaper.apply(104).unwrap();
+                    engine.wallpaper.complete(104, state(), 105).unwrap();
+                    engine.wallpaper.complete(105, Ok(citizen::Reply { rc: 10, body: "{}".into(), error: Some("refused".into()) }), 106);
+                }
+                let mut h = Harness::builder().build_ui(move |ui| {
+                    problem_feedback(ui, &engine, &mut Vec::new());
+                });
+                h.run();
+                assert_eq!(h.query_by_label("Problem on Wallpaper ›").is_some(), refused && section.section != Section::Wallpapers);
+            }
+        }
     }
 
     #[test]

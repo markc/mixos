@@ -77,6 +77,7 @@ pub fn section(
                             "email-select"
                         };
                         ui.add(egui::Label::new(RichText::new(label(key)).weak()).wrap());
+                        task_feedback(ui, engine);
                     }
                 }
             });
@@ -104,7 +105,6 @@ pub fn section(
             command_button(ui, engine, commands, strings, "email.reset", false, events);
             ui.add(egui::Label::new(RichText::new(label("email-note")).weak()).wrap());
         });
-        task_feedback(ui, engine);
     });
 }
 
@@ -226,7 +226,10 @@ fn account(
     if let Some(saved) = saved {
         bars::hairline(ui);
         password(ui, engine, commands, strings, saved, width, events);
+        task_feedback(ui, engine);
         identities(ui, engine, width, events);
+    } else {
+        task_feedback(ui, engine);
     }
 }
 

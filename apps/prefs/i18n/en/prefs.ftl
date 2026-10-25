@@ -380,3 +380,4 @@ affects-wallpaper = Affects: the desktop background.
 related-contrast = Contrast
 related-text-size = Text size
 appearance-theme = Theme
+problem-dismiss = ×

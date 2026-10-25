@@ -71,6 +71,7 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::Search(query) => engine.ui.search = query,
             UiEvent::SearchFocused => engine.ui.search_focus = false,
             UiEvent::CloseMacros => engine.ui.macros_open = false,
+            UiEvent::DismissSettingsProblem => engine.dismiss_settings_problem(),
             UiEvent::Command(id, origin) => {
                 let _ = commands.execute(id, engine, origin);
             }
