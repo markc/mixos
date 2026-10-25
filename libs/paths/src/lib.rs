@@ -337,6 +337,18 @@ impl Dirs {
 /// Pure derivation from an already canonical executable. from_environment
 /// canonicalises explicit inputs; current() obtains the real /proc target.
 pub fn prefix_from_exe(exe: &Path) -> Result<PathBuf> {
+    // A binary inside a cargo build tree (`target/<profile>/x` or
+    // `target/<profile>/deps/x`, marked by cargo's `.fingerprint`) is not an
+    // install: it has no bin/ or share/ of its own. It uses the default
+    // prefix, as every build did before relocation. MIXOS_PREFIX still wins.
+    let dir = exe.parent();
+    if [dir, dir.and_then(Path::parent)]
+        .into_iter()
+        .flatten()
+        .any(|d| d.join(".fingerprint").is_dir())
+    {
+        return Ok(PathBuf::from(DEFAULT_PREFIX));
+    }
     let prefix = exe
         .parent()
         .and_then(Path::parent)

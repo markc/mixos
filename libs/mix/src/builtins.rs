@@ -30594,7 +30594,7 @@ mod ssh_helpers_tests {
         ])
         .expect("plan");
         let remote = call.argv.last().expect("argv ends with the command");
-        assert_eq!(remote, "/srv/example/bin/mix --strict-arity -");
+        assert_eq!(remote, "mix --strict-arity -");
         // An EXPLICIT false is the escape hatch — the flipped remote
         // default would otherwise stay strict (gemini-pro consolidated
         // review, 2026-09-30).
@@ -30605,7 +30605,7 @@ mod ssh_helpers_tests {
         ])
         .expect("plan");
         let remote2 = call2.argv.last().expect("argv ends with the command");
-        assert_eq!(remote2, "/srv/example/bin/mix --compat-arity -");
+        assert_eq!(remote2, "mix --compat-arity -");
         // Absent opt: the remote default applies.
         let (call3, _) = super::plan_ssh_mix(vec![
             Value::String("h".into()),
@@ -30614,7 +30614,7 @@ mod ssh_helpers_tests {
         ])
         .expect("plan");
         let remote3 = call3.argv.last().expect("argv ends with the command");
-        assert_eq!(remote3, "/srv/example/bin/mix -");
+        assert_eq!(remote3, "mix -");
         // mix_bin replaces the binary and keeps the arity flag before `-`.
         let (call4, _) = super::plan_ssh_mix(vec![
             Value::String("h".into()),

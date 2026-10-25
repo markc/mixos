@@ -330,3 +330,27 @@ fn real_layout_and_symlink_follow_a_move() {
     assert_eq!(after.get(Dir::Etc), Path::new("/file/etc"));
     std::fs::remove_dir_all(temp).unwrap();
 }
+
+#[test]
+fn a_cargo_build_tree_is_not_an_install() {
+    let temp = std::env::temp_dir().join(format!("mixos-paths-cargo-{}", std::process::id()));
+    let profile = temp.join("target/debug");
+    std::fs::create_dir_all(profile.join(".fingerprint")).unwrap();
+    std::fs::create_dir_all(profile.join("deps")).unwrap();
+    for exe in [profile.join("term"), profile.join("deps/term-0123")] {
+        assert_eq!(prefix_from_exe(&exe).unwrap(), Path::new(DEFAULT_PREFIX), "{}", exe.display());
+    }
+    // MIXOS_PREFIX still wins over the build-tree default.
+    let env = Environment {
+        uid: 1000,
+        home: Some("/home/user".into()),
+        exe: Some(profile.join("deps/term-0123")),
+        prefix: Some("/srv/moved tree".into()),
+        ..Environment::default()
+    };
+    assert_eq!(
+        Layout::from_environment(&env).unwrap().root(Root::Prefix),
+        Path::new("/srv/moved tree")
+    );
+    std::fs::remove_dir_all(temp).unwrap();
+}
