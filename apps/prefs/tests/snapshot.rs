@@ -135,6 +135,7 @@ fn creative_studio_dark() {
             {"app":"drawing","repo":"example/drawing","category":"creative","installed":null,"latest":"0.9.0","published":"2026-10-10","status":"not installed"}
         ]),
     );
+    e.set_section(Section::Software);
     e.set_software_group(SoftwareGroup::Creative);
     draw(
         chrome(Scheme::Studio, Mode::Dark),
@@ -526,6 +527,7 @@ fn email_invalid_pro_light() {
 #[test]
 fn releases_missing_studio_dark() {
     let mut engine = Engine::new(label_with);
+    engine.set_section(Section::Software);
     let ticket = engine
         .take_effects()
         .into_iter()
