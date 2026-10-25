@@ -112,6 +112,17 @@ pub fn panel<R>(
     (shown, changed)
 }
 
+/// Set a share from a Bus command and invalidate egui's remembered pixels.
+pub fn set_panel(ctx: &egui::Context, name: &str, share: f32) {
+    with(ctx, |w| {
+        w.panels.insert(name.into(), share);
+        // A Bus choice made before the first layout must win over loading
+        // the previous session's share on that first layout.
+        w.applied.insert(format!("panel:{name}"));
+    });
+    ctx.data_mut(|d| d.remove::<egui::containers::panel::PanelState>(egui::Id::new(name)));
+}
+
 /// A restored selection's visibility takes priority over the old raw offset.
 pub fn forget_scroll(ctx: &egui::Context, name: &str) {
     with(ctx, |w| {
@@ -316,6 +327,21 @@ mod tests {
         h.drop_at(egui::pos2(50.0, 50.0));
         h.run();
         assert_eq!(*h.state(), share);
+    }
+    #[test]
+    fn a_panel_command_before_first_layout_replaces_the_saved_share() {
+        let ctx = egui::Context::default();
+        let mut widgets = Widgets::default();
+        widgets.panels.insert("left".into(), 0.4);
+        widgets.install(&ctx);
+        set_panel(&ctx, "left", 0.6);
+        draw(&ctx, |ui| {
+            let (out, changed) = panel(ui, "left", egui::Panel::left("left"), 1000.0, 0.6, 0.1..=0.8, true, |_| {});
+            assert!((out.response.rect.width() - 600.0).abs() < 2.0);
+            assert!(changed.is_none());
+        });
+        widgets.collect(&ctx);
+        assert_eq!(widgets.panels["left"], 0.6);
     }
     #[test]
     fn scroll_applies_once_after_layout_clamped_and_only_for_its_key() {

@@ -1142,16 +1142,11 @@ impl Shell {
             });
         }
         if std::mem::take(&mut self.engine.split_requested) {
-            let panel = egui::Id::new(SERVICES_PANEL);
-            ui.ctx()
-                .data_mut(|d| d.remove::<egui::containers::panel::PanelState>(panel));
+            toolkit::saved::widgets::set_panel(ui.ctx(), SERVICES_PANEL, self.engine.ui.split);
         }
         if std::mem::take(&mut self.engine.dock_requested) {
-            ui.ctx().data_mut(|d| {
-                for name in ["traffic-bottom", "traffic-right"] {
-                    d.remove::<egui::containers::panel::PanelState>(egui::Id::new(name));
-                }
-            });
+            toolkit::saved::widgets::set_panel(ui.ctx(), "traffic-bottom", self.engine.ui.dock_height);
+            toolkit::saved::widgets::set_panel(ui.ctx(), "traffic-right", self.engine.ui.dock_width);
         }
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);
         let mut events = view(ui, &self.engine, &self.commands, &self.strings);
