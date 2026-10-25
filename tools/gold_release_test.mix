@@ -7,7 +7,7 @@ $base = "/tmp/mixos-gold-test-" .. uuid()
 $root = $base .. "/gold"
 $state_root = $base .. "/state"
 $state = $state_root .. "/releases"
-$layout = {prefix: $root, config: $base .. "/config", state: $state_root, cache: $base .. "/cache", runtime: $base .. "/runtime"}
+$layout = {prefix: $root, share: $root .. "/share", etc: $base .. "/config", var: $state_root, cache: $base .. "/cache", run: $base .. "/runtime"}
 $dist = $base .. "/dist"
 $name = "mixos-desktop-0.1.2-linux-x86_64"
 $server_name = "mixos-server-0.1.2-linux-x86_64"
@@ -19,7 +19,7 @@ end
 
 mkdir($root .. "/bin", {parents: true})
 mkdir($dist, {parents: true})
-write_file($root .. "/layout.mx", data_encode({prefix: $root}) .. "\n")
+write_file($root .. "/layout.mx", "{}\n")
 write_file($root .. "/bin/mock", "previous\n")
 -- An empty directory that predates the install must survive its rollback.
 mkdir($root .. "/share", {parents: true})
@@ -71,24 +71,24 @@ write_file($manifest, data_encode({schema: 1, version: "0.1.2", source: $source,
    libraries: []}]}) .. "\n")
 $sha = hash_file($manifest, "sha256")
 $base_argv = [$mix, $repo .. "/tools/gold_release.mix"]
-$opts = ["--root", $root, "--state", $state_root, "--manifest", $manifest,
+$opts = ["--root", $root, "--var", $state_root, "--manifest", $manifest,
   "--manifest-sha256", $sha, "--archive-dir", $dist, "--package", "desktop"]
 try
   $alias_root = $root .. "/../gold"
-  $alias = run_argv(concat($base_argv, ["plan", "--root", $alias_root, "--state", $state_root,
+  $alias = run_argv(concat($base_argv, ["plan", "--root", $alias_root, "--var", $state_root,
     "--manifest", $manifest, "--manifest-sha256", $sha, "--archive-dir", $dist,
     "--package", "desktop"]), {timeout: 30, stderr: "stdout"})
   need($alias.exit_code != 0 and contains($alias.stdout, "GOLD_ROOT"),
     "noncanonical root was accepted: " .. $alias.stdout)
   $bad = run_argv(concat(concat($base_argv, ["plan"]),
-    ["--root", $root, "--state", $state_root, "--manifest", $manifest,
+    ["--root", $root, "--var", $state_root, "--manifest", $manifest,
      "--manifest-sha256", "0000000000000000000000000000000000000000000000000000000000000000",
      "--archive-dir", $dist, "--package", "desktop"]), {timeout: 30, stderr: "stdout"})
   need($bad.exit_code != 0 and contains($bad.stdout, "GOLD_DIGEST"), "wrong manifest digest refusal differs: " .. $bad.stdout)
   need(not is_file($base .. "/defaults-query.json"), "unverified release binary was executed")
   mkdir($base .. "/outside-state")
   symlink($base .. "/outside-state", $base .. "/state-link")
-  $state_link = run_argv(concat($base_argv, ["plan", "--root", $root, "--state", $base .. "/state-link",
+  $state_link = run_argv(concat($base_argv, ["plan", "--root", $root, "--var", $base .. "/state-link",
     "--manifest", $manifest, "--manifest-sha256", $sha, "--archive-dir", $dist, "--package", "desktop"]),
     {timeout: 30, stderr: "stdout"})
   need($state_link.exit_code != 0 and contains($state_link.stdout, "GOLD_STATE") and
@@ -97,7 +97,7 @@ try
   need($plan.exit_code == 0 and contains($plan.stdout, "changed=6"), "plan failed: " .. $plan.stdout)
   need(deep_eq(json_parse(read_file($base .. "/defaults-query.json")),
     ["layout", "defaults", "--tier", "system", "--json", "--prefix", $root]), "defaults were not queried from the staged binary for the explicit target")
-  $all_opts = ["--root", $root, "--state", $state_root, "--manifest", $manifest,
+  $all_opts = ["--root", $root, "--var", $state_root, "--manifest", $manifest,
     "--manifest-sha256", $sha, "--archive-dir", $dist, "--package", "all"]
   $all_plan = run_argv(concat(concat($base_argv, ["plan"]), $all_opts), {timeout: 30, stderr: "stdout"})
   need($all_plan.exit_code == 0 and contains($all_plan.stdout, "changed=7"),
@@ -109,7 +109,7 @@ try
   need(read_link($root .. "/bin/alias") == "mock", "gold link missing")
   need(read_file($root .. "/lib/libinput.so.10") == "mock-library\n", "runtime library missing")
   need(is_file($root .. "/share/scenes/test.mix"), "gold scene missing")
-  need(deep_eq(load_data($root .. "/layout.mx"), $layout), "resolved target layout was not persisted")
+  need(deep_eq(load_data($root .. "/layout.mx"), delete($layout, "prefix")), "resolved non-prefix target layout was not persisted")
   $lines = split(trim($apply.stdout), "\n")
   $last = $lines[len($lines) - 1]
   $id = replace(fields($last)[1], "receipt=", "")
@@ -119,11 +119,11 @@ try
   $later_id = replace(fields($later_lines[len($later_lines) - 1])[1], "receipt=", "")
   -- Recovery must not execute the target binary (it may be broken or absent).
   remove($base .. "/defaults-query.json")
-  $stale = run_argv(concat($base_argv, ["rollback", "--root", $root, "--state", $state_root,
+  $stale = run_argv(concat($base_argv, ["rollback", "--root", $root, "--var", $state_root,
     "--receipt", $id]), {timeout: 30, stderr: "stdout"})
   need($stale.exit_code != 0 and contains($stale.stdout, "GOLD_ORDER"),
     "older receipt rollback was accepted: " .. $stale.stdout)
-  $later_rollback = run_argv(concat($base_argv, ["rollback", "--root", $root, "--state", $state_root,
+  $later_rollback = run_argv(concat($base_argv, ["rollback", "--root", $root, "--var", $state_root,
     "--receipt", $later_id]), {timeout: 30, stderr: "stdout"})
   need($later_rollback.exit_code == 0, "newer receipt rollback failed: " .. $later_rollback.stdout)
   $rollback = run_argv(concat($base_argv, ["rollback", "--receipt-file", $state .. "/receipts/" .. $id .. ".mx"]),
@@ -147,21 +147,21 @@ try
   $rec2.status = "pending"
   write_file($state .. "/pending.mx", data_encode($rec2) .. "\n")
   remove($receipt2)
-  $recover = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state_root]),
+  $recover = run_argv(concat($base_argv, ["recover", "--root", $root, "--var", $state_root]),
     {timeout: 30, stderr: "stdout"})
   need($recover.exit_code == 0 and read_file($root .. "/bin/mock") == "previous\n",
     "interrupted apply recovery failed: " .. $recover.stdout)
   $recovered = load_data($receipt2)
   write_file($state .. "/pending.mx", data_encode($recovered) .. "\n")
   remove($receipt2)
-  $recover_again = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state_root]),
+  $recover_again = run_argv(concat($base_argv, ["recover", "--root", $root, "--var", $state_root]),
     {timeout: 30, stderr: "stdout"})
   need($recover_again.exit_code == 0 and not is_file($state .. "/pending.mx"),
     "recovered pending receipt did not finish: " .. $recover_again.stdout)
   $attack = $rec2
   $attack.files[len($attack.files) - 1].rel = "bin/../../outside"
   write_file($state .. "/pending.mx", data_encode($attack) .. "\n")
-  $unsafe = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state_root]),
+  $unsafe = run_argv(concat($base_argv, ["recover", "--root", $root, "--var", $state_root]),
     {timeout: 30, stderr: "stdout"})
   need($unsafe.exit_code != 0 and contains($unsafe.stdout, "GOLD_PATH"),
     "unsafe receipt path was accepted: " .. $unsafe.stdout)
@@ -169,7 +169,7 @@ try
   $dir_attack = $rec2
   $dir_attack.created_dirs = ["share/../../outside"]
   write_file($state .. "/pending.mx", data_encode($dir_attack) .. "\n")
-  $unsafe_dir = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state_root]),
+  $unsafe_dir = run_argv(concat($base_argv, ["recover", "--root", $root, "--var", $state_root]),
     {timeout: 30, stderr: "stdout"})
   need($unsafe_dir.exit_code != 0 and contains($unsafe_dir.stdout, "GOLD_PATH"),
     "unsafe receipt directory was accepted: " .. $unsafe_dir.stdout)
@@ -177,7 +177,7 @@ try
   $id_attack = $rec2
   $id_attack.id = "../../escape"
   write_file($state .. "/pending.mx", data_encode($id_attack) .. "\n")
-  $unsafe_id = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state_root]),
+  $unsafe_id = run_argv(concat($base_argv, ["recover", "--root", $root, "--var", $state_root]),
     {timeout: 30, stderr: "stdout"})
   need($unsafe_id.exit_code != 0 and contains($unsafe_id.stdout, "GOLD_RECEIPT"),
     "unsafe receipt id was accepted: " .. $unsafe_id.stdout)
@@ -186,7 +186,7 @@ try
   $bad_doc = load_data($manifest)
   $bad_doc.archives[0].libraries[0].sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
   write_file($bad_manifest, data_encode($bad_doc) .. "\n")
-  $bad_library = run_argv(concat($base_argv, ["plan", "--root", $root, "--state", $state_root,
+  $bad_library = run_argv(concat($base_argv, ["plan", "--root", $root, "--var", $state_root,
     "--manifest", $bad_manifest, "--manifest-sha256", hash_file($bad_manifest, "sha256"),
     "--archive-dir", $dist, "--package", "desktop"]), {timeout: 30, stderr: "stdout"})
   need($bad_library.exit_code != 0 and contains($bad_library.stdout, "GOLD_LIBRARY"),

@@ -82,7 +82,7 @@ session/VT number is a supervision attribute and never a second instance
 identity. The session target wants and upholds the authority. The unit
 validates with plain seed before serving, and application and compositor
 startup does not wait for settings readiness. An image must provision its
-service account's writable `MIXOS_CONFIG/settings` root and explicitly seed
+service account's writable `MIXOS_ETC/settings` root and explicitly seed
 once during first installation. Automatic startup never receives
 `--allow-create`, so lost mounts or directories do not silently become new
 default profiles.

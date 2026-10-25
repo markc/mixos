@@ -41,7 +41,7 @@ Binaries and paths the gates rely on:
 - The broker URL from `MIXOS_NODED_URL`, else `~/.config/mixos/node.conf.mix`
   or `<config>/node.conf.mix`, else loopback. A gate with fixed Bus names
   starts a private `noded` (`--noded PATH` overrides the lookup).
-- compd's per-run state through `MIXOS_CONFIG`, `MIXOS_STATE` and `MIXOS_RUNTIME`, and
+- compd's per-run state through `MIXOS_ETC`, `MIXOS_VAR` and `MIXOS_RUN`, and
   its own switches `COMPD_FRAME_TRACE`, `COMPD_FRAME_TRACE_FILE`,
   `COMPD_FRAME_TRACE_LIMIT`, `COMPD_CHROME_CLIP_DEBUG`, `COMPD_XWAYLAND`.
 - Seats are `seat0` (human) and `agent`; decoration styles are `mac`, `win11`

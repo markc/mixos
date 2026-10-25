@@ -3,7 +3,7 @@
 -- Default layout byte contract, plus a prefix with a space.
 $repo = dirname(dirname(realpath($0)))
 $renderer = require($repo .. "/share/layout/render.mix")
-$roots = {prefix: "/opt/mixos", config: "/etc/mixos", state: "/var/lib/mixos", cache: "/var/cache/mixos", runtime: "/run/mixos"}
+$roots = {prefix: "/opt/mixos", share: "/opt/mixos/share", etc: "/etc/mixos", var: "/var/lib/mixos", cache: "/var/cache/mixos", run: "/run/mixos"}
 $manifest = load_data($repo .. "/share/layout/templates.mx")
 $different = []
 $live = []

@@ -83,7 +83,7 @@ fn relative_entry_path_survives_a_prelude_override_that_chdirs() {
         .current_dir(&dir)
         .arg("main.mix")
         .env("MIX_STATS", "off")
-        .env("MIXOS_CONFIG", &etc)
+        .env("MIXOS_ETC", &etc)
         .output()
         .expect("failed to spawn mix binary");
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();

@@ -246,12 +246,12 @@ fn check_runtime($probe)
 end
 
 -- The instance config path: $BRIDGED_CONFIG when set, else
--- <etc>/bridge/<name>.conf.mix, with <etc> = $MIXOS_CONFIG or <config>.
+-- <etc>/bridge/<name>.conf.mix, with <etc> = $MIXOS_ETC or <config>.
 fn config_path($name)
   $explicit = env("BRIDGED_CONFIG") ?? ""
   if $explicit != "" then return $explicit end
-  $etc = env("MIXOS_CONFIG") ?? ""
-  if $etc == "" then $etc = (mixos_path("config") .. "") end
+  $etc = env("MIXOS_ETC") ?? ""
+  if $etc == "" then $etc = "/etc/mixos" end
   return $etc .. "/bridge/" .. $name .. ".conf.mix"
 end
 
@@ -259,7 +259,7 @@ end
 fn registry_path()
   $explicit = env("BRIDGED_COMMANDS") ?? ""
   if $explicit != "" then return $explicit end
-  return (mixos_path("prefix") .. "/share/bus/commands.conf.mix")
+  return (mixos_path("prefix", "share") .. "/bus/commands.conf.mix")
 end
 
 -- ---------------------------------------------------------------- client

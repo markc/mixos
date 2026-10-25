@@ -3,7 +3,7 @@
 -- bridged_test: bridged over a real Bus, offline. A private noded broker
 -- (tests/lib/private_bus.mix), a stand-in app (tests/lib/fake_app.mix, token
 -- auth) and bridged itself as a serve citizen named fakeapp, configured by
--- the instance-config path rule (<MIXOS_CONFIG>/bridge/fakeapp.conf.mix) and
+-- the instance-config path rule (<MIXOS_ETC>/bridge/fakeapp.conf.mix) and
 -- guarded by this checkout's command registry, started the way the unit starts
 -- it (bridged.mix --start fakeapp: checks, then the serve citizen as a child).
 -- Every command is driven with `send`, including the refusals; then the app dies
@@ -106,8 +106,8 @@ try
   $app = start_fake("app", 0)
   $port = $app.port
   -- The instance config, where the path rule looks for it.
-  mkdir($client.MIXOS_CONFIG .. "/bridge", {parents: true})
-  write_file($client.MIXOS_CONFIG .. "/bridge/fakeapp.conf.mix", join(["token_file: \"" .. $tmp .. "/app.tok\"", "port: " .. to_string($port),
+  mkdir($client.MIXOS_ETC .. "/bridge", {parents: true})
+  write_file($client.MIXOS_ETC .. "/bridge/fakeapp.conf.mix", join(["token_file: \"" .. $tmp .. "/app.tok\"", "port: " .. to_string($port),
     "timeout_s: 3", "backoff_s: 1", "instance: \"bridged-test\""], ",\n") .. "\n")
   -- BRIDGED_MIX reaches every bridged process, the --start parent and its serve child.
   $env = merge($client, {BRIDGED_MIX: $MIX, BRIDGED_COMMANDS: $registry, BRIDGED_CONFIG: ""})
@@ -293,7 +293,7 @@ try
   end
   if not is_file($keyportfile) then raise("KEY_APP", "key fake did not listen") end
   $keyport = to_number(trim(read_file($keyportfile)))
-  write_file($client.MIXOS_CONFIG .. "/bridge/fakeapp.conf.mix", data_encode({auth: "key",
+  write_file($client.MIXOS_ETC .. "/bridge/fakeapp.conf.mix", data_encode({auth: "key",
     token_file: $keyfile, port: $keyport, instance: "key-bus-test", timeout_s: 2, backoff_s: 0.2}))
   push($pids, spawn([$MIX, "--serve", $citizen, "--name", "fakeapp"],
     {die_with_parent: true, env: $env, stdout: {file: $tmp .. "/key-bridge.log"}, stderr: "stdout"}))

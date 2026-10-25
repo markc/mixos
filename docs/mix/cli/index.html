@@ -976,7 +976,7 @@ minutes. There is no stdin in v1: the task gets <code>/dev/null</code>, and a
 stdin-feeding task is a named future field rather than a silent absence.</p>
 <p><strong>The environment is enumerated, not inherited.</strong> A task starts from exactly:</p>
 <pre><code>HOME  USER  PATH  LANG  TERM=dumb
-MIXOS_PREFIX  MIXOS_CONFIG  MIXOS_STATE  MIXOS_CACHE  MIXOS_RUNTIME  MIXOS_SRC
+MIXOS_PREFIX  MIXOS_ETC  MIXOS_VAR  MIXOS_CACHE  MIXOS_RUN  MIXOS_SRC
 MIXOS_NODE_CONFIG  MIXOS_BROKER_ACCOUNT
 </code></pre>
 <p>plus the caller's <code>env</code> overlay, which WINS on a name collision. Those values

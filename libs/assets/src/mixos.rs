@@ -5,7 +5,7 @@
 //!
 //! Order: `$XDG_DATA_HOME/mixos/assets`, each `$XDG_DATA_DIRS` entry's
 //! `mixos/assets`, then `assets` under the share directory `config`
-//! resolves (`the resolved prefix/share`, default `mixos:prefix/share`). Unset or empty
+//! resolves (`MIXOS_SHARE`, default the derived prefix/share). Unset or empty
 //! XDG variables take their defaults; relative entries are ignored.
 
 use std::path::Path;

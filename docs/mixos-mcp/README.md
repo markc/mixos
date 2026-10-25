@@ -15,7 +15,7 @@ are the [single naming exception](../docs/decisions/2026-10-19-mcp-program-name.
 The server starts without a Bus connection. The first Bus tool connects
 using `libs/bus`. `MIXOS_NODED_URL` overrides the node configuration URL;
 otherwise the native client's node config discovery applies, including
-`MIXOS_NODE_CONFIG`, `MIXOS_CONFIG` and the user/system defaults.
+`MIXOS_NODE_CONFIG`, `MIXOS_ETC` and the user/system defaults.
 
 Set `MIXOS_BROKER_ACCOUNT` to the broker's operating-system account and
 `MIXOS_BUS_SOCKET` to the session's Unix socket. With either set, verified
@@ -90,7 +90,7 @@ by `<prefix>/bin/mix -c`.
 ### Host indexd from a desk
 
 When a desk cannot reach the host's Bus, select SSH in
-`$MIXOS_CONFIG/knowledge.conf.mix` (normally `~/.config/mixos/knowledge.conf.mix`):
+`$MIXOS_ETC/knowledge.conf.mix` (normally `~/.config/mixos/knowledge.conf.mix`):
 
 ```text
 indexd: {

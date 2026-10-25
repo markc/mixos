@@ -175,7 +175,7 @@ const BASE_NAMES: &[&str] = &[
     "MIXOS",
     "MIXOS_SRC",
     "MIXOS_BIN",
-    "MIXOS_CONFIG",
+    "MIXOS_ETC",
     "MIXOS_NODE_CONFIG",
     "MIXOS_BROKER_ACCOUNT",
 ];

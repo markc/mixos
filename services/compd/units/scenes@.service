@@ -9,9 +9,9 @@ PartOf=session@%i.target
 [Service]
 Type=simple
 User=mixos
-EnvironmentFile=@{config}/session/%i.env
+EnvironmentFile=@{etc}/session/%i.env
 UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
-ExecStart=@{prefix}/bin/mix --serve @{prefix}/share/compd/scripts/scenes.mix --name scenes
+ExecStart=@{prefix}/bin/mix --serve @{share}/compd/scripts/scenes.mix --name scenes
 KillMode=control-group
 TimeoutStopSec=10
 Restart=on-failure

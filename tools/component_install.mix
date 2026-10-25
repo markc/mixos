@@ -46,12 +46,12 @@
 -- MIXOS_COMPONENT_INSTALL_FAIL=<point> raises there instead.
 
 $g = getopt(args(), {help: {short: "h"}, root: {arg: true}, source: {arg: true},
-  prefix: {arg: true}, config: {arg: true}, state: {arg: true}, cache: {arg: true}, runtime: {arg: true},
+  prefix: {arg: true}, share: {arg: true}, etc: {arg: true}, var: {arg: true}, cache: {arg: true}, run: {arg: true},
   tier: {arg: true}, mix: {arg: true},
   check: {}, rollback: {arg: true}, "dry-run": {}})
 if len($g.errors) != 0 then raise("INSTALL_ARGS", join($g.errors, "; ")) end
 if $g.opts.help then
-  print("usage: mix tools/component_install.mix [--root SYSROOT] [--prefix DIR] [--mix STAGED_MIX] [--tier system|user] [--config DIR --state DIR --cache DIR --runtime DIR] [--source DIR] [--check | --rollback NAME | --dry-run] [component...]")
+  print("usage: mix tools/component_install.mix [--root SYSROOT] [--prefix DIR] [--mix STAGED_MIX] [--tier system|user] [--share DIR --etc DIR --var DIR --run DIR --cache DIR] [--source DIR] [--check | --rollback NAME | --dry-run] [component...]")
   exit(0)
 end
 $root = $g.opts.root ?? "/"

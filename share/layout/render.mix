@@ -3,7 +3,7 @@
 -- Pure template operations: no environment reads and no filesystem writes.
 fn render($text, $roots)
   for $name in keys($roots)
-    if not contains(["prefix", "config", "state", "cache", "runtime"], $name) then
+    if not contains(["prefix", "share", "etc", "var", "run", "cache"], $name) then
       raise("LAYOUT_ROOT", "unknown root " .. $name)
     end
     $value = $roots[$name]

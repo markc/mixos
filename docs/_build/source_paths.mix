@@ -5,7 +5,7 @@ fn resolve($repo, $value)
   if not starts_with($value, "mixos:") then return $value end
   $parts = split(substr($value, 6), "/")
   $name = $parts[0]
-  if not contains(["prefix", "config", "state", "cache", "runtime", "share", "bin", "lib"], $name) then
+  if not contains(["prefix", "share", "etc", "var", "run", "cache"], $name) then
     raise("SITE_PATH", "unknown source root: " .. $name)
   end
   $tail = []

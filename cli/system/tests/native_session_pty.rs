@@ -299,14 +299,8 @@ impl Child {
             ("HOME".into(), home.path().display().to_string()),
             ("MIXOS_SRC".into(), home.path().display().to_string()),
             (
-                "MIXOS_PREFIX".into(),
-                current_mix()
-                    .parent()
-                    .unwrap()
-                    .parent()
-                    .unwrap()
-                    .display()
-                    .to_string(),
+                "MIXOS_BIN".into(),
+                current_mix().parent().unwrap().display().to_string(),
             ),
             ("MIXOS_NODE_CONFIG".into(), config.display().to_string()),
             ("MIXOS_BROKER_ACCOUNT".into(), account),
@@ -2538,9 +2532,10 @@ fn p4_a_task_inherits_only_what_it_was_given() {
             "PATH",
             "LANG",
             "TERM",
-            "MIXOS_PREFIX",
+            "MIXOS",
             "MIXOS_SRC",
-            "MIXOS_CONFIG",
+            "MIXOS_BIN",
+            "MIXOS_ETC",
             "MIXOS_NODE_CONFIG",
             "MIXOS_BROKER_ACCOUNT",
             "P4_OVERLAY",

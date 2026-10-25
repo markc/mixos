@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Status: accepted, 2026-10-25.">
+    <meta name="description" content="Status: accepted, 2026-10-25; amended the same day to preserve main&#x27;s uid and directory rules.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -234,40 +234,62 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="relocatable-layout">Relocatable layout</h1>
-<p>Status: accepted, 2026-10-25.</p>
+<p>Status: accepted, 2026-10-25; amended the same day to preserve main's uid and
+directory rules.</p>
 <ol>
-<li>MixOS code asks for a root rather than naming an installation location.
-This is a clean break, without old-path fallbacks or location aliases.</li>
-<li>The only roots are <code>prefix</code>, <code>config</code>, <code>state</code>, <code>cache</code> and <code>runtime</code>.
-<code>bin</code>, <code>lib</code> and <code>share</code> are children of prefix. The default table and
-system/user tier rule are in the <a href="/paths/">paths manual</a>.</li>
-<li>Precedence is per root: <code>MIXOS_&lt;ROOT&gt;</code>, then <code>&lt;prefix&gt;/layout.mx</code>, then
-defaults. Prefix self-location follows <code>/proc/self/exe</code> through symlinks.
-A layout document has at most five unique known keys and is strict data.</li>
-<li><code>libs/paths</code> owns resolution and depends on no workspace crate. Rust uses
-<code>paths::root</code>, <code>bin</code>, <code>share</code> and <code>resolve</code>; Mix uses <code>mixos_path</code>.</li>
-<li>Files read by external programs are rendered from <code>@{root}</code> templates.
-<code>mix layout apply</code> renders them idempotently. Component unit sources stay
-with their owner; installed templates ship under <code>share/layout/</code>.
-Moving a tree requires re-rendering and restarting affected processes.</li>
-<li>Saved MixOS references use <code>mixos:&lt;root&gt;/&lt;relative&gt;</code>. Readers resolve the
-reference at use time. Root escapes refuse. User-owned paths stay unchanged.
-Offline migration retains originals; live migration is a separate operation.</li>
-<li><code>tools/path_gate.mix</code> joins lint. Literal defaults belong only in the
-resolver, external templates, default assertions and documentation.
-Shipped scripts use <code>#!/usr/bin/env mix</code> or are invoked with <code>mix</code>.</li>
-<li>Release proof installs to an owned temporary prefix with a space and hides
-the old prefix and config roots in a private mount namespace. It exercises
-installer tests, scenes, a nested desktop and SSH loopback where available.
-Unsupported privileged fixtures report a skip rather than passing silently.</li>
-<li>One managed link is the fixed entry point: <code>/usr/local/bin/mix</code> on hosts,
-<code>/usr/bin/mix</code> only inside a MixOS-owned image. Login shells and <code>/etc/shells</code>
-use that link. <code>mix-static</code> remains unlinked. Host Elixir installations do
-not change the chosen name. Remote precedence is option, environment,
-per-host table when one exists, then bare <code>mix</code> on PATH.</li>
+<li>MixOS asks for installation roots rather than embedding locations.
+Existing environment names and per-caller directory policies are retained.</li>
+<li>Canonical roots are <code>prefix</code>, <code>share</code>, <code>etc</code>, <code>var</code>, <code>run</code>, <code>cache</code>.
+<code>etc</code>, <code>var</code>, <code>run</code> and <code>share</code> preserve the rules of
+<code>libs/config/src/dir.rs</code> at <code>32650ae5</code>: <code>MIXOS_ETC</code>, <code>MIXOS_VAR</code>,
+<code>MIXOS_RUN</code>, <code>MIXOS_SHARE</code> and whole-tree <code>MIXOS</code>; real uid 0 means system,
+other uids mean user/XDG. Relative XDG values are ignored. Var uses XDG
+data, and run keeps the <code>/tmp/mixos-run</code> fallback. Only the installed prefix
+and default share location change to self-location. Cache is additive.
+Caller-owned app state and per-file overrides keep their own rules.</li>
+<li>Per-root precedence is its override, then <code>$MIXOS</code> where applicable,
+then <code>&lt;prefix&gt;/layout.mx</code>, then uid defaults. Share ignores <code>$MIXOS</code> and
+accepts only an absolute override. Prefix comes from <code>MIXOS_PREFIX</code>, else
+canonical <code>/proc/self/exe</code> and the parent of <code>bin/</code>; it never selects tier.
+The bounded strict-data layout has at most <code>etc</code>, <code>var</code>, <code>run</code>, <code>share</code>,
+<code>cache</code>, and refuses a prefix key. The <a href="/paths/">paths manual</a>
+gives the complete table and explicit system/user APIs.</li>
+<li><code>libs/paths</code> owns the implementation without workspace dependencies;
+<code>config::dir</code> re-exports the original API. Rust and <code>mixos_path</code> share it.
+Process helpers resolve once; pure explicit inputs support tests.</li>
+<li>External files use <code>@{prefix}</code>, <code>@{share}</code>, <code>@{etc}</code>, <code>@{var}</code>, <code>@{run}</code>,
+<code>@{cache}</code>. <code>mix layout apply</code> renders idempotently and prints changes.
+Unit templates remain with their components and ship in <code>share/layout</code>.</li>
+<li>Saved MixOS references use <code>mixos:&lt;root&gt;/&lt;relative&gt;</code>. Root escapes refuse;
+user-owned paths retain their meaning. Offline migration keeps originals;
+live migration is a separate operator action.</li>
+<li>The path gate joins lint. Literal defaults are limited to the resolver,
+external templates, default assertions and documentation. Shipped scripts
+use <code>#!/usr/bin/env mix</code> or are invoked with Mix.
+The behaviour-preservation review explicitly permits deferring a literal
+where a replacement cannot be proved equivalent. Three fixed-FHS Mix
+fallbacks and two storage-path lines in indexd's example are recorded by
+exact file, line and reason in
+<code>tools/path_gate_exceptions.mx</code>; stale entries or additional occurrences
+fail the gate. They are not a general path fallback or an environment alias.</li>
+<li>Main's directory tests move with unchanged assertions. A table compares
+each root under public-safe desktop, system-unit and bare-login environments
+for uid 0 and a user at both default and moved prefixes. No default-layout
+user data moves are accepted. The relocation proof uses a disposable prefix
+with a space and hides the old roots in a private mount namespace; it runs
+installer, scene, nested desktop and SSH loopback checks where available.
+Missing privileges are reported as skips.</li>
+<li>The stable host entry is <code>/usr/local/bin/mix</code>; <code>/usr/bin/mix</code> is managed
+only in a MixOS-owned image. Login shells and <code>/etc/shells</code> use that link.
+<code>mix-static</code> stays unlinked. Remote lookup is option, environment,
+per-host table when one exists, then <code>mix</code> on PATH.</li>
 </ol>
-<p>This changes no live installation and does not introduce hot relocation,
-generations or a versioned store. The default layout stays in place.</p>
+<p>N-1 tooling remains usable before a new binary is installed. Installers get
+target defaults by invoking the verified staged binary's <code>mix layout defaults</code>
+command. They do not select a target from their own interpreter. Rollback can
+read the receipt or target layout without running the installed target.</p>
+<p>This decision does not deploy or migrate a live installation, move app data,
+introduce hot relocation, generations or a versioned store.</p>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-25-relocatable-layout.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

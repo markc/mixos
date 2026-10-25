@@ -9,13 +9,13 @@ PartOf=session-headless@%i.target
 Type=simple
 User=mixos
 SupplementaryGroups=render
-EnvironmentFile=@{config}/session/%i.env
+EnvironmentFile=@{etc}/session/%i.env
 UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
 Environment=MIXOS_CONTAIN_CHILDREN=1
 RuntimeDirectory=mixos/session/%i/desktop
 RuntimeDirectoryMode=0700
 # As in compd@, expose the desk's session bus to compositor children.
-ExecStartPre=-/usr/bin/ln -sfn @{runtime}/session/%i/dbus/bus @{runtime}/session/%i/desktop/bus
+ExecStartPre=-/usr/bin/ln -sfn @{run}/session/%i/dbus/bus @{run}/session/%i/desktop/bus
 ExecStart=@{prefix}/bin/compd --headless --socket ${WAYLAND_DISPLAY} --size ${MIXOS_HEADLESS_SIZE} --scale ${MIXOS_OUTPUT_SCALE} --config-file ${MIXOS_COMPD_CONFIG} --bus-service comp --scene-service shell
 StandardOutput=journal
 StandardError=journal

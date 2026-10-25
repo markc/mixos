@@ -3,23 +3,24 @@
 -- version: 0.1.0
 -- Offline migration only. Never discovers or opens live saved-data roots.
 -- Supply a copy and an explicit old five-root document. Preview is the default.
-$g = getopt(args(), {source: {arg: true}, "from-layout": {arg: true}, apply: {}, help: {short: "h"}})
+$g = getopt(args(), {source: {arg: true}, "from-layout": {arg: true}, "from-prefix": {arg: true}, apply: {}, help: {short: "h"}})
 if $g.opts.help then
-  print("layout_migrate_saved.mix --source COPY --from-layout OLD_LAYOUT [--apply]")
+  print("layout_migrate_saved.mix --source COPY --from-prefix OLD_PREFIX --from-layout OLD_LAYOUT [--apply]")
   exit(0)
 end
-if len($g.errors) != 0 or len($g.rest) != 0 or $g.opts.source == nil or $g.opts["from-layout"] == nil then
-  raise("MIGRATE_ARGS", "requires --source COPY --from-layout FILE; dry-run unless --apply")
+if len($g.errors) != 0 or len($g.rest) != 0 or $g.opts.source == nil or $g.opts["from-layout"] == nil or $g.opts["from-prefix"] == nil then
+  raise("MIGRATE_ARGS", "requires --source COPY --from-prefix OLD_PREFIX --from-layout FILE; dry-run unless --apply")
 end
 $copy = realpath($g.opts.source)
 if $copy == nil or not is_dir($copy) or $copy == "/" then raise("MIGRATE_SOURCE", "source must be an existing copy directory") end
-$old = load_data($g.opts["from-layout"])
-if type($old) != "map" or len(keys($old)) != 5 then raise("MIGRATE_LAYOUT", "offline migration needs all five old roots to reject live source paths") end
 $targets = require(dirname(realpath($0)) .. "/lib/layout_target.mix")
+$old = $targets.document($g.opts["from-layout"])
+if len(keys($old)) != 5 then raise("MIGRATE_LAYOUT", "offline migration needs all five non-prefix roots") end
+$old.prefix = $g.opts["from-prefix"]
 $old = $targets.checked($old)
 $pairs = []
 for $name in keys($old)
-  if not contains(["prefix", "config", "state", "cache", "runtime"], $name) or type($old[$name]) != "string" or not starts_with($old[$name], "/") then
+  if not contains(["prefix", "share", "etc", "var", "run", "cache"], $name) or type($old[$name]) != "string" or not starts_with($old[$name], "/") then
     raise("MIGRATE_LAYOUT", "invalid old layout root")
   end
   $live = realpath($old[$name]) ?? $old[$name]

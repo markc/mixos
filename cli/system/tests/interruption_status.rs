@@ -324,7 +324,7 @@ fn sigint_during_cpu_only_prelude_exits_with_130_for_command_and_file() {
         .unwrap();
         let stdout_path = dir.path().join("stdout");
         let mut cmd = command(dir.path());
-        cmd.env("MIXOS_CONFIG", dir.path())
+        cmd.env("MIXOS_ETC", dir.path())
             .stdout(Stdio::from(std::fs::File::create(&stdout_path).unwrap()));
         match mode {
             "command" => {
@@ -384,7 +384,7 @@ fn assert_framed_startup_sigint(startup: &str) {
     match startup {
         "prelude" => {
             std::fs::write(dir.path().join("prelude.mix"), &body).unwrap();
-            cmd.env("MIXOS_CONFIG", dir.path());
+            cmd.env("MIXOS_ETC", dir.path());
         }
         "mixrc" => {
             std::fs::write(dir.path().join(".mixrc"), &body).unwrap();

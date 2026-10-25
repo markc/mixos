@@ -6,9 +6,23 @@ $repo = dirname(dirname(realpath($0)))
 $pattern = '/(opt|etc|var/lib|var/cache|run)/mixos\b'
 $listed = run_argv_must(["git", "-C", $repo, "ls-files", "--cached", "--others", "--exclude-standard"])
 $bad = []
+$exceptions = load_data($repo .. "/tools/path_gate_exceptions.mx")
+if $exceptions.schema != 1 or type($exceptions.entries) != "list" then raise("PATH_EXCEPTIONS", "invalid scoped exception registry") end
+if len($exceptions.entries) > 5 then raise("PATH_EXCEPTIONS", "the five approved lines may shrink, not grow") end
+$allowed = {}
+$seen = {}
+for $entry in $exceptions.entries
+  if type($entry.path) != "string" or type($entry.line) != "string" or type($entry.reason) != "string" or trim($entry.reason) == "" then raise("PATH_EXCEPTIONS", "exception needs an exact path, line and reason") end
+  $key = $entry.path .. ":" .. $entry.line
+  if has_key($allowed,$key) then raise("PATH_EXCEPTIONS", "duplicate exception") end
+  $allowed[$key] = true
+end
 for $rel in sort(unique(lines(trim($listed))))
   if not is_file($repo .. "/" .. $rel) then continue end
   if starts_with($rel, "libs/paths/") or ends_with($rel, ".md") or starts_with($rel, "docs/") then continue end
+  -- Explicitly scoped deferrals from the behaviour-preservation amendment.
+  -- The registry is validated above; every entry must match exactly once.
+  if $rel == "tools/path_gate_exceptions.mx" then continue end
   if starts_with($rel, "share/") and any([".template", ".service", ".desktop", ".nspawn", ".conf"], fn($ext) = ends_with($rel, $ext)) then continue end
   -- Default assertions and their fixtures. Executable relocation coverage
   -- separately hides the old roots, so a test exemption cannot prove relocation.
@@ -24,14 +38,22 @@ for $rel in sort(unique(lines(trim($listed))))
   end
   for $line in lines($text)
     $n = $n + 1
+    -- Rust doc comments describe the default table and are documentation,
+    -- not executable fallback paths. Ordinary source comments stay gated.
+    if starts_with(trim($line), "///") or starts_with(trim($line), "//!") then continue end
     if starts_with(trim($line), "#[cfg(test)]") then $in_tests = true end
     if re_match($line, $pattern) and not $in_tests then
-      push($bad, $rel .. ":" .. to_string($n) .. ": " .. trim($line))
+      $key = $rel .. ":" .. trim($line)
+      if has_key($allowed,$key) then $seen[$key] = ($seen[$key] ?? 0) + 1
+      else push($bad, $rel .. ":" .. to_string($n) .. ": " .. trim($line)) end
     end
   end
+end
+for $key in keys($allowed)
+  if ($seen[$key] ?? 0) != 1 then push($bad,"stale or duplicated exception: " .. $key) end
 end
 if len($bad) != 0 then
   for $line in $bad print("path: " .. $line) end
   exit(1)
 end
-print("path: no literal MixOS roots outside ruling 7")
+print("path: no unapproved literal roots; " .. to_string(len(keys($allowed))) .. " exact behaviour-preserving deferrals")

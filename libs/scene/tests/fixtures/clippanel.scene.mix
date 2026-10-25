@@ -4,7 +4,7 @@ name: clippanel
 citizen: clippanel-citizen
 window: {"kind":"edge","edge":"right","title":"MixOS Clipboard","w":720,"h":520}
 subscribe: ["desktop.clipboard.changed"]
-targets: {"conf":"mixos:config/clipboard.conf.mix"}
+targets: {"conf":"/etc/mixos/clipboard.conf.mix"}
 ---
 The canonical Mix Scenes v0 fixture: the core parses, lints and diffs it,
 a renderer draws it, and a citizen regenerates it. Prose outside the fence

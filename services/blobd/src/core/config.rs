@@ -59,7 +59,7 @@ pub const DEFAULT_FETCH_DEADLINE_SECS: u64 = 3600;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     /// mds root. `None` means the caller's default (the unit's
-    /// `StateDirectory`, `mixos:state/blobd`).
+    /// `StateDirectory`, `<system var>/blobd`).
     pub root: Option<PathBuf>,
     /// Instance name: the Bus service is `blobd` or `blobd-<name>`,
     /// with a root per instance.
@@ -318,11 +318,12 @@ pub type ByteSize = u64;
 
 /// The documented default root, used when neither `root:` nor the
 /// unit's `$STATE_DIRECTORY` names one.
+fn default_system_root() -> PathBuf { paths::system_default(paths::Root::Var).expect("built-in system var default").join("blobd") }
 
 /// The root when the config sets none (m10): systemd's
 /// `$STATE_DIRECTORY` (the unit's `StateDirectory`, a named instance's
 /// drop-in included; the first entry when it lists several), else
-/// [`DEFAULT_ROOT`]. Never the XDG resolver — under the unit's
+/// system var root's `blobd` child. Never the XDG resolver — under the unit's
 /// `HOME=%S/mixos/blobd` redirect a non-root uid resolves that
 /// somewhere under the state dir, not to it.
 pub fn default_root(state_directory: Option<&str>) -> PathBuf {
@@ -330,7 +331,7 @@ pub fn default_root(state_directory: Option<&str>) -> PathBuf {
         .and_then(|dirs| dirs.split(':').next())
         .filter(|dir| !dir.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| ::paths::root(::paths::Root::State).join("blobd"))
+        .unwrap_or_else(|| default_system_root())
 }
 
 #[cfg(test)]
@@ -347,14 +348,8 @@ mod tests {
             default_root(Some("/var/lib/mixos/blobd:/var/lib/other")),
             PathBuf::from("/var/lib/mixos/blobd")
         );
-        assert_eq!(
-            default_root(Some("")),
-            ::paths::root(::paths::Root::State).join("blobd")
-        );
-        assert_eq!(
-            default_root(None),
-            ::paths::root(::paths::Root::State).join("blobd")
-        );
+        assert_eq!(default_root(Some("")), default_system_root());
+        assert_eq!(default_root(None), default_system_root());
     }
 
     #[test]

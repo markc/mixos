@@ -9,7 +9,7 @@ PartOf=session@%i.target
 [Service]
 Type=simple
 User=mixos
-EnvironmentFile=@{config}/session/%i.env
+EnvironmentFile=@{etc}/session/%i.env
 UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
 ExecStart=@{prefix}/bin/editd serve
 KillMode=control-group

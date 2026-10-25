@@ -374,7 +374,7 @@ mod tests {
         // SAFETY: this test's process reads these only here.
         unsafe {
             std::env::set_var("MIXOS_SCREENSHOTS_DIR", dir.path().join("shots"));
-            std::env::set_var("MIXOS_STATE", dir.path().join("state"));
+            std::env::set_var("MIXOS_APP_HOME", dir.path().join("state"));
         }
         let mut document = Document::new(RgbaImage::new(30, 20)).unwrap();
         let first = save_now(&document, &SaveTo::Folder, &crate::face()).unwrap();

@@ -1,113 +1,128 @@
 # Relocatable paths
 
-`paths` resolves the five MixOS roots. It has no workspace dependencies.
-The running binary finds its prefix through `/proc/self/exe`, following the
-managed entry link to the real binary, then taking the parent of `bin/`.
-Moving that tree requires no rebuild.
+`paths` implements the directory rules from `config` at `32650ae5`. The
+process's real uid selects the default tier: uid 0 is system; every other uid
+is user. Where the binary is installed does not select the tier.
 
-| Root | System default | Prefix under `$HOME` |
-|---|---|---|
-| `prefix` | Derived from the binary | Derived from the binary |
-| `config` | `/etc/mixos` | `$XDG_CONFIG_HOME/mixos`, else `~/.config/mixos` |
-| `state` | `/var/lib/mixos` | `$XDG_STATE_HOME/mixos`, else `~/.local/state/mixos` |
-| `cache` | `/var/cache/mixos` | `$XDG_CACHE_HOME/mixos`, else `~/.cache/mixos` |
-| `runtime` | `/run/mixos` | `$XDG_RUNTIME_DIR/mixos` (required) |
+| Root | Override | Whole-tree `$MIXOS` | User default | System default |
+|---|---|---|---|---|
+| `prefix` | `MIXOS_PREFIX` | Ignored | Parent of the running binary's `bin/` | Same |
+| `share` | `MIXOS_SHARE` (absolute only) | Ignored | `<prefix>/share` | Same |
+| `etc` | `MIXOS_ETC` | `$MIXOS/etc` | `$XDG_CONFIG_HOME/mixos`, else `~/.config/mixos` | `/etc/mixos` |
+| `var` | `MIXOS_VAR` | `$MIXOS/var` | `$XDG_DATA_HOME/mixos`, else `~/.local/share/mixos` | `/var/lib/mixos` |
+| `run` | `MIXOS_RUN` | `$MIXOS/run` | `$XDG_RUNTIME_DIR/mixos`, else `/tmp/mixos-run` | `/run/mixos` |
+| `cache` | `MIXOS_CACHE` | `$MIXOS/cache` | `$XDG_CACHE_HOME/mixos`, else `~/.cache/mixos` | `/var/cache/mixos` |
 
-Each root takes `MIXOS_<ROOT>` first, then its key in `<prefix>/layout.mx`,
-then the default. The environment prefix also selects where to read
-`layout.mx`; a `prefix` key inside that document does not start another lookup.
-The document is strict data, with at most five unique keys, each an absolute
-path string. Unknown keys, relative paths and executable expressions refuse.
-Empty root overrides refuse rather than falling back.
+An empty variable is unset. Relative XDG variables are ignored. The original
+`etc`, `var` and `run` overrides and `$MIXOS` retain main's acceptance of relative
+values; callers that previously required absolute application directories still
+enforce that requirement. An absent HOME falls back to `/root`, as in main.
+
+Per-root precedence is its override variable, then `$MIXOS` where applicable,
+then `<prefix>/layout.mx`, then the uid default. Prefix itself comes only from
+`MIXOS_PREFIX` or `/proc/self/exe`, following symlinks to the real executable.
+`layout.mx` is bounded strict data with at most five keys: `etc`, `var`, `run`,
+`share`, `cache`. A `prefix` key is refused. Root values in that file must be
+absolute paths without `..` or control bytes. Unknown and duplicate keys refuse.
 
 ```text
-config: "/srv/example/config"
-state: "/srv/example/state"
+etc: "/srv/example/etc"
+var: "/srv/example/var"
 ```
 
-Rust callers use `paths::root(paths::Root::Config)`, `paths::bin("mix")`,
-`paths::share("scenes/editor")` and `paths::resolve("mixos:prefix/share/scenes")`.
-Mix callers use `mixos_path("config")`, `mixos_path("prefix", "bin/mix")` or
-`mixos_path("mixos:prefix/share/scenes")`. Relative paths cannot escape their
-root with `..`. Ordinary user paths are unchanged by `resolve`.
+Process helpers cache one environment and layout snapshot for the process.
+`Environment` plus `Dirs::from_source` provide pure env/uid/executable inputs;
+`Dirs::from_environment` additionally reads the layout file. `config::Dir`,
+`config::Environment`, `config::Dirs` and `config::path` are thin re-exports.
+There is one implementation. [Compatibility fixtures](compatibility.md) spell
+out the expected values for both uids at two installation prefixes.
 
-Saved MixOS paths use `mixos:<root>/<relative>`. Programs resolve them when
-opening the file. The old `MIXOS`, `MIXOS_ETC`, `MIXOS_VAR`, `MIXOS_RUN`,
-`MIXOS_SHARE`, `MIXOS_BIN` and per-app location aliases have no layout role.
-`MIXOS_SRC` separately names a development checkout.
+Rust uses `paths::root(paths::Root::Etc)`, `paths::bin("mix")`,
+`paths::share("scenes/editor")` and `paths::resolve("mixos:share/scenes")`.
+Fallible callers use `try_root`, `try_system` and `resolve`; the infallible
+helpers document their startup `expect` contract. `paths::system(Root::Etc)`
+selects system defaults regardless of uid, retaining override precedence.
+`system_default` explicitly ignores process overrides for existing APIs whose
+contract was a fixed system fallback, such as the native bus endpoint.
+It also keeps webd's WWW default, blobd's fallback and indexd's database/model
+defaults at their existing system paths. In particular indexd's model cache
+stays under `var/indexd/.cache`; it does not move to the additive cache root.
 
-Installers select a target independently of their interpreter. The staged
-binary exposes the defaults from `libs/paths` without self-location or
-`MIXOS_*` overrides:
+```mix
+mixos_path("etc")
+mixos_path("etc", "node.conf.mix", {tier: "system"})
+mixos_path("var", "example", {tier: "user"})
+mixos_path("mixos:share/scenes/editor/scene.mix")
+```
+
+Logical references use `mixos:<root>/<relative>` with the six names above.
+Relative tails cannot escape their root. Ordinary user file paths are unchanged.
+Existing per-file overrides such as `MIXOS_NODE_CONFIG` stay in place.
+
+Application state keeps its existing policy. `AppDirs`, Ced, Dopus and screenshot
+retain `MIXOS_APP_HOME`, `MIXOS_APPS_HOME`, `MIXOS_VAR/apps`, XDG state and home
+state precedence; config/state/cache remain children of that application root.
+The macro catalogue keeps its own XDG config directory and `MIXOS_MIX` override.
+These policies do not switch to the directory resolver's XDG data default.
+
+External files use `@{prefix}`, `@{share}`, `@{etc}`, `@{var}`, `@{run}` and
+`@{cache}` templates. Component-owned units ship under `share/layout/`.
+`mix layout apply [--root SYSROOT] [--dry-run] [--image]` renders them
+idempotently, prints changed files and manages the PATH block, `/etc/shells`
+and a single link to `<prefix>/bin/mix`: `/usr/local/bin/mix` on hosts,
+`/usr/bin/mix` only in a MixOS-owned image. A non-symlink at the link refuses.
+`mix-static` is never linked. Host Elixir installs do not rename this entry.
+
+Installers select a target independently of their interpreter. The staged binary
+prints defaults from this same Rust implementation without self-location,
+layout files or MIXOS overrides:
 
 ```text
 /path/to/staged/mix layout defaults --tier system --json
 /path/to/staged/mix layout defaults --tier user --prefix /home/user/mixos --json
 ```
 
-The system installation prefix defaults to `/opt/mixos`; a user installation
-requires `--prefix`. User roots use the caller's XDG environment; an unset
-runtime is omitted from the JSON and must be supplied explicitly by the
-installer. Runtime path resolution still derives the prefix from the binary.
+System installation defaults use `/opt/mixos`; user installation requires
+`--prefix`. Both commands return six roots, including the user run fallback.
+`tools/gold_release.mix` and `tools/component_install.mix` accept `--prefix`
+and optional `--share`, `--etc`, `--var`, `--run`, `--cache`, `--tier` roots.
+Explicit target flags precede its layout file, then the staged binary's
+defaults. They do not inherit the installer's ambient layout overrides.
+Component `--root` is a staging sysroot; `--mix STAGED_MIX` supplies defaults
+before a target binary exists. Gold verifies the release before querying its
+binary, journals the five-key layout document and saves all six target roots
+in receipts. Release records are beneath `var/releases`. Rollback/recovery
+can use `--receipt-file FILE` without invoking a target binary.
 
-`tools/gold_release.mix` accepts `--prefix`, `--tier`, and overrides for the
-other four roots. It verifies the release before querying its staged Mix.
-Command-line roots take precedence over the target's existing `layout.mx`,
-then the staged binary's defaults. Applying journals the selected `layout.mx`
-alongside the installed files. `--state` selects the state root; release
-records and backups live beneath its `releases/` directory. Rollback/recover
-can use `--receipt-file FILE`, or an explicit prefix and target layout (with
-`--state` and `--receipt ID` to locate a saved receipt). They need no running
-target binary and work under the previous release or `mix-static`.
+Repository tools work under the previous release and `mix-static`. Docs resolve
+logical paths against the checkout: `mixos:share/x` names `<repo>/share/x`.
+Populate pinned font inputs with `mix share/assets/install.mix --root
+/absolute/checkout/share/assets`; these ignored build inputs are excluded from
+packages. Lint skips installed-asset checks when `mixos_path` is unavailable.
 
-`tools/component_install.mix` uses the same precedence. `--root` is a staging
-system root, while `--prefix` selects the target prefix within that root.
-`--mix STAGED_MIX` supplies defaults before a target binary exists; otherwise
-it queries the target's `bin/mix`. Complete explicit roots, target layouts or
-rollback receipts need no defaults query. Component receipts retain the
-target layout. Neither installer derives the destination from its interpreter.
+To relocate, stop affected processes, move the prefix, update non-default roots
+in `layout.mx`, render again and restart. Existing processes retain their cached
+snapshot. This implementation does not migrate live data.
+`tools/layout_migrate_saved.mix --source COPY --from-prefix OLD_PREFIX
+--from-layout OLD_LAYOUT` previews offline changes by default; `--apply` keeps
+originals. The old layout supplies the five non-prefix roots. SQLite stores
+must first be exported by their owner so revisions and audit chains survive.
 
-Repository tools support the previous Mix release. Docs resolve logical paths
-against the checkout: `mixos:prefix/share/x` (or `mixos:share/x`) names
-`<repo>/share/x`. Populate pinned font inputs in the ignored
-`share/assets/sets/` with `mix share/assets/install.mix --root
-/absolute/checkout/share/assets` before building the site. Dev lint skips
-installed-asset checks when its interpreter lacks `mixos_path`.
+The gate rejects literal roots outside resolver defaults, templates, default
+assertions and documentation. The release proof uses a prefix with a space and
+a private mount namespace hiding the old roots. Installer, scene, nested desk
+and SSH loopback tests use disposable roots; unavailable privileges report a
+clear skip. The template proof compares 45 rendered files byte-for-byte with
+main; `--installed` additionally reports drift in the installed unit collection.
 
-External files use templates with `@{prefix}`, `@{config}`, `@{state}`,
-`@{cache}` and `@{runtime}` placeholders. Component owners keep their unit
-templates; packages carry them beneath `share/layout/`. Apply the layout with:
-
-```text
-mix layout apply --dry-run
-mix layout apply
-mix layout apply --root /tmp/example-root
-```
-
-`--root` stages writes beneath a throwaway system root. The renderer prints
-each changed file and is idempotent. It manages the PATH block in `.mixrc`,
-the login-shell entry in `/etc/shells`, and one link to `<prefix>/bin/mix`:
-`/usr/local/bin/mix` on hosts, or `/usr/bin/mix` with `--image`. A non-symlink
-at that link path refuses before writes. It never links `mix-static`.
-On hosts with Elixir, the managed link makes `mix` mean MixOS.
-
-Remote execution selects the `mix_bin` option, then `MIX_REMOTE_BIN`, then
-bare `mix` on the remote PATH. There is no interpreter-owned mesh host table.
-Absolute remote binary paths may contain spaces; they are quoted before SSH.
-
-To relocate: stop the affected services, move the prefix, adjust `layout.mx`
-for other moved roots, run `mix layout apply`, then restart. Running processes
-keep their current paths. The implementation does not migrate live data.
-`tools/layout_migrate_saved.mix` previews changes in explicit offline copies,
-keeps originals when applied, and refuses live-root overlaps. SQLite stores
-must be exported through their owning component first so audit chains survive.
-
-The path gate runs in `tools/lint.mix`. The worker release gate also checks
-default template bytes and runs `tests/layout_relocation_test.mix`, using a
-prefix with a space and a private mount namespace. Missing namespace, nested
-desktop or loopback SSH support is reported explicitly as a skip.
-
-`mix tests/layout_templates_test.mix --installed` additionally compares the
-rendered defaults against an existing installed `share/units` tree and reports
-any deployment drift, including comments. The normal release check compares
-against the immutable source baseline.
+Three fixed-FHS Mix defaults remain as exact path-gate deferrals: bridged's
+system config fallback, scene-sync's session environment file, and topbar's
+identity file. Their original per-file/CLI overrides remain authoritative.
+Using a tier lookup there would newly honour MIXOS or layout overrides and
+would not preserve main's selection. `tools/path_gate_exceptions.mx` records
+each line and its reason. An isolated relocation run must supply their original
+overrides if it exercises these paths; these defaults are not relocation proof.
+The same registry retains the two literal storage paths in indexd's shipped
+example: its loader does not resolve logical strings, and changing their tier
+would change the database/model locations. The registry has five exact lines
+in four files; it may shrink, and cannot grow silently.

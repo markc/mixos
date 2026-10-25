@@ -31,7 +31,7 @@ Environment=RUST_LOG=webd=info
 Environment=HOME=%S/mixos/webd
 # Node config is pinned so that listen address, TLS paths, the JMAP upstream
 # and the noded URL come from the per-host config, not from fallbacks.
-Environment=MIXOS_ETC=@{config}
+Environment=MIXOS_ETC=@{etc}
 # Journald is the sink. Stray stdout and stderr also go there, and the rate
 # limit stops a crash loop from flooding the journal.
 StandardOutput=journal

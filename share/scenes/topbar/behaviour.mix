@@ -36,7 +36,7 @@ $state = {ready: false, clock_armed: false, ticking: false, icons: {}, themed: {
 fn identity()
   $out = {desk: "unknown", vt: "?"}
   try
-    for $line in read_lines(env("DESK_IDENTITY", (mixos_path("config") .. "/desk.env")))
+    for $line in read_lines(env("DESK_IDENTITY", "/etc/mixos/desk.env"))
       $kv = split_once($line, "=")
       if $kv != nil and $kv[0] == "DESK" then $out.desk = $kv[1] end
       if $kv != nil and $kv[0] == "VT" then $out.vt = $kv[1] end

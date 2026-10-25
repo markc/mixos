@@ -6,8 +6,8 @@ $source_paths = require($repo .. "/docs/_build/source_paths.mix")
 $tmp = "/tmp/mixos-target-test-" .. uuid()
 $prefix = $tmp .. "/target prefix"
 $binary = $tmp .. "/staged mix"
-$fixture = {prefix: $prefix, config: $tmp .. "/default-config", state: $tmp .. "/default-state",
-  cache: $tmp .. "/default-cache", runtime: $tmp .. "/default-runtime"}
+$fixture = {prefix: $prefix, share: $prefix .. "/share", etc: $tmp .. "/default-config", var: $tmp .. "/default-state",
+  cache: $tmp .. "/default-cache", run: $tmp .. "/default-runtime"}
 fn need($ok, $message)
   if not $ok then raise("TARGET_TEST", $message) end
 end
@@ -29,10 +29,10 @@ PROGRAM
   chmod($binary, 0o755)
   $first = $targets.resolve({}, $binary, "", {})
   need(deep_eq($first, $fixture), "default target came from the running interpreter")
-  write_file($prefix .. "/layout.mx", data_encode({config: $tmp .. "/file-config", cache: $tmp .. "/file-cache"}))
-  $next = $targets.resolve({prefix: $prefix, config: $tmp .. "/cli-config"}, $binary, "", {})
-  need($next.prefix == $prefix and $next.config == $tmp .. "/cli-config" and
-    $next.cache == $tmp .. "/file-cache" and $next.state == $fixture.state,
+  write_file($prefix .. "/layout.mx", data_encode({etc: $tmp .. "/file-config", cache: $tmp .. "/file-cache"}))
+  $next = $targets.resolve({prefix: $prefix, etc: $tmp .. "/cli-config"}, $binary, "", {})
+  need($next.prefix == $prefix and $next.etc == $tmp .. "/cli-config" and
+    $next.cache == $tmp .. "/file-cache" and $next.var == $fixture.var,
     "per-root CLI > target layout > staged defaults precedence differs")
   remove($prefix .. "/layout.mx")
   $saved = $targets.resolve({"record-only": true}, nil, "", $next)
@@ -50,17 +50,21 @@ PROGRAM
   remove($prefix .. "/layout.mx")
   $sysroot = $tmp .. "/sysroot"
   mkdir($sysroot .. $prefix, {parents: true})
-  write_file($sysroot .. $prefix .. "/layout.mx", data_encode($fixture))
+  write_file($sysroot .. $prefix .. "/layout.mx", data_encode(delete($fixture, "prefix")))
   need(deep_eq($targets.resolve({prefix: $prefix}, nil, $sysroot, {}), $fixture), "staging root was mistaken for a prefix")
   need($source_paths.resolve($repo, "mixos:prefix/share/x") == $repo .. "/share/x" and
     $source_paths.resolve($repo, "mixos:share/x") == $repo .. "/share/x", "docs resolved outside the checkout")
   need(refuses(fn() = $source_paths.resolve($repo, "mixos:prefix/../outside")), "docs accepted a source escape")
+  for $name in ["config", "state", "runtime", "bin", "lib"]
+    need(refuses(fn() = $source_paths.resolve($repo, "mixos:" .. $name .. "/x")), "docs accepted an unknown root")
+  end
   $copy = $tmp .. "/saved-copy"
   mkdir($copy)
   $saved_text = json_encode({file: $prefix .. "/share/example"})
   write_file($copy .. "/saved.json", $saved_text)
+  write_file($tmp .. "/old-layout.mx", data_encode(delete($fixture, "prefix")))
   $migration = run_argv([realpath("/proc/self/exe"), $repo .. "/tools/layout_migrate_saved.mix",
-    "--source", $copy, "--from-layout", $tmp .. "/defaults.mx"], {timeout: 30, stderr: "stdout"})
+    "--source", $copy, "--from-prefix", $prefix, "--from-layout", $tmp .. "/old-layout.mx"], {timeout: 30, stderr: "stdout"})
   need($migration.ok and contains($migration.stdout, "would migrate") and read_file($copy .. "/saved.json") == $saved_text and
     not is_file($copy .. "/saved.json.layout-original"), "N-1 migration dry-run changed its offline input")
   print("PASS target defaults, per-root precedence, receipt-only rollback, sysroot, strict layout, docs source paths and offline migration dry-run under N-1 Mix")

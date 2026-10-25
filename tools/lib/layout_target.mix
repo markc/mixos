@@ -1,10 +1,10 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- N-1 compatible installer boundary. Defaults are supplied by the target
 -- binary's Rust resolver, never copied here or taken from this interpreter.
-$ROOTS = ["prefix", "config", "state", "cache", "runtime"]
+$ROOTS = ["prefix", "share", "etc", "var", "run", "cache"]
 
 fn checked($layout)
-  if type($layout) != "map" or len(keys($layout)) > 5 then raise("INSTALL_LAYOUT", "layout must contain at most five roots") end
+  if type($layout) != "map" or len(keys($layout)) > 6 then raise("INSTALL_LAYOUT", "resolved layout must contain at most six roots") end
   for $key in keys($layout)
     $value = $layout[$key]
     if not contains($ROOTS, $key) or type($value) != "string" or not starts_with($value, "/") or $value == "/" or re_match($value, "[\\x00-\\x1f\\x7f]") then
@@ -22,7 +22,9 @@ fn document($path)
   if stat($path, {follow_symlinks: false}).is_symlink or stat($path).size > 65536 then
     raise("INSTALL_LAYOUT", "expected a small regular layout document: " .. $path)
   end
-  return checked(load_data($path))
+  $layout = checked(load_data($path))
+  if has_key($layout, "prefix") or len(keys($layout)) > 5 then raise("INSTALL_LAYOUT", "layout.mx accepts only etc, var, run, share, cache; prefix is supplied separately") end
+  return $layout
 end
 
 -- CLI roots > the target's layout.mx > the staged binary's defaults.
@@ -46,15 +48,15 @@ fn resolve($opts, $binary, $sysroot, $recorded)
   end
   $file = document($sysroot .. $prefix .. "/layout.mx")
   $overrides = merge(merge($saved, $file), $cli)
-  $overrides.prefix = $cli.prefix ?? $file.prefix ?? $saved.prefix ?? $prefix
-  if len(keys($overrides)) < 5 then
+  $overrides.prefix = $prefix
+  if len(keys($overrides)) < 6 then
     if $opts["record-only"] ?? false then raise("INSTALL_LAYOUT", "rollback needs a complete target layout.mx or receipt layout; no running interpreter defaults are used") end
     if $binary == nil then $binary = $sysroot .. $prefix .. "/bin/mix" end
-    if not is_file($binary) then raise("INSTALL_LAYOUT", "incomplete target layout; supply --mix STAGED_MIX or all five target roots") end
+    if not is_file($binary) then raise("INSTALL_LAYOUT", "incomplete target layout; supply --mix STAGED_MIX or all six target roots") end
     $defaults = defaults($binary, $tier, $prefix)
   end
   $layout = checked(merge($defaults, $overrides))
-  if len(keys($layout)) != 5 then raise("INSTALL_LAYOUT", "target layout needs all five roots (user runtime needs --runtime or XDG_RUNTIME_DIR)") end
+  if len(keys($layout)) != 6 then raise("INSTALL_LAYOUT", "target layout needs all six roots") end
   return $layout
 end
 

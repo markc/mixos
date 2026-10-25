@@ -10,8 +10,8 @@
 //! file or the props surface is the problem) > the persisted file > `true`.
 //!
 //! The file is `<etc>/comp/xwayland-enabled.<socket>`, `<etc>` being the
-//! MixOS etc dir (`config::path(Dir::Etc)`): `$MIXOS_CONFIG`, else
-//! `$MIXOS/etc`, else `mixos:config` for root, else `$XDG_CONFIG_HOME/mixos`
+//! MixOS etc dir (`config::path(Dir::Etc)`): `$MIXOS_ETC`, else
+//! `$MIXOS/etc`, else `/etc/mixos` for root, else `$XDG_CONFIG_HOME/mixos`
 //! or `$HOME/.config/mixos`.
 
 use std::path::{Path, PathBuf};

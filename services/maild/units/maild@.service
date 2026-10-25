@@ -10,8 +10,8 @@ Requires=noded@%i.service
 Type=simple
 User=maild
 Group=maild
-EnvironmentFile=@{config}/session/%i.env
-Environment=MIXOS_ETC=@{config}
+EnvironmentFile=@{etc}/session/%i.env
+Environment=MIXOS_ETC=@{etc}
 Environment=MIXOS_VAR=%S/maild
 Environment=HOME=%S/maild
 Environment=RUST_LOG=maild=info
@@ -22,7 +22,7 @@ RuntimeDirectoryMode=0750
 ConfigurationDirectory=mixos/maild
 ConfigurationDirectoryMode=0750
 WorkingDirectory=%S/maild
-ExecStart=@{prefix}/bin/maild -c @{config}/maild/config.conf.mix serve
+ExecStart=@{prefix}/bin/maild -c @{etc}/maild/config.conf.mix serve
 Restart=on-failure
 RestartSec=5s
 StandardOutput=journal

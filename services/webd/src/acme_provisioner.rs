@@ -3361,7 +3361,7 @@ pub fn read_meta_json(path: &Path) -> Result<MetaV1, MetaReadError> {
 ///
 /// Filesystems that don't support directory fsync (FAT, some network
 /// mounts) surface `EINVAL` here — propagated rather than swallowed,
-/// because webd's `mixos:state/webd/acme/` is assumed to live on
+/// because webd's `mixos:var/webd/acme/` is assumed to live on
 /// a real local filesystem and a surprise EINVAL is a deployment
 /// configuration bug worth surfacing loudly.
 pub fn write_atomic_pem(path: &Path, pem: &str) -> std::io::Result<()> {

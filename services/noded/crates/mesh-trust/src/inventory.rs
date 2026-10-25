@@ -286,7 +286,7 @@ pub fn authoring_blake3_for_value(value: &Value) -> String {
 }
 
 /// The signed-inventory envelope (§7.1) — the JSON wire artifact
-/// (`mixos:state/noded/inventory.signed`).
+/// (`mixos:var/noded/inventory.signed`).
 ///
 /// The **strict / tolerant boundary** is deliberate:
 /// - [`InventoryPayload`] and its nested [`VerifyKey`] are the SIGNED
@@ -347,7 +347,7 @@ pub struct TrustedKey {
 /// non-removable anchor), and the persisted anti-rollback baseline.
 ///
 /// In 1b-a this is an *input*; 1b-c wires it to durable storage
-/// (`mixos:state/noded/`). `last_epoch` / `last_recovery_generation` /
+/// (`mixos:var/noded/`). `last_epoch` / `last_recovery_generation` /
 /// `last_canonical_hash` are the wipe-surviving baseline (a numeric value never
 /// seen is `0`; a missing hash is the one-time migration state, §6.4/§7.4).
 ///

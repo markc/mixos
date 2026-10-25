@@ -70,7 +70,7 @@ declaration, and the vendored parser's licences in the server archive.
 `<config>/session/INSTANCE.env` file, including its `MIXOS_NODE_CONFIG` broker
 configuration. It runs as the `maild` account. The unit uses
 `<config>/maild/config.conf.mix`, creates `StateDirectory=maild`, and sets
-`MIXOS_STATE=/var/lib/maild`; configured TLS material must be readable by maild.
+`MIXOS_VAR=/var/lib/maild`; configured TLS material must be readable by maild.
 The unit documentation URL points to this manual.
 
 `maild.service` is the plain per-host form, for a host that runs the plain

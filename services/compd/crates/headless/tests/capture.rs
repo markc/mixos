@@ -111,9 +111,9 @@ fn helper(action: &str, root: &Path, rest: &[&str], url: Option<&str>) -> Output
         .arg(root)
         .args(rest)
         .env("MIXOS_NODED_URL", url.unwrap_or("ws://127.0.0.1:1"))
-        .env("MIXOS_RUNTIME", root.join("run"))
-        .env("MIXOS_CONFIG", root.join("etc"))
-        .env("MIXOS_STATE", root.join("var"))
+        .env("MIXOS_RUN", root.join("run"))
+        .env("MIXOS_ETC", root.join("etc"))
+        .env("MIXOS_VAR", root.join("var"))
         .env("MIXOS_NODE_CONFIG", root.join("etc/node.conf.mix"));
     command.output().unwrap()
 }

@@ -20,8 +20,8 @@
 --     on a random loopback port in 47000-47999, retrying up to 10 times;
 --   * readiness is OWNERSHIP, not a pong: noded.info must answer with this
 --     node name AND this pid (a broker someone else left on the port is refused);
---   * EXPORTS MIXOS_NODED_URL / MIXOS_NODE_CONFIG / MIXOS_RUNTIME / MIXOS_CONFIG /
---     MIXOS_STATE into this process (unless export: false), so later `send`,
+--   * EXPORTS MIXOS_NODED_URL / MIXOS_NODE_CONFIG / MIXOS_RUN / MIXOS_ETC /
+--     MIXOS_VAR into this process (unless export: false), so later `send`,
 --     spawn and run_argv calls in this process reach the private broker. stop()
 --     puts back what was there before and reconnects;
 --   * records the broker's identity in <dir>/noded.pid (pid, kernel start time,
@@ -40,7 +40,7 @@
 -- stop() is TERM, wait, KILL, wait, and raises BROKER_STOP if the broker
 -- survives. client_env($bus) is the map to pass to children explicitly.
 
-$_CLIENT_VARS = ["MIXOS_NODED_URL", "MIXOS_NODE_CONFIG", "MIXOS_RUNTIME", "MIXOS_CONFIG", "MIXOS_STATE"]
+$_CLIENT_VARS = ["MIXOS_NODED_URL", "MIXOS_NODE_CONFIG", "MIXOS_RUN", "MIXOS_ETC", "MIXOS_VAR"]
 
 -- Kernel start time (clock ticks since boot; /proc/<pid>/stat field 22), or nil.
 fn _starttime($pid)
@@ -116,9 +116,9 @@ end
 fn _client_set($vars)
   export MIXOS_NODED_URL=$vars.MIXOS_NODED_URL ?? ""
   export MIXOS_NODE_CONFIG=$vars.MIXOS_NODE_CONFIG ?? ""
-  export MIXOS_RUNTIME=$vars.MIXOS_RUNTIME ?? ""
-  export MIXOS_CONFIG=$vars.MIXOS_CONFIG ?? ""
-  export MIXOS_STATE=$vars.MIXOS_STATE ?? ""
+  export MIXOS_RUN=$vars.MIXOS_RUN ?? ""
+  export MIXOS_ETC=$vars.MIXOS_ETC ?? ""
+  export MIXOS_VAR=$vars.MIXOS_VAR ?? ""
   bus_reconnect()
   return nil
 end
@@ -154,8 +154,8 @@ fn _listening_now($port)
 end
 
 fn client_env($bus)
-  return {MIXOS_NODED_URL: $bus.url, MIXOS_NODE_CONFIG: $bus.conf, MIXOS_RUNTIME: $bus.dir .. "/run",
-    MIXOS_CONFIG: $bus.dir .. "/etc", MIXOS_STATE: $bus.dir .. "/var"}
+  return {MIXOS_NODED_URL: $bus.url, MIXOS_NODE_CONFIG: $bus.conf, MIXOS_RUN: $bus.dir .. "/run",
+    MIXOS_ETC: $bus.dir .. "/etc", MIXOS_VAR: $bus.dir .. "/var"}
 end
 
 -- One noded.info through this process's client: "yes" (this broker), "no"
@@ -198,7 +198,7 @@ fn start($opts)
     write_file($mesh, json_encode({node_name: $name, peers: []}))
     $p = spawn([$noded, "serve", "--listen", "127.0.0.1:" .. to_string($port), "--node", $name, "--no-monitor", "--no-log", "--mesh-config", $mesh],
       {detach: true, clear_env: true, env: {PATH: env("PATH"), USER: env("USER"), HOME: $dir .. "/home",
-        MIXOS_CONFIG: $dir .. "/etc", MIXOS_STATE: $dir .. "/var", MIXOS_RUNTIME: $dir .. "/run", MIXOS_NODE_CONFIG: $conf},
+        MIXOS_ETC: $dir .. "/etc", MIXOS_VAR: $dir .. "/var", MIXOS_RUN: $dir .. "/run", MIXOS_NODE_CONFIG: $conf},
         stdout: {file: $log}, stderr: "stdout"})
     $id = {pid: $p, starttime: _starttime($p), noded: $noded, name: $name, conf: $conf}
     $bus = merge($id, {port: $port, url: "ws://127.0.0.1:" .. to_string($port) .. "/ws", dir: $dir, log: $log, before: $before})

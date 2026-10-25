@@ -1180,7 +1180,7 @@ fn classify_seed_read(raw: std::io::Result<String>) -> SeedRead {
 }
 
 /// Read this node's `kind:"d2"` admission seed (SPEC 13 §9a, slice 2-c-1) —
-/// base64 32-byte at `mixos:config/noded/d2.seed`. The corrected perms are
+/// base64 32-byte at `mixos:etc/noded/d2.seed`. The corrected perms are
 /// **`root:noded 0640`** (NOT root-only `0600`): noded runs as the
 /// unprivileged `noded` user, so a root-only seed is unreadable and the
 /// node is silently prover-incapable. Returns `None` on missing/unreadable/
@@ -1663,7 +1663,7 @@ fn reload_keeps_last_good(
 /// the start-time posture and logs a warning. **Known limitation:** if the
 /// watched parent dir is *removed and recreated*, the inotify watch is not
 /// re-established and reload goes quiet until the daemon restarts (the error is
-/// logged). `mixos:state/noded` is stable system state, so this is an
+/// logged). `mixos:var/noded` is stable system state, so this is an
 /// operational anomaly, not a steady-state concern; the file being replaced
 /// in place (the `install`/scp writer) is handled by watching the dir.
 fn spawn_inventory_reload_watcher(state: AppState) {

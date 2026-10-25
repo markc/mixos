@@ -7,9 +7,9 @@
 //!
 //! 1. `MIXOS_NODE_CONFIG` env var (explicit path override).
 //! 2. `node.conf.mix` in the Etc directory (`EtcEnvironment`) — normally
-//!    under `~/.config/mixos/` for non-root users, `mixos:config/` for root.
-//! 3. `mixos:config/node.conf.mix` as the system fallback — suppressed
-//!    when `MIXOS_CONFIG` env var is set (the explicit isolation knob for
+//!    under `~/.config/mixos/` for non-root users, `<system etc>/` for root.
+//! 3. `<system etc>/node.conf.mix` as the system fallback — suppressed
+//!    when `MIXOS_ETC` env var is set (the explicit isolation knob for
 //!    tests, chroots, alternate installs).
 //!
 //! Parses just the two fields the URL format needs — top-level
@@ -103,7 +103,8 @@ pub(crate) struct NativeEnvironment {
 }
 
 impl NativeEnvironment {
-    /// Main-thread snapshot only. No file reads, self-location or NSS here.
+    /// Main-thread environment and /proc executable snapshot only. Layout
+    /// reads and NSS remain deferred to resolve.
     pub(crate) fn capture() -> Self {
         Self {
             explicit: std::env::var("MIXOS_NODE_CONFIG").ok(),
@@ -113,7 +114,8 @@ impl NativeEnvironment {
     }
 
     pub(crate) fn resolve(self) -> Result<(Option<PathBuf>, String), &'static str> {
-        let default_endpoint = config::Dirs::resolve(&self.directories)
+        let default_endpoint = config::Dirs::from_environment(&self.directories)
+            .map_err(|_| "invalid MixOS layout")?
             .get(config::Dir::Run)
             .join("noded/bus.sock");
         let paths = if let Some(path) = self.explicit {
@@ -166,8 +168,13 @@ fn parse_native_endpoint(contents: &str) -> Result<Option<PathBuf>, &'static str
 }
 
 fn paths_from_etc(etc: PathBuf, mixos_etc_set: bool) -> Vec<PathBuf> {
-    let _ = mixos_etc_set;
-    let dirs = vec![etc];
+    let mut dirs = vec![etc];
+    if !mixos_etc_set {
+        let system = ::paths::system_default(::paths::Root::Etc).expect("built-in system etc default");
+        if !dirs.contains(&system) {
+            dirs.push(system);
+        }
+    }
     expand_node_paths(dirs)
 }
 
@@ -329,7 +336,7 @@ mod tests {
     fn expand_node_paths_emits_conf_mix_per_dir() {
         let dirs = vec![
             PathBuf::from("/home/alice/.config/mixos"),
-            PathBuf::from("/etc/mixos"),
+            ::paths::system_default(::paths::Root::Etc).expect("built-in system etc default"),
         ];
         assert_eq!(
             expand_node_paths(dirs),

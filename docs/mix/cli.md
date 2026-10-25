@@ -921,7 +921,7 @@ stdin-feeding task is a named future field rather than a silent absence.
 **The environment is enumerated, not inherited.** A task starts from exactly:
 
     HOME  USER  PATH  LANG  TERM=dumb
-    MIXOS_PREFIX  MIXOS_CONFIG  MIXOS_STATE  MIXOS_CACHE  MIXOS_RUNTIME  MIXOS_SRC
+    MIXOS_PREFIX  MIXOS_ETC  MIXOS_VAR  MIXOS_CACHE  MIXOS_RUN  MIXOS_SRC
     MIXOS_NODE_CONFIG  MIXOS_BROKER_ACCOUNT
 
 plus the caller's `env` overlay, which WINS on a name collision. Those values

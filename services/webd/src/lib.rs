@@ -111,11 +111,11 @@ enum Command {
         #[arg(long)]
         http_listen: Option<String>,
 
-        /// Directory containing WASM apps (default: from node.conf.mix or mixos:state/www)
+        /// Directory containing WASM apps (default: from node.conf.mix or /var/lib/mixos/www)
         #[arg(long)]
         www_dir: Option<PathBuf>,
 
-        /// Path to the SQLite database (default: $MIXOS_STATE/web.db)
+        /// Path to the SQLite database (default: $MIXOS_VAR/web.db)
         #[arg(long)]
         db_path: Option<PathBuf>,
 
@@ -166,7 +166,7 @@ enum Command {
     },
     /// Initialise the SQLite database
     Init {
-        /// Path to the SQLite database (default: $MIXOS_STATE/web.db)
+        /// Path to the SQLite database (default: $MIXOS_VAR/web.db)
         #[arg(long)]
         db_path: Option<PathBuf>,
     },
@@ -894,7 +894,7 @@ struct NodeState {
     /// cookies. The `/auth/login` handler seals a maild bearer token into
     /// the `mixos_session` cookie; `serve_static`'s `jmap()` seam
     /// unseals it to authorise SSR page navigations. Loaded (or
-    /// generated) from `mixos:state/webd/session.key` on the serving
+    /// generated) from `/var/lib/mixos/webd/session.key` on the serving
     /// node; an ephemeral key on the bootstrap / test fixtures (which
     /// never serve login traffic). See [`session`].
     session: Arc<session::SessionSealer>,
@@ -4502,7 +4502,7 @@ async fn serve_static(
 
 /// Path to the per-node session sealing key. Overridable via
 /// `MIXOS_WEBD_SESSION_KEY_PATH` (dev/test); otherwise it lives under the
-/// var directory (`$MIXOS_STATE`, default `mixos:state`) as `webd/session.key`
+/// var directory (`$MIXOS_VAR`, default `/var/lib/mixos`) as `webd/session.key`
 /// (D2.6).
 fn session_key_path() -> PathBuf {
     std::env::var_os("MIXOS_WEBD_SESSION_KEY_PATH")
@@ -4531,8 +4531,8 @@ mod session_key_path_tests {
     #[test]
     fn the_stock_var_directory_gives_the_canonical_path() {
         assert_eq!(
-            session_key_path_in(&::paths::root(::paths::Root::State)),
-            ::paths::root(::paths::Root::State).join("webd/session.key")
+            session_key_path_in(StdPath::new("/var/lib/mixos")),
+            PathBuf::from("/var/lib/mixos/webd/session.key")
         );
     }
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env mix
 -- version: 0.1.0
 -- Install a pinned, complete static asset set. No daemon or runtime downloads.
--- Default system root: the resolved prefix/share/assets, otherwise <prefix>/share/assets.
+-- Default system root: $MIXOS_SHARE (else derived share)/assets, otherwise <prefix>/share/assets.
 -- Use --user for XDG data, --root for a sandbox, --list or --verify to inspect.
 
 fn check_file($directory, $file)
@@ -177,8 +177,11 @@ if $asset_root == nil then
     end
     $asset_root = $data_home .. "/mixos/assets"
   else
-    if not has_builtin("mixos_path") then raise("ASSET_ROOT", "N-1 bootstrap: specify --root TARGET_ASSETS") end
-    $share_root = mixos_path("prefix", "share")
+    $share_root = env("MIXOS_SHARE", nil)
+    if $share_root == nil then
+      if not has_builtin("mixos_path") then raise("ASSET_ROOT", "N-1 bootstrap: specify --root TARGET_ASSETS or MIXOS_SHARE") end
+      $share_root = mixos_path("share")
+    end
     $asset_root = $share_root .. "/assets"
   end
 end

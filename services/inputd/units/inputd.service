@@ -24,7 +24,7 @@ ExecStart=@{prefix}/bin/inputd
 Restart=always
 RestartSec=500ms
 # The keymap lives at $STATE_DIRECTORY/keymap.json
-# (@{state}/inputd/keymap.json), never in a home directory.
+# (@{var}/inputd/keymap.json), never in a home directory.
 StateDirectory=mixos/inputd
 StateDirectoryMode=0700
 Environment=RUST_LOG=inputd=info

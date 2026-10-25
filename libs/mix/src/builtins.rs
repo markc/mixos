@@ -267,7 +267,7 @@ builtin_table! {
     ("access", CapabilityClass::FsRead,          "io",      "Ask the kernel whether this process can access path using its effective uid/gid: mode is a non-empty, duplicate-free string of r/w/x/f letters (f = existence and is redundant when combined). Follows symlinks. Unlike inspecting stat().perm, this honours POSIX ACLs. Ordinary absence/denial returns false; malformed input or an unexpected syscall failure raises (v0.45.0).", contract!((path: string, mode: string) -> bool; failure[raises])),
     ("is_dir", CapabilityClass::FsRead,          "io",      "Test if path is a directory", contract!((path: string) -> bool)),
     ("is_file", CapabilityClass::FsRead,         "io",      "Test if path is a regular file", contract!((path: string) -> bool)),
-    ("mixos_path", CapabilityClass::FsRead, "io", "Resolve a MixOS root and optional relative path, or a mixos:root/rel logical path. Environment > prefix/layout.mx > defaults. Escapes above a root are refused", contract!((root: string, rel?: string) -> string; failure[raises])),
+    ("mixos_path", CapabilityClass::FsRead, "io", "Resolve prefix/share/etc/var/run/cache or a logical path. Override > MIXOS > layout.mx > uid/XDG defaults. Optional tier: system or user. Relative paths cannot escape", contract!((root: string, rel?: string, opts?: map) -> string; failure[raises])),
     ("realpath", CapabilityClass::FsRead,        "io",      "Canonicalise a path: resolve every symlink + `.`/`..` to the absolute real path (like `readlink -f` / realpath(3)). The path MUST exist. realpath(path) -> string | nil (nil ONLY when a component is missing; a permission/IO/symlink-loop/non-UTF-8 failure RAISES — v0.103.14). NORMALISATION ONLY, not a race-free authorization primitive: canonicalise-then-use is not atomic, so for an exec/open safety check, exec/open the RETURNED canonical path (which has no symlinks to re-traverse), not the original (v0.31.2)", contract!((path: string) -> any_of(string, nil); failure[raises])),
     ("glob", CapabilityClass::FsRead,            "io",      "List files matching a glob pattern (supports ** globstar in v0.2.1)", contract!((pattern: string) -> list(string); failure[raises])),
     ("ls", CapabilityClass::FsRead,              "io",      "List directory entries", contract!((path?: string) -> list(string); failure[raises])),
@@ -13903,15 +13903,26 @@ pub(crate) fn canonicalize_path(path: &str) -> Option<String> {
 
 fn builtin_mixos_path(args: Vec<Value>) -> MixResult<Option<Value>> {
     let error = |msg: String| MixError::RuntimeError { span: None, msg };
-    if !(1..=2).contains(&args.len()) {
-        return Err(error("mixos_path expects root[, rel]".into()));
+    if !(1..=3).contains(&args.len()) {
+        return Err(error("mixos_path expects root[, rel[, {tier: system|user}]]".into()));
     }
     let Value::String(name) = &args[0] else {
         return Err(error("mixos_path root must be a string".into()));
     };
-    let layout = paths::Layout::discover().map_err(error)?;
-    let path = if args.len() == 1 && name.starts_with("mixos:") {
-        layout.resolve(name).map_err(error)?
+    let layout = match args.get(2) {
+        None => paths::Layout::discover(),
+        Some(Value::Map(options)) => {
+            if options.len() != 1 { return Err(error("mixos_path opts accepts only tier".into())); }
+            let Some(Value::String(tier)) = options.get("tier") else { return Err(error("mixos_path tier must be system or user".into())); };
+            paths::Layout::for_tier(paths::Tier::parse(tier).map_err(error)?)
+        }
+        _ => return Err(error("mixos_path opts must be a map".into())),
+    }.map_err(error)?;
+    let path = if name.starts_with("mixos:") {
+        if args.get(1).is_some_and(|v| !matches!(v, Value::String(s) if s.is_empty())) {
+            return Err(error("a logical path cannot have an additional relative path".into()));
+        }
+        layout.resolve_path(name).map_err(error)?
     } else {
         let rel = match args.get(1) {
             None => "",
@@ -16859,7 +16870,7 @@ fn builtin_toml_encode(args: Vec<Value>) -> MixResult<Option<Value>> {
 #[cfg(feature = "toml")]
 fn builtin_project_info(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("project_info", &args, 0)?;
-    let root = std::env::var("MIXOS_SRC")
+    let root = std::env::var("MIXOS")
         .ok()
         .or_else(|| {
             std::env::var("HOME")

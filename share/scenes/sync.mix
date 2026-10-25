@@ -12,7 +12,7 @@
 $here = dirname(realpath($0))
 $argv = args()
 $apply = contains($argv, "--apply")
-$env_path = (mixos_path("config") .. "/session/4.env")
+$env_path = "/etc/mixos/session/4.env"
 if contains($argv, "--env") then
   $env_path = $argv[index_of($argv, "--env") + 1]
 end

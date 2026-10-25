@@ -12,12 +12,12 @@ StartLimitBurst=3
 Type=simple
 User=indexd
 Group=indexd
-Environment=MIXOS_ETC=@{config}
-Environment=MIXOS_VAR=@{state}
+Environment=MIXOS_ETC=@{etc}
+Environment=MIXOS_VAR=@{var}
 Environment=MIXOS_NODE_CONFIG=@{prefix}/etc/node.conf.mix
 Environment=MALLOC_ARENA_MAX=2
 Environment=HOME=%S/mixos/indexd
-ExecStart=@{prefix}/bin/indexd -c @{config}/indexd/config.conf.mix serve
+ExecStart=@{prefix}/bin/indexd -c @{etc}/indexd/config.conf.mix serve
 StateDirectory=mixos/indexd
 StateDirectoryMode=0750
 ConfigurationDirectory=mixos/indexd

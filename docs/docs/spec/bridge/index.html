@@ -316,7 +316,7 @@ the <a href="/docs/decisions/2026-10-13-instance-verb-families/">decision</a>.</
 <h2 id="instance-config-version-020">Instance config, version 0.2.0</h2>
 <p>A strict-data document (<code>load_data</code>; never executed).</p>
 <p><strong>Path:</strong> <code>$BRIDGED_CONFIG</code> when set; otherwise <code>&lt;etc&gt;/bridge/&lt;app&gt;.conf.mix</code>,
-where <code>&lt;etc&gt;</code> is <code>$MIXOS_CONFIG</code> when set, else <code>&lt;config&gt;</code>. The file stem is
+where <code>&lt;etc&gt;</code> is <code>$MIXOS_ETC</code> when set, else <code>&lt;config&gt;</code>. The file stem is
 the serve name.</p>
 <pre><code class="language-text">port: 47801,
 token_file: "/home/user/.config/fakeapp/control.token",

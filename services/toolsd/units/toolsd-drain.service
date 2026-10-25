@@ -13,7 +13,7 @@ Group=toolsd
 # TOOLS_BASE_URL (which webd to claim from) + TOOLS_CA_FILE (verify its cert honestly —
 # never ssl_verify:false). NO `-` prefix: a missing config fails the unit CLOSED rather
 # than draining nothing, or the wrong vhost.
-EnvironmentFile=@{config}/toolsd/env
+EnvironmentFile=@{etc}/toolsd/env
 
 # Serialize drains ON THIS HOST. The FLEET-wide guarantee is not this flock (which is
 # host-local) — it is the claim endpoint's atomic NOT EXISTS guard, which refuses to lease
@@ -25,7 +25,7 @@ ExecStart=/usr/bin/flock -n /run/toolsd/drain.lock @{prefix}/bin/mix @{prefix}/l
 # (0400, readable only by this unit's user) and never present in the environment.
 # It authorises claiming TOOL RUNS ONLY — a separate secret, queue and endpoint from any
 # provisioning drain's, so this identity can never lease a provisioning job.
-LoadCredential=tools_secret:@{config}/toolsd/secret
+LoadCredential=tools_secret:@{etc}/toolsd/secret
 
 # The drain bounds its own WALL (MAX_WALL=600s): it stops claiming once the budget is
 # spent, and never starts a run it cannot finish. Worst case = MAX_WALL + one full run

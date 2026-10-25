@@ -37,7 +37,7 @@ through. The full contract is in the
 ## Setting up an instance
 
 Write the instance config, `<config>/bridge/<app>.conf.mix` (or
-`$MIXOS_CONFIG/bridge/<app>.conf.mix` for a session). The file name is the
+`$MIXOS_ETC/bridge/<app>.conf.mix` for a session). The file name is the
 instance name:
 
 ```text

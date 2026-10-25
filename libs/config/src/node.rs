@@ -228,11 +228,11 @@ impl NodedConfig {
     pub fn unix_endpoint(&self) -> std::path::PathBuf {
         self.unix_socket
             .clone()
-            .unwrap_or_else(|| ::paths::root(::paths::Root::Runtime).join("noded/bus.sock"))
+            .unwrap_or_else(|| paths::system_default(paths::Root::Run).expect("built-in system run default").join("noded/bus.sock"))
     }
 
     /// A broker publishes its resolved endpoint through noded.ping. System
-    /// units pin MIXOS_RUNTIME; development installs retain the common path rules.
+    /// units pin MIXOS_RUN; development installs retain the common path rules.
     pub fn broker_unix_endpoint(&self) -> std::path::PathBuf {
         self.unix_socket
             .clone()
@@ -259,28 +259,41 @@ const ENV_VAR: &str = "MIXOS_NODE_CONFIG";
 /// In user mode (uid != 0) `path(Etc)` resolves to
 /// `~/.config/mixos/`, which means a system daemon user (e.g.
 /// `mixos-maild`) running an unprivileged CLI would never find a
-/// node config placed at `mixos:config/`. The doc comment at the top of
+/// node config placed at `<system etc>/`. The doc comment at the top of
 /// this file already promised user-XDG-then-system-etc; this honours
 /// that promise by appending the system directory as a secondary
 /// candidate whenever it differs from the primary (root mode
 /// dedupes naturally). Within each directory `node.conf.mix` is the
 /// sole config file.
 ///
-/// `MIXOS_CONFIG` is the explicit isolation knob (tests, chroots,
+/// `MIXOS_ETC` is the explicit isolation knob (tests, chroots,
 /// alternate installs): when it is set we honour the caller's intent
-/// and do NOT silently fall through to the host's `mixos:config/`.
+/// and do NOT silently fall through to the host's `<system etc>/`.
 fn search_paths() -> Vec<PathBuf> {
-    build_search_paths(&crate::path(crate::Dir::Etc), true)
+    let primary_dir = crate::path(crate::Dir::Etc);
+    let mixos_etc_set =
+        has_override(std::env::var_os("MIXOS_ETC")) || has_override(std::env::var_os("MIXOS"));
+    build_search_paths(&primary_dir, mixos_etc_set)
 }
 
-#[cfg(test)]
 fn has_override(value: Option<std::ffi::OsString>) -> bool {
-    value.is_some_and(|v| !v.is_empty())
+    value.is_some_and(|value| !value.is_empty())
 }
 
+/// Pure helper extracted from `search_paths()` so the search order
+/// can be unit-tested without touching process env vars (which would
+/// poison the `OnceLock`-cached path resolver for sibling tests).
+///
+/// Emits one `node.conf.mix` per candidate directory, the user dir
+/// ahead of the system dir.
 fn build_search_paths(primary_dir: &Path, mixos_etc_set: bool) -> Vec<PathBuf> {
-    let _ = mixos_etc_set;
-    let dirs = vec![primary_dir.to_path_buf()];
+    let mut dirs = vec![primary_dir.to_path_buf()];
+    if !mixos_etc_set {
+        let system = ::paths::system_default(::paths::Root::Etc).expect("built-in system etc default");
+        if !dirs.contains(&system) {
+            dirs.push(system);
+        }
+    }
     dirs.into_iter()
         .map(|dir| dir.join("node.conf.mix"))
         .collect()
@@ -372,7 +385,10 @@ mod tests {
                 Path::new("/home/user/.config/mixos"),
                 has_override(Some("".into()))
             ),
-            vec![PathBuf::from("/home/user/.config/mixos/node.conf.mix"),]
+            vec![
+                PathBuf::from("/home/user/.config/mixos/node.conf.mix"),
+                PathBuf::from("/etc/mixos/node.conf.mix")
+            ]
         );
         assert_eq!(
             build_search_paths(Path::new("/sandbox"), true),
@@ -665,7 +681,7 @@ mod transplanted_tests {
 
     // Tests exercise the pure `build_search_paths()` helper with
     // explicit inputs, so they do not depend on (and do not mutate)
-    // the inherited `MIXOS_CONFIG` env var or the `OnceLock`-cached
+    // the inherited `MIXOS_ETC` env var or the `OnceLock`-cached
     // path resolver in `paths.rs`. This keeps them hermetic regardless
     // of the test harness's environment.
 
@@ -675,28 +691,31 @@ mod transplanted_tests {
         let paths = build_search_paths(&dir, false);
         assert_eq!(
             paths,
-            vec![PathBuf::from("/home/alice/.config/mixos/node.conf.mix"),],
-            "user-mode (no MIXOS_CONFIG) must search user dir then /etc/mixos"
+            vec![
+                PathBuf::from("/home/alice/.config/mixos/node.conf.mix"),
+                PathBuf::from("/etc/mixos/node.conf.mix"),
+            ],
+            "user-mode (no MIXOS_ETC) must search user dir then /etc/mixos"
         );
     }
 
     #[test]
     fn build_search_paths_mixos_etc_set_isolates() {
-        // The MIXOS_CONFIG isolation case — the original Medium finding.
+        // The MIXOS_ETC isolation case — the original Medium finding.
         // When the caller has explicitly overridden the etc dir, we
-        // do NOT silently fall through to the host's mixos:config.
+        // do NOT silently fall through to the host's <system etc>.
         let dir = PathBuf::from("/sandbox/etc/mixos");
         let paths = build_search_paths(&dir, true);
         assert_eq!(
             paths,
             vec![PathBuf::from("/sandbox/etc/mixos/node.conf.mix")],
-            "MIXOS_CONFIG set must suppress /etc/mixos fallback"
+            "MIXOS_ETC set must suppress /etc/mixos fallback"
         );
     }
 
     #[test]
     fn build_search_paths_root_mode_dedupes() {
-        let dir = PathBuf::from("/etc/mixos");
+        let dir = ::paths::system_default(::paths::Root::Etc).expect("built-in system etc default");
         let paths = build_search_paths(&dir, false);
         assert_eq!(
             paths,

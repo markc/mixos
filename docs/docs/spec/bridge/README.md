@@ -95,7 +95,7 @@ the [decision](../../decisions/2026-10-13-instance-verb-families.md).
 A strict-data document (`load_data`; never executed).
 
 **Path:** `$BRIDGED_CONFIG` when set; otherwise `<etc>/bridge/<app>.conf.mix`,
-where `<etc>` is `$MIXOS_CONFIG` when set, else `<config>`. The file stem is
+where `<etc>` is `$MIXOS_ETC` when set, else `<config>`. The file stem is
 the serve name.
 
 ```text

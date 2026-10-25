@@ -7819,7 +7819,7 @@ impl Evaluator {
 
     /// Load the standard prelude (utility functions).
     /// Checks the user's config dir for a `prelude.mix` override first —
-    /// `$MIXOS_CONFIG`, else `$MIXOS/etc`, else `~/.config/mixos` — and
+    /// `$MIXOS_ETC`, else `$MIXOS/etc`, else `~/.config/mixos` — and
     /// falls back to the built-in prelude.
     ///
     /// B10 (TODO-mix 2026-09-24): failures used to be PRINTED and
@@ -7837,8 +7837,13 @@ impl Evaluator {
         // inside requests instead of at the surface.
 
         // Check for user override
-        let (source, override_path) = {
-            let etc = paths::root(paths::Root::Config);
+        let (source, override_path) = if let Some(home) = dirs_home() {
+            let etc = std::env::var_os("MIXOS_ETC")
+                .map(std::path::PathBuf::from)
+                .or_else(|| {
+                    std::env::var_os("MIXOS").map(|r| std::path::PathBuf::from(r).join("etc"))
+                })
+                .unwrap_or_else(|| home.join(".config/mixos"));
             let user_prelude = etc.join("prelude.mix");
             if user_prelude.exists() {
                 match std::fs::read_to_string(&user_prelude) {
@@ -7856,6 +7861,8 @@ impl Evaluator {
             } else {
                 (BUILTIN_PRELUDE.to_string(), None)
             }
+        } else {
+            (BUILTIN_PRELUDE.to_string(), None)
         };
 
         let mut lexer = crate::lexer::Lexer::new(&source);

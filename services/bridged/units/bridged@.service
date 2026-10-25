@@ -2,7 +2,7 @@
 # Copyright 2026 Mark Constable <mc@mixos.dev>
 # One bridge per external application: bridged@<app>.service serves the Bus
 # service <app> (commands <app>.call, .commands, .execute, .inspect, .screenshot,
-# .status) from @{config}/bridge/<app>.conf.mix.
+# .status) from @{etc}/bridge/<app>.conf.mix.
 [Unit]
 Description=MixOS Bus bridge for the external application %i
 After=network.target
@@ -19,7 +19,7 @@ User=mixos
 # lives (MIXOS_ETC, or BRIDGED_CONFIG for one file). It must be writable only
 # by the administrator: whoever can change it (BRIDGED_MIX in particular)
 # picks the code that runs as mixos.
-EnvironmentFile=-@{config}/bridge/%i.env
+EnvironmentFile=-@{etc}/bridge/%i.env
 # --start runs every start check (name, command registry, config, token) in this
 # process, before the name reaches the Bus. A documented refusal exits 2.
 # Otherwise it runs `mix --serve bridged.mix --name %i` as its child (Mix has

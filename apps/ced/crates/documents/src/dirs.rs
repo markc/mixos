@@ -39,17 +39,63 @@ impl AppDirs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn env(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<PathBuf> {
+        move |k| {
+            pairs
+                .iter()
+                .find(|(n, _)| *n == k)
+                .map(|(_, v)| PathBuf::from(v))
+        }
+    }
+
     #[test]
-    fn directories_follow_the_shared_layout() {
-        let d = AppDirs::resolve_with("ced", |key| match key {
-            "MIXOS_PREFIX" => Some("/srv/tree".into()),
-            "MIXOS_CONFIG" => Some("/isolated/config".into()),
-            "MIXOS_STATE" => Some("/isolated/state".into()),
-            _ => None,
-        })
-        .unwrap();
-        assert_eq!(d.root(), Path::new("/isolated/state/apps/ced"));
-        assert_eq!(d.config(), Path::new("/isolated/config/apps/ced"));
-        assert!(AppDirs::resolve_with("../escape", |_| None).is_none());
+    fn resolution_order() {
+        let all = &[
+            ("MIXOS_APP_HOME", "/a"),
+            ("MIXOS_APPS_HOME", "/b"),
+            ("XDG_STATE_HOME", "/c"),
+            ("HOME", "/h"),
+        ];
+        assert_eq!(
+            AppDirs::resolve_with("ced", env(all)).unwrap().root(),
+            Path::new("/a")
+        );
+        let three = &[
+            ("MIXOS_APPS_HOME", "/b"),
+            ("XDG_STATE_HOME", "/c"),
+            ("HOME", "/h"),
+        ];
+        assert_eq!(
+            AppDirs::resolve_with("ced", env(three)).unwrap().root(),
+            Path::new("/b/ced")
+        );
+        let two = &[("XDG_STATE_HOME", "/c"), ("HOME", "/h")];
+        assert_eq!(
+            AppDirs::resolve_with("ced", env(two)).unwrap().root(),
+            Path::new("/c/mixos/apps/ced")
+        );
+        let one = &[("HOME", "/h")];
+        let d = AppDirs::resolve_with("ced", env(one)).unwrap();
+        assert_eq!(d.root(), Path::new("/h/.local/state/mixos/apps/ced"));
+        assert_eq!(
+            d.session_file(),
+            Path::new("/h/.local/state/mixos/apps/ced/state/session.json")
+        );
+        assert_eq!(
+            d.config_file(),
+            Path::new("/h/.local/state/mixos/apps/ced/config/ced.conf.mix")
+        );
+    }
+
+    #[test]
+    fn relative_values_and_bad_slugs_are_refused() {
+        let rel = &[("MIXOS_APP_HOME", "rel"), ("HOME", "/h")];
+        assert_eq!(
+            AppDirs::resolve_with("ced", env(rel)).unwrap().root(),
+            Path::new("/h/.local/state/mixos/apps/ced")
+        );
+        assert!(AppDirs::resolve_with("../x", env(&[("HOME", "/h")])).is_none());
+        assert!(AppDirs::resolve_with("", env(&[("HOME", "/h")])).is_none());
     }
 }

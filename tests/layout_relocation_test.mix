@@ -15,7 +15,7 @@ if $g.opts.child then
   if exists("/opt/mixos/bin/mix") or exists("/etc/mixos/node.conf.mix") then raise("RELOCATION_HIDE", "old roots are still visible") end
   print("relocation: old prefix and config are hidden")
   $mix = $scratch .. "/moved prefix/bin/mix"
-  $envmap = {MIXOS_CONFIG: $scratch .. "/config", MIXOS_STATE: $scratch .. "/state", MIXOS_CACHE: $scratch .. "/cache", MIXOS_RUNTIME: $scratch .. "/runtime"}
+  $envmap = {MIXOS: nil, MIXOS_PREFIX: nil, MIXOS_SHARE: nil, MIXOS_ETC: $scratch .. "/config", MIXOS_VAR: $scratch .. "/state", MIXOS_CACHE: $scratch .. "/cache", MIXOS_RUN: $scratch .. "/runtime"}
   -- No MIXOS_PREFIX override: this must come from /proc/self/exe.
   $oracle = run_argv_must([$mix, "-c", 'print(mixos_path("prefix"))'], {env: $envmap})
   if trim($oracle) != $scratch .. "/moved prefix" then raise("RELOCATION_PREFIX", $oracle) end
@@ -26,7 +26,7 @@ if $g.opts.child then
   print("relocation: renderer is idempotent; " .. to_string(len(lines($first))) .. " changes on first apply")
   $link = $scratch .. "/sysroot/usr/local/bin/mix"
   if read_link($link) != $mix then raise("RELOCATION_LINK", "managed link target differs") end
-  $logical = run_argv_must([$mix, "-c", 'print(mixos_path("mixos:prefix/share/scenes/editor/scene.mix"))'], {env: $envmap})
+  $logical = run_argv_must([$mix, "-c", 'print(mixos_path("mixos:share/scenes/editor/scene.mix"))'], {env: $envmap})
   if trim($logical) != $scratch .. "/moved prefix/share/scenes/editor/scene.mix" then raise("RELOCATION_LOGICAL", $logical) end
   $escape = run_argv([$mix, "-c", 'print(mixos_path("mixos:prefix/../escape"))'], {env: $envmap})
   if $escape.ok then raise("RELOCATION_ESCAPE", "root escape accepted") end

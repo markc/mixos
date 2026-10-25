@@ -54,18 +54,35 @@ pub fn expand_tilde_with(home: &Path, value: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn env(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<PathBuf> {
+        move |k| {
+            pairs
+                .iter()
+                .find(|(n, _)| *n == k)
+                .map(|(_, v)| PathBuf::from(v))
+        }
+    }
+
     #[test]
-    fn directories_follow_the_shared_layout() {
-        let d = AppDirs::resolve_with("dopus", |key| match key {
-            "MIXOS_PREFIX" => Some("/srv/tree".into()),
-            "MIXOS_CONFIG" => Some("/isolated/config".into()),
-            "MIXOS_STATE" => Some("/isolated/state".into()),
-            _ => None,
-        })
-        .unwrap();
-        assert_eq!(d.root(), Path::new("/isolated/state/apps/dopus"));
-        assert_eq!(d.config(), Path::new("/isolated/config/apps/dopus"));
-        assert!(AppDirs::resolve_with("../escape", |_| None).is_none());
+    fn resolution_order() {
+        let all = &[
+            ("MIXOS_APP_HOME", "/a"),
+            ("MIXOS_APPS_HOME", "/b"),
+            ("XDG_STATE_HOME", "/c"),
+            ("HOME", "/h"),
+        ];
+        assert_eq!(
+            AppDirs::resolve_with("dopus", env(all)).unwrap().root(),
+            Path::new("/a")
+        );
+        let one = &[("HOME", "/h")];
+        let d = AppDirs::resolve_with("dopus", env(one)).unwrap();
+        assert_eq!(d.root(), Path::new("/h/.local/state/mixos/apps/dopus"));
+        assert_eq!(
+            d.config_dir(),
+            Path::new("/h/.local/state/mixos/apps/dopus/config")
+        );
     }
 
     #[test]

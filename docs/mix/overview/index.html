@@ -340,9 +340,12 @@ parity. Mix now occupies that role exclusively across the mixos stack.</p>
 on the host, the <strong>same binary</strong> becomes mesh-viable on next invocation — no
 reinstall, no recompile, no script edits. A runtime lazy-probe decides
 bare-vs-mesh at execution time.</p>
-<p>MixOS locations use <code>mixos_path(root[, rel])</code>, backed by the shared
+<p>MixOS locations use <code>mixos_path(root[, rel[, opts]])</code>, backed by the shared
 <a href="/paths/">paths resolver</a>. For example,
-<code>mix -c 'print(mixos_path("prefix"))'</code> prints the current installation prefix.</p>
+<code>mix -c 'print(mixos_path("prefix"))'</code> prints the current installation prefix.
+The roots are <code>prefix</code>, <code>share</code>, <code>etc</code>, <code>var</code>, <code>run</code>, <code>cache</code>. Defaults follow
+the process uid. <code>{tier: "system"}</code> or <code>{tier: "user"}</code> selects a tier
+explicitly, for example <code>mixos_path("etc", "node.conf.mix", {tier: "system"})</code>.</p>
 <p>Before installation, a staged binary can print target defaults independently
 of its own location: <code>mix layout defaults --tier system --json</code>, with an
 optional <code>--prefix DIR</code>. The <code>user</code> tier requires <code>--prefix</code>. Installers run

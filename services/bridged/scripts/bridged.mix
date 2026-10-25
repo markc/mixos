@@ -17,7 +17,7 @@
 -- in this process, and only then starts the serve citizen as its child, so a
 -- refused name never reaches the Bus.
 -- Config: $BRIDGED_CONFIG, else <etc>/bridge/<app>.conf.mix with <etc> =
--- $MIXOS_CONFIG or <config>. Keys: host, port, auth, token_file, timeout_s,
+-- $MIXOS_ETC or <config>. Keys: host, port, auth, token_file, timeout_s,
 -- connect_timeout_s, backoff_s, max_line, instance (docs/docs/spec/bridge/).
 -- auth "key" reads token_file on every connect, not here: the app writes that
 -- file after it starts, so a key path that does not exist yet is not refused.

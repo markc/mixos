@@ -8,14 +8,14 @@
 --     --archive-dir DIR --package desktop|server|all
 -- mix tools/gold_release.mix rollback --receipt ID
 -- mix tools/gold_release.mix recover  (put back an interrupted apply)
--- Target flags: --prefix DIR [--tier system|user] and optional --config,
--- --state, --cache, --runtime roots. State receipts live under state/releases.
+-- Target flags: --prefix DIR [--tier system|user] and optional --share,
+-- --etc, --var, --run, --cache roots. Receipts live under var/releases.
 -- Tests may pass --root /tmp/mixos-gold-test-N. Rollback/recover require
 -- an explicit --prefix with layout.mx, or --receipt-file FILE with saved roots.
 
 $g = getopt(args(), {manifest: {arg: true}, "manifest-sha256": {arg: true},
   "archive-dir": {arg: true}, package: {arg: true}, receipt: {arg: true},
-  root: {arg: true}, prefix: {arg: true}, config: {arg: true}, state: {arg: true}, cache: {arg: true}, runtime: {arg: true}, tier: {arg: true}, "receipt-file": {arg: true}})
+  root: {arg: true}, prefix: {arg: true}, share: {arg: true}, etc: {arg: true}, var: {arg: true}, cache: {arg: true}, run: {arg: true}, tier: {arg: true}, "receipt-file": {arg: true}})
 if len($g.errors) != 0 or len($g.rest) != 1 or not contains(["plan", "apply", "rollback", "recover"], $g.rest[0]) then
   raise("GOLD_ARGS", "usage: gold_release.mix plan|apply|rollback|recover [--manifest FILE --manifest-sha256 HEX --archive-dir DIR --package desktop|server|all] [--receipt ID]")
 end
@@ -33,13 +33,13 @@ $saved = {}
 if $g.opts["receipt-file"] != nil then
   if not contains(["rollback", "recover"], $mode) then raise("GOLD_ARGS", "--receipt-file is only for rollback/recover") end
   $saved = load_data($g.opts["receipt-file"]).layout ?? {}
-elif contains(["rollback", "recover"], $mode) and $g.opts.state != nil then
-  $targets.checked({state: $g.opts.state})
-  $rp = $g.opts.state .. "/releases/pending.mx"
+elif contains(["rollback", "recover"], $mode) and $g.opts.var != nil then
+  $targets.checked({var: $g.opts.var})
+  $rp = $g.opts.var .. "/releases/pending.mx"
   if $mode == "rollback" then
     $rid = $g.opts.receipt ?? ""
     if not re_match($rid, "^[a-z0-9-]{8,100}$") then raise("GOLD_ARGS", "rollback needs --receipt ID") end
-    $rp = $g.opts.state .. "/releases/receipts/" .. $rid .. ".mx"
+    $rp = $g.opts.var .. "/releases/receipts/" .. $rid .. ".mx"
   end
   if is_file($rp) then $saved = load_data($rp).layout ?? {} end
 end
@@ -63,7 +63,7 @@ catch $message, $err
   raise($err.code ?? "GOLD_LAYOUT", $message)
 end
 $root = $layout.prefix
-$state = $layout.state .. "/releases"
+$state = $layout.var .. "/releases"
 $live = not starts_with($root, "/tmp/mixos-gold-test-")
 try
   if not is_dir($root) or stat($root, {follow_symlinks: false}).is_symlink then
@@ -158,7 +158,7 @@ try
   fn verify_receipt($rec)
     if not deep_eq($targets.checked($rec.layout ?? {}), $layout) then raise("GOLD_RECEIPT", "receipt layout does not describe the selected target") end
     if (type($rec.id) != "string" or not re_match($rec.id, "^[a-z0-9-]{8,100}$") or
-        $rec.backup != "mixos:state/releases/backups/" .. $rec.id or type($rec.files) != "list") then
+        $rec.backup != "mixos:var/releases/backups/" .. $rec.id or type($rec.files) != "list") then
       raise("GOLD_RECEIPT", "invalid receipt identity or backup path")
     end
   end
@@ -304,7 +304,7 @@ try
   -- The selected roots must survive the installer's environment. Journal
   -- layout.mx like every shipped file so recovery/rollback restores it too.
   $layout_source = $stage .. "/target-layout.mx"
-  write_file($layout_source, data_encode($layout) .. "\n")
+  write_file($layout_source, data_encode(delete($layout, "prefix")) .. "\n")
   $layout_after = {kind: "file", sha256: hash_file($layout_source, "sha256")}
   push($files, {rel: "layout.mx", source: $layout_source, before: existing_state($root .. "/layout.mx"),
     after: $layout_after, same: matches($root .. "/layout.mx", $layout_after)})
@@ -333,7 +333,7 @@ try
   write_atomic($sequence_path, data_encode({schema: 1, last: $next}) .. "\n")
   $record = {schema: 1, id: $id, sequence: $next, status: "pending", root: "mixos:prefix/",
     layout: $layout, source: $manifest.source, version: $manifest.version, packages: $want,
-    manifest_sha256: $expect, backup: "mixos:state/releases/backups/" .. $id, started_at: now_iso(), files: []}
+    manifest_sha256: $expect, backup: "mixos:var/releases/backups/" .. $id, started_at: now_iso(), files: []}
   for $f in $files
     $record.files = push($record.files, {rel: $f.rel, before: $f.before, after: $f.after, same: $f.same})
   end

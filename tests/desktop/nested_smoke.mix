@@ -81,7 +81,7 @@
 --      the installed style, else mac) and props.set decoration.style is
 --      refused read_only; `xwayland` reads enabled true with persist_path
 --      <run dir>/etc/comp/xwayland-enabled.<socket> (compd runs with
---      MIXOS_CONFIG in the run dir), a set false answers {old true, new false,
+--      MIXOS_ETC in the run dir), a set false answers {old true, new false,
 --      persisted true} and the file reads false, a string value is refused
 --      invalid_value, a set true restores it; `dmabuf` has numeric accepted /
 --      failed and a failures list (counts printed, not gated: the clients
@@ -341,7 +341,7 @@ fn noded_url()
   if $set != "" then
     return $set
   end
-  for each $path in [env("HOME", "") .. "/.config/mixos/node.conf.mix", (mixos_path("config") .. "/node.conf.mix")]
+  for each $path in [env("HOME", "") .. "/.config/mixos/node.conf.mix", ("/etc/mixos" .. "/node.conf.mix")]
     if is_file($path) then
       $c = load_data($path)
       $host = $c.wg_ip ?? ""
@@ -884,10 +884,10 @@ end
 $before = sockets($run_dir)
 $cenv = $base_env
 $cenv["WAYLAND_DISPLAY"] = "wl-host"
--- The xwayland.enabled switch persists under MIXOS_CONFIG (step 11c): keep it
+-- The xwayland.enabled switch persists under MIXOS_ETC (step 11c): keep it
 -- in the run dir, never the real per-socket file.
 $ETC = $run_dir .. "/etc"
-$cenv["MIXOS_CONFIG"] = $ETC
+$cenv["MIXOS_ETC"] = $ETC
 $cargv = [$bin]
 if $config != nil then
   push($cargv, "--config-file=" .. $config)

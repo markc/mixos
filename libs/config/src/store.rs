@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-/// Configuration directory (resolved via `MIXOS_CONFIG`).
+/// Configuration directory (resolved via `MIXOS_ETC`).
 pub fn config_dir() -> PathBuf {
     crate::path(crate::Dir::Etc)
 }
@@ -53,7 +53,7 @@ where
 /// Directory-explicit core of [`load_service`]. Public so a daemon's
 /// own config tests can drive the full store contract (missing file
 /// materialises defaults; present-but-unparsable is fatal) against a
-/// throwaway dir instead of mutating the `MIXOS_CONFIG` env var (which
+/// throwaway dir instead of mutating the `MIXOS_ETC` env var (which
 /// would poison the `OnceLock`-cached path resolver in `paths.rs` for
 /// sibling tests) — same hermeticity discipline as `node.rs`.
 pub fn load_service_in<T>(dir: &Path, service: &str) -> Result<T>

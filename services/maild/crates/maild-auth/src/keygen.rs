@@ -8,7 +8,7 @@
 //! to read back, plus the matching `_domainkey` DNS TXT record snippet.
 //!
 //! Output materials:
-//! - `private_pem`: ready to drop into `mixos:state/maild/dkim/...`
+//! - `private_pem`: ready to drop into `mixos:var/maild/dkim/...`
 //! - `public_b64`: raw base64 (no DKIM wrapping), exposed so callers
 //!   can rebuild a custom TXT record if `dns_txt_record` doesn't fit.
 //! - `dns_txt_record`: the full `v=DKIM1;... p=...` value that goes

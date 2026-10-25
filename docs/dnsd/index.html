@@ -242,7 +242,7 @@ model, parsing, snapshots, persistence, resolver and wire codec.</p>
 </code></pre>
 <p>All three arguments are required. Repeat <code>--listen</code> to bind more than one
 address. Wildcard binds are refused. The default <code>mixos</code> feature reads
-<code>node.conf.mix</code> using <code>config</code> (including <code>MIXOS_CONFIG</code> and
+<code>node.conf.mix</code> using <code>config</code> (including <code>MIXOS_ETC</code> and
 <code>MIXOS_NODE_CONFIG</code>) and accepts the configured WireGuard IP or loopback.
 If node configuration is absent or invalid, non-loopback binds require
 <code>--allow-non-loopback-listen</code>, with a warning. The standalone build
@@ -262,9 +262,9 @@ v1 format, so a binary rollback can read state written by this port.</p>
 retries with bounded exponential backoff. Mutation commands are rejected.</p>
 <p><code>services/dnsd/units/dnsd.service</code> runs <code>&lt;prefix&gt;/bin/dnsd</code> as <code>dnsd</code>,
 with UID and GID 506, <code>CAP_NET_BIND_SERVICE</code> and the original hardening.
-Its config root is <code>MIXOS_CONFIG=&lt;prefix&gt;/etc</code>, with <code>dnsd/zones.mix</code> and
+Its config root is <code>MIXOS_ETC=&lt;prefix&gt;/etc</code>, with <code>dnsd/zones.mix</code> and
 <code>dnsd/service.env</code> (<code>LISTEN=192.0.2.10:53</code>). Its state root is
-<code>MIXOS_STATE=&lt;state&gt;</code>, with <code>dnsd/state</code>. The unit sets those roots
+<code>MIXOS_VAR=&lt;state&gt;</code>, with <code>dnsd/state</code>. The unit sets those roots
 explicitly; changing the roots also requires overriding its argument and
 environment-file paths. Node identity comes from
 <code>&lt;prefix&gt;/etc/node.conf.mix</code>. The sysusers and tmpfiles fragments are

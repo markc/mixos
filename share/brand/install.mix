@@ -1,7 +1,7 @@
 #!/usr/bin/env mix
 -- version: 0.2.1
 -- Install the MixOS brand icons into the shared icon tree.
--- Default root: the resolved prefix/share, otherwise <prefix>/share. --root for a sandbox.
+-- Default root: $MIXOS_SHARE (else derived share), otherwise <prefix>/share. --root for a sandbox.
 --
 --   mix share/brand/install.mix [--root /absolute/share]
 --   mix share/brand/install.mix --check    validate the sources; write nothing
@@ -31,8 +31,11 @@ if $g.opts.help then
 end
 $root = $g.opts.root
 if $root == nil then
-  if not has_builtin("mixos_path") then raise("BRAND_ROOT", "N-1 bootstrap: specify --root TARGET_SHARE") end
-  $root = mixos_path("prefix", "share")
+  $root = env("MIXOS_SHARE", nil)
+  if $root == nil then
+    if not has_builtin("mixos_path") then raise("BRAND_ROOT", "N-1 bootstrap: specify --root TARGET_SHARE or MIXOS_SHARE") end
+    $root = mixos_path("share")
+  end
 end
 if not $g.opts.check and (not starts_with($root, "/") or $root == "/") then
   raise("BRAND_ROOT", "Destination must be an absolute share directory")

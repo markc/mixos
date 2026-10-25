@@ -48,6 +48,7 @@ pub(super) fn parse(source: &str) -> Result<BTreeMap<Root, PathBuf>> {
             s
         };
         let root = Root::parse(&key)?;
+        if root == Root::Prefix { return Err("layout.mx refuses a prefix key; use MIXOS_PREFIX".into()); }
         p.space();
         if p.chars.next() != Some(':') {
             return Err("expected ':' in layout.mx".into());
@@ -103,7 +104,7 @@ impl Reader<'_> {
             if c == quote {
                 return Ok(out);
             }
-            if c == '\\' {
+            if c == '\\' && quote == '"' {
                 let c = self.chars.next().ok_or("unclosed layout escape")?;
                 match c {
                     '\\' => out.push('\\'),

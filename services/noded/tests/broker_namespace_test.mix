@@ -31,7 +31,7 @@ fn copy_elf($root,$source,$destination,$cache)
   end
 end
 fn as_user($root,$id,$source,$environment)
-  return run_argv(["chroot","--userspec=" .. to_string($id) .. ":" .. to_string($id),"--groups=" .. to_string($id),$root,(mixos_path("prefix") .. "/bin/mix"),"-"],{stdin:$source,env:$environment,clear_env:true,timeout:20})
+  return run_argv(["chroot","--userspec=" .. to_string($id) .. ":" .. to_string($id),"--groups=" .. to_string($id),$root,"/opt/mixos/bin/mix","-"],{stdin:$source,env:$environment,clear_env:true,timeout:20})
 end
 
 $argv=args()
@@ -40,7 +40,7 @@ if len($argv)==0 then
   chmod($owned,0o711)
   $before=filter(lines(read_file("/proc/self/mountinfo")),fn($line)=contains($line,$owned))
   $loopback_before=json_parse(native(["ip","-j","address","show","dev","lo"]))
-  $r=run_argv(["unshare","--user","--map-auto","--map-root-user","--mount","--propagation","private","--net","--pid","--fork",(mixos_path("prefix") .. "/bin/mix"),realpath($0),"--inside",read_link("/proc/self/ns/net"),$owned],{timeout:90,grace:2})
+  $r=run_argv(["unshare","--user","--map-auto","--map-root-user","--mount","--propagation","private","--net","--pid","--fork","/opt/mixos/bin/mix",realpath($0),"--inside",read_link("/proc/self/ns/net"),$owned],{timeout:90,grace:2})
   print($r.stdout)
   check(deep_eq($before,filter(lines(read_file("/proc/self/mountinfo")),fn($line)=contains($line,$owned))),"fixture leaked a parent-namespace mount")
   check(not exists($owned,{follow_symlinks:false}),"fixture did not remove its temporary root")
@@ -70,13 +70,13 @@ try
   write_new($root .. "/etc/nsswitch.conf","passwd: files\ngroup: files\nhosts: files\n",0o644)
   $s=stat($root)
   write_new($root .. "/.broker-rootfs.json",json_encode({kind:"native-broker-rootfs",dev:$s.dev,ino:$s.ino}),0o600)
-  $spec={project:"mixos",session:3,profile:(mixos_path("state") .. "/broker-a"),client:{name:"desktop",uid:2000,gid:2000},broker:{name:"noded",uid:1999,gid:1999},node:{name:"desk-a",mesh:"example.internal",ip:"192.0.2.14",port:4200,admission:"observe",mesh_open:true}}
-  mkdir($root .. (mixos_path("state") .. "/desktop-a"),{parents:true})
-  write_new($root .. (mixos_path("state") .. "/desktop-a/settings"),"preserved-desktop-state",0o600)
-  chown($root .. (mixos_path("state") .. "/desktop-a/settings"),2000,2000)
-  chown($root .. (mixos_path("state") .. "/desktop-a"),2000,2000)
-  chmod($root .. (mixos_path("state") .. "/desktop-a"),0o700)
-  $desktop_before=stat($root .. (mixos_path("state") .. "/desktop-a/settings"))
+  $spec={project:"mixos",session:3,profile:"/var/lib/mixos/broker-a",client:{name:"desktop",uid:2000,gid:2000},broker:{name:"noded",uid:1999,gid:1999},node:{name:"desk-a",mesh:"example.internal",ip:"192.0.2.14",port:4200,admission:"observe",mesh_open:true}}
+  mkdir($root .. "/var/lib/mixos/desktop-a",{parents:true})
+  write_new($root .. "/var/lib/mixos/desktop-a/settings","preserved-desktop-state",0o600)
+  chown($root .. "/var/lib/mixos/desktop-a/settings",2000,2000)
+  chown($root .. "/var/lib/mixos/desktop-a",2000,2000)
+  chmod($root .. "/var/lib/mixos/desktop-a",0o700)
+  $desktop_before=stat($root .. "/var/lib/mixos/desktop-a/settings")
   $passwd_before=hash_file($root .. "/etc/passwd","sha256")
   $bad=$spec
   $bad.client.uid=2001
@@ -88,9 +88,9 @@ try
   check($receipt.status=="prepared" and not $receipt.live_activation,"offline preparation failed")
   check(contains(read_file($root .. "/etc/passwd"),"noded:x:1999:1999:"),"offline broker account absent")
   check(contains(read_file($root .. $spec.profile .. "/etc/noded/service.env"),"MIXOS_BROKER_ACCOUNT=noded"),"broker effective environment absent")
-  check(not contains(read_file($root .. $spec.profile .. "/etc/client.env"),"MIXOS_STATE"),"client environment changed app VAR")
+  check(not contains(read_file($root .. $spec.profile .. "/etc/client.env"),"MIXOS_VAR"),"client environment changed app VAR")
   check(contains($plan.unit_text,"EnvironmentFile=\nEnvironmentFile=") and contains($plan.unit_text,"SupplementaryGroups=\n"),"effective unit does not reset inherited desktop configuration")
-  check(deep_eq(stat($root .. (mixos_path("state") .. "/desktop-a/settings")),$desktop_before) and read_file($root .. (mixos_path("state") .. "/desktop-a/settings"))=="preserved-desktop-state","preparer changed desktop state or ownership")
+  check(deep_eq(stat($root .. "/var/lib/mixos/desktop-a/settings"),$desktop_before) and read_file($root .. "/var/lib/mixos/desktop-a/settings")=="preserved-desktop-state","preparer changed desktop state or ownership")
   $cache={}
   for $line in lines(native(["ldconfig","-p"]))
     $f=fields($line)
@@ -101,19 +101,19 @@ try
   $noded_expected=env("MIXOS_TEST_NODED_SHA256","")
   $pin_test=$mix_candidate!=""
   check($pin_test or ($mix_expected=="" and $noded_expected==""),"candidate hash without Mix candidate would skip the PID proof")
-  $mix_source=if $pin_test then $mix_candidate else (mixos_path("prefix") .. "/bin/mix") end
+  $mix_source=if $pin_test then $mix_candidate else "/opt/mixos/bin/mix" end
   if $pin_test then
     check(starts_with($mix_source,"/") and is_file($mix_source) and re_match($mix_expected,"^[0-9a-f]{64}$") and hash_file($mix_source,"sha256")==$mix_expected,"explicit Mix candidate hash differs")
   end
-  copy_elf($root,$mix_source,(mixos_path("prefix") .. "/bin/mix"),$cache)
-  check(hash_file($root .. (mixos_path("prefix") .. "/bin/mix"),"sha256")==hash_file($mix_source,"sha256"),"fixture Mix artifact copy differs")
-  $candidate=env("MIXOS_TEST_NODED",(mixos_path("prefix") .. "/bin/noded"))
+  copy_elf($root,$mix_source,"/opt/mixos/bin/mix",$cache)
+  check(hash_file($root .. "/opt/mixos/bin/mix","sha256")==hash_file($mix_source,"sha256"),"fixture Mix artifact copy differs")
+  $candidate=env("MIXOS_TEST_NODED","/opt/mixos/bin/noded")
   check(type($candidate)=="string" and starts_with($candidate,"/") and is_file($candidate),"explicit native noded artifact absent")
   if $pin_test then
     check(re_match($noded_expected,"^[0-9a-f]{64}$") and hash_file($candidate,"sha256")==$noded_expected,"explicit noded candidate hash differs")
   end
-  copy_elf($root,$candidate,(mixos_path("prefix") .. "/bin/noded"),$cache)
-  check(hash_file($root .. (mixos_path("prefix") .. "/bin/noded"),"sha256")==hash_file($candidate,"sha256"),"fixture noded artifact copy differs")
+  copy_elf($root,$candidate,"/opt/mixos/bin/noded",$cache)
+  check(hash_file($root .. "/opt/mixos/bin/noded","sha256")==hash_file($candidate,"sha256"),"fixture noded artifact copy differs")
   if has_key($cache,"libnss_files.so.2") then copy_elf($root,$cache["libnss_files.so.2"],$cache["libnss_files.so.2"],$cache) end
   mkdir($root .. "/proc")
   -- Retain the enclosing container's masked proc submounts. A new proc mount
@@ -125,7 +125,7 @@ try
   native(["ip","address","add","192.0.2.14/32","dev","lo"])
   mkdir($base .. "/private")
   chmod($base .. "/private",0o700)
-  $signer=[(mixos_path("prefix") .. "/bin/mesh-sign"),"--secrets-db",$base .. "/private/secrets.db","--mesh","example.internal"]
+  $signer=["/opt/mixos/bin/mesh-sign","--secrets-db",$base .. "/private/secrets.db","--mesh","example.internal"]
   native(concat($signer,["genesis"]))
   $pub=trim(native(concat($signer,["pubkey"])))
   $inventory={unsigned:true,schema_version:1,mesh:"example.internal",subnet:"192.0.2.0/24",epoch:7,hub:["desk-a"],members:[{name:"desk-a",mesh_ip:"192.0.2.14",bus:true,status:"active",noded_port:4200}]}
@@ -139,12 +139,12 @@ try
   chown($var .. "/noded/inventory.signed",0,1999)
   $socket=$root .. $plan.endpoint
   $watch=fs_watch($root .. $plan.run,{recursive:true,events:["created","modified","moved","deleted"]})
-  $daemon=spawn(["chroot","--userspec=1999:1999","--groups=1999",$root,(mixos_path("prefix") .. "/bin/noded"),"serve","--no-monitor","--no-log"],{env:$plan.broker_env,clear_env:true,die_with_parent:true,stdout:{file:$base .. "/noded.log"},stderr:{file:$base .. "/noded.err"}})
+  $daemon=spawn(["chroot","--userspec=1999:1999","--groups=1999",$root,"/opt/mixos/bin/noded","serve","--no-monitor","--no-log"],{env:$plan.broker_env,clear_env:true,die_with_parent:true,stdout:{file:$base .. "/noded.log"},stderr:{file:$base .. "/noded.err"}})
   while not exists($socket,{follow_symlinks:false})
     if not process_alive($daemon) then raise("BROKER_NAMESPACE_TEST","fixture noded exited before native socket") end
     $_batch=fs_wait($watch)
   end
-  $client_env={PATH:(mixos_path("prefix") .. "/bin:/usr/bin:/bin"),MIXOS_NODE_CONFIG:$spec.profile .. "/etc/client.conf.mix",MIXOS_BROKER_ACCOUNT:"noded",MIXOS_NODED_URL:"",MIXOS_RUNTIME:(mixos_path("runtime") .. "/session/3")}
+  $client_env={PATH:"/opt/mixos/bin:/usr/bin:/bin",MIXOS_NODE_CONFIG:$spec.profile .. "/etc/client.conf.mix",MIXOS_BROKER_ACCOUNT:"noded",MIXOS_NODED_URL:"",MIXOS_RUN:"/run/mixos/session/3"}
   $query_source='send noded noded.info timeout=10
 $info={rc:$rc,value:$result}
 send noded noded.inventory timeout=10
@@ -179,14 +179,14 @@ print(json_encode({uid:uid(),gid:gid(),info:$info,rc:$rc,value:$result}))'
   $lock=stat($baseline .. ".lock",{follow_symlinks:false})
   check($lock.uid==1999 and $lock.gid==1999 and $lock.perm==0o600,"native witness lock ownership differs")
   $before=hash_file($baseline,"sha256")
-  $attack=as_user($root,2000,('write_file("' .. mixos_path("state") .. '/broker-a/var/noded/inventory.baseline","forged")'),$client_env)
+  $attack=as_user($root,2000,'write_file("/var/lib/mixos/broker-a/var/noded/inventory.baseline","forged")',$client_env)
   check(not $attack.ok and contains($attack.stderr,"Permission denied") and hash_file($baseline,"sha256")==$before,"desktop UID did not encounter witness write denial")
-  $private_attack=as_user($root,2000,('write_new("' .. mixos_path("state") .. '/broker-a/var/noded/desktop-touch","forged",0o600)'),$client_env)
+  $private_attack=as_user($root,2000,'write_new("/var/lib/mixos/broker-a/var/noded/desktop-touch","forged",0o600)',$client_env)
   check(not $private_attack.ok and contains($private_attack.stderr,"Permission denied"),"desktop UID could create a file in private broker VAR")
   $endpoint=stat($socket,{follow_symlinks:false})
   check($endpoint.uid==1999 and floor($endpoint.mode/4096)%16==12,"native socket owner/type differs")
   $ancestry=[]
-  for $path in ["/","/run",(mixos_path("runtime") .. ""),(mixos_path("runtime") .. "/broker"),(mixos_path("runtime") .. "/broker/3"),(mixos_path("runtime") .. "/broker/3/noded")]
+  for $path in ["/","/run","/run/mixos","/run/mixos/broker","/run/mixos/broker/3","/run/mixos/broker/3/noded"]
     $meta=stat(if $path=="/" then $root else $root .. $path end,{follow_symlinks:false})
     push($ancestry,{path:$path,uid:$meta.uid,gid:$meta.gid,perm:$meta.perm,is_symlink:$meta.is_symlink})
   end

@@ -249,7 +249,7 @@ the same under a reconnect supervisor whose incoming stream survives
 broker restarts and which replays every recorded topic subscription before
 reporting <code>Connected</code>; <code>IncomingCommand</code>; and <code>noded_url()</code>, which finds
 the broker (<code>MIXOS_NODED_URL</code>, then <code>node.conf.mix</code> via
-<code>MIXOS_NODE_CONFIG</code>, <code>$MIXOS_CONFIG</code>, <code>~/.config/mixos</code> or <code>&lt;config&gt;</code>, then
+<code>MIXOS_NODE_CONFIG</code>, <code>$MIXOS_ETC</code>, <code>~/.config/mixos</code> or <code>&lt;config&gt;</code>, then
 <code>ws://127.0.0.1:4200/ws</code>).</li>
 </ul>
 <p>A wire-only consumer depends on <code>bus</code> with <code>default-features = false</code> and

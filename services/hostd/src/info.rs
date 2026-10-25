@@ -5,7 +5,7 @@
 use serde_json::{Value, json};
 use std::path::Path;
 
-/// The MixOS image modes a start path may write to `mixos:runtime/mode`.
+/// The MixOS image modes a start path may write to `mixos:run/mode`.
 const MODES: &[&str] = &["nested", "shared", "isolated", "metal"];
 
 pub fn collect(root: &Path) -> Value {

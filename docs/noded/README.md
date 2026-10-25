@@ -23,7 +23,7 @@ personalities of the [system](../system/README.md) binary.
 ## Configuration
 
 Configuration is strict data in `node.conf.mix`, resolved beneath `MIXOS` or
-an explicit `MIXOS_CONFIG`. Isolated roots never fall back to host
+an explicit `MIXOS_ETC`. Isolated roots never fall back to host
 configuration. Set `MIXOS` to an isolated runtime root and supply
 `etc/node.conf.mix`, for example:
 

@@ -705,7 +705,7 @@ pub fn run_layout(args: &[String]) -> i32 {
     }
 }
 
-fn layout_defaults(args: &[String]) -> Result<std::collections::BTreeMap<String, PathBuf>, String> {
+fn layout_defaults(args: &[String]) -> Result<std::collections::BTreeMap<String, String>, String> {
     let mut tier = None;
     let mut prefix = None;
     let mut json = false;
@@ -726,13 +726,13 @@ fn layout_defaults(args: &[String]) -> Result<std::collections::BTreeMap<String,
     let layout = ::paths::Layout::defaults(
         tier.ok_or("--tier is required")?,
         prefix,
-        &env::vars().collect(),
+        &::paths::Environment::current(),
     )?;
     let mut out = std::collections::BTreeMap::new();
     for root in ::paths::Root::ALL {
-        // An unset user runtime is deliberately absent: an installer must
-        // supply it explicitly if its operation requires that root.
+        // All roots are present, including main's user runtime fallback.
         if let Ok(value) = layout.try_root(root) {
+            let value = value.into_os_string().into_string().map_err(|_| format!("{} default is not UTF-8", root.name()))?;
             out.insert(root.name().to_string(), value);
         }
     }
@@ -1436,7 +1436,7 @@ fn cmd_config(version: &str) {
     );
 }
 
-/// `mix build`: cargo build --release, strip, install to the resolved prefix/bin/
+/// `mix build`: cargo build --release, strip, install to MIXOS_BIN, otherwise the derived prefix/bin/
 /// Returns Some(path) if the REPL should save history and exec into the new binary.
 fn cmd_build() -> Option<String> {
     let mix_dir = mixos_src_str();
@@ -1473,7 +1473,7 @@ fn cmd_build() -> Option<String> {
     let dst = format!("{}/mix", bin_dir);
 
     println!("Installing {} -> {}", src, dst);
-    // Direct fs calls — no `sh -c` string, so a prefix/MIXOS_SRC path
+    // Direct fs calls — no `sh -c` string, so a MIXOS_BIN/MIXOS_SRC path
     // containing spaces or shell metacharacters can't be re-interpreted.
     // Remove-then-copy (never write in place) per the ETXTBSY note above;
     // a missing destination is the normal first-install case, not an error.

@@ -223,7 +223,7 @@ services/releasesd/
    are recorded in `docs/docs/spec/names/retired.conf.mix` and stay reserved
    forever. A gate refuses reuse.
 6. **The brand lives in one layer only:** Wayland app IDs and desktop files
-   (`dev.mixos.<app>`), plus the paths `<prefix>`, `<state>`,
+   (`dev.mixos.<app>`), plus the paths `<prefix>`, `<var>`,
    `$MIXOS` and the `mixos` XDG directories.
 7. **Frozen wire constants are never renamed.** A byte string inside a
    signature, transcript or cross-process contract keeps its bytes, even if

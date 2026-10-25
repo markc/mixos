@@ -237,7 +237,7 @@ pub struct IssuedChain {
 pub enum AcmeError {
     /// Filesystem error reading or writing the account
     /// directory — typically `EACCES` on a fresh deploy where
-    /// the daemon's user can't write `mixos:state/webd/`.
+    /// the daemon's user can't write `mixos:var/webd/`.
     #[error("ACME account directory {path}: {source}")]
     AccountDirIo {
         /// The path the operation was targeting.

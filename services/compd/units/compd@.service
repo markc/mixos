@@ -11,7 +11,7 @@ PartOf=session@%i.target
 Type=simple
 User=mixos
 SupplementaryGroups=seat
-EnvironmentFile=@{config}/session/%i.env
+EnvironmentFile=@{etc}/session/%i.env
 UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
 Environment=LIBSEAT_BACKEND=seatd MIXOS_CONTAIN_CHILDREN=1
 Environment=MIXOS_VT=%i
@@ -22,7 +22,7 @@ RuntimeDirectoryMode=0700
 # runtime directory, so link it into this one; systemd removes the link with
 # the directory when compd stops. Dangling until the session bus starts.
 # Non-fatal (-): a missing link must never keep the compositor down.
-ExecStartPre=-/usr/bin/ln -sfn @{runtime}/session/%i/dbus/bus @{runtime}/session/%i/desktop/bus
+ExecStartPre=-/usr/bin/ln -sfn @{run}/session/%i/dbus/bus @{run}/session/%i/desktop/bus
 ExecStart=@{prefix}/bin/compd kms-live --socket ${WAYLAND_DISPLAY} --scale ${MIXOS_OUTPUT_SCALE} --config-file ${MIXOS_COMPD_CONFIG} --bus-service comp --scene-service shell
 TTYPath=/dev/tty%i
 StandardInput=tty

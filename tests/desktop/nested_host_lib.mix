@@ -9,7 +9,7 @@
 -- Rather than nesting in a live desktop session, it brings its own host, as
 -- nested_smoke does, so a build worker with no desktop can run every gate.
 -- Everything is private to one run directory: the host, the compositor's
--- socket, its Bus service name, its MIXOS_CONFIG, MIXOS_STATE and MIXOS_RUNTIME.
+-- socket, its Bus service name, its MIXOS_ETC, MIXOS_VAR and MIXOS_RUN.
 -- Nothing touches a live desktop.
 --
 -- Binaries: mix, noded, compd and the testkit probes are looked up in
@@ -198,7 +198,7 @@ fn noded_url()
   if $set != "" then
     return $set
   end
-  for each $path in [env("HOME", "") .. "/.config/mixos/node.conf.mix", (mixos_path("config") .. "/node.conf.mix")]
+  for each $path in [env("HOME", "") .. "/.config/mixos/node.conf.mix", ("/etc/mixos" .. "/node.conf.mix")]
     if is_file($path) then
       $c = load_data($path)
       $host = $c.wg_ip ?? ""
@@ -224,7 +224,7 @@ end
 -- which another broker start may have replaced by now.
 fn _bus_env($broker)
   return {MIXOS_NODED_URL:$broker.url,MIXOS_NODE_CONFIG:$broker.conf,
-    MIXOS_RUNTIME:$broker.dir .. "/run",MIXOS_CONFIG:$broker.dir .. "/etc",MIXOS_STATE:$broker.dir .. "/var",
+    MIXOS_RUN:$broker.dir .. "/run",MIXOS_ETC:$broker.dir .. "/etc",MIXOS_VAR:$broker.dir .. "/var",
     HOME:$broker.dir .. "/home",MIXOS_BROKER_ACCOUNT:$broker.account}
 end
 
@@ -292,8 +292,8 @@ end
 -- later restart never re-reads globals or exports.
 fn _spawn_owned($spec, $serve)
   $p = spawn($serve, {clear_env:true, env: {PATH:$spec.path_env, USER:$spec.user_env,
-    HOME:$spec.dir .. "/home", MIXOS_CONFIG:$spec.dir .. "/etc", MIXOS_STATE:$spec.dir .. "/var",
-    MIXOS_RUNTIME:$spec.dir .. "/run", MIXOS_NODE_CONFIG:$spec.conf},
+    HOME:$spec.dir .. "/home", MIXOS_ETC:$spec.dir .. "/etc", MIXOS_VAR:$spec.dir .. "/var",
+    MIXOS_RUN:$spec.dir .. "/run", MIXOS_NODE_CONFIG:$spec.conf},
     stdout: {file: $spec.log}, stderr: "stdout", detach: true})
   $mesh_conf = ""
   if len($spec.peers) > 0 then $mesh_conf = $spec.mesh_conf end
@@ -363,7 +363,7 @@ fn private_bus($opts)
   $conf = $dir .. "/node.conf.mix"
   $log = $dir .. "/noded.log"
   export MIXOS_NODE_CONFIG=$conf
-  export MIXOS_RUNTIME=$dir .. "/run"
+  export MIXOS_RUN=$dir .. "/run"
   export MIXOS_BROKER_ACCOUNT=trim(run_argv_must(["id", "-un"]))
   $listen_ip = $opts["listen_ip"] ?? "127.0.0.1"
   $peers = $opts["peers"] ?? []
@@ -437,8 +437,8 @@ fn restart_private_bus($broker)
   end
   $log = $broker.dir .. "/noded-restart-" .. to_string(pid()) .. "-" .. to_string(random(1000, 9999)) .. ".log"
   $p = spawn($argv, {clear_env:true, env: {PATH:$broker.path_env, USER:$broker.user_env,
-    HOME:$broker.dir .. "/home", MIXOS_CONFIG:$broker.dir .. "/etc", MIXOS_STATE:$broker.dir .. "/var",
-    MIXOS_RUNTIME:$broker.dir .. "/run", MIXOS_NODE_CONFIG:$broker.conf},
+    HOME:$broker.dir .. "/home", MIXOS_ETC:$broker.dir .. "/etc", MIXOS_VAR:$broker.dir .. "/var",
+    MIXOS_RUN:$broker.dir .. "/run", MIXOS_NODE_CONFIG:$broker.conf},
     stdout: {file: $log}, stderr: "stdout", detach: true})
   $replacement = merge($broker, {pid: $p, log: $log})
   if not _broker_ready($broker.node, $p, $replacement) then
@@ -684,10 +684,10 @@ fn start($opts)
     WINIT_UNIX_BACKEND: "wayland",
     DISPLAY: "",
     RUST_LOG: "info",
-    MIXOS_CONFIG: $run .. "/etc",
-    MIXOS_RUNTIME: $run .. "/run",
+    MIXOS_ETC: $run .. "/etc",
+    MIXOS_RUN: $run .. "/run",
     MIXOS_NODED_URL: noded_url(),
-    MIXOS_NODE_CONFIG: env("MIXOS_NODE_CONFIG", (mixos_path("config") .. "/node.conf.mix")),
+    MIXOS_NODE_CONFIG: env("MIXOS_NODE_CONFIG", ("/etc/mixos" .. "/node.conf.mix")),
     HOME: env("HOME", "/tmp"),
     USER: env("USER", "")
   }
@@ -711,7 +711,7 @@ fn start($opts)
   $cenv["DBUS_STARTER_BUS_TYPE"] = nil
   $cenv["DBUS_SYSTEM_BUS_ADDRESS"] = nil
   -- Persistence must stay private even when the caller supplies an env map.
-  $cenv["MIXOS_STATE"] = $run .. "/var"
+  $cenv["MIXOS_VAR"] = $run .. "/var"
   $argv = [$bin, "--nested", "--socket", $socket, "--bus-service", $service, "--config-file=" .. $opts["config"]]
   if $opts.scale != nil then push($argv, "--scale=" .. to_string($opts.scale)) end
   $cp = spawn($argv, {env: $cenv, stdout: {file: $log}, stderr: "stdout", detach: true})

@@ -3,6 +3,9 @@
 //! Strict-data configuration and filesystem domain policy.
 use crate::*;
 
+fn system_cfg_dir() -> PathBuf { paths::system_default(paths::Root::Etc).expect("built-in system etc default").join("indexd") }
+fn snapshots() -> PathBuf { paths::system_default(paths::Root::Var).expect("built-in system var default").join("indexd/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1.5/snapshots") }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -91,17 +94,10 @@ pub struct ServiceConfig {
 impl Default for ServiceConfig {
     fn default() -> Self {
         Self {
-            vectors_db: ::paths::root(::paths::Root::State)
-                .join("indexd/vectors.db")
+            vectors_db: paths::system_default(paths::Root::Var).expect("built-in system var default").join("indexd/vectors.db").to_string_lossy().into_owned(),
+            model_dir: resolve_snapshot(&snapshots())
                 .to_string_lossy()
                 .into_owned(),
-            model_dir: resolve_snapshot(
-                &::paths::root(::paths::Root::Cache).join(
-                    "indexd/huggingface/hub/models--nomic-ai--nomic-embed-text-v1.5/snapshots",
-                ),
-            )
-            .to_string_lossy()
-            .into_owned(),
             idle_timeout_secs: 300,
             dtype: "f16".into(),
             vindex_dtype: "f32".into(),
@@ -195,7 +191,7 @@ pub fn load_indexd_config(cli_path: Option<&Path>) -> Result<(PathBuf, Config)> 
         let path = path.to_path_buf();
         return Ok((path.clone(), ::config::load_conf_mix_path(&path)?));
     }
-    if let Some(found) = load_system_config(&::paths::root(::paths::Root::Config).join("indexd"))? {
+    if let Some(found) = load_system_config(&system_cfg_dir())? {
         return Ok(found);
     }
     let user_dir = std::env::var_os("XDG_CONFIG_HOME")
@@ -208,9 +204,7 @@ pub fn load_indexd_config(cli_path: Option<&Path>) -> Result<(PathBuf, Config)> 
         }
     }
     Ok((
-        ::paths::root(::paths::Root::Config)
-            .join("indexd")
-            .join("config.conf.mix"),
+        system_cfg_dir().join("config.conf.mix"),
         Config::default(),
     ))
 }

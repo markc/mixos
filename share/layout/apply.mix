@@ -11,7 +11,7 @@ if not starts_with($stage, "/") or contains(split($stage, "/"), "..") then raise
 $stage = if $stage == "/" then "" else $stage end
 $dry = $g.opts["dry-run"] == true
 $roots = {}
-for $name in ["prefix", "config", "state", "cache", "runtime"] $roots[$name] = mixos_path($name) end
+for $name in ["prefix", "share", "etc", "var", "run", "cache"] $roots[$name] = mixos_path($name) end
 $here = dirname(realpath($0))
 $manifest = load_data($here .. "/templates.mx")
 if $manifest.schema != 1 then raise("LAYOUT_SCHEMA", "unsupported template manifest") end

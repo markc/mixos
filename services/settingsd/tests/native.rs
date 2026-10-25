@@ -80,9 +80,9 @@ impl BrokerFixture {
                     "--no-log",
                 ])
                 .env("MIXOS_NODE_CONFIG", &self.config)
-                .env("MIXOS_CONFIG", root.join("etc"))
-                .env("MIXOS_RUNTIME", root.join("run"))
-                .env("MIXOS_STATE", root.join("var"))
+                .env("MIXOS_ETC", root.join("etc"))
+                .env("MIXOS_RUN", root.join("run"))
+                .env("MIXOS_VAR", root.join("var"))
                 .stdout(Stdio::from(log.try_clone().unwrap()))
                 .stderr(Stdio::from(log))
                 .spawn()

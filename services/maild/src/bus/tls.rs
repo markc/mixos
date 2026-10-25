@@ -73,7 +73,7 @@ pub struct TlsReloadState {
     /// behaviour changes.
     pub tls_identities_runtime: Arc<Runtime>,
     /// PEM root for substrate-declared identities. Default is
-    /// [`crate::config::default_tls_key_root`] (`mixos:state/maild/tls/`).
+    /// [`crate::config::default_tls_key_root`] (`mixos:var/maild/tls/`).
     pub tls_root: PathBuf,
     /// Resolver-global strict-SNI flag — mirrored from `TlsConfig`.
     pub strict_sni: bool,

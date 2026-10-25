@@ -7,7 +7,7 @@
 --   mix share/icons/install.mix --check    validate the bundle; write nothing
 --   mix share/icons/install.mix --verify   validate it, then compare the installed bytes
 --
--- Default root: the resolved prefix/share, otherwise <prefix>/share. No network is used.
+-- Default root: $MIXOS_SHARE (else derived share), otherwise <prefix>/share. No network is used.
 --
 -- Outputs, all under <root>/icons/mixos (the theme apps.mix selects by default):
 --   scalable/apps/<alias>.svg, scalable/status/<alias>.svg, scalable/actions/<alias>.svg
@@ -51,8 +51,11 @@ $verify = if $g.opts.verify then true else false end
 if $check and $verify then raise("ICON_ARGS", "--check and --verify are separate modes") end
 $root = $g.opts.root
 if $root == nil then
-  if not has_builtin("mixos_path") then raise("ICON_ROOT", "N-1 bootstrap: specify --root TARGET_SHARE") end
-  $root = mixos_path("prefix", "share")
+  $root = env("MIXOS_SHARE", nil)
+  if $root == nil then
+    if not has_builtin("mixos_path") then raise("ICON_ROOT", "N-1 bootstrap: specify --root TARGET_SHARE or MIXOS_SHARE") end
+    $root = mixos_path("share")
+  end
 end
 $here = dirname(realpath($0))
 $KEY_RE = "^[a-z0-9][a-z0-9-]{0,63}$"

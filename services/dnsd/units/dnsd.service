@@ -19,7 +19,7 @@ RuntimeDirectoryMode=0750
 WorkingDirectory=%S/mixos/dnsd
 EnvironmentFile=@{prefix}/etc/dnsd/service.env
 Environment=MIXOS_ETC=@{prefix}/etc
-Environment=MIXOS_VAR=@{state}
+Environment=MIXOS_VAR=@{var}
 Environment=MIXOS_NODE_CONFIG=@{prefix}/etc/node.conf.mix
 Environment=RUST_LOG=dnsd=info
 Environment=HOME=%S/mixos/dnsd
