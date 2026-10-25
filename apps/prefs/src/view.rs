@@ -1395,15 +1395,17 @@ fn look_controls(
                     ui.horizontal_wrapped(|ui| {
                         for &scheme in row {
                             ui.spacing_mut().item_spacing.x = 6.0;
-                            if let Some(swatch) = swatch(scheme, look.mode) {
-                                paint_swatch(ui, swatch);
-                            }
                             let name = toolkit::action::label_text(
                                 strings,
                                 &format!("toolkit-theme-{}", scheme.name()),
                             );
-                            if toolkit::selectable(ui, look.scheme == scheme, name).clicked()
-                                && look.scheme != scheme
+                            let galley = ui.painter().layout_no_wrap(name.clone(), egui::TextStyle::Button.resolve(ui.style()), ui.visuals().text_color());
+                            let width = SWATCH + galley.size().x + ui.spacing().item_spacing.x + 2.0 * ui.spacing().button_padding.x;
+                            let clicked = ui.allocate_ui_with_layout(egui::vec2(width, ui.spacing().interact_size.y), Layout::left_to_right(Align::Center), |ui| {
+                                if let Some(swatch) = swatch(scheme, look.mode) { paint_swatch(ui, swatch); }
+                                toolkit::selectable(ui, look.scheme == scheme, name).clicked()
+                            }).inner;
+                            if clicked && look.scheme != scheme
                             {
                                 events.push(UiEvent::Look(Look {
                                     scheme,

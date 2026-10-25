@@ -320,7 +320,10 @@ list installed families, sorted without duplicates; the monospace picker lists
 only families with monospaced faces. The font list is read once in the background.
 The first row restores the design default (Inter or JetBrains Mono), stored as
 null. A stored family absent from the list stays visible, marked <strong>missing</strong>.
-Interface weight and size controls sit beside the family choices.</p>
+Interface weight and size controls sit beside the family choices.
+The size reset restores <strong>Design default</strong>, stored as null; an unset size is
+labelled with the design's pixel size. Viewing or tabbing through controls
+does not save a value.</p>
 <p>Family choices use the same fenced drafts and conflict handling as Appearance.
 The note names the families settingsd holds. The toolkit currently installs
 bundled Inter and JetBrains Mono regardless of those stored names, including

@@ -22,8 +22,6 @@ macro_rules! categories {
             pub fn label(self) -> &'static str {
                 match self { $(Self::$variant => concat!("category-", $id)),+ }
             }
-
-
         }
     };
 }
