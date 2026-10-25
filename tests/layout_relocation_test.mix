@@ -52,7 +52,7 @@ if $g.opts.child then
   if which("systemd-nspawn") == nil or which("weston") == nil or which("weston-simple-shm") == nil or not is_file($scratch .. "/moved prefix/bin/compd") then
     print("SKIP nested desk: systemd-nspawn, Weston fixtures or CBC-built compd unavailable")
   else
-    $desk = run_argv([$mix, $repo .. "/tests/desktop/nested_smoke.mix", $scratch .. "/moved prefix/bin/compd", "--secs", "3"], {env: $envmap, timeout: 300})
+    $desk = run_argv([$mix, $repo .. "/tests/desktop/nested_smoke.mix", $scratch .. "/moved prefix/bin/compd", "--secs", "3", "--config-file", $repo .. "/tests/desktop/smoke-settings.json"], {env: $envmap, timeout: 300})
     if not $desk.ok then raise("RELOCATION_DESK", $desk.stderr .. $desk.stdout) end
     print($desk.stdout)
   end
