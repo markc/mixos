@@ -333,6 +333,9 @@ mod tests {
             assert!(!entry.name.starts_with("term."));
             assert!(
                 answers(&name)
+                    || name
+                        .strip_prefix("term.macros.")
+                        .is_some_and(|suffix| citizen::macros::SUFFIXES.contains(&suffix))
                     || term_core::bus::COMMANDS
                         .iter()
                         .any(|(command, _)| *command == name)
