@@ -52,12 +52,20 @@ fn startup_help_matches_screencast_dispatch() {
                 .unwrap();
                 tokio::time::timeout(Duration::from_secs(10), async {
                     loop {
-                        assert!(!portal.is_finished(), "production portal exited during startup");
+                        assert!(
+                            !portal.is_finished(),
+                            "production portal exited during startup"
+                        );
                         let services = caller
                             .call("noded", "noded.list", serde_json::json!({}))
                             .await
                             .unwrap();
-                        if services.as_array().unwrap().iter().any(|s| s["name"] == "portald") {
+                        if services
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|s| s["name"] == "portald")
+                        {
                             break;
                         }
                         tokio::time::sleep(Duration::from_millis(5)).await;
@@ -65,27 +73,40 @@ fn startup_help_matches_screencast_dispatch() {
                 })
                 .await
                 .expect("portald must register during production startup");
-                let help = caller.call("portald", "HELP", serde_json::json!({})).await.unwrap();
+                let help = caller
+                    .call("portald", "HELP", serde_json::json!({}))
+                    .await
+                    .unwrap();
                 let commands: Vec<bus::CommandDescriptor> = serde_json::from_value(help).unwrap();
                 assert_eq!(commands.len(), if enabled { 6 } else { 2 });
                 assert_eq!(commands[0].name, "HELP");
                 assert_eq!(commands[1].name, "portald.status");
-                let screencast: Vec<_> = commands.iter()
+                let screencast: Vec<_> = commands
+                    .iter()
                     .filter(|c| c.name.starts_with("portald.screencast."))
                     .map(|c| c.name.as_str())
                     .collect();
                 assert_eq!(screencast.len(), if enabled { 4 } else { 0 });
                 if enabled {
-                    assert_eq!(screencast, [
-                        "portald.screencast.pending",
-                        "portald.screencast.answer",
-                        "portald.screencast.grant",
-                        "portald.screencast.revoke",
-                    ]);
+                    assert_eq!(
+                        screencast,
+                        [
+                            "portald.screencast.pending",
+                            "portald.screencast.answer",
+                            "portald.screencast.grant",
+                            "portald.screencast.revoke",
+                        ]
+                    );
                 }
-                let (rc, body, _) = caller.call_with_headers_raw(
-                    "portald", "portald.screencast.pending", &BTreeMap::new(), "{}",
-                ).await.unwrap();
+                let (rc, body, _) = caller
+                    .call_with_headers_raw(
+                        "portald",
+                        "portald.screencast.pending",
+                        &BTreeMap::new(),
+                        "{}",
+                    )
+                    .await
+                    .unwrap();
                 let body: serde_json::Value = serde_json::from_str(&body).unwrap();
                 if enabled {
                     assert_eq!(rc, 0, "{body}");
@@ -93,11 +114,14 @@ fn startup_help_matches_screencast_dispatch() {
                     assert_eq!(body["grants"], serde_json::json!([]));
                 } else {
                     assert_eq!(rc, 10);
-                    assert_eq!(body, serde_json::json!({
-                        "error_code": "UNKNOWN_COMMAND",
-                        "command": "portald.screencast.pending",
-                        "message": "portald runs without --screencast",
-                    }));
+                    assert_eq!(
+                        body,
+                        serde_json::json!({
+                            "error_code": "UNKNOWN_COMMAND",
+                            "command": "portald.screencast.pending",
+                            "message": "portald runs without --screencast",
+                        })
+                    );
                 }
                 caller.close().await;
                 portal.abort();
@@ -109,14 +133,22 @@ fn startup_help_matches_screencast_dispatch() {
         let broker = test_broker::Broker::start();
         let dbus = PrivateBus::start().unwrap();
         let output = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "startup_help_matches_screencast_dispatch", "--nocapture"])
+            .args([
+                "--exact",
+                "startup_help_matches_screencast_dispatch",
+                "--nocapture",
+            ])
             .env(MODE, mode)
             .env("MIXOS_NODED_URL", &broker.url)
             .env("PORTALD_TEST_DBUS", &dbus.address)
             .output()
             .unwrap();
-        assert!(output.status.success(), "screencast {mode}:\n{}\n{}",
-            String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "screencast {mode}:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 
