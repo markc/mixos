@@ -73,53 +73,53 @@ fn chrome(scheme: Scheme, mode: Mode) -> Theme {
 }
 
 #[test]
-fn fonts_studio_dark() {
+fn text_and_fonts() {
     let mut e = appearance_engine();
-    e.set_section(Section::Fonts);
+    e.set_section(Section::TextAndFonts);
     draw_at_size(
         chrome(Scheme::Studio, Mode::Dark),
-        "fonts_studio_dark",
+        "text_and_fonts",
         e,
         egui::vec2(980.0, 960.0),
     );
 }
 
 #[test]
-fn size_studio_dark() {
+fn windows() {
     let mut e = appearance_engine();
-    e.set_section(Section::Size);
-    draw(chrome(Scheme::Studio, Mode::Dark), "size_studio_dark", e);
+    e.set_section(Section::Windows);
+    draw(chrome(Scheme::Studio, Mode::Dark), "windows", e);
 }
 
 #[test]
-fn motion_studio_dark() {
+fn accessibility() {
     let mut e = appearance_engine();
-    e.set_section(Section::Motion);
-    draw(chrome(Scheme::Studio, Mode::Dark), "motion_studio_dark", e);
+    e.set_section(Section::Accessibility);
+    draw(chrome(Scheme::Studio, Mode::Dark), "accessibility", e);
 }
 
 #[test]
-fn terminal_weights_studio_dark() {
+fn apps_term() {
     let mut e = appearance_engine();
     e.set_section(Section::Terminal);
     e.look.terminal = Some(Default::default());
     draw_at_size(
         chrome(Scheme::Studio, Mode::Dark),
-        "terminal_weights_studio_dark",
+        "apps_term",
         e,
         egui::vec2(980.0, 960.0),
     );
 }
 
 #[test]
-fn text_section_studio_dark() {
+fn apps_ced() {
     let mut e = appearance_engine();
-    e.set_section(Section::Text);
+    e.set_section(Section::Ced);
     e.look.email = Some(Default::default());
     e.look.ced = Some(Default::default());
     draw_at_size(
         chrome(Scheme::Studio, Mode::Dark),
-        "text_section_studio_dark",
+        "apps_ced",
         e,
         egui::vec2(980.0, 960.0),
     );
@@ -187,7 +187,7 @@ fn appearance_engine() -> Engine {
             error: None,
         }),
     );
-    e.set_section(Section::Themes);
+    e.set_section(Section::Appearance);
     wallpaper_read(&mut e, json!({"schema":1}));
     e
 }
@@ -224,7 +224,7 @@ fn wallpaper_image_pro_light() {
     e.set_section(Section::Wallpapers);
     wallpaper_read(
         &mut e,
-        json!({"schema":1,"default":{"image":"/opt/mixos/share/wallpapers/landscape.jpg"}}),
+        json!({"schema":1,"default":{"image":"/usr/share/backgrounds/landscape.jpg"}}),
     );
     draw(
         chrome(Scheme::Pro, Mode::Light),
@@ -254,20 +254,20 @@ fn wallpaper_picker_studio_dark() {
     let mut e = appearance_engine();
     e.set_section(Section::Wallpapers);
     e.picker.open = true;
-    e.picker.directory = "/opt/mixos/share/wallpapers".into();
+    e.picker.directory = "/usr/share/backgrounds".into();
     e.picker.entries = vec![
         preferences::picker::Entry {
             name: "landscapes".into(),
-            path: "/opt/mixos/share/wallpapers/landscapes".into(),
+            path: "/usr/share/backgrounds/landscapes".into(),
             directory: true,
         },
         preferences::picker::Entry {
             name: "mountains.jpg".into(),
-            path: "/opt/mixos/share/wallpapers/mountains.jpg".into(),
+            path: "/usr/share/backgrounds/mountains.jpg".into(),
             directory: false,
         },
     ];
-    e.picker.selected = Some("/opt/mixos/share/wallpapers/mountains.jpg".into());
+    e.picker.selected = Some("/usr/share/backgrounds/mountains.jpg".into());
     draw(
         chrome(Scheme::Studio, Mode::Dark),
         "wallpaper_picker_studio_dark",
@@ -295,10 +295,10 @@ fn draw_at_size(theme: Theme, name: &str, engine: Engine, size: egui::Vec2) {
 
 /// The default look: Studio Dark.
 #[test]
-fn applications_studio_dark() {
+fn software() {
     window_with(
         chrome(Scheme::Studio, Mode::Dark),
-        "applications_studio_dark",
+        "software",
         None,
     );
 }
@@ -325,10 +325,10 @@ fn remove_confirmation_studio_light() {
 
 /// Appearance as settingsd holds it, nothing edited.
 #[test]
-fn appearance_studio_dark() {
+fn appearance() {
     draw(
         chrome(Scheme::Studio, Mode::Dark),
-        "appearance_studio_dark",
+        "appearance",
         appearance_engine(),
     );
 }
@@ -452,12 +452,13 @@ fn email_engine(email: serde_json::Value, passwords: Option<serde_json::Value>) 
 
 /// No accounts yet: the list says so and Add account is the way in.
 #[test]
-fn email_empty_studio_dark() {
+fn apps_email() {
     let e = email_engine(json!({}), None);
-    draw(
+    draw_at_size(
         chrome(Scheme::Studio, Mode::Dark),
-        "email_empty_studio_dark",
+        "apps_email",
         e,
+        egui::vec2(980.0, 1500.0),
     );
 }
 

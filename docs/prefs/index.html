@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="MixOS&#x27;s preferences window — Appearance sets the session&#x27;s look, fonts and wallpaper; Apps holds Email, Terminal and Text settings; System → Software follows, installs, updates, rolls back and removes upstream releases.">
+    <meta name="description" content="Appearance, Text &amp; Fonts, Windows, app preferences, Accessibility, and Software &amp; Updates in one window.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -208,8 +208,10 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <a href="#system--software">System → Software</a>
+                        <a href="#software--updates">Software &amp; Updates</a>
                         <a href="#appearance">Appearance</a>
+                        <a href="#text--fonts">Text &amp; Fonts</a>
+                        <a href="#accessibility">Accessibility</a>
                         <a href="#apps">Apps</a>
                         <a href="#email" class="toc-h3">Email</a>
                         <a href="#for-agents">For agents</a>
@@ -241,21 +243,19 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="preferences">Preferences</h1>
-<p>Preferences holds MixOS's preference editors in one window. A resizable tree
-on the left opens sections on the right. Appearance contains Themes, Fonts,
-Size &amp; Density, Motion and Wallpapers. Apps contains Email, Terminal and Text. System contains
-Software. Overview, Desktop, Input and Output have no sections yet, so the
-tree hides them. The window takes its cue from the Prefs drawer of AmigaOS,
-where each setting had its own small editor.</p>
-<p>Ctrl+1 through Ctrl+7 open the first section in Overview, Appearance,
-Desktop, Input, Output, Apps and System, in that order. Empty categories
-are disabled. Section commands have no default shortcuts.</p>
+<p>Preferences holds MixOS's preference editors in one window. The flat sidebar
+lists Appearance, Text &amp; Fonts, Windows, Apps (Email, Term, Ced),
+Accessibility, and Software &amp; Updates. Hairlines separate look, desktop,
+apps and system pages. Empty categories are hidden. Each page starts with
+an <strong>Affects:</strong> line. Wallpaper opens from Appearance.</p>
+<p>Section commands have no default shortcuts. Existing category commands
+remain available through the palette and Bus.</p>
 <p>Press <code>/</code> outside a text field, or choose the magnifier in the title bar's icon bar, to
 focus search. It filters sections by title, category, extra words and
 settings keys, ignoring case. Try <code>terminal.</code> or <code>background</code>. Enter opens
 the first match. Escape clears search and releases focus. Ctrl+/ opens
 Keyboard shortcuts.</p>
-<h2 id="system--software">System → Software</h2>
+<h2 id="software--updates">Software &amp; Updates</h2>
 <p>Software shows its followed apps, from the <a href="/releasesd/">releases
 service</a>: each app's installed version, the latest release,
 when it was published, and its status (up to date, update available, not
@@ -289,13 +289,16 @@ publishes, and the previous version is kept for rolling back: see
 empty list. You follow apps by listing them in
 <code>~/.config/mixos/releases.mx</code>.</p>
 <h2 id="appearance">Appearance</h2>
-<p><strong>Appearance → Themes</strong> sets the session's look through the settings service
-(settingsd): the <strong>colour scheme</strong> (each shown with its accent), the
-<strong>style</strong> (the scheme's own, or Plain, Pro, Studio or Classic), <strong>light or
-dark</strong>, <strong>contrast</strong>, and the <strong>window frame</strong>: Automatic (the default), a
-title bar drawn by the app, or one drawn by the system. Automatic shows its
-current result. The window-button side can be changed whenever the effective
-title bar is drawn by the app.</p>
+<p><strong>Appearance</strong> sets the session's colour scheme, light or dark mode,
+contrast, <strong>Widget style</strong>, and <strong>Density</strong> through settingsd.
+Widget style controls how buttons, fields and panels are drawn; a scheme
+brings its own style unless you pick one. Density offers Compact (0.85),
+Comfortable (1.0), and Spacious (1.2), scaling spacing and control heights.
+Off-step values remain stored and show <strong>Custom (x)</strong>. Wallpaper opens
+its existing editor from this page.</p>
+<p><strong>Windows</strong> holds title bars (Automatic, Drawn by the app, Drawn by the
+system) and window-button side. Automatic shows its current result; button
+side is editable when the effective title bar is drawn by the app.</p>
 <p>Each change applies to the whole session as you make it, as in GNOME's
 settings: the apps that follow the session look (Prefs itself, Workshop,
 and the portal's clients) change with it. Only the setting you changed is
@@ -311,41 +314,34 @@ it never lands on a change you have not seen. If its answer is
 lost, Preferences asks settingsd for the change's receipt before anything else is
 applied (<strong>Check again</strong> asks now); if settingsd no longer holds one, the
 session's current state decides what the status line says.</p>
-<p><strong>Appearance → Fonts</strong> shows the interface, heading and monospace faces currently
+<h2 id="text--fonts">Text &amp; Fonts</h2>
+<p><strong>Text &amp; Fonts</strong> shows the interface, heading and monospace faces currently
 installed on the window, with previews. Interface and monospace family pickers
 list installed families, sorted without duplicates; the monospace picker lists
 only families with monospaced faces. The font list is read once in the background.
 The first row restores the design default (Inter or JetBrains Mono), stored as
 null. A stored family absent from the list stays visible, marked <strong>missing</strong>.
 Interface weight and size controls sit beside the family choices.</p>
-<p>Family choices use the same fenced drafts and conflict handling as Themes.
+<p>Family choices use the same fenced drafts and conflict handling as Appearance.
 The note names the families settingsd holds. The toolkit currently installs
 bundled Inter and JetBrains Mono regardless of those stored names, including
 after a theme reload or restart. Other families take effect when the toolkit
 supports loading them; this stage adds no font loader. The faces grid and
 previews show the actual egui font stacks, rather than the saved request.</p>
-<p><strong>Appearance → Size &amp; Density</strong> sets <strong>Larger text</strong> (50–300%, in 5% steps).
-It multiplies interface text, editor and reader text, and the terminal grid,
-over their own saved font sizes. <strong>Reset</strong> restores 100%. A drag applies once
-when released; keyboard and wheel steps apply individually.
-<strong>Density</strong> offers Compact (0.85), Comfortable (1.0) and Spacious (1.2).
-It changes spacing and control heights without changing text or icon sizes.
-Other stored density values from 0.5 to 2.0 still apply continuously; the
-choice shows the nearest step. Changes reach running toolkit apps immediately.
-These are desktop settings; per-app Larger text overrides are not applied.
-Search also finds this section with <code>scale</code>, <code>zoom</code>, <code>density</code>, <code>spacing</code> or <code>compact</code>.</p>
-<p><strong>Appearance → Motion</strong> sets <strong>Reduce motion</strong>, which apps and the compositor
-honour. Search also accepts <code>animation</code>, <code>reduce motion</code> and <code>accessibility</code>.
-Both sections use Appearance's fenced applies, queued drafts, receipts and
-conflict recovery controls.</p>
+<h2 id="accessibility">Accessibility</h2>
+<p><strong>Larger text</strong> (50–300%, in 5% steps) multiplies every text size,
+including readers, editors and the terminal grid. Reset restores 100%.
+<strong>Reduce motion</strong> reduces animation in apps and the compositor.
+Related rows open Contrast in Appearance and Text size in Text &amp; Fonts.</p>
 <h2 id="apps">Apps</h2>
-<p><strong>Apps → Terminal</strong> holds the terminal's font, layout, cursor, focus ring,
-mouse and environment settings, plus Reset terminal. Each change uses
-settingsd and applies as it is made. Themes contains only the session theme
-controls. See the <a href="/docs/spec/settings/#terminal">terminal settings</a> for
-the defaults and ranges.</p>
-<p><strong>Apps → Text</strong> holds the content styles for Email's reader and composer,
-and the Ced editor. Each change applies through settingsd as it is made.</p>
+<p><strong>Apps → Term</strong> groups font family, size, weight and padding under <strong>Text</strong>;
+scrollback, scroll speed, cursor and copy on select under <strong>Behaviour</strong>;
+TERM, pane border and focus ring under <strong>Advanced</strong>. An unset family says
+<strong>Same as Monospace (…)</strong>, following <code>appearance.mono_family</code>.
+Reset terminal and existing apply behaviour remain available.</p>
+<p><strong>Apps → Ced</strong> holds the editor's font, size, padding and light content.
+Email's <strong>Reading</strong> and <strong>Writing</strong> cards live on <strong>Apps → Email</strong>.
+Content sizes remain absolute in this step; no settings keys change.</p>
 <h3 id="email">Email</h3>
 <p><strong>Apps → Email</strong> holds the
 <a href="/email/">email app</a>'s accounts and mail options (<code>email.*</code> in
@@ -431,7 +427,9 @@ changes it at once (<code>scheme</code>, <code>style</code> with <code>own</code
 <code>contrast</code>, <code>decorations</code>, <code>caption_side</code>, <code>font_family</code>, <code>mono_family</code>,
 <code>text_scale</code>, <code>density</code>, <code>reduced_motion</code>). Family values are strings or null;
 text scale and density reset with 1.0, and reduced motion takes a boolean.
-The new section ids are <code>size</code> and <code>motion</code>. Search includes their <code>ui.*</code>
+The section ids are <code>appearance</code>, <code>text_and_fonts</code>, <code>windows</code>, <code>apps_email</code>,
+<code>apps_term</code>, <code>apps_ced</code>, <code>accessibility</code>, <code>software</code>, and <code>wallpaper</code>.
+Navigation actions use <code>view.section.&lt;id&gt;</code>; retired section ids have no aliases. Search includes their <code>ui.*</code>
 keys and both font-family keys. <code>prefs.appearance</code> and <code>prefs.appearance.set</code>
 are version 0.2.0; <code>prefs.info</code>, which embeds appearance, is 0.3.0.
 <code>prefs.section {name[, group]}</code> opens a registry section and expands its
@@ -452,7 +450,7 @@ enablement. The window is drivable like every MixOS app
 <p>For scripted work, call the services directly (<code>releases.*</code>,
 <code>settings.*</code>): Preferences is their window, not a second implementation.</p>
 <h2 id="wallpaper">Wallpaper</h2>
-<p>In <strong>Appearance → Wallpapers</strong>, choose the default or an output, then Theme,
+<p>Open <strong>Wallpaper</strong> from <strong>Appearance</strong>, then choose the default or an output, then Theme,
 Colour or Image. Colour accepts a picker or <code>#RRGGBB</code>. Browse opens the native
 image browser at the installed wallpaper folder, or Pictures in your home
 folder. It lists PNG/JPEG files and folders without blocking the window.
@@ -477,7 +475,7 @@ state read, never automatically resent.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/apps/prefs"><code>apps/prefs</code></a>:</p>
 <table><thead><tr><th>Path</th><th>What</th></tr></thead><tbody>
 <tr><td><code>crates/preferences</code></td><td>the headless engine: sections, rows, notes, one operation at a time, the <code>prefs.*</code> commands</td></tr>
-<tr><td><code>crates/preferences/src/navigation.rs</code></td><td>the section registry, seven categories, software groups and search</td></tr>
+<tr><td><code>crates/preferences/src/navigation.rs</code></td><td>the section registry, page registry, software groups and search</td></tr>
 <tr><td><code>crates/preferences/src/appearance.rs</code></td><td>Appearance: the look, families, scale, density and motion, with drafts, fenced applies and receipts for lost replies</td></tr>
 <tr><td><code>crates/preferences/src/email.rs</code></td><td>Apps → Email: account changes planned and checked, fenced applies, passwords handed to Email</td></tr>
 <tr><td><code>src/commands.rs</code></td><td>every action as a registered command (menus, buttons, shortcuts, <code>prefs.execute</code>)</td></tr>

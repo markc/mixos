@@ -97,15 +97,15 @@ macro_rules! sections {
 }
 
 sections! {
-    Themes => ("themes", Appearance, "section-themes", &["colour", "style"], &["appearance."]),
-    Fonts => ("fonts", Appearance, "section-fonts", &["typeface", "typography"], &["appearance.font", "appearance.mono_family"]),
-    Size => ("size", Appearance, "section-size", &["scale", "zoom", "density", "spacing", "compact"], &["ui.text_scale", "ui.density"]),
-    Motion => ("motion", Appearance, "section-motion", &["animation", "reduce motion", "accessibility"], &["ui.reduced_motion"]),
-    Wallpapers => ("wallpapers", Appearance, "section-wallpapers", &["background"], &[]),
-    Email => ("email", Apps, "section-email", &["mail", "accounts"], &["email."]),
-    Terminal => ("terminal", Apps, "nav-terminal", &["shell", "console"], &["terminal."]),
-    Text => ("text", Apps, "section-text", &["reader", "composer", "editor"], &["email.reader", "email.composer", "ced."]),
+    Appearance => ("appearance", Appearance, "section-appearance", &["colour", "style", "density", "spacing", "compact"], &["appearance.scheme", "appearance.style", "appearance.mode", "appearance.contrast", "ui.density"]),
+    TextAndFonts => ("text_and_fonts", Appearance, "section-text-and-fonts", &["typeface", "typography", "size"], &["appearance.font", "appearance.mono_family"]),
+    Windows => ("windows", Desktop, "section-windows", &["title bars", "window buttons"], &["appearance.decorations", "appearance.caption_side"]),
+    Email => ("apps_email", Apps, "section-email", &["mail", "accounts", "reader", "composer"], &["email."]),
+    Terminal => ("apps_term", Apps, "nav-terminal", &["shell", "console"], &["terminal."]),
+    Ced => ("apps_ced", Apps, "section-ced", &["editor"], &["ced.editor."]),
+    Accessibility => ("accessibility", System, "section-accessibility", &["animation", "reduce motion", "scale", "zoom", "larger text"], &["ui.reduced_motion", "ui.text_scale"]),
     Software => ("software", System, "section-software", &["install", "update", "applications", "packages"], &[]),
+    Wallpapers => ("wallpaper", Appearance, "section-wallpapers", &["background"], &[]),
 }
 
 impl Section {
@@ -256,38 +256,19 @@ mod tests {
                 .map(|s| s.id)
                 .collect::<Vec<_>>()
         };
-        assert_eq!(ids("TERMINAL."), ["terminal"]);
-        assert_eq!(ids("background"), ["wallpapers"]);
-        assert_eq!(ids("wallpapers"), ["wallpapers"]);
-        assert_eq!(ids("system"), ["software"]);
-        assert_eq!(ids("category-apps"), ["email", "terminal", "text"]);
-        assert_eq!(ids("email.reader"), ["text"]);
-        for query in [
-            "size",
-            "scale",
-            "zoom",
-            "density",
-            "spacing",
-            "compact",
-            "ui.text_scale",
-            "ui.density",
-        ] {
-            assert_eq!(ids(query), ["size"], "{query}");
-        }
-        for query in [
-            "motion",
-            "animation",
-            "reduce motion",
-            "accessibility",
-            "ui.reduced_motion",
-        ] {
-            assert_eq!(ids(query), ["motion"], "{query}");
-        }
-        assert_eq!(ids("appearance.mono_family"), ["fonts"]);
-        assert_eq!(
-            ids("appearance"),
-            ["themes", "fonts", "size", "motion", "wallpapers"]
-        );
+        assert_eq!(ids("TERMINAL."), ["apps_term"]);
+        assert_eq!(ids("background"), ["wallpaper"]);
+        assert_eq!(ids("category-apps"), ["apps_email", "apps_term", "apps_ced"]);
+        assert_eq!(ids("email.reader"), ["apps_email"]);
+        assert_eq!(ids("ced.editor"), ["apps_ced"]);
+        assert_eq!(ids("appearance.decorations"), ["windows"]);
+        assert_eq!(ids("appearance.caption_side"), ["windows"]);
+        assert_eq!(ids("ui.density"), ["appearance"]);
+        assert_eq!(ids("compact"), ["appearance"]);
+        assert_eq!(ids("ui.text_scale"), ["accessibility"]);
+        assert_eq!(ids("ui.reduced_motion"), ["accessibility"]);
+        assert_eq!(ids("animation"), ["accessibility"]);
+        assert_eq!(ids("appearance.mono_family"), ["text_and_fonts"]);
         assert!(ids("no such setting").is_empty());
         assert_eq!(ids("").len(), SECTIONS.len());
     }

@@ -7,9 +7,8 @@ use super::*;
 use preferences::text::{FONT_SIZE_MAX, FONT_SIZE_MIN, PADDINGS, Setting, Surface};
 
 /// The Text section: a card for each surface, in the order they are listed.
-pub(super) fn section(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
-    let title = label("section-text");
-    panel::group(ui, "text", &[title.as_str()], |ui, _| {
+pub(super) fn section(ui: &mut Ui, engine: &Engine, surfaces: &[Surface], events: &mut Vec<UiEvent>) {
+    ui.vertical(|ui| {
         if engine.look.settings == Settings::Missing {
             ui.add(egui::Label::new(RichText::new(label("look-missing")).weak()).wrap());
             return;
@@ -17,7 +16,7 @@ pub(super) fn section(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         ui.add_enabled_ui(engine.can_edit_text(), |ui| {
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width());
-                for surface in Surface::ALL {
+                for &surface in surfaces {
                     ui.push_id(surface.path(), |ui| {
                         surface_card(ui, engine, surface, events)
                     });

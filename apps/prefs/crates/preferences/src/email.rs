@@ -2710,7 +2710,7 @@ mod tests {
     #[test]
     fn entering_the_section_asks_email_about_passwords() {
         let mut e = read();
-        e.set_section(Section::Themes);
+        e.set_section(Section::Appearance);
         e.take_effects();
         e.set_section(Section::Email);
         let effects = e.take_effects();

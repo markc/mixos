@@ -1,20 +1,18 @@
 ---
 title: Preferences
-description: MixOS's preferences window — Appearance sets the session's look, fonts and wallpaper; Apps holds Email, Terminal and Text settings; System → Software follows, installs, updates, rolls back and removes upstream releases.
+description: Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window.
 ---
 
 # Preferences
 
-Preferences holds MixOS's preference editors in one window. A resizable tree
-on the left opens sections on the right. Appearance contains Themes, Fonts,
-Size & Density, Motion and Wallpapers. Apps contains Email, Terminal and Text. System contains
-Software. Overview, Desktop, Input and Output have no sections yet, so the
-tree hides them. The window takes its cue from the Prefs drawer of AmigaOS,
-where each setting had its own small editor.
+Preferences holds MixOS's preference editors in one window. The flat sidebar
+lists Appearance, Text & Fonts, Windows, Apps (Email, Term, Ced),
+Accessibility, and Software & Updates. Hairlines separate look, desktop,
+apps and system pages. Empty categories are hidden. Each page starts with
+an **Affects:** line. Wallpaper opens from Appearance.
 
-Ctrl+1 through Ctrl+7 open the first section in Overview, Appearance,
-Desktop, Input, Output, Apps and System, in that order. Empty categories
-are disabled. Section commands have no default shortcuts.
+Section commands have no default shortcuts. Existing category commands
+remain available through the palette and Bus.
 
 Press `/` outside a text field, or choose the magnifier in the title bar's icon bar, to
 focus search. It filters sections by title, category, extra words and
@@ -22,7 +20,7 @@ settings keys, ignoring case. Try `terminal.` or `background`. Enter opens
 the first match. Escape clears search and releases focus. Ctrl+/ opens
 Keyboard shortcuts.
 
-## System → Software
+## Software & Updates
 
 Software shows its followed apps, from the [releases
 service](../releasesd/README.md): each app's installed version, the latest release,
@@ -58,13 +56,17 @@ empty list. You follow apps by listing them in
 
 ## Appearance
 
-**Appearance → Themes** sets the session's look through the settings service
-(settingsd): the **colour scheme** (each shown with its accent), the
-**style** (the scheme's own, or Plain, Pro, Studio or Classic), **light or
-dark**, **contrast**, and the **window frame**: Automatic (the default), a
-title bar drawn by the app, or one drawn by the system. Automatic shows its
-current result. The window-button side can be changed whenever the effective
-title bar is drawn by the app.
+**Appearance** sets the session's colour scheme, light or dark mode,
+contrast, **Widget style**, and **Density** through settingsd.
+Widget style controls how buttons, fields and panels are drawn; a scheme
+brings its own style unless you pick one. Density offers Compact (0.85),
+Comfortable (1.0), and Spacious (1.2), scaling spacing and control heights.
+Off-step values remain stored and show **Custom (x)**. Wallpaper opens
+its existing editor from this page.
+
+**Windows** holds title bars (Automatic, Drawn by the app, Drawn by the
+system) and window-button side. Automatic shows its current result; button
+side is editable when the effective title bar is drawn by the app.
 
 Each change applies to the whole session as you make it, as in GNOME's
 settings: the apps that follow the session look (Prefs itself, Workshop,
@@ -83,7 +85,9 @@ lost, Preferences asks settingsd for the change's receipt before anything else i
 applied (**Check again** asks now); if settingsd no longer holds one, the
 session's current state decides what the status line says.
 
-**Appearance → Fonts** shows the interface, heading and monospace faces currently
+## Text & Fonts
+
+**Text & Fonts** shows the interface, heading and monospace faces currently
 installed on the window, with previews. Interface and monospace family pickers
 list installed families, sorted without duplicates; the monospace picker lists
 only families with monospaced faces. The font list is read once in the background.
@@ -91,39 +95,31 @@ The first row restores the design default (Inter or JetBrains Mono), stored as
 null. A stored family absent from the list stays visible, marked **missing**.
 Interface weight and size controls sit beside the family choices.
 
-Family choices use the same fenced drafts and conflict handling as Themes.
+Family choices use the same fenced drafts and conflict handling as Appearance.
 The note names the families settingsd holds. The toolkit currently installs
 bundled Inter and JetBrains Mono regardless of those stored names, including
 after a theme reload or restart. Other families take effect when the toolkit
 supports loading them; this stage adds no font loader. The faces grid and
 previews show the actual egui font stacks, rather than the saved request.
 
-**Appearance → Size & Density** sets **Larger text** (50–300%, in 5% steps).
-It multiplies interface text, editor and reader text, and the terminal grid,
-over their own saved font sizes. **Reset** restores 100%. A drag applies once
-when released; keyboard and wheel steps apply individually.
-**Density** offers Compact (0.85), Comfortable (1.0) and Spacious (1.2).
-It changes spacing and control heights without changing text or icon sizes.
-Other stored density values from 0.5 to 2.0 still apply continuously; the
-choice shows the nearest step. Changes reach running toolkit apps immediately.
-These are desktop settings; per-app Larger text overrides are not applied.
-Search also finds this section with `scale`, `zoom`, `density`, `spacing` or `compact`.
+## Accessibility
 
-**Appearance → Motion** sets **Reduce motion**, which apps and the compositor
-honour. Search also accepts `animation`, `reduce motion` and `accessibility`.
-Both sections use Appearance's fenced applies, queued drafts, receipts and
-conflict recovery controls.
+**Larger text** (50–300%, in 5% steps) multiplies every text size,
+including readers, editors and the terminal grid. Reset restores 100%.
+**Reduce motion** reduces animation in apps and the compositor.
+Related rows open Contrast in Appearance and Text size in Text & Fonts.
 
 ## Apps
 
-**Apps → Terminal** holds the terminal's font, layout, cursor, focus ring,
-mouse and environment settings, plus Reset terminal. Each change uses
-settingsd and applies as it is made. Themes contains only the session theme
-controls. See the [terminal settings](../docs/spec/settings/README.md#terminal) for
-the defaults and ranges.
+**Apps → Term** groups font family, size, weight and padding under **Text**;
+scrollback, scroll speed, cursor and copy on select under **Behaviour**;
+TERM, pane border and focus ring under **Advanced**. An unset family says
+**Same as Monospace (…)**, following `appearance.mono_family`.
+Reset terminal and existing apply behaviour remain available.
 
-**Apps → Text** holds the content styles for Email's reader and composer,
-and the Ced editor. Each change applies through settingsd as it is made.
+**Apps → Ced** holds the editor's font, size, padding and light content.
+Email's **Reading** and **Writing** cards live on **Apps → Email**.
+Content sizes remain absolute in this step; no settings keys change.
 
 ### Email
 
@@ -217,7 +213,9 @@ changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
 `contrast`, `decorations`, `caption_side`, `font_family`, `mono_family`,
 `text_scale`, `density`, `reduced_motion`). Family values are strings or null;
 text scale and density reset with 1.0, and reduced motion takes a boolean.
-The new section ids are `size` and `motion`. Search includes their `ui.*`
+The section ids are `appearance`, `text_and_fonts`, `windows`, `apps_email`,
+`apps_term`, `apps_ced`, `accessibility`, `software`, and `wallpaper`.
+Navigation actions use `view.section.<id>`; retired section ids have no aliases. Search includes their `ui.*`
 keys and both font-family keys. `prefs.appearance` and `prefs.appearance.set`
 are version 0.2.0; `prefs.info`, which embeds appearance, is 0.3.0.
 `prefs.section {name[, group]}` opens a registry section and expands its
@@ -241,7 +239,7 @@ For scripted work, call the services directly (`releases.*`,
 
 ## Wallpaper
 
-In **Appearance → Wallpapers**, choose the default or an output, then Theme,
+Open **Wallpaper** from **Appearance**, then choose the default or an output, then Theme,
 Colour or Image. Colour accepts a picker or `#RRGGBB`. Browse opens the native
 image browser at the installed wallpaper folder, or Pictures in your home
 folder. It lists PNG/JPEG files and folders without blocking the window.
@@ -274,7 +272,7 @@ The source is [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs
 | Path | What |
 |---|---|
 | `crates/preferences` | the headless engine: sections, rows, notes, one operation at a time, the `prefs.*` commands |
-| `crates/preferences/src/navigation.rs` | the section registry, seven categories, software groups and search |
+| `crates/preferences/src/navigation.rs` | the section registry, page registry, software groups and search |
 | `crates/preferences/src/appearance.rs` | Appearance: the look, families, scale, density and motion, with drafts, fenced applies and receipts for lost replies |
 | `crates/preferences/src/email.rs` | Apps → Email: account changes planned and checked, fenced applies, passwords handed to Email |
 | `src/commands.rs` | every action as a registered command (menus, buttons, shortcuts, `prefs.execute`) |

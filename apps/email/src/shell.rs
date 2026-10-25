@@ -1119,7 +1119,7 @@ impl Shell {
     fn open_prefs(&mut self) {
         let bus = self.bus.clone();
         self.spawn(async move {
-            let section = json!({"name": "email"});
+            let section = json!({"name": "apps_email"});
             let asked = bus.call("prefs", "prefs.section", section.clone()).await;
             if asked.as_ref().is_ok_and(|r| r.rc == 0) {
                 return Event::PrefsOpened(Ok(()));

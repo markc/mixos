@@ -1953,7 +1953,7 @@ mod tests {
             Mode::Light,
             "the edit is kept"
         );
-        e.ui.section = crate::Section::Themes;
+        e.ui.section = crate::Section::Appearance;
         e.refresh();
         answer_next(&mut e, 0, snapshot_body("9", "studio", "dark"));
         let (_, command_name, body) = next(&mut e);
@@ -1989,7 +1989,7 @@ mod tests {
         e.open(crate::Dialog::About);
         let (read_after, _, _) = next(&mut e);
         e.settled(read_after, lost());
-        e.ui.section = crate::Section::Themes;
+        e.ui.section = crate::Section::Appearance;
         e.close_dialog();
         assert!(settings_calls(&mut e).is_empty(), "still no fresh fence");
     }
@@ -2216,7 +2216,7 @@ mod tests {
             settings_calls(&mut e).is_empty(),
             "no apply on a stale fence"
         );
-        e.ui.section = crate::Section::Themes;
+        e.ui.section = crate::Section::Appearance;
         assert!(e.can_refresh());
         e.refresh();
         answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
@@ -2448,7 +2448,7 @@ mod tests {
         e.settled(again, lost());
         assert!(settings_calls(&mut e).is_empty() && !e.can_apply_look());
         assert_eq!(e.look.shown().unwrap().scheme, Scheme::Studio);
-        e.ui.section = crate::Section::Themes;
+        e.ui.section = crate::Section::Appearance;
         e.refresh();
         answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
         let draft = e.look.draft.as_ref().unwrap();

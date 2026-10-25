@@ -14,10 +14,10 @@ fn undialogued(e: &Engine) -> bool {
 /// Icons belong to the renderer; the engine registry stays headless.
 pub fn section_icon(section: Section) -> Icon {
     match section {
-        Section::Themes => Icon::Palette,
-        Section::Fonts | Section::Text => Icon::Type,
-        Section::Size => Icon::ZoomIn,
-        Section::Motion => Icon::Play,
+        Section::Appearance => Icon::Palette,
+        Section::TextAndFonts | Section::Ced => Icon::Type,
+        Section::Windows => Icon::ZoomIn,
+        Section::Accessibility => Icon::Play,
         Section::Wallpapers => Icon::Image,
         Section::Email => Icon::Mail,
         Section::Terminal => Icon::FileTerminal,

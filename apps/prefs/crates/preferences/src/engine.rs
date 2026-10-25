@@ -2001,9 +2001,9 @@ mod tests {
         assert_eq!(e.section(), Section::Software);
         assert_eq!(e.ui.software_group, SoftwareGroup::Other);
         assert_eq!(e.ui.selected.as_deref(), Some("demo"));
-        e.set_section(Section::Fonts);
+        e.set_section(Section::TextAndFonts);
         assert!(!e.can_check() && !e.can_update_all());
-        e.command(2, "prefs.section", r#"{"name":"terminal"}"#);
+        e.command(2, "prefs.section", r#"{"name":"apps_term"}"#);
         assert_eq!(e.section(), Section::Terminal);
         assert_eq!(e.section().category(), Category::Apps);
         assert!(!e.can_check() && !e.can_update_all());
@@ -2014,13 +2014,13 @@ mod tests {
         let mut e = listed();
         e.toggle_category(Category::Appearance);
         assert!(!e.ui.expanded.contains(&Category::Appearance));
-        e.command(1, "prefs.section", r#"{"name":"wallpapers"}"#);
+        e.command(1, "prefs.section", r#"{"name":"wallpaper"}"#);
         assert_eq!(e.section(), Section::Wallpapers);
         assert!(e.ui.expanded.contains(&Category::Appearance));
         let saved = serde_json::to_value(&e.ui).unwrap();
         assert_eq!(serde_json::from_value::<UiState>(saved).unwrap(), e.ui);
         e.picker.open = true;
-        e.command(2, "prefs.section", r#"{"name":"themes"}"#);
+        e.command(2, "prefs.section", r#"{"name":"appearance"}"#);
         assert_eq!(e.section(), Section::Wallpapers);
         assert!(
             e.take_effects().iter().any(
@@ -2043,7 +2043,7 @@ mod tests {
         assert!(e.ui.selected.is_none() && e.notes.is_none() && e.notes_job.is_none());
         let ui = e.ui.clone();
         for (id, args) in [
-            (2, r#"{"name":"themes","group":"creative"}"#),
+            (2, r#"{"name":"appearance","group":"creative"}"#),
             (3, r#"{"name":"software","group":"unknown"}"#),
             (4, r#"{"name":"software","group":null}"#),
         ] {
@@ -2063,8 +2063,8 @@ mod tests {
         e.ui.search = "existing filter".into();
         let ui = e.ui.clone();
         for (id, query, section, category) in [
-            (1, "terminal.", "terminal", "apps"),
-            (2, "BACKGROUND", "wallpapers", "appearance"),
+            (1, "terminal.", "apps_term", "apps"),
+            (2, "BACKGROUND", "wallpaper", "appearance"),
         ] {
             e.command(id, "prefs.search", &json!({"query":query}).to_string());
             assert_eq!(e.ui, ui);

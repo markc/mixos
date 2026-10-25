@@ -199,7 +199,7 @@ fn slash_focuses_search_enter_opens_first_match_and_escape_clears_and_unfocuses(
     assert!(
         rig.bus.log().iter().any(|entry| matches!(entry,
             Logged::Reply { id: 11, rc: 0, body }
-                if body["section"] == "wallpapers" && body["category"] == "appearance"
+                if body["section"] == "wallpaper" && body["category"] == "appearance"
         )),
         "{:?}",
         rig.bus.log()
@@ -222,9 +222,9 @@ fn search_command_uses_translated_titles_and_leaves_the_window_alone() {
     wait(&mut rig, &[21, 22]);
     assert!(rig.bus.log().iter().any(|entry| matches!(entry,
         Logged::Reply { id: 21, rc: 0, body } if body["matches"] == json!([
-            {"id":"email","category":"apps"},
-            {"id":"terminal","category":"apps"},
-            {"id":"text","category":"apps"}
+            {"id":"apps_email","category":"apps"},
+            {"id":"apps_term","category":"apps"},
+            {"id":"apps_ced","category":"apps"}
         ])
     )));
     assert!(rig.bus.log().iter().any(|entry| matches!(entry,
@@ -254,10 +254,10 @@ fn every_registry_section_opens_through_the_shell() {
     send(&mut rig, 200, "prefs.search", json!({"query":"compact"}));
     send(&mut rig, 201, "prefs.search", json!({"query":"animation"}));
     wait(&mut rig, &[200, 201]);
-    for (id, section) in [(200, "size"), (201, "motion")] {
+    for (id, section, category) in [(200, "appearance", "appearance"), (201, "accessibility", "system")] {
         assert!(rig.bus.log().iter().any(|entry| matches!(entry,
             Logged::Reply { id: reply_id, rc: 0, body } if *reply_id == id
-                && body["matches"] == json!([{"id":section,"category":"appearance"}])
+                && body["matches"] == json!([{"id":section,"category":category}])
         )));
     }
 }

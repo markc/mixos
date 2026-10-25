@@ -132,6 +132,7 @@ pub fn view(
             events.push(UiEvent::Command(id, origin));
         }
     }
+    if engine.section() == Section::Software {
     bars::status(ui, |ui| {
         let (icon, colour) = if !engine.connected {
             (Icon::Unplug, ui.visuals().error_fg_color)
@@ -150,6 +151,7 @@ pub fn view(
             ui.small(&engine.status);
         }
     });
+    }
     egui::Panel::left("editors")
         .resizable(true)
         .default_size(220.0)
@@ -159,29 +161,31 @@ pub fn view(
         .show(ui, |ui| editors(ui, engine, commands, &mut events));
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| match engine.section() {
+        .show(ui, |ui| {
+            page_header(ui, engine.section());
+            match engine.section() {
             Section::Software => applications(ui, engine, commands, strings, &mut events),
             section => {
                 ScrollArea::vertical()
                     .id_salt(section.name())
                     .auto_shrink(false)
                     .show(ui, |ui| match section {
-                        Section::Themes => appearance(ui, engine, commands, strings, &mut events),
+                        Section::Appearance => appearance(ui, engine, commands, strings, &mut events),
                         Section::Terminal => terminal(ui, engine, commands, strings, &mut events),
-                        Section::Text => text::section(ui, engine, &mut events),
+                        Section::Ced => text::section(ui, engine, &[preferences::text::Surface::CedEditor], &mut events),
                         Section::Wallpapers => {
                             wallpaper::controls(ui, engine, commands, strings, &mut events)
                         }
-                        Section::Fonts => fonts(ui, engine, commands, strings, &mut events),
-                        Section::Size => size(ui, engine, commands, strings, &mut events),
-                        Section::Motion => motion(ui, engine, commands, strings, &mut events),
+                        Section::TextAndFonts => fonts(ui, engine, commands, strings, &mut events),
+                        Section::Windows => windows(ui, engine, commands, strings, &mut events),
+                        Section::Accessibility => motion(ui, engine, commands, strings, &mut events),
                         Section::Email => {
                             email::section(ui, engine, commands, strings, &mut events)
                         }
                         _ => unreachable!(),
                     });
             }
-        });
+        }});
     dialogs(ui, engine, commands, strings, &mut events);
     wallpaper::picker(ui, engine, &mut events);
     if toolkit::macros::show_app(ui.ctx(), "prefs", engine.ui.macros_open) {
@@ -189,6 +193,12 @@ pub fn view(
     }
     toolkit::titlebar::edges(ui);
     events
+}
+
+fn page_header(ui: &mut Ui, section: Section) {
+    ui.heading(label(section.label()));
+    ui.label(RichText::new(label(&format!("affects-{}", section.name()))).weak());
+    bars::hairline(ui);
 }
 
 /// A tree whose selection and expansion live in the serialisable engine.
@@ -225,42 +235,26 @@ fn editors(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, events: &m
     ScrollArea::vertical()
         .id_salt("navigation-tree")
         .show(ui, |ui| {
-            for category in Category::ALL {
-                if !matches.iter().any(|s| s.category == category) {
-                    continue;
+            let mut previous = None;
+            for section in matches.iter().filter(|s| s.section != Section::Wallpapers || !query.is_empty()) {
+                if previous.is_some_and(|category| category != section.category) {
+                    bars::hairline(ui);
                 }
-                let expanded = !query.is_empty() || engine.ui.expanded.contains(&category);
-                let shown = ui.add_enabled_ui(engine.can_navigate(), |ui| {
-                    egui::CollapsingHeader::new(label(category.label()))
-                        .id_salt(category.name())
-                        .open(Some(expanded))
-                        .show(ui, |ui| {
-                            for section in matches.iter().filter(|s| s.category == category) {
-                                let command =
-                                    commands.get(section.command).expect("section command");
-                                ui.horizontal(|ui| {
-                                    ui.add(icons::image_of(
-                                        ui.ctx(),
-                                        command.icon.expect("section icon"),
-                                        ICON,
-                                        ui.visuals().text_color(),
-                                    ));
-                                    if toolkit::selectable(
-                                        ui,
-                                        engine.section() == section.section,
-                                        label(section.title),
-                                    )
-                                    .clicked()
-                                    {
-                                        events.push(UiEvent::Command(section.command, Origin::Ui));
-                                    }
-                                });
-                            }
-                        })
+                if section.category == Category::Apps && previous != Some(Category::Apps) {
+                    panel::section_label(ui, &label("category-apps"));
+                }
+                previous = Some(section.category);
+                ui.add_enabled_ui(engine.can_navigate(), |ui| {
+                    ui.horizontal(|ui| {
+                        let command = commands.get(section.command).expect("section command");
+                        ui.add(icons::image_of(ui.ctx(), command.icon.expect("section icon"),
+                            ICON, ui.visuals().text_color()));
+                        if toolkit::selectable(ui, engine.section() == section.section,
+                            label(section.title)).clicked() {
+                            events.push(UiEvent::Command(section.command, Origin::Ui));
+                        }
+                    });
                 });
-                if shown.inner.header_response.clicked() {
-                    events.push(UiEvent::ToggleCategory(category));
-                }
             }
         });
 }
@@ -316,7 +310,7 @@ fn fonts(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    let title = label("section-fonts");
+    let title = label("section-text-and-fonts");
     panel::group(ui, "fonts", &[title.as_str()], |ui, _| {
         let Some(look) = appearance_state(ui, engine, commands, strings, events) else {
             return;
@@ -438,45 +432,34 @@ fn family_picker(
         .then(|| values[selected].clone())
 }
 
-fn size(
-    ui: &mut Ui,
-    engine: &Engine,
-    commands: &Registry<Engine>,
-    strings: &Strings,
-    events: &mut Vec<UiEvent>,
-) {
-    let title = label("section-size");
-    panel::group(ui, "size", &[title.as_str()], |ui, _| {
-        let Some(look) = appearance_state(ui, engine, commands, strings, events) else {
-            return;
-        };
-        ui.add_enabled_ui(engine.can_edit_look(), |ui| {
-            if let Some(scale) =
-                scale_control(ui, "size-text-scale", look.text_scale, 0.5..=3.0, true)
-            {
-                events.push(UiEvent::Appearance(AppearanceEdit::TextScale(scale)));
+fn density(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
+    ui.add_enabled_ui(engine.can_edit_look(), |ui| {
+        panel::section_label(ui, &label("size-density"));
+        ui.horizontal_wrapped(|ui| {
+            let step = toolkit::ui_scale::density_step(look.density);
+            for (index, key) in ["size-compact", "size-comfortable", "size-spacious"]
+                .into_iter().enumerate() {
+                if toolkit::selectable(ui, step == Some(index), label(key)).clicked() {
+                    events.push(UiEvent::Appearance(AppearanceEdit::Density(
+                        toolkit::ui_scale::DENSITY_STEPS[index])));
+                }
             }
-            ui.label(label("size-text-scale-note"));
-            panel::section_label(ui, &label("size-density"));
-            ui.horizontal(|ui| {
-                let step = toolkit::ui_scale::density_step(look.density);
-                for (index, key) in ["size-compact", "size-comfortable", "size-spacious"]
-                    .into_iter()
-                    .enumerate()
-                {
-                    if toolkit::selectable(ui, step == Some(index), label(key)).clicked() {
-                        events.push(UiEvent::Appearance(AppearanceEdit::Density(
-                            toolkit::ui_scale::DENSITY_STEPS[index],
-                        )));
-                    }
-                }
-                if step.is_none() {
-                    let value = format!("{:.2}", look.density);
-                    ui.weak(label_with("size-custom", &[("value", &value)]));
-                }
-            });
+            if step.is_none() {
+                ui.weak(label_with("size-custom", &[("value", &format!("{:.2}", look.density))]));
+            }
         });
     });
+}
+
+fn windows(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>,
+    strings: &Strings, events: &mut Vec<UiEvent>) {
+    if let Some(look) = appearance_state(ui, engine, commands, strings, events) {
+        ui.add_enabled_ui(engine.can_edit_look(), |ui| {
+            egui::Grid::new("windows-controls").num_columns(2).show(ui, |ui| {
+                decoration_controls(ui, look, events);
+            });
+        });
+    }
 }
 
 fn scale_control(
@@ -533,12 +516,16 @@ fn motion(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    let title = label("section-motion");
+    let title = label("section-accessibility");
     panel::group(ui, "motion", &[title.as_str()], |ui, _| {
         let Some(look) = appearance_state(ui, engine, commands, strings, events) else {
             return;
         };
         ui.add_enabled_ui(engine.can_edit_look(), |ui| {
+            if let Some(scale) = scale_control(ui, "size-text-scale", look.text_scale, 0.5..=3.0, true) {
+                events.push(UiEvent::Appearance(AppearanceEdit::TextScale(scale)));
+            }
+            ui.weak(label("size-text-scale-note"));
             let mut reduced = look.reduced_motion;
             if ui
                 .add(Toggle::new(&mut reduced, label("motion-reduce")))
@@ -548,6 +535,8 @@ fn motion(
             }
         });
         ui.add(egui::Label::new(RichText::new(label("motion-note")).weak()).wrap());
+        command_button(ui, engine, commands, strings, "view.section.appearance", false, events);
+        command_button(ui, engine, commands, strings, "view.section.text_and_fonts", false, events);
     });
 }
 
@@ -573,15 +562,8 @@ fn interface_font_controls(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEven
 
         panel::section_label(ui, &label("fonts-size"));
         let design = design::default_typography(design::TypographyRole::Ui).font_size;
-        let mut design_size = font.size.is_none();
-        if ui
-            .add(Toggle::new(&mut design_size, label("fonts-size-design")))
-            .changed()
         {
-            let size = (!design_size).then_some(design);
-            events.push(UiEvent::Interface(InterfaceEdit::Size(size)));
-        }
-        if let Some(size) = font.size {
+            let size = font.size.unwrap_or(design);
             let spec = Numeric {
                 key: "fonts-size",
                 title: label("fonts-size"),
@@ -784,10 +766,13 @@ fn appearance(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    let title = label("section-themes");
+    let title = label("section-appearance");
     panel::group(ui, "appearance", &[title.as_str()], |ui, _| {
         if let Some(look) = appearance_state(ui, engine, commands, strings, events) {
-            look_controls(ui, engine, strings, look, events);
+            look_controls(ui, engine, strings, look.clone(), events);
+            ui.weak(label("look-style-note"));
+            density(ui, engine, &look, events);
+            command_button(ui, engine, commands, strings, "view.section.wallpaper", false, events);
         }
     });
 }
@@ -813,12 +798,6 @@ fn appearance_state(
             if shown {
                 command_button(ui, engine, commands, strings, id, primary, events);
             }
-        }
-        if let Some(revision) = engine.look.revision() {
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let text = label_with("look-revision", &[("revision", &revision.to_string())]);
-                ui.label(RichText::new(text).weak());
-            });
         }
     });
     bars::hairline(ui);
@@ -853,15 +832,7 @@ fn appearance_state(
         if engine.look.custom_source {
             note(ui, "look-custom", None);
         }
-        note(
-            ui,
-            if engine.look.hold {
-                "look-held"
-            } else {
-                "look-current"
-            },
-            None,
-        );
+        if engine.look.hold { note(ui, "look-held", None); }
     });
     bars::hairline(ui);
     Some(look)
@@ -901,17 +872,18 @@ fn terminal(
         ui.add_enabled_ui(engine.can_edit_terminal(), |ui| {
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width());
-                terminal_controls(ui, &term, events);
+                terminal_controls(ui, &term, engine.look.shown().and_then(|look| look.mono_family), events);
             });
         });
     });
 }
 
 /// The controls for each field, in the order the settings are read.
-fn terminal_controls(ui: &mut Ui, term: &Terminal, events: &mut Vec<UiEvent>) {
+fn terminal_controls(ui: &mut Ui, term: &Terminal, mono: Option<String>, events: &mut Vec<UiEvent>) {
+    panel::section_label(ui, &label("term-text"));
     panel::section_label(ui, &label("terminal-family"));
     let family = family_text(term.font.family.as_deref());
-    let hint = label("terminal-family-system");
+    let hint = label_with("terminal-family-system", &[("family", mono.as_deref().unwrap_or("JetBrains Mono"))]);
     if let Some(setting) = checked_text(ui, "terminal-family", &family, &hint, family_setting) {
         events.push(UiEvent::Terminal(setting));
     }
@@ -942,6 +914,8 @@ fn terminal_controls(ui: &mut Ui, term: &Terminal, events: &mut Vec<UiEvent>) {
         events.push(UiEvent::Terminal(Setting::Padding(padding)));
     }
 
+    bars::hairline(ui);
+    panel::section_label(ui, &label("term-behaviour"));
     let scrollback = Numeric {
         key: "terminal-scrollback",
         title: label("terminal-scrollback"),
@@ -966,14 +940,6 @@ fn terminal_controls(ui: &mut Ui, term: &Terminal, events: &mut Vec<UiEvent>) {
         events.push(UiEvent::Terminal(Setting::ScrollSpeed(value as u32)));
     }
 
-    panel::section_label(ui, &label("terminal-border"));
-    let widths: Vec<(u32, String)> = (BORDER_WIDTH_MIN..=BORDER_WIDTH_MAX)
-        .map(|w| (w, w.to_string()))
-        .collect();
-    if let Some(width) = choices(ui, term.border.width, &widths) {
-        events.push(UiEvent::Terminal(Setting::BorderWidth(width)));
-    }
-
     panel::section_label(ui, &label("terminal-cursor-shape"));
     let shapes = [
         (CursorShape::Block, label("terminal-cursor-block")),
@@ -989,6 +955,24 @@ fn terminal_controls(ui: &mut Ui, term: &Terminal, events: &mut Vec<UiEvent>) {
         .changed()
     {
         events.push(UiEvent::Terminal(Setting::CursorBlink(blink)));
+    }
+
+    let mut copy = term.mouse.copy_on_select;
+    if ui
+        .add(Toggle::new(&mut copy, label("terminal-copy-on-select")))
+        .changed()
+    {
+        events.push(UiEvent::Terminal(Setting::CopyOnSelect(copy)));
+    }
+
+    bars::hairline(ui);
+    panel::section_label(ui, &label("term-advanced"));
+    panel::section_label(ui, &label("terminal-border"));
+    let widths: Vec<(u32, String)> = (BORDER_WIDTH_MIN..=BORDER_WIDTH_MAX)
+        .map(|w| (w, w.to_string()))
+        .collect();
+    if let Some(width) = choices(ui, term.border.width, &widths) {
+        events.push(UiEvent::Terminal(Setting::BorderWidth(width)));
     }
 
     panel::section_label(ui, &label("terminal-focus-ring"));
@@ -1010,14 +994,6 @@ fn terminal_controls(ui: &mut Ui, term: &Terminal, events: &mut Vec<UiEvent>) {
         if let Some(value) = number(ui, strength, term.focus.strength, 0.0..=1.0) {
             events.push(UiEvent::Terminal(Setting::FocusStrength(value)));
         }
-    }
-
-    let mut copy = term.mouse.copy_on_select;
-    if ui
-        .add(Toggle::new(&mut copy, label("terminal-copy-on-select")))
-        .changed()
-    {
-        events.push(UiEvent::Terminal(Setting::CopyOnSelect(copy)));
     }
 
     panel::section_label(ui, &label("terminal-term"));
@@ -1237,7 +1213,7 @@ fn look_controls(
                 }
                 ui.end_row();
 
-                decoration_controls(ui, look, events);
+
             });
     });
 }
