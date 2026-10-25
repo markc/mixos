@@ -183,7 +183,10 @@ pub struct NodedConfig {
     #[serde(deserialize_with = "absolute_unix_socket")]
     pub unix_socket: Option<std::path::PathBuf>,
     /// Operating-system account trusted by local broker clients.
-    #[serde(deserialize_with = "broker_account_name")]
+    #[serde(
+        deserialize_with = "broker_account_name",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub account: Option<String>,
     /// BROKER-019 pending grants per Term; may lower the initial cap of 32.
     pub pending_grants_per_parent: usize,
@@ -386,16 +389,7 @@ impl NodeConfigSearch {
         if let Some(path) = &self.explicit {
             return Ok(Some(path.clone()));
         }
-        for path in self.candidate_paths()? {
-            match std::fs::symlink_metadata(&path) {
-                Ok(_) => return Ok(Some(path)),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(error) => {
-                    return Err(error).with_context(|| format!("node config {}", path.display()));
-                }
-            }
-        }
-        Ok(None)
+        first_config_file(self.candidate_paths()?)
     }
 
     /// Preserve the source for tolerant URL parsing and typed native settings.
@@ -419,6 +413,22 @@ impl NodeConfigSearch {
     }
 }
 
+fn first_config_file(candidates: Vec<PathBuf>) -> Result<Option<PathBuf>> {
+    for path in candidates {
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_file() => return Ok(Some(path)),
+            Ok(_) => continue,
+            Err(error) if matches!(error.raw_os_error(), Some(libc::ENOENT | libc::ENOTDIR)) => {
+                continue;
+            }
+            Err(error) => {
+                return Err(error).with_context(|| format!("node config {}", path.display()));
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Load node config, returning an error if not found.
 pub fn require_node_config() -> Result<NodeConfig> {
     let search = NodeConfigSearch::capture();
@@ -436,10 +446,34 @@ pub fn require_node_config() -> Result<NodeConfig> {
 mod tests {
     use super::*;
     #[test]
+    fn non_files_in_user_search_do_not_mask_the_next_config() {
+        let directory = tempfile::tempdir().unwrap();
+        let dangling = directory.path().join("dangling");
+        std::os::unix::fs::symlink(directory.path().join("missing"), &dangling).unwrap();
+        let regular = directory.path().join("node.conf.mix");
+        std::fs::write(&regular, "node: example").unwrap();
+        let alias = directory.path().join("alias");
+        std::os::unix::fs::symlink(&regular, &alias).unwrap();
+        let candidates = vec![
+            dangling,
+            alias,
+            directory.path().to_path_buf(),
+            regular.join("child"),
+            regular.clone(),
+        ];
+        assert_eq!(first_config_file(candidates).unwrap(), Some(regular));
+    }
+    #[test]
     fn broker_account_is_optional_and_validated() {
         let config: NodeConfig = strict::from_str("noded: { account: 'broker-user' }").unwrap();
         assert_eq!(config.noded.account.as_deref(), Some("broker-user"));
         assert!(NodedConfig::default().account.is_none());
+        assert!(
+            serde_json::to_value(NodedConfig::default())
+                .unwrap()
+                .get("account")
+                .is_none()
+        );
         for source in [
             "noded: { account: 7 }",
             "noded: { account: '' }",

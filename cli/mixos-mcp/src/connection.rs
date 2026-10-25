@@ -59,6 +59,32 @@ fn tcp_permission(value: Option<&str>, paths: Vec<std::path::PathBuf>) -> Result
     }
 }
 
+async fn finish_connect(
+    name: &str,
+    url: &str,
+    provenance: Option<bus::RegisterProvenance>,
+    tcp_opt_in: Option<&str>,
+    result: Result<UnixConnectOutcome, ConnectError>,
+) -> Result<Client, String> {
+    match result {
+        Ok(UnixConnectOutcome::VerifiedUnix(connection)) => Ok(Client::Unix {
+            connection: Arc::new(connection),
+            drain: Mutex::new(None),
+        }),
+        Ok(UnixConnectOutcome::UnverifiedTcp { .. }) => {
+            Err("native Unix connection required".into())
+        }
+        Err(ConnectError::CandidatesMissing(paths)) => {
+            tcp_permission(tcp_opt_in, paths)?;
+            NodedClient::connect_with_provenance(name, url, provenance)
+                .await
+                .map(|client| Client::Tcp(Box::new(client)))
+                .map_err(|error| error.to_string())
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 impl BrokerConnection {
     pub(crate) fn new() -> Self {
         let nonce = std::time::SystemTime::now()
@@ -120,8 +146,9 @@ impl BrokerConnection {
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>()
             .join(", ");
+        let tcp_opt_in = std::env::var("MIXOS_MCP_ALLOW_TCP").ok();
         let connect = async {
-            match configuration.resolve_endpoint().await {
+            let result = match configuration.resolve_endpoint().await {
                 Ok(endpoint) => {
                     let mut options = configuration
                         .into_options()
@@ -130,28 +157,19 @@ impl BrokerConnection {
                     options.incoming_capacity = Some(64);
                     // Retain the resolved locator, including one advertised by ping.
                     options.endpoint = Some(endpoint);
-                    match NodedClient::connect_unix(&self.name, &url, &options, Some(provenance))
+                    NodedClient::connect_unix(&self.name, &url, &options, Some(provenance.clone()))
                         .await
-                        .map_err(|error| error.to_string())?
-                    {
-                        UnixConnectOutcome::VerifiedUnix(connection) => Ok(Client::Unix {
-                            connection: Arc::new(connection),
-                            drain: Mutex::new(None),
-                        }),
-                        UnixConnectOutcome::UnverifiedTcp { .. } => {
-                            Err("native Unix connection required".into())
-                        }
-                    }
                 }
-                Err(ConnectError::CandidatesMissing(paths)) => {
-                    tcp_permission(std::env::var("MIXOS_MCP_ALLOW_TCP").ok().as_deref(), paths)?;
-                    NodedClient::connect_with_provenance(&self.name, &url, Some(provenance))
-                        .await
-                        .map(|client| Client::Tcp(Box::new(client)))
-                        .map_err(|error| error.to_string())
-                }
-                Err(error) => Err(error.to_string()),
-            }
+                Err(error) => Err(error),
+            };
+            finish_connect(
+                &self.name,
+                &url,
+                Some(provenance),
+                tcp_opt_in.as_deref(),
+                result,
+            )
+            .await
         };
         let client = tokio::time::timeout(std::time::Duration::from_secs(5), connect)
             .await
@@ -208,6 +226,48 @@ impl BrokerConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn missing_candidates_with_opt_in_connect_over_tcp() {
+        let broker = test_broker::Broker::start();
+        let mut options = broker.options();
+        options.endpoint = None;
+        options.discover_by_ping = false;
+        let result = NodedClient::connect_unix("mcp-tcp-test", &broker.url, &options, None).await;
+        assert!(matches!(result, Err(ConnectError::CandidatesMissing(_))));
+        let client = finish_connect("mcp-tcp-test", &broker.url, None, Some("1"), result)
+            .await
+            .ok()
+            .unwrap();
+        assert!(matches!(client, Client::Tcp(_)));
+        assert_eq!(
+            client
+                .call("noded", "noded.ping", serde_json::Value::Null)
+                .await
+                .unwrap()["pong"],
+            true
+        );
+        client.close().await;
+    }
+
+    #[tokio::test]
+    async fn existing_failed_socket_never_takes_tcp_even_with_opt_in() {
+        let broker = test_broker::Broker::start();
+        let directory = tempfile::tempdir().unwrap();
+        let endpoint = directory.path().canonicalize().unwrap().join("stale.sock");
+        drop(std::os::unix::net::UnixListener::bind(&endpoint).unwrap());
+        let mut options = broker.options();
+        options.endpoint = Some(endpoint.clone());
+        options.allow_unverified_tcp_fallback = true;
+        let result =
+            NodedClient::connect_unix("mcp-failed-test", &broker.url, &options, None).await;
+        let error = finish_connect("mcp-failed-test", &broker.url, None, Some("1"), result)
+            .await
+            .err()
+            .unwrap();
+        assert!(error.contains(&endpoint.display().to_string()));
+        assert!(error.contains("refused"));
+    }
 
     #[test]
     fn tcp_requires_explicit_opt_in_and_reports_candidates() {

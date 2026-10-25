@@ -309,12 +309,12 @@ fn resident_uses_configuration_captured_before_thread_start() {
     }
     // Imports above the worker must not make an unqualified env read invisible.
     assert!(!source.contains("use std::env"));
-    let paths = include_str!("paths.rs");
-    let resolution = paths
-        .split("pub(crate) fn resolve(mut self)")
+    let helpers = include_str!("../../../libs/bus/src/client_helpers.rs");
+    let resolution = helpers
+        .split("pub fn configuration(self)")
         .nth(1)
         .unwrap()
-        .split("#[cfg(test)]")
+        .split("fn environment_account")
         .next()
         .unwrap();
     for forbidden in ["std::env::var", "use std::env", "dirs::"] {

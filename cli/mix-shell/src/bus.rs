@@ -524,8 +524,8 @@ impl MixBusHandler {
     ///
     /// The ordinary path may fall back to anonymous TCP. A process-local PID
     /// pin changes that policy in `probe_with_pin` below.
-    fn verified_options() -> Option<::bus::native_client::UnixConnectOptions> {
-        let (options, _) = crate::node_config::NativeEnvironment::capture()
+    fn verified_options() -> Option<(::bus::native_client::UnixConnectOptions, String)> {
+        let (options, url) = crate::node_config::NativeEnvironment::capture()
             .resolve()
             .map_err(
                 |error| tracing::warn!(error = %format!("{error:#}"), "broker discovery failed"),
@@ -533,7 +533,9 @@ impl MixBusHandler {
             .ok()?;
         // The resident's own resolver, so a driver and a pane shell on one node
         // cannot disagree about which account owns the socket.
-        Some(crate::native_session::options(options))
+        let mut options = crate::native_session::options(options);
+        options.discover_by_ping = false;
+        Some((options, url))
     }
 
     /// Split from the config resolution above so the ABSENT-SOCKET path is
@@ -715,7 +717,6 @@ impl MixBusHandler {
         if let Some(url) = test_url {
             return Self::probe_anonymous(&url).await;
         }
-        let url = crate::node_config::resolve_noded_url();
         // Verified FIRST. This is what makes a plain `send` reach a local
         // service's protected commands: the lane carries peer credentials, so
         // the broker has a principal it did not have to be told. Nothing
@@ -727,7 +728,13 @@ impl MixBusHandler {
         // cross-node target — all of those are ordinary, and all of them
         // must keep working exactly as they did.
         let pid_pin = std::env::var_os("MIXOS_NODED_EXPECTED_SERVER_PID");
-        Self::probe_with_pin(&url, pid_pin.as_deref(), Self::verified_options()).await
+        match Self::verified_options() {
+            Some((options, url)) => {
+                Self::probe_with_pin(&url, pid_pin.as_deref(), Some(options)).await
+            }
+            None if pid_pin.is_some() => None,
+            None => Self::probe_anonymous(&crate::node_config::resolve_noded_url()).await,
+        }
     }
 
     /// One-shot authority query: the presence of a pin forbids every
@@ -2817,25 +2824,36 @@ mod tests {
     /// connect timeout, every first send on every headless host would stall
     /// five seconds — a worse regression than the feature is a gain.
     ///
-    /// The isolated candidate is missing and the loopback discovery URL
-    /// refuses immediately. General ping discovery has its own bounded wait.
+    /// Ping discovery is disabled for this ordinary send probe, so an absent
+    /// local socket returns immediately without contacting the URL.
     #[tokio::test(flavor = "current_thread")]
     async fn an_absent_verified_socket_falls_back_immediately() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("ws://{}/ws", listener.local_addr().unwrap());
+        let directory = tempfile::tempdir().unwrap();
         let mut options =
             ::bus::native_client::UnixConnectOptions::new(::bus::native_client::BrokerAccount {
                 // SAFETY: process credential reads have no preconditions.
                 uid: unsafe { libc::geteuid() },
                 gid: unsafe { libc::getegid() },
             });
-        options.endpoint = Some(std::path::PathBuf::from(
-            "/nonexistent/mixos/definitely-not-a-socket",
-        ));
-        options.default_endpoints = Some(Vec::new());
+        options.endpoint = Some(directory.path().join("missing.sock"));
+        options.default_endpoints = Vec::new();
+        options.discover_by_ping = false;
         options.require_native_session = true;
         let started = std::time::Instant::now();
-        let outcome = MixBusHandler::connect_verified_with("ws://127.0.0.1:1/ws", &options).await;
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            MixBusHandler::connect_verified_with(&url, &options),
+        )
+        .await
+        .expect("an absent local socket must not wait for ping discovery");
         let elapsed = started.elapsed();
         assert!(outcome.is_none(), "a missing socket is not a verified lane");
+        assert!(
+            matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
+        );
         assert!(
             elapsed < std::time::Duration::from_millis(500),
             "the absent-socket fallback took {elapsed:?}; it must not pay the connect timeout"

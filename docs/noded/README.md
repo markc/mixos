@@ -43,11 +43,22 @@ pass every verification check; permissions, symlinks, non-sockets, ownership,
 peer credentials, version and refused connections are fatal. A server-PID
 pin disables skipping and ping discovery. Exhausted searches list all paths.
 
+Clients capture socket candidates before connecting. If a selected endpoint
+disappears, an unpinned client retries once with the remaining candidates;
+a second disappearance returns the missing-candidates error. Other existing
+endpoint failures remain fatal. The shell's ordinary send probe disables
+ping discovery so an absent local socket does not trigger TCP ping traffic.
+
 Clients trust the account selected by `MIXOS_BROKER_ACCOUNT`, then
 `noded.account`, then the default `noded`. They never infer it from a socket's
 owner. Account lookup errors name the account and its configuration source.
 URL lookup uses the same node-file search and retains its loopback default
 on read or parse failure.
+
+An explicit socket override is not blocked by unreadable or invalid socket
+settings in node.conf. Account settings are checked independently: an explicit
+`MIXOS_BROKER_ACCOUNT` overrides broken account configuration, while clients
+relying on `noded.account` still report configuration errors.
 
 ## Running it
 

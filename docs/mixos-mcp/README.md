@@ -29,6 +29,11 @@ resolved URL. Only missing path components are skipped, with a warning.
 An existing candidate must pass path, account, peer-credential and protocol
 verification; any failure is fatal. A server-PID pin forbids skipping and ping.
 
+Candidates are captured before connection. An unpinned client retries once
+if a selected path disappears; a second disappearance follows the
+missing-candidates policy below. Socket and account overrides are independent,
+so broken lower-priority node settings cannot veto an explicit override.
+
 Verified Unix ingress is required whenever any candidate exists. When all
 candidates are missing, plain TCP requires `MIXOS_MCP_ALLOW_TCP=1`; the default
 is to refuse it and list the candidates tried. Calls are never replayed after

@@ -21,8 +21,7 @@
 //! | Bin  | MIXOS_BIN   | `$MIXOS/bin`     | `~/.local/bin/` · `/usr/local/bin/`  |
 //! | Share | MIXOS_SHARE | `<prefix>/share` | `<prefix>/share` (both)         |
 //!
-//! Etc is not cached here: the node configuration reads it through
-//! `EtcEnvironment`, which captures the environment without calling `dirs`.
+//! Node configuration and runtime discovery use the shared libs/bus resolver.
 //!
 //! A system install (`<prefix>/bin/mix`, no `$MIXOS`, no checkout
 //! above it) therefore keeps the FHS defaults it always had. Mix keeps
@@ -124,122 +123,9 @@ fn env_or(var: &str, fallback: impl FnOnce() -> PathBuf) -> PathBuf {
         .unwrap_or_else(fallback)
 }
 
-/// Capture environment and the kernel executable path, deferring layout file
-/// reads and name-service work. Resolution must not call dirs/read environ.
-pub(crate) struct EtcEnvironment {
-    root: Option<PathBuf>,
-    etc: Option<PathBuf>,
-    home: Option<PathBuf>,
-    xdg_config: Option<PathBuf>,
-    prefix: Option<PathBuf>,
-    exe: Option<PathBuf>,
-}
-
-impl EtcEnvironment {
-    pub(crate) fn capture() -> Self {
-        let paths = ::paths::Environment::current();
-        Self {
-            root: std::env::var_os("MIXOS").map(PathBuf::from),
-            etc: std::env::var_os("MIXOS_ETC").map(PathBuf::from),
-            home: std::env::var_os("HOME")
-                .filter(|v| !v.is_empty())
-                .map(PathBuf::from),
-            xdg_config: std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
-            prefix: paths.prefix,
-            exe: paths.exe,
-        }
-    }
-
-    pub(crate) fn resolve(mut self) -> (PathBuf, bool) {
-        self.root = self.root.filter(|path| !path.as_os_str().is_empty());
-        self.etc = self.etc.filter(|path| !path.as_os_str().is_empty());
-        self.xdg_config = self.xdg_config.filter(|path| !path.as_os_str().is_empty());
-        let isolated = self.etc.is_some() || self.root.is_some();
-        let environment = config::Environment {
-            root: self.root,
-            etc: self.etc,
-            home: Some(self.home.unwrap_or_else(home_without_environment)),
-            xdg_config_home: self.xdg_config,
-            uid: current_uid(),
-            prefix: self.prefix,
-            exe: self.exe,
-            ..config::Environment::default()
-        };
-        let dirs =
-            config::Dirs::from_environment(&environment).expect("invalid MixOS startup layout");
-        (dirs.get(config::Dir::Etc).to_owned(), isolated)
-    }
-}
-
-fn home_without_environment() -> PathBuf {
-    use std::os::unix::ffi::OsStrExt;
-    let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
-    let mut result = std::ptr::null_mut();
-    let mut buffer = vec![0u8; 65536];
-    // Resident-only NSS fallback, matching dirs' HOME-absent Unix behaviour.
-    let rc = unsafe {
-        libc::getpwuid_r(
-            libc::getuid(),
-            entry.as_mut_ptr(),
-            buffer.as_mut_ptr().cast(),
-            buffer.len(),
-            &mut result,
-        )
-    };
-    if rc == 0 && !result.is_null() {
-        let entry = unsafe { entry.assume_init() };
-        if !entry.pw_dir.is_null() {
-            let home = unsafe { std::ffi::CStr::from_ptr(entry.pw_dir) };
-            return PathBuf::from(std::ffi::OsStr::from_bytes(home.to_bytes()));
-        }
-    }
-    PathBuf::from("/root")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn captured_etc_environment_preserves_override_and_root_precedence() {
-        let captured = |etc| EtcEnvironment {
-            root: Some(PathBuf::from("/srv/mixos")),
-            etc,
-            home: Some(PathBuf::from("/home/alice")),
-            xdg_config: Some(PathBuf::from("/alternate/config")),
-            prefix: None,
-            exe: None,
-        };
-        assert_eq!(
-            captured(Some(PathBuf::from("/isolated/etc"))).resolve(),
-            (PathBuf::from("/isolated/etc"), true)
-        );
-        assert_eq!(
-            captured(None).resolve(),
-            (PathBuf::from("/srv/mixos/etc"), true)
-        );
-    }
-
-    #[test]
-    fn empty_captured_overrides_match_the_shared_directory_rule() {
-        let captured = EtcEnvironment {
-            root: Some(PathBuf::new()),
-            etc: Some(PathBuf::new()),
-            home: Some(PathBuf::from("/home/user")),
-            xdg_config: Some(PathBuf::new()),
-            prefix: None,
-            exe: None,
-        };
-        let expected = config::Dirs::resolve(&config::Environment {
-            home: Some(PathBuf::from("/home/user")),
-            uid: current_uid(),
-            ..Default::default()
-        });
-        assert_eq!(
-            captured.resolve(),
-            (expected.get(config::Dir::Etc).to_owned(), false)
-        );
-    }
 
     #[test]
     fn env_root_wins_over_self_location() {

@@ -54,7 +54,7 @@ async fn connect(
         gid: unsafe { libc::getegid() },
     });
     options.endpoint = Some(root.join("run/bus.sock"));
-    options.default_endpoints = Some(Vec::new());
+    options.default_endpoints = Vec::new();
     options.require_native_session = true;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     loop {

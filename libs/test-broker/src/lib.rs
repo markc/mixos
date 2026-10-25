@@ -141,7 +141,7 @@ impl Broker {
                 gid: unsafe { libc::getegid() },
             });
         options.endpoint = Some(self.endpoint.clone());
-        options.default_endpoints = Some(Vec::new());
+        options.default_endpoints = Vec::new();
         options.require_native_session = true;
         options
     }

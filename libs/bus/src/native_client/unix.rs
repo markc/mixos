@@ -2,13 +2,14 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Verified node-local BUS-013 transport with shared environment discovery.
-//! Missing candidates may be skipped before connecting; any failure on an
-//! existing endpoint is fatal. Ordinary `NodedClient::connect` remains TCP.
+//! Missing candidates may be skipped before connecting. An unpinned client
+//! retries once if its selected endpoint disappears; other failures on an
+//! existing endpoint are fatal. Ordinary `NodedClient::connect` remains TCP.
 
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::{Component, Path, PathBuf};
 
-use crate::client_helpers::{at_endpoint, resolve_unix_endpoint};
+use crate::client_helpers::connect_unix_candidates;
 use crate::native_session::BrokerPrincipal;
 use tokio::sync::mpsc;
 
@@ -41,9 +42,10 @@ pub struct UnixConnectOptions {
     pub broker_account: BrokerAccount,
     pub endpoint: Option<PathBuf>,
     pub configured_endpoint: Option<PathBuf>,
-    /// Resolved environment and system candidates. None uses shared discovery;
-    /// isolated fixtures can supply their own ordered list (including empty).
-    pub default_endpoints: Option<Vec<PathBuf>>,
+    /// Environment and system candidates resolved at capture time. Empty means none.
+    pub default_endpoints: Vec<PathBuf>,
+    /// Permit TCP ping discovery after local candidates are missing.
+    pub discover_by_ping: bool,
     /// Hard requirement. Overrides `allow_unverified_tcp_fallback` on every
     /// failure, including permissions, ownership, peer credentials and version.
     pub require_native_session: bool,
@@ -60,12 +62,15 @@ pub struct UnixConnectOptions {
 }
 
 impl UnixConnectOptions {
+    /// Construct without reading configuration or environment. Capture shared
+    /// defaults through BrokerEnvironment before passing options to connect.
     pub fn new(broker_account: BrokerAccount) -> Self {
         Self {
             broker_account,
             endpoint: None,
             configured_endpoint: None,
-            default_endpoints: None,
+            default_endpoints: Vec::new(),
+            discover_by_ping: true,
             require_native_session: false,
             allow_unverified_tcp_fallback: false,
             expected_server_pid: None,
@@ -314,18 +319,17 @@ impl NodedClient {
     /// endpoint, config, environment runtime, system runtime, then ping. Every
     /// candidate is verified; discovery never establishes authority. Unix is node-local
     /// in v1: mesh-destined traffic is refused, with no transparent TCP retry.
+    /// One disappearing endpoint permits re-resolution unless the server PID is pinned.
     pub async fn connect_unix(
         service_name: &str,
         tcp_url: &str,
         options: &UnixConnectOptions,
         provenance: Option<crate::RegisterProvenance>,
     ) -> Result<UnixConnectOutcome, ConnectError> {
-        let result = async {
-            let path = resolve_unix_endpoint(options, tcp_url).await?;
-            connect_verified(service_name, &path, options, provenance.clone())
-                .await
-                .map_err(|error| at_endpoint(&path, error))
-        }
+        let result = connect_unix_candidates(options, tcp_url, |path| {
+            let provenance = provenance.clone();
+            async move { connect_verified(service_name, &path, options, provenance).await }
+        })
         .await;
         match result {
             Ok(connection) => Ok(UnixConnectOutcome::VerifiedUnix(connection)),

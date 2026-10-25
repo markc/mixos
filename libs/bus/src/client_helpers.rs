@@ -4,6 +4,9 @@
 //! Shared broker discovery for native ABP clients. Explicit socket, node
 //! config, environment runtime and system runtime precede TCP ping discovery.
 //! Account configuration is independent of socket ownership.
+//! A client with a server-PID pin must name its endpoint explicitly through
+//! MIXOS_BUS_SOCKET, the caller endpoint or noded.unix_socket: no candidates
+//! are skipped, so default run-root discovery stops at its first candidate.
 
 use crate::native_client::ConnectError;
 use crate::native_client::{BrokerAccount, NodedClient, UnixConnectOptions};
@@ -89,8 +92,8 @@ pub fn resolve_noded_url() -> String {
     crate::noded_url()
 }
 
-/// Configuration errors propagate for authenticated ingress. Missing socket
-/// candidates may fall through; existing candidates must pass verification.
+/// Capture candidates with a caller-resolved account. An explicit endpoint
+/// overrides broken node socket settings; account settings are not relied on.
 pub fn unix_connect_options(account: BrokerAccount) -> anyhow::Result<UnixConnectOptions> {
     let mut configuration = BrokerEnvironment::capture().configuration()?;
     configuration.options.broker_account = account;
@@ -100,8 +103,23 @@ pub fn unix_connect_options(account: BrokerAccount) -> anyhow::Result<UnixConnec
 /// Resolve the trusted account: environment, node.conf `noded.account`, noded.
 /// NSS errors name both the account and the configuration source.
 pub fn resolve_broker_account() -> anyhow::Result<BrokerAccount> {
-    let configuration = BrokerEnvironment::capture().configuration()?;
-    configuration.account_selection().lookup()
+    let environment = std::env::var_os("MIXOS_BROKER_ACCOUNT");
+    resolve_account_from(
+        environment.as_deref(),
+        &config::node::NodeConfigSearch::capture(),
+    )
+}
+
+fn resolve_account_from(
+    environment: Option<&std::ffi::OsStr>,
+    search: &config::node::NodeConfigSearch,
+) -> anyhow::Result<BrokerAccount> {
+    if let Some(account) = environment_account(environment)? {
+        return account_selection(Some(account), None).lookup();
+    }
+    let source = search.read()?;
+    let settings = node_setting(source.as_ref(), "account")?;
+    account_selection(None, settings.account.as_deref()).lookup()
 }
 
 struct AccountSelection<'a> {
@@ -180,6 +198,7 @@ pub struct BrokerConfiguration {
     pub url: String,
     account: String,
     account_source: &'static str,
+    account_error: Option<anyhow::Error>,
 }
 
 impl BrokerConfiguration {
@@ -200,6 +219,9 @@ impl BrokerConfiguration {
     }
 
     pub fn into_options(mut self) -> anyhow::Result<UnixConnectOptions> {
+        if let Some(error) = self.account_error.take() {
+            return Err(error).context("node config is required for broker account resolution");
+        }
         self.options.broker_account = self.account_selection().lookup()?;
         Ok(self.options)
     }
@@ -233,38 +255,50 @@ impl BrokerEnvironment {
     }
 
     pub fn configuration(self) -> anyhow::Result<BrokerConfiguration> {
-        let source = self.search.read()?;
-        #[derive(Default, serde::Deserialize)]
-        #[serde(default)]
-        struct NativeConfig {
-            noded: config::node::NodedConfig,
-        }
-        let native: NativeConfig = match &source {
-            Some((path, source)) => config::from_conf_mix_str(source)
-                .with_context(|| format!("invalid node config {}", path.display()))?,
-            None => NativeConfig::default(),
+        let environment_account = environment_account(self.account.as_deref())?;
+        let mut account_error = None;
+        let source = match self.search.read() {
+            Ok(source) => source,
+            Err(error) if self.endpoint.is_some() => {
+                tracing::warn!(error = %format!("{error:#}"), "ignoring node config for explicit Unix endpoint");
+                if environment_account.is_none() {
+                    account_error = Some(error);
+                }
+                None
+            }
+            Err(error) => return Err(error),
         };
-        let environment_account =
-            self.account
-                .as_ref()
-                .map(|account| {
-                    account.to_str().with_context(|| format!(
-                "broker account {account:?} from MIXOS_BROKER_ACCOUNT is not valid Unicode"
-            ))
-                })
-                .transpose()?;
-        let account = account_selection(environment_account, native.noded.account.as_deref());
+        let configured_endpoint = match node_setting(source.as_ref(), "unix_socket") {
+            Ok(settings) => settings.unix_socket,
+            Err(error) if self.endpoint.is_some() => {
+                tracing::warn!(error = %format!("{error:#}"), "ignoring node socket config for explicit Unix endpoint");
+                None
+            }
+            Err(error) => return Err(error),
+        };
+        let configured_account = if environment_account.is_none() {
+            match node_setting(source.as_ref(), "account") {
+                Ok(settings) => settings.account,
+                Err(error) => {
+                    account_error = Some(error);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let account = account_selection(environment_account, configured_account.as_deref());
         let directories =
             config::Dirs::from_environment(&self.directories).map_err(anyhow::Error::msg)?;
         let mut options = UnixConnectOptions::new(BrokerAccount { uid: 0, gid: 0 });
         options.endpoint = self.endpoint;
-        options.configured_endpoint = native.noded.unix_socket;
-        options.default_endpoints = Some(vec![
+        options.configured_endpoint = configured_endpoint;
+        options.default_endpoints = vec![
             directories.get(config::Dir::Run).join("noded/bus.sock"),
             paths::system_default(paths::Root::Run)
                 .expect("built-in system run default")
                 .join("noded/bus.sock"),
-        ]);
+        ];
         let url = self
             .url
             .or_else(|| {
@@ -278,33 +312,60 @@ impl BrokerEnvironment {
             url,
             account: account.name.to_owned(),
             account_source: account.source,
+            account_error,
         })
     }
+}
+
+fn environment_account(account: Option<&std::ffi::OsStr>) -> anyhow::Result<Option<&str>> {
+    account
+        .map(|account| {
+            account.to_str().with_context(|| {
+                format!("broker account {account:?} from MIXOS_BROKER_ACCOUNT is not valid Unicode")
+            })
+        })
+        .transpose()
+}
+
+/// Decode only the field being relied on, so an overridden field cannot veto it.
+fn node_setting(
+    source: Option<&(PathBuf, String)>,
+    field: &str,
+) -> anyhow::Result<config::node::NodedConfig> {
+    let Some((path, source)) = source else {
+        return Ok(config::node::NodedConfig::default());
+    };
+    let decode = || -> anyhow::Result<config::node::NodedConfig> {
+        let value = strict::parse(source)?;
+        anyhow::ensure!(
+            matches!(value, strict::Value::Map(_)),
+            "node config must be a map"
+        );
+        let Some(noded) = value.get("noded") else {
+            return Ok(config::node::NodedConfig::default());
+        };
+        anyhow::ensure!(
+            matches!(noded, strict::Value::Map(_)),
+            "noded must be a map"
+        );
+        let mut fields = strict::Map::new();
+        if let Some(value) = noded.get(field) {
+            fields.insert(field.to_owned(), value.clone());
+        }
+        Ok(strict::from_value(&strict::Value::Map(fields))?)
+    };
+    decode().with_context(|| format!("invalid node config {} noded.{field}", path.display()))
 }
 
 /// Build the ordered list without testing existence or connecting. Callers
 /// may override the first two entries; shared defaults remain in order.
 pub fn unix_endpoint_candidates(options: &UnixConnectOptions) -> anyhow::Result<Vec<PathBuf>> {
-    let defaults;
-    let configured = if options.default_endpoints.is_none() {
-        defaults = unix_connect_options(options.broker_account)?;
-        &defaults
-    } else {
-        options
-    };
     let mut candidates = Vec::new();
     for path in options
         .endpoint
-        .as_ref()
-        .or(configured.endpoint.as_ref())
-        .into_iter()
-        .chain(
-            options
-                .configured_endpoint
-                .as_ref()
-                .or(configured.configured_endpoint.as_ref()),
-        )
-        .chain(configured.default_endpoints.iter().flatten())
+        .iter()
+        .chain(options.configured_endpoint.iter())
+        .chain(&options.default_endpoints)
     {
         if !candidates.contains(path) {
             candidates.push(path.clone());
@@ -322,10 +383,83 @@ pub async fn resolve_unix_endpoint(
     let candidates = options
         .endpoint_candidates()
         .map_err(ConnectError::Protocol)?;
-    resolve_endpoint(candidates, options.expected_server_pid, || {
-        discover_endpoint(tcp_url)
+    resolve_endpoint(candidates, options.expected_server_pid, || async {
+        if options.discover_by_ping {
+            discover_endpoint(tcp_url).await
+        } else {
+            None
+        }
     })
     .await
+}
+
+/// Re-resolve once after a selected endpoint disappears. Other failures remain
+/// fatal, and a PID pin forbids both skipping and this retry.
+pub(crate) async fn connect_unix_candidates<T, F, Fut>(
+    options: &UnixConnectOptions,
+    tcp_url: &str,
+    mut connect: F,
+) -> Result<T, ConnectError>
+where
+    F: FnMut(PathBuf) -> Fut,
+    Fut: std::future::Future<Output = Result<T, ConnectError>>,
+{
+    let mut candidates = options
+        .endpoint_candidates()
+        .map_err(ConnectError::Protocol)?;
+    let mut tried = candidates.clone();
+    let mut ping_available = options.discover_by_ping;
+    let mut retried = false;
+    loop {
+        let mut ping_used = false;
+        let path = resolve_endpoint(candidates.clone(), options.expected_server_pid, || {
+            ping_used = ping_available;
+            async {
+                if ping_available {
+                    discover_endpoint(tcp_url).await
+                } else {
+                    None
+                }
+            }
+        })
+        .await
+        .map_err(|error| match error {
+            ConnectError::CandidatesMissing(paths) => {
+                for path in paths {
+                    if !tried.contains(&path) {
+                        tried.push(path);
+                    }
+                }
+                ConnectError::CandidatesMissing(tried.clone())
+            }
+            error => error,
+        })?;
+        if ping_used {
+            ping_available = false;
+        }
+        if !tried.contains(&path) {
+            tried.push(path.clone());
+        }
+        match connect(path.clone()).await {
+            Ok(connection) => return Ok(connection),
+            Err(error)
+                if options.expected_server_pid.is_none()
+                    && matches!(error.endpoint_cause(), ConnectError::Io(error)
+                    if matches!(error.raw_os_error(), Some(libc::ENOENT | libc::ENOTDIR))) =>
+            {
+                tracing::warn!(path = %path.display(), %error, "selected Unix endpoint disappeared");
+                if retried {
+                    return Err(ConnectError::CandidatesMissing(tried));
+                }
+                retried = true;
+                candidates = candidates
+                    .iter()
+                    .position(|candidate| candidate == &path)
+                    .map_or_else(Vec::new, |index| candidates[index + 1..].to_vec());
+            }
+            Err(error) => return Err(at_endpoint(&path, error)),
+        }
+    }
 }
 
 /// TCP discovery supplies a locator only, never authority. Every discovered
@@ -373,6 +507,212 @@ pub(crate) mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::UnixListener;
 
+    fn captured_environment(dir: &TestDir) -> BrokerEnvironment {
+        let directories = config::Environment {
+            prefix: Some(dir.0.clone()),
+            run: Some(dir.0.join("run")),
+            ..Default::default()
+        };
+        BrokerEnvironment {
+            search: config::node::NodeConfigSearch::from_environment(
+                Some(dir.0.join("node.conf.mix")),
+                directories.clone(),
+            ),
+            directories,
+            endpoint: None,
+            account: None,
+            url: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_endpoint_and_account_override_broken_node_config() {
+        let dir = TestDir::new();
+        let endpoint = dir.0.join("explicit.sock");
+        let _socket = UnixListener::bind(&endpoint).unwrap();
+        for contents in ["noded: {", "noded: { unix_socket: 7, account: 7 }"] {
+            std::fs::write(dir.0.join("node.conf.mix"), contents).unwrap();
+            let mut environment = captured_environment(&dir);
+            environment.endpoint = Some(endpoint.clone());
+            environment.account = Some("env-account".into());
+            let configuration = environment.configuration().unwrap();
+            assert_eq!(configuration.account, "env-account");
+            assert!(configuration.account_error.is_none());
+            assert_eq!(configuration.resolve_endpoint().await.unwrap(), endpoint);
+            let mut environment = captured_environment(&dir);
+            environment.account = Some("env-account".into());
+            let error = environment.configuration().err().unwrap();
+            assert!(format!("{error:#}").contains("node.conf.mix"));
+        }
+        // Reading a directory fails even when the test runs as root.
+        std::fs::remove_file(dir.0.join("node.conf.mix")).unwrap();
+        std::fs::create_dir(dir.0.join("node.conf.mix")).unwrap();
+        let mut environment = captured_environment(&dir);
+        environment.endpoint = Some(endpoint.clone());
+        environment.account = Some("env-account".into());
+        assert_eq!(
+            environment
+                .configuration()
+                .unwrap()
+                .resolve_endpoint()
+                .await
+                .unwrap(),
+            endpoint
+        );
+        assert!(captured_environment(&dir).configuration().is_err());
+    }
+
+    #[test]
+    fn only_the_config_field_being_relied_on_can_fail_resolution() {
+        let dir = TestDir::new();
+        std::fs::write(
+            dir.0.join("node.conf.mix"),
+            "noded: { unix_socket: 7, account: 'config-account' }",
+        )
+        .unwrap();
+        let mut environment = captured_environment(&dir);
+        environment.endpoint = Some(dir.0.join("explicit.sock"));
+        let configuration = environment.configuration().unwrap();
+        assert_eq!(configuration.account, "config-account");
+        assert!(configuration.account_error.is_none());
+        std::fs::write(
+            dir.0.join("node.conf.mix"),
+            "noded: { unix_socket: '/tmp/example.sock', account: 7 }",
+        )
+        .unwrap();
+        let mut environment = captured_environment(&dir);
+        environment.account = Some("env-account".into());
+        let configuration = environment.configuration().unwrap();
+        assert_eq!(
+            configuration.options.configured_endpoint,
+            Some("/tmp/example.sock".into())
+        );
+        assert_eq!(configuration.account, "env-account");
+        // Account-only lookup must not read the broken config before the override.
+        let error = resolve_account_from(
+            Some(std::ffi::OsStr::new("invalid\0account")),
+            &captured_environment(&dir).search,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("MIXOS_BROKER_ACCOUNT"));
+        assert!(!format!("{error:#}").contains("node.conf"));
+        std::fs::write(dir.0.join("node.conf.mix"), "noded: {").unwrap();
+        let mut environment = captured_environment(&dir);
+        environment.endpoint = Some(dir.0.join("explicit.sock"));
+        let error = environment
+            .configuration()
+            .unwrap()
+            .into_options()
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("broker account resolution"));
+    }
+
+    #[test]
+    fn captured_explicit_socket_precedes_the_full_configured_order() {
+        let dir = TestDir::new();
+        let explicit = dir.0.join("explicit.sock");
+        let configured = dir.0.join("configured.sock");
+        std::fs::write(
+            dir.0.join("node.conf.mix"),
+            format!("noded: {{ unix_socket: '{}' }}", configured.display()),
+        )
+        .unwrap();
+        let mut environment = captured_environment(&dir);
+        environment.endpoint = Some(explicit.clone());
+        let configuration = environment.configuration().unwrap();
+        assert_eq!(
+            configuration.endpoint_candidates().unwrap(),
+            vec![
+                explicit,
+                configured,
+                dir.0.join("run/noded/bus.sock"),
+                paths::system_default(paths::Root::Run)
+                    .unwrap()
+                    .join("noded/bus.sock"),
+            ]
+        );
+        let mut supplied = UnixConnectOptions::new(BrokerAccount { uid: 123, gid: 123 });
+        supplied.endpoint = Some(dir.0.join("caller.sock"));
+        assert_eq!(
+            supplied.endpoint_candidates().unwrap(),
+            vec![dir.0.join("caller.sock")]
+        );
+        assert!(supplied.default_endpoints.is_empty());
+    }
+
+    #[test]
+    fn non_missing_component_errors_are_fatal_and_name_the_candidate() {
+        let dir = TestDir::new();
+        let path = dir.0.join("x".repeat(256)).join("socket");
+        let error = select_endpoint(&[path.clone(), dir.0.join("later")], false, |_, _| {
+            panic!("must not skip a non-missing error")
+        })
+        .unwrap_err();
+        assert!(
+            matches!(error.endpoint_cause(), ConnectError::Io(error) if error.raw_os_error() == Some(libc::ENAMETOOLONG))
+        );
+        assert!(error.to_string().contains(&path.display().to_string()));
+    }
+
+    #[tokio::test]
+    async fn disappearing_endpoint_retries_remaining_candidates_once() {
+        let dir = TestDir::new();
+        let paths = vec![
+            dir.0.join("first"),
+            dir.0.join("second"),
+            dir.0.join("third"),
+        ];
+        let _sockets: Vec<_> = paths
+            .iter()
+            .map(|path| UnixListener::bind(path).unwrap())
+            .collect();
+        let mut options = options(&paths);
+        options.discover_by_ping = false;
+        let mut attempts = Vec::new();
+        let selected = connect_unix_candidates(&options, "ws://192.0.2.1:4200/ws", |path| {
+            attempts.push(path.clone());
+            if attempts.len() == 1 {
+                std::fs::remove_file(&path).unwrap();
+            }
+            std::future::ready(
+                std::fs::symlink_metadata(&path)
+                    .map(|_| path)
+                    .map_err(ConnectError::Io),
+            )
+        })
+        .await
+        .unwrap();
+        assert_eq!(selected, paths[1]);
+        assert_eq!(attempts, paths[..2]);
+        let _first = UnixListener::bind(&paths[0]).unwrap();
+        for errno in [libc::ENOENT, libc::ENOTDIR] {
+            let mut attempts = Vec::new();
+            let error =
+                connect_unix_candidates::<(), _, _>(&options, "ws://192.0.2.1:4200/ws", |path| {
+                    attempts.push(path);
+                    std::future::ready(Err(ConnectError::Io(std::io::Error::from_raw_os_error(
+                        errno,
+                    ))))
+                })
+                .await
+                .unwrap_err();
+            assert_eq!(attempts, paths[..2]);
+            assert!(matches!(error, ConnectError::CandidatesMissing(ref tried) if tried == &paths));
+        }
+        options.expected_server_pid = Some(42);
+        let mut attempts = 0;
+        let error = connect_unix_candidates::<(), _, _>(&options, "ws://192.0.2.1:4200/ws", |_| {
+            attempts += 1;
+            std::future::ready(Err(ConnectError::Io(std::io::Error::from_raw_os_error(
+                libc::ENOENT,
+            ))))
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(attempts, 1);
+        assert!(matches!(error.endpoint_cause(), ConnectError::Io(_)));
+    }
+
     pub(crate) struct TestDir(pub(crate) PathBuf);
 
     impl TestDir {
@@ -410,7 +750,7 @@ pub(crate) mod tests {
         let mut options = UnixConnectOptions::new(account);
         options.endpoint = paths.first().cloned();
         options.configured_endpoint = paths.get(1).cloned();
-        options.default_endpoints = Some(paths.iter().skip(2).cloned().collect());
+        options.default_endpoints = paths.iter().skip(2).cloned().collect();
         options.require_native_session = true;
         options
     }

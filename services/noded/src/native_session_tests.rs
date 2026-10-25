@@ -1717,7 +1717,7 @@ fn client_options(broker: &Broker) -> bus::native_client::UnixConnectOptions {
             gid: unsafe { libc::getegid() },
         });
     options.configured_endpoint = Some(broker.root.join("bus.sock"));
-    options.default_endpoints = Some(Vec::new());
+    options.default_endpoints = Vec::new();
     options.require_native_session = true;
     options
 }

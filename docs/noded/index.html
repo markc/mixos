@@ -267,11 +267,20 @@ advertised by <code>noded.ping</code> on the resolved TCP URL. Missing component
 pass every verification check; permissions, symlinks, non-sockets, ownership,
 peer credentials, version and refused connections are fatal. A server-PID
 pin disables skipping and ping discovery. Exhausted searches list all paths.</p>
+<p>Clients capture socket candidates before connecting. If a selected endpoint
+disappears, an unpinned client retries once with the remaining candidates;
+a second disappearance returns the missing-candidates error. Other existing
+endpoint failures remain fatal. The shell's ordinary send probe disables
+ping discovery so an absent local socket does not trigger TCP ping traffic.</p>
 <p>Clients trust the account selected by <code>MIXOS_BROKER_ACCOUNT</code>, then
 <code>noded.account</code>, then the default <code>noded</code>. They never infer it from a socket's
 owner. Account lookup errors name the account and its configuration source.
 URL lookup uses the same node-file search and retains its loopback default
 on read or parse failure.</p>
+<p>An explicit socket override is not blocked by unreadable or invalid socket
+settings in node.conf. Account settings are checked independently: an explicit
+<code>MIXOS_BROKER_ACCOUNT</code> overrides broken account configuration, while clients
+relying on <code>noded.account</code> still report configuration errors.</p>
 <h2 id="running-it">Running it</h2>
 <p>Run <code>noded serve</code>; <code>--no-monitor --no-log</code> disables its optional observation
 clients. The Unix broker endpoint verifies peer credentials before
