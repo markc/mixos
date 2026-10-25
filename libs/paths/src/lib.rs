@@ -322,7 +322,9 @@ impl Dirs {
                 _ => return Err("MixOS relative path escapes its root".into()),
             }
         }
-        Ok(self.try_root(root)?.join(tail))
+        // join("") appends a trailing slash; an empty rel names the root itself.
+        let root = self.try_root(root)?;
+        Ok(if tail.as_os_str().is_empty() { root } else { root.join(tail) })
     }
     pub fn resolve_path(&self, value: &str) -> Result<PathBuf> {
         if let Some(logical) = value.strip_prefix("mixos:") {

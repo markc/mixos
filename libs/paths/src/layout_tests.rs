@@ -332,6 +332,25 @@ fn real_layout_and_symlink_follow_a_move() {
 }
 
 #[test]
+fn an_empty_rel_names_the_root_without_a_trailing_slash() {
+    let env = Environment {
+        uid: 1000,
+        home: Some("/home/user".into()),
+        prefix: Some("/srv/moved tree".into()),
+        ..Environment::default()
+    };
+    let layout = Layout::from_environment(&env).unwrap();
+    for rel in ["", ".", "a/.."] {
+        let path = layout.path(Root::Prefix, rel).unwrap();
+        assert_eq!(path.as_os_str(), "/srv/moved tree", "{rel:?}");
+    }
+    assert_eq!(
+        layout.resolve_path("mixos:prefix").unwrap().as_os_str(),
+        "/srv/moved tree"
+    );
+}
+
+#[test]
 fn a_cargo_build_tree_is_not_an_install() {
     let temp = std::env::temp_dir().join(format!("mixos-paths-cargo-{}", std::process::id()));
     let profile = temp.join("target/debug");
