@@ -1491,6 +1491,7 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].1, "releases.list");
         e.released(calls[0].0, ok(rows()));
+        e.set_section(Section::Software);
         e.set_software_group(SoftwareGroup::Other);
         e.take_effects();
         e
@@ -2048,9 +2049,12 @@ mod tests {
 
     #[test]
     fn a_fresh_window_opens_on_appearance() {
-        assert_eq!(listed().section(), Section::Appearance);
-        let saved = serde_json::from_value::<UiState>(json!({})).unwrap();
-        assert_eq!(saved.section, Section::Appearance);
+        assert_eq!(Engine::new(label).section(), Section::Appearance);
+        // Saved UI state from before sections were stored opens there too.
+        let mut saved = serde_json::to_value(UiState::default()).unwrap();
+        saved.as_object_mut().unwrap().remove("section");
+        let ui = serde_json::from_value::<UiState>(saved).unwrap();
+        assert_eq!(ui.section, Section::Appearance);
     }
 
     #[test]
