@@ -7,6 +7,7 @@ use crate::control::Target;
 use crate::tabs::{Cleanup, TabSet};
 use serde_json::{Value, json};
 use std::sync::Mutex;
+use ::bus::native_client::BrokerAccount;
 use test_broker::Broker;
 
 const REQUIRE_MIX: &str = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only";
