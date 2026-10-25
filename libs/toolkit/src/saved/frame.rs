@@ -180,16 +180,30 @@ impl Frame {
         }
     }
 
-    /// Read placement at exit only when the runtime catalogue identified compd.
-    pub fn capture_comp(&mut self, w: &Value) {
+    /// Read the owning window and its output at exit. Place coordinates are
+    /// output-local window geometry, unlike the catalogue's global surface box.
+    pub async fn capture_exit<F, Fut>(&mut self, app_id: &str, mut call: F)
+    where
+        F: FnMut(&'static str, Value) -> Fut,
+        Fut: Future<Output = Option<Value>>,
+    {
+        let Some(window) = Self::own_window(app_id, &mut call).await else { return; };
+        let Some(output) = window["output"].as_str() else { return; };
+        let Some(output) = call("comp.props.get", json!({"path":format!("outputs.{output}")})).await else { return; };
+        self.capture_comp(&window, &output);
+    }
+
+    /// Capture window geometry relative to the owning output, excluding the
+    /// client's shadows and surface margins. Incomplete reads retain old state.
+    pub fn capture_comp(&mut self, w: &Value, output: &Value) {
         let parsed = (|| {
             Some(Placement {
                 output: w["output"].as_str()?.into(),
                 workspace: u32::try_from(w["workspace"].as_u64()?).ok()?,
-                x: w["x"].as_f64()?,
-                y: w["y"].as_f64()?,
-                width: dimension(&w["width"])?,
-                height: dimension(&w["height"])?,
+                x: w["window_x"].as_f64()? - output["x"].as_f64()?,
+                y: w["window_y"].as_f64()? - output["y"].as_f64()?,
+                width: dimension(&w["window_width"])?,
+                height: dimension(&w["window_height"])?,
             })
         })();
         if let Some(p) = parsed {
@@ -223,7 +237,8 @@ mod tests {
     }
     fn window() -> Value {
         json!({"id":7,"generation":3,"app_id":"dev.mixos.example","pid":std::process::id(),
-            "output":"o_main","workspace":2,"x":20.0,"y":30.0,"width":900.0,"height":600.0})
+            "output":"o_main","workspace":2,"x":1930.0,"y":20.0,"width":920.0,"height":620.0,
+            "window_x":1940.0,"window_y":30.0,"window_width":900.0,"window_height":600.0})
     }
     fn runtime() -> tokio::runtime::Runtime {
         tokio::runtime::Builder::new_current_thread()
@@ -356,7 +371,7 @@ mod tests {
         let mut f = frame();
         f.maximised = true;
         f.theme = choice.into();
-        f.capture_comp(&window());
+        f.capture_comp(&window(), &json!({"x":1920,"y":0}));
         let raw = config::to_conf_mix_string(&f).unwrap();
         let back: Frame = config::from_conf_mix_str(&raw).unwrap();
         assert_eq!(back, f);

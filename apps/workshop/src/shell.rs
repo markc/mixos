@@ -429,10 +429,11 @@ impl Shell {
         if self.restore.is_some() {
             let bus = self.bus.clone();
             let comp = self.comp.clone();
-            let window = self.runtime.block_on(async move {
-                tokio::time::timeout(
+            let frame = &mut self.saved.window;
+            self.runtime.block_on(async move {
+                let _ = tokio::time::timeout(
                     std::time::Duration::from_millis(700),
-                    toolkit::saved::Frame::own_window(inspector::model::APP_ID, |command, args| {
+                    frame.capture_exit(inspector::model::APP_ID, |command, args| {
                         let bus = bus.clone();
                         let comp = comp.clone();
                         async move {
@@ -444,13 +445,8 @@ impl Shell {
                         }
                     }),
                 )
-                .await
-                .ok()
-                .flatten()
+                .await;
             });
-            if let Some(window) = window {
-                self.saved.window.capture_comp(&window);
-            }
         }
         self.save_state(true);
     }

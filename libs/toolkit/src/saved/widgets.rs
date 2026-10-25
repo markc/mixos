@@ -66,7 +66,7 @@ pub fn panel<R>(
     let (share, restored) = with(ui.ctx(), |w| {
         if w.applied.insert(format!("panel:{name}")) {
             let saved = panel_share(w, name, share);
-            (saved, (saved - share).abs().gt(&0.005).then_some(saved))
+            (saved, ((saved - share).abs() > 0.005).then_some(saved))
         } else {
             (share, None)
         }
@@ -87,7 +87,11 @@ pub fn panel<R>(
         .resizable(true)
         .default_size(extent * share.clamp(*limits.start(), *limits.end()))
         .size_range(extent * limits.start()..=extent * limits.end())
-        .show(ui, body);
+        .show(ui, |ui| {
+            if horizontal { ui.set_min_width(ui.available_width()); }
+            else { ui.set_min_height(ui.available_height()); }
+            body(ui)
+        });
     let size = if horizontal {
         shown.response.rect.width()
     } else {

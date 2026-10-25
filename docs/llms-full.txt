@@ -34467,8 +34467,9 @@ the window appears. The adapter returns `None` for transport errors or any
 non-zero return code. Toolkit probes the catalogue, matches app ID and PID,
 and sends generation-fenced workspace then placement/maximise requests.
 It stops silently at a refusal, never focuses or switches workspace. Before
-disconnecting at exit, use `Frame::own_window` and `capture_comp` to remember
-output, position and workspace. Other Wayland desktops restore only size
+disconnecting at exit, use `Frame::capture_exit` to remember output, position
+and workspace. It reads the output origin and window geometry, so client
+shadows and multiple outputs do not shift the restored position. Other Wayland desktops restore only size
 and maximised state; no position is invented.
 
 The strict-data envelope has `schema_version: 1`. Malformed files and unknown
