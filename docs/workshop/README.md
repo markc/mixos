@@ -214,7 +214,11 @@ Auto, Bottom or Right; the dock header's panel button switches between Bottom
 and Right. Drag the pane boundary to resize it. Placement, right width and
 bottom height are saved in the window's `UiState`, with separate sizes for
 each side. Width is kept within 20–50% of the window, height within 12–50%.
-The services split is a share of the width left beside Traffic.
+The services split is a share of the width left beside Traffic, within 10–80%.
+`workshop.dock {side:"auto", size}` records the requested share on both axes
+(each within its own limits), so the size survives the first layout and later
+crossings of Auto's width threshold. Startup resolves Auto from the saved
+window width before the first frame.
 
 Click Traffic in its header (or View › Traffic) to collapse it to a bottom
 header strip; click again to reopen it. Right-side rows show time, command,
