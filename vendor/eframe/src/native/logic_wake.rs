@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! A demand-driven safety net for root logic when no redraw arrives.
-use std::time::{Duration, Instant};
+use core::time::Duration;
+use std::time::Instant;
 
 const GRACE: Duration = Duration::from_millis(100);
 
@@ -45,12 +46,12 @@ mod tests {
         let mut wake = LogicWake::default();
         assert_eq!(wake.deadline(), None);
         wake.request(now);
-        let deadline = wake.deadline().unwrap();
+        let deadline = wake.deadline().expect("a repaint arms a deadline");
         assert!(!wake.take_due(now));
         wake.request(now + Duration::from_millis(50));
         assert_eq!(wake.deadline(), Some(deadline));
         assert!(wake.take_due(deadline));
-        assert!(!wake.take_due(deadline + Duration::from_secs(60)));
+        assert!(!wake.take_due(deadline + Duration::from_secs(1)));
         assert_eq!(wake.deadline(), None);
     }
 

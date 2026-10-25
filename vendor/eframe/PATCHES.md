@@ -4,6 +4,9 @@ Base: crates.io `eframe` 0.36.2, upstream egui revision
 `49682f8baa058bf49e011035cfbd6e825f88a5ef` (`crates/eframe`).
 MIT OR Apache-2.0. The published crate omits the workspace licence files;
 `LICENSE-MIT` and `LICENSE-APACHE` are copied from that exact upstream revision.
+Its workspace `clippy.toml` is also copied unchanged from that revision: the
+crate's published manifest enables lints that depend on the upstream MSRV,
+type-complexity threshold, exported-API policy and documentation word list.
 
 ## 1. One-shot logic wake when a redraw stalls
 
