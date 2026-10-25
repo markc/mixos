@@ -107,6 +107,17 @@ fn explicit_bottom_and_saved_sizes_are_honoured() {
 }
 
 #[test]
+fn the_header_button_flips_the_effective_side() {
+    for (size, target) in [(egui::vec2(1920.0, 1080.0), inspector::DockSide::Bottom),
+        (egui::vec2(900.0, 700.0), inspector::DockSide::Right)] {
+        let mut h = sized_harness(engine(None), size);
+        h.get_by_label(&label("traffic-switch-side")).click();
+        h.run();
+        assert!(h.state().contains(&UiEvent::DockSide(target)));
+    }
+}
+
+#[test]
 fn collapsed_traffic_reopens_with_one_click() {
     let mut e = engine(None);
     e.ui.dock_side = inspector::DockSide::Right;

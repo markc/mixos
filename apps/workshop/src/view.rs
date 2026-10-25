@@ -103,7 +103,7 @@ pub fn view(
         let chrome = toolkit::chrome::Chrome::of(ui.ctx());
         egui::Panel::bottom("traffic-collapsed")
             .resizable(false)
-            .exact_size(chrome.style.icon_button as f32 + 2.0 * chrome.metrics.dock_margin as f32)
+            .exact_size(chrome.style.icon_button as f32 + 2.0 * chrome.metrics.dock_margin)
             .frame(bars::dock_frame(ui.ctx()))
             .show(ui, |ui| traffic(ui, engine, side, &mut events));
     } else {
