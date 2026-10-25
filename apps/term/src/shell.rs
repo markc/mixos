@@ -96,6 +96,7 @@ pub struct Shell {
     theme: Theme,
     file_theme: Theme,
     look: Option<settings::Appearance>,
+    common_ui: settings::model::CommonUi,
     follower: settings::follow::Follower,
     look_topic: String,
     /// A read already prepared by the follower after retargeting.
@@ -137,6 +138,7 @@ impl Shell {
             file_theme: theme.clone(),
             theme,
             look: None,
+            common_ui: settings::model::CommonUi::default(),
             follower: settings::follow::Follower::new(&hostname()),
             look_topic: settings::summary_topic(settings::follow::PROFILE),
             look_prepared: None,
@@ -378,7 +380,8 @@ impl Shell {
             .look
             .as_ref()
             .map(|look| toolkit::session_look::theme_or(look, &self.file_theme))
-            .unwrap_or_else(|| self.file_theme.clone());
+            .unwrap_or_else(|| self.file_theme.clone())
+            .with_ui(self.common_ui.clone());
         self.installed = None;
         self.ctx.request_repaint();
     }
@@ -404,10 +407,13 @@ impl Shell {
         match followed {
             Some(settings::follow::Followed::Look {
                 appearance,
+                ui,
                 custom_source,
                 terminal,
                 ..
             }) => {
+                self.common_ui = ui;
+                self.app.set_text_scale(self.common_ui.text_scale as f32);
                 // The terminal's settings apply whatever the look's source.
                 let family = terminal.font_family(&appearance).map(str::to_owned);
                 self.app

@@ -197,6 +197,7 @@ pub struct Shell {
     file_theme: Theme,
     /// The session look settingsd holds, once read.
     look: Option<settings::Appearance>,
+    common_ui: settings::model::CommonUi,
     /// The profile's bindings for Workshop, as last applied.
     keymap: toolkit::keymap::Overrides,
     follower: settings::follow::Follower,
@@ -322,6 +323,7 @@ impl Shell {
             inbox,
             installed: toolkit::theme_menu::Choice::default(),
             look: None,
+            common_ui: settings::model::CommonUi::default(),
             keymap: toolkit::keymap::Overrides::new(),
             follower: settings::follow::Follower::new(&hostname()),
             look_retry: 0,
@@ -821,6 +823,7 @@ impl Shell {
             .as_ref()
             .map(|look| toolkit::session_look::theme_or(look, &self.file_theme))
             .unwrap_or_else(|| self.file_theme.clone())
+            .with_ui(self.common_ui.clone())
     }
 
     /// Apply the profile's bindings for Workshop over the built chords.
@@ -890,10 +893,12 @@ impl Shell {
             // as `session_look` does for one it cannot draw.
             Some(settings::follow::Followed::Look {
                 appearance,
+                ui,
                 custom_source,
                 keymaps,
                 ..
             }) => {
+                self.common_ui = ui;
                 self.set_look((!custom_source).then_some(*appearance));
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
             }

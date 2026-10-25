@@ -101,6 +101,7 @@ pub struct Shell {
     theme: Theme,
     installed: Option<toolkit::theme_menu::Choice>,
     look: Option<settings::Appearance>,
+    common_ui: settings::model::CommonUi,
     keymap: toolkit::keymap::Overrides,
     follower: settings::follow::Follower,
     look_retry: u64,
@@ -191,6 +192,7 @@ impl Shell {
             theme,
             installed: None,
             look: None,
+            common_ui: settings::model::CommonUi::default(),
             keymap: toolkit::keymap::Overrides::new(),
             follower: settings::follow::Follower::new(&hostname()),
             look_retry: 0,
@@ -539,7 +541,8 @@ impl Shell {
             .look
             .as_ref()
             .map(|look| toolkit::session_look::theme_or(look, &self.file_theme))
-            .unwrap_or_else(|| self.file_theme.clone());
+            .unwrap_or_else(|| self.file_theme.clone())
+            .with_ui(self.common_ui.clone());
         self.installed = None;
         self.ctx.request_repaint();
     }
@@ -607,10 +610,12 @@ impl Shell {
         match followed {
             Some(settings::follow::Followed::Look {
                 appearance,
+                ui,
                 custom_source,
                 keymaps,
                 ..
             }) => {
+                self.common_ui = ui;
                 self.look = (!custom_source).then_some(*appearance);
                 self.set_base();
                 self.set_keymap(keymaps.get(SERVICE).cloned().unwrap_or_default());

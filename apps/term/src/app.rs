@@ -63,6 +63,7 @@ pub struct App {
     /// missing here has not been sized yet, which forces its first resize.
     pub grids: HashMap<u64, (u16, u16)>,
     font: FontSize,
+    text_scale: f32,
     /// The font raster every pane draws with (shared with the GPU grid).
     pub raster: Arc<Mutex<Raster>>,
     scale: f32,
@@ -173,6 +174,7 @@ impl App {
             },
             grids: HashMap::new(),
             font,
+            text_scale: 1.0,
             raster: Arc::new(Mutex::new(raster)),
             scale,
             cell,
@@ -246,6 +248,23 @@ impl App {
         self.font
     }
 
+    /// Larger text multiplies the raster size; zoom and saved font px stay
+    /// in the terminal's unscaled units.
+    pub fn set_text_scale(&mut self, scale: f32) {
+        let scale = if scale.is_nan() { 1.0 } else { scale.clamp(0.5, 3.0) };
+        if self.text_scale == scale {
+            return;
+        }
+        let raster = self.raster.lock().unwrap().resized(self.scale, self.font.current() * scale);
+        match raster {
+            Ok(raster) => {
+                self.text_scale = scale;
+                self.replace_raster(raster);
+            }
+            Err(error) => eprintln!("term: larger text: {error}"),
+        }
+    }
+
     pub fn area(&self) -> Geometry {
         self.area
     }
@@ -284,7 +303,7 @@ impl App {
         if face != self.face {
             let weight = u16::try_from(terminal.font.weight).unwrap_or(400);
             let cursor = self.raster.lock().expect("raster").cursor();
-            match Raster::with_face(self.scale, font.current(), cursor, family, weight) {
+            match Raster::with_face(self.scale, font.current() * self.text_scale, cursor, family, weight) {
                 Ok(raster) => {
                     self.face = face;
                     self.face_failed = None;
@@ -305,7 +324,7 @@ impl App {
                 self.raster
                     .lock()
                     .expect("raster")
-                    .resized(self.scale, font.current()),
+                    .resized(self.scale, font.current() * self.text_scale),
             );
         }
         match rebuilt {
@@ -657,7 +676,7 @@ impl App {
             .raster
             .lock()
             .expect("raster")
-            .resized(self.scale, font.current());
+            .resized(self.scale, font.current() * self.text_scale);
         match rebuilt {
             Ok(raster) => {
                 self.font = font;
@@ -688,7 +707,7 @@ impl App {
             .raster
             .lock()
             .expect("raster")
-            .resized(scale, self.font.current());
+            .resized(scale, self.font.current() * self.text_scale);
         match rebuilt {
             Ok(raster) => self.replace_raster(raster),
             Err(error) => eprintln!("term: raster rebuild at scale {scale}: {error}"),

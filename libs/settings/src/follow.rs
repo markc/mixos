@@ -46,6 +46,7 @@ pub enum Followed {
     /// design source of its own (an app keeps its theme file then).
     Look {
         appearance: Box<Appearance>,
+        ui: crate::model::CommonUi,
         custom_source: bool,
         revision: u64,
         /// The person's key bindings, per application
@@ -304,6 +305,7 @@ impl Follower {
         self.seen = Some((incarnation.to_owned(), revision));
         Followed::Look {
             appearance: Box::new(summary.appearance),
+            ui: summary.ui,
             custom_source: summary.custom_source,
             revision: revision.0,
             keymaps: summary.keymaps,

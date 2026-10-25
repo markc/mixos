@@ -74,6 +74,7 @@ pub struct Shell {
     theme: Theme,
     file_theme: Theme,
     look: Option<settings::Appearance>,
+    common_ui: settings::model::CommonUi,
     /// The profile's bindings for dopus, as last applied.
     keymap: toolkit::keymap::Overrides,
     follower: settings::follow::Follower,
@@ -132,6 +133,7 @@ impl Shell {
             file_theme: theme.clone(),
             theme,
             look: None,
+            common_ui: settings::model::CommonUi::default(),
             keymap: toolkit::keymap::Overrides::new(),
             follower: settings::follow::Follower::new(&hostname()),
             look_topic: settings::summary_topic(settings::follow::PROFILE),
@@ -432,7 +434,8 @@ impl Shell {
             .look
             .as_ref()
             .map(|look| toolkit::session_look::theme_or(look, &self.file_theme))
-            .unwrap_or_else(|| self.file_theme.clone());
+            .unwrap_or_else(|| self.file_theme.clone())
+            .with_ui(self.common_ui.clone());
         self.installed = None;
         self.ctx.request_repaint();
     }
@@ -493,10 +496,12 @@ impl Shell {
         match followed {
             Some(settings::follow::Followed::Look {
                 appearance,
+                ui,
                 custom_source,
                 keymaps,
                 ..
             }) => {
+                self.common_ui = ui;
                 self.set_look((!custom_source).then_some(*appearance));
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
             }

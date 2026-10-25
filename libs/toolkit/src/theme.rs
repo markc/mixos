@@ -141,6 +141,7 @@ impl Overlay {
 /// The resolved design for one context, and how its windows are framed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Theme {
+    ui: settings::model::CommonUi,
     context: DesignContext,
     design: UnstampedResolvedDesign,
     style: ResolvedStyle,
@@ -303,6 +304,7 @@ impl Theme {
                     None => Self::for_context(context.clone()).style,
                 };
                 Ok(Self {
+                    ui: settings::model::CommonUi::default(),
                     context,
                     design: success.candidate,
                     style,
@@ -336,6 +338,7 @@ impl Theme {
                 });
                 theme.decorations = self.decorations;
                 theme.captions = self.captions;
+                theme.ui = self.ui.clone();
                 // A rebuilt design drops the session's choices; carry them across.
                 theme.with_overlay(self.overlay.clone())?
             };
@@ -367,7 +370,7 @@ impl Theme {
         }
         self.overlay_style = None;
         let style = self
-            .style()
+            .raw_style()
             .with_values(&overlay.style)
             .map_err(Error::Compile)?;
         self.overlay = overlay;
@@ -429,6 +432,21 @@ impl Theme {
 
     /// The chrome's forms and lengths (the design's style family).
     pub fn style(&self) -> ResolvedStyle {
+        crate::ui_scale::tokens(self.raw_style(), &self.ui)
+    }
+
+    /// Desktop accessibility and layout choices. Per-app overrides require
+    /// Summary.apps and are deliberately not applied here.
+    pub fn with_ui(mut self, ui: settings::model::CommonUi) -> Self {
+        self.ui = crate::ui_scale::clamped(ui);
+        self
+    }
+
+    pub fn ui(&self) -> &settings::model::CommonUi {
+        &self.ui
+    }
+
+    fn raw_style(&self) -> ResolvedStyle {
         if let Some(style) = self.overlay_style {
             return style;
         }

@@ -456,10 +456,21 @@ fn size(
             {
                 events.push(UiEvent::Appearance(AppearanceEdit::TextScale(scale)));
             }
-            if let Some(density) = scale_control(ui, "size-density", look.density, 0.5..=2.0, false)
-            {
-                events.push(UiEvent::Appearance(AppearanceEdit::Density(density)));
-            }
+            ui.label(label("size-text-scale-note"));
+            panel::section_label(ui, &label("size-density"));
+            ui.horizontal(|ui| {
+                let nearest = toolkit::ui_scale::nearest_density(look.density);
+                for (index, key) in ["size-compact", "size-comfortable", "size-spacious"]
+                    .into_iter()
+                    .enumerate()
+                {
+                    if toolkit::selectable(ui, index == nearest, label(key)).clicked() {
+                        events.push(UiEvent::Appearance(AppearanceEdit::Density(
+                            toolkit::ui_scale::DENSITY_STEPS[index],
+                        )));
+                    }
+                }
+            });
         });
     });
 }

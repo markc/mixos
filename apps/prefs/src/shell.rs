@@ -571,6 +571,15 @@ impl Shell {
             Some(look) => base.framed(look.decorations, look.captions),
             None => base,
         };
+        // Desktop values only; per-app text overrides are not in Summary.
+        let base = match &look {
+            Some(look) => base.with_ui(settings::model::CommonUi {
+                text_scale: look.text_scale,
+                density: look.density,
+                reduced_motion: look.reduced_motion,
+            }),
+            None => base,
+        };
         let theme = match base.with_choice(&choice) {
             Ok(theme) => theme,
             Err(error) => {

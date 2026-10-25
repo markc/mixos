@@ -193,6 +193,30 @@ fn window_studio_dark() {
     window(chrome(Scheme::Studio, Mode::Dark), "window_studio_dark");
 }
 
+#[test]
+fn window_larger_text() {
+    window(Theme::embedded().with_ui(settings::model::CommonUi {
+        text_scale: 1.5,
+        ..Default::default()
+    }), "window_larger_text");
+}
+
+#[test]
+fn window_compact() {
+    window(Theme::embedded().with_ui(settings::model::CommonUi {
+        density: toolkit::ui_scale::DENSITY_STEPS[0],
+        ..Default::default()
+    }), "window_compact");
+}
+
+#[test]
+fn window_spacious() {
+    window(Theme::embedded().with_ui(settings::model::CommonUi {
+        density: toolkit::ui_scale::DENSITY_STEPS[2],
+        ..Default::default()
+    }), "window_spacious");
+}
+
 /// The chrome scheme classic: bevels, square corners.
 #[test]
 fn window_classic() {

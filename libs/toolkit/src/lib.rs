@@ -75,6 +75,7 @@ pub mod thumbnail;
 pub mod titlebar;
 pub mod toggle;
 pub mod tooltip;
+pub mod ui_scale;
 
 pub use action::{Action, Registry};
 pub use button::selectable;

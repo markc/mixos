@@ -160,6 +160,9 @@ pub fn pair_style(theme: &Theme) -> Style {
         TextStyle::Monospace,
         FontId::new(mono.font_size as f32, FontFamily::Monospace),
     );
+    for font in style.text_styles.values_mut() {
+        font.size *= theme.ui().text_scale as f32;
+    }
 
     for widget in [
         &mut style.visuals.widgets.noninteractive,
@@ -287,6 +290,7 @@ fn pair_visuals(theme: &Theme) -> Visuals {
 /// goes in both egui theme slots: the MixOS theme, not the system
 /// preference, picks the mode.
 pub fn apply(ctx: &egui::Context, theme: &Theme) {
+    crate::ui_scale::install(ctx, theme.ui());
     ctx.data_mut(|d| {
         d.insert_temp(
             egui::Id::new("toolkit.editor-palette"),
