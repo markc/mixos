@@ -686,6 +686,14 @@ async fn own(
                         }
                     } else if command.id.is_some() {
                         let connection = connection.clone();
+                        // Static discovery remains available while attachment
+                        // is being refreshed; it needs no bound record.
+                        if command.command == "HELP" && requests.len() < crate::session_status::SHARED_SLOTS {
+                            requests.spawn(async move {
+                                crate::session_status::help(&connection, &event).await;
+                            });
+                            continue;
+                        }
                         // The last slot belongs to this pane's own Term; other
                         // same-UID callers share the rest.
                         let admitted = record

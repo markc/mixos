@@ -35,7 +35,7 @@ fn manifest() -> Vec<::bus::CommandDescriptor> {
 /// Concurrent status dispatches the resident will carry at once, and the share
 /// of them any caller other than this pane's own Term may hold.
 const DISPATCH_SLOTS: usize = 4;
-const SHARED_SLOTS: usize = DISPATCH_SLOTS - 1;
+pub(crate) const SHARED_SLOTS: usize = DISPATCH_SLOTS - 1;
 
 /// Scheduling class only, never authority: `admitted` still re-runs the whole
 /// policy on the reserved slot. Without the reservation any same-UID process
@@ -209,6 +209,15 @@ pub(crate) async fn admitted(
         && caller_lease.is_none_or(|lease| lease.is_live(hello).unwrap_or(false))
 }
 
+pub(crate) async fn help(connection: &VerifiedConnection, event: &VerifiedCommand) {
+    let body = serde_json::to_string(&manifest()).expect("static descriptors serialise");
+    let _ = tokio::time::timeout(
+        ADMISSION,
+        connection.client().respond(event.command(), 0, &body),
+    )
+    .await;
+}
+
 /// Runs in the resident's bounded sibling task set, never in its receive arm.
 pub(crate) async fn dispatch(
     connection: &VerifiedConnection,
@@ -221,9 +230,7 @@ pub(crate) async fn dispatch(
         return;
     }
     if command.command == "HELP" {
-        let body = serde_json::to_string(&manifest()).expect("static descriptors serialise");
-        let _ =
-            tokio::time::timeout(ADMISSION, connection.client().respond(command, 0, &body)).await;
+        help(connection, event).await;
         return;
     }
     let Some(principal) = event.trusted_context() else {
@@ -234,12 +241,10 @@ pub(crate) async fn dispatch(
     // are different authorities, so an execute command is admitted against
     // `Execute` and a caller holding only `ReadState` never reaches it.
     //
-    // An UNKNOWN command is deliberately admitted against the WEAKEST capability
-    // rather than answered early. Answering it before admission would tell an
-    // unauthorised caller which commands exist — a known command would come back
-    // REFUSED and an unknown one UNSUPPORTED, which is a probe of the command
-    // table. Admitted callers still get UNSUPPORTED below, and unadmitted ones
-    // get the same uniform refusal for everything.
+    // Unknown invocations are admitted against the weakest capability so
+    // unadmitted callers receive the same uniform refusal for every invocation.
+    // HELP above is public static metadata; it exposes no admission state or
+    // authority and never changes permission to invoke a command.
     let capability = match command.command.as_str() {
         crate::session_execute::SUBMIT
         | crate::session_execute::RESULT
