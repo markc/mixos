@@ -3551,10 +3551,7 @@ mod tests {
     fn help_covers_dispatcher_arms() {
         let entries = commands::manifest();
         let source = include_str!("controller.rs");
-        let dispatcher = source
-            .split("match cmd.command.as_str() {")
-            .nth(1)
-            .unwrap();
+        let dispatcher = source.split("match cmd.command.as_str() {").nth(1).unwrap();
         let dispatcher = dispatcher.split("fn tab_name").next().unwrap();
         for line in dispatcher.lines() {
             let line = line.trim();

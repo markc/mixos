@@ -243,7 +243,10 @@ fn the_window_answers_its_commands_over_a_real_broker() {
     assert_eq!(rc, 0, "{body}");
     assert_ne!(tabs.lock().unwrap().active_id(), before, "Ctrl+PageDown");
     // A targeted command: term.execute names the tab.
-    let (rc, body) = call("term-12345.execute", json!({"id": "tab.select", "tab": before}));
+    let (rc, body) = call(
+        "term-12345.execute",
+        json!({"id": "tab.select", "tab": before}),
+    );
     assert_eq!(rc, 0, "{body}");
     assert_eq!(tabs.lock().unwrap().active_id(), before, "tab.select by id");
 
