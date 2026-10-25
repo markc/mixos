@@ -252,4 +252,20 @@ mod tests {
         missing.preserve_pending(&mut saved);
         assert!(saved.row_key.is_none());
     }
+    #[test]
+    fn saved_collapsed_local_node_wins_over_discovery_but_first_launch_uses_defaults() {
+        for saved in [false, true] {
+            let a = Arrangement::default(); let mut pending = Pending::new(&a);
+            if !saved { pending.follow_defaults(); }
+            let mut e = Engine::new(crate::label);
+            let inspector::Effect::Discover { ticket } = e.take_effects().remove(0) else { panic!("discovery"); };
+            let mut snapshot = inspector::Snapshot::default();
+            snapshot.nodes.push(inspector::model::Node { name: "local".into(), local: true, ..Default::default() });
+            snapshot.progress = Some(inspector::model::Progress { finished: false, ..Default::default() });
+            e.discovered(ticket, snapshot); assert!(e.ui.expanded.contains("node:local"));
+            pending.reconcile(&mut e); assert_eq!(e.ui.expanded.contains("node:local"), !saved);
+            e.ui.expanded.insert("node:local".into()); pending.reconcile(&mut e);
+            assert!(e.ui.expanded.contains("node:local"), "later user choices survive");
+        }
+    }
 }
