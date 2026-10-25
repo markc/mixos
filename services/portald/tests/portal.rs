@@ -20,6 +20,106 @@ use tokio::task::JoinHandle;
 use zbus::Message;
 use zbus::zvariant::{OwnedValue, Value};
 
+/// Exercise production startup, registration and command dispatch. Each mode
+/// runs in a fresh process because installed consent is intentionally permanent.
+#[test]
+fn startup_help_matches_screencast_dispatch() {
+    const MODE: &str = "PORTALD_TEST_SCREENCAST";
+    if let Ok(mode) = std::env::var(MODE) {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let enabled = mode == "on";
+                assert!(portald::screencast::consent::installed().is_none());
+                let portal = tokio::spawn(portald::run(
+                    Binding {
+                        instance: "host".into(),
+                        profile: "default".into(),
+                    },
+                    std::env::var("PORTALD_TEST_DBUS").unwrap(),
+                    None,
+                    enabled.then_some(portald::screencast::consent::Policy::Prompt),
+                    Default::default(),
+                ));
+                let caller = bus::native_client::SupervisedClient::connect_options(
+                    "portal-startup-test",
+                    &std::env::var("MIXOS_NODED_URL").unwrap(),
+                )
+                .connect()
+                .await
+                .unwrap();
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    loop {
+                        assert!(!portal.is_finished(), "production portal exited during startup");
+                        let services = caller
+                            .call("noded", "noded.list", serde_json::json!({}))
+                            .await
+                            .unwrap();
+                        if services.as_array().unwrap().iter().any(|s| s["name"] == "portald") {
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                })
+                .await
+                .expect("portald must register during production startup");
+                let help = caller.call("portald", "HELP", serde_json::json!({})).await.unwrap();
+                let commands: Vec<bus::CommandDescriptor> = serde_json::from_value(help).unwrap();
+                assert_eq!(commands.len(), if enabled { 6 } else { 2 });
+                assert_eq!(commands[0].name, "HELP");
+                assert_eq!(commands[1].name, "portald.status");
+                let screencast: Vec<_> = commands.iter()
+                    .filter(|c| c.name.starts_with("portald.screencast."))
+                    .map(|c| c.name.as_str())
+                    .collect();
+                assert_eq!(screencast.len(), if enabled { 4 } else { 0 });
+                if enabled {
+                    assert_eq!(screencast, [
+                        "portald.screencast.pending",
+                        "portald.screencast.answer",
+                        "portald.screencast.grant",
+                        "portald.screencast.revoke",
+                    ]);
+                }
+                let (rc, body, _) = caller.call_with_headers_raw(
+                    "portald", "portald.screencast.pending", &BTreeMap::new(), "{}",
+                ).await.unwrap();
+                let body: serde_json::Value = serde_json::from_str(&body).unwrap();
+                if enabled {
+                    assert_eq!(rc, 0, "{body}");
+                    assert_eq!(body["pending"], serde_json::json!([]));
+                    assert_eq!(body["grants"], serde_json::json!([]));
+                } else {
+                    assert_eq!(rc, 10);
+                    assert_eq!(body, serde_json::json!({
+                        "error_code": "UNKNOWN_COMMAND",
+                        "command": "portald.screencast.pending",
+                        "message": "portald runs without --screencast",
+                    }));
+                }
+                caller.close().await;
+                portal.abort();
+                let _ = portal.await;
+            });
+        return;
+    }
+    for mode in ["off", "on"] {
+        let broker = test_broker::Broker::start();
+        let dbus = PrivateBus::start().unwrap();
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "startup_help_matches_screencast_dispatch", "--nocapture"])
+            .env(MODE, mode)
+            .env("MIXOS_NODED_URL", &broker.url)
+            .env("PORTALD_TEST_DBUS", &dbus.address)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "screencast {mode}:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    }
+}
+
 /// The Studio dark accent the design resolves to (`resolve_with_embedded_and_accents`
 /// on the embedded default, pinned in settingsd's `appearance` tests).
 const ACCENT: [f64; 3] = [0.5450980392156862, 0.48627450980392156, 0.9647058823529412];

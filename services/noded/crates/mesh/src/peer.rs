@@ -1015,7 +1015,7 @@ async fn connect_and_publish(
                         if address.service.as_deref() == Some(link_name.as_str()))
             });
             if addressed_to_link
-                && bus_msg.get("type") != Some("response")
+                && matches!(bus_msg.get("type"), None | Some("request"))
                 && let Some(id) = bus_msg.get("id")
             {
                 let command = bus_msg.command_name().unwrap_or("");
@@ -1755,6 +1755,23 @@ mod tests {
             assert_eq!(registration.command_name(), Some("noded.register"));
             let name = registration.from_addr().unwrap();
             assert_eq!(name, "bridge-alpha");
+            // Events with correlation IDs still enter mesh ingress. A link
+            // must never manufacture an UNKNOWN_COMMAND response from one.
+            let event = BusMessage::new()
+                .with_header("to", name)
+                .with_header("type", "event")
+                .with_header("command", "props.changed")
+                .with_header("id", "event-id");
+            websocket
+                .send(tungstenite::Message::Text(event.to_wire().into()))
+                .await
+                .unwrap();
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), next_bus_frame(&mut websocket))
+                    .await
+                    .is_err(),
+                "link-addressed events must not be answered"
+            );
             for command in ["HELP", "x.ping"] {
                 let request = BusMessage::new()
                     .with_header("to", name)
@@ -1782,6 +1799,15 @@ mod tests {
         });
         mesh.ensure_connected(&beta).await.unwrap();
         server.await.unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(2), incoming.recv())
+            .await
+            .unwrap()
+            .expect("link-addressed event must still reach mesh ingress");
+        assert_eq!(event.peer, "beta");
+        assert_eq!(event.message.get("type"), Some("event"));
+        assert_eq!(event.message.get("id"), Some("event-id"));
+        assert_eq!(event.message.to_addr(), Some("bridge-alpha"));
+        assert_eq!(event.message.command_name(), Some("props.changed"));
         assert!(
             incoming.try_recv().is_err(),
             "link requests must not enter mesh ingress"
