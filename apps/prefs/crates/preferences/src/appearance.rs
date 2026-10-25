@@ -476,6 +476,10 @@ pub struct Appearance {
     pub settings: Availability,
     /// The latest settings failure, kept separate from Software status.
     pub problem: Option<String>,
+    pub problem_source: Option<crate::Section>,
+    pub status_source: crate::Section,
+    pub settings_status: Option<String>,
+    pub problem_missing: bool,
     /// The look settingsd holds.
     pub current: Option<Look>,
     /// The terminal's preferences as settingsd holds them, from the same
@@ -543,6 +547,10 @@ impl Default for Appearance {
             retargeted: false,
             settings: Availability::Unknown,
             problem: None,
+            problem_source: None,
+            status_source: crate::Section::Appearance,
+            settings_status: None,
+            problem_missing: false,
             current: None,
             terminal: None,
             email: None,
@@ -862,7 +870,21 @@ impl Engine {
     }
 
     pub(crate) fn record_settings_status(&mut self) {
-        self.look.problem = self.failed.then(|| self.status.clone());
+        if self.failed {
+            self.look.problem = Some(self.status.clone());
+            self.look.problem_source = Some(self.look.status_source);
+            self.look.problem_missing = false;
+        } else {
+            self.look.settings_status = Some(self.status.clone());
+        }
+    }
+
+    fn clear_settings_problem(&mut self, source: crate::Section) {
+        if self.look.problem_source == Some(source) {
+            self.look.problem = None;
+            self.look.problem_source = None;
+            self.look.problem_missing = false;
+        }
     }
 
     pub(crate) fn call_settings(&mut self, call: Call) {
@@ -970,6 +992,16 @@ impl Engine {
         }
         let Some(expected) = self.look.expected() else {
             return;
+        };
+        let shown = self.look.shown().unwrap_or_else(|| expected.clone());
+        self.look.status_source = if look.decorations != shown.decorations || look.captions != shown.captions {
+            crate::Section::Windows
+        } else if look.text_scale != shown.text_scale || look.reduced_motion != shown.reduced_motion {
+            crate::Section::Accessibility
+        } else if look.font_family != shown.font_family || look.mono_family != shown.mono_family {
+            crate::Section::TextAndFonts
+        } else {
+            crate::Section::Appearance
         };
         let base = self
             .look
@@ -1180,13 +1212,23 @@ impl Engine {
             return;
         }
         self.look.job = None;
+        self.look.status_source = match &call {
+            Call::Terminal(..) => crate::Section::Terminal,
+            Call::Email(..) => crate::Section::Email,
+            Call::Text(_, edit) => edit.section(),
+            _ => self.look.status_source,
+        };
         let answer = answer(result);
+        if matches!(answer, Answer::Ok(_)) && !matches!(call, Call::Read | Call::Receipt(_)) {
+            self.clear_settings_problem(self.look.status_source);
+        }
         if let Answer::Missing = answer {
             self.look.settings = Availability::Missing;
             if !matches!(call, Call::Read) {
                 self.status = self.label("settings-missing", &[]);
                 self.failed = true;
                 self.record_settings_status();
+                self.look.problem_missing = true;
             }
             if matches!(call, Call::Apply(_)) {
                 self.look.unsend();
@@ -1217,6 +1259,11 @@ impl Engine {
         match answer {
             Answer::Ok(value) => match snapshot(&value) {
                 Ok((summary, look)) => {
+                    if self.look.problem_missing {
+                        if let Some(source) = self.look.problem_source {
+                            self.clear_settings_problem(source);
+                        }
+                    }
                     self.look.settings = Availability::Available;
                     self.look.keymaps = summary.keymaps;
                     self.look.fence = Some((summary.incarnation, summary.revision));
@@ -1451,7 +1498,7 @@ impl Engine {
             "conflicts":self.look.conflicts,"shown":self.look.shown(),
             "effective":self.look.shown().map(|look| look.effective()),
             "expected":self.look.expected(),"sent":self.look.sent.as_ref().map(|s| &s.axes),
-            "hold":self.look.hold,"problem":self.look.problem,
+            "hold":self.look.hold,"problem":self.look.problem,"problem_source":self.look.problem_source,
             "custom_source":self.look.custom_source,
             "uncertain":self.look.uncertain.as_ref().map(|s| &s.operation),
             "working":self.look.job.as_ref().map(|(_, c)| c.command_name()),
@@ -1562,6 +1609,36 @@ mod tests {
 
     fn changed() -> Value {
         json!({"status":"changed","receipt":{}})
+    }
+
+    #[test]
+    fn missing_settings_problem_clears_on_recovered_read() {
+        let mut e = read();
+        e.edit_terminal(crate::terminal::Setting::Padding(8));
+        let ticket = settings_calls(&mut e)[0].0;
+        e.settled(ticket, Ok(Reply { rc: 10, body: String::new(), error: Some("settingsd not found".into()) }));
+        assert!(e.look.problem.is_some());
+        e.read_look();
+        let ticket = settings_calls(&mut e)[0].0;
+        e.settled(ticket, reply(0, snapshot_body("8", "studio", "dark")));
+        assert!(e.look.problem.is_none());
+    }
+
+    #[test]
+    fn successful_write_clears_only_its_owners_problem() {
+        let mut e = read();
+        e.edit_terminal(crate::terminal::Setting::Term("BAD".into()));
+        assert_eq!(e.look.problem_source, Some(crate::Section::Terminal));
+        e.edit_interface_font(crate::text::InterfaceEdit::Size(Some(16.0)));
+        let ticket = settings_calls(&mut e)[0].0;
+        e.settled(ticket, reply(0, changed()));
+        assert_eq!(e.look.problem_source, Some(crate::Section::Terminal));
+        let ticket = settings_calls(&mut e)[0].0;
+        e.settled(ticket, reply(0, snapshot_body("8", "studio", "dark")));
+        e.edit_terminal(crate::terminal::Setting::Term("xterm".into()));
+        let ticket = settings_calls(&mut e)[0].0;
+        e.settled(ticket, reply(0, changed()));
+        assert!(e.look.problem.is_none());
     }
 
     fn settings_calls(e: &mut Engine) -> Vec<(u64, &'static str, Value)> {

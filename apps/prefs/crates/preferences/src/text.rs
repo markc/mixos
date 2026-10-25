@@ -77,6 +77,18 @@ pub struct TextEdit {
     pub value: Value,
 }
 
+impl TextEdit {
+    pub(crate) fn section(&self) -> crate::Section {
+        if self.path.starts_with("ced.") {
+            crate::Section::Ced
+        } else if self.path.starts_with("email.") {
+            crate::Section::Email
+        } else {
+            crate::Section::TextAndFonts
+        }
+    }
+}
+
 impl Setting {
     pub fn surface(&self) -> Surface {
         match self {
@@ -146,6 +158,7 @@ impl Engine {
     /// Apply one control's value at once. A value settingsd would refuse is
     /// not sent; the status says why.
     pub fn edit_text(&mut self, setting: Setting) {
+        self.look.status_source = setting.edit().section();
         if let Some(refusal) = setting.refusal() {
             self.status = self.label(refusal, &[]);
             self.failed = true;
@@ -158,6 +171,7 @@ impl Engine {
     }
 
     fn send_text(&mut self, edit: TextEdit) {
+        self.look.status_source = edit.section();
         let operation = self.look.operation();
         self.status = self.label("applying-text", &[]);
         self.failed = false;
@@ -222,6 +236,7 @@ impl Engine {
     /// Apply one interface font change at once. A value settingsd would
     /// refuse is not sent; the status says why.
     pub fn edit_interface_font(&mut self, edit: InterfaceEdit) {
+        self.look.status_source = crate::Section::TextAndFonts;
         if let Some(refusal) = edit.refusal() {
             self.status = self.label(refusal, &[]);
             self.failed = true;

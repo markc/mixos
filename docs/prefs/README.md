@@ -11,8 +11,7 @@ Accessibility, and Software & Updates. Hairlines separate look, desktop,
 apps and system pages. Empty categories are hidden. Each page starts with
 an **Affects:** line. Wallpaper opens from Appearance.
 
-Section commands have no default shortcuts. Existing category commands
-remain available through the palette and Bus.
+Section commands have no default shortcuts. The Apps header is a plain label.
 
 Press `/` outside a text field, or choose the magnifier in the title bar's icon bar, to
 focus search. It filters sections by title, category, extra words and
@@ -217,7 +216,12 @@ The section ids are `appearance`, `text_and_fonts`, `windows`, `apps_email`,
 `apps_term`, `apps_ced`, `accessibility`, `software`, and `wallpaper`.
 Navigation actions use `view.section.<id>`; retired section ids have no aliases. Search includes their `ui.*`
 keys and both font-family keys. `prefs.appearance` and `prefs.appearance.set`
-are version 0.2.0; `prefs.info`, which embeds appearance, is 0.3.0.
+are version 0.3.0; `prefs.info`, which embeds appearance, is 0.4.0.
+The reply includes `problem` (the unresolved settings failure, or null) and
+`problem_source` (its page id, or null). Problems appear on their own page,
+with a link from other pages, and clear on a successful write to the same
+owner. A settings-service outage also clears on a recovered read. Email
+account tasks report their outcome inline and never create settings problems.
 `prefs.section {name[, group]}` opens a registry section and expands its
 category. `app.describe` lists the section ids and their searchable metadata.
 For Software, `group` selects `mixos-desktop`, `mixos-server`, `creative` or

@@ -827,6 +827,7 @@ impl Engine {
     }
 
     fn email_refused(&mut self, change: &Change, refusal: &Refusal) {
+        self.look.status_source = crate::Section::Email;
         match refusal {
             Refusal::Fields(fields) => {
                 if let Some(form) = &mut self.email.form
@@ -857,6 +858,7 @@ impl Engine {
     }
 
     fn send_email(&mut self, edit: Edit) {
+        self.look.status_source = crate::Section::Email;
         let operation = self.look.operation();
         self.status = self.label("applying-email", &[]);
         self.failed = false;
@@ -1420,8 +1422,7 @@ impl Engine {
             self.email.outcome = Some((text.clone(), true));
             self.status = text;
             self.failed = true;
-            self.record_settings_status();
-        } else if self.email.task.is_some() {
+            } else if self.email.task.is_some() {
             self.email.forgets.push((id, name));
         } else {
             self.begin_action(Action::Forget(id), None, false, name);
@@ -1442,7 +1443,6 @@ impl Engine {
         };
         self.status = self.label(key, &[("account", &name)]);
         self.failed = false;
-        self.record_settings_status();
         self.email.outcome = None;
         let ticket = self.next();
         self.email.task = Some(Task {
@@ -1732,7 +1732,6 @@ impl Engine {
     fn launch_email(&mut self, mut task: Task) {
         self.status = self.label("email-launching", &[]);
         self.failed = false;
-        self.record_settings_status();
         let ticket = self.next();
         task.ticket = ticket;
         task.stage = Stage::Launching;
@@ -1777,7 +1776,6 @@ impl Engine {
         };
         self.status = self.label("email-waiting", &[]);
         self.failed = false;
-        self.record_settings_status();
         let ticket = self.next();
         task.ticket = ticket;
         task.stage = Stage::Waiting;
@@ -1813,7 +1811,6 @@ impl Engine {
         };
         self.status = text.clone();
         self.failed = failed;
-        self.record_settings_status();
         self.email.outcome = Some((text.clone(), failed));
         if let (true, Action::Password(id, password)) = (failed, &task.action)
             && task.reply.is_none()
@@ -2753,6 +2750,8 @@ mod tests {
     #[test]
     fn set_password_launches_email_when_absent_then_sends_once_it_registers() {
         let mut e = read();
+        e.edit_terminal(crate::terminal::Setting::Term("BAD".into()));
+        let problem = e.look.problem.clone();
         e.select_email_account("a");
         e.edit_email_password(Secret::new("hunter2"));
         assert!(e.can_set_email_password());
@@ -2767,8 +2766,10 @@ mod tests {
         e.mailed(calls[0].0, missing());
         let calls = mail_calls(&e.take_effects());
         assert_eq!((calls[0].1, calls[0].2), (APPS, "apps.launch"));
+        assert_eq!(e.look.problem, problem, "launch preserves the Term problem");
         assert_eq!(calls[0].3, json!({"id":EMAIL_APP_ID}));
         e.mailed(calls[0].0, reply(0, json!({"launched":true})));
+        assert_eq!(e.look.problem, problem, "waiting preserves the Term problem");
         let wait = e
             .take_effects()
             .into_iter()
@@ -2794,6 +2795,7 @@ mod tests {
         assert!(e.email.task.is_none());
         assert!(!e.failed);
         assert!(e.status.starts_with("email-password-set"), "{}", e.status);
+        assert_eq!(e.look.problem, problem, "the account outcome is inline only");
     }
 
     #[test]

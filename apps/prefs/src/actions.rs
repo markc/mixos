@@ -4,7 +4,7 @@
 //! the Bus commands `prefs.actions` / `prefs.execute` all come from this
 //! registry.
 use egui::{Key, KeyboardShortcut, Modifiers};
-use preferences::{Category, Dialog, Engine, SECTIONS, Section};
+use preferences::{Dialog, Engine, SECTIONS, Section};
 use toolkit::{Action, Icon, Registry};
 
 fn undialogued(e: &Engine) -> bool {
@@ -15,9 +15,10 @@ fn undialogued(e: &Engine) -> bool {
 pub fn section_icon(section: Section) -> Icon {
     match section {
         Section::Appearance => Icon::Palette,
-        Section::TextAndFonts | Section::Ced => Icon::Type,
-        Section::Windows => Icon::ZoomIn,
-        Section::Accessibility => Icon::Play,
+        Section::TextAndFonts => Icon::Type,
+        Section::Ced => Icon::FileCode,
+        Section::Windows => Icon::AppWindow,
+        Section::Accessibility => Icon::Accessibility,
         Section::Wallpapers => Icon::Image,
         Section::Email => Icon::Mail,
         Section::Terminal => Icon::FileTerminal,
@@ -71,27 +72,6 @@ pub fn registry() -> Registry<Engine> {
         run: Engine::focus_search,
     });
     r.scope("view.search", toolkit::action::Scope::Browsing);
-    for (category, shortcut) in Category::ALL.into_iter().zip([
-        Key::Num1,
-        Key::Num2,
-        Key::Num3,
-        Key::Num4,
-        Key::Num5,
-        Key::Num6,
-        Key::Num7,
-    ]) {
-        r.add(Action {
-            id: category.command(),
-            label: category.label(),
-            menu: Some("view"),
-            submenu: None,
-            group: 0,
-            shortcut: key(Modifiers::COMMAND, shortcut),
-            icon: None,
-            enabled: category.enabled(),
-            run: category.run(),
-        });
-    }
     for section in SECTIONS {
         r.add(Action {
             id: section.command,

@@ -248,8 +248,7 @@ lists Appearance, Text &amp; Fonts, Windows, Apps (Email, Term, Ced),
 Accessibility, and Software &amp; Updates. Hairlines separate look, desktop,
 apps and system pages. Empty categories are hidden. Each page starts with
 an <strong>Affects:</strong> line. Wallpaper opens from Appearance.</p>
-<p>Section commands have no default shortcuts. Existing category commands
-remain available through the palette and Bus.</p>
+<p>Section commands have no default shortcuts. The Apps header is a plain label.</p>
 <p>Press <code>/</code> outside a text field, or choose the magnifier in the title bar's icon bar, to
 focus search. It filters sections by title, category, extra words and
 settings keys, ignoring case. Try <code>terminal.</code> or <code>background</code>. Enter opens
@@ -431,7 +430,12 @@ The section ids are <code>appearance</code>, <code>text_and_fonts</code>, <code>
 <code>apps_term</code>, <code>apps_ced</code>, <code>accessibility</code>, <code>software</code>, and <code>wallpaper</code>.
 Navigation actions use <code>view.section.&lt;id&gt;</code>; retired section ids have no aliases. Search includes their <code>ui.*</code>
 keys and both font-family keys. <code>prefs.appearance</code> and <code>prefs.appearance.set</code>
-are version 0.2.0; <code>prefs.info</code>, which embeds appearance, is 0.3.0.
+are version 0.3.0; <code>prefs.info</code>, which embeds appearance, is 0.4.0.
+The reply includes <code>problem</code> (the unresolved settings failure, or null) and
+<code>problem_source</code> (its page id, or null). Problems appear on their own page,
+with a link from other pages, and clear on a successful write to the same
+owner. A settings-service outage also clears on a recovered read. Email
+account tasks report their outcome inline and never create settings problems.
 <code>prefs.section {name[, group]}</code> opens a registry section and expands its
 category. <code>app.describe</code> lists the section ids and their searchable metadata.
 For Software, <code>group</code> selects <code>mixos-desktop</code>, <code>mixos-server</code>, <code>creative</code> or

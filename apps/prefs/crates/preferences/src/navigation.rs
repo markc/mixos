@@ -23,18 +23,7 @@ macro_rules! categories {
                 match self { $(Self::$variant => concat!("category-", $id)),+ }
             }
 
-            pub fn command(self) -> &'static str {
-                match self { $(Self::$variant => concat!("view.category.", $id)),+ }
-            }
 
-            pub fn run(self) -> fn(&mut Engine) {
-                match self { $(Self::$variant => |e| e.set_category(Self::$variant)),+ }
-            }
-
-            pub fn enabled(self) -> fn(&Engine) -> bool {
-                match self { $(Self::$variant => |e| e.can_navigate()
-                    && Self::$variant.first_section().is_some()),+ }
-            }
         }
     };
 }
@@ -47,15 +36,6 @@ categories! {
     Output => "output",
     Apps => "apps",
     System => "system",
-}
-
-impl Category {
-    pub fn first_section(self) -> Option<Section> {
-        SECTIONS
-            .iter()
-            .find(|s| s.category == self)
-            .map(|s| s.section)
-    }
 }
 
 /// One editor's identity and searchable metadata. Rendering dispatches on
@@ -97,15 +77,15 @@ macro_rules! sections {
 }
 
 sections! {
-    Appearance => ("appearance", Appearance, "section-appearance", &["colour", "style", "density", "spacing", "compact"], &["appearance.scheme", "appearance.style", "appearance.mode", "appearance.contrast", "ui.density"]),
+    Appearance => ("appearance", Appearance, "section-appearance", &["themes", "colour", "style", "density", "spacing", "compact"], &["appearance.scheme", "appearance.style", "appearance.mode", "appearance.contrast", "ui.density"]),
     TextAndFonts => ("text_and_fonts", Appearance, "section-text-and-fonts", &["typeface", "typography", "size"], &["appearance.font", "appearance.mono_family"]),
+    Wallpapers => ("wallpaper", Appearance, "section-wallpapers", &["wallpapers", "background"], &[]),
     Windows => ("windows", Desktop, "section-windows", &["title bars", "window buttons"], &["appearance.decorations", "appearance.caption_side"]),
     Email => ("apps_email", Apps, "section-email", &["mail", "accounts", "reader", "composer"], &["email."]),
     Terminal => ("apps_term", Apps, "nav-terminal", &["shell", "console"], &["terminal."]),
     Ced => ("apps_ced", Apps, "section-ced", &["editor"], &["ced.editor."]),
-    Accessibility => ("accessibility", System, "section-accessibility", &["animation", "reduce motion", "scale", "zoom", "larger text"], &["ui.reduced_motion", "ui.text_scale"]),
-    Software => ("software", System, "section-software", &["install", "update", "applications", "packages"], &[]),
-    Wallpapers => ("wallpaper", Appearance, "section-wallpapers", &["background"], &[]),
+    Accessibility => ("accessibility", System, "section-accessibility", &["size", "animation", "reduce motion", "scale", "zoom", "larger text"], &["ui.reduced_motion", "ui.text_scale"]),
+    Software => ("software", System, "section-software", &["system", "install", "update", "applications", "packages"], &[]),
 }
 
 impl Section {
@@ -141,7 +121,7 @@ impl Section {
 /// Filtering the registry preserves category and section order.
 pub fn search(query: &str, label: impl Fn(&str) -> String) -> Vec<&'static SectionDescriptor> {
     let query = query.to_lowercase();
-    SECTIONS
+    let mut matches: Vec<_> = SECTIONS
         .iter()
         .filter(|s| {
             [label(s.title), label(s.category.label())]
@@ -153,7 +133,11 @@ pub fn search(query: &str, label: impl Fn(&str) -> String) -> Vec<&'static Secti
                 .any(|text| text.to_lowercase().contains(&query))
                 || s.prefixes.iter().any(|prefix| query.starts_with(prefix))
         })
-        .collect()
+        .collect();
+    if query == "system" {
+        matches.sort_by_key(|s| s.section != Section::Software);
+    }
+    matches
 }
 
 /// Software's catalogue groups are independent of sidebar sections.
@@ -277,6 +261,12 @@ mod tests {
         assert_eq!(ids("appearance.caption_side"), ["windows"]);
         assert_eq!(ids("ui.density"), ["appearance"]);
         assert_eq!(ids("compact"), ["appearance"]);
+        assert_eq!(ids("size"), ["text_and_fonts", "accessibility"]);
+        assert_eq!(ids("density"), ["appearance"]);
+        assert_eq!(ids("themes"), ["appearance"]);
+        assert_eq!(ids("wallpapers"), ["wallpaper"]);
+        assert_eq!(ids("system")[0], "software");
+        assert_eq!(ids("appearance").last(), Some(&"wallpaper"));
         assert_eq!(ids("ui.text_scale"), ["accessibility"]);
         assert_eq!(ids("ui.reduced_motion"), ["accessibility"]);
         assert_eq!(ids("animation"), ["accessibility"]);

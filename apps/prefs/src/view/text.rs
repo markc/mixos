@@ -33,13 +33,13 @@ pub(super) fn section(
 
 /// One surface's controls: its font, size, padding and light mode.
 fn surface_card(ui: &mut Ui, engine: &Engine, surface: Surface, events: &mut Vec<UiEvent>) {
-    panel::section_label(ui, &label(surface.title()));
+    group_heading(ui, surface.title(), surface == Surface::CedEditor);
     let Some(style) = engine.text_style(surface) else {
         ui.label(RichText::new(label("look-reading")).weak());
         return;
     };
 
-    panel::section_label(ui, &label("text-family"));
+    row(ui, "text-family-row", &label("text-family"), |ui| {
     let mut families: Vec<(usize, String)> = vec![(0, label("text-family-default"))];
     families.extend(
         surface
@@ -62,6 +62,7 @@ fn surface_card(ui: &mut Ui, engine: &Engine, surface: Surface, events: &mut Vec
     if surface == Surface::CedEditor {
         ui.label(RichText::new(label("text-editor-mono")).weak());
     }
+    });
 
     let size = Numeric {
         key: size_key(surface),
@@ -74,12 +75,14 @@ fn surface_card(ui: &mut Ui, engine: &Engine, surface: Surface, events: &mut Vec
         events.push(UiEvent::Text(Setting::Size(surface, value)));
     }
 
-    panel::section_label(ui, &label("text-padding"));
+    row(ui, "text-padding-row", &label("text-padding"), |ui| {
     let paddings: Vec<(u32, String)> = PADDINGS.iter().map(|&p| (p, p.to_string())).collect();
     if let Some(padding) = choices(ui, style.padding, &paddings) {
         events.push(UiEvent::Text(Setting::Padding(surface, padding)));
     }
+    });
 
+row(ui, "text-light-row", &label("text-light"), |ui| {
     let mut light = style.light;
     if ui
         .add(Toggle::new(&mut light, label("text-light")))
@@ -87,6 +90,7 @@ fn surface_card(ui: &mut Ui, engine: &Engine, surface: Surface, events: &mut Vec
     {
         events.push(UiEvent::Text(Setting::Light(surface, light)));
     }
+    });
 }
 
 /// The drag memory key for a surface's size: each control needs its own,

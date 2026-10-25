@@ -50,6 +50,7 @@ macro_rules! icons {
 }
 
 icons! {
+    Accessibility => "accessibility",
     AppWindow => "app-window",
     ArrowDown => "arrow-down",
     ArrowLeft => "arrow-left",

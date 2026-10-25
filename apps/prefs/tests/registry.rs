@@ -99,56 +99,6 @@ fn every_registry_section_has_one_command_and_is_described() {
 }
 
 #[test]
-fn all_seven_category_commands_have_ordered_shortcuts_and_gate_empty_categories() {
-    use preferences::{Category, Engine};
-    let commands = prefs::actions::registry();
-    let mut engine = Engine::new(prefs::label_with);
-    let keys = [
-        egui::Key::Num1,
-        egui::Key::Num2,
-        egui::Key::Num3,
-        egui::Key::Num4,
-        egui::Key::Num5,
-        egui::Key::Num6,
-        egui::Key::Num7,
-    ];
-    assert_eq!(
-        Category::ALL.map(Category::name),
-        [
-            "overview",
-            "appearance",
-            "desktop",
-            "input",
-            "output",
-            "apps",
-            "system"
-        ]
-    );
-    for (category, key) in Category::ALL.into_iter().zip(keys) {
-        let command = commands.get(category.command()).unwrap();
-        assert_eq!(
-            command.shortcut,
-            Some(egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, key))
-        );
-        assert_eq!(
-            (command.enabled)(&engine),
-            category.first_section().is_some()
-        );
-        if let Some(first) = category.first_section() {
-            engine.ui.expanded.clear();
-            commands
-                .execute(command.id, &mut engine, toolkit::action::Origin::Bus)
-                .unwrap();
-            assert_eq!(engine.section(), first);
-            assert!(engine.ui.expanded.contains(&category));
-        }
-    }
-    assert_eq!(
-        commands
-            .iter()
-            .filter(|c| c.id.starts_with("view.category."))
-            .count(),
-        7
-    );
-    assert_eq!(class_of("prefs.search"), Some("query"));
+fn flat_sidebar_has_no_category_commands() {
+    assert!(!prefs::actions::registry().iter().any(|c| c.id.starts_with("view.category.")));
 }

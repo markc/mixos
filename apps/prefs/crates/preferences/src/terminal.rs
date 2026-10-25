@@ -106,6 +106,7 @@ impl Engine {
     /// Apply one terminal control's value at once. A value settingsd would
     /// refuse is not sent; the status says why.
     pub fn edit_terminal(&mut self, setting: Setting) {
+        self.look.status_source = crate::Section::Terminal;
         if let Some(refusal) = setting.refusal() {
             self.status = self.label(refusal, &[]);
             self.failed = true;
@@ -130,6 +131,7 @@ impl Engine {
     }
 
     fn send_terminal(&mut self, edit: Edit) {
+        self.look.status_source = crate::Section::Terminal;
         let operation = self.look.operation();
         self.status = self.label("applying-terminal", &[]);
         self.failed = false;

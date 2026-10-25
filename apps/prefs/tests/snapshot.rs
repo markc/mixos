@@ -12,7 +12,7 @@ use citizen::Reply;
 use design::{CaptionSide, DesignContext, Mode, Scheme, Style};
 use egui_kittest::Harness;
 use preferences::email::Field;
-use preferences::{Category, Dialog, Effect, Engine, Look, Section, SoftwareGroup};
+use preferences::{Dialog, Effect, Engine, Look, Section, SoftwareGroup};
 use prefs::{actions, label_with, strings, view::view};
 use serde_json::json;
 use toolkit::Theme;
@@ -147,7 +147,6 @@ fn creative_studio_dark() {
 fn desktop_studio_light() {
     let mut e = engine();
     e.set_software_group(SoftwareGroup::Desktop);
-    e.ui.expanded.retain(|c| *c != Category::Appearance);
     draw(
         chrome(Scheme::Studio, Mode::Light),
         "desktop_studio_light",

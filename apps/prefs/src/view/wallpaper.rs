@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use super::{UiEvent, command_button};
+use super::{UiEvent, command_button, row};
 use crate::label;
 use egui::{RichText, Ui};
 use preferences::{Engine, wallpaper::Kind};
@@ -60,8 +60,7 @@ pub fn controls(
         });
         bars::hairline(ui);
         ui.add_enabled_ui(engine.can_edit_wallpaper(), |ui| {
-            ui.horizontal(|ui| {
-                let caption = ui.label(label("wallpaper-output"));
+            row(ui, "wallpaper-output-row", &label("wallpaper-output"), |ui| {
                 let mut target = editor.target.clone();
                 egui::ComboBox::from_id_salt("wallpaper-output")
                     .selected_text(target.clone().unwrap_or_else(|| label("wallpaper-default")))
@@ -81,12 +80,12 @@ pub fn controls(
                             }
                         }
                     })
-                    .response
-                    .labelled_by(caption.id);
+                    ;
                 if target != editor.target {
                     events.push(UiEvent::WallpaperTarget(target));
                 }
             });
+            row(ui, "wallpaper-kind-row", &label("wallpaper-kind"), |ui| {
             ui.horizontal_wrapped(|ui| {
                 for (value, key) in [
                     (
@@ -106,6 +105,8 @@ pub fn controls(
                     }
                 }
             });
+            });
+            row(ui, "wallpaper-fill-row", "", |ui| {
             match kind {
                 Kind::Theme => {
                     ui.label(
@@ -152,14 +153,13 @@ pub fn controls(
                         .clone()
                         .or_else(|| fill["image"].as_str().map(str::to_owned))
                         .unwrap_or_default();
-                    let caption = ui.label(label("wallpaper-path"));
                     if ui
                         .add(
                             egui::TextEdit::singleline(&mut path)
                                 .desired_width(ui.available_width())
                                 .hint_text(label("wallpaper-path-hint")),
                         )
-                        .labelled_by(caption.id)
+                        .on_hover_text(label("wallpaper-path"))
                         .changed()
                     {
                         events.push(UiEvent::WallpaperImage(path));
@@ -176,6 +176,7 @@ pub fn controls(
                     ui.label(RichText::new(label("wallpaper-image-note")).weak());
                 }
             }
+            });
         });
         let key = format!(
             "wallpaper-{}",

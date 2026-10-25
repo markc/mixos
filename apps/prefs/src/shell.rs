@@ -67,7 +67,6 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
         .partition(|e| matches!(e, UiEvent::Command(..)));
     for event in edits.into_iter().chain(fired).chain(closed) {
         match event {
-            UiEvent::ToggleCategory(category) => engine.toggle_category(category),
             UiEvent::SoftwareGroup(group) => engine.set_software_group(group),
             UiEvent::Search(query) => engine.ui.search = query,
             UiEvent::SearchFocused => engine.ui.search_focus = false,

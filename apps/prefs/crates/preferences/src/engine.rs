@@ -194,7 +194,6 @@ pub struct UiState {
     pub wallpaper_invalid: bool,
     #[serde(default = "default_section")]
     pub section: Section,
-    pub expanded: Vec<Category>,
     pub software_group: SoftwareGroup,
     pub search: String,
     /// A focus request consumed by the view after it draws the field.
@@ -231,7 +230,6 @@ impl Default for UiState {
             wallpaper_image: None,
             wallpaper_invalid: false,
             section: default_section(),
-            expanded: Category::ALL.to_vec(),
             software_group: SoftwareGroup::Creative,
             search: String::new(),
             search_focus: false,
@@ -349,6 +347,8 @@ pub struct Engine {
     /// Why the notes could not be loaded.
     pub notes_error: Option<String>,
     pub status: String,
+    pub release_status: String,
+    pub release_failed: bool,
     /// The status reports a failure (the view colours it).
     pub failed: bool,
     pub connected: bool,
@@ -388,6 +388,8 @@ impl Engine {
             notes: None,
             notes_error: None,
             status: label("connecting", &[]),
+            release_status: label("connecting", &[]),
+            release_failed: false,
             failed: false,
             connected: true,
             releases: Availability::Unknown,
@@ -552,6 +554,8 @@ impl Engine {
         if !quiet {
             self.status = self.label(op.progress(), &[("app", op.app())]);
             self.failed = false;
+            self.release_status = self.status.clone();
+            self.release_failed = false;
         }
         self.job = Some(Job { ticket, op, quiet });
         self.effects.push(Effect::Releases {
@@ -641,20 +645,11 @@ impl Engine {
         self.ui.dialog.is_none() && !self.picker.open && !self.quitting
     }
 
-    pub fn set_category(&mut self, category: Category) {
-        if let Some(section) = category.first_section() {
-            self.set_section(section);
-        }
-    }
-
     pub fn set_section(&mut self, section: Section) {
         if !self.can_navigate() {
             return;
         }
         self.ui.section = section;
-        if !self.ui.expanded.contains(&section.category()) {
-            self.ui.expanded.push(section.category());
-        }
         if self.ui.selected.is_some() && self.selected_row().is_none() {
             self.clear_selection();
         }
@@ -669,17 +664,6 @@ impl Engine {
         self.notes = None;
         self.notes_error = None;
         self.notes_job = None;
-    }
-
-    pub fn toggle_category(&mut self, category: Category) {
-        if !self.can_navigate() {
-            return;
-        }
-        if self.ui.expanded.contains(&category) {
-            self.ui.expanded.retain(|c| *c != category);
-        } else {
-            self.ui.expanded.push(category);
-        }
     }
 
     pub fn set_software_group(&mut self, group: SoftwareGroup) {
@@ -874,7 +858,11 @@ impl Engine {
             && job.ticket == ticket
         {
             self.job = None;
+            self.status = self.release_status.clone();
+            self.failed = self.release_failed;
             self.finished(job.op, job.quiet, result);
+            self.release_status = self.status.clone();
+            self.release_failed = self.failed;
             if self.relist {
                 self.relist = false;
                 self.start_with(Op::List, true);
@@ -2010,13 +1998,10 @@ mod tests {
     }
 
     #[test]
-    fn tree_state_round_trips_and_bus_expands_the_selected_parent() {
+    fn navigation_state_round_trips_and_bus_selects_the_editor() {
         let mut e = listed();
-        e.toggle_category(Category::Appearance);
-        assert!(!e.ui.expanded.contains(&Category::Appearance));
         e.command(1, "prefs.section", r#"{"name":"wallpaper"}"#);
         assert_eq!(e.section(), Section::Wallpapers);
-        assert!(e.ui.expanded.contains(&Category::Appearance));
         let saved = serde_json::to_value(&e.ui).unwrap();
         assert_eq!(serde_json::from_value::<UiState>(saved).unwrap(), e.ui);
         e.picker.open = true;
