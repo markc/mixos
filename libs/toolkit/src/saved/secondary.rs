@@ -3,7 +3,12 @@
 //! adopted root persistence yet. All compositor traffic uses the native Bus.
 use super::{Frame, Store};
 use serde_json::Value;
-use std::{collections::BTreeMap, path::PathBuf, sync::{Arc, Mutex}, time::{Duration, Instant}};
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 #[derive(Default)]
 struct Windows {
@@ -15,19 +20,43 @@ struct Windows {
 }
 type Shared = Arc<Mutex<Windows>>;
 
-fn key(app: &str) -> egui::Id { egui::Id::new(("toolkit.saved.windows", app)) }
+fn key(app: &str) -> egui::Id {
+    egui::Id::new(("toolkit.saved.windows", app))
+}
 
-pub(super) fn install(ctx: &egui::Context, app: &str, path: Option<PathBuf>, frames: BTreeMap<String, Frame>) {
-    ctx.data_mut(|d| d.insert_temp(key(app), Arc::new(Mutex::new(Windows { path, frames, ..Default::default() }))));
+pub(super) fn install(
+    ctx: &egui::Context,
+    app: &str,
+    path: Option<PathBuf>,
+    frames: BTreeMap<String, Frame>,
+) {
+    ctx.data_mut(|d| {
+        d.insert_temp(
+            key(app),
+            Arc::new(Mutex::new(Windows {
+                path,
+                frames,
+                ..Default::default()
+            })),
+        )
+    });
 }
 
 pub(super) fn collect(ctx: &egui::Context, app: &str) -> Option<BTreeMap<String, Frame>> {
     let state: Shared = ctx.data(|d| d.get_temp(key(app)))?;
-    Some(state.lock().unwrap_or_else(|e| e.into_inner()).frames.clone())
+    Some(
+        state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .frames
+            .clone(),
+    )
 }
 
 fn shared(ctx: &egui::Context, app: &str) -> Shared {
-    if let Some(state) = ctx.data(|d| d.get_temp::<Shared>(key(app))) { return state; }
+    if let Some(state) = ctx.data(|d| d.get_temp::<Shared>(key(app))) {
+        return state;
+    }
     #[cfg(not(test))]
     let directory = config::AppDirs::resolve(app).map(|d| d.state());
     #[cfg(test)]
@@ -36,20 +65,29 @@ fn shared(ctx: &egui::Context, app: &str) -> Shared {
     // placeholder which a later app-owned version (starting at one) can drop.
     let store = Store::<Value>::load(directory, 0);
     install(ctx, app, store.path, store.windows);
-    ctx.data(|d| d.get_temp(key(app))).expect("installed secondary windows")
+    ctx.data(|d| d.get_temp(key(app)))
+        .expect("installed secondary windows")
 }
 
 /// A distinct Wayland app ID plus PID identifies the editor independently of
 /// its changing document title. Embedded viewports have no native geometry.
-pub fn builder(ctx: &egui::Context, app: &str, name: &str, builder: egui::ViewportBuilder) -> egui::ViewportBuilder {
-    if ctx.embed_viewports() { return builder; }
+pub fn builder(
+    ctx: &egui::Context,
+    app: &str,
+    name: &str,
+    builder: egui::ViewportBuilder,
+) -> egui::ViewportBuilder {
+    if ctx.embed_viewports() {
+        return builder;
+    }
     let state = shared(ctx, app);
     let app_id = format!("dev.mixos.{app}.{name}");
     let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
     let frame = windows.frames.entry(name.into()).or_default().clone();
     #[cfg(not(test))]
     if let std::collections::btree_map::Entry::Vacant(entry) = windows.workers.entry(name.into())
-        && let Some(worker) = worker(app, name, &app_id, state.clone(), ctx.clone()) {
+        && let Some(worker) = worker(app, name, &app_id, state.clone(), ctx.clone())
+    {
         entry.insert(worker);
     }
     frame.viewport(builder.with_app_id(app_id))
@@ -59,7 +97,9 @@ pub fn builder(ctx: &egui::Context, app: &str, name: &str, builder: egui::Viewpo
 /// happen synchronously. Normal compositor reads run off the GUI thread;
 /// native close gives the final read a bounded 750 ms acknowledgement window.
 pub fn capture(ctx: &egui::Context, app: &str, name: &str) {
-    if ctx.embed_viewports() { return; }
+    if ctx.embed_viewports() {
+        return;
+    }
     let state = shared(ctx, app);
     let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
     windows.viewports.insert(name.into(), ctx.viewport_id());
@@ -69,13 +109,21 @@ pub fn capture(ctx: &egui::Context, app: &str, name: &str) {
     let pointer_down = ctx.input(|i| i.pointer.any_down());
     let rect = ctx.input(|i| i.viewport().outer_rect);
     let frame = windows.frames[name].clone();
-    let changed = windows.captured.get(name).is_none_or(|(_, saved, old_rect)| *saved != frame || *old_rect != rect);
-    let due = windows.captured.get(name).is_none_or(|(last, _, _)| now.duration_since(*last) >= Duration::from_secs(1));
+    let changed = windows
+        .captured
+        .get(name)
+        .is_none_or(|(_, saved, old_rect)| *saved != frame || *old_rect != rect);
+    let due = windows
+        .captured
+        .get(name)
+        .is_none_or(|(last, _, _)| now.duration_since(*last) >= Duration::from_secs(1));
     if closing || (changed && due && !pointer_down) {
         ctx.request_repaint_of(egui::ViewportId::ROOT);
         windows.captured.insert(name.into(), (now, frame, rect));
         persist(&windows, name);
-        if !closing && let Some(worker) = windows.workers.get(name) { let _ = worker.try_send(None); }
+        if !closing && let Some(worker) = windows.workers.get(name) {
+            let _ = worker.try_send(None);
+        }
     } else if changed {
         ctx.request_repaint_after(Duration::from_secs(1));
     }
@@ -85,24 +133,39 @@ pub fn capture(ctx: &egui::Context, app: &str, name: &str) {
 }
 
 fn persist(windows: &Windows, name: &str) {
-    let Some(path) = &windows.path else { return; };
+    let Some(path) = &windows.path else {
+        return;
+    };
     let mut store = Store::<Value>::load(path.parent().map(PathBuf::from), 0);
     // This writer owns only one named window. Keep the latest root/app/widget
     // values verbatim, including versions this writer cannot understand.
     if let Ok(raw) = std::fs::read_to_string(path)
-        && let Ok(value) = strict::from_str::<Value>(&raw) {
+        && let Ok(value) = strict::from_str::<Value>(&raw)
+    {
         for section in ["window", "widgets", "app"] {
-            if let Some(raw) = value.get(section) { store.preserved.insert(section.into(), raw.clone()); }
+            if let Some(raw) = value.get(section) {
+                store.preserved.insert(section.into(), raw.clone());
+            }
         }
     }
-    if let Some(frame) = windows.frames.get(name) { store.windows.insert(name.into(), frame.clone()); }
-    if let Err(error) = store.flush() { eprintln!("toolkit: saving secondary window: {error}"); }
+    if let Some(frame) = windows.frames.get(name) {
+        store.windows.insert(name.into(), frame.clone());
+    }
+    if let Err(error) = store.flush() {
+        eprintln!("toolkit: saving secondary window: {error}");
+    }
 }
 
 type CaptureSender = tokio::sync::mpsc::Sender<Option<std::sync::mpsc::Sender<()>>>;
 
 #[cfg(not(test))]
-fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context) -> Option<CaptureSender> {
+fn worker(
+    app: &str,
+    name: &str,
+    app_id: &str,
+    state: Shared,
+    ctx: egui::Context,
+) -> Option<CaptureSender> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Option<std::sync::mpsc::Sender<()>>>(2);
     let (app, name, app_id) = (app.to_owned(), name.to_owned(), app_id.to_owned());
     let state = Arc::downgrade(&state);
@@ -184,8 +247,12 @@ fn worker(app: &str, name: &str, app_id: &str, state: Shared, ctx: egui::Context
 }
 
 fn capture_event(path: Option<&str>, own_id: Option<u64>) -> bool {
-    let Some(path) = path else { return false; };
-    if path == "outputs" || path.starts_with("outputs.") || path == "windows" { return true; }
+    let Some(path) = path else {
+        return false;
+    };
+    if path == "outputs" || path.starts_with("outputs.") || path == "windows" {
+        return true;
+    }
     match own_id {
         Some(id) => {
             let prefix = format!("windows.s{id}");
@@ -197,29 +264,39 @@ fn capture_event(path: Option<&str>, own_id: Option<u64>) -> bool {
 
 fn reply_value(rc: u8, body: &str) -> Option<Value> {
     let mut value: Value = serde_json::from_str(body).ok()?;
-    if rc >= 10 && value.get("error").is_none() { value = serde_json::json!({"error":"refused"}); }
+    if rc >= 10 && value.get("error").is_none() {
+        value = serde_json::json!({"error":"refused"});
+    }
     Some(value)
 }
 
 /// Drop senders at root shutdown so compositor readers cannot outlive the app.
 pub fn close(ctx: &egui::Context, app: &str) {
     if let Some(windows) = collect(ctx, app) {
-        for name in windows.keys() { finish(ctx, app, name); }
+        for name in windows.keys() {
+            finish(ctx, app, name);
+        }
     }
 }
 
 /// Finish before the native viewport is destroyed, also for Escape or a
 /// save-and-close dialog. Never create a store for an unopened editor.
 pub fn finish(ctx: &egui::Context, app: &str, name: &str) {
-    let Some(state) = ctx.data(|d| d.get_temp::<Shared>(key(app))) else { return; };
+    let Some(state) = ctx.data(|d| d.get_temp::<Shared>(key(app))) else {
+        return;
+    };
     let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
-    if windows.captured.remove(name).is_none() && !windows.workers.contains_key(name) { return; }
+    if windows.captured.remove(name).is_none() && !windows.workers.contains_key(name) {
+        return;
+    }
     persist(&windows, name);
     let worker = windows.workers.remove(name);
     let (done, finished) = std::sync::mpsc::channel();
     let waiting = worker.is_some_and(|worker| worker.try_send(Some(done)).is_ok());
     drop(windows);
-    if waiting { let _ = finished.recv_timeout(Duration::from_millis(750)); }
+    if waiting {
+        let _ = finished.recv_timeout(Duration::from_millis(750));
+    }
     ctx.request_repaint_of(egui::ViewportId::ROOT);
 }
 
@@ -234,21 +311,43 @@ mod tests {
         install(&ctx, "example", None, BTreeMap::new());
         let shared = shared(&ctx, "example");
         let (worker, mut calls) = tokio::sync::mpsc::channel(2);
-        shared.lock().unwrap().workers.insert("macro-editor".into(), worker);
+        shared
+            .lock()
+            .unwrap()
+            .workers
+            .insert("macro-editor".into(), worker);
         let mut input = egui::RawInput::default();
-        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().events.push(egui::ViewportEvent::Close);
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .events
+            .push(egui::ViewportEvent::Close);
         let mut output = ctx.run_ui(input, |ui| capture(ui.ctx(), "example", "macro-editor"));
         output.textures_delta.clear();
         assert!(shared.lock().unwrap().workers.contains_key("macro-editor"));
-        assert!(calls.try_recv().is_err(), "the accepted-close hook owns final compositor capture");
+        assert!(
+            calls.try_recv().is_err(),
+            "the accepted-close hook owns final compositor capture"
+        );
     }
 
     #[test]
     fn secondary_events_follow_only_its_window_and_output_geometry() {
-        for path in ["windows.s7.window_x", "windows.s7.workspace", "windows.s7.maximized", "outputs.o_main.x", "windows.s7"] {
+        for path in [
+            "windows.s7.window_x",
+            "windows.s7.workspace",
+            "windows.s7.maximized",
+            "outputs.o_main.x",
+            "windows.s7",
+        ] {
             assert!(capture_event(Some(path), Some(7)), "{path}");
         }
-        for path in ["windows.s70.window_x", "windows.s8.workspace", "decoration.style"] {
+        for path in [
+            "windows.s70.window_x",
+            "windows.s8.workspace",
+            "decoration.style",
+        ] {
             assert!(!capture_event(Some(path), Some(7)), "{path}");
         }
         assert!(!capture_event(None, Some(7)));
@@ -267,10 +366,21 @@ mod tests {
     fn closing_flushes_the_latest_size_before_the_debounce_deadline() {
         let dir = tempfile::tempdir().unwrap();
         let ctx = egui::Context::default();
-        let frame = Frame { size: Some([840.0, 620.0]), ..Default::default() };
-        install(&ctx, "example", Some(dir.path().join("window.conf.mix")), [("macro-editor".into(), frame.clone())].into());
+        let frame = Frame {
+            size: Some([840.0, 620.0]),
+            ..Default::default()
+        };
+        install(
+            &ctx,
+            "example",
+            Some(dir.path().join("window.conf.mix")),
+            [("macro-editor".into(), frame.clone())].into(),
+        );
         let shared = shared(&ctx, "example");
-        shared.lock().unwrap().captured.insert("macro-editor".into(), (Instant::now(), Frame::default(), None));
+        shared.lock().unwrap().captured.insert(
+            "macro-editor".into(),
+            (Instant::now(), Frame::default(), None),
+        );
         finish(&ctx, "example", "macro-editor");
         let back = Store::<Value>::load(Some(dir.path().into()), 1);
         assert_eq!(back.windows["macro-editor"], frame);
@@ -285,8 +395,16 @@ mod tests {
         root.app = serde_json::json!({"keep":"root"});
         root.window.size = Some([1200.0, 800.0]);
         root.flush().unwrap();
-        let frame = Frame { size: Some([700.0, 480.0]), maximised: true, ..Default::default() };
-        let windows = Windows { path: Some(path), frames: [("macro-editor".into(), frame.clone())].into(), ..Default::default() };
+        let frame = Frame {
+            size: Some([700.0, 480.0]),
+            maximised: true,
+            ..Default::default()
+        };
+        let windows = Windows {
+            path: Some(path),
+            frames: [("macro-editor".into(), frame.clone())].into(),
+            ..Default::default()
+        };
         persist(&windows, "macro-editor");
         let back = Store::<Value>::load(Some(dir.path().into()), 1);
         assert_eq!(back.windows["macro-editor"], frame);
@@ -307,8 +425,21 @@ mod tests {
 
     #[test]
     fn secondary_comp_restore_uses_its_own_app_id_and_fenced_bodies() {
-        let frame = Frame { placement: Some(super::super::frame::Placement { output:"o_main".into(), workspace:3, x:10.0, y:20.0, width:700, height:480 }), ..Default::default() };
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let frame = Frame {
+            placement: Some(super::super::frame::Placement {
+                output: "o_main".into(),
+                workspace: 3,
+                x: 10.0,
+                y: 20.0,
+                width: 700,
+                height: 480,
+            }),
+            ..Default::default()
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         let mut calls = Vec::new();
         runtime.block_on(frame.restore("dev.mixos.example.macro-editor", |command, args| {
             calls.push((command, args));
@@ -319,12 +450,25 @@ mod tests {
                 ]})
             } else { serde_json::json!({}) }))
         }));
-        assert_eq!(calls[3].1, serde_json::json!({"id":2,"generation":4,"index":3,"follow":false}));
-        assert_eq!(calls[4].1, serde_json::json!({"id":2,"generation":4,"output":"o_main","x":10.0,"y":20.0,"width":700,"height":480}));
+        assert_eq!(
+            calls[3].1,
+            serde_json::json!({"id":2,"generation":4,"index":3,"follow":false})
+        );
+        assert_eq!(
+            calls[4].1,
+            serde_json::json!({"id":2,"generation":4,"output":"o_main","x":10.0,"y":20.0,"width":700,"height":480})
+        );
         calls.clear();
-        runtime.block_on(frame.restore("dev.mixos.example.macro-editor", |command, args| {
-            calls.push((command, args)); std::future::ready(None)
-        }));
-        assert_eq!(calls.len(), 1, "absent compd allows only the catalogue probe");
+        runtime.block_on(
+            frame.restore("dev.mixos.example.macro-editor", |command, args| {
+                calls.push((command, args));
+                std::future::ready(None)
+            }),
+        );
+        assert_eq!(
+            calls.len(),
+            1,
+            "absent compd allows only the catalogue probe"
+        );
     }
 }

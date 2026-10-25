@@ -496,36 +496,39 @@ mod tests {
     #[test]
     fn placement_refusals_keep_the_restored_workspace_without_following() {
         for maximised in [false, true] {
-        for reason in [
-            "invalid_state",
-            "off_output",
-            "unknown_output",
-            "missing_workspace",
-        ] {
-            let mut workspace = 3;
-            let mut moves = 0;
-            let mut f = frame();
-            f.maximised = maximised;
-            runtime().block_on(f.restore("dev.mixos.example", |command, args| {
-                let answer = if command == "comp.windows.list" {
-                    let mut w = window();
-                    w["workspace"] = json!(3);
-                    Some(json!({"windows":[w]}))
-                } else if command == "comp.window.send_to_workspace" {
-                    assert_eq!(args["follow"], false);
-                    workspace = args["index"].as_u64().unwrap();
-                    moves += 1;
-                    Some(json!({}))
-                } else if command == "comp.window.place" || command == "comp.window.maximize" {
-                    Some(json!({"error":reason}))
-                } else {
-                    Some(json!({}))
-                };
-                std::future::ready(answer)
-            }));
-            assert_eq!(workspace, 2, "{reason}");
-            assert_eq!(moves, 1, "a {reason} refusal never rolls back the workspace");
-        }
+            for reason in [
+                "invalid_state",
+                "off_output",
+                "unknown_output",
+                "missing_workspace",
+            ] {
+                let mut workspace = 3;
+                let mut moves = 0;
+                let mut f = frame();
+                f.maximised = maximised;
+                runtime().block_on(f.restore("dev.mixos.example", |command, args| {
+                    let answer = if command == "comp.windows.list" {
+                        let mut w = window();
+                        w["workspace"] = json!(3);
+                        Some(json!({"windows":[w]}))
+                    } else if command == "comp.window.send_to_workspace" {
+                        assert_eq!(args["follow"], false);
+                        workspace = args["index"].as_u64().unwrap();
+                        moves += 1;
+                        Some(json!({}))
+                    } else if command == "comp.window.place" || command == "comp.window.maximize" {
+                        Some(json!({"error":reason}))
+                    } else {
+                        Some(json!({}))
+                    };
+                    std::future::ready(answer)
+                }));
+                assert_eq!(workspace, 2, "{reason}");
+                assert_eq!(
+                    moves, 1,
+                    "a {reason} refusal never rolls back the workspace"
+                );
+            }
         }
     }
     #[test]
