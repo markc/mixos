@@ -58,11 +58,10 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
                     {
                         store.window = decode(&value["window"]);
                         store.widgets = decode(&value["widgets"]);
-                        if value["app"]["version"].as_f64() == Some(f64::from(version)) {
-                            if let Some(app) = try_decode(&value["app"]["value"]) {
-                                store.app = app;
-                                store.app_loaded = true;
-                            }
+                        if value["app"]["version"].as_f64() == Some(f64::from(version))
+                            && let Some(app) = try_decode(&value["app"]["value"]) {
+                            store.app = app;
+                            store.app_loaded = true;
                         }
                     }
                     _ => store.writable = false,
