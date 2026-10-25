@@ -4,7 +4,7 @@
 //! form, its password and connection, then the mail options. The values
 //! are settingsd's as last read; the form is the person's typing until
 //! Save. Each list action and option applies at once.
-use super::{Numeric, UiEvent, command_button, number, row, group_heading, field_label};
+use super::{Numeric, UiEvent, command_button, field_label, group_heading, number, row};
 use crate::{label, label_with};
 use egui::{Align, Layout, RichText, Ui};
 use preferences::Engine;
@@ -465,51 +465,66 @@ fn mail_options(ui: &mut Ui, engine: &Engine, email: &Email, events: &mut Vec<Ui
             if let Some(value) = number(ui, size, f64::from(mail.page_size), range) {
                 events.push(UiEvent::EmailChange(Change::PageSize(value as u32)));
             }
-row(ui, "email-mark-read-row", &label("email-mark-read"), |ui| {
-            let mut read = mail.mark_read_on_open;
-            if ui
-                .add(Toggle::new(&mut read, label("email-mark-read")))
-                .changed()
-            {
-                events.push(UiEvent::EmailChange(Change::MarkReadOnOpen(read)));
-            }
-    });
-row(ui, "email-confirm-delete-row", &label("email-confirm-delete"), |ui| {
-            let mut confirm = mail.confirm_delete;
-            if ui
-                .add(Toggle::new(&mut confirm, label("email-confirm-delete")))
-                .changed()
-            {
-                events.push(UiEvent::EmailChange(Change::ConfirmDelete(confirm)));
-            }
-    });
-row(ui, "email-quote-on-reply-row", &label("email-quote-on-reply"), |ui| {
-            let mut quote = mail.quote_on_reply;
-            if ui
-                .add(Toggle::new(&mut quote, label("email-quote-on-reply")))
-                .changed()
-            {
-                events.push(UiEvent::EmailChange(Change::QuoteOnReply(quote)));
-            }
-    });
-            let mut position = mail.reply_position;
-            row(ui, "email-reply-position", &label("email-reply-position"), |ui| {
-            ui.horizontal(|ui| {
-                let above = ui.radio_value(
-                    &mut position,
-                    ReplyPosition::Above,
-                    label("email-reply-above"),
-                );
-                let below = ui.radio_value(
-                    &mut position,
-                    ReplyPosition::Below,
-                    label("email-reply-below"),
-                );
-                if (above.changed() || below.changed()) && position != mail.reply_position {
-                    events.push(UiEvent::EmailChange(Change::ReplyPosition(position)));
+            row(ui, "email-mark-read-row", &label("email-mark-read"), |ui| {
+                let mut read = mail.mark_read_on_open;
+                if ui
+                    .add(Toggle::new(&mut read, label("email-mark-read")))
+                    .changed()
+                {
+                    events.push(UiEvent::EmailChange(Change::MarkReadOnOpen(read)));
                 }
             });
-            });
+            row(
+                ui,
+                "email-confirm-delete-row",
+                &label("email-confirm-delete"),
+                |ui| {
+                    let mut confirm = mail.confirm_delete;
+                    if ui
+                        .add(Toggle::new(&mut confirm, label("email-confirm-delete")))
+                        .changed()
+                    {
+                        events.push(UiEvent::EmailChange(Change::ConfirmDelete(confirm)));
+                    }
+                },
+            );
+            row(
+                ui,
+                "email-quote-on-reply-row",
+                &label("email-quote-on-reply"),
+                |ui| {
+                    let mut quote = mail.quote_on_reply;
+                    if ui
+                        .add(Toggle::new(&mut quote, label("email-quote-on-reply")))
+                        .changed()
+                    {
+                        events.push(UiEvent::EmailChange(Change::QuoteOnReply(quote)));
+                    }
+                },
+            );
+            let mut position = mail.reply_position;
+            row(
+                ui,
+                "email-reply-position",
+                &label("email-reply-position"),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        let above = ui.radio_value(
+                            &mut position,
+                            ReplyPosition::Above,
+                            label("email-reply-above"),
+                        );
+                        let below = ui.radio_value(
+                            &mut position,
+                            ReplyPosition::Below,
+                            label("email-reply-below"),
+                        );
+                        if (above.changed() || below.changed()) && position != mail.reply_position {
+                            events.push(UiEvent::EmailChange(Change::ReplyPosition(position)));
+                        }
+                    });
+                },
+            );
         });
     });
 }

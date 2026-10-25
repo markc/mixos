@@ -133,7 +133,12 @@ pub fn view(
     }
     bars::status(ui, |ui| {
         if !engine.connected {
-            ui.add(icons::image_of(ui.ctx(), Icon::Unplug, ICON, ui.visuals().error_fg_color));
+            ui.add(icons::image_of(
+                ui.ctx(),
+                Icon::Unplug,
+                ICON,
+                ui.visuals().error_fg_color,
+            ));
             ui.small(label("disconnected"));
         } else if engine.section() == Section::Software {
             let (icon, colour) = if !engine.connected {
@@ -225,7 +230,9 @@ fn problem_feedback(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     if let Some(problem) = &engine.look.problem {
         let source = engine.look.problem_source.unwrap_or(Section::Appearance);
         if engine.section() == source {
-            ui.add(egui::Label::new(RichText::new(problem).color(ui.visuals().error_fg_color)).wrap());
+            ui.add(
+                egui::Label::new(RichText::new(problem).color(ui.visuals().error_fg_color)).wrap(),
+            );
         } else {
             let text = label_with("problem-on", &[("page", &label(source.label()))]);
             if ui.link(text).clicked() {
@@ -233,8 +240,14 @@ fn problem_feedback(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             }
         }
     }
-    if engine.wallpaper.failed && engine.section() != Section::Wallpapers
-        && ui.link(label_with("problem-on", &[("page", &label(Section::Wallpapers.label()))])).clicked()
+    if engine.wallpaper.failed
+        && engine.section() != Section::Wallpapers
+        && ui
+            .link(label_with(
+                "problem-on",
+                &[("page", &label(Section::Wallpapers.label()))],
+            ))
+            .clicked()
     {
         events.push(UiEvent::Command(Section::Wallpapers.command(), Origin::Ui));
     }
@@ -243,23 +256,34 @@ fn problem_feedback(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
 const LABEL_WIDTH: f32 = 144.0;
 
 fn field_label(ui: &mut Ui, text: &str) -> egui::Response {
-    ui.add_sized([LABEL_WIDTH, ui.spacing().interact_size.y], egui::Label::new(text).wrap())
+    ui.add_sized(
+        [LABEL_WIDTH, ui.spacing().interact_size.y],
+        egui::Label::new(text).wrap(),
+    )
 }
 
 fn row<R>(ui: &mut Ui, key: &str, text: &str, control: impl FnOnce(&mut Ui) -> R) -> R {
-    egui::Grid::new(key).num_columns(2).spacing([24.0, 10.0]).show(ui, |ui| {
-        field_label(ui, text);
-        let result = ui.vertical(|ui| {
-            ui.set_width(ui.available_width());
-            control(ui)
-        }).inner;
-        ui.end_row();
-        result
-    }).inner
+    egui::Grid::new(key)
+        .num_columns(2)
+        .spacing([24.0, 10.0])
+        .show(ui, |ui| {
+            field_label(ui, text);
+            let result = ui
+                .vertical(|ui| {
+                    ui.set_width(ui.available_width());
+                    control(ui)
+                })
+                .inner;
+            ui.end_row();
+            result
+        })
+        .inner
 }
 
 fn group_heading(ui: &mut Ui, key: &str, first: bool) {
-    if !first { bars::hairline(ui); }
+    if !first {
+        bars::hairline(ui);
+    }
     ui.add_space(ui.spacing().item_spacing.y);
     ui.strong(label(key));
     ui.add_space(ui.spacing().item_spacing.y);
@@ -267,9 +291,17 @@ fn group_heading(ui: &mut Ui, key: &str, first: bool) {
 
 fn signpost(ui: &mut Ui, engine: &Engine, key: &str, target: Section, events: &mut Vec<UiEvent>) {
     row(ui, key, &label(key), |ui| {
-        let text = label(if target == Section::Wallpapers { "open-wallpaper" }
-            else if target == Section::Appearance { "change-appearance" } else { "change-text-fonts" });
-        if ui.add_enabled(engine.can_navigate(), egui::Link::new(text)).clicked() {
+        let text = label(if target == Section::Wallpapers {
+            "open-wallpaper"
+        } else if target == Section::Appearance {
+            "change-appearance"
+        } else {
+            "change-text-fonts"
+        });
+        if ui
+            .add_enabled(engine.can_navigate(), egui::Link::new(text))
+            .clicked()
+        {
             events.push(UiEvent::Command(target.command(), Origin::Ui));
         }
     });
@@ -346,7 +378,8 @@ fn editors(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, events: &m
 }
 
 fn sidebar_selected(current: Section, item: Section, query: &str) -> bool {
-    current == item || (current == Section::Wallpapers && item == Section::Appearance && query.is_empty())
+    current == item
+        || (current == Section::Wallpapers && item == Section::Appearance && query.is_empty())
 }
 
 /// A button for registry command `id`, enabled as the registry says.
@@ -462,14 +495,14 @@ fn font_family_controls(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut 
             ),
         ] {
             row(ui, key, &label(key), |ui| {
-            if let Some(family) = family_picker(ui, key, current, installed, label(default)) {
-                let edit = if mono {
-                    AppearanceEdit::MonoFamily(family)
-                } else {
-                    AppearanceEdit::FontFamily(family)
-                };
-                events.push(UiEvent::Appearance(edit));
-            }
+                if let Some(family) = family_picker(ui, key, current, installed, label(default)) {
+                    let edit = if mono {
+                        AppearanceEdit::MonoFamily(family)
+                    } else {
+                        AppearanceEdit::FontFamily(family)
+                    };
+                    events.push(UiEvent::Appearance(edit));
+                }
             });
         }
     });
@@ -483,9 +516,13 @@ fn font_family_controls(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut 
             .clone()
             .unwrap_or_else(|| label("fonts-mono-family-design"));
         let note = label_with("fonts-stored", &[("family", &family), ("mono", &mono)]);
-        row(ui, "fonts-stored-note", "", |ui| { ui.add(egui::Label::new(RichText::new(note).weak()).wrap()); });
+        row(ui, "fonts-stored-note", "", |ui| {
+            ui.add(egui::Label::new(RichText::new(note).weak()).wrap());
+        });
     }
-    row(ui, "fonts-family-help", "", |ui| { ui.add(egui::Label::new(RichText::new(label("fonts-family-note")).weak()).wrap()); });
+    row(ui, "fonts-family-help", "", |ui| {
+        ui.add(egui::Label::new(RichText::new(label("fonts-family-note")).weak()).wrap());
+    });
 }
 
 fn family_picker(
@@ -525,25 +562,25 @@ fn family_picker(
 fn density(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
     ui.add_enabled_ui(engine.can_edit_look(), |ui| {
         row(ui, "density-row", &label("size-density"), |ui| {
-        ui.horizontal_wrapped(|ui| {
-            let step = toolkit::ui_scale::density_step(look.density);
-            for (index, key) in ["size-compact", "size-comfortable", "size-spacious"]
-                .into_iter()
-                .enumerate()
-            {
-                if toolkit::selectable(ui, step == Some(index), label(key)).clicked() {
-                    events.push(UiEvent::Appearance(AppearanceEdit::Density(
-                        toolkit::ui_scale::DENSITY_STEPS[index],
-                    )));
+            ui.horizontal_wrapped(|ui| {
+                let step = toolkit::ui_scale::density_step(look.density);
+                for (index, key) in ["size-compact", "size-comfortable", "size-spacious"]
+                    .into_iter()
+                    .enumerate()
+                {
+                    if toolkit::selectable(ui, step == Some(index), label(key)).clicked() {
+                        events.push(UiEvent::Appearance(AppearanceEdit::Density(
+                            toolkit::ui_scale::DENSITY_STEPS[index],
+                        )));
+                    }
                 }
-            }
-            if step.is_none() {
-                ui.weak(label_with(
-                    "size-custom",
-                    &[("value", &format!("{:.2}", look.density))],
-                ));
-            }
-        });
+                if step.is_none() {
+                    ui.weak(label_with(
+                        "size-custom",
+                        &[("value", &format!("{:.2}", look.density))],
+                    ));
+                }
+            });
         });
     });
 }
@@ -559,6 +596,7 @@ fn windows(
         ui.add_enabled_ui(engine.can_edit_look(), |ui| {
             egui::Grid::new("windows-controls")
                 .num_columns(2)
+                .spacing([24.0, 10.0])
                 .show(ui, |ui| {
                     decoration_controls(ui, look, events);
                 });
@@ -577,34 +615,34 @@ fn scale_control(
     let mut value = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(current);
     let mut commit = false;
     row(ui, key, &label(key), |ui| {
-    ui.horizontal(|ui| {
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.add(PushButton::secondary(label("size-reset"))).clicked() {
-                value = 1.0;
-                commit = true;
-            }
-            ui.label(if percent {
-                format!("{:.0}%", value * 100.0)
-            } else {
-                format!("{value:.2}")
+        ui.horizontal(|ui| {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.add(PushButton::secondary(label("size-reset"))).clicked() {
+                    value = 1.0;
+                    commit = true;
+                }
+                ui.label(if percent {
+                    format!("{:.0}%", value * 100.0)
+                } else {
+                    format!("{value:.2}")
+                });
+                let response = ui.add(
+                    Slider::new(&mut value, range)
+                        .step(0.05)
+                        .wheel(0.05)
+                        .reset_to(1.0)
+                        .unmodified_arrows()
+                        .label(label(key)),
+                );
+                value = (value * 20.0).round() / 20.0;
+                // Hold the value while the pointer is down; apply on release.
+                if response.dragged() || response.is_pointer_button_down_on() {
+                    ui.data_mut(|d| d.insert_temp(id, value));
+                } else if response.drag_stopped() || response.changed() || response.clicked() {
+                    commit = true;
+                }
             });
-            let response = ui.add(
-                Slider::new(&mut value, range)
-                    .step(0.05)
-                    .wheel(0.05)
-                    .reset_to(1.0)
-                    .unmodified_arrows()
-                    .label(label(key)),
-            );
-            value = (value * 20.0).round() / 20.0;
-            // Hold the value while the pointer is down; apply on release.
-            if response.dragged() || response.is_pointer_button_down_on() {
-                ui.data_mut(|d| d.insert_temp(id, value));
-            } else if response.drag_stopped() || response.changed() || response.clicked() {
-                commit = true;
-            }
         });
-    });
     });
     if commit {
         ui.data_mut(|d| d.remove::<f64>(id));
@@ -631,20 +669,28 @@ fn motion(
             {
                 events.push(UiEvent::Appearance(AppearanceEdit::TextScale(scale)));
             }
-            row(ui, "text-scale-note", "", |ui| { ui.weak(label("size-text-scale-note")); });
+            row(ui, "text-scale-note", "", |ui| {
+                ui.weak(label("size-text-scale-note"));
+            });
             row(ui, "reduced-motion", &label("motion-reduce"), |ui| {
-            let mut reduced = look.reduced_motion;
-            if ui
-                .add(Toggle::new(&mut reduced, label("motion-reduce")))
-                .changed()
-            {
-                events.push(UiEvent::Appearance(AppearanceEdit::ReducedMotion(reduced)));
-            }
-            ui.add(egui::Label::new(RichText::new(label("motion-note")).weak()).wrap());
+                let mut reduced = look.reduced_motion;
+                if ui
+                    .add(Toggle::new(&mut reduced, label("motion-reduce")))
+                    .changed()
+                {
+                    events.push(UiEvent::Appearance(AppearanceEdit::ReducedMotion(reduced)));
+                }
+                ui.add(egui::Label::new(RichText::new(label("motion-note")).weak()).wrap());
             });
         });
         signpost(ui, engine, "related-contrast", Section::Appearance, events);
-        signpost(ui, engine, "related-text-size", Section::TextAndFonts, events);
+        signpost(
+            ui,
+            engine,
+            "related-text-size",
+            Section::TextAndFonts,
+            events,
+        );
     });
 }
 
@@ -657,16 +703,16 @@ fn interface_font_controls(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEven
     };
     ui.add_enabled_ui(engine.can_edit_interface_font(), |ui| {
         row(ui, "interface-weight-row", &label("fonts-weight"), |ui| {
-        let weights = [
-            (None, label("fonts-weight-design")),
-            (Some(300), label("fonts-weight-light")),
-            (Some(400), label("fonts-weight-regular")),
-            (Some(500), label("fonts-weight-medium")),
-            (Some(600), label("fonts-weight-semibold")),
-        ];
-        if let Some(weight) = choices(ui, font.weight, &weights) {
-            events.push(UiEvent::Interface(InterfaceEdit::Weight(weight)));
-        }
+            let weights = [
+                (None, label("fonts-weight-design")),
+                (Some(300), label("fonts-weight-light")),
+                (Some(400), label("fonts-weight-regular")),
+                (Some(500), label("fonts-weight-medium")),
+                (Some(600), label("fonts-weight-semibold")),
+            ];
+            if let Some(weight) = choices(ui, font.weight, &weights) {
+                events.push(UiEvent::Interface(InterfaceEdit::Weight(weight)));
+            }
         });
 
         let design = design::default_typography(design::TypographyRole::Ui).font_size;
@@ -686,10 +732,16 @@ fn interface_font_controls(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEven
             }
             row(ui, "interface-size-default", "", |ui| {
                 if font.size.is_none() {
-                    ui.weak(label_with("fonts-size-unset", &[("value", &format!("{design:.2}"))]));
+                    ui.weak(label_with(
+                        "fonts-size-unset",
+                        &[("value", &format!("{design:.2}"))],
+                    ));
                 }
                 let text = label_with("fonts-size-design", &[("value", &format!("{design:.2}"))]);
-                if ui.add_enabled(font.size.is_some(), PushButton::secondary(text)).clicked() {
+                if ui
+                    .add_enabled(font.size.is_some(), PushButton::secondary(text))
+                    .clicked()
+                {
                     events.push(UiEvent::Interface(InterfaceEdit::Size(None)));
                 }
             });
@@ -886,7 +938,9 @@ fn appearance(
         if let Some(look) = appearance_state(ui, engine, commands, strings, events) {
             group_heading(ui, "appearance-theme", true);
             look_controls(ui, engine, strings, look.clone(), events);
-            row(ui, "style-note", "", |ui| { ui.weak(label("look-style-note")); });
+            row(ui, "style-note", "", |ui| {
+                ui.weak(label("look-style-note"));
+            });
             density(ui, engine, &look, events);
             signpost(ui, engine, "related-wallpaper", Section::Wallpapers, events);
         }
@@ -1015,14 +1069,14 @@ fn terminal_controls(
 ) {
     group_heading(ui, "term-text", true);
     row(ui, "terminal-family-row", &label("terminal-family"), |ui| {
-    let family = family_text(term.font.family.as_deref());
-    let hint = label_with(
-        "terminal-family-system",
-        &[("family", mono.as_deref().unwrap_or("JetBrains Mono"))],
-    );
-    if let Some(setting) = checked_text(ui, "terminal-family", &family, &hint, family_setting) {
-        events.push(UiEvent::Terminal(setting));
-    }
+        let family = family_text(term.font.family.as_deref());
+        let hint = label_with(
+            "terminal-family-system",
+            &[("family", mono.as_deref().unwrap_or("JetBrains Mono"))],
+        );
+        if let Some(setting) = checked_text(ui, "terminal-family", &family, &hint, family_setting) {
+            events.push(UiEvent::Terminal(setting));
+        }
     });
     let size = Numeric {
         key: "terminal-size",
@@ -1036,22 +1090,28 @@ fn terminal_controls(
     }
 
     row(ui, "terminal-weight-row", &label("terminal-weight"), |ui| {
-    let weights = [
-        (300, label("terminal-weight-light")),
-        (400, label("terminal-weight-regular")),
-        (500, label("terminal-weight-medium")),
-    ];
-    if let Some(weight) = choices(ui, term.font.weight, &weights) {
-        events.push(UiEvent::Terminal(Setting::Weight(weight)));
-    }
+        let weights = [
+            (300, label("terminal-weight-light")),
+            (400, label("terminal-weight-regular")),
+            (500, label("terminal-weight-medium")),
+        ];
+        if let Some(weight) = choices(ui, term.font.weight, &weights) {
+            events.push(UiEvent::Terminal(Setting::Weight(weight)));
+        }
     });
 
-    row(ui, "terminal-padding-row", &label("terminal-padding"), |ui| {
-    let paddings: Vec<(u32, String)> = PADDINGS.iter().map(|&p| (p, p.to_string())).collect();
-    if let Some(padding) = choices(ui, term.padding, &paddings) {
-        events.push(UiEvent::Terminal(Setting::Padding(padding)));
-    }
-    });
+    row(
+        ui,
+        "terminal-padding-row",
+        &label("terminal-padding"),
+        |ui| {
+            let paddings: Vec<(u32, String)> =
+                PADDINGS.iter().map(|&p| (p, p.to_string())).collect();
+            if let Some(padding) = choices(ui, term.padding, &paddings) {
+                events.push(UiEvent::Terminal(Setting::Padding(padding)));
+            }
+        },
+    );
 
     group_heading(ui, "term-behaviour", false);
     let scrollback = Numeric {
@@ -1078,55 +1138,75 @@ fn terminal_controls(
         events.push(UiEvent::Terminal(Setting::ScrollSpeed(value as u32)));
     }
 
-    row(ui, "terminal-cursor-shape-row", &label("terminal-cursor-shape"), |ui| {
-    let shapes = [
-        (CursorShape::Block, label("terminal-cursor-block")),
-        (CursorShape::Underline, label("terminal-cursor-underline")),
-        (CursorShape::Bar, label("terminal-cursor-bar")),
-    ];
-    if let Some(shape) = choices(ui, term.cursor.shape, &shapes) {
-        events.push(UiEvent::Terminal(Setting::CursorShape(shape)));
-    }
-    });
-row(ui, "terminal-cursor-blink-row", &label("terminal-cursor-blink"), |ui| {
-    let mut blink = term.cursor.blink;
-    if ui
-        .add(Toggle::new(&mut blink, label("terminal-cursor-blink")))
-        .changed()
-    {
-        events.push(UiEvent::Terminal(Setting::CursorBlink(blink)));
-    }
-    });
+    row(
+        ui,
+        "terminal-cursor-shape-row",
+        &label("terminal-cursor-shape"),
+        |ui| {
+            let shapes = [
+                (CursorShape::Block, label("terminal-cursor-block")),
+                (CursorShape::Underline, label("terminal-cursor-underline")),
+                (CursorShape::Bar, label("terminal-cursor-bar")),
+            ];
+            if let Some(shape) = choices(ui, term.cursor.shape, &shapes) {
+                events.push(UiEvent::Terminal(Setting::CursorShape(shape)));
+            }
+        },
+    );
+    row(
+        ui,
+        "terminal-cursor-blink-row",
+        &label("terminal-cursor-blink"),
+        |ui| {
+            let mut blink = term.cursor.blink;
+            if ui
+                .add(Toggle::new(&mut blink, label("terminal-cursor-blink")))
+                .changed()
+            {
+                events.push(UiEvent::Terminal(Setting::CursorBlink(blink)));
+            }
+        },
+    );
 
-row(ui, "terminal-copy-on-select-row", &label("terminal-copy-on-select"), |ui| {
-    let mut copy = term.mouse.copy_on_select;
-    if ui
-        .add(Toggle::new(&mut copy, label("terminal-copy-on-select")))
-        .changed()
-    {
-        events.push(UiEvent::Terminal(Setting::CopyOnSelect(copy)));
-    }
-    });
+    row(
+        ui,
+        "terminal-copy-on-select-row",
+        &label("terminal-copy-on-select"),
+        |ui| {
+            let mut copy = term.mouse.copy_on_select;
+            if ui
+                .add(Toggle::new(&mut copy, label("terminal-copy-on-select")))
+                .changed()
+            {
+                events.push(UiEvent::Terminal(Setting::CopyOnSelect(copy)));
+            }
+        },
+    );
 
     group_heading(ui, "term-advanced", false);
     row(ui, "terminal-border-row", &label("terminal-border"), |ui| {
-    let widths: Vec<(u32, String)> = (BORDER_WIDTH_MIN..=BORDER_WIDTH_MAX)
-        .map(|w| (w, w.to_string()))
-        .collect();
-    if let Some(width) = choices(ui, term.border.width, &widths) {
-        events.push(UiEvent::Terminal(Setting::BorderWidth(width)));
-    }
+        let widths: Vec<(u32, String)> = (BORDER_WIDTH_MIN..=BORDER_WIDTH_MAX)
+            .map(|w| (w, w.to_string()))
+            .collect();
+        if let Some(width) = choices(ui, term.border.width, &widths) {
+            events.push(UiEvent::Terminal(Setting::BorderWidth(width)));
+        }
     });
 
-    row(ui, "terminal-focus-ring-row", &label("terminal-focus-ring"), |ui| {
-    let rings = [
-        (FocusRing::Neutral, label("terminal-focus-neutral")),
-        (FocusRing::Accent, label("terminal-focus-accent")),
-    ];
-    if let Some(ring) = choices(ui, term.focus.ring, &rings) {
-        events.push(UiEvent::Terminal(Setting::FocusRing(ring)));
-    }
-    });
+    row(
+        ui,
+        "terminal-focus-ring-row",
+        &label("terminal-focus-ring"),
+        |ui| {
+            let rings = [
+                (FocusRing::Neutral, label("terminal-focus-neutral")),
+                (FocusRing::Accent, label("terminal-focus-accent")),
+            ];
+            if let Some(ring) = choices(ui, term.focus.ring, &rings) {
+                events.push(UiEvent::Terminal(Setting::FocusRing(ring)));
+            }
+        },
+    );
     if term.focus.ring == FocusRing::Accent {
         let strength = Numeric {
             key: "terminal-focus-strength",
@@ -1141,12 +1221,12 @@ row(ui, "terminal-copy-on-select-row", &label("terminal-copy-on-select"), |ui| {
     }
 
     row(ui, "terminal-term-row", &label("terminal-term"), |ui| {
-    let hint = "xterm-256color";
-    let to_term = |text: &str| Setting::Term(text.to_owned());
-    if let Some(setting) = checked_text(ui, "terminal-term", &term.env.term, hint, to_term) {
-        events.push(UiEvent::Terminal(setting));
-    }
-    ui.add(egui::Label::new(RichText::new(label("terminal-term-note")).weak()).wrap());
+        let hint = "xterm-256color";
+        let to_term = |text: &str| Setting::Term(text.to_owned());
+        if let Some(setting) = checked_text(ui, "terminal-term", &term.env.term, hint, to_term) {
+            events.push(UiEvent::Terminal(setting));
+        }
+        ui.add(egui::Label::new(RichText::new(label("terminal-term-note")).weak()).wrap());
     });
 }
 
@@ -1170,32 +1250,32 @@ fn number(ui: &mut Ui, spec: Numeric, current: f64, range: RangeInclusive<f64>) 
     let mut value = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(current);
     let mut commit = false;
     row(ui, spec.key, &spec.title, |ui| {
-    ui.horizontal(|ui| {
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
-            let field = ValueField::new(&mut value, range.clone()).unit(spec.unit);
-            let response = ui.add(field);
-            let cancelled = response.lost_focus() && escaped;
-            if cancelled {
-                ui.data_mut(|d| d.remove::<f64>(id));
-                value = current;
-            } else if response.has_focus() || response.dragged() {
-                ui.data_mut(|d| d.insert_temp(id, value));
-            }
-            if !cancelled && (response.lost_focus() || response.drag_stopped()) {
-                commit = true;
-            }
-            if spec.slider {
-                let slider = Slider::new(&mut value, range.clone()).label(spec.title.as_str());
-                let response = ui.add(slider);
-                if response.dragged() {
+        ui.horizontal(|ui| {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                let field = ValueField::new(&mut value, range.clone()).unit(spec.unit);
+                let response = ui.add(field);
+                let cancelled = response.lost_focus() && escaped;
+                if cancelled {
+                    ui.data_mut(|d| d.remove::<f64>(id));
+                    value = current;
+                } else if response.has_focus() || response.dragged() {
                     ui.data_mut(|d| d.insert_temp(id, value));
-                } else if response.drag_stopped() || response.changed() {
+                }
+                if !cancelled && (response.lost_focus() || response.drag_stopped()) {
                     commit = true;
                 }
-            }
+                if spec.slider {
+                    let slider = Slider::new(&mut value, range.clone()).label(spec.title.as_str());
+                    let response = ui.add(slider);
+                    if response.dragged() {
+                        ui.data_mut(|d| d.insert_temp(id, value));
+                    } else if response.drag_stopped() || response.changed() {
+                        commit = true;
+                    }
+                }
+            });
         });
-    });
     });
     if !commit {
         return None;
@@ -1559,15 +1639,26 @@ mod numeric_tests {
     fn ready_engine() -> Engine {
         let mut engine = Engine::new(crate::label_with);
         engine.start_appearance("example");
-        let ticket = engine.take_effects().into_iter().find_map(|effect| match effect {
-            preferences::Effect::Settings { ticket, .. } => Some(ticket),
-            _ => None,
-        }).unwrap();
+        let ticket = engine
+            .take_effects()
+            .into_iter()
+            .find_map(|effect| match effect {
+                preferences::Effect::Settings { ticket, .. } => Some(ticket),
+                _ => None,
+            })
+            .unwrap();
         let body = serde_json::json!({"summary":{"schema":1,"binding":{"instance":"example","profile":"default"},
             "incarnation":"example","revision":"1","design_revision":"1","source_digest":"example",
             "appearance":{"scheme":"studio","mode":"dark","contrast":"normal","source":null},
             "custom_source":false,"terminal":{}},"recovering":false});
-        engine.settled(ticket, Ok(citizen::Reply { rc: 0, body: body.to_string(), error: None }));
+        engine.settled(
+            ticket,
+            Ok(citizen::Reply {
+                rc: 0,
+                body: body.to_string(),
+                error: None,
+            }),
+        );
         engine.take_effects();
         engine
     }
@@ -1580,9 +1671,12 @@ mod numeric_tests {
                 Some(preferences::appearance::InterfaceFont { weight: None, size });
             let mut h = Harness::builder()
                 .with_size(egui::vec2(720.0, 300.0))
-                .build_ui_state(|ui, state: &mut (Engine, Vec<UiEvent>)| {
-                    interface_font_controls(ui, &state.0, &mut state.1);
-                }, (engine, Vec::new()));
+                .build_ui_state(
+                    |ui, state: &mut (Engine, Vec<UiEvent>)| {
+                        interface_font_controls(ui, &state.0, &mut state.1);
+                    },
+                    (engine, Vec::new()),
+                );
             toolkit::install(&h.ctx, &toolkit::Theme::embedded());
             h.run();
             assert_eq!(h.get_all_by_role(Role::Slider).count(), 1);
@@ -1600,18 +1694,28 @@ mod numeric_tests {
     #[test]
     fn interface_size_reset_emits_null() {
         let mut engine = ready_engine();
-        engine.look.interface_font = Some(preferences::appearance::InterfaceFont { weight: None, size: Some(16.0) });
+        engine.look.interface_font = Some(preferences::appearance::InterfaceFont {
+            weight: None,
+            size: Some(16.0),
+        });
         engine.look.settings = Settings::Available;
-        let mut h = Harness::builder().with_size(egui::vec2(720.0, 360.0))
-            .build_ui_state(|ui, state: &mut (Engine, Vec<UiEvent>)| {
-                interface_font_controls(ui, &state.0, &mut state.1);
-            }, (engine, Vec::new()));
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(720.0, 360.0))
+            .build_ui_state(
+                |ui, state: &mut (Engine, Vec<UiEvent>)| {
+                    interface_font_controls(ui, &state.0, &mut state.1);
+                },
+                (engine, Vec::new()),
+            );
         toolkit::install(&h.ctx, &toolkit::Theme::embedded());
         h.run();
         h.get_by_label("Design default (14.67 px)").click();
         h.run();
         assert_eq!(h.state().1, [UiEvent::Interface(InterfaceEdit::Size(None))]);
-        assert_eq!(InterfaceEdit::Size(None).edit().value, serde_json::Value::Null);
+        assert_eq!(
+            InterfaceEdit::Size(None).edit().value,
+            serde_json::Value::Null
+        );
     }
 
     #[test]
@@ -1625,21 +1729,47 @@ mod numeric_tests {
                 problem_feedback(ui, &engine, &mut Vec::new());
             });
             h.run();
-            assert_eq!(h.query_by_label("Refused terminal edit").is_some(), page == Section::Terminal);
-            assert_eq!(h.query_by_label("Problem on Term ›").is_some(), page != Section::Terminal);
+            assert_eq!(
+                h.query_by_label("Refused terminal edit").is_some(),
+                page == Section::Terminal
+            );
+            assert_eq!(
+                h.query_by_label("Problem on Term ›").is_some(),
+                page != Section::Terminal
+            );
         }
     }
 
     #[test]
     fn wallpaper_sidebar_selection_and_filter_stay_in_appearance() {
-        assert!(sidebar_selected(Section::Wallpapers, Section::Appearance, ""));
-        assert!(!sidebar_selected(Section::Wallpapers, Section::Appearance, "wallpapers"));
-        assert!(sidebar_selected(Section::Wallpapers, Section::Wallpapers, "wallpapers"));
+        assert!(sidebar_selected(
+            Section::Wallpapers,
+            Section::Appearance,
+            ""
+        ));
+        assert!(!sidebar_selected(
+            Section::Wallpapers,
+            Section::Appearance,
+            "wallpapers"
+        ));
+        assert!(sidebar_selected(
+            Section::Wallpapers,
+            Section::Wallpapers,
+            "wallpapers"
+        ));
         let engine = Engine::new(crate::label_with);
         let matches = engine.search("appearance");
-        assert_eq!(matches.last().unwrap().section, Section::Wallpapers);
-        assert!(matches.iter().position(|s| s.section == Section::Wallpapers).unwrap()
-            < preferences::SECTIONS.iter().position(|s| s.section == Section::Windows).unwrap());
+        assert_eq!(matches[2].section, Section::Wallpapers);
+        assert!(
+            matches
+                .iter()
+                .position(|s| s.section == Section::Wallpapers)
+                .unwrap()
+                < preferences::SECTIONS
+                    .iter()
+                    .position(|s| s.section == Section::Windows)
+                    .unwrap()
+        );
     }
 
     #[test]

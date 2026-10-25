@@ -11,7 +11,7 @@
 //! late reply can never land on a newer operation.
 use crate::appearance::Appearance;
 use crate::model::{self, APP_ID, AppRow, Notes};
-use crate::navigation::{self, Category, Section, SoftwareGroup, application_group};
+use crate::navigation::{self, Section, SoftwareGroup, application_group};
 use citizen::{CallError, Delivery, Reply};
 use design::{CaptionSide, Mode, RequestedDecorations as Decorations, Scheme, Style};
 use serde::{Deserialize, Serialize};
@@ -1333,6 +1333,7 @@ fn summary(label: Label, value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Category;
     #[test]
     fn bus_auto_first_detects_once_with_bounded_reply() {
         use design::decorations::{Resolver, SessionFacts, with_resolver};

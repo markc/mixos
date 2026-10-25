@@ -60,54 +60,58 @@ pub fn controls(
         });
         bars::hairline(ui);
         ui.add_enabled_ui(engine.can_edit_wallpaper(), |ui| {
-            row(ui, "wallpaper-output-row", &label("wallpaper-output"), |ui| {
-                let mut target = editor.target.clone();
-                egui::ComboBox::from_id_salt("wallpaper-output")
-                    .selected_text(target.clone().unwrap_or_else(|| label("wallpaper-default")))
-                    .show_ui(ui, |ui| {
-                        if toolkit::selectable(ui, target.is_none(), label("wallpaper-default"))
-                            .clicked()
-                        {
-                            target = None;
-                            ui.close();
-                        }
-                        for name in &editor.outputs {
-                            if toolkit::selectable(ui, target.as_deref() == Some(name), name)
+            row(
+                ui,
+                "wallpaper-output-row",
+                &label("wallpaper-output"),
+                |ui| {
+                    let mut target = editor.target.clone();
+                    egui::ComboBox::from_id_salt("wallpaper-output")
+                        .selected_text(target.clone().unwrap_or_else(|| label("wallpaper-default")))
+                        .show_ui(ui, |ui| {
+                            if toolkit::selectable(ui, target.is_none(), label("wallpaper-default"))
                                 .clicked()
                             {
-                                target = Some(name.clone());
+                                target = None;
                                 ui.close();
                             }
-                        }
-                    })
-                    ;
-                if target != editor.target {
-                    events.push(UiEvent::WallpaperTarget(target));
-                }
-            });
-            row(ui, "wallpaper-kind-row", &label("wallpaper-kind"), |ui| {
-            ui.horizontal_wrapped(|ui| {
-                for (value, key) in [
-                    (
-                        Kind::Theme,
-                        if editor.target.is_some() {
-                            "wallpaper-inherit"
-                        } else {
-                            "wallpaper-theme"
-                        },
-                    ),
-                    (Kind::Colour, "wallpaper-colour"),
-                    (Kind::Image, "wallpaper-image"),
-                ] {
-                    if toolkit::selectable(ui, kind == value, label(key)).clicked() && kind != value
-                    {
-                        events.push(UiEvent::WallpaperKind(value));
+                            for name in &editor.outputs {
+                                if toolkit::selectable(ui, target.as_deref() == Some(name), name)
+                                    .clicked()
+                                {
+                                    target = Some(name.clone());
+                                    ui.close();
+                                }
+                            }
+                        });
+                    if target != editor.target {
+                        events.push(UiEvent::WallpaperTarget(target));
                     }
-                }
+                },
+            );
+            row(ui, "wallpaper-kind-row", &label("wallpaper-kind"), |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for (value, key) in [
+                        (
+                            Kind::Theme,
+                            if editor.target.is_some() {
+                                "wallpaper-inherit"
+                            } else {
+                                "wallpaper-theme"
+                            },
+                        ),
+                        (Kind::Colour, "wallpaper-colour"),
+                        (Kind::Image, "wallpaper-image"),
+                    ] {
+                        if toolkit::selectable(ui, kind == value, label(key)).clicked()
+                            && kind != value
+                        {
+                            events.push(UiEvent::WallpaperKind(value));
+                        }
+                    }
+                });
             });
-            });
-            row(ui, "wallpaper-fill-row", "", |ui| {
-            match kind {
+            row(ui, "wallpaper-fill-row", "", |ui| match kind {
                 Kind::Theme => {
                     ui.label(
                         RichText::new(label(if editor.target.is_some() {
@@ -175,7 +179,6 @@ pub fn controls(
                     );
                     ui.label(RichText::new(label("wallpaper-image-note")).weak());
                 }
-            }
             });
         });
         let key = format!(

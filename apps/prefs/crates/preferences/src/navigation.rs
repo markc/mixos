@@ -266,7 +266,7 @@ mod tests {
         assert_eq!(ids("themes"), ["appearance"]);
         assert_eq!(ids("wallpapers"), ["wallpaper"]);
         assert_eq!(ids("system")[0], "software");
-        assert_eq!(ids("appearance").last(), Some(&"wallpaper"));
+        assert_eq!(&ids("appearance")[..3], ["appearance", "text_and_fonts", "wallpaper"]);
         assert_eq!(ids("ui.text_scale"), ["accessibility"]);
         assert_eq!(ids("ui.reduced_motion"), ["accessibility"]);
         assert_eq!(ids("animation"), ["accessibility"]);

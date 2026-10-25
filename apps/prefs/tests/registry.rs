@@ -100,5 +100,9 @@ fn every_registry_section_has_one_command_and_is_described() {
 
 #[test]
 fn flat_sidebar_has_no_category_commands() {
-    assert!(!prefs::actions::registry().iter().any(|c| c.id.starts_with("view.category.")));
+    assert!(
+        !prefs::actions::registry()
+            .iter()
+            .any(|c| c.id.starts_with("view.category."))
+    );
 }

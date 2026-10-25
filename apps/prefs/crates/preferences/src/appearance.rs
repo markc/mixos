@@ -427,6 +427,14 @@ pub struct Submitted {
 }
 
 impl Submitted {
+    fn section(&self) -> crate::Section {
+        match self.axes.first() {
+            Some(Axis::Decorations | Axis::CaptionSide) => crate::Section::Windows,
+            Some(Axis::FontFamily | Axis::MonoFamily) => crate::Section::TextAndFonts,
+            Some(Axis::TextScale | Axis::ReducedMotion) => crate::Section::Accessibility,
+            _ => crate::Section::Appearance,
+        }
+    }
     /// `current` shows every axis this apply asked for.
     fn shown_in(&self, current: &Look) -> bool {
         self.axes.iter().all(|a| !a.differs(&self.look, current))
@@ -871,6 +879,7 @@ impl Engine {
 
     pub(crate) fn record_settings_status(&mut self) {
         if self.failed {
+            self.look.settings_status = None;
             self.look.problem = Some(self.status.clone());
             self.look.problem_source = Some(self.look.status_source);
             self.look.problem_missing = false;
@@ -994,9 +1003,12 @@ impl Engine {
             return;
         };
         let shown = self.look.shown().unwrap_or_else(|| expected.clone());
-        self.look.status_source = if look.decorations != shown.decorations || look.captions != shown.captions {
+        self.look.status_source = if look.decorations != shown.decorations
+            || look.captions != shown.captions
+        {
             crate::Section::Windows
-        } else if look.text_scale != shown.text_scale || look.reduced_motion != shown.reduced_motion {
+        } else if look.text_scale != shown.text_scale || look.reduced_motion != shown.reduced_motion
+        {
             crate::Section::Accessibility
         } else if look.font_family != shown.font_family || look.mono_family != shown.mono_family {
             crate::Section::TextAndFonts
@@ -1024,6 +1036,7 @@ impl Engine {
     /// its failure status no longer describe anything, so they go.
     fn settle_if_retired(&mut self, held: bool) {
         if held && self.look.draft.is_none() {
+            self.clear_settings_problem(self.look.status_source);
             self.look.hold = false;
             self.look.discard_on_quit = false;
             self.status = self.label("settled-look", &[]);
@@ -1180,6 +1193,7 @@ impl Engine {
         self.look.conflicts.clear();
         self.look.hold = false;
         self.status = self.label("reverted-look", &[]);
+        self.clear_settings_problem(self.look.status_source);
         self.failed = false;
         self.record_settings_status();
     }
@@ -1213,6 +1227,7 @@ impl Engine {
         }
         self.look.job = None;
         self.look.status_source = match &call {
+            Call::Apply(submitted) | Call::Receipt(submitted) => submitted.section(),
             Call::Terminal(..) => crate::Section::Terminal,
             Call::Email(..) => crate::Section::Email,
             Call::Text(_, edit) => edit.section(),
@@ -1616,7 +1631,14 @@ mod tests {
         let mut e = read();
         e.edit_terminal(crate::terminal::Setting::Padding(8));
         let ticket = settings_calls(&mut e)[0].0;
-        e.settled(ticket, Ok(Reply { rc: 10, body: String::new(), error: Some("settingsd not found".into()) }));
+        e.settled(
+            ticket,
+            Ok(Reply {
+                rc: 10,
+                body: String::new(),
+                error: Some("settingsd not found".into()),
+            }),
+        );
         assert!(e.look.problem.is_some());
         e.read_look();
         let ticket = settings_calls(&mut e)[0].0;
@@ -1995,7 +2017,7 @@ mod tests {
         assert!(e.can_apply_look() && e.can_revert_look());
         // Apply tries again; an edit would too; Revert drops it.
         e.apply_look();
-        assert!(e.look.problem.is_none());
+        assert!(e.look.problem.is_some(), "a retry has not succeeded yet");
         assert_eq!(next(&mut e).1, "settings.apply");
         let mut e = read();
         edit(&mut e, json!({"scheme":"forest"}));

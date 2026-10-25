@@ -872,8 +872,8 @@ impl Engine {
     /// refused Add keeps its form.
     pub(crate) fn email_answered(&mut self, answer: Answer) {
         match answer {
-            Answer::Ok(_) => {
-                self.status = self.label("applied-email", &[]);
+            Answer::Ok(value) => {
+                self.status = self.label(if value["status"] == "unchanged" { "email-unchanged" } else { "applied-email" }, &[]);
                 self.failed = false;
                 self.record_settings_status();
             }
@@ -1422,7 +1422,7 @@ impl Engine {
             self.email.outcome = Some((text.clone(), true));
             self.status = text;
             self.failed = true;
-            } else if self.email.task.is_some() {
+        } else if self.email.task.is_some() {
             self.email.forgets.push((id, name));
         } else {
             self.begin_action(Action::Forget(id), None, false, name);
@@ -2769,7 +2769,10 @@ mod tests {
         assert_eq!(e.look.problem, problem, "launch preserves the Term problem");
         assert_eq!(calls[0].3, json!({"id":EMAIL_APP_ID}));
         e.mailed(calls[0].0, reply(0, json!({"launched":true})));
-        assert_eq!(e.look.problem, problem, "waiting preserves the Term problem");
+        assert_eq!(
+            e.look.problem, problem,
+            "waiting preserves the Term problem"
+        );
         let wait = e
             .take_effects()
             .into_iter()
@@ -2795,7 +2798,33 @@ mod tests {
         assert!(e.email.task.is_none());
         assert!(!e.failed);
         assert!(e.status.starts_with("email-password-set"), "{}", e.status);
-        assert_eq!(e.look.problem, problem, "the account outcome is inline only");
+        assert_eq!(
+            e.look.problem, problem,
+            "the account outcome is inline only"
+        );
+    }
+
+    #[test]
+    fn rejected_password_is_an_inline_outcome_not_a_settings_problem() {
+        let mut e = read();
+        e.select_email_account("a");
+        e.edit_email_password(Secret::new("example-password"));
+        e.set_email_password();
+        let calls = mail_calls(&e.take_effects());
+        e.mailed(calls[0].0, reply(10, json!({"error_code":"REJECTED","message":"Password rejected"})));
+        assert!(e.email.outcome.as_ref().is_some_and(|(_, failed)| *failed));
+        assert!(e.look.problem.is_none());
+        assert!(e.appearance_view()["problem"].is_null());
+    }
+
+    #[test]
+    fn resetting_unchanged_email_settings_has_visible_feedback() {
+        let mut e = read();
+        e.reset_email();
+        e.confirm_email();
+        let calls = settings_calls(&mut e);
+        e.settled(calls[0].0, reply(0, json!({"status":"unchanged"})));
+        assert_eq!(e.look.settings_status.as_deref(), Some("email-unchanged"));
     }
 
     #[test]
