@@ -697,7 +697,7 @@ fn node_ids_round_trip_as_text() {
 /// sol finding 4: hiding the window answers what it accepted, instead of
 /// stranding input no pass will ever read.
 #[test]
-fn hiding_the_window_settles_accepted_input() {
+fn a_hidden_window_settles_input_after_the_quiet_period() {
     let mut h = window();
     let app = h.state_mut();
     app.inbox.push((60, "ui.click", json!({"label":"File"})));
@@ -709,8 +709,16 @@ fn hiding_the_window_settles_accepted_input() {
         .entry(ViewportId::ROOT)
         .or_default()
         .minimized = Some(true);
-    h.step();
-    let answers = &h.state().answers;
+    let hidden = h.input_mut().clone();
+    let mut answers = Vec::new();
+    let _ = h
+        .ctx
+        .run_logic(&hidden, |ctx| answers.extend(drive::logic(ctx)));
+    assert!(answers.is_empty(), "a brief hidden period preserves input");
+    std::thread::sleep(drive::INPUT_QUIET_PERIOD + std::time::Duration::from_millis(10));
+    let _ = h
+        .ctx
+        .run_logic(&hidden, |ctx| answers.extend(drive::logic(ctx)));
     assert_eq!(
         answers.iter().map(|a| a.id).collect::<Vec<_>>(),
         [60, 61],
