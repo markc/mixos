@@ -459,7 +459,9 @@ fn details(
         |ui| {
             let after = if engine.workshop.selected.is_none() {
                 toolkit::chrome::Chrome::of(ui.ctx()).style.panel_card_after as f32
-            } else { 0.0 };
+            } else {
+                0.0
+            };
             ui.set_max_height((height - after).max(0.0));
             details_content(ui, engine, commands, strings, events);
         },

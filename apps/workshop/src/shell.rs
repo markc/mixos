@@ -353,7 +353,11 @@ impl Shell {
     pub fn with_saved(mut self, saved: toolkit::saved::Store<crate::saved::Arrangement>) -> Self {
         saved.app.apply(&mut self.engine);
         self.restore = Some(crate::saved::Pending::new(&saved.app));
-        if !saved.app_loaded() && let Some(restore) = &mut self.restore { restore.follow_defaults(); }
+        if !saved.app_loaded()
+            && let Some(restore) = &mut self.restore
+        {
+            restore.follow_defaults();
+        }
         crate::actions::set_choice(&mut self.engine, saved.window.theme.choice());
         self.engine.ui.split =
             toolkit::saved::widgets::panel_share(&saved.widgets, "services", self.engine.ui.split);

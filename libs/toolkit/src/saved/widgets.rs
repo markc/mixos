@@ -88,8 +88,11 @@ pub fn panel<R>(
         .default_size(extent * share.clamp(*limits.start(), *limits.end()))
         .size_range(extent * limits.start()..=extent * limits.end())
         .show(ui, |ui| {
-            if horizontal { ui.set_min_width(ui.available_width()); }
-            else { ui.set_min_height(ui.available_height()); }
+            if horizontal {
+                ui.set_min_width(ui.available_width());
+            } else {
+                ui.set_min_height(ui.available_height());
+            }
             body(ui)
         });
     let size = if horizontal {
@@ -258,7 +261,9 @@ mod tests {
                     |_| {},
                 );
                 assert!((out.response.rect.width() - 400.0).abs() < 2.0);
-                if let Some(restored) = changed { share = restored; }
+                if let Some(restored) = changed {
+                    share = restored;
+                }
             });
         }
         assert_eq!(share, 0.4);
@@ -402,15 +407,21 @@ mod tests {
     }
     #[test]
     fn collapsing_accepts_the_native_consuming_header_and_body() {
-        let ctx = egui::Context::default(); let mut widgets = Widgets::default(); widgets.install(&ctx);
+        let ctx = egui::Context::default();
+        let mut widgets = Widgets::default();
+        widgets.install(&ctx);
         draw(&ctx, |ui| {
             collapsing(&ctx, "branch", true, |mut state| {
                 state.set_open(false);
-                state.show_header(ui, |ui| ui.label("Branch")).body(|ui| ui.label("Contents"))
+                state
+                    .show_header(ui, |ui| ui.label("Branch"))
+                    .body(|ui| ui.label("Contents"))
             });
         });
-        widgets.collect(&ctx); assert!(!widgets.open["branch"]);
-        let next = egui::Context::default(); widgets.install(&next);
+        widgets.collect(&ctx);
+        assert!(!widgets.open["branch"]);
+        let next = egui::Context::default();
+        widgets.install(&next);
         collapsing(&next, "branch", true, |s| assert!(!s.is_open()));
     }
 }

@@ -187,9 +187,20 @@ impl Frame {
         F: FnMut(&'static str, Value) -> Fut,
         Fut: Future<Output = Option<Value>>,
     {
-        let Some(window) = Self::own_window(app_id, &mut call).await else { return; };
-        let Some(output) = window["output"].as_str() else { return; };
-        let Some(output) = call("comp.props.get", json!({"path":format!("outputs.{output}")})).await else { return; };
+        let Some(window) = Self::own_window(app_id, &mut call).await else {
+            return;
+        };
+        let Some(output) = window["output"].as_str() else {
+            return;
+        };
+        let Some(output) = call(
+            "comp.props.get",
+            json!({"path":format!("outputs.{output}")}),
+        )
+        .await
+        else {
+            return;
+        };
         self.capture_comp(&window, &output);
     }
 
@@ -376,6 +387,9 @@ mod tests {
         let back: Frame = config::from_conf_mix_str(&raw).unwrap();
         assert_eq!(back, f);
         assert_eq!(back.theme.choice(), choice);
+        let viewport = back.viewport(egui::ViewportBuilder::default());
+        assert_eq!(viewport.inner_size, Some(egui::vec2(900.0, 600.0)));
+        assert_eq!(viewport.maximized, Some(true));
         assert_eq!(
             ThemeChoice::default().choice(),
             crate::theme::Choice::default()
@@ -384,13 +398,21 @@ mod tests {
     }
     #[test]
     fn exit_reads_geometry_in_output_local_coordinates() {
-        let mut f = Frame::default(); let mut calls = Vec::new();
+        let mut f = Frame::default();
+        let mut calls = Vec::new();
         runtime().block_on(f.capture_exit("dev.mixos.example", |command, args| {
             calls.push((command, args));
-            std::future::ready(Some(if command == "comp.windows.list" { json!({"windows":[window()]}) }
-                else { json!({"x":1920,"y":0}) }))
+            std::future::ready(Some(if command == "comp.windows.list" {
+                json!({"windows":[window()]})
+            } else {
+                json!({"x":1920,"y":0})
+            }))
         }));
-        assert_eq!(calls[1], ("comp.props.get", json!({"path":"outputs.o_main"})));
-        let p = f.placement.unwrap(); assert_eq!((p.x, p.y, p.width, p.height), (20.0, 30.0, 900, 600));
+        assert_eq!(
+            calls[1],
+            ("comp.props.get", json!({"path":"outputs.o_main"}))
+        );
+        let p = f.placement.unwrap();
+        assert_eq!((p.x, p.y, p.width, p.height), (20.0, 30.0, 900, 600));
     }
 }

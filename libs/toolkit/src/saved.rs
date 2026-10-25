@@ -59,7 +59,8 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
                         store.window = decode(&value["window"]);
                         store.widgets = decode(&value["widgets"]);
                         if value["app"]["version"].as_f64() == Some(f64::from(version))
-                            && let Some(app) = try_decode(&value["app"]["value"]) {
+                            && let Some(app) = try_decode(&value["app"]["value"])
+                        {
                             store.app = app;
                             store.app_loaded = true;
                         }
@@ -133,7 +134,9 @@ impl<A: Serialize + DeserializeOwned + Default> Store<A> {
     }
     /// Whether a compatible app section was decoded, so first-launch defaults
     /// can differ from deliberately saved empty selections or collapsed trees.
-    pub fn app_loaded(&self) -> bool { self.app_loaded }
+    pub fn app_loaded(&self) -> bool {
+        self.app_loaded
+    }
     /// Schedule a save timer only while a changed value is waiting.
     pub fn pending(&self) -> bool {
         self.writable && self.serialise().is_ok_and(|s| s != self.written)
@@ -170,6 +173,7 @@ mod tests {
         assert!(!s.flush().unwrap());
         assert_eq!(s.writes(), 1);
         let back = Store::<App>::load(Some(dir.path().into()), 2);
+        assert!(back.app_loaded());
         assert_eq!(back.app, s.app);
         assert_eq!(back.window, s.window);
     }

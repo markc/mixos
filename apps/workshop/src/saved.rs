@@ -81,7 +81,9 @@ impl Pending {
         }
     }
     /// First launch uses discovery's defaults, including its open local node.
-    pub fn follow_defaults(&mut self) { self.expanded = None; }
+    pub fn follow_defaults(&mut self) {
+        self.expanded = None;
+    }
     pub fn reconcile(&mut self, engine: &mut Engine) {
         if self.done {
             return;
@@ -99,7 +101,9 @@ impl Pending {
                 }
             }
             for key in keys.difference(&self.seen) {
-                if expanded.contains(key) { engine.ui.expanded.insert(key.clone()); }
+                if expanded.contains(key) {
+                    engine.ui.expanded.insert(key.clone());
+                }
             }
         }
         self.seen.extend(keys.iter().cloned());
@@ -110,7 +114,11 @@ impl Pending {
         }
         if self.row_key.as_ref().is_some_and(|k| keys.contains(k)) {
             let mut parents = Vec::new();
-            reveal(&rows, self.row_key.as_deref().unwrap_or_default(), &mut parents);
+            reveal(
+                &rows,
+                self.row_key.as_deref().unwrap_or_default(),
+                &mut parents,
+            );
             engine.ui.expanded.extend(parents);
             engine.ui.row_key = self.row_key.take();
             engine.ui.selected = self
@@ -152,8 +160,13 @@ fn collect(rows: &[Row], keys: &mut BTreeSet<String>) {
 
 fn reveal(rows: &[Row], key: &str, parents: &mut Vec<String>) -> bool {
     for row in rows {
-        if row.key == key { return true; }
-        if reveal(&row.children, key, parents) { parents.push(row.key.clone()); return true; }
+        if row.key == key {
+            return true;
+        }
+        if reveal(&row.children, key, parents) {
+            parents.push(row.key.clone());
+            return true;
+        }
     }
     false
 }
@@ -267,17 +280,35 @@ mod tests {
     #[test]
     fn saved_collapsed_local_node_wins_over_discovery_but_first_launch_uses_defaults() {
         for saved in [false, true] {
-            let a = Arrangement::default(); let mut pending = Pending::new(&a);
-            if !saved { pending.follow_defaults(); }
+            let a = Arrangement::default();
+            let mut pending = Pending::new(&a);
+            if !saved {
+                pending.follow_defaults();
+            }
             let mut e = Engine::new(crate::label);
-            let inspector::Effect::Discover { ticket } = e.take_effects().remove(0) else { panic!("discovery"); };
+            let inspector::Effect::Discover { ticket } = e.take_effects().remove(0) else {
+                panic!("discovery");
+            };
             let mut snapshot = inspector::Snapshot::default();
-            snapshot.nodes.push(inspector::model::Node { name: "local".into(), local: true, ..Default::default() });
-            snapshot.progress = Some(inspector::model::Progress { finished: false, ..Default::default() });
-            e.discovered(ticket, snapshot); assert!(e.ui.expanded.contains("node:local"));
-            pending.reconcile(&mut e); assert_eq!(e.ui.expanded.contains("node:local"), !saved);
-            e.ui.expanded.insert("node:local".into()); pending.reconcile(&mut e);
-            assert!(e.ui.expanded.contains("node:local"), "later user choices survive");
+            snapshot.nodes.push(inspector::model::Node {
+                name: "local".into(),
+                local: true,
+                ..Default::default()
+            });
+            snapshot.progress = Some(inspector::model::Progress {
+                finished: false,
+                ..Default::default()
+            });
+            e.discovered(ticket, snapshot);
+            assert!(e.ui.expanded.contains("node:local"));
+            pending.reconcile(&mut e);
+            assert_eq!(e.ui.expanded.contains("node:local"), !saved);
+            e.ui.expanded.insert("node:local".into());
+            pending.reconcile(&mut e);
+            assert!(
+                e.ui.expanded.contains("node:local"),
+                "later user choices survive"
+            );
         }
     }
 }
