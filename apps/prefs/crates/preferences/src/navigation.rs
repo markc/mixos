@@ -258,7 +258,10 @@ mod tests {
         };
         assert_eq!(ids("TERMINAL."), ["apps_term"]);
         assert_eq!(ids("background"), ["wallpaper"]);
-        assert_eq!(ids("category-apps"), ["apps_email", "apps_term", "apps_ced"]);
+        assert_eq!(
+            ids("category-apps"),
+            ["apps_email", "apps_term", "apps_ced"]
+        );
         assert_eq!(ids("email.reader"), ["apps_email"]);
         assert_eq!(ids("ced.editor"), ["apps_ced"]);
         assert_eq!(ids("appearance.decorations"), ["windows"]);

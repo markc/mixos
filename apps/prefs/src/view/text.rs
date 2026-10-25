@@ -7,7 +7,12 @@ use super::*;
 use preferences::text::{FONT_SIZE_MAX, FONT_SIZE_MIN, PADDINGS, Setting, Surface};
 
 /// The Text section: a card for each surface, in the order they are listed.
-pub(super) fn section(ui: &mut Ui, engine: &Engine, surfaces: &[Surface], events: &mut Vec<UiEvent>) {
+pub(super) fn section(
+    ui: &mut Ui,
+    engine: &Engine,
+    surfaces: &[Surface],
+    events: &mut Vec<UiEvent>,
+) {
     ui.vertical(|ui| {
         if engine.look.settings == Settings::Missing {
             ui.add(egui::Label::new(RichText::new(label("look-missing")).weak()).wrap());

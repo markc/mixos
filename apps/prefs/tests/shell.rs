@@ -254,7 +254,10 @@ fn every_registry_section_opens_through_the_shell() {
     send(&mut rig, 200, "prefs.search", json!({"query":"compact"}));
     send(&mut rig, 201, "prefs.search", json!({"query":"animation"}));
     wait(&mut rig, &[200, 201]);
-    for (id, section, category) in [(200, "appearance", "appearance"), (201, "accessibility", "system")] {
+    for (id, section, category) in [
+        (200, "appearance", "appearance"),
+        (201, "accessibility", "system"),
+    ] {
         assert!(rig.bus.log().iter().any(|entry| matches!(entry,
             Logged::Reply { id: reply_id, rc: 0, body } if *reply_id == id
                 && body["matches"] == json!([{"id":section,"category":category}])

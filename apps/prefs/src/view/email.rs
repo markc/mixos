@@ -95,10 +95,15 @@ pub fn section(
         ui.strong(label("email-mail"));
         mail_options(ui, engine, email, events);
         bars::hairline(ui);
-        super::text::section(ui, engine, &[
-            preferences::text::Surface::EmailReader,
-            preferences::text::Surface::EmailComposer,
-        ], events);
+        super::text::section(
+            ui,
+            engine,
+            &[
+                preferences::text::Surface::EmailReader,
+                preferences::text::Surface::EmailComposer,
+            ],
+            events,
+        );
         ui.horizontal(|ui| {
             command_button(ui, engine, commands, strings, "email.reset", false, events);
             ui.add(egui::Label::new(RichText::new(label("email-note")).weak()).wrap());

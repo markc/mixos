@@ -133,24 +133,26 @@ pub fn view(
         }
     }
     if engine.section() == Section::Software {
-    bars::status(ui, |ui| {
-        let (icon, colour) = if !engine.connected {
-            (Icon::Unplug, ui.visuals().error_fg_color)
-        } else if engine.working().is_some() || engine.look.working() || engine.email.task.is_some()
-        {
-            (Icon::LoaderCircle, ui.visuals().weak_text_color())
-        } else if engine.failed {
-            (Icon::CircleAlert, ui.visuals().error_fg_color)
-        } else {
-            (Icon::Plug, ui.visuals().weak_text_color())
-        };
-        ui.add(icons::image_of(ui.ctx(), icon, ICON, colour));
-        if engine.failed {
-            ui.small(RichText::new(&engine.status).color(ui.visuals().error_fg_color));
-        } else {
-            ui.small(&engine.status);
-        }
-    });
+        bars::status(ui, |ui| {
+            let (icon, colour) = if !engine.connected {
+                (Icon::Unplug, ui.visuals().error_fg_color)
+            } else if engine.working().is_some()
+                || engine.look.working()
+                || engine.email.task.is_some()
+            {
+                (Icon::LoaderCircle, ui.visuals().weak_text_color())
+            } else if engine.failed {
+                (Icon::CircleAlert, ui.visuals().error_fg_color)
+            } else {
+                (Icon::Plug, ui.visuals().weak_text_color())
+            };
+            ui.add(icons::image_of(ui.ctx(), icon, ICON, colour));
+            if engine.failed {
+                ui.small(RichText::new(&engine.status).color(ui.visuals().error_fg_color));
+            } else {
+                ui.small(&engine.status);
+            }
+        });
     }
     egui::Panel::left("editors")
         .resizable(true)
@@ -164,28 +166,42 @@ pub fn view(
         .show(ui, |ui| {
             page_header(ui, engine.section());
             match engine.section() {
-            Section::Software => applications(ui, engine, commands, strings, &mut events),
-            section => {
-                ScrollArea::vertical()
-                    .id_salt(section.name())
-                    .auto_shrink(false)
-                    .show(ui, |ui| match section {
-                        Section::Appearance => appearance(ui, engine, commands, strings, &mut events),
-                        Section::Terminal => terminal(ui, engine, commands, strings, &mut events),
-                        Section::Ced => text::section(ui, engine, &[preferences::text::Surface::CedEditor], &mut events),
-                        Section::Wallpapers => {
-                            wallpaper::controls(ui, engine, commands, strings, &mut events)
-                        }
-                        Section::TextAndFonts => fonts(ui, engine, commands, strings, &mut events),
-                        Section::Windows => windows(ui, engine, commands, strings, &mut events),
-                        Section::Accessibility => motion(ui, engine, commands, strings, &mut events),
-                        Section::Email => {
-                            email::section(ui, engine, commands, strings, &mut events)
-                        }
-                        _ => unreachable!(),
-                    });
+                Section::Software => applications(ui, engine, commands, strings, &mut events),
+                section => {
+                    ScrollArea::vertical()
+                        .id_salt(section.name())
+                        .auto_shrink(false)
+                        .show(ui, |ui| match section {
+                            Section::Appearance => {
+                                appearance(ui, engine, commands, strings, &mut events)
+                            }
+                            Section::Terminal => {
+                                terminal(ui, engine, commands, strings, &mut events)
+                            }
+                            Section::Ced => text::section(
+                                ui,
+                                engine,
+                                &[preferences::text::Surface::CedEditor],
+                                &mut events,
+                            ),
+                            Section::Wallpapers => {
+                                wallpaper::controls(ui, engine, commands, strings, &mut events)
+                            }
+                            Section::TextAndFonts => {
+                                fonts(ui, engine, commands, strings, &mut events)
+                            }
+                            Section::Windows => windows(ui, engine, commands, strings, &mut events),
+                            Section::Accessibility => {
+                                motion(ui, engine, commands, strings, &mut events)
+                            }
+                            Section::Email => {
+                                email::section(ui, engine, commands, strings, &mut events)
+                            }
+                            _ => unreachable!(),
+                        });
+                }
             }
-        }});
+        });
     dialogs(ui, engine, commands, strings, &mut events);
     wallpaper::picker(ui, engine, &mut events);
     if toolkit::macros::show_app(ui.ctx(), "prefs", engine.ui.macros_open) {
@@ -236,7 +252,10 @@ fn editors(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, events: &m
         .id_salt("navigation-tree")
         .show(ui, |ui| {
             let mut previous = None;
-            for section in matches.iter().filter(|s| s.section != Section::Wallpapers || !query.is_empty()) {
+            for section in matches
+                .iter()
+                .filter(|s| s.section != Section::Wallpapers || !query.is_empty())
+            {
                 if previous.is_some_and(|category| category != section.category) {
                     bars::hairline(ui);
                 }
@@ -247,10 +266,19 @@ fn editors(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, events: &m
                 ui.add_enabled_ui(engine.can_navigate(), |ui| {
                     ui.horizontal(|ui| {
                         let command = commands.get(section.command).expect("section command");
-                        ui.add(icons::image_of(ui.ctx(), command.icon.expect("section icon"),
-                            ICON, ui.visuals().text_color()));
-                        if toolkit::selectable(ui, engine.section() == section.section,
-                            label(section.title)).clicked() {
+                        ui.add(icons::image_of(
+                            ui.ctx(),
+                            command.icon.expect("section icon"),
+                            ICON,
+                            ui.visuals().text_color(),
+                        ));
+                        if toolkit::selectable(
+                            ui,
+                            engine.section() == section.section,
+                            label(section.title),
+                        )
+                        .clicked()
+                        {
                             events.push(UiEvent::Command(section.command, Origin::Ui));
                         }
                     });
@@ -438,26 +466,39 @@ fn density(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>)
         ui.horizontal_wrapped(|ui| {
             let step = toolkit::ui_scale::density_step(look.density);
             for (index, key) in ["size-compact", "size-comfortable", "size-spacious"]
-                .into_iter().enumerate() {
+                .into_iter()
+                .enumerate()
+            {
                 if toolkit::selectable(ui, step == Some(index), label(key)).clicked() {
                     events.push(UiEvent::Appearance(AppearanceEdit::Density(
-                        toolkit::ui_scale::DENSITY_STEPS[index])));
+                        toolkit::ui_scale::DENSITY_STEPS[index],
+                    )));
                 }
             }
             if step.is_none() {
-                ui.weak(label_with("size-custom", &[("value", &format!("{:.2}", look.density))]));
+                ui.weak(label_with(
+                    "size-custom",
+                    &[("value", &format!("{:.2}", look.density))],
+                ));
             }
         });
     });
 }
 
-fn windows(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>,
-    strings: &Strings, events: &mut Vec<UiEvent>) {
+fn windows(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
     if let Some(look) = appearance_state(ui, engine, commands, strings, events) {
         ui.add_enabled_ui(engine.can_edit_look(), |ui| {
-            egui::Grid::new("windows-controls").num_columns(2).show(ui, |ui| {
-                decoration_controls(ui, look, events);
-            });
+            egui::Grid::new("windows-controls")
+                .num_columns(2)
+                .show(ui, |ui| {
+                    decoration_controls(ui, look, events);
+                });
         });
     }
 }
@@ -522,7 +563,9 @@ fn motion(
             return;
         };
         ui.add_enabled_ui(engine.can_edit_look(), |ui| {
-            if let Some(scale) = scale_control(ui, "size-text-scale", look.text_scale, 0.5..=3.0, true) {
+            if let Some(scale) =
+                scale_control(ui, "size-text-scale", look.text_scale, 0.5..=3.0, true)
+            {
                 events.push(UiEvent::Appearance(AppearanceEdit::TextScale(scale)));
             }
             ui.weak(label("size-text-scale-note"));
@@ -535,8 +578,24 @@ fn motion(
             }
         });
         ui.add(egui::Label::new(RichText::new(label("motion-note")).weak()).wrap());
-        command_button(ui, engine, commands, strings, "view.section.appearance", false, events);
-        command_button(ui, engine, commands, strings, "view.section.text_and_fonts", false, events);
+        command_button(
+            ui,
+            engine,
+            commands,
+            strings,
+            "view.section.appearance",
+            false,
+            events,
+        );
+        command_button(
+            ui,
+            engine,
+            commands,
+            strings,
+            "view.section.text_and_fonts",
+            false,
+            events,
+        );
     });
 }
 
@@ -772,7 +831,15 @@ fn appearance(
             look_controls(ui, engine, strings, look.clone(), events);
             ui.weak(label("look-style-note"));
             density(ui, engine, &look, events);
-            command_button(ui, engine, commands, strings, "view.section.wallpaper", false, events);
+            command_button(
+                ui,
+                engine,
+                commands,
+                strings,
+                "view.section.wallpaper",
+                false,
+                events,
+            );
         }
     });
 }
@@ -832,7 +899,9 @@ fn appearance_state(
         if engine.look.custom_source {
             note(ui, "look-custom", None);
         }
-        if engine.look.hold { note(ui, "look-held", None); }
+        if engine.look.hold {
+            note(ui, "look-held", None);
+        }
     });
     bars::hairline(ui);
     Some(look)
@@ -872,18 +941,31 @@ fn terminal(
         ui.add_enabled_ui(engine.can_edit_terminal(), |ui| {
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width());
-                terminal_controls(ui, &term, engine.look.shown().and_then(|look| look.mono_family), events);
+                terminal_controls(
+                    ui,
+                    &term,
+                    engine.look.shown().and_then(|look| look.mono_family),
+                    events,
+                );
             });
         });
     });
 }
 
 /// The controls for each field, in the order the settings are read.
-fn terminal_controls(ui: &mut Ui, term: &Terminal, mono: Option<String>, events: &mut Vec<UiEvent>) {
+fn terminal_controls(
+    ui: &mut Ui,
+    term: &Terminal,
+    mono: Option<String>,
+    events: &mut Vec<UiEvent>,
+) {
     panel::section_label(ui, &label("term-text"));
     panel::section_label(ui, &label("terminal-family"));
     let family = family_text(term.font.family.as_deref());
-    let hint = label_with("terminal-family-system", &[("family", mono.as_deref().unwrap_or("JetBrains Mono"))]);
+    let hint = label_with(
+        "terminal-family-system",
+        &[("family", mono.as_deref().unwrap_or("JetBrains Mono"))],
+    );
     if let Some(setting) = checked_text(ui, "terminal-family", &family, &hint, family_setting) {
         events.push(UiEvent::Terminal(setting));
     }
@@ -1212,8 +1294,6 @@ fn look_controls(
                     }));
                 }
                 ui.end_row();
-
-
             });
     });
 }

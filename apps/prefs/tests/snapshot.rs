@@ -296,11 +296,7 @@ fn draw_at_size(theme: Theme, name: &str, engine: Engine, size: egui::Vec2) {
 /// The default look: Studio Dark.
 #[test]
 fn software() {
-    window_with(
-        chrome(Scheme::Studio, Mode::Dark),
-        "software",
-        None,
-    );
+    window_with(chrome(Scheme::Studio, Mode::Dark), "software", None);
 }
 
 /// The Pro chrome in its light mode.
