@@ -852,10 +852,11 @@ fn resolve_api_key(cfg: &LlmBackendConfig) -> Result<String> {
 
     // Try shell command.
     if !cfg.api_key_cmd.is_empty() {
-        let output = std::process::Command::new(::paths::root(::paths::Root::Prefix).join("bin/mix"))
-            .args(["-c", &cfg.api_key_cmd])
-            .output()
-            .with_context(|| format!("running api_key_cmd: {}", cfg.api_key_cmd))?;
+        let output =
+            std::process::Command::new(::paths::root(::paths::Root::Prefix).join("bin/mix"))
+                .args(["-c", &cfg.api_key_cmd])
+                .output()
+                .with_context(|| format!("running api_key_cmd: {}", cfg.api_key_cmd))?;
         if output.status.success() {
             let key = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !key.is_empty() {

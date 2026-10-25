@@ -5,7 +5,12 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Dir { Etc, Var, Run, Share }
+pub enum Dir {
+    Etc,
+    Var,
+    Run,
+    Share,
+}
 
 pub fn path(dir: Dir) -> PathBuf {
     match dir {
@@ -24,20 +29,35 @@ pub struct Environment {
 }
 impl Environment {
     pub fn current() -> Self {
-        Self { vars: std::env::vars().collect(), exe: std::env::current_exe().expect("self location") }
+        Self {
+            vars: std::env::vars().collect(),
+            exe: std::env::current_exe().expect("self location"),
+        }
     }
 }
 #[derive(Debug, Clone)]
-pub struct Dirs { etc: PathBuf, var: PathBuf, run: PathBuf, share: PathBuf }
+pub struct Dirs {
+    etc: PathBuf,
+    var: PathBuf,
+    run: PathBuf,
+    share: PathBuf,
+}
 impl Dirs {
     pub fn resolve(env: &Environment) -> Self {
         let l = paths::Layout::from_environment(&env.exe, &env.vars).expect("invalid MixOS layout");
         Self {
-            etc: l.root(paths::Root::Config), var: l.root(paths::Root::State),
-            run: l.root(paths::Root::Runtime), share: l.root(paths::Root::Prefix).join("share"),
+            etc: l.root(paths::Root::Config),
+            var: l.root(paths::Root::State),
+            run: l.root(paths::Root::Runtime),
+            share: l.root(paths::Root::Prefix).join("share"),
         }
     }
     pub fn get(&self, dir: Dir) -> &Path {
-        match dir { Dir::Etc => &self.etc, Dir::Var => &self.var, Dir::Run => &self.run, Dir::Share => &self.share }
+        match dir {
+            Dir::Etc => &self.etc,
+            Dir::Var => &self.var,
+            Dir::Run => &self.run,
+            Dir::Share => &self.share,
+        }
     }
 }

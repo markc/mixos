@@ -168,7 +168,8 @@ fn roots_are_pure_absolute_and_injectable() {
         "MIXOS_PREFIX" => Some("/srv/moved tree".into()),
         "MIXOS_CONFIG" => Some("/isolated/config".into()),
         _ => None,
-    }).unwrap();
+    })
+    .unwrap();
     assert_eq!(resolved.builtin, Path::new("/srv/moved tree/share/macros"));
     assert_eq!(resolved.mix, Path::new("/srv/moved tree/bin/mix"));
     assert_eq!(resolved.user, Path::new("/isolated/config/macros"));

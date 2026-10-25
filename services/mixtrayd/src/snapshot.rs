@@ -11,7 +11,9 @@ use crate::ssh::Ssh;
 use crate::units;
 
 /// Where the MixOS mix binary lives in the gold copy.
-fn mix_bin() -> String { ::paths::bin("mix").to_string_lossy().into_owned() }
+fn mix_bin() -> String {
+    ::paths::bin("mix").to_string_lossy().into_owned()
+}
 
 pub async fn build(client: &NodedClient, ssh: &Arc<Ssh>) -> Value {
     let cos = tab_cos().await;

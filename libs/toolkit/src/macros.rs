@@ -1223,16 +1223,12 @@ fn launch(path: &Path, folder: bool) -> io::Result<()> {
     } else {
         ::paths::bin("ced")
     };
-    let mut child = Command::new(if native.is_file() {
-        native
-    } else {
-        "xdg-open"
-    })
-    .arg(path)
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
-    .spawn()?;
+    let mut child = Command::new(if native.is_file() { native } else { "xdg-open" })
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
     std::thread::spawn(move || {
         let _ = child.wait();
     });

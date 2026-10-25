@@ -372,9 +372,7 @@ mod tests {
                 Path::new("/home/user/.config/mixos"),
                 has_override(Some("".into()))
             ),
-            vec![
-                PathBuf::from("/home/user/.config/mixos/node.conf.mix"),
-            ]
+            vec![PathBuf::from("/home/user/.config/mixos/node.conf.mix"),]
         );
         assert_eq!(
             build_search_paths(Path::new("/sandbox"), true),
@@ -677,9 +675,7 @@ mod transplanted_tests {
         let paths = build_search_paths(&dir, false);
         assert_eq!(
             paths,
-            vec![
-                PathBuf::from("/home/alice/.config/mixos/node.conf.mix"),
-            ],
+            vec![PathBuf::from("/home/alice/.config/mixos/node.conf.mix"),],
             "user-mode (no MIXOS_CONFIG) must search user dir then /etc/mixos"
         );
     }

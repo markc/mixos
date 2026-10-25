@@ -61,7 +61,8 @@ mod tests {
             "MIXOS_CONFIG" => Some("/isolated/config".into()),
             "MIXOS_STATE" => Some("/isolated/state".into()),
             _ => None,
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(d.root(), Path::new("/isolated/state/apps/dopus"));
         assert_eq!(d.config(), Path::new("/isolated/config/apps/dopus"));
         assert!(AppDirs::resolve_with("../escape", |_| None).is_none());

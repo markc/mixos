@@ -319,7 +319,6 @@ pub type ByteSize = u64;
 /// The documented default root, used when neither `root:` nor the
 /// unit's `$STATE_DIRECTORY` names one.
 
-
 /// The root when the config sets none (m10): systemd's
 /// `$STATE_DIRECTORY` (the unit's `StateDirectory`, a named instance's
 /// drop-in included; the first entry when it lists several), else
@@ -348,8 +347,14 @@ mod tests {
             default_root(Some("/var/lib/mixos/blobd:/var/lib/other")),
             PathBuf::from("/var/lib/mixos/blobd")
         );
-        assert_eq!(default_root(Some("")), ::paths::root(::paths::Root::State).join("blobd"));
-        assert_eq!(default_root(None), ::paths::root(::paths::Root::State).join("blobd"));
+        assert_eq!(
+            default_root(Some("")),
+            ::paths::root(::paths::Root::State).join("blobd")
+        );
+        assert_eq!(
+            default_root(None),
+            ::paths::root(::paths::Root::State).join("blobd")
+        );
     }
 
     #[test]

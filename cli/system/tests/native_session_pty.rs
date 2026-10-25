@@ -300,7 +300,13 @@ impl Child {
             ("MIXOS_SRC".into(), home.path().display().to_string()),
             (
                 "MIXOS_PREFIX".into(),
-                current_mix().parent().unwrap().parent().unwrap().display().to_string(),
+                current_mix()
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .display()
+                    .to_string(),
             ),
             ("MIXOS_NODE_CONFIG".into(), config.display().to_string()),
             ("MIXOS_BROKER_ACCOUNT".into(), account),

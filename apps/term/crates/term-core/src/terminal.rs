@@ -656,7 +656,6 @@ fn reap_child(pid: i32, timeout: Duration) {
 /// The canonical system Mix — the only shell Term spawns (mandate: Mix is the
 /// shell). Probed for executability before spawn; see `Terminal::start_session`.
 
-
 struct LaunchSettings<'a> {
     program: &'a str,
     home: Option<String>,

@@ -269,8 +269,10 @@ mod tests {
         // Deployment's shared/ tree is vhosts/ in the repository. Absolute
         // includes bypass set_file, so relocate only their prefix in this test
         // and use the handler's script-relative include mechanism below.
-        let library = include_str!("../vhosts/lib/lib.mix")
-            .replace("include (mixos_path(\"prefix\") .. \"/vhosts/shared/", "include (\"../");
+        let library = include_str!("../vhosts/lib/lib.mix").replace(
+            "include (mixos_path(\"prefix\") .. \"/vhosts/shared/",
+            "include (\"../",
+        );
         let source = format!(
             "{}\n$SITE = {{title: \"Test\", tagline: \"\", footer: \"\"}}\ncms_init()\ncms_init()\nensure_col(\"media\", \"blob TEXT NULL\")\n",
             library

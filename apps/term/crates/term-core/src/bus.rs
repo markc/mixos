@@ -1518,7 +1518,10 @@ mod tests {
     }
 
     fn c6_fixture() -> Option<(Mutex<TabSet>, Cleanup, std::thread::JoinHandle<()>)> {
-        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix)
+            .join("bin/mix")
+            .is_file()
+        {
             eprintln!("SKIP C6 PTY test: Mix unavailable");
             return None;
         }
@@ -2347,7 +2350,10 @@ mod tests {
     /// one the last-tab close causes, and that close must end the loop.
     #[test]
     fn idle_bus_loop_takes_no_turns_until_the_last_tab_closes() {
-        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix)
+            .join("bin/mix")
+            .is_file()
+        {
             eprintln!("SKIP idle Bus loop test: Mix unavailable");
             return;
         }
@@ -2399,7 +2405,10 @@ mod tests {
     /// A set already empty when the loop starts is never waited on.
     #[test]
     fn bus_loop_on_an_empty_set_returns_without_a_turn() {
-        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix)
+            .join("bin/mix")
+            .is_file()
+        {
             eprintln!("SKIP empty Bus loop test: Mix unavailable");
             return;
         }
@@ -2434,7 +2443,10 @@ mod tests {
     /// select, both tab.close forms, and the closing latch after the last tab.
     #[test]
     fn tab_commands_echo_exact_identity_and_the_last_close_latches() {
-        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix)
+            .join("bin/mix")
+            .is_file()
+        {
             eprintln!("SKIP tab identity test: Mix unavailable");
             return;
         }
@@ -2518,7 +2530,10 @@ mod tests {
     /// starts afterwards completes at once instead of sleeping forever.
     #[test]
     fn a_close_before_the_wait_is_not_lost() {
-        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix)
+            .join("bin/mix")
+            .is_file()
+        {
             eprintln!("SKIP emptied permit test: Mix unavailable");
             return;
         }
@@ -2672,7 +2687,10 @@ mod tests {
     /// second reply never comes.
     #[test]
     fn a_panicking_command_is_answered_and_the_lane_keeps_serving() {
-        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix)
+            .join("bin/mix")
+            .is_file()
+        {
             eprintln!("SKIP panic continuation test: Mix unavailable");
             return;
         }
@@ -2707,7 +2725,10 @@ mod tests {
     /// a child process (the abort would otherwise kill the test binary).
     #[test]
     fn a_command_that_poisons_the_tab_set_aborts_the_process() {
-        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix)
+            .join("bin/mix")
+            .is_file()
+        {
             eprintln!("SKIP poison abort test: Mix unavailable");
             return;
         }
@@ -2791,7 +2812,10 @@ mod tests {
     }
     #[test]
     fn pane_handlers_and_active_snapshot() {
-        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix)
+            .join("bin/mix")
+            .is_file()
+        {
             eprintln!("SKIP pane Bus test: Mix unavailable");
             return;
         }
@@ -2883,7 +2907,10 @@ mod tests {
     }
     #[test]
     fn dispatch_posture_gate_and_request_id_replay() {
-        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix)
+            .join("bin/mix")
+            .is_file()
+        {
             eprintln!("SKIP dispatch Bus test: Mix unavailable");
             return;
         }
@@ -3258,7 +3285,10 @@ mod tests {
     /// wearing two hats.
     #[test]
     fn altterm_serves_its_own_namespace_and_refuses_terms() {
-        if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
+        if !::paths::root(::paths::Root::Prefix)
+            .join("bin/mix")
+            .is_file()
+        {
             eprintln!("SKIP altterm namespace test: Mix unavailable");
             return;
         }

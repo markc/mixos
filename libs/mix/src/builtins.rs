@@ -7019,7 +7019,8 @@ fn builtin_run_argv_impl(caller: &str, args: &[Value]) -> MixResult<Value> {
     if argv[0].starts_with("mixos:") {
         argv[0] = paths::resolve(&argv[0])
             .map_err(|message| MixError::structured("LAYOUT_PATH", message))?
-            .into_os_string().into_string()
+            .into_os_string()
+            .into_string()
             .map_err(|_| MixError::structured("LAYOUT_PATH", "executable is not UTF-8"))?;
     }
     let opts = parse_run_argv_opts(caller, args.get(1))?;
@@ -11543,10 +11544,11 @@ fn validate_remote_mix_bin(caller: &str, source: &str, s: &str) -> MixResult<()>
     if s.is_empty() {
         return bad("is empty");
     }
-    if let Some(c) = s
-        .chars()
-        .find(|c| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '/' | '+' | '-') || (s.starts_with('/') && *c == ' ')))
-    {
+    if let Some(c) = s.chars().find(|c| {
+        !(c.is_ascii_alphanumeric()
+            || matches!(c, '_' | '.' | '/' | '+' | '-')
+            || (s.starts_with('/') && *c == ' '))
+    }) {
         return bad(&format!("contains {c:?}, which is not allowed"));
     }
     if s.starts_with('-') {
@@ -11590,7 +11592,11 @@ fn remote_mix_bin(caller: &str, opt: Option<&str>) -> MixResult<String> {
         }
     };
     let binary = resolve_remote_mix_bin(caller, opt, env.as_deref())?;
-    Ok(if binary.contains(' ') { shell_quote(&binary) } else { binary })
+    Ok(if binary.contains(' ') {
+        shell_quote(&binary)
+    } else {
+        binary
+    })
 }
 
 /// Read a `mix_bin` option value: it must be a string (validated later by
@@ -13912,10 +13918,15 @@ fn builtin_mixos_path(args: Vec<Value>) -> MixResult<Option<Value>> {
             Some(Value::String(s)) => s,
             _ => return Err(error("mixos_path rel must be a string".into())),
         };
-        layout.path(paths::Root::parse(name).map_err(error)?, rel).map_err(error)?
+        layout
+            .path(paths::Root::parse(name).map_err(error)?, rel)
+            .map_err(error)?
     };
-    Ok(Some(Value::String(path.into_os_string().into_string()
-        .map_err(|_| error("MixOS path is not UTF-8".into()))?)))
+    Ok(Some(Value::String(
+        path.into_os_string()
+            .into_string()
+            .map_err(|_| error("MixOS path is not UTF-8".into()))?,
+    )))
 }
 
 fn builtin_realpath(args: Vec<Value>) -> MixResult<Option<Value>> {

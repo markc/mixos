@@ -203,10 +203,19 @@ impl Bridge {
     }
 
     fn spawn(&self) -> Result<Session> {
-        let remote_args: Vec<String> = self.settings.ssh_command.iter().map(|arg| {
-            let data = config::to_conf_mix_string(arg).expect("string is strict data");
-            if arg.starts_with("mixos:") { format!("mixos_path({data})") } else { data }
-        }).collect();
+        let remote_args: Vec<String> = self
+            .settings
+            .ssh_command
+            .iter()
+            .map(|arg| {
+                let data = config::to_conf_mix_string(arg).expect("string is strict data");
+                if arg.starts_with("mixos:") {
+                    format!("mixos_path({data})")
+                } else {
+                    data
+                }
+            })
+            .collect();
         let remote_source = format!("exit(run_stream([{}]))", remote_args.join(", "));
         let remote_command = format!("mix -c {}", mix::builtins::shell_quote(&remote_source));
         let mut command = Command::new("ssh");

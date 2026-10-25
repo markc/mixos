@@ -676,18 +676,32 @@ pub fn needs_live_eval(sub: &str) -> bool {
 pub fn run_layout(args: &[String]) -> i32 {
     if args.first().map(String::as_str) == Some("defaults") {
         return match layout_defaults(&args[1..]) {
-            Ok(layout) => { println!("{}", serde_json::to_string(&layout).expect("layout JSON")); 0 }
-            Err(error) => { eprintln!("mix layout defaults: {error}"); 2 }
+            Ok(layout) => {
+                println!("{}", serde_json::to_string(&layout).expect("layout JSON"));
+                0
+            }
+            Err(error) => {
+                eprintln!("mix layout defaults: {error}");
+                2
+            }
         };
     }
     if args.first().map(String::as_str) != Some("apply") {
-        eprintln!("usage: mix layout apply [--root DIR] [--dry-run] [--image]\n       mix layout defaults --tier system|user [--prefix DIR] --json");
+        eprintln!(
+            "usage: mix layout apply [--root DIR] [--dry-run] [--image]\n       mix layout defaults --tier system|user [--prefix DIR] --json"
+        );
         return 2;
     }
     match std::process::Command::new(std::env::current_exe().expect("self location"))
-        .arg(::paths::share("layout/apply.mix")).args(&args[1..]).status() {
+        .arg(::paths::share("layout/apply.mix"))
+        .args(&args[1..])
+        .status()
+    {
         Ok(status) => status.code().unwrap_or(1),
-        Err(error) => { eprintln!("mix layout apply: {error}"); 1 }
+        Err(error) => {
+            eprintln!("mix layout apply: {error}");
+            1
+        }
     }
 }
 
@@ -699,18 +713,28 @@ fn layout_defaults(args: &[String]) -> Result<std::collections::BTreeMap<String,
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--tier" if tier.is_none() => tier = Some(args.next().ok_or("--tier needs a value")?),
-            "--prefix" if prefix.is_none() => prefix = Some(Path::new(args.next().ok_or("--prefix needs a value")?)),
+            "--prefix" if prefix.is_none() => {
+                prefix = Some(Path::new(args.next().ok_or("--prefix needs a value")?))
+            }
             "--json" if !json => json = true,
             _ => return Err(format!("unexpected or repeated argument: {arg}")),
         }
     }
-    if !json { return Err("--json is required".into()); }
-    let layout = ::paths::Layout::defaults(tier.ok_or("--tier is required")?, prefix, &env::vars().collect())?;
+    if !json {
+        return Err("--json is required".into());
+    }
+    let layout = ::paths::Layout::defaults(
+        tier.ok_or("--tier is required")?,
+        prefix,
+        &env::vars().collect(),
+    )?;
     let mut out = std::collections::BTreeMap::new();
     for root in ::paths::Root::ALL {
         // An unset user runtime is deliberately absent: an installer must
         // supply it explicitly if its operation requires that root.
-        if let Ok(value) = layout.try_root(root) { out.insert(root.name().to_string(), value); }
+        if let Ok(value) = layout.try_root(root) {
+            out.insert(root.name().to_string(), value);
+        }
     }
     Ok(out)
 }
@@ -724,7 +748,9 @@ pub fn dispatch(args: &[&str], eval: &Evaluator, version: &str) -> Option<String
     match args[0] {
         "layout" => {
             let args: Vec<String> = args[1..].iter().map(|s| s.to_string()).collect();
-            if run_layout(&args) != 0 { mark_missed(); }
+            if run_layout(&args) != 0 {
+                mark_missed();
+            }
         }
         "vars" => cmd_vars(eval),
         "aliases" => cmd_aliases(eval),
@@ -1071,9 +1097,17 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
     // box doing this deliberately is a choice, not a fault.
     if let Ok(exe) = std::env::current_exe() {
         let exe_path = exe.to_string_lossy().into_owned();
-        if exe_path.starts_with(&::paths::root(::paths::Root::Prefix).to_string_lossy().to_string()) {
+        if exe_path.starts_with(
+            &::paths::root(::paths::Root::Prefix)
+                .to_string_lossy()
+                .to_string(),
+        ) {
             let prelude_src = mixos_src_str();
-            if !prelude_src.starts_with(&::paths::root(::paths::Root::Prefix).to_string_lossy().to_string()) {
+            if !prelude_src.starts_with(
+                &::paths::root(::paths::Root::Prefix)
+                    .to_string_lossy()
+                    .to_string(),
+            ) {
                 println!(
                     "  ⚠ prelude    resolved outside the install tier: {prelude_src} (binary is {exe_path}) — MIXOS points the /opt binary at a dev checkout"
                 );

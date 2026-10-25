@@ -17,7 +17,10 @@ use term_core::terminal::Terminal;
 
 #[test]
 fn a_tiny_pane_never_draws_over_its_neighbour() {
-    if !::paths::root(::paths::Root::Prefix).join("bin/mix").is_file() {
+    if !::paths::root(::paths::Root::Prefix)
+        .join("bin/mix")
+        .is_file()
+    {
         eprintln!("skipping: the PTY tests need Mix at /opt/mixos/bin/mix");
         return;
     }

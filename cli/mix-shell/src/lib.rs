@@ -2698,7 +2698,9 @@ mod gui_tests {
             );
         }
         // And a qualified path is still absolutised rather than PATH-searched.
-        assert!(!is_bare_frontend_name(&::paths::root(::paths::Root::Prefix).join("bin/bterm")));
+        assert!(!is_bare_frontend_name(
+            &::paths::root(::paths::Root::Prefix).join("bin/bterm")
+        ));
         assert!(!is_bare_frontend_name(Path::new("./term")));
         assert!(!is_bare_frontend_name(Path::new("bterm")));
     }

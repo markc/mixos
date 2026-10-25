@@ -290,10 +290,6 @@ impl Bed {
             "{argv:?}"
         );
         let n = argv.len();
-        assert_eq!(
-            &argv[n - 3..],
-            ["--", host, "mix -"],
-            "{argv:?}"
-        );
+        assert_eq!(&argv[n - 3..], ["--", host, "mix -"], "{argv:?}");
     }
 }

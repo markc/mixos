@@ -3,9 +3,6 @@
 //! Strict-data configuration and filesystem domain policy.
 use crate::*;
 
-
-
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -94,10 +91,17 @@ pub struct ServiceConfig {
 impl Default for ServiceConfig {
     fn default() -> Self {
         Self {
-            vectors_db: ::paths::root(::paths::Root::State).join("indexd/vectors.db").to_string_lossy().into_owned(),
-            model_dir: resolve_snapshot(&::paths::root(::paths::Root::Cache).join("indexd/huggingface/hub/models--nomic-ai--nomic-embed-text-v1.5/snapshots"))
+            vectors_db: ::paths::root(::paths::Root::State)
+                .join("indexd/vectors.db")
                 .to_string_lossy()
                 .into_owned(),
+            model_dir: resolve_snapshot(
+                &::paths::root(::paths::Root::Cache).join(
+                    "indexd/huggingface/hub/models--nomic-ai--nomic-embed-text-v1.5/snapshots",
+                ),
+            )
+            .to_string_lossy()
+            .into_owned(),
             idle_timeout_secs: 300,
             dtype: "f16".into(),
             vindex_dtype: "f32".into(),
@@ -204,7 +208,9 @@ pub fn load_indexd_config(cli_path: Option<&Path>) -> Result<(PathBuf, Config)> 
         }
     }
     Ok((
-        ::paths::root(::paths::Root::Config).join("indexd").join("config.conf.mix"),
+        ::paths::root(::paths::Root::Config)
+            .join("indexd")
+            .join("config.conf.mix"),
         Config::default(),
     ))
 }
