@@ -724,6 +724,7 @@ name = "backdrop"
 version = "0.1.2"
 dependencies = [
  "buildinfo",
+ "bus",
  "citizen",
  "config",
  "egui",
@@ -2280,6 +2281,7 @@ version = "0.1.2"
 dependencies = [
  "blake3",
  "buildinfo",
+ "bus",
  "config",
  "edit",
  "editor-model",
