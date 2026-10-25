@@ -474,6 +474,8 @@ pub struct Appearance {
     pub binding: Binding,
     retargeted: bool,
     pub settings: Availability,
+    /// The latest settings failure, kept separate from Software status.
+    pub problem: Option<String>,
     /// The look settingsd holds.
     pub current: Option<Look>,
     /// The terminal's preferences as settingsd holds them, from the same
@@ -540,6 +542,7 @@ impl Default for Appearance {
             },
             retargeted: false,
             settings: Availability::Unknown,
+            problem: None,
             current: None,
             terminal: None,
             email: None,
@@ -858,6 +861,10 @@ impl Engine {
         }
     }
 
+    pub(crate) fn record_settings_status(&mut self) {
+        self.look.problem = self.failed.then(|| self.status.clone());
+    }
+
     pub(crate) fn call_settings(&mut self, call: Call) {
         let ticket = self.next();
         let body = match &call {
@@ -989,6 +996,7 @@ impl Engine {
             self.look.discard_on_quit = false;
             self.status = self.label("settled-look", &[]);
             self.failed = false;
+            self.record_settings_status();
         }
     }
 
@@ -1045,6 +1053,7 @@ impl Engine {
             self.look.hold = true;
             self.status = self.label("look-kept-open", &[]);
             self.failed = true;
+            self.record_settings_status();
             return;
         }
         self.effects.push(Effect::Exit);
@@ -1119,6 +1128,7 @@ impl Engine {
         let operation = self.look.operation();
         self.status = self.label("applying-look", &[]);
         self.failed = false;
+        self.record_settings_status();
         let submitted = Submitted {
             operation,
             axes: draft.edits(),
@@ -1139,6 +1149,7 @@ impl Engine {
         self.look.hold = false;
         self.status = self.label("reverted-look", &[]);
         self.failed = false;
+        self.record_settings_status();
     }
 
     /// Keep the edits over the other writer's change, and apply them.
@@ -1148,6 +1159,7 @@ impl Engine {
             self.look.hold = false;
             self.status = self.label("kept-look", &[]);
             self.failed = false;
+            self.record_settings_status();
             self.pump_look();
         }
     }
@@ -1174,6 +1186,7 @@ impl Engine {
             if !matches!(call, Call::Read) {
                 self.status = self.label("settings-missing", &[]);
                 self.failed = true;
+                self.record_settings_status();
             }
             if matches!(call, Call::Apply(_)) {
                 self.look.unsend();
@@ -1228,11 +1241,13 @@ impl Engine {
                         if submitted.shown_in(&look) {
                             self.status = self.label("applied-look", &[]);
                             self.failed = false;
+                            self.record_settings_status();
                         } else {
                             self.look.unsend();
                             self.look.hold = true;
                             self.status = self.label("look-unconfirmed", &[]);
                             self.failed = true;
+                            self.record_settings_status();
                         }
                     }
                     // The session after the last apply is read: nothing is
@@ -1270,6 +1285,7 @@ impl Engine {
                 self.look.syncing = true;
                 self.status = self.label("applied-look", &[]);
                 self.failed = false;
+                self.record_settings_status();
                 self.look.reread = true;
             }
             // Another writer was first: the edits return to the draft and
@@ -1282,6 +1298,7 @@ impl Engine {
                 self.look.syncing = true;
                 self.status = self.label("look-conflict", &[]);
                 self.failed = true;
+                self.record_settings_status();
                 self.look.reread = true;
             }
             Answer::Refused(value) if value["status"] == "outcome_unknown" => {
@@ -1307,6 +1324,7 @@ impl Engine {
         self.look.uncertain = Some(submitted);
         self.status = self.label("look-uncertain", &[("message", message)]);
         self.failed = true;
+        self.record_settings_status();
         // Ask for the receipt next (read_look does, while uncertain).
         self.look.reread = true;
     }
@@ -1322,6 +1340,7 @@ impl Engine {
                 self.look.syncing = true;
                 self.status = self.label("applied-look", &[]);
                 self.failed = false;
+                self.record_settings_status();
                 self.look.reread = true;
             }
             // No receipt, and settingsd is not recovering: it may have been
@@ -1347,6 +1366,7 @@ impl Engine {
     fn receipt_pending(&mut self, message: &str) {
         self.status = self.label("look-uncertain", &[("message", message)]);
         self.failed = true;
+        self.record_settings_status();
         if self.quitting {
             self.look.reread = true;
         }
@@ -1355,6 +1375,7 @@ impl Engine {
     fn look_failed(&mut self, message: &str) {
         self.status = self.label("look-failed", &[("message", message)]);
         self.failed = true;
+        self.record_settings_status();
     }
 
     /// A terminal edit settled. Whatever the answer, the session is read
@@ -1367,19 +1388,23 @@ impl Engine {
             Answer::Ok(_) => {
                 self.status = self.label("applied-text", &[]);
                 self.failed = false;
+                self.record_settings_status();
             }
             Answer::Refused(value) if value["status"] == "conflict" => {
                 self.status = self.label("text-conflict", &[]);
                 self.failed = true;
+                self.record_settings_status();
             }
             Answer::Refused(value) => {
                 let message = refusal(&value);
                 self.status = self.label("text-failed", &[("message", message.as_str())]);
                 self.failed = true;
+                self.record_settings_status();
             }
             Answer::NotSent(message) | Answer::Lost(message) => {
                 self.status = self.label("text-failed", &[("message", message.as_str())]);
                 self.failed = true;
+                self.record_settings_status();
             }
             Answer::Missing => return,
         }
@@ -1392,19 +1417,23 @@ impl Engine {
             Answer::Ok(_) => {
                 self.status = self.label("applied-terminal", &[]);
                 self.failed = false;
+                self.record_settings_status();
             }
             Answer::Refused(value) if value["status"] == "conflict" => {
                 self.status = self.label("terminal-conflict", &[]);
                 self.failed = true;
+                self.record_settings_status();
             }
             Answer::Refused(value) => {
                 let message = refusal(&value);
                 self.status = self.label("terminal-failed", &[("message", message.as_str())]);
                 self.failed = true;
+                self.record_settings_status();
             }
             Answer::NotSent(message) | Answer::Lost(message) => {
                 self.status = self.label("terminal-failed", &[("message", message.as_str())]);
                 self.failed = true;
+                self.record_settings_status();
             }
             Answer::Missing => return,
         }
@@ -1879,11 +1908,17 @@ mod tests {
             json!({"status":"validation_failed","message":"no"}),
         );
         assert!(e.look.hold && e.look.waiting() && e.failed);
+        assert_eq!(e.look.problem.as_deref(), Some(e.status.as_str()));
+        // Software status updates must not replace a settings failure banner.
+        e.status = "listed".into();
+        e.failed = false;
+        assert!(e.look.problem.is_some());
         assert_eq!(e.look.draft.as_ref().unwrap().look.scheme, Scheme::Forest);
         assert!(settings_calls(&mut e).is_empty(), "not retried in a loop");
         assert!(e.can_apply_look() && e.can_revert_look());
         // Apply tries again; an edit would too; Revert drops it.
         e.apply_look();
+        assert!(e.look.problem.is_none());
         assert_eq!(next(&mut e).1, "settings.apply");
         let mut e = read();
         edit(&mut e, json!({"scheme":"forest"}));

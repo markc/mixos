@@ -165,6 +165,11 @@ pub fn view(
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| {
             page_header(ui, engine.section());
+            if engine.section() != Section::Software
+                && let Some(problem) = &engine.look.problem
+            {
+                ui.add(egui::Label::new(RichText::new(problem).color(ui.visuals().error_fg_color)).wrap());
+            }
             match engine.section() {
                 Section::Software => applications(ui, engine, commands, strings, &mut events),
                 section => {

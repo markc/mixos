@@ -109,6 +109,7 @@ impl Engine {
         if let Some(refusal) = setting.refusal() {
             self.status = self.label(refusal, &[]);
             self.failed = true;
+            self.record_settings_status();
             return;
         }
         if self.can_edit_terminal() {
@@ -132,6 +133,7 @@ impl Engine {
         let operation = self.look.operation();
         self.status = self.label("applying-terminal", &[]);
         self.failed = false;
+        self.record_settings_status();
         self.call_settings(crate::appearance::Call::Terminal(operation, edit));
     }
 }

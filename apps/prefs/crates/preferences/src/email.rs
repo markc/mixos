@@ -836,18 +836,22 @@ impl Engine {
                 }
                 self.status = self.label("email-fields-refused", &[]);
                 self.failed = true;
+                self.record_settings_status();
             }
             Refusal::Key(key) => {
                 self.status = self.label(key, &[]);
                 self.failed = true;
+                self.record_settings_status();
             }
             Refusal::Settings(message) => {
                 self.status = self.label("email-failed", &[("message", message)]);
                 self.failed = true;
+                self.record_settings_status();
             }
             Refusal::Unchanged => {
                 self.status = self.label("email-unchanged", &[]);
                 self.failed = false;
+                self.record_settings_status();
             }
         }
     }
@@ -856,6 +860,7 @@ impl Engine {
         let operation = self.look.operation();
         self.status = self.label("applying-email", &[]);
         self.failed = false;
+        self.record_settings_status();
         self.call_settings(Call::Email(operation, edit));
     }
 
@@ -868,12 +873,14 @@ impl Engine {
             Answer::Ok(_) => {
                 self.status = self.label("applied-email", &[]);
                 self.failed = false;
+                self.record_settings_status();
             }
             Answer::Refused(value) if value["status"] == "conflict" => {
                 self.email.added = None;
                 self.email.removed = None;
                 self.status = self.label("email-conflict", &[]);
                 self.failed = true;
+                self.record_settings_status();
             }
             Answer::Refused(value) => {
                 self.email.added = None;
@@ -881,18 +888,21 @@ impl Engine {
                 let message = refusal(&value);
                 self.status = self.label("email-failed", &[("message", message.as_str())]);
                 self.failed = true;
+                self.record_settings_status();
             }
             Answer::NotSent(message) => {
                 self.email.added = None;
                 self.email.removed = None;
                 self.status = self.label("email-failed", &[("message", message.as_str())]);
                 self.failed = true;
+                self.record_settings_status();
             }
             // A lost reply is no verdict: the read shows whether the Add or
             // Remove landed, so its id is kept until then.
             Answer::Lost(message) => {
                 self.status = self.label("email-failed", &[("message", message.as_str())]);
                 self.failed = true;
+                self.record_settings_status();
             }
             Answer::Missing => return,
         }
@@ -1410,6 +1420,7 @@ impl Engine {
             self.email.outcome = Some((text.clone(), true));
             self.status = text;
             self.failed = true;
+            self.record_settings_status();
         } else if self.email.task.is_some() {
             self.email.forgets.push((id, name));
         } else {
@@ -1431,6 +1442,7 @@ impl Engine {
         };
         self.status = self.label(key, &[("account", &name)]);
         self.failed = false;
+        self.record_settings_status();
         self.email.outcome = None;
         let ticket = self.next();
         self.email.task = Some(Task {
@@ -1720,6 +1732,7 @@ impl Engine {
     fn launch_email(&mut self, mut task: Task) {
         self.status = self.label("email-launching", &[]);
         self.failed = false;
+        self.record_settings_status();
         let ticket = self.next();
         task.ticket = ticket;
         task.stage = Stage::Launching;
@@ -1764,6 +1777,7 @@ impl Engine {
         };
         self.status = self.label("email-waiting", &[]);
         self.failed = false;
+        self.record_settings_status();
         let ticket = self.next();
         task.ticket = ticket;
         task.stage = Stage::Waiting;
@@ -1799,6 +1813,7 @@ impl Engine {
         };
         self.status = text.clone();
         self.failed = failed;
+        self.record_settings_status();
         self.email.outcome = Some((text.clone(), failed));
         if let (true, Action::Password(id, password)) = (failed, &task.action)
             && task.reply.is_none()
