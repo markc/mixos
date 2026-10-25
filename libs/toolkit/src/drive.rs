@@ -136,7 +136,7 @@ pub fn describe(app: &str) -> Vec<Value> {
             "ui.capture",
             json!({"name":"optional plain file name ending .png"}),
             "Screenshot the window to a new PNG in $XDG_RUNTIME_DIR/<app>/captures and answer with its path",
-            false,
+            true,
         ),
         (
             "window",
