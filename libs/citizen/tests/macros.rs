@@ -66,6 +66,11 @@ fn bus_macro_writes_refuse_other_services_and_workshop_deputy_calls() {
             ("workshop.call", ""),
             ("workshop.call", "  "),
             ("workshop.call", "not json"),
+            // Not JSON whitespace: the gate must not read past what Workshop parses.
+            (
+                "workshop.call",
+                "\u{00A0}{\"service\":\"workshop\",\"command\":\"workshop.info\"}\u{00A0}",
+            ),
         ] {
             let reply = caller
                 .call_with_headers_raw("workshop-acl-test", command, &BTreeMap::new(), body)

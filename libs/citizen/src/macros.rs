@@ -55,13 +55,16 @@ pub fn dispatch(
     // Workshop's generic dispatch must not bypass its macro mutation gate.
     // UI commands stay open: a save made through Workshop's window is
     // Workshop's own write, whoever drives it.
-    // Read the body as Workshop will: the delivery turns an empty body into
-    // `{}` (a call on the selection), so an empty body must not skip the
+    // Read exactly the bytes Workshop will: the delivery turns an empty body
+    // into `{}` (a call on the selection), so an empty body must not skip the
     // check. A body that is not JSON reads as null and so names no command.
     let proxy_write = app == "workshop" && {
-        let text = command.body.trim();
-        let body = serde_json::from_str::<Value>(if text.is_empty() { "{}" } else { text })
-            .unwrap_or(Value::Null);
+        let delivered = if command.body.trim().is_empty() {
+            "{}"
+        } else {
+            command.body.as_str()
+        };
+        let body = serde_json::from_str::<Value>(delivered).unwrap_or(Value::Null);
         match command.command.as_str() {
             "workshop.execute" => body["id"].as_str().is_some_and(|id| {
                 id == "bus.call"
