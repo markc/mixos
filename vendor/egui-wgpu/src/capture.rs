@@ -223,7 +223,13 @@ impl CaptureState {
                     return;
                 }
             };
-            for padded_row in mapped_range.chunks(padding.padded_bytes_per_row as usize) {
+            // Mapped readback memory can be uncached on integrated GPUs. Copy it
+            // in bulk before swizzling: scalar per-channel reads directly from
+            // that memory can take seconds for a desktop-sized capture.
+            let bytes = mapped_range.to_vec();
+            drop(mapped_range);
+            buffer.unmap();
+            for padded_row in bytes.chunks(padding.padded_bytes_per_row as usize) {
                 let row = &padded_row[..padding.unpadded_bytes_per_row as usize];
                 for color in row.chunks(4) {
                     pixels.push(epaint::Color32::from_rgba_premultiplied(
@@ -234,9 +240,6 @@ impl CaptureState {
                     ));
                 }
             }
-            drop(mapped_range);
-            buffer.unmap();
-
             let image = Arc::new(ColorImage::new(
                 [tex_extent.width as usize, tex_extent.height as usize],
                 pixels,

@@ -14,10 +14,15 @@ licences; LICENSE-MIT and LICENSE-APACHE are retained from egui's matching
   reconfigures, recreates or presents a surface. A bounded native background
   device poll completes screenshot callbacks without requiring another paint;
   browser callbacks retain wgpu's event-loop-driven progress.
+- `src/capture.rs`: copy mapped readback bytes into host memory before
+  RGBA/BGRA conversion and unmap immediately. Scalar channel reads from
+  uncached integrated-GPU mappings can outlive the capture deadline and
+  leave readback workers consuming CPU after the request has been refused.
 - `Cargo.toml`, `Cargo.lock`: add pollster as a dev dependency for the headless GPU guard.
   `offscreen_tests::hidden_window_capture_without_surface` renders without a
   window or surface, checks padded row widths, resizing, scaled primitives,
-  clear colour, RGBA/BGRA ordering, multiple callbacks and consumption of texture deltas.
+  clear colour, RGBA/BGRA ordering, multiple callbacks and consumption of texture deltas,
+  including a 3840 by 2160 capture.
 
 Guards: `cargo test --manifest-path vendor/egui-wgpu/Cargo.toml --lib --features winit,wayland
 hidden_window_capture_without_surface` (requires a headless wgpu adapter),

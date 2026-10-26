@@ -47,8 +47,8 @@ mod offscreen_tests {
             state.target_format = format;
             *state.renderer.write() = crate::Renderer::new(&state.device, format, options);
             painter.screen_capture_state = None;
-            // Odd widths exercise capture's padded rows; a second size exercises reuse.
-            for size in [[67, 31], [79, 23]] {
+            // Odd widths exercise padded rows; desktop size exercises bulk readback.
+            for size in [[67, 31], [79, 23], [3840, 2160]] {
                 let ctx = Context::default();
                 let output = ctx.run_ui(
                     egui::RawInput {
