@@ -442,6 +442,7 @@ pub fn text_edit<'t>(text: &'t mut String, hint: &str, width: f32) -> TextField<
             .desired_width(width)
             .align(egui::Align2::LEFT_CENTER),
         search: false,
+        accessible_name: hint.to_owned(),
     }
 }
 
@@ -449,6 +450,7 @@ pub fn text_edit<'t>(text: &'t mut String, hint: &str, width: f32) -> TextField<
 pub struct TextField<'t> {
     edit: TextEdit<'t>,
     search: bool,
+    accessible_name: String,
 }
 
 impl TextField<'_> {
@@ -480,6 +482,11 @@ impl Widget for TextField<'_> {
                 )
                 .min_size(vec2(0.0, field.height)),
         );
+        let response = if self.accessible_name.is_empty() {
+            response
+        } else {
+            response.accessible_name(&self.accessible_name)
+        };
         if chrome.style.bevels {
             chrome::bevel(ui.painter(), response.rect, false, &chrome.palette);
         }

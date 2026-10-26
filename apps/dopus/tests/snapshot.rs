@@ -299,7 +299,9 @@ fn preview(name: &str, w: usize, h: usize) {
     let theme = chrome(Scheme::Studio, Mode::Dark);
     let registry = actions::registry();
     let strings = strings();
+    let initial_theme = theme.clone();
     let mut harness = Harness::builder()
+        .with_context_setup(move |ctx| toolkit::install(ctx, &initial_theme))
         .with_size(egui::vec2(980.0, 640.0))
         .wgpu()
         .build_ui(move |ui| {

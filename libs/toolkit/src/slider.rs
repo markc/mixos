@@ -606,7 +606,7 @@ pub fn row(
             if let Some(unit) = unit {
                 field = field.unit(unit);
             }
-            changed |= ui.add(field).changed();
+            changed |= ui.add(field).accessible_name(label).changed();
         });
     });
     let mut response = ui.add(Slider::new(value, range).label(label));

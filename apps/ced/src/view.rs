@@ -394,6 +394,7 @@ fn document(
         return None;
     }
     let mut view = app.view_for(tab);
+    view.label = Some(name.clone());
     // Preserve the editor's saved size and zoom; Larger text multiplies
     // the displayed source and preview, using the desktop value only.
     let font_px = f32::from(app.ui.font_px) * toolkit::ui_scale::of(ui.ctx()).text_scale as f32;

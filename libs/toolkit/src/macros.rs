@@ -889,7 +889,7 @@ impl State {
                 ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
                     ui.add_enabled_ui(editor_enabled, |ui| {
                         self.editor_focus =
-                            Some(doc.show(ui, &palette, &editor::View::default()).response.id);
+                            Some(doc.show(ui, &palette, &editor::View { label: Some(own("macros-editor")), ..Default::default() }).response.id);
                         ctx.data_mut(|d| {
                             d.insert_temp(
                                 crate::window_id(viewport, "macro-editor-focus"),

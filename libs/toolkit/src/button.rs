@@ -558,10 +558,10 @@ mod tests {
 
     #[test]
     #[allow(clippy::disallowed_methods)]
-    fn egui_s_selectable_label_moves_on_hover_under_the_chrome() {
-        // Why `selectable` exists: if egui ever stops doing this, it can go.
+    fn egui_selectable_label_keeps_its_place_on_hover() {
+        // egui 0.37 fixes the former hover-dependent size change.
         let (rest, hovered) = rest_and_hover(|ui| ui.selectable_label(false, "Applications"));
-        assert_ne!(rest, hovered);
+        assert_eq!(rest, hovered);
     }
 
     #[test]

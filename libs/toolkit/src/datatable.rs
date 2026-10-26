@@ -870,7 +870,7 @@ impl<'a> DataTable<'a> {
                             &mut chosen,
                             &options,
                             Some(height * 2.5),
-                        );
+                        ).accessible_name(crate::strings::own("datatable-page-size"));
                         if picker.changed()
                             && let Some(size) = self.page_sizes.get(chosen)
                         {

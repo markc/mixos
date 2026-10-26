@@ -697,7 +697,7 @@ fn location_bar(ui: &mut Ui, app: &App, pane: PaneId, active: bool, events: &mut
                         egui::TextEdit::singleline(&mut text)
                             .id(id)
                             .desired_width(width),
-                    );
+                    ).accessible_name(label("prop-path"));
                     if app.focus_location {
                         // The whole path selected, so typing replaces it.
                         response.request_focus();
@@ -711,6 +711,7 @@ fn location_bar(ui: &mut Ui, app: &App, pane: PaneId, active: bool, events: &mut
                         }
                         events.push(UiEvent::LocationFocused);
                     }
+                    let response = response.accessible_name(label("prop-path"));
                     if response.changed() {
                         events.push(UiEvent::LocationText(text));
                     }
@@ -737,6 +738,7 @@ fn location_bar(ui: &mut Ui, app: &App, pane: PaneId, active: bool, events: &mut
                             .desired_width(width)
                             .text_color(colour),
                     );
+                    let response = response.accessible_name(label("prop-path"));
                     if response.gained_focus() || response.clicked() {
                         events.push(UiEvent::EditLocation(pane));
                     }
@@ -1168,7 +1170,7 @@ fn dialogs(
                     let field = egui::TextEdit::singleline(&mut value)
                         .id(id.with("field"))
                         .desired_width(f32::INFINITY);
-                    let response = ui.add(field);
+                    let response = ui.add(field).accessible_name(label("prop-name"));
                     // Before taking the keyboard back: losing it to Enter is the submit.
                     if response.lost_focus()
                         && ui.input(|i| i.key_pressed(egui::Key::Enter))

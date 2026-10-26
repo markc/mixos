@@ -190,6 +190,7 @@ pub fn harness(builder: HarnessBuilder<Fixture>, theme: &Theme) -> Harness<'stat
             let mut controls = [
                 Control::Combo {
                     id: "workspace",
+                    label: "Workspace",
                     selected: &mut workspace,
                     options: &workspaces,
                 },

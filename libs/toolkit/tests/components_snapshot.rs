@@ -76,13 +76,13 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
             ValueField::new(&mut s.opacity, 0.0..=100.0)
                 .unit("%")
                 .width(64.0),
-        );
+        ).accessible_name("Opacity");
         ui.label("Flow:");
         ui.add(
             ValueField::new(&mut s.flow, 0.0..=100.0)
                 .unit("%")
                 .width(64.0),
-        );
+        ).accessible_name("Flow");
         bars::divider(ui, bars::divider_height_of(ui.ctx()));
         ui.add(Toggle::new(&mut s.pressure, "Pressure for Size"));
     });
@@ -91,7 +91,7 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
             ValueField::new(&mut s.zoom, 1.0..=3200.0)
                 .unit("%")
                 .width(64.0),
-        );
+        ).accessible_name("Zoom");
         ui.label("640 × 480 px (72 ppi)");
     });
     bars::tools(ui, |ui| {
@@ -130,7 +130,7 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
                 let hues = (0..=6)
                     .map(|k| egui::ecolor::Hsva::new(k as f32 / 6.0, 1.0, 1.0, 1.0).into())
                     .collect();
-                ui.add(Slider::new(&mut s.hue, 0.0..=360.0).gradient(hues));
+                ui.add(Slider::new(&mut s.hue, 0.0..=360.0).gradient(hues).label("Hue"));
             },
         );
         panel::group(ui, "properties", &["Properties", "Adjustments"], |ui, _| {
@@ -138,7 +138,7 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
             ui.add(Switch::new(&mut s.snap, "Snap to pixels"));
             ui.horizontal(|ui| {
                 ui.label("Mode:");
-                combo::show(ui, "blend", &mut s.blend, &BLENDS, None);
+                combo::show(ui, "blend", &mut s.blend, &BLENDS, None).accessible_name("Blend mode");
             });
             field::text(ui, &mut s.name, "Layer name", 200.0);
             field::search(ui, &mut s.query, "Search menus", 200.0);
@@ -191,7 +191,7 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
                         ValueField::new(&mut s.size, 1.0..=30_000.0)
                             .unit("px")
                             .width(96.0),
-                    );
+                    ).accessible_name("Width");
                 });
                 ui.add(Checkbox::new(&mut s.resample, "Resample"));
             });

@@ -84,6 +84,7 @@ pub enum Control<'a> {
     /// anything else gives way (a workspace switcher).
     Combo {
         id: &'a str,
+        label: &'a str,
         selected: &'a mut usize,
         options: &'a [String],
     },
@@ -536,10 +537,11 @@ fn right_group<S>(
         let command = match control {
             Control::Combo {
                 id,
+                label,
                 selected,
                 options,
             } => {
-                crate::combo::show(&mut cell, *id, selected, options, Some(width));
+                crate::combo::show(&mut cell, *id, selected, options, Some(width)).accessible_name(*label);
                 None
             }
             Control::Icon {

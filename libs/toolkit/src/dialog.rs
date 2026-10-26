@@ -160,6 +160,7 @@ impl Dialog {
         });
         let mut place: Placement = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
         let mut area = Area::new(id)
+            .accessible_name(title.clone())
             .kind(UiKind::Modal)
             .sense(Sense::hover())
             .order(Order::Foreground)
@@ -185,14 +186,6 @@ impl Dialog {
             .area(area)
             .backdrop_color(Color32::TRANSPARENT)
             .show(ctx, |ui| {
-                // To assistive technology (and the drive layer) the frame is a
-                // modal dialog named by its title, its controls its children.
-                let name = title.clone();
-                ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
-                    node.set_role(egui::accesskit::Role::Dialog);
-                    node.set_modal();
-                    node.set_label(name);
-                });
                 if resize.is_none() {
                     ui.set_min_width(width.min);
                     ui.set_max_width(width.max);
