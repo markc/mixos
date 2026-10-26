@@ -121,13 +121,6 @@ impl SceneEntry {
         })
     }
 
-    fn is_model_authority(&self, mount: Option<&SceneMount<'_>>) -> bool {
-        self.owner
-            .as_ref()
-            .zip(mount)
-            .is_some_and(|(owner, caller)| owner.citizen == caller.owner)
-    }
-
     fn diagnostics(&self) -> Value {
         self.render_error
             .as_ref()
@@ -481,22 +474,13 @@ impl SceneStore {
                 };
                 let source = args["source"].as_str().unwrap_or(body);
                 let document = scene::parse(source).map_err(|d| json!({"diagnostics":d}))?;
-                // A pre-empting dialog load displaces whoever holds the name;
-                // another owner's model fence must not turn that into a
-                // refusal, or a squatter bricks safe mode.
-                let preempting = args["preempt_dialog"].as_bool() == Some(true)
-                    && mount.is_some()
-                    && scene::resolve(&document).is_ok_and(|tree| is_dialog(&tree));
-                if let Some(entry) = self.scenes.get(&document.name)
-                    && entry.model_generation.is_some()
-                    && (!preempting || entry.is_model_authority(mount.as_deref()))
-                    && (managed_generation.is_none() || !entry.is_model_authority(mount.as_deref()))
-                {
-                    return Err(model_authority_refusal(&document.name));
-                }
-                if managed_generation.is_some() && mount.is_none() {
-                    return Err(model_authority_refusal(&document.name));
-                }
+                // Reloads are open to every caller. An omitted generation keeps
+                // the current model fence rather than silently discarding it.
+                let managed_generation = managed_generation.or_else(|| {
+                    self.scenes
+                        .get(&document.name)
+                        .and_then(|entry| entry.model_generation)
+                });
                 let name = document.name.clone();
                 // The loader's envelope flag: a dialog load that must win the
                 // seat (the Scene Editor), so a squatter cannot brick it.
@@ -563,11 +547,10 @@ impl SceneStore {
                     .ok_or_else(|| json!({"error":"value is required"}))?;
                 if path == "model" || path.starts_with("model.") {
                     if let Some(generation) = entry.model_generation
-                        && (!entry.is_model_authority(mount.as_deref())
-                            || generation == 0
-                            || args["generation"].as_u64() != Some(generation))
+                        && (generation == 0 || args["generation"].as_u64() != Some(generation))
                     {
-                        return Err(model_authority_refusal(name));
+                        return Err(json!({"scene":name, "error_code":"SCENE_MODEL_GENERATION",
+                            "message":"model writes require the current nonzero generation"}));
                     }
                     let result =
                         scene::bindings::reevaluate(&entry.tree, &entry.bindings, path, value)
@@ -818,14 +801,17 @@ impl SceneStore {
             .get(&tree.name)
             .and_then(|entry| entry.owner.clone());
         let owner = if let Some(mount) = mount {
-            // Patching content is mesh-open but does not take ownership or
-            // refresh another citizen's lifetime. Loads are owner
-            // registrations.
+            // Content changes by another caller retain the loader's mount
+            // receipt and lifetime. A loader can refresh its own receipt.
             let fresh = || SceneOwner {
                 citizen: mount.owner.to_owned(),
                 accepted_at: mount.accepted_at,
             };
-            let owner = if loading {
+            let owner = if loading
+                && old_owner
+                    .as_ref()
+                    .is_none_or(|owner| owner.citizen == mount.owner)
+            {
                 fresh()
             } else {
                 old_owner.unwrap_or_else(fresh)
@@ -962,11 +948,6 @@ fn toast_refusal(name: &str, error: DialogError) -> Value {
         }),
         other => json!({"scene":name, "error_code":"SCENE_REFUSED", "message":other.to_string()}),
     }
-}
-
-fn model_authority_refusal(name: &str) -> Value {
-    json!({"scene":name, "error_code":"SCENE_MODEL_AUTHORITY",
-        "message":"managed model writes require the loader and its current generation; use scenes.model"})
 }
 
 /// SHA-256 of the resolved tree's JSON, lower-case hex.

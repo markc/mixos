@@ -10,7 +10,7 @@
 -- applies each write to it, logs every call, and, as `pactl subscribe`,
 -- prints one change event per line the test appends to its events file.
 -- Every wait is bounded. Bus callers (cli.mix) are not the host: every
--- write command must refuse them.
+-- write commands must accept them.
 --
 --   mix services/compd/tests/volume_behaviour_test.mix
 --
@@ -202,11 +202,11 @@ fn direct($target, $command, $body)
   return json_parse(trim($r.stdout))
 end
 
--- A UI event, as the scene host relays a click.
-fn ui_event($handler, $node, $item = nil)
+-- Panel-shaped events sent by an ordinary Bus caller, without the host relay.
+fn panel_event($handler, $node, $item = nil)
   $ev = {scene: "volume", node: $node, kind: "click"}
   if $item != nil then $ev.item = $item end
-  return direct("shell-stub", "ui.forward", {to: "scene-volume", command: $handler, event: $ev})
+  return direct("scene-volume", $handler, $ev)
 end
 
 fn expect_rc($r, $rc, $what)
@@ -281,17 +281,17 @@ end
 -- level, -/+ and mute, then a device row of each list. The player stream
 -- (4600) is chosen first; choosing writes nothing.
 fn drive_all($what)
-  expect_rc(ui_event("vol_stream_pick", "v_streams", {id: "si_4600"}), 0, $what .. ": choose the player")
+  expect_rc(panel_event("vol_stream_pick", "v_streams", {id: "si_4600"}), 0, $what .. ": choose the player")
   $prefixes = {out: "vo", in: "vi", stream: "vs"}
   for each $kind in ["out", "in", "stream"]
     $p = $prefixes[$kind]
-    expect_rc(ui_event("vol_" .. $kind .. "_set", $p .. "_bar", {id: "v50", pct: 50}), 0, $what .. ": " .. $kind .. " bar")
-    expect_rc(ui_event("vol_" .. $kind .. "_up", $p .. "_up"), 0, $what .. ": " .. $kind .. " +")
-    expect_rc(ui_event("vol_" .. $kind .. "_down", $p .. "_down"), 0, $what .. ": " .. $kind .. " -")
-    expect_rc(ui_event("vol_" .. $kind .. "_mute", $p .. "_mute"), 0, $what .. ": " .. $kind .. " mute")
+    expect_rc(panel_event("vol_" .. $kind .. "_set", $p .. "_bar", {id: "v50", pct: 50}), 0, $what .. ": " .. $kind .. " bar")
+    expect_rc(panel_event("vol_" .. $kind .. "_up", $p .. "_up"), 0, $what .. ": " .. $kind .. " +")
+    expect_rc(panel_event("vol_" .. $kind .. "_down", $p .. "_down"), 0, $what .. ": " .. $kind .. " -")
+    expect_rc(panel_event("vol_" .. $kind .. "_mute", $p .. "_mute"), 0, $what .. ": " .. $kind .. " mute")
   end
-  expect_rc(ui_event("vol_output_pick", "v_outs", {id: "sink_302"}), 0, $what .. ": pick output_2")
-  expect_rc(ui_event("vol_input_pick", "v_ins", {id: "source_402"}), 0, $what .. ": pick input_2")
+  expect_rc(panel_event("vol_output_pick", "v_outs", {id: "sink_302"}), 0, $what .. ": pick output_2")
+  expect_rc(panel_event("vol_input_pick", "v_ins", {id: "source_402"}), 0, $what .. ": pick input_2")
 end
 
 try
@@ -322,63 +322,59 @@ try
   check(length(filter(calls(), function ($c) = $c[0] == "subscribe")) == 1, "one pactl subscribe stream")
 
   -- A: a bar segment sets the output level; -/+ step it; mute toggles.
-  expect_rc(ui_event("vol_out_set", "vo_bar", {id: "v40", pct: 40}), 0, "output to 40 %")
+  expect_rc(panel_event("vol_out_set", "vo_bar", {id: "v40", pct: 40}), 0, "output to 40 %")
   wait_model("output 40 %", "out.level_text", "40%")
-  expect_rc(ui_event("vol_out_up", "vo_up"), 0, "output +5")
+  expect_rc(panel_event("vol_out_up", "vo_up"), 0, "output +5")
   wait_model("output 45 %", "out.level_text", "45%")
-  expect_rc(ui_event("vol_out_down", "vo_down"), 0, "output -5")
+  expect_rc(panel_event("vol_out_down", "vo_down"), 0, "output -5")
   wait_model("output 40 % again", "out.level_text", "40%")
-  expect_rc(ui_event("vol_out_mute", "vo_mute"), 0, "output mute")
+  expect_rc(panel_event("vol_out_mute", "vo_mute"), 0, "output mute")
   $m = wait_model("output muted", "out.level_text", "Muted")
   check($m.out.mute_label == "Unmute", "a muted output offers Unmute")
-  expect_rc(ui_event("vol_out_mute", "vo_mute"), 0, "output unmute")
+  expect_rc(panel_event("vol_out_mute", "vo_mute"), 0, "output unmute")
   wait_model("output unmuted", "out.level_text", "40%")
   check(deep_eq(writes(), [["set-sink-volume", $OUT, "40%"], ["set-sink-volume", $OUT, "45%"], ["set-sink-volume", $OUT, "40%"],
     ["set-sink-mute", $OUT, "toggle"], ["set-sink-mute", $OUT, "toggle"]]), "the output writes pactl received: " .. json_encode(writes()))
 
   -- B: a device row makes it the default; a level above 100 % stays the
   -- ceiling, and the bar runs to 150 %.
-  expect_rc(ui_event("vol_output_pick", "v_outs", {id: "sink_58"}), 0, "pick the built-in output")
+  expect_rc(panel_event("vol_output_pick", "v_outs", {id: "sink_58"}), 0, "pick the built-in output")
   $m = wait_model("the built-in output is the default", "status", "Built-in Audio Analog Stereo")
   check($m.outputs[1].sub == "Default" and $m.outputs[0].sub == "" and length($m.out.bar) == 30, "the default marker moved; the 125 % bar: " .. json_encode($m.outputs))
-  expect_rc(ui_event("vol_out_mute", "vo_mute"), 0, "unmute the built-in output")
+  expect_rc(panel_event("vol_out_mute", "vo_mute"), 0, "unmute the built-in output")
   wait_model("built-in unmuted at 125 %", "out.level_text", "125%")
-  expect_rc(ui_event("vol_out_up", "vo_up"), 0, "+5 above 100 %")
+  expect_rc(panel_event("vol_out_up", "vo_up"), 0, "+5 above 100 %")
   wait_model("still 125 %", "out.level_text", "125%")
   $w = writes()
   check(deep_eq($w[5], ["set-default-sink", $OUT2]) and deep_eq($w[length($w) - 1], ["set-sink-volume", $OUT2, "125%"]), "default switch and the clamp: " .. json_encode($w))
 
   -- C: the input card and list.
-  expect_rc(ui_event("vol_in_set", "vi_bar", {id: "v60", pct: 60}), 0, "input to 60 %")
+  expect_rc(panel_event("vol_in_set", "vi_bar", {id: "v60", pct: 60}), 0, "input to 60 %")
   wait_model("input 60 %", "inp.level_text", "60%")
-  expect_rc(ui_event("vol_input_pick", "v_ins", {id: "source_63"}), 0, "pick the built-in input")
+  expect_rc(panel_event("vol_input_pick", "v_ins", {id: "source_63"}), 0, "pick the built-in input")
   wait_model("built-in input", "inp.name", "Built-in Audio Analog Stereo")
 
   -- D: a stream row gets the controls; its level and mute.
-  expect_rc(ui_event("vol_stream_pick", "v_streams", {id: "si_4600"}), 0, "choose the player")
+  expect_rc(panel_event("vol_stream_pick", "v_streams", {id: "si_4600"}), 0, "choose the player")
   wait_model("player chosen", "stream.name", "example-player")
-  expect_rc(ui_event("vol_stream_set", "vs_bar", {id: "v30", pct: 30}), 0, "player to 30 %")
-  expect_rc(ui_event("vol_stream_mute", "vs_mute"), 0, "player unmute")
+  expect_rc(panel_event("vol_stream_set", "vs_bar", {id: "v30", pct: 30}), 0, "player to 30 %")
+  expect_rc(panel_event("vol_stream_mute", "vs_mute"), 0, "player unmute")
   wait_model("player at 30 %", "stream.level_text", "30%")
   $w = writes()
   check(deep_eq(slice($w, length($w) - 2, length($w)), [["set-sink-input-volume", "4600", "30%"], ["set-sink-input-mute", "4600", "toggle"]]), "the stream writes: " .. json_encode($w))
 
   -- E: a failed write shows one plain line and the real level.
   write_file($tmp .. "/pactl/fail", "")
-  expect_rc(ui_event("vol_out_set", "vo_bar", {id: "v10", pct: 10}), 0, "a refused write")
+  expect_rc(panel_event("vol_out_set", "vo_bar", {id: "v10", pct: 10}), 0, "a refused write")
   $m = wait_model("the failure line", "note", "Change failed: Failure: Access denied")
   check($m.out.level_text == "125%" and $m.has_note, "after a refused write the bar shows PipeWire's level")
   remove($tmp .. "/pactl/fail")
 
-  -- F: a Bus caller is refused for every write command, a forged header in
-  -- its body included; nothing reaches pactl.
+  -- F: a direct caller changes the output and observes the published model.
   $before = length(writes())
-  for each $handler in ["vol_out_set", "vol_in_set", "vol_stream_set", "vol_out_down", "vol_out_up", "vol_in_down", "vol_in_up",
-      "vol_stream_down", "vol_stream_up", "vol_out_mute", "vol_in_mute", "vol_stream_mute", "vol_output_pick", "vol_input_pick", "vol_stream_pick"]
-    $r = direct("scene-volume", $handler, {item: {id: "sink_56", pct: 100}, headers: {from: "shell-stub"}, from: "shell-stub"})
-    check($r.rc == 10 and $r.result.error_code == "ui_only", $handler .. " from a Bus caller: " .. json_encode($r))
-  end
-  check(length(writes()) == $before, "a Bus caller reached pactl: " .. json_encode(writes()))
+  expect_rc(direct("scene-volume", "vol_out_set", {item: {id: "v80", pct: 80}}), 0, "direct output to 80 %")
+  wait_model("direct output 80 %", "out.level_text", "80%")
+  check(length(writes()) == $before + 1, "the direct write reached pactl")
   $st = direct("scene-volume", "volume.state", {})
   check($st.rc == 0 and $st.result.output.name == "Built-in Audio Analog Stereo" and $st.result.streams == 2, "volume.state reads: " .. json_encode($st))
 
@@ -403,7 +399,7 @@ try
   $m = wait_model("the default past the cut", "status", "Output 18")
   check($m.out.level_text == "200%" and length($m.outputs) == 17, "the default at 200 %, kept past the cut: " .. json_encode({level: $m.out.level_text, rows: length($m.outputs)}))
   $before = length(writes())
-  expect_rc(ui_event("vol_out_up", "vo_up"), 0, "+5 at 200 %")
+  expect_rc(panel_event("vol_out_up", "vo_up"), 0, "+5 at 200 %")
   wait_model("read back at 150 %", "out.level_text", "150%")
   $w = writes()
   check(length($w) == $before + 1 and deep_eq($w[length($w) - 1], ["set-sink-volume", "output_18", "150%"]), "the write goes to the default, at most 150 %: " .. json_encode(slice($w, $before, length($w))))
@@ -439,7 +435,7 @@ try
   $m = wait_model("the server gone", "status", "Audio service unavailable")
   check(not $m.has_out and not $m.has_in and not $m.has_streams, "with no server every card is hidden")
 
-  print("PASS volume behaviour: output, input and stream levels and mute, default devices, the 125 % ceiling, a refused write read back, UI-only writes, outside changes by event, the default past the device cut, the 150 % write ceiling, one write guard (every handler writes with both defaults, none with either missing), server gone")
+  print("PASS volume behaviour: output, input and stream levels and mute, default devices, the 125 % ceiling, a refused write read back, writes from any Bus caller, outside changes by event, the default past the device cut, the 150 % write ceiling, one write guard (every handler writes with both defaults, none with either missing), server gone")
 finally
   stop_pid($scene_pid)
   stop_pid($scenes_pid)

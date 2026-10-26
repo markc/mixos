@@ -91,7 +91,7 @@ struct Writes {
     // input and VT replies must remain admissible while a paste drains.
     control_bytes: usize,
     foreground: u64,
-    owner: Option<(String, Arc<crate::control::Permit>)>,
+    last_permit: Option<Arc<crate::control::Permit>>,
 }
 
 #[derive(Clone)]
@@ -252,7 +252,7 @@ impl Listener {
     }
     fn revoke_writer(writes: &mut Writes) {
         writes.foreground = writes.foreground.saturating_add(1);
-        if let Some((_, permit)) = writes.owner.take() {
+        if let Some(permit) = writes.last_permit.take() {
             permit.revoke();
         }
         for pending in &writes.pending {
@@ -286,7 +286,6 @@ impl Listener {
         &self,
         text: &str,
         generation: u64,
-        actor: &str,
         permit: Arc<crate::control::Permit>,
     ) -> Result<(), &'static str> {
         let bytes = encode_text(text).map_err(|_| "INVALID_ARGUMENT")?;
@@ -301,14 +300,6 @@ impl Listener {
         if !permit.valid() {
             return Err("FORBIDDEN");
         }
-        if !crate::control::mesh_open()
-            && writes
-                .owner
-                .as_ref()
-                .is_some_and(|(owner, p)| owner != actor && p.valid())
-        {
-            return Err("BUSY");
-        }
         self.enqueue(
             &mut writes,
             bytes,
@@ -317,7 +308,7 @@ impl Listener {
             true,
         )
         .map_err(|_| "RESOURCE_LIMIT")?;
-        writes.owner = Some((actor.into(), permit));
+        writes.last_permit = Some(permit);
         drop(writes);
         if sends_bytes {
             self.follow_input();

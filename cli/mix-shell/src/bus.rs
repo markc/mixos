@@ -42,12 +42,8 @@ enum MeshState {
 
 /// How this process reaches the local broker.
 ///
-/// The two lanes differ in ONE respect that matters: what the broker knows
-/// about the caller. A TCP connection carries a name the caller asserts about
-/// itself, which is not an authority — which is why a session-enrolled
-/// service's protected commands answer FORBIDDEN over it. A Unix connection
-/// carries peer credentials the KERNEL supplies, so the broker learns who is
-/// calling without being told, and the same `send` reaches those commands.
+/// A Unix connection carries kernel peer credentials for broker session
+/// records. TCP and mesh callers can invoke the same commands without them.
 ///
 /// Verified is preferred and unverified is the fallback, never the reverse: a
 /// host with no local broker socket, or a genuinely remote target, must keep

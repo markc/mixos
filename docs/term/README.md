@@ -40,6 +40,13 @@ it) and answers:
 `term.info` returns the prose usage and diagnostic notes. `app.describe`
 keeps its richer `{schema, app_id, commands}` object on the window service.
 
+Every command accepts local and mesh callers, including TCP callers without
+a Unix principal. The allocated native-session route also serves target-bound
+commands and forwards execution and isolated tasks to the pane shell.
+Callers can inspect and cancel each other's operations. Targets, current
+generations, request replay checks and bounded queues still apply. Input
+from different callers shares the PTY write queue.
+
 ## Configuration
 
 The desktop profile's `terminal.*` settings, held by

@@ -1,6 +1,6 @@
 -- hostd client for scene behaviours: one request per connection over the
 -- local socket (NUL-terminated JSON frames, docs/hostd/README.md). Writes go only
--- this way, never over the Bus. Every answer is a map:
+-- this way; hostd also accepts local Bus writes. Every answer is a map:
 --   {ok: true, body}                  rc 0
 --   {ok: false, status, body}         hostd refused (rc 10; status from body)
 --   {ok: false, status: "unavailable", message, sent}   no socket, no
@@ -59,75 +59,15 @@ fn uncertain($out)
   return $out.status == "timeout" or ($out.status == "unavailable" and $out.sent == true)
 end
 
--- What the widget may do, from hostd.status: {available, frozen, grants,
--- held}. held is hostd's held_grants (each in full: commands, limits);
--- grants their names. may() answers per command and link.
-fn grant_state()
+-- Host availability and freeze state apply equally to every local caller.
+fn access_state()
   $out = call("hostd.status", {})
-  if not $out.ok then return {available: $out.status != "unavailable", frozen: false, grants: [], held: []} end
-  $held = []
-  for each $g in type($out.body.held_grants) == "list" ? $out.body.held_grants : []
-    if type($g) == "map" then push($held, $g) end
-  end
-  return {available: true, frozen: $out.body.frozen != nil,
-    grants: map($held, function ($g) = to_string($g.name)), held: $held}
+  if not $out.ok then return {available: $out.status != "unavailable", frozen: false} end
+  return {available: true, frozen: $out.body.frozen != nil}
 end
 
--- Does a grant command cover $command? hostd's rule: an exact name, or a
--- family `prefix.*` covering every command that starts with `prefix.`.
-fn command_covers($pattern, $command)
-  $p = to_string($pattern)
-  if $p == $command then return true end
-  return ends_with($p, ".*") and starts_with($command, slice($p, 0, length($p) - 1))
-end
-
-fn covers($g, $command)
-  if type($g) != "map" or type($g.commands) != "list" then return false end
-  for each $v in $g.commands
-    if command_covers($v, $command) then return true end
-  end
-  return false
-end
-
--- A grant's allow-list for one limit key, or nil when it lists none (a key
--- a grant doesn't list is unrestricted).
-fn limit($g, $key)
-  $limits = type($g.limits) == "map" ? $g.limits : {}
-  $l = $limits[$key]
-  return type($l) == "list" ? $l : nil
-end
-
--- May this panel run $command on $link (and, for Wi-Fi, $ssid)? A live,
--- unfrozen hostd and a held grant covering the command whose limits allow
--- the arguments.
-fn may($access, $command, $link, $ssid = nil)
-  if $access == nil or not $access.available or $access.frozen then return false end
-  for each $g in $access.held ?? []
-    if not covers($g, $command) then continue end
-    $links = limit($g, "links")
-    if $links != nil and not contains($links, $link) then continue end
-    if $ssid != nil then
-      $ssids = limit($g, "ssids")
-      if $ssids != nil and not contains($ssids, $ssid) then continue end
-    end
-    return true
-  end
-  return false
-end
-
--- The links a grant names for $command (only explicit lists: an unlimited
--- grant names none). The panel offers "New tunnel" for names in this list
--- that don't exist yet.
-fn named_links($access, $command)
-  $out = []
-  if $access == nil or not $access.available or $access.frozen then return $out end
-  for each $g in $access.held ?? []
-    if not covers($g, $command) then continue end
-    for each $l in limit($g, "links") ?? []
-      if not contains($out, $l) then push($out, $l) end
-    end
-  end
-  return $out
+fn writable($access)
+  return $access != nil and $access.available and not $access.frozen
 end
 
 -- Split a typed list ("a, b c") into its non-empty items.

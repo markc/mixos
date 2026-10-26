@@ -493,7 +493,78 @@ async fn cached_status_delivery_rechecks_broker_suspend_without_notices() {
         .ok()
         .unwrap();
     let observer = std::sync::Arc::new(connect(&broker).await);
-    let observer_hello = observer.session_hello().await.unwrap();
+
+    // A TCP caller carries broker provenance but no Unix principal. It can
+    // read status and submit a task even though the child grant is read-only.
+    crate::session_state::enable();
+    crate::session_state::commit(crate::session_state::Transition::AttachmentChanged {
+        source: Some((&bound).into()),
+    });
+    async fn dispatch_tcp(
+        broker: &Broker,
+        child: &VerifiedConnection,
+        bound: &SessionRecord,
+        command: &'static str,
+        body: serde_json::Value,
+    ) -> serde_json::Value {
+        let caller = NodedClient::connect_anonymous(&broker.url).await.unwrap();
+        let name = bound.name.clone();
+        let request = tokio::spawn(async move { caller.call(&name, command, body).await });
+        let delivery = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let event = child.recv_shared().await.unwrap();
+                if event.command().command == command {
+                    break event;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert!(delivery.trusted_context().is_none());
+        crate::session_status::dispatch(child, bound, &delivery).await;
+        request.await.unwrap().unwrap()
+    }
+    let target = crate::session_state::Source::from(&bound);
+    let status = dispatch_tcp(
+        &broker,
+        &child,
+        &bound,
+        "shell.status",
+        serde_json::json!({"version":1,"target":target}),
+    )
+    .await;
+    assert_eq!(status["version"], 1);
+    let task = dispatch_tcp(
+        &broker,
+        &child,
+        &bound,
+        "shell.task.submit",
+        serde_json::json!({"version":1,"target":target,"request_id":"901",
+            "argv":["/usr/bin/true"],"cwd":"/tmp","env":[],"timeout_ms":"1000"}),
+    )
+    .await;
+    let operation = task["operation_id"].clone();
+    assert!(operation.is_string(), "{task}");
+    // A separate caller can inspect and cancel the operation.
+    let result = dispatch_tcp(
+        &broker,
+        &child,
+        &bound,
+        "shell.task.result",
+        serde_json::json!({"version":1,"target":target,"operation_id":operation}),
+    )
+    .await;
+    assert_eq!(result["operation_id"], operation);
+    let cancelled = dispatch_tcp(
+        &broker,
+        &child,
+        &bound,
+        "shell.task.cancel",
+        serde_json::json!({"version":1,"target":target,"operation_id":operation}),
+    )
+    .await;
+    assert_eq!(cancelled["operation_id"], operation);
+
     let sending = observer.clone();
     let name = bound.name.clone();
     let request = tokio::spawn(async move {
@@ -508,17 +579,8 @@ async fn cached_status_delivery_rechecks_broker_suspend_without_notices() {
             break event;
         }
     };
-    let principal = delivery.trusted_context().unwrap();
-    assert!(
-        crate::session_status::admitted(
-            &observer,
-            &observer_hello,
-            principal,
-            &bound,
-            Capability::ReadState
-        )
-        .await
-    );
+    assert!(delivery.trusted_context().is_some());
+    assert!(crate::session_status::admitted(&observer, &bound).await);
     parent.client().close().await; // real broker recursively suspends the child
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
@@ -532,16 +594,7 @@ async fn cached_status_delivery_rechecks_broker_suspend_without_notices() {
     // Never consume a lifecycle hint. The saved delivery + old Attached record
     // alone would pass policy; a fresh verified reader isolates the Attached
     // re-read gate from the original connection's compulsory broker close.
-    assert!(
-        !crate::session_status::admitted(
-            &observer,
-            &observer_hello,
-            principal,
-            &bound,
-            Capability::ReadState
-        )
-        .await
-    );
+    assert!(!crate::session_status::admitted(&observer, &bound).await);
     request.abort();
     let _ = request.await;
 }
@@ -913,7 +966,7 @@ async fn admission_contention_delays_a_renewal_instead_of_dropping_the_attachmen
 }
 
 #[tokio::test]
-async fn a_session_bound_admission_costs_two_round_trips() {
+async fn recipient_freshness_costs_one_round_trip() {
     use test_broker::Broker;
     let broker = Broker::start();
     let delay = Duration::from_millis(150);
@@ -981,24 +1034,21 @@ async fn a_session_bound_admission_costs_two_round_trips() {
             break event;
         }
     };
-    let principal = delivery.trusted_context().unwrap();
-    assert_eq!(principal.assurance, Assurance::SessionBound);
-
-    // A session-bound caller's admission is one lease check plus one re-read of
-    // our own attachment. The hello that used to precede the lease check made it
-    // three, and every one of them serialises on the connection the resident
-    // renews over.
-    let started = Instant::now();
-    assert!(
-        crate::session_status::admitted(&child, &hello, principal, &bound, Capability::ReadState)
-            .await
+    assert!(delivery.trusted_context().is_some());
+    assert_eq!(
+        delivery.trusted_context().unwrap().assurance,
+        Assurance::SessionBound
     );
+
+    // Freshness requires one re-read of the recipient attachment, regardless
+    // of the caller. Each RPC crosses the delayed relay in both directions.
+    let started = Instant::now();
+    assert!(crate::session_status::admitted(&child, &bound).await);
     let elapsed = started.elapsed();
     assert!(
-        elapsed < delay * 5,
-        "admission took {elapsed:?}: two round trips cost about {:?}, three about {:?}",
-        delay * 4,
-        delay * 6
+        elapsed < delay * 3,
+        "freshness took {elapsed:?}: one round trip costs about {:?}",
+        delay * 2
     );
     request.abort();
     let _ = request.await;
