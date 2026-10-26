@@ -687,9 +687,6 @@ impl Painter {
         }
 
         let offscreen = window.is_none();
-        if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
-            eprintln!("offtrace painter offscreen={offscreen} callbacks={}", capture_data.len());
-        }
         let capture = offscreen || !capture_data.is_empty();
         let mut vsync_sec = 0.0;
 
@@ -766,13 +763,7 @@ impl Painter {
             profiling::scope!("get_current_texture");
             // This is what vsync-waiting happens on my Mac.
             let start = web_time::Instant::now();
-            if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
-                eprintln!("offtrace acquire start");
-            }
             let output_frame = surface_state.surface.get_current_texture();
-            if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
-                eprintln!("offtrace acquire end {:?}", start.elapsed());
-            }
             vsync_sec += start.elapsed().as_secs_f32();
             match output_frame {
                 wgpu::CurrentSurfaceTexture::Success(frame) => Some(frame),

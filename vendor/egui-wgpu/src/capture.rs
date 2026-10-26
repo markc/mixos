@@ -196,9 +196,6 @@ impl CaptureState {
         let buffer_clone = Arc::clone(&buffer);
         let buffer_slice = buffer_clone.slice(..);
         let format = self.texture.format();
-        if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
-            eprintln!("offtrace readback format={format:?}");
-        }
         let tex_extent = self.texture.size();
         let padding = self.padding;
         let to_rgba = match format {
@@ -212,9 +209,6 @@ impl CaptureState {
             }
         };
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
-                eprintln!("offtrace mapped {result:?}");
-            }
             if let Err(err) = result {
                 log::error!("Failed to map buffer for reading: {err}");
                 return;
@@ -248,9 +242,6 @@ impl CaptureState {
                 pixels,
             ));
             for callback in callbacks {
-                if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
-                    eprintln!("offtrace callback complete");
-                }
                 callback.complete(Arc::clone(&image));
             }
         });
