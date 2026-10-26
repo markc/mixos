@@ -1035,7 +1035,7 @@ fn handle(
             std::process::id()
         )),
         "term.session" => {
-            let mut status = tabs.session_status();
+            let status = tabs.session_status();
             Ok(status.to_string())
         }
         "term.tabs" => Ok(tabs

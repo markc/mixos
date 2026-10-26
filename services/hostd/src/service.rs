@@ -6,7 +6,7 @@ use crate::{
     caller::{Origin, Peer},
     desk, freeze, info, link, net,
     rate::RateLimiter,
-    receipt::{self, Outcome, Receipt},
+    receipt::{Outcome, Receipt},
     txn, unit, wg, wifi,
 };
 use serde::Deserialize;
@@ -564,6 +564,7 @@ fn audit(command_name: &str, origin: &Origin, result: &Result<Value, Value>) {
 mod tests {
     use super::*;
     use crate::caller::Caller;
+    use crate::receipt;
 
     fn socket_caller() -> Origin {
         Origin::Local(Caller {
