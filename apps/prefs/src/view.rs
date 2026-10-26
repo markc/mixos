@@ -293,12 +293,7 @@ fn field_label(ui: &mut Ui, text: &str) -> egui::Response {
 fn toggle(ui: &mut Ui, value: &mut bool, key: &str) -> bool {
     let response = ui.add(Toggle::new(value, ""));
     response.widget_info(|| {
-        egui::WidgetInfo::selected(
-            egui::Role::CheckBox,
-            ui.is_enabled(),
-            *value,
-            label(key),
-        )
+        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), *value, label(key))
     });
     response.changed()
 }

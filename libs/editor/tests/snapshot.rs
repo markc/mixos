@@ -65,8 +65,9 @@ fn harness(app: App, theme: &Theme, size: egui::Vec2) -> Harness<'static, App> {
             let output = app.doc.show(ui, &palette, &view);
             for event in output.events {
                 if let editor::Event::Layout(layout) = event {
-                    ui.ctx()
-                        .data_mut(|d| d.insert_temp(egui::Id::unique("test-editor-layout"), layout));
+                    ui.ctx().data_mut(|d| {
+                        d.insert_temp(egui::Id::unique("test-editor-layout"), layout)
+                    });
                 }
             }
         },

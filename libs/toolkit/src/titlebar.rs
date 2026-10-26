@@ -41,8 +41,8 @@ use design::{CaptionSide, Decorations};
 use egui::emath::GuiRounding;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align, CursorIcon, Frame, Layout, Pos2, Rect, ResizeDirection, Sense, Stroke, StrokeKind, Ui,
-    UiBuilder, ViewportBuilder, ViewportCommand, WidgetInfo, Role, pos2, vec2,
+    Align, CursorIcon, Frame, Layout, Pos2, Rect, ResizeDirection, Role, Sense, Stroke, StrokeKind,
+    Ui, UiBuilder, ViewportBuilder, ViewportCommand, WidgetInfo, pos2, vec2,
 };
 
 fn label(key: &str) -> String {
@@ -229,7 +229,11 @@ pub fn show_with<S>(
         let gap = ui.data(|d| d.get_temp::<Rect>(gap_id)).unwrap_or(bar);
         // Registered first and over the free gap only, so nothing drawn
         // later loses its clicks to it.
-        let drag = ui.interact(gap, ui.scope_id().with("titlebar-drag"), Sense::click_and_drag());
+        let drag = ui.interact(
+            gap,
+            ui.scope_id().with("titlebar-drag"),
+            Sense::click_and_drag(),
+        );
 
         // The caption buttons take one end, Close in its corner: at the
         // right Minimize, Maximize, Close; at the left Close, Minimize,
@@ -631,7 +635,11 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
         Caption::Close => "window-close",
     };
     let name = label(key);
-    let response = ui.interact(rect, ui.scope_id().with(("toolkit-caption", key)), Sense::click());
+    let response = ui.interact(
+        rect,
+        ui.scope_id().with(("toolkit-caption", key)),
+        Sense::click(),
+    );
     response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &name));
     let p = &chrome.palette;
     let pressed = response.is_pointer_button_down_on();
@@ -781,7 +789,8 @@ pub fn edges(ui: &mut Ui) {
     for (direction, zone, cursor) in zones {
         let response = ui.interact(
             zone,
-            ui.scope_id().with(("toolkit-resize", format!("{direction:?}"))),
+            ui.scope_id()
+                .with(("toolkit-resize", format!("{direction:?}"))),
             Sense::drag(),
         );
         if response

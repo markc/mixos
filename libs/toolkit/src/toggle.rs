@@ -19,8 +19,8 @@ use crate::chrome::{self, Chrome};
 use design::family::style::{Switch as SwitchStyle, Toggle as ToggleStyle};
 use egui::emath::GuiRounding;
 use egui::{
-    Color32, Rect, Response, Sense, Stroke, StrokeKind, TextStyle, Ui, Vec2, Widget, WidgetInfo,
-    Role, pos2, vec2,
+    Color32, Rect, Response, Role, Sense, Stroke, StrokeKind, TextStyle, Ui, Vec2, Widget,
+    WidgetInfo, pos2, vec2,
 };
 
 /// A checkbox.
@@ -61,9 +61,7 @@ fn row(
     if response.clicked() {
         response.mark_changed();
     }
-    response.widget_info(|| {
-        WidgetInfo::selected(Role::CheckBox, ui.is_enabled(), checked, label)
-    });
+    response.widget_info(|| WidgetInfo::selected(Role::CheckBox, ui.is_enabled(), checked, label));
     let control = Rect::from_min_size(
         pos2(rect.left(), rect.center().y - control.y / 2.0),
         control,

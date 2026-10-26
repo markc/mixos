@@ -581,7 +581,12 @@ impl Shell {
         let over = |pos: egui::Pos2| area.contains(pos) && ctx.layer_id_at(pos) == Some(layer);
         let now = Instant::now();
         for event in events {
-            if keyboard && matches!(event, Event::Copy | Event::Cut | Event::Paste(_) | Event::PasteImage(_)) {
+            if keyboard
+                && matches!(
+                    event,
+                    Event::Copy | Event::Cut | Event::Paste(_) | Event::PasteImage(_)
+                )
+            {
                 if let Some(action) = self.app.clipboard_event(&event) {
                     self.run(action, Origin::Shortcut);
                 }
@@ -610,7 +615,7 @@ impl Shell {
                     }
                 }
                 Event::MouseWheel {
-                                        unit,
+                    unit,
                     delta,
                     modifiers,
                     ..

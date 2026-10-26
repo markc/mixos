@@ -979,7 +979,7 @@ impl Pane<'_, '_> {
         let delta = self.ui.input(|i| {
             i.events.iter().fold(Vec2::ZERO, |sum, e| match e {
                 egui::Event::MouseWheel {
-                                        unit,
+                    unit,
                     delta,
                     modifiers,
                     ..

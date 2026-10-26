@@ -29,8 +29,8 @@ use crate::icons::{self, Icon};
 use design::family::style::{PushShape, SecondaryButton};
 use egui::emath::GuiRounding;
 use egui::{
-    Color32, CornerRadius, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, Widget, WidgetInfo,
-    Role, pos2, vec2,
+    Color32, CornerRadius, Rect, Response, Role, Sense, Stroke, StrokeKind, Ui, Vec2, Widget,
+    WidgetInfo, pos2, vec2,
 };
 
 /// Which family of icon button (§3.8).
@@ -101,9 +101,8 @@ impl Widget for IconButton {
         let size = size.unwrap_or(Chrome::of(ui.ctx()).style.icon_button as f32);
         let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
         let name = tooltip.clone().unwrap_or_else(|| icon.name().to_owned());
-        response.widget_info(|| {
-            WidgetInfo::selected(Role::Button, ui.is_enabled(), selected, &name)
-        });
+        response
+            .widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), selected, &name));
         if ui.is_rect_visible(rect) {
             let chrome = Chrome::of(ui.ctx());
             let p = &chrome.palette;
@@ -229,8 +228,7 @@ impl Widget for PushButton {
             height,
         );
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-        response
-            .widget_info(|| WidgetInfo::labeled(Role::Button, ui.is_enabled(), &self.label));
+        response.widget_info(|| WidgetInfo::labeled(Role::Button, ui.is_enabled(), &self.label));
         if !ui.is_rect_visible(rect) {
             return response;
         }
@@ -373,8 +371,7 @@ impl Widget for Link {
             ui.spacing().interact_size.y,
         );
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-        response
-            .widget_info(|| WidgetInfo::labeled(Role::Link, ui.is_enabled(), &self.label));
+        response.widget_info(|| WidgetInfo::labeled(Role::Link, ui.is_enabled(), &self.label));
         if ui.is_rect_visible(rect) {
             let p = Chrome::of(ui.ctx()).palette;
             let ink = if response.hovered() {

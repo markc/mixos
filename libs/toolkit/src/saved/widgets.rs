@@ -131,7 +131,8 @@ pub fn set_panel(ctx: &egui::Context, name: &str, share: f32) {
         // the previous session's share on that first layout.
         w.applied.insert(format!("panel:{name}"));
         w.panel_ids.get(name).copied()
-    }).flatten();
+    })
+    .flatten();
     if let Some(id) = id {
         ctx.data_mut(|d| d.remove::<egui::containers::panel::PanelState>(id));
     }
@@ -527,9 +528,18 @@ mod tests {
         widgets.collect(&ctx);
         assert_eq!(widgets.scrolls["services"].offset[1], 300.0);
         draw(&ctx, |ui| {
-            scroll(ui, "services", None, false,
-                egui::ScrollArea::vertical().max_height(100.0).vertical_scroll_offset(80.0),
-                |ui| { ui.allocate_space(egui::vec2(100.0, 1000.0)); });
+            scroll(
+                ui,
+                "services",
+                None,
+                false,
+                egui::ScrollArea::vertical()
+                    .max_height(100.0)
+                    .vertical_scroll_offset(80.0),
+                |ui| {
+                    ui.allocate_space(egui::vec2(100.0, 1000.0));
+                },
+            );
         });
         draw(&ctx, |ui| {
             scroll(
@@ -581,9 +591,18 @@ mod tests {
         tree(false, &mut id, &mut offset);
         // The person scrolls while discovery is still running.
         draw(&ctx, |ui| {
-            scroll(ui, "services", None, false,
-                egui::ScrollArea::vertical().max_height(100.0).vertical_scroll_offset(80.0),
-                |ui| { ui.allocate_space(egui::vec2(100.0, 1000.0)); });
+            scroll(
+                ui,
+                "services",
+                None,
+                false,
+                egui::ScrollArea::vertical()
+                    .max_height(100.0)
+                    .vertical_scroll_offset(80.0),
+                |ui| {
+                    ui.allocate_space(egui::vec2(100.0, 1000.0));
+                },
+            );
         });
         tree(false, &mut id, &mut offset);
         for _ in 0..2 {

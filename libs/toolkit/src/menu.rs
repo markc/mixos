@@ -28,9 +28,8 @@
 use crate::chrome::Chrome;
 use egui::emath::GuiRounding;
 use egui::{
-    Area, Color32, Context, Frame, Id, Key, Modifiers, Order, PointerButton, Pos2, Rect,
-    ScrollArea, Sense, Stroke, TextEdit, Ui, UiKind, Vec2, WidgetInfo, Role, pos2,
-    text::Galley, vec2,
+    Area, Color32, Context, Frame, Id, Key, Modifiers, Order, PointerButton, Pos2, Rect, Role,
+    ScrollArea, Sense, Stroke, TextEdit, Ui, UiKind, Vec2, WidgetInfo, pos2, text::Galley, vec2,
 };
 use std::sync::Arc;
 
@@ -1784,8 +1783,7 @@ fn level_rows(
     for (index, (entry, row_rect)) in entries.iter().zip(&rows).enumerate() {
         let response = ui.interact(*row_rect, id.with(index), Sense::click());
         if let Entry::Row(row) = entry {
-            response
-                .widget_info(|| WidgetInfo::labeled(Role::Button, row.enabled, &row.label));
+            response.widget_info(|| WidgetInfo::labeled(Role::Button, row.enabled, &row.label));
             if let Some(checked) = row.checked {
                 // A choice is one of a group, ticked or not: a radio menu
                 // item to assistive technology and the drive layer.

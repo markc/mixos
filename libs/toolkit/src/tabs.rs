@@ -34,8 +34,8 @@ use design::family::style::DocumentTabs;
 use egui::emath::GuiRounding;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Color32, FontFamily, FontId, Frame, Galley, Id, Margin, Popup, Rect, Sense, Shape, Stroke,
-    StrokeKind, Ui, WidgetInfo, Role, pos2, vec2,
+    Color32, FontFamily, FontId, Frame, Galley, Id, Margin, Popup, Rect, Role, Sense, Shape,
+    Stroke, StrokeKind, Ui, WidgetInfo, pos2, vec2,
 };
 use std::f32::consts::{FRAC_PI_2, PI};
 use std::sync::Arc;
@@ -468,8 +468,7 @@ fn doc_tab(
 ) -> (bool, bool) {
     let (p, pro) = (&chrome.palette, is_strip(chrome));
     let response = ui.interact(rect, id, Sense::click());
-    response
-        .widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), selected, name));
+    response.widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), selected, name));
     let (close_size, close_from_right, close_icon) = if pro {
         (
             crate::chrome::Chrome::of(ui.ctx()).style.tabs_pro_close as f32,

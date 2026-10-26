@@ -179,9 +179,8 @@ fn tool_bar(
             .unwrap_or(0);
         let before = chosen;
         let response = combo::show(ui, "node", &mut chosen, &options, Some(150.0));
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::Role::ComboBox, true, label("node"))
-        });
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, label("node")));
         if chosen != before {
             events.push(UiEvent::Node((chosen > 0).then(|| options[chosen].clone())));
         }

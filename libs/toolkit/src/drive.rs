@@ -589,11 +589,7 @@ impl egui::Plugin for Drive {
             if let Some(running) = &mut child.running
                 && running.trace.is_some()
             {
-                running.pass_events = input
-                    .events
-                    .iter()
-                    .map(|e| format!("{e:?}"))
-                    .collect();
+                running.pass_events = input.events.iter().map(|e| format!("{e:?}")).collect();
             }
             return;
         }
@@ -601,11 +597,7 @@ impl egui::Plugin for Drive {
         if let Some(running) = &mut self.running
             && running.trace.is_some()
         {
-            running.pass_events = input
-                .events
-                .iter()
-                .map(|e| format!("{e:?}"))
-                .collect();
+            running.pass_events = input.events.iter().map(|e| format!("{e:?}")).collect();
         }
     }
 
@@ -1253,10 +1245,11 @@ impl Drive {
                 let completed = self.screenshots.clone();
                 let ctx = ctx.clone();
                 let viewport = ctx.viewport_id();
-                let shot = ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |image| {
-                    completed.lock().unwrap().push((tag, image));
-                    ctx.request_repaint_of(viewport);
-                }));
+                let shot =
+                    ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |image| {
+                        completed.lock().unwrap().push((tag, image));
+                        ctx.request_repaint_of(viewport);
+                    }));
                 let deadline = Instant::now() + self.options.capture_timeout;
                 (
                     vec![
@@ -1293,7 +1286,11 @@ impl Drive {
             deadline,
         }) = running.steps.front_mut()
         {
-            let image = self.screenshots.lock().unwrap().drain(..)
+            let image = self
+                .screenshots
+                .lock()
+                .unwrap()
+                .drain(..)
                 .find_map(|(completed_tag, image)| (completed_tag == *tag).then_some(image));
             let answer = match image {
                 Some(image) => match write_png(path, &image) {
@@ -1946,10 +1943,13 @@ mod tests {
         // it waiting for its event, even well beyond the input quiet period.
         assert!(logic_at(&ctx, Instant::now() + INPUT_QUIET_PERIOD).is_empty());
         ctx.with_plugin(|drive: &mut Drive| {
-            drive.screenshots.lock().unwrap().push((1,
-                std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE))));
+            drive.screenshots.lock().unwrap().push((
+                1,
+                std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
+            ));
         });
-        ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+        ctx.run_ui(RawInput::default(), |_| {})
+            .drop_without_applying_deltas();
         let answers = logic(&ctx);
         assert_eq!(answers.len(), 1);
         assert_eq!(answers[0].rc, 0);
@@ -1970,10 +1970,13 @@ mod tests {
             assert!(logic_at(&ctx, pass + Duration::from_millis(999)).is_empty());
         }
         ctx.with_plugin(|drive: &mut Drive| {
-            drive.screenshots.lock().unwrap().push((1,
-                std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE))));
+            drive.screenshots.lock().unwrap().push((
+                1,
+                std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
+            ));
         });
-        ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+        ctx.run_ui(RawInput::default(), |_| {})
+            .drop_without_applying_deltas();
         assert_eq!(logic(&ctx)[0].rc, 0);
         assert!(temp.path().join("demo/captures/trickle.png").is_file());
     }
@@ -2188,8 +2191,10 @@ mod tests {
             }),
         );
         let ctx = Context::default();
-        drive.children[&editor].screenshots.lock().unwrap().push((7,
-            std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE))));
+        drive.children[&editor].screenshots.lock().unwrap().push((
+            7,
+            std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
+        ));
         let mut input = RawInput {
             viewport_id: editor,
             ..Default::default()

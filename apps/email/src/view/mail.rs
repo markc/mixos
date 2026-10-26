@@ -696,38 +696,39 @@ fn message(
         // The keys and the area share this ui, so they share the scroll state.
         let offset = scroll_with_keys(ui, focused);
         let area = ScrollArea::vertical();
-        let area = if let Some(offset) = offset { area.vertical_scroll_offset(offset) } else { area };
-        area
-            .id_salt(BODY_SCROLL)
-            .auto_shrink(false)
-            .show(ui, |ui| {
-                match email.text_body_value() {
-                    Some(body) if format == Format::Markdown => {
-                        let parsed;
-                        let document = match reader.document(email) {
-                            Some(document) => document,
-                            None => {
-                                parsed = Document::parse(body);
-                                &parsed
-                            }
-                        };
-                        markdown::show(ui, document);
-                    }
-                    Some(body) => {
-                        ui.add(egui::Label::new(body).wrap());
-                    }
-                    None => match email.html_body_value() {
-                        // No HTML rendering in this slice: the source, escaped by
-                        // the label, with a note.
-                        Some(html) => {
-                            ui.weak(crate::label("html-source"));
-                            ui.add(egui::Label::new(egui::RichText::new(html).monospace()).wrap());
-                        }
+        let area = if let Some(offset) = offset {
+            area.vertical_scroll_offset(offset)
+        } else {
+            area
+        };
+        area.id_salt(BODY_SCROLL).auto_shrink(false).show(ui, |ui| {
+            match email.text_body_value() {
+                Some(body) if format == Format::Markdown => {
+                    let parsed;
+                    let document = match reader.document(email) {
+                        Some(document) => document,
                         None => {
-                            ui.weak(crate::label("no-body"));
+                            parsed = Document::parse(body);
+                            &parsed
                         }
-                    },
+                    };
+                    markdown::show(ui, document);
                 }
-            });
+                Some(body) => {
+                    ui.add(egui::Label::new(body).wrap());
+                }
+                None => match email.html_body_value() {
+                    // No HTML rendering in this slice: the source, escaped by
+                    // the label, with a note.
+                    Some(html) => {
+                        ui.weak(crate::label("html-source"));
+                        ui.add(egui::Label::new(egui::RichText::new(html).monospace()).wrap());
+                    }
+                    None => {
+                        ui.weak(crate::label("no-body"));
+                    }
+                },
+            }
+        });
     });
 }

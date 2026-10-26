@@ -559,9 +559,8 @@ impl<'a> DataTable<'a> {
                         whole = ui.max_rect();
                         header_cell(ui, column, &label, sorted, pad, rule, n < last);
                     });
-                    response.widget_info(|| {
-                        WidgetInfo::labeled(Role::Button, column.sortable, &label)
-                    });
+                    response
+                        .widget_info(|| WidgetInfo::labeled(Role::Button, column.sortable, &label));
                     header_node(&response, whole, sorted);
                     if column.sortable && response.clicked() {
                         events.extend(self.state.header_clicked(
@@ -600,9 +599,8 @@ impl<'a> DataTable<'a> {
                     }
                     let response = row.response();
                     let label = texts.join(", ");
-                    response.widget_info(|| {
-                        WidgetInfo::selected(Role::Button, true, selected, &label)
-                    });
+                    response
+                        .widget_info(|| WidgetInfo::selected(Role::Button, true, selected, &label));
                     // The whole row, this pass: the cells' own responses
                     // carry the last pass's content rects.
                     response.ctx.accesskit_node_builder(response.id, |node| {

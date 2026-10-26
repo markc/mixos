@@ -499,7 +499,10 @@ fn form(
             let mut buffer = compose.draft.subject.clone();
             let width = ui.available_width();
             let response = ui
-                .add(field::text_edit(&mut buffer, "", width).id(egui::Id::unique("compose-subject")))
+                .add(
+                    field::text_edit(&mut buffer, "", width)
+                        .id(egui::Id::unique("compose-subject")),
+                )
                 .labelled_by(label);
             if response.changed() {
                 events.push(UiEvent::ComposeField(ComposeField::Subject, buffer));

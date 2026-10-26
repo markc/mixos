@@ -24,8 +24,8 @@ use crate::icons::Icon;
 use crate::tabs;
 use egui::emath::GuiRounding;
 use egui::{
-    Color32, FontId, Frame, Id, Margin, Pos2, Rect, Response, Sense, Stroke, Ui, WidgetInfo,
-    Role, pos2, vec2,
+    Color32, FontId, Frame, Id, Margin, Pos2, Rect, Response, Role, Sense, Stroke, Ui, WidgetInfo,
+    pos2, vec2,
 };
 
 /// A group's view state.

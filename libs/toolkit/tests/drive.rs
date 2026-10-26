@@ -917,9 +917,8 @@ fn a_capture_ignores_other_screenshots() {
     h.step();
     h.step();
     // An unrelated callback has its own recipient and cannot fulfil this capture.
-    egui::ScreenshotCallback::new(|_| {}).complete(
-        Arc::new(ColorImage::filled([4, 3], Color32::RED)),
-    );
+    egui::ScreenshotCallback::new(|_| {})
+        .complete(Arc::new(ColorImage::filled([4, 3], Color32::RED)));
     for _ in 0..20 {
         h.step();
     }

@@ -69,7 +69,8 @@ pub fn tab_strip(ui: &mut Ui, app: &App) -> Vec<UiEvent> {
         })
         .collect();
     let selected = tabs.iter().position(|tab| tab.active).unwrap_or(0);
-    let picked = toolkit::tabs::documents(ui, egui::Id::unique("term.tabs"), &shown, selected, None);
+    let picked =
+        toolkit::tabs::documents(ui, egui::Id::unique("term.tabs"), &shown, selected, None);
     let mut events = Vec::new();
     if let Some(tab) = picked.selected.and_then(|i| tabs.get(i)) {
         events.push(UiEvent::SelectTab(tab.id));

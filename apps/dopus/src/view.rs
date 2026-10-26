@@ -239,9 +239,11 @@ mod column_tests {
                 if key.is_none() {
                     let _ = cached_column_widths(ui, model, &rows);
                     key = Some(
-                        ui.data(|d| d.get_temp::<ColumnCache>(ui.scope_id().with("metadata-widths")))
-                            .unwrap()
-                            .key,
+                        ui.data(|d| {
+                            d.get_temp::<ColumnCache>(ui.scope_id().with("metadata-widths"))
+                        })
+                        .unwrap()
+                        .key,
                     );
                 }
                 let key = key.as_mut().unwrap();
@@ -566,7 +568,11 @@ fn panes(
     let divider = Rect::from_min_size(pos2(left.right(), area.top()), vec2(DIVIDER, area.height()));
     let right = Rect::from_min_max(pos2(divider.right(), area.top()), area.max);
     // Law 7: the divider sets the split ratio; a double-click restores half.
-    let grip = ui.interact(divider, Id::unique("dopus-divider"), Sense::click_and_drag());
+    let grip = ui.interact(
+        divider,
+        Id::unique("dopus-divider"),
+        Sense::click_and_drag(),
+    );
     if grip.hovered() || grip.dragged() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
     }
@@ -780,10 +786,13 @@ fn header(
     ] {
         let Some(cell) = cell else { continue };
         let response = ui
-            .interact(cell, Id::unique(("header", pane.index(), key)), Sense::click())
+            .interact(
+                cell,
+                Id::unique(("header", pane.index(), key)),
+                Sense::click(),
+            )
             .on_hover_text(label_with("sort-by", &[("column", &label(key))]));
-        response
-            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label(key)));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label(key)));
         if response.hovered() {
             ui.painter()
                 .rect_filled(cell, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
@@ -855,12 +864,7 @@ fn row(
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click_and_drag());
     response.widget_info(|| {
-        egui::WidgetInfo::selected(
-            egui::Role::ListBoxOption,
-            true,
-            selected,
-            &entry.name,
-        )
+        egui::WidgetInfo::selected(egui::Role::ListBoxOption, true, selected, &entry.name)
     });
     let visuals = ui.visuals().clone();
     let fill = if selected {

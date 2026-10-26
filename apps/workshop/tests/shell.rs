@@ -17,7 +17,6 @@ use toolkit::{Theme, drive};
 use workshop::label;
 use workshop::shell::{APP, Shell};
 
-
 #[test]
 fn capture_waits_for_quiet_deadline_then_releases_later_commands() {
     let mut rig = rig();
@@ -517,9 +516,11 @@ fn a_bus_dock_size_replaces_the_remembered_panel_size() {
         wait(&mut rig, &[id]);
         assert_eq!(reply(&rig, id).unwrap().1, 0);
         rig.h.run_steps(5);
-        let panel =
-            egui::containers::panel::PanelState::load(&rig.h.ctx, egui::Id::unique("traffic-bottom"))
-                .unwrap();
+        let panel = egui::containers::panel::PanelState::load(
+            &rig.h.ctx,
+            egui::Id::unique("traffic-bottom"),
+        )
+        .unwrap();
         assert!((panel.size().y / 620.0 - size as f32).abs() < 0.02);
         assert!((engine(&rig).ui.dock_height - size as f32).abs() < 0.02);
     }
