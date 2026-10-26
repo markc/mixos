@@ -701,12 +701,19 @@ impl Drive {
     }
 
     fn refuse_unshown_captures(&mut self, ctx: &Context, now: Instant, viewport: egui::ViewportId) {
-        let hidden = ctx.input(|i| i.raw.viewports.get(&viewport).is_some_and(viewport_not_shown));
+        let hidden = ctx.input(|i| {
+            i.raw
+                .viewports
+                .get(&viewport)
+                .is_some_and(viewport_not_shown)
+        });
         for (id, accepted) in std::mem::take(&mut self.pending_captures) {
             if self.answers.iter().any(|answer| answer.id == id) {
                 continue;
             }
-            let since = self.last_ui_pass.map_or(accepted, |pass| pass.max(accepted));
+            let since = self
+                .last_ui_pass
+                .map_or(accepted, |pass| pass.max(accepted));
             let quiet = now.saturating_duration_since(since);
             if !hidden && quiet < CAPTURE_QUIET_PERIOD {
                 self.pending_captures.insert(id, accepted);
@@ -724,8 +731,7 @@ impl Drive {
             {
                 self.running = None;
             }
-            self.answers
-                .push(not_shown(id, quiet));
+            self.answers.push(not_shown(id, quiet));
         }
     }
 
@@ -1732,7 +1738,11 @@ mod tests {
             }
             let now = Instant::now();
             assert!(logic_at(&ctx, now + Duration::from_millis(1)).is_empty());
-            assert!(logic_at(&ctx, now + INPUT_QUIET_PERIOD).iter().all(|a| a.id != 2));
+            assert!(
+                logic_at(&ctx, now + INPUT_QUIET_PERIOD)
+                    .iter()
+                    .all(|a| a.id != 2)
+            );
             let answers = logic_at(&ctx, now + CAPTURE_QUIET_PERIOD);
             let answer = answers.iter().find(|a| a.id == 2).unwrap();
             assert_eq!(answer.body["error_code"], "NOT_SHOWN");
@@ -1761,14 +1771,23 @@ mod tests {
         for pass_after_acceptance in [false, true] {
             let (ctx, _temp) = capture_context();
             assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
-            ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+            ctx.run_ui(RawInput::default(), |_| {})
+                .drop_without_applying_deltas();
             let start = Instant::now();
             let later = start + Duration::from_secs(2);
             ctx.with_plugin(|drive: &mut Drive| {
-                drive.pending_captures.insert(1, if pass_after_acceptance { start } else { later });
+                drive
+                    .pending_captures
+                    .insert(1, if pass_after_acceptance { start } else { later });
                 drive.last_ui_pass = Some(if pass_after_acceptance { later } else { start });
             });
-            assert!(logic_at(&ctx, later + CAPTURE_QUIET_PERIOD - Duration::from_millis(1)).is_empty());
+            assert!(
+                logic_at(
+                    &ctx,
+                    later + CAPTURE_QUIET_PERIOD - Duration::from_millis(1)
+                )
+                .is_empty()
+            );
             let answers = logic_at(&ctx, later + CAPTURE_QUIET_PERIOD);
             assert_eq!(answers.len(), 1);
             assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
@@ -1782,7 +1801,8 @@ mod tests {
         let child = egui::ViewportId::from_hash_of("child");
         register_viewport(&ctx, egui::ViewportId::ROOT, "child", child);
         assert!(request(&ctx, 3, "ui.capture", &json!({"viewport":"child"})).is_none());
-        ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+        ctx.run_ui(RawInput::default(), |_| {})
+            .drop_without_applying_deltas();
         let now = Instant::now();
         ctx.with_plugin(|drive: &mut Drive| drive.last_ui_pass = Some(now + CAPTURE_QUIET_PERIOD));
         let answers = logic_at(&ctx, now + CAPTURE_QUIET_PERIOD);
@@ -1819,7 +1839,8 @@ mod tests {
         assert!(request(&ctx, 1, "ui.capture", &json!({"name":"trickle.png"})).is_none());
         let start = Instant::now();
         for seconds in 1..=5 {
-            ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+            ctx.run_ui(RawInput::default(), |_| {})
+                .drop_without_applying_deltas();
             let pass = start + Duration::from_secs(seconds);
             // Advance the viewport clock without sleeping in this unit test.
             ctx.with_plugin(|drive: &mut Drive| drive.last_ui_pass = Some(pass));

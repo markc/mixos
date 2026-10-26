@@ -174,7 +174,13 @@ pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
     }
     let mut burst = BURST.get();
     let mut last_refill = LAST_REFILL.get();
-    let period = next_period(LAST_SEND.get(), Instant::now(), &mut burst, IDLE.get(), &mut last_refill);
+    let period = next_period(
+        LAST_SEND.get(),
+        Instant::now(),
+        &mut burst,
+        IDLE.get(),
+        &mut last_refill,
+    );
     LAST_REFILL.set(last_refill);
     BURST.set(burst);
     let mut next_send = Instant::now() + period;
@@ -198,11 +204,12 @@ pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
             // continuously animating client needs time to request its next one.
             // Probe after 16 ms even when the next send is a second away, so
             // short gaps between captures can establish idle promptly.
-            next_send = Instant::now() + if BURST.get() > 0 {
-                BURST_INTERVAL
-            } else {
-                PARKED_TRICKLE
-            };
+            next_send = Instant::now()
+                + if BURST.get() > 0 {
+                    BURST_INTERVAL
+                } else {
+                    PARKED_TRICKLE
+                };
             TimeoutAction::ToDuration(BURST_INTERVAL)
         },
     );
@@ -234,12 +241,24 @@ mod tests {
         let sent = Instant::now();
         let mut burst = 0;
         assert_eq!(
-            next_period(Some(sent), sent + PARKED_TRICKLE, &mut burst, false, &mut Some(sent)),
+            next_period(
+                Some(sent),
+                sent + PARKED_TRICKLE,
+                &mut burst,
+                false,
+                &mut Some(sent)
+            ),
             PARKED_TRICKLE
         );
         assert_eq!(burst, 0);
         assert_eq!(
-            next_period(Some(sent), sent + BURST_QUIET, &mut burst, false, &mut Some(sent)),
+            next_period(
+                Some(sent),
+                sent + BURST_QUIET,
+                &mut burst,
+                false,
+                &mut Some(sent)
+            ),
             BURST_INTERVAL
         );
         assert_eq!(burst, BURST_FRAMES);
@@ -250,7 +269,13 @@ mod tests {
         let sent = Instant::now();
         let mut burst = 3;
         assert_eq!(
-            next_period(Some(sent), sent + BURST_INTERVAL, &mut burst, false, &mut Some(sent)),
+            next_period(
+                Some(sent),
+                sent + BURST_INTERVAL,
+                &mut burst,
+                false,
+                &mut Some(sent)
+            ),
             BURST_INTERVAL
         );
         assert_eq!(burst, 3);
@@ -261,9 +286,27 @@ mod tests {
         let start = Instant::now();
         let mut refill = Some(start);
         let mut burst = 0;
-        assert_eq!(next_period(Some(start), start + BURST_MIN_SPACING - Duration::from_millis(1), &mut burst, true, &mut refill), PARKED_TRICKLE);
+        assert_eq!(
+            next_period(
+                Some(start),
+                start + BURST_MIN_SPACING - Duration::from_millis(1),
+                &mut burst,
+                true,
+                &mut refill
+            ),
+            PARKED_TRICKLE
+        );
         assert_eq!(burst, 0);
-        assert_eq!(next_period(Some(start), start + BURST_MIN_SPACING, &mut burst, true, &mut refill), BURST_INTERVAL);
+        assert_eq!(
+            next_period(
+                Some(start),
+                start + BURST_MIN_SPACING,
+                &mut burst,
+                true,
+                &mut refill
+            ),
+            BURST_INTERVAL
+        );
         assert_eq!(burst, BURST_FRAMES);
         assert_eq!(refill, Some(start + BURST_MIN_SPACING));
     }
