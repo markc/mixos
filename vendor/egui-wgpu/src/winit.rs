@@ -814,7 +814,9 @@ impl Painter {
                 &screen_descriptor,
             );
 
-            if !capture_data.is_empty() && let Some(capture_state) = &mut self.screen_capture_state {
+            if !capture_data.is_empty()
+                && let Some(capture_state) = &mut self.screen_capture_state
+            {
                 capture_buffer = Some(capture_state.copy_textures(
                     &render_state.device,
                     output_frame.as_ref(),

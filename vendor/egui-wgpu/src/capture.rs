@@ -211,7 +211,11 @@ impl CaptureState {
         };
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
             if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
-                eprintln!("offtrace mapped {:?} after {:?}", result, trace_start.elapsed());
+                eprintln!(
+                    "offtrace mapped {:?} after {:?}",
+                    result,
+                    trace_start.elapsed()
+                );
             }
             if let Err(err) = result {
                 log::error!("Failed to map buffer for reading: {err}");
@@ -230,9 +234,24 @@ impl CaptureState {
             // Mapped readback memory can be uncached on integrated GPUs. Copy it
             // in bulk before swizzling: scalar per-channel reads directly from
             // that memory can take seconds for a desktop-sized capture.
-            let bytes = mapped_range.to_vec();
+            // Small, fixed-width copies avoid libc's large-copy REP MOVSB path,
+            // which reads write-combined GPU mappings very slowly on some x86 GPUs.
+            // Each complete chunk can instead compile to vector loads/stores.
+            let mut bytes = vec![0; mapped_range.len()];
+            let mut source = mapped_range.chunks_exact(128);
+            let mut target = bytes.chunks_exact_mut(128);
+            for (src, dst) in source.by_ref().zip(target.by_ref()) {
+                let src: &[u8; 128] = src.try_into().unwrap();
+                let dst: &mut [u8; 128] = dst.try_into().unwrap();
+                *dst = *src;
+            }
+            target.into_remainder().copy_from_slice(source.remainder());
             if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
-                eprintln!("offtrace copied {} bytes after {:?}", bytes.len(), trace_start.elapsed());
+                eprintln!(
+                    "offtrace copied {} bytes after {:?}",
+                    bytes.len(),
+                    trace_start.elapsed()
+                );
             }
             drop(mapped_range);
             buffer.unmap();

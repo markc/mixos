@@ -21,6 +21,6 @@ fn hidden_window_vendor_patch_guard() {
     assert!(painter.contains("let capture = offscreen || !capture_data.is_empty()"));
     assert!(painter.contains("Failed to poll offscreen screenshot"));
     assert!(painter.contains("tests/desktop/offscreen_gpu.rs"));
-    assert!(painter.contains("if !capture_data.is_empty() && let Some(capture_state)"));
+    assert!(painter.contains("if !capture_data.is_empty()\n                && let Some(capture_state)"));
     assert!(painter.contains("sync_channel::<wgpu::Device>(8)"));
 }

@@ -27,9 +27,7 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
 #[test]
 fn hidden_window_capture_without_surface() {
     let config = WgpuConfiguration {
-        wgpu_setup: crate::WgpuSetup::CreateNew(
-            crate::WgpuSetupCreateNew::without_display_handle(),
-        ),
+        wgpu_setup: crate::WgpuSetup::CreateNew(crate::WgpuSetupCreateNew::without_display_handle()),
         ..Default::default()
     };
     let options = RendererOptions::default();

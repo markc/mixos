@@ -870,7 +870,11 @@ impl Drive {
             && ctx.data(|data| data.get_temp::<bool>(egui::Id::unique("eframe.offscreen_capture")))
                 == Some(false)
         {
-            return Some(refusal(id, "NOT_SHOWN", "this renderer cannot capture a hidden window: show the window first"));
+            return Some(refusal(
+                id,
+                "NOT_SHOWN",
+                "this renderer cannot capture a hidden window: show the window first",
+            ));
         }
         // A hidden window runs no passes, so its input would never be read.
         if command_name != "ui.capture" && ctx.input(|i| i.viewport().visible() == Some(false)) {
@@ -1736,6 +1740,8 @@ fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
     let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), width, height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
+    // Interactive captures favour latency over the smallest possible file.
+    encoder.set_compression(png::Compression::Fast);
     let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
     let data: Vec<u8> = image
         .pixels
@@ -2203,7 +2209,11 @@ mod tests {
         let (ctx, _temp) = capture_context();
         ctx.data_mut(|data| data.insert_temp(egui::Id::unique("eframe.offscreen_capture"), false));
         let mut input = RawInput::default();
-        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().minimized = Some(true);
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .minimized = Some(true);
         ctx.run_ui(input, |_| {}).drop_without_applying_deltas();
         let answer = request(&ctx, 1, "ui.capture", &json!({})).unwrap();
         assert_eq!(answer.body["error_code"], "NOT_SHOWN");
