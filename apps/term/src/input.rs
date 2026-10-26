@@ -458,8 +458,10 @@ mod tests {
         assert_eq!(codes(&egui::Event::Copy), [3]);
         assert_eq!(codes(&egui::Event::Cut), [24]);
         assert_eq!(codes(&egui::Event::Paste("x".into())), [22]);
-        let image = egui::Event::PasteImage(std::sync::Arc::new(
-            egui::ColorImage::filled([1, 1], egui::Color32::WHITE)));
+        let image = egui::Event::PasteImage(std::sync::Arc::new(egui::ColorImage::filled(
+            [1, 1],
+            egui::Color32::WHITE,
+        )));
         assert_eq!(codes(&image), [22]);
         assert!(matches!(clipboard_event(&image, ctrl_shift()),
             Some(Clipboard::Keys(keys)) if keys.iter().copied().flat_map(encode).collect::<Vec<_>>() == [22]));

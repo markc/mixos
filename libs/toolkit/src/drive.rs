@@ -265,7 +265,9 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
             .get(&std::thread::current().id())
             .is_none_or(Vec::is_empty);
         drive.finish_capture();
-        for child in drive.children.values_mut() { child.finish_capture(); }
+        for child in drive.children.values_mut() {
+            child.finish_capture();
+        }
         let input_quiet_since = drive.input_quiet_since.get_or_insert(now);
         let quiet = now.saturating_duration_since(*input_quiet_since);
         drive.refuse_unshown_captures(ctx, now, egui::ViewportId::ROOT);
@@ -1250,7 +1252,7 @@ impl Drive {
                     ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |image| {
                         completed.lock().unwrap().push((tag, image));
                         // App::logic runs on the root even for child captures.
-                    ctx.request_repaint_of(egui::ViewportId::ROOT);
+                        ctx.request_repaint_of(egui::ViewportId::ROOT);
                     }));
                 let deadline = Instant::now() + self.options.capture_timeout;
                 (
@@ -1271,7 +1273,11 @@ impl Drive {
 
     fn finish_capture(&mut self) {
         self.receive_capture();
-        if self.running.as_ref().is_some_and(|r| r.steps.is_empty() && r.answer.is_some()) {
+        if self
+            .running
+            .as_ref()
+            .is_some_and(|r| r.steps.is_empty() && r.answer.is_some())
+        {
             let running = self.running.take().unwrap();
             self.pending_captures.remove(&running.id);
             self.answers.push(running.answer.unwrap());
@@ -1280,7 +1286,9 @@ impl Drive {
 
     /// GPU readback can finish even while the next UI frame is withheld.
     fn receive_capture(&mut self) {
-        let Some(running) = &mut self.running else { return; };
+        let Some(running) = &mut self.running else {
+            return;
+        };
         if let Some(Step::Await {
             tag,
             path,
@@ -1843,11 +1851,15 @@ mod tests {
 
     fn requested_screenshot(ctx: &Context) -> egui::ScreenshotCallback {
         let output = ctx.run_ui(RawInput::default(), |_| {});
-        let callback = output.viewport_output.values().flat_map(|v| &v.commands)
+        let callback = output
+            .viewport_output
+            .values()
+            .flat_map(|v| &v.commands)
             .find_map(|c| match c {
                 ViewportCommand::Screenshot(callback) => Some(callback.clone()),
                 _ => None,
-            }).expect("capture requested a screenshot");
+            })
+            .expect("capture requested a screenshot");
         output.drop_without_applying_deltas();
         callback
     }
@@ -1970,11 +1982,21 @@ mod tests {
         let callback = requested_screenshot(&ctx);
         assert!(logic_at(&ctx, Instant::now() + INPUT_QUIET_PERIOD).is_empty());
         let duplicate = callback.clone();
-        callback.complete(std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)));
-        duplicate.complete(std::sync::Arc::new(ColorImage::filled([8, 9], egui::Color32::BLACK)));
+        callback.complete(std::sync::Arc::new(ColorImage::filled(
+            [4, 3],
+            egui::Color32::WHITE,
+        )));
+        duplicate.complete(std::sync::Arc::new(ColorImage::filled(
+            [8, 9],
+            egui::Color32::BLACK,
+        )));
         let pass = ctx.cumulative_pass_nr();
         let answers = logic(&ctx);
-        assert_eq!(ctx.cumulative_pass_nr(), pass, "completion needs no UI pass");
+        assert_eq!(
+            ctx.cumulative_pass_nr(),
+            pass,
+            "completion needs no UI pass"
+        );
         assert_eq!(answers.len(), 1);
         assert_eq!(answers[0].rc, 0);
         assert_eq!(answers[0].body["width"], 4);
@@ -1989,12 +2011,16 @@ mod tests {
         let callback = requested_screenshot(&ctx);
         let start = Instant::now();
         for seconds in 1..=5 {
-            ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+            ctx.run_ui(RawInput::default(), |_| {})
+                .drop_without_applying_deltas();
             let pass = start + Duration::from_secs(seconds);
             ctx.with_plugin(|drive: &mut Drive| drive.last_ui_pass = Some(pass));
             assert!(logic_at(&ctx, pass + Duration::from_millis(999)).is_empty());
         }
-        callback.complete(std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)));
+        callback.complete(std::sync::Arc::new(ColorImage::filled(
+            [4, 3],
+            egui::Color32::WHITE,
+        )));
         assert_eq!(logic(&ctx)[0].rc, 0);
         assert!(temp.path().join("demo/captures/trickle.png").is_file());
     }

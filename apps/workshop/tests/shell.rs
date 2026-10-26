@@ -540,7 +540,11 @@ fn the_services_split_keeps_its_share_beside_the_right_dock() {
         wait(&mut rig, &[id]);
         rig.h.run_steps(5);
         let panel = |name| {
-            egui::containers::panel::PanelState::load(&rig.h.ctx, egui::ViewportId::ROOT.root_ui_id().with(name)).unwrap()
+            egui::containers::panel::PanelState::load(
+                &rig.h.ctx,
+                egui::ViewportId::ROOT.root_ui_id().with(name),
+            )
+            .unwrap()
         };
         let remaining = 980.0 - panel("traffic-right").size().x;
         assert!((panel("services").size().x / remaining - split).abs() < 0.02);
