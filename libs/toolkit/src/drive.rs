@@ -387,6 +387,7 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                 // child capture is checked before the child deadline.
                 ctx.request_repaint();
                 ctx.request_repaint_after(CAPTURE_QUIET_PERIOD);
+                ctx.request_repaint_after(child.options.capture_timeout);
                 None
             })
             .unwrap_or_else(|| {
@@ -1784,6 +1785,8 @@ mod tests {
                 let answer = request(ctx, 1, "ui.capture", &json!({})).unwrap();
                 assert_eq!(answer.rc, 10);
                 assert_eq!(answer.body["error_code"], "NOT_SHOWN");
+                assert!(answer.body["message"].as_str().unwrap().contains("minimised or hidden"));
+                assert!(!answer.body["message"].as_str().unwrap().contains("0 ms"));
                 assert!(!pending(ctx));
             });
         }
@@ -1855,7 +1858,6 @@ mod tests {
         let answers = logic_at(&ctx, start + CAPTURE_QUIET_PERIOD);
         assert_eq!(answers.len(), 1);
         assert_eq!(answers[0].rc, 10);
-        assert_eq!(answers[0].rc, 10);
         assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
     }
 
@@ -1883,6 +1885,40 @@ mod tests {
         assert_eq!(answers.len(), 1);
         assert_eq!(answers[0].rc, 0);
         assert!(logic(&ctx).is_empty());
+    }
+
+    #[test]
+    fn child_screenshot_await_schedules_root_backstop_wake() {
+        let (ctx, _temp) = capture_context();
+        // Consume initial repaint requests so the callback below observes only logic.
+        for _ in 0..3 {
+            let _output = ctx.run_logic(&RawInput::default(), |_| {});
+        }
+        let delays = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = delays.clone();
+        ctx.set_request_repaint_callback(move |request| {
+            if request.viewport_id == egui::ViewportId::ROOT {
+                recorded.lock().unwrap().push(request.delay);
+            }
+        });
+        let child = egui::ViewportId::from_hash_of("await-child");
+        let now = Instant::now();
+        let budget = Duration::from_millis(200);
+        ctx.with_plugin(|drive: &mut Drive| {
+            drive.children.insert(child, Box::new(Drive {
+                running: Some(Running {
+                    id: 7,
+                    steps: VecDeque::from([Step::Await {
+                        tag: 7, path: PathBuf::from("unused.png"), deadline: now + budget,
+                    }]),
+                    report: Report::Ui, extra: json!({}), answer: None,
+                    down: Vec::new(), trace: None, pass_events: Vec::new(),
+                }),
+                ..Drive::default()
+            }));
+        });
+        assert!(logic_at(&ctx, now).is_empty());
+        assert!(delays.lock().unwrap().iter().any(|delay| *delay == budget));
     }
 
     #[test]

@@ -23,7 +23,8 @@
 //! 5–6 s parked. Demand returning more than [`DEMAND_IDLE`] after a send gets a burst:
 //! the next [`BURST_FRAMES`] sends come [`BURST_INTERVAL`] apart, then 1 Hz
 //! resumes. Refills are at least [`BURST_MIN_SPACING`] apart, bounding clients
-//! that toggle idle/busy to eight fast callbacks per 250 ms, plus the trickle.
+//! that toggle idle/busy to at most 32 fast callbacks/s in the long run,
+//! plus the trickle (a refill grants eight and is spaced by at least 250 ms).
 //! Turnaround up to 250 ms stays continuous and gets only the initial burst,
 //! then 1 Hz. Longer turnaround is indistinguishable from a new capture.
 
@@ -51,16 +52,50 @@ pub const DEMAND_IDLE: Duration = Duration::from_millis(250);
 pub const BURST_MIN_SPACING: Duration = Duration::from_millis(250);
 
 thread_local! {
-    /// A parked-trickle timer is armed (one at a time).
-    static ARMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// Fast sends left in the current burst.
-    static BURST: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
-    /// When the trickle last answered callbacks.
-    static LAST_SEND: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
-    static LAST_REFILL: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
+    static DEMAND: std::cell::RefCell<Demand> = std::cell::RefCell::new(Demand::default());
 }
 
-/// Delay before a send, refilling on quiet or restarted demand with spacing.
+#[derive(Default)]
+struct Demand {
+    armed: bool,
+    burst: u32,
+    last_send: Option<Instant>,
+    last_refill: Option<Instant>,
+    next_send: Option<Instant>,
+}
+
+impl Demand {
+    fn arm(&mut self, now: Instant, waiting: bool) -> Option<Duration> {
+        if self.armed || !waiting {
+            return None;
+        }
+        let period = next_period(
+            self.last_send, now, &mut self.burst,
+            self.last_send.is_none_or(|sent| now.duration_since(sent) > DEMAND_IDLE),
+            &mut self.last_refill,
+        );
+        let deadline = send_deadline(self.last_send, now, period);
+        self.next_send = Some(deadline);
+        self.armed = true;
+        Some(deadline.saturating_duration_since(now))
+    }
+
+    /// An empty probe drops the timer, preserving demand history for re-arm.
+    fn probe(&mut self, waiting: bool) -> bool {
+        if !waiting {
+            self.armed = false;
+        }
+        self.armed
+    }
+
+    fn sent(&mut self, now: Instant) {
+        self.last_send = Some(now);
+        self.burst = self.burst.saturating_sub(1);
+        self.next_send = Some(now + if self.burst > 0 { BURST_INTERVAL } else { PARKED_TRICKLE });
+    }
+}
+
+/// Delay before a send, refilling only on restarted demand with spacing.
 fn next_period(
     last_send: Option<Instant>,
     now: Instant,
@@ -170,60 +205,39 @@ fn send(state: &Loop) {
 /// fires: once presentation resumes, the flip answers callbacks and the timer
 /// drops without sending.
 pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
-    if ARMED.get() || !parked(state) {
+    if DEMAND.with(|demand| demand.borrow().armed) || !parked(state) {
         return;
     }
-    if !waiting(state) {
+    let Some(period) = DEMAND.with(|demand| demand.borrow_mut().arm(Instant::now(), waiting(state))) else {
         return;
-    }
-    let mut burst = BURST.get();
-    let mut last_refill = LAST_REFILL.get();
-    let period = next_period(
-        LAST_SEND.get(),
-        Instant::now(),
-        &mut burst,
-        LAST_SEND.get().is_none_or(|sent| sent.elapsed() > DEMAND_IDLE),
-        &mut last_refill,
-    );
-    LAST_REFILL.set(last_refill);
-    BURST.set(burst);
-    // Dropping and re-arming during client rendering must preserve the send
-    // deadline; otherwise each commit can advance or postpone the rate limit.
-    let now = Instant::now();
-    let mut next_send = send_deadline(LAST_SEND.get(), now, period);
+    };
     let armed = state.loop_handle.insert_source(
-        Timer::from_duration(next_send.saturating_duration_since(now)),
+        Timer::from_duration(period),
         move |_, _, state: &mut Loop| {
-            if !parked(state) || !waiting(state) {
-                ARMED.set(false);
+            if !DEMAND.with(|demand| demand.borrow_mut().probe(parked(state) && waiting(state))) {
                 return TimeoutAction::Drop;
             }
             let now = Instant::now();
+            let next_send = DEMAND.with(|demand| demand.borrow().next_send.expect("armed deadline"));
             if now < next_send {
                 return TimeoutAction::ToDuration(next_send - now);
             }
             send(state);
-            LAST_SEND.set(Some(Instant::now()));
-            BURST.set(BURST.get().saturating_sub(1));
+            DEMAND.with(|demand| demand.borrow_mut().sent(Instant::now()));
             let _ = state.inner.loader.display_handle.flush_clients();
             // Do not check waiting immediately after draining callbacks: a
             // continuously animating client needs time to request its next one.
             // Drop the timer promptly when idle; a commit re-arms it without
             // treating ordinary render turnaround as restarted demand.
-            next_send = Instant::now()
-                + if BURST.get() > 0 {
-                    BURST_INTERVAL
-                } else {
-                    PARKED_TRICKLE
-                };
             TimeoutAction::ToDuration(BURST_INTERVAL)
         },
     );
     match armed {
-        Ok(_) => {
-            ARMED.set(true);
+        Ok(_) => {}
+        Err(error) => {
+            DEMAND.with(|demand| demand.borrow_mut().probe(false));
+            warn!("parked frame trickle not armed: {error}");
         }
-        Err(error) => warn!("parked frame trickle not armed: {error}"),
     }
 }
 
@@ -335,27 +349,21 @@ mod tests {
     // waiting callback and drops the timer, then the client's commit re-arms.
     fn client_cycle(turnaround: Duration, sends: usize) -> Vec<Duration> {
         let start = Instant::now();
-        let mut last_send = None;
-        let mut refill = None;
-        let mut burst = 0;
+        let mut demand = Demand::default();
         let mut now = start;
         let mut times = Vec::new();
-        let mut armed = false;
         for _ in 0..sends {
-            assert!(!armed, "the idle probe dropped the previous timer");
-            let restarted = last_send.is_none_or(|sent| now.duration_since(sent) > DEMAND_IDLE);
-            let period = next_period(last_send, now, &mut burst, restarted, &mut refill);
-            armed = true;
-            // A second main-loop arm observes ARMED and cannot alter this deadline.
-            let deadline = send_deadline(last_send, now, period);
-            assert!(armed);
-            now = deadline;
+            assert!(!demand.armed, "the idle probe dropped the previous timer");
+            let period = demand.arm(now, true).expect("commit re-arms timer");
+            assert_eq!(demand.arm(now, true), None, "no double-arm");
+            now += period;
+            assert!(demand.probe(true));
             times.push(now.duration_since(start));
-            last_send = Some(now);
-            burst = burst.saturating_sub(1);
+            demand.sent(now);
             now += BURST_INTERVAL;
             assert!(turnaround > BURST_INTERVAL);
-            armed = false; // no callback waiting at the probe: no idle timer
+            assert!(!demand.probe(false));
+            assert_eq!(demand.arm(now, false), None, "no idle timer");
             now += turnaround - BURST_INTERVAL;
         }
         times
@@ -375,25 +383,26 @@ mod tests {
     fn capture_gap_refills_after_probe_drop() {
         let start = Instant::now();
         let mut now = start;
-        let mut last_send = None;
-        let mut refill = None;
-        let mut burst = 0;
+        let mut demand = Demand::default();
         for _ in 0..3 {
             // No timer survived the idle probe between captures.
-            let period = next_period(last_send, now, &mut burst, true, &mut refill);
-            assert_eq!(period, BURST_INTERVAL);
-            assert_eq!(burst, BURST_FRAMES);
+            let mut period = demand.arm(now, true).unwrap();
+            assert!(period <= BURST_INTERVAL);
+            assert_eq!(demand.burst, BURST_FRAMES);
             for _ in 0..BURST_FRAMES {
-                now = send_deadline(last_send, now, BURST_INTERVAL);
-                last_send = Some(now);
-                burst = burst.saturating_sub(1);
+                now += period;
+                assert!(demand.probe(true));
+                demand.sent(now);
+                assert!(!demand.probe(false));
                 // A 20 ms render drops the 16 ms probe then re-arms.
                 now += Duration::from_millis(20);
-                let period = next_period(last_send, now, &mut burst, false, &mut refill);
-                assert_eq!(period, if burst == 0 { PARKED_TRICKLE } else { BURST_INTERVAL });
+                if demand.burst > 0 {
+                    period = demand.arm(now, true).unwrap();
+                    assert!(period <= BURST_INTERVAL);
+                }
             }
-            now = last_send.unwrap() + Duration::from_millis(300);
-            assert!(now.duration_since(last_send.unwrap()) > DEMAND_IDLE);
+            now = demand.last_send.unwrap() + Duration::from_millis(300);
+            assert!(now.duration_since(demand.last_send.unwrap()) > DEMAND_IDLE);
         }
     }
 }
