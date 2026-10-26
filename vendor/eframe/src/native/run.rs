@@ -413,6 +413,9 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
         window_id: WindowId,
         event: winit::event::WindowEvent,
     ) {
+        if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
+            eprintln!("offtrace event {event:?}");
+        }
         profiling::function_scope!(egui_winit::short_window_event_description(&event));
 
         // Nb: Make sure this guard is dropped after this function returns.
