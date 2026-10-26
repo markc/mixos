@@ -713,7 +713,6 @@ fn location_bar(ui: &mut Ui, app: &App, pane: PaneId, active: bool, events: &mut
                         }
                         events.push(UiEvent::LocationFocused);
                     }
-                    let response = response.accessible_name(label("prop-path"));
                     if response.changed() {
                         events.push(UiEvent::LocationText(text));
                     }

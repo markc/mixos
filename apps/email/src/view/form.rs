@@ -80,6 +80,7 @@ fn line(
     let caption = ui.label(crate::label(label));
     let mut buffer = value.to_owned();
     if field::text(ui, &mut buffer, hint, 300.0_f32.max(ui.available_width()))
+        .accessible_name(crate::label(label))
         .labelled_by(caption.id)
         .changed()
     {
