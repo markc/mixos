@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Read-state admission on the existing enrolled connection, never legacy Bus.
+//! Status and execution on the enrolled connection for every Bus caller.
 use crate::session_state::{self, Source, View};
-use ::bus::native_client::session::Hello;
 use ::bus::native_client::session::boottime_ms;
 use ::bus::native_client::{VerifiedCommand, VerifiedConnection};
 use ::bus::native_session::*;
@@ -12,6 +11,22 @@ use std::time::Duration;
 const MAX_REQUEST: usize = 2048;
 const ADMISSION: Duration = Duration::from_secs(2);
 pub(crate) const COMMAND: &str = "shell.status";
+
+fn stamped(command: &::bus::native_client::IncomingCommand) -> bool {
+    let origins: Vec<_> = command
+        .headers
+        .iter()
+        .filter(|(key, _)| key.eq_ignore_ascii_case("broker_origin"))
+        .map(|(_, value)| value.as_str())
+        .collect();
+    origins == ["mesh"]
+        || (origins == ["local"]
+            && !command.headers.keys().any(|key| {
+                ["source_peer", "permissions", "signed_ident"]
+                    .iter()
+                    .any(|name| key.eq_ignore_ascii_case(name))
+            }))
+}
 
 /// Discovery is static public metadata: never serialise session state here.
 fn manifest() -> Vec<::bus::CommandDescriptor> {
@@ -32,35 +47,8 @@ fn manifest() -> Vec<::bus::CommandDescriptor> {
     })
     .collect()
 }
-/// Concurrent status dispatches the resident will carry at once, and the share
-/// of them any caller other than this pane's own Term may hold.
-const DISPATCH_SLOTS: usize = 4;
-pub(crate) const SHARED_SLOTS: usize = DISPATCH_SLOTS - 1;
-
-/// Scheduling class only, never authority: `admitted` still re-runs the whole
-/// policy on the reserved slot. Without the reservation any same-UID process
-/// can hold every slot and starve the owning Term into uniform refusals.
-fn owning_term(event: &VerifiedCommand, bound: &SessionRecord) -> bool {
-    event.trusted_context().is_some_and(|principal| {
-        principal.broker_epoch == bound.broker_epoch
-            && principal.unix_uid == bound.owner_uid
-            && principal.owner_node == bound.owner_node
-            && principal.session.as_ref().is_some_and(|caller| {
-                caller.role == Role::Term
-                    && Some(caller.instance_id) == bound.parent_instance
-                    && Some(caller.incarnation) == bound.parent_incarnation
-            })
-    })
-}
-
-/// How many of the resident's dispatch slots this caller may occupy.
-pub(crate) fn dispatch_slots(event: &VerifiedCommand, bound: &SessionRecord) -> usize {
-    if owning_term(event, bound) {
-        DISPATCH_SLOTS
-    } else {
-        SHARED_SLOTS
-    }
-}
+/// Concurrent status dispatches, bounded equally for every caller.
+pub(crate) const DISPATCH_SLOTS: usize = 4;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -125,72 +113,8 @@ struct Reply {
     freshness: &'static str,
 }
 
-/// Pure policy step, called only with a broker-authenticated stamp. Bound
-/// principals never fall back to ambient owner authority on the same connection.
-///
-/// `capability` is the one the command family requires — `ReadState` for a
-/// snapshot, `Execute` for an admission. It is a parameter rather than a
-/// constant because a reader must never be able to reach the execute surface by
-/// holding the capability that answers questions.
-pub(crate) fn permitted(
-    principal: &BrokerPrincipal,
-    target: &SessionRecord,
-    capability: Capability,
-) -> bool {
-    if principal.broker_epoch != target.broker_epoch
-        || principal.unix_uid != target.owner_uid
-        || principal.owner_node != target.owner_node
-    {
-        return false;
-    }
-    match (principal.assurance, &principal.session) {
-        (Assurance::LocalUnix, None) => target.policy == Policy::DefaultOpen,
-        (Assurance::SessionBound, Some(caller)) => {
-            let parent = caller.role == Role::Term
-                && Some(caller.instance_id) == target.parent_instance
-                && Some(caller.incarnation) == target.parent_incarnation
-                && caller.capabilities.contains(&capability);
-            let own_pane = caller.role == Role::PaneShell
-                && caller.record_id == target.record_id
-                && caller.instance_id == target.instance_id
-                && caller.incarnation == target.incarnation
-                && caller.binding_generation == target.binding_generation
-                && caller.pane_id == target.pane_id
-                && caller.pane_generation == target.pane_generation
-                && caller.capabilities.contains(&capability);
-            parent || own_pane
-        }
-        _ => false,
-    }
-}
-
-pub(crate) async fn admitted(
-    connection: &VerifiedConnection,
-    hello: &Hello,
-    principal: &BrokerPrincipal,
-    bound: &SessionRecord,
-    capability: Capability,
-) -> bool {
-    if !permitted(principal, bound, capability) {
-        return false;
-    }
-    // Fresh correlated checks refresh the delivered caller's dependency. No cached
-    // discovery snapshot or lease_remaining_ms from the request is authority.
-    let caller_lease = if let Some(caller) = &principal.session {
-        match connection
-            .session_lease_check(RecordRef {
-                record_id: caller.record_id,
-                incarnation: caller.incarnation,
-                binding_generation: caller.binding_generation,
-            })
-            .await
-        {
-            Ok(deadline) => Some(deadline),
-            Err(_) => return false,
-        }
-    } else {
-        None
-    };
+/// Check the recipient's current attachment, independently of the caller.
+pub(crate) async fn admitted(connection: &VerifiedConnection, bound: &SessionRecord) -> bool {
     // lease.check is recipient-only: broker delivery creates a dependency on
     // the CALLER, not on ourselves. Re-read our own attachment by record ID,
     // retaining request-start time so latency cannot extend its reported lease.
@@ -202,11 +126,9 @@ pub(crate) async fn admitted(
     };
     current.record.state == BindingState::Attached
         && Source::from(&current.record) == Source::from(bound)
-        && current.record.policy == bound.policy
         && current.record.lease_remaining_ms.is_some_and(|remaining| {
             boottime_ms().is_ok_and(|now| now.saturating_sub(started) < remaining.0)
         })
-        && caller_lease.is_none_or(|lease| lease.is_live(hello).unwrap_or(false))
 }
 
 pub(crate) async fn help(connection: &VerifiedConnection, event: &VerifiedCommand) {
@@ -221,7 +143,6 @@ pub(crate) async fn help(connection: &VerifiedConnection, event: &VerifiedComman
 /// Runs in the resident's bounded sibling task set, never in its receive arm.
 pub(crate) async fn dispatch(
     connection: &VerifiedConnection,
-    hello: &Hello,
     bound: &SessionRecord,
     event: &VerifiedCommand,
 ) {
@@ -233,40 +154,24 @@ pub(crate) async fn dispatch(
         help(connection, event).await;
         return;
     }
-    let Some(principal) = event.trusted_context() else {
+    if !stamped(command) {
         refuse(connection, event).await;
         return;
-    };
-    // One capability per command family. Reading the shell's state and driving it
-    // are different authorities, so an execute command is admitted against
-    // `Execute` and a caller holding only `ReadState` never reaches it.
-    //
-    // Unknown invocations are admitted against the weakest capability so
-    // unadmitted callers receive the same uniform refusal for every invocation.
-    // HELP above is public static metadata; it exposes no admission state or
-    // authority and never changes permission to invoke a command.
+    }
     let capability = match command.command.as_str() {
         crate::session_execute::SUBMIT
         | crate::session_execute::RESULT
         | crate::session_execute::CANCEL
-        // Tasks are the same authority: an isolated task is still this
-        // principal causing this shell to run code, and the isolation is about
-        // the process, not about who may ask for one.
         | crate::session_execute::TASK_SUBMIT
         | crate::session_execute::TASK_RESULT
         | crate::session_execute::TASK_CANCEL
-        // The advertised deferrals are gated too, so their UNSUPPORTED is only
-        // visible to a caller that could otherwise have used them.
         | crate::session_execute::TASK_WATCH
         | crate::session_execute::TASK_LIST => Capability::Execute,
         _ => Capability::ReadState,
     };
-    if !tokio::time::timeout(
-        ADMISSION,
-        admitted(connection, hello, principal, bound, capability),
-    )
-    .await
-    .unwrap_or(false)
+    if !tokio::time::timeout(ADMISSION, admitted(connection, bound))
+        .await
+        .unwrap_or(false)
     {
         refuse(connection, event).await;
         return;
@@ -274,7 +179,7 @@ pub(crate) async fn dispatch(
     let response = if command.command != COMMAND && capability != Capability::Execute {
         (10, "{\"error_code\":\"UNSUPPORTED\"}".to_owned())
     } else if capability == Capability::Execute {
-        crate::session_execute::dispatch(connection, hello, bound, event, principal).await
+        crate::session_execute::dispatch(connection, bound, event).await
     } else {
         let request = (command.body.len() <= MAX_REQUEST)
             .then(|| serde_json::from_str::<Request>(&command.body).ok())
@@ -340,6 +245,36 @@ pub(crate) async fn refuse(connection: &VerifiedConnection, event: &VerifiedComm
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provenance_accepts_local_and_mesh_without_a_principal() {
+        let mut command = ::bus::native_client::IncomingCommand {
+            generation: 0,
+            from: String::new(),
+            command: COMMAND.into(),
+            id: Some("1".into()),
+            args: serde_json::Value::Null,
+            body: "{}".into(),
+            headers: Default::default(),
+        };
+        assert!(!stamped(&command));
+        command
+            .headers
+            .insert("broker_origin".into(), "local".into());
+        assert!(stamped(&command));
+        command
+            .headers
+            .insert("source_peer".into(), "peer.example".into());
+        assert!(!stamped(&command));
+        command
+            .headers
+            .insert("broker_origin".into(), "mesh".into());
+        assert!(stamped(&command));
+        command
+            .headers
+            .insert("Broker_Origin".into(), "local".into());
+        assert!(!stamped(&command));
+    }
 
     #[test]
     fn help_contains_only_public_command_metadata() {
@@ -408,112 +343,6 @@ mod tests {
             lease_remaining_ms: Some(DecimalU64(1000)),
         }
     }
-    fn ambient() -> BrokerPrincipal {
-        BrokerPrincipal {
-            version: PrincipalVersion::V1,
-            assurance: Assurance::LocalUnix,
-            owner_node: "alpha".into(),
-            unix_uid: 1000,
-            unix_gid: 1000,
-            peer_pid: 1,
-            broker_epoch: HexBytes([1; 16]),
-            connection_id: HexBytes([7; 16]),
-            session: None,
-        }
-    }
-    #[test]
-    fn policy_cross_uid_epoch_and_bound_scope_never_fall_back() {
-        let mut target = target();
-        let mut caller = ambient();
-        assert!(!permitted(&caller, &target, Capability::ReadState));
-        target.policy = Policy::DefaultOpen;
-        assert!(permitted(&caller, &target, Capability::ReadState));
-        caller.unix_uid += 1;
-        assert!(!permitted(&caller, &target, Capability::ReadState));
-        caller.unix_uid -= 1;
-        caller.broker_epoch = HexBytes([9; 16]);
-        assert!(!permitted(&caller, &target, Capability::ReadState));
-        caller.broker_epoch = target.broker_epoch;
-        caller.assurance = Assurance::SessionBound;
-        caller.session = Some(SessionIdentity {
-            record_id: target.record_id,
-            instance_id: target.instance_id,
-            incarnation: target.incarnation,
-            role: Role::PaneShell,
-            parent_instance: target.parent_instance,
-            parent_incarnation: target.parent_incarnation,
-            pane_id: target.pane_id,
-            pane_generation: target.pane_generation,
-            binding_generation: target.binding_generation,
-            capabilities: vec![Capability::ReadState],
-            lease_remaining_ms: DecimalU64(1000),
-        });
-        assert!(permitted(&caller, &target, Capability::ReadState));
-        target.policy = Policy::Restricted;
-        assert!(permitted(&caller, &target, Capability::ReadState));
-        caller.session.as_mut().unwrap().capabilities.clear();
-        assert!(!permitted(&caller, &target, Capability::ReadState));
-        target.policy = Policy::DefaultOpen;
-        assert!(!permitted(&caller, &target, Capability::ReadState));
-        caller
-            .session
-            .as_mut()
-            .unwrap()
-            .capabilities
-            .push(Capability::ReadState);
-        caller.session.as_mut().unwrap().pane_id = Some(DecimalU64(99));
-        assert!(!permitted(&caller, &target, Capability::ReadState));
-        caller.session.as_mut().unwrap().pane_id = target.pane_id;
-        caller.session.as_mut().unwrap().binding_generation = DecimalU64(1);
-        assert!(!permitted(&caller, &target, Capability::ReadState));
-    }
-
-    /// Reading the shell's state and driving it are different authorities. A
-    /// caller holding only ReadState must not reach the execute family, and a
-    /// caller holding only Execute must not be able to read snapshots — the
-    /// capability is a parameter precisely so neither can stand in for the
-    /// other.
-    #[test]
-    fn read_authority_is_not_execute_authority_in_either_direction() {
-        let target = target();
-        let mut caller = ambient();
-        caller.assurance = Assurance::SessionBound;
-        caller.session = Some(SessionIdentity {
-            record_id: HexBytes([10; 16]),
-            instance_id: target.parent_instance.unwrap(),
-            incarnation: target.parent_incarnation.unwrap(),
-            role: Role::Term,
-            parent_instance: None,
-            parent_incarnation: None,
-            pane_id: None,
-            pane_generation: None,
-            binding_generation: DecimalU64(1),
-            capabilities: vec![Capability::ReadState],
-            lease_remaining_ms: DecimalU64(1000),
-        });
-        assert!(permitted(&caller, &target, Capability::ReadState));
-        assert!(!permitted(&caller, &target, Capability::Execute));
-        caller.session.as_mut().unwrap().capabilities = vec![Capability::Execute];
-        assert!(permitted(&caller, &target, Capability::Execute));
-        assert!(!permitted(&caller, &target, Capability::ReadState));
-        // The own-pane arm is held to the same split.
-        caller.session = Some(SessionIdentity {
-            record_id: target.record_id,
-            instance_id: target.instance_id,
-            incarnation: target.incarnation,
-            role: Role::PaneShell,
-            parent_instance: target.parent_instance,
-            parent_incarnation: target.parent_incarnation,
-            pane_id: target.pane_id,
-            pane_generation: target.pane_generation,
-            binding_generation: target.binding_generation,
-            capabilities: vec![Capability::ReadState],
-            lease_remaining_ms: DecimalU64(1000),
-        });
-        assert!(permitted(&caller, &target, Capability::ReadState));
-        assert!(!permitted(&caller, &target, Capability::Execute));
-    }
-
     #[test]
     fn bounded_typed_request_rejects_unknown_fields_and_bad_counters() {
         let target = Source::from(&target());
@@ -524,33 +353,5 @@ mod tests {
         value.as_object_mut().unwrap().remove("after_sequence");
         value["command"] = serde_json::json!("execute");
         assert!(serde_json::from_value::<Request>(value).is_err());
-    }
-
-    #[test]
-    fn parent_linkage_without_read_state_is_not_authority() {
-        let target = target();
-        let mut caller = ambient();
-        caller.assurance = Assurance::SessionBound;
-        caller.session = Some(SessionIdentity {
-            record_id: HexBytes([10; 16]),
-            instance_id: target.parent_instance.unwrap(),
-            incarnation: target.parent_incarnation.unwrap(),
-            role: Role::Term,
-            parent_instance: None,
-            parent_incarnation: None,
-            pane_id: None,
-            pane_generation: None,
-            binding_generation: DecimalU64(1),
-            capabilities: Vec::new(),
-            lease_remaining_ms: DecimalU64(1000),
-        });
-        assert!(!permitted(&caller, &target, Capability::ReadState));
-        caller
-            .session
-            .as_mut()
-            .unwrap()
-            .capabilities
-            .push(Capability::ReadState);
-        assert!(permitted(&caller, &target, Capability::ReadState));
     }
 }

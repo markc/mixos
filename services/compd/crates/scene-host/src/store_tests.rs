@@ -319,125 +319,91 @@ fn a_refused_load_publishes_a_zero_op_summary_with_its_diagnostics() {
 // ── ported SceneStore tests ──────────────────────────────────────────────
 
 #[test]
-fn managed_model_writes_require_loader_and_current_generation() {
+fn every_caller_can_patch_and_reload_managed_models_with_current_generation() {
     let mut store = SceneStore::default();
-    let mut caller = mount("scenes", 1);
-    let load = json!({"source": MODEL_SCENE, "model_generation": 7});
+    let mut loader = mount("scenes", 1);
+    let load = json!({"source":MODEL_SCENE,"model_generation":7});
     store
-        .request_mounted(SceneCommand::Load, "", &load, Some(&mut caller))
+        .request_mounted(SceneCommand::Load, "", &load, Some(&mut loader))
         .unwrap();
-    let patch =
-        json!({"scene":"model-test", "path":"model.caption", "value":"current", "generation":7});
-    store
-        .request_mounted(SceneCommand::Patch, "", &patch, Some(&mut caller))
-        .unwrap();
-    assert_eq!(
-        store.scenes["model-test"].tree.nodes["caption"].ports["text"],
-        "current"
-    );
-
-    // Equal tokens confer no authority to a direct behaviour or mesh caller.
     for other in ["scene-model-test", "peer/editor"] {
-        let mut caller = mount(other, 1);
-        let before = store.scenes["model-test"].tree.clone();
-        let revision = store.scenes["model-test"].revision;
+        let mut caller = mount(other, 2);
         for path in ["model", "model.caption"] {
-            let mut request = patch.clone();
-            request["path"] = json!(path);
-            request["value"] = if path == "model" {
-                json!({"caption":"bad"})
+            let value = if path == "model" {
+                json!({"caption":"changed"})
             } else {
-                json!("bad")
+                json!("changed")
             };
-            let error = store
-                .request_mounted(SceneCommand::Patch, "", &request, Some(&mut caller))
-                .unwrap_err();
-            assert_eq!(error["error_code"], "SCENE_MODEL_AUTHORITY");
-            assert_eq!(store.scenes["model-test"].tree, before);
-            assert_eq!(store.scenes["model-test"].revision, revision);
+            let patch = json!({"scene":"model-test","path":path,"value":value,"generation":7});
+            store
+                .request_mounted(SceneCommand::Patch, "", &patch, Some(&mut caller))
+                .unwrap();
+            assert_eq!(
+                store.scenes["model-test"].tree.nodes["caption"].ports["text"],
+                "changed"
+            );
         }
-        assert!(
-            store
-                .request_mounted(
-                    SceneCommand::Load,
-                    MODEL_SCENE,
-                    &Value::Null,
-                    Some(&mut caller)
-                )
-                .is_err()
-        );
-        assert!(
-            store
-                .request_mounted(SceneCommand::Load, "", &load, Some(&mut caller))
-                .is_err()
-        );
-    }
-    // A raw load cannot accidentally strip an existing fence, even by its owner.
-    assert!(
         store
             .request_mounted(
                 SceneCommand::Load,
                 MODEL_SCENE,
                 &Value::Null,
-                Some(&mut caller)
+                Some(&mut caller),
             )
-            .is_err()
-    );
+            .unwrap();
+        assert_eq!(store.scenes["model-test"].model_generation, Some(7));
+        assert_eq!(store.scenes["model-test"].owner(), Some("scenes"));
+        store
+            .request_mounted(SceneCommand::Load, "", &load, Some(&mut caller))
+            .unwrap();
+    }
+    // A principal-less store request is also accepted.
+    store.request(SceneCommand::Load, "", &load).unwrap();
     store
-        .request_mounted(
-            SceneCommand::Load,
+        .request(
+            SceneCommand::Patch,
             "",
-            &json!({"source":MODEL_SCENE,"model_generation":8}),
-            Some(&mut caller),
+            &json!({"scene":"model-test",
+        "path":"model.caption","value":"direct","generation":7}),
         )
         .unwrap();
     let revision = store.scenes["model-test"].revision;
-    for generation in [Value::Null, json!(7), json!("8")] {
-        let mut stale = patch.clone();
-        stale["generation"] = generation;
-        assert!(
-            store
-                .request_mounted(SceneCommand::Patch, "", &stale, Some(&mut caller))
-                .is_err()
-        );
+    for generation in [Value::Null, json!(6), json!("7")] {
+        let error = store
+            .request(
+                SceneCommand::Patch,
+                "",
+                &json!({"scene":"model-test",
+            "path":"model.caption","value":"stale","generation":generation}),
+            )
+            .unwrap_err();
+        assert_eq!(error["error_code"], "SCENE_MODEL_GENERATION");
         assert_eq!(store.scenes["model-test"].revision, revision);
     }
-    let mut current = patch;
-    current["generation"] = json!(8);
     store
-        .request_mounted(SceneCommand::Patch, "", &current, Some(&mut caller))
-        .unwrap();
-    store
-        .request_mounted(
-            SceneCommand::Patch,
-            "",
-            &json!({"scene":"model-test","path":"caption.text","value":"layout"}),
-            Some(&mut caller),
-        )
-        .unwrap();
-    assert_eq!(store.scenes["model-test"].model_generation, Some(8));
-    store
-        .request_mounted(
+        .request(
             SceneCommand::Load,
             "",
             &json!({"source":MODEL_SCENE,"model_generation":0}),
-            Some(&mut caller),
         )
         .unwrap();
-    current["generation"] = json!(0);
     assert!(
         store
-            .request_mounted(SceneCommand::Patch, "", &current, Some(&mut caller))
+            .request(
+                SceneCommand::Patch,
+                "",
+                &json!({"scene":"model-test",
+        "path":"model.caption","value":"not ready","generation":0})
+            )
             .is_err()
     );
-    // An out-of-range or non-integer generation is refused before parsing.
     for generation in [json!(9_007_199_254_740_991u64), json!(-1), json!(1.5)] {
         let error = store
-            .request_mounted(
+            .request(
                 SceneCommand::Load,
                 "",
-                &json!({"source":MODEL_SCENE,"model_generation":generation}),
-                Some(&mut caller),
+                &json!({"source":MODEL_SCENE,
+            "model_generation":generation}),
             )
             .unwrap_err();
         assert_eq!(error["error_code"], "SCENE_MODEL_GENERATION");
@@ -923,7 +889,7 @@ fn a_name_squatter_is_displaced_only_by_a_preempting_dialog_load() {
         false,
     )
     .unwrap_err();
-    assert_eq!(error["error_code"], "SCENE_MODEL_AUTHORITY", "{error}");
+    assert_eq!(error["error_code"], "SUBPANEL_COLLISION", "{error}");
     load(&mut store, "scenes", 3, &dialog_source("editor", 880), true).unwrap();
     assert_eq!(store.is_dialog("editor"), Some(true));
     assert_eq!(store.dialog_seat().unwrap().owner, "scenes");

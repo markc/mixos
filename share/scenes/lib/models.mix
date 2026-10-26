@@ -194,18 +194,14 @@ $TEXT = {
   net_undone: "Undone: {link} has its previous configuration again.",
   net_need_address: "Static needs at least one address.",
   net_need_prefix: "Each address needs a prefix length, such as /24.", net_bad_mode: "Choose DHCP or Static.",
-  net_hostd_frozen: "hostd is frozen: changes are off until root on the host thaws it.",
-  net_hostd_no_grant: "No hostd grant for this panel: read only.",
-  hostd_no_grant: "This panel has no hostd grant for that change.",
-  hostd_outside_grant: "{link} is outside this panel's hostd grant.",
+  net_hostd_frozen: "hostd is frozen: changes are off until a local caller thaws it.",
   hostd_foreign_config: "Another networkd file configures {link}, so hostd will not change it.",
   hostd_unmanaged_configured: "{link} has addresses networkd did not set, so hostd will not take it over.",
   hostd_no_such_link: "{link} no longer exists.",
   hostd_rolled_back: "{link} did not come up, so hostd put the old configuration back",
   hostd_abandoned: "{link} did not come up, and its file changed meanwhile, so hostd left it as it found it",
   net_no_answer: "hostd did not answer in time. The change to {link} may still finish; reopen the popup to see the link as it is.",
-  hostd_frozen: "hostd is frozen: changes are off until root on the host thaws it.",
-  hostd_grant_suspended: "Two failed changes in a row suspended this panel's grant until root thaws hostd.",
+  hostd_frozen: "hostd is frozen: changes are off until a local caller thaws it.",
   hostd_recovery_pending: "hostd is finishing an earlier change. Try again shortly.",
   hostd_busy: "hostd is busy with another change. Try again.",
   hostd_timeout: "hostd did not finish in time. Try again.",
@@ -213,8 +209,6 @@ $TEXT = {
   hostd_superseded: "Undo refused: {link} has changed since that change.",
   hostd_not_applied: "Nothing to undo: that change is no longer in force.",
   hostd_unavailable: "hostd is not reachable.",
-  hostd_caller_unverified: "hostd could not verify this panel as the caller.",
-  hostd_ui_only: "Changes come only from clicks in the panel.",
   hostd_bad_request: "hostd refused the request: {message}", hostd_refused: "hostd refused the change ({status}).",
   zone: "UTC{offset}", calendar_hint: "Click for the calendar",
   rename_prompt: "Name for workspace {n}", rename_hint: "Workspace {n}",
@@ -408,8 +402,8 @@ end
 -- $snap: lib/network.mix snapshot(), or nil before the first one. Loopback
 -- links and link-local IPv6 addresses are left out. The default-route link
 -- sorts first, then links that are up, then by name.
--- $ui (optional): {access: lib/hostd.mix grant_state(), edit: the open editor or
--- nil}. With a hostd grant, each link offers Configure; the editor applies
+-- $ui (optional): {access: lib/hostd.mix access_state(), edit: the open editor or
+-- nil}. With a live hostd, each link offers Configure; the editor applies
 -- through hostd (net.link.apply) and can undo its last change.
 $MAX_LINKS = 32
 -- Card geometry. Every card is one shared height (the scene's list and rows
@@ -428,7 +422,7 @@ end
 fn network($snap, $ui = nil)
   $known = $snap != nil
   $ui = $ui ?? {}
-  $access = $ui.access ?? {available: false, frozen: false, grants: [], held: []}
+  $access = $ui.access ?? {available: false, frozen: false}
   $edit = $ui.edit
   $snap = $snap ?? {}
   $kinds = $snap.kinds ?? {}
@@ -515,10 +509,16 @@ fn network($snap, $ui = nil)
   $servers = []
   if $snap.resolved != nil then $servers = $link_dns[$default_dev] ?? $snap.resolved.global end
   $note = ($known and $nd == nil) ? text("net_kernel_only") : ""
-  -- Tunnel names a grant lists for net.wg.apply that don't exist yet.
+  -- Offer the first unused conventional tunnel name; Bus callers may name any.
   $new_tunnels = []
-  for each $name in $hd.named_links($access, "net.wg.apply")
-    if $by_name[$name] == nil then push($new_tunnels, {id: "wg_" .. $name, cells: [], label: text("net_new_tunnel", {name: $name})}) end
+  if $hd.writable($access) then
+    for $i = 0 to 255
+      $name = "wg" .. to_string($i)
+      if $by_name[$name] == nil then
+        push($new_tunnels, {id: "wg_" .. $name, cells: [], label: text("net_new_tunnel", {name: $name})})
+        break
+      end
+    end
   end
 
   return {title: text("network_title"), summary: $summary,
@@ -533,13 +533,12 @@ fn network($snap, $ui = nil)
     edit: editor($edit)}
 end
 
--- What a click on a link row opens: "wifi" for a Wi-Fi device, "wg" for a
--- WireGuard link, "link" for any other, each only when a held grant covers
--- that command for that link; "" when the row is read only.
+-- The editor follows the link kind while hostd is live and unfrozen.
 fn row_action($access, $kind, $link)
-  if $kind == "wlan" then return $hd.may($access, "net.wifi.connect", $link) ? "wifi" : "" end
-  if $kind == "wireguard" then return $hd.may($access, "net.wg.apply", $link) ? "wg" : "" end
-  return $hd.may($access, "net.link.apply", $link) ? "link" : ""
+  if not $hd.writable($access) then return "" end
+  if $kind == "wlan" then return "wifi" end
+  if $kind == "wireguard" then return "wg" end
+  return "link"
 end
 
 $ACTION_CTA = {link: "net_configure", wg: "net_tunnel_configure", wifi: "net_wifi_networks"}
@@ -549,7 +548,6 @@ $ACTION_CTA = {link: "net_configure", wg: "net_tunnel_configure", wifi: "net_wif
 fn hostd_note($access)
   if not $access.available then return "" end
   if $access.frozen then return text("net_hostd_frozen") end
-  if length($access.grants ?? []) == 0 then return text("net_hostd_no_grant") end
   return ""
 end
 

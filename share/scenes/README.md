@@ -60,17 +60,16 @@ talks to PipeWire through `pactl`, and says so in the popup when that does
 not answer.
 
 The top bar's power buttons send `power.suspend`, `power.reboot` and
-`power.poweroff` to hostd. Each needs a hostd grant. A refusal is shown in the
+`power.poweroff` to hostd. Every local caller can use them. A refusal is shown in the
 button's tooltip, and nothing runs. Shutdown is not a hostd command yet.
 
 `network` shows links and addresses from rtnetlink, plus systemd-networkd,
 systemd-resolved and the default routes when their tools answer
 (`networkctl`, `resolvectl`, `ip -j`). A missing daemon degrades to the
-kernel's view. Where hostd runs and grants this panel's scene loader,
+kernel's view. Where hostd runs,
 a link can be configured (DHCP or static) through hostd's `net.link.apply`,
 which keeps a change only if the link comes up, and the last change undone
-(`lib/hostd.mix`, `docs/hostd/README.md`). Those handlers act only on clicks the
-scene host relays, never on a Bus caller.
+(`lib/hostd.mix`, `docs/hostd/README.md`). Those handlers accept every Bus caller as well as panel clicks.
 
 `volume` is the bottom panel's audio popup. It shows the default output and
 input with a level bar (one segment per 5 %, to 150 % only while PipeWire
@@ -79,7 +78,7 @@ device lists, where a click makes a device the default; and the application
 streams, where a click gives a stream the same controls. Reads and writes
 are `pactl` calls (`lib/audio.mix`), every write is read back, and a
 `pactl subscribe` stream (`audio_watch`) keeps it current. The writes act
-only on clicks the scene host relays.
+for every Bus caller as well as panel clicks.
 
 ## The editor helpers and legacy template
 

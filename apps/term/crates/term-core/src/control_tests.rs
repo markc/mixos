@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Acceptance exercises production noded, Term's allocated route and actual
-//! VerifiedConnection deliveries, plus a principal/scope admission matrix.
+//! VerifiedConnection deliveries, principal-less callers and target/replay checks.
 use super::*;
 use crate::control::Target;
 use crate::tabs::{Cleanup, TabSet};
@@ -14,9 +14,6 @@ const REQUIRE_MIX: &str = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explic
 
 #[test]
 fn t15_control_input_returns_to_live_screen() {
-    if in_posture("t15_control_input_returns_to_live_screen", Some("0")) {
-        return;
-    }
     let fixture = Fixture::admission(Policy::DefaultOpen);
     runtime().block_on(async {
         let owner = verified(&fixture.broker).await;
@@ -188,34 +185,6 @@ fn ran_one_test(stdout: &[u8]) -> bool {
 }
 fn forbidden(reply: (u8, Value)) {
     assert_eq!(reply, (10, json!({"error_code":"FORBIDDEN"})));
-}
-
-// Environment is process-wide. Isolate posture changes in a child test process,
-// never mutate it while the broker/PTY threads or parallel tests are running.
-fn in_posture(test: &str, value: Option<&str>) -> bool {
-    if std::env::var("MIXOS_MESH_OPEN").ok().as_deref() == value {
-        return false;
-    }
-    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
-    command.args([
-        "--exact",
-        &format!("native_session::enforcement_tests::{test}"),
-        "--include-ignored",
-        "--nocapture",
-    ]);
-    if let Some(value) = value {
-        command.env("MIXOS_MESH_OPEN", value);
-    } else {
-        command.env_remove("MIXOS_MESH_OPEN");
-    }
-    let output = command.output().unwrap();
-    assert!(
-        output.status.success() && ran_one_test(&output.stdout),
-        "posture test failed:\n{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    true
 }
 
 struct Fixture {
@@ -505,9 +474,6 @@ fn target(parent: &SessionRecord, child: &SessionRecord) -> Target {
 
 #[test]
 fn grantless_type_admission() {
-    if in_posture("grantless_type_admission", None) {
-        return;
-    }
     let fixture = Fixture::admission(Policy::DefaultOpen);
     runtime().block_on(async {
         let caller = verified(&fixture.broker).await;
@@ -546,142 +512,103 @@ fn grantless_type_admission() {
     });
 }
 
-fn principal(parent: &SessionRecord) -> BrokerPrincipal {
-    BrokerPrincipal {
-        version: PrincipalVersion::V1,
-        assurance: Assurance::LocalUnix,
-        owner_node: parent.owner_node.clone(),
-        unix_uid: parent.owner_uid,
-        unix_gid: parent.owner_uid,
-        peer_pid: 1,
-        broker_epoch: parent.broker_epoch,
-        connection_id: HexBytes([91; 16]),
-        session: None,
-    }
-}
-
 #[test]
-fn mesh_open_admission() {
-    if in_posture("mesh_open_admission", None) {
-        return;
-    }
+fn every_caller_can_read_write_and_manage_sibling_panes() {
     let fixture = Fixture::admission(Policy::Restricted);
     runtime().block_on(async {
         let caller = verified(&fixture.broker).await;
         let (parent, child) = fixture.records(&caller, 1).await;
         let target = target(&parent, &child);
-        let mut actor = principal(&parent);
-        actor.owner_node = "another-mesh-node".into();
-        actor.unix_uid = parent.owner_uid.wrapping_add(1);
-        actor.broker_epoch = HexBytes([92; 16]);
-        for role in [None, Some(Role::Term), Some(Role::PaneShell)] {
-            actor.assurance = if role.is_some() { Assurance::SessionBound } else { Assurance::LocalUnix };
-            actor.session = role.map(|role| SessionIdentity {
-                record_id: HexBytes([93; 16]), instance_id: HexBytes([94; 16]),
-                incarnation: HexBytes([95; 16]), role,
-                parent_instance: (role == Role::PaneShell).then_some(HexBytes([96; 16])),
-                parent_incarnation: (role == Role::PaneShell).then_some(HexBytes([97; 16])),
-                pane_id: (role == Role::PaneShell).then_some(DecimalU64(999)),
-                pane_generation: (role == Role::PaneShell).then_some(DecimalU64(999)),
-                binding_generation: DecimalU64(99), capabilities: vec![Capability::ReadState], lease_remaining_ms: DecimalU64(0),
-            });
-            assert!(actor.validate().is_ok());
-            for capability in super::capabilities() {
-                assert!(crate::control::allows(&parent, &actor, &target, capability), "{role:?} {capability:?}");
-                for bad in [
-                    Target { instance_id: HexBytes([98; 16]), ..target.clone() },
-                    Target { incarnation: HexBytes([98; 16]), ..target.clone() },
-                    Target { pane_generation: DecimalU64(0), ..target.clone() },
-                ] { assert!(!crate::control::allows(&parent, &actor, &bad, capability)); }
-            }
-        }
-        actor.owner_node.clear();
-        assert!(!crate::control::allows(&parent, &actor, &target, Capability::Input));
-
-        // Restricted allocation cannot gate a real grantless delivery in open posture.
-        let state = call(caller.client(), &parent.name, "term.session", json!({"target":target})).await;
-        assert_eq!(state.0, 0, "{state:?}");
-        assert_eq!(call(caller.client(), &parent.name, "term.type", json!({"target":target,"request_id":"1",
-            "foreground_generation":state.1["foreground_generation"].as_u64().unwrap().to_string(),"text":"x"})).await.0, 0);
-        let listener = fixture.tabs.lock().unwrap().pane_by_id(1).unwrap().lock().unwrap().listener.clone();
+        let tcp = NodedClient::connect_anonymous(&fixture.broker.url)
+            .await
+            .unwrap();
+        let state = call(&tcp, &parent.name, "term.session", json!({"target":target})).await;
+        assert_eq!(state.0, 0, "principal-less state: {state:?}");
+        let listener = fixture
+            .tabs
+            .lock()
+            .unwrap()
+            .pane_by_id(1)
+            .unwrap()
+            .lock()
+            .unwrap()
+            .listener
+            .clone();
         listener.block_control_writes(true);
-        let queued = json!({"target":target,"request_id":"2","text":"a",
+        let request = json!({"target":target,"request_id":"1","text":"x",
             "foreground_generation":listener.foreground_generation().to_string()});
-        assert_eq!(call(caller.client(), &parent.name, "term.type", queued.clone()).await.0, 0);
-        let other = verified(&fixture.broker).await;
-        assert_eq!(call(other.client(), &parent.name, "term.type", queued).await.0, 0,
-            "mesh-open must not retain actor-exclusive input ownership");
+        let first = call(&tcp, &parent.name, "term.type", request.clone()).await;
+        assert_eq!(first.0, 0, "principal-less input: {first:?}");
+        assert_eq!(
+            call(&tcp, &parent.name, "term.type", request.clone()).await,
+            first
+        );
+        assert_eq!(
+            call(caller.client(), &parent.name, "term.type", request)
+                .await
+                .0,
+            0,
+            "another writer must not be refused by identity"
+        );
         listener.block_control_writes(false);
-        // A bound pane shell can act outside its recorded pane scope.
         let bound = verified(&fixture.broker).await;
         let (parent, target) = fixture.bound(&bound).await;
         fixture.open_second();
         let (_, sibling) = fixture.records(&caller, 2).await;
-        let sibling_target = super::enforcement_tests::target(&parent, &sibling);
-        assert_eq!(call(bound.client(), &parent.name, "term.snapshot", json!({"target":sibling_target,"contents":true})).await.0, 0);
+        let sibling = super::enforcement_tests::target(&parent, &sibling);
+        assert_eq!(
+            call(
+                bound.client(),
+                &parent.name,
+                "term.snapshot",
+                json!({"target":sibling,"contents":true})
+            )
+            .await
+            .0,
+            0
+        );
         super::tests::wait_ready(fixture.native(), 3);
-        let opened = call(bound.client(), &parent.name, "term.tab.new", json!({"target":target,"affected":[sibling_target],"request_id":"1"})).await;
-        assert_eq!(opened.0, 0, "bound layout refused: {opened:?}");
+        let opened = call(
+            bound.client(),
+            &parent.name,
+            "term.tab.new",
+            json!({"target":target,"affected":[sibling],"request_id":"1"}),
+        )
+        .await;
+        assert_eq!(opened.0, 0, "bound layout: {opened:?}");
     });
 }
 
 #[test]
-fn strict_admission() {
-    if in_posture("strict_admission", Some("0")) {
-        return;
-    }
-    for policy in [Policy::DefaultOpen, Policy::Restricted] {
-        let fixture = Fixture::admission(policy);
-        runtime().block_on(async {
-            let caller = verified(&fixture.broker).await;
-            let (parent, child) = fixture.records(&caller, 1).await;
-            let target = target(&parent, &child);
-            let actor = principal(&parent);
-            assert_eq!(crate::control::allows(&parent, &actor, &target, Capability::Input), policy == Policy::DefaultOpen);
-            let mut foreign = actor.clone(); foreign.owner_node = "another-mesh-node".into();
-            assert!(!crate::control::allows(&parent, &foreign, &target, Capability::Input));
-            let mut foreign = actor.clone(); foreign.unix_uid = parent.owner_uid.wrapping_add(1);
-            assert!(!crate::control::allows(&parent, &foreign, &target, Capability::Input));
-            let mut foreign = actor; foreign.broker_epoch = HexBytes([92; 16]);
-            assert!(!crate::control::allows(&parent, &foreign, &target, Capability::Input));
-            let mut bound = principal(&parent);
-            bound.assurance = Assurance::SessionBound;
-            bound.session = Some(SessionIdentity {
-                record_id: child.record_id, instance_id: child.instance_id, incarnation: child.incarnation,
-                role: Role::PaneShell, parent_instance: Some(parent.instance_id), parent_incarnation: Some(parent.incarnation),
-                pane_id: Some(target.pane_id), pane_generation: Some(target.pane_generation),
-                binding_generation: child.binding_generation, capabilities: vec![Capability::ReadState], lease_remaining_ms: DecimalU64(5000),
-            });
-            assert!(crate::control::allows(&parent, &bound, &target, Capability::ReadState));
-            assert!(!crate::control::allows(&parent, &bound, &target, Capability::Input));
-            let sibling = Target { pane_id: DecimalU64(999), ..target.clone() };
-            assert!(!crate::control::allows(&parent, &bound, &sibling, Capability::ReadState));
-            let state = call(caller.client(), &parent.name, "term.session", json!({"target":target})).await;
-            if policy == Policy::Restricted { forbidden(state); }
-            else {
-                assert_eq!(state.0, 0);
-                let mut body = json!({"target":target,"request_id":"1","text":"x",
-                    "foreground_generation":state.1["foreground_generation"].as_u64().unwrap().to_string()});
-                assert_eq!(raw(caller.client(), &parent.name, "term.type", &body).await.1["error_code"], "INVALID_ARGUMENT");
-                body["request_epoch"] = state.1["request_epoch"].clone();
-                let listener = fixture.tabs.lock().unwrap().pane_by_id(1).unwrap().lock().unwrap().listener.clone();
-                listener.block_control_writes(true);
-                assert_eq!(raw(caller.client(), &parent.name, "term.type", &body).await.0, 0);
-                let other = verified(&fixture.broker).await;
-                body.as_object_mut().unwrap().remove("request_epoch");
-                assert_eq!(call(other.client(), &parent.name, "term.type", body).await.1["error_code"], "BUSY");
-                listener.block_control_writes(false);
-            }
-        });
-    }
+fn target_validation_is_independent_of_caller_scope() {
+    let fixture = Fixture::admission(Policy::Restricted);
+    runtime().block_on(async {
+        let caller = verified(&fixture.broker).await;
+        let (parent, child) = fixture.records(&caller, 1).await;
+        let target = target(&parent, &child);
+        assert!(crate::control::target_matches(&parent, &target));
+        for bad in [
+            Target {
+                instance_id: HexBytes([98; 16]),
+                ..target.clone()
+            },
+            Target {
+                incarnation: HexBytes([98; 16]),
+                ..target.clone()
+            },
+            Target {
+                pane_generation: DecimalU64(0),
+                ..target.clone()
+            },
+        ] {
+            assert!(!crate::control::target_matches(&parent, &bad));
+        }
+    });
 }
 
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_07_real_recipient_both_policies() {
-    if in_posture("p0i_07_real_recipient_both_policies", Some("0")) {
-        return;
-    }
     eprintln!("{REQUIRE_MIX}");
     for policy in [Policy::DefaultOpen, Policy::Restricted] {
         let fixture = Fixture::new(policy);
@@ -691,16 +618,15 @@ fn p0i_07_real_recipient_both_policies() {
             let target = target(&parent, &child);
             for command_name in ["term.session", "term.list", "term.tabs", "term.panes", "term.snapshot"] {
                 let reply = call(owner.client(), &parent.name, command_name, json!({"target":target})).await;
-                if policy == Policy::DefaultOpen { assert_eq!(reply.0, 0, "{command_name}: {reply:?}"); }
-                else { forbidden(reply); }
+                assert_eq!(reply.0, 0, "{command_name}: {reply:?}");
             }
             for property in ["state", "contents"] {
                 let reply = call(owner.client(), &parent.name, "term.props.get", json!({"target":target,"property":property})).await;
-                if policy == Policy::DefaultOpen { assert_eq!(reply.0, 0); } else { forbidden(reply); }
+                assert_eq!(reply.0, 0, "{reply:?}");
             }
             let tcp = NodedClient::connect_anonymous(&fixture.broker.url).await.unwrap();
-            for command_name in ["term.session", "term.snapshot", "term.type", "term.pane.close", "term.props.set", "term.execute"] {
-                forbidden(call(&tcp, &parent.name, command_name, json!({"target":target})).await);
+            for command_name in ["term.session", "term.snapshot"] {
+                assert_eq!(call(&tcp, &parent.name, command_name, json!({"target":target})).await.0, 0);
             }
             let bound = verified(&fixture.broker).await;
             let (parent, target) = fixture.bound(&bound).await;
@@ -714,12 +640,7 @@ fn p0i_07_real_recipient_both_policies() {
                 body.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
                 assert_eq!(call(bound.client(), &parent.name, command_name, body).await.0, 0, "{policy:?} {command_name}");
             }
-            // Stage D made `execute` real, so an authorised caller no longer
-            // gets the "unimplemented" answer — it gets the schema refusal for
-            // a submission that names no source and no generation. What has NOT
-            // changed is that an unauthorised caller is refused above, before
-            // any of this is visible. The full forwarding path is
-            // p0j_d_execute_forwards_to_the_pane_shell_and_refuses_at_the_edges.
+            // Incomplete execution requests still receive a schema refusal.
             assert_eq!(call(bound.client(), &parent.name, "term.execute", json!({"target":target})).await, (10,json!({"error_code":"INVALID_ARGUMENT"})));
             let state = call(bound.client(), &parent.name, "term.session", json!({"target":target})).await.1;
             let request = json!({"target":target,"request_id":"3","foreground_generation":state["foreground_generation"].as_u64().unwrap().to_string(),"text":"S4_INPUT"});
@@ -730,31 +651,21 @@ fn p0i_07_real_recipient_both_policies() {
             assert_eq!(call(bound.client(), &parent.name, "term.type", conflict).await.1["error_code"], "CONFLICT");
             let independent = verified(&fixture.broker).await;
             let reply = call(independent.client(), &parent.name, "term.snapshot", json!({"target":target,"contents":true})).await;
-            if policy == Policy::DefaultOpen { assert_eq!(reply.0, 0); } else { forbidden(reply); }
-            // Real second pane, same Term; a bound child never gains sibling
-            // access, whereas default-open independent connections are owners.
+            assert_eq!(reply.0, 0, "{reply:?}");
+            // A bound child can inspect and change a sibling pane.
             fixture.open_second();
             let observer = verified(&fixture.broker).await;
             let (_, sibling) = fixture.records(&observer, 2).await;
             let sibling_target = super::enforcement_tests::target(&parent, &sibling);
-            forbidden(call(bound.client(), &parent.name, "term.snapshot", json!({"target":sibling_target,"contents":true})).await);
-            forbidden(call(bound.client(), &parent.name, "term.props.set", json!({"target":sibling_target,"request_id":"4","property":"selected","value":true})).await);
-            forbidden(call(bound.client(), &parent.name, "term.tab.new", json!({"target":target,"affected":[sibling_target],"request_id":"5"})).await);
-            // Body assertions cannot manufacture a principal or change policy.
-            // Sent from the VERIFIED owner as well as the anonymous peer: an
-            // anonymous caller is refused before its body is even parsed, so
-            // that arm alone would prove nothing about the body. From a caller
-            // who IS otherwise authorised, the request schema simply has no
-            // field through which to assert either one.
+            assert_eq!(call(bound.client(), &parent.name, "term.snapshot", json!({"target":sibling_target,"contents":true})).await.0, 0);
+            assert_eq!(call(bound.client(), &parent.name, "term.props.set", json!({"target":sibling_target,"affected":[target],"request_id":"4","property":"selected","value":true})).await.0, 0);
+            assert_eq!(call(bound.client(), &parent.name, "term.tab.new", json!({"target":target,"affected":[sibling_target],"request_id":"5"})).await.0, 0);
+            // Request bodies cannot invent fields outside the typed schema.
             let forged = json!({"target":target,"principal":{"unix_uid":parent.owner_uid},"policy":"default-open"});
             let reply = call(owner.client(), &parent.name, "term.session", forged.clone()).await;
             assert_ne!(reply.0, 0, "forged body accepted from a verified owner: {reply:?}");
-            if policy == Policy::DefaultOpen {
-                assert_eq!(reply.1["error_code"], "INVALID_ARGUMENT", "{reply:?}");
-            } else {
-                forbidden(reply);
-            }
-            forbidden(call(&tcp, &parent.name, "term.session", forged).await);
+            assert_eq!(reply.1["error_code"], "INVALID_ARGUMENT", "{reply:?}");
+            assert_eq!(call(&tcp, &parent.name, "term.session", forged).await.1["error_code"], "INVALID_ARGUMENT");
         });
     }
 }
@@ -762,9 +673,6 @@ fn p0i_07_real_recipient_both_policies() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_08_queued_input_human_revoke_and_deadline() {
-    if in_posture("p0i_08_queued_input_human_revoke_and_deadline", Some("0")) {
-        return;
-    }
     let fixture = Fixture::new(Policy::DefaultOpen);
     runtime().block_on(async {
         let owner = verified(&fixture.broker).await;
@@ -800,8 +708,8 @@ fn p0i_08_queued_input_human_revoke_and_deadline() {
         drop(paused);
         // Prove the permit aged out on its own deadline BEFORE any human key.
         // A keypress revokes it regardless, so asserting only after one would
-        // pass whether or not the deadline did anything. Another actor being
-        // admitted is only possible once the previous permit is invalid.
+        // pass whether or not the deadline did anything. The retained outcome
+        // below proves that the expired queued input was revoked.
         let expiry = verified(&fixture.broker).await;
         // Term's own renew failed while the broker was paused, so it has to
         // re-earn its deadline first. Asking it anything protected before then
@@ -817,14 +725,20 @@ fn p0i_08_queued_input_human_revoke_and_deadline() {
         })
         .await
         .expect("Term re-establishes its own attachment after the broker pause");
-        // Empty text on purpose. The one-writer check runs before anything is
-        // queued, so this still discriminates BUSY from admitted, while adding
-        // no bytes whose flush would race the revocation below and make the
-        // byte-count assertion nondeterministic.
+        let expired = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let reply = call(owner.client(), &parent.name, "term.operation",
+                    json!({"target":target,"operation_id":"2"})).await;
+                if reply.1["reason"] == "input_lease_ended" { break reply.1; }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        }).await.expect("queued input expiry is retained before any human key");
+        assert_eq!(expired["delivered_bytes_lower_bound"], 0);
+        // Empty text adds no bytes that could race the revocation below.
         assert_eq!(
             call(expiry.client(), &parent.name, "term.type", json!({"target":target,"request_id":"1","request_epoch":epoch,"foreground_generation":listener.foreground_generation().to_string(),"text":""})).await.0,
             0,
-            "an expired permit must not still hold the one-writer lease"
+            "input remains available after an old permit expires"
         );
         listener.block_control_writes(false);
         listener.key(crate::terminal::Key::Interrupt, Instant::now()).unwrap();
@@ -843,9 +757,6 @@ fn p0i_10_unbound_pane_has_no_control() {
     if !crate::test_support::with_mix(
         "native_session::enforcement_tests::p0i_10_unbound_pane_has_no_control",
     ) {
-        return;
-    }
-    if in_posture("p0i_10_unbound_pane_has_no_control", Some("0")) {
         return;
     }
     let fixture = Fixture::new(Policy::DefaultOpen);
@@ -890,9 +801,6 @@ fn p0i_10_unbound_pane_has_no_control() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_07_owner_mutations_and_retired_retries() {
-    if in_posture("p0i_07_owner_mutations_and_retired_retries", Some("0")) {
-        return;
-    }
     for command_name in [
         "term.tab.new",
         "term.pane.split",
@@ -950,6 +858,19 @@ fn p0i_07_owner_mutations_and_retired_retries() {
                 .0,
                 0
             );
+            let other = verified(&fixture.broker).await;
+            assert_eq!(
+                call(
+                    other.client(),
+                    &parent.name,
+                    "term.operation",
+                    json!({"target":target,"operation_id":"1"})
+                )
+                .await
+                .0,
+                0,
+                "another caller can inspect the retained mutation"
+            );
             fixture._control.expire_retries();
             assert_eq!(
                 call(owner.client(), &parent.name, command_name, request)
@@ -975,9 +896,6 @@ fn p0i_07_owner_mutations_and_retired_retries() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_08_child_pane_term_and_broker_lifetime() {
-    if in_posture("p0i_08_child_pane_term_and_broker_lifetime", Some("0")) {
-        return;
-    }
     for cause in ["child_exit", "pane_close", "term_exit", "broker_bounce"] {
         let mut fixture = Fixture::new(Policy::DefaultOpen);
         runtime().block_on(async {
@@ -1036,9 +954,6 @@ fn p0i_08_child_pane_term_and_broker_lifetime() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_09_real_payload_tap_observe_and_logs() {
-    if in_posture("p0i_09_real_payload_tap_observe_and_logs", Some("0")) {
-        return;
-    }
     if std::env::var_os("MIXOS_S4_OBSERVE_WORKER").is_none() {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
@@ -1132,9 +1047,6 @@ fn p0i_09_real_payload_tap_observe_and_logs() {
 #[test]
 #[ignore = "SKIPPED privileged S4 multi-UID fixture: requires root, MIXOS_SESSION_TEST_UID and current-HEAD MIXOS_E2E_MIX_BIN; run explicitly"]
 fn p0i_07_other_uid_both_policies() {
-    if in_posture("p0i_07_other_uid_both_policies", Some("0")) {
-        return;
-    }
     if let Ok(configuration) = std::env::var("MIXOS_S4_OTHER_UID_WORKER") {
         let configuration: Value = serde_json::from_str(&configuration).unwrap();
         runtime().block_on(async {
@@ -1147,11 +1059,14 @@ fn p0i_07_other_uid_both_policies() {
             let UnixConnectOutcome::VerifiedUnix(client) = NodedClient::connect_unix("", configuration["url"].as_str().unwrap(), &options, None).await.unwrap()
             else { panic!("real other-UID kernel verified connection required"); };
             assert_ne!(unsafe { libc::geteuid() }, options.broker_account.uid);
-            for command_name in ["term.session", "term.list", "term.tabs", "term.panes", "term.snapshot", "term.type", "term.execute", "term.tab.new", "term.tab.select", "term.tab.close", "term.pane.split", "term.pane.select", "term.pane.close", "term.props.get", "term.props.set", "term.props.watch"] {
-                for target in [configuration["target"].clone(), json!({"nonexistent":true})] {
-                    forbidden(call(client.client(), configuration["name"].as_str().unwrap(), command_name, json!({"target":target,"request_id":"1","property":"input","value":"BLOCKED"})).await);
-                }
-            }
+            let name = configuration["name"].as_str().unwrap();
+            let target = configuration["target"].clone();
+            let state = call(client.client(), name, "term.session", json!({"target":target})).await;
+            assert_eq!(state.0, 0, "different-UID state: {state:?}");
+            assert_eq!(call(client.client(), name, "term.snapshot", json!({"target":target,"contents":true})).await.0, 0);
+            let reply = call(client.client(), name, "term.type", json!({"target":target,"request_id":"1",
+                "foreground_generation":state.1["foreground_generation"].as_u64().unwrap().to_string(),"text":"x"})).await;
+            assert_eq!(reply.0, 0, "different-UID input: {reply:?}");
         });
         return;
     }
@@ -1183,7 +1098,7 @@ fn p0i_07_other_uid_both_policies() {
             std::io::Read::read_to_end(&mut process.stdout.take().unwrap(), &mut stdout).unwrap();
             assert!(
                 ran_one_test(&stdout),
-                "other-UID worker never ran its denial assertions: {}",
+                "other-UID worker never ran its success assertions: {}",
                 String::from_utf8_lossy(&stdout)
             );
         });
@@ -1192,11 +1107,8 @@ fn p0i_07_other_uid_both_policies() {
 
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
-fn p0i_10_real_tcp_fallback_is_control_free() {
-    if in_posture("p0i_10_real_tcp_fallback_is_control_free", Some("0")) {
-        return;
-    }
-    let fixture = Fixture::new(Policy::DefaultOpen);
+fn p0i_10_real_tcp_global_lane_serves_controls() {
+    let fixture = Fixture::new(Policy::Restricted);
     let (notify, receiver) = tokio::sync::mpsc::unbounded_channel();
     drop(notify);
     let service = crate::bus::start_at(
@@ -1212,42 +1124,33 @@ fn p0i_10_real_tcp_fallback_is_control_free() {
             .await
             .unwrap();
         tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                if client.call("term", "HELP", json!({})).await.is_ok() {
-                    break;
-                }
+            while client.call("term", "HELP", json!({})).await.is_err() {
                 tokio::time::sleep(Duration::from_millis(25)).await;
             }
         })
         .await
-        .expect("real legacy diagnostic registration");
-        for command_name in [
+        .unwrap();
+        for command in [
             "term.session",
             "term.tabs",
             "term.panes",
             "term.snapshot",
-            "term.type",
-            "term.tab.new",
-            "term.tab.select",
-            "term.tab.close",
-            "term.pane.split",
-            "term.pane.select",
-            "term.pane.close",
-            "term.execute",
-            "term.props.get",
-            "term.props.set",
             "term.props.watch",
         ] {
-            forbidden(
-                call(
-                    &client,
-                    "term",
-                    command_name,
-                    json!({"text":"NO_LEGACY_CONTROL"}),
-                )
-                .await,
+            assert!(
+                client.call("term", command, json!({})).await.is_ok(),
+                "{command}"
             );
         }
+        assert!(
+            client
+                .call("term", "term.type", json!({"pane":1,"text":"x"}))
+                .await
+                .is_ok()
+        );
+        let before = fixture.tabs.lock().unwrap().list().len();
+        assert!(client.call("term", "term.tab.new", json!({})).await.is_ok());
+        assert_eq!(fixture.tabs.lock().unwrap().list().len(), before + 1);
     });
     fixture
         .cleanup
@@ -1258,12 +1161,6 @@ fn p0i_10_real_tcp_fallback_is_control_free() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_10_launch_failures_reach_real_recipient_denial() {
-    if in_posture(
-        "p0i_10_launch_failures_reach_real_recipient_denial",
-        Some("0"),
-    ) {
-        return;
-    }
     for fault in [
         "missing",
         "wrong_grant",
@@ -1315,13 +1212,7 @@ fn p0i_10_launch_failures_reach_real_recipient_denial() {
 
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
-fn p0i_10_parent_bootstrap_outage_has_only_diagnostic_lane() {
-    if in_posture(
-        "p0i_10_parent_bootstrap_outage_has_only_diagnostic_lane",
-        Some("0"),
-    ) {
-        return;
-    }
+fn p0i_10_parent_bootstrap_outage_keeps_global_controls() {
     let program = super::production_e2e::current_mix();
     let broker = Broker::start();
     let mut options = broker.options();
@@ -1378,18 +1269,23 @@ fn p0i_10_parent_bootstrap_outage_has_only_diagnostic_lane() {
         })
         .await
         .unwrap();
-        for command_name in [
-            "term.session",
-            "term.snapshot",
-            "term.type",
-            "term.tab.new",
-            "term.pane.split",
-            "term.pane.close",
-            "term.props.get",
-            "term.props.set",
-        ] {
-            forbidden(call(owner.client(), "term", command_name, json!({})).await);
+        for command in ["term.session", "term.snapshot"] {
+            assert!(
+                owner
+                    .client()
+                    .call("term", command, json!({}))
+                    .await
+                    .is_ok(),
+                "{command}"
+            );
         }
+        assert!(
+            owner
+                .client()
+                .call("term", "term.type", json!({"pane":1,"text":"x"}))
+                .await
+                .is_ok()
+        );
     });
     cleanup.submit(tabs.lock().unwrap().shutdown());
     diagnostic.join().unwrap();
@@ -1398,12 +1294,6 @@ fn p0i_10_parent_bootstrap_outage_has_only_diagnostic_lane() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_08_stale_cleanup_and_private_event_connection_guard() {
-    if in_posture(
-        "p0i_08_stale_cleanup_and_private_event_connection_guard",
-        Some("0"),
-    ) {
-        return;
-    }
     let fixture = Fixture::new(Policy::Restricted);
     runtime().block_on(async {
         let first = verified(&fixture.broker).await;
@@ -1448,78 +1338,18 @@ fn p0i_08_stale_cleanup_and_private_event_connection_guard() {
 
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
-fn p0i_07_capability_separation_and_bound_termination() {
-    if in_posture(
-        "p0i_07_capability_separation_and_bound_termination",
-        Some("0"),
-    ) {
-        return;
-    }
+fn p0i_07_read_state_only_caller_can_write_and_terminate() {
     for policy in [Policy::DefaultOpen, Policy::Restricted] {
         let fixture = Fixture::with_fault(policy, "read_state_only");
         runtime().block_on(async {
             let bound = verified(&fixture.broker).await;
             let (parent, target) = fixture.bound(&bound).await;
-            assert_eq!(
-                call(
-                    bound.client(),
-                    &parent.name,
-                    "term.session",
-                    json!({"target":target})
-                )
-                .await
-                .0,
-                0
-            );
-            assert_eq!(
-                call(
-                    bound.client(),
-                    &parent.name,
-                    "term.props.get",
-                    json!({"target":target,"property":"state"})
-                )
-                .await
-                .0,
-                0
-            );
-            for (command_name, extra) in [
-                ("term.snapshot", json!({"contents":true})),
-                (
-                    "term.type",
-                    json!({"text":"DENIED","foreground_generation":"1"}),
-                ),
-                ("term.pane.select", json!({})),
-                ("term.pane.close", json!({})),
-                ("term.execute", json!({})),
-                ("term.props.get", json!({"property":"contents"})),
-                (
-                    "term.props.set",
-                    json!({"property":"selected","value":true}),
-                ),
-            ] {
-                let mut body = json!({"target":target,"request_id":"1"});
-                body.as_object_mut()
-                    .unwrap()
-                    .extend(extra.as_object().unwrap().clone());
-                forbidden(call(bound.client(), &parent.name, command_name, body).await);
-            }
-        });
-        drop(fixture);
-        let fixture = Fixture::new(policy);
-        runtime().block_on(async {
-            let bound = verified(&fixture.broker).await;
-            let (parent, target) = fixture.bound(&bound).await;
-            assert_eq!(
-                call(
-                    bound.client(),
-                    &parent.name,
-                    "term.pane.close",
-                    json!({"target":target,"request_id":"1"})
-                )
-                .await
-                .0,
-                0
-            );
+            let state = call(bound.client(), &parent.name, "term.session", json!({"target":target})).await;
+            assert_eq!(state.0, 0);
+            assert_eq!(call(bound.client(), &parent.name, "term.snapshot", json!({"target":target,"contents":true})).await.0, 0);
+            assert_eq!(call(bound.client(), &parent.name, "term.type", json!({"target":target,"request_id":"1",
+                "foreground_generation":state.1["foreground_generation"].as_u64().unwrap().to_string(),"text":"x"})).await.0, 0);
+            assert_eq!(call(bound.client(), &parent.name, "term.pane.close", json!({"target":target,"request_id":"2"})).await.0, 0);
             assert!(fixture.tabs.lock().unwrap().is_empty());
         });
     }
@@ -1528,12 +1358,6 @@ fn p0i_07_capability_separation_and_bound_termination() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_07_affected_set_and_live_generation_authority() {
-    if in_posture(
-        "p0i_07_affected_set_and_live_generation_authority",
-        Some("0"),
-    ) {
-        return;
-    }
     eprintln!("{REQUIRE_MIX}");
     let fixture = Fixture::new(Policy::DefaultOpen);
     runtime().block_on(async {
@@ -1664,85 +1488,22 @@ fn p0i_07_affected_set_and_live_generation_authority() {
 
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
-fn p0i_08_lease_window_refresh_and_successor_binding_invalidation() {
-    if in_posture(
-        "p0i_08_lease_window_refresh_and_successor_binding_invalidation",
-        Some("0"),
-    ) {
-        return;
-    }
-    eprintln!("{REQUIRE_MIX}");
+fn p0i_08_two_writers_survive_caller_rebinding() {
     let fixture = Fixture::new(Policy::DefaultOpen);
     runtime().block_on(async {
         let bound = verified(&fixture.broker).await;
         let (parent, target) = fixture.bound(&bound).await;
-        assert_eq!(
-            call(
-                bound.client(),
-                &parent.name,
-                "term.session",
-                json!({"target":target})
-            )
-            .await
-            .0,
-            0
-        );
-
-        // A bound caller's lease check is reused for one five-second window.
-        // Every other fixture finishes well inside it, so the branch that lets
-        // the cache expire and takes a fresh check has never run.
-        tokio::time::sleep(Duration::from_millis(5500)).await;
-        assert_eq!(
-            call(
-                bound.client(),
-                &parent.name,
-                "term.session",
-                json!({"target":target})
-            )
-            .await
-            .0,
-            0,
-            "a bound caller must survive its cached lease check expiring"
-        );
-
-        // A successor binding retires what the previous one authorised. Proved
-        // without a keypress, which would revoke the permit regardless: another
-        // actor is admitted to the one-writer lease only once the queued permit
-        // has actually been invalidated.
-        let pane = fixture.tabs.lock().unwrap().pane_by_id(1).unwrap();
-        let listener = pane.lock().unwrap().listener.clone();
+        let listener = fixture.tabs.lock().unwrap().pane_by_id(1).unwrap().lock().unwrap().listener.clone();
         listener.block_control_writes(true);
-        let generation = listener.foreground_generation().to_string();
-        assert_eq!(
-            call(
-                bound.client(),
-                &parent.name,
-                "term.type",
-                json!({"target":target,"request_id":"1","foreground_generation":generation,"text":"NEVER_AFTER_REBIND"})
-            )
-            .await
-            .0,
-            0
-        );
-        let claimed = Instant::now();
-        let owner = verified(&fixture.broker).await;
-        assert_eq!(
-            call(owner.client(), &parent.name, "term.type", json!({"target":target,"request_id":"1","foreground_generation":listener.foreground_generation().to_string(),"text":"BLOCKED"})).await.1["error_code"],
-            "BUSY",
-            "the queued permit must hold the lease before the successor lands"
-        );
-        let (parent, target) = fixture.rebind(&bound, false).await;
-        assert_eq!(
-            call(owner.client(), &parent.name, "term.type", json!({"target":target,"request_id":"2","foreground_generation":listener.foreground_generation().to_string(),"text":"ADMITTED"})).await.0,
-            0,
-            "a successor binding must invalidate the previous permit"
-        );
-        // Without this the permit's own two-second deadline would explain the
-        // admission just as well, and the assertion above would prove nothing.
-        assert!(
-            claimed.elapsed() < Duration::from_secs(2),
-            "permit aged out on its own deadline; this says nothing about the successor binding"
-        );
+        let body = json!({"target":target,"request_id":"1","foreground_generation":listener.foreground_generation().to_string(),"text":"x"});
+        assert_eq!(call(bound.client(), &parent.name, "term.type", body.clone()).await.0, 0);
+        let other = verified(&fixture.broker).await;
+        assert_eq!(call(other.client(), &parent.name, "term.type", body).await.0, 0);
+        let (parent, successor) = fixture.rebind(&bound, false).await;
+        assert_eq!(target, successor);
+        assert_eq!(call(other.client(), &parent.name, "term.snapshot", json!({"target":target})).await.0, 0);
+        assert_eq!(call(other.client(), &parent.name, "term.type", json!({"target":successor,"request_id":"2",
+            "foreground_generation":listener.foreground_generation().to_string(),"text":"y"})).await.0, 0);
         listener.block_control_writes(false);
     });
 }
@@ -1775,9 +1536,6 @@ fn control_input_never_opens_a_bracketed_paste() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_07_actor_table_survives_reconnect_churn() {
-    if in_posture("p0i_07_actor_table_survives_reconnect_churn", Some("0")) {
-        return;
-    }
     eprintln!("{REQUIRE_MIX}");
     let fixture = Fixture::new(Policy::DefaultOpen);
     runtime().block_on(async {
@@ -1938,12 +1696,6 @@ async fn idle_generation(client: &NodedClient, child: &SessionRecord) -> String 
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit stage-D gate only"]
 fn p0j_d_execute_forwards_to_the_pane_shell_and_refuses_at_the_edges() {
-    if in_posture(
-        "p0j_d_execute_forwards_to_the_pane_shell_and_refuses_at_the_edges",
-        Some("0"),
-    ) {
-        return;
-    }
     eprintln!("{REQUIRE_MIX}");
     let fixture = Fixture::new(Policy::DefaultOpen);
     runtime().block_on(async {
@@ -2066,13 +1818,21 @@ fn p0j_d_execute_forwards_to_the_pane_shell_and_refuses_at_the_edges() {
         assert_eq!(finished.0, 0, "{finished:?}");
         assert_eq!(finished.1["outcome"], "already_finished");
 
-        // An unverified peer never reaches any of it.
+        // A TCP peer can inspect a retained execution without a Unix principal.
         let tcp = NodedClient::connect_anonymous(&fixture.broker.url)
             .await
             .unwrap();
-        for command_name in ["term.execute", "term.exec.result", "term.exec.cancel"] {
-            forbidden(call(&tcp, &parent.name, command_name, json!({"target":target})).await);
-        }
+        assert_eq!(
+            call(
+                &tcp,
+                &parent.name,
+                "term.exec.result",
+                json!({"target":target,"operation_id":operation})
+            )
+            .await
+            .0,
+            0
+        );
 
         // The announcement names the ORIGINATING agent, not Term. On the real
         // agent path Term is always the shell's direct caller, so an
@@ -2137,13 +1897,7 @@ fn p0j_d_execute_forwards_to_the_pane_shell_and_refuses_at_the_edges() {
 
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit P4 gate only"]
-fn p4_task_forwards_to_the_pane_shell_and_scopes_by_actor_and_kind() {
-    if in_posture(
-        "p4_task_forwards_to_the_pane_shell_and_scopes_by_actor_and_kind",
-        Some("0"),
-    ) {
-        return;
-    }
+fn p4_task_forwards_for_every_caller_and_keeps_families_separate() {
     eprintln!("{REQUIRE_MIX}");
     let fixture = Fixture::new(Policy::DefaultOpen);
     runtime().block_on(async {
@@ -2166,8 +1920,7 @@ fn p4_task_forwards_to_the_pane_shell_and_scopes_by_actor_and_kind() {
         )
         .await;
         assert_eq!(session.0, 0, "{session:?}");
-        // This gate runs under MIXOS_MESH_OPEN=0 (in_posture above).
-        assert_eq!(session.1["posture"], "strict", "{session:?}");
+        assert_eq!(session.0, 0, "{session:?}");
         let epoch = session.1["request_epoch"].clone();
         assert!(
             epoch.is_string(),
@@ -2253,10 +2006,7 @@ fn p4_task_forwards_to_the_pane_shell_and_scopes_by_actor_and_kind() {
             "a task was cancellable through the execute family: {crossed:?}"
         );
 
-        // FOREIGN-ACTOR scoping, which is the property Term's ownership map
-        // exists for: a sibling that learns the operation number some other way
-        // still cannot address it, and the same caller request id does not
-        // collide at the child.
+        // Another caller can read this task; its request IDs remain independent.
         let sibling = verified(&fixture.broker).await;
         let stolen = call(
             sibling.client(),
@@ -2266,8 +2016,8 @@ fn p4_task_forwards_to_the_pane_shell_and_scopes_by_actor_and_kind() {
         )
         .await;
         assert_eq!(
-            stolen.1["error_code"], "UNKNOWN_OUTCOME",
-            "a sibling addressed another actor's task: {stolen:?}"
+            stolen.0, 0,
+            "a sibling must be able to read a task: {stolen:?}"
         );
         let other = call(
             sibling.client(),
@@ -2284,8 +2034,7 @@ fn p4_task_forwards_to_the_pane_shell_and_scopes_by_actor_and_kind() {
         );
         sibling.client().close().await;
 
-        // An id this shell never minted addresses nothing, and an unverified
-        // peer reaches none of the family.
+        // An unknown id addresses nothing; a TCP peer can read a known task.
         let unknown = call(
             owner.client(),
             &parent.name,
@@ -2297,9 +2046,17 @@ fn p4_task_forwards_to_the_pane_shell_and_scopes_by_actor_and_kind() {
         let tcp = NodedClient::connect_anonymous(&fixture.broker.url)
             .await
             .unwrap();
-        for command_name in ["term.task.submit", "term.task.result", "term.task.cancel"] {
-            forbidden(call(&tcp, &parent.name, command_name, json!({"target":target})).await);
-        }
+        assert_eq!(
+            call(
+                &tcp,
+                &parent.name,
+                "term.task.result",
+                json!({"target":target,"operation_id":operation})
+            )
+            .await
+            .0,
+            0
+        );
 
         // A pane generation that is not this child's is not this child.
         let mut wrong = target;
@@ -2332,12 +2089,6 @@ fn p4_task_forwards_to_the_pane_shell_and_scopes_by_actor_and_kind() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit gate only"]
 fn unified_send_drives_term_execute_from_a_separate_driver_process() {
-    if in_posture(
-        "unified_send_drives_term_execute_from_a_separate_driver_process",
-        Some("0"),
-    ) {
-        return;
-    }
     eprintln!("{REQUIRE_MIX}");
     let fixture = Fixture::new(Policy::DefaultOpen);
     runtime().block_on(async {
@@ -2411,10 +2162,7 @@ fn unified_send_drives_term_execute_from_a_separate_driver_process() {
             out.contains("DISCOVERY=true"),
             "the driver could not find the term instance in noded.list\n{out}\n{err}"
         );
-        // The decisive line, and it is term.session rather than term.execute:
-        // a PROTECTED command answering rc 0 to a grantless separate process is
-        // precisely what the diagnostic lane refuses with FORBIDDEN. If the
-        // verified lane were not carrying the principal, this is where it ends.
+        // The driver reaches target-bound session state through plain send.
         assert!(
             out.contains("SESSION_RC=0"),
             "plain send did not reach a protected command — this is the VT5 gap\n{out}\n{err}"
@@ -2428,12 +2176,7 @@ fn unified_send_drives_term_execute_from_a_separate_driver_process() {
             "the submission was not accepted\n{out}\n{err}"
         );
 
-        // The work actually ran — read back BY THE DRIVER, which is the only
-        // actor that can. An operation is scoped to the identity that minted
-        // it, so the fixture is structurally unable to ask about the
-        // driver's work: this connection gets UNKNOWN_OUTCOME, correctly. That
-        // is the P4 foreign-actor scoping doing its job, and it means the
-        // poll belongs in the driver's own script.
+        // Read the completed result from the driver's output.
         let finished = out
             .lines()
             .find_map(|line| line.strip_prefix("FINAL="))

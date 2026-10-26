@@ -50,7 +50,7 @@ fn help_line(command_name: &str) -> Option<&'static str> {
 
 /// The full window service HELP reply, in the protocol descriptor shape.
 pub fn help(service: &str) -> Vec<::bus::CommandDescriptor> {
-    let mut entries = term_core::bus::manifest(service, true);
+    let mut entries = term_core::bus::manifest(service);
     let mut hosted = drive::describe(service);
     hosted.extend([
         json!({"name":format!("{service}.actions"),"description":"List window actions","read_only":true}),

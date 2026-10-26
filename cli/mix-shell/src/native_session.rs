@@ -688,22 +688,20 @@ async fn own(
                         let connection = connection.clone();
                         // Static discovery remains available while attachment
                         // is being refreshed; it needs no bound record.
-                        if command.command == "HELP" && requests.len() < crate::session_status::SHARED_SLOTS {
+                        if command.command == "HELP" && requests.len() < crate::session_status::DISPATCH_SLOTS {
                             requests.spawn(async move {
                                 crate::session_status::help(&connection, &event).await;
                             });
                             continue;
                         }
-                        // The last slot belongs to this pane's own Term; other
-                        // same-UID callers share the rest.
+                        // Every caller shares the same bounded dispatch capacity.
                         let admitted = record
                             .as_ref()
-                            .filter(|bound| requests.len() < crate::session_status::dispatch_slots(&event, bound))
+                            .filter(|_| requests.len() < crate::session_status::DISPATCH_SLOTS)
                             .cloned();
                         if let Some(bound) = admitted {
-                            let hello = hello.clone();
                             requests.spawn(async move {
-                                crate::session_status::dispatch(&connection, &hello, &bound, &event).await;
+                                crate::session_status::dispatch(&connection, &bound, &event).await;
                             });
                         } else {
                             refusal = Some(Box::pin(async move {

@@ -9,7 +9,7 @@
 //! The sequence is the design memo's, and each step is here for a reason a
 //! shorter one would violate:
 //!
-//! 1. The Bus arm validates schema, bounds and authority, and submits a
+//! 1. The Bus arm validates schema, bounds and target freshness, and submits a
 //!    candidate naming the prompt generation it believes is current.
 //! 2. The admission owner reserves the eligible prompt. A reservation is NOT an
 //!    acceptance: it only asks the editor to give up the terminal.
@@ -39,7 +39,6 @@ use crate::editor::Generation;
 use crate::editor::runtime::{Admission, AdmitRequest, Admitted, Control, OwnerToken};
 use crate::editor::{self, Reply as EditorReply};
 use crate::session_state::{self, Phase, Source};
-use ::bus::native_client::session::Hello;
 use ::bus::native_client::{VerifiedCommand, VerifiedConnection};
 use ::bus::native_session::*;
 use serde::{Deserialize, Serialize};
@@ -441,13 +440,11 @@ impl Store {
             .get(actor)
             .is_some_and(|mark| request_id <= *mark)
     }
-    /// Operations are addressed only by the actor that submitted them. A
-    /// mismatch answers exactly like an unknown id, so the surface cannot be
-    /// used as an oracle for which operation numbers exist.
-    fn owned(&self, actor: &str, operation: u64, kind: Kind) -> Option<&Record> {
+    /// Every caller can address retained operations within their command family.
+    fn operation(&self, operation: u64, kind: Kind) -> Option<&Record> {
         self.records
             .iter()
-            .find(|r| r.operation == operation && r.actor == actor && r.kind == kind)
+            .find(|r| r.operation == operation && r.kind == kind)
     }
     /// The supervisor publishes by operation alone: it is the owner of that
     /// task by construction and has no actor context to check against.
@@ -609,37 +606,54 @@ pub(crate) fn reserve_hold() -> Duration {
     })
 }
 
-/// Stable identity for retry dedupe. Same construction as Term's: a bound
-/// caller is its record, an ambient one is its connection, which never returns.
-fn actor_key(actor: &BrokerPrincipal) -> String {
-    match &actor.session {
-        Some(s) => format!("{}:{:?}:{:?}", actor.unix_uid, s.record_id, s.incarnation),
-        None => format!(
-            "{}:{:?}:{:?}",
-            actor.unix_uid, actor.broker_epoch, actor.connection_id
-        ),
+/// Broker-stamped replay identity and display label, without an admission role.
+struct Caller {
+    key: String,
+    label: String,
+}
+impl Caller {
+    fn from_event(event: &VerifiedCommand) -> Self {
+        if let Some(actor) = event.trusted_context() {
+            let key = match &actor.session {
+                Some(session) => format!(
+                    "{}:{:?}:{:?}",
+                    actor.unix_uid, session.record_id, session.incarnation
+                ),
+                None => format!(
+                    "{}:{:?}:{:?}",
+                    actor.unix_uid, actor.broker_epoch, actor.connection_id
+                ),
+            };
+            return Self {
+                key,
+                label: actor.session.as_ref().map_or_else(
+                    || format!("uid {} pid {}", actor.unix_uid, actor.peer_pid),
+                    |session| format!("{:?} {:?}", session.role, session.record_id),
+                ),
+            };
+        }
+        let command = event.command();
+        Self {
+            key: format!(
+                "bus:{:?}:{:?}:{:?}:{:?}",
+                command.header("broker_origin"),
+                command.header("source_peer"),
+                command.header("signed_ident"),
+                command.from
+            ),
+            label: format!(
+                "Bus {} {}",
+                command.header("source_peer").unwrap_or("local"),
+                command.from
+            ),
+        }
     }
 }
-
-/// What the human sees announced. Short by design: the point is that the pane
-/// names who is driving it, not that it reproduces broker identifiers.
-fn principal_label(actor: &BrokerPrincipal) -> String {
-    match &actor.session {
-        Some(s) => {
-            // HexBytes renders as lowercase hex through Serialize, not Debug —
-            // Debug would put the type name on the glass where the identity
-            // should be. The first bytes are enough to tell two callers apart.
-            let record: String = s
-                .record_id
-                .0
-                .iter()
-                .take(4)
-                .map(|byte| format!("{byte:02x}"))
-                .collect();
-            format!("{:?} {}", s.role, record)
-        }
-        None => format!("uid {} pid {}", actor.unix_uid, actor.peer_pid),
-    }
+fn actor_key(actor: &Caller) -> String {
+    actor.key.clone()
+}
+fn principal_label(actor: &Caller) -> String {
+    actor.label.clone()
 }
 
 /// Escape everything that could move the cursor or change modes. The echo
@@ -743,29 +757,21 @@ fn escape(character: char) -> String {
 
 pub(crate) async fn dispatch(
     connection: &VerifiedConnection,
-    hello: &Hello,
     bound: &SessionRecord,
     event: &VerifiedCommand,
-    actor: &BrokerPrincipal,
 ) -> (u8, String) {
+    let actor = &Caller::from_event(event);
     let command = event.command();
     if command.body.len() > MAX_REQUEST {
         return refusal("INVALID_REQUEST");
     }
-    // The request arm resolved this family's capability before doing any
-    // correlated work, so this is the same decision restated. It is restated
-    // deliberately: this module's guarantee that nothing executes without
-    // `Execute` should not depend on which caller reached it.
-    if !crate::session_status::permitted(actor, bound, Capability::Execute) {
-        return refusal("REFUSED");
-    }
     match command.command.as_str() {
-        SUBMIT => submit(connection, hello, bound, event, actor).await,
-        RESULT => retrieve(bound, actor, &command.body),
-        CANCEL => cancel(bound, actor, &command.body),
+        SUBMIT => submit(connection, bound, event, actor).await,
+        RESULT => retrieve(bound, &command.body),
+        CANCEL => cancel(bound, &command.body),
         TASK_SUBMIT => task_submit(bound, actor, &command.body),
-        TASK_RESULT => task_retrieve(bound, actor, &command.body),
-        TASK_CANCEL => task_cancel(bound, actor, &command.body),
+        TASK_RESULT => task_retrieve(bound, &command.body),
+        TASK_CANCEL => task_cancel(bound, &command.body),
         // Advertised, not stubbed. The §6 rule is that an absent operation says
         // so: a caller polling `shell.task.result` is doing the supported thing,
         // and would otherwise have to discover by silence that watching is not
@@ -789,7 +795,7 @@ pub(crate) async fn dispatch(
     }
 }
 
-fn retrieve(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u8, String) {
+fn retrieve(bound: &SessionRecord, body: &str) -> (u8, String) {
     let Ok(request) = serde_json::from_str::<Operation>(body) else {
         return refusal("INVALID_REQUEST");
     };
@@ -799,13 +805,9 @@ fn retrieve(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u8, 
     if request.target != Source::from(bound) {
         return refusal("STALE_GENERATION");
     }
-    let identity = actor_key(actor);
     let mut store = store().lock().unwrap_or_else(|e| e.into_inner());
     store.sweep();
-    // Scoped to the submitting actor. An execution's result names what ran in
-    // this shell and what it returned; holding `execute` authorises driving the
-    // shell, not reading back what somebody else drove it to do.
-    let Some(record) = store.owned(&identity, request.operation_id.0, Kind::Execute) else {
+    let Some(record) = store.operation(request.operation_id.0, Kind::Execute) else {
         return refusal("UNKNOWN_OUTCOME");
     };
     (
@@ -824,7 +826,7 @@ fn retrieve(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u8, 
     )
 }
 
-fn cancel(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u8, String) {
+fn cancel(bound: &SessionRecord, body: &str) -> (u8, String) {
     let Ok(request) = serde_json::from_str::<Operation>(body) else {
         return refusal("INVALID_REQUEST");
     };
@@ -834,7 +836,6 @@ fn cancel(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u8, St
     if request.target != Source::from(bound) {
         return refusal("STALE_GENERATION");
     }
-    let identity = actor_key(actor);
     let operation = request.operation_id.0;
     // THE STORE IS AUTHORITATIVE, not the cancellation registry.
     //
@@ -846,7 +847,7 @@ fn cancel(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u8, St
     // below is adopted when the evaluation begins rather than lost.
     let finished = {
         let store = store().lock().unwrap_or_else(|e| e.into_inner());
-        match store.owned(&identity, operation, Kind::Execute) {
+        match store.operation(operation, Kind::Execute) {
             None => return refusal("UNKNOWN_OUTCOME"),
             Some(record) => record.completion.is_some(),
         }
@@ -967,7 +968,7 @@ fn handles() -> &'static Mutex<std::collections::HashMap<u64, crate::session_tas
 /// NO idle-prompt admission, deliberately. A task is a separate process; the
 /// shell being busy has nothing to do with whether one can start, and refusing
 /// BUSY here would destroy the independence that is the mode's entire purpose.
-fn task_submit(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u8, String) {
+fn task_submit(bound: &SessionRecord, actor: &Caller, body: &str) -> (u8, String) {
     let Ok(request) = serde_json::from_str::<TaskSubmit>(body) else {
         return refusal("INVALID_REQUEST");
     };
@@ -1148,7 +1149,7 @@ fn task_settled(operation: u64, report: crate::session_task::TaskReport) {
         .remove(&operation);
 }
 
-fn task_retrieve(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u8, String) {
+fn task_retrieve(bound: &SessionRecord, body: &str) -> (u8, String) {
     let Ok(request) = serde_json::from_str::<Operation>(body) else {
         return refusal("INVALID_REQUEST");
     };
@@ -1158,10 +1159,9 @@ fn task_retrieve(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> 
     if request.target != Source::from(bound) {
         return refusal("STALE_GENERATION");
     }
-    let identity = actor_key(actor);
     let mut store = store().lock().unwrap_or_else(|e| e.into_inner());
     store.sweep();
-    let Some(record) = store.owned(&identity, request.operation_id.0, Kind::Task) else {
+    let Some(record) = store.operation(request.operation_id.0, Kind::Task) else {
         return refusal("UNKNOWN_OUTCOME");
     };
     let report = record.task.clone();
@@ -1209,7 +1209,7 @@ fn task_retrieve(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> 
     )
 }
 
-fn task_cancel(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u8, String) {
+fn task_cancel(bound: &SessionRecord, body: &str) -> (u8, String) {
     let Ok(request) = serde_json::from_str::<Operation>(body) else {
         return refusal("INVALID_REQUEST");
     };
@@ -1219,11 +1219,10 @@ fn task_cancel(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u
     if request.target != Source::from(bound) {
         return refusal("STALE_GENERATION");
     }
-    let identity = actor_key(actor);
     let operation = request.operation_id.0;
     let settled = {
         let store = store().lock().unwrap_or_else(|e| e.into_inner());
-        match store.owned(&identity, operation, Kind::Task) {
+        match store.operation(operation, Kind::Task) {
             None => return refusal("UNKNOWN_OUTCOME"),
             Some(record) => record.completion.is_some(),
         }
@@ -1261,10 +1260,9 @@ fn task_cancel(bound: &SessionRecord, actor: &BrokerPrincipal, body: &str) -> (u
 
 async fn submit(
     connection: &VerifiedConnection,
-    hello: &Hello,
     bound: &SessionRecord,
     event: &VerifiedCommand,
-    actor: &BrokerPrincipal,
+    actor: &Caller,
 ) -> (u8, String) {
     let body = &event.command().body;
     let Ok(request) = serde_json::from_str::<Submit>(body) else {
@@ -1408,12 +1406,9 @@ async fn submit(
     // caller nothing about what to do next: an identity loss is permanent, a
     // moved generation means re-read it, and a continuation means wait.
     let lost_identity = !connection.client().is_connected()
-        || !tokio::time::timeout(
-            RECHECK,
-            crate::session_status::admitted(connection, hello, actor, bound, Capability::Execute),
-        )
-        .await
-        .unwrap_or(false);
+        || !tokio::time::timeout(RECHECK, crate::session_status::admitted(connection, bound))
+            .await
+            .unwrap_or(false);
     let recheck = if lost_identity {
         Some("REFUSED")
     } else {
@@ -1852,13 +1847,13 @@ mod tests {
     }
 
     #[test]
-    fn operations_are_addressable_only_by_the_actor_that_submitted_them() {
+    fn operations_are_addressable_by_every_caller_with_the_right_family() {
         let mut store = Store::default();
         store.admit(record(7, true));
-        assert!(store.owned("a", 7, Kind::Execute).is_some());
+        assert!(store.operation(7, Kind::Execute).is_some());
         assert!(
-            store.owned("b", 7, Kind::Execute).is_none(),
-            "another actor reached an operation it did not submit"
+            store.operation(7, Kind::Task).is_none(),
+            "an execution was returned as a task"
         );
     }
 

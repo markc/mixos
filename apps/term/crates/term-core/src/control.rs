@@ -13,17 +13,77 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+/// Broker provenance is required even when no Unix principal was delivered.
+fn stamped(command: &::bus::native_client::IncomingCommand) -> bool {
+    let origins: Vec<_> = command
+        .headers
+        .iter()
+        .filter(|(key, _)| key.eq_ignore_ascii_case("broker_origin"))
+        .map(|(_, value)| value.as_str())
+        .collect();
+    origins == ["mesh"]
+        || (origins == ["local"]
+            && !command.headers.keys().any(|key| {
+                ["source_peer", "permissions", "signed_ident"]
+                    .iter()
+                    .any(|name| key.eq_ignore_ascii_case(name))
+            }))
+}
+
+/// Replay namespace, never an admission decision. Mesh ingress has no Unix
+/// principal, so use the broker's delivered peer and sender instead.
+fn caller_key(event: &VerifiedCommand) -> String {
+    if let Some(actor) = event.trusted_context() {
+        return match &actor.session {
+            Some(session) => format!(
+                "{}:{:?}:{:?}",
+                actor.unix_uid, session.record_id, session.incarnation
+            ),
+            None => format!(
+                "{}:{:?}:{:?}",
+                actor.unix_uid, actor.broker_epoch, actor.connection_id
+            ),
+        };
+    }
+    let command = event.command();
+    format!(
+        "bus:{:?}:{:?}:{:?}:{:?}",
+        command.header("broker_origin"),
+        command.header("source_peer"),
+        command.header("signed_ident"),
+        command.from
+    )
+}
+
+fn caller_epoch(event: &VerifiedCommand, broker_epoch: HexBytes<16>) -> HexBytes<16> {
+    if let Some(actor) = event.trusted_context() {
+        return actor.connection_id;
+    }
+    let key = format!("{broker_epoch:?}:{}", caller_key(event));
+    let digest = Sha256::digest(key.as_bytes());
+    HexBytes(digest[..16].try_into().expect("SHA-256 prefix"))
+}
+
+fn caller_label(event: &VerifiedCommand) -> String {
+    event
+        .trusted_context()
+        .map(principal_label)
+        .unwrap_or_else(|| {
+            let command = event.command();
+            format!(
+                "Bus {} {}",
+                command.header("source_peer").unwrap_or("local"),
+                command.from
+            )
+        })
+}
+
 const RETENTION: Duration = Duration::from_secs(900);
-/// BROKER-020's renew cadence. A cached bound-caller check is reused no longer
-/// than one such window, so a revocation missed by every notice still closes
-/// the lane within the lease it was granted under.
-const LEASE_WINDOW: Duration = Duration::from_secs(5);
 const PER_ACTOR: usize = 1024;
 const TOTAL: usize = 4096;
 const ACTORS: usize = 256;
 
-/// Public command metadata; invocation still passes the recipient's policy
-/// and target/generation checks. Native identity is published after install.
+/// Public command metadata; invocation still checks target and generation.
 pub(crate) fn command_manifest() -> Vec<::bus::CommandDescriptor> {
     use ::bus::CommandDescriptor;
     let mut command_names = vec![CommandDescriptor::new(
@@ -135,17 +195,6 @@ pub(crate) fn command_manifest() -> Vec<::bus::CommandDescriptor> {
         command_names.push(descriptor);
     }
     command_names
-}
-
-/// Same default-open posture as CTK app-control and desktop.mix.
-pub(crate) fn mesh_open() -> bool {
-    std::env::var("MIXOS_MESH_OPEN").map_or(true, |value| value != "0")
-}
-
-/// [`mesh_open`] as `term.session` reports it, so a caller reads the posture
-/// instead of inferring it from which replies differ.
-pub(crate) fn posture(open: bool) -> &'static str {
-    if open { "mesh-open" } else { "strict" }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -282,7 +331,6 @@ pub struct Permit {
     pub connection: Arc<dyn Fn() -> bool + Send + Sync>,
     pub live: std::sync::atomic::AtomicBool,
     pub parent: Deadline,
-    pub actor: Option<Deadline>,
     pub hello: Hello,
     pub until: Instant,
     pub pane: Arc<dyn Fn() -> bool + Send + Sync>,
@@ -298,10 +346,6 @@ impl Permit {
             && (self.connection)()
             && Instant::now() < self.until
             && self.parent.is_live(&self.hello).unwrap_or(false)
-            && self
-                .actor
-                .as_ref()
-                .is_none_or(|a| a.is_live(&self.hello).unwrap_or(false))
             && (self.pane)()
     }
     pub fn revoke(&self) {
@@ -346,13 +390,7 @@ impl Default for History {
 #[derive(Default)]
 struct State {
     history: HashMap<String, History>,
-    permits: Vec<(Option<RecordRef>, std::sync::Weak<Permit>)>,
-    /// Bound-caller lease checks, reused within one lease window. Lifecycle
-    /// notices and gaps drop these with the permits they authorised, so a
-    /// cached check can never outlive the authority it recorded. A list, not a
-    /// map: `RecordRef` is a wire type without `Hash`, and this holds at most
-    /// one entry per live bound child.
-    leases: Vec<(RecordRef, Instant, Deadline)>,
+    permits: Vec<std::sync::Weak<Permit>>,
     /// Request ids Term mints for what it forwards, and the caller request each
     /// one stands for.
     ///
@@ -365,36 +403,6 @@ struct State {
     /// (Term, forwarded-seq) and nothing collides.
     forwarded: HashMap<String, (u64, [u8; 32])>,
     next_forward: u64,
-    /// Operation ids the child minted, and the ACTOR each belongs to.
-    ///
-    /// Every forwarded submission travels on Term's one connection, so at the
-    /// child they all share Term's identity and the child's own per-actor
-    /// scoping cannot separate them. Ownership therefore has to be kept HERE:
-    /// without it a sibling agent that guesses an operation id reads another
-    /// agent's result — up to 16 KiB of whatever that shell printed — or
-    /// cancels its evaluation.
-    operations: HashMap<u64, (String, Family)>,
-}
-
-/// Which surface an operation belongs to.
-///
-/// Scopes ADDRESSING only. The forwarded-id map is deliberately NOT split by
-/// this: one caller request id must map to one forwarded id across both
-/// surfaces, or the same id could mint a fresh operation on each and both would
-/// execute.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Family {
-    Execute,
-    Task,
-}
-impl Family {
-    fn of(command_name: &str) -> Self {
-        if command_name.starts_with("term.task.") {
-            Self::Task
-        } else {
-            Self::Execute
-        }
-    }
 }
 
 /// What Term already knows about a caller request it is being asked to forward.
@@ -484,7 +492,7 @@ impl Control {
     pub async fn flush_notices(&self, connection: &VerifiedConnection) {
         {
             let mut state = self.state.lock().unwrap();
-            state.permits.retain(|(_, weak)| {
+            state.permits.retain(|weak| {
                 let Some(permit) = weak.upgrade() else {
                     return false;
                 };
@@ -559,31 +567,15 @@ impl Control {
 
     pub fn invalidate(&self, target: Option<&RecordRef>) {
         let mut state = self.state.lock().unwrap();
-        // Drop the cached checks first: a notice or gap means the authority
-        // they recorded is no longer current, and the next request must pay
-        // for a fresh one rather than resolve against a stale window.
-        match target {
-            None => state.leases.clear(),
-            Some(t) => state.leases.retain(|(reference, _, _)| {
-                reference.record_id != t.record_id
-                    || reference.incarnation != t.incarnation
-                    || reference.binding_generation.0 > t.binding_generation.0
-            }),
-        }
-        state.permits.retain(|(actor, weak)| {
+        state.permits.retain(|weak| {
             let Some(permit) = weak.upgrade() else {
                 return false;
             };
             if target.is_none_or(|t| {
-                [&Some(permit.parent.target().clone()), actor]
-                    .into_iter()
-                    .any(|r| {
-                        r.as_ref().is_some_and(|r| {
-                            r.record_id == t.record_id
-                                && r.incarnation == t.incarnation
-                                && r.binding_generation.0 <= t.binding_generation.0
-                        })
-                    })
+                let r = permit.parent.target();
+                r.record_id == t.record_id
+                    && r.incarnation == t.incarnation
+                    && r.binding_generation.0 <= t.binding_generation.0
             }) {
                 permit.revoke();
             }
@@ -617,15 +609,13 @@ impl Control {
             self.invalidate(None);
             return Reply::error("DISCONNECTED");
         }
-        let Some(actor) = event.trusted_context() else {
-            return Reply::error("FORBIDDEN");
-        };
-        // Deny before argument parsing: untrusted callers cannot probe schema,
-        // target existence, policy or supported operation details.
-        if !principal_allowed(parent, actor) {
-            return Reply::error("FORBIDDEN");
-        }
         let command = event.command();
+        if !stamped(command) {
+            return Reply::error("INVALID_ARGUMENT");
+        }
+        let actor = event.trusted_context();
+        let identity = caller_key(event);
+        let request_epoch = caller_epoch(event, parent.broker_epoch);
         if command.body.len() > 8192 {
             return Reply::error("INVALID_ARGUMENT");
         }
@@ -655,40 +645,19 @@ impl Control {
             (command_name, _) if !property => command_name,
             _ => return Reply::error("UNSUPPORTED"),
         };
-        // An unknown command is resolved against the WEAKEST capability rather
-        // than answered here. Answering early would tell an unauthorised caller
-        // which commands exist — a known one comes back FORBIDDEN and an unknown
-        // one UNSUPPORTED, which is a probe of the command table. The UNSUPPORTED
-        // fall-through is below, after `allows`.
         let capability =
             capability_of(command_name, request.contents).unwrap_or(Capability::ReadState);
         if (request.request_id.is_some() || request.operation_id.is_some())
-            && actor.session.is_none()
             && (request.target.instance_id != parent.instance_id
                 || request.target.incarnation != parent.incarnation)
         {
             return Reply::error("UNKNOWN_OUTCOME");
         }
-        if !allows(parent, actor, &request.target, capability) {
+        if !target_matches(parent, &request.target) {
             return Reply::error("FORBIDDEN");
         }
-        // Only now, to a caller that WOULD have been allowed. An unauthorised
-        // one was refused above and learns nothing about the command table.
-        //
-        // Derived from the capability match, not a third hand-written copy of
-        // it: the same list already existed there and in the coverage test, and
-        // a fourth would drift the way the second one did.
         if capability_of(command_name, request.contents).is_none() {
             return Reply::error("UNSUPPORTED");
-        }
-        if !mesh_open()
-            && matches!(command_name, "term.tab.new" | "term.pane.split")
-            && actor
-                .session
-                .as_ref()
-                .is_some_and(|s| s.role == Role::PaneShell)
-        {
-            return Reply::error("FORBIDDEN");
         }
         // The recipient's own deadline comes from its renew cadence, never
         // from a check made here: `lease.check` answers only for a record this
@@ -702,63 +671,7 @@ impl Control {
         {
             return Reply::error("FORBIDDEN");
         }
-        // A bound caller's own lease is checked against the broker. Its request
-        // registered the dependency this needs, so the check is answerable, and
-        // it completes here — outside the synchronous capability resolution
-        // below, which may never block on a Bus call (PROP-024). A live cached
-        // check from this lease window satisfies the requirement instead.
-        let actor_deadline = if mesh_open() {
-            // Caller session ownership and leases are not authorisation on the
-            // mesh. The recipient's own deadline and pane guard still apply.
-            None
-        } else if let Some(s) = &actor.session {
-            let reference = reference(s);
-            let cached = self
-                .state
-                .lock()
-                .unwrap()
-                .leases
-                .iter()
-                .find(|(target, at, deadline)| {
-                    *target == reference
-                        && at.elapsed() < LEASE_WINDOW
-                        && deadline.is_live(&hello).unwrap_or(false)
-                })
-                .map(|(_, _, deadline)| deadline.clone());
-            let deadline = match cached {
-                Some(deadline) => deadline,
-                None => {
-                    let fresh = tokio::time::timeout(
-                        Duration::from_secs(2),
-                        connection.session_lease_check(reference.clone()),
-                    )
-                    .await;
-                    let Ok(Ok(deadline)) = fresh else {
-                        return Reply::error("FORBIDDEN");
-                    };
-                    let mut state = self.state.lock().unwrap();
-                    state.leases.retain(|(target, at, _)| {
-                        *target != reference && at.elapsed() < LEASE_WINDOW
-                    });
-                    if state.leases.len() < ACTORS {
-                        state
-                            .leases
-                            .push((reference, Instant::now(), deadline.clone()));
-                    }
-                    deadline
-                }
-            };
-            if !deadline.is_live(&hello).unwrap_or(false) {
-                return Reply::error("FORBIDDEN");
-            }
-            Some(deadline)
-        } else {
-            None
-        };
-        // A completed close can be retried after removal of its pane. Resolve
-        // retained results after actor/recipient lease checks but before live
-        // target lookup. Retired IDs never re-enter the mutation path.
-        let identity = actor_key(actor);
+        // Retained outcomes survive pane removal; request IDs remain caller-scoped.
         let digest: [u8; 32] =
             Sha256::digest(format!("{}\0{}", command.command, command.body).as_bytes()).into();
         if command_name == "term.operation" {
@@ -766,15 +679,24 @@ impl Control {
                 return Reply::error("INVALID_ARGUMENT");
             };
             let state = self.state.lock().unwrap();
-            return match state.history.get(&identity).and_then(|h| {
-                h.entries
-                    .iter()
-                    .find(|e| e.sequence == id.0 && e.at.elapsed() < RETENTION)
-            }) {
-                Some(entry) if entry.target == request.target => {
-                    entry.outcome.as_ref().unwrap_or(&entry.reply).clone()
-                }
-                Some(_) => Reply::error("FORBIDDEN"),
+            return match state
+                .history
+                .get(&identity)
+                .into_iter()
+                .chain(
+                    state
+                        .history
+                        .iter()
+                        .filter(|(key, _)| *key != &identity)
+                        .map(|(_, history)| history),
+                )
+                .flat_map(|history| &history.entries)
+                .find(|entry| {
+                    entry.sequence == id.0
+                        && entry.target == request.target
+                        && entry.at.elapsed() < RETENTION
+                }) {
+                Some(entry) => entry.outcome.as_ref().unwrap_or(&entry.reply).clone(),
                 None => Reply::error("UNKNOWN_OUTCOME"),
             };
         }
@@ -804,7 +726,7 @@ impl Control {
         }
         // The execute family answers from the CHILD, over a round trip Term
         // must not hold the terminal or tab lock across. It is handled here,
-        // after every identity, capability and lease check and before any of
+        // after recipient freshness and target checks and before any of
         // those locks are taken.
         if matches!(
             command_name,
@@ -816,7 +738,15 @@ impl Control {
                 | "term.task.cancel"
         ) {
             return self
-                .forward_execute(connection, actor, command_name, &request, &identity, digest)
+                .forward_execute(
+                    connection,
+                    request_epoch,
+                    &caller_label(event),
+                    command_name,
+                    &request,
+                    &identity,
+                    digest,
+                )
                 .await;
         }
         let target = request.target.clone();
@@ -825,7 +755,6 @@ impl Control {
             connection: Arc::new(connection.client().connection_liveness()),
             live: std::sync::atomic::AtomicBool::new(true),
             parent: parent_deadline,
-            actor: actor_deadline,
             hello,
             until: Instant::now() + Duration::from_secs(2),
             pane: live,
@@ -837,19 +766,7 @@ impl Control {
         if !permit.valid() || tabs.pane_by_id(target.pane_id.0).is_none() {
             return Reply::error("FORBIDDEN");
         }
-        // `term.props.*` is a COMMAND ALIAS, not a second authorisation surface.
-        // Each property name resolved to a command above and everything after this
-        // point is the enforcement for both spellings, which is precisely what
-        // PROP-024 requires: the property owner shares BROKER-023's policy and
-        // current-target checks with its command handlers.
-        //
-        // There used to be an AuthPolicy here that rebuilt a PeerIdentity from
-        // the actor this function had already authorised, then asked `allows`
-        // the same question again with the same arguments. It could not fail on
-        // any reachable path, and it read like an independent gate — which is
-        // worse than no gate, because a reader counts it as defence. If a
-        // second surface is ever wanted it has to consult something `allows`
-        // does not; until then the alias carries no separate check.
+        // Property aliases use the same current-target checks as direct commands.
         let layout = matches!(capability, Capability::ManageLayout | Capability::Terminate);
         if layout {
             let affected = tabs.control_affected(target.pane_id.0, command_name);
@@ -861,7 +778,7 @@ impl Control {
                         request.affected.iter().find(|t| t.pane_id.0 == *id)
                     };
                     t.is_none_or(|t| {
-                        !allows(parent, actor, t, Capability::ManageLayout)
+                        !target_matches(parent, t)
                             || !native.pane_guard(t.pane_id.0, t.pane_generation.0)()
                     })
                 })
@@ -882,7 +799,7 @@ impl Control {
                                 .find(|t| t.pane_id.0 == *id)
                                 .unwrap()
                         };
-                        !allows(parent, actor, t, Capability::Terminate)
+                        !target_matches(parent, t)
                     })
             {
                 return Reply::error("FORBIDDEN");
@@ -894,12 +811,13 @@ impl Control {
             // from which to learn an epoch. Bind an omitted epoch to the actual
             // broker-stamped delivery, never to a body assertion. Explicit old
             // epochs still fail, and request IDs remain connection-scoped.
-            if mesh_open() && actor.session.is_none() && request.request_epoch.is_none() {
-                request.request_epoch = Some(actor.connection_id);
+            if actor.is_none_or(|actor| actor.session.is_none()) && request.request_epoch.is_none()
+            {
+                request.request_epoch = Some(request_epoch);
             }
             match request.request_epoch {
                 None => return Reply::error("INVALID_ARGUMENT"),
-                Some(epoch) if epoch != actor.connection_id => {
+                Some(epoch) if epoch != request_epoch => {
                     return Reply::error("UNKNOWN_OUTCOME");
                 }
                 Some(_) => {}
@@ -922,22 +840,21 @@ impl Control {
                 let panes: Vec<_> = tabs.control_panes().into_iter().filter_map(|p| {
                     let generation = native.pane_generation(p.id)?;
                     let t = Target { pane_id:DecimalU64(p.id), pane_generation:DecimalU64(generation), ..target.clone() };
-                    allows(parent, actor, &t, Capability::ReadState).then(|| json!({
+                    target_matches(parent, &t).then(|| json!({
                         "target":t,"tab_id":tabs.control_tab(p.id),"cols":p.cols,"rows":p.rows,"child_pid":p.child_pid
                     }))
                 }).collect();
                 let tab_metadata: Vec<_> = tabs.list().into_iter().filter(|tab| {
                     tabs.control_panes().iter().filter(|p| tabs.control_tab(p.id) == Some(tab.id)).all(|p| {
                         native.pane_generation(p.id).is_some_and(|generation| {
-                            allows(parent, actor, &Target { pane_id:DecimalU64(p.id), pane_generation:DecimalU64(generation), ..target.clone() }, Capability::ReadState)
+                            target_matches(parent, &Target { pane_id:DecimalU64(p.id), pane_generation:DecimalU64(generation), ..target.clone() })
                         })
                     })
                 }).map(|tab| json!({"id":tab.id,"active":tab.active,"title":tab.title,"cols":tab.cols,"rows":tab.rows,"child_pid":tab.child_pid})).collect();
                 Reply::ok(json!({
                     "instance_id":parent.instance_id, "incarnation":parent.incarnation,
                     "target":target, "policy":parent.policy,
-                    "posture":posture(mesh_open()),
-                    "request_epoch":actor.connection_id,
+                    "request_epoch":request_epoch,
                     "request_high_water":DecimalU64(state.history.get(&identity).map_or(0, |h| h.high_water)),
                     "panes":panes,
                     "tabs":tab_metadata,
@@ -972,28 +889,20 @@ impl Control {
                                 actor: identity.clone(),
                                 expected: text.len(),
                                 to: command.from.clone(),
-                                actor_epoch: actor.broker_epoch,
-                                actor_connection: actor.connection_id,
+                                actor_epoch: parent.broker_epoch,
+                                actor_connection: request_epoch,
                                 target: target.clone(),
                                 request_id: request.request_id,
                                 written: 0,
                             },
                         ));
-                        match pane.listener.control_text(
-                            text,
-                            generation.0,
-                            &identity,
-                            permit.clone(),
-                        ) {
+                        match pane
+                            .listener
+                            .control_text(text, generation.0, permit.clone())
+                        {
                             Ok(()) => {
-                                state.permits.retain(|(_, p)| p.strong_count() > 0);
-                                state.permits.push((
-                                    permit
-                                        .actor
-                                        .as_ref()
-                                        .map(|deadline| deadline.target().clone()),
-                                    Arc::downgrade(&permit),
-                                ));
+                                state.permits.retain(|permit| permit.strong_count() > 0);
+                                state.permits.push(Arc::downgrade(&permit));
                                 Reply::ok(
                                     json!({"status":"accepted","outcome":"unknown","request_id":request.request_id}),
                                 )
@@ -1136,31 +1045,6 @@ impl Control {
         Forward::Fresh(minted)
     }
 
-    /// Bind a child-minted operation id to the actor that caused it.
-    fn claim_operation(&self, identity: &str, operation: u64, family: Family) {
-        let mut state = self.state.lock().unwrap();
-        // Bounded with the history it belongs to; an id whose mapping is gone
-        // answers like an unknown one, which is a refusal and never a leak.
-        if state.operations.len() >= TOTAL
-            && let Some(victim) = state.operations.keys().next().copied()
-        {
-            state.operations.remove(&victim);
-        }
-        state
-            .operations
-            .insert(operation, (identity.to_owned(), family));
-    }
-    /// Whether `identity` may address `operation` at all. An unmapped id is
-    /// treated as somebody else's, not as public.
-    fn owns_operation(&self, identity: &str, operation: u64, family: Family) -> bool {
-        self.state
-            .lock()
-            .unwrap()
-            .operations
-            .get(&operation)
-            .is_some_and(|(owner, owned_family)| owner == identity && *owned_family == family)
-    }
-
     /// Retain a completed mutation's outcome so a retry replays it.
     fn record_outcome(
         &self,
@@ -1200,7 +1084,8 @@ impl Control {
     async fn forward_execute(
         &self,
         connection: &VerifiedConnection,
-        actor: &BrokerPrincipal,
+        request_epoch: HexBytes<16>,
+        caller_label: &str,
         command_name: &str,
         request: &Request,
         identity: &str,
@@ -1237,7 +1122,7 @@ impl Control {
                 // in-flight id.
                 match request.request_epoch {
                     None => return Reply::error("INVALID_ARGUMENT"),
-                    Some(epoch) if epoch != actor.connection_id => {
+                    Some(epoch) if epoch != request_epoch => {
                         return Reply::error("UNKNOWN_OUTCOME");
                     }
                     Some(_) => {}
@@ -1269,7 +1154,7 @@ impl Control {
                         // The shell authenticated Term, not this actor, so the
                         // shell renders it as relayed. Taken from Term's own
                         // trusted context — a caller cannot put a name here.
-                        "on_behalf_of": principal_label(actor),
+                        "on_behalf_of": caller_label,
                     }),
                     Some(sequence),
                 )
@@ -1286,7 +1171,7 @@ impl Control {
                 };
                 match request.request_epoch {
                     None => return Reply::error("INVALID_ARGUMENT"),
-                    Some(epoch) if epoch != actor.connection_id => {
+                    Some(epoch) if epoch != request_epoch => {
                         return Reply::error("UNKNOWN_OUTCOME");
                     }
                     Some(_) => {}
@@ -1339,14 +1224,7 @@ impl Control {
                 let Some(operation) = request.operation_id else {
                     return Reply::error("INVALID_ARGUMENT");
                 };
-                let family = Family::of(command_name);
-                // Scoped to the actor that submitted it AND to the family it
-                // belongs to, refused exactly like an id that does not exist —
-                // so neither surface can read the other's operations, and
-                // neither can be used to discover which numbers are live.
-                if !self.owns_operation(identity, operation.0, family) {
-                    return Reply::error("UNKNOWN_OUTCOME");
-                }
+                // The pane shell resolves operation IDs and command families.
                 let shell_command = match command_name {
                     "term.exec.cancel" => "shell.execute.cancel",
                     "term.task.cancel" => "shell.task.cancel",
@@ -1379,15 +1257,6 @@ impl Control {
         let (mut reply, mut retain) = match answer {
             Ok(Ok(value)) => {
                 let mut value = value;
-                // Record who owns the operation the child just minted, before
-                // the id reaches anyone. A sibling that learns the number some
-                // other way still cannot address it.
-                if let Some(operation) = value["operation_id"]
-                    .as_str()
-                    .and_then(|id| id.parse::<u64>().ok())
-                {
-                    self.claim_operation(identity, operation, Family::of(command_name));
-                }
                 value["target"] = json!(request.target);
                 if let Some(sequence) = sequence {
                     value["operation_id_request"] = json!(DecimalU64(sequence));
@@ -1638,27 +1507,7 @@ fn mismatch() -> Value {
 fn retired(high_water: u64) -> Value {
     json!({"reason":"retired_request_id","request_high_water":DecimalU64(high_water)})
 }
-fn reference(s: &SessionIdentity) -> RecordRef {
-    RecordRef {
-        record_id: s.record_id,
-        incarnation: s.incarnation,
-        binding_generation: s.binding_generation,
-    }
-}
-fn actor_key(actor: &BrokerPrincipal) -> String {
-    match &actor.session {
-        Some(s) => format!("{}:{:?}:{:?}", actor.unix_uid, s.record_id, s.incarnation),
-        None => format!(
-            "{}:{:?}:{:?}",
-            actor.unix_uid, actor.broker_epoch, actor.connection_id
-        ),
-    }
-}
-/// The ONE command-to-capability table. `dispatch`'s gate, its UNSUPPORTED
-/// fall-through and the grant-coverage test all read this, because the moment
-/// there were two copies the second one drifted — it kept answering UNSUPPORTED
-/// before `allows`, which is how an unauthorised caller could tell a real command
-/// from an invented one.
+/// Command classification for dispatch, independent of the caller's capabilities.
 pub(crate) fn capability_of(command_name: &str, contents: bool) -> Option<Capability> {
     Some(match command_name {
         "term.macros.run" | "term.macros.stop" | "term.macros.reload" | "term.macros.new" => {
@@ -1678,8 +1527,6 @@ pub(crate) fn capability_of(command_name: &str, contents: bool) -> Option<Capabi
         // One capability for the whole execute family. Asking what an execution
         // did is asking about an execution.
         "term.execute" | "term.exec.result" | "term.exec.cancel" => Capability::Execute,
-        // Same authority: an isolated task is still this principal causing
-        // this shell to run code. The isolation is about the process.
         "term.task.submit" | "term.task.result" | "term.task.cancel" => Capability::Execute,
         _ => return None,
     })
@@ -1705,61 +1552,11 @@ fn principal_label(actor: &BrokerPrincipal) -> String {
     }
 }
 
-fn principal_allowed(parent: &SessionRecord, actor: &BrokerPrincipal) -> bool {
-    if mesh_open() {
-        return actor.validate().is_ok();
-    }
-    actor.validate().is_ok()
-        && actor.unix_uid == parent.owner_uid
-        && actor.owner_node == parent.owner_node
-        && actor.broker_epoch == parent.broker_epoch
-        && match &actor.session {
-            None => parent.policy == Policy::DefaultOpen,
-            Some(s) if s.role == Role::Term => {
-                s.record_id == parent.record_id && s.incarnation == parent.incarnation
-            }
-            Some(s) => {
-                s.role == Role::PaneShell
-                    && s.parent_instance == Some(parent.instance_id)
-                    && s.parent_incarnation == Some(parent.incarnation)
-            }
-        }
-}
-/// Shared pure capability/scope decision. All callers must additionally supply
-/// current checked leases and hold the pane owner's commitment lock.
-pub fn allows(
-    parent: &SessionRecord,
-    actor: &BrokerPrincipal,
-    target: &Target,
-    capability: Capability,
-) -> bool {
-    if !principal_allowed(parent, actor)
-        || parent.instance_id != target.instance_id
-        || parent.incarnation != target.incarnation
-        || target.pane_generation.0 == 0
-    {
-        return false;
-    }
-    if mesh_open() {
-        return true;
-    }
-    match &actor.session {
-        None => parent.policy == Policy::DefaultOpen,
-        Some(s) if s.role == Role::Term => {
-            s.record_id == parent.record_id
-                && s.incarnation == parent.incarnation
-                && s.binding_generation == parent.binding_generation
-                && s.capabilities.contains(&capability)
-        }
-        Some(s) => {
-            s.role == Role::PaneShell
-                && s.parent_instance == Some(parent.instance_id)
-                && s.parent_incarnation == Some(parent.incarnation)
-                && s.pane_id == Some(target.pane_id)
-                && s.pane_generation == Some(target.pane_generation)
-                && s.capabilities.contains(&capability)
-        }
-    }
+/// Target validation is independent of the caller.
+pub(crate) fn target_matches(parent: &SessionRecord, target: &Target) -> bool {
+    parent.instance_id == target.instance_id
+        && parent.incarnation == target.incarnation
+        && target.pane_generation.0 > 0
 }
 
 #[cfg(test)]

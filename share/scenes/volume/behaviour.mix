@@ -4,8 +4,7 @@
 -- default device's level (a segment bar and -/+ steps) and mute; their
 -- lists pick the default device (`pactl set-default-sink`, and PipeWire
 -- moves the streams that follow the default). The chosen stream gets the
--- same level and mute controls. Every write is a pactl call, made only on a
--- click the scene host relays; a Bus caller gets ui_only. After each write
+-- same level and mute controls. Every caller can write through pactl. After each write
 -- the whole state is read back, so a refused change shows the real level.
 -- A `pactl subscribe` stream (audio_watch) re-reads the snapshot on every
 -- batch (events are hints, state is truth). There is no polling fallback.
@@ -29,16 +28,6 @@ fn republish()
   if not $state.ready then return $r.failure("scene_not_ready", "Waiting for loader readiness") end
   $state.model = $m.volume($state.snap, {selected: $state.selected, note: $state.note})
   return $r.publish_model($ctx, $state.model)
-end
-
--- A click relayed by the scene host; the broker sets `from` to the
--- sender's authenticated name. Anything else is refused for writes.
-fn from_ui($event)
-  return type($event.headers) == "map" and $event.headers.from == $ctx.host
-end
-
-fn ui_only()
-  return $r.failure("ui_only", $m.text("hostd_ui_only"))
 end
 
 fn schedule()
@@ -108,7 +97,6 @@ end
 -- A closed batch from the live handle re-subscribes after the backoff; one
 -- from an older handle (already replaced) changes nothing.
 on audio.changed async
-  if len(keys($event.headers)) != 0 then return end
   $batch = type($event.args) == "map" ? $event.args : {}
   if type($batch.closed) == "map" then
     eprint("volume: audio events ended: " .. to_string($batch.closed.message))
@@ -125,7 +113,6 @@ on audio.changed async
 end
 
 on audio.retry async
-  if len(keys($event.headers)) != 0 then return end
   try
     sleep($state.retry)
     $state.retry = min($state.retry * 2, 300)
@@ -209,7 +196,6 @@ end
 
 -- A segment of a level bar: item {pct}.
 fn bar_click($event, $kind)
-  if not from_ui($event) then $r.respond(ui_only()); return end
   $item = $r.event_args($event).item
   $pct = type($item) == "map" ? $item.pct : nil
   if type($pct) != "number" then $r.respond($r.failure("invalid_args", "item.pct must be a level")); return end
@@ -217,12 +203,10 @@ fn bar_click($event, $kind)
 end
 
 fn ui_step($event, $kind, $delta)
-  if not from_ui($event) then $r.respond(ui_only()); return end
   $r.respond(nudge($kind, $delta))
 end
 
 fn ui_mute($event, $kind)
-  if not from_ui($event) then $r.respond(ui_only()); return end
   $r.respond(toggle_mute($kind))
 end
 
@@ -267,7 +251,6 @@ end
 -- snapshot by index, so only a listed device can be chosen. Guarded like
 -- every other write: no change while writable() is false.
 fn pick_default($event, $prefix, $list_key, $command)
-  if not from_ui($event) then $r.respond(ui_only()); return end
   if not writable() then $r.respond(republish()); return end
   $id = $r.item_id($event)
   if $id == nil or not starts_with($id, $prefix) then $r.respond($r.failure("invalid_args", "item.id must be a device row")); return end
@@ -291,7 +274,6 @@ end
 
 -- A stream row: give it the controls under the list. No write.
 on vol_stream_pick
-  if not from_ui($event) then $r.respond(ui_only()); return end
   $id = $r.item_id($event)
   if $id == nil or not starts_with($id, "si_") then $r.respond($r.failure("invalid_args", "item.id must be a stream row")); return end
   $state.selected = to_number(slice($id, 3, length($id)))
@@ -325,7 +307,6 @@ on props.changed
   end
 end
 on bus.connected
-  if len(keys($event.headers)) != 0 then return end
   $state.ready = false
   $ready = $r.ready($ctx)
   $state.ready = $ready.ok

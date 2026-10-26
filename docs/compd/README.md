@@ -7,6 +7,12 @@ description: The MixOS Wayland compositor, which owns scanout, rendering, input 
 
 The MixOS Wayland compositor.
 
+Scene model patches and reloads accept every Bus caller. Managed model
+patches still require the current nonzero generation. Volume and network
+panels accept direct Bus events alongside panel clicks; hostd writes run
+locally without a standing grant. Freeze state, write serialisation and
+health-check rollback still apply.
+
 compd owns KMS scanout, the GLES renderer and one shared wgpu device, its
 own egui surfaces (capture overlays, notifications, the Mix Scenes shell),
 the Xwayland window manager, frame pacing, fractional scale, input devices

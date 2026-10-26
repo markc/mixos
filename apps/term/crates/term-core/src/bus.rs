@@ -37,9 +37,8 @@ pub const COMMANDS: [(&str, bool); 23] = [
     ("term.macros.new", false),
 ];
 
-/// Stable discovery for the lane. Strict posture advertises discovery only;
-/// an open frontend adds its window commands to this list.
-pub fn manifest(service: &str, open: bool) -> Vec<::bus::CommandDescriptor> {
+/// Discovery for every caller; frontends add their window commands.
+pub fn manifest(service: &str) -> Vec<::bus::CommandDescriptor> {
     use ::bus::CommandDescriptor;
     let mut entries = vec![
         CommandDescriptor::new("HELP", &[], "List every command", true),
@@ -48,9 +47,6 @@ pub fn manifest(service: &str, open: bool) -> Vec<::bus::CommandDescriptor> {
         CommandDescriptor::new("info", &[], "Read terminal diagnostics and usage", true),
         CommandDescriptor::new("help", &[], "List every command", true),
     ];
-    if !open {
-        return entries;
-    }
     entries.extend(
         COMMANDS
             .iter()
@@ -161,10 +157,6 @@ fn to_window(
         }
         return None;
     }
-    // The strict posture answers INFO and HELP only, window commands included.
-    if !crate::control::mesh_open() {
-        return Some(command);
-    }
     let command_name = canonical_command(service, &command.command)
         .map(std::borrow::Cow::into_owned)
         .filter(|command_name| (window.answers)(command_name))
@@ -207,7 +199,7 @@ fn to_window(
     None
 }
 
-pub const INFO: &str = "term: tabbed Wayland Mix terminal\nMesh-open surface (2026-09-15 law): under the default posture (MIXOS_MESH_OPEN unset or != \"0\") this global name serves every command below to any mesh or local caller, no grant required. Commands are TARGETLESS — unless explicit pane/tab selectors are supplied, they act on the active tab/pane of the instance holding this name at delivery time (term.type excepted: it requires pane or tab); the frontend also starts target-bound control (instance/incarnation/pane_generation) on the allocated native-session route: list/session/tabs/panes/snapshot/type, execute, exec.result/cancel, task.submit/result/cancel, operation, props.get/set and tab/pane mutations. Use the allocated route HELP for target envelopes. These are not targetless commands on this global name. Requires local noded >= 0.16.8 native ingress, the resolved runtime root and socket directory 0755; unavailable ingress leaves graphics working. MIXOS_MESH_OPEN=0 restores the strict diagnostic-only lane (INFO/HELP/app.describe; everything else FORBIDDEN).\nHELP / app.describe: command descriptor list\nINFO / term.info: usage and diagnostics\nterm.tabs {}: list id, active, title, cols, rows, child_pid, revision, instance (this process's token)\nterm.tab.new {cwd?:<absolute existing directory>, title?:<string>}: open and activate a tab; the reply adds binding=granted (native launch grant delivered, enrolment async), graphics-only (no usable grant) or unavailable (no native session)\nterm.tab.select {\"id\":<integer>}: select tab\nterm.tab.close {\"id\":<integer>}: close tab; last tab quits\nterm.panes {tab?:<integer>}: list selected tab (default active tab) pane ids, focus, dimensions, child pids, logical geometry, tab, revision and instance (last layout only; hidden tabs may be stale or zero)\nterm.pane.split {\"dir\":\"h|horizontal|v|vertical\"}\nterm.pane.close {}: close active pane; last pane closes tab\nterm.pane.select {\"id\":<integer>}: select pane in active tab\nterm.snapshot {pane?:<integer>, tab?:<integer>, contents?:<boolean=true>, scrollback_lines?:<integer=0, max 10000>}: read-only selected live screen (offset zero, default active); buffered history above the live screen is capped at available lines; text has a 512 KiB encoded-byte budget, returns complete oldest-first rows with truncated and lines_returned; formatting happens after releasing capture locks; pane+tab must agree; contents=false omits text but keeps dimensions, cursor, child pid, byte counters and DIAGNOSTIC timings\nterm.scroll {pane?:<integer>, lines?:<signed integer>, page?:<signed integer>, to?:top|bottom}: exactly one of lines/page/to; positive lines or pages move up into history; pages overlap by one row; viewport only, snapshots stay live; returns JSON {pane,display_offset,history_lines}; stale pane is not-found; changed offsets publish pane.changed kind=scrolled when watching\nterm.type {pane:<integer> | tab:<integer>, instance?:<integer>, \"text\":\"<string>\"}: ASCII synthetic keys without changing focus; pane or tab is REQUIRED, neither is refused {error_code:INVALID_ARGUMENT} and never defaults to the active pane. pane is the SAFE selector; tab means that tab's active pane AT DELIVERY, so it still follows focus within the tab; both must agree. Pane/tab ids are per-process counters, so pass back the instance that term.tabs/term.panes/INFO reported: a different process refuses INVALID_ARGUMENT instead of typing into its own pane of that id. Keys go through the keyboard encoder, max 8192 bytes including JSON envelope; newline=Enter, tab, backspace, Ctrl+C/D supported; revokes any delegated control writer like real keys.\nterm.tab.title {id:<integer>, title:<string>}: pin a user title (controls stripped, max 256 UTF-8 bytes); empty after sanitising clears the pin and restores the active pane OSC title\nterm.tab.move {id:<integer>, index:<integer>}: reorder tab, clamping index to 0..len-1; focus is preserved\nterm.props.watch {}: first subscribe through noded topic.subscribe to term.tabs.changed, term.pane.changed and term.title.changed; then call this command to enable caller-free publishing and return JSON {topics,revision}; then read current state. Bodies are {tab,pane,kind,revision}; revision is a separate monotonic event sequence, not the legacy layout revision. Bounded best-effort delivery; on a gap or reconnect read current state.\nBefore the first tab attaches, mutating commands return non-zero rc with error starting. Retry after attach, including with the same request_id; starting refusals are not cached.\nEmpty body is {} for no-arg commands; all term.* bodies must be JSON objects.\nAny MUTATING command's body (tab.*, pane.*, type, scroll) may add \"request_id\":\"<string>\": a resend of the same request (same command and arguments, key order free) replays the recorded reply instead of re-executing (last 128 remembered) — use it on every mutation you might resend. NOT recorded (the same id may be retried with the request fixed): starting, an oversized body, and every validation refusal — malformed JSON, unexpected/missing/mistyped arguments and any invalid-argument or INVALID_ARGUMENT reply (e.g. term.type without pane/tab, a pane/tab disagreement, a foreign instance). Recorded and replayed: successes and state refusals such as not-found, non-ASCII text and the tab limit. A reused id whose first attempt WAS recorded, sent with a different command or arguments, is refused as a conflict. The replay is the recorded outcome of the ORIGINAL attempt; retrying after changing state (e.g. after freeing the tab limit) needs a fresh id. Reads never consult the cache and always answer current state.\nReplies echo the identity acted on as key=value tokens — tab=<id> pane=<id> revision=<tab-set revision> (tab.close: revision only; pane.close: tab and revision; list lines: revision, panes also tab) — so a caller can detect drift after the fact; it is detection, not binding.\nterm.macros.list {}: shared application macro list\nterm.macros.reload {}: shared application macro reload\nterm.macros.run {id}: shared application macro run\nterm.macros.status {}: shared application macro status\nterm.macros.output {}: shared application macro output\nterm.macros.stop {}: shared application macro stop\nterm.macros.new {title}: shared application macro new\nDIAGNOSTIC timings are process-side, never presented-frame evidence.";
+pub const INFO: &str = "term: tabbed Wayland Mix terminal\nThis global name serves every command below to any mesh or local caller, no grant required. Commands are TARGETLESS — unless explicit pane/tab selectors are supplied, they act on the active tab/pane of the instance holding this name at delivery time (term.type excepted: it requires pane or tab); the frontend also starts target-bound control (instance/incarnation/pane_generation) on the allocated native-session route: list/session/tabs/panes/snapshot/type, execute, exec.result/cancel, task.submit/result/cancel, operation, props.get/set and tab/pane mutations. Use the allocated route HELP for target envelopes. These are not targetless commands on this global name. Requires local noded >= 0.16.8 native ingress, the resolved runtime root and socket directory 0755; unavailable ingress leaves graphics working.\nHELP / app.describe: command descriptor list\nINFO / term.info: usage and diagnostics\nterm.tabs {}: list id, active, title, cols, rows, child_pid, revision, instance (this process's token)\nterm.tab.new {cwd?:<absolute existing directory>, title?:<string>}: open and activate a tab; the reply adds binding=granted (native launch grant delivered, enrolment async), graphics-only (no usable grant) or unavailable (no native session)\nterm.tab.select {\"id\":<integer>}: select tab\nterm.tab.close {\"id\":<integer>}: close tab; last tab quits\nterm.panes {tab?:<integer>}: list selected tab (default active tab) pane ids, focus, dimensions, child pids, logical geometry, tab, revision and instance (last layout only; hidden tabs may be stale or zero)\nterm.pane.split {\"dir\":\"h|horizontal|v|vertical\"}\nterm.pane.close {}: close active pane; last pane closes tab\nterm.pane.select {\"id\":<integer>}: select pane in active tab\nterm.snapshot {pane?:<integer>, tab?:<integer>, contents?:<boolean=true>, scrollback_lines?:<integer=0, max 10000>}: read-only selected live screen (offset zero, default active); buffered history above the live screen is capped at available lines; text has a 512 KiB encoded-byte budget, returns complete oldest-first rows with truncated and lines_returned; formatting happens after releasing capture locks; pane+tab must agree; contents=false omits text but keeps dimensions, cursor, child pid, byte counters and DIAGNOSTIC timings\nterm.scroll {pane?:<integer>, lines?:<signed integer>, page?:<signed integer>, to?:top|bottom}: exactly one of lines/page/to; positive lines or pages move up into history; pages overlap by one row; viewport only, snapshots stay live; returns JSON {pane,display_offset,history_lines}; stale pane is not-found; changed offsets publish pane.changed kind=scrolled when watching\nterm.type {pane:<integer> | tab:<integer>, instance?:<integer>, \"text\":\"<string>\"}: ASCII synthetic keys without changing focus; pane or tab is REQUIRED, neither is refused {error_code:INVALID_ARGUMENT} and never defaults to the active pane. pane is the SAFE selector; tab means that tab's active pane AT DELIVERY, so it still follows focus within the tab; both must agree. Pane/tab ids are per-process counters, so pass back the instance that term.tabs/term.panes/INFO reported: a different process refuses INVALID_ARGUMENT instead of typing into its own pane of that id. Keys go through the keyboard encoder, max 8192 bytes including JSON envelope; newline=Enter, tab, backspace, Ctrl+C/D supported; revokes any delegated control writer like real keys.\nterm.tab.title {id:<integer>, title:<string>}: pin a user title (controls stripped, max 256 UTF-8 bytes); empty after sanitising clears the pin and restores the active pane OSC title\nterm.tab.move {id:<integer>, index:<integer>}: reorder tab, clamping index to 0..len-1; focus is preserved\nterm.props.watch {}: first subscribe through noded topic.subscribe to term.tabs.changed, term.pane.changed and term.title.changed; then call this command to enable caller-free publishing and return JSON {topics,revision}; then read current state. Bodies are {tab,pane,kind,revision}; revision is a separate monotonic event sequence, not the legacy layout revision. Bounded best-effort delivery; on a gap or reconnect read current state.\nBefore the first tab attaches, mutating commands return non-zero rc with error starting. Retry after attach, including with the same request_id; starting refusals are not cached.\nEmpty body is {} for no-arg commands; all term.* bodies must be JSON objects.\nAny MUTATING command's body (tab.*, pane.*, type, scroll) may add \"request_id\":\"<string>\": a resend of the same request (same command and arguments, key order free) replays the recorded reply instead of re-executing (last 128 remembered) — use it on every mutation you might resend. NOT recorded (the same id may be retried with the request fixed): starting, an oversized body, and every validation refusal — malformed JSON, unexpected/missing/mistyped arguments and any invalid-argument or INVALID_ARGUMENT reply (e.g. term.type without pane/tab, a pane/tab disagreement, a foreign instance). Recorded and replayed: successes and state refusals such as not-found, non-ASCII text and the tab limit. A reused id whose first attempt WAS recorded, sent with a different command or arguments, is refused as a conflict. The replay is the recorded outcome of the ORIGINAL attempt; retrying after changing state (e.g. after freeing the tab limit) needs a fresh id. Reads never consult the cache and always answer current state.\nReplies echo the identity acted on as key=value tokens — tab=<id> pane=<id> revision=<tab-set revision> (tab.close: revision only; pane.close: tab and revision; list lines: revision, panes also tab) — so a caller can detect drift after the fact; it is detection, not binding.\nterm.macros.list {}: shared application macro list\nterm.macros.reload {}: shared application macro reload\nterm.macros.run {id}: shared application macro run\nterm.macros.status {}: shared application macro status\nterm.macros.output {}: shared application macro output\nterm.macros.stop {}: shared application macro stop\nterm.macros.new {title}: shared application macro new\nDIAGNOSTIC timings are process-side, never presented-frame evidence.";
 /// The one spelling the handlers in this crate are written in.
 ///
 /// D1 (TODO-term, 2026-09-21): two binaries cannot both own the global Bus
@@ -677,8 +669,7 @@ async fn serve_with(
                     },
                     None => command,
                 };
-                if crate::control::mesh_open()
-                    && let Some(command_name) = canonical_command(service, &command.command)
+                if let Some(command_name) = canonical_command(service, &command.command)
                     && let Some(suffix) = command_name.strip_prefix("term.macros.") {
                     let caller = citizen::macros::caller(&command, service);
                     let reply = citizen::macros::request("term", caller, suffix, &command.body);
@@ -691,7 +682,6 @@ async fn serve_with(
                     continue;
                 }
                 let guarded = guard(terminal, std::panic::AssertUnwindSafe(|| dispatch(
-                    crate::control::mesh_open(),
                     service,
                     terminal,
                     cleanup,
@@ -917,14 +907,8 @@ fn mutates(command_name: &str) -> bool {
     )
 }
 
-/// Mesh-open law (2026-09-15): every Bus command of every app is reachable by
-/// any mesh/local caller with no authorization gate. Under the default-open
-/// posture the global name serves the full active-tab command set;
-/// MIXOS_MESH_OPEN=0 restores the diagnostic-only lane (protected controls
-/// native-session-route only). An optional `request_id` body field makes a
-/// retry replay the recorded reply instead of re-executing the command.
+/// Every caller can use the global command set. Request IDs replay mutations.
 fn dispatch(
-    open: bool,
     service: &str,
     set: &Mutex<TabSet>,
     cleanup: &Cleanup,
@@ -937,13 +921,6 @@ fn dispatch(
     // handler below all see `term.*` whatever name this frontend serves
     // under. Doing it here rather than per-handler is what keeps `altterm` and
     // `term` the same implementation instead of two that drift (D1).
-    // Posture gate first, and on the WIRE command, so the strict lane keeps its
-    // stated contract exactly: INFO/HELP answer, everything else is
-    // FORBIDDEN — including a foreign namespace, which must not be able to
-    // tell itself apart from a refused one.
-    if !open {
-        return diagnostic(service, wire_command);
-    }
     let Some(command_name) = canonical_command(service, wire_command) else {
         // Another frontend's namespace. Refused with the same message an
         // unknown command in our OWN namespace gets, so the reply is not an
@@ -1023,21 +1000,6 @@ fn is_invalid_argument(error: &str) -> bool {
             .is_ok_and(|value| value["error_code"] == "INVALID_ARGUMENT")
 }
 
-/// The global, self-asserted TCP name is never an authority boundary.
-/// Keep discovery/notification compatibility, but fail closed for all data and
-/// controls, including when native bootstrap is unavailable.
-fn diagnostic(service: &str, command_name: &str) -> Result<String, String> {
-    match command_name {
-        "HELP" | "help" | "app.describe" => {
-            Ok(serde_json::json!(manifest(service, false)).to_string())
-        }
-        "INFO" | "info" => Ok(format!(
-            "{service}: diagnostic discovery only (posture=strict, MIXOS_MESH_OPEN=0); protected controls require the allocated native-session route"
-        )),
-        _ => Err("{\"error_code\":\"FORBIDDEN\"}".into()),
-    }
-}
-
 fn handle(
     service: &str,
     set: &Mutex<TabSet>,
@@ -1066,9 +1028,7 @@ fn handle(
         // `pid` lets a caller bind to one term PROCESS (the session-control
         // resume worker checks it against the boot term unit's MainPID), which
         // `instance`, reported by that same process, cannot prove.
-        "HELP" | "help" | "app.describe" => {
-            Ok(serde_json::json!(manifest(service, true)).to_string())
-        }
+        "HELP" | "help" | "app.describe" => Ok(serde_json::json!(manifest(service)).to_string()),
         "INFO" | "info" | "term.info" => Ok(format!(
             "{}\n{service}.session {{}}: native identity and per-pane binding diagnostics (not live authority)\ninstance={} pid={}",
             info(service),
@@ -1077,9 +1037,6 @@ fn handle(
         )),
         "term.session" => {
             let mut status = tabs.session_status();
-            // dispatch() refuses every command but INFO/HELP under the strict
-            // posture before reaching here, so a handler reply is mesh-open.
-            status["posture"] = crate::control::posture(true).into();
             Ok(status.to_string())
         }
         "term.tabs" => Ok(tabs
@@ -1496,14 +1453,8 @@ mod tests {
 
     #[test]
     fn help_is_a_descriptor_list_of_answered_commands() {
-        let strict = super::diagnostic("term", "HELP").unwrap();
-        let entries: Vec<::bus::CommandDescriptor> = serde_json::from_str(&strict).unwrap();
-        assert_eq!(entries[0].name, "HELP");
-        for entry in entries {
-            assert!(super::diagnostic("term", &entry.name).is_ok());
-        }
         for service in ["term", "altterm", "term-12345"] {
-            let entries = manifest(service, true);
+            let entries = manifest(service);
             assert_eq!(entries[0].name, "HELP");
             for entry in entries {
                 let canonical = canonical_command(service, &entry.name).unwrap();
@@ -1627,7 +1578,6 @@ mod tests {
         let mut replies = ReplyCache::default();
         let call = |service, body: &str, replies: &mut ReplyCache| {
             super::dispatch(
-                true,
                 service,
                 &set,
                 &cleanup,
@@ -1740,7 +1690,6 @@ mod tests {
         );
         assert!(
             super::dispatch(
-                false,
                 "altterm",
                 &set,
                 &cleanup,
@@ -1748,7 +1697,7 @@ mod tests {
                 "altterm.scroll",
                 r#"{"lines":1}"#
             )
-            .is_err()
+            .is_ok()
         );
         assert!(
             call(
@@ -2003,7 +1952,7 @@ mod tests {
         let listener = pane.lock().unwrap().listener.clone();
         listener.send_event(RioEvent::Title("program".into()), WindowId::from(0));
         let pin = r#"{"id":1,"title":"pinned","request_id":"pin"}"#;
-        let reply = dispatch(true, &set, &cleanup, &mut replies, "term.tab.title", pin).unwrap();
+        let reply = dispatch(&set, &cleanup, &mut replies, "term.tab.title", pin).unwrap();
         listener.send_event(RioEvent::Title("latest".into()), WindowId::from(0));
         assert!(
             handle(&set, &cleanup, "term.tabs", "")
@@ -2013,7 +1962,7 @@ mod tests {
         handle(&set, &cleanup, "term.tab.title", r#"{"id":1,"title":""}"#).unwrap();
         assert_eq!(set.lock().unwrap().active_tab().title, "latest");
         assert_eq!(
-            dispatch(true, &set, &cleanup, &mut replies, "term.tab.title", pin).unwrap(),
+            dispatch(&set, &cleanup, &mut replies, "term.tab.title", pin).unwrap(),
             reply
         );
         assert_eq!(
@@ -2042,7 +1991,7 @@ mod tests {
         );
         handle(&set, &cleanup, "term.tab.new", "").unwrap();
         let moved = r#"{"id":1,"index":18446744073709551615,"request_id":"move"}"#;
-        let reply = dispatch(true, &set, &cleanup, &mut replies, "term.tab.move", moved).unwrap();
+        let reply = dispatch(&set, &cleanup, &mut replies, "term.tab.move", moved).unwrap();
         assert!(reply.contains("index=1"));
         assert_eq!(
             set.lock()
@@ -2056,7 +2005,7 @@ mod tests {
         assert_eq!(set.lock().unwrap().active_id(), 2);
         handle(&set, &cleanup, "term.tab.move", r#"{"id":1,"index":-1}"#).unwrap();
         assert_eq!(
-            dispatch(true, &set, &cleanup, &mut replies, "term.tab.move", moved).unwrap(),
+            dispatch(&set, &cleanup, &mut replies, "term.tab.move", moved).unwrap(),
             reply
         );
         assert_eq!(set.lock().unwrap().list()[0].id, 1);
@@ -2186,18 +2135,13 @@ mod tests {
     /// shim. `altterm`'s own routing is covered by the namespace tests below,
     /// which call the real `super::dispatch` with a service name.
     fn dispatch(
-        open: bool,
         set: &Mutex<TabSet>,
         cleanup: &Cleanup,
         replies: &mut ReplyCache,
         command_name: &str,
         body: &str,
     ) -> Result<String, String> {
-        super::dispatch(open, CANONICAL, set, cleanup, replies, command_name, body)
-    }
-
-    fn diagnostic(command_name: &str) -> Result<String, String> {
-        super::diagnostic(CANONICAL, command_name)
+        super::dispatch(CANONICAL, set, cleanup, replies, command_name, body)
     }
 
     fn handle(
@@ -2236,7 +2180,6 @@ mod tests {
             assert!(mutates(command_name));
             assert_eq!(
                 dispatch(
-                    true,
                     &set,
                     &cleanup,
                     &mut replies,
@@ -2283,7 +2226,6 @@ mod tests {
         }
         assert!(
             dispatch(
-                true,
                 &set,
                 &cleanup,
                 &mut replies,
@@ -2298,30 +2240,20 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_lane_has_no_protected_controls() {
-        for command_name in [
+    fn every_global_command_is_discoverable() {
+        let names: Vec<_> = manifest(CANONICAL)
+            .into_iter()
+            .map(|entry| entry.name)
+            .collect();
+        for command in [
             "term.session",
             "term.tabs",
-            "term.panes",
-            "term.snapshot",
             "term.type",
-            "term.tab.new",
-            "term.tab.select",
-            "term.tab.close",
-            "term.pane.split",
-            "term.pane.select",
             "term.pane.close",
-            "term.execute",
-            "props.get",
-            "props.set",
-            "props.watch",
+            "term.macros.new",
         ] {
-            assert_eq!(
-                diagnostic(command_name).unwrap_err(),
-                "{\"error_code\":\"FORBIDDEN\"}"
-            );
+            assert!(names.iter().any(|name| name == command), "{command}");
         }
-        assert!(diagnostic("HELP").is_ok());
     }
     #[test]
     fn notification_drain_keeps_final_reap_and_bounds_blocked_sends() {
@@ -2967,40 +2899,24 @@ mod tests {
         worker.join().unwrap();
     }
     #[test]
-    fn dispatch_posture_gate_and_request_id_replay() {
-        if !crate::test_support::with_mix("bus::tests::dispatch_posture_gate_and_request_id_replay")
-        {
+    fn dispatch_serves_controls_and_replays_request_ids() {
+        if !crate::test_support::with_mix(
+            "bus::tests::dispatch_serves_controls_and_replays_request_ids",
+        ) {
             return;
         }
         let set = Mutex::new(TabSet::new().unwrap());
         let (cleanup, worker) = Cleanup::start().unwrap();
         let mut replies = ReplyCache::default();
-        // Strict posture: diagnostic-only, protected commands refused.
-        assert_eq!(
-            dispatch(false, &set, &cleanup, &mut replies, "term.tabs", "").unwrap_err(),
-            "{\"error_code\":\"FORBIDDEN\"}"
-        );
-        assert!(
-            dispatch(false, &set, &cleanup, &mut replies, "INFO", "")
-                .unwrap()
-                .contains("posture=strict")
-        );
-        // Open posture: the full command set answers on the global name, and
-        // term.session names the posture instead of leaving it to inference.
-        assert!(dispatch(true, &set, &cleanup, &mut replies, "term.tabs", "").is_ok());
-        let session: serde_json::Value = serde_json::from_str(
-            &dispatch(true, &set, &cleanup, &mut replies, "term.session", "").unwrap(),
-        )
-        .unwrap();
-        assert_eq!(session["posture"], "mesh-open");
+        assert!(dispatch(&set, &cleanup, &mut replies, "term.tabs", "").is_ok());
         // A retried mutation with the same request_id replays the recorded
         // reply and must NOT re-execute: still two panes after the retry.
         let body = r#"{"dir":"v","request_id":"r1"}"#;
-        let first = dispatch(true, &set, &cleanup, &mut replies, "term.pane.split", body).unwrap();
-        let replay = dispatch(true, &set, &cleanup, &mut replies, "term.pane.split", body).unwrap();
+        let first = dispatch(&set, &cleanup, &mut replies, "term.pane.split", body).unwrap();
+        let replay = dispatch(&set, &cleanup, &mut replies, "term.pane.split", body).unwrap();
         assert_eq!(first, replay);
         assert_eq!(
-            dispatch(true, &set, &cleanup, &mut replies, "term.panes", "")
+            dispatch(&set, &cleanup, &mut replies, "term.panes", "")
                 .unwrap()
                 .lines()
                 .count(),
@@ -3008,7 +2924,6 @@ mod tests {
         );
         // A different request_id executes again.
         let second = dispatch(
-            true,
             &set,
             &cleanup,
             &mut replies,
@@ -3018,7 +2933,7 @@ mod tests {
         .unwrap();
         assert_ne!(first, second);
         assert_eq!(
-            dispatch(true, &set, &cleanup, &mut replies, "term.panes", "")
+            dispatch(&set, &cleanup, &mut replies, "term.panes", "")
                 .unwrap()
                 .lines()
                 .count(),
@@ -3026,10 +2941,9 @@ mod tests {
         );
         // Error replies replay too — the failed attempt is not retried.
         let bad = r#"{"id":999,"request_id":"r3"}"#;
-        let refusal =
-            dispatch(true, &set, &cleanup, &mut replies, "term.pane.select", bad).unwrap_err();
+        let refusal = dispatch(&set, &cleanup, &mut replies, "term.pane.select", bad).unwrap_err();
         assert_eq!(
-            dispatch(true, &set, &cleanup, &mut replies, "term.pane.select", bad).unwrap_err(),
+            dispatch(&set, &cleanup, &mut replies, "term.pane.select", bad).unwrap_err(),
             refusal
         );
         // A reused id with a DIFFERENT command or body is a conflict, never a
@@ -3037,7 +2951,6 @@ mod tests {
         // still three panes afterwards.
         assert_eq!(
             dispatch(
-                true,
                 &set,
                 &cleanup,
                 &mut replies,
@@ -3049,7 +2962,6 @@ mod tests {
         );
         assert_eq!(
             dispatch(
-                true,
                 &set,
                 &cleanup,
                 &mut replies,
@@ -3060,7 +2972,7 @@ mod tests {
             REQUEST_ID_CONFLICT
         );
         assert_eq!(
-            dispatch(true, &set, &cleanup, &mut replies, "term.panes", "")
+            dispatch(&set, &cleanup, &mut replies, "term.panes", "")
                 .unwrap()
                 .lines()
                 .count(),
@@ -3070,7 +2982,6 @@ mod tests {
         // conflicted, not re-executed (still three panes).
         assert_eq!(
             dispatch(
-                true,
                 &set,
                 &cleanup,
                 &mut replies,
@@ -3083,7 +2994,6 @@ mod tests {
         // Reads never consult the cache: a reused id answers current state.
         assert_eq!(
             dispatch(
-                true,
                 &set,
                 &cleanup,
                 &mut replies,
@@ -3099,12 +3009,11 @@ mod tests {
         // unused, so the same id afterwards executes normally.
         let oversized = format!(r#"{{"text":"{}","request_id":"r4"}}"#, "a".repeat(8192));
         assert_eq!(
-            dispatch(true, &set, &cleanup, &mut replies, "term.type", &oversized).unwrap_err(),
+            dispatch(&set, &cleanup, &mut replies, "term.type", &oversized).unwrap_err(),
             "request exceeds 8192 bytes"
         );
         assert!(
             dispatch(
-                true,
                 &set,
                 &cleanup,
                 &mut replies,
@@ -3120,7 +3029,7 @@ mod tests {
             (r#"{"tab":1,"text":"","request_id":"r5"}"#, true),
             (r#"{"tab":1,"text":"","request_id":"r5"}"#, true),
         ] {
-            let reply = dispatch(true, &set, &cleanup, &mut replies, "term.type", body);
+            let reply = dispatch(&set, &cleanup, &mut replies, "term.type", body);
             assert_eq!(reply.is_ok(), ok, "{body}: {reply:?}");
         }
         assert!(
@@ -3129,7 +3038,7 @@ mod tests {
         );
         // tab.new says whether the new pane got a native binding; this set
         // was built without a native session, so it cannot have one.
-        let opened = dispatch(true, &set, &cleanup, &mut replies, "term.tab.new", "").unwrap();
+        let opened = dispatch(&set, &cleanup, &mut replies, "term.tab.new", "").unwrap();
         assert!(opened.ends_with(" binding=unavailable"), "{opened}");
         set.lock().unwrap().shutdown();
         drop(cleanup);
@@ -3352,15 +3261,7 @@ mod tests {
         let (cleanup, worker) = Cleanup::start().unwrap();
         let mut replies = ReplyCache::default();
         let mut call = |service: &str, command_name: &str| {
-            super::dispatch(
-                true,
-                service,
-                &set,
-                &cleanup,
-                &mut replies,
-                command_name,
-                "",
-            )
+            super::dispatch(service, &set, &cleanup, &mut replies, command_name, "")
         };
         assert!(call("altterm", "altterm.tabs").is_ok());
         assert_eq!(
