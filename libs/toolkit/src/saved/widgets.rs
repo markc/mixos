@@ -444,16 +444,32 @@ mod tests {
         let widgets = Widgets::default();
         widgets.install(&ctx);
         draw(&ctx, |ui| {
-            let (out, _) = panel(ui, "left", egui::Panel::left("left"), 1000.0,
-                0.3, 0.1..=0.8, true, |_| {});
+            let (out, _) = panel(
+                ui,
+                "left",
+                egui::Panel::left("left"),
+                1000.0,
+                0.3,
+                0.1..=0.8,
+                true,
+                |_| {},
+            );
             assert!((out.response.rect.width() - 300.0).abs() < 2.0);
         });
         widgets.install(&ctx);
         assert!(shared(&ctx).unwrap().lock().unwrap().panel_ids.is_empty());
         set_panel(&ctx, "left", 0.6);
         draw(&ctx, |ui| {
-            let (out, _) = panel(ui, "left", egui::Panel::left("left"), 1000.0,
-                0.6, 0.1..=0.8, true, |_| {});
+            let (out, _) = panel(
+                ui,
+                "left",
+                egui::Panel::left("left"),
+                1000.0,
+                0.6,
+                0.1..=0.8,
+                true,
+                |_| {},
+            );
             assert!((out.response.rect.width() - 600.0).abs() < 2.0);
         });
     }

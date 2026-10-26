@@ -1032,6 +1032,7 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                 PointerEventKind::Axis {
                     ref horizontal,
                     ref vertical,
+                    source,
                     ..
                 } => {
                     let modifiers = input::modifiers(&self.modifiers);
@@ -1054,7 +1055,7 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                     self.push_to(
                         &wl,
                         egui::Event::MouseWheel {
-                            source: egui::MouseWheelSource::Unknown,
+                            source: input::wheel_source(source),
                             unit,
                             delta,
                             // Movement only: an End phase would drop the

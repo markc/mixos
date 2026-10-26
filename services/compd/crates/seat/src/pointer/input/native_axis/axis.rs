@@ -93,6 +93,11 @@ pub fn input_received<I: InputBackend>(
             discrete_y,
             horizontal_amount,
             vertical_amount,
+            match source {
+                AxisSource::Finger => ui::input::ScrollSource::Finger,
+                AxisSource::Wheel | AxisSource::WheelTilt => ui::input::ScrollSource::Wheel,
+                _ => ui::input::ScrollSource::Unknown,
+            },
         );
     }
 }

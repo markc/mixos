@@ -445,8 +445,11 @@ fn a_dialog_opens_centred_ignores_clicks_outside_and_moves_by_its_title() {
     );
     {
         use egui_kittest::kittest::NodeT;
-        assert!(h.get_by_role_and_label(Role::Dialog, "Image Size")
-            .accesskit_node().is_modal());
+        assert!(
+            h.get_by_role_and_label(Role::Dialog, "Image Size")
+                .accesskit_node()
+                .is_modal()
+        );
     }
     let title = h
         .get_by_role_and_label(Role::Label, "Image Size")

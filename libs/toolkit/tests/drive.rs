@@ -931,8 +931,15 @@ fn a_capture_ignores_other_screenshots() {
         .expect("answered");
     assert_eq!(shot.rc, 0, "{}", shot.body);
     assert_eq!(shot.body["height"], 500);
-    assert!(h.state().runtime.as_ref().unwrap().path()
-        .join("demo/captures/mine.png").is_file());
+    assert!(
+        h.state()
+            .runtime
+            .as_ref()
+            .unwrap()
+            .path()
+            .join("demo/captures/mine.png")
+            .is_file()
+    );
     assert_eq!(
         shot.body["width"], 900,
         "not the stray 4×3 image: {}",

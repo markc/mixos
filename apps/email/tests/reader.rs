@@ -1071,14 +1071,19 @@ fn compose_sender_and_recipient_controls_have_fluent_accessible_names() {
     assert!(state.open_compose(Some("home"), Default::default()));
     let mut h = window(state, &theme(Scheme::Studio, Mode::Dark));
     h.run();
-    assert!(h.query_all_by_label(&label("from")).any(|node|
-        node.accesskit_node().role() == egui::accesskit::Role::ComboBox));
+    assert!(
+        h.query_all_by_label(&label("from"))
+            .any(|node| node.accesskit_node().role() == egui::accesskit::Role::ComboBox)
+    );
     for tip in ["show-cc", "show-bcc"] {
         h.get_by_label(&label(tip)).click();
         h.run();
     }
     for key in ["to", "cc", "bcc"] {
-        assert!(field(&h, &label(key)).is_some(), "{key} editor has its Fluent name");
+        assert!(
+            field(&h, &label(key)).is_some(),
+            "{key} editor has its Fluent name"
+        );
     }
 }
 

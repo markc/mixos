@@ -76,6 +76,14 @@ pub enum ScrollDelta {
     Pixels { x: f32, y: f32 },
 }
 
+/// The backend's axis source, independent of the UI toolkit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScrollSource {
+    Unknown,
+    Wheel,
+    Finger,
+}
+
 /// One key press or release.
 #[derive(Clone, Debug, PartialEq)]
 pub struct KeyInput {
@@ -104,7 +112,7 @@ pub enum Input {
         code: u32,
         pressed: bool,
     },
-    Scroll(ScrollDelta),
+    Scroll { delta: ScrollDelta, source: ScrollSource },
     Key(KeyInput),
     Modifiers(Modifiers),
     Focused(bool),
@@ -147,20 +155,21 @@ pub fn key(code: u32, keysym: u32, utf8: Option<&str>, pressed: bool, repeat: bo
 
 /// A scroll event: `discrete_*` are wheel ticks, `pixel_*` continuous
 /// deltas (touchpad). Ticks win when present; `None` when both are zero.
-pub fn wheel(discrete_x: i32, discrete_y: i32, pixel_x: f64, pixel_y: f64) -> Option<Input> {
-    if discrete_x != 0 || discrete_y != 0 {
-        Some(Input::Scroll(ScrollDelta::Lines {
+pub fn wheel(discrete_x: i32, discrete_y: i32, pixel_x: f64, pixel_y: f64, source: ScrollSource) -> Option<Input> {
+    let delta = if discrete_x != 0 || discrete_y != 0 {
+        ScrollDelta::Lines {
             x: discrete_x as f32,
             y: discrete_y as f32,
-        }))
+        }
     } else if pixel_x != 0.0 || pixel_y != 0.0 {
-        Some(Input::Scroll(ScrollDelta::Pixels {
+        ScrollDelta::Pixels {
             x: pixel_x as f32,
             y: pixel_y as f32,
-        }))
+        }
     } else {
-        None
-    }
+        return None;
+    };
+    Some(Input::Scroll { delta, source })
 }
 
 /// xkb keysym → egui key. Named keys by table; printable keys by their text.
@@ -280,7 +289,7 @@ impl Translator {
                     });
                 }
             }
-            Input::Scroll(delta) => {
+            Input::Scroll { delta, source } => {
                 // egui's wheel is positive up and left: the opposite of Wayland's.
                 let (unit, delta) = match delta {
                     ScrollDelta::Lines { x, y } => (egui::MouseWheelUnit::Line, egui::vec2(-x, -y)),
@@ -289,7 +298,11 @@ impl Translator {
                     }
                 };
                 out.push(egui::Event::MouseWheel {
-                    source: egui::MouseWheelSource::Unknown,
+                    source: match source {
+                        ScrollSource::Unknown => egui::MouseWheelSource::Unknown,
+                        ScrollSource::Wheel => egui::MouseWheelSource::Wheel,
+                        ScrollSource::Finger => egui::MouseWheelSource::Trackpad,
+                    },
                     unit,
                     delta,
                     phase: egui::TouchPhase::Move,
@@ -473,16 +486,23 @@ mod tests {
 
     #[test]
     fn wheel_ticks_win_and_flip_to_egui_sign() {
-        let Some(Input::Scroll(delta)) = wheel(0, 2, 0.0, 30.0) else {
+        let Some(Input::Scroll { delta, source }) = wheel(0, 2, 0.0, 30.0, ScrollSource::Wheel) else {
             panic!()
         };
         assert_eq!(delta, ScrollDelta::Lines { x: 0.0, y: 2.0 });
-        let events = run(vec![Input::Scroll(delta)]);
+        let events = run(vec![Input::Scroll { delta, source }]);
         assert!(matches!(
             events[0],
-            egui::Event::MouseWheel { source: egui::MouseWheelSource::Unknown, unit: egui::MouseWheelUnit::Line, delta, .. } if delta == egui::vec2(0.0, -2.0)
+            egui::Event::MouseWheel { source: egui::MouseWheelSource::Wheel, unit: egui::MouseWheelUnit::Line, delta, .. } if delta == egui::vec2(0.0, -2.0)
         ));
-        assert_eq!(wheel(0, 0, 0.0, 0.0), None);
+        assert_eq!(wheel(0, 0, 0.0, 0.0, ScrollSource::Finger), None);
+        for (source, expected) in [(ScrollSource::Finger, egui::MouseWheelSource::Trackpad),
+            (ScrollSource::Unknown, egui::MouseWheelSource::Unknown)] {
+            let input = wheel(0, 0, 0.0, 3.0, source).unwrap();
+            assert!(matches!(run(vec![input])[0], egui::Event::MouseWheel {
+                source, unit: egui::MouseWheelUnit::Point, delta, ..
+            } if source == expected && delta == egui::vec2(0.0, -3.0)));
+        }
     }
 
     #[test]

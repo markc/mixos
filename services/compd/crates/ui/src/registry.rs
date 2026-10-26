@@ -792,9 +792,10 @@ impl UiRegistry {
         discrete_y: i32,
         pixel_x: f64,
         pixel_y: f64,
+        source: crate::input::ScrollSource,
     ) {
         let Some(handle) = target else { return };
-        if let Some(input) = crate::input::wheel(discrete_x, discrete_y, pixel_x, pixel_y) {
+        if let Some(input) = crate::input::wheel(discrete_x, discrete_y, pixel_x, pixel_y, source) {
             let _ = self.dispatch_input(handle, input);
         }
     }
