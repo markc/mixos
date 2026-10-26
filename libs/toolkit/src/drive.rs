@@ -2244,8 +2244,11 @@ mod tests {
                 data.insert_temp(egui::Id::unique("eframe.offscreen_capture"), false);
             });
             let mut input = RawInput::default();
-            input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().minimized =
-                Some(!hidden_child);
+            input
+                .viewports
+                .get_mut(&egui::ViewportId::ROOT)
+                .unwrap()
+                .minimized = Some(!hidden_child);
             input.viewports.entry(child).or_default().minimized = Some(hidden_child);
             ctx.run_ui(input, |_| {}).drop_without_applying_deltas();
             let answer = request(&ctx, 1, "ui.capture", &json!({"viewport":"child"}));
