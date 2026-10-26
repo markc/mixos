@@ -1246,11 +1246,11 @@ impl Drive {
             Job::Capture { path, tag } => {
                 let completed = self.screenshots.clone();
                 let ctx = ctx.clone();
-                let viewport = ctx.viewport_id();
                 let shot =
                     ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |image| {
                         completed.lock().unwrap().push((tag, image));
-                        ctx.request_repaint_of(viewport);
+                        // App::logic runs on the root even for child captures.
+                    ctx.request_repaint_of(egui::ViewportId::ROOT);
                     }));
                 let deadline = Instant::now() + self.options.capture_timeout;
                 (
