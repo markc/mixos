@@ -495,21 +495,24 @@ impl Store {
             return Ok((primary, false));
         }
         primary.check(from)?;
-        let previous =
-            match open_in(&store.directory, "desktop.previous.conf.mix", libc::O_RDONLY) {
-                Ok(file) => {
-                    let previous: Accepted = read_typed(file)?;
-                    previous.check(from)?;
-                    Some(previous)
-                }
-                Err(e)
-                    if e.downcast_ref::<std::io::Error>()
-                        .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
-                {
-                    None
-                }
-                Err(e) => return Err(e),
-            };
+        let previous = match open_in(
+            &store.directory,
+            "desktop.previous.conf.mix",
+            libc::O_RDONLY,
+        ) {
+            Ok(file) => {
+                let previous: Accepted = read_typed(file)?;
+                previous.check(from)?;
+                Some(previous)
+            }
+            Err(e)
+                if e.downcast_ref::<std::io::Error>()
+                    .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
+            {
+                None
+            }
+            Err(e) => return Err(e),
+        };
         let rebound = |mut record: Accepted| -> anyhow::Result<Accepted> {
             record.binding = to.clone();
             record.seal()?;
