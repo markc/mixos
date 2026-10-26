@@ -292,6 +292,7 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
 /// sent), queued jobs as cancelled. Send all of them before the Bus stops.
 pub fn finish(ctx: &Context) -> Vec<Answer> {
     ctx.with_plugin(|drive: &mut Drive| {
+        drive.unpainted_captures.clear();
         if let Some(running) = drive.running.take() {
             let interrupted = running.steps.iter().any(|s| !matches!(s, Step::Idle));
             let answer = match running.answer {
@@ -312,6 +313,7 @@ pub fn finish(ctx: &Context) -> Vec<Answer> {
         }
         drive.cancel_queue("the app closed before this input was read");
         for child in drive.children.values_mut() {
+            child.unpainted_captures.clear();
             child.settle(ctx, "the app closed before this input was read");
             for (id, _, _) in child.requests.drain(..) {
                 child
@@ -978,6 +980,7 @@ impl Drive {
     /// and cancel the queue.
     fn settle(&mut self, ctx: &Context, why: &str) {
         if let Some(running) = self.running.take() {
+            self.unpainted_captures.remove(&running.id);
             let answer = match running.answer {
                 Some(answer) => answer,
                 None if running.steps.iter().all(|s| matches!(s, Step::Idle)) => {
@@ -1019,6 +1022,7 @@ impl Drive {
 
     fn cancel_queue(&mut self, why: &str) {
         for (id, _) in std::mem::take(&mut self.queue) {
+            self.unpainted_captures.remove(&id);
             self.answers.push(refusal(id, "CANCELLED", why));
         }
     }
