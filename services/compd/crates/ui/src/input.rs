@@ -112,7 +112,10 @@ pub enum Input {
         code: u32,
         pressed: bool,
     },
-    Scroll { delta: ScrollDelta, source: ScrollSource },
+    Scroll {
+        delta: ScrollDelta,
+        source: ScrollSource,
+    },
     Key(KeyInput),
     Modifiers(Modifiers),
     Focused(bool),
@@ -155,7 +158,13 @@ pub fn key(code: u32, keysym: u32, utf8: Option<&str>, pressed: bool, repeat: bo
 
 /// A scroll event: `discrete_*` are wheel ticks, `pixel_*` continuous
 /// deltas (touchpad). Ticks win when present; `None` when both are zero.
-pub fn wheel(discrete_x: i32, discrete_y: i32, pixel_x: f64, pixel_y: f64, source: ScrollSource) -> Option<Input> {
+pub fn wheel(
+    discrete_x: i32,
+    discrete_y: i32,
+    pixel_x: f64,
+    pixel_y: f64,
+    source: ScrollSource,
+) -> Option<Input> {
     let delta = if discrete_x != 0 || discrete_y != 0 {
         ScrollDelta::Lines {
             x: discrete_x as f32,
@@ -486,7 +495,8 @@ mod tests {
 
     #[test]
     fn wheel_ticks_win_and_flip_to_egui_sign() {
-        let Some(Input::Scroll { delta, source }) = wheel(0, 2, 0.0, 30.0, ScrollSource::Wheel) else {
+        let Some(Input::Scroll { delta, source }) = wheel(0, 2, 0.0, 30.0, ScrollSource::Wheel)
+        else {
             panic!()
         };
         assert_eq!(delta, ScrollDelta::Lines { x: 0.0, y: 2.0 });
@@ -496,8 +506,10 @@ mod tests {
             egui::Event::MouseWheel { source: egui::MouseWheelSource::Wheel, unit: egui::MouseWheelUnit::Line, delta, .. } if delta == egui::vec2(0.0, -2.0)
         ));
         assert_eq!(wheel(0, 0, 0.0, 0.0, ScrollSource::Finger), None);
-        for (source, expected) in [(ScrollSource::Finger, egui::MouseWheelSource::Trackpad),
-            (ScrollSource::Unknown, egui::MouseWheelSource::Unknown)] {
+        for (source, expected) in [
+            (ScrollSource::Finger, egui::MouseWheelSource::Trackpad),
+            (ScrollSource::Unknown, egui::MouseWheelSource::Unknown),
+        ] {
             let input = wheel(0, 0, 0.0, 3.0, source).unwrap();
             assert!(matches!(run(vec![input])[0], egui::Event::MouseWheel {
                 source, unit: egui::MouseWheelUnit::Point, delta, ..

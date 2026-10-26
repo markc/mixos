@@ -6,7 +6,9 @@
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape;
 use smithay_client_toolkit::seat::keyboard::Modifiers;
 
-pub(crate) fn wheel_source(source: Option<wayland_client::protocol::wl_pointer::AxisSource>) -> egui::MouseWheelSource {
+pub(crate) fn wheel_source(
+    source: Option<wayland_client::protocol::wl_pointer::AxisSource>,
+) -> egui::MouseWheelSource {
     use wayland_client::protocol::wl_pointer::AxisSource;
     match source {
         Some(AxisSource::Finger) => egui::MouseWheelSource::Trackpad,
@@ -153,7 +155,10 @@ mod tests {
             (Some(AxisSource::Finger), egui::MouseWheelSource::Trackpad),
             (Some(AxisSource::Wheel), egui::MouseWheelSource::Wheel),
             (Some(AxisSource::WheelTilt), egui::MouseWheelSource::Wheel),
-            (Some(AxisSource::Continuous), egui::MouseWheelSource::Unknown),
+            (
+                Some(AxisSource::Continuous),
+                egui::MouseWheelSource::Unknown,
+            ),
             (None, egui::MouseWheelSource::Unknown),
         ] {
             assert_eq!(super::wheel_source(source), expected);
