@@ -1743,7 +1743,8 @@ mod tests {
     fn ui_pass_before_logic_only_preserves_capture_until_screenshot() {
         let (ctx, temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({"name":"shown.png"})).is_none());
-        ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+        ctx.run_ui(RawInput::default(), |_| {})
+            .drop_without_applying_deltas();
         // A real UI pass requested the screenshot. Logic-only must now leave
         // it waiting for its event, even well beyond the input quiet period.
         assert!(logic_at(&ctx, Instant::now() + INPUT_QUIET_PERIOD).is_empty());
@@ -1777,7 +1778,8 @@ mod tests {
     fn painted_capture_without_screenshot_still_expires() {
         let (ctx, _temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
-        ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+        ctx.run_ui(RawInput::default(), |_| {})
+            .drop_without_applying_deltas();
         ctx.with_plugin(|drive: &mut Drive| {
             let running = drive.running.as_mut().unwrap();
             let Some(Step::Await { deadline, .. }) = running.steps.front_mut() else {
