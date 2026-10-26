@@ -70,16 +70,19 @@ fn harness_with_missing_glyphs(
 ) -> Harness<'static, App> {
     app.view.label = Some("Document".into());
     let initial_theme = theme.clone();
-    let harness = Harness::builder()
+    let builder = Harness::builder()
         .with_context_setup(move |ctx| {
             toolkit::install(ctx, &initial_theme);
-            // This one code fixture deliberately includes unsupported CJK;
-            // preserve its visible tofu rather than changing its test text.
-            if allow_missing {
-                ctx.set_missing_glyph_policy(egui::MissingGlyphPolicy::Tofu);
-            }
         })
-        .with_size(size)
+        .with_size(size);
+    // This one code fixture deliberately includes unsupported CJK;
+    // preserve its visible tofu rather than changing its test text.
+    let builder = if allow_missing {
+        builder.allow_missing_glyphs()
+    } else {
+        builder
+    };
+    let harness = builder
         .wgpu()
         .build_ui_state(
             |ui, app: &mut App| {
