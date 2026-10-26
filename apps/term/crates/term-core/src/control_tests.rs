@@ -558,6 +558,13 @@ fn every_caller_can_read_write_and_manage_sibling_panes() {
             call(&tcp_other, &parent.name, "term.type", other_request).await,
             second
         );
+        let third = call(caller.client(), &parent.name, "term.type", request.clone()).await;
+        assert_eq!(
+            third.0, 0,
+            "another writer must not be refused by identity: {third:?}"
+        );
+        assert_ne!(third.1["operation_id"], first.1["operation_id"]);
+        assert_ne!(third.1["operation_id"], second.1["operation_id"]);
         let select = json!({"target":target,"request_id":"2"});
         let selected_a = call(&tcp, &parent.name, "term.pane.select", select.clone()).await;
         let selected_b = call(&tcp_other, &parent.name, "term.pane.select", select).await;
@@ -577,13 +584,16 @@ fn every_caller_can_read_write_and_manage_sibling_panes() {
                 "lookup selected another caller's request id 2"
             );
         }
-        assert_eq!(
-            call(caller.client(), &parent.name, "term.type", request)
-                .await
-                .0,
-            0,
-            "another writer must not be refused by identity"
-        );
+        // Selecting a pane revokes its queued input and foreground generation.
+        // A new request must still reject the old generation for every caller.
+        let mut stale = request;
+        stale["request_id"] = json!("2");
+        let refused = call(caller.client(), &parent.name, "term.type", stale.clone()).await;
+        assert_eq!(refused.1["error_code"], "STALE_GENERATION", "{refused:?}");
+        stale["request_id"] = json!("3");
+        stale["foreground_generation"] = json!(listener.foreground_generation().to_string());
+        let fresh = call(caller.client(), &parent.name, "term.type", stale).await;
+        assert_eq!(fresh.0, 0, "fresh input after selection: {fresh:?}");
         listener.block_control_writes(false);
         let bound = verified(&fixture.broker).await;
         let (parent, target) = fixture.bound(&bound).await;

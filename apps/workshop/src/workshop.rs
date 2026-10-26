@@ -314,17 +314,21 @@ mod tests {
             .build()
             .unwrap();
         let (agent, _) = inspector::bus::start("agent-1", &broker.url, &[]).unwrap();
-        // The app uses the ordinary citizen macro interception lane.
-        let (app, _) = inspector::bus::start("example", &broker.url, &[]).unwrap();
+        // inspector::bus::start always installs Workshop's namespace, even
+        // under another service name. Use the running app's own namespace,
+        // matching the apps that the shell puts in its running map.
+        let (app, _) = citizen::start_with_macros("example", "example", &broker.url, &[]).unwrap();
         runtime.block_on(async {
             for (app_name, running) in [
                 ("global", BTreeMap::new()),
                 ("ced", BTreeMap::new()),
+                ("workshop", BTreeMap::new()),
                 (
-                    "workshop",
-                    BTreeMap::from([("workshop".into(), "example".into())]),
+                    "example",
+                    BTreeMap::from([("example".into(), "example".into())]),
                 ),
             ] {
+                let is_running = running.contains_key(app_name);
                 let document = perform(
                     agent.clone(),
                     "macros.new",
@@ -334,6 +338,7 @@ mod tests {
                 .await
                 .unwrap();
                 assert_eq!(document["app"], app_name);
+                assert_eq!(document["catalogue"]["running"], is_running);
                 assert!(document["id"].as_str().unwrap().starts_with("fresh"));
                 assert!(
                     document["text"]

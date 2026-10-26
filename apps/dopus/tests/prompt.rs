@@ -136,7 +136,12 @@ fn bus_file_operations_accept_driven_prompts_confirmations_and_drops() {
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        panic!("file operation did not finish: {:?}", h.state().app.status);
+        panic!(
+            "file operation did not finish: status={:?}, dialog={:?}, answers={:?}",
+            h.state().app.status,
+            h.state().app.dialog,
+            h.state().answers
+        );
     };
     let action = |h: &mut Harness<'_, Window>, id: &str| {
         h.state_mut().app.effects.clear();
@@ -156,7 +161,9 @@ fn bus_file_operations_accept_driven_prompts_confirmations_and_drops() {
             "{id}: {:?}",
             h.state().app.effects
         );
-        h.step();
+        // A new modal first draws an invisible sizing pass. Settle its
+        // placement and keyboard focus before submitting drive input.
+        h.run();
     };
     let drive_input = |h: &mut Harness<'_, Window>, command: &str, args: serde_json::Value| {
         h.state_mut().answers.clear();
@@ -171,7 +178,21 @@ fn bus_file_operations_accept_driven_prompts_confirmations_and_drops() {
         harness.state().app.dialog,
         Some(Dialog::Prompt { .. })
     ));
+    drive_input(
+        &mut harness,
+        "ui.click",
+        json!({"label":dopus::label("prop-name")}),
+    );
+    drive_input(
+        &mut harness,
+        "ui.key",
+        json!({"key":"A","modifiers":["ctrl"]}),
+    );
     drive_input(&mut harness, "ui.type", json!({"text":"Fresh"}));
+    assert!(matches!(
+        &harness.state().app.dialog,
+        Some(Dialog::Prompt { text, .. }) if text == "Fresh"
+    ));
     drive_input(
         &mut harness,
         "ui.click",
@@ -198,10 +219,19 @@ fn bus_file_operations_accept_driven_prompts_confirmations_and_drops() {
     action(&mut harness, "file.rename");
     drive_input(
         &mut harness,
+        "ui.click",
+        json!({"label":dopus::label("prop-name")}),
+    );
+    drive_input(
+        &mut harness,
         "ui.key",
         json!({"key":"A","modifiers":["ctrl"]}),
     );
     drive_input(&mut harness, "ui.type", json!({"text":"renamed.txt"}));
+    assert!(matches!(
+        &harness.state().app.dialog,
+        Some(Dialog::Prompt { text, .. }) if text == "renamed.txt"
+    ));
     drive_input(
         &mut harness,
         "ui.click",
@@ -230,7 +260,7 @@ fn bus_file_operations_accept_driven_prompts_confirmations_and_drops() {
         .state_mut()
         .app
         .dropped(PaneId::Left, vec![dropped.clone()], right.clone());
-    harness.step();
+    harness.run();
     drive_input(
         &mut harness,
         "ui.click",

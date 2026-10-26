@@ -12044,6 +12044,7 @@ version = "0.1.2"
 dependencies = [
  "buildinfo",
  "bus",
+ "citizen",
  "config",
  "design",
  "editor",

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Real Bus requests exercise the shared application transport adapter.
 use bus::native_client::SupervisedClient;
+use futures::StreamExt;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -58,10 +59,35 @@ fn arbitrary_bus_caller_can_manage_app_global_and_cross_app_macros() {
         .build()
         .unwrap();
     let (app, _) = citizen::start_with_macros("fixture", "fixture", &broker.url, &[]).unwrap();
-    let (global, _) = citizen::start_with_macros("workshop", "workshop", &broker.url, &[]).unwrap();
+    let (global, mut global_commands) =
+        citizen::start_with_macros("workshop", "workshop", &broker.url, &[]).unwrap();
     let (other, _) = citizen::start_with_macros("other", "other", &broker.url, &[]).unwrap();
     let roots = macros::Roots::resolve().unwrap();
     runtime.block_on(async {
+        // Workshop's new command belongs to its shell, rather than the
+        // shared adapter. Consume that delivery and create the global file
+        // through the same macro Session used by the shell.
+        let shell = global.clone();
+        let global_ui = tokio::spawn(async move {
+            while let Some(delivery) = global_commands.next().await {
+                if let citizen::Delivery::Command { id, command, body } = delivery {
+                    assert_eq!(command, "workshop.macros.new");
+                    assert_eq!(
+                        serde_json::from_str::<serde_json::Value>(&body).unwrap()["title"],
+                        "Global"
+                    );
+                    let answer = tokio::task::spawn_blocking(move || {
+                        citizen::macros::request("workshop", "new", &body).wait()
+                    })
+                    .await
+                    .unwrap();
+                    let (rc, body) = citizen::macros::answer_body(answer);
+                    shell.reply(id, rc, body);
+                    return;
+                }
+            }
+            panic!("Workshop closed before receiving macros.new");
+        });
         let caller = SupervisedClient::connect("agent-1", &broker.url)
             .await
             .unwrap();
@@ -103,6 +129,7 @@ fn arbitrary_bus_caller_can_manage_app_global_and_cross_app_macros() {
                 .unwrap();
             assert_eq!(rc, 0, "{app}.{suffix}: {body}");
         }
+        global_ui.await.unwrap();
         std::fs::create_dir_all(roots.builtin.join("fixture")).unwrap();
         std::fs::write(
             roots.builtin.join("fixture/builtin.mix"),
