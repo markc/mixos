@@ -355,6 +355,13 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
         let Some(target) = target else {
             return Some(refusal(id, "NOT_FOUND", "viewport is not open"));
         };
+        if command_name == "ui.capture"
+            && ctx.data(|data| data.get_temp::<bool>(egui::Id::unique("eframe.offscreen_capture")))
+                == Some(false)
+            && ctx.input(|i| i.raw.viewports.get(&target).is_some_and(|info| info.visible() == Some(false)))
+        {
+            return Some(refusal(id, "NOT_SHOWN", "this renderer cannot capture a hidden window: show the window first"));
+        }
         return ctx
             .with_plugin(|drive: &mut Drive| {
                 let app = drive.app.clone();
