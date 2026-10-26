@@ -236,9 +236,14 @@ pub fn pending(ctx: &Context) -> bool {
 /// releasing later Bus commands after a window stops producing frames.
 pub const INPUT_QUIET_PERIOD: Duration = Duration::from_secs(1);
 
+/// No UI pass for this long refuses a pending capture. Stay above compd's
+/// one-second parked/occluded callback trickle with margin. This is independent
+/// of eframe's logic-wake grace period.
+pub const CAPTURE_QUIET_PERIOD: Duration = Duration::from_millis(1500);
+
 /// Run from app logic, including logic-only wakes. Settle pending input after
 /// [`INPUT_QUIET_PERIOD`] without a UI pass, refuse captures without a UI pass
-/// on a logic-only wake, expire screenshots and return answers.
+/// for [`CAPTURE_QUIET_PERIOD`], expire screenshots and return answers.
 pub fn logic(ctx: &Context) -> Vec<Answer> {
     logic_at(ctx, Instant::now())
 }
@@ -254,11 +259,9 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
             .is_none_or(Vec::is_empty);
         let input_quiet_since = drive.input_quiet_since.get_or_insert(now);
         let quiet = now.saturating_duration_since(*input_quiet_since);
-        if logic_only {
-            drive.refuse_unshown_captures(now);
-            for child in drive.children.values_mut() {
-                child.refuse_unshown_captures(now);
-            }
+        drive.refuse_unshown_captures(ctx, now);
+        for child in drive.children.values_mut() {
+            child.refuse_unshown_captures(ctx, now);
         }
         if logic_only && quiet >= INPUT_QUIET_PERIOD {
             drive.settle_input(
@@ -372,7 +375,7 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                 // App logic belongs to the root. Wake it too so a parked
                 // child capture is checked before the child deadline.
                 ctx.request_repaint();
-                ctx.request_repaint_after(child.options.capture_timeout);
+                ctx.request_repaint_after(CAPTURE_QUIET_PERIOD);
                 None
             })
             .unwrap_or_else(|| {
@@ -513,9 +516,9 @@ struct Shot(u64);
 /// The plugin: the last widget tree, queued input and finished answers.
 #[derive(Default)]
 pub struct Drive {
-    /// Captures waiting for their first UI pass after acceptance.
-    /// Only this viewport's output clears them.
+    /// Pending captures, tracked until completion, cancellation or shutdown.
     unpainted_captures: HashMap<u64, Instant>,
+    last_ui_pass: Option<Instant>,
     /// Quiet time starts when input first waits, and restarts on root UI passes.
     /// Idle time before a request must not shorten its tolerance for a stall.
     input_quiet_since: Option<Instant>,
@@ -680,13 +683,31 @@ impl Drive {
             })
         });
         let running = if capture { self.running.take() } else { None };
+        let mut captures = VecDeque::new();
+        let mut inputs = VecDeque::new();
+        for job in std::mem::take(&mut self.queue) {
+            if self.unpainted_captures.contains_key(&job.0) {
+                captures.push_back(job);
+            } else {
+                inputs.push_back(job);
+            }
+        }
+        self.queue = inputs;
         self.settle(ctx, why);
+        self.queue = captures;
         self.running = running;
     }
 
-    fn refuse_unshown_captures(&mut self, now: Instant) {
+    fn refuse_unshown_captures(&mut self, ctx: &Context, now: Instant) {
         for (id, accepted) in std::mem::take(&mut self.unpainted_captures) {
             if self.answers.iter().any(|answer| answer.id == id) {
+                continue;
+            }
+            let since = self.last_ui_pass.map_or(accepted, |pass| pass.max(accepted));
+            let quiet = now.saturating_duration_since(since);
+            if quiet < CAPTURE_QUIET_PERIOD {
+                self.unpainted_captures.insert(id, accepted);
+                ctx.request_repaint_after(CAPTURE_QUIET_PERIOD - quiet);
                 continue;
             }
             self.requests.retain(|(queued, _, _)| *queued != id);
@@ -701,7 +722,7 @@ impl Drive {
                 self.running = None;
             }
             self.answers
-                .push(not_shown(id, now.saturating_duration_since(accepted)));
+                .push(not_shown(id, quiet));
         }
     }
 
@@ -714,7 +735,10 @@ impl Drive {
     }
 
     fn output(&mut self, ctx: &Context, output: &mut FullOutput) {
-        self.unpainted_captures.clear();
+        self.last_ui_pass = Some(Instant::now());
+        if !self.unpainted_captures.is_empty() {
+            ctx.request_repaint_after_for(CAPTURE_QUIET_PERIOD, egui::ViewportId::ROOT);
+        }
         if let Some(update) = &output.platform_output.accesskit_update {
             self.tree = Some(update.clone());
         }
@@ -839,6 +863,7 @@ impl Drive {
         self.queue.push_back((id, job));
         if command_name == "ui.capture" {
             self.unpainted_captures.insert(id, Instant::now());
+            ctx.request_repaint_after_for(CAPTURE_QUIET_PERIOD, egui::ViewportId::ROOT);
         }
         None
     }
@@ -1031,6 +1056,7 @@ impl Drive {
     fn expire(&mut self) {
         for answer in &self.answers {
             self.deadlines.remove(&answer.id);
+            self.unpainted_captures.remove(&answer.id);
         }
         let now = Instant::now();
         let expired: Vec<_> = self
@@ -1686,7 +1712,7 @@ mod tests {
     }
 
     #[test]
-    fn logic_only_refuses_queued_and_running_captures_before_input_settles() {
+    fn capture_refuses_only_at_its_quiet_deadline() {
         for running in [false, true] {
             let (ctx, _temp) = capture_context();
             assert!(request(&ctx, 1, "ui.type", &json!({"text":"waiting"})).is_none());
@@ -1699,15 +1725,12 @@ mod tests {
                 });
             }
             let now = Instant::now();
-            let answers = logic_at(&ctx, now + Duration::from_millis(1));
-            assert_eq!(answers.len(), 1);
-            assert_eq!(answers[0].id, 2);
-            assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
-            assert!(
-                logic_at(&ctx, now + INPUT_QUIET_PERIOD)
-                    .iter()
-                    .all(|a| a.id != 2)
-            );
+            assert!(logic_at(&ctx, now + Duration::from_millis(1)).is_empty());
+            assert!(logic_at(&ctx, now + INPUT_QUIET_PERIOD).iter().all(|a| a.id != 2));
+            let answers = logic_at(&ctx, now + CAPTURE_QUIET_PERIOD);
+            let answer = answers.iter().find(|a| a.id == 2).unwrap();
+            assert_eq!(answer.body["error_code"], "NOT_SHOWN");
+            assert!(logic_at(&ctx, now + CAPTURE_QUIET_PERIOD).is_empty());
         }
     }
 
@@ -1750,12 +1773,36 @@ mod tests {
     }
 
     #[test]
+    fn one_hz_ui_passes_keep_capture_alive_until_screenshot() {
+        let (ctx, temp) = capture_context();
+        assert!(request(&ctx, 1, "ui.capture", &json!({"name":"trickle.png"})).is_none());
+        let start = Instant::now();
+        for seconds in 1..=5 {
+            ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+            let pass = start + Duration::from_secs(seconds);
+            // Advance the viewport clock without sleeping in this unit test.
+            ctx.with_plugin(|drive: &mut Drive| drive.last_ui_pass = Some(pass));
+            assert!(logic_at(&ctx, pass + Duration::from_millis(999)).is_empty());
+        }
+        let mut input = RawInput::default();
+        input.events.push(Event::Screenshot {
+            viewport_id: egui::ViewportId::ROOT,
+            user_data: UserData::new(Shot(1)),
+            image: std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
+        });
+        ctx.run_ui(input, |_| {}).drop_without_applying_deltas();
+        assert_eq!(logic(&ctx)[0].rc, 0);
+        assert!(temp.path().join("demo/captures/trickle.png").is_file());
+    }
+
+    #[test]
     fn child_capture_refuses_without_waiting_for_child_ui_or_deadline() {
         let (ctx, _temp) = capture_context();
         let child = egui::ViewportId::from_hash_of("child");
         register_viewport(&ctx, egui::ViewportId::ROOT, "child", child);
         assert!(request(&ctx, 3, "ui.capture", &json!({"viewport":"child"})).is_none());
-        let answers = logic_at(&ctx, Instant::now() + Duration::from_millis(1));
+        assert!(logic_at(&ctx, Instant::now() + Duration::from_millis(1)).is_empty());
+        let answers = logic_at(&ctx, Instant::now() + CAPTURE_QUIET_PERIOD);
         assert_eq!(answers.len(), 1);
         assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
         assert!(!pending(&ctx));

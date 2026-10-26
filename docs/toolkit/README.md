@@ -313,13 +313,15 @@ many milliseconds the window produced no frames. Retry when frames resume.
 The quiet period starts when input first waits and restarts on each root UI
 pass; idle time before that input does not shorten it.
 
-Captures use a separate rule: if a logic-only wake runs before any UI pass
-since acceptance, queued and running captures return `NOT_SHOWN` (rc 10)
-immediately, without waiting for the input quiet period or capture timeout.
+Captures use a separate 1.5 second no-UI-pass threshold, measured from the
+later of acceptance and the viewport's last UI pass. Queued captures, child
+requests awaiting dispatch and running screenshots return `NOT_SHOWN` (rc 10)
+at that deadline, with a scheduled logic wake to check it. The threshold stays
+above compd's 1 Hz parked/occluded callback trickle with margin, so captures
+progressing there continue.
 Minimised or occluded viewports refuse immediately too. Show the window or
 switch to its VT, then retry. Idle time alone does not refuse a capture;
-a normal redraw arriving first preserves the existing screenshot path.
-After a UI pass, `Options::capture_timeout` remains the backstop for missing
+a UI pass restarts the quiet clock. `Options::capture_timeout` remains the backstop for missing
 screenshot events (`CAPTURE`), independently of input settling. The rule
 also applies to child captures still awaiting dispatch to their UI, and
 does not depend on the integration's logic-only fallback delay.

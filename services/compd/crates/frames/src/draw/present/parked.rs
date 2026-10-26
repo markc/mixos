@@ -20,12 +20,11 @@
 //!
 //! One second per frame is too slow for work that needs a few frames in a row:
 //! a capture settles, draws and collects over about five frames, which took
-//! 5–6 s parked. So demand after a quiet spell gets a short burst first: when
-//! the trickle has sent nothing for [`BURST_QUIET`], the next [`BURST_FRAMES`]
-//! sends come [`BURST_INTERVAL`] apart, then the 1 Hz rate resumes. A client
-//! that keeps animating answers every callback within the second, so it never
-//! goes quiet and never refills the burst: the worst case is [`BURST_FRAMES`]
-//! extra frames per [`BURST_QUIET`].
+//! 5–6 s parked. Demand after a quiet spell or an idle timer gets a short burst:
+//! the next [`BURST_FRAMES`] sends come [`BURST_INTERVAL`] apart, then 1 Hz
+//! resumes. Refills are at least [`BURST_MIN_SPACING`] apart, bounding clients
+//! that toggle idle/busy. Continuous animation never restarts demand or goes
+//! quiet, so it never refills the burst.
 
 use crate::draw::present::callbacks::{OCCLUDED_TRICKLE, surface_awaits_frame, tree_awaits_frame};
 use smithay::desktop::layer_map_for_output;
@@ -46,6 +45,8 @@ pub const BURST_FRAMES: u32 = 8;
 pub const BURST_INTERVAL: Duration = Duration::from_millis(16);
 /// How long the trickle must have sent nothing before the burst refills.
 pub const BURST_QUIET: Duration = Duration::from_secs(2);
+/// Minimum spacing between refills, including when demand restarts.
+pub const BURST_MIN_SPACING: Duration = Duration::from_millis(250);
 
 thread_local! {
     /// A parked-trickle timer is armed (one at a time).
@@ -54,12 +55,24 @@ thread_local! {
     static BURST: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     /// When the trickle last answered callbacks.
     static LAST_SEND: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
+    static LAST_REFILL: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
+    /// A timer was not re-armed because no surface awaited a callback.
+    static IDLE: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
 }
 
 /// The delay before the next send, refilling the burst after a quiet spell.
-fn next_period(last_send: Option<Instant>, now: Instant, burst: &mut u32) -> Duration {
-    if last_send.is_none_or(|sent| now.duration_since(sent) >= BURST_QUIET) {
+fn next_period(
+    last_send: Option<Instant>,
+    now: Instant,
+    burst: &mut u32,
+    restarted: bool,
+    last_refill: &mut Option<Instant>,
+) -> Duration {
+    if (restarted || last_send.is_none_or(|sent| now.duration_since(sent) >= BURST_QUIET))
+        && last_refill.is_none_or(|refill| now.duration_since(refill) >= BURST_MIN_SPACING)
+    {
         *burst = BURST_FRAMES;
+        *last_refill = Some(now);
     }
     if *burst > 0 {
         BURST_INTERVAL
@@ -152,11 +165,17 @@ fn send(state: &Loop) {
 /// fires: once presentation resumes, the flip answers callbacks and the timer
 /// drops without sending.
 pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
-    if ARMED.get() || !parked(state) || !waiting(state) {
+    if ARMED.get() || !parked(state) {
+        return;
+    }
+    if !waiting(state) {
+        IDLE.set(true);
         return;
     }
     let mut burst = BURST.get();
-    let period = next_period(LAST_SEND.get(), Instant::now(), &mut burst);
+    let mut last_refill = LAST_REFILL.get();
+    let period = next_period(LAST_SEND.get(), Instant::now(), &mut burst, IDLE.get(), &mut last_refill);
+    LAST_REFILL.set(last_refill);
     BURST.set(burst);
     let armed = state.loop_handle.insert_source(
         Timer::from_duration(period),
@@ -173,7 +192,10 @@ pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
         },
     );
     match armed {
-        Ok(_) => ARMED.set(true),
+        Ok(_) => {
+            IDLE.set(false);
+            ARMED.set(true);
+        }
         Err(error) => warn!("parked frame trickle not armed: {error}"),
     }
 }
@@ -186,7 +208,7 @@ mod tests {
     fn first_demand_bursts() {
         let mut burst = 0;
         assert_eq!(
-            next_period(None, Instant::now(), &mut burst),
+            next_period(None, Instant::now(), &mut burst, true, &mut None),
             BURST_INTERVAL
         );
         assert_eq!(burst, BURST_FRAMES);
@@ -197,12 +219,12 @@ mod tests {
         let sent = Instant::now();
         let mut burst = 0;
         assert_eq!(
-            next_period(Some(sent), sent + PARKED_TRICKLE, &mut burst),
+            next_period(Some(sent), sent + PARKED_TRICKLE, &mut burst, false, &mut Some(sent)),
             PARKED_TRICKLE
         );
         assert_eq!(burst, 0);
         assert_eq!(
-            next_period(Some(sent), sent + BURST_QUIET, &mut burst),
+            next_period(Some(sent), sent + BURST_QUIET, &mut burst, false, &mut Some(sent)),
             BURST_INTERVAL
         );
         assert_eq!(burst, BURST_FRAMES);
@@ -213,9 +235,36 @@ mod tests {
         let sent = Instant::now();
         let mut burst = 3;
         assert_eq!(
-            next_period(Some(sent), sent + BURST_INTERVAL, &mut burst),
+            next_period(Some(sent), sent + BURST_INTERVAL, &mut burst, false, &mut Some(sent)),
             BURST_INTERVAL
         );
         assert_eq!(burst, 3);
+    }
+
+    #[test]
+    fn restart_refills_only_after_minimum_spacing() {
+        let start = Instant::now();
+        let mut refill = Some(start);
+        let mut burst = 0;
+        assert_eq!(next_period(Some(start), start + BURST_MIN_SPACING - Duration::from_millis(1), &mut burst, true, &mut refill), PARKED_TRICKLE);
+        assert_eq!(burst, 0);
+        assert_eq!(next_period(Some(start), start + BURST_MIN_SPACING, &mut burst, true, &mut refill), BURST_INTERVAL);
+        assert_eq!(burst, BURST_FRAMES);
+        assert_eq!(refill, Some(start + BURST_MIN_SPACING));
+    }
+
+    #[test]
+    fn continuous_demand_never_refills() {
+        let start = Instant::now();
+        let mut refill = Some(start);
+        let mut burst = BURST_FRAMES;
+        let mut sent = start;
+        for _ in 0..100 {
+            let period = next_period(Some(sent), sent, &mut burst, false, &mut refill);
+            sent += period;
+            burst = burst.saturating_sub(1);
+        }
+        assert_eq!(burst, 0);
+        assert_eq!(refill, Some(start));
     }
 }
