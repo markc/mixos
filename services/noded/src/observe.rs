@@ -1484,13 +1484,11 @@ mod tests {
         ));
         manager.drain_once();
         let mesh: Value =
-            serde_json::from_str(&bus::wire::parse(&rx.try_recv().unwrap()).unwrap().body)
-                .unwrap();
+            serde_json::from_str(&bus::wire::parse(&rx.try_recv().unwrap()).unwrap().body).unwrap();
         assert_eq!(mesh["direction"], "mesh_in");
         assert_eq!(mesh["peer"], "gamma");
         let local: Value =
-            serde_json::from_str(&bus::wire::parse(&rx.try_recv().unwrap()).unwrap().body)
-                .unwrap();
+            serde_json::from_str(&bus::wire::parse(&rx.try_recv().unwrap()).unwrap().body).unwrap();
         assert!(local.get("peer").is_none());
     }
 }
