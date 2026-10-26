@@ -487,11 +487,20 @@ fn start_inner(
 }
 
 /// The attested caller key: `local:<from>` for a registered local caller,
-/// `mesh:<service>@<peer>` for a mesh caller, else `anon`. noded strips
-/// client-supplied `broker_*` headers, so these are the broker's stamps.
+/// `local:connection:<id>` for an unregistered one (the broker's
+/// per-connection stamp), `mesh:<service>@<peer>` for a mesh caller, else
+/// `anon`. noded strips client-supplied `broker_*` headers, so these are the
+/// broker's stamps. A connection key changes on reconnect: it attributes a
+/// caller, it is not an idempotency key.
 pub fn caller_key(cmd: &IncomingCommand) -> String {
     match cmd.header("broker_origin") {
         Some("local") if !cmd.from.is_empty() => format!("local:{}", cmd.from),
+        Some("local") => match cmd.header("broker_connection") {
+            Some(connection) if !connection.is_empty() => {
+                format!("local:connection:{connection}")
+            }
+            _ => "anon".to_string(),
+        },
         Some("mesh") => format!(
             "mesh:{}@{}",
             cmd.header("broker_service").unwrap_or("unknown"),
@@ -850,6 +859,11 @@ mod tests {
         assert_eq!(caller_key(&command), "local:caller");
         command.from.clear();
         assert_eq!(caller_key(&command), "anon");
+        command
+            .headers
+            .insert("broker_connection".into(), "7/42".into());
+        assert_eq!(caller_key(&command), "local:connection:7/42");
+        command.headers.remove("broker_connection");
         command
             .headers
             .insert("broker_origin".into(), "mesh".into());
