@@ -620,11 +620,7 @@ async fn submission_of<W: Wire>(wire: &W, email_id: &str) -> Result<Option<Strin
 }
 
 /// Create the message in Drafts; the new Email's id.
-async fn create_draft<W: Wire>(
-    wire: &W,
-    mime: Vec<u8>,
-    drafts: &str,
-) -> Result<String> {
+async fn create_draft<W: Wire>(wire: &W, mime: Vec<u8>, drafts: &str) -> Result<String> {
     let blob_id = wire.upload(mime, "message/rfc822").await?;
     // A top-level `blobId` on `Email/set` create is maild's extension:
     // RFC 8621 builds an Email from uploaded MIME with `Email/import`
@@ -761,7 +757,7 @@ pub(crate) async fn send<W: Wire>(
     }
     if attempt.submitted {
         let current = compose_fingerprint(composed);
-        let previous = attempt.compose_fingerprint.as_deref().or_else(|| {
+        let previous = attempt.compose_fingerprint.as_deref().or({
             // Before attachments, this was also the full fingerprint.
             if composed.attachments.is_empty() {
                 attempt.fingerprint.as_deref()
@@ -781,11 +777,15 @@ pub(crate) async fn send<W: Wire>(
     if !attempt.submitted {
         let limit = wire.max_size_upload().unwrap_or(DEFAULT_UPLOAD_LIMIT);
         let paths = composed.attachments.clone();
-        let parts = match tokio::task::spawn_blocking(move || read_parts(&paths, Some(limit))).await {
+        let parts = match tokio::task::spawn_blocking(move || read_parts(&paths, Some(limit))).await
+        {
             Ok(Ok(parts)) => parts,
             Ok(Err(error)) => return (attempt, Err(error)),
             Err(error) => {
-                return (attempt, Err(Error::Protocol(format!("attachment worker: {error}"))));
+                return (
+                    attempt,
+                    Err(Error::Protocol(format!("attachment worker: {error}"))),
+                );
             }
         };
         let print = fingerprint(composed, &parts);

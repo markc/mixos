@@ -6779,21 +6779,27 @@ pub(crate) mod tests {
 
     #[test]
     fn round2_oversized_compose_returns_invalid_and_closes() {
-        let mut state = connected();
-        crate::commands::command(
-            &mut state,
-            &crate::actions::registry(),
-            &crate::strings(),
-            1,
-            "email.compose",
-            &json!({"account":"a", "body":"x".repeat(65 * 1024 * 1024)}).to_string(),
-        );
-        let replies = state.take_replies();
-        assert_eq!(replies.len(), 1);
-        assert_eq!(replies[0].body["error_code"], code::INVALID_ARGUMENT);
-        assert!(state.compose.is_none());
-        state.save_draft();
-        assert!(state.take_draft_ops().is_empty());
+        let body = json!({"account":"a", "body":"x".repeat(65 * 1024 * 1024)}).to_string();
+        // The editor's cap wins with the fallback, a tiny upload limit, and
+        // a server that would otherwise allow this body to be uploaded.
+        for limit in [None, Some(1), Some(u64::MAX)] {
+            let mut state = connected();
+            state.accounts[0].session.as_mut().unwrap().max_size_upload = limit;
+            crate::commands::command(
+                &mut state,
+                &crate::actions::registry(),
+                &crate::strings(),
+                1,
+                "email.compose",
+                &body,
+            );
+            let replies = state.take_replies();
+            assert_eq!(replies.len(), 1);
+            assert_eq!(replies[0].body["error_code"], code::INVALID_ARGUMENT);
+            assert!(state.compose.is_none());
+            state.save_draft();
+            assert!(state.take_draft_ops().is_empty());
+        }
     }
 
     fn oversized_quote_is_invalid(then: Then) {

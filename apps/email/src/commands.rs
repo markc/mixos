@@ -1299,10 +1299,21 @@ fn dispatch(
             };
             // The identity sets Reply-To; an explicit one replaces it.
             let reply_to = text(args, "reply_to")?.filter(|r| !r.trim().is_empty());
-            validate_message(state, &account, &draft)?;
+            // The editor's body cap is separate from the upload limit. Check
+            // it first so an oversized body remains INVALID_ARGUMENT.
             state.open_compose(Some(&account), draft);
             if let Some(error) = state.close_failed_compose() {
                 return Err(invalid(&error));
+            }
+            if let Some(compose) = &state.compose {
+                let draft = Composed {
+                    body: compose.body.contents(),
+                    ..compose.draft.clone()
+                };
+                if let Err(error) = validate_message(state, &account, &draft) {
+                    state.compose = None;
+                    return Err(error);
+                }
             }
             if let (Some(reply_to), Some(compose)) = (reply_to, state.compose.as_mut()) {
                 compose.draft.reply_to = Some(reply_to);
