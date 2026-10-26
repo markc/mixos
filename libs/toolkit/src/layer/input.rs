@@ -165,7 +165,7 @@ mod tests {
                 let unknown = sample(egui::MouseWheelSource::Unknown, unit, modifiers);
                 assert!(unknown.iter().any(|(delta, zoom, _)|
                     *delta != egui::Vec2::ZERO || *zoom != 1.0));
-                for source in [egui::MouseWheelSource::MouseWheel, egui::MouseWheelSource::Trackpad] {
+                for source in [egui::MouseWheelSource::Wheel, egui::MouseWheelSource::Trackpad] {
                     assert_eq!(unknown, sample(source, unit, modifiers));
                 }
             }
