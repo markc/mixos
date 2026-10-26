@@ -306,9 +306,9 @@ for a normal redraw, then runs logic without a UI pass or paint unless a
 pending screenshot or `RequestPaintWhileHidden` needs pixels. With wgpu,
 those requests run a full UI pass into an offscreen texture, without
 acquiring or presenting a compositor surface. A
-normal redraw cancels that fallback. Eframe installs no periodic wake, but
-a hidden app that keeps calling `request_repaint()` runs logic at roughly
-250 ms intervals. Queries and app actions still run. Paint-dependent input
+normal redraw cancels that fallback. Once a callback is overdue, subsequent
+requested passes use the fallback immediately until a callback arrives.
+Eframe installs no periodic wake; an idle hidden app sleeps. Queries and app actions still run. Paint-dependent input
 is preserved across brief stalls. After `drive::INPUT_QUIET_PERIOD` (1000 ms)
 without a UI pass, pending input is settled with the existing cancellation
 policy, releasing later Bus commands. The cancellation message reports how
@@ -318,17 +318,20 @@ pass; idle time before that input does not shorten it.
 
 Captures use a separate 1.5 second no-UI-pass threshold, measured from the
 later of acceptance and the viewport's last UI pass. Queued captures, child
-requests awaiting dispatch and running screenshots return `NOT_SHOWN` (rc 10)
+requests awaiting dispatch return `NOT_SHOWN` (rc 10)
 after at least 1.5 s without a frame, with a scheduled logic wake to check it
 (the deadline plus up to the toolkit's logic-wake grace). The threshold stays
 above compd's 1 Hz parked/occluded callback trickle with margin, so captures
 progressing there continue.
 Minimised and occluded viewports can be captured through the wgpu offscreen
 path. The 1.5 s rule remains a backstop when no UI pass arrives, including
-glow and windows without an initialised surface. Show the window or switch
+windows without an initialised surface. Glow immediately refuses captures of
+known hidden windows with a message to show the window. Show the window or switch
 to its VT if that backstop refuses a capture. Idle time alone does not refuse a capture;
 a UI pass restarts the quiet clock. `Options::capture_timeout` remains the backstop for missing
-screenshot events (`CAPTURE`), independently of input settling. The rule
+screenshot events (`CAPTURE`), independently of input settling. Once a UI pass
+has emitted the screenshot command, only that capture timeout can refuse it;
+the no-UI-pass threshold never cancels an in-flight readback. The rule
 also applies to child captures still awaiting dispatch to their UI, and
 uses the integration's scheduled logic wake.
 

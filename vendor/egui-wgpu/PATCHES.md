@@ -10,16 +10,22 @@ licences; LICENSE-MIT and LICENSE-APACHE are retained from egui's matching
 - `src/winit.rs`: add `Painter::paint_offscreen_and_update_textures`, sharing
   the normal painting implementation. It uses the viewport's configured
   size, renderer target format, scale, clear colour, depth/MSAA attachments,
-  texture uploads/frees and existing CaptureState. It never acquires,
+  texture uploads/frees and existing CaptureState. Paint-only hidden passes
+  skip readback allocation and copying. It never acquires,
   reconfigures, recreates or presents a surface. A bounded native background
-  device poll completes screenshot callbacks without requiring another paint;
+  device poll (one process-wide worker, eight queued requests, ten-second
+  wait limit) completes screenshot callbacks without requiring another paint;
   browser callbacks retain wgpu's event-loop-driven progress.
 - `src/capture.rs`: copy mapped readback bytes into host memory before
   RGBA/BGRA conversion and unmap immediately. Scalar channel reads from
   uncached integrated-GPU mappings can outlive the capture deadline and
   leave readback workers consuming CPU after the request has been refused.
-- `Cargo.toml`, `Cargo.lock`: add pollster as a dev dependency for the headless GPU guard.
-  `offscreen_tests::hidden_window_capture_without_surface` renders without a
+- `src/winit.rs` logs missing surface/render state and zero-size captures.
+  ScreenshotCallback has no error completion and dropping it does not panic;
+  callers retain their capture timeout as the failure backstop.
+- The headless GPU guard lives in `tests/desktop/offscreen_gpu.rs`, included
+  as a unit-test module for private painter access. It needs no extra dependency
+  or vendored manifest/lockfile changes. It renders without a
   window or surface, checks padded row widths, resizing, scaled primitives,
   clear colour, RGBA/BGRA ordering, multiple callbacks and consumption of texture deltas,
   including a 3840 by 2160 capture.

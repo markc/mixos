@@ -2187,6 +2187,32 @@ mod tests {
     }
 
     #[test]
+    fn readback_survives_quiet_period_without_another_ui_pass() {
+        let (ctx, _temp) = capture_context();
+        assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
+        let callback = requested_screenshot(&ctx);
+        assert!(logic_at(&ctx, Instant::now() + CAPTURE_QUIET_PERIOD * 2).is_empty());
+        callback.complete(std::sync::Arc::new(ColorImage::filled(
+            [4, 3],
+            egui::Color32::WHITE,
+        )));
+        assert_eq!(logic(&ctx)[0].rc, 0);
+    }
+
+    #[test]
+    fn hidden_glow_capture_refuses_immediately() {
+        let (ctx, _temp) = capture_context();
+        ctx.data_mut(|data| data.insert_temp(egui::Id::new("eframe.offscreen_capture"), false));
+        let mut input = RawInput::default();
+        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().minimized = Some(true);
+        ctx.run_ui(input, |_| {}).drop_without_applying_deltas();
+        let answer = request(&ctx, 1, "ui.capture", &json!({})).unwrap();
+        assert_eq!(answer.body["error_code"], "NOT_SHOWN");
+        assert!(answer.body.to_string().contains("show the window"));
+        assert!(!pending(&ctx));
+    }
+
+    #[test]
     fn painted_capture_uses_gpu_timeout_instead_of_not_shown() {
         let (ctx, _temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());

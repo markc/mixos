@@ -12,6 +12,11 @@ licences; LICENSE-MIT and LICENSE-APACHE are from that upstream revision.
   Known hidden windows also bypass surface acquisition during direct Full
   passes. Immediate child viewports inherit offscreen painting. Offscreen
   rendering does not run the first-present hook that makes a window visible.
+- Remember stalled redraws until the outstanding callback arrives, avoiding a
+  fresh 250 ms grace period for every requested offscreen step. No idle timer
+  is added. Destroyed windows release this bookkeeping.
+- Glow marks offscreen capture unsupported in context data so toolkit can
+  immediately refuse a known hidden window with an actionable message.
 - Uses the matching egui-wgpu patch, without changing public eframe APIs.
 
 Guard: `cargo test -p toolkit --test offscreen_patch`; state-machine coverage
