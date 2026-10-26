@@ -12,6 +12,7 @@
 
 $d = require("../_lib/deploy_lib.mix")
 $desk = require("../_lib/desk_ops.mix")
+$verify_policy = require("../_lib/sync_verify.mix")
 $DESK_PROGRAM = $desk.worker_program(dirname(dirname(realpath($0))) .. "/_lib/desk_worker.mix")
 
 $CONF_PATH = $d.hub_root() .. "/_etc/mesh_sync.conf.mix"
@@ -248,18 +249,33 @@ end
 
 -- A fresh interpreter is load-bearing after the local broker restarts: the
 -- parent process's severed broker connection does not reconnect mid-process.
-fn verify_node($node, $is_local, $epoch, $hash)
+-- A member new in this epoch ($is_new) is unknown to a local broker still on
+-- the previous epoch: on "Unknown mesh node" it is verified on the target over
+-- ssh instead, and listed for a Bus re-check once every node is done. With
+-- $is_new false, a routing failure stays a failure.
+fn verify_node($node, $is_local, $epoch, $hash, $is_new)
   $target = $is_local ? "noded" : "noded." .. $node .. ".bus"
-  $probe = "$t = " .. json_encode($target) .. "\n"
-  $probe = $probe .. "send $t noded.inventory timeout=15\n"
-  $probe = $probe .. "if type($result) == \"map\" and $result.posture == \"verified\" and (\"\" .. $result.epoch) == " .. json_encode("" .. $epoch) .. " and $result.hash == " .. json_encode($hash) .. " then\n"
-  $probe = $probe .. "  print(\"OK\")\nelse\n  print(\"WAIT rc=\" .. (\"\" .. $rc))\nend\n"
+  $probe = $verify_policy.probe($target, $epoch, $hash)
+  $on_target = false
   $attempt = 0
   while $attempt < 8
-    $r = run_argv([$d.mix_bin(), "-"], {stdin: $probe, timeout: 20})
-    if $r["exit_code"] == 0 and contains(trim($r["stdout"]), "OK") then
-      print("    verified epoch=" .. ("" .. $epoch) .. " hash=" .. substr($hash, 0, 12) .. "...")
-      return nil
+    $ok = false
+    if not $on_target then
+      $r = run_argv([$d.mix_bin(), "-"], {stdin: $probe, timeout: 20})
+      $ok = $r.exit_code == 0 and trim($r.stdout) == "MESH_VERIFY_OK"
+      if not $ok and $verify_policy.needs_target($is_local, $is_new, $r.stdout) then
+        $on_target = true
+        print("    new in this epoch and unknown to the local broker; verifying on target over ssh")
+      end
+    end
+    if $on_target then
+      $remote = ssh_mix($node, $verify_policy.probe("noded", $epoch, $hash), {mix_bin:$d.mix_bin(), timeout: 30})
+      $ok = $remote.ok and trim($remote.stdout) == "MESH_VERIFY_OK"
+    end
+    if $ok then
+      $via = $on_target ? "on target over ssh" : "via local broker"
+      print("    verified " .. $via .. " epoch=" .. ("" .. $epoch) .. " hash=" .. substr($hash, 0, 12) .. "...")
+      return $on_target
     end
     $attempt = $attempt + 1
     sleep(2)
@@ -592,6 +608,7 @@ end
 
 -- ── distribute, restart, verify; stop at the first failed node ──────────
 $done = []
+$ssh_verified = []
 $floor_raised = false
 for each $node in $order
   $is_local = $node == $LOCAL
@@ -636,7 +653,10 @@ for each $node in $order
       $d.state_root() .. "/noded/inventory.signed", "root", "root", "0644")
     restart_noded($node, $is_local)
     sleep(2)
-    verify_node($node, $is_local, $epoch, $vi["canonical_blake3"])
+    if verify_node($node, $is_local, $epoch, $vi["canonical_blake3"],
+        $verify_policy.new_in_epoch($vi["inventory"], $node, $epoch)) then
+      push($ssh_verified, $node)
+    end
     if not $floor_raised then
       $m.mesh_baseline_raise($BASELINE, $vi)
       $floor_raised = true
@@ -650,6 +670,18 @@ if $partial then
   print("  partial: canonical cache unchanged; freshness floor advanced/confirmed after first acceptance")
   if $proposal_used then
     print("           proposal retained for a later complete rollout")
+  end
+end
+
+-- Members verified on the target must also be reachable over the Bus once
+-- every node (the local one included) runs this epoch: no publication without.
+if not $dry and not $partial and len($ssh_verified) > 0 then
+  print("[bus re-check] " .. join($ssh_verified, " "))
+  for each $node in $ssh_verified
+    if verify_node($node, false, $epoch, $vi["canonical_blake3"], false) then
+      print("  ERROR: " .. $node .. " is verified only over ssh, not over the Bus; no canonical publication")
+      exit(1)
+    end
   end
 end
 

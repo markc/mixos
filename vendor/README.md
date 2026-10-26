@@ -10,6 +10,8 @@ Each crate's local edits against its upstream base are listed in that crate's
 
 | Crate | Dir | Upstream version | Wired via | Local edits | Notes |
 |---|---|---|---|---|---|
+| eframe | `eframe/` | crates.io 0.37.0 | `[patch.crates-io]` | Pending paint actions use a full offscreen pass after a stalled redraw; see `eframe/PATCHES.md` | MIT OR Apache-2.0; guard: toolkit's `offscreen_patch` and drive state-machine tests |
+| egui-wgpu | `egui-wgpu/` | crates.io 0.37.0 | `[patch.crates-io]` | Surface-independent painter entry point using existing capture machinery; see `egui-wgpu/PATCHES.md` | MIT OR Apache-2.0; guard: `offscreen_tests::hidden_window_capture_without_surface` |
 | mail-parser | `mail-parser/` | crates.io 0.11.5 | `[patch.crates-io]` | 64-level embedded-message nesting cap; see `mail-parser/PATCHES.md` | Apache-2.0 OR MIT; guard: maild's `parser_nesting` integration suite |
 | pipewire | `pipewire/` | crates.io 0.10.1 | `[patch.crates-io]` | `Buffer::find_meta_mut`, so portald can stamp each frame's PTS; see `pipewire/PATCHES.md` | MIT; guard: the compile-time `MetaHeader` size assert in portald |
 | msedit (Microsoft Edit buffer) | `msedit/` | revision `826b4c097b6f14ba0a846dc56f2f0223a3aaf73a` | `#[path]` include from `libs/edit` | see `msedit/PATCHES.md` | MIT; its `lsh` and `stdext` workspaces are excluded |
@@ -19,6 +21,6 @@ Each crate's local edits against its upstream base are listed in that crate's
 | teletypewriter (rio) | `teletypewriter/` | rio git `932c1a7d9e07b4db5924f7a0dd689e823c3a1442`, package 0.5.27; see `teletypewriter/PATCHES.md` | `[patch."https://github.com/raphamorim/rio"]` | **yes**: child-only sealed session-descriptor handoff between fork and exec | MIT; guard `teletypewriter_patch_guard` in term-core's unit tests |
 | dirs-sys | `dirs-sys/` | crates.io 0.5.0, `8bcd4aa2c35990d57a2cff2953793525fc42709c` | `[patch.crates-io]` | replace one OptionExt comparison with standard Option equality; remove option-ext | MIT OR Apache-2.0; upstream XDG tests and licence gate |
 
-eframe and egui-winit use crates.io 0.37.0. Upstream PR 8631 supplies the
+egui-winit uses crates.io 0.37.0. Upstream PR 8631 supplies the
 one-shot 250 ms stalled-redraw logic pass; PR 8472 supplies image-only
 clipboard paste events, handled by Term as the terminal's Ctrl+V.

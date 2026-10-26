@@ -9,6 +9,14 @@
 -- /etc/<project>/noded/d2.seed (root:noded 0640). The daemon is NOT
 -- restarted: it loads the staged seed at the later admission-posture roll.
 --
+--   mix _bin/mesh_d2_seed.mix [--signed PATH] [node...]
+--
+-- --signed verifies against another signed inventory instead of the canonical
+-- one, such as the pending inventory.proposal.signed: a member the proposal
+-- adds needs its seed before mesh_sync starts its broker, and the canonical
+-- inventory names it only after that rollout. It must still match the
+-- authored inventory and clear the epoch baseline.
+--
 -- With no arguments, every rostered mesh member is handled in the canonical
 -- hubs-last rollout order. Named foreign roster nodes are valid SSH aliases;
 -- they are never looked up in the mesh inventory.
@@ -149,7 +157,8 @@ fn read_seeds($path, $mesh_name, $nodes)
       print("  ERROR: D2 seed for node '" .. $node .. "' is not valid base64")
       exit(1)
     end
-    if byte_length($decoded) != 32 then
+    -- base64_decode returns bytes; len() counts them.
+    if len($decoded) != 32 then
       print("  ERROR: D2 seed for node '" .. $node .. "' is not a 32-byte Ed25519 seed")
       exit(1)
     end
@@ -243,6 +252,15 @@ for each $node in $ROSTER["all"]
 end
 
 $selection_args = args()
+if len($selection_args) > 0 and $selection_args[0] == "--signed" then
+  if len($selection_args) < 2 or starts_with($selection_args[1], "-") then
+    print("  ERROR: --signed needs a signed inventory path")
+    exit(2)
+  end
+  $SIGNED = $selection_args[1]
+  $selection_args = slice($selection_args, 2)
+  print("  verifying against " .. $SIGNED)
+end
 if len($selection_args) == 0 then
   $selection_args = $d.rollout_order($ROSTER)
 end

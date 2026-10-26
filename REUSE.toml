@@ -3,6 +3,12 @@
 # header keeps it ("closest" precedence). Checked by a Mix gate (AGENTS.md §4).
 version = 1
 
+[[annotations]]
+path = ["vendor/eframe/**", "vendor/egui-wgpu/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2018-2021 Emil Ernerfeldt and egui contributors"
+SPDX-License-Identifier = "MIT OR Apache-2.0"
+
 # Generated from the legacy tokenizers 0.21.4/onig build over tokenizer_corpus.txt.
 [[annotations]]
 path = "services/indexd/tests/tokenizer_golden.json"

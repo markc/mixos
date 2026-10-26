@@ -557,6 +557,32 @@ fn a_capture_writes_the_window_to_a_png() {
     );
 }
 
+/// Hidden UI passes still reach the real renderer and the drive's PNG callback.
+#[test]
+fn hidden_captures_render_the_window_with_headless_wgpu() {
+    for minimized in [false, true] {
+        let mut h = window();
+        let viewport = h.input_mut().viewports.get_mut(&ViewportId::ROOT).unwrap();
+        viewport.minimized = Some(minimized);
+        viewport.occluded = Some(!minimized);
+        let shot = ok(&mut h, "ui.capture", json!({"name":"hidden.png"}));
+        assert_eq!(
+            (shot["width"].as_u64(), shot["height"].as_u64()),
+            (Some(900), Some(500))
+        );
+        let image = image::open(captures(&h).join("hidden.png"))
+            .unwrap()
+            .to_rgba8();
+        assert_eq!(image.dimensions(), (900, 500));
+        let first = image.get_pixel(0, 0);
+        assert!(
+            image.pixels().any(|pixel| pixel != first),
+            "capture contains rendered controls"
+        );
+        assert!(!drive::pending(&h.ctx));
+    }
+}
+
 /// `<runtime>/demo/captures`, where every capture of the test window goes.
 fn captures(h: &Harness<'_, App>) -> std::path::PathBuf {
     h.state()

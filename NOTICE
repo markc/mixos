@@ -8,6 +8,11 @@ enters the tree. Per-file licensing is recorded in REUSE.toml.
 Third-party vendored code under vendor/ keeps its own licence files, and each
 directory records its upstream base and local patches (vendor/README.md).
 
+eframe and egui-wgpu 0.37.0, vendor/eframe and vendor/egui-wgpu,
+Emil Ernerfeldt and egui contributors, MIT OR Apache-2.0. Original upstream
+LICENSE-MIT and LICENSE-APACHE retained. Hidden-window capture changes and
+guards are recorded in each PATCHES.md.
+
 The wlcs callback structure in services/compd/crates/wlcs/src/lib.rs was informed
 by Smithay 0.7 wlcs_anvil, Victor Berger, Victoria Brekenfeld and contributors,
 MIT (vendor/smithay/LICENSE.txt). Small client/surface lookup fragments in

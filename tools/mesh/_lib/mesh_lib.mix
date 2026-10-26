@@ -508,32 +508,53 @@ function member_record($mesh, $name)
 end
 
 -- Fail-CLOSED pre-flight for zone emission (run before any record is built):
---   - every PUBLISHED owner must be a declared, ACTIVE, bus:true inventory
---     member AND have a numeric serial. Active because a tombstoned/removed
+--   - every published owner must be a declared, ACTIVE inventory member
+--     AND have a numeric serial. Active because a tombstoned/removed
 --     owner left in published[] would keep serving live A/MX/SRV/PTR for a
---     decommissioned node; bus:true because the mesh_forward zones emit MX +
+--     decommissioned node; published[] needs bus:true because it emits MX +
 --     _imaps/_submissions SRV, which are bogus for a transport-only node.
 --   - every VERBATIM bundle owner must have a numeric serial (it need NOT be a
 --     mesh member — example.net owners are serial-grouping labels for infra).
 -- A missing serial would otherwise emit `serial: nil` into a production zone.
+function published_owners($overlay)
+  $owners = []
+  for $field in ["published", "published_address_only"]
+    $items = $overlay[$field] ?? []
+    if type($items) != "list" then
+      print("ERROR: overlay." .. $field .. " must be a list")
+      mesh_fatal()
+    end
+    for $owner in $items
+      if type($owner) != "string" or contains($owners, $owner) then
+        print("ERROR: published owners must be strings, unique across both lists")
+        mesh_fatal()
+      end
+      push($owners, $owner)
+    end
+  end
+  return $owners
+end
+
+-- Address-only owners need active membership and a serial, but no Bus/mail
+-- capability. They emit only A/PTR; forward extras are deliberately excluded.
 function validate_zone_emission($mesh, $overlay)
   $serials = $overlay["serials"]
-  for each $owner in $overlay["published"]
+  for each $owner in published_owners($overlay)
     $m = member_record($mesh, $owner)
     if $m == nil then
-      print("ERROR: overlay.published owner '" .. ("" .. $owner) .. "' is not a declared inventory member")
+      print("ERROR: published owner '" .. ("" .. $owner) .. "' is not a declared inventory member")
       mesh_fatal()
     end
     if $m["status"] != "active" then
-      print("ERROR: overlay.published owner '" .. $owner .. "' is " .. ("" .. $m["status"]) .. ", not active — remove it from published[] before generating (it would keep serving DNS for a decommissioned node)")
+      print("ERROR: published owner '" .. $owner .. "' is not active — remove it from the publication list before generating")
       mesh_fatal()
     end
-    if $m["bus"] != true then
+    if contains($overlay["published"] ?? [], $owner) and $m["bus"] != true then
       print("ERROR: overlay.published owner '" .. $owner .. "' is transport-only (bus:false) — the mesh_forward zones emit MX/SRV that are bogus for it; remove it from published[]")
       mesh_fatal()
     end
     if type($serials[$owner]) != "number" then
-      print("ERROR: overlay.published owner '" .. $owner .. "' has no numeric serial in overlay.serials")
+      print("ERROR: published owner '" .. $owner .. "' has no numeric serial in overlay.serials")
       mesh_fatal()
     end
   end
@@ -591,14 +612,29 @@ end
 
 -- Resolve one zone's bundles to a list of { owner, records } per its `kind`:
 --   mesh_forward  generated A/MX/SRV per published owner ++ extra[owner]
---   mesh_reverse  one generated PTR per published owner
+--                 address-only owners get exactly A, with no extras
+--   mesh_reverse  one generated PTR per owner in either publication list
 --   verbatim      the authored bundles, as-is
 function resolve_zone_bundles($mesh, $overlay, $z)
   $resolved = []
   $kind = $z["kind"]
   if $kind == "mesh_forward" then
-    for each $owner in $overlay["published"]
+    for each $owner in published_owners($overlay)
       $recs = gen_forward_records($owner, $z["__name"], mesh_ip_of($mesh, $owner))
+      if contains($overlay["published_address_only"] ?? [], $owner) then
+        -- Address-only: exactly the A record. Authored extras would be
+        -- silently dropped, so they are refused instead.
+        if $z["extra"] != nil and $z["extra"][$owner] != nil then
+          print("ERROR: " .. $z["__name"] .. " has extra records for address-only owner " .. $owner .. ": move it to published[] or remove the extras")
+          mesh_fatal()
+        end
+        if $recs[0]["type"] != "A" then
+          print("ERROR: gen_forward_records no longer leads with the A record")
+          mesh_fatal()
+        end
+        push($resolved, {owner:$owner, records:[$recs[0]]})
+        continue
+      end
       $ex = $z["extra"][$owner]
       if $ex != nil then
         for each $er in $ex
@@ -609,7 +645,7 @@ function resolve_zone_bundles($mesh, $overlay, $z)
     end
   else
     if $kind == "mesh_reverse" then
-      for each $owner in $overlay["published"]
+      for each $owner in published_owners($overlay)
         $ptr = gen_ptr_record($owner, mesh_ip_of($mesh, $owner), $z["ptr_target"])
         -- the reversed-IP name MUST fall under this reverse zone, else a
         -- subnet change (or a wrong zone name) would file PTRs in the wrong zone.

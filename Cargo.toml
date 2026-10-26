@@ -213,6 +213,10 @@ mesh = { path = "services/noded/crates/mesh" }
 mesh-trust = { path = "services/noded/crates/mesh-trust" }
 
 [patch.crates-io]
+# Hidden-window paint requests bypass compositor frame callbacks and surface acquisition.
+# See the upstream bases and guards in vendor/{eframe,egui-wgpu}/PATCHES.md.
+eframe = { path = "vendor/eframe" }
+egui-wgpu = { path = "vendor/egui-wgpu" }
 # maild's parser nesting safeguard; see vendor/mail-parser/PATCHES.md.
 mail-parser = { path = "vendor/mail-parser" }
 # dirs-sys without option-ext; calloop with composed-channel idle wakeups;

@@ -69,18 +69,7 @@ fn refusal(id: u64, code: &str, message: &str) -> Answer {
     }
 }
 
-fn viewport_not_shown(viewport: &egui::ViewportInfo) -> bool {
-    viewport.minimized == Some(true) || viewport.occluded == Some(true)
-}
-
 fn not_shown(id: u64, quiet: Duration) -> Answer {
-    if quiet.is_zero() {
-        return refusal(
-            id,
-            "NOT_SHOWN",
-            "the window is minimised or hidden: show the window or switch to its VT, then retry the capture",
-        );
-    }
     refusal(
         id,
         "NOT_SHOWN",
@@ -270,9 +259,11 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
         }
         let input_quiet_since = drive.input_quiet_since.get_or_insert(now);
         let quiet = now.saturating_duration_since(*input_quiet_since);
-        drive.refuse_unshown_captures(ctx, now, egui::ViewportId::ROOT);
+        drive.refuse_unshown_captures(ctx, now);
+        drive.request_capture_pass(ctx, egui::ViewportId::ROOT);
         for (&viewport, child) in &mut drive.children {
-            child.refuse_unshown_captures(ctx, now, viewport);
+            child.refuse_unshown_captures(ctx, now);
+            child.request_capture_pass(ctx, viewport);
         }
         if logic_only && quiet >= INPUT_QUIET_PERIOD {
             drive.settle_input(
@@ -364,6 +355,22 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
         let Some(target) = target else {
             return Some(refusal(id, "NOT_FOUND", "viewport is not open"));
         };
+        if command_name == "ui.capture"
+            && ctx.data(|data| data.get_temp::<bool>(egui::Id::unique("eframe.offscreen_capture")))
+                == Some(false)
+            && ctx.input(|i| {
+                i.raw
+                    .viewports
+                    .get(&target)
+                    .is_some_and(|info| info.visible() == Some(false))
+            })
+        {
+            return Some(refusal(
+                id,
+                "NOT_SHOWN",
+                "this renderer cannot capture a hidden window: show the window first",
+            ));
+        }
         return ctx
             .with_plugin(|drive: &mut Drive| {
                 let app = drive.app.clone();
@@ -379,10 +386,8 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                     return Some(refusal(id, "BUSY", "viewport request queue is full"));
                 }
                 if command_name == "ui.capture" {
-                    if ctx.input(|i| i.raw.viewports.get(&target).is_some_and(viewport_not_shown)) {
-                        return Some(not_shown(id, Duration::ZERO));
-                    }
                     child.pending_captures.insert(id, Instant::now());
+                    ctx.send_viewport_cmd_to(target, ViewportCommand::RequestPaintWhileHidden);
                 }
                 child
                     .requests
@@ -665,6 +670,31 @@ impl egui::Plugin for Drive {
 }
 
 impl Drive {
+    fn request_capture_pass(&self, ctx: &Context, viewport: egui::ViewportId) {
+        // A capture behind input must advance through the same passes as a
+        // visible window. Stop asking for paint once only GPU readback remains.
+        if self
+            .running
+            .as_ref()
+            .is_some_and(|running| matches!(running.steps.front(), Some(Step::Await { .. })))
+        {
+            return;
+        }
+        if !self.pending_captures.is_empty()
+            && (!self.queue.is_empty()
+                || !self.requests.is_empty()
+                || self.running.as_ref().is_some_and(|running| {
+                    running
+                        .steps
+                        .front()
+                        .is_some_and(|step| !matches!(step, Step::Await { .. }))
+                }))
+        {
+            ctx.send_viewport_cmd_to(viewport, ViewportCommand::RequestPaintWhileHidden);
+            ctx.request_repaint_of(viewport);
+        }
+    }
+
     /// A capture that has painted still gets its full screenshot budget.
     /// The input quiet period only settles input, not GPU readback.
     fn settle_input(&mut self, ctx: &Context, why: &str) {
@@ -693,13 +723,7 @@ impl Drive {
         self.running = running;
     }
 
-    fn refuse_unshown_captures(&mut self, ctx: &Context, now: Instant, viewport: egui::ViewportId) {
-        let hidden = ctx.input(|i| {
-            i.raw
-                .viewports
-                .get(&viewport)
-                .is_some_and(viewport_not_shown)
-        });
+    fn refuse_unshown_captures(&mut self, ctx: &Context, now: Instant) {
         for (id, accepted) in std::mem::take(&mut self.pending_captures) {
             if self.answers.iter().any(|answer| answer.id == id) {
                 continue;
@@ -713,11 +737,19 @@ impl Drive {
                 self.deadlines.remove(&id);
                 continue;
             }
+            // Await means the screenshot command has been emitted by a UI pass.
+            // Only its capture deadline may expire GPU work already in flight.
+            if self.running.as_ref().is_some_and(|running| {
+                running.id == id && matches!(running.steps.front(), Some(Step::Await { .. }))
+            }) {
+                self.pending_captures.insert(id, accepted);
+                continue;
+            }
             let since = self
                 .last_ui_pass
                 .map_or(accepted, |pass| pass.max(accepted));
             let quiet = now.saturating_duration_since(since);
-            if !hidden && quiet < CAPTURE_QUIET_PERIOD {
+            if quiet < CAPTURE_QUIET_PERIOD {
                 self.pending_captures.insert(id, accepted);
                 ctx.request_repaint_after(CAPTURE_QUIET_PERIOD - quiet);
                 continue;
@@ -733,8 +765,7 @@ impl Drive {
             {
                 self.running = None;
             }
-            self.answers
-                .push(not_shown(id, if hidden { Duration::ZERO } else { quiet }));
+            self.answers.push(not_shown(id, quiet));
         }
     }
 
@@ -794,9 +825,6 @@ impl Drive {
         if !args.is_object() {
             return Some(refusal(id, "ARGUMENT", "arguments must be a JSON object"));
         }
-        if command_name == "ui.capture" && ctx.input(|i| viewport_not_shown(i.viewport())) {
-            return Some(not_shown(id, Duration::ZERO));
-        }
         let job = match command_name {
             "ui.tree" => return Some(self.tree_answer(id, args)),
             "ui.menu" => return Some(ok(id, json!({"menu":menu_state(ctx)}))),
@@ -853,8 +881,19 @@ impl Drive {
             Ok(job) => job,
             Err(message) => return Some(refusal(id, "ARGUMENT", &message)),
         };
+        if command_name == "ui.capture"
+            && ctx.input(|i| i.viewport().visible() == Some(false))
+            && ctx.data(|data| data.get_temp::<bool>(egui::Id::unique("eframe.offscreen_capture")))
+                == Some(false)
+        {
+            return Some(refusal(
+                id,
+                "NOT_SHOWN",
+                "this renderer cannot capture a hidden window: show the window first",
+            ));
+        }
         // A hidden window runs no passes, so its input would never be read.
-        if ctx.input(|i| i.viewport().visible() == Some(false)) {
+        if command_name != "ui.capture" && ctx.input(|i| i.viewport().visible() == Some(false)) {
             return Some(refusal(
                 id,
                 "BUSY",
@@ -875,6 +914,9 @@ impl Drive {
         self.queue.push_back((id, job));
         if command_name == "ui.capture" {
             self.pending_captures.insert(id, Instant::now());
+            // Bootstrap a full pass even when the request arrived in logic-only
+            // processing. The screenshot itself stays behind all earlier input.
+            ctx.send_viewport_cmd(ViewportCommand::RequestPaintWhileHidden);
             ctx.request_repaint_after_for(CAPTURE_QUIET_PERIOD, egui::ViewportId::ROOT);
         }
         None
@@ -1730,6 +1772,8 @@ fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
     let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), width, height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
+    // Interactive captures favour latency over the smallest possible file.
+    encoder.set_compression(png::Compression::Fast);
     let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
     let data: Vec<u8> = image
         .pixels
@@ -1768,7 +1812,6 @@ mod tests {
                 ctx.with_plugin(|drive: &mut Drive| {
                     drive.queue.pop_front();
                     drive.start(&ctx);
-                    drive.running.as_mut().unwrap().steps.pop_front();
                 });
             }
             let now = Instant::now();
@@ -1787,7 +1830,7 @@ mod tests {
     }
 
     #[test]
-    fn minimized_and_occluded_captures_refuse_during_logic() {
+    fn minimized_and_occluded_captures_wait_for_a_pass_or_the_quiet_deadline() {
         for minimized in [false, true] {
             let (ctx, _temp) = capture_context();
             let mut input = RawInput::default();
@@ -1795,19 +1838,170 @@ mod tests {
             viewport.minimized = Some(minimized);
             viewport.occluded = Some(!minimized);
             let _output = ctx.run_logic(&input, |ctx| {
-                let answer = request(ctx, 1, "ui.capture", &json!({})).unwrap();
-                assert_eq!(answer.rc, 10);
-                assert_eq!(answer.body["error_code"], "NOT_SHOWN");
-                assert!(
-                    answer.body["message"]
-                        .as_str()
-                        .unwrap()
-                        .contains("minimised or hidden")
-                );
-                assert!(!answer.body["message"].as_str().unwrap().contains("0 ms"));
+                assert!(request(ctx, 1, "ui.capture", &json!({})).is_none());
+                let now = Instant::now();
+                assert!(logic_at(ctx, now + Duration::from_millis(250)).is_empty());
+                assert!(pending(ctx));
+                let answers = logic_at(ctx, now + CAPTURE_QUIET_PERIOD);
+                assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
                 assert!(!pending(ctx));
             });
         }
+    }
+
+    #[test]
+    fn hidden_capture_completes_after_an_offscreen_ui_pass() {
+        for child in [false, true] {
+            let (ctx, temp) = capture_context();
+            let target = if child {
+                let target = egui::ViewportId::from_hash_of("hidden-child");
+                register_viewport(&ctx, egui::ViewportId::ROOT, "child", target);
+                target
+            } else {
+                egui::ViewportId::ROOT
+            };
+            let mut input = RawInput::default();
+            input.viewports.entry(target).or_default().occluded = Some(true);
+            let bootstrap = ctx.run_logic(&input, |ctx| {
+                let args = if child {
+                    json!({"viewport":"child", "name":"hidden.png"})
+                } else {
+                    json!({"name":"hidden.png"})
+                };
+                assert!(request(ctx, 7, "ui.capture", &args).is_none());
+                assert!(logic(ctx).is_empty());
+            });
+            assert!(
+                bootstrap
+                    .viewport_commands
+                    .get(&target)
+                    .is_some_and(|commands| {
+                        commands.iter().any(|command| {
+                            matches!(command, ViewportCommand::RequestPaintWhileHidden)
+                        })
+                    })
+            );
+            input.viewport_id = target;
+            let mut screenshot = None;
+            for _ in 0..4 {
+                let output = ctx.run_ui(input.clone(), |_| {});
+                screenshot = output
+                    .viewport_output
+                    .values()
+                    .flat_map(|v| &v.commands)
+                    .find_map(|command| match command {
+                        ViewportCommand::Screenshot(callback) => Some(callback.clone()),
+                        _ => None,
+                    });
+                output.drop_without_applying_deltas();
+                if screenshot.is_some() {
+                    break;
+                }
+            }
+            let callback = screenshot.expect("hidden pass requests screenshot");
+            let waiting = ctx.run_logic(&RawInput::default(), |ctx| {
+                assert!(logic(ctx).is_empty());
+            });
+            assert!(
+                waiting.viewport_commands.values().flatten().all(|command| {
+                    !matches!(command, ViewportCommand::RequestPaintWhileHidden)
+                }),
+                "readback alone does not keep painting"
+            );
+            callback.complete(std::sync::Arc::new(ColorImage::filled(
+                [67, 31],
+                egui::Color32::RED,
+            )));
+            let answers = logic(&ctx);
+            assert_eq!(answers.len(), 1);
+            assert_eq!((answers[0].id, answers[0].rc), (7, 0));
+            assert!(temp.path().join("demo/captures/hidden.png").is_file());
+            assert!(!pending(&ctx));
+        }
+    }
+
+    #[test]
+    fn hidden_capture_preserves_input_order_and_stops_painting_during_readback() {
+        let (ctx, _temp) = capture_context();
+        assert!(request(&ctx, 1, "ui.type", &json!({"text":"before"})).is_none());
+        assert!(request(&ctx, 2, "ui.capture", &json!({})).is_none());
+        assert!(request(&ctx, 3, "ui.type", &json!({"text":"after"})).is_none());
+        let mut input = RawInput::default();
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .minimized = Some(true);
+        let mut seen = Vec::new();
+        let mut screenshot = None;
+        for _ in 0..12 {
+            let bootstrap = ctx.run_logic(&input, |ctx| {
+                let _ = logic(ctx);
+            });
+            assert!(
+                bootstrap
+                    .viewport_commands
+                    .values()
+                    .flatten()
+                    .any(|command| { matches!(command, ViewportCommand::RequestPaintWhileHidden) })
+            );
+            let output = ctx.run_ui(input.clone(), |ui| {
+                ui.input(|i| {
+                    seen.extend(i.events.iter().filter_map(|event| match event {
+                        Event::Text(text) => Some(text.clone()),
+                        _ => None,
+                    }));
+                });
+            });
+            screenshot = output
+                .viewport_output
+                .values()
+                .flat_map(|v| &v.commands)
+                .find_map(|command| match command {
+                    ViewportCommand::Screenshot(callback) => Some(callback.clone()),
+                    _ => None,
+                });
+            output.drop_without_applying_deltas();
+            if screenshot.is_some() {
+                break;
+            }
+        }
+        assert_eq!(seen, ["before"]);
+        let callback = screenshot.expect("capture followed earlier input");
+        let waiting = ctx.run_logic(&input, |ctx| {
+            let _ = logic(ctx);
+        });
+        assert!(
+            waiting
+                .viewport_commands
+                .values()
+                .flatten()
+                .all(|command| { !matches!(command, ViewportCommand::RequestPaintWhileHidden) }),
+            "later input stays queued without a paint loop"
+        );
+        callback.complete(std::sync::Arc::new(ColorImage::filled(
+            [4, 3],
+            egui::Color32::WHITE,
+        )));
+        let answers = logic(&ctx);
+        assert!(
+            answers
+                .iter()
+                .any(|answer| answer.id == 2 && answer.rc == 0)
+        );
+        assert!(!answers.iter().any(|answer| answer.id == 3));
+        for _ in 0..4 {
+            ctx.run_ui(input.clone(), |ui| {
+                ui.input(|i| {
+                    seen.extend(i.events.iter().filter_map(|event| match event {
+                        Event::Text(text) => Some(text.clone()),
+                        _ => None,
+                    }));
+                });
+            })
+            .drop_without_applying_deltas();
+        }
+        assert_eq!(seen, ["before", "after"]);
     }
 
     #[test]
@@ -1815,8 +2009,7 @@ mod tests {
         for pass_after_acceptance in [false, true] {
             let (ctx, _temp) = capture_context();
             assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
-            ctx.run_ui(RawInput::default(), |_| {})
-                .drop_without_applying_deltas();
+            // Still queued: emitted screenshots use capture_timeout instead.
             let start = Instant::now();
             let later = start + Duration::from_secs(2);
             ctx.with_plugin(|drive: &mut Drive| {
@@ -2024,7 +2217,68 @@ mod tests {
     }
 
     #[test]
-    fn a_stalled_capture_keeps_not_shown_priority_over_gpu_timeout() {
+    fn readback_survives_quiet_period_without_another_ui_pass() {
+        let (ctx, _temp) = capture_context();
+        assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
+        let callback = requested_screenshot(&ctx);
+        assert!(logic_at(&ctx, Instant::now() + CAPTURE_QUIET_PERIOD * 2).is_empty());
+        callback.complete(std::sync::Arc::new(ColorImage::filled(
+            [4, 3],
+            egui::Color32::WHITE,
+        )));
+        assert_eq!(logic(&ctx)[0].rc, 0);
+    }
+
+    #[test]
+    fn hidden_glow_capture_refuses_immediately() {
+        let (ctx, _temp) = capture_context();
+        ctx.data_mut(|data| data.insert_temp(egui::Id::unique("eframe.offscreen_capture"), false));
+        // Renderer capability must survive many frames without being read.
+        for _ in 0..1_000 {
+            ctx.run_ui(RawInput::default(), |_| {})
+                .drop_without_applying_deltas();
+        }
+        let mut input = RawInput::default();
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .minimized = Some(true);
+        ctx.run_ui(input, |_| {}).drop_without_applying_deltas();
+        let answer = request(&ctx, 1, "ui.capture", &json!({})).unwrap();
+        assert_eq!(answer.body["error_code"], "NOT_SHOWN");
+        assert!(answer.body.to_string().contains("show the window"));
+        assert!(!pending(&ctx));
+    }
+
+    #[test]
+    fn glow_capture_guard_reads_the_target_viewport() {
+        for hidden_child in [false, true] {
+            let (ctx, _temp) = capture_context();
+            let child = egui::ViewportId::from_hash_of("glow-child");
+            register_viewport(&ctx, egui::ViewportId::ROOT, "child", child);
+            ctx.data_mut(|data| {
+                data.insert_temp(egui::Id::unique("eframe.offscreen_capture"), false);
+            });
+            let mut input = RawInput::default();
+            input
+                .viewports
+                .get_mut(&egui::ViewportId::ROOT)
+                .unwrap()
+                .minimized = Some(!hidden_child);
+            input.viewports.entry(child).or_default().minimized = Some(hidden_child);
+            ctx.run_ui(input, |_| {}).drop_without_applying_deltas();
+            let answer = request(&ctx, 1, "ui.capture", &json!({"viewport":"child"}));
+            if hidden_child {
+                assert_eq!(answer.unwrap().body["error_code"], "NOT_SHOWN");
+            } else {
+                assert!(answer.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn painted_capture_uses_gpu_timeout_instead_of_not_shown() {
         let (ctx, _temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
         let _callback = requested_screenshot(&ctx);
@@ -2041,7 +2295,7 @@ mod tests {
                 panic!("capture awaits readback");
             }
         });
-        assert_eq!(logic_at(&ctx, now)[0].body["error_code"], "NOT_SHOWN");
+        assert_eq!(logic_at(&ctx, now)[0].body["error_code"], "CAPTURE");
     }
 
     #[test]
