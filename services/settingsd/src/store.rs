@@ -477,6 +477,64 @@ impl Store {
             }
         }
     }
+    /// Move an established profile to a renamed instance (the machine was
+    /// renamed, and the instance is its hostname). The primary, and the backup
+    /// when present, must each verify as stored under `from`; each is then
+    /// re-sealed under `to`, backup first, through the atomic replacement
+    /// path. Nothing else changes: incarnation, revisions and receipts stay.
+    /// The writer lock keeps a serving settingsd out. A profile already bound
+    /// to `to` is left alone.
+    pub fn rebind(root: &Path, from: &Binding, to: Binding) -> anyhow::Result<(Accepted, bool)> {
+        to.validate().map_err(|e| anyhow::anyhow!(e.message))?;
+        anyhow::ensure!(from != &to, "rebind needs a different binding");
+        let store = Self::lock(root, false)?;
+        store.check_root()?;
+        let primary: Accepted =
+            open_in(&store.directory, "desktop.conf.mix", libc::O_RDONLY).and_then(read_typed)?;
+        if primary.check(&to).is_ok() {
+            return Ok((primary, false));
+        }
+        primary.check(from)?;
+        let previous =
+            match open_in(&store.directory, "desktop.previous.conf.mix", libc::O_RDONLY) {
+                Ok(file) => {
+                    let previous: Accepted = read_typed(file)?;
+                    previous.check(from)?;
+                    Some(previous)
+                }
+                Err(e)
+                    if e.downcast_ref::<std::io::Error>()
+                        .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
+                {
+                    None
+                }
+                Err(e) => return Err(e),
+            };
+        let rebound = |mut record: Accepted| -> anyhow::Result<Accepted> {
+            record.binding = to.clone();
+            record.seal()?;
+            record.check(&to)?;
+            Ok(record)
+        };
+        if let Some(previous) = previous {
+            let previous = rebound(previous)?;
+            store.check_root()?;
+            config::atomic::replace_in(
+                &store.directory,
+                "desktop.previous.conf.mix".as_ref(),
+                &encode(&previous)?,
+            )?;
+        }
+        let primary = rebound(primary)?;
+        store.check_root()?;
+        config::atomic::replace_in(
+            &store.directory,
+            "desktop.conf.mix".as_ref(),
+            &encode(&primary)?,
+        )?;
+        store.check_root()?;
+        Ok((primary, true))
+    }
     /// Upgrade the backup in place when it is an intact older record (its
     /// seal verified as stored); leave an absent or unreadable one for the
     /// next commit to replace.
@@ -651,6 +709,51 @@ mod tests {
         let (_, accepted) = Store::open(dir.path(), &binding()).unwrap();
         assert_eq!(accepted.revision, Revision(2));
         assert_eq!(accepted.receipts[0].operation_id, "ambiguous");
+    }
+    #[test]
+    fn rebind_reseals_primary_and_backup_under_the_new_instance() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut store, current) =
+            Store::create(dir.path(), binding(), Desktop::default()).unwrap();
+        let mut next = current.clone();
+        next.revision = Revision(2);
+        next.desktop.ui.density = 1.5;
+        next.effective_digest = settings::digest(
+            &settings::resolve_with_embedded(&next.desktop, &next.embedded_source).unwrap(),
+        )
+        .unwrap();
+        next.seal().unwrap();
+        store.commit(&current, &next).unwrap();
+        // A serving writer holds the lock: rebind waits its turn.
+        let renamed = Binding {
+            instance: "renamed".into(),
+            profile: "default".into(),
+        };
+        assert!(Store::rebind(dir.path(), &binding(), renamed.clone()).is_err());
+        drop(store);
+
+        let (accepted, changed) = Store::rebind(dir.path(), &binding(), renamed.clone()).unwrap();
+        assert!(changed);
+        assert_eq!(accepted.binding, renamed);
+        assert_eq!(accepted.revision, Revision(2));
+        assert_eq!(accepted.incarnation, next.incarnation);
+        let backup: Accepted = strict::from_str(
+            &std::fs::read_to_string(dir.path().join("desktop.previous.conf.mix")).unwrap(),
+        )
+        .unwrap();
+        backup.check(&renamed).unwrap();
+        assert!(Store::open(dir.path(), &binding()).is_err());
+        let (_, opened) = Store::open(dir.path(), &renamed).unwrap();
+        assert_eq!(opened.desktop.ui.density, 1.5);
+
+        // Again is a no-op; a wrong `from` is refused.
+        let (_, changed) = Store::rebind(dir.path(), &binding(), renamed.clone()).unwrap();
+        assert!(!changed);
+        let other = Binding {
+            instance: "other".into(),
+            profile: "default".into(),
+        };
+        assert!(Store::rebind(dir.path(), &other, binding()).is_err());
     }
     #[test]
     fn writer_lock_and_missing_store_do_not_materialise_defaults() {

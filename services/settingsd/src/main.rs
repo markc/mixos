@@ -52,6 +52,15 @@ enum Command {
     },
     /// Serve an established profile; missing/unsupported state fails visibly.
     Serve(Profile),
+    /// Move an established profile to a renamed instance (after a machine
+    /// rename). Run with settingsd stopped; both stored documents must verify
+    /// under --from-instance and are re-sealed under --instance.
+    Rebind {
+        #[command(flatten)]
+        profile: Profile,
+        #[arg(long)]
+        from_instance: String,
+    },
 }
 fn main() -> anyhow::Result<()> {
     buildinfo::exit_on_version!();
@@ -79,6 +88,23 @@ fn main() -> anyhow::Result<()> {
             println!(
                 "{}",
                 serde_json::json!({"status":"seeded","binding":accepted.binding,"incarnation":accepted.incarnation,"revision":accepted.revision})
+            );
+            Ok(())
+        }
+        Command::Rebind {
+            profile,
+            from_instance,
+        } => {
+            let (root, binding) = profile.resolve()?;
+            let from = Binding {
+                instance: from_instance,
+                profile: binding.profile.clone(),
+            };
+            from.validate().map_err(|e| anyhow::anyhow!(e.message))?;
+            let (accepted, changed) = settingsd::store::Store::rebind(&root, &from, binding)?;
+            println!(
+                "{}",
+                serde_json::json!({"status": if changed {"rebound"} else {"unchanged"},"from":from,"binding":accepted.binding,"incarnation":accepted.incarnation,"revision":accepted.revision})
             );
             Ok(())
         }
