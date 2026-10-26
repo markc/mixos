@@ -462,7 +462,7 @@ mod tests {
             egui::ColorImage::filled([1, 1], egui::Color32::WHITE)));
         assert_eq!(codes(&image), [22]);
         assert!(matches!(clipboard_event(&image, ctrl_shift()),
-            Some(Clipboard::Keys(keys)) if keys.into_iter().flat_map(encode).collect::<Vec<_>>() == [22]));
+            Some(Clipboard::Keys(keys)) if keys.iter().copied().flat_map(encode).collect::<Vec<_>>() == [22]));
         assert!(matches!(
             clipboard_event(&egui::Event::Copy, ctrl_shift()),
             Some(Clipboard::Action(Action::Copy))

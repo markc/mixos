@@ -864,7 +864,7 @@ fn row(
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click_and_drag());
     response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::Role::ListBoxOption, true, selected, &entry.name)
+        egui::WidgetInfo::selected(egui::Role::Button, true, selected, &entry.name)
     });
     let visuals = ui.visuals().clone();
     let fill = if selected {
