@@ -2216,6 +2216,11 @@ mod tests {
     fn hidden_glow_capture_refuses_immediately() {
         let (ctx, _temp) = capture_context();
         ctx.data_mut(|data| data.insert_temp(egui::Id::unique("eframe.offscreen_capture"), false));
+        // Renderer capability must survive many frames without being read.
+        for _ in 0..1_000 {
+            ctx.run_ui(RawInput::default(), |_| {})
+                .drop_without_applying_deltas();
+        }
         let mut input = RawInput::default();
         input
             .viewports
@@ -2227,6 +2232,29 @@ mod tests {
         assert_eq!(answer.body["error_code"], "NOT_SHOWN");
         assert!(answer.body.to_string().contains("show the window"));
         assert!(!pending(&ctx));
+    }
+
+    #[test]
+    fn glow_capture_guard_reads_the_target_viewport() {
+        for hidden_child in [false, true] {
+            let (ctx, _temp) = capture_context();
+            let child = egui::ViewportId::from_hash_of("glow-child");
+            register_viewport(&ctx, egui::ViewportId::ROOT, "child", child);
+            ctx.data_mut(|data| {
+                data.insert_temp(egui::Id::unique("eframe.offscreen_capture"), false);
+            });
+            let mut input = RawInput::default();
+            input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().minimized =
+                Some(!hidden_child);
+            input.viewports.entry(child).or_default().minimized = Some(hidden_child);
+            ctx.run_ui(input, |_| {}).drop_without_applying_deltas();
+            let answer = request(&ctx, 1, "ui.capture", &json!({"viewport":"child"}));
+            if hidden_child {
+                assert_eq!(answer.unwrap().body["error_code"], "NOT_SHOWN");
+            } else {
+                assert!(answer.is_none());
+            }
+        }
     }
 
     #[test]

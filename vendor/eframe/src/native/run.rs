@@ -96,6 +96,9 @@ struct WinitAppWrapper<T: WinitApp> {
     /// Do not pay the grace period again for every step of an offscreen capture.
     windows_stalled_redraws: HashSet<WindowId>,
 
+    /// Earliest next direct pass, including repaints delivered by later user events.
+    windows_direct_repaint_floors: HashMap<WindowId, Instant>,
+
     winit_app: T,
     return_result: Result<(), crate::Error>,
     run_and_return: bool,
@@ -107,6 +110,7 @@ impl<T: WinitApp> WinitAppWrapper<T> {
             windows_next_repaint_times: HashMap::default(),
             windows_redraw_deadlines: HashMap::default(),
             windows_stalled_redraws: HashSet::default(),
+            windows_direct_repaint_floors: HashMap::default(),
             winit_app,
             return_result: Ok(()),
             run_and_return,
@@ -215,6 +219,9 @@ impl<T: WinitApp> WinitAppWrapper<T> {
 
         self.windows_next_repaint_times
             .retain(|window_id, repaint_time| {
+                if let Some(floor) = self.windows_direct_repaint_floors.get(window_id) {
+                    *repaint_time = (*repaint_time).max(*floor);
+                }
                 if now < *repaint_time {
                     return true; // not yet ready
                 }
@@ -226,6 +233,9 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                     // directly below.
                     // See: https://github.com/emilk/egui/issues/5229
                     if self.windows_stalled_redraws.contains(window_id) {
+                        // Winit deduplicates this; keep recovery armed even if a
+                        // platform consumed the earlier request while hidden.
+                        window.request_redraw();
                         stalled_window_ids.push(*window_id);
                     } else if is_invisible_or_minimized(&window) {
                         invisible_window_ids.push(*window_id);
@@ -251,6 +261,8 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         for window_id in stalled_window_ids {
             let mode = self.winit_app.overdue_pass_mode(window_id);
             let event_result = self.winit_app.run_ui_and_paint(event_loop, window_id, mode);
+            self.windows_direct_repaint_floors
+                .insert(window_id, Instant::now() + MISSED_REDRAW_TIMEOUT);
             self.handle_event_result(event_loop, event_result);
         }
 
@@ -295,6 +307,11 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                 );
                 let mode = self.winit_app.overdue_pass_mode(window_id);
                 let event_result = self.winit_app.run_ui_and_paint(event_loop, window_id, mode);
+                if let Some(window) = self.winit_app.window(window_id) {
+                    window.request_redraw();
+                }
+                self.windows_direct_repaint_floors
+                    .insert(window_id, Instant::now() + MISSED_REDRAW_TIMEOUT);
                 self.handle_event_result(event_loop, event_result);
             }
         }
@@ -436,12 +453,14 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
                 winit::event::WindowEvent::RedrawRequested => {
                     self.windows_redraw_deadlines.remove(&window_id);
                     self.windows_stalled_redraws.remove(&window_id);
+                    self.windows_direct_repaint_floors.remove(&window_id);
                     self.winit_app
                         .run_ui_and_paint(event_loop, window_id, PassMode::Full)
                 }
                 _ => {
                     if matches!(event, winit::event::WindowEvent::Destroyed) {
                         self.windows_stalled_redraws.remove(&window_id);
+                        self.windows_direct_repaint_floors.remove(&window_id);
                         self.windows_redraw_deadlines.remove(&window_id);
                         self.windows_next_repaint_times.remove(&window_id);
                     }

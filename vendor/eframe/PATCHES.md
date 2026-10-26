@@ -15,6 +15,8 @@ licences; LICENSE-MIT and LICENSE-APACHE are from that upstream revision.
 - Remember stalled redraws until the outstanding callback arrives, avoiding a
   fresh 250 ms grace period for every requested offscreen step. No idle timer
   is added. Destroyed windows release this bookkeeping.
+- Direct stalled passes retain a 250 ms repaint floor across later wakes;
+  deduplicated redraw requests remain armed for compositor-driven recovery.
 - Glow marks offscreen capture unsupported in context data so toolkit can
   immediately refuse a known hidden window with an actionable message.
 - Uses the matching egui-wgpu patch, without changing public eframe APIs.

@@ -8,6 +8,9 @@ fn hidden_window_vendor_patch_guard() {
     let modes = include_str!("../../../vendor/eframe/src/native/winit_integration.rs");
     let painter = include_str!("../../../vendor/egui-wgpu/src/winit.rs");
     assert!(run.contains("self.winit_app.overdue_pass_mode(window_id)"));
+    assert!(run.contains("*repaint_time = (*repaint_time).max(*floor)"));
+    assert!(run.contains(".insert(window_id, Instant::now() + MISSED_REDRAW_TIMEOUT)"));
+    assert!(run.contains("self.windows_direct_repaint_floors.remove(&window_id)"));
     assert!(
         modes.contains("PassMode::LogicOnly"),
         "glow keeps logic-only fallback"
