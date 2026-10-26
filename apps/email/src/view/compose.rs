@@ -367,7 +367,11 @@ fn attachment_chip(
         .size();
     let full_width = ui.max_rect().width();
     let outer_width = (natural.x + icon + spacing + margin).min(full_width);
-    if outer_width > ui.available_width() && ui.available_width() < full_width {
+    // available_width() is the full row width in a wrapping layout. Scopes
+    // advance their already drawn rect without wrapping it, so wrap before
+    // push_id/Frame using the space left on this row instead.
+    let remaining_width = ui.available_size_before_wrap().x;
+    if outer_width > remaining_width && remaining_width < full_width {
         ui.end_row();
     }
     let width = natural
@@ -409,6 +413,9 @@ fn form(
     palette: &editor::Palette,
     events: &mut Vec<UiEvent>,
 ) {
+    // Capture the Resize body's content width before any row can expand its
+    // bounds. The attachment column uses the same budget as Subject.
+    let form_width = ui.available_width();
     // Leave room below the editor. Otherwise a fill-height editor makes
     // the resizable dialog grow again on every frame.
     let spacing = ui.spacing().item_spacing.y;
@@ -463,6 +470,7 @@ fn form(
         })
         .fold(0.0_f32, f32::max)
         .ceil();
+    let attachment_width = (form_width - column - GAP).max(0.0);
     let icon = field::height_of(ui.ctx());
     // While a send is in flight every field is read-only: the dialog shows
     // exactly what is being sent.
@@ -586,6 +594,7 @@ fn form(
         if !compose.attachments.is_empty() {
             row(ui, &crate::label("compose-attachments"), column, |ui, _| {
                 ui.vertical(|ui| {
+                    ui.set_max_width(attachment_width);
                     ui.horizontal_wrapped(|ui| {
                         let chrome = toolkit::chrome::Chrome::of(ui.ctx());
                         ui.add(toolkit::icons::image_of(

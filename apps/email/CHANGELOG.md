@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Attachment chips wrap within the compose form's field width. Scoped chip
+  frames no longer expand the row and dialog instead of starting a new row.
 - `email.send` and `email.compose` accept an optional `attachments` list of
   absolute file paths. Symlinks are followed; relative paths, non-files,
   unreadable files and oversized messages have distinct refusal codes.
