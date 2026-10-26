@@ -618,8 +618,8 @@ impl ComposeAttachment {
                     attachment.size = Some(metadata.len());
                     // Check effective-user read permission without opening the
                     // file or reading any bytes. Send still opens and checks it.
-                    let readable = std::ffi::CString::new(path.as_os_str().as_bytes())
-                        .is_ok_and(|path| {
+                    let readable =
+                        std::ffi::CString::new(path.as_os_str().as_bytes()).is_ok_and(|path| {
                             // SAFETY: path is a live NUL-terminated string.
                             unsafe {
                                 libc::faccessat(
@@ -6972,7 +6972,10 @@ pub(crate) mod tests {
             );
             state.apply_ui(UiEvent::SendCompose);
             assert!(
-                !state.take_work().iter().any(|w| matches!(w, Work::Send { .. }))
+                !state
+                    .take_work()
+                    .iter()
+                    .any(|w| matches!(w, Work::Send { .. }))
             );
             let compose = state.compose.as_ref().unwrap();
             assert_eq!(compose.attachments[0].state, expected);
@@ -7012,9 +7015,15 @@ pub(crate) mod tests {
             state.apply_ui(UiEvent::SendCompose);
             assert!(!state.compose_sendable());
             assert!(
-                !state.take_work().iter().any(|w| matches!(w, Work::Send { .. }))
+                !state
+                    .take_work()
+                    .iter()
+                    .any(|w| matches!(w, Work::Send { .. }))
             );
-            assert_eq!(state.compose.as_ref().unwrap().attachments[0].state, expected);
+            assert_eq!(
+                state.compose.as_ref().unwrap().attachments[0].state,
+                expected
+            );
             assert_eq!(
                 state.compose.as_ref().unwrap().attachments_over_limit,
                 change == "grow"
@@ -7046,7 +7055,10 @@ pub(crate) mod tests {
         );
         assert!(!state.compose_sendable());
         assert!(
-            !state.take_work().iter().any(|w| matches!(w, Work::Send { .. }))
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Send { .. }))
         );
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
@@ -7055,10 +7067,7 @@ pub(crate) mod tests {
     fn compose_limits_include_encoding_body_edits_and_sender_account() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("large.bin");
-        std::fs::File::create(&path)
-            .unwrap()
-            .set_len(2048)
-            .unwrap();
+        std::fs::File::create(&path).unwrap().set_len(2048).unwrap();
         let mut state = connected_many(&["a", "b"]);
         state.accounts[0].session.as_mut().unwrap().max_size_upload = Some(2048);
         state.accounts[1].session.as_mut().unwrap().max_size_upload = Some(16 * 1024);
@@ -7071,7 +7080,10 @@ pub(crate) mod tests {
             ComposeField::Body,
             "x".repeat(16 * 1024),
         ));
-        assert!(!state.compose_sendable(), "the limit covers the whole message");
+        assert!(
+            !state.compose_sendable(),
+            "the limit covers the whole message"
+        );
         state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "small".into()));
         assert!(state.compose_sendable());
         state.apply_ui(UiEvent::SendCompose);
@@ -7114,12 +7126,18 @@ pub(crate) mod tests {
         vanished.apply_ui(UiEvent::RestoreDraft(DraftChoice::Keep));
         let compose = vanished.compose.as_ref().unwrap();
         assert_eq!(compose.draft.attachments, [path]);
-        assert_eq!(compose.attachments[0].state, ComposeAttachmentState::Missing);
+        assert_eq!(
+            compose.attachments[0].state,
+            ComposeAttachmentState::Missing
+        );
         assert_eq!(compose.attachments[0].size, None);
         assert!(!vanished.compose_sendable());
         vanished.apply_ui(UiEvent::SendCompose);
         assert!(
-            !vanished.take_work().iter().any(|w| matches!(w, Work::Send { .. }))
+            !vanished
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Send { .. }))
         );
     }
 

@@ -16,7 +16,8 @@ use toolkit::toggle::Toggle;
 
 use super::UiEvent;
 use crate::state::{
-    ComposeAttachment, ComposeAttachmentState, ComposeField, ComposeState, Confirm, DraftChoice, State,
+    ComposeAttachment, ComposeAttachmentState, ComposeField, ComposeState, Confirm, DraftChoice,
+    State,
 };
 
 /// The close or quit question over a draft: Keep Draft (the default, and
@@ -366,9 +367,8 @@ fn attachment_chip(
                 )
                 .size()
                 .x;
-            let width = natural.min(
-                (ui.available_width() - icon - ui.spacing().item_spacing.x).max(icon),
-            );
+            let width =
+                natural.min((ui.available_width() - icon - ui.spacing().item_spacing.x).max(icon));
             let mut text = egui::RichText::new(text);
             if bad || over_limit {
                 text = text.color(ui.visuals().error_fg_color);

@@ -1261,11 +1261,19 @@ fn compose_attachment_chips_show_status_and_remove_through_the_window() {
         ],
     );
     assert!(h.query_by_label(&missing_status).is_some());
-    assert!(h.get_by_label(&label("send")).accesskit_node().is_disabled());
+    assert!(
+        h.get_by_label(&label("send"))
+            .accesskit_node()
+            .is_disabled()
+    );
     let remove = |name| email::label_with("compose-attachment-remove", &[("name", name)]);
     h.get_by_label(&remove("missing.txt")).click();
     h.run();
-    assert!(!h.get_by_label(&label("send")).accesskit_node().is_disabled());
+    assert!(
+        !h.get_by_label(&label("send"))
+            .accesskit_node()
+            .is_disabled()
+    );
     assert_eq!(
         h.state().state.info()["compose"]["attachments"],
         serde_json::json!([
