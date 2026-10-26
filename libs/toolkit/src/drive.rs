@@ -1885,34 +1885,24 @@ mod tests {
     fn completed_screenshot_survives_hidden_refusal_check() {
         let (ctx, temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({"name":"finished.png"})).is_none());
-        ctx.run_ui(RawInput::default(), |_| {})
-            .drop_without_applying_deltas();
-        let mut input = RawInput::default();
-        input.events.push(Event::Screenshot {
-            viewport_id: egui::ViewportId::ROOT,
-            user_data: UserData::new(Shot(1)),
-            image: std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
-        });
-        ctx.with_plugin(|drive: &mut Drive| drive.step(&mut input));
-        assert!(temp.path().join("demo/captures/finished.png").is_file());
+        let callback = requested_screenshot(&ctx);
+        callback.complete(std::sync::Arc::new(ColorImage::filled(
+            [4, 3],
+            egui::Color32::WHITE,
+        )));
         let mut hidden = RawInput::default();
         hidden
             .viewports
             .get_mut(&egui::ViewportId::ROOT)
             .unwrap()
             .minimized = Some(true);
+        let mut answers = Vec::new();
         let _output = ctx.run_logic(&hidden, |ctx| {
-            ctx.with_plugin(|drive: &mut Drive| {
-                drive.refuse_unshown_captures(
-                    ctx,
-                    Instant::now() + CAPTURE_QUIET_PERIOD,
-                    egui::ViewportId::ROOT,
-                );
-            });
+            answers = logic_at(ctx, Instant::now() + CAPTURE_QUIET_PERIOD);
         });
-        let answers = logic(&ctx);
         assert_eq!(answers.len(), 1);
         assert_eq!(answers[0].rc, 0);
+        assert!(temp.path().join("demo/captures/finished.png").is_file());
         assert!(logic(&ctx).is_empty());
     }
 
