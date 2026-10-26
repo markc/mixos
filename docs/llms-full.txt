@@ -753,7 +753,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [email](../email/README.md) | app | unclassified | [`apps/email`](https://github.com/markc/mixos/tree/main/apps/email) |  |
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [files](../files/README.md) | lib | none (library) | [`libs/files`](https://github.com/markc/mixos/tree/main/libs/files) | Rooted reads and the files-as-truth markdown corpus model. |
-| [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed commands behind standing grants, receipts and rollback, so agents never need sudo. |
+| [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo. |
 | [indexd](../indexd/README.md) | service | desktop | [`services/indexd`](https://github.com/markc/mixos/tree/main/services/indexd) | Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI. |
 | [inputd](../inputd/README.md) · [changelog](../inputd/changelog.md) | service | unclassified | [`services/inputd`](https://github.com/markc/mixos/tree/main/services/inputd) | How inputd turns keys into Bus commands below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
@@ -8750,8 +8750,8 @@ behind it are in the
 
 ## Calling it
 
-Locally, hostd listens on `/run/hostd/hostd.sock` (mode 0660, group
-`hostd`). Frames are JSON, each ended by a NUL byte, many per connection:
+Locally, hostd listens on `/run/hostd/hostd.sock` (mode 0666). Frames are
+JSON, each ended by a NUL byte, many per connection:
 
 ```text
 -> {"command":"net.state","body":{}}\0
@@ -8766,8 +8766,9 @@ hostd call host.info
 hostd call net.link.apply '{"link":"eth1","config":{"mode":"dhcp"}}'
 ```
 
-Read commands are also on the Bus, owned by `hostd`. Changes are never taken
-from the Bus.
+Every command is also on the Bus, owned by `hostd`. Writes accept local
+Bus requests stamped `broker_origin: local`, and Unix-socket callers.
+Mesh-origin writes remain refused.
 
 There is one hostd per host, run as root and socket-activated:
 
@@ -8784,19 +8785,22 @@ hostd serve --no-bus             # local socket only
 |---|---|---|
 | `host.info` | read | hostname, kernel, OS, MixOS mode, container, uptime, CPU, memory |
 | `net.state` | read | which network managers run, networkd links and files, resolved DNS, iwd stations, hostd's own files |
-| `hostd.status` | read | frozen or not, the policy's state, the caller's identity, and the grants it holds: `held` (names) and `held_grants` (each in full: commands, limits, expiry, rate) |
-| `hostd.receipt` | read | one change's receipt: what it changed, under which grant, how it ended (never file contents) |
-| `hostd.freeze` | control | refuse every change until thawed: root on the host, or a grant naming it |
-| `hostd.thaw` | control | accept changes again and lift grant suspensions: root on the host only |
+| `hostd.status` | read | frozen or not, and the caller's origin |
+| `hostd.receipt` | read | one change's receipt: what it changed, its origin, how it ended (never file contents) |
+| `hostd.freeze` | control | refuse every change until thawed: any local caller |
+| `hostd.thaw` | control | accept changes again: any local caller |
 | `net.link.apply` | write | configure one link through networkd, rolled back unless it comes up |
-| `hostd.undo` | write | put back what an applied change replaced; needs no grant of its own (see below) |
+| `net.wifi.scan` | write | scan for Wi-Fi networks on one device (iwd); drives the radio |
+| `net.wifi.connect` | write | connect a Wi-Fi device to a network (iwd), put back unless connected in time |
+| `hostd.undo` | write | put back what an applied change replaced; any local caller |
+| `unit.control` | write | start, stop or restart a named `.service` unit with `{unit, action}`; hostd's own units are protected |
 | `net.wg.apply` | write | configure a WireGuard link through networkd, rolled back unless it comes up and its peers complete a handshake |
-| `desk.restart` | write | restart the desk machine that the caller's grant names, session and console included (starts `desk-restart@DESK.service`); the host stays up; no undo |
-| `desk.stop` | write | power off the desk machine that the caller's grant names and give the console back (starts `desk-stop@DESK.service`); the host stays up; no undo |
+| `desk.restart` | write | restart the named desk machine, session and console included (starts `desk-restart@DESK.service`); the host stays up; no undo |
+| `desk.stop` | write | power off the named desk machine and give the console back (starts `desk-stop@DESK.service`); the host stays up; no undo |
 
-The desk commands take no machine name. A grant gives the caller one desk through
-its `desks` limit, which must name exactly one machine. A grant with no desk,
-or with two, is refused.
+The desk commands take `{"desk":"desk-2"}`. The name must start with a
+lowercase letter, contain only lowercase letters, digits and hyphens, and
+be at most 32 characters. Every local caller may target any desk.
 
 A desk power action is a cycle that outlives the caller: a restart stops the
 desk's session, reboots the machine, starts the session again and switches
@@ -8811,59 +8815,29 @@ unit is missing, the command is refused `unit_failed`.
 
 Only hostd on the host can do this. A hostd running inside a desk refuses
 both commands `in_container`. The desk reaches the host's hostd through its
-socket bound into the machine, so the grant names the caller by its cgroup as
-the host sees it, under the machine's payload:
-`/machine.slice/systemd-nspawn@DESK.service/payload/system.slice/system-scenes.slice/scenes@VT.service/*`.
+socket bound into the machine.
 Every refusal is logged at warn under `hostd::audit`.
-| `net.wifi.scan` | write | scan for Wi-Fi networks on one device (iwd). It changes nothing durable, but it drives the radio, so it needs a grant |
-| `net.wifi.connect` | write | connect a Wi-Fi device to a network (iwd), put back unless connected in time |
 
 `host.info` is also published as the retained topic `hostd.info`.
 
 ## Who may change what
 
-Reads are open to anyone who can reach hostd. Changes need a **standing
-grant** in `/etc/hostd/policy.mx`, a strict-data document that only root
-can change:
+Reads are open to every caller. Writes and control commands accept every
+caller on the same host, over the Unix socket or the local Bus. No policy
+file, cgroup membership, uid or grant determines access. Broker provenance
+is required; unstamped Bus requests are malformed. Writes from other nodes
+are refused with `local_only`.
 
-```text
-{
-  schema: 1,
-  grants: [
-    {name: "desk-network",
-     caller: {cgroup: "/machine.slice/systemd-nspawn@desk.service/*"},
-     commands: ["net.link.apply"],
-     limits: {links: ["eth0", "wlan0"]},
-     expires: "2027-01-01T00:00:00Z",
-     rate: {count: 3, per_s: 600}}
-  ]
-}
-```
-
-- **The caller is matched by what the kernel says,** never by what it
-  sends: its uid and its cgroup. A cgroup only counts when hostd holds a
-  pidfd for the caller and the caller was alive after the cgroup was read.
-  Both are read again for every request.
-- **`X/*` matches the cgroup `X` and everything below it.** Name a subtree
-  the caller can't move itself into, such as one under `machine.slice`.
-- **Commands** are exact names or a family such as `net.*`. No grant can name
-  `hostd.thaw`.
-- **Limits** are allow-lists the command checks its arguments against
-  (`links` for `net.link.apply`). A key the grant doesn't list is
-  unrestricted.
-- **Rate** applies per caller, with a grant-wide cap of four callers' worth.
-- **Default deny.** No policy file means no grants.
-
-The policy is read for every change, so an edit takes effect at once. A
-file that anyone but root could change, or that sits in a directory anyone
-but root could change, is refused.
+Writes are limited to 30 calls per minute per caller and command, plus a
+host-wide cap of 120 writes per minute. Socket identity (uid and cgroup)
+and broker-stamped sender names provide rate-accounting keys only.
 
 ## What a change does
 
 Every write follows the same pattern:
 
 1. **Check:** the request is typed and validated (no free text reaches a
-   file), then the grant, limits, rate and freeze state.
+   file), then local origin, rate and freeze state.
 2. **Record:** a receipt keeps the previous content of every file the change
    replaces.
 3. **Apply:** hostd writes only files it names itself, and never edits a file
@@ -8875,8 +8849,7 @@ Every write follows the same pattern:
 
 One change runs at a time, host-wide. A change waits at most 15 seconds
 behind others (`busy` after that), and the whole gate runs again once it
-holds the lock, so a freeze, a suspension, an expiry or a policy edit that
-lands while it waits is obeyed. A change runs to the end, rollback
+holds the lock, so a freeze that lands while it waits is obeyed. A change runs to the end, rollback
 included, even if the caller hangs up.
 
 **A stop waits for a running change** (up to 80 seconds), and a change that
@@ -8895,8 +8868,6 @@ still holds what that change installed. If a later change, or anyone's
 edit, has replaced it since, undo is refused (`superseded`): undo the later
 change first.
 
-**Two rollbacks in a row** under one grant suspend that grant until root on
-the host thaws hostd.
 
 ## Network links
 
@@ -8932,8 +8903,7 @@ the host thaws hostd.
 The reply to a change that passed (`rc` 0):
 
 ```text
-{"receipt": "<id>", "outcome": "applied", "reason": null, "grant": "<grant>",
- "grant_suspended": false, "link": {"admin": "configured", "operational": "routable"}}
+{"receipt": "<id>", "outcome": "applied", "reason": null, "link": {"admin": "configured", "operational": "routable"}}
 ```
 
 A change that failed and was reversed comes back with `rc` 10, as
@@ -8941,11 +8911,8 @@ A change that failed and was reversed comes back with `rc` 10, as
 keys. Keep the `receipt` id to undo the change later, or to look it up with
 `hostd.receipt`.
 
-**Undo needs no grant of its own.** `hostd.undo {receipt}` is allowed to
-whoever holds a grant that covers the original change: its command and its
-limits (for `net.link.apply`, that link). A grant that may configure `hd0`
-may undo its own changes to `hd0`. Naming `hostd.undo` in a grant adds
-nothing.
+Any local caller may undo an applied receipt, even one created by another
+caller. Receipt and file-integrity checks still apply.
 
 ## WireGuard links
 
@@ -8972,7 +8939,6 @@ nothing.
 - A link of that name hostd didn't create is refused (`foreign_config`).
 - A changed `.netdev` takes effect because hostd deletes its own link and
   networkd creates it again. Peers reconnect within a keepalive.
-- Grants limit WireGuard links by `links`, like other links.
 
 hostd's unit has two capabilities, both for this command:
 - `CAP_CHOWN`, to give the key file to group `systemd-network`;
@@ -9009,13 +8975,12 @@ Wi-Fi commands answer `no_iwd`.
 - **Undo** puts the device back the same way. It is refused (`superseded`)
   once the device has moved to another network since. If someone else
   moved the device during a change, the put-back leaves it alone.
-- Grants limit Wi-Fi by `links` (the device) and `ssids`.
 
 ## Stopping it
 
 `hostd.freeze` stops every change at once and survives restarts and
-reboots. An unreadable freeze record counts as frozen. Only root on the
-host itself thaws it, never root inside a container.
+reboots. An unreadable freeze record counts as frozen. Any local caller
+may freeze or thaw hostd.
 
 ## Refusals
 
@@ -9026,15 +8991,10 @@ refusal names its reason in `status`:
 | Status | Meaning |
 |---|---|
 | `bad_request` | the body doesn't fit the command's schema |
-| `local_only` | a control or write command arrived over the Bus |
-| `caller_unverified` | hostd couldn't prove the caller's cgroup |
-| `no_grant` | no unexpired grant covers this caller and command |
-| `outside_grant` | a grant covers the command but not these arguments |
-| `grant_suspended` | the circuit breaker suspended the grant |
-| `rate_limited` | the grant's rate is used up |
+| `local_only` | a control or write command arrived from another node |
+| `unstamped` | a Bus request has no valid broker origin stamp |
+| `rate_limited` | the caller or host-wide write rate is used up |
 | `frozen` | hostd is frozen |
-| `policy_invalid` | the policy can't be loaded; changes are refused |
-| `root_only` | only root on the host may do this |
 | `foreign_config`, `unmanaged_configured`, `no_such_link` | `net.link.apply` or `net.wg.apply` won't touch this link |
 | `no_iwd`, `no_such_station`, `no_such_network`, `unsupported` | Wi-Fi: iwd isn't running, the device isn't an iwd station, the SSID isn't in range, or the security type isn't handled |
 | `rolled_back` | the change failed its health check and was reversed |
@@ -9053,30 +9013,29 @@ The source is
 |---|---|
 | `src/local.rs` | the local socket: NUL-framed JSON, per-uid and per-connection limits |
 | `src/caller.rs` | caller identity from `SO_PEERCRED`, a held pidfd, cgroup and namespaces, read per request |
-| `src/service.rs` | the command table, tiers, dispatch and the `authorise` gate |
-| `src/policy.rs` | grants: loading (one `O_NOFOLLOW` open, root-only), matching, rate limits |
+| `src/service.rs` | the command table, tiers, dispatch and the write gate |
+| `src/rate.rs` | sliding-window write limits per caller and command, plus a host cap |
 | `src/freeze.rs` | the kill switch, failing closed |
-| `src/receipt.rs` | receipts, durable atomic writes, restore, the circuit breaker |
-| `src/txn.rs` | the transaction every write runs through: receipt first, conclude (keep or put back, breaker, durable outcome), recovery, undo |
+| `src/receipt.rs` | receipts, durable atomic writes, restore |
+| `src/txn.rs` | the transaction every write runs through: receipt first, conclude (keep or put back, durable outcome), recovery, undo |
 | `src/link.rs` | `net.link.apply`: validation, rendering, the change, its proof |
 | `src/wg.rs` | `net.wg.apply`: WireGuard netdev, network and key files, the handshake proof |
 | `src/wgnl.rs` | WireGuard generic netlink (peer handshakes) and deleting a link |
 | `src/wifi.rs` | `net.wifi.scan` and `net.wifi.connect` through iwd: the one-connect passphrase agent, runtime put-back |
 | `src/networkd.rs` | networkd over D-Bus and Varlink, the event-driven health wait |
 | `src/net.rs`, `src/info.rs` | the read commands |
-| `units/` | `hostd.socket`, `hostd.service` (sandboxed), `sysusers.conf` |
+| `units/` | `hostd.socket`, `hostd.service` (sandboxed) |
 
 ## Adding a write command
 
 1. A typed request with `deny_unknown_fields`, validated into a plan before
    anything else happens. Anything the plan reads from the host (a key, a
    file) is read inside the writer lock.
-2. `service::write(host, origin, peer, command, limits, ...)` with the
-   allow-list keys the command checks: it gates the call, takes the writer
+2. `service::write(host, origin, peer, command, ...)`: it gates the call, takes the writer
    lock, gates it again and runs the change in its own task.
 3. The change through `txn`: `FileChange::backup` for every file (with the
    mode and group a new file needs), `txn::begin`, the change and its proof,
-   then `txn::conclude`. Never order the breaker or the receipt by hand.
+   then `txn::conclude`. Never order the receipt by hand.
 4. A `reapply` for the command in `txn::put_back`, so rollback, recovery and
    undo can make the host use the restored files. Without it the command
    doesn't ship.
@@ -9399,8 +9358,8 @@ body. A row with `"passthrough": true` re-emits its stroke instead.
 | `input.key` | inject a key press, release or tap |
 | `input.pointer.move`, `.button`, `.scroll` | inject pointer input |
 
-Bindings are written through to the keymap file. `MIXOS_MESH_OPEN=0`
-limits the keymap changes to node-local callers.
+Bindings are written through to the keymap file. Both local and mesh
+callers can change the keymap; mutations require the broker's origin stamp.
 
 ---
 
@@ -32851,6 +32810,19 @@ the Bus contracts otherwise match 0.18.2.
 The source is
 [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded).
 
+## Open Bus commands
+
+`noded.tap` and `noded.observe.start` accept callers from every node,
+including anonymous connections. Observation events are delivered on the
+connection that started the subscription; registration is unnecessary.
+Connection quotas, bounded queues, filtering and payload redaction still
+apply. Native-session traffic can cross nodes. Broker identity stamps,
+mesh admission, topic ownership and session-record ownership remain enforced.
+
+Node config preserves unknown keys as unowned data, so existing files with
+`noded.mesh_open` or `observe.allowed_services` still load. Neither key
+controls broker behaviour.
+
 ---
 
 <!-- page: https://mixos.dev/notifyd/ (source: https://mixos.dev/notifyd/README.md) -->
@@ -32917,14 +32889,12 @@ An expired question was not answered. Treat it as "no answer", never as yes.
 Each notification gets exactly one outcome. The first one wins, and a later
 button press or timeout is refused with `ALREADY_ANSWERED`.
 
-`notify.present`, `notify.action`, `notify.dismiss`, `notify.close` and `notify.close_all`
-record a local presentation or settle a notification, so notifyd takes them only from callers on this node
-(the broker's `broker_origin` stamp). A peer across the mesh can post and read
-notifications but never answer or withdraw one for the person. That matters
-for questions such as portald's screen-share consent.
+`notify.present`, `notify.action`, `notify.dismiss`, `notify.close` and
+`notify.close_all` accept every broker-stamped caller, local or mesh.
+Agents on other nodes can answer and withdraw notifications.
 
 Errors come back as `{error_code, message}`: rc 10 `USAGE` (a bad body),
-rc 13 `FORBIDDEN` (not a local caller), rc 14 `NOT_FOUND`,
+rc 10 `INVALID_ARGUMENT` (missing provenance), rc 14 `NOT_FOUND`,
 rc 15 `ALREADY_ANSWERED`, rc 16 `TOO_MANY_OPEN`.
 
 ## Limits
@@ -32939,7 +32909,7 @@ Explicit `urgency` takes precedence. Replies and events expose only `urgency`.
 `status`, `outcome` and `presented`. The app defaults to source, then `MixOS`.
 `presented` maps surface names to opaque string references, for example
 `{"plasma":"42"}`. Surface and ref are non-empty strings of at most 80
-characters. Only local callers can record presentations; unknown ids and
+characters. Any caller can record presentations; unknown ids and
 settled notifications use `NOT_FOUND` and `ALREADY_ANSWERED`. Every outcome
 clears all presentation records. Urgency and presentations persist across
 restarts; older state files default to `normal` and `{}`.
@@ -33395,21 +33365,13 @@ Nothing is captured until the request is granted, in this order:
 | `portald.screencast.grant` | `{app?, count?, ttl_ms?}` | covers the next `count` (default 1, at most 100) Starts by `app` (any app when absent) for `ttl_ms` (default 5 minutes, at most an hour); at most 16 grants |
 | `portald.screencast.revoke` | `{id?}` | withdraws one grant, or all of them |
 
-These commands answer **callers on this node only**. A request with
-`broker_origin` other than `local` is refused with rc 13 `FORBIDDEN`, because a
-grant hands over the whole screen. notifyd holds the same line for the
-buttons: `notify.action`, `notify.dismiss`, `notify.close` and
-`notify.close_all` are refused for callers off this node, so no mesh peer can
-press Allow either. Every grant, answer and decision is logged with the
-caller.
+These commands accept every broker-stamped caller, local or mesh.
+Missing provenance is a malformed request (rc 10). notifyd likewise accepts
+answers and withdrawals from any node, so a remote agent can press Allow.
+Every grant, answer and decision is logged with the caller.
 
-The trust model, plainly: consent keeps the screen from other nodes and from
-an app that shares by accident. It is not a wall between local processes:
-any process on this node that can reach the Bus (`local` means this node,
-not this session) can answer or grant, and any
-Wayland client of this desk can already capture the screen through compd, so
-an app that wants to approve its own share can. Sandboxed apps, where that
-would matter, are out of scope for now.
+Consent prevents accidental sharing. Any caller on the Bus can answer or
+grant access; it is not an access boundary between mesh nodes or processes.
 
 To share the screen from a script with nobody at the desk:
 
@@ -36527,17 +36489,15 @@ the predecessor repository at revision
 
 - Read commands `host.info`, `net.state`, `hostd.status`, `hostd.receipt` on the
   local socket and the Bus; retained `hostd.info` topic.
-- Control commands `hostd.freeze` (root on the host, or a grant) and
-  `hostd.thaw` (root on the host only; also lifts grant suspensions), local
-  only.
-- Write commands `net.link.apply` and `hostd.undo`, local only, behind standing
-  grants in `/etc/hostd/policy.mx` (schema 1): caller by uid and verified
-  cgroup, command families, argument allow-lists, expiry, per-caller rate with a
-  grant-wide cap. Receipts, health-checked rollback, and a circuit breaker
-  that suspends a grant after two rollbacks in a row.
+- Control commands `hostd.freeze` and `hostd.thaw` accept any local caller.
+- Write commands accept every same-host Bus or Unix-socket caller, with
+  receipts, health-checked rollback and per-caller and host-wide rate limits.
+  Mesh-origin writes stay refused.
+- Desk power commands take an explicit `{desk}` argument. Unit control takes
+  `{unit, action}`. Socket access is open to all local accounts (mode 0666).
 - Local socket: NUL-framed JSON, kernel caller identity read per request,
   per-uid connection cap, connection lifetime, read and write deadlines.
-- `hostd.status` adds `held_grants`: each grant the caller holds, in full.
+- `hostd.status` reports freeze state and caller origin.
 - Write command `net.wg.apply`: networkd-native WireGuard, key made and kept by
   hostd (0640 root:systemd-network, never returned), the handshake dead-man
   check. The unit gains `CAP_CHOWN` and `CAP_NET_ADMIN` for it.
@@ -36593,7 +36553,6 @@ loads unchanged.
   injector is `inputd virtual pointer`.
 - The keymap is `keymap.json` in the state directory
   (`/var/lib/mixos/inputd/`), or `--keymap PATH`.
-- The mesh lock is `MIXOS_MESH_OPEN=0`.
 
 ---
 
@@ -37678,7 +37637,7 @@ yet. They are listed on both this page and the server page until they do.
 - [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
-- [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed commands behind standing grants, receipts and rollback, so agents never need sudo.
+- [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo.
 - [inputd](../inputd/README.md) (service): How inputd turns keys into Bus commands below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.
 - [mesh-sign](../mesh-sign/README.md) (cli): Signs and verifies the mesh inventory, the trust root of a MixOS mesh.
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
@@ -37732,7 +37691,7 @@ yet. They are listed on both this page and the desktop page until they do.
 - [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
-- [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed commands behind standing grants, receipts and rollback, so agents never need sudo.
+- [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo.
 - [inputd](../inputd/README.md) (service): How inputd turns keys into Bus commands below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.
 - [mesh-sign](../mesh-sign/README.md) (cli): Signs and verifies the mesh inventory, the trust root of a MixOS mesh.
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.

@@ -241,17 +241,15 @@
 <ul>
 <li>Read commands <code>host.info</code>, <code>net.state</code>, <code>hostd.status</code>, <code>hostd.receipt</code> on the
 local socket and the Bus; retained <code>hostd.info</code> topic.</li>
-<li>Control commands <code>hostd.freeze</code> (root on the host, or a grant) and
-<code>hostd.thaw</code> (root on the host only; also lifts grant suspensions), local
-only.</li>
-<li>Write commands <code>net.link.apply</code> and <code>hostd.undo</code>, local only, behind standing
-grants in <code>/etc/hostd/policy.mx</code> (schema 1): caller by uid and verified
-cgroup, command families, argument allow-lists, expiry, per-caller rate with a
-grant-wide cap. Receipts, health-checked rollback, and a circuit breaker
-that suspends a grant after two rollbacks in a row.</li>
+<li>Control commands <code>hostd.freeze</code> and <code>hostd.thaw</code> accept any local caller.</li>
+<li>Write commands accept every same-host Bus or Unix-socket caller, with
+receipts, health-checked rollback and per-caller and host-wide rate limits.
+Mesh-origin writes stay refused.</li>
+<li>Desk power commands take an explicit <code>{desk}</code> argument. Unit control takes
+<code>{unit, action}</code>. Socket access is open to all local accounts (mode 0666).</li>
 <li>Local socket: NUL-framed JSON, kernel caller identity read per request,
 per-uid connection cap, connection lifetime, read and write deadlines.</li>
-<li><code>hostd.status</code> adds <code>held_grants</code>: each grant the caller holds, in full.</li>
+<li><code>hostd.status</code> reports freeze state and caller origin.</li>
 <li>Write command <code>net.wg.apply</code>: networkd-native WireGuard, key made and kept by
 hostd (0640 root:systemd-network, never returned), the handshake dead-man
 check. The unit gains <code>CAP_CHOWN</code> and <code>CAP_NET_ADMIN</code> for it.</li>

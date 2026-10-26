@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! hostd: information about the host, and privileged host actions through
-//! closed, typed commands, behind standing grants, receipts and rollback.
+//! closed, typed commands, with receipts, rate limits and rollback.
 pub mod bus_loop;
 pub mod caller;
 pub mod desk;
@@ -13,7 +13,7 @@ pub mod local;
 pub mod neigh;
 pub mod net;
 pub mod networkd;
-pub mod policy;
+pub mod rate;
 pub mod receipt;
 pub mod service;
 pub mod txn;

@@ -12,7 +12,6 @@
     "max_buffers": 256,
     "max_reply_bytes": 4194304
   },
-  "mesh_open": true,
   "name": "edit",
   "props_level": "L2",
   "publisher_loss": 0,

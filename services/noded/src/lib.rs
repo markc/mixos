@@ -153,8 +153,6 @@ async fn async_main() -> Result<()> {
     let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
     let noded_node = node.clone();
     let admission_mode = node_cfg.noded.admission;
-    let mesh_open = node_cfg.noded.mesh_open;
-    let observe_allowed_services = node_cfg.observe.allowed_services.clone();
     let wg_ip = node_cfg.wg_ip.clone();
     let unix_socket = Some(node_cfg.noded.broker_unix_endpoint());
     let pending_grants_per_parent = node_cfg.noded.pending_grants_per_parent;
@@ -169,8 +167,6 @@ async fn async_main() -> Result<()> {
                 mesh_config_path: mesh_config,
                 spec_dir,
                 admission_mode,
-                mesh_open,
-                observe_allowed_services,
                 unix_socket,
                 pending_grants_per_parent,
             },

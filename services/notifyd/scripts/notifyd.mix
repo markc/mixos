@@ -23,12 +23,9 @@
 -- on the topic "<name>.changed" with inner command notification.answered, and
 -- notify.get reads it afterwards. Other inner commands: notification.created,
 -- notification.closed (any outcome that is not a button press).
--- present records a local surface; action, dismiss, close and close_all settle
--- a notification. These commands are
--- taken from callers on this node only (the broker's broker_origin stamp): a
--- peer across the mesh must never answer or withdraw a question for the
--- person, such as portald's screen-share consent.
--- Replies: rc 0 with JSON; rc 10 bad request; rc 13 not a local caller;
+-- present records a surface; action, dismiss, close and close_all settle
+-- a notification. Every broker-stamped caller, local or mesh, may use them.
+-- Replies: rc 0 with JSON; rc 10 bad request;
 -- rc 14 unknown id; rc 15 already answered; rc 16 too many open. Errors use
 -- {error_code, message}.
 --
@@ -66,16 +63,15 @@ fn body()
 end
 
 fn fail($code, $message)
-  $rc = if $code == "NOT_FOUND" then 14 elif $code == "ALREADY_ANSWERED" then 15 elif $code == "TOO_MANY_OPEN" then 16 elif $code == "FORBIDDEN" then 13 else 10 end
+  $rc = if $code == "NOT_FOUND" then 14 elif $code == "ALREADY_ANSWERED" then 15 elif $code == "TOO_MANY_OPEN" then 16 else 10 end
   reply($rc, json_encode({error_code: $code, message: $message}))
 end
 
--- Whether the request came from this node, as the broker stamped it. A
--- refused caller has been answered.
-fn local_caller()
+-- Require provenance stamped by the broker. Every honest origin is accepted.
+fn stamped_caller()
   $headers = $event.headers ?? {}
-  if type($headers) == "map" and $headers.broker_origin == "local" then return true end
-  fail("FORBIDDEN", "only the desk on this node answers or dismisses notifications")
+  if type($headers) == "map" and contains(["local", "mesh"], $headers.broker_origin) then return true end
+  fail("INVALID_ARGUMENT", "notification changes require a broker-stamped caller")
   return false
 end
 
@@ -133,11 +129,11 @@ on notify.list desc "open notifications, oldest first (all: true for every recor
 end
 
 on notify.action desc "the human pressed button {action} on notification {id}"
-  if local_caller() then $S = settle_and_reply(body().id, "action", body().action) end
+  if stamped_caller() then $S = settle_and_reply(body().id, "action", body().action) end
 end
 
 on notify.present desc "record a local surface reference {id, surface, ref}"
-  if local_caller() then
+  if stamped_caller() then
     try
       $out = $n.present($S, body())
       save($out.state)
@@ -151,15 +147,15 @@ on notify.present desc "record a local surface reference {id, surface, ref}"
 end
 
 on notify.dismiss desc "the human closed notification {id} without choosing"
-  if local_caller() then $S = settle_and_reply(body().id, "dismissed", nil) end
+  if stamped_caller() then $S = settle_and_reply(body().id, "dismissed", nil) end
 end
 
 on notify.close desc "withdraw notification {id} (its sender, or the Notifications page)"
-  if local_caller() then $S = settle_and_reply(body().id, "closed", nil) end
+  if stamped_caller() then $S = settle_and_reply(body().id, "closed", nil) end
 end
 
 on notify.close_all desc "close every open notification that has no buttons"
-  if local_caller() then
+  if stamped_caller() then
     $closed = []
     for each $r in $S.records
       if $n.is_open($r) and not $n.is_actionable($r) then push($closed, $r.id) end

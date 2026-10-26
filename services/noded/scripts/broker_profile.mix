@@ -19,10 +19,10 @@ fn plan($spec)
   if type($spec.session)!="number" or floor($spec.session)!=$spec.session or $spec.session<1 or $spec.session>6 then refuse("invalid session") end
   if type($spec.profile)!="string" or not re_match($spec.profile,"^/var/lib/" .. $spec.project .. "/[a-z][a-z0-9-]{0,31}$") then refuse("invalid dedicated profile") end
   $n=$spec.node
-  if not plain_label($n.name) or type($n.mesh)!="string" or not re_match($n.mesh,"^[a-z][a-z0-9.-]{0,127}$") or type($n.ip)!="string" or not re_match($n.ip,"^[0-9]{1,3}(\\.[0-9]{1,3}){3}$") or type($n.port)!="number" or floor($n.port)!=$n.port or $n.port<1 or $n.port>65535 or not contains(["off","observe","enforce"],$n.admission) or type($n.mesh_open)!="bool" then refuse("invalid explicit node configuration") end
+  if not plain_label($n.name) or type($n.mesh)!="string" or not re_match($n.mesh,"^[a-z][a-z0-9.-]{0,127}$") or type($n.ip)!="string" or not re_match($n.ip,"^[0-9]{1,3}(\\.[0-9]{1,3}){3}$") or type($n.port)!="number" or floor($n.port)!=$n.port or $n.port<1 or $n.port>65535 or not contains(["off","observe","enforce"],$n.admission) then refuse("invalid explicit node configuration") end
   $p=$spec.profile
   $run="/run/" .. $spec.project .. "/broker/" .. to_string($spec.session)
-  $config={node:$n.name,mesh:$n.mesh,wg_ip:$n.ip,noded:{port:$n.port,unix_socket:$run .. "/noded/bus.sock",admission:$n.admission,mesh_open:$n.mesh_open}}
+  $config={node:$n.name,mesh:$n.mesh,wg_ip:$n.ip,noded:{port:$n.port,unix_socket:$run .. "/noded/bus.sock",admission:$n.admission}}
   $client={node:$n.name,mesh:$n.mesh,wg_ip:$n.ip,noded:{port:$n.port,unix_socket:$config.noded.unix_socket}}
   $prefix=upper($spec.project)
   $env={PATH:"/opt/" .. $spec.project .. "/bin:/usr/bin:/bin",HOME:"/",USER:$spec.broker.name,LOGNAME:$spec.broker.name}

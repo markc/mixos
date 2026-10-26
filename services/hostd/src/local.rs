@@ -62,7 +62,7 @@ pub fn listener(path: &Path) -> anyhow::Result<UnixListener> {
         std::fs::remove_file(path).with_context(|| format!("remove stale {}", path.display()))?;
     }
     let listener = UnixListener::bind(path).with_context(|| format!("bind {}", path.display()))?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o660))?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o666))?;
     Ok(listener)
 }
 
@@ -168,7 +168,7 @@ mod tests {
         std::fs::write(root.join("proc/sys/kernel/hostname"), "example\n").unwrap();
         let listener = listener(&socket).unwrap();
         let mode = std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o660);
+        assert_eq!(mode, 0o666);
         tokio::spawn(serve(listener, Host::fixture(&root)));
 
         let (rc, body) = call(&socket, "host.info", json!({})).await.unwrap();
@@ -177,6 +177,15 @@ mod tests {
             .await
             .unwrap();
         assert_eq!((rc, &body["error_code"]), (10, &json!("UNKNOWN_COMMAND")));
+
+        // A socket caller needs no policy file, uid or cgroup grant.
+        let (rc, _) = call(&socket, "hostd.freeze", json!({"reason":"test"}))
+            .await
+            .unwrap();
+        assert_eq!(rc, 0);
+        let (rc, body) = call(&socket, "hostd.thaw", json!({})).await.unwrap();
+        assert_eq!(rc, 0);
+        assert_eq!(body["thawed"], true);
     }
 
     /// Callers that pipeline requests and never read the replies take

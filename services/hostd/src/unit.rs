@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Unit control: start, stop or restart one system unit on this host. The
-//! unit and the action come from the caller's grant: `units` and `actions`
-//! limits. A grant names exactly the units its holder may control, so policy
-//! decides what a caller can touch, and a request can never reach past it.
+//! unit and action are typed request arguments, available to every local caller.
 //!
 //! hostd runs `systemctl ACTION UNIT` itself, so a caller needs no polkit
 //! rule and no sudo. The command never touches hostd's own units: a restart of
-//! hostd from its own callers would cut the grant that asked for it.
+//! hostd during a write would interrupt its transaction.
 use crate::{
     caller::Origin,
     receipt::{Outcome, Receipt},
@@ -17,15 +15,11 @@ use serde_json::{Value, json};
 use std::{path::Path, time::Duration};
 
 pub const COMMAND: &str = "unit.control";
-/// The grant limit that names the units a caller may control.
-pub const LIMIT_UNITS: &str = "units";
-/// The grant limit that names the actions a caller may take.
-pub const LIMIT_ACTIONS: &str = "actions";
 const SYSTEMCTL: &str = "systemctl";
 /// `systemctl` waits for the job, so this is the longest a unit may take to
 /// start or stop before the caller is told it timed out.
 const BUDGET: Duration = Duration::from_secs(60);
-/// Units hostd never controls, whatever a grant says.
+/// Units hostd never controls while it is serving transactions.
 const REFUSED: &[&str] = &["hostd.service", "hostd.socket"];
 pub const ACTIONS: &[&str] = &["start", "stop", "restart"];
 
@@ -53,17 +47,10 @@ pub fn valid_action(action: &str) -> bool {
     ACTIONS.contains(&action)
 }
 
-/// Run `action` on `unit`, then record it. The caller has passed the grant
-/// gate with `units` and `actions` set to these same values. A unit action
-/// has no undo, so its receipt is never undoable: `hostd.undo` refuses it.
-pub async fn act(
-    state: &Path,
-    unit: &str,
-    action: &str,
-    grant: &str,
-    origin: &Origin,
-) -> Result<Value, Value> {
-    act_with(SYSTEMCTL, state, unit, action, grant, origin).await
+/// Run `action` on `unit`, then record it. A unit action has no undo, so
+/// its receipt is never undoable: `hostd.undo` refuses it.
+pub async fn act(state: &Path, unit: &str, action: &str, origin: &Origin) -> Result<Value, Value> {
+    act_with(SYSTEMCTL, state, unit, action, origin).await
 }
 
 /// `act`, with the program that runs the action named: tests pass a
@@ -73,7 +60,6 @@ async fn act_with(
     state: &Path,
     unit: &str,
     action: &str,
-    grant: &str,
     origin: &Origin,
 ) -> Result<Value, Value> {
     if REFUSED.contains(&unit) {
@@ -95,12 +81,7 @@ async fn act_with(
         return Err(json!({"status":"unit_failed","command":COMMAND,"unit":unit,
             "action":action,"message":message}));
     }
-    let mut receipt = Receipt::new(
-        COMMAND,
-        grant,
-        origin,
-        json!({"unit": unit, "action": action}),
-    );
+    let mut receipt = Receipt::new(COMMAND, origin, json!({"unit": unit, "action": action}));
     receipt.outcome = Outcome::Applied;
     receipt
         .save(state)
@@ -159,7 +140,7 @@ mod tests {
     async fn hostd_never_controls_its_own_units() {
         let dir = fixture();
         let state = dir.path().join("state");
-        let err = act_with("true", &state, "hostd.service", "restart", "g", &origin())
+        let err = act_with("true", &state, "hostd.service", "restart", &origin())
             .await
             .expect_err("refused");
         assert_eq!(err["status"], "refused");
@@ -169,7 +150,7 @@ mod tests {
     async fn a_unit_action_is_recorded_and_never_undoable() {
         let dir = fixture();
         let state = dir.path().join("state");
-        let out = act_with("true", &state, "noded.service", "restart", "g", &origin())
+        let out = act_with("true", &state, "noded.service", "restart", &origin())
             .await
             .expect("done");
         assert_eq!(out["unit"], "noded.service");
@@ -184,7 +165,7 @@ mod tests {
     async fn a_unit_that_fails_is_refused_without_a_receipt() {
         let dir = fixture();
         let state = dir.path().join("state");
-        let err = act_with("false", &state, "webd.service", "start", "g", &origin())
+        let err = act_with("false", &state, "webd.service", "start", &origin())
             .await
             .expect_err("failed");
         assert_eq!(err["status"], "unit_failed");

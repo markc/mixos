@@ -320,7 +320,6 @@ pub struct InfoReply {
     pub buffers: usize,
     pub dirty: usize,
     pub volatile: bool,
-    pub mesh_open: bool,
     pub event_seq: u64,
     pub publisher_loss: u64,
     pub limits: Map<String, Value>,

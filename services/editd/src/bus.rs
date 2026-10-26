@@ -159,15 +159,6 @@ pub async fn serve() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .try_init();
     let config = crate::router::Config::from_env();
-    tracing::info!(
-        "editd: epoch {}, mesh access {}",
-        config.epoch,
-        if config.mesh_open {
-            "open"
-        } else {
-            "locked (MIXOS_MESH_OPEN=0: mutations node-local only)"
-        }
-    );
     // Recovery files are restored BEFORE registration (ced E1 plan §5.2): the
     // scan, quarantine, salvage, sweep and new-generation switches all happen
     // here; the buffers go live below before the first command is served and

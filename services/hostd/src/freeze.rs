@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The kill switch. A frozen hostd serves reads and refuses every write
-//! until root on the host thaws it. The state is a file in hostd's state
+//! until a local caller thaws it. The state is a file in hostd's state
 //! directory, written durably, so it survives restarts, crashes and reboots.
 //!
 //! It fails closed: only a missing file means "not frozen". A record that
 //! can't be read, for any other reason, counts as frozen.
-use crate::{caller::Caller, receipt};
+use crate::{caller::Origin, receipt};
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -28,7 +28,7 @@ pub fn blocks_writes(dir: &Path) -> bool {
     !matches!(state(dir), Ok(None))
 }
 
-pub fn freeze(dir: &Path, by: &Caller, reason: Option<&str>) -> anyhow::Result<Value> {
+pub fn freeze(dir: &Path, by: &Origin, reason: Option<&str>) -> anyhow::Result<Value> {
     match state(dir) {
         Ok(Some(existing)) => return Ok(existing),
         Ok(None) => {}
@@ -63,15 +63,15 @@ pub fn thaw(dir: &Path) -> anyhow::Result<bool> {
 mod tests {
     use super::*;
 
-    fn root() -> Caller {
-        Caller {
+    fn root() -> Origin {
+        Origin::Local(crate::caller::Caller {
             uid: 0,
             gid: 0,
             pid: Some(1),
             cgroup: None,
             verified: false,
             host_ns: false,
-        }
+        })
     }
 
     #[test]

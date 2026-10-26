@@ -5,8 +5,7 @@
 //! Wire shape (decision 10): `rc = 10`, body
 //! `{"error_code": CODE, "message": text, "reason"?: REASON, …context}`.
 //! The core only ever produces `InvalidArgument`, `NotFound`, `Conflict`,
-//! `ResourceLimit` and `Internal`; editd adds `IoError`, `UnknownCommand` and
-//! `Forbidden` (the last only under the `MIXOS_MESH_OPEN=0` lock).
+//! `ResourceLimit` and `Internal`; editd adds `IoError` and `UnknownCommand`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -20,7 +19,6 @@ pub enum ErrorCode {
     ResourceLimit,
     IoError,
     UnknownCommand,
-    Forbidden,
     Internal,
 }
 
@@ -70,8 +68,6 @@ pub mod reason {
     pub const OUT_OF_MEMORY: &str = "out_of_memory";
     pub const BUSY: &str = "busy";
     pub const LIMIT: &str = "limit";
-    // FORBIDDEN
-    pub const MESH_LOCKED: &str = "mesh_locked";
 }
 
 /// A core-level refusal. editd renders it verbatim into the wire body.

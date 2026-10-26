@@ -65,14 +65,12 @@ An expired question was not answered. Treat it as "no answer", never as yes.
 Each notification gets exactly one outcome. The first one wins, and a later
 button press or timeout is refused with `ALREADY_ANSWERED`.
 
-`notify.present`, `notify.action`, `notify.dismiss`, `notify.close` and `notify.close_all`
-record a local presentation or settle a notification, so notifyd takes them only from callers on this node
-(the broker's `broker_origin` stamp). A peer across the mesh can post and read
-notifications but never answer or withdraw one for the person. That matters
-for questions such as portald's screen-share consent.
+`notify.present`, `notify.action`, `notify.dismiss`, `notify.close` and
+`notify.close_all` accept every broker-stamped caller, local or mesh.
+Agents on other nodes can answer and withdraw notifications.
 
 Errors come back as `{error_code, message}`: rc 10 `USAGE` (a bad body),
-rc 13 `FORBIDDEN` (not a local caller), rc 14 `NOT_FOUND`,
+rc 10 `INVALID_ARGUMENT` (missing provenance), rc 14 `NOT_FOUND`,
 rc 15 `ALREADY_ANSWERED`, rc 16 `TOO_MANY_OPEN`.
 
 ## Limits
@@ -87,7 +85,7 @@ Explicit `urgency` takes precedence. Replies and events expose only `urgency`.
 `status`, `outcome` and `presented`. The app defaults to source, then `MixOS`.
 `presented` maps surface names to opaque string references, for example
 `{"plasma":"42"}`. Surface and ref are non-empty strings of at most 80
-characters. Only local callers can record presentations; unknown ids and
+characters. Any caller can record presentations; unknown ids and
 settled notifications use `NOT_FOUND` and `ALREADY_ANSWERED`. Every outcome
 clears all presentation records. Urgency and presentations persist across
 restarts; older state files default to `normal` and `{}`.

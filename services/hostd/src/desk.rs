@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Desk power: restart or stop one desk instance, a systemd-nspawn machine on
-//! this host. The commands take no machine name. The desk comes from the
-//! caller's own grant: its `desks` limit must name exactly one valid machine,
-//! so policy decides which desk a session may restart or stop, and a request
-//! can never name another. The host itself is never powered.
+//! this host. A typed request names the desk. Every local caller may act on
+//! any desk; the host itself is never powered.
 //!
 //! The work is a full cycle, not one `machinectl` call: a restart stops the
 //! session, reboots the machine, starts the session again and puts the
@@ -15,17 +13,20 @@
 //! `desk-stop@DESK.service`) and answers once systemd has queued it. The
 //! host installs those units; hostd only names them.
 use crate::{
-    caller::{Caller, Origin},
-    policy::Policy,
+    caller::Origin,
     receipt::{Outcome, Receipt},
 };
 use serde_json::{Value, json};
-use std::{collections::BTreeSet, path::Path, time::Duration};
+use std::{path::Path, time::Duration};
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Request {
+    pub desk: String,
+}
 
 pub const RESTART: &str = "desk.restart";
 pub const STOP: &str = "desk.stop";
-/// The grant limit that names the desk, one machine per grant.
-pub const LIMIT: &str = "desks";
 const SYSTEMCTL: &str = "systemctl";
 const SYSTEMCTL_BUDGET: Duration = Duration::from_secs(30);
 
@@ -55,40 +56,7 @@ pub fn valid_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// The one desk this caller may act on with `command`: every matching grant's
-/// `desks` limit, which must name exactly one valid machine. Anything else is
-/// refused by status, and the status says why.
-pub fn target(
-    policy: &Policy,
-    caller: &Caller,
-    command: &str,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Result<String, &'static str> {
-    let grants = policy
-        .grants_for(caller, command, now)
-        .map_err(|_| "not_granted")?;
-    let desks: BTreeSet<&str> = grants
-        .iter()
-        .filter_map(|g| g.limits.get(LIMIT))
-        .flatten()
-        .map(String::as_str)
-        .collect();
-    match desks.len() {
-        0 => Err("not_granted"),
-        1 => {
-            let desk = desks.into_iter().next().unwrap_or_default();
-            if valid_name(desk) {
-                Ok(desk.to_owned())
-            } else {
-                Err("bad_desk")
-            }
-        }
-        _ => Err("ambiguous_desk"),
-    }
-}
-
-/// Start one power cycle on `desk`, then record it. The caller has passed the
-/// grant gate with `desks` set to this same name. A power action has no undo,
+/// Start one power cycle on `desk`, then record it. A power action has no undo,
 /// so its receipt is never undoable: `hostd.undo` refuses the command. The
 /// receipt records that the cycle started; its unit's journal says how it
 /// ended.
@@ -97,10 +65,9 @@ pub async fn act(
     state: &Path,
     command: &str,
     desk: &str,
-    grant: &str,
     origin: &Origin,
 ) -> Result<Value, Value> {
-    act_with(SYSTEMCTL, root, state, command, desk, grant, origin).await
+    act_with(SYSTEMCTL, root, state, command, desk, origin).await
 }
 
 /// `act`, with the program that starts the unit named: tests pass a
@@ -111,7 +78,6 @@ async fn act_with(
     state: &Path,
     command: &str,
     desk: &str,
-    grant: &str,
     origin: &Origin,
 ) -> Result<Value, Value> {
     if in_container(root) {
@@ -147,7 +113,6 @@ async fn act_with(
     };
     let mut receipt = Receipt::new(
         command,
-        grant,
         origin,
         json!({"desk": desk, "action": action, "unit": unit}),
     );
@@ -163,222 +128,66 @@ async fn act_with(
 mod tests {
     use super::*;
 
-    fn caller(cgroup: &str) -> Caller {
-        Caller {
-            uid: 1002,
-            gid: 1002,
-            pid: Some(1),
-            cgroup: Some(cgroup.into()),
-            verified: true,
-            host_ns: false,
-        }
-    }
-
-    fn policy(text: &str) -> Policy {
-        let policy: Policy = strict::from_str(text).expect("parses");
-        policy.validate().expect("validates");
-        policy
-    }
-
-    fn now() -> chrono::DateTime<chrono::Utc> {
-        "2026-10-13T00:00:00Z".parse().unwrap()
-    }
-
-    const SESSION: &str = "/system.slice/system-scenes.slice/scenes@4.service";
-
     #[test]
     fn names_are_machine_names() {
-        assert!(valid_name("desk12"));
-        assert!(valid_name("desk-2"));
-        assert!(!valid_name(""));
-        assert!(!valid_name("12desk"));
-        assert!(!valid_name("Desk"));
-        assert!(!valid_name("desk_12"));
-        assert!(!valid_name("desk/12"));
+        for name in ["desk12", "desk-2"] {
+            assert!(valid_name(name));
+        }
+        for name in ["", "12desk", "Desk", "desk_12", "desk/12", "../host"] {
+            assert!(!valid_name(name));
+        }
         assert!(!valid_name(&"a".repeat(33)));
     }
 
-    #[test]
-    fn the_grant_names_the_one_desk() {
-        let p = policy(&format!(
-            r#"{{schema: 1, grants: [
-              {{name: "topbar", caller: {{cgroup: "{SESSION}"}}, commands: ["desk.restart", "desk.stop"],
-               limits: {{desks: ["desk12"]}}, expires: "2030-01-01T00:00:00Z", rate: {{count: 2, per_s: 60}}}}
-            ]}}"#
-        ));
-        assert_eq!(
-            target(&p, &caller(SESSION), RESTART, now()),
-            Ok("desk12".into())
-        );
-        assert_eq!(
-            target(&p, &caller(SESSION), STOP, now()),
-            Ok("desk12".into())
-        );
-    }
-
-    #[test]
-    fn another_session_gets_no_desk() {
-        let p = policy(&format!(
-            r#"{{schema: 1, grants: [
-              {{name: "topbar", caller: {{cgroup: "{SESSION}"}}, commands: ["desk.stop"],
-               limits: {{desks: ["desk12"]}}, expires: "2030-01-01T00:00:00Z", rate: {{count: 2, per_s: 60}}}}
-            ]}}"#
-        ));
-        let other = "/system.slice/system-apps.slice/apps@4.service";
-        assert_eq!(target(&p, &caller(other), STOP, now()), Err("not_granted"));
-        // A command the grant does not list is not granted either.
-        assert_eq!(
-            target(&p, &caller(SESSION), RESTART, now()),
-            Err("not_granted")
-        );
-    }
-
-    #[test]
-    fn a_grant_without_a_desk_or_with_two_is_refused() {
-        let none = policy(&format!(
-            r#"{{schema: 1, grants: [
-              {{name: "topbar", caller: {{cgroup: "{SESSION}"}}, commands: ["desk.stop"],
-               expires: "2030-01-01T00:00:00Z", rate: {{count: 2, per_s: 60}}}}
-            ]}}"#
-        ));
-        assert_eq!(
-            target(&none, &caller(SESSION), STOP, now()),
-            Err("not_granted")
-        );
-        let two = policy(&format!(
-            r#"{{schema: 1, grants: [
-              {{name: "topbar", caller: {{cgroup: "{SESSION}"}}, commands: ["desk.stop"],
-               limits: {{desks: ["desk12", "desk13"]}}, expires: "2030-01-01T00:00:00Z", rate: {{count: 2, per_s: 60}}}}
-            ]}}"#
-        ));
-        assert_eq!(
-            target(&two, &caller(SESSION), STOP, now()),
-            Err("ambiguous_desk")
-        );
-    }
-
-    #[test]
-    fn an_invalid_desk_name_in_policy_is_refused() {
-        let bad = policy(&format!(
-            r#"{{schema: 1, grants: [
-              {{name: "topbar", caller: {{cgroup: "{SESSION}"}}, commands: ["desk.stop"],
-               limits: {{desks: ["../host"]}}, expires: "2030-01-01T00:00:00Z", rate: {{count: 2, per_s: 60}}}}
-            ]}}"#
-        ));
-        assert_eq!(target(&bad, &caller(SESSION), STOP, now()), Err("bad_desk"));
-    }
-
-    /// The top bar of desk32 as the host's hostd sees it: the desk's own
-    /// cgroup path sits under its nspawn unit's payload.
-    const HOST_VIEW: &str = "/machine.slice/systemd-nspawn@desk32.service/payload/system.slice/system-scenes.slice/scenes@3.service";
-
-    /// desk32 is an isolated VT: its topbar runs as uid 1000 (its own `mixos`
-    /// user, PrivateUsers=no), not the shared markc uid 1002 that desk12 uses.
-    /// A grant naming the wrong uid never matches, so the bar's click is refused.
-    #[test]
-    fn the_host_matches_a_desk_session_by_its_full_cgroup() {
-        let p = policy(&format!(
-            r#"{{schema: 1, grants: [
-              {{name: "desk32-power", caller: {{uid: 1000, cgroup: "{HOST_VIEW}/*"}}, commands: ["desk.restart", "desk.stop"],
-               limits: {{desks: ["desk32"]}}, rate: {{count: 2, per_s: 60}}}}
-            ]}}"#
-        ));
-        let topbar = Caller {
-            uid: 1000,
-            ..caller(HOST_VIEW)
+    #[tokio::test]
+    async fn any_local_bus_caller_can_target_a_desk() {
+        let dir = tempfile::tempdir().unwrap();
+        let origin = Origin::LocalBus {
+            from: "arbitrary".into(),
         };
-        assert_eq!(target(&p, &topbar, RESTART, now()), Ok("desk32".into()));
-        // The same cgroup under the shared uid does not match: the grant names the uid.
-        assert_eq!(
-            target(&p, &caller(HOST_VIEW), RESTART, now()),
-            Err("not_granted")
-        );
-        // The same session's path as seen inside the desk does not match.
-        let inside = "/system.slice/system-scenes.slice/scenes@3.service";
-        assert_eq!(
-            target(
-                &p,
-                &Caller {
-                    uid: 1000,
-                    ..caller(inside)
-                },
-                RESTART,
-                now()
-            ),
-            Err("not_granted")
-        );
+        let out = act_with("true", dir.path(), dir.path(), RESTART, "desk-2", &origin)
+            .await
+            .unwrap();
+        let receipt = Receipt::load(dir.path(), out["receipt"].as_str().unwrap()).unwrap();
+        assert_eq!(receipt.origin, origin);
+        assert_eq!(receipt.summary["desk"], "desk-2");
+        assert_eq!(receipt.summary["unit"], "desk-restart@desk-2.service");
+        assert_eq!(receipt.outcome, Outcome::Applied);
     }
 
     #[test]
     fn each_command_names_its_host_unit() {
-        assert_eq!(unit(RESTART, "desk32"), "desk-restart@desk32.service");
-        assert_eq!(unit(STOP, "desk12"), "desk-stop@desk12.service");
-    }
-
-    fn fixture() -> tempfile::TempDir {
-        let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir_all(dir.path().join("state")).expect("state dir");
-        dir
-    }
-
-    fn origin() -> Origin {
-        Origin::Local(caller(HOST_VIEW))
-    }
-
-    #[tokio::test]
-    async fn a_started_unit_is_recorded_and_never_undoable() {
-        let dir = fixture();
-        let state = dir.path().join("state");
-        let out = act_with(
-            "true",
-            dir.path(),
-            &state,
-            RESTART,
-            "desk32",
-            "g",
-            &origin(),
-        )
-        .await
-        .expect("started");
-        assert_eq!(out["unit"], "desk-restart@desk32.service");
-        assert_eq!(out["action"], "restart");
-        let receipt = Receipt::load(&state, out["receipt"].as_str().unwrap()).expect("saved");
-        assert_eq!(receipt.command, RESTART);
-        assert_eq!(receipt.outcome, Outcome::Applied);
-        assert_eq!(receipt.summary["unit"], "desk-restart@desk32.service");
+        assert_eq!(unit(RESTART, "desk-2"), "desk-restart@desk-2.service");
+        assert_eq!(unit(STOP, "desk-3"), "desk-stop@desk-3.service");
     }
 
     #[tokio::test]
     async fn a_unit_that_does_not_start_is_refused_without_a_receipt() {
-        let dir = fixture();
+        let dir = tempfile::tempdir().unwrap();
         let state = dir.path().join("state");
-        let err = act_with("false", dir.path(), &state, STOP, "desk32", "g", &origin())
+        std::fs::create_dir_all(&state).unwrap();
+        let origin = Origin::LocalBus {
+            from: "agent".into(),
+        };
+        let err = act_with("false", dir.path(), &state, STOP, "desk-2", &origin)
             .await
             .unwrap_err();
         assert_eq!(err["status"], "unit_failed");
-        assert_eq!(err["unit"], "desk-stop@desk32.service");
+        assert_eq!(err["unit"], "desk-stop@desk-2.service");
         assert_eq!(std::fs::read_dir(&state).unwrap().count(), 0);
     }
 
     #[tokio::test]
     async fn a_hostd_inside_a_desk_refuses_and_starts_nothing() {
-        let dir = fixture();
+        let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("run/systemd")).unwrap();
         std::fs::write(dir.path().join("run/systemd/container"), "systemd-nspawn\n").unwrap();
-        let state = dir.path().join("state");
-        // A program that would fail proves it never ran: the refusal is
-        // in_container, not unit_failed.
-        let err = act_with(
-            "false",
-            dir.path(),
-            &state,
-            RESTART,
-            "desk12",
-            "g",
-            &origin(),
-        )
-        .await
-        .unwrap_err();
+        let origin = Origin::LocalBus {
+            from: "agent".into(),
+        };
+        let err = act_with("false", dir.path(), dir.path(), RESTART, "desk-2", &origin)
+            .await
+            .unwrap_err();
         assert_eq!(err["status"], "in_container");
     }
 }

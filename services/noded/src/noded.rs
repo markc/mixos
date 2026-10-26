@@ -396,12 +396,6 @@ struct AppState {
     /// (default) sends no challenge — behaviour-neutral. `observe` challenges +
     /// verdicts + logs but never refuses. Start-immutable.
     admission_mode: AdmissionMode,
-    /// AGENTIC-FIRST posture (Mark, 2026-09-14). When true, per-message
-    /// principal/native-session-locality egress guards are relaxed so ABP flows
-    /// freely between admitted WG mesh peers (the /24 + signed inventory is the
-    /// boundary). Enforcement code is retained and re-armed by config. Carried
-    /// across per-connection clones like every other field.
-    mesh_open: bool,
     /// SPEC 13 §9a B1 self-check (2-c-2b) — is the listener bound to this node's
     /// own WG/mesh IP? Start-immutable (the bind never changes at runtime). A
     /// fail-closed input to the enforce gate: a non-WG bind cannot hold the WG
@@ -506,8 +500,6 @@ pub struct RunConfig {
     pub mesh_config_path: Option<String>,
     pub spec_dir: Option<PathBuf>,
     pub admission_mode: AdmissionMode,
-    pub mesh_open: bool,
-    pub observe_allowed_services: Vec<String>,
 }
 
 pub async fn run(config: RunConfig, ready_tx: oneshot::Sender<()>) -> Result<()> {
@@ -559,8 +551,6 @@ async fn serve(
         mesh_config_path,
         spec_dir,
         admission_mode,
-        mesh_open,
-        observe_allowed_services,
     } = config;
     anyhow::ensure!(
         pending_grants_per_parent <= 32,
@@ -676,7 +666,7 @@ async fn serve(
     );
 
     let registry: Registry = Arc::new(RwLock::new(HashMap::new()));
-    let observe = ObserveManager::new(observe_allowed_services);
+    let observe = ObserveManager::new();
     observe.spawn_drainer();
 
     // Deliver messages from remote hubs to local services
@@ -933,7 +923,6 @@ async fn serve(
         listener_port,
         listener_endpoint_diverged,
         admission_mode,
-        mesh_open,
         wg_bound,
         challenge_table: Arc::new(crate::admission::ChallengeTable::new()),
         live_sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -2793,7 +2782,6 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     &tx,
                     service_name.as_deref(),
                     source_ip,
-                    &session_adm,
                     mesh_from.as_deref(),
                 )
                 .await;
@@ -2825,31 +2813,6 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
             }
             Route::RemoteMesh { target } => {
-                // There is no cross-node native-session classification or UID
-                // delegation contract in v1. Do not export protected traffic to
-                // a legacy hop whose observers cannot retain its classification.
-                //
-                // AGENTIC-FIRST (Mark, 2026-09-14): under the `mesh_open` posture
-                // this guard is relaxed — principal-carrying (native-session)
-                // traffic egresses cross-node to admitted WG mesh peers, so ABP
-                // flows freely and the WG /24 + signed inventory is the trust
-                // boundary. The refusal (and its v1 rationale) is retained and
-                // re-armed by setting noded.mesh_open=false once the mesh matures.
-                if state.principal.is_some() && !state.mesh_open {
-                    let mut reply = BusMessage::new().with_header("type", "response").with_header("rc", "10")
-                        .with_body(r#"{"error_code":"UNSUPPORTED","message":"native session traffic is node-local","details":{}}"#);
-                    if let Some(id) = bus_msg.get("id") {
-                        reply.set("id", id);
-                    }
-                    deliver_observed_response(
-                        &state.observe,
-                        &tx,
-                        &reply,
-                        ObserveDirection::Local,
-                        reply.get("id"),
-                    );
-                    continue;
-                }
                 canonicalize_routed_from_in_place(&mut bus_msg, service_name.as_deref());
                 // Only a local registered source acquires a direct-hop service
                 // assertion. A relay cannot borrow this node's clipboard grant.
@@ -3289,26 +3252,12 @@ fn broker_origin_for_delivery(source_ip: std::net::IpAddr, bind: &str) -> Broker
 
 /// Caller holds delivery_fence through enqueue and the registry read lock
 /// proving that the registered bridge still belongs to this connection.
-fn admitted_delivery_peer(
-    state: &AppState,
-    source_ip: std::net::IpAddr,
-    registered: Option<&str>,
-    admission: &SessionAdmission,
-) -> Option<String> {
+fn admitted_delivery_peer(state: &AppState, source_ip: std::net::IpAddr) -> Option<String> {
     let authority = state.authority.load();
     let crate::authority::Posture::Verified(accepted) = &authority.posture else {
         return None;
     };
-    // AGENTIC-FIRST mesh_open (Mark, 2026-09-14): attest any Verified WG mesh
-    // peer by resolving its source WG address to the signed-inventory ActiveBus
-    // member name, WITHOUT the Enforce-mode d2 admission proof. WG peering plus
-    // the signed inventory already bound the peer's identity to that address, so
-    // this is the "/24 + signed inventory is the trust boundary" posture: it
-    // stamps broker_peer/broker_service so the attested-mesh app path
-    // (broker_origin=mesh, from=bridge-<peer>) works and ABP flows freely
-    // between admitted peers. The d2-Enforce gate below is retained and used
-    // when mesh_open is off (re-armed per node once the mesh matures).
-    if state.mesh_open && !is_same_node_origin(source_ip, &state.bind) {
+    if !is_same_node_origin(source_ip, &state.bind) {
         let peer = accepted
             .routing_view
             .iter()
@@ -3324,20 +3273,7 @@ fn admitted_delivery_peer(
             .is_none()
             .then_some(peer);
     }
-    let RegisterGate::Admit(peer) = register_gate_decision(
-        source_ip,
-        &state.bind,
-        state.admission_mode,
-        state.wg_bound,
-        true,
-        registered?,
-        admission,
-    ) else {
-        return None;
-    };
-    reload_revoke_detail(accepted.members_full.get(&peer), accepted.epoch)
-        .is_none()
-        .then_some(peer)
+    None
 }
 
 fn observe_rejected_local_route(
@@ -3485,7 +3421,6 @@ fn session_delivery_error(
     reply
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn route_local(
     state: &AppState,
     service: &str,
@@ -3493,7 +3428,6 @@ async fn route_local(
     caller_tx: &mpsc::Sender<String>,
     caller_service: Option<&str>,
     source_ip: std::net::IpAddr,
-    admission: &SessionAdmission,
     mesh_from: Option<&str>,
 ) -> LocalRouteResult {
     let registry = &state.registry;
@@ -3560,8 +3494,7 @@ async fn route_local(
                 .is_some_and(|entry| entry.same_channel(caller_tx));
             if owns_registration
                 && let Some(origin_service) = mesh_from.filter(|name| valid_service_name(name))
-                && let Some(peer) =
-                    admitted_delivery_peer(state, source_ip, caller_service, admission)
+                && let Some(peer) = admitted_delivery_peer(state, source_ip)
             {
                 msg.set(crate::subscription::BROKER_PEER_HEADER, &peer);
                 msg.set(crate::subscription::BROKER_SERVICE_HEADER, origin_service);
@@ -4298,22 +4231,7 @@ async fn handle_noded_command(
         }
 
         "noded.observe.start" => {
-            let registered = if let Some(name) = service_name.as_deref() {
-                let registry = state.registry.read().await;
-                registry
-                    .get(name)
-                    .filter(|entry| entry.same_channel(tx))
-                    .map(|_| name)
-            } else {
-                None
-            };
-            if let Err(error) = state.observe.start(
-                registered,
-                is_same_node_origin(source_ip, &state.bind),
-                tx,
-                msg_id,
-                &msg.body,
-            ) {
+            if let Err(error) = state.observe.start(tx, msg_id, &msg.body) {
                 outcome
                     .rejected
                     .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -4357,29 +4275,6 @@ async fn handle_noded_command(
         }
 
         "noded.tap" => {
-            // `noded.tap` streams a live copy of EVERY inter-service message
-            // routed on this node (headers + bodies) to the subscriber — mail
-            // content, session/auth tokens carried in bodies, props values. It
-            // therefore bypasses all per-service read authorization and must be
-            // reachable only by same-node citizens (e.g. the logger), never by a
-            // remote mesh peer. Gate it with the same same-node-origin test the
-            // register enforce gate uses (`is_same_node_origin`): a remote WG
-            // peer's source is its authenticated `/24` IP — never loopback, never
-            // the broker's own bind IP — so it can't forge a local origin. Unlike
-            // `noded.register` this is NOT a session-scoped decision, so the gate
-            // lives here in the command handler rather than the routing layer.
-            if !is_same_node_origin(source_ip, &state.bind) {
-                tracing::warn!(
-                    source_ip = %source_ip,
-                    peer = %peer_id,
-                    "refused noded.tap from off-node origin (would mirror all inter-service traffic)"
-                );
-                let mut resp = respond("10");
-                resp.set("command", "noded.tap");
-                resp.set("error", "noded.tap is restricted to same-node origin");
-                let _ = tx.try_send(resp.to_wire());
-                return;
-            }
             state.tap_subscribers.write().await.push(tx.clone());
             tracing::info!(source_ip = %source_ip, "Tap subscriber added");
 
@@ -5685,7 +5580,7 @@ mod tests {
             registry: Arc::new(RwLock::new(HashMap::new())),
             pending_responses: Arc::new(PendingResponseTable::new()),
             tap_subscribers: Arc::new(RwLock::new(Vec::new())),
-            observe: ObserveManager::new(Vec::new()),
+            observe: ObserveManager::new(),
             mesh,
             node_name: "alpha".into(),
             broker: broker.clone(),
@@ -5703,10 +5598,6 @@ mod tests {
             listener_port,
             listener_endpoint_diverged: Arc::new(AtomicBool::new(false)),
             admission_mode: AdmissionMode::Off,
-            // Tests default to the LOCKED posture so the existing node-local
-            // egress-refusal assertions still exercise the guard; a test opts
-            // into the open posture by flipping this.
-            mesh_open: false,
             wg_bound: true,
             challenge_table: Arc::new(crate::admission::ChallengeTable::new()),
             live_sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -6012,8 +5903,6 @@ mod tests {
             mesh_config_path: None,
             spec_dir: None,
             admission_mode: config::node::AdmissionMode::Off,
-            mesh_open: false,
-            observe_allowed_services: Vec::new(),
         };
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
         let error = super::run_on(config(format!("127.0.0.1:{other}")), listener, ready_tx)
@@ -6061,8 +5950,6 @@ mod tests {
                     mesh_config_path: None,
                     spec_dir: None,
                     admission_mode: config::node::AdmissionMode::Off,
-                    mesh_open: false,
-                    observe_allowed_services: Vec::new(),
                 },
                 listener,
                 ready_tx,
@@ -6151,8 +6038,6 @@ mod tests {
                     mesh_config_path: None,
                     spec_dir: None,
                     admission_mode: config::node::AdmissionMode::Observe,
-                    mesh_open: false,
-                    observe_allowed_services: Vec::new(),
                 },
                 listener,
                 ready_tx,
@@ -6287,10 +6172,10 @@ mod tests {
 
     /// Spawn the broker on a free loopback port and return the ws URL.
     async fn spawn_broker() -> Option<String> {
-        spawn_broker_with_observe(Vec::new()).await
+        spawn_broker_with_observe().await
     }
 
-    async fn spawn_broker_with_observe(observe_allowed_services: Vec<String>) -> Option<String> {
+    async fn spawn_broker_with_observe() -> Option<String> {
         let (listener, listen) = pick_listener()?;
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
         let listen_for_run = listen.clone();
@@ -6306,8 +6191,6 @@ mod tests {
                     mesh_config_path: None,
                     spec_dir: None,
                     admission_mode: config::node::AdmissionMode::Off,
-                    mesh_open: false,
-                    observe_allowed_services,
                 },
                 listener,
                 ready_tx,
@@ -6318,37 +6201,77 @@ mod tests {
         Some(format!("ws://{listen}/ws"))
     }
 
+    #[tokio::test]
+    async fn tap_and_observe_accept_anonymous_mesh_connections() {
+        let state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
+        let source = "192.0.2.99".parse().unwrap();
+        for command in ["noded.tap", "noded.observe.start"] {
+            let request = BusMessage::new()
+                .with_header("command", command)
+                .with_header("id", "remote-request")
+                .with_body(r#"{"body":"none"}"#);
+            let (tx, mut rx) = mpsc::channel(4);
+            let mut service = None;
+            let mut outcome = super::ObserveOutcome::BrokerHandled;
+            super::handle_noded_command(
+                &request,
+                &tx,
+                &state,
+                &mut service,
+                "anon-remote",
+                source,
+                &mut outcome,
+            )
+            .await;
+            let response = bus::wire::parse(&rx.recv().await.unwrap()).unwrap();
+            assert_eq!(response.get("rc"), Some("0"), "{command}");
+            assert_eq!(outcome, super::ObserveOutcome::BrokerHandled);
+            if command == "noded.tap" {
+                assert!(
+                    state
+                        .tap_subscribers
+                        .read()
+                        .await
+                        .iter()
+                        .any(|subscriber| subscriber.same_channel(&tx))
+                );
+            } else {
+                assert!(state.observe.is_active());
+            }
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn observe_wire_gate_and_event_delivery_follow_registered_allowlist() {
-        let Some(url) = spawn_broker_with_observe(vec!["tower-bevy-*".into()]).await else {
+    async fn observe_wire_accepts_anonymous_and_arbitrary_registered_callers() {
+        let Some(url) = spawn_broker_with_observe().await else {
             return;
         };
 
         let anonymous = bus::native_client::NodedClient::connect_anonymous(&url)
             .await
             .expect("anonymous connect");
-        let denied = anonymous
+        let started = anonymous
             .call(
                 "noded",
                 "noded.observe.start",
                 serde_json::json!({"body":"none"}),
             )
             .await
-            .unwrap_err();
-        assert!(denied.to_string().contains("observe_unauthorised"));
+            .expect("every caller may observe");
+        assert!(started["subscription_id"].is_string());
 
         let studio = bus::native_client::NodedClient::connect("studio-bevy-7", &url)
             .await
             .expect("studio register");
-        let denied = studio
+        let started = studio
             .call(
                 "noded",
                 "noded.observe.start",
                 serde_json::json!({"body":"none"}),
             )
             .await
-            .unwrap_err();
-        assert!(denied.to_string().contains("observe_unauthorised"));
+            .expect("every caller may observe");
+        assert!(started["subscription_id"].is_string());
 
         let tower = bus::native_client::NodedClient::connect("tower-bevy-7", &url)
             .await
@@ -6409,7 +6332,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn observe_covers_rejected_broker_response_and_route_outcomes_truthfully() {
-        let Some(url) = spawn_broker_with_observe(vec!["tower-bevy-*".into()]).await else {
+        let Some(url) = spawn_broker_with_observe().await else {
             return;
         };
 
@@ -7017,7 +6940,6 @@ mod tests {
             },
         );
         let mut request = BusMessage::new().with_header("id", "oversized");
-        let admission = super::SessionAdmission::default();
         let result = super::route_local(
             &state,
             "recipient",
@@ -7025,7 +6947,6 @@ mod tests {
             &caller,
             None,
             "127.0.0.1".parse().unwrap(),
-            &admission,
             None,
         )
         .await;
@@ -7047,7 +6968,6 @@ mod tests {
             &caller,
             None,
             "127.0.0.1".parse().unwrap(),
-            &admission,
             None,
         )
         .await;
@@ -7069,7 +6989,6 @@ mod tests {
         state.sessions = Arc::new(tokio::sync::Mutex::new(sessions));
         let (caller, mut replies) = mpsc::channel(8);
         let mut request = BusMessage::new().with_header("id", "reclassify");
-        let admission = super::SessionAdmission::default();
         let pending = state.pending_responses.map.write().await;
         let route = super::route_local(
             &state,
@@ -7078,7 +6997,6 @@ mod tests {
             &caller,
             None,
             "127.0.0.1".parse().unwrap(),
-            &admission,
             None,
         );
         tokio::pin!(route);
@@ -7126,7 +7044,6 @@ mod tests {
             .with_header("id", "original")
             .with_header("command", "probe.echo");
         let pending_guard = state.pending_responses.map.write().await;
-        let admission = super::SessionAdmission::default();
         let route = super::route_local(
             &state,
             "recipient",
@@ -7134,7 +7051,6 @@ mod tests {
             &caller,
             None,
             "127.0.0.1".parse().unwrap(),
-            &admission,
             None,
         );
         tokio::pin!(route);
@@ -7177,17 +7093,11 @@ mod tests {
     #[tokio::test]
     async fn late_response_stays_protected_after_tombstone_expiry() {
         let mut state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
-        let observe = crate::observe::ObserveManager::new(vec!["test-observer".into()]);
+        let observe = crate::observe::ObserveManager::new();
         observe.spawn_drainer();
         let (observer, mut observed) = mpsc::channel(8);
         observe
-            .start(
-                Some("test-observer"),
-                true,
-                &observer,
-                Some("start"),
-                r#"{"body":"redacted"}"#,
-            )
+            .start(&observer, Some("start"), r#"{"body":"redacted"}"#)
             .unwrap();
         observed.recv().await.unwrap();
         state.observe = observe.for_class(super::TrafficClass::NativeSession);
@@ -7214,7 +7124,6 @@ mod tests {
             &caller,
             None,
             "127.0.0.1".parse().unwrap(),
-            &super::SessionAdmission::default(),
             None,
         )
         .await;
@@ -7267,14 +7176,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mesh_delivery_identity_requires_proof_owner_and_direct_source() {
+    async fn mesh_delivery_identity_requires_membership_owner_and_direct_source() {
         for case in [
             "valid",
             "off",
             "observe",
             "local",
-            "no-proof",
-            "wrong-proof",
             "wrong-owner",
             "relay",
             "bad-source",
@@ -7285,16 +7192,9 @@ mod tests {
             let (caller, _caller_rx) = mpsc::channel(4);
             let (other, _other_rx) = mpsc::channel(4);
             let (target, mut target_rx) = mpsc::channel(4);
-            let mut admission = super::SessionAdmission {
-                admitted_node: Some("beta".into()),
-                response_seen: true,
-                last_detail: None,
-            };
             match case {
                 "off" => state.admission_mode = AdmissionMode::Off,
                 "observe" => state.admission_mode = AdmissionMode::Observe,
-                "no-proof" => admission.admitted_node = None,
-                "wrong-proof" => admission.admitted_node = Some("gamma".into()),
                 "non-wg" => state.wg_bound = false,
                 "revoked" => apply_inventory_reload(&state, reload_posture(2, vec![])).await,
                 _ => {}
@@ -7347,19 +7247,22 @@ mod tests {
                 &caller,
                 Some("bridge-beta"),
                 source,
-                &admission,
                 origin_service,
             )
             .await;
             let delivered = bus_mod::parse(&target_rx.recv().await.unwrap()).unwrap();
             assert_eq!(
                 delivered.get("broker_peer"),
-                if case == "valid" { Some("beta") } else { None },
+                if matches!(case, "valid" | "off" | "observe" | "non-wg") {
+                    Some("beta")
+                } else {
+                    None
+                },
                 "{case}"
             );
             assert_eq!(
                 delivered.get("broker_service"),
-                if case == "valid" {
+                if matches!(case, "valid" | "off" | "observe" | "non-wg") {
                     Some("desktopctl")
                 } else {
                     None
@@ -7399,14 +7302,9 @@ mod tests {
         let mut request = BusMessage::new()
             .with_header("id", "original")
             .with_header("broker_origin", "mesh");
-        let admission = super::SessionAdmission {
-            admitted_node: Some("beta".into()),
-            response_seen: true,
-            last_detail: None,
-        };
         let source = "192.0.2.2".parse().unwrap();
         assert_eq!(
-            super::admitted_delivery_peer(&state, source, Some("bridge-beta"), &admission),
+            super::admitted_delivery_peer(&state, source),
             Some("beta".into()),
             "the old authority must permit the stamp before the reload"
         );
@@ -7418,7 +7316,6 @@ mod tests {
             &caller,
             Some("bridge-beta"),
             source,
-            &admission,
             Some("desktopctl"),
         );
         tokio::pin!(route);

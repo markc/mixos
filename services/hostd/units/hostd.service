@@ -14,7 +14,7 @@ RestartSec=1
 # A stop waits up to 80 s for a running transaction (health window plus
 # rollback); a transaction cut short anyway is rolled back at the next start.
 TimeoutStopSec=90
-# Sandbox. hostd reads the host and its policy (/etc/hostd/policy.mx). It
+# Sandbox. hostd reads the host and keeps durable change receipts. It
 # writes its state directory (freeze record, receipts, circuit breaker) and,
 # through net.link.apply and net.wg.apply, only its own 50-hostd-* files
 # in /etc/systemd/network. Each new write command adds exactly the paths it

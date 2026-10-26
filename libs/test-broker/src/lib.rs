@@ -193,13 +193,8 @@ impl Broker {
                         node: "test-node".into(),
                         wg_ip: "127.0.0.1".into(),
                         mesh_config_path: None,
-                        mesh_open: false,
                         spec_dir: None,
                         admission_mode: config::node::AdmissionMode::Off,
-                        observe_allowed_services: vec![
-                            "term-policy-audit".into(),
-                            "workshop-observe-test".into(),
-                        ],
                     },
                     tcp,
                     tx,

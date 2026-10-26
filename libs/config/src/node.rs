@@ -193,15 +193,6 @@ pub struct NodedConfig {
     pub mesh_config: Option<String>,
     /// SPEC 13 §9a D2 admission posture (off | observe | enforce). Default off.
     pub admission: AdmissionMode,
-    /// AGENTIC-FIRST posture switch (Mark, 2026-09-14). When `true` (the
-    /// default), noded lets ABP flow freely between admitted WG mesh peers:
-    /// the per-message principal/native-session-locality guards are relaxed and
-    /// the WG /24 + signed inventory (mesh membership) is the trust boundary.
-    /// This is the CLAUDE.md "default open, opt-in hard" law — the enforcement
-    /// code is retained and re-armed by setting this to `false` per node once
-    /// the mesh/app layer is mature. Membership trust (WG + signed inventory)
-    /// is UNAFFECTED either way; only per-message authorization relaxes.
-    pub mesh_open: bool,
 }
 
 fn absolute_unix_socket<'de, D: serde::Deserializer<'de>>(
@@ -245,7 +236,6 @@ impl Default for NodedConfig {
             pending_grants_per_parent: 32,
             mesh_config: None,
             admission: AdmissionMode::Off,
-            mesh_open: true,
         }
     }
 }
@@ -270,9 +260,6 @@ impl NodedConfig {
 pub struct ObserveConfig {
     #[serde(flatten)]
     pub extra: std::collections::BTreeMap<String, serde_json::Value>,
-    /// Anchored service-name globs admitted to `noded.observe.start`.
-    /// The broker validates pattern syntax and ignores invalid entries.
-    pub allowed_services: Vec<String>,
 }
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
@@ -530,7 +517,6 @@ mod tests {
     fn broker_defaults_and_explicit_native_endpoint() {
         let config: NodeConfig = strict::from_str("node: alpha\n").unwrap();
         assert_eq!(config.noded_listen(), "127.0.0.1:4200");
-        assert!(config.noded.mesh_open);
         assert_eq!(config.noded.admission, AdmissionMode::Off);
         assert_eq!(config.noded.pending_grants_per_parent, 32);
         let config: NodeConfig = strict::from_str(
@@ -576,7 +562,10 @@ mod tests {
     fn unrelated_service_fields_are_forward_compatible() {
         let config: NodeConfig = strict::from_str("node: beta\nwg_ip: '192.0.2.2'\nwebd: { port: 443 }\nobserve: { allowed_services: [tower] }\n").unwrap();
         assert_eq!(config.noded_url(), "ws://192.0.2.2:4200/ws");
-        assert_eq!(config.observe.allowed_services, vec!["tower"]);
+        assert_eq!(
+            config.observe.extra["allowed_services"],
+            serde_json::json!(["tower"])
+        );
     }
 
     #[test]
@@ -970,18 +959,22 @@ mod transplanted_tests {
     }
 
     #[test]
-    fn observe_allowlist_parses_and_defaults_fail_closed() {
+    fn removed_posture_keys_load_as_unowned_data() {
         let empty: NodeConfig =
             crate::from_conf_mix_str("node: \"alpha\"\n").expect("parse defaults");
-        assert!(empty.observe.allowed_services.is_empty());
+        assert!(empty.observe.extra.is_empty());
 
         let configured: NodeConfig = crate::from_conf_mix_str(
-            "observe: { allowed_services: [\"tower-bevy-*\", \"log-observe-*\"] }\n",
+            "noded: { mesh_open: false }\nobserve: { allowed_services: [\"tower-bevy-*\", \"log-observe-*\"] }\n",
         )
-        .expect("parse observe allowlist");
+        .expect("unknown config keys still load");
         assert_eq!(
-            configured.observe.allowed_services,
-            ["tower-bevy-*", "log-observe-*"]
+            configured.noded.extra["mesh_open"],
+            serde_json::json!(false)
+        );
+        assert_eq!(
+            configured.observe.extra["allowed_services"],
+            serde_json::json!(["tower-bevy-*", "log-observe-*"])
         );
     }
 
