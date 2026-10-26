@@ -99,6 +99,9 @@ struct WinitAppWrapper<T: WinitApp> {
     /// Earliest next direct pass, including repaints delivered by later user events.
     windows_direct_repaint_floors: HashMap<WindowId, Instant>,
 
+    /// Bounded grace for the logic/readback wakes following an explicit pixel request.
+    windows_capture_repaint_until: HashMap<WindowId, Instant>,
+
     winit_app: T,
     return_result: Result<(), crate::Error>,
     run_and_return: bool,
@@ -111,6 +114,7 @@ impl<T: WinitApp> WinitAppWrapper<T> {
             windows_redraw_deadlines: HashMap::default(),
             windows_stalled_redraws: HashSet::default(),
             windows_direct_repaint_floors: HashMap::default(),
+            windows_capture_repaint_until: HashMap::default(),
             winit_app,
             return_result: Ok(()),
             run_and_return,
@@ -223,6 +227,10 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                 // their multi-pass capture handshake responsive; ordinary Bus/PTY
                 // wakes must still obey the stalled-window pacing floor.
                 if self.winit_app.overdue_pass_mode(*window_id) == PassMode::LogicOnly
+                    && !self
+                        .windows_capture_repaint_until
+                        .get(window_id)
+                        .is_some_and(|until| now < *until)
                     && let Some(floor) = self.windows_direct_repaint_floors.get(window_id)
                 {
                     *repaint_time = (*repaint_time).max(*floor);
@@ -265,6 +273,11 @@ impl<T: WinitApp> WinitAppWrapper<T> {
 
         for window_id in stalled_window_ids {
             let mode = self.winit_app.overdue_pass_mode(window_id);
+            #[cfg(feature = "wgpu")]
+            if mode == PassMode::Offscreen {
+                self.windows_capture_repaint_until
+                    .insert(window_id, now + MISSED_REDRAW_TIMEOUT);
+            }
             let event_result = self.winit_app.run_ui_and_paint(event_loop, window_id, mode);
             self.windows_direct_repaint_floors
                 .insert(window_id, Instant::now() + MISSED_REDRAW_TIMEOUT);
@@ -311,6 +324,11 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                     "RedrawRequested is overdue for {window_id:?}: running without a surface"
                 );
                 let mode = self.winit_app.overdue_pass_mode(window_id);
+                #[cfg(feature = "wgpu")]
+                if mode == PassMode::Offscreen {
+                    self.windows_capture_repaint_until
+                        .insert(window_id, now + MISSED_REDRAW_TIMEOUT);
+                }
                 let event_result = self.winit_app.run_ui_and_paint(event_loop, window_id, mode);
                 if let Some(window) = self.winit_app.window(window_id) {
                     window.request_redraw();
@@ -459,6 +477,7 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
                     self.windows_redraw_deadlines.remove(&window_id);
                     self.windows_stalled_redraws.remove(&window_id);
                     self.windows_direct_repaint_floors.remove(&window_id);
+                    self.windows_capture_repaint_until.remove(&window_id);
                     self.winit_app
                         .run_ui_and_paint(event_loop, window_id, PassMode::Full)
                 }
@@ -466,6 +485,7 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
                     if matches!(event, winit::event::WindowEvent::Destroyed) {
                         self.windows_stalled_redraws.remove(&window_id);
                         self.windows_direct_repaint_floors.remove(&window_id);
+                        self.windows_capture_repaint_until.remove(&window_id);
                         self.windows_redraw_deadlines.remove(&window_id);
                         self.windows_next_repaint_times.remove(&window_id);
                     }
