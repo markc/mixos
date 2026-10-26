@@ -143,7 +143,7 @@ pub(crate) fn page(theme: &Theme, dialog: bool) -> Palette {
 /// Install `theme` on a scene's egui context at `text_scale`, with an edge
 /// page's surface and ink on the secondary pair.
 pub(crate) fn install(ctx: &egui::Context, theme: &Theme, text_scale: f32, dialog: bool) {
-    toolkit::style::apply(ctx, theme);
+    toolkit::install(ctx, theme);
     let palette = page(theme, dialog);
     let fill = crate::view::colour(palette.base.surface);
     let ink = crate::view::colour(palette.base.foreground);
