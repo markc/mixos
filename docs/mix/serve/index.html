@@ -267,8 +267,8 @@ long-lived, addressable Mix process that <em>is</em> a service. The full normati
 contract is <strong>SPEC 18</strong> (the Mix Citizen Runtime); this page is the operational
 view — what the flag does, what the runtime injects, and how a citizen behaves.</p>
 <h2 id="native-events-and-generation-lifetime">Native events and generation lifetime</h2>
-<p><code>on fs.changed</code>, <code>on proc.exited</code>, <code>on net.changed</code>, <code>on audio.changed</code> and
-<code>on bus.connected</code> use the ordinary event
+<p><code>on fs.changed</code>, <code>on proc.exited</code>, <code>on net.changed</code>, <code>on audio.changed</code>,
+<code>on bus.connected</code> and <code>on bus.disconnected</code> use the ordinary event
 envelope: payloads are in <strong><code>$event.args</code></strong>, with <code>command</code>, <code>headers</code> and <code>body</code>
 available as usual. Plain handlers remain serial; async handlers use the
 existing concurrent scheduling and drain rules. Native notifications also enter
@@ -308,7 +308,23 @@ on bus.connected
   print($event.args.generation)
   -- Refresh snapshots after subscriptions have been restored.
 end
+on bus.disconnected
+  print("Broker connection lost: " .. $event.args.generation)
+  -- Mark cached state stale; reconnect is automatic.
+end
 </code></pre>
+<p><code>bus.connected</code> announces the initial connection and each observed reconnect
+after registration and subscription replay. <code>bus.disconnected</code> carries
+<code>{generation: N}</code> for the last connection delivered as <code>bus.connected</code>, once
+that connection is lost. Delivery order is <code>bus.connected {N}</code>, then
+<code>bus.disconnected {N}</code>, then <code>bus.connected {M}</code> for a newer generation M.
+If drops and reconnects coalesce while the pump is busy, it still delivers one
+disconnect for the last delivered N before one connect for the newest live M;
+intermediate connections that were never delivered produce no disconnect.
+There is no disconnect before the first connected event or at clean shutdown /
+<code>QUIT</code>. An unhandled event is dropped. Both events share the connection observer
+across hot reloads; a reload alone emits neither event. These are connection
+generations, independent of script reload generations.</p>
 <p>See <a href="/mix/io/#native-filesystem-events">filesystem events</a>,
 <a href="/mix/system/#managed-child-exit-events">managed spawn</a>,
 <a href="/mix/system/#desktop-status-events--net_watch-audio_watch">network and audio events</a>, and
@@ -832,6 +848,7 @@ retirement: once the swap commits, the old generation is gone.</li>
 proper daemon across broker churn:</p>
 <ul>
 <li><strong>Reconnect with backoff.</strong> On transport loss the runtime re-enters <code>connect → register → pump</code> with bounded exponential backoff + jitter, then <strong>re-registers</strong> the service name and <strong>re-subscribes every topic</strong> the script subscribed to (init-body <em>and</em> handler-body — the full set, replayed by the runtime, not the author). Broker-side registration and subscriptions do not survive a transport drop and are not silently assumed to.</li>
+<li><strong>Connection events.</strong> <code>on bus.disconnected</code> reports loss of the last delivered <code>bus.connected</code> generation through <code>$event.args.generation</code>, without polling. It is delivered once, before any newer <code>bus.connected</code>, even when a drop and reconnect coalesce. Connections never delivered as connected produce no disconnect; clean shutdown and <code>QUIT</code> produce none. See <a href="#native-events-and-generation-lifetime">native events</a> for an example.</li>
 <li><strong>No outbound queue while disconnected.</strong> An outbound <code>send</code> while disconnected fails fast with a typed transport error — an outage is surfaced to the caller, never absorbed behind a buffer.</li>
 <li><strong>Initial-connect budget is fatal.</strong> If the <em>first</em> connect+register budget is exhausted (no reachable broker at start), <code>--serve</code> exits non-zero so a misconfigured citizen fails fast under systemd rather than spinning silently.</li>
 <li><strong>Graceful shutdown.</strong> <code>SIGTERM</code> (the systemd stop signal), Ctrl-C, the Ch02 <code>QUIT</code> universal, and the self-initiated <code>quit()</code> builtin all converge on <strong>one</strong> path: stop accepting new requests, let in-flight handlers a bounded grace to finish, <strong>deregister</strong> the service name (bounded so a wedged broker can't hang exit), then exit <code>0</code>. If the grace is exceeded or deregister fails, the process exits non-zero so systemd records an unclean stop and the broker registry doesn't retain a dead name. <code>QUIT</code> is <strong>not</strong> a no-op — it drives this exact sequence.</li>

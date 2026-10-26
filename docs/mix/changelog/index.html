@@ -270,6 +270,11 @@
 <h2 id="unreleased">Unreleased</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><code>on bus.disconnected</code> in <code>mix --serve</code>, with <code>{generation: N}</code> in
+<code>$event.args</code> for the last delivered <code>bus.connected</code> connection that was
+lost. Disconnect is delivered once, before any newer connected event even
+when drops and reconnects coalesce. No event precedes the first connected
+event or accompanies clean shutdown; observer state survives hot reloads.</li>
 <li><code>?.</code> optional field access: <code>$a?.b</code> is nil when <code>$a</code> is nil instead of
 raising. Each <code>?.</code> guards one step (<code>$a?.b?.c</code> for a chain); a string, list
 or number on the left still raises; it is never an assignment target, and

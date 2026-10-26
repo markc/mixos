@@ -42,8 +42,18 @@ supervised connection across script reloads; a reload alone does not emit a new
 connection event. A dropped receive future preserves state readiness. The lazy
 non-serve Bus connection contract is unchanged.
 
-Local native events (`fs.changed`, `proc.exited`, `bus.connected`) share the same
-handler dispatch and `$event.args` conversion as incoming Bus events. Structured
+`on bus.disconnected` receives `{generation: N}` once the last delivered
+`bus.connected {N}` connection is lost. It precedes any newer `bus.connected`,
+even when drops and reconnects coalesce: one disconnect for the last delivered
+generation, then one connect for the newest live generation. There is none before
+the first connected event, for an undelivered connection, or at clean shutdown /
+`QUIT`. Both events share observer state across hot reloads; unhandled events are
+dropped. See [serve mode](serve.md#native-events-and-generation-lifetime) for an
+example.
+
+Local native events (`fs.changed`, `proc.exited`, `bus.connected`,
+`bus.disconnected`) share the same handler dispatch and `$event.args` conversion
+as incoming Bus events. Structured
 event bodies are parsed even in a library build without the optional JSON
 *builtin* feature. This introduces no new transport or local-only command gate;
 the citizen's public commands retain their existing local/mesh routing.

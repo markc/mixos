@@ -263,6 +263,66 @@ task_start("probe_emits", json_encode({}))
 "#;
 
 #[tokio::test]
+async fn connection_events_order_broker_loss_reconnect_and_clean_quit() {
+    let _g = lock().await;
+    let dir = Dir::new("connection-events");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let mut broker = Broker::with_tcp_port(port);
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(port));
+    let script = dir.write(
+        "svc.mix",
+        r#"-- version: 0.1.0
+$TRACE = env("HONEST_TRACE")
+on bus.connected
+  append_file($TRACE, "bus.connected|" .. $event.args.generation .. chr(10))
+end
+on bus.disconnected
+  append_file($TRACE, "bus.disconnected|" .. $event.args.generation .. chr(10))
+end
+on rel.state
+  reply("ok")
+end
+"#,
+    );
+    let mut citizen = Citizen::spawn(
+        Path::new(env!("CARGO_BIN_EXE_mix")),
+        &dir,
+        &node_conf,
+        &script,
+    );
+    wait_trace(&dir, "bus.connected|1\n", HARD).await;
+    broker.stop();
+    wait_trace(&dir, "bus.disconnected|1\n", HARD).await;
+    assert!(citizen.child.try_wait().unwrap().is_none());
+    assert_eq!(trace(&dir), "bus.connected|1\nbus.disconnected|1\n");
+
+    broker.bounce();
+    wait_trace(&dir, "bus.connected|2\n", HARD).await;
+    let c = connect(&broker).await;
+    wait_service(&c, HARD).await;
+    call(&c, "QUIT", json!({})).await.unwrap();
+    let deadline = Instant::now() + HARD;
+    loop {
+        if let Some(status) = citizen.child.try_wait().unwrap() {
+            assert!(
+                status.success(),
+                "citizen stderr:\n{}",
+                dir.read("citizen.stderr")
+            );
+            break;
+        }
+        assert!(Instant::now() < deadline, "QUIT did not stop the citizen");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        trace(&dir),
+        "bus.connected|1\nbus.disconnected|1\nbus.connected|2\n"
+    );
+}
+
+#[tokio::test]
 async fn served_handler_callbacks_capture_invocation_locals() {
     let _g = lock().await;
     let dir = Dir::new("closure");

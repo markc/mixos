@@ -12,6 +12,11 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 
 ### Added
 
+- `on bus.disconnected` in `mix --serve`, with `{generation: N}` in
+  `$event.args` for the last delivered `bus.connected` connection that was
+  lost. Disconnect is delivered once, before any newer connected event even
+  when drops and reconnects coalesce. No event precedes the first connected
+  event or accompanies clean shutdown; observer state survives hot reloads.
 - `?.` optional field access: `$a?.b` is nil when `$a` is nil instead of
   raising. Each `?.` guards one step (`$a?.b?.c` for a chain); a string, list
   or number on the left still raises; it is never an assignment target, and

@@ -13,8 +13,8 @@ view — what the flag does, what the runtime injects, and how a citizen behaves
 
 ## Native events and generation lifetime
 
-`on fs.changed`, `on proc.exited`, `on net.changed`, `on audio.changed` and
-`on bus.connected` use the ordinary event
+`on fs.changed`, `on proc.exited`, `on net.changed`, `on audio.changed`,
+`on bus.connected` and `on bus.disconnected` use the ordinary event
 envelope: payloads are in **`$event.args`**, with `command`, `headers` and `body`
 available as usual. Plain handlers remain serial; async handlers use the
 existing concurrent scheduling and drain rules. Native notifications also enter
@@ -59,7 +59,24 @@ on bus.connected
   print($event.args.generation)
   -- Refresh snapshots after subscriptions have been restored.
 end
+on bus.disconnected
+  print("Broker connection lost: " .. $event.args.generation)
+  -- Mark cached state stale; reconnect is automatic.
+end
 ```
+
+`bus.connected` announces the initial connection and each observed reconnect
+after registration and subscription replay. `bus.disconnected` carries
+`{generation: N}` for the last connection delivered as `bus.connected`, once
+that connection is lost. Delivery order is `bus.connected {N}`, then
+`bus.disconnected {N}`, then `bus.connected {M}` for a newer generation M.
+If drops and reconnects coalesce while the pump is busy, it still delivers one
+disconnect for the last delivered N before one connect for the newest live M;
+intermediate connections that were never delivered produce no disconnect.
+There is no disconnect before the first connected event or at clean shutdown /
+`QUIT`. An unhandled event is dropped. Both events share the connection observer
+across hot reloads; a reload alone emits neither event. These are connection
+generations, independent of script reload generations.
 
 See [filesystem events](io.md#native-filesystem-events),
 [managed spawn](system.md#managed-child-exit-events),
@@ -715,6 +732,7 @@ Serve mode wraps the pump in a supervised client, so the citizen behaves like a
 proper daemon across broker churn:
 
 - **Reconnect with backoff.** On transport loss the runtime re-enters `connect → register → pump` with bounded exponential backoff + jitter, then **re-registers** the service name and **re-subscribes every topic** the script subscribed to (init-body *and* handler-body — the full set, replayed by the runtime, not the author). Broker-side registration and subscriptions do not survive a transport drop and are not silently assumed to.
+- **Connection events.** `on bus.disconnected` reports loss of the last delivered `bus.connected` generation through `$event.args.generation`, without polling. It is delivered once, before any newer `bus.connected`, even when a drop and reconnect coalesce. Connections never delivered as connected produce no disconnect; clean shutdown and `QUIT` produce none. See [native events](#native-events-and-generation-lifetime) for an example.
 - **No outbound queue while disconnected.** An outbound `send` while disconnected fails fast with a typed transport error — an outage is surfaced to the caller, never absorbed behind a buffer.
 - **Initial-connect budget is fatal.** If the *first* connect+register budget is exhausted (no reachable broker at start), `--serve` exits non-zero so a misconfigured citizen fails fast under systemd rather than spinning silently.
 - **Graceful shutdown.** `SIGTERM` (the systemd stop signal), Ctrl-C, the Ch02 `QUIT` universal, and the self-initiated `quit()` builtin all converge on **one** path: stop accepting new requests, let in-flight handlers a bounded grace to finish, **deregister** the service name (bounded so a wedged broker can't hang exit), then exit `0`. If the grace is exceeded or deregister fails, the process exits non-zero so systemd records an unclean stop and the broker registry doesn't retain a dead name. `QUIT` is **not** a no-op — it drives this exact sequence.

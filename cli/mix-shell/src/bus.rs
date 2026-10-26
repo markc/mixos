@@ -1422,6 +1422,8 @@ pub struct MixServeHandler {
     connection_state:
         tokio::sync::Mutex<tokio::sync::watch::Receiver<::bus::native_client::ConnState>>,
     delivered_connection: Cell<u64>,
+    /// Whether the last delivered connection's loss has been reported.
+    connection_disconnected: Cell<bool>,
     supervised: std::sync::Arc<::bus::native_client::SupervisedClient>,
     /// The supervisor's outward incoming receiver, taken **once** at
     /// construction (it survives reconnects underneath). `None` here
@@ -1458,6 +1460,7 @@ impl MixServeHandler {
         MixServeHandler {
             connection_state: tokio::sync::Mutex::new(supervised.subscribe_state()),
             delivered_connection: Cell::new(0),
+            connection_disconnected: Cell::new(false),
             supervised,
             incoming: RefCell::new(incoming),
             incoming_closed: RefCell::new(false),
@@ -1467,41 +1470,55 @@ impl MixServeHandler {
         }
     }
 
-    async fn next_connected(&self) -> IncomingEvent {
-        let generation =
-            next_connected_generation(&self.connection_state, &self.delivered_connection, || {
-                self.supervised.connection_generation()
-            })
-            .await;
+    async fn next_connection_event(&self) -> IncomingEvent {
+        let (command, generation) = next_connection_change(
+            &self.connection_state,
+            &self.delivered_connection,
+            &self.connection_disconnected,
+            || self.supervised.connection_generation(),
+        )
+        .await;
         IncomingEvent {
             generation: 0,
-            command: "bus.connected".into(),
+            command: command.into(),
             headers: BTreeMap::new(),
             body: serde_json::json!({"generation": generation}).to_string(),
         }
     }
 }
 
-async fn next_connected_generation(
+async fn next_connection_change(
     state: &tokio::sync::Mutex<tokio::sync::watch::Receiver<::bus::native_client::ConnState>>,
     delivered: &Cell<u64>,
+    disconnected: &Cell<bool>,
     current: impl Fn() -> u64,
-) -> u64 {
+) -> (&'static str, u64) {
+    use ::bus::native_client::ConnState;
+
     let mut state = state.lock().await;
     loop {
-        let (connected, generation) = {
+        let (connection, generation) = {
             // Hold the watch read guard through the counter sample: a concurrent
             // disconnect cannot let an old Connected sample label a newer,
             // not-yet-published connection generation.
             let sampled = state.borrow_and_update();
-            (
-                *sampled == ::bus::native_client::ConnState::Connected,
-                current(),
-            )
+            (*sampled, current())
         };
-        if connected && generation > delivered.get() {
+        // A newer generation proves the delivered connection was lost even
+        // when the watch coalesced its drop and reconnect. Deliver that loss
+        // first; shutdown states never synthesise a disconnect.
+        if matches!(connection, ConnState::Connected | ConnState::Disconnected)
+            && delivered.get() > 0
+            && !disconnected.get()
+            && (connection == ConnState::Disconnected || generation > delivered.get())
+        {
+            disconnected.set(true);
+            return ("bus.disconnected", delivered.get());
+        }
+        if connection == ConnState::Connected && generation > delivered.get() {
             delivered.set(generation);
-            return generation;
+            disconnected.set(false);
+            return ("bus.connected", generation);
         }
         if state.changed().await.is_err() {
             std::future::pending::<()>().await;
@@ -1524,29 +1541,125 @@ mod connection_events_tests {
         let (tx, rx) = tokio::sync::watch::channel(ConnState::Connected);
         let state = tokio::sync::Mutex::new(rx);
         let delivered = Cell::new(0);
+        let disconnected = Cell::new(false);
         let generation = Cell::new(1);
-        assert_eq!(
-            next_connected_generation(&state, &delivered, || generation.get()).await,
-            1
-        );
+        let next = || next_connection_change(&state, &delivered, &disconnected, || generation.get());
+        assert_eq!(next().await, ("bus.connected", 1));
         let mut cx = Context::from_waker(Waker::noop());
         {
-            let mut next = pin!(next_connected_generation(&state, &delivered, || generation.get()));
-            assert!(matches!(next.as_mut().poll(&mut cx), Poll::Pending));
+            let mut waiting = pin!(next());
+            assert!(matches!(waiting.as_mut().poll(&mut cx), Poll::Pending));
             // Dropping this select loser must release the receiver lock.
         }
         tx.send(ConnState::Disconnected).unwrap();
+        generation.set(2);
+        tx.send(ConnState::Connected).unwrap();
+        tx.send(ConnState::Disconnected).unwrap();
         generation.set(3); // two reconnects coalesced before the consumer runs
         tx.send(ConnState::Connected).unwrap();
-        assert_eq!(
-            next_connected_generation(&state, &delivered, || generation.get()).await,
-            3
-        );
-        let mut next = pin!(next_connected_generation(&state, &delivered, || generation.get()));
+        assert_eq!(next().await, ("bus.disconnected", 1));
+        assert_eq!(next().await, ("bus.connected", 3));
+        let mut waiting = pin!(next());
         assert!(
-            next.as_mut().poll(&mut cx).is_pending(),
+            waiting.as_mut().poll(&mut cx).is_pending(),
             "no duplicate or clock wake"
         );
+    }
+
+    #[tokio::test]
+    async fn disconnected_generation_once_after_delivered_connection() {
+        use ::bus::native_client::ConnState;
+        let (tx, rx) = tokio::sync::watch::channel(ConnState::Connected);
+        let state = tokio::sync::Mutex::new(rx);
+        let delivered = Cell::new(0);
+        let disconnected = Cell::new(false);
+        let generation = Cell::new(1);
+        let next = || next_connection_change(&state, &delivered, &disconnected, || generation.get());
+        assert_eq!(next().await, ("bus.connected", 1));
+        tx.send(ConnState::Disconnected).unwrap();
+        assert_eq!(next().await, ("bus.disconnected", 1));
+        let mut cx = Context::from_waker(Waker::noop());
+        {
+            let mut waiting = pin!(next());
+            assert!(waiting.as_mut().poll(&mut cx).is_pending());
+        }
+        generation.set(2);
+        tx.send(ConnState::Connected).unwrap();
+        assert_eq!(next().await, ("bus.connected", 2));
+        tx.send(ConnState::Disconnected).unwrap();
+        assert_eq!(next().await, ("bus.disconnected", 2));
+    }
+
+    #[tokio::test]
+    async fn no_disconnect_for_undelivered_connections() {
+        use ::bus::native_client::ConnState;
+        let (tx, rx) = tokio::sync::watch::channel(ConnState::Connecting);
+        let state = tokio::sync::Mutex::new(rx);
+        let delivered = Cell::new(0);
+        let disconnected = Cell::new(false);
+        let generation = Cell::new(0);
+        let next = || next_connection_change(&state, &delivered, &disconnected, || generation.get());
+        let mut cx = Context::from_waker(Waker::noop());
+        {
+            let mut waiting = pin!(next());
+            assert!(waiting.as_mut().poll(&mut cx).is_pending());
+            tx.send(ConnState::Disconnected).unwrap();
+            assert!(waiting.as_mut().poll(&mut cx).is_pending());
+            generation.set(1);
+            tx.send(ConnState::Connected).unwrap();
+            tx.send(ConnState::Disconnected).unwrap();
+            assert!(waiting.as_mut().poll(&mut cx).is_pending());
+        }
+        assert_eq!(delivered.get(), 0);
+        generation.set(2);
+        tx.send(ConnState::Connected).unwrap();
+        assert_eq!(next().await, ("bus.connected", 2));
+    }
+
+    #[tokio::test]
+    async fn disconnected_generation_cancel_mid_wait_preserves_loss_and_reconnect() {
+        use ::bus::native_client::ConnState;
+        let (tx, rx) = tokio::sync::watch::channel(ConnState::Connected);
+        let state = tokio::sync::Mutex::new(rx);
+        let delivered = Cell::new(0);
+        let disconnected = Cell::new(false);
+        let generation = Cell::new(1);
+        let next = || next_connection_change(&state, &delivered, &disconnected, || generation.get());
+        assert_eq!(next().await, ("bus.connected", 1));
+        let mut cx = Context::from_waker(Waker::noop());
+        {
+            let mut waiting = pin!(next());
+            assert!(waiting.as_mut().poll(&mut cx).is_pending());
+            tx.send(ConnState::Disconnected).unwrap();
+            // Cancel after the wake but before the future observes the drop.
+        }
+        assert_eq!(next().await, ("bus.disconnected", 1));
+        {
+            let mut waiting = pin!(next());
+            assert!(waiting.as_mut().poll(&mut cx).is_pending());
+            generation.set(2);
+            tx.send(ConnState::Connected).unwrap();
+        }
+        assert_eq!(next().await, ("bus.connected", 2));
+        let mut waiting = pin!(next());
+        assert!(waiting.as_mut().poll(&mut cx).is_pending());
+    }
+
+    #[tokio::test]
+    async fn shutdown_does_not_emit_disconnected() {
+        use ::bus::native_client::ConnState;
+        let (tx, rx) = tokio::sync::watch::channel(ConnState::Connected);
+        let state = tokio::sync::Mutex::new(rx);
+        let delivered = Cell::new(0);
+        let disconnected = Cell::new(false);
+        let generation = Cell::new(1);
+        let next = || next_connection_change(&state, &delivered, &disconnected, || generation.get());
+        assert_eq!(next().await, ("bus.connected", 1));
+        tx.send(ConnState::ShuttingDown).unwrap();
+        let mut cx = Context::from_waker(Waker::noop());
+        let mut waiting = pin!(next());
+        assert!(waiting.as_mut().poll(&mut cx).is_pending());
+        assert!(!disconnected.get());
     }
 }
 
@@ -1702,7 +1815,7 @@ impl BusHandler for MixServeHandler {
             };
             let result = tokio::select! {
                 command = guard.as_mut().recv() => command,
-                event = self.next_connected() => return Some(event),
+                event = self.next_connection_event() => return Some(event),
             };
             drop(guard);
 
