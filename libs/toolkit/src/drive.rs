@@ -1734,7 +1734,6 @@ fn key(args: &Value) -> Result<Job, String> {
 }
 
 fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
-    let trace_start = Instant::now();
     use std::os::unix::fs::OpenOptionsExt;
     // O_CREAT|O_EXCL: never an existing file, and never through a link.
     let file = std::fs::OpenOptions::new()
@@ -1755,13 +1754,7 @@ fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
         .iter()
         .flat_map(|p| p.to_srgba_unmultiplied())
         .collect();
-    if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
-        eprintln!("offtrace PNG pixels after {:?}", trace_start.elapsed());
-    }
     writer.write_image_data(&data).map_err(|e| e.to_string())?;
-    if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
-        eprintln!("offtrace PNG encoded after {:?}", trace_start.elapsed());
-    }
     writer.finish().map_err(|e| e.to_string())
 }
 
