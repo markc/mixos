@@ -219,7 +219,12 @@ impl<T: WinitApp> WinitAppWrapper<T> {
 
         self.windows_next_repaint_times
             .retain(|window_id, repaint_time| {
-                if let Some(floor) = self.windows_direct_repaint_floors.get(window_id) {
+                // Explicit pixel requests are bounded, demand-driven work. Keep
+                // their multi-pass capture handshake responsive; ordinary Bus/PTY
+                // wakes must still obey the stalled-window pacing floor.
+                if self.winit_app.overdue_pass_mode(*window_id) == PassMode::LogicOnly
+                    && let Some(floor) = self.windows_direct_repaint_floors.get(window_id)
+                {
                     *repaint_time = (*repaint_time).max(*floor);
                 }
                 if now < *repaint_time {

@@ -17,6 +17,7 @@ licences; LICENSE-MIT and LICENSE-APACHE are from that upstream revision.
   is added. Destroyed windows release this bookkeeping.
 - Direct stalled passes retain a 250 ms repaint floor across later wakes;
   deduplicated redraw requests remain armed for compositor-driven recovery.
+  Explicit pixel requests bypass the floor for their bounded capture handshake.
 - Glow marks offscreen capture unsupported in context data so toolkit can
   immediately refuse a known hidden window with an actionable message.
 - Uses the matching egui-wgpu patch, without changing public eframe APIs.
