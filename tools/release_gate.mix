@@ -102,7 +102,7 @@ if $mode == "check" then
   -- it runs alone here in release mode.
   stage("test", ["cargo", "test", "--workspace", "--locked", "--no-fail-fast"], 5400)
   stage("offscreen", ["cargo", "test", "--manifest-path", "vendor/egui-wgpu/Cargo.toml", "--lib", "--locked",
-    "--target-dir", "target", "--features", "winit,wayland", "hidden_window_capture_without_surface"], 900)
+    "--target-dir", "target", "--features", "winit,wayland", "offscreen_tests::"], 900)
   stage("latency", ["cargo", "test", "--release", "-p", "editd", "--test", "dispatch", "--locked",
     "large_file_open_edit_get_latency", "--", "--exact", "--nocapture"], 3600)
   $mix = "target/debug/mix"

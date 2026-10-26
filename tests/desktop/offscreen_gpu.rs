@@ -2,6 +2,22 @@
 // Compiled as egui-wgpu's unit-test module to exercise its private painter state.
 use super::*;
 
+#[test]
+fn readback_copy_preserves_aligned_unaligned_and_partial_vectors() {
+    #[repr(align(16))]
+    struct Aligned([u8; 512]);
+    let mut bytes = Aligned([0; 512]);
+    for (index, byte) in bytes.0.iter_mut().enumerate() {
+        *byte = (index % 251) as u8;
+    }
+    for offset in 0..16 {
+        for length in [0, 1, 15, 16, 17, 127, 128, 129, 256] {
+            let source = &bytes.0[offset..offset + length];
+            assert_eq!(crate::capture::copy_readback(source), source);
+        }
+    }
+}
+
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
     struct WakeThread(std::thread::Thread);
     impl std::task::Wake for WakeThread {

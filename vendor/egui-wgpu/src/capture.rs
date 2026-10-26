@@ -269,7 +269,7 @@ impl CaptureState {
     }
 }
 
-fn copy_readback(source: &[u8]) -> Vec<u8> {
+pub(crate) fn copy_readback(source: &[u8]) -> Vec<u8> {
     #[cfg(target_arch = "x86_64")]
     if std::is_x86_feature_detected!("sse4.1") && source.as_ptr().align_offset(16) == 0 {
         // SAFETY: the CPU feature and source alignment are checked above. The

@@ -16,8 +16,9 @@ licences; LICENSE-MIT and LICENSE-APACHE are retained from egui's matching
   device poll (one process-wide worker, eight queued requests, ten-second
   wait limit) completes screenshot callbacks without requiring another paint;
   browser callbacks retain wgpu's event-loop-driven progress.
-- `src/capture.rs`: copy mapped readback bytes into host memory in fixed-width
-  chunks before
+- `src/capture.rs`: copy mapped readback bytes into host memory using SSE4.1
+  streaming loads on aligned x86-64 mappings (runtime-detected, portable bulk
+  copy fallback) before
   RGBA/BGRA conversion and unmap immediately. Scalar channel reads from
   uncached integrated-GPU mappings can outlive the capture deadline and
   leave readback workers consuming CPU after the request has been refused.
@@ -32,7 +33,8 @@ licences; LICENSE-MIT and LICENSE-APACHE are retained from egui's matching
   including a 3840 by 2160 capture.
 
 Guards: `cargo test --manifest-path vendor/egui-wgpu/Cargo.toml --lib --features winit,wayland
-hidden_window_capture_without_surface` (requires a headless wgpu adapter),
+offscreen_tests::` (requires a headless wgpu adapter; also checks aligned,
+unaligned and partial-vector copies),
 and `cargo test -p toolkit --test offscreen_patch` (re-vendor wiring).
 All Rust commands run on the build worker. Drop alongside the eframe patch
 once upstream provides the same surface-independent paint path.
