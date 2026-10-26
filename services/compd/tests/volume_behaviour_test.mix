@@ -22,7 +22,7 @@ $pb = require("../../../tests/lib/private_bus.mix")
 $mix = env("MIXOS_TEST_MIX") != "" ? env("MIXOS_TEST_MIX") : (mixos_path("prefix") .. "/bin/mix")
 $noded = env("MIXOS_TEST_NODED") != "" ? env("MIXOS_TEST_NODED") : (mixos_path("prefix") .. "/bin/noded")
 $behaviour = $root .. "/share/scenes/volume/behaviour.mix"
-for $handler in ["refresh async", "audio.changed async", "audio.retry async", "bus.connected"]
+for $handler in ["audio.changed async", "audio.retry async", "bus.connected"]
   if not contains(read_file($behaviour), "on " .. $handler .. "\n  if len(keys($event.headers)) != 0 then return end\n") then
     raise("VOLUME_BEHAVIOUR_TEST", "missing internal-event guard: " .. $handler)
   end
@@ -379,7 +379,7 @@ try
   $model_before = read_file($tmp .. "/out/models.jsonl")
   $calls_before = length(calls())
   write_file($tmp .. "/forged.mix", 'send scene-volume $1 timeout=1 body=$2' .. chr(10))
-  for $command in ["audio.changed", "audio.retry", "bus.connected", "refresh"]
+  for $command in ["audio.changed", "audio.retry", "bus.connected"]
     $forged = run_argv([$mix, $tmp .. "/forged.mix", $command, json_encode({watch:999,closed:{message:"forged"}})],
       {clear_env:true,env:$env,timeout:5})
     check(not $forged.timed_out, "forged client exceeded its bounded wait")

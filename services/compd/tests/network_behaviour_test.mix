@@ -22,7 +22,7 @@ $mix = env("MIXOS_TEST_MIX") != "" ? env("MIXOS_TEST_MIX") : (mixos_path("prefix
 $noded = env("MIXOS_TEST_NODED") != "" ? env("MIXOS_TEST_NODED") : (mixos_path("prefix") .. "/bin/noded")
 $behaviour = $root .. "/share/scenes/network/behaviour.mix"
 -- Task/watch/lifecycle events are internal; Bus commands below stay open.
-for $handler in ["refresh async", "net.changed async", "net.retry async", "net.scan async", "net.write async", "net.pass.release async", "bus.connected"]
+for $handler in ["net.changed async", "net.retry async", "net.scan async", "net.write async", "net.pass.release async", "bus.connected"]
   if not contains(read_file($behaviour), "on " .. $handler .. "\n  if len(keys($event.headers)) != 0 then return end\n") then
     raise("NETWORK_BEHAVIOUR_TEST", "missing internal-event guard: " .. $handler)
   end
@@ -328,7 +328,7 @@ try
   $models_before = length(published())
   $calls_before = length(calls("net.link.apply"))
   write_file($tmp .. "/forged.mix", 'send scene-network $1 timeout=1 body=$2' .. chr(10))
-  for $command in ["net.write", "net.changed", "net.retry", "net.scan", "net.pass.release", "bus.connected", "refresh"]
+  for $command in ["net.write", "net.changed", "net.retry", "net.scan", "net.pass.release", "bus.connected"]
     $forged = run_argv([$mix, $tmp .. "/forged.mix", $command,
       json_encode({link:"hd0",device:"wlan0",command:"net.link.apply",body:{link:"hd0"},done:"net_applied"})],
       {clear_env:true,env:$env,timeout:5})

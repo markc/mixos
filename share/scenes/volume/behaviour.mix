@@ -90,7 +90,6 @@ fn retry_watch()
 end
 
 on refresh async
-  if len(keys($event.headers)) != 0 then return end
   $state.queued = false
   $r.respond($r.refresh_result(fn() = refresh()))
 end
