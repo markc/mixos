@@ -657,9 +657,11 @@ impl Drive {
     fn request_capture_pass(&self, ctx: &Context, viewport: egui::ViewportId) {
         // A capture behind input must advance through the same passes as a
         // visible window. Stop asking for paint once only GPU readback remains.
-        if self.running.as_ref().is_some_and(|running| {
-            matches!(running.steps.front(), Some(Step::Await { .. }))
-        }) {
+        if self
+            .running
+            .as_ref()
+            .is_some_and(|running| matches!(running.steps.front(), Some(Step::Await { .. })))
+        {
             return;
         }
         if !self.pending_captures.is_empty()
@@ -1872,14 +1874,24 @@ mod tests {
         assert!(request(&ctx, 2, "ui.capture", &json!({})).is_none());
         assert!(request(&ctx, 3, "ui.type", &json!({"text":"after"})).is_none());
         let mut input = RawInput::default();
-        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().minimized = Some(true);
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .minimized = Some(true);
         let mut seen = Vec::new();
         let mut screenshot = None;
         for _ in 0..12 {
-            let bootstrap = ctx.run_logic(&input, |ctx| { let _ = logic(ctx); });
-            assert!(bootstrap.viewport_commands.values().flatten().any(|command| {
-                matches!(command, ViewportCommand::RequestPaintWhileHidden)
-            }));
+            let bootstrap = ctx.run_logic(&input, |ctx| {
+                let _ = logic(ctx);
+            });
+            assert!(
+                bootstrap
+                    .viewport_commands
+                    .values()
+                    .flatten()
+                    .any(|command| { matches!(command, ViewportCommand::RequestPaintWhileHidden) })
+            );
             let output = ctx.run_ui(input.clone(), |ui| {
                 ui.input(|i| {
                     seen.extend(i.events.iter().filter_map(|event| match event {
@@ -1888,23 +1900,42 @@ mod tests {
                     }));
                 });
             });
-            screenshot = output.viewport_output.values().flat_map(|v| &v.commands)
+            screenshot = output
+                .viewport_output
+                .values()
+                .flat_map(|v| &v.commands)
                 .find_map(|command| match command {
                     ViewportCommand::Screenshot(callback) => Some(callback.clone()),
                     _ => None,
                 });
             output.drop_without_applying_deltas();
-            if screenshot.is_some() { break; }
+            if screenshot.is_some() {
+                break;
+            }
         }
         assert_eq!(seen, ["before"]);
         let callback = screenshot.expect("capture followed earlier input");
-        let waiting = ctx.run_logic(&input, |ctx| { let _ = logic(ctx); });
-        assert!(waiting.viewport_commands.values().flatten().all(|command| {
-            !matches!(command, ViewportCommand::RequestPaintWhileHidden)
-        }), "later input stays queued without a paint loop");
-        callback.complete(std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)));
+        let waiting = ctx.run_logic(&input, |ctx| {
+            let _ = logic(ctx);
+        });
+        assert!(
+            waiting
+                .viewport_commands
+                .values()
+                .flatten()
+                .all(|command| { !matches!(command, ViewportCommand::RequestPaintWhileHidden) }),
+            "later input stays queued without a paint loop"
+        );
+        callback.complete(std::sync::Arc::new(ColorImage::filled(
+            [4, 3],
+            egui::Color32::WHITE,
+        )));
         let answers = logic(&ctx);
-        assert!(answers.iter().any(|answer| answer.id == 2 && answer.rc == 0));
+        assert!(
+            answers
+                .iter()
+                .any(|answer| answer.id == 2 && answer.rc == 0)
+        );
         assert!(!answers.iter().any(|answer| answer.id == 3));
         for _ in 0..4 {
             ctx.run_ui(input.clone(), |ui| {
@@ -1914,7 +1945,8 @@ mod tests {
                         _ => None,
                     }));
                 });
-            }).drop_without_applying_deltas();
+            })
+            .drop_without_applying_deltas();
         }
         assert_eq!(seen, ["before", "after"]);
     }

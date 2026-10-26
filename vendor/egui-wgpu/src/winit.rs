@@ -39,70 +39,77 @@ mod offscreen_tests {
             .expect("headless wgpu adapter"),
         );
 
-        for format in [wgpu::TextureFormat::Rgba8Unorm, wgpu::TextureFormat::Bgra8Unorm] {
+        for format in [
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Bgra8Unorm,
+        ] {
             let state = painter.render_state.as_mut().unwrap();
             state.target_format = format;
             *state.renderer.write() = crate::Renderer::new(&state.device, format, options);
             painter.screen_capture_state = None;
             // Odd widths exercise capture's padded rows; a second size exercises reuse.
             for size in [[67, 31], [79, 23]] {
-            let ctx = Context::default();
-            let output = ctx.run_ui(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(size[0] as f32 / 2.0, size[1] as f32 / 2.0),
-                    )),
-                    ..Default::default()
-                },
-                |ui| {
-                    ui.painter().rect_filled(
-                        egui::Rect::from_min_size(egui::pos2(2.0, 2.0), egui::vec2(8.0, 6.0)),
-                        0.0,
-                        egui::Color32::RED,
-                    );
-                },
-            );
-            let primitives = ctx.tessellate(output.shapes, 2.0);
-            let mut delta = output.textures_delta;
-            delta.free.insert(epaint::TextureId::Managed(0));
-            let (tx, rx) = std::sync::mpsc::channel();
-            let callbacks = (0..2).map(|_| {
-                let sender = tx.clone();
-                egui::ScreenshotCallback::new(move |image| { sender.send(image).unwrap(); })
-            }).collect();
-            drop(tx);
-            painter.paint_and_update_textures_impl(
-                ViewportId::ROOT,
-                size,
-                2.0,
-                [0.0, 0.0, 1.0, 1.0],
-                &primitives,
-                &mut delta,
-                callbacks,
-                None,
-            );
-            for _ in 0..2 {
-                let image = rx
-                    .recv_timeout(core::time::Duration::from_secs(15))
-                    .expect("offscreen callback without another paint");
-                assert_eq!(image.size, [size[0] as usize, size[1] as usize]);
-                assert_eq!(image[(0, 0)], egui::Color32::BLUE);
-                assert_eq!(image[(8, 8)], egui::Color32::RED);
-            }
-            assert!(delta.is_empty(), "texture uploads and frees consumed");
-            assert!(
-                painter
-                    .render_state
-                    .as_ref()
-                    .unwrap()
-                    .renderer
-                    .read()
-                    .texture(&epaint::TextureId::Managed(0))
-                    .is_none(),
-                "texture freed after submission"
-            );
-            assert!(painter.surfaces.is_empty(), "no surface was created");
+                let ctx = Context::default();
+                let output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(size[0] as f32 / 2.0, size[1] as f32 / 2.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        ui.painter().rect_filled(
+                            egui::Rect::from_min_size(egui::pos2(2.0, 2.0), egui::vec2(8.0, 6.0)),
+                            0.0,
+                            egui::Color32::RED,
+                        );
+                    },
+                );
+                let primitives = ctx.tessellate(output.shapes, 2.0);
+                let mut delta = output.textures_delta;
+                delta.free.insert(epaint::TextureId::Managed(0));
+                let (tx, rx) = std::sync::mpsc::channel();
+                let callbacks = (0..2)
+                    .map(|_| {
+                        let sender = tx.clone();
+                        egui::ScreenshotCallback::new(move |image| {
+                            sender.send(image).unwrap();
+                        })
+                    })
+                    .collect();
+                drop(tx);
+                painter.paint_and_update_textures_impl(
+                    ViewportId::ROOT,
+                    size,
+                    2.0,
+                    [0.0, 0.0, 1.0, 1.0],
+                    &primitives,
+                    &mut delta,
+                    callbacks,
+                    None,
+                );
+                for _ in 0..2 {
+                    let image = rx
+                        .recv_timeout(core::time::Duration::from_secs(15))
+                        .expect("offscreen callback without another paint");
+                    assert_eq!(image.size, [size[0] as usize, size[1] as usize]);
+                    assert_eq!(image[(0, 0)], egui::Color32::BLUE);
+                    assert_eq!(image[(8, 8)], egui::Color32::RED);
+                }
+                assert!(delta.is_empty(), "texture uploads and frees consumed");
+                assert!(
+                    painter
+                        .render_state
+                        .as_ref()
+                        .unwrap()
+                        .renderer
+                        .read()
+                        .texture(&epaint::TextureId::Managed(0))
+                        .is_none(),
+                    "texture freed after submission"
+                );
+                assert!(painter.surfaces.is_empty(), "no surface was created");
             }
         }
     }
