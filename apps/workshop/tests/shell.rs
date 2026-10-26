@@ -22,7 +22,7 @@ use workshop::shell::{APP, Shell};
 mod logic_wake;
 
 #[test]
-fn capture_refuses_on_logic_only_wake_and_releases_later_commands() {
+fn capture_waits_for_quiet_deadline_then_releases_later_commands() {
     let mut rig = rig();
     let ctx = rig.h.ctx.clone();
     let pass = ctx.cumulative_pass_nr();
@@ -30,6 +30,12 @@ fn capture_refuses_on_logic_only_wake_and_releases_later_commands() {
     send(&mut rig, 7101, "workshop.ping", json!({}));
     rig.h.state().as_ref().unwrap().forward_pending();
     let started = std::time::Instant::now();
+    let _output = ctx.run_logic(&egui::RawInput::default(), |ctx| {
+        rig.h.state_mut().as_mut().unwrap().logic(ctx);
+    });
+    assert!(reply(&rig, 7100).is_none());
+    assert!(reply(&rig, 7101).is_none());
+    std::thread::sleep(drive::CAPTURE_QUIET_PERIOD + Duration::from_millis(10));
     for _ in 0..2 {
         let _output = ctx.run_logic(&egui::RawInput::default(), |ctx| {
             rig.h.state_mut().as_mut().unwrap().logic(ctx);
@@ -38,7 +44,7 @@ fn capture_refuses_on_logic_only_wake_and_releases_later_commands() {
     assert_eq!(ctx.cumulative_pass_nr(), pass);
     assert_eq!(reply(&rig, 7100).unwrap().2["error_code"], "NOT_SHOWN");
     assert_eq!(reply(&rig, 7101).unwrap().1, 0);
-    assert!(started.elapsed() < drive::INPUT_QUIET_PERIOD);
+    assert!(started.elapsed() < drive::Options::default().capture_timeout);
     assert!(!drive::pending(&ctx));
 }
 

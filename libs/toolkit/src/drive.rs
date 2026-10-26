@@ -259,9 +259,9 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
             .is_none_or(Vec::is_empty);
         let input_quiet_since = drive.input_quiet_since.get_or_insert(now);
         let quiet = now.saturating_duration_since(*input_quiet_since);
-        drive.refuse_unshown_captures(ctx, now);
-        for child in drive.children.values_mut() {
-            child.refuse_unshown_captures(ctx, now);
+        drive.refuse_unshown_captures(ctx, now, egui::ViewportId::ROOT);
+        for (&viewport, child) in &mut drive.children {
+            child.refuse_unshown_captures(ctx, now, viewport);
         }
         if logic_only && quiet >= INPUT_QUIET_PERIOD {
             drive.settle_input(
@@ -295,7 +295,7 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
 /// sent), queued jobs as cancelled. Send all of them before the Bus stops.
 pub fn finish(ctx: &Context) -> Vec<Answer> {
     ctx.with_plugin(|drive: &mut Drive| {
-        drive.unpainted_captures.clear();
+        drive.pending_captures.clear();
         if let Some(running) = drive.running.take() {
             let interrupted = running.steps.iter().any(|s| !matches!(s, Step::Idle));
             let answer = match running.answer {
@@ -316,7 +316,7 @@ pub fn finish(ctx: &Context) -> Vec<Answer> {
         }
         drive.cancel_queue("the app closed before this input was read");
         for child in drive.children.values_mut() {
-            child.unpainted_captures.clear();
+            child.pending_captures.clear();
             child.settle(ctx, "the app closed before this input was read");
             for (id, _, _) in child.requests.drain(..) {
                 child
@@ -363,7 +363,7 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                     if ctx.input(|i| i.raw.viewports.get(&target).is_some_and(viewport_not_shown)) {
                         return Some(not_shown(id, Duration::ZERO));
                     }
-                    child.unpainted_captures.insert(id, Instant::now());
+                    child.pending_captures.insert(id, Instant::now());
                 }
                 child
                     .requests
@@ -517,7 +517,7 @@ struct Shot(u64);
 #[derive(Default)]
 pub struct Drive {
     /// Pending captures, tracked until completion, cancellation or shutdown.
-    unpainted_captures: HashMap<u64, Instant>,
+    pending_captures: HashMap<u64, Instant>,
     last_ui_pass: Option<Instant>,
     /// Quiet time starts when input first waits, and restarts on root UI passes.
     /// Idle time before a request must not shorten its tolerance for a stall.
@@ -554,6 +554,7 @@ impl egui::Plugin for Drive {
     fn input_hook(&mut self, ctx: &Context, input: &mut RawInput) {
         if input.viewport_id == egui::ViewportId::ROOT {
             self.input_quiet_since = Some(Instant::now());
+            self.last_ui_pass = Some(Instant::now());
         }
         self.passes
             .entry(std::thread::current().id())
@@ -585,6 +586,7 @@ impl egui::Plugin for Drive {
                 })
             });
             input.events.append(&mut child.screenshots);
+            child.last_ui_pass = Some(Instant::now());
             child.step(input);
             if let Some(running) = &mut child.running
                 && running.trace.is_some()
@@ -686,7 +688,7 @@ impl Drive {
         let mut captures = VecDeque::new();
         let mut inputs = VecDeque::new();
         for job in std::mem::take(&mut self.queue) {
-            if self.unpainted_captures.contains_key(&job.0) {
+            if self.pending_captures.contains_key(&job.0) {
                 captures.push_back(job);
             } else {
                 inputs.push_back(job);
@@ -698,15 +700,16 @@ impl Drive {
         self.running = running;
     }
 
-    fn refuse_unshown_captures(&mut self, ctx: &Context, now: Instant) {
-        for (id, accepted) in std::mem::take(&mut self.unpainted_captures) {
+    fn refuse_unshown_captures(&mut self, ctx: &Context, now: Instant, viewport: egui::ViewportId) {
+        let hidden = ctx.input(|i| i.raw.viewports.get(&viewport).is_some_and(viewport_not_shown));
+        for (id, accepted) in std::mem::take(&mut self.pending_captures) {
             if self.answers.iter().any(|answer| answer.id == id) {
                 continue;
             }
             let since = self.last_ui_pass.map_or(accepted, |pass| pass.max(accepted));
             let quiet = now.saturating_duration_since(since);
-            if quiet < CAPTURE_QUIET_PERIOD {
-                self.unpainted_captures.insert(id, accepted);
+            if !hidden && quiet < CAPTURE_QUIET_PERIOD {
+                self.pending_captures.insert(id, accepted);
                 ctx.request_repaint_after(CAPTURE_QUIET_PERIOD - quiet);
                 continue;
             }
@@ -736,7 +739,7 @@ impl Drive {
 
     fn output(&mut self, ctx: &Context, output: &mut FullOutput) {
         self.last_ui_pass = Some(Instant::now());
-        if !self.unpainted_captures.is_empty() {
+        if !self.pending_captures.is_empty() {
             ctx.request_repaint_after_for(CAPTURE_QUIET_PERIOD, egui::ViewportId::ROOT);
         }
         if let Some(update) = &output.platform_output.accesskit_update {
@@ -862,7 +865,7 @@ impl Drive {
         }
         self.queue.push_back((id, job));
         if command_name == "ui.capture" {
-            self.unpainted_captures.insert(id, Instant::now());
+            self.pending_captures.insert(id, Instant::now());
             ctx.request_repaint_after_for(CAPTURE_QUIET_PERIOD, egui::ViewportId::ROOT);
         }
         None
@@ -1005,7 +1008,7 @@ impl Drive {
     /// and cancel the queue.
     fn settle(&mut self, ctx: &Context, why: &str) {
         if let Some(running) = self.running.take() {
-            self.unpainted_captures.remove(&running.id);
+            self.pending_captures.remove(&running.id);
             let answer = match running.answer {
                 Some(answer) => answer,
                 None if running.steps.iter().all(|s| matches!(s, Step::Idle)) => {
@@ -1047,7 +1050,7 @@ impl Drive {
 
     fn cancel_queue(&mut self, why: &str) {
         for (id, _) in std::mem::take(&mut self.queue) {
-            self.unpainted_captures.remove(&id);
+            self.pending_captures.remove(&id);
             self.answers.push(refusal(id, "CANCELLED", why));
         }
     }
@@ -1056,7 +1059,7 @@ impl Drive {
     fn expire(&mut self) {
         for answer in &self.answers {
             self.deadlines.remove(&answer.id);
-            self.unpainted_captures.remove(&answer.id);
+            self.pending_captures.remove(&answer.id);
         }
         let now = Instant::now();
         let expired: Vec<_> = self
@@ -1091,6 +1094,9 @@ impl Drive {
                 "CAPTURE",
                 "no screenshot arrived in time",
             ));
+        }
+        for answer in &self.answers {
+            self.pending_captures.remove(&answer.id);
         }
     }
 
