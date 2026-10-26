@@ -75,7 +75,11 @@ fn viewport_not_shown(viewport: &egui::ViewportInfo) -> bool {
 
 fn not_shown(id: u64, quiet: Duration) -> Answer {
     if quiet.is_zero() {
-        return refusal(id, "NOT_SHOWN", "the window is minimised or hidden: show the window or switch to its VT, then retry the capture");
+        return refusal(
+            id,
+            "NOT_SHOWN",
+            "the window is minimised or hidden: show the window or switch to its VT, then retry the capture",
+        );
     }
     refusal(
         id,
@@ -753,7 +757,8 @@ impl Drive {
             {
                 self.running = None;
             }
-            self.answers.push(not_shown(id, if hidden { Duration::ZERO } else { quiet }));
+            self.answers
+                .push(not_shown(id, if hidden { Duration::ZERO } else { quiet }));
         }
     }
 
@@ -1768,7 +1773,7 @@ mod tests {
             let answers = logic_at(&ctx, now + CAPTURE_QUIET_PERIOD);
             let answer = answers.iter().find(|a| a.id == 2).unwrap();
             assert_eq!(answer.rc, 10);
-                assert_eq!(answer.body["error_code"], "NOT_SHOWN");
+            assert_eq!(answer.body["error_code"], "NOT_SHOWN");
             assert!(logic_at(&ctx, now + CAPTURE_QUIET_PERIOD).is_empty());
         }
     }
@@ -1785,7 +1790,12 @@ mod tests {
                 let answer = request(ctx, 1, "ui.capture", &json!({})).unwrap();
                 assert_eq!(answer.rc, 10);
                 assert_eq!(answer.body["error_code"], "NOT_SHOWN");
-                assert!(answer.body["message"].as_str().unwrap().contains("minimised or hidden"));
+                assert!(
+                    answer.body["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("minimised or hidden")
+                );
                 assert!(!answer.body["message"].as_str().unwrap().contains("0 ms"));
                 assert!(!pending(ctx));
             });
@@ -1817,7 +1827,7 @@ mod tests {
             let answers = logic_at(&ctx, later + CAPTURE_QUIET_PERIOD);
             assert_eq!(answers.len(), 1);
             assert_eq!(answers[0].rc, 10);
-        assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
+            assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
             assert!(!pending(&ctx));
         }
     }
@@ -1851,8 +1861,12 @@ mod tests {
             drive.last_ui_pass = Some(start);
         });
         for _ in 0..3 {
-            ctx.run_ui(RawInput { viewport_id: child, ..Default::default() }, |_| {})
-                .drop_without_applying_deltas();
+            let mut input = RawInput {
+                viewport_id: child,
+                ..Default::default()
+            };
+            input.viewports.insert(child, Default::default());
+            ctx.run_ui(input, |_| {}).drop_without_applying_deltas();
             ctx.with_plugin(|drive: &mut Drive| assert_eq!(drive.last_ui_pass, Some(start)));
         }
         let answers = logic_at(&ctx, start + CAPTURE_QUIET_PERIOD);
@@ -1865,7 +1879,8 @@ mod tests {
     fn completed_screenshot_survives_hidden_refusal_check() {
         let (ctx, temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({"name":"finished.png"})).is_none());
-        ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+        ctx.run_ui(RawInput::default(), |_| {})
+            .drop_without_applying_deltas();
         let mut input = RawInput::default();
         input.events.push(Event::Screenshot {
             viewport_id: egui::ViewportId::ROOT,
@@ -1875,10 +1890,18 @@ mod tests {
         ctx.with_plugin(|drive: &mut Drive| drive.step(&mut input));
         assert!(temp.path().join("demo/captures/finished.png").is_file());
         let mut hidden = RawInput::default();
-        hidden.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().minimized = Some(true);
+        hidden
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .minimized = Some(true);
         let _output = ctx.run_logic(&hidden, |ctx| {
             ctx.with_plugin(|drive: &mut Drive| {
-                drive.refuse_unshown_captures(ctx, Instant::now() + CAPTURE_QUIET_PERIOD, egui::ViewportId::ROOT);
+                drive.refuse_unshown_captures(
+                    ctx,
+                    Instant::now() + CAPTURE_QUIET_PERIOD,
+                    egui::ViewportId::ROOT,
+                );
             });
         });
         let answers = logic(&ctx);
@@ -1905,17 +1928,26 @@ mod tests {
         let now = Instant::now();
         let budget = Duration::from_millis(200);
         ctx.with_plugin(|drive: &mut Drive| {
-            drive.children.insert(child, Box::new(Drive {
-                running: Some(Running {
-                    id: 7,
-                    steps: VecDeque::from([Step::Await {
-                        tag: 7, path: PathBuf::from("unused.png"), deadline: now + budget,
-                    }]),
-                    report: Report::Ui, extra: json!({}), answer: None,
-                    down: Vec::new(), trace: None, pass_events: Vec::new(),
+            drive.children.insert(
+                child,
+                Box::new(Drive {
+                    running: Some(Running {
+                        id: 7,
+                        steps: VecDeque::from([Step::Await {
+                            tag: 7,
+                            path: PathBuf::from("unused.png"),
+                            deadline: now + budget,
+                        }]),
+                        report: Report::Ui,
+                        extra: json!({}),
+                        answer: None,
+                        down: Vec::new(),
+                        trace: None,
+                        pass_events: Vec::new(),
+                    }),
+                    ..Drive::default()
                 }),
-                ..Drive::default()
-            }));
+            );
         });
         assert!(logic_at(&ctx, now).is_empty());
         assert!(delays.lock().unwrap().iter().any(|delay| *delay == budget));

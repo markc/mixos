@@ -10,9 +10,10 @@
 //! own GPU-start watchdog) stalls until the VT comes back — and a watchdog that
 //! times out reads the stall as a crashed GPU start.
 //!
-//! A parked desktop is treated as fully occluded: every surface still waiting on
-//! a callback gets one at most every [`PARKED_TRICKLE`], the rate the occluded
-//! trickle gives a covered window. The timer is armed from the main loop pass
+//! A parked desktop is treated as fully occluded: after its initial demand
+//! burst, every surface still waiting on a callback gets one at most every
+//! [`PARKED_TRICKLE`], the rate the occluded trickle gives a covered window.
+//! The timer is armed from the main loop pass
 //! that every client request wakes (not from the skipped frame: a VT switch
 //! that leaves pipes in flight swallows the redraw pings that would reach it),
 //! stops when its next tick finds nothing waiting. It never
@@ -21,7 +22,7 @@
 //! One second per frame is too slow for work that needs a few frames in a row:
 //! a capture settles, draws and collects over about five frames, which took
 //! 5–6 s parked. Demand returning more than [`DEMAND_IDLE`] after a send gets a burst:
-//! the next [`BURST_FRAMES`] sends come [`BURST_INTERVAL`] apart, then 1 Hz
+//! the next [`BURST_FRAMES`] sends are eligible [`BURST_INTERVAL`] apart, then 1 Hz
 //! resumes. Refills are at least [`BURST_MIN_SPACING`] apart, bounding clients
 //! that toggle idle/busy to at most 32 fast callbacks/s in the long run,
 //! plus the trickle (a refill grants eight and is spaced by at least 250 ms).
@@ -38,7 +39,7 @@ use smithay::wayland::seat::WaylandFocus;
 use std::time::{Duration, Instant};
 use world::state::Loop;
 
-/// One callback per waiting surface at most this often while frames are parked.
+/// Slow cadence per waiting surface after its demand burst while frames are parked.
 pub const PARKED_TRICKLE: Duration = OCCLUDED_TRICKLE;
 
 /// Fast sends a burst allows.
@@ -70,8 +71,11 @@ impl Demand {
             return None;
         }
         let period = next_period(
-            self.last_send, now, &mut self.burst,
-            self.last_send.is_none_or(|sent| now.duration_since(sent) > DEMAND_IDLE),
+            self.last_send,
+            now,
+            &mut self.burst,
+            self.last_send
+                .is_none_or(|sent| now.duration_since(sent) > DEMAND_IDLE),
             &mut self.last_refill,
         );
         let deadline = send_deadline(self.last_send, now, period);
@@ -91,7 +95,13 @@ impl Demand {
     fn sent(&mut self, now: Instant) {
         self.last_send = Some(now);
         self.burst = self.burst.saturating_sub(1);
-        self.next_send = Some(now + if self.burst > 0 { BURST_INTERVAL } else { PARKED_TRICKLE });
+        self.next_send = Some(
+            now + if self.burst > 0 {
+                BURST_INTERVAL
+            } else {
+                PARKED_TRICKLE
+            },
+        );
     }
 }
 
@@ -199,7 +209,7 @@ fn send(state: &Loop) {
 }
 
 /// Arm the parked trickle if frames are parked and some surface waits on a
-/// callback: a burst after quiet or restarted demand, else the 1 Hz trickle.
+/// callback: a burst on restarted demand, else the 1 Hz trickle.
 /// Called on every main-loop pass while parked. `parked` is the backend's own
 /// answer (`native.render.execute.frames_parked`), read again when the timer
 /// fires: once presentation resumes, the flip answers callbacks and the timer
@@ -208,7 +218,9 @@ pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
     if DEMAND.with(|demand| demand.borrow().armed) || !parked(state) {
         return;
     }
-    let Some(period) = DEMAND.with(|demand| demand.borrow_mut().arm(Instant::now(), waiting(state))) else {
+    let Some(period) =
+        DEMAND.with(|demand| demand.borrow_mut().arm(Instant::now(), waiting(state)))
+    else {
         return;
     };
     let armed = state.loop_handle.insert_source(
@@ -218,7 +230,8 @@ pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
                 return TimeoutAction::Drop;
             }
             let now = Instant::now();
-            let next_send = DEMAND.with(|demand| demand.borrow().next_send.expect("armed deadline"));
+            let next_send =
+                DEMAND.with(|demand| demand.borrow().next_send.expect("armed deadline"));
             if now < next_send {
                 return TimeoutAction::ToDuration(next_send - now);
             }
@@ -232,12 +245,9 @@ pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
             TimeoutAction::ToDuration(BURST_INTERVAL)
         },
     );
-    match armed {
-        Ok(_) => {}
-        Err(error) => {
-            DEMAND.with(|demand| demand.borrow_mut().probe(false));
-            warn!("parked frame trickle not armed: {error}");
-        }
+    if let Err(error) = armed {
+        DEMAND.with(|demand| demand.borrow_mut().probe(false));
+        warn!("parked frame trickle not armed: {error}");
     }
 }
 
