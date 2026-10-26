@@ -728,8 +728,10 @@ fn p0i_08_queued_input_human_revoke_and_deadline() {
         let before = pane.lock().unwrap().stats.lock().unwrap().input_written;
         let body = json!({"target":target,"request_id":"1","foreground_generation":listener.foreground_generation().to_string(),"text":"MUST_NOT_REACH_PTY"});
         assert_eq!(call(owner.client(), &parent.name, "term.type", body.clone()).await.0, 0);
+        // The Bus is open: a second caller's input queues behind the first
+        // instead of being refused, and the human key below revokes both.
         let other = verified(&fixture.broker).await;
-        assert_eq!(call(other.client(), &parent.name, "term.type", body).await.1["error_code"], "BUSY");
+        assert_eq!(call(other.client(), &parent.name, "term.type", body).await.0, 0);
         // Real keyboard entry point invalidates before admitting the human key.
         listener.key(crate::terminal::Key::Char(' '), Instant::now()).unwrap();
         listener.block_control_writes(false);
