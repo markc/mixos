@@ -8,5 +8,12 @@
 - Send reads files at send time and emits multipart MIME with desktop MIME
   types, base64 and RFC 2231 filenames. The encoded message is limited by
   JMAP `maxSizeUpload`, or 25 MiB when the server advertises no limit.
-- Compose keeps attachment paths in memory. Attachment controls and draft
-  persistence will follow separately.
+- Local drafts save and restore attachment paths (never file contents),
+  including across restarts. Older drafts still load without attachments.
+- Send resolves an earlier uncertain submission before checking local files or
+  upload limits. Attachment reads and encoding run off the async runtime;
+  command validation uses metadata only, and MIME bytes are rendered once.
+- Standalone MIME builders impose no upload limit; Send applies the server's
+  limit to the exact encoded bytes.
+- Sends with attachments log the caller key and paths in the Email app.
+  Attachment controls will follow separately.

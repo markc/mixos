@@ -118,6 +118,7 @@ enum Control {
 #[derive(Clone)]
 pub struct Handle {
     events: Arc<Mutex<TopicInbox>>,
+    callers: Arc<Mutex<HashMap<u64, String>>>,
     tx: tokio::sync::mpsc::Sender<Effect>,
     control: tokio::sync::mpsc::UnboundedSender<Control>,
     done: Arc<(Mutex<bool>, Condvar)>,
@@ -188,6 +189,17 @@ pub enum Logged {
 }
 
 impl Handle {
+    /// The broker-attested caller of a pending command, or `anon`.
+    /// Available until the app replies or the connection is lost.
+    pub fn caller_key(&self, id: u64) -> String {
+        self.callers
+            .lock()
+            .unwrap()
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| "anon".into())
+    }
+
     /// Drain retained topic bodies. The native lane bounds this inbox to 256
     /// events; ordinary topic hints still wake consumers after overflow.
     pub fn take_topic_events(&self) -> Vec<Value> {
@@ -268,6 +280,7 @@ impl Handle {
             .map_err(|e| e.to_string())
     }
     pub fn reply(&self, id: u64, rc: u8, body: Value) {
+        self.callers.lock().unwrap().remove(&id);
         #[cfg(any(test, feature = "testing"))]
         self.log.lock().unwrap().push(Logged::Reply {
             id,
@@ -331,6 +344,7 @@ impl Handle {
             done: Arc::new((Mutex::new(true), Condvar::new())),
             outbox: Arc::new(outbox::Outbox::default()),
             events: Arc::default(),
+            callers: Arc::default(),
             service: Arc::from("sink"),
             log: Arc::new(Mutex::new(Vec::new())),
         }
@@ -414,6 +428,8 @@ fn start_inner(
     let worker_outbox = outbox.clone();
     let events = Arc::new(Mutex::new(TopicInbox::default()));
     let worker_events = events.clone();
+    let callers = Arc::new(Mutex::new(HashMap::new()));
+    let worker_callers = callers.clone();
     let registered: Arc<str> = Arc::from(service);
     let service = service.to_owned();
     let url = url.to_owned();
@@ -439,6 +455,7 @@ fn start_inner(
                         worker_outbox,
                         macro_app,
                         worker_events,
+                        worker_callers,
                     ));
                     // A timed-out macro job may still own a spawn_blocking
                     // receiver wait. Abandon it rather than parking teardown.
@@ -456,6 +473,7 @@ fn start_inner(
     Ok((
         Handle {
             events,
+            callers,
             tx,
             control,
             done,
@@ -466,6 +484,21 @@ fn start_inner(
         },
         receive,
     ))
+}
+
+/// The attested caller key: `local:<from>` for a registered local caller,
+/// `mesh:<service>@<peer>` for a mesh caller, else `anon`. noded strips
+/// client-supplied `broker_*` headers, so these are the broker's stamps.
+pub fn caller_key(cmd: &IncomingCommand) -> String {
+    match cmd.header("broker_origin") {
+        Some("local") if !cmd.from.is_empty() => format!("local:{}", cmd.from),
+        Some("mesh") => format!(
+            "mesh:{}@{}",
+            cmd.header("broker_service").unwrap_or("unknown"),
+            cmd.header("broker_peer").unwrap_or("unknown")
+        ),
+        _ => "anon".to_string(),
+    }
 }
 
 /// The answer every request gets once the app is closing.
@@ -486,6 +519,7 @@ async fn worker(
     outbox: Arc<outbox::Outbox>,
     macro_app: Option<String>,
     events: Arc<Mutex<TopicInbox>>,
+    callers: Arc<Mutex<HashMap<u64, String>>>,
 ) {
     let connect = SupervisedClient::connect_options(&service, &url)
         .bounded_incoming(64)
@@ -618,6 +652,7 @@ async fn worker(
                     continue;
                 }
                 let delivery = Delivery::Command {id:next_id,command:command.command.clone(),body:if command.body.trim().is_empty(){"{}".into()}else{command.body.clone()}};
+                callers.lock().unwrap().insert(next_id, caller_key(&command));
                 pending.insert(next_id,command);
                 let _ = send.send(delivery).await;
             }
@@ -659,7 +694,7 @@ async fn worker(
                 if changed.is_err() { break; }
                 let event = match *connection.borrow_and_update() {
                     ConnState::Connected => Some(Delivery::Connected),
-                    ConnState::Disconnected | ConnState::Connecting => { pending.clear(); Some(Delivery::Disconnected) },
+                    ConnState::Disconnected | ConnState::Connecting => { pending.clear(); callers.lock().unwrap().clear(); Some(Delivery::Disconnected) },
                     ConnState::Fatal | ConnState::ShuttingDown => break,
                 };
                 if let Some(event) = event { let _ = send.send(event).await; }
@@ -667,6 +702,7 @@ async fn worker(
         }
     }
     macro_jobs.finish().await;
+    callers.lock().unwrap().clear();
     for command in unanswered(pending, || incoming.recv().now_or_never().flatten()) {
         let _ = tokio::time::timeout(
             Duration::from_secs(2),
@@ -803,6 +839,33 @@ pub async fn show(handle: Handle, comp: String, app_id: &str) -> Result<Value, S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn caller_keys_use_only_broker_attested_identity() {
+        let mut command = request("email.send", None);
+        assert_eq!(caller_key(&command), "anon");
+        command.headers.insert("broker_origin".into(), "local".into());
+        assert_eq!(caller_key(&command), "local:caller");
+        command.from.clear();
+        assert_eq!(caller_key(&command), "anon");
+        command.headers.insert("broker_origin".into(), "mesh".into());
+        command.headers.insert("broker_service".into(), "sender".into());
+        command.headers.insert("broker_peer".into(), "peer".into());
+        assert_eq!(caller_key(&command), "mesh:sender@peer");
+        command.headers.remove("broker_peer");
+        assert_eq!(caller_key(&command), "mesh:sender@unknown");
+    }
+
+    #[test]
+    fn a_pending_callers_key_is_shared_and_removed_when_answered() {
+        let handle = Handle::sink();
+        let clone = handle.clone();
+        handle.callers.lock().unwrap().insert(7, "local:sender".into());
+        assert_eq!(clone.caller_key(7), "local:sender");
+        assert_eq!(clone.caller_key(0), "anon");
+        clone.reply(7, 0, json!({}));
+        assert_eq!(handle.caller_key(7), "anon");
+    }
     #[test]
     fn topic_inbox_bounds_memory_and_reports_loss_before_bodies() {
         let mut inbox = TopicInbox::default();

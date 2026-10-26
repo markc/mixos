@@ -246,6 +246,10 @@ command; <code>quit</code>, which answers every accepted command
 (<code>BUSY: &lt;app&gt; is closing</code>) before the connection closes; <code>wait_done</code>.</li>
 <li><code>probe</code>/<code>forward</code>: single-instance launch through <code>&lt;app&gt;.ping</code> and
 <code>&lt;app&gt;.show</code>; <code>noded_url()</code>: the broker this session uses.</li>
+<li><code>Handle::caller_key(id)</code>: the pending command's broker-attested caller,
+<code>local:&lt;from&gt;</code>, <code>mesh:&lt;service&gt;@&lt;peer&gt;</code> or <code>anon</code>. It is retained until
+the app replies or disconnects. <code>caller_key(&amp;IncomingCommand)</code> provides
+the same formatter for apps with their own native Bus lane.</li>
 <li><code>Handle::subscribe(topic)</code> / <code>unsubscribe(topic)</code>: change subscriptions
 at runtime on the same supervised native connection and await the result.
 Reconnection retains the client's subscription set. <code>Delivery::Topic</code>

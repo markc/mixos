@@ -727,6 +727,7 @@ impl ComposeState {
             bcc: self.bcc_text.clone(),
             subject: self.draft.subject.clone(),
             body: self.body.contents(),
+            attachments: self.draft.attachments.clone(),
             in_reply_to: self.draft.in_reply_to.clone(),
             identity: self.identity.clone(),
             from_name: self.draft.from_name.clone(),
@@ -3760,6 +3761,7 @@ impl State {
             reply_to,
             subject: saved.subject,
             body: saved.body,
+            attachments: saved.attachments,
             in_reply_to: saved.in_reply_to,
             ..Composed::default()
         };
@@ -7220,6 +7222,8 @@ pub(crate) mod tests {
             "cy@example.invalid".into(),
         ));
         // An earlier send got as far as creating the server copy.
+        let attachments = vec![std::path::PathBuf::from("/home/user/report.pdf")];
+        first.compose.as_mut().unwrap().draft.attachments = attachments.clone();
         first.compose.as_mut().unwrap().attempt.email_id = Some("E1".into());
         first.save_draft();
         keep(&mut first, &mut store);
@@ -7240,6 +7244,8 @@ pub(crate) mod tests {
         assert_eq!(compose.draft.subject, "Lunch");
         assert_eq!(compose.body.contents(), "Noon at the usual place?");
         assert_eq!(compose.attempt.email_id.as_deref(), Some("E1"));
+        assert_eq!(compose.draft.attachments, attachments);
+        assert_eq!(compose.saved_draft().attachments, attachments);
         // Closing a restored draft asks too: it holds text.
         state.apply_ui(UiEvent::CloseCompose);
         assert_eq!(state.confirm, Some(Confirm::CloseCompose));

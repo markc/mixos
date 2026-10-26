@@ -120,6 +120,8 @@ pub struct Shell {
     palette: editor::Palette,
     composer_light: bool,
     bus: citizen::Handle,
+    /// Caller while a Bus command and its immediate effects are dispatched.
+    command_caller: Option<String>,
     runtime: tokio::runtime::Runtime,
     tx: mpsc::Sender<Event>,
     rx: mpsc::Receiver<Event>,
@@ -163,6 +165,16 @@ pub struct Shell {
     drafts: Box<dyn DraftStore>,
     /// When the open draft's unsaved edits are saved, if it has any.
     draft_due: Option<std::time::Instant>,
+}
+
+fn audit_attachments(caller: &str, draft: &jmap::Composed) {
+    if !draft.attachments.is_empty() {
+        tracing::info!(
+            caller_key = caller,
+            attachments = ?draft.attachments,
+            "sending email attachments"
+        );
+    }
 }
 
 /// This host's name: the settingsd instance to try first (settingsd runs
@@ -582,6 +594,7 @@ impl Shell {
             strings: crate::strings(),
             theme: theme.clone(),
             bus,
+            command_caller: None,
             runtime,
             tx,
             rx,
@@ -844,6 +857,12 @@ impl Shell {
                         self.state.wrote(&tag, reply, form, write, Err(error));
                     }
                     Some((tag, client)) => {
+                        if let Write::Send { draft } = &write {
+                            let caller = reply
+                                .map(|id| self.bus.caller_key(id))
+                                .unwrap_or_else(|| format!("local:{}", self.bus.service()));
+                            audit_attachments(&caller, draft);
+                        }
                         self.spawn(async move {
                             let answer =
                                 crate::commands::run_write(&client, write.clone(), sent).await;
@@ -955,6 +974,11 @@ impl Shell {
                 let boxes = self.state.send_boxes(&account);
                 match (self.client(&account), boxes) {
                     (Some((tag, client)), Ok(boxes)) => {
+                        let caller = self
+                            .command_caller
+                            .clone()
+                            .unwrap_or_else(|| format!("local:{}", self.bus.service()));
+                        audit_attachments(&caller, &draft);
                         self.spawn(async move {
                             let (attempt, result) = client.send(&draft, &boxes, attempt).await;
                             Event::Account(tag, Done::Sent(ticket, attempt, result))
@@ -1312,6 +1336,7 @@ impl Shell {
     /// One Bus command: the commands layer answers or queues it; the drive
     /// commands and the window's activation are the shell's.
     fn command(&mut self, id: u64, command_name: &str, body: &str) {
+        self.command_caller = Some(self.bus.caller_key(id));
         let forward = crate::commands::command(
             &mut self.state,
             &self.commands,
@@ -1338,6 +1363,7 @@ impl Shell {
             None => {}
         }
         self.settle();
+        self.command_caller = None;
     }
 
     /// Persist the config when the state says it changed, and rewrite it as
@@ -1727,6 +1753,49 @@ impl eframe::App for Shell {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Clone)]
+    struct AuditWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for AuditWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn attachment_audit_logs_one_line_with_caller_and_paths_only() {
+        for caller in ["local:sender", "mesh:sender@peer"] {
+            let bytes = Arc::new(Mutex::new(Vec::new()));
+            let writer = bytes.clone();
+            let subscriber = tracing_subscriber::fmt()
+                .without_time()
+                .with_ansi(false)
+                .with_writer(move || AuditWriter(writer.clone()))
+                .finish();
+            let draft = jmap::Composed {
+                attachments: vec![PathBuf::from("/home/user/report.pdf")],
+                body: "private body".into(),
+                subject: "private subject".into(),
+                ..jmap::Composed::default()
+            };
+            tracing::subscriber::with_default(subscriber, || {
+                audit_attachments(caller, &draft);
+                audit_attachments(caller, &jmap::Composed::default());
+            });
+            let log = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+            assert_eq!(log.lines().count(), 1, "{log}");
+            assert!(log.contains("INFO"), "{log}");
+            assert!(log.contains(&format!("caller_key=\"{caller}\"")), "{log}");
+            assert!(log.contains("/home/user/report.pdf"), "{log}");
+            assert!(!log.contains("private body") && !log.contains("private subject"));
+        }
+    }
 
     fn reply(rc: u8, body: &str) -> Result<citizen::Reply, citizen::CallError> {
         Ok(citizen::Reply {

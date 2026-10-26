@@ -20,6 +20,7 @@
 use std::io::Read;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -40,7 +41,7 @@ pub struct Composed {
     pub bcc: Vec<EmailAddress>,
     pub subject: String,
     pub body: String,
-    /// Absolute file paths. Bytes are read afresh for each send attempt.
+    /// Absolute file paths. Bytes are read when preparing an unsent message.
     pub attachments: Vec<PathBuf>,
     /// The message being replied to, as `Email.messageId` gives it
     /// (bracketed). Sent as `In-Reply-To`/`References`.
@@ -159,7 +160,8 @@ pub fn format_address(address: &EmailAddress) -> String {
 
 /// Build the MIME message for [`Composed`]. Headers are CRLF-stripped;
 /// `In-Reply-To` keeps exactly one pair of angle brackets; Bcc stays in
-/// the submission envelope. File and size failures are returned to the caller.
+/// the submission envelope. File failures are returned to the caller;
+/// the sender applies the server's upload limit to the finished bytes.
 pub fn build_mime(composed: &Composed) -> Result<Vec<u8>> {
     build_mime_with_id(composed, &new_message_id(&composed.from))
 }
@@ -178,10 +180,8 @@ fn new_message_id(from: &str) -> String {
 /// [`build_mime`] under a given `Message-ID`: a retried send keeps the id
 /// of its first attempt, so a recipient can recognise a repeat.
 fn build_mime_with_id(composed: &Composed, message_id: &str) -> Result<Vec<u8>> {
-    let parts = read_parts(composed, None)?;
-    let mime = render_mime(composed, message_id, &parts);
-    check_message_size(mime.len() as u64, None)?;
-    Ok(mime)
+    let parts = read_parts(&composed.attachments, None)?;
+    Ok(render_mime(composed, message_id, &parts))
 }
 
 fn render_mime(composed: &Composed, message_id: &str, parts: &[String]) -> Vec<u8> {
@@ -293,9 +293,8 @@ fn unreadable(path: &Path, source: std::io::Error) -> Error {
     }
 }
 
-/// Follow symlinks, then check the opened file too. O_NONBLOCK prevents a
-/// path replaced by a FIFO between stat and open from hanging the caller.
-fn open_attachment(path: &Path) -> Result<std::fs::File> {
+/// Metadata only: command dispatch must never open or read an attachment.
+fn attachment_metadata(path: &Path) -> Result<std::fs::Metadata> {
     if !path.is_absolute() {
         return Err(Error::AttachmentRelative(path.to_owned()));
     }
@@ -309,9 +308,17 @@ fn open_attachment(path: &Path) -> Result<std::fs::File> {
     if !metadata.is_file() {
         return Err(Error::AttachmentNotFile(path.to_owned()));
     }
+    Ok(metadata)
+}
+
+/// Follow symlinks, then check the opened file too. O_NONBLOCK prevents a
+/// path replaced by a FIFO between stat and open from hanging the caller;
+/// O_NOCTTY prevents a substituted terminal becoming the controlling tty.
+fn open_attachment(path: &Path) -> Result<std::fs::File> {
+    attachment_metadata(path)?;
     let file = std::fs::OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NONBLOCK)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
         .open(path)
         .map_err(|error| unreadable(path, error))?;
     if !file
@@ -362,54 +369,54 @@ fn attachment_headers(name: &str, mime: &str) -> String {
     headers
 }
 
-/// Cheap command-time validation: check paths and readability without reading
-/// contents. MIME overhead is estimated using filename types; send checks the
-/// exact encoded size again after sniffing the bytes.
+/// Cheap command-time validation: stat paths and estimate encoded size.
+/// Opening, reading and MIME database loading happen only on the send worker.
 pub fn validate_attachments(composed: &Composed, max_size_upload: Option<u64>) -> Result<()> {
-    let db = mimedb::Database::load();
     let mut parts = Vec::new();
     let mut encoded = 0_u64;
     for path in &composed.attachments {
-        let file = open_attachment(path)?;
-        let size = file
-            .metadata()
-            .map_err(|error| unreadable(path, error))?
-            .len();
+        let size = attachment_metadata(path)?.len();
         encoded = encoded.saturating_add(encoded_file_size(size));
         let name = file_name(path);
-        parts.push(attachment_headers(&name, &db.guess(Some(&name), None).mime));
+        parts.push(attachment_headers(&name, "application/octet-stream"));
     }
     let size = (render_mime(composed, &new_message_id(&composed.from), &parts).len() as u64)
         .saturating_add(encoded);
     check_message_size(size, max_size_upload)
 }
 
-fn read_parts(composed: &Composed, max_size_upload: Option<u64>) -> Result<Vec<String>> {
-    if composed.attachments.is_empty() {
+fn mime_database() -> &'static mimedb::Database {
+    static DB: OnceLock<mimedb::Database> = OnceLock::new();
+    DB.get_or_init(mimedb::Database::load)
+}
+
+/// `limit` is absent for standalone builders, which impose no upload policy.
+fn read_parts(paths: &[PathBuf], limit: Option<u64>) -> Result<Vec<String>> {
+    if paths.is_empty() {
         return Ok(Vec::new());
     }
-    let db = mimedb::Database::load();
-    let limit = max_size_upload.unwrap_or(DEFAULT_UPLOAD_LIMIT);
+    let db = mime_database();
     let mut parts = Vec::new();
     let mut encoded = 0_u64;
-    for path in &composed.attachments {
+    for path in paths {
         let file = open_attachment(path)?;
         let size = file
             .metadata()
             .map_err(|error| unreadable(path, error))?
             .len();
         // Reject a known oversized input before allocating its contents.
-        check_message_size(
-            encoded.saturating_add(encoded_file_size(size)),
-            max_size_upload,
-        )?;
+        if let Some(limit) = limit {
+            check_message_size(encoded.saturating_add(encoded_file_size(size)), Some(limit))?;
+        }
         let mut bytes = Vec::new();
         // Bound reads even when a file grows after metadata validation.
-        file.take(limit.saturating_add(1))
+        file.take(limit.map_or(u64::MAX, |limit| limit.saturating_add(1)))
             .read_to_end(&mut bytes)
             .map_err(|error| unreadable(path, error))?;
         encoded = encoded.saturating_add(encoded_file_size(bytes.len() as u64));
-        check_message_size(encoded, max_size_upload)?;
+        if let Some(limit) = limit {
+            check_message_size(encoded, Some(limit))?;
+        }
         let name = file_name(path);
         let mime = db
             .guess(Some(&name), Some(&bytes[..bytes.len().min(db.sniff_len())]))
@@ -477,6 +484,9 @@ pub struct SendAttempt {
     /// A fingerprint of the content that Email holds: an edited message
     /// is never submitted under the old Email.
     pub fingerprint: Option<String>,
+    /// Compose fields and attachment paths only, so a confirmed earlier send
+    /// can detect edits without reopening files. Absent in older saved drafts.
+    pub compose_fingerprint: Option<String>,
     /// The confirmed EmailSubmission.
     pub submission_id: Option<String>,
     /// The server confirmed the submission: the message has gone.
@@ -489,8 +499,8 @@ pub struct SendAttempt {
 /// What a send that went did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SendReport {
-    /// An earlier, ambiguous try had in fact been submitted: nothing new
-    /// went out this time.
+    /// An earlier try had already been submitted: nothing new went out
+    /// this time.
     pub earlier: bool,
     /// The message went, but moving it into Sent failed (it stays in
     /// Drafts on the server), and why.
@@ -566,6 +576,10 @@ fn fingerprint(composed: &Composed, parts: &[String]) -> String {
         feed(part);
     }
     format!("{hash:016x}")
+}
+
+fn compose_fingerprint(composed: &Composed) -> String {
+    fingerprint(composed, &vec![String::new(); composed.attachments.len()])
 }
 
 /// The submission identity to send `from` with (see [`Client::identity_id`]).
@@ -727,20 +741,8 @@ pub(crate) async fn send<W: Wire>(
     boxes: &SendBoxes,
     mut attempt: SendAttempt,
 ) -> (SendAttempt, Result<SendReport>) {
-    let parts = match read_parts(composed, wire.max_size_upload()) {
-        Ok(parts) => parts,
-        Err(error) => return (attempt, Err(error)),
-    };
-    let message_id = attempt
-        .message_id
-        .clone()
-        .unwrap_or_else(|| new_message_id(&composed.from));
-    let mime_size = render_mime(composed, &message_id, &parts).len() as u64;
-    if let Err(error) = check_message_size(mime_size, wire.max_size_upload()) {
-        return (attempt, Err(error));
-    }
-    let print = fingerprint(composed, &parts);
-    let mut earlier = false;
+    // Resolve the server's outcome before touching local files or limits.
+    let mut earlier = attempt.submitted;
     if attempt.ambiguous && !attempt.submitted {
         match attempt.email_id.clone() {
             Some(email_id) => match submission_of(wire, &email_id).await {
@@ -751,29 +753,67 @@ pub(crate) async fn send<W: Wire>(
                     attempt.submitted = true;
                     attempt.ambiguous = false;
                     earlier = true;
-                    if attempt.fingerprint.as_deref() != Some(print.as_str()) {
-                        // What went is the earlier content: file it, and
-                        // leave the edited message for the person to send
-                        // as a new one.
-                        let _ = file_sent(wire, &email_id, &boxes.sent).await;
-                        return (SendAttempt::default(), Err(Error::AlreadySent));
-                    }
                 }
                 Ok(None) => attempt.ambiguous = false,
             },
             None => attempt.ambiguous = false,
         }
     }
+    if attempt.submitted {
+        let current = compose_fingerprint(composed);
+        let previous = attempt.compose_fingerprint.as_deref().or_else(|| {
+            // Before attachments, this was also the full fingerprint.
+            if composed.attachments.is_empty() {
+                attempt.fingerprint.as_deref()
+            } else {
+                // Legacy attachment attempts have no fields-only baseline.
+                // Server confirmation still takes precedence over local I/O.
+                None
+            }
+        });
+        if previous.is_some_and(|previous| previous != current) {
+            if let Some(email_id) = &attempt.email_id {
+                let _ = file_sent(wire, email_id, &boxes.sent).await;
+            }
+            return (SendAttempt::default(), Err(Error::AlreadySent));
+        }
+    }
     if !attempt.submitted {
-        if let Some(stale) = attempt
-            .email_id
-            .clone()
-            .filter(|_| attempt.fingerprint.as_deref() != Some(print.as_str()))
-        {
+        let limit = wire.max_size_upload().unwrap_or(DEFAULT_UPLOAD_LIMIT);
+        let paths = composed.attachments.clone();
+        let parts = match tokio::task::spawn_blocking(move || read_parts(&paths, Some(limit))).await {
+            Ok(Ok(parts)) => parts,
+            Ok(Err(error)) => return (attempt, Err(error)),
+            Err(error) => {
+                return (attempt, Err(Error::Protocol(format!("attachment worker: {error}"))));
+            }
+        };
+        let print = fingerprint(composed, &parts);
+        let changed = attempt.fingerprint.as_deref() != Some(print.as_str());
+        // Render once when a new server draft is needed, check these exact
+        // bytes before changing server state, and reuse them for the upload.
+        let mime = if attempt.email_id.is_none() || changed {
+            let message_id = if changed && attempt.email_id.is_some() {
+                new_message_id(&composed.from)
+            } else {
+                attempt
+                    .message_id
+                    .clone()
+                    .unwrap_or_else(|| new_message_id(&composed.from))
+            };
+            let mime = render_mime(composed, &message_id, &parts);
+            if let Err(error) = check_message_size(mime.len() as u64, Some(limit)) {
+                return (attempt, Err(error));
+            }
+            attempt.message_id = Some(message_id);
+            Some(mime)
+        } else {
+            None
+        };
+        if let Some(stale) = attempt.email_id.clone().filter(|_| changed) {
             destroy_draft(wire, &stale).await;
             attempt.email_id = None;
             attempt.fingerprint = None;
-            attempt.message_id = None;
         }
         // Read before anything is created: a failure here creates nothing.
         let identity = match identity_for(wire, &composed.from).await {
@@ -783,24 +823,18 @@ pub(crate) async fn send<W: Wire>(
         let email_id = match attempt.email_id.clone() {
             Some(email_id) => email_id,
             None => {
-                let message_id = attempt
-                    .message_id
-                    .get_or_insert_with(|| new_message_id(&composed.from))
-                    .clone();
-                let mime = render_mime(composed, &message_id, &parts);
-                if let Err(error) = check_message_size(mime.len() as u64, wire.max_size_upload()) {
-                    return (attempt, Err(error));
-                }
+                let mime = mime.expect("a new draft has MIME bytes");
                 match create_draft(wire, mime, &boxes.drafts).await {
                     Ok(email_id) => {
                         attempt.email_id = Some(email_id.clone());
-                        attempt.fingerprint = Some(print.clone());
+                        attempt.fingerprint = Some(print);
                         email_id
                     }
                     Err(error) => return (attempt, Err(error)),
                 }
             }
         };
+        attempt.compose_fingerprint = Some(compose_fingerprint(composed));
         match submit(wire, composed, &email_id, &identity).await {
             Ok(submission) => {
                 attempt.submission_id = Some(submission);
@@ -944,6 +978,177 @@ mod tests {
     }
 
     #[test]
+    fn standalone_builders_do_not_impose_the_fallback_upload_limit() {
+        let message = Composed {
+            body: "x".repeat(DEFAULT_UPLOAD_LIMIT as usize + 1),
+            ..composed()
+        };
+        assert!(build_mime(&message).unwrap().len() as u64 > DEFAULT_UPLOAD_LIMIT);
+
+        let (_dir, message) = attached("large.bin", b"");
+        // Base64 alone exceeds the fallback, even though the source does not.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&message.attachments[0])
+            .unwrap()
+            .set_len(DEFAULT_UPLOAD_LIMIT * 3 / 4 + 1)
+            .unwrap();
+        let mime = build_mime_with_id(&message, &new_message_id(&message.from)).unwrap();
+        assert!(mime.len() as u64 > DEFAULT_UPLOAD_LIMIT);
+        let fake = Fake::new(&[]);
+        fake.server().limit = Some(mime.len() as u64);
+        assert!(try_send(&fake, &message, SendAttempt::default()).1.is_ok());
+        assert_eq!(fake.server().uploads[0].len(), mime.len());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn command_validation_never_opens_or_reads_attachment_files() {
+        use std::os::fd::{FromRawFd, OwnedFd};
+        use std::os::unix::ffi::OsStrExt;
+
+        let (_dir, message) = attached("metadata.txt", b"contents");
+        let path = std::ffi::CString::new(message.attachments[0].as_os_str().as_bytes()).unwrap();
+        // SAFETY: flags are valid and the descriptor is owned below.
+        let fd = unsafe { libc::inotify_init1(libc::IN_NONBLOCK | libc::IN_CLOEXEC) };
+        assert!(fd >= 0);
+        // SAFETY: fd is newly allocated and transferred to OwnedFd once.
+        let _owned = unsafe { OwnedFd::from_raw_fd(fd) };
+        // SAFETY: path is NUL-terminated and fd remains open.
+        let watch = unsafe {
+            libc::inotify_add_watch(fd, path.as_ptr(), libc::IN_OPEN | libc::IN_ACCESS)
+        };
+        assert!(watch >= 0);
+        validate_attachments(&message, None).unwrap();
+        let mut events = [0_u8; 4096];
+        // SAFETY: events is writable for the full buffer length.
+        let read = unsafe { libc::read(fd, events.as_mut_ptr().cast(), events.len()) };
+        assert_eq!(read, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+
+    #[test]
+    fn attachment_preparation_yields_to_the_async_runtime() {
+        use std::future::Future;
+        use std::task::Poll;
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .build()
+            .unwrap();
+        let (_dir, message) = attached("worker.txt", b"contents");
+        let fake = Fake::new(&[]);
+        runtime.block_on(async {
+            let (release, wait) = std::sync::mpsc::channel();
+            // Hold the sole blocking worker. Preparation must wait for it,
+            // while the current-thread runtime can still poll other work.
+            let blocker = tokio::task::spawn_blocking(move || {
+                wait.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            });
+            let boxes = boxes();
+            let mut sending = std::pin::pin!(send(&fake, &message, &boxes, SendAttempt::default()));
+            std::future::poll_fn(|cx| {
+                assert!(matches!(sending.as_mut().poll(cx), Poll::Pending));
+                Poll::Ready(())
+            })
+            .await;
+            assert!(fake.server().uploads.is_empty());
+            release.send(()).unwrap();
+            assert!(sending.await.1.is_ok());
+            blocker.await.unwrap();
+        });
+    }
+
+    #[test]
+    fn an_ambiguous_send_with_a_vanished_file_reports_sent_earlier() {
+        let (_dir, message) = attached("gone.txt", b"sent contents");
+        let fake = Fake::new(&[Submit::AcceptThenLose]);
+        let (attempt, result) = try_send(&fake, &message, SendAttempt::default());
+        assert!(result.is_err() && attempt.ambiguous);
+        std::fs::remove_file(&message.attachments[0]).unwrap();
+        fake.server().limit = Some(0);
+        let (attempt, result) = try_send(&fake, &message, attempt);
+        assert!(result.unwrap().earlier);
+        assert!(attempt.submitted && !attempt.ambiguous);
+        assert_eq!(fake.count("EmailSubmission/query"), 1);
+        assert_eq!(fake.count("EmailSubmission/set"), 1);
+        assert_eq!(fake.server().uploads.len(), 1);
+        assert_eq!(fake.in_box("M-sent"), 1);
+    }
+
+    #[test]
+    fn an_ambiguous_send_ignores_changed_file_contents_and_a_lower_limit() {
+        let (_dir, message) = attached("changed.txt", b"sent contents");
+        let fake = Fake::new(&[Submit::AcceptThenLose]);
+        let (attempt, _) = try_send(&fake, &message, SendAttempt::default());
+        std::fs::write(&message.attachments[0], b"different contents").unwrap();
+        fake.server().limit = Some(0);
+        let (_, result) = try_send(&fake, &message, attempt);
+        assert!(result.unwrap().earlier);
+        assert_eq!(fake.server().uploads.len(), 1);
+        assert_eq!(fake.count("EmailSubmission/set"), 1);
+    }
+
+    #[test]
+    fn a_confirmed_send_is_filed_without_reopening_attachments() {
+        let (_dir, message) = attached("sent.txt", b"contents");
+        let fake = Fake::new(&[]);
+        let (attempt, result) = try_send(&fake, &message, SendAttempt::default());
+        assert!(result.is_ok() && attempt.submitted);
+        std::fs::remove_file(&message.attachments[0]).unwrap();
+        fake.server().limit = Some(0);
+        let (_, result) = try_send(&fake, &message, attempt);
+        assert!(result.unwrap().earlier);
+        assert_eq!(fake.count("EmailSubmission/query"), 0);
+        assert_eq!(fake.count("EmailSubmission/set"), 1);
+        assert_eq!(fake.in_box("M-sent"), 1);
+    }
+
+    #[test]
+    fn an_unresolved_send_returns_the_server_error_before_file_errors() {
+        let (_dir, message) = attached("unknown.txt", b"contents");
+        let fake = Fake::new(&[Submit::AcceptThenLose]);
+        let (attempt, _) = try_send(&fake, &message, SendAttempt::default());
+        std::fs::remove_file(&message.attachments[0]).unwrap();
+        fake.server().no_query = true;
+        let (attempt, result) = try_send(&fake, &message, attempt);
+        assert!(matches!(result, Err(Error::Method { .. })));
+        assert!(attempt.ambiguous);
+        assert_eq!(fake.count("EmailSubmission/set"), 1);
+    }
+
+    #[test]
+    fn edits_after_an_earlier_attachment_send_are_kept_without_reopening_files() {
+        let (_dir, mut message) = attached("edited.txt", b"contents");
+        let fake = Fake::new(&[Submit::AcceptThenLose]);
+        let (attempt, _) = try_send(&fake, &message, SendAttempt::default());
+        std::fs::remove_file(&message.attachments[0]).unwrap();
+        message.body = "edited body".into();
+        let (attempt, result) = try_send(&fake, &message, attempt);
+        assert!(matches!(result, Err(Error::AlreadySent)));
+        assert_eq!(attempt, SendAttempt::default());
+        assert_eq!(fake.count("EmailSubmission/set"), 1);
+        assert_eq!(fake.in_box("M-sent"), 1);
+    }
+
+    #[test]
+    fn old_attempts_without_a_compose_fingerprint_still_reconcile() {
+        let (_dir, message) = attached("old.txt", b"contents");
+        let fake = Fake::new(&[Submit::AcceptThenLose]);
+        let (attempt, _) = try_send(&fake, &message, SendAttempt::default());
+        let mut saved = serde_json::to_value(attempt).unwrap();
+        saved.as_object_mut().unwrap().remove("compose_fingerprint");
+        let attempt = serde_json::from_value(saved).unwrap();
+        std::fs::remove_file(&message.attachments[0]).unwrap();
+        let (_, result) = try_send(&fake, &message, attempt);
+        assert!(result.unwrap().earlier);
+        assert_eq!(fake.count("EmailSubmission/set"), 1);
+    }
+
+    #[test]
     fn send_reads_current_bytes_and_replaces_a_refused_draft_after_file_edits() {
         let (_dir, message) = attached("note.txt", b"before");
         validate_attachments(&message, None).unwrap();
@@ -967,7 +1172,7 @@ mod tests {
     fn send_rechecks_missing_files_and_exact_encoded_size_before_upload() {
         let (_dir, message) = attached("note.txt", b"hello");
         let fake = Fake::new(&[]);
-        let parts = read_parts(&message, None).unwrap();
+        let parts = read_parts(&message.attachments, None).unwrap();
         let id = new_message_id(&message.from);
         let size = render_mime(&message, &id, &parts).len() as u64;
         fake.server().limit = Some(size - 1);
@@ -1299,14 +1504,12 @@ mod tests {
         }
     }
 
-    /// Run a future that never waits (the fake answers at once).
+    /// The fake answers immediately; file preparation uses the blocking pool.
     fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        let mut future = std::pin::pin!(future);
-        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
-        match future.as_mut().poll(&mut cx) {
-            std::task::Poll::Ready(output) => output,
-            std::task::Poll::Pending => panic!("the fake server never waits"),
-        }
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(future)
     }
 
     fn boxes() -> SendBoxes {

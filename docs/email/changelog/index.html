@@ -245,8 +245,15 @@ unreadable files and oversized messages have distinct refusal codes.</li>
 <li>Send reads files at send time and emits multipart MIME with desktop MIME
 types, base64 and RFC 2231 filenames. The encoded message is limited by
 JMAP <code>maxSizeUpload</code>, or 25 MiB when the server advertises no limit.</li>
-<li>Compose keeps attachment paths in memory. Attachment controls and draft
-persistence will follow separately.</li>
+<li>Local drafts save and restore attachment paths (never file contents),
+including across restarts. Older drafts still load without attachments.</li>
+<li>Send resolves an earlier uncertain submission before checking local files or
+upload limits. Attachment reads and encoding run off the async runtime;
+command validation uses metadata only, and MIME bytes are rendered once.</li>
+<li>Standalone MIME builders impose no upload limit; Send applies the server's
+limit to the exact encoded bytes.</li>
+<li>Sends with attachments log the caller key and paths in the Email app.
+Attachment controls will follow separately.</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/email/changelog.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

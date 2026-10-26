@@ -18,6 +18,20 @@ fn main() {
             std::process::exit(2);
         }
     };
+    let _logging = match logging::init(
+        &logging::LogOpts::default(),
+        &logging::StatsOpts::default(),
+        logging::LogDefaults {
+            default_filter: Some("warn,email=info".into()),
+            ..logging::LogDefaults::gui(email::APP)
+        },
+    ) {
+        Ok(handle) => handle,
+        Err(error) => {
+            eprintln!("email: {error}");
+            std::process::exit(1);
+        }
+    };
     let result = if citizen::probe(&args.url, &args.service, email::APP) {
         // One window per session: a second launch raises the first.
         citizen::forward(&args.url, &args.service, email::APP)

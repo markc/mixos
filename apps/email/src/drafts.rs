@@ -41,6 +41,8 @@ pub struct SavedDraft {
     pub bcc: String,
     pub subject: String,
     pub body: String,
+    /// Paths only; attachment contents are read when sending, never saved here.
+    pub attachments: Vec<PathBuf>,
     pub in_reply_to: Option<String>,
     /// The sender identity it was typed under, and that identity's display
     /// name and Reply-To, so a restored draft sends as it was. Empty for a
@@ -224,6 +226,7 @@ mod tests {
         let mut store = DirStore::new(root.path());
         store.save(&draft("0a", "2026-10-18T01:00:00Z")).unwrap();
         let mut newer = draft("0b", "2026-10-18T02:00:00Z");
+        newer.attachments = vec![root.path().join("report.pdf"), root.path().join("photo.png")];
         newer.attempt.email_id = Some("E1".into());
         store.save(&newer).unwrap();
         let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
@@ -231,7 +234,7 @@ mod tests {
         assert_eq!(mode(&store.dir.join("0a.json")), 0o600);
         let list = store.list();
         assert_eq!(list.len(), 2);
-        assert_eq!(list[0], newer, "newest first, the send attempt kept");
+        assert_eq!(list[0], newer, "newest first, paths and send attempt kept");
         // No temporary is left behind.
         let names: Vec<_> = std::fs::read_dir(&store.dir)
             .unwrap()
@@ -242,6 +245,22 @@ mod tests {
         store.remove("0a").unwrap();
         store.remove("0a").unwrap();
         assert_eq!(store.list(), vec![newer]);
+    }
+
+    #[test]
+    fn old_schema_one_draft_without_attachments_still_loads() {
+        let root = tempfile::tempdir().unwrap();
+        let store = DirStore::new(root.path());
+        std::fs::create_dir_all(&store.dir).unwrap();
+        std::fs::write(
+            store.dir.join("0a.json"),
+            br#"{"schema_version":1,"id":"0a","body":"kept text"}"#,
+        )
+        .unwrap();
+        let drafts = store.list();
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].body, "kept text");
+        assert!(drafts[0].attachments.is_empty());
     }
 
     #[test]

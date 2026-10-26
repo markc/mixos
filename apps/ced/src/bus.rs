@@ -230,21 +230,7 @@ pub fn is_bus(effect: &Effect) -> bool {
     )
 }
 
-/// The attested caller key editd would derive: `local:<from>` for a
-/// registered local caller, `mesh:<service>@<peer>` for a mesh caller, else
-/// `anon`. noded strips client-supplied `broker_*` headers, so these are the
-/// broker's stamps.
-pub fn caller_key(cmd: &IncomingCommand) -> String {
-    match cmd.header("broker_origin") {
-        Some("local") if !cmd.from.is_empty() => format!("local:{}", cmd.from),
-        Some("mesh") => format!(
-            "mesh:{}@{}",
-            cmd.header("broker_service").unwrap_or("unknown"),
-            cmd.header("broker_peer").unwrap_or("unknown")
-        ),
-        _ => "anon".to_string(),
-    }
-}
+pub use citizen::caller_key;
 
 /// Start the Bus thread registered as `service` on the broker at `url`.
 pub fn spawn(

@@ -17,6 +17,10 @@ An app's supervised native Bus connection, shared by the MixOS apps
   (`BUSY: <app> is closing`) before the connection closes; `wait_done`.
 - `probe`/`forward`: single-instance launch through `<app>.ping` and
   `<app>.show`; `noded_url()`: the broker this session uses.
+- `Handle::caller_key(id)`: the pending command's broker-attested caller,
+  `local:<from>`, `mesh:<service>@<peer>` or `anon`. It is retained until
+  the app replies or disconnects. `caller_key(&IncomingCommand)` provides
+  the same formatter for apps with their own native Bus lane.
 - `Handle::subscribe(topic)` / `unsubscribe(topic)`: change subscriptions
   at runtime on the same supervised native connection and await the result.
   Reconnection retains the client's subscription set. `Delivery::Topic`

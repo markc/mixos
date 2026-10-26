@@ -373,13 +373,19 @@ RFC 8621 server builds an Email from uploaded MIME with <code>Email/import</code
 so it refuses the send; <code>Email/import</code> is future work.
 <code>email.compose</code> and <code>email.send</code> accept <code>attachments: ["/home/user/report.pdf"]</code>.
 Paths must be absolute, readable regular files; symlinks are followed.
-Compose keeps the paths in memory and Send reads their current contents.
-The dialog does not show attachments yet, and local drafts do not save them.
+Compose and local drafts keep the paths, never the file contents. Restoring
+a draft restores its attachment paths, and Send reads their current contents
+in the background. The dialog does not show attachments yet.
 Attached files follow the plain text part in <code>multipart/mixed</code>, with MIME
 types from the desktop MIME database and base64 lines of at most 76 characters.
 The whole encoded message must fit the session's <code>maxSizeUpload</code>, or 25 MiB
 when the server gives none. Paths and estimated size are checked on the Bus
-request; Send checks the files again and checks the exact encoded size.</p>
+request; Send checks the files again and checks the exact encoded size.
+An uncertain earlier send is checked with the server first, even if a local
+file has since disappeared or the upload limit has changed. A confirmed
+earlier submission is filed in Sent without sending another copy.
+Sends with attachments log the caller key and attachment paths in Email's
+application log; these details are never added to the message.</p>
 </li>
 <li>
 <p><strong>The Message menu</strong> holds everything that acts on the open email:

@@ -2030,6 +2030,10 @@ An app's supervised native Bus connection, shared by the MixOS apps
   (`BUSY: <app> is closing`) before the connection closes; `wait_done`.
 - `probe`/`forward`: single-instance launch through `<app>.ping` and
   `<app>.show`; `noded_url()`: the broker this session uses.
+- `Handle::caller_key(id)`: the pending command's broker-attested caller,
+  `local:<from>`, `mesh:<service>@<peer>` or `anon`. It is retained until
+  the app replies or disconnects. `caller_key(&IncomingCommand)` provides
+  the same formatter for apps with their own native Bus lane.
 - `Handle::subscribe(topic)` / `unsubscribe(topic)`: change subscriptions
   at runtime on the same supervised native connection and await the result.
   Reconnection retains the client's subscription set. `Delivery::Topic`
@@ -8497,13 +8501,19 @@ A malformed file loads defaults and is never overwritten.
   so it refuses the send; `Email/import` is future work.
   `email.compose` and `email.send` accept `attachments: ["/home/user/report.pdf"]`.
   Paths must be absolute, readable regular files; symlinks are followed.
-  Compose keeps the paths in memory and Send reads their current contents.
-  The dialog does not show attachments yet, and local drafts do not save them.
+  Compose and local drafts keep the paths, never the file contents. Restoring
+  a draft restores its attachment paths, and Send reads their current contents
+  in the background. The dialog does not show attachments yet.
   Attached files follow the plain text part in `multipart/mixed`, with MIME
   types from the desktop MIME database and base64 lines of at most 76 characters.
   The whole encoded message must fit the session's `maxSizeUpload`, or 25 MiB
   when the server gives none. Paths and estimated size are checked on the Bus
   request; Send checks the files again and checks the exact encoded size.
+  An uncertain earlier send is checked with the server first, even if a local
+  file has since disappeared or the upload limit has changed. A confirmed
+  earlier submission is filed in Sent without sending another copy.
+  Sends with attachments log the caller key and attachment paths in Email's
+  application log; these details are never added to the message.
 - **The Message menu** holds everything that acts on the open email:
   reply (with or without the quote), reply all, forward, star, mark read
   or unread, junk or not junk, move, and delete to Trash (confirmed when
@@ -36601,8 +36611,15 @@ the predecessor repository at revision
 - Send reads files at send time and emits multipart MIME with desktop MIME
   types, base64 and RFC 2231 filenames. The encoded message is limited by
   JMAP `maxSizeUpload`, or 25 MiB when the server advertises no limit.
-- Compose keeps attachment paths in memory. Attachment controls and draft
-  persistence will follow separately.
+- Local drafts save and restore attachment paths (never file contents),
+  including across restarts. Older drafts still load without attachments.
+- Send resolves an earlier uncertain submission before checking local files or
+  upload limits. Attachment reads and encoding run off the async runtime;
+  command validation uses metadata only, and MIME bytes are rendered once.
+- Standalone MIME builders impose no upload limit; Send applies the server's
+  limit to the exact encoded bytes.
+- Sends with attachments log the caller key and paths in the Email app.
+  Attachment controls will follow separately.
 
 ---
 
