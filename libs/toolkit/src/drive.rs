@@ -69,18 +69,7 @@ fn refusal(id: u64, code: &str, message: &str) -> Answer {
     }
 }
 
-fn viewport_not_shown(viewport: &egui::ViewportInfo) -> bool {
-    viewport.minimized == Some(true) || viewport.occluded == Some(true)
-}
-
 fn not_shown(id: u64, quiet: Duration) -> Answer {
-    if quiet.is_zero() {
-        return refusal(
-            id,
-            "NOT_SHOWN",
-            "the window is minimised or hidden: show the window or switch to its VT, then retry the capture",
-        );
-    }
     refusal(
         id,
         "NOT_SHOWN",
@@ -270,9 +259,9 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
         }
         let input_quiet_since = drive.input_quiet_since.get_or_insert(now);
         let quiet = now.saturating_duration_since(*input_quiet_since);
-        drive.refuse_unshown_captures(ctx, now, egui::ViewportId::ROOT);
-        for (&viewport, child) in &mut drive.children {
-            child.refuse_unshown_captures(ctx, now, viewport);
+        drive.refuse_unshown_captures(ctx, now);
+        for child in drive.children.values_mut() {
+            child.refuse_unshown_captures(ctx, now);
         }
         if logic_only && quiet >= INPUT_QUIET_PERIOD {
             drive.settle_input(
@@ -379,9 +368,6 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                     return Some(refusal(id, "BUSY", "viewport request queue is full"));
                 }
                 if command_name == "ui.capture" {
-                    if ctx.input(|i| i.raw.viewports.get(&target).is_some_and(viewport_not_shown)) {
-                        return Some(not_shown(id, Duration::ZERO));
-                    }
                     child.pending_captures.insert(id, Instant::now());
                 }
                 child
@@ -693,13 +679,7 @@ impl Drive {
         self.running = running;
     }
 
-    fn refuse_unshown_captures(&mut self, ctx: &Context, now: Instant, viewport: egui::ViewportId) {
-        let hidden = ctx.input(|i| {
-            i.raw
-                .viewports
-                .get(&viewport)
-                .is_some_and(viewport_not_shown)
-        });
+    fn refuse_unshown_captures(&mut self, ctx: &Context, now: Instant) {
         for (id, accepted) in std::mem::take(&mut self.pending_captures) {
             if self.answers.iter().any(|answer| answer.id == id) {
                 continue;
@@ -717,7 +697,7 @@ impl Drive {
                 .last_ui_pass
                 .map_or(accepted, |pass| pass.max(accepted));
             let quiet = now.saturating_duration_since(since);
-            if !hidden && quiet < CAPTURE_QUIET_PERIOD {
+            if quiet < CAPTURE_QUIET_PERIOD {
                 self.pending_captures.insert(id, accepted);
                 ctx.request_repaint_after(CAPTURE_QUIET_PERIOD - quiet);
                 continue;
@@ -733,8 +713,7 @@ impl Drive {
             {
                 self.running = None;
             }
-            self.answers
-                .push(not_shown(id, if hidden { Duration::ZERO } else { quiet }));
+            self.answers.push(not_shown(id, quiet));
         }
     }
 
@@ -793,9 +772,6 @@ impl Drive {
     ) -> Option<Answer> {
         if !args.is_object() {
             return Some(refusal(id, "ARGUMENT", "arguments must be a JSON object"));
-        }
-        if command_name == "ui.capture" && ctx.input(|i| viewport_not_shown(i.viewport())) {
-            return Some(not_shown(id, Duration::ZERO));
         }
         let job = match command_name {
             "ui.tree" => return Some(self.tree_answer(id, args)),
@@ -1770,7 +1746,7 @@ mod tests {
     }
 
     #[test]
-    fn minimized_and_occluded_captures_refuse_during_logic() {
+    fn minimized_and_occluded_captures_wait_for_a_pass_or_the_quiet_deadline() {
         for minimized in [false, true] {
             let (ctx, _temp) = capture_context();
             let mut input = RawInput::default();
@@ -1778,18 +1754,53 @@ mod tests {
             viewport.minimized = Some(minimized);
             viewport.occluded = Some(!minimized);
             let _output = ctx.run_logic(&input, |ctx| {
-                let answer = request(ctx, 1, "ui.capture", &json!({})).unwrap();
-                assert_eq!(answer.rc, 10);
-                assert_eq!(answer.body["error_code"], "NOT_SHOWN");
-                assert!(
-                    answer.body["message"]
-                        .as_str()
-                        .unwrap()
-                        .contains("minimised or hidden")
-                );
-                assert!(!answer.body["message"].as_str().unwrap().contains("0 ms"));
+                assert!(request(ctx, 1, "ui.capture", &json!({})).is_none());
+                let now = Instant::now();
+                assert!(logic_at(ctx, now + Duration::from_millis(250)).is_empty());
+                assert!(pending(ctx));
+                let answers = logic_at(ctx, now + CAPTURE_QUIET_PERIOD);
+                assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
                 assert!(!pending(ctx));
             });
+        }
+    }
+
+    #[test]
+    fn hidden_capture_completes_after_an_offscreen_ui_pass() {
+        for child in [false, true] {
+            let (ctx, temp) = capture_context();
+            let target = if child {
+                let target = egui::ViewportId::from_hash_of("hidden-child");
+                register_viewport(&ctx, egui::ViewportId::ROOT, "child", target);
+                target
+            } else {
+                egui::ViewportId::ROOT
+            };
+            let mut input = RawInput::default();
+            input.viewports.entry(target).or_default().occluded = Some(true);
+            ctx.run_logic(&input, |ctx| {
+                let args = if child { json!({"viewport":"child", "name":"hidden.png"}) }
+                    else { json!({"name":"hidden.png"}) };
+                assert!(request(ctx, 7, "ui.capture", &args).is_none());
+                assert!(logic(ctx).is_empty());
+            });
+            input.viewport_id = target;
+            let output = ctx.run_ui(input, |_| {});
+            let callback = output.viewport_output.values()
+                .flat_map(|v| &v.commands)
+                .find_map(|command| match command {
+                    ViewportCommand::Screenshot(callback) => Some(callback.clone()),
+                    _ => None,
+                }).expect("hidden pass requests screenshot");
+            output.drop_without_applying_deltas();
+            callback.complete(std::sync::Arc::new(ColorImage::filled(
+                [67, 31], egui::Color32::RED,
+            )));
+            let answers = logic(&ctx);
+            assert_eq!(answers.len(), 1);
+            assert_eq!((answers[0].id, answers[0].rc), (7, 0));
+            assert!(temp.path().join("demo/captures/hidden.png").is_file());
+            assert!(!pending(&ctx));
         }
     }
 

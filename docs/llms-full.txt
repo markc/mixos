@@ -35239,7 +35239,10 @@ be queued. The [driving guide](../docs/drive.md) shows them in use.
 
 Bus logic also runs when Wayland withholds a window's frame callbacks (for
 example, on another virtual desktop). The eframe integration allows 250 ms
-for a normal redraw, then runs logic without a UI pass or paint. A
+for a normal redraw, then runs logic without a UI pass or paint unless a
+pending screenshot or `RequestPaintWhileHidden` needs pixels. With wgpu,
+those requests run a full UI pass into an offscreen texture, without
+acquiring or presenting a compositor surface. A
 normal redraw cancels that fallback. Eframe installs no periodic wake, but
 a hidden app that keeps calling `request_repaint()` runs logic at roughly
 250 ms intervals. Queries and app actions still run. Paint-dependent input
@@ -35257,9 +35260,10 @@ after at least 1.5 s without a frame, with a scheduled logic wake to check it
 (the deadline plus up to the toolkit's logic-wake grace). The threshold stays
 above compd's 1 Hz parked/occluded callback trickle with margin, so captures
 progressing there continue.
-Minimised or occluded viewports refuse immediately only when the platform
-reports that state in that pass. Wayland does not; the 1.5 s rule applies. Show the window or
-switch to its VT, then retry. Idle time alone does not refuse a capture;
+Minimised and occluded viewports can be captured through the wgpu offscreen
+path. The 1.5 s rule remains a backstop when no UI pass arrives, including
+glow and windows without an initialised surface. Show the window or switch
+to its VT if that backstop refuses a capture. Idle time alone does not refuse a capture;
 a UI pass restarts the quiet clock. `Options::capture_timeout` remains the backstop for missing
 screenshot events (`CAPTURE`), independently of input settling. The rule
 also applies to child captures still awaiting dispatch to their UI, and
