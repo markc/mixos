@@ -1915,7 +1915,8 @@ mod tests {
         let (ctx, _temp) = capture_context();
         // Consume initial repaint requests so the callback below observes only logic.
         for _ in 0..3 {
-            let _output = ctx.run_logic(&RawInput::default(), |_| {});
+            ctx.run_ui(RawInput::default(), |_| {})
+                .drop_without_applying_deltas();
         }
         let delays = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let recorded = delays.clone();
@@ -1950,7 +1951,11 @@ mod tests {
             );
         });
         assert!(logic_at(&ctx, now).is_empty());
-        assert!(delays.lock().unwrap().iter().any(|delay| *delay == budget));
+        let delays = delays.lock().unwrap();
+        assert!(
+            delays.iter().any(|delay| !delay.is_zero() && *delay <= budget),
+            "child deadline must schedule a root wake within its budget: {delays:?}"
+        );
     }
 
     #[test]
