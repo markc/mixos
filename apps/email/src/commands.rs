@@ -855,16 +855,22 @@ fn addresses(args: &Value, key: &str) -> Checked<Vec<jmap::EmailAddress>> {
 fn attachment_paths(args: &Value) -> Checked<Vec<std::path::PathBuf>> {
     match args.get("attachments") {
         None => Ok(Vec::new()),
-        Some(Value::Array(items)) => items.iter().map(|item| {
-            item.as_str().map(std::path::PathBuf::from)
-                .ok_or_else(|| invalid("attachments must hold absolute file paths"))
-        }).collect(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .map(std::path::PathBuf::from)
+                    .ok_or_else(|| invalid("attachments must hold absolute file paths"))
+            })
+            .collect(),
         _ => Err(invalid("attachments must be a list of absolute file paths")),
     }
 }
 
 fn validate_message(state: &State, account: &str, draft: &Composed) -> Checked<()> {
-    let limit = state.account(account).and_then(|view| view.session.as_ref())
+    let limit = state
+        .account(account)
+        .and_then(|view| view.session.as_ref())
         .and_then(|session| session.max_size_upload);
     jmap::validate_attachments(draft, limit).map_err(|error| {
         let (code, message) = server_refusal(&error);
@@ -1562,26 +1568,47 @@ mod tests {
         let loop_path = dir.path().join("unreadable");
         std::os::unix::fs::symlink(&loop_path, &loop_path).unwrap();
         let oversized = dir.path().join("large.bin");
-        std::fs::File::create(&oversized).unwrap().set_len(jmap::DEFAULT_UPLOAD_LIMIT).unwrap();
+        std::fs::File::create(&oversized)
+            .unwrap()
+            .set_len(jmap::DEFAULT_UPLOAD_LIMIT)
+            .unwrap();
         for command_name in ["email.send", "email.compose"] {
             for (path, expected) in [
-                (std::path::PathBuf::from("relative.txt"), code::ATTACHMENT_RELATIVE),
+                (
+                    std::path::PathBuf::from("relative.txt"),
+                    code::ATTACHMENT_RELATIVE,
+                ),
                 (dir.path().to_owned(), code::ATTACHMENT_NOT_FILE),
                 (dir.path().join("missing"), code::ATTACHMENT_NOT_FILE),
                 (loop_path.clone(), code::ATTACHMENT_UNREADABLE),
                 (oversized.clone(), code::MESSAGE_TOO_LARGE),
             ] {
                 let mut state = connected_many(&["a"]);
-                run(&mut state, command_name, json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [path]}));
+                run(
+                    &mut state,
+                    command_name,
+                    json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [path]}),
+                );
                 let reply = &state.take_replies()[0];
-                assert_eq!((reply.rc, reply.body["error_code"].as_str()), (10, Some(expected)), "{command_name}: {reply:?}");
+                assert_eq!(
+                    (reply.rc, reply.body["error_code"].as_str()),
+                    (10, Some(expected)),
+                    "{command_name}: {reply:?}"
+                );
                 assert!(!reply.body["message"].as_str().unwrap().is_empty());
                 assert!(state.compose.is_none());
                 assert!(state.take_work().is_empty());
             }
             let mut state = connected_many(&["a"]);
-            run(&mut state, command_name, json!({"to": "ann@example.invalid", "subject": "Files", "attachments": "relative.txt"}));
-            assert_eq!(state.take_replies()[0].body["error_code"], code::INVALID_ARGUMENT);
+            run(
+                &mut state,
+                command_name,
+                json!({"to": "ann@example.invalid", "subject": "Files", "attachments": "relative.txt"}),
+            );
+            assert_eq!(
+                state.take_replies()[0].body["error_code"],
+                code::INVALID_ARGUMENT
+            );
         }
     }
 
@@ -1592,16 +1619,24 @@ mod tests {
         let link = dir.path().join("link.txt");
         std::fs::write(&path, b"contents").unwrap();
         std::os::unix::fs::symlink(&path, &link).unwrap();
-        let args = json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [link]});
+        let args =
+            json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [link]});
         let mut state = connected_many(&["a"]);
         run(&mut state, "email.compose", args.clone());
         assert_eq!(state.take_replies()[0].rc, 0);
-        assert_eq!(state.compose.as_ref().unwrap().draft.attachments, [link.clone()]);
+        assert_eq!(
+            state.compose.as_ref().unwrap().draft.attachments,
+            [link.clone()]
+        );
         state.apply_ui(crate::view::UiEvent::SendCompose);
-        assert!(state.take_work().iter().any(|work| matches!(work, Work::Send { draft, .. } if draft.attachments == [link.clone()])));
+        assert!(state.take_work().iter().any(
+            |work| matches!(work, Work::Send { draft, .. } if draft.attachments == [link.clone()])
+        ));
         let mut state = connected_many(&["a"]);
         run(&mut state, "email.send", args);
-        assert!(matches!(queued_write(&mut state), Write::Send { draft } if draft.attachments == [link]));
+        assert!(
+            matches!(queued_write(&mut state), Write::Send { draft } if draft.attachments == [link])
+        );
     }
 
     #[test]
@@ -1611,9 +1646,24 @@ mod tests {
         std::fs::write(&file, b"contents").unwrap();
         for command_name in ["email.send", "email.compose"] {
             let mut state = connected_many(&["a"]);
-            state.accounts.iter_mut().find(|view| view.id() == "a").unwrap().session.as_mut().unwrap().max_size_upload = Some(10);
-            run(&mut state, command_name, json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [file]}));
-            assert_eq!(state.take_replies()[0].body["error_code"], code::MESSAGE_TOO_LARGE);
+            state
+                .accounts
+                .iter_mut()
+                .find(|view| view.id() == "a")
+                .unwrap()
+                .session
+                .as_mut()
+                .unwrap()
+                .max_size_upload = Some(10);
+            run(
+                &mut state,
+                command_name,
+                json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [file]}),
+            );
+            assert_eq!(
+                state.take_replies()[0].body["error_code"],
+                code::MESSAGE_TOO_LARGE
+            );
         }
     }
 
