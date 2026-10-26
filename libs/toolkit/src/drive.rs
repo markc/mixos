@@ -1184,6 +1184,7 @@ impl Drive {
             ),
             Job::Scroll { at, delta } => {
                 let wheel = Event::MouseWheel {
+                    source: egui::MouseWheelSource::Unknown,
                     unit: MouseWheelUnit::Point,
                     delta,
                     phase: TouchPhase::Move,

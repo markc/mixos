@@ -552,6 +552,7 @@ fn stacked_groups_keep_their_own_scroll_and_widget_ids_across_a_reorder() {
     let over = h.get_by_label("Alpha row 1").rect().center();
     h.hover_at(over);
     h.event(Event::MouseWheel {
+        source: egui::MouseWheelSource::Unknown,
         unit: MouseWheelUnit::Point,
         delta: vec2(0.0, -200.0),
         phase: TouchPhase::Move,
@@ -681,6 +682,7 @@ fn sliders_follow_the_pointer_reset_on_double_click_and_step_on_the_wheel() {
     h.hover_at(at(0.5));
     h.run();
     let wheel = |modifiers| Event::MouseWheel {
+        source: egui::MouseWheelSource::Unknown,
         unit: MouseWheelUnit::Line,
         delta: vec2(0.0, 1.0),
         phase: TouchPhase::Move,

@@ -289,6 +289,7 @@ impl Translator {
                     }
                 };
                 out.push(egui::Event::MouseWheel {
+                    source: egui::MouseWheelSource::Unknown,
                     unit,
                     delta,
                     phase: egui::TouchPhase::Move,
@@ -479,7 +480,7 @@ mod tests {
         let events = run(vec![Input::Scroll(delta)]);
         assert!(matches!(
             events[0],
-            egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta, .. } if delta == egui::vec2(0.0, -2.0)
+            egui::Event::MouseWheel { source: egui::MouseWheelSource::Unknown, unit: egui::MouseWheelUnit::Line, delta, .. } if delta == egui::vec2(0.0, -2.0)
         ));
         assert_eq!(wheel(0, 0, 0.0, 0.0), None);
     }

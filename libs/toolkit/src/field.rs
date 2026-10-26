@@ -320,7 +320,7 @@ impl Widget for ValueField<'_> {
         let layout = egui::Layout::centered_and_justified(egui::Direction::TopDown);
         let mut cell = ui.new_child(
             UiBuilder::new()
-                .id(id.with("cell"))
+                .scope_id(id.with("cell"))
                 .max_rect(inner)
                 .layout(layout),
         );
@@ -332,8 +332,7 @@ impl Widget for ValueField<'_> {
                 .id(id)
                 .frame(egui::Frame::new().inner_margin(field.padding))
                 .font(number_font.clone())
-                .horizontal_align(Align::RIGHT)
-                .vertical_align(Align::Center)
+                .align(egui::Align2::RIGHT_CENTER)
                 .desired_width(inner.width())
                 .min_size(inner.size());
             response = cell.add(output);
@@ -441,7 +440,7 @@ pub fn text_edit<'t>(text: &'t mut String, hint: &str, width: f32) -> TextField<
         edit: TextEdit::singleline(text)
             .hint_text(hint)
             .desired_width(width)
-            .vertical_align(Align::Center),
+            .align(egui::Align2::LEFT_CENTER),
         search: false,
     }
 }

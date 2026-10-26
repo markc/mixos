@@ -502,6 +502,7 @@ fn a_submenu_closes_when_its_row_scrolls_out_of_view() {
     // puts it partly below this deliberately short viewport on first open.
     h.hover_at(h.get_by_label("New…").rect().center());
     h.event(Event::MouseWheel {
+        source: egui::MouseWheelSource::Unknown,
         unit: egui::MouseWheelUnit::Point,
         delta: egui::vec2(0.0, -40.0),
         phase: egui::TouchPhase::Move,
@@ -521,6 +522,7 @@ fn a_submenu_closes_when_its_row_scrolls_out_of_view() {
         "hovering shows the submenu"
     );
     h.event(Event::MouseWheel {
+        source: egui::MouseWheelSource::Unknown,
         unit: egui::MouseWheelUnit::Point,
         delta: egui::vec2(0.0, -2000.0),
         phase: egui::TouchPhase::Move,

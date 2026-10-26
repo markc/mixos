@@ -1054,6 +1054,7 @@ impl<P: LayerProgram + 'static> PointerHandler for State<P> {
                     self.push_to(
                         &wl,
                         egui::Event::MouseWheel {
+                            source: egui::MouseWheelSource::Unknown,
                             unit,
                             delta,
                             // Movement only: an End phase would drop the

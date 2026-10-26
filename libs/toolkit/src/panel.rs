@@ -365,7 +365,7 @@ pub fn stack(
     let mut extents = Vec::with_capacity(order.len());
     let mut dragging: Option<(usize, Response)> = None;
     for (position, &group) in order.iter().enumerate() {
-        let shown = ui.scope_builder(egui::UiBuilder::new().id(id.with(group)), |ui| {
+        let shown = ui.scope_builder(egui::UiBuilder::new().scope_id(id.with(group)), |ui| {
             show(ui, group)
         });
         extents.push(shown.response.rect.y_range());

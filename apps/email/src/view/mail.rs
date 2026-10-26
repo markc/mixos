@@ -603,9 +603,9 @@ const LINE: f32 = 48.0;
 
 /// Scroll the body with the keys, before its scroll area draws, when the
 /// reader has the keyboard. The area keeps its offset under its own id.
-fn scroll_with_keys(ui: &mut Ui, focused: bool) {
+fn scroll_with_keys(ui: &mut Ui, focused: bool) -> Option<f32> {
     if !focused {
-        return;
+        return None;
     }
     let body = ui.make_persistent_id(BODY_SCROLL);
     let page = ui.available_height() * 0.9;
@@ -626,11 +626,11 @@ fn scroll_with_keys(ui: &mut Ui, focused: bool) {
         step
     });
     if step != 0.0
-        && let Some(mut scroll) = egui::scroll_area::State::load(ui.ctx(), body)
+        && let Some(scroll) = egui::scroll_area::State::load(ui.ctx(), body)
     {
-        scroll.offset.y = (scroll.offset.y + step).max(0.0);
-        scroll.store(ui.ctx(), body);
+        return Some((scroll.clamped_offset().y + step).max(0.0));
     }
+    None
 }
 
 /// The open email: subject first and largest, then From, To and the date,
@@ -694,8 +694,10 @@ fn message(
     toolkit::bars::hairline(ui);
     toolkit::content::surface(ui, content, |ui| {
         // The keys and the area share this ui, so they share the scroll state.
-        scroll_with_keys(ui, focused);
-        ScrollArea::vertical()
+        let offset = scroll_with_keys(ui, focused);
+        let area = ScrollArea::vertical();
+        let area = if let Some(offset) = offset { area.vertical_scroll_offset(offset) } else { area };
+        area
             .id_salt(BODY_SCROLL)
             .auto_shrink(false)
             .show(ui, |ui| {

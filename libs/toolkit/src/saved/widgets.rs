@@ -14,6 +14,8 @@ pub struct Widgets {
     pub groups: BTreeMap<String, crate::panel::GroupState>,
     #[serde(skip)]
     applied: BTreeSet<String>,
+    #[serde(skip)]
+    panel_ids: BTreeMap<String, egui::Id>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Scroll {
@@ -48,7 +50,7 @@ fn with<R>(ctx: &egui::Context, f: impl FnOnce(&mut Widgets) -> R) -> Option<R> 
 /// A panel's size share. `share` is also the app's Bus-controlled value. Only
 /// dragging records a changed size, so content minimums cannot feed back.
 /// Construct the egui Panel with the same `name` as its ID. The resize handle
-/// ID below follows pinned egui 0.36; the drag regression test guards it.
+/// ID below follows pinned egui 0.37; the drag regression test guards it.
 #[expect(
     clippy::too_many_arguments,
     reason = "thin adapter retains the panel builder and size policy"
@@ -63,6 +65,10 @@ pub fn panel<R>(
     horizontal: bool,
     body: impl FnOnce(&mut egui::Ui) -> R,
 ) -> (egui::InnerResponse<R>, Option<f32>) {
+    let panel_id = ui.make_persistent_id(name);
+    with(ui.ctx(), |w| {
+        w.panel_ids.insert(name.into(), panel_id);
+    });
     let (share, restored) = with(ui.ctx(), |w| {
         if w.applied.insert(format!("panel:{name}")) {
             let saved = panel_share(w, name, share);
@@ -79,7 +85,7 @@ pub fn panel<R>(
         if d.get_temp::<f32>(key)
             .is_some_and(|old| (old - extent).abs() > 0.5)
         {
-            d.remove::<egui::containers::panel::PanelState>(egui::Id::unique(name));
+            d.remove::<egui::containers::panel::PanelState>(panel_id);
         }
         d.insert_temp(key, extent);
     });
@@ -101,7 +107,7 @@ pub fn panel<R>(
         shown.response.rect.height()
     };
     let changed = ui
-        .read_response(egui::Id::unique(name).with("__resize"))
+        .read_response(panel_id.with("__resize"))
         .is_some_and(|r| r.dragged() || r.drag_stopped())
         .then_some((size / extent.max(1.0)).clamp(*limits.start(), *limits.end()))
         .filter(|v| (*v - share).abs() > 0.005)
@@ -119,13 +125,16 @@ pub fn panel<R>(
 
 /// Set a share from a Bus command and invalidate egui's remembered pixels.
 pub fn set_panel(ctx: &egui::Context, name: &str, share: f32) {
-    with(ctx, |w| {
+    let id = with(ctx, |w| {
         w.panels.insert(name.into(), share);
         // A Bus choice made before the first layout must win over loading
         // the previous session's share on that first layout.
         w.applied.insert(format!("panel:{name}"));
-    });
-    ctx.data_mut(|d| d.remove::<egui::containers::panel::PanelState>(egui::Id::unique(name)));
+        w.panel_ids.get(name).copied()
+    }).flatten();
+    if let Some(id) = id {
+        ctx.data_mut(|d| d.remove::<egui::containers::panel::PanelState>(id));
+    }
 }
 
 /// A restored selection's visibility takes priority over the old raw offset.
@@ -168,24 +177,21 @@ pub fn scroll<R>(
         }
     })
     .flatten();
-    // First show lays out content. Setting egui's state now applies next frame,
-    // with bounds known, rather than clamping against an empty first layout.
+    // The builder restores the offset before layout; egui clamps it to the
+    // new content bounds during this pass. Persist only the clamped result.
+    let area = if let Some(saved) = prior {
+        area.scroll_offset(egui::vec2(saved.offset[0], saved.offset[1]))
+    } else {
+        area
+    };
     let out = area.id_salt(("saved-scroll", name, key)).show(ui, body);
-    let max = (out.content_size - out.inner_rect.size()).max(egui::Vec2::ZERO);
-    let restore = prior.map(|s| egui::vec2(s.offset[0], s.offset[1]).clamp(egui::Vec2::ZERO, max));
-    if let Some(offset) = restore {
-        let mut state = out.state;
-        state.offset = offset;
-        state.store(ui.ctx(), out.id);
-        ui.ctx().request_repaint();
-    }
     // Scrolled by the user before the rows were ready: the user's place
     // wins, so the saved offset is never applied over it.
-    let user_scrolled = !ready && out.state.offset != egui::Vec2::ZERO;
+    let user_scrolled = !ready && out.state.clamped_offset() != egui::Vec2::ZERO;
     with(ui.ctx(), |w| {
         if ready || user_scrolled {
             w.applied.insert(token);
-            let offset = restore.unwrap_or(out.state.offset);
+            let offset = out.state.clamped_offset();
             w.scrolls.insert(
                 name.into(),
                 Scroll {
@@ -345,6 +351,7 @@ mod tests {
     #[test]
     fn panel_drag_records_the_share_and_unrelated_clicks_do_not() {
         let mut h = egui_kittest::Harness::builder()
+            .with_context_setup(|ctx| Widgets::default().install(ctx))
             .with_size(egui::vec2(1000.0, 600.0))
             .build_ui_state(
                 |ui, share: &mut f32| {
@@ -367,7 +374,8 @@ mod tests {
                 0.3,
             );
         h.run();
-        let edge = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::unique("left"))
+        let id = shared(&h.ctx).unwrap().lock().unwrap().panel_ids["left"];
+        let edge = egui::containers::panel::PanelState::load(&h.ctx, id)
             .unwrap()
             .outer_rect
             .right();
@@ -457,7 +465,7 @@ mod tests {
                     ui.allocate_space(egui::vec2(100.0, 1000.0));
                 },
             );
-            assert!(out.state.offset.y > 800.0);
+            assert!(out.state.clamped_offset().y > 800.0);
         });
         draw(&ctx, |ui| {
             let out = scroll(
@@ -470,7 +478,7 @@ mod tests {
                     ui.allocate_space(egui::vec2(100.0, 1000.0));
                 },
             );
-            assert_eq!(out.state.offset.y, 0.0);
+            assert_eq!(out.state.clamped_offset().y, 0.0);
         });
     }
     #[test]
@@ -518,9 +526,11 @@ mod tests {
         }
         widgets.collect(&ctx);
         assert_eq!(widgets.scrolls["services"].offset[1], 300.0);
-        let mut user = egui::scroll_area::State::load(&ctx, id).unwrap();
-        user.offset.y = 80.0;
-        user.store(&ctx, id);
+        draw(&ctx, |ui| {
+            scroll(ui, "services", None, false,
+                egui::ScrollArea::vertical().max_height(100.0).vertical_scroll_offset(80.0),
+                |ui| { ui.allocate_space(egui::vec2(100.0, 1000.0)); });
+        });
         draw(&ctx, |ui| {
             scroll(
                 ui,
@@ -564,15 +574,17 @@ mod tests {
                     },
                 );
                 *id = out.id;
-                *offset = out.state.offset.y;
+                *offset = out.state.clamped_offset().y;
             });
         };
         let (mut id, mut offset) = (egui::Id::NULL, 0.0);
         tree(false, &mut id, &mut offset);
         // The person scrolls while discovery is still running.
-        let mut user = egui::scroll_area::State::load(&ctx, id).unwrap();
-        user.offset.y = 80.0;
-        user.store(&ctx, id);
+        draw(&ctx, |ui| {
+            scroll(ui, "services", None, false,
+                egui::ScrollArea::vertical().max_height(100.0).vertical_scroll_offset(80.0),
+                |ui| { ui.allocate_space(egui::vec2(100.0, 1000.0)); });
+        });
         tree(false, &mut id, &mut offset);
         for _ in 0..2 {
             tree(true, &mut id, &mut offset);

@@ -49,7 +49,7 @@ use egui::accesskit::{Role, SortDirection};
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
 use egui::{
     Color32, EventFilter, FontId, Id, Key, Layout, Modifiers, Rect, Sense, Stroke, StrokeKind,
-    TextStyle, Ui, UiBuilder, WidgetInfo, Role, pos2, vec2,
+    TextStyle, Ui, UiBuilder, WidgetInfo, pos2, vec2,
 };
 use egui_extras::TableBuilder;
 use serde_json::{Value, json};

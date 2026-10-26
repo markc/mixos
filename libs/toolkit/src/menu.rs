@@ -2053,7 +2053,7 @@ mod tests {
                                         );
                                     }
                                 });
-                                offset = out.state.offset.y;
+                                offset = out.state.clamped_offset().y;
                             });
                         });
                     },
