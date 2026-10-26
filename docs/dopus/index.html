@@ -334,13 +334,23 @@ FUSE and automounted filesystems too.</p>
 <tr><td><code>dopus.theme.set</code></td><td><code>scheme</code>, <code>mode</code></td><td>this window's look</td></tr>
 <tr><td><code>dopus.quit</code></td><td></td><td>closes the window</td></tr>
 </tbody></table>
-<p><strong>File operations are keyboard-only.</strong> <code>dopus.action</code> refuses every <code>file.*</code>
-action (<code>FORBIDDEN</code>). Input played through the drive commands (<code>dopus.ui.*</code>)
-is held to the same rule: while it runs, file actions and opening files are
-refused, and a delete, name or drop dialog can be dismissed but not
-accepted. The rule holds for the whole time drive input runs, so a key you
-press yourself in that moment is refused too; press it again after. An agent reads, navigates, sorts and selects through DOpus, but
-never creates, renames, moves, copies, deletes or opens files through it.</p>
+<p>Every action accepts local and mesh callers, including <code>file.open</code>,
+<code>file.new-folder</code>, <code>file.rename</code>, <code>file.copy-other-pane</code>,
+<code>file.move-other-pane</code> and <code>file.delete</code>. <code>dopus.actions.list</code> reports the
+same availability as the keyboard and menus: selection, an idle worker and
+valid arguments still matter.</p>
+<p>File actions keep the normal name prompts, destructive confirmations and
+drop choices. After <code>dopus.action {id:"file.new-folder"}</code>, use
+<code>dopus.ui.type {text:"Projects"}</code> and <code>dopus.ui.click {label:"OK"}</code> to
+answer the focused prompt. For rename, select the old text first with
+<code>dopus.ui.key {key:"A",modifiers:["ctrl"]}</code>. Answer a delete confirmation
+with <code>dopus.ui.click {label:"Yes"}</code> or cancel with <code>label:"No"</code>; a drop
+dialog offers <strong>Move Here</strong>, <strong>Copy Here</strong> and <strong>Cancel</strong>. These are the
+existing drive commands acting on the same dialogs a person sees. There is
+no separate dialog-answer command. <code>dopus.ui.tree</code> gives the current
+accessible labels when using another language. Delete keeps its normal
+confirmation. Existing destinations refuse a collision; they are never
+silently overwritten.</p>
 <p>The window is drivable like every MixOS app, including its menus: see
 <a href="/docs/drive/">driving an app</a> (<code>dopus.ui.*</code>, <code>dopus.window</code>). The commands are
 registered in <code>docs/docs/spec/bus/commands.conf.mix</code>.</p>
@@ -351,7 +361,9 @@ reached (<code>menu</code>, <code>shortcut</code>, <code>ui</code> or <code>bus<
 action is not published.</p>
 <p><code>dopus --headless</code> runs the core and the Bus port without a window, for
 tests: the same commands, minus those that need a window. It publishes its
-accepted <code>dopus.action</code> runs on <code>&lt;service&gt;.action.executed</code> too.</p>
+accepted <code>dopus.action</code> runs on <code>&lt;service&gt;.action.executed</code> too.
+Headless instances cancel name prompts and confirmations because there is
+no window to answer them; copy and move still use the real filesystem worker.</p>
 <h2 id="macro-bus-commands">Macro Bus commands</h2>
 <p>The shared <a href="/macros/#bus-commands">macro Bus surface</a> uses this process's
 catalogue and runner. Subscribe to <code>&lt;service&gt;.macros.finished</code> for completion, where <code>service</code> is

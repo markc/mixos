@@ -239,10 +239,6 @@ pub fn settle(
                             json!({"executed": command, "result": result, "status": app.status,
                                 "dialog": app.ui.dialog, "job": app.job().map(crate::app::JobKind::name)}),
                         ),
-                        Err(Error::Denied { .. }) => (
-                            10,
-                            json!({"error_code":"DENIED","message":crate::label("command-denied")}),
-                        ),
                         Err(Error::Unknown(_)) => (
                             10,
                             json!({"error_code":"UNKNOWN_ACTION","message":crate::label("unknown-action")}),

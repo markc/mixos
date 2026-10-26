@@ -9,6 +9,8 @@ pub const TRAFFIC_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Default, serde::Serialize)]
 pub struct Workshop {
+    pub new_title: String,
+    pub focus_editor: bool,
     pub destination: String,
     pub next_ticket: u64,
     pub latest_open: u64,
@@ -170,7 +172,7 @@ fn redact(value: &mut Value) {
 impl Engine {
     pub fn workshop_completion(&mut self, ticket: u64, operation: &str) -> bool {
         self.workshop.pending = self.workshop.pending.saturating_sub(1);
-        (operation != "macros.open" || ticket == self.workshop.latest_open)
+        (!matches!(operation, "macros.open" | "macros.new") || ticket == self.workshop.latest_open)
             && (operation != "catalogues" || ticket == self.workshop.latest_catalogues)
     }
     pub fn reveal_macro(&mut self) {
@@ -193,6 +195,58 @@ impl Engine {
             self.ui.expanded.extend(path);
         }
     }
+    pub fn macro_app(&self) -> Option<&str> {
+        self.workshop
+            .selected
+            .as_ref()
+            .map(|(app, _)| app.as_str())
+            .or_else(|| self.ui.row_key.as_deref()?.strip_prefix("macros:"))
+    }
+
+    pub fn can_new_macro(&self) -> bool {
+        self.macro_app().is_some() && !self.busy() && self.ui.dialog.is_none() && !self.quitting
+    }
+
+    pub fn new_macro(&mut self) {
+        if self.can_new_macro() {
+            self.workshop.new_title.clear();
+            self.open(crate::Dialog::NewMacro);
+        }
+    }
+
+    pub fn confirm_new_macro(&mut self) {
+        if self.ui.dialog != Some(crate::Dialog::NewMacro)
+            || self.workshop.new_title.trim().is_empty()
+        {
+            return;
+        }
+        let Some(app) = self.macro_app().map(str::to_owned) else {
+            return;
+        };
+        let title = self.workshop.new_title.trim().to_owned();
+        self.close_dialog();
+        self.macro_action("macros.new", json!({"app":app,"title":title}), None);
+    }
+
+    /// Both opening and creating a macro use the same editor state transition.
+    pub fn open_macro_document(&mut self, app: &str, document: &Value) {
+        let id = document["id"].as_str().unwrap_or_default();
+        self.ui.selected = None;
+        self.ui.row_key = Some(format!("macro:{app}:{id}"));
+        self.ui.expanded.insert(format!("macros:{app}"));
+        if let Some(catalogue) = document.get("catalogue") {
+            self.workshop
+                .catalogues
+                .insert(app.to_owned(), catalogue.clone());
+        }
+        self.workshop.selected = Some((app.to_owned(), id.to_owned()));
+        self.workshop.document = document.clone();
+        self.workshop.draft = None;
+        self.workshop.saved_text = None;
+        self.workshop.focus_editor = true;
+        self.reveal_macro();
+    }
+
     pub fn macro_command(&mut self, operation: &str) {
         let mut args = std::mem::replace(&mut self.workshop.arguments, json!({}));
         if !args.is_object() {
@@ -361,7 +415,7 @@ impl Engine {
         self.workshop.pending += 1;
         self.workshop.next_ticket += 1;
         let ticket = self.workshop.next_ticket;
-        if operation == "macros.open" {
+        if matches!(operation, "macros.open" | "macros.new") {
             self.workshop.latest_open = ticket;
         }
         if operation == "catalogues" {
@@ -447,6 +501,30 @@ impl Engine {
 mod tests {
     use super::*;
     #[test]
+    fn title_dialog_confirms_in_the_selected_app_or_global_group() {
+        for app in ["ced", "global"] {
+            let mut engine = Engine::new(str::to_owned);
+            let Effect::Discover { ticket } = engine.take_effects().pop().unwrap() else {
+                panic!("discovery")
+            };
+            engine.discovered(ticket, crate::Snapshot::default());
+            engine.take_effects();
+            engine.ui.row_key = Some(format!("macros:{app}"));
+            engine.new_macro();
+            assert_eq!(engine.ui.dialog, Some(crate::Dialog::NewMacro));
+            engine.workshop.new_title = "  ".into();
+            engine.confirm_new_macro();
+            assert!(engine.take_effects().is_empty());
+            engine.workshop.new_title = "  Fresh macro  ".into();
+            engine.confirm_new_macro();
+            assert!(engine.ui.dialog.is_none());
+            assert!(
+                matches!(&engine.take_effects()[..], [Effect::Workshop { operation, args, .. }]
+                if operation == "macros.new" && args == &json!({"app":app,"title":"Fresh macro"}))
+            );
+        }
+    }
+    #[test]
     fn observe_events_never_generate_reply_effects() {
         let mut engine = Engine::new(str::to_owned);
         engine.take_effects();
@@ -513,6 +591,13 @@ mod tests {
         assert!(engine.workshop_completion(second, "macros.open"));
         assert_eq!(engine.workshop.pending, 0);
         assert_ne!(first, second);
+        engine.queue_workshop("macros.new", json!({"app":"ced","title":"Fresh"}), None);
+        let creation = engine.workshop.latest_open;
+        engine.queue_workshop("macros.open", json!({"app":"ced","id":"other"}), None);
+        let navigation = engine.workshop.latest_open;
+        assert!(!engine.workshop_completion(creation, "macros.new"));
+        assert!(engine.workshop_completion(navigation, "macros.open"));
+        assert_eq!(engine.workshop.pending, 0);
     }
 
     #[test]

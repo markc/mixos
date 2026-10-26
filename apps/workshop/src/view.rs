@@ -26,6 +26,9 @@ pub enum UiEvent {
     MacroTarget(String),
     CancelDelete,
     MacroDraft(String),
+    NewMacroTitle(String),
+    ConfirmNewMacro,
+    EditorFocused,
     Macro(String, serde_json::Value),
     Dock(bool),
     DockSide(DockSide),
@@ -227,18 +230,52 @@ pub fn view(
         let title = match dialog {
             Dialog::About => "about",
             Dialog::Shortcuts => "shortcuts",
+            Dialog::NewMacro => "macro-new",
         };
         let id = egui::Id::unique("dialog").with(title);
         // The shortcuts in force, from the registry: the profile can rebind them.
+        let buttons = if dialog == Dialog::NewMacro {
+            vec![
+                Choice::new(label("macro-create"), dialog::Role::Default)
+                    .enabled(!engine.workshop.new_title.trim().is_empty()),
+                Choice::new(label("macro-cancel"), dialog::Role::Cancel),
+            ]
+        } else {
+            vec![Choice::new(label("done"), dialog::Role::Default)]
+        };
+        let mut submitted = false;
         let shown = dialog::Dialog::new(id, label(title))
-            .buttons(vec![Choice::new(label("done"), dialog::Role::Default)])
+            .buttons(buttons)
             .show(ui.ctx(), |ui| match dialog {
                 Dialog::About => {
                     ui.add(egui::Label::new(label("about-body")).wrap());
                 }
                 Dialog::Shortcuts => commands.shortcut_grid(ui, strings),
+                Dialog::NewMacro => {
+                    let mut title = engine.workshop.new_title.clone();
+                    let response = ui
+                        .add(
+                            egui::TextEdit::singleline(&mut title)
+                                .id(id.with("title"))
+                                .hint_text(label("macro-title")),
+                        )
+                        .accessible_name(label("macro-title"));
+                    submitted = response.lost_focus()
+                        && ui.input(|input| input.key_pressed(egui::Key::Enter))
+                        && !title.trim().is_empty();
+                    if !response.has_focus() && ui.memory(|memory| memory.focused().is_none()) {
+                        response.request_focus();
+                    }
+                    if response.changed() {
+                        events.push(UiEvent::NewMacroTitle(title));
+                    }
+                }
             });
-        if shown.chosen.is_some() || shown.dismissed {
+        if dialog == Dialog::NewMacro && (submitted || shown.chosen == Some(0)) && !shown.dismissed
+        {
+            dialog::Dialog::reset(ui.ctx(), id);
+            events.push(UiEvent::ConfirmNewMacro);
+        } else if shown.chosen.is_some() || shown.dismissed {
             // Each opening starts centred again.
             dialog::Dialog::reset(ui.ctx(), id);
             events.push(UiEvent::CloseDialog);
@@ -475,6 +512,17 @@ fn details_content(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
+    if engine.workshop.selected.is_none()
+        && engine.macro_app().is_some()
+        && ui
+            .add_enabled(
+                engine.can_new_macro(),
+                egui::Button::new(label("macro-new")),
+            )
+            .clicked()
+    {
+        events.push(UiEvent::Command("macro.new", Origin::Ui));
+    }
     if engine.workshop.selected.is_some() {
         macro_details(ui, engine, events);
         return;
@@ -758,7 +806,7 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             (ui.available_height() - 150.0).max(100.0),
         ),
         |ui| {
-            doc.show(
+            let output = doc.show(
                 ui,
                 &palette,
                 &editor::View {
@@ -766,6 +814,10 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                     ..editor::View::default()
                 },
             );
+            if engine.workshop.focus_editor {
+                output.response.request_focus();
+                events.push(UiEvent::EditorFocused);
+            }
         },
     );
     if doc.is_dirty()

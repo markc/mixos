@@ -270,7 +270,7 @@ async fn run(
                 if cmd.command.is_empty() {
                     continue;
                 }
-                if citizen::macros::dispatch("dopus", &service, &cmd, client.clone(), &mut macro_jobs) { continue; }
+                if citizen::macros::dispatch("dopus", &cmd, client.clone(), &mut macro_jobs) { continue; }
                 next_command += 1;
                 let delivery = Delivery::Command(Command {
                     id: next_command,

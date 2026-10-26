@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Macro transport glue shared by application Bus lanes.
 use crate::outbox::Outbox;
-pub use ::macros::commands::{Caller, Refusal, SUFFIXES, describe};
+pub use ::macros::commands::{Refusal, SUFFIXES, describe};
 use bus::native_client::{IncomingCommand, SupervisedClient};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -47,70 +47,15 @@ impl Jobs {
 
 pub fn dispatch(
     app: &str,
-    service: &str,
     command: &IncomingCommand,
     client: Arc<SupervisedClient>,
     jobs: &mut Jobs,
 ) -> bool {
-    // Workshop's generic dispatch must not bypass its macro mutation gate.
-    // UI commands stay open: a save made through Workshop's window is
-    // Workshop's own write, whoever drives it.
-    // Read exactly the bytes Workshop will: the delivery turns an empty body
-    // into `{}` (a call on the selection), so an empty body must not skip the
-    // check. A body that is not JSON reads as null and so names no command.
-    let proxy_write = app == "workshop" && {
-        let delivered = if command.body.trim().is_empty() {
-            "{}"
-        } else {
-            command.body.as_str()
-        };
-        let body = serde_json::from_str::<Value>(delivered).unwrap_or(Value::Null);
-        match command.command.as_str() {
-            "workshop.execute" => body["id"].as_str().is_some_and(|id| {
-                id == "bus.call"
-                    || id
-                        .strip_prefix("macro.")
-                        .is_some_and(::macros::commands::mutates)
-            }),
-            "workshop.call" => body["command"].as_str().is_none_or(|command_name| {
-                command_name
-                    .rsplit_once(".macros.")
-                    .is_some_and(|(_, suffix)| ::macros::commands::mutates(suffix))
-                    || matches!(command_name, "workshop.call" | "workshop.execute")
-            }),
-            _ => false,
-        }
-    };
-    let suffix = if proxy_write {
-        "put"
-    } else {
-        let Some(suffix) = command.command.strip_prefix(&format!("{app}.macros.")) else {
-            return false;
-        };
-        suffix
-    };
-    let limit = if suffix == "put" {
-        ::macros::commands::PUT_ENVELOPE_LIMIT
-    } else {
-        REQUEST_BODY_LIMIT
-    };
-    let caller = caller(command, service);
-    let authority =
-        ::macros::commands::authorize(app, caller, suffix, &Value::Null).map_err(|mut error| {
-            if proxy_write {
-                error.message = format!(
-                    "{}: macro-file writes through Workshop require Workshop",
-                    command.command
-                );
-            }
-            error
-        });
-    if proxy_write && authority.is_ok() {
+    let Some(suffix) = command.command.strip_prefix(&format!("{app}.macros.")) else {
         return false;
-    }
+    };
+    // Workshop owns app-targeted macro commands and opening the editor.
     if app == "workshop"
-        && authority.is_ok()
-        && command.body.len() <= limit
         && (suffix == "open"
             || serde_json::from_str::<Value>(&command.body)
                 .ok()
@@ -119,15 +64,13 @@ pub fn dispatch(
         return false;
     }
     while jobs.0.try_join_next().is_some() {}
-    let reply = if let Err(error) = authority {
-        ::macros::commands::Reply::Immediate(Err(error))
-    } else if jobs.0.len() >= 32 {
+    let reply = if jobs.0.len() >= 32 {
         ::macros::commands::Reply::Immediate(Err(Refusal::new(
             "BUSY",
             "macro request capacity exhausted",
         )))
     } else {
-        request(app, caller, suffix, &command.body)
+        request(app, suffix, &command.body)
     };
     let command = IncomingCommand {
         generation: command.generation,
@@ -155,25 +98,7 @@ pub fn dispatch(
     true
 }
 
-pub fn caller(command: &IncomingCommand, service: &str) -> ::macros::commands::Caller {
-    if command.header("broker_origin") == Some("local") {
-        ::macros::commands::Caller::local(&command.from, service)
-    } else {
-        ::macros::commands::Caller::Other
-    }
-}
-
-pub fn request(
-    app: &str,
-    caller: ::macros::commands::Caller,
-    suffix: &str,
-    body: &str,
-) -> ::macros::commands::Reply {
-    // Refuse an unauthorised write before its body is read, so the refusal
-    // is always DENIED; `handle` re-checks with the real body.
-    if let Err(refusal) = ::macros::commands::authorize(app, caller, suffix, &Value::Null) {
-        return ::macros::commands::Reply::Immediate(Err(refusal));
-    }
+pub fn request(app: &str, suffix: &str, body: &str) -> ::macros::commands::Reply {
     let limit = if suffix == "put" {
         ::macros::commands::PUT_ENVELOPE_LIMIT
     } else {
@@ -186,9 +111,7 @@ pub fn request(
         )));
     }
     match serde_json::from_str::<Value>(if body.trim().is_empty() { "{}" } else { body }) {
-        Ok(body) => {
-            ::macros::commands::handle(&::macros::Session::for_app(app), caller, suffix, &body)
-        }
+        Ok(body) => ::macros::commands::handle(&::macros::Session::for_app(app), suffix, &body),
         Err(error) => {
             ::macros::commands::Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", error)))
         }
@@ -209,39 +132,6 @@ pub fn answer_body(answer: ::macros::commands::Answer) -> (u8, Value) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn macro_authority_requires_local_broker_origin_and_exact_owner_service() {
-        use ::macros::commands::Caller;
-        let mut command = IncomingCommand {
-            generation: 0,
-            from: "ced-instance".into(),
-            command: "ced.macros.put".into(),
-            id: None,
-            args: Value::Null,
-            body: "{}".into(),
-            headers: Default::default(),
-        };
-        assert_eq!(caller(&command, "ced-instance"), Caller::Other);
-        command
-            .headers
-            .insert("broker_origin".into(), "local".into());
-        assert_eq!(caller(&command, "ced-instance"), Caller::Owner);
-        assert_eq!(caller(&command, "ced-other"), Caller::Other);
-        for name in ["workshop", "workshop-instance"] {
-            command.from = name.into();
-            assert_eq!(caller(&command, "ced-instance"), Caller::Workshop);
-            command
-                .headers
-                .insert("broker_origin".into(), "mesh".into());
-            assert_eq!(caller(&command, "ced-instance"), Caller::Other);
-            command
-                .headers
-                .insert("broker_origin".into(), "local".into());
-        }
-        command.from = "workshopper".into();
-        assert_eq!(caller(&command, "ced-instance"), Caller::Other);
-    }
-
     #[tokio::test]
     async fn finish_abandons_a_stalled_reply() {
         let mut jobs = Jobs::default();
@@ -259,14 +149,9 @@ mod tests {
         let body = json!({"id":"missing", "text":text}).to_string();
         assert!(body.len() > 272 * 1024);
         // No existing id is required to prove that the envelope was admitted.
-        let error = request(
-            "escape-heavy-test",
-            ::macros::commands::Caller::Workshop,
-            "put",
-            &body,
-        )
-        .wait()
-        .unwrap_err();
+        let error = request("escape-heavy-test", "put", &body)
+            .wait()
+            .unwrap_err();
         assert_ne!(error.code, "INVALID_ARGUMENT");
     }
 }

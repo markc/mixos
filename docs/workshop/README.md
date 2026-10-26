@@ -299,7 +299,7 @@ instance). Commands keep the app’s canonical prefix, such as `workshop.macros.
 | `workshop.macros.status` | `{}` | Current or last run |
 | `workshop.macros.output` | `{}` | Retained output and dropped flag |
 | `workshop.macros.stop` | `{}` | Whether termination was requested |
-| `workshop.macros.new` | `{title}` | Create a global user macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
+| `workshop.macros.new` | `{app,title}` | Create a user macro, select it and open its document; returns `{app,id,path,text,tier,catalogue}` |
 | `workshop.macros.get` | `{id, app?}` | Read `{id,tier,path,text}`, at most 256 KiB |
 | `workshop.macros.put` | `{id,text,app?}` | Save a user macro atomically and refresh its owning Session |
 | `workshop.macros.remove` | `{id,app?}` | Delete a user macro; built-ins refuse with `DENIED` |
@@ -324,6 +324,14 @@ Dopus dispatch through Workshop's command registry. A `-- target:` header
 offers only its allowed apps; `any` offers running apps. The chosen app is
 passed as `MIXOS_MACRO_TARGET`. Without a header, Run remains target-free.
 Each app serves the same management commands through its own macro Session.
+Select a macro group (`macros:<app>` or `macros:global`) or an existing macro
+and choose **Macros → New macro…**, or use the **New macro…** button in
+Details. Enter a title and choose Create. Workshop refreshes the catalogue,
+selects the new file and gives its editor the keyboard. The action is
+available while Workshop is idle. `workshop.execute {id:"macro.new"}` opens
+the same dialog; `workshop.macros.new {app:"ced",title:"Tidy imports"}`
+creates and opens it directly. Running apps receive their own `macros.new`
+request; stopped apps and global macros use the shared local library.
 Macro requests are capped at 8 KiB, except `put`: its envelope is capped at
 1544 KiB and its text at 256 KiB.
 
@@ -332,8 +340,7 @@ The collapsible Traffic dock combines broker observations and native
 at most 1,024 rows and 8 MiB, reports dropped rows and redacts sensitive
 topic fields before retaining them. Broker observation defaults to redacted
 bodies; `none` is also supported. A refused observer leaves the reason in
-the dock and keeps topic deliveries available. The host must explicitly
-admit `workshop*` in `observe.allowed_services`. Run
+the dock and keeps topic deliveries available. Any caller may observe. Run
 `mix --serve tools/workshop_observe.mix --name workshop-probe` to check
 the advertised observe extension and open and close a probe stream.
 
@@ -342,23 +349,8 @@ with `--app ced --id tidy-imports` selects that macro. The global folder in
 Dopus is the fallback when Workshop is not installed. Headless instances
 use the same management and traffic commands.
 
-Macro-file writes (`put`, `remove`, `move`, `copy`, `new`) require the owning
-process’s registered local service or Workshop (`workshop`, `workshop-*`).
-Global writes and moves into another app’s catalogue require Workshop.
-Workshop’s own mutating macro commands, including forwarding with `app`, accept
-only Workshop callers, preventing arbitrary callers from using it as a write
-proxy. Refusals use rc 10, `DENIED`, and name the command and rule before any
-file effects. Read/run/status/output/stop/reload remain open.
-
-The broker stamps service identity and local/mesh origin; mesh writes are
-refused. Local service registration is not executable authentication: a
-client able to register an unused Workshop service name gains its authority.
-This is a Bus access rule, not filesystem or same-user code isolation.
-
-Workshop’s Bus `execute` for mutating `macro.*` actions and `bus.call`,
-implicit-target `call`, and calls forwarding macro mutations or these proxy
-operations require Workshop too. These paths can otherwise turn an untrusted
-caller into the manager. Explicit `call` requests for read/run commands remain
-open. Workshop’s UI commands (`workshop.ui.*`) are open to every caller, so an
-agent can drive its window: a save made there is Workshop’s own write, as if
-a person had pressed Save.
+Every macro command accepts every caller, local or mesh. This includes
+global writes, moves between apps, `workshop.execute` for `macro.*` and
+`bus.call`, and `workshop.call` with an explicit or selected target.
+Built-in files remain read-only; path containment, argument validation,
+request limits and the runner’s single-flight limit still apply.

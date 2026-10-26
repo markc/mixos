@@ -80,6 +80,9 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
                 let _ = commands.execute(&command, engine, Origin::Ui);
             }
             UiEvent::MacroDraft(text) => engine.workshop.draft = Some(text),
+            UiEvent::NewMacroTitle(title) => engine.workshop.new_title = title,
+            UiEvent::ConfirmNewMacro => engine.confirm_new_macro(),
+            UiEvent::EditorFocused => engine.workshop.focus_editor = false,
             UiEvent::Dock(open) => engine.workshop.dock_open = open,
             UiEvent::Pause(paused) => engine.workshop.paused = paused,
             UiEvent::TrafficFilter(filter) => engine.workshop.filter = filter,
@@ -118,7 +121,16 @@ pub fn describe() -> Value {
             json!({"name":"workshop.macros.open","args":{"app":"app or global","id":"string"},"description":"Select a macro and read its document","read_only":false}),
         ]);
         command_names.extend(drive::describe(APP));
-        command_names.extend(inspector::bus::macros::describe(APP));
+        command_names.extend(inspector::bus::macros::describe(APP).into_iter().map(
+            |mut command| {
+                if command["name"] == "workshop.macros.new" {
+                    command["args"] = json!({"app":"app or global","title":"string"});
+                    command["description"] =
+                        json!("Create a macro, select it and open its document");
+                }
+                command
+            },
+        ));
     }
     surface
 }
@@ -144,10 +156,6 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                 Effect::Execute { id, command } => {
                     let (rc, body) = match commands.execute(&command, engine, Origin::Bus) {
                         Ok(()) => (0, json!({ "executed": command })),
-                        Err(CommandError::Denied(_)) => (
-                            10,
-                            json!({"error_code":"DENIED","message":label("command-denied")}),
-                        ),
                         Err(CommandError::Unknown(_)) => (
                             10,
                             json!({"error_code":"UNKNOWN_ACTION","message":label("unknown-action")}),
@@ -567,7 +575,7 @@ impl Shell {
                 if operation == "catalogues" && !refused {
                     self.engine.workshop.catalogues =
                         serde_json::from_value(body.clone()).unwrap_or_default();
-                } else if operation == "macros.open" && !refused {
+                } else if matches!(operation.as_str(), "macros.open" | "macros.new") && !refused {
                     let app = args["app"].as_str().unwrap_or("global").to_owned();
                     self.engine.ui.selected = None;
                     if body.get("branch").is_some() {
@@ -581,20 +589,10 @@ impl Shell {
                         self.settle();
                         continue;
                     }
-                    let id = args["id"].as_str().unwrap_or_default().to_owned();
-                    if let Some(catalogue) = body.get("catalogue") {
-                        self.engine
-                            .workshop
-                            .catalogues
-                            .insert(app.clone(), catalogue.clone());
+                    self.engine.open_macro_document(&app, &body);
+                    if operation == "macros.new" {
+                        self.engine.queue_workshop("catalogues", json!({}), None);
                     }
-                    self.engine.ui.row_key = Some(format!("macro:{app}:{id}"));
-                    self.engine.ui.expanded.insert(format!("macros:{app}"));
-                    self.engine.workshop.selected = Some((app, id));
-                    self.engine.reveal_macro();
-                    self.engine.workshop.document = body.clone();
-                    self.engine.workshop.draft = None;
-                    self.engine.workshop.saved_text = None;
                 } else if operation == "observe" {
                     self.engine.workshop.observe = if refused {
                         body["message"].as_str().unwrap_or_default().into()
@@ -1231,6 +1229,63 @@ mod tests {
             "compd".into(),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn bus_new_selects_and_opens_the_created_document() {
+        for app in ["ced", "global"] {
+            let mut shell = test_shell();
+            // Discard startup effects so the test captures this request.
+            shell.engine.take_effects();
+            shell.engine.workshop.selected = Some(("other".into(), "old".into()));
+            shell.engine.workshop.draft = Some("old draft".into());
+            shell.engine.command(
+                41,
+                "workshop.macros.new",
+                &json!({"app":app,"title":"Fresh"}).to_string(),
+            );
+            let effects = shell.engine.take_effects();
+            let [
+                Effect::Workshop {
+                    ticket,
+                    operation,
+                    args,
+                    reply,
+                },
+            ] = &effects[..]
+            else {
+                panic!("{effects:?}")
+            };
+            assert_eq!(operation, "macros.new");
+            assert_eq!(*reply, Some(41));
+            let document = json!({"app":app,"id":"fresh","path":"/tmp/macros/fresh.mix","text":"-- title: Fresh\n","catalogue":{"macros":[{"id":"fresh","title":"Fresh"}]}});
+            shell
+                .tx
+                .send(Event::Workshop(
+                    *ticket,
+                    operation.clone(),
+                    args.clone(),
+                    *reply,
+                    Ok(document.clone()),
+                ))
+                .unwrap();
+            shell.pump();
+            assert_eq!(
+                shell.engine.workshop.selected,
+                Some((app.into(), "fresh".into()))
+            );
+            assert_eq!(shell.engine.workshop.document, document);
+            assert_eq!(
+                shell.engine.ui.row_key.as_deref(),
+                Some(format!("macro:{app}:fresh").as_str())
+            );
+            assert!(shell.engine.workshop.draft.is_none());
+            assert!(shell.engine.workshop.focus_editor);
+            assert_eq!(
+                shell.engine.workshop.catalogues[app]["macros"][0]["id"],
+                "fresh"
+            );
+        }
     }
 
     #[test]

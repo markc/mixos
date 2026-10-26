@@ -112,13 +112,24 @@ DOpus answers on the Bus as `dopus` (schema `dopus.v1`).
 | `dopus.theme.set` | `scheme`, `mode` | this window's look |
 | `dopus.quit` | | closes the window |
 
-**File operations are keyboard-only.** `dopus.action` refuses every `file.*`
-action (`FORBIDDEN`). Input played through the drive commands (`dopus.ui.*`)
-is held to the same rule: while it runs, file actions and opening files are
-refused, and a delete, name or drop dialog can be dismissed but not
-accepted. The rule holds for the whole time drive input runs, so a key you
-press yourself in that moment is refused too; press it again after. An agent reads, navigates, sorts and selects through DOpus, but
-never creates, renames, moves, copies, deletes or opens files through it.
+Every action accepts local and mesh callers, including `file.open`,
+`file.new-folder`, `file.rename`, `file.copy-other-pane`,
+`file.move-other-pane` and `file.delete`. `dopus.actions.list` reports the
+same availability as the keyboard and menus: selection, an idle worker and
+valid arguments still matter.
+
+File actions keep the normal name prompts, destructive confirmations and
+drop choices. After `dopus.action {id:"file.new-folder"}`, use
+`dopus.ui.type {text:"Projects"}` and `dopus.ui.click {label:"OK"}` to
+answer the focused prompt. For rename, select the old text first with
+`dopus.ui.key {key:"A",modifiers:["ctrl"]}`. Answer a delete confirmation
+with `dopus.ui.click {label:"Yes"}` or cancel with `label:"No"`; a drop
+dialog offers **Move Here**, **Copy Here** and **Cancel**. These are the
+existing drive commands acting on the same dialogs a person sees. There is
+no separate dialog-answer command. `dopus.ui.tree` gives the current
+accessible labels when using another language. Delete keeps its normal
+confirmation. Existing destinations refuse a collision; they are never
+silently overwritten.
 
 The window is drivable like every MixOS app, including its menus: see
 [driving an app](../docs/drive.md) (`dopus.ui.*`, `dopus.window`). The commands are
@@ -133,6 +144,8 @@ action is not published.
 `dopus --headless` runs the core and the Bus port without a window, for
 tests: the same commands, minus those that need a window. It publishes its
 accepted `dopus.action` runs on `<service>.action.executed` too.
+Headless instances cancel name prompts and confirmations because there is
+no window to answer them; copy and move still use the real filesystem worker.
 
 ## Macro Bus commands
 

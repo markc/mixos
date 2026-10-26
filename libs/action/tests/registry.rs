@@ -211,33 +211,6 @@ fn typed_parameters_round_trip_and_report_their_schema() {
 }
 
 #[test]
-fn authorisation_precedes_enablement_and_sees_the_call() {
-    let mut r = Registry::new();
-    let mut c = typed();
-    c.enabled = |_| panic!("authorisation must run first");
-    r.add(c);
-    r.authorize = Some(|call| {
-        assert_eq!(call.id, "count.set");
-        assert_eq!(call.origin, Origin::Bus);
-        assert_eq!(call.params, &json!({"n": 5}));
-        Err("refused")
-    });
-    assert_eq!(
-        r.execute(
-            "count.set",
-            &mut Counter::default(),
-            json!({"n": 5}),
-            Origin::Bus
-        ),
-        Err(Error::Denied {
-            id: "count.set",
-            reason: "refused"
-        })
-    );
-    assert!(r.take_executed().0.is_empty());
-}
-
-#[test]
 fn failed_handlers_return_typed_errors_and_are_not_journaled() {
     let mut r = registry();
     let mut c = typed();
@@ -447,29 +420,6 @@ fn chords_are_stored_in_canonical_modifier_order() {
     r.add(c);
     r.add_shortcuts("canonical", ["Shift+Ctrl+Alt+C".into()]);
     assert_eq!(r.shortcuts_of("canonical"), ["Ctrl+Alt+Shift+C"]);
-}
-
-#[test]
-fn denied_precedes_both_enabled_and_disabled_without_running() {
-    for locked in [false, true] {
-        let mut r = registry();
-        r.authorize = Some(|_| Err("refused"));
-        let mut s = Counter { locked, n: 0 };
-        let error = r.execute("count.bump", &mut s, json!({"bad": true}), Origin::Bus);
-        assert_eq!(
-            error,
-            Err(Error::Denied {
-                id: "count.bump",
-                reason: "refused"
-            })
-        );
-        assert_eq!(
-            error.unwrap_err().to_string(),
-            "command \"count.bump\" is denied: refused"
-        );
-        assert_eq!(s.n, 0);
-        assert!(r.take_executed().0.is_empty());
-    }
 }
 
 #[test]

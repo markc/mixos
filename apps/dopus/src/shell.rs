@@ -606,7 +606,6 @@ impl Shell {
 
     /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        self.app.driven = drive::pending(ui.ctx());
         // Shortcuts are off while a text field (the location bar, a prompt)
         // has the keyboard, a menu is open, or a dialog is up.
         let typing =

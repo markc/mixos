@@ -12,8 +12,7 @@ removed in plan step 7.
 Core and toolkit `describe()` emit stored chords in the keymaps grammar
 (`Ctrl+=`, `ArrowLeft`, or the app's short forms), ordered Ctrl, Alt, Shift.
 
-An authorize refusal returns `Denied` before enablement or parameter checks.
-A Bus-level `DENIED` test waits for the first app to set `authorize` (dopus, plan step 5).
+Dispatch checks enablement and parameters for every input origin.
 
 `ExecuteRequest` names the strict serde body for `<app>.execute`. Executed
 events are v2, with accepted params and returned result, each bounded to 4096
