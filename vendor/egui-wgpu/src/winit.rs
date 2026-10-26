@@ -603,7 +603,9 @@ impl Painter {
         capture_data: Vec<egui::ScreenshotCallback>,
         window: &Arc<winit::window::Window>,
     ) -> f32 {
-        let size = self.surfaces.get(&viewport_id)
+        let size = self
+            .surfaces
+            .get(&viewport_id)
             .map_or([0, 0], |surface| [surface.width, surface.height]);
         self.paint_and_update_textures_impl(
             viewport_id,

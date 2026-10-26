@@ -566,11 +566,19 @@ fn hidden_captures_render_the_window_with_headless_wgpu() {
         viewport.minimized = Some(minimized);
         viewport.occluded = Some(!minimized);
         let shot = ok(&mut h, "ui.capture", json!({"name":"hidden.png"}));
-        assert_eq!((shot["width"].as_u64(), shot["height"].as_u64()), (Some(900), Some(500)));
-        let image = image::open(captures(&h).join("hidden.png")).unwrap().to_rgba8();
+        assert_eq!(
+            (shot["width"].as_u64(), shot["height"].as_u64()),
+            (Some(900), Some(500))
+        );
+        let image = image::open(captures(&h).join("hidden.png"))
+            .unwrap()
+            .to_rgba8();
         assert_eq!(image.dimensions(), (900, 500));
         let first = image.get_pixel(0, 0);
-        assert!(image.pixels().any(|pixel| pixel != first), "capture contains rendered controls");
+        assert!(
+            image.pixels().any(|pixel| pixel != first),
+            "capture contains rendered controls"
+        );
         assert!(!drive::pending(&h.ctx));
     }
 }
