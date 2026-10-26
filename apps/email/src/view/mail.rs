@@ -65,7 +65,11 @@ pub fn list(
     } else {
         String::new()
     };
-    panel::group(ui, "emails", &[title.as_str(), count.as_str()], |ui, _| {
+    let mut tabs = vec![title.as_str()];
+    if !count.is_empty() {
+        tabs.push(count.as_str());
+    }
+    panel::group(ui, "emails", &tabs, |ui, _| {
         let columns = list_columns(date_width(ui));
         let table = view.mail.list_table();
         let rows = EmailRows {

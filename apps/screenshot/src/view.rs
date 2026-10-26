@@ -213,6 +213,7 @@ fn controls(
             let response = ui
                 .add_enabled_ui(!app.busy(), |ui| {
                     toolkit::combo::show(ui, "screenshot-window", &mut at, &names, Some(180.0))
+                        .accessible_name(label("window"))
                 })
                 .inner;
             if response.changed() {
@@ -235,6 +236,7 @@ fn controls(
         let response = ui
             .add_enabled_ui(!app.busy(), |ui| {
                 toolkit::combo::show(ui, "screenshot-output", &mut at, &names, Some(180.0))
+                    .accessible_name(label("output"))
             })
             .inner
             .on_hover_text(label("output"));
@@ -912,7 +914,7 @@ fn dialogs(
                     let field = egui::TextEdit::singleline(&mut value)
                         .id(id.with("field"))
                         .desired_width(f32::INFINITY);
-                    let response = ui.add(field);
+                    let response = ui.add(field).accessible_name(label("path"));
                     if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         submitted = true;
                     }
