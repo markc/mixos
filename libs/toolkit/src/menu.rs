@@ -1020,7 +1020,7 @@ pub fn bar(ui: &mut Ui, menus: &[Menu]) -> Option<&'static str> {
 /// Whether `event` edits the search field's text.
 fn edits_text(event: &egui::Event) -> bool {
     match event {
-        egui::Event::Text(_) | egui::Event::Paste(_) | egui::Event::Cut | egui::Event::Ime(_) => {
+        egui::Event::Text(_) | egui::Event::Paste(_) | egui::Event::PasteImage(_) | egui::Event::Cut | egui::Event::Ime(_) => {
             true
         }
         egui::Event::Key {
@@ -1059,7 +1059,7 @@ fn defer_after_typing(ui: &mut Ui) -> Vec<egui::Event> {
                 event,
                 egui::Event::Key { .. }
                     | egui::Event::Text(_)
-                    | egui::Event::Paste(_)
+                    | egui::Event::Paste(_) | egui::Event::PasteImage(_)
                     | egui::Event::Cut
                     | egui::Event::Copy
                     | egui::Event::Ime(_)

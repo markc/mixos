@@ -546,7 +546,7 @@ impl<S> Registry<S> {
             } => (*key, *modifiers),
             egui::Event::Cut if clipboard => (egui::Key::X, held),
             egui::Event::Copy if clipboard => (egui::Key::C, held),
-            egui::Event::Paste(_) if clipboard => (egui::Key::V, held),
+            egui::Event::Paste(_) | egui::Event::PasteImage(_) if clipboard => (egui::Key::V, held),
             _ => return None,
         };
         let pressed =
@@ -1655,6 +1655,7 @@ mod tests {
             enabled: always,
             run: |_| {},
         };
+        r.add(bind("paste", Modifiers::COMMAND, Key::V));
         r.add(bind("copy", Modifiers::COMMAND, Key::C)).add(bind(
             "cut.more",
             Modifiers::COMMAND | Modifiers::SHIFT,
@@ -1679,7 +1680,9 @@ mod tests {
             ["cut.more"]
         );
         assert!(fire(Modifiers::COMMAND, egui::Event::Cut).is_empty());
-        assert!(fire(Modifiers::COMMAND, egui::Event::Paste("p".into())).is_empty());
+        assert_eq!(fire(Modifiers::COMMAND, egui::Event::Paste("p".into())), ["paste"]);
+        assert_eq!(fire(Modifiers::COMMAND, egui::Event::PasteImage(std::sync::Arc::new(
+            egui::ColorImage::filled([1, 1], egui::Color32::WHITE)))), ["paste"]);
     }
 
     fn fired_key(

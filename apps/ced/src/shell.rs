@@ -677,6 +677,7 @@ impl Shell {
                 egui::Event::Text(_)
                     | egui::Event::Key { pressed: true, .. }
                     | egui::Event::Paste(_)
+                    | egui::Event::PasteImage(_)
                     | egui::Event::Copy
                     | egui::Event::Cut
                     | egui::Event::Ime(_)
