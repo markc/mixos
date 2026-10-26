@@ -4412,7 +4412,7 @@ async fn handle_noded_command(
         }
 
         "noded.tap" => {
-            if !add_tap(&mut state.tap_subscribers.write().await, tx) {
+            if !add_tap(&mut *state.tap_subscribers.write().await, tx) {
                 outcome.rejected.store(true, Ordering::Relaxed);
                 let mut resp = respond("10");
                 resp.set("command", "noded.tap");
