@@ -11,18 +11,10 @@
 //! can introspect "which cert am I actually serving for which SNI"
 //! over `maild.props.list namespace="tls_identities"`.
 //!
-//! ## Why read-only
-//!
-//! Phase 1 of the maild SNI / internal-CA plan does not mint or
-//! rotate certs — that is Phase 3's job, behind the `pki.props.*`
-//! commands in `pki`. This namespace's writes are denied at the
-//! [`AuthPolicy`] layer (no `props.write` / `props.delete`
-//! capabilities granted). The internal bootstrap call below uses
-//! [`Runtime::set`] / [`Runtime::delete`] directly, which bypasses
-//! the Bus authorisation layer; the substrate's auth check fires
-//! only on Bus-routed `maild.props.set` / `maild.props.delete`
-//! requests, so external callers cannot bypass the read-only intent.
-//!
+//! This is a materialised resolver view. The props router rejects mutations
+//! for every Bus caller. Internal runtime writes refresh it from TLS inputs.
+//! Minting and rotation belong to the source identity configuration.
+
 //! ## Cardinality + storage
 //!
 //! `Cardinality::Collection { primary_key_field: "server_name" }`
@@ -41,11 +33,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use ::props::bus::mutation::PropsRouter;
-use ::props::capability::{Capability, CapabilitySet};
-use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
+use ::props::hooks::Hooks;
 use ::props::namespace::{
-    AuthPolicy, Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName,
-    NamespaceSpec, PeerIdentity, PropertySchema, StorageBackendKind,
+    Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName, NamespaceSpec,
+    PropertySchema, StorageBackendKind,
 };
 use ::props::record::{Actor, RecordKey, Version};
 use ::props::runtime::{DeleteOpts, Runtime, SetOpts};
@@ -63,19 +54,7 @@ pub const NAMESPACE: &str = "tls_identities";
 /// Primary-key field — matches the (lower-cased) wire `server_name`.
 pub const PRIMARY_KEY_FIELD: &str = "server_name";
 
-/// `before_set` / `before_delete` reject every operator-driven write
-/// with this prefix so denials surface uniformly in client error
-/// strings. Bootstrap writes happen with the internal
-/// `Actor::service("maild")` and are accepted; everything else is a
-/// misuse the AuthPolicy already blocks, but the hook is the
-/// belt-and-braces guard.
-pub const READONLY_PREFIX: &str = "tls_identities_readonly:";
-
-/// Actor used by the bootstrap path. The hook recognises this exact
-/// service name to allow internal writes through; anyone forging it
-/// over the Bus wire would already have to satisfy the AuthPolicy
-/// (which never grants write caps), so the hook check is a
-/// defense-in-depth latch, not the primary gate.
+/// Audit actor used when the resolver materialises this view.
 pub const BOOTSTRAP_SERVICE: &str = "maild";
 
 pub fn namespace_name() -> NamespaceName {
@@ -216,59 +195,6 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// the props contract [`AuthPolicy`] — read/describe/audit caps granted to
-/// every peer (WG `/24` trust domain). **No write/delete caps** — the
-/// namespace is a projection of resolver state, not an operator
-/// surface. Phase 3's `pki.props.*` is where mint/rotate lives.
-pub fn auth_policy() -> AuthPolicy {
-    fn resolve(_peer: &PeerIdentity) -> CapabilitySet {
-        [
-            "props.read:maild.tls_identities",
-            "props.describe:maild.tls_identities:public",
-            "props.describe:maild.tls_identities:full",
-            "props.audit:maild.tls_identities",
-        ]
-        .into_iter()
-        .map(|s| Capability::new(s).expect("non-empty capability"))
-        .collect()
-    }
-    AuthPolicy::new(resolve)
-}
-
-/// Read-only hook handler. Bootstrap writes from the internal
-/// `Actor::service("maild")` are accepted; every other actor is
-/// rejected. `before_delete` follows the same rule so bootstrap can
-/// reconcile away stale rows.
-pub struct TlsIdentitiesHooks;
-
-impl TlsIdentitiesHooks {
-    fn require_bootstrap_actor(ctx: &HookCtx, op: &str) -> Result<(), HookError> {
-        // `Actor` is a transparent newtype over the shared contract
-        // wire string — `Actor::service("maild")` renders to the bare
-        // service name `maild`, distinct from `operator:<principal>`
-        // / `daemon:<svc>` forms. Bootstrap is the only caller that
-        // ever issues a bare service token over the Runtime API.
-        if ctx.actor.as_str() == BOOTSTRAP_SERVICE {
-            Ok(())
-        } else {
-            Err(HookError::validation(format!(
-                "{READONLY_PREFIX} maild.tls_identities {op} is read-only — \
-                 identity set is derived from [[tls.identity]] at startup"
-            )))
-        }
-    }
-}
-
-impl HookHandler for TlsIdentitiesHooks {
-    fn before_set<'a>(&'a self, ctx: &'a HookCtx) -> HookFuture<'a, ()> {
-        Box::pin(async move { Self::require_bootstrap_actor(ctx, "set") })
-    }
-
-    fn before_delete<'a>(&'a self, ctx: &'a HookCtx) -> HookFuture<'a, ()> {
-        Box::pin(async move { Self::require_bootstrap_actor(ctx, "delete") })
-    }
-}
-
 pub fn spec(hooks: Hooks) -> NamespaceSpec {
     let mut s = NamespaceSpec::new(
         namespace_name(),
@@ -281,7 +207,7 @@ pub fn spec(hooks: Hooks) -> NamespaceSpec {
         },
     );
     s.lifecycle = NamespaceLifecycle::Simple;
-    s.auth = auth_policy();
+    s.read_only = true;
     s.hooks = hooks;
     s
 }
@@ -480,7 +406,7 @@ pub async fn register(
     identities: &[TlsIdentityConfig],
     strict_sni: bool,
 ) -> Result<Arc<Runtime>> {
-    let hooks = Hooks::new(TlsIdentitiesHooks);
+    let hooks = Hooks::noop();
     let spec = spec(hooks);
     store
         .register_namespace(&spec, Arc::new(JsonValuesMapping::new(namespace_name())))
@@ -691,6 +617,31 @@ mod tests {
         Arc::new(SqliteStore::new("maild", conn).expect("store"))
     }
 
+    #[tokio::test]
+    async fn resolver_projection_rejects_bus_mutations_for_every_caller() {
+        let store = test_store();
+        let mut router = PropsRouter::new("maild");
+        register(&mut router, &store, &[], false).await.unwrap();
+        for caller in [
+            ::props::PeerIdentity::default(),
+            ::props::PeerIdentity {
+                service_name: Some("maild".into()),
+                ..Default::default()
+            },
+        ] {
+            let mut request = ::bus::wire::BusMessage::new();
+            request.set("namespace", NAMESPACE);
+            request.set("key", "mail.example.test");
+            for command in ["set", "delete"] {
+                let response = router.dispatch(command, &request, &caller).await;
+                let body: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+                assert_eq!(body["error_code"], "validation_error");
+                assert_eq!(body["message"], "namespace is read-only");
+            }
+            assert_eq!(router.dispatch("list", &request, &caller).await.rc, 0);
+        }
+    }
+
     fn write_self_signed_pair(
         dir: &std::path::Path,
         stem: &str,
@@ -740,91 +691,14 @@ mod tests {
 
     #[test]
     fn cardinality_is_collection_keyed_by_server_name() {
-        let s = spec(Hooks::new(TlsIdentitiesHooks));
+        let s = spec(Hooks::noop());
+        assert!(s.read_only);
         match &s.cardinality {
             Cardinality::Collection { primary_key_field } => {
                 assert_eq!(primary_key_field, PRIMARY_KEY_FIELD);
             }
             other => panic!("expected Collection, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn auth_policy_grants_read_only_caps() {
-        let policy = auth_policy();
-        let caps = policy.resolve(&PeerIdentity::default());
-        for c in [
-            "props.read:maild.tls_identities",
-            "props.describe:maild.tls_identities:public",
-            "props.describe:maild.tls_identities:full",
-            "props.audit:maild.tls_identities",
-        ] {
-            assert!(
-                caps.contains(&Capability::new(c).expect("non-empty capability")),
-                "grant {c}"
-            );
-        }
-        // No write / delete caps.
-        assert!(
-            !caps.contains(
-                &Capability::new("props.write:maild.tls_identities").expect("non-empty capability")
-            ),
-            "tls_identities is read-only"
-        );
-    }
-
-    #[tokio::test]
-    async fn before_set_rejects_non_bootstrap_actor() {
-        let hooks = TlsIdentitiesHooks;
-        let ctx = HookCtx {
-            key: RecordKey::collection(namespace_name(), "host.lan"),
-            old: None,
-            new: Some(PropValue::Object(BTreeMap::new())),
-            version: Version::zero(),
-            actor: Actor::operator("alice").expect("valid actor"),
-            merge: Some(MergeMode::Replace),
-            origin: ::props::WriteOrigin::caller(),
-        };
-        let err = hooks.before_set(&ctx).await.unwrap_err();
-        assert!(
-            err.message().starts_with(READONLY_PREFIX),
-            "got: {}",
-            err.message()
-        );
-    }
-
-    #[tokio::test]
-    async fn before_set_accepts_bootstrap_actor() {
-        let hooks = TlsIdentitiesHooks;
-        let ctx = HookCtx {
-            key: RecordKey::collection(namespace_name(), "host.lan"),
-            old: None,
-            new: Some(PropValue::Object(BTreeMap::new())),
-            version: Version::zero(),
-            actor: Actor::service(BOOTSTRAP_SERVICE).expect("valid bootstrap service actor"),
-            merge: Some(MergeMode::Replace),
-            origin: ::props::WriteOrigin::caller(),
-        };
-        hooks
-            .before_set(&ctx)
-            .await
-            .expect("bootstrap actor allowed");
-    }
-
-    #[tokio::test]
-    async fn before_delete_rejects_non_bootstrap_actor() {
-        let hooks = TlsIdentitiesHooks;
-        let ctx = HookCtx {
-            key: RecordKey::collection(namespace_name(), "host.lan"),
-            old: Some(PropValue::Object(BTreeMap::new())),
-            new: None,
-            version: Version::zero(),
-            actor: Actor::operator("alice").expect("valid actor"),
-            merge: None,
-            origin: ::props::WriteOrigin::caller(),
-        };
-        let err = hooks.before_delete(&ctx).await.unwrap_err();
-        assert!(err.message().starts_with(READONLY_PREFIX));
     }
 
     #[test]

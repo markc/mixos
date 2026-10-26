@@ -485,10 +485,6 @@ fn make_multi_vhost_config(
         // half-rejects mixed shapes. Hold the half-set invariant.
         tls_cert: None,
         tls_key: None,
-        retention_operators: Vec::new(),
-        bayesian_rebuild_operators: Vec::new(),
-        vtoken_operators: Vec::new(),
-        vtoken_delegated_peers: Vec::new(),
         tls: TlsConfig {
             identity: identities,
             strict_sni: false,

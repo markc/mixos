@@ -9434,10 +9434,14 @@ the property dispatcher. It lives until the Tokio runtime shuts down.
 
 `format` remains stored introspection data and does not rebuild sinks.
 `applied_at`, `applied_by` and `source` remain mutable metadata; the watcher
-does not write them back. The current log policy grants every reachable
-peer the namespace's capabilities, including write access that can silence
-logging. Services needing narrower access must supply their policy.
+does not write them back. Every Bus caller can read and change the logging
+namespace, including write access that can silence logging.
 See the [contract](../docs/spec/props/README.md#logging) for the frozen schema.
+
+`handle_snapshot_bus` serves every caller. Snapshots return raw labels and
+accept exact-value, key-presence and hash filters without capabilities.
+Filter validation and the 1 MiB response limit remain. Label sensitivity
+continues to control redaction in on-disk JSONL and Prometheus output.
 
 The source is [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging).
 
@@ -9732,9 +9736,22 @@ namespace modules register their schemas, SQLite mappings and hooks during
 
 The router handles `maild.props.*` requests. Durable changes publish on
 `maild.props.records.changed` and `maild.props.audit`; replay and audit
-semantics, capability strings, error tokens and the five `__props_*`
+semantics, error tokens and the five `__props_*`
 SQLite table names follow the shared props contract unchanged. Account,
 alias and domain hooks reconcile the mail store after committed changes.
+
+Every Bus caller can read and write properties, including secret fields.
+`tls_identities` is a materialised resolver view: its Bus mutations return
+`validation_error` for every caller; internal reconciliation refreshes it.
+Vtoken management, retention sweeps and Bayesian rebuilds accept every caller
+without operator lists or delegation envelopes. Retention still validates
+its armed account set, deletion windows, dry-run flag and sweep limits.
+
+Submission accepts mesh requests with no `from` sender. Audit records use
+the broker peer when supplied, otherwise the stable actor `bus`; the typed
+request selects the sending account. Sender validation, size limits and
+operation replay protection still apply. Config loading ignores unknown
+keys, so existing files carrying removed operator lists continue to load.
 
 ## Shared libraries
 
@@ -33859,17 +33876,30 @@ the storage and routing API needed by the forthcoming mail service port.
 | --- | --- |
 | default (empty) | Pure read types, redaction, diff and in-memory revision writes |
 | `bus` | Read dispatch and native publication envelopes |
-| `store` | Namespace schemas, capabilities, hooks, lifecycle, audit HMAC, `PropertyStore`, `MemoryStore` and `Runtime` |
+| `store` | Namespace schemas, hooks, lifecycle, audit HMAC, `PropertyStore`, `MemoryStore` and `Runtime` |
 | `sqlite` | `store` plus `SqliteStore`, `SqliteTableMapping` and `JsonValuesMapping` |
 | `router` | `bus` and `store` plus `PropsRouter`, `SubscribeGranter` and per-namespace event dispatch |
 
 Choose `sqlite` and `router` together for durable service namespaces.
-Services supply their own domain-table mapping, authorisation policy,
+Services supply their own domain-table mapping,
 subscription granter and publisher. The library opens no second transport.
 The [property contract](../docs/spec/props/README.md) defines the wire
 surface, error vocabulary and persisted table ownership; the
 [ownership decision](../docs/decisions/2026-10-18-property-store-in-props.md)
 explains the boundary with desktop settings.
+
+Every caller can read and mutate registered namespaces, including secret
+fields and full schemas. Peer metadata supplies audit and live delivery
+addresses; it does not grant access. A materialised view can declare
+`NamespaceSpec::read_only`, which rejects every Bus mutation with
+`validation_error` while allowing the owning runtime to refresh its data.
+
+Schema validation, version checks, lifecycle hooks, audit digests, replay
+windows and reserved topic ownership remain enforced. A live watch needs a
+registered subscriber destination and a working subscription granter;
+missing routing data returns `validation_error`, and a broker subscription
+failure returns `grant_failed`. Public schema and broadcast event projections
+still redact fields uniformly; callers can request full data explicitly.
 
 Read-surface transplant provenance: commit
 `e0297242305f3a3c3de09f1ca01e8faa771768da`, MIT OR Apache-2.0.
@@ -35908,6 +35938,19 @@ The shipped `vhosts/` Mix handlers and `examples/mix-cms/` remain alongside
 the service. Configure document roots and credentials explicitly; example
 values are documentation, not deployment configuration. Session cookies,
 environment variables and data paths use MixOS names.
+
+Every Bus caller can change listener controls, read listener secrets,
+manage vhosts, request ACME renewal, revoke sessions and reload manual TLS
+certificates. There is no listener operator list. Property schemas, computed
+status fields, listener lockout checks, certificate validation and issuance
+rate limits still apply. Reload builds all resolvers before swapping them;
+it remains unavailable where no manual TLS resolver exists.
+
+The node config loader preserves unknown webd settings, so an old
+`listeners` operator block still loads without affecting command access.
+HTTP session checks, CSRF validation and embedded route declarations remain
+part of the HTTP interface. Token commands forwarded by an HTTP handler
+carry ordinary command arguments without a delegation envelope.
 
 Build and test with `cargo test --locked -p webd`. `webd --version` emits
 MixOS build provenance. Units, sysusers and tmpfiles fragments are in

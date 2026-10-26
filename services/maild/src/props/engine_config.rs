@@ -63,11 +63,10 @@ use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 
 use ::props::bus::mutation::PropsRouter;
-use ::props::capability::{Capability, CapabilitySet};
 use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
 use ::props::namespace::{
-    AuthPolicy, Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName,
-    NamespaceSpec, PeerIdentity, PropertySchema, SchemaVersion, StorageBackendKind,
+    Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName, NamespaceSpec,
+    PropertySchema, SchemaVersion, StorageBackendKind,
 };
 use ::props::record::RecordKey;
 use ::props::runtime::Runtime;
@@ -363,25 +362,6 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// the props contract [`AuthPolicy`] — phase-3 grants every property
-/// capability to every reachable peer (WireGuard `/24` trust domain,
-/// same posture as Phase 1/2). Phase N+ narrows.
-pub fn auth_policy() -> AuthPolicy {
-    fn resolve(_peer: &PeerIdentity) -> CapabilitySet {
-        [
-            "props.read:maild.engine_config",
-            "props.write:maild.engine_config",
-            "props.describe:maild.engine_config:public",
-            "props.describe:maild.engine_config:full",
-            "props.audit:maild.engine_config",
-        ]
-        .into_iter()
-        .map(|s| Capability::new(s).expect("non-empty capability"))
-        .collect()
-    }
-    AuthPolicy::new(resolve)
-}
-
 pub fn spec(hooks: Hooks) -> NamespaceSpec {
     let mut s = NamespaceSpec::new(
         namespace_name(),
@@ -416,7 +396,6 @@ pub fn spec(hooks: Hooks) -> NamespaceSpec {
     // incompatible with `require_version=true` (§5.4) and deletes are
     // unconditionally rejected by `before_delete` anyway.
     s.require_version = true;
-    s.auth = auth_policy();
     s.hooks = hooks;
     s
 }
@@ -1592,24 +1571,6 @@ mod tests {
                 assert_eq!(canonical_key, CANONICAL_KEY);
             }
             other => panic!("expected Singleton, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn auth_policy_grants_full_capability_set() {
-        let policy = auth_policy();
-        let caps = policy.resolve(&PeerIdentity::default());
-        for c in [
-            "props.read:maild.engine_config",
-            "props.write:maild.engine_config",
-            "props.describe:maild.engine_config:public",
-            "props.describe:maild.engine_config:full",
-            "props.audit:maild.engine_config",
-        ] {
-            assert!(
-                caps.contains(&Capability::new(c).expect("non-empty capability")),
-                "cap {c} granted"
-            );
         }
     }
 

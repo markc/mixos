@@ -28,23 +28,16 @@
 //! already does this via `bcrypt::hash`; the Bus/WG-mesh equivalent
 //! must do the same. Phase 1 accepts the supplied bytes verbatim.
 //!
-//! ## Auth policy (Phase 1)
-//!
-//! Permissive per the mesh trust model: any peer reaching the dispatcher receives
-//! the four `props.{read,write,describe,audit}:maild.accounts`
-//! capabilities. The WireGuard `/24` is the trust domain; broker-side
-//! reservation (the props contract, landed in) gates the records.changed
-//! and audit topics so a peer cannot bypass the commands to spoof events.
-//! Phase 2+ will narrow this to operator vs service capability tiers.
+//! Every Bus caller can read and mutate this namespace. Hooks validate records;
+//! broker topic ownership prevents callers from spoofing property events.
 
 use std::sync::{Arc, Mutex, OnceLock};
 
 use ::props::bus::mutation::PropsRouter;
-use ::props::capability::{Capability, CapabilitySet};
 use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
 use ::props::namespace::{
-    AuthPolicy, Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName,
-    NamespaceSpec, PeerIdentity, PropertySchema, StorageBackendKind,
+    Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName, NamespaceSpec,
+    PropertySchema, StorageBackendKind,
 };
 use ::props::record::{Actor as RecordActor, RecordKey};
 use ::props::runtime::{DeleteOpts, Runtime, RuntimeError};
@@ -844,26 +837,6 @@ fn seed_default_personal_collections(conn: &Arc<Mutex<Connection>>, account_id: 
     Ok(())
 }
 
-/// the props contract [`AuthPolicy`] for `maild.accounts`. Phase 1 grants
-/// every property capability to every reachable peer; the
-/// WireGuard `/24` trust domain (the mesh trust model) is what bounds reachability.
-/// Phase 2+ will narrow this to operator / service tiers.
-pub fn auth_policy() -> AuthPolicy {
-    fn resolve(_peer: &PeerIdentity) -> CapabilitySet {
-        [
-            "props.read:maild.accounts",
-            "props.write:maild.accounts",
-            "props.describe:maild.accounts:public",
-            "props.describe:maild.accounts:full",
-            "props.audit:maild.accounts",
-        ]
-        .into_iter()
-        .map(|s| Capability::new(s).expect("non-empty capability"))
-        .collect()
-    }
-    AuthPolicy::new(resolve)
-}
-
 /// Build the [`NamespaceSpec`]. `hooks` is parameterised so tests can
 /// substitute a fake handler; production code calls
 /// [`register`] which builds the real [`AccountsHooks`].
@@ -879,7 +852,6 @@ pub fn spec(hooks: Hooks) -> NamespaceSpec {
         },
     );
     s.lifecycle = NamespaceLifecycle::Saga;
-    s.auth = auth_policy();
     s.hooks = hooks;
     s
 }
@@ -932,30 +904,6 @@ mod tests {
         assert!(pw.secret);
         let email = s.field("email").expect("email field present");
         assert!(!email.secret);
-    }
-
-    #[test]
-    fn auth_policy_grants_phase1_caps() {
-        let caps = auth_policy().resolve(&PeerIdentity::default());
-        // Five-cap surface; phase 2+ narrows.
-        assert!(caps.contains(
-            &Capability::new("props.read:maild.accounts").expect("non-empty capability")
-        ));
-        assert!(caps.contains(
-            &Capability::new("props.write:maild.accounts").expect("non-empty capability")
-        ));
-        assert!(caps.contains(
-            &Capability::new("props.describe:maild.accounts:public").expect("non-empty capability")
-        ));
-        assert!(caps.contains(
-            &Capability::new("props.describe:maild.accounts:full").expect("non-empty capability")
-        ));
-        assert!(caps.contains(
-            &Capability::new("props.audit:maild.accounts").expect("non-empty capability")
-        ));
-        assert!(!caps.contains(
-            &Capability::new("props.write:maild.elsewhere").expect("non-empty capability")
-        ));
     }
 
     #[test]

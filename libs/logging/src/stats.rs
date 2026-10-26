@@ -19,8 +19,7 @@
 //! - **Roll-up + dispatch:** `perform_rollup` / `flush_all_sinks` /
 //!   `shutdown_installed_recorder`; `local_snapshot()` reads the
 //!   installed recorder directly and always returns raw labels; the
-//!   cap-gated `snapshot_dispatch` family that applies redaction
-//!   projection backs the `<svc>.stats.snapshot` Bus command.
+//!   `snapshot_dispatch` applies filters to the same raw labels and backs the `<svc>.stats.snapshot` Bus command.
 //! - **Bus command handler (`feature = "bus-handlers"`):** the
 //!   `<svc>.stats.snapshot` Bus handler (`handle_snapshot_bus`),
 //!   parsing the wire frame via `bus::native_client`'s
@@ -63,7 +62,7 @@ mod snapshot;
 mod types;
 
 #[cfg(feature = "bus-handlers")]
-pub use bus::{SNAPSHOT_MAX_RESPONSE_BYTES, SnapshotCaps, handle_snapshot_bus};
+pub use bus::{SNAPSHOT_MAX_RESPONSE_BYTES, handle_snapshot_bus};
 // Canonical interval ceiling lives in `init`; re-exposed here so the
 // prometheus gauge idle-timeout (and any consumer) reads it under the
 // `stats::` path the original schema export used. Only the prometheus
@@ -71,7 +70,7 @@ pub use bus::{SNAPSHOT_MAX_RESPONSE_BYTES, SnapshotCaps, handle_snapshot_bus};
 #[cfg(feature = "prometheus")]
 pub(crate) use crate::init::INTERVAL_SECONDS_CEILING;
 pub use classify::{classify, classify_default, sensitivity_of};
-pub use dispatch::{LabelFilter, MetricPattern, SnapshotError, SnapshotRequest, snapshot_dispatch};
+pub use dispatch::{LabelFilter, MetricPattern, SnapshotRequest, snapshot_dispatch};
 pub(crate) use event_counter::EventCounterLayer;
 pub use jsonl_sink::{HARD_BUDGET_BYTES, JsonlSink, ProducerClass};
 pub use labels_hash::{labels_hash, labels_hash_bytes};

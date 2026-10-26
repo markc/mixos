@@ -1,75 +1,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! C5 — ergonomic Bus commands for the `webd.vhosts` substrate.
-//!
-//! Five commands sit on top of the SPEC-12 `webd.props.*` surface to give
-//! operators a single intent per command instead of having to assemble
-//! `props.set` / `props.list` / a force-renew kick by hand:
-//!
-//! * `webd.vhost.add` — assemble flat kwargs into a [`VhostRow`], stamp
-//!   `source = "bus_runtime"`, and write via
-//!   `Runtime::set_with_origin(.., WriteOrigin::backend())` under the
-//!   per-FQDN lock the provisioner's `VhostRemoved` arm also holds.
-//!   Capability: `props.write:webd.vhosts`. Backend-origin because
-//!   `source` is daemon-owned (see [`crate::vhosts_namespace`]
-//!   §"Owner column") — the caller-cap gates the command invocation, the
-//!   storage write goes through the daemon's own service-tier credential.
-//! * `webd.vhost.remove` — caller-origin `delete` against the resolved
-//!   record key. No daemon-owned-field rule on delete, so a plain
-//!   `Runtime::delete` suffices. The provisioner's `after_delete` arm
-//!   (`VhostRemoved` event → C4b cleanup) is the only downstream
-//!   state-mutation. Capability: `props.write:webd.vhosts`.
-//! * `webd.vhost.list` — caller-origin `list`, decorated with a derived
-//!   `acme_status` field (`pending` / `valid` / `expiring_soon` /
-//!   `failing`) computed from the row's `not_after` and the
-//!   provisioner's `vhost_state` (when ACME plans exist). Capability:
-//!   `props.read:webd.vhosts`; secret fields gated on `:secrets`.
-//! * `webd.acme.renew` — kicks the provisioner's notify channel so the
-//!   next sweep ticks immediately, bypassing the renewal-window gate.
-//!   Capability: **`webd.acme.renew:webd.vhosts`** (a *narrow* new cap,
-//!   not `props.write`). A renew-only operator (e.g. an automated
-//!   rotation script) should not also be able to delete vhosts; the
-//!   pair pins the cap split. The post-renewal namespace writeback goes
-//!   through webd's own service-tier write, not the caller's, so the
-//!   cap names "force a renewal" not "perform the writeback."
-//! * `webd.acme.status` — returns the provisioner's `vhost_state[fqdn]`
-//!   plus the namespace row's `not_after` and the derived
-//!   `acme_status`. Capability: `props.read:webd.vhosts`. `last_error`
-//!   is redacted (`"<redacted>"`) without `:secrets`.
-//!
-//! ## Why the commands live outside the props router
-//!
-//! The five commands are ergonomic — they assemble multiple substrate
-//! primitives into one operator intent. `vhost.add` must stamp the
-//! `source` daemon-owned field, which the caller-cap surface cannot
-//! reach; `acme.renew` is a daemon-internal notify kick that has no
-//! props.* surface at all. Routing them through the `webd.props.*`
-//! dispatcher would either require widening the caller-origin write
-//! surface (breaking the daemon-owned-field invariant) or shoehorning
-//! a non-substrate kick into the props command taxonomy (breaking the
-//! "props commands touch substrate state only" mental model).
-//!
-//! Each command owns its capability check directly via
-//! [`crate::vhosts_namespace::auth_policy`]; the per-FQDN lock is
-//! acquired against the same handle the provisioner shares
-//! ([`acme_provisioner::FqdnLockMap`]).
-//!
-//! ## Kwargs convention
-//!
-//! Mix `send <command> key=value key2=value2 ...` passes each `key=value`
-//! pair as an [`IncomingCommand::headers`] entry. We accept both
-//! dotted and underscored forms for the ACME / TLS pairs
-//! (`acme.provider` ≡ `acme_provider`) so the spec's canonical example
-//! reads naturally while existing operator habits keep working. The
-//! dotted form takes precedence when both are present (operator typed
-//! the spec form most recently).
+//! Vhost management and ACME intent commands for every Bus caller.
+//! Validated property writes and provisioner notifications share the same
+//! per-FQDN locks as the ACME provisioner.
 
 use std::sync::Arc;
 
 use ::bus::native_client::IncomingCommand;
 use props::{
-    Actor, Capability, CapabilitySet, DeleteOpts, MergeMode, PeerIdentity, PropValue, RecordKey,
-    SetOpts, StoreError, Version, WriteOrigin,
+    Actor, DeleteOpts, MergeMode, PropValue, RecordKey, SetOpts, StoreError, Version, WriteOrigin,
 };
 use serde_json::{Value as JsonValue, json};
 use std::collections::BTreeMap;
@@ -80,11 +19,11 @@ use tokio::sync::Mutex as TokioMutex;
 use super::{kwarg, kwarg_any, kwarg_bool};
 use crate::NodeState;
 use crate::acme_provisioner::RENEWAL_WINDOW;
-use crate::vhosts_namespace::{VhostRow, auth_policy, namespace_name, vhost_row_from_value};
+use crate::vhosts_namespace::{VhostRow, namespace_name, vhost_row_from_value};
 
 /// Caller-error sentinel — matches [`crate::bus::RC_CALLER_ERROR`].
 /// Duplicated here because that constant is private to `bus::mod`; the
-/// cap-deny / wire-validation arms in this module need the same shape.
+/// wire-validation arms in this module need the same shape.
 const RC_CALLER_ERROR: u8 = 10;
 
 /// `source` field value the daemon stamps on Bus-runtime vhost writes.
@@ -98,9 +37,6 @@ const SOURCE_BUS_RUNTIME: &str = "bus_runtime";
 /// after stripping the `webd.` namespace prefix (e.g. `vhost.add`).
 /// Returns the `(rc, body)` shape `NodedClient::respond` expects.
 ///
-/// Read-only by *construction* for any command the caller doesn't have a
-/// cap for; each ergonomic arm owns its own cap check via
-/// [`auth_policy`].
 pub(crate) async fn dispatch(
     suffix: &str,
     cmd: &IncomingCommand,
@@ -127,10 +63,6 @@ pub(crate) async fn dispatch(
 /// same lock identity. See `_doc/planned/webd-vhosts-phase3.md`
 /// §"Per-fqdn serialization lock".
 async fn vhost_add(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String) {
-    if let Err(rsp) = require_cap(cmd, "props.write:webd.vhosts") {
-        return rsp;
-    }
-
     // Required kwargs.
     let fqdn = match kwarg(cmd, "fqdn") {
         Some(s) => s,
@@ -273,9 +205,6 @@ async fn vhost_add(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String)
 /// `after_delete` hook → `VhostRemoved` event → C4b cleanup
 /// (archive `acme/<fqdn>/live/`, drop the plan, rebuild arc-swaps).
 async fn vhost_remove(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String) {
-    if let Err(rsp) = require_cap(cmd, "props.write:webd.vhosts") {
-        return rsp;
-    }
     let fqdn = match kwarg(cmd, "fqdn") {
         Some(s) => s,
         None => return caller_error("missing required kwarg: fqdn"),
@@ -333,18 +262,8 @@ async fn vhost_remove(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, Stri
     }
 }
 
-/// `webd.vhost.list` — `runtime.store().list` + per-row `acme_status`
-/// decoration. The substrate's secret-redaction layer is bypassed here
-/// (we serialise the typed [`VhostRow`] directly), so this command
-/// performs the same redaction inline based on the caller's
-/// `:secrets` cap. Operators who need the full substrate envelope
-/// (audit nseq, version) should continue to use `webd.props.list`.
+/// List vhosts with derived ACME status and full stored fields.
 async fn vhost_list(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String) {
-    if let Err(rsp) = require_cap(cmd, "props.read:webd.vhosts") {
-        return rsp;
-    }
-    let with_secrets = has_cap(cmd, "props.read:webd.vhosts:secrets");
-
     let Some(runtime) = node.vhosts_runtime.as_ref() else {
         return server_error("webd.vhosts runtime not attached — bootstrap node or wiring bug");
     };
@@ -370,7 +289,7 @@ async fn vhost_list(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String
             }
         };
         let acme_status = derive_acme_status(&row, &tls_snap, now_unix);
-        rows_out.push(project_row(&row, &acme_status, with_secrets));
+        rows_out.push(project_row(&row, &acme_status));
     }
 
     (
@@ -415,14 +334,10 @@ async fn vhost_list(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String
 ///   visible error.
 ///
 /// The internal read uses the runtime's store directly (no
-/// `props.read` cap on the caller is required) — this is validation
+/// an additional read request) — this is validation
 /// under the narrow renew authority, not disclosure. The command's
 /// response carries no row fields beyond the echoed `fqdn`.
 async fn acme_renew(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String) {
-    // Narrow cap — NOT `props.write`. See module docstring.
-    if let Err(rsp) = require_cap(cmd, "webd.acme.renew:webd.vhosts") {
-        return rsp;
-    }
     let fqdn = match kwarg(cmd, "fqdn") {
         Some(s) => s,
         None => return caller_error("missing required kwarg: fqdn"),
@@ -488,15 +403,8 @@ async fn acme_renew(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String
     )
 }
 
-/// `webd.acme.status fqdn=<host>` — provisioner `vhost_state[fqdn]` +
-/// namespace `not_after` + derived `acme_status`. `last_error` is
-/// redacted (`"<redacted>"`) unless the caller holds `:secrets`.
+/// Return the vhost's ACME state and full error details for every caller.
 async fn acme_status(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String) {
-    if let Err(rsp) = require_cap(cmd, "props.read:webd.vhosts") {
-        return rsp;
-    }
-    let with_secrets = has_cap(cmd, "props.read:webd.vhosts:secrets");
-
     let fqdn = match kwarg(cmd, "fqdn") {
         Some(s) => s,
         None => return caller_error("missing required kwarg: fqdn"),
@@ -538,14 +446,7 @@ async fn acme_status(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, Strin
         .as_ref()
         .and_then(|a| a.vhost_state.get(&fqdn).cloned());
 
-    let last_error_field = match (
-        with_secrets,
-        vhost_state.as_ref().and_then(|s| s.last_error.clone()),
-    ) {
-        (true, opt) => opt.map(JsonValue::String).unwrap_or(JsonValue::Null),
-        (false, Some(_)) => JsonValue::String("<redacted>".into()),
-        (false, None) => JsonValue::Null,
-    };
+    let last_error_field = vhost_state.as_ref().and_then(|s| s.last_error.clone());
 
     let body = json!({
         "fqdn": fqdn,
@@ -568,96 +469,6 @@ async fn acme_status(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, Strin
 /// [`crate::vhosts_namespace::dispatch_props`] — `service_name` carries
 /// the registered sender; Unix peer creds + WireGuard fields stay
 /// `None` because noded doesn't surface them today.
-fn peer_from_cmd(cmd: &IncomingCommand) -> PeerIdentity {
-    PeerIdentity {
-        service_name: if cmd.from.is_empty() {
-            None
-        } else {
-            Some(cmd.from.clone())
-        },
-        ..Default::default()
-    }
-}
-
-/// True iff the caller's resolved capability set contains `cap`.
-fn has_cap(cmd: &IncomingCommand, cap: &str) -> bool {
-    let peer = peer_from_cmd(cmd);
-    let caps = resolve_caps_for_dispatch(&peer);
-    Capability::new(cap).is_ok_and(|cap| caps.contains(&cap))
-}
-
-/// Resolve the dispatch-time capability set for `peer`.
-///
-/// In production the answer is `auth_policy("webd").resolve(peer)` —
-/// the same default policy the SPEC-12 `webd.props.*` router consults
-/// (the `vhosts_namespace::spec()` wires `auth_policy` straight into
-/// the `NamespaceSpec`). The ergonomic commands in this module reach
-/// outside the props router (they assemble multiple substrate
-/// primitives into one intent), so they perform their own cap
-/// resolution against the same policy and the same `PeerIdentity`
-/// shape — every cap-gated decision in the daemon goes through the
-/// same authoritative source.
-///
-/// Under `cfg(test)` the V-V cap-split tests need to drive each command
-/// arm with a hand-crafted cap set (no `props.write`, no `:secrets`,
-/// the narrow `webd.acme.renew` alone, etc.) without standing up a
-/// real peer-identity chain. A thread-local override lets a test
-/// install a custom [`AuthPolicy`] that resolves to whatever
-/// capability set the assertion needs; `clear_auth_policy_for_test`
-/// resets to the default policy at end-of-test. The override is
-/// `cfg(test)`-only — production builds compile the direct
-/// `auth_policy("webd").resolve(peer)` branch and never read the
-/// override.
-fn resolve_caps_for_dispatch(peer: &PeerIdentity) -> CapabilitySet {
-    #[cfg(test)]
-    {
-        if let Some(caps) =
-            AUTH_POLICY_OVERRIDE.with(|cell| cell.borrow().as_ref().map(|p| p.resolve(peer)))
-        {
-            return caps;
-        }
-    }
-    auth_policy("webd").resolve(peer)
-}
-
-// Thread-local override for `resolve_caps_for_dispatch`. See that
-// function's docstring for the design intent. `thread_local!` (not a
-// global) so parallel-running `#[tokio::test(flavor = "current_thread")]`s
-// don't share state — each test's tokio runtime pins to its own
-// thread for the duration of the test.
-#[cfg(test)]
-thread_local! {
-    static AUTH_POLICY_OVERRIDE: std::cell::RefCell<Option<props::AuthPolicy>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-#[cfg(test)]
-fn set_auth_policy_for_test(p: props::AuthPolicy) {
-    AUTH_POLICY_OVERRIDE.with(|cell| *cell.borrow_mut() = Some(p));
-}
-
-#[cfg(test)]
-fn clear_auth_policy_for_test() {
-    AUTH_POLICY_OVERRIDE.with(|cell| *cell.borrow_mut() = None);
-}
-
-/// Cap-check helper — returns `Err((rc, body))` to short-circuit a
-/// command arm with `auth_denied`.
-pub(crate) fn require_cap(cmd: &IncomingCommand, cap: &str) -> Result<(), (u8, String)> {
-    if has_cap(cmd, cap) {
-        Ok(())
-    } else {
-        Err((
-            RC_CALLER_ERROR,
-            json!({
-                "error": "auth_denied",
-                "missing_capability": cap,
-            })
-            .to_string(),
-        ))
-    }
-}
-
 pub(crate) fn caller_error(msg: &str) -> (u8, String) {
     (
         RC_CALLER_ERROR,
@@ -754,20 +565,8 @@ fn derive_acme_status(
     }
 }
 
-/// Render a [`VhostRow`] to JSON for the command response, redacting the
-/// three secret-annotated fields (`cert_blob_id`, `key_blob_id`,
-/// `last_error`) when the caller lacks `:secrets`.
-fn project_row(row: &VhostRow, acme_status: &str, with_secrets: bool) -> JsonValue {
-    let redact = |v: &Option<String>| -> JsonValue {
-        match (with_secrets, v) {
-            (true, opt) => opt
-                .as_ref()
-                .map(|s| JsonValue::String(s.clone()))
-                .unwrap_or(JsonValue::Null),
-            (false, Some(_)) => JsonValue::String("<redacted>".into()),
-            (false, None) => JsonValue::Null,
-        }
-    };
+/// Render all stored vhost fields for every Bus caller.
+fn project_row(row: &VhostRow, acme_status: &str) -> JsonValue {
     json!({
         "fqdn": row.fqdn,
         "enabled": row.enabled,
@@ -779,12 +578,12 @@ fn project_row(row: &VhostRow, acme_status: &str, with_secrets: bool) -> JsonVal
         "acme_contact_email": row.acme_contact_email,
         "tls_cert_path": row.tls_cert_path,
         "tls_key_path": row.tls_key_path,
-        "cert_blob_id": redact(&row.cert_blob_id),
-        "key_blob_id": redact(&row.key_blob_id),
+        "cert_blob_id": row.cert_blob_id,
+        "key_blob_id": row.key_blob_id,
         "not_after": row.not_after,
         "last_attempt": row.last_attempt,
         "last_error_count": row.last_error_count,
-        "last_error": redact(&row.last_error),
+        "last_error": row.last_error,
         "acme_status": acme_status,
     })
 }
@@ -800,11 +599,20 @@ mod tests {
     };
     use arc_swap::ArcSwap;
     use config::node::{NodeConfig, WebdListenerConfig};
+    use props::PropsRouter;
     use props::sqlite::SqliteStore;
-    use props::{AuthPolicy, PropsRouter};
     use rusqlite::Connection;
     use std::collections::{BTreeMap, HashMap, HashSet};
     use tokio::sync::RwLock;
+
+    #[test]
+    fn configs_with_removed_listener_operators_still_load() {
+        let config: NodeConfig = config::from_conf_mix_str(
+            r#"webd: { listeners: { operators: ["old-client"] }, port: 8443 }"#,
+        )
+        .expect("unknown webd settings survive typed node config loading");
+        assert_eq!(config.webd.port, 8443);
+    }
 
     fn cmd_with_headers(command_name: &str, headers: &[(&str, &str)]) -> IncomingCommand {
         let mut hdrs: std::collections::BTreeMap<String, String> = Default::default();
@@ -838,35 +646,16 @@ mod tests {
         }
     }
 
-    /// Build a NodeState whose `vhosts_runtime` is wired against an
-    /// in-memory SqliteStore + per-FQDN lock map + notify channel.
-    /// `auth_policy` is overridden via [`override_auth_policy`] so the
-    /// V-V cap-split tests can hand the dispatcher a peer with a
-    /// narrowed cap set without going through PeerIdentity.
-    async fn build_node_with_caps(caps: &[&str]) -> Arc<NodeState> {
-        build_node_with_caps_ops(caps, &[]).await
+    /// Build an in-memory namespace with the production command path.
+    async fn build_node() -> Arc<NodeState> {
+        build_node_full(ListenerConfigSource::Fixed(None)).await
     }
 
-    /// As [`build_node_with_caps`], but also seeds the L0
-    /// `listeners_operators` allowlist — the listener write-cap is granted
-    /// only to a peer whose `service_name` is in it (see
-    /// `listeners_namespace::auth_policy`), so a test that must reach a
-    /// listener MUTATION arm needs both this AND a matching `cmd.from`.
-    async fn build_node_with_caps_ops(caps: &[&str], operators: &[&str]) -> Arc<NodeState> {
-        build_node_full(caps, operators, ListenerConfigSource::Fixed(None)).await
+    async fn build_node_with_listener_config(cfg: NodeConfig) -> Arc<NodeState> {
+        build_node_full(ListenerConfigSource::Fixed(Some(Arc::new(cfg)))).await
     }
 
-    /// As [`build_node_with_caps`], but the commands' restart-time
-    /// listener check reads `cfg` instead of "no node config".
-    async fn build_node_with_listener_config(caps: &[&str], cfg: NodeConfig) -> Arc<NodeState> {
-        build_node_full(caps, &[], ListenerConfigSource::Fixed(Some(Arc::new(cfg)))).await
-    }
-
-    async fn build_node_full(
-        caps: &[&str],
-        operators: &[&str],
-        listener_config: ListenerConfigSource,
-    ) -> Arc<NodeState> {
+    async fn build_node_full(listener_config: ListenerConfigSource) -> Arc<NodeState> {
         // Mirror production: explicit iff the node config carries a
         // [[webd.listener]] array.
         let explicit_listeners = matches!(
@@ -883,17 +672,6 @@ mod tests {
         let (runtime, _events_rx) =
             register_vhosts_namespace_with_listener_config(&mut router, &store, listener_config)
                 .expect("register");
-        // Override the spec's AuthPolicy after registration so the test
-        // cap set is what command dispatch sees. We can't replace the
-        // `NamespaceSpec` already wired into the runtime, but the
-        // commands read `vhosts_namespace::auth_policy("webd")` directly
-        // — so we don't need to. Instead the command dispatch's
-        // `has_cap` reads the same default policy. For V-V tests we
-        // *only* need to test the cap-deny / cap-admit shapes; we do
-        // that by stubbing the `auth_policy` call indirectly via
-        // [`AUTH_POLICY_OVERRIDE`] (see `set_auth_policy_for_test`).
-        set_auth_policy_for_test(custom_policy(caps));
-
         let (_tx, tls_status_rx) = tokio::sync::watch::channel(TlsStatusSnapshot::default());
         let key_locks: FqdnLockMap = Arc::new(TokioMutex::new(HashMap::new()));
         let notify = Arc::new(tokio::sync::Notify::new());
@@ -926,7 +704,6 @@ mod tests {
             broker_handle: crate::bus::subscribe_granter::new_broker_handle(),
             vhosts_runtime: Some(runtime),
             listeners_runtime: None,
-            listeners_operators: operators.iter().map(|s| (*s).to_string()).collect(),
             vhost_key_locks: Some(key_locks),
             acme_notify: Some(notify),
             // Tests that exercise force-renew share the fixture but
@@ -947,56 +724,67 @@ mod tests {
         })
     }
 
-    /// Build a CapabilitySet from a slice of cap strings.
-    fn caps_from(list: &[&str]) -> CapabilitySet {
-        list.iter()
-            .map(|s| Capability::new((*s).to_string()).expect("non-empty capability"))
-            .collect()
-    }
-
-    /// Build an AuthPolicy that returns the given cap set for any peer.
-    fn custom_policy(list: &[&str]) -> AuthPolicy {
-        let caps = caps_from(list);
-        AuthPolicy::new(move |_peer: &PeerIdentity| caps.clone())
-    }
-
-    // `set_auth_policy_for_test` / `clear_auth_policy_for_test` live
-    // at parent module scope so `resolve_caps_for_dispatch` (the
-    // production hot path under `#[cfg(test)]`) can read the same
-    // thread-local. See [`resolve_caps_for_dispatch`].
-    use super::{clear_auth_policy_for_test, set_auth_policy_for_test};
-
-    /// Sanity: the default `auth_policy("webd")` grants all 7 caps
-    /// declared by [`crate::vhosts_namespace::auth_policy`] — the 6
-    /// substrate-shaped caps from C1c plus the C5-added narrow
-    /// renew cap. The V-V cap-split tests below depend on the
-    /// override returning *only* the listed caps; this test pins the
-    /// baseline so a default-policy change can't silently widen the
-    /// V-V test admission.
-    ///
-    /// The renew cap is granted to every WG peer in v0.1, matching
-    /// the existing posture for the other webd caps and the
-    /// maild Phase 1/2/3 default (`_doc/planned/webd-vhosts-phase3.md`
-    /// §"AuthPolicy"). Cross-mesh authz narrows it later without
-    /// renaming the cap.
-    #[test]
-    fn default_auth_policy_lists_all_caps() {
-        let caps = auth_policy("webd").resolve(&PeerIdentity::default());
-        for w in [
-            "props.read:webd.vhosts",
-            "props.read:webd.vhosts:secrets",
-            "props.describe:webd.vhosts:public",
-            "props.describe:webd.vhosts:full",
-            "props.audit:webd.vhosts",
-            "props.write:webd.vhosts",
-            "webd.acme.renew:webd.vhosts",
-        ] {
-            assert!(
-                caps.contains(&Capability::new(w.to_string()).expect("non-empty capability")),
-                "default policy must declare {w}",
-            );
+    #[tokio::test]
+    async fn listener_commands_accept_every_caller_and_include_secrets() {
+        let mut node = build_node().await;
+        let store =
+            Arc::new(SqliteStore::new("webd", Connection::open_in_memory().unwrap()).unwrap());
+        let mut router = PropsRouter::new("webd");
+        let (runtime, _events) =
+            crate::listeners_namespace::register_listeners_namespace(&mut router, &store).unwrap();
+        runtime
+            .set_with_origin(
+                RecordKey::collection(crate::listeners_namespace::namespace_name(), "public"),
+                serde_json::from_value(serde_json::json!({
+                    "id":"public", "enabled":true, "external":true, "last_error":"listener detail"
+                }))
+                .unwrap(),
+                SetOpts {
+                    expected_version: Some(Version::zero()),
+                    merge: MergeMode::Replace,
+                    actor: Actor::service("webd").unwrap(),
+                    cause: None,
+                    ts_ms: 0,
+                },
+                WriteOrigin::backend(),
+            )
+            .await
+            .unwrap();
+        Arc::get_mut(&mut node).unwrap().listeners_runtime = Some(runtime);
+        for caller in ["", "unlisted-agent"] {
+            for (command, enabled) in [("listener.disable", false), ("listener.enable", true)] {
+                let mut request = cmd_with_args(command, serde_json::json!({"id":"public"}));
+                request.from = caller.into();
+                let (rc, body) =
+                    super::super::listener_commands::dispatch(command, &request, &node)
+                        .await
+                        .unwrap();
+                assert_eq!(rc, 0, "{caller:?}: {body}");
+                let status = cmd_with_args("listener.status", serde_json::json!({"id":"public"}));
+                let (rc, body) =
+                    super::super::listener_commands::dispatch("listener.status", &status, &node)
+                        .await
+                        .unwrap();
+                assert_eq!(rc, 0, "{body}");
+                let body: JsonValue = serde_json::from_str(&body).unwrap();
+                assert_eq!(body["listeners"][0]["enabled"], enabled);
+                assert_eq!(body["listeners"][0]["last_error"], "listener detail");
+            }
         }
-        clear_auth_policy_for_test();
+    }
+
+    #[tokio::test]
+    async fn tls_reload_availability_is_the_same_for_every_caller() {
+        let node = build_node().await;
+        for caller in ["", "unlisted-agent"] {
+            let mut request = cmd_with_headers("webd.tls.reload", &[]);
+            request.from = caller.into();
+            let (rc, body) = super::super::tls::dispatch("tls.reload", &request, &node)
+                .await
+                .unwrap();
+            assert_eq!(rc, 10);
+            assert!(body.contains("unavailable"), "{body}");
+        }
     }
 
     /// V-V — `vhost.add` happy path with full ACME trio. Acquires the
@@ -1005,8 +793,7 @@ mod tests {
     /// with the stamped source.
     #[tokio::test(flavor = "current_thread")]
     async fn vhost_add_happy_path_writes_bus_runtime_row() {
-        let node =
-            build_node_with_caps(&["props.write:webd.vhosts", "props.read:webd.vhosts"]).await;
+        let node = build_node().await;
         let cmd = cmd_with_headers(
             "webd.vhost.add",
             &[
@@ -1043,72 +830,12 @@ mod tests {
         } else {
             panic!("row body is not an Object: {:?}", snap.value.value);
         }
-        clear_auth_policy_for_test();
     }
 
-    /// 2026-07 kwarg sweep — `vhost.add` with EVERY kwarg delivered in the
-    /// JSON `args` object (no headers), the shape a bare Mix `send k=v`
-    /// produces. Proves per-command that `fqdn`/`www_dir` (kwarg), a dotted
-    /// `acme.provider` (kwarg_any), and `enabled=false` as a real JSON bool
-    /// (kwarg_bool) all read from `args` — the exact channel the pre-sweep
-    /// header-only reads missed. The discriminating assertion is
-    /// `enabled == false`: a kwarg_bool that failed to read the JSON bool
-    /// would default it back to `true`.
-    #[tokio::test(flavor = "current_thread")]
-    async fn vhost_add_reads_all_kwargs_from_args_object() {
-        let node =
-            build_node_with_caps(&["props.write:webd.vhosts", "props.read:webd.vhosts"]).await;
-        let cmd = cmd_with_args(
-            "webd.vhost.add",
-            serde_json::json!({
-                "fqdn": "argswired.example.com",
-                "www_dir": "/srv/argswired",
-                "acme.provider": "letsencrypt_staging",
-                "acme.challenge": "http01",
-                "acme.contact_email": "ops@example.com",
-                "enabled": false,
-            }),
-        );
-        let (rc, body) = vhost_add(&node, &cmd).await;
-        assert_eq!(rc, 0, "args-delivered add rc=0; body={body}");
-
-        let runtime = node.vhosts_runtime.as_ref().unwrap();
-        let key = RecordKey::collection(namespace_name(), "argswired.example.com".to_string());
-        let snap = runtime.store().get(&key).await.expect("row present");
-        let PropValue::Object(m) = &snap.value.value else {
-            panic!("row body is not an Object: {:?}", snap.value.value);
-        };
-        assert_eq!(
-            m.get("www_dir"),
-            Some(&PropValue::String("/srv/argswired".into())),
-            "www_dir read from args",
-        );
-        assert_eq!(
-            m.get("acme_provider"),
-            Some(&PropValue::String("letsencrypt_staging".into())),
-            "dotted acme.provider read from args via kwarg_any",
-        );
-        assert_eq!(
-            m.get("enabled"),
-            Some(&PropValue::Bool(false)),
-            "enabled=false JSON bool read from args via kwarg_bool — NOT defaulted to true",
-        );
-        clear_auth_policy_for_test();
-    }
-
-    /// 2026-07 kwarg sweep — `listener.enable` reads its `id` from the
-    /// `args` object (no header). The live probe couldn't reach this arm
-    /// (it sits behind the operator write-cap), so pin it here: with the
-    /// cap granted, an args-delivered `id` must get PAST the "missing
-    /// required kwarg: id" gate to the not-found lookup — proving the read,
-    /// not the header coincidence.
+    /// Listener intent reads its id from args even with a broker correlation header.
     #[tokio::test(flavor = "current_thread")]
     async fn listener_enable_reads_id_from_args_object() {
-        // Operator "op-tester" holds the listener write-cap (allowlist +
-        // matching cmd.from). listener_commands uses its OWN auth_policy keyed
-        // on listeners_operators — NOT the vhost thread-local override — so
-        // the cap must be granted this way.
-        let node = build_node_with_caps_ops(&[], &["op-tester"]).await;
+        let node = build_node().await;
         let mut cmd = cmd_with_args(
             "webd.listener.enable",
             serde_json::json!({ "id": "nonexistent-listener" }),
@@ -1125,16 +852,11 @@ mod tests {
         let (rc, body) = super::super::listener_commands::dispatch("listener.enable", &cmd, &node)
             .await
             .expect("listener.enable is a listener command");
-        // The id read (kwarg) sits AFTER the cap check but BEFORE the
-        // runtime check, so with the cap granted the response must be the
-        // "not attached" (runtime=None in this fixture) — proving the id was
-        // read from args — and must NEVER be "missing required kwarg: id"
-        // (which would mean the args-delivered id was dropped) or
-        // "auth_denied" (cap not granted → id read never reached).
+        // This fixture has no listener runtime, so availability follows argument parsing.
         assert_eq!(rc, 10, "body={body}");
         assert!(
-            !body.contains("missing required kwarg") && !body.contains("auth_denied"),
-            "id must be read from args past the cap gate; got {body}",
+            !body.contains("missing required kwarg"),
+            "id must be read from args; got {body}",
         );
         assert!(
             body.contains("not attached"),
@@ -1152,7 +874,7 @@ mod tests {
     /// id honoured, exercised via the real dispatch path.
     #[tokio::test(flavor = "current_thread")]
     async fn listener_status_id_filter_uses_operator_id_not_message_id() {
-        let node = build_node_with_caps_ops(&["props.read:webd.listeners"], &[]).await;
+        let node = build_node().await;
         // status needs a listeners runtime; without one it's "not attached".
         // The point here is purely that the id read prefers args — assert via
         // kwarg directly on the production-shaped command, since status with
@@ -1168,11 +890,10 @@ mod tests {
         let _ = node; // node built to mirror the dispatch fixture shape
     }
 
-    /// V-V — `vhost.add` without `props.write:webd.vhosts` rejected.
-    /// Pin the cap-split: a read-only caller cannot create vhosts.
+    /// An anonymous caller can create a validated vhost.
     #[tokio::test(flavor = "current_thread")]
-    async fn vhost_add_without_write_cap_denied() {
-        let node = build_node_with_caps(&["props.read:webd.vhosts"]).await;
+    async fn anonymous_vhost_add_succeeds() {
+        let node = build_node().await;
         let cmd = cmd_with_headers(
             "webd.vhost.add",
             &[
@@ -1184,25 +905,17 @@ mod tests {
             ],
         );
         let (rc, body) = vhost_add(&node, &cmd).await;
-        assert_eq!(rc, RC_CALLER_ERROR);
-        let v: JsonValue = serde_json::from_str(&body).unwrap();
-        assert_eq!(v["error"], "auth_denied");
-        assert_eq!(v["missing_capability"], "props.write:webd.vhosts");
-        // Negative: no row was written.
+        assert_eq!(rc, 0, "anonymous add: {body}");
         let runtime = node.vhosts_runtime.as_ref().unwrap();
         let key = RecordKey::collection(namespace_name(), "denied.example.com".to_string());
-        assert!(
-            matches!(runtime.store().get(&key).await, Err(StoreError::NotFound)),
-            "denied vhost.add must not write a row",
-        );
-        clear_auth_policy_for_test();
+        assert!(runtime.store().get(&key).await.is_ok());
     }
 
     /// V-V — `vhost.remove` happy path. Add a row, remove it,
     /// confirm the row is gone.
     #[tokio::test(flavor = "current_thread")]
     async fn vhost_remove_happy_path_drops_row() {
-        let node = build_node_with_caps(&["props.write:webd.vhosts"]).await;
+        let node = build_node().await;
         // Seed: vhost.add first.
         let add = cmd_with_headers(
             "webd.vhost.add",
@@ -1227,7 +940,6 @@ mod tests {
             matches!(runtime.store().get(&key).await, Err(StoreError::NotFound)),
             "row must be gone after vhost.remove",
         );
-        clear_auth_policy_for_test();
     }
 
     /// Regression for the soft-delete re-add OCC trap: after
@@ -1239,7 +951,7 @@ mod tests {
     /// the operator would have no in-band recovery path.
     #[tokio::test(flavor = "current_thread")]
     async fn vhost_add_after_remove_recreates_via_tombstone_anchor() {
-        let node = build_node_with_caps(&["props.write:webd.vhosts"]).await;
+        let node = build_node().await;
         let add1 = cmd_with_headers(
             "webd.vhost.add",
             &[
@@ -1303,15 +1015,13 @@ mod tests {
         } else {
             panic!("row body is not an Object: {:?}", snap.value.value);
         }
-        clear_auth_policy_for_test();
     }
 
     /// V-V — `vhost.list` happy path returns the row with derived
     /// `acme_status = "pending"` (no `not_after` stamped yet).
     #[tokio::test(flavor = "current_thread")]
     async fn vhost_list_happy_path_decorates_acme_status_pending() {
-        let node =
-            build_node_with_caps(&["props.read:webd.vhosts", "props.write:webd.vhosts"]).await;
+        let node = build_node().await;
         // Seed.
         let add = cmd_with_headers(
             "webd.vhost.add",
@@ -1334,11 +1044,8 @@ mod tests {
         let row = &v["rows"][0];
         assert_eq!(row["fqdn"], "list.example.com");
         assert_eq!(row["acme_status"], "pending");
-        // Without :secrets, cert_blob_id stays redacted/null. The
-        // freshly-added row has no cert_blob_id either way (no
-        // issuance yet), so we just assert the field exists.
+        // No certificate has been issued yet, so the field is present but null.
         assert!(row.get("cert_blob_id").is_some());
-        clear_auth_policy_for_test();
     }
 
     /// V-V — `acme.renew` happy path BOTH queues the fqdn for
@@ -1351,14 +1058,10 @@ mod tests {
     /// The command now also pre-validates the fqdn against the namespace
     /// row (since the post-fix command rejects unknown/disabled/non-ACME
     /// fqdns rather than queueing a guaranteed-no-op), so the test
-    /// seeds an enabled ACME row before invoking renew. The seed uses
-    /// the same `vhost.add` path the operator would, which requires
-    /// the `props.write:webd.vhosts` cap to be in scope alongside the
-    /// narrow renew cap for this test only.
+    /// seeds an enabled ACME row through vhost.add before invoking renew.
     #[tokio::test(flavor = "current_thread")]
     async fn acme_renew_happy_path_queues_then_notifies() {
-        let node =
-            build_node_with_caps(&["props.write:webd.vhosts", "webd.acme.renew:webd.vhosts"]).await;
+        let node = build_node().await;
         // Seed the row so the new pre-queue validation passes.
         let seed = cmd_with_headers(
             "webd.vhost.add",
@@ -1399,23 +1102,17 @@ mod tests {
         let v: JsonValue = serde_json::from_str(&body).unwrap();
         assert_eq!(v["ok"], true);
         assert_eq!(v["state"], "pending");
-        clear_auth_policy_for_test();
     }
 
-    /// V-V — `acme.renew` with `props.write` but NOT the narrow
-    /// `webd.acme.renew:webd.vhosts` cap is denied. This is the
-    /// cap-split pin: a write-cap holder cannot force renewals
-    /// outside the renewal-window gate.
+    /// An anonymous renewal request reaches target validation.
     #[tokio::test(flavor = "current_thread")]
-    async fn acme_renew_with_write_cap_only_denied() {
-        let node = build_node_with_caps(&["props.write:webd.vhosts"]).await;
+    async fn anonymous_acme_renew_validates_target() {
+        let node = build_node().await;
         let cmd = cmd_with_headers("webd.acme.renew", &[("fqdn", "denied.example.com")]);
         let (rc, body) = acme_renew(&node, &cmd).await;
         assert_eq!(rc, RC_CALLER_ERROR);
         let v: JsonValue = serde_json::from_str(&body).unwrap();
-        assert_eq!(v["error"], "auth_denied");
-        assert_eq!(v["missing_capability"], "webd.acme.renew:webd.vhosts");
-        clear_auth_policy_for_test();
+        assert!(v["error"].as_str().unwrap().contains("not found"), "{body}");
     }
 
     /// V-V — `acme.renew` on an unknown fqdn (typo or never-added) is
@@ -1429,7 +1126,7 @@ mod tests {
     /// renew.
     #[tokio::test(flavor = "current_thread")]
     async fn acme_renew_unknown_fqdn_caller_error() {
-        let node = build_node_with_caps(&["webd.acme.renew:webd.vhosts"]).await;
+        let node = build_node().await;
         let queue = node.acme_force_renew_queue.clone().expect("queue wired");
         let cmd = cmd_with_headers(
             "webd.acme.renew",
@@ -1448,7 +1145,6 @@ mod tests {
             queue.lock().await.is_empty(),
             "queue must remain empty after rejected renew",
         );
-        clear_auth_policy_for_test();
     }
 
     /// V-V — `acme.renew` on a soft-deleted (tombstoned) row is
@@ -1458,8 +1154,7 @@ mod tests {
     /// no-op path.
     #[tokio::test(flavor = "current_thread")]
     async fn acme_renew_tombstoned_fqdn_caller_error() {
-        let node =
-            build_node_with_caps(&["props.write:webd.vhosts", "webd.acme.renew:webd.vhosts"]).await;
+        let node = build_node().await;
         let queue = node.acme_force_renew_queue.clone().expect("queue wired");
         // Add then remove → tombstone in the SqliteStore.
         let add = cmd_with_headers(
@@ -1496,7 +1191,6 @@ mod tests {
             queue.lock().await.is_empty(),
             "queue must remain empty after tombstone rejection",
         );
-        clear_auth_policy_for_test();
     }
 
     /// V-V — `acme.renew` on a disabled (`enabled=false`) row is
@@ -1505,8 +1199,7 @@ mod tests {
     /// disabled-state gate which the BLOCKER 1 fix did NOT bypass).
     #[tokio::test(flavor = "current_thread")]
     async fn acme_renew_disabled_fqdn_caller_error() {
-        let node =
-            build_node_with_caps(&["props.write:webd.vhosts", "webd.acme.renew:webd.vhosts"]).await;
+        let node = build_node().await;
         let queue = node.acme_force_renew_queue.clone().expect("queue wired");
         let add = cmd_with_headers(
             "webd.vhost.add",
@@ -1534,7 +1227,6 @@ mod tests {
             queue.lock().await.is_empty(),
             "queue must remain empty after disabled rejection",
         );
-        clear_auth_policy_for_test();
     }
 
     /// V-V — `acme.renew` on a row with no `acme_provider` (manual-TLS
@@ -1544,8 +1236,7 @@ mod tests {
     /// mismatch to the operator instead.
     #[tokio::test(flavor = "current_thread")]
     async fn acme_renew_no_acme_provider_caller_error() {
-        let node =
-            build_node_with_caps(&["props.write:webd.vhosts", "webd.acme.renew:webd.vhosts"]).await;
+        let node = build_node().await;
         let queue = node.acme_force_renew_queue.clone().expect("queue wired");
         // Manual-TLS vhost: no acme_provider, but cert/key pair so the
         // namespace hook accepts an enabled row. This is the operator
@@ -1581,15 +1272,12 @@ mod tests {
             queue.lock().await.is_empty(),
             "queue must remain empty after no-acme-provider rejection",
         );
-        clear_auth_policy_for_test();
     }
 
-    /// V-V — `acme.status` happy path returns the derived status +
-    /// row's `not_after` + redacted `last_error` without `:secrets`.
+    /// An anonymous caller receives full ACME error details.
     #[tokio::test(flavor = "current_thread")]
-    async fn acme_status_happy_path_redacts_last_error() {
-        let node =
-            build_node_with_caps(&["props.read:webd.vhosts", "props.write:webd.vhosts"]).await;
+    async fn anonymous_acme_status_includes_last_error() {
+        let node = build_node().await;
         // Seed a vhost row.
         let add = cmd_with_headers(
             "webd.vhost.add",
@@ -1653,7 +1341,6 @@ mod tests {
                 broker_handle: node.broker_handle.clone(),
                 vhosts_runtime: runtime,
                 listeners_runtime: None,
-                listeners_operators: Vec::new(),
                 vhost_key_locks: key_locks,
                 acme_notify: notify,
                 acme_force_renew_queue: force_queue,
@@ -1673,21 +1360,17 @@ mod tests {
         let v: JsonValue = serde_json::from_str(&body).unwrap();
         assert_eq!(v["fqdn"], "status.example.com");
         assert_eq!(
-            v["last_error"], "<redacted>",
-            "last_error must be redacted without :secrets cap"
+            v["last_error"], "secret-leaking-error-body",
+            "every caller receives last_error"
         );
         assert_eq!(v["last_error_count"], 2);
         assert_eq!(v["acme_status"], "failing"); // last_error_count > 0
-        clear_auth_policy_for_test();
     }
 
-    /// V-V cap-split admit pin (the inverse of the renew-deny
-    /// test): a holder of `props.write:webd.vhosts` *can* add a new
-    /// ACME vhost, even though that consumes LE rate-limit budget.
-    /// The cap honestly admits this scope.
+    /// Any caller can request ACME issuance; issuance rate limits still apply.
     #[tokio::test(flavor = "current_thread")]
-    async fn props_write_cap_holder_can_add_new_acme_vhost_consuming_rate() {
-        let node = build_node_with_caps(&["props.write:webd.vhosts"]).await;
+    async fn anonymous_caller_can_add_new_acme_vhost_consuming_rate() {
+        let node = build_node().await;
         let cmd = cmd_with_headers(
             "webd.vhost.add",
             &[
@@ -1701,9 +1384,8 @@ mod tests {
         let (rc, body) = vhost_add(&node, &cmd).await;
         assert_eq!(
             rc, 0,
-            "props.write holder admitted for ACME vhost.add; body={body}"
+            "anonymous caller admitted for ACME vhost.add; body={body}"
         );
-        clear_auth_policy_for_test();
     }
 
     // ── restart-time listener surface: vhost.add / vhost.remove must
@@ -1906,7 +1588,7 @@ mod tests {
             )],
             &[],
         );
-        let node = build_node_with_listener_config(&["props.write:webd.vhosts"], cfg).await;
+        let node = build_node_with_listener_config(cfg).await;
         let (rc, body) = vhost_add(&node, &add_cmd("new.example.org")).await;
         assert_eq!(rc, RC_CALLER_ERROR, "refused as caller error; body={body}");
         assert!(body.contains("vhost.add failed"), "{body}");
@@ -1923,7 +1605,6 @@ mod tests {
             "a refused add must not even leave a tombstone",
         );
         assert!(namespace_hosts(&node).await.is_empty());
-        clear_auth_policy_for_test();
     }
 
     /// The success half: after an admitted `vhost.add`, every surface
@@ -1944,7 +1625,7 @@ mod tests {
             ],
             &[],
         );
-        let node = build_node_with_listener_config(&["props.write:webd.vhosts"], cfg.clone()).await;
+        let node = build_node_with_listener_config(cfg.clone()).await;
         let www = tempfile::tempdir().unwrap();
         let www_dir = www.path().to_string_lossy().into_owned();
         let (rc, body) = vhost_add(&node, &add_cmd_in(host, &www_dir)).await;
@@ -1991,7 +1672,6 @@ mod tests {
         let buckets = crate::partition_identities_by_listener(&[ident], &resolved);
         assert_eq!(buckets.get("pub").map(Vec::len), Some(1));
         assert!(!buckets.contains_key("wg"));
-        clear_auth_policy_for_test();
     }
 
     /// Remove mirror: refusing to orphan a listener entry, and allowing
@@ -2000,7 +1680,7 @@ mod tests {
     async fn vhost_remove_refused_while_a_listener_still_names_the_host() {
         let host = "gone.example.org";
         let naming = cfg_with(vec![listener("pub", "192.0.2.1:443", true, &[host])], &[]);
-        let node = build_node_with_listener_config(&["props.write:webd.vhosts"], naming).await;
+        let node = build_node_with_listener_config(naming).await;
         let (rc, body) = vhost_add(&node, &add_cmd(host)).await;
         assert_eq!(rc, 0, "seed add; body={body}");
 
@@ -2013,7 +1693,6 @@ mod tests {
             vec![host.to_string()],
             "a refused remove must leave the row in place",
         );
-        clear_auth_policy_for_test();
     }
 
     /// A disabled row is not routed, so it needs no listener: the add is
@@ -2024,7 +1703,7 @@ mod tests {
     async fn disabled_add_needs_no_listener_but_enabling_it_does() {
         let host = "staged.example.org";
         let cfg = cfg_with(vec![listener("pub", "192.0.2.1:443", true, &[])], &[]);
-        let node = build_node_with_listener_config(&["props.write:webd.vhosts"], cfg.clone()).await;
+        let node = build_node_with_listener_config(cfg.clone()).await;
         let mut add = add_cmd(host);
         add.headers
             .insert("enabled".to_string(), "false".to_string());
@@ -2046,18 +1725,15 @@ mod tests {
         let (rc, body) = vhost_add(&node, &add_cmd(host)).await;
         assert_eq!(rc, RC_CALLER_ERROR, "enable refused; body={body}");
         assert!(body.contains("not in any [[webd.listener]]"), "{body}");
-        clear_auth_policy_for_test();
     }
 
     /// An unreadable node.conf.mix is a node fault: rc 20 on both the
     /// ergonomic command and the raw props surface, not a caller error.
     #[tokio::test(flavor = "current_thread")]
     async fn unreadable_node_config_is_rc_20_on_both_surfaces() {
-        let node = build_node_full(
-            &["props.write:webd.vhosts"],
-            &[],
-            ListenerConfigSource::Broken("parse error at line 3".to_string()),
-        )
+        let node = build_node_full(ListenerConfigSource::Broken(
+            "parse error at line 3".to_string(),
+        ))
         .await;
         let (rc, body) = vhost_add(&node, &add_cmd("any.example.org")).await;
         assert_eq!(rc, 20, "command: node fault; body={body}");
@@ -2079,7 +1755,6 @@ mod tests {
             crate::vhosts_namespace::dispatch_props(&node.props_router, "set", &set).await;
         assert_eq!(rc, 20, "props.set: node fault; body={body}");
         assert!(namespace_hosts(&node).await.is_empty());
-        clear_auth_policy_for_test();
     }
 
     fn props_cmd(command_name: &str, headers: &[(&str, &str)], body: &str) -> IncomingCommand {
@@ -2096,7 +1771,7 @@ mod tests {
         let named = "named.example.org";
         let unnamed = "unnamed.example.org";
         let cfg = cfg_with(vec![listener("pub", "192.0.2.1:443", true, &[named])], &[]);
-        let node = build_node_with_listener_config(&["props.write:webd.vhosts"], cfg).await;
+        let node = build_node_with_listener_config(cfg).await;
         let row = |fqdn: &str| {
             format!(
                 r#"{{"fqdn":"{fqdn}","www_dir":"/srv/x","enabled":true,
@@ -2141,7 +1816,6 @@ mod tests {
         assert_eq!(rc, 10, "delete refused; body={body}");
         assert!(body.contains("still names vhost"), "{body}");
         assert_eq!(namespace_hosts(&node).await, vec![named.to_string()]);
-        clear_auth_policy_for_test();
     }
 
     /// Writes to an already-enabled row are not re-checked: config that
@@ -2240,13 +1914,52 @@ mod tests {
             vec![listener("pub", "192.0.2.1:443", true, &[host])],
             &[host],
         );
-        let node = build_node_with_listener_config(&["props.write:webd.vhosts"], cfg).await;
+        let node = build_node_with_listener_config(cfg).await;
         let (rc, body) = vhost_add(&node, &add_cmd(host)).await;
         assert_eq!(rc, 0, "seed add; body={body}");
         let rm = cmd_with_headers("webd.vhost.remove", &[("fqdn", host)]);
         let (rc, body) = vhost_remove(&node, &rm).await;
         assert_eq!(rc, 0, "remove allowed; body={body}");
         assert!(namespace_hosts(&node).await.is_empty());
-        clear_auth_policy_for_test();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn vhost_add_reads_all_kwargs_from_args_object() {
+        let node = build_node().await;
+        let cmd = cmd_with_args(
+            "webd.vhost.add",
+            serde_json::json!({
+                "fqdn": "argswired.example.com",
+                "www_dir": "/srv/argswired",
+                "acme.provider": "letsencrypt_staging",
+                "acme.challenge": "http01",
+                "acme.contact_email": "ops@example.com",
+                "enabled": false,
+            }),
+        );
+        let (rc, body) = vhost_add(&node, &cmd).await;
+        assert_eq!(rc, 0, "args-delivered add rc=0; body={body}");
+
+        let runtime = node.vhosts_runtime.as_ref().unwrap();
+        let key = RecordKey::collection(namespace_name(), "argswired.example.com".to_string());
+        let snap = runtime.store().get(&key).await.expect("row present");
+        let PropValue::Object(m) = &snap.value.value else {
+            panic!("row body is not an Object: {:?}", snap.value.value);
+        };
+        assert_eq!(
+            m.get("www_dir"),
+            Some(&PropValue::String("/srv/argswired".into())),
+            "www_dir read from args",
+        );
+        assert_eq!(
+            m.get("acme_provider"),
+            Some(&PropValue::String("letsencrypt_staging".into())),
+            "dotted acme.provider read from args via kwarg_any",
+        );
+        assert_eq!(
+            m.get("enabled"),
+            Some(&PropValue::Bool(false)),
+            "enabled=false JSON bool read from args via kwarg_bool — NOT defaulted to true",
+        );
     }
 }

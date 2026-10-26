@@ -36,11 +36,10 @@
 use std::sync::Arc;
 
 use ::props::bus::mutation::PropsRouter;
-use ::props::capability::{Capability, CapabilitySet};
 use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
 use ::props::namespace::{
-    AuthPolicy, Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName,
-    NamespaceSpec, PeerIdentity, PropertySchema, StorageBackendKind,
+    Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName, NamespaceSpec,
+    PropertySchema, StorageBackendKind,
 };
 use ::props::record::RecordKey;
 use ::props::runtime::Runtime;
@@ -100,27 +99,6 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// the props contract [`AuthPolicy`] — grants every property capability to every
-/// reachable peer, the same WireGuard-`/24`-is-the-trust-domain posture
-/// as `maild.accounts` / `maild.account_overrides`. (A narrower
-/// operator tier is a future hardening, tracked with the sibling
-/// namespaces, not introduced piecemeal here.)
-pub fn auth_policy() -> AuthPolicy {
-    fn resolve(_peer: &PeerIdentity) -> CapabilitySet {
-        [
-            "props.read:maild.aliases",
-            "props.write:maild.aliases",
-            "props.describe:maild.aliases:public",
-            "props.describe:maild.aliases:full",
-            "props.audit:maild.aliases",
-        ]
-        .into_iter()
-        .map(|s| Capability::new(s).expect("non-empty capability"))
-        .collect()
-    }
-    AuthPolicy::new(resolve)
-}
-
 pub fn spec(hooks: Hooks) -> NamespaceSpec {
     let mut s = NamespaceSpec::new(
         namespace_name(),
@@ -133,7 +111,6 @@ pub fn spec(hooks: Hooks) -> NamespaceSpec {
         },
     );
     s.lifecycle = NamespaceLifecycle::Simple;
-    s.auth = auth_policy();
     s.hooks = hooks;
     s
 }

@@ -250,9 +250,20 @@ namespace modules register their schemas, SQLite mappings and hooks during
 <code>logging::props::register</code>.</p>
 <p>The router handles <code>maild.props.*</code> requests. Durable changes publish on
 <code>maild.props.records.changed</code> and <code>maild.props.audit</code>; replay and audit
-semantics, capability strings, error tokens and the five <code>__props_*</code>
+semantics, error tokens and the five <code>__props_*</code>
 SQLite table names follow the shared props contract unchanged. Account,
 alias and domain hooks reconcile the mail store after committed changes.</p>
+<p>Every Bus caller can read and write properties, including secret fields.
+<code>tls_identities</code> is a materialised resolver view: its Bus mutations return
+<code>validation_error</code> for every caller; internal reconciliation refreshes it.
+Vtoken management, retention sweeps and Bayesian rebuilds accept every caller
+without operator lists or delegation envelopes. Retention still validates
+its armed account set, deletion windows, dry-run flag and sweep limits.</p>
+<p>Submission accepts mesh requests with no <code>from</code> sender. Audit records use
+the broker peer when supplied, otherwise the stable actor <code>bus</code>; the typed
+request selects the sending account. Sender validation, size limits and
+operation replay protection still apply. Config loading ignores unknown
+keys, so existing files carrying removed operator lists continue to load.</p>
 <h2 id="shared-libraries">Shared libraries</h2>
 <p>Maild uses <code>bus::native_client::NodedClient</code> and the Bus connection helpers.
 Its advertised commands are registered in the repository Bus registry and checked

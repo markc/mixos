@@ -83,34 +83,6 @@ pub fn classify_default() -> LabelSensitivity {
     LabelSensitivity::Restricted
 }
 
-/// Run `f` while holding the classification registry's read lock.
-///
-/// This is the security primitive that
-/// [`crate::stats::snapshot_dispatch`] uses to make the audit + the
-/// registry snapshot + sensitivity projection consistent against a
-/// single policy view. Concurrent `classify()` calls (which take the
-/// write lock) block until `f` returns, so no `Safe → Restricted`
-/// reclassification can land between the audit decision and the
-/// projection of the recorder data. (Codex slice-5a round-2 MAJOR
-/// fix — releasing the lock between capture and recorder-snapshot
-/// allowed a reclassification race.)
-///
-/// The closure receives a `&HashMap<&'static str, LabelSensitivity>`
-/// containing only *classified* families. Callers must apply the
-/// unclassified-default rule (`Restricted`) themselves — that rule
-/// is the entire reason for the safer-side default
-/// ([`classify_default`]).
-///
-/// `f` should not call `classify()` itself: doing so would deadlock
-/// because the write lock isn't reentrant and is held to be exclusive
-/// with this reader.
-pub fn with_classifications<R>(f: impl FnOnce(&HashMap<&'static str, LabelSensitivity>) -> R) -> R {
-    let map = registry()
-        .read()
-        .expect("classify registry RwLock poisoned");
-    f(&map)
-}
-
 /// Built-in metric families classified `Safe` at recorder build
 /// time. Every entry's labels are compile-time bounded (level
 /// values, crate names) — no user-controlled bytes ever flow

@@ -18,28 +18,14 @@
 //!
 //! * **caller** — `enabled`, `rate_limit_per_ip`, `max_conns_global`,
 //!   `max_conns_per_ip`, `strict_sni`, `allow_cidrs`, `deny_cidrs`.
-//!   Writable through `props.set` by an *operator* (see [`auth_policy`]).
+//!   Writable through `props.set` by every caller.
 //! * **daemon** — `external`, `bound`, `bound_addr`, `active_conns`,
 //!   `last_transition`, `last_error` (secret). Written only via
 //!   `Runtime::set_with_origin(.., WriteOrigin::backend())` — the
 //!   bootstrap seed and the reaction-loop writeback.
 //!
-//! ## Deliberate AuthPolicy divergence
-//!
-//! Unlike the permissive every-WG-peer posture of `vhosts`/`accounts`,
-//! `props.write:webd.listeners` (the cap that flips `enabled` — a DoS
-//! primitive) is granted **only to an operator allowlist** seeded from
-//! the L0 `[webd.listeners] operators=[...]` config. read/describe stay
-//! open to every WG peer (status is benign). See
-//! `_decisions/2026-06-05-mixos-listener-control.md`.
-//!
-//! ## Lockout guard
-//!
-//! [`ListenersNamespaceHooks::before_set`] refuses `enabled=false` on a
-//! non-`external` listener — you must not be able to kill the WG/mesh
-//! control-path listener and lock yourself off the very channel you'd
-//! use to turn it back on. `external` is daemon-owned (seeded at
-//! bootstrap from config), so a caller can't flip it to bypass the rule.
+//! Every Bus caller may read listener secrets and change listener controls.
+//! Computed status fields and listener lockout checks remain validated.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -48,9 +34,9 @@ use anyhow::Result;
 use daemon::listen::Cidr;
 use props::sqlite::{JsonValuesMapping, SqliteStore};
 use props::{
-    AuthPolicy, Capability, CapabilitySet, Cardinality, FieldSchema, FieldType, HookCtx, HookError,
-    HookFuture, HookHandler, Hooks, MergeMode, NamespaceName, NamespaceSpec, PeerIdentity,
-    PropValue, PropertySchema, PropsRouter, Runtime, StorageBackendKind,
+    Cardinality, FieldSchema, FieldType, HookCtx, HookError, HookFuture, HookHandler, Hooks,
+    MergeMode, NamespaceName, NamespaceSpec, PropValue, PropertySchema, PropsRouter, Runtime,
+    StorageBackendKind,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -302,49 +288,10 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// Capability surface. **Operator-tier divergence:** read/describe/audit
-/// → every WG peer; `props.write:webd.listeners` and the `:secrets`
-/// read → only a peer whose `service_name` (the Bus sender, `cmd.from`)
-/// is in `operators`. Empty `operators` ⇒ no remote write (daemon
-/// backend-origin writes are unaffected — they don't flow through
-/// `AuthPolicy`). Caps are named stably; the gate tightens when the
-/// cross-mesh principal model lands.
-pub fn auth_policy(service: &str, operators: Vec<String>) -> AuthPolicy {
-    let read_public =
-        Capability::new(format!("props.read:{service}.listeners")).expect("non-empty capability");
-    let read_secrets = Capability::new(format!("props.read:{service}.listeners:secrets"))
-        .expect("non-empty capability");
-    let describe_public = Capability::new(format!("props.describe:{service}.listeners:public"))
-        .expect("non-empty capability");
-    let describe_full = Capability::new(format!("props.describe:{service}.listeners:full"))
-        .expect("non-empty capability");
-    let audit =
-        Capability::new(format!("props.audit:{service}.listeners")).expect("non-empty capability");
-    let write =
-        Capability::new(format!("props.write:{service}.listeners")).expect("non-empty capability");
-    AuthPolicy::new(move |peer: &PeerIdentity| {
-        let mut caps = vec![
-            read_public.clone(),
-            describe_public.clone(),
-            describe_full.clone(),
-            audit.clone(),
-        ];
-        let is_operator = peer
-            .service_name
-            .as_deref()
-            .is_some_and(|s| operators.iter().any(|o| o == s));
-        if is_operator {
-            caps.push(write.clone());
-            caps.push(read_secrets.clone());
-        }
-        caps.into_iter().collect::<CapabilitySet>()
-    })
-}
-
 /// Build the `NamespaceSpec` — collection cardinality keyed on `id`,
 /// SqliteTable storage, `require_version = true` (OCC for the
 /// caller-flip vs daemon-writeback race; SPEC 12 §4.4).
-pub fn spec(service: &str, hooks: Hooks, operators: Vec<String>) -> NamespaceSpec {
+pub fn spec(hooks: Hooks) -> NamespaceSpec {
     let mut s = NamespaceSpec::new(
         namespace_name(),
         schema(),
@@ -355,7 +302,6 @@ pub fn spec(service: &str, hooks: Hooks, operators: Vec<String>) -> NamespaceSpe
             table: "__props_values".into(),
         },
     );
-    s.auth = auth_policy(service, operators);
     s.hooks = hooks;
     s.require_version = true;
     s
@@ -614,12 +560,10 @@ fn emit(tx: &mpsc::Sender<ListenerEvent>, event: ListenerEvent, id: &str) {
 pub fn register_listeners_namespace(
     router: &mut PropsRouter,
     store: &Arc<SqliteStore>,
-    operators: Vec<String>,
 ) -> Result<(Arc<Runtime>, mpsc::Receiver<ListenerEvent>)> {
-    let service = router.service().to_string();
     let (events_tx, events_rx) = mpsc::channel(LISTENER_EVENT_CHANNEL_CAPACITY);
     let hooks = Hooks::new(ListenersNamespaceHooks::new(events_tx));
-    let spec = spec(&service, hooks, operators);
+    let spec = spec(hooks);
     store
         .register_namespace(&spec, Arc::new(JsonValuesMapping::new(namespace_name())))
         .map_err(|e| anyhow::anyhow!("register listeners namespace in store: {e}"))?;
@@ -742,42 +686,8 @@ mod tests {
         let store = open_test_store();
         let mut router = PropsRouter::new("webd");
         let (runtime, _rx) =
-            register_listeners_namespace(&mut router, &store, vec![]).expect("clean register");
+            register_listeners_namespace(&mut router, &store).expect("clean register");
         assert_eq!(runtime.spec().name.as_str(), NAMESPACE);
-    }
-
-    #[test]
-    fn auth_policy_gates_write_on_operator_allowlist() {
-        let policy = auth_policy("webd", vec!["op-node".to_string()]);
-        let write = Capability::new("props.write:webd.listeners".to_string())
-            .expect("non-empty capability");
-        let read =
-            Capability::new("props.read:webd.listeners".to_string()).expect("non-empty capability");
-
-        // Operator sender → write + read.
-        let op = PeerIdentity {
-            service_name: Some("op-node".to_string()),
-            ..Default::default()
-        };
-        let caps = policy.resolve(&op);
-        assert!(caps.contains(&write), "operator must get write");
-        assert!(caps.contains(&read), "operator must get read");
-
-        // Non-operator sender → read only, NO write.
-        let other = PeerIdentity {
-            service_name: Some("random-node".to_string()),
-            ..Default::default()
-        };
-        let caps = policy.resolve(&other);
-        assert!(caps.contains(&read), "every peer gets read");
-        assert!(!caps.contains(&write), "non-operator must NOT get write");
-
-        // Empty allowlist → nobody writes.
-        let none = auth_policy("webd", vec![]);
-        assert!(
-            !none.resolve(&op).contains(&write),
-            "empty allowlist denies all writes"
-        );
     }
 
     fn seeded(id: &str, external: bool) -> BTreeMap<String, PropValue> {
@@ -786,6 +696,57 @@ mod tests {
             ("enabled", PropValue::Bool(true)),
             ("external", PropValue::Bool(external)),
         ])
+    }
+
+    #[tokio::test]
+    async fn every_caller_can_change_listener_controls_and_read_secrets() {
+        let store = open_test_store();
+        let mut router = PropsRouter::new("webd");
+        let (runtime, _rx) = register_listeners_namespace(&mut router, &store).unwrap();
+        let key = RecordKey::collection(namespace_name(), "public");
+        let mut value = seeded("public", true);
+        value.insert(
+            "last_error".into(),
+            PropValue::String("listener detail".into()),
+        );
+        runtime
+            .set_with_origin(
+                key.clone(),
+                PropValue::Object(value),
+                props::SetOpts {
+                    expected_version: Some(Version::zero()),
+                    merge: MergeMode::Replace,
+                    actor: Actor::service("webd").unwrap(),
+                    cause: None,
+                    ts_ms: 0,
+                },
+                WriteOrigin::backend(),
+            )
+            .await
+            .unwrap();
+        for peer in [
+            props::PeerIdentity::default(),
+            props::PeerIdentity {
+                service_name: Some("unlisted-agent".into()),
+                ..Default::default()
+            },
+        ] {
+            let mut request = ::bus::wire::BusMessage::new();
+            request.set("namespace", NAMESPACE);
+            request.set("key", "public");
+            request.set("merge", "patch");
+            let version = runtime.store().version_anchor(&key).await.unwrap().unwrap();
+            request.set("if_version", &version.0.to_string());
+            request.body = r#"{"enabled":false}"#.into();
+            let response = router.dispatch("set", &request, &peer).await;
+            assert_eq!(response.rc, 0, "{}", response.body);
+            request.body.clear();
+            let response = router.dispatch("get", &request, &peer).await;
+            assert_eq!(response.rc, 0, "{}", response.body);
+            let value: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+            assert_eq!(value["fields"]["last_error"], "listener detail");
+            assert_eq!(value["fields"]["enabled"], false);
+        }
     }
 
     #[tokio::test]

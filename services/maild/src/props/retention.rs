@@ -39,11 +39,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use ::props::bus::mutation::PropsRouter;
-use ::props::capability::{Capability, CapabilitySet};
 use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
 use ::props::namespace::{
-    AuthPolicy, Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName,
-    NamespaceSpec, PeerIdentity, PropertySchema, StorageBackendKind,
+    Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName, NamespaceSpec,
+    PropertySchema, StorageBackendKind,
 };
 use ::props::record::RecordKey;
 use ::props::runtime::Runtime;
@@ -190,42 +189,7 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// the props contract [`AuthPolicy`] — **operator-tier divergence** (mirrors
-/// `webd.listeners`): read / describe / audit go to every WG peer, but
-/// `props.write:maild.retention` — the cap that *arms* automatic mail
-/// deletion (flips a window non-zero or clears `dry_run`) — is granted
-/// only to a peer whose `service_name` (the Bus sender, `cmd.from`) is in
-/// `operators`. **Empty `operators` ⇒ no remote arming at all** (the
-/// shipped default), so retention cannot be turned on over Bus until an
-/// operator is explicitly named in maild config. Daemon backend-origin
-/// writes don't flow through `AuthPolicy` and are unaffected.
-pub fn auth_policy(operators: Vec<String>) -> AuthPolicy {
-    let read = Capability::new("props.read:maild.retention").expect("non-empty capability");
-    let describe_public =
-        Capability::new("props.describe:maild.retention:public").expect("non-empty capability");
-    let describe_full =
-        Capability::new("props.describe:maild.retention:full").expect("non-empty capability");
-    let audit = Capability::new("props.audit:maild.retention").expect("non-empty capability");
-    let write = Capability::new("props.write:maild.retention").expect("non-empty capability");
-    AuthPolicy::new(move |peer: &PeerIdentity| {
-        let mut caps = vec![
-            read.clone(),
-            describe_public.clone(),
-            describe_full.clone(),
-            audit.clone(),
-        ];
-        let is_operator = peer
-            .service_name
-            .as_deref()
-            .is_some_and(|s| operators.iter().any(|o| o == s));
-        if is_operator {
-            caps.push(write.clone());
-        }
-        caps.into_iter().collect::<CapabilitySet>()
-    })
-}
-
-pub fn spec(hooks: Hooks, operators: Vec<String>) -> NamespaceSpec {
+pub fn spec(hooks: Hooks) -> NamespaceSpec {
     let mut s = NamespaceSpec::new(
         namespace_name(),
         schema(),
@@ -237,7 +201,6 @@ pub fn spec(hooks: Hooks, operators: Vec<String>) -> NamespaceSpec {
         },
     );
     s.lifecycle = NamespaceLifecycle::Simple;
-    s.auth = auth_policy(operators);
     s.hooks = hooks;
     s
 }
@@ -279,16 +242,10 @@ impl HookHandler for RetentionHooks {
     }
 }
 
-/// Wire the `maild.retention` namespace into the substrate. `operators`
-/// is the write-allowlist (Bus sender names) — empty disables remote
-/// arming entirely (see [`auth_policy`]).
-pub fn register(
-    router: &mut PropsRouter,
-    store: &Arc<SqliteStore>,
-    operators: Vec<String>,
-) -> Result<Arc<Runtime>> {
+/// Register the retention config namespace, writable by every Bus caller.
+pub fn register(router: &mut PropsRouter, store: &Arc<SqliteStore>) -> Result<Arc<Runtime>> {
     let hooks = Hooks::new(RetentionHooks);
-    let spec = spec(hooks, operators);
+    let spec = spec(hooks);
     store
         .register_namespace(&spec, Arc::new(JsonValuesMapping::new(namespace_name())))
         .map_err(|e| anyhow::anyhow!("register retention namespace in store: {e}"))?;
@@ -503,6 +460,31 @@ fn read_string_list_or(
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn every_caller_can_arm_retention() {
+        let store = Arc::new(
+            SqliteStore::new("maild", rusqlite::Connection::open_in_memory().unwrap()).unwrap(),
+        );
+        let mut router = PropsRouter::new("maild");
+        let runtime = register(&mut router, &store).unwrap();
+        for caller in [
+            ::props::PeerIdentity::default(),
+            ::props::PeerIdentity {
+                service_name: Some("unlisted-agent".into()),
+                ..Default::default()
+            },
+        ] {
+            let mut request = ::bus::wire::BusMessage::new();
+            request.set("namespace", NAMESPACE);
+            request.body = r#"{"junk_retention_days":30,"dry_run":false,"armed_accounts":["user@example.test"]}"#.into();
+            let response = router.dispatch("set", &request, &caller).await;
+            assert_eq!(response.rc, 0, "{}", response.body);
+            let effective = read_config(&runtime).await.unwrap();
+            assert!(!effective.is_disabled());
+            assert!(!effective.dry_run);
+        }
+    }
+
     fn obj(pairs: Vec<(&str, PropValue)>) -> PropValue {
         let mut m = BTreeMap::new();
         for (k, v) in pairs {
@@ -607,37 +589,5 @@ mod tests {
             PropValue::String("seven".into()),
         )]));
         assert!(r.is_err());
-    }
-
-    #[test]
-    fn auth_policy_gates_write_on_operator_allowlist() {
-        let write = Capability::new("props.write:maild.retention").expect("non-empty capability");
-        let read = Capability::new("props.read:maild.retention").expect("non-empty capability");
-
-        // An operator-named peer gets write (can arm).
-        let policy = auth_policy(vec!["ops-node".to_string()]);
-        let op = PeerIdentity {
-            service_name: Some("ops-node".to_string()),
-            ..Default::default()
-        };
-        let caps = policy.resolve(&op);
-        assert!(caps.contains(&write), "named operator can write");
-        assert!(caps.contains(&read), "everyone can read");
-
-        // A non-operator peer can read but NOT write (can't arm).
-        let other = PeerIdentity {
-            service_name: Some("random-node".to_string()),
-            ..Default::default()
-        };
-        let caps = policy.resolve(&other);
-        assert!(!caps.contains(&write), "non-operator cannot write");
-        assert!(caps.contains(&read), "non-operator can still read");
-
-        // Empty allowlist (the shipped default) denies ALL remote writes.
-        let none = auth_policy(Vec::new());
-        assert!(
-            !none.resolve(&op).contains(&write),
-            "empty operators ⇒ no remote arming"
-        );
     }
 }

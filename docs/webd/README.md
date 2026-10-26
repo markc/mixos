@@ -21,6 +21,19 @@ the service. Configure document roots and credentials explicitly; example
 values are documentation, not deployment configuration. Session cookies,
 environment variables and data paths use MixOS names.
 
+Every Bus caller can change listener controls, read listener secrets,
+manage vhosts, request ACME renewal, revoke sessions and reload manual TLS
+certificates. There is no listener operator list. Property schemas, computed
+status fields, listener lockout checks, certificate validation and issuance
+rate limits still apply. Reload builds all resolvers before swapping them;
+it remains unavailable where no manual TLS resolver exists.
+
+The node config loader preserves unknown webd settings, so an old
+`listeners` operator block still loads without affecting command access.
+HTTP session checks, CSRF validation and embedded route declarations remain
+part of the HTTP interface. Token commands forwarded by an HTTP handler
+carry ordinary command arguments without a delegation envelope.
+
 Build and test with `cargo test --locked -p webd`. `webd --version` emits
 MixOS build provenance. Units, sysusers and tmpfiles fragments are in
 `services/webd/units/`; they are not installed by building the service.

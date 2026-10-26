@@ -912,7 +912,6 @@ mod tests {
             // `bus::vhost_commands::tests` wires its own.
             vhosts_runtime: None,
             listeners_runtime: None,
-            listeners_operators: Vec::new(),
             vhost_key_locks: None,
             acme_notify: None,
             acme_force_renew_queue: None,

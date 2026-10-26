@@ -13,7 +13,7 @@ mod watch;
 
 pub use namespace::{
     CANONICAL_KEY, INVALID_FILTER_PREFIX, LogNamespace, LogNamespaceHooks, NAMESPACE,
-    UNDELETABLE_PREFIX, UNKNOWN_ENUM_VARIANT_PREFIX, applied_by_variants, auth_policy,
-    format_variants, level_variants, namespace_name, register, schema, spec,
+    UNDELETABLE_PREFIX, UNKNOWN_ENUM_VARIANT_PREFIX, applied_by_variants, format_variants,
+    level_variants, namespace_name, register, schema, spec,
 };
 pub use watch::attach;

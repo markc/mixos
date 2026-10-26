@@ -43,66 +43,14 @@
 //! Response body on success: `{ "service": ..., "captured_at": ...,
 //! "metrics": [...] }` per plan §4.2; rc = [`RC_SUCCESS`].
 //!
-//! Response body on error: `{ "error": "<type>", "reason": "...", ...
-//! }` with rc = [`RC_ERROR`]. The `error` discriminant is one of
-//! `ParseError`, `CapabilityRequired`, or `TooLarge`; the
-//! `CapabilityRequired` variant carries a `needed` field, and the
-//! `TooLarge` variant carries `limit_bytes` + `actual_bytes`.
-//!
-//! # Cap-admission vs probe-oracle gate
-//!
-//! Two layered gates protect this command:
-//!
-//! 1. **Command admission** — `stats.snapshot:<svc>` (operator-class
-//!    default). The caller must hold this to call the command at all.
-//!    Enforced here in [`handle_snapshot_bus`] before any header
-//!    parsing or registry access (plan §4.3, §4.2).
-//! 2. **Restricted-family probe-oracle defense** —
-//!    `stats.snapshot:raw-labels:<svc>` (host-class default). Without
-//!    it, `KeyEquals`-shaped `labels` filters are rejected on
-//!    request shape alone (no registry scan), per the contract in
-//!    [`crate::stats::dispatch`]. Enforced inside `snapshot_dispatch`
-//!    via the `has_raw_labels_cap` flag we forward into it.
-//!
-//! # Out-of-scope hardening (tracked for a future slice)
-//!
-//! Two limitations are inherited from upstream layers and not addressed
-//! here. Both follow from being faithful to the plan §4.2 wire shape
-//! and the slice-5a `snapshot_dispatch` contract; tightening them would
-//! cross plan / recorder / snapshot boundaries that slice 5b is not
-//! chartered to touch.
-//!
-//! - **HasKey on Restricted is operator-class.** Plan §4.3 admits
-//!   `LabelFilter::HasKey` on Restricted families at the operator cap,
-//!   on the assumption *"label keys are a static, code-declared
-//!   vocabulary"* (see `dispatch.rs` `LabelFilter::HasKey` doc). That
-//!   assumption is **not** enforced by `StatsRecorder`:
-//!   `metrics::Label::new` accepts dynamic key strings, so a daemon
-//!   that ever builds label keys from user input would turn `HasKey`
-//!   into a presence-oracle. The follow-up path is either *recorder
-//!   admission must enforce bounded/static label keys*, or *plan §4.3
-//!   must reclassify `HasKey` as raw-labels-gated*. Slice 5b can't
-//!   pick one — it would contradict the frozen §4.3 cap matrix.
-//! - **Pre-serialize allocation is unbounded by per-value byte
-//!   length.** The 1 MiB cap is checked *after* `snapshot_dispatch`
-//!   builds the full filtered `Snapshot` and `serialize_snapshot`
-//!   renders it (the only authoritative wire-byte count). Cardinality
-//!   cap bounds series count, but not label-value byte length, so an
-//!   operator-cap caller against a registry with very large label
-//!   values can allocate well past 1 MiB before `TooLarge` fires. The
-//!   follow-up path is either *recorder admission caps label-value
-//!   byte length*, or *snapshot/serialize gains a budgeted early-abort
-//!   surface*. Both restructure `snapshot.rs::snapshot_from_inner`
-//!   (slice-3a-ish surface) and require their own slice.
+//! Errors report `ParseError` or `TooLarge`. The response remains bounded to 1 MiB.
 
 use std::collections::BTreeMap;
 
 use bus::native_client::IncomingCommand;
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 
-use crate::stats::dispatch::{
-    LabelFilter, MetricPattern, SnapshotError, SnapshotRequest, snapshot_dispatch,
-};
+use crate::stats::dispatch::{LabelFilter, MetricPattern, SnapshotRequest, snapshot_dispatch};
 use crate::stats::recorder::StatsRecorder;
 use crate::stats::types::{
     HistogramSummary, MetricFamily, MetricKind, Series, SeriesLabels, SeriesValue, Snapshot,
@@ -123,75 +71,13 @@ const RC_OK: u8 = 0;
 /// helper in the tree (see `mixos-maild/src/bus/mod.rs:64`).
 const RC_ERR: u8 = 10;
 
-/// Capabilities the caller holds for `<svc>.stats.snapshot`.
-///
-/// The wire layer (this module's caller — the daemon dispatch loop)
-/// is responsible for mapping the Bus peer's authenticated identity
-/// to this struct *before* invoking [`handle_snapshot_bus`]. Daemons
-/// without a peer-capability source yet can pass
-/// `SnapshotCaps { has_snapshot: true, has_raw_labels: false }` to
-/// match the operator-class default in plan §4.3 (counters return,
-/// labels on Restricted families come back hashed).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct SnapshotCaps {
-    /// `stats.snapshot:<svc>` (plan §4.3, operator-class default).
-    /// Required to call the command at all. Missing → `RC_ERR` with
-    /// `error="CapabilityRequired"`, `needed="stats.snapshot:<svc>"`.
-    pub has_snapshot: bool,
-    /// `stats.snapshot:raw-labels:<svc>` (plan §4.3, host-class
-    /// default). Unlocks raw labels on `Restricted` families and
-    /// admits `KeyEquals` filters that the probe-oracle gate would
-    /// otherwise reject (see [`crate::stats::dispatch`] module docs).
-    pub has_raw_labels: bool,
-}
-
-/// Handle a `<svc>.stats.snapshot` Bus request end-to-end: cap
-/// admission → header parse → [`snapshot_dispatch`] → JSON serialize →
-/// 1 MiB cap. Returns the `(rc, body)` tuple the daemon's
-/// `NodedClient::respond` expects.
-///
-/// # Ordering (load-bearing)
-///
-/// 1. Command-admission cap-check (`has_snapshot`) — *before* any header
-///    parse, so a caller with no operator cap can't probe for parse
-///    differentials (e.g. observing whether an invalid `metric` glob
-///    surfaces faster than a valid one).
-/// 2. Header parse (`metric`, `labels`, `labels_hash`).
-/// 3. Build [`SnapshotRequest`], forwarding `has_raw_labels` into
-///    the dispatch's `has_raw_labels_cap` field — the probe-oracle
-///    gate inside [`snapshot_dispatch`] consults this for `KeyEquals`
-///    admission.
-/// 4. Call [`snapshot_dispatch`]; pass through its `CapabilityRequired`
-///    rejection verbatim.
-/// 5. Serialize to JSON (plan §4.2 shape).
-/// 6. Reject if byte length > [`SNAPSHOT_MAX_RESPONSE_BYTES`].
-pub fn handle_snapshot_bus(
-    cmd: &IncomingCommand,
-    recorder: &StatsRecorder,
-    caps: &SnapshotCaps,
-) -> (u8, String) {
-    // 1. Command-admission cap-check (plan §4.3).
-    if !caps.has_snapshot {
-        return capability_required(
-            "stats.snapshot:<svc>",
-            "<svc>.stats.snapshot requires the stats.snapshot:<svc> capability",
-        );
-    }
-
-    // 2. Header parse. Empty / missing headers → no filter (return
-    //    everything that passes other filters), per plan §4.2.
-    let request = match parse_request(cmd, caps.has_raw_labels) {
-        Ok(r) => r,
+/// Serve every caller, retaining filter validation and the response byte bound.
+pub fn handle_snapshot_bus(cmd: &IncomingCommand, recorder: &StatsRecorder) -> (u8, String) {
+    let request = match parse_request(cmd) {
+        Ok(request) => request,
         Err(reason) => return parse_error(&reason),
     };
-
-    // 3+4. Dispatch — cap-gating inside (probe-oracle defense).
-    let snapshot = match snapshot_dispatch(recorder, &request) {
-        Ok(s) => s,
-        Err(SnapshotError::CapabilityRequired { needed, reason }) => {
-            return capability_required(&needed, &reason);
-        }
-    };
+    let snapshot = snapshot_dispatch(recorder, &request);
 
     // 5. Serialize to the plan §4.2 JSON shape.
     let body = serialize_snapshot(&snapshot);
@@ -210,10 +96,7 @@ pub fn handle_snapshot_bus(
 
 // ── Header parsing ────────────────────────────────────────────────
 
-fn parse_request(
-    cmd: &IncomingCommand,
-    has_raw_labels_cap: bool,
-) -> Result<SnapshotRequest, String> {
+fn parse_request(cmd: &IncomingCommand) -> Result<SnapshotRequest, String> {
     let metric = match cmd.header("metric") {
         Some(s) if !s.is_empty() => Some(parse_metric_glob(s)?),
         _ => None,
@@ -230,7 +113,6 @@ fn parse_request(
         metric,
         labels,
         labels_hash,
-        has_raw_labels_cap,
     })
 }
 
@@ -293,12 +175,7 @@ fn parse_metric_glob(s: &str) -> Result<MetricPattern, String> {
 /// **Duplicate keys: last-write-wins (`serde_json::Map` default).**
 /// `{"user":"alice","user":null}` parses as `HasKey("user")` — the
 /// `null` (second occurrence) overwrites the earlier `"alice"`. This
-/// is intentionally documented rather than rejected because the
-/// collapse can only *downgrade* the cap requirement (a `KeyEquals`
-/// → `HasKey` collapse moves the request from raw-labels-gated to
-/// operator-class — a strictly weaker filter the caller could have
-/// expressed directly). It cannot bypass the probe-oracle gate. See
-/// the regression test `labels_filter_duplicate_keys_last_wins`.
+/// follows serde_json's last-write-wins object parsing.
 fn parse_labels_filter(s: &str) -> Result<Vec<LabelFilter>, String> {
     let parsed: JsonMap<String, JsonValue> = serde_json::from_str(s)
         .map_err(|e| format!("labels must be a JSON object (e.g. {{\"verdict\":\"ham\"}}): {e}"))?;
@@ -434,18 +311,6 @@ fn parse_error(reason: &str) -> (u8, String) {
     )
 }
 
-fn capability_required(needed: &str, reason: &str) -> (u8, String) {
-    (
-        RC_ERR,
-        json!({
-            "error": "CapabilityRequired",
-            "needed": needed,
-            "reason": reason,
-        })
-        .to_string(),
-    )
-}
-
 fn too_large(actual: usize) -> (u8, String) {
     (
         RC_ERR,
@@ -510,40 +375,11 @@ mod tests {
         }
     }
 
-    fn caps_operator() -> SnapshotCaps {
-        SnapshotCaps {
-            has_snapshot: true,
-            has_raw_labels: false,
-        }
-    }
-
-    fn caps_host() -> SnapshotCaps {
-        SnapshotCaps {
-            has_snapshot: true,
-            has_raw_labels: true,
-        }
-    }
-
     fn parse_body(body: &str) -> JsonValue {
         serde_json::from_str(body).expect("response body must be valid JSON")
     }
 
     // ── Cap admission ──────────────────────────────────────────────
-
-    #[test]
-    fn missing_snapshot_cap_rejects_before_parse() {
-        // Even a malformed metric glob doesn't matter — admission
-        // fails first. This is the load-bearing ordering guarantee
-        // (no parse differential a non-operator caller could probe).
-        let recorder = build_with_counter("bus-test", "bus_admission_metric", &[("k", "v")], 1);
-        let cmd = make_cmd(&[("metric", "***invalid***")]);
-        let caps = SnapshotCaps::default();
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps);
-        assert_eq!(rc, RC_ERR);
-        let v = parse_body(&body);
-        assert_eq!(v["error"], "CapabilityRequired");
-        assert_eq!(v["needed"], "stats.snapshot:<svc>");
-    }
 
     // ── metric? parsing ────────────────────────────────────────────
 
@@ -557,7 +393,7 @@ mod tests {
             3,
         );
         let cmd = make_cmd(&[("metric", "bus_metric_exact_metric")]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_OK);
         let v = parse_body(&body);
         let metrics = v["metrics"].as_array().expect("metrics array");
@@ -574,7 +410,7 @@ mod tests {
         classify("bus_prefix_match_metric", LabelSensitivity::Safe);
         let recorder = build_with_counter("bus-test", "bus_prefix_match_metric", &[], 1);
         let cmd = make_cmd(&[("metric", "bus_prefix_*")]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_OK);
         let v = parse_body(&body);
         let metrics = v["metrics"].as_array().expect("metrics array");
@@ -590,7 +426,7 @@ mod tests {
         classify("bus_suffix_match_total", LabelSensitivity::Safe);
         let recorder = build_with_counter("bus-test", "bus_suffix_match_total", &[], 1);
         let cmd = make_cmd(&[("metric", "*_total")]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_OK);
         let v = parse_body(&body);
         let metrics = v["metrics"].as_array().expect("metrics array");
@@ -608,7 +444,7 @@ mod tests {
         // in isolation, but the middle `*` makes the whole pattern
         // ambiguous. The parser rejects on count, not position.
         let cmd = make_cmd(&[("metric", "bus_**metric")]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_ERR);
         let v = parse_body(&body);
         assert_eq!(v["error"], "ParseError");
@@ -623,7 +459,7 @@ mod tests {
     fn metric_middle_star_rejected() {
         let recorder = build_with_counter("bus-test", "bus_middle_star_metric", &[], 1);
         let cmd = make_cmd(&[("metric", "foo*bar")]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_ERR);
         let v = parse_body(&body);
         assert_eq!(v["error"], "ParseError");
@@ -633,7 +469,7 @@ mod tests {
     fn metric_bare_star_rejected() {
         let recorder = build_with_counter("bus-test", "bus_bare_star_metric", &[], 1);
         let cmd = make_cmd(&[("metric", "*")]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_ERR);
         let v = parse_body(&body);
         assert_eq!(v["error"], "ParseError");
@@ -647,9 +483,8 @@ mod tests {
     // ── labels? parsing ────────────────────────────────────────────
 
     #[test]
-    fn labels_filter_key_equals_with_cap() {
-        // KeyEquals on Restricted with the raw-labels cap passes
-        // through; verifies the cap forwarding into the dispatch.
+    fn labels_filter_key_equals_for_anonymous_caller() {
+        // Value predicates and raw labels are available to every caller.
         let recorder = build_with_counter(
             "bus-test",
             "bus_labels_keyequals_metric",
@@ -657,7 +492,7 @@ mod tests {
             1,
         );
         let cmd = make_cmd(&[("labels", r#"{"user":"alice"}"#)]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_host());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_OK);
         let v = parse_body(&body);
         assert!(
@@ -670,27 +505,8 @@ mod tests {
     }
 
     #[test]
-    fn labels_filter_key_equals_without_cap_is_rejected() {
-        // KeyEquals on a Restricted family without raw-labels cap
-        // hits the probe-oracle gate inside dispatch.
-        let recorder = build_with_counter(
-            "bus-test",
-            "bus_labels_keyequals_norestricted_metric",
-            &[("user", "alice")],
-            1,
-        );
-        let cmd = make_cmd(&[("labels", r#"{"user":"alice"}"#)]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
-        assert_eq!(rc, RC_ERR);
-        let v = parse_body(&body);
-        assert_eq!(v["error"], "CapabilityRequired");
-        assert_eq!(v["needed"], "stats.snapshot:raw-labels:<svc>");
-    }
-
-    #[test]
-    fn labels_filter_haskey_passes_on_restricted_without_cap() {
-        // HasKey is operator-class — value isn't bound, no probe
-        // oracle. Restricted family still projects labels to hash.
+    fn labels_filter_haskey_returns_raw_labels() {
+        // Key-presence predicates preserve raw labels.
         let recorder = build_with_counter(
             "bus-test",
             "bus_labels_haskey_metric",
@@ -698,7 +514,7 @@ mod tests {
             1,
         );
         let cmd = make_cmd(&[("labels", r#"{"region":null}"#)]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_OK);
         let v = parse_body(&body);
         let family = v["metrics"]
@@ -709,17 +525,16 @@ mod tests {
             .expect("family present");
         let series = family["series"].as_array().unwrap();
         assert_eq!(series.len(), 1);
-        // Restricted-without-cap projection: no raw `labels`, only
-        // `labels_hash`.
-        assert!(series[0].get("labels").is_none());
-        assert!(series[0].get("labels_hash").is_some());
+        // Bus snapshots carry raw labels for every caller.
+        assert!(series[0].get("labels").is_some());
+        assert!(series[0].get("labels_hash").is_none());
     }
 
     #[test]
     fn labels_filter_non_object_rejected() {
         let recorder = build_with_counter("bus-test", "bus_labels_nonobject_metric", &[], 1);
         let cmd = make_cmd(&[("labels", "not-json")]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_ERR);
         let v = parse_body(&body);
         assert_eq!(v["error"], "ParseError");
@@ -727,55 +542,33 @@ mod tests {
 
     #[test]
     fn labels_filter_duplicate_keys_last_wins() {
-        // Regression test for the documented last-write-wins behavior
-        // of serde_json::Map. The collapse is benign — it can only
-        // downgrade KeyEquals→HasKey, never escalate; both flow
-        // through the operator-class admission path. This test pins
-        // the behaviour so a parser swap (e.g. to a duplicate-rejecting
-        // visitor) becomes a deliberate decision, not a silent change.
+        // Duplicate JSON keys follow serde_json's last-write-wins parsing.
         let recorder = build_with_counter(
             "bus-test",
             "bus_labels_dup_keys_metric",
             &[("region", "us")],
             1,
         );
-        // `{"region":"us"} → KeyEquals` would normally require
-        // raw-labels cap on Restricted. The duplicate-key collapse to
-        // HasKey makes the call legal at operator-class.
         let cmd = make_cmd(&[("labels", r#"{"region":"us","region":null}"#)]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
-        // HasKey on Restricted at operator-class admits; KeyEquals
-        // would have been rejected here.
-        assert_eq!(
-            rc, RC_OK,
-            "duplicate-key collapse to HasKey is admitted: {body}"
-        );
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
+        assert_eq!(rc, RC_OK);
         let v = parse_body(&body);
         let family = v["metrics"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|m| m["name"] == "bus_labels_dup_keys_metric")
-            .expect("family present (HasKey path matched)");
-        // Restricted projection (no raw-labels cap) → series carries
-        // labels_hash, not raw labels.
-        assert!(family["series"][0].get("labels").is_none());
-        assert!(family["series"][0].get("labels_hash").is_some());
+            .find(|metric| metric["name"] == "bus_labels_dup_keys_metric")
+            .unwrap();
+        assert_eq!(family["series"][0]["labels"]["region"], "us");
     }
 
     #[test]
-    fn labels_filter_boolean_value_rejected() {
-        let recorder = build_with_counter("bus-test", "bus_labels_boolean_metric", &[], 1);
-        let cmd = make_cmd(&[("labels", r#"{"enabled":true}"#)]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+    fn labels_filter_non_string_value_rejected() {
+        let recorder = build_with_counter("bus-test", "bus_labels_number_metric", &[], 1);
+        let cmd = make_cmd(&[("labels", r#"{"region":42}"#)]);
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_ERR);
-        let v = parse_body(&body);
-        assert_eq!(v["error"], "ParseError");
-        let reason = v["reason"].as_str().expect("reason string");
-        assert!(
-            reason.contains("string"),
-            "reason cites string-only constraint: {reason}"
-        );
+        assert_eq!(parse_body(&body)["error"], "ParseError");
     }
 
     // ── labels_hash? parsing ───────────────────────────────────────
@@ -802,7 +595,7 @@ mod tests {
         let header = format!("{expected},0000000000000000");
 
         let cmd = make_cmd(&[("labels_hash", header.as_str())]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_OK);
         let v = parse_body(&body);
         assert!(
@@ -828,7 +621,7 @@ mod tests {
         let expected = crate::stats::labels_hash::labels_hash(&map);
         let header = format!("{expected},  ,");
         let cmd = make_cmd(&[("labels_hash", header.as_str())]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_OK);
         let v = parse_body(&body);
         assert!(
@@ -844,7 +637,7 @@ mod tests {
     fn labels_hash_filter_wrong_length_rejected() {
         let recorder = build_with_counter("bus-test", "bus_labels_hash_short_metric", &[], 1);
         let cmd = make_cmd(&[("labels_hash", "deadbeef")]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_ERR);
         let v = parse_body(&body);
         assert_eq!(v["error"], "ParseError");
@@ -854,39 +647,13 @@ mod tests {
     fn labels_hash_filter_non_hex_rejected() {
         let recorder = build_with_counter("bus-test", "bus_labels_hash_nonhex_metric", &[], 1);
         let cmd = make_cmd(&[("labels_hash", "zzzzzzzzzzzzzzzz")]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_ERR);
         let v = parse_body(&body);
         assert_eq!(v["error"], "ParseError");
     }
 
     // ── Response envelope & projection ────────────────────────────
-
-    #[test]
-    fn restricted_family_emits_labels_hash_not_labels() {
-        // Default sensitivity is Restricted; no cap → series carries
-        // labels_hash, not labels.
-        let recorder = build_with_counter(
-            "bus-test",
-            "bus_restricted_projection_metric",
-            &[("user", "alice")],
-            1,
-        );
-        let cmd = make_cmd(&[]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
-        assert_eq!(rc, RC_OK);
-        let v = parse_body(&body);
-        let family = v["metrics"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|m| m["name"] == "bus_restricted_projection_metric")
-            .expect("family present");
-        let series0 = &family["series"][0];
-        assert!(series0.get("labels").is_none());
-        let h = series0["labels_hash"].as_str().expect("labels_hash string");
-        assert_eq!(h.len(), 16);
-    }
 
     #[test]
     fn safe_family_emits_raw_labels() {
@@ -898,7 +665,7 @@ mod tests {
             1,
         );
         let cmd = make_cmd(&[]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_OK);
         let v = parse_body(&body);
         let family = v["metrics"]
@@ -916,7 +683,7 @@ mod tests {
     fn captured_at_is_rfc3339_with_millis_z() {
         let recorder = build_with_counter("bus-test", "bus_captured_at_metric", &[], 1);
         let cmd = make_cmd(&[]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_OK);
         let v = parse_body(&body);
         let ts = v["captured_at"].as_str().expect("captured_at string");
@@ -939,7 +706,7 @@ mod tests {
         // check, kept tiny so the cost stays low.
         let recorder = build_with_counter("bus-test", "bus_valid_json_metric", &[], 1);
         let cmd = make_cmd(&[]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_OK);
         let v: JsonValue = serde_json::from_str(&body).expect("valid JSON");
         assert_eq!(v["service"], "bus-test");
@@ -978,7 +745,7 @@ mod tests {
             counter.increment(1);
         }
         let cmd = make_cmd(&[]);
-        let (rc, body) = handle_snapshot_bus(&cmd, &recorder, &caps_operator());
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
         assert_eq!(rc, RC_ERR);
         let v = parse_body(&body);
         assert_eq!(v["error"], "TooLarge");
@@ -988,6 +755,21 @@ mod tests {
         assert!(
             reason.contains("metric") && reason.contains("labels"),
             "reason explains how to narrow: {reason}"
+        );
+    }
+
+    #[test]
+    fn labels_filter_boolean_value_rejected() {
+        let recorder = build_with_counter("bus-test", "bus_labels_boolean_metric", &[], 1);
+        let cmd = make_cmd(&[("labels", r#"{"enabled":true}"#)]);
+        let (rc, body) = handle_snapshot_bus(&cmd, &recorder);
+        assert_eq!(rc, RC_ERR);
+        let v = parse_body(&body);
+        assert_eq!(v["error"], "ParseError");
+        let reason = v["reason"].as_str().expect("reason string");
+        assert!(
+            reason.contains("string"),
+            "reason cites string-only constraint: {reason}"
         );
     }
 }

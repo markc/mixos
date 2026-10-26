@@ -6,7 +6,7 @@
 //! This crate carries `PropPath`, `PropValue`, `PropTree`,
 //! `PropDescribe`, `redact`, `diff` — the read-side types every
 //! `<svc>.props.*` consumer needs. The `store` feature supports namespace
-//! schemas, records, lifecycle, capabilities, hooks, audit HMAC and the
+//! schemas, records, lifecycle, hooks, audit HMAC and the
 //! in-memory runtime. `sqlite` enables persistent storage; `router` adds
 //! Bus mutation routing and event dispatch.
 //!
@@ -32,8 +32,6 @@ pub mod value;
 
 #[cfg(feature = "store")]
 pub mod audit;
-#[cfg(feature = "store")]
-pub mod capability;
 #[cfg(feature = "store")]
 pub mod hooks;
 #[cfg(feature = "store")]
@@ -70,8 +68,6 @@ pub use value::PropValue;
 #[cfg(feature = "store")]
 pub use audit::{AuditKey, canonical_serialise, compute_digest, tombstone_value};
 #[cfg(feature = "store")]
-pub use capability::{AuthDecision, Capability, CapabilityError, CapabilitySet};
-#[cfg(feature = "store")]
 pub use hooks::{
     HookCtx, HookError, HookFuture, HookHandler, HookResult, Hooks, NoopHooks, WriteOrigin,
 };
@@ -81,8 +77,8 @@ pub use lifecycle::{LIFECYCLE_FIELD, Lifecycle};
 pub use memory::MemoryStore;
 #[cfg(feature = "store")]
 pub use namespace::{
-    AuthPolicy, Cardinality, ConformanceLevel, DeleteMode, ExternalEditPolicy, FieldSchema,
-    FieldType, NamespaceLifecycle, NamespaceName, NamespaceNameError, NamespaceSpec, PeerIdentity,
+    Cardinality, ConformanceLevel, DeleteMode, ExternalEditPolicy, FieldSchema, FieldType,
+    NamespaceLifecycle, NamespaceName, NamespaceNameError, NamespaceSpec, PeerIdentity,
     PropertySchema, ReplayWindow, SchemaPublic, SchemaVersion, StorageBackendKind,
     SubscribePayload, Validator, ValidatorFn,
 };

@@ -45,33 +45,17 @@
 //! * `enabled: Bool` — default `true`. Disabled rows are skipped at
 //!   table-build time.
 //!
-//! ## AuthPolicy
-//!
-//! Phase-1 posture (matching `webd.vhosts`): every reachable WG `/24`
-//! peer gets the issued read/write/describe/audit cap set on
-//! `props.*:webd.handlers`. Cross-mesh authz narrows later without
-//! renaming the caps.
-//!
-//! ## Reload signal
-//!
-//! `after_set`/`after_delete` fire a `tokio::sync::Notify` — the
-//! lightest correct shape for "the handler table changed, rebuild it
-//! from a fresh namespace snapshot." `notify_one` is non-blocking and
-//! coalescing (multiple writes before the rebuild task wakes collapse
-//! to one rebuild, which reads the latest snapshot anyway), so it never
-//! blocks the substrate commit thread and never drops a needed reload.
-//! The namespace is the durable source of truth; a missed wakeup is
-//! impossible as long as the rebuild task loops back to `notified()`.
+//! Every Bus caller can read and mutate the namespace. Route capability
+//! declarations still validate what an embedded HTTP handler can execute.
 
 use std::sync::Arc;
 
 use anyhow::Result;
 use props::sqlite::{JsonValuesMapping, SqliteStore};
 use props::{
-    Actor, AuthPolicy, Capability, CapabilitySet, Cardinality, FieldSchema, FieldType, HookCtx,
-    HookError, HookFuture, HookHandler, Hooks, MergeMode, NamespaceName, NamespaceSpec,
-    PeerIdentity, PropValue, PropertySchema, PropsRouter, RecordKey, Runtime, SetOpts,
-    StorageBackendKind, WriteOrigin,
+    Actor, Cardinality, FieldSchema, FieldType, HookCtx, HookError, HookFuture, HookHandler, Hooks,
+    MergeMode, NamespaceName, NamespaceSpec, PropValue, PropertySchema, PropsRouter, RecordKey,
+    Runtime, SetOpts, StorageBackendKind, WriteOrigin,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -288,31 +272,11 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// Capability surface — Phase-1 posture: every reachable peer (WG `/24`
-/// trust domain) gets the full read/write/describe/audit set, matching
-/// `webd.vhosts`. Cross-mesh authz narrows later without renaming caps.
-pub fn auth_policy(service: &str) -> AuthPolicy {
-    let read =
-        Capability::new(format!("props.read:{service}.handlers")).expect("non-empty capability");
-    let write =
-        Capability::new(format!("props.write:{service}.handlers")).expect("non-empty capability");
-    let describe_public = Capability::new(format!("props.describe:{service}.handlers:public"))
-        .expect("non-empty capability");
-    let describe_full = Capability::new(format!("props.describe:{service}.handlers:full"))
-        .expect("non-empty capability");
-    let audit =
-        Capability::new(format!("props.audit:{service}.handlers")).expect("non-empty capability");
-    let caps: CapabilitySet = [read, write, describe_public, describe_full, audit]
-        .into_iter()
-        .collect();
-    AuthPolicy::new(move |_peer: &PeerIdentity| caps.clone())
-}
-
 /// Build the `NamespaceSpec`. Collection cardinality keyed on
 /// `route_id`, shared `__props_values` storage, validating hooks,
 /// `require_version = true` (SPEC-12 §4.4 optimistic concurrency — two
 /// operators editing the same `route_id` can't lose an update).
-pub fn spec(service: &str, hooks: Hooks) -> NamespaceSpec {
+pub fn spec(hooks: Hooks) -> NamespaceSpec {
     let mut s = NamespaceSpec::new(
         namespace_name(),
         schema(),
@@ -323,7 +287,6 @@ pub fn spec(service: &str, hooks: Hooks) -> NamespaceSpec {
             table: "__props_values".into(),
         },
     );
-    s.auth = auth_policy(service);
     s.hooks = hooks;
     s.require_version = true;
     s
@@ -558,10 +521,9 @@ pub fn register_handlers_namespace(
     router: &mut PropsRouter,
     store: &Arc<SqliteStore>,
 ) -> Result<(Arc<Runtime>, Arc<Notify>)> {
-    let service = router.service().to_string();
     let reload = Arc::new(Notify::new());
     let hooks = Hooks::new(HandlersHooks::new(reload.clone()));
-    let spec = spec(&service, hooks);
+    let spec = spec(hooks);
     store
         .register_namespace(&spec, Arc::new(JsonValuesMapping::new(namespace_name())))
         .map_err(|e| anyhow::anyhow!("register handlers namespace in store: {e}"))?;

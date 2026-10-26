@@ -21,7 +21,7 @@ use crate::value::PropValue;
 
 /// Storage-layer errors. These are the error taxonomy that can arise inside a `PropertyStore` call; each
 /// variant maps to one wire `error_code` and the command layer
-/// surfaces it verbatim. The other tokens (`auth_denied`,
+/// surfaces it verbatim. The other tokens (
 /// `hook_error`, `unavailable`) originate above the store — at the
 /// Bus layer, the hook runner, or the transport — and never
 /// appear here. New storage-layer variants require a contract amendment.

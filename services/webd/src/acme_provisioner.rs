@@ -5786,7 +5786,7 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         let lstore = Arc::new(props::sqlite::SqliteStore::new("webd", conn).unwrap());
         let mut lrouter = props::PropsRouter::new("webd");
-        let (lrt, _lrx) = register_listeners_namespace(&mut lrouter, &lstore, Vec::new()).unwrap();
+        let (lrt, _lrx) = register_listeners_namespace(&mut lrouter, &lstore).unwrap();
         _set_listener_strict(&lrt, "pub", true).await;
 
         let tmp = tempfile::tempdir().unwrap();

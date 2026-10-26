@@ -17,11 +17,10 @@ use std::sync::Arc;
 
 use crate::LogError;
 use props::bus::mutation::PropsRouter;
-use props::capability::{Capability, CapabilitySet};
 use props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
 use props::namespace::{
-    AuthPolicy, Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName,
-    NamespaceSpec, PeerIdentity, PropertySchema, StorageBackendKind,
+    Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName, NamespaceSpec,
+    PropertySchema, StorageBackendKind,
 };
 use props::runtime::Runtime;
 use props::sqlite::{JsonValuesMapping, SqliteStore};
@@ -183,27 +182,7 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// Capabilities scoped to `<svc>.log`. The current policy grants every
-/// reachable peer read, describe, write and audit access. A write can
-/// silence logging through `level=none`; services that require narrower
-/// access must supply a namespace authorisation policy before exposing it.
-pub fn auth_policy(service: &str) -> AuthPolicy {
-    let read = Capability::new(format!("props.read:{service}.log")).expect("non-empty capability");
-    let describe_public = Capability::new(format!("props.describe:{service}.log:public"))
-        .expect("non-empty capability");
-    let describe_full = Capability::new(format!("props.describe:{service}.log:full"))
-        .expect("non-empty capability");
-    let write =
-        Capability::new(format!("props.write:{service}.log")).expect("non-empty capability");
-    let audit =
-        Capability::new(format!("props.audit:{service}.log")).expect("non-empty capability");
-    let caps: CapabilitySet = [read, describe_public, describe_full, write, audit]
-        .into_iter()
-        .collect();
-    AuthPolicy::new(move |_peer: &PeerIdentity| caps.clone())
-}
-
-pub fn spec(service: &str, hooks: Hooks) -> NamespaceSpec {
+pub fn spec(hooks: Hooks) -> NamespaceSpec {
     let mut s = NamespaceSpec::new(
         namespace_name(),
         schema(),
@@ -215,7 +194,6 @@ pub fn spec(service: &str, hooks: Hooks) -> NamespaceSpec {
         },
     );
     s.lifecycle = NamespaceLifecycle::Simple;
-    s.auth = auth_policy(service);
     s.hooks = hooks;
     s
 }
@@ -320,7 +298,7 @@ fn validate_filter(obj: &BTreeMap<String, PropValue>) -> Result<(), HookError> {
 ///
 /// The router's service name (set at `PropsRouter::new("<svc>")`)
 /// determines the fully-qualified namespace `<svc>.log` and the five
-/// capability names. The returned `LogNamespace` (= `Arc<Runtime>`)
+/// event names. The returned `LogNamespace` (= `Arc<Runtime>`)
 /// is what `logging::props::attach` watches — the host
 /// service must hold it for the lifetime of the process.
 ///
@@ -330,13 +308,12 @@ pub fn register(
     router: &mut PropsRouter,
     store: &Arc<SqliteStore>,
 ) -> Result<LogNamespace, LogError> {
-    let service = router.service().to_string();
     // Namespace-private wake shared between the `after_set` hook (pulses)
     // and the watcher (parks). See `LogNamespace`'s doc for why this
     // must NOT be `Runtime::events_signal()`.
     let signal = Arc::new(Notify::new());
     let hooks = Hooks::new(LogNamespaceHooks::new(signal.clone()));
-    let spec = spec(&service, hooks);
+    let spec = spec(hooks);
     store
         .register_namespace(&spec, Arc::new(JsonValuesMapping::new(namespace_name())))
         .map_err(|e| LogError::Props(format!("register log namespace in store: {e}")))?;

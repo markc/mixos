@@ -45,14 +45,8 @@
 //! reflected by the next rebuild. The result is folder state as of enumeration,
 //! plus every correction made before the swap.
 //!
-//! `bayesian_rebuild_operators` is an opt-in peer gate. An empty list is open
-//! to every Bus peer by deliberate agentic-first default; a non-empty list
-//! admits only exact sender matches.
-//!
-//! All actions return `(rc, body_json)` with the same convention as
-//! `bus::rules`: `rc = 0` on success and `rc >= 10` on caller or engine
-//! errors. A waited rebuild that aborts or fails returns `rc = 10` with its
-//! job body so the counters and last error remain available.
+//! Rebuild accepts every Bus caller. Actions return rc=0 on success and
+//! rc>=10 for caller or engine errors, including failed waited rebuilds.
 
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
@@ -127,21 +121,19 @@ impl RebuildJob {
 #[derive(Clone)]
 pub struct BayesianBusState {
     pub(crate) jobs: Arc<Mutex<HashMap<String, RebuildJob>>>,
-    operators: Arc<Vec<String>>,
 }
 
 impl BayesianBusState {
-    pub fn new(operators: Vec<String>) -> Self {
+    pub fn new() -> Self {
         Self {
             jobs: Arc::new(Mutex::new(HashMap::new())),
-            operators: Arc::new(operators),
         }
     }
 }
 
 impl Default for BayesianBusState {
     fn default() -> Self {
-        Self::new(Vec::new())
+        Self::new()
     }
 }
 
@@ -168,23 +160,13 @@ pub async fn dispatch(
         "classify" => handle_classify(classifier, &args, input).await,
         "train" => handle_train(classifier, db, mailstore, &args).await,
         "untrain" => handle_untrain(classifier, db, mailstore, &args).await,
-        "rebuild" => {
-            if !rebuild_authorised(cmd, state) {
-                (RC_ERROR, err_body("not an authorised rebuild operator"))
-            } else {
-                handle_rebuild(classifier, db, mailstore, state, &args).await
-            }
-        }
+        "rebuild" => handle_rebuild(classifier, db, mailstore, state, &args).await,
         "rebuild_status" => handle_rebuild_status(state, &args),
         other => (
             RC_ERROR,
             err_body(&format!("unknown bayesian action: {other}")),
         ),
     }
-}
-
-fn rebuild_authorised(cmd: &IncomingCommand, state: &BayesianBusState) -> bool {
-    state.operators.is_empty() || state.operators.iter().any(|operator| operator == &cmd.from)
 }
 
 /// Account selector shared by the per-account inspection and training
@@ -2457,7 +2439,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rebuild_operator_allowlist_is_opt_in() {
+    async fn rebuild_accepts_named_and_mesh_callers() {
         let (dir, _mds, store) = temp_mailstore();
         store.ensure_account_set(1).unwrap();
         let cls = disk_classifier(&dir.path().join("bayes"));
@@ -2468,7 +2450,7 @@ mod tests {
             "wait": true,
             "allow_empty": true,
         });
-        let command = IncomingCommand {
+        let mut command = IncomingCommand {
             generation: 0,
             from: "peer-any".to_string(),
             command: "maild.bayesian.rebuild".to_string(),
@@ -2489,24 +2471,20 @@ mod tests {
             &super::super::diagnostics::Legacy::default(),
         )
         .await;
-        assert_eq!(rc, 0, "empty allowlist refused peer: {body}");
+        assert_eq!(rc, 0, "named caller: {body}");
 
-        let restricted_state = BayesianBusState::new(vec!["operator-one".to_string()]);
+        command.from.clear();
         let (rc, body) = dispatch(
             "rebuild",
             &command,
             &cls,
             &database,
             &store,
-            &restricted_state,
+            &open_state,
             &super::super::diagnostics::Legacy::default(),
         )
         .await;
-        assert_eq!(rc, RC_ERROR);
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&body).unwrap()["error"],
-            "not an authorised rebuild operator"
-        );
+        assert_eq!(rc, 0, "mesh caller: {body}");
     }
 
     #[tokio::test]

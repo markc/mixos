@@ -11,25 +11,18 @@
 //! `webd.listener.status` (or the `_bin/webd_listener.mix` script
 //! read-back) to confirm the listener actually bound/unbound.
 //!
-//! Cap model mirrors the namespace's operator-tier [`auth_policy`]:
-//! `props.write:webd.listeners` (the privileged cut-traffic cap) is
-//! granted only to a sender in the L0 operators allowlist; read/status
-//! is open to every WG peer (secret `last_error` redacted without the
-//! `:secrets` read cap).
+//! Commands, status and listener secrets are available to every caller.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use ::bus::native_client::IncomingCommand;
-use props::{
-    Actor, Capability, CapabilitySet, MergeMode, PeerIdentity, PropValue, RecordKey, SetOpts,
-    WriteOrigin,
-};
+use props::{Actor, MergeMode, PropValue, RecordKey, SetOpts, WriteOrigin};
 use serde_json::json;
 
 use super::kwarg;
 use crate::NodeState;
-use crate::listeners_namespace::{auth_policy, namespace_name, snapshot_rows};
+use crate::listeners_namespace::{namespace_name, snapshot_rows};
 
 /// Caller-error sentinel — matches [`crate::bus::RC_CALLER_ERROR`].
 const RC_CALLER_ERROR: u8 = 10;
@@ -50,15 +43,12 @@ pub(crate) async fn dispatch(
     Some(result)
 }
 
-/// `webd.listener.{enable,disable}` — operator-gated `props.set` of the
+/// `webd.listener.{enable,disable}` — `props.set` of the
 /// `enabled` field. The reaction loop does the actual bind/unbind. The
 /// namespace's lockout guard (before_set rule 4) rejects disabling a
-/// non-external listener even for an operator — that rejection surfaces
+/// non-external listener for every caller — that rejection surfaces
 /// here as a caller error.
 async fn set_enabled(node: &Arc<NodeState>, cmd: &IncomingCommand, enabled: bool) -> (u8, String) {
-    if let Err(rsp) = require_cap(node, cmd, "props.write:webd.listeners") {
-        return rsp;
-    }
     let id = match kwarg(cmd, "id") {
         Some(s) => s,
         None => return caller_error("missing required kwarg: id"),
@@ -75,11 +65,8 @@ async fn set_enabled(node: &Arc<NodeState>, cmd: &IncomingCommand, enabled: bool
     };
 
     // Caller-origin Patch of the (caller-owned) `enabled` field — fires
-    // the namespace's after_set, which the reaction loop consumes and
-    // applies to the live listener set. (Caller-origin so the operator
-    // intent is what triggers reconciliation; the command's own cap-check
-    // above is the gate, and we write no daemon-owned columns.) Bounded
-    // OCC retry: the reaction loop's frequent backend status writeback
+    // the namespace's after_set event for the reaction loop to consume.
+    // Bounded OCC retry: the reaction loop's frequent backend status writeback
     // can bump the version between our anchor read and our write, which
     // would otherwise surface as a spurious version_mismatch.
     const ATTEMPTS: usize = 3;
@@ -137,15 +124,11 @@ async fn set_enabled(node: &Arc<NodeState>, cmd: &IncomingCommand, enabled: bool
 }
 
 /// `webd.listener.status [id=<id>]` — project the namespace rows.
-/// `last_error` (secret) is included only with the `:secrets` read cap.
+/// Includes `last_error` for every caller.
 async fn status(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String) {
-    if let Err(rsp) = require_cap(node, cmd, "props.read:webd.listeners") {
-        return rsp;
-    }
     let Some(runtime) = node.listeners_runtime.as_ref() else {
         return server_error("webd.listeners runtime not attached — bootstrap node or wiring bug");
     };
-    let with_secrets = has_cap(node, cmd, "props.read:webd.listeners:secrets");
     let id_filter = kwarg(cmd, "id");
 
     let rows = match snapshot_rows(runtime).await {
@@ -156,7 +139,7 @@ async fn status(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String) {
         .into_iter()
         .filter(|r| id_filter.as_ref().is_none_or(|f| &r.id == f))
         .map(|r| {
-            let mut j = json!({
+            json!({
                 "id": r.id,
                 "enabled": r.enabled,
                 "external": r.external,
@@ -170,54 +153,14 @@ async fn status(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String) {
                 "allow_cidrs": r.allow_cidrs,
                 "deny_cidrs": r.deny_cidrs,
                 "last_transition": r.last_transition,
-            });
-            if with_secrets {
-                j["last_error"] = json!(r.last_error);
-            }
-            j
+                "last_error": r.last_error,
+            })
         })
         .collect();
     (0, json!({ "listeners": listeners }).to_string())
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
-
-/// Resolve the caller's capability set against the operator-tier
-/// [`auth_policy`] — same authoritative source the props router uses,
-/// seeded with this node's L0 operators allowlist.
-fn has_cap(node: &Arc<NodeState>, cmd: &IncomingCommand, cap: &str) -> bool {
-    let peer = peer_from_cmd(cmd);
-    let caps: CapabilitySet = auth_policy("webd", node.listeners_operators.clone()).resolve(&peer);
-    Capability::new(cap).is_ok_and(|cap| caps.contains(&cap))
-}
-
-pub(crate) fn require_cap(
-    node: &Arc<NodeState>,
-    cmd: &IncomingCommand,
-    cap: &str,
-) -> Result<(), (u8, String)> {
-    if has_cap(node, cmd, cap) {
-        Ok(())
-    } else {
-        Err((
-            RC_CALLER_ERROR,
-            json!({ "error": "auth_denied", "missing_capability": cap }).to_string(),
-        ))
-    }
-}
-
-/// noded forwards the registered sender as `service_name`; Unix/WG
-/// fields stay `None` (noded doesn't surface them today).
-fn peer_from_cmd(cmd: &IncomingCommand) -> PeerIdentity {
-    PeerIdentity {
-        service_name: if cmd.from.is_empty() {
-            None
-        } else {
-            Some(cmd.from.clone())
-        },
-        ..Default::default()
-    }
-}
 
 fn caller_error(msg: &str) -> (u8, String) {
     (RC_CALLER_ERROR, json!({ "error": msg }).to_string())

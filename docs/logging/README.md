@@ -31,9 +31,13 @@ the property dispatcher. It lives until the Tokio runtime shuts down.
 
 `format` remains stored introspection data and does not rebuild sinks.
 `applied_at`, `applied_by` and `source` remain mutable metadata; the watcher
-does not write them back. The current log policy grants every reachable
-peer the namespace's capabilities, including write access that can silence
-logging. Services needing narrower access must supply their policy.
+does not write them back. Every Bus caller can read and change the logging
+namespace, including write access that can silence logging.
 See the [contract](../docs/spec/props/README.md#logging) for the frozen schema.
+
+`handle_snapshot_bus` serves every caller. Snapshots return raw labels and
+accept exact-value, key-presence and hash filters without capabilities.
+Filter validation and the 1 MiB response limit remain. Label sensitivity
+continues to control redaction in on-disk JSONL and Prometheus output.
 
 The source is [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging).

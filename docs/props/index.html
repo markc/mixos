@@ -243,17 +243,28 @@ the storage and routing API needed by the forthcoming mail service port.</p>
 <table><thead><tr><th>Feature</th><th>Adds</th></tr></thead><tbody>
 <tr><td>default (empty)</td><td>Pure read types, redaction, diff and in-memory revision writes</td></tr>
 <tr><td><code>bus</code></td><td>Read dispatch and native publication envelopes</td></tr>
-<tr><td><code>store</code></td><td>Namespace schemas, capabilities, hooks, lifecycle, audit HMAC, <code>PropertyStore</code>, <code>MemoryStore</code> and <code>Runtime</code></td></tr>
+<tr><td><code>store</code></td><td>Namespace schemas, hooks, lifecycle, audit HMAC, <code>PropertyStore</code>, <code>MemoryStore</code> and <code>Runtime</code></td></tr>
 <tr><td><code>sqlite</code></td><td><code>store</code> plus <code>SqliteStore</code>, <code>SqliteTableMapping</code> and <code>JsonValuesMapping</code></td></tr>
 <tr><td><code>router</code></td><td><code>bus</code> and <code>store</code> plus <code>PropsRouter</code>, <code>SubscribeGranter</code> and per-namespace event dispatch</td></tr>
 </tbody></table>
 <p>Choose <code>sqlite</code> and <code>router</code> together for durable service namespaces.
-Services supply their own domain-table mapping, authorisation policy,
+Services supply their own domain-table mapping,
 subscription granter and publisher. The library opens no second transport.
 The <a href="/docs/spec/props/">property contract</a> defines the wire
 surface, error vocabulary and persisted table ownership; the
 <a href="/docs/decisions/2026-10-18-property-store-in-props/">ownership decision</a>
 explains the boundary with desktop settings.</p>
+<p>Every caller can read and mutate registered namespaces, including secret
+fields and full schemas. Peer metadata supplies audit and live delivery
+addresses; it does not grant access. A materialised view can declare
+<code>NamespaceSpec::read_only</code>, which rejects every Bus mutation with
+<code>validation_error</code> while allowing the owning runtime to refresh its data.</p>
+<p>Schema validation, version checks, lifecycle hooks, audit digests, replay
+windows and reserved topic ownership remain enforced. A live watch needs a
+registered subscriber destination and a working subscription granter;
+missing routing data returns <code>validation_error</code>, and a broker subscription
+failure returns <code>grant_failed</code>. Public schema and broadcast event projections
+still redact fields uniformly; callers can request full data explicitly.</p>
 <p>Read-surface transplant provenance: commit
 <code>e0297242305f3a3c3de09f1ca01e8faa771768da</code>, MIT OR Apache-2.0.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/libs/props"><code>libs/props</code></a>.</p>

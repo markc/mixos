@@ -27,7 +27,7 @@
 //!
 //! Three fields are also marked `secret: true` (`cert_blob_id`,
 //! `key_blob_id`, `last_error`) so the substrate redacts them without
-//! the `props.read:webd.vhosts:secrets` capability.
+//! explicit redacted projections; Bus callers can read all fields.
 //!
 //! ## C1 scope (commits 1a / 1b / 1c / 1d)
 //!
@@ -61,11 +61,8 @@
 //!   - `after_delete` enqueues [`NamespaceEvent::VhostRemoved`] on
 //!     the same mpsc (C1d). Provisioner consumer arms land in
 //!     commits §"Commit 4a" / §"Commit 4b" of the rev-6 plan.
-//! * Six-cap `AuthPolicy` including the `:secrets` variant and the
-//!   `props.write:webd.vhosts` write cap (re-introduced in C1c now
-//!   that the validating hook can defend it — see
-//!   [`auth_policy`] for the BLOCKER-fix history).
-//! * `dispatch_props` — unchanged Bus command-suffix bridge from the
+//! * Every Bus caller can read and write the namespace.
+//! * `dispatch_props` — Bus command-suffix bridge from the
 //!   v0 file.
 //!
 //! ## Bisect contract — non-deployable mid-commit states
@@ -85,9 +82,9 @@ use anyhow::Result;
 use config::node::{NodeConfig, WebdListenerConfig};
 use props::sqlite::{JsonValuesMapping, SqliteStore};
 use props::{
-    AuthPolicy, Capability, CapabilitySet, Cardinality, FieldSchema, FieldType, HookCtx, HookError,
-    HookFuture, HookHandler, Hooks, MergeMode, NamespaceName, NamespaceSpec, PeerIdentity,
-    PropValue, PropertySchema, PropsRouter, Runtime, StorageBackendKind,
+    Cardinality, FieldSchema, FieldType, HookCtx, HookError, HookFuture, HookHandler, Hooks,
+    MergeMode, NamespaceName, NamespaceSpec, PeerIdentity, PropValue, PropertySchema, PropsRouter,
+    Runtime, StorageBackendKind,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -462,77 +459,6 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// Capability surface per plan §"Capability split". For v0.1 every
-/// reachable peer (WG `/24` trust domain) gets the issued set,
-/// matching the maild Phase 1/2/3 posture; cross-mesh authz narrows
-/// later without renaming the caps.
-///
-/// **C1c surface — read + write, validated.** C1b withheld
-/// `props.write:webd.vhosts` because [`VhostsNamespaceHooks`] was a
-/// no-op stub: an open write cap against an empty hook would have
-/// let any in-mesh caller persist Phase 3 rows that bypass every
-/// intended invariant. C1c lands the validating `before_set`
-/// (daemon-owned column rejection on caller-origin, reserved enum
-/// rejection, multi-SAN aliases rejection, ACME-vs-manual-TLS
-/// mutual exclusion) and re-introduces the write cap in the same
-/// commit — closing the substrate's "schema-vs-hook" race window
-/// inside one diff so a bisect can never land on a node where the
-/// cap is open and the hook is empty. Pin-tested by
-/// [`tests::auth_policy_grants_write_cap_with_validating_hook`].
-///
-/// Backend-origin writes (`Runtime::set_with_origin(_,
-/// WriteOrigin::backend())`) are unaffected — those are direct Rust
-/// API calls that do not flow through `AuthPolicy`. C3's
-/// bootstrap-upsert path uses that route. The validating hook
-/// branches on `ctx.origin`: caller writes that name a daemon-owned
-/// column are rejected with `operator_wrote_daemon_field`, while
-/// backend-origin writes bypass that arm — the cross-field rules
-/// (rules 2-5) run on every write regardless of origin.
-pub fn auth_policy(service: &str) -> AuthPolicy {
-    let read_public =
-        Capability::new(format!("props.read:{service}.vhosts")).expect("non-empty capability");
-    let read_secrets = Capability::new(format!("props.read:{service}.vhosts:secrets"))
-        .expect("non-empty capability");
-    let describe_public = Capability::new(format!("props.describe:{service}.vhosts:public"))
-        .expect("non-empty capability");
-    let describe_full = Capability::new(format!("props.describe:{service}.vhosts:full"))
-        .expect("non-empty capability");
-    let audit =
-        Capability::new(format!("props.audit:{service}.vhosts")).expect("non-empty capability");
-    let write =
-        Capability::new(format!("props.write:{service}.vhosts")).expect("non-empty capability");
-    // C5 — narrow cap gating the `webd.acme.renew` ergonomic command
-    // ([`crate::bus::vhost_commands`]). NOT a `props.*` cap because the
-    // command is daemon-internal kick semantics, not a substrate row
-    // mutation — the post-renewal namespace writeback runs under
-    // webd's own service-tier credential rather than the caller's.
-    // Naming follows the spec's "cross-mesh authz narrows later
-    // without renaming caps" rule: the wire shape stays stable when
-    // the policy graduates from "every WG peer" to a tighter scope.
-    let acme_renew =
-        Capability::new(format!("webd.acme.renew:{service}.vhosts")).expect("non-empty capability");
-    // Narrow cap gating the `webd.session.revoke` ergonomic command
-    // ([`crate::bus::session_commands`]) — cookie-path session revocation
-    // (2026-07 audit). Same non-`props.*` rationale as `acme_renew`:
-    // it mutates runtime security state (the per-vhost `session_epochs`
-    // table), not a substrate row.
-    let session_revoke = Capability::new(format!("webd.session.revoke:{service}.vhosts"))
-        .expect("non-empty capability");
-    let caps: CapabilitySet = [
-        read_public,
-        read_secrets,
-        describe_public,
-        describe_full,
-        audit,
-        write,
-        acme_renew,
-        session_revoke,
-    ]
-    .into_iter()
-    .collect();
-    AuthPolicy::new(move |_peer: &PeerIdentity| caps.clone())
-}
-
 /// Build the `NamespaceSpec` — collection cardinality keyed on `fqdn`,
 /// SqliteTable storage on the shared `__props_values` table,
 /// validating hooks landed in C1c.
@@ -552,7 +478,7 @@ pub fn auth_policy(service: &str) -> AuthPolicy {
 /// reality. This is the SPEC 12 §4.4 guidance for namespaces with
 /// automation writers — webd's ACME provisioner is exactly that.
 /// Pinned by [`tests::caller_set_without_if_version_rejected`].
-pub fn spec(service: &str, hooks: Hooks) -> NamespaceSpec {
+pub fn spec(hooks: Hooks) -> NamespaceSpec {
     let mut s = NamespaceSpec::new(
         namespace_name(),
         schema(),
@@ -563,7 +489,6 @@ pub fn spec(service: &str, hooks: Hooks) -> NamespaceSpec {
             table: "__props_values".into(),
         },
     );
-    s.auth = auth_policy(service);
     s.hooks = hooks;
     s.require_version = true;
     s
@@ -1281,10 +1206,9 @@ pub fn register_vhosts_namespace_with_listener_config(
     store: &Arc<SqliteStore>,
     listener_config: ListenerConfigSource,
 ) -> Result<(Arc<Runtime>, mpsc::Receiver<NamespaceEvent>)> {
-    let service = router.service().to_string();
     let (events_tx, events_rx) = mpsc::channel(PROVISIONER_EVENT_CHANNEL_CAPACITY);
     let hooks = Hooks::new(VhostsNamespaceHooks::new(events_tx, listener_config));
-    let spec = spec(&service, hooks);
+    let spec = spec(hooks);
     store
         .register_namespace(&spec, Arc::new(JsonValuesMapping::new(namespace_name())))
         .map_err(|e| anyhow::anyhow!("register vhosts namespace in store: {e}"))?;
@@ -1418,7 +1342,7 @@ pub async fn snapshot_rows(runtime: &Runtime) -> Result<Vec<VhostRow>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use props::{Actor, PeerIdentity, RecordKey, SetOpts, Version, WriteOrigin};
+    use props::{Actor, RecordKey, SetOpts, Version, WriteOrigin};
     use rusqlite::Connection;
 
     fn open_test_store() -> Arc<SqliteStore> {
@@ -1498,53 +1422,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn auth_policy_caps_scope_to_webd_prefix() {
-        let policy = auth_policy("webd");
-        let caps = policy.resolve(&PeerIdentity::default());
-        // Every cap must be scoped to `webd.vhosts` — a regression
-        // that emits `webd.routes` or omits the service prefix would
-        // silently widen authorisation. Verify by string-shape against
-        // each declared cap.
-        let want = [
-            "props.read:webd.vhosts",
-            "props.read:webd.vhosts:secrets",
-            "props.describe:webd.vhosts:public",
-            "props.describe:webd.vhosts:full",
-            "props.audit:webd.vhosts",
-            "props.write:webd.vhosts",
-            // C5 — narrow cap for `webd.acme.renew`. Granted to
-            // every WG peer in v0.1 alongside the other webd caps;
-            // cross-mesh authz narrows later without renaming.
-            "webd.acme.renew:webd.vhosts",
-        ];
-        for w in want {
-            assert!(
-                caps.contains(&Capability::new(w.to_string()).expect("non-empty capability")),
-                "missing cap {w}; got {caps:?}",
-            );
-        }
-    }
-
-    /// C1c re-introduces `props.write:webd.vhosts` together with the
-    /// validating hook (the pair landed in a single commit so a
-    /// bisect can never reach a node where the cap is open and the
-    /// hook is empty — that was the C1b BLOCKER shape). The hook is
-    /// load-bearing for write authority; this test asserts the cap
-    /// is present and is the BLOCKER fix sibling to
-    /// [`before_set_*`] hook tests below.
-    #[test]
-    fn auth_policy_grants_write_cap_with_validating_hook() {
-        let policy = auth_policy("webd");
-        let caps = policy.resolve(&PeerIdentity::default());
-        let write_cap =
-            Capability::new("props.write:webd.vhosts".to_string()).expect("non-empty capability");
-        assert!(
-            caps.contains(&write_cap),
-            "C1c grants the write cap — validating hook defends it. Got: {caps:?}",
-        );
-    }
-
     fn full_row() -> VhostRow {
         VhostRow {
             fqdn: "example.com".into(),
@@ -1602,15 +1479,9 @@ mod tests {
         );
     }
 
-    /// The substrate redacts fields annotated `secret: true` when the
-    /// caller's capability set lacks `:secrets`. We exercise this at
-    /// the schema level — a smoke test that the secret flag survived
-    /// the schema builder. The full caller-visible redaction
-    /// behaviour is tested in `mixos-lib-props-store` itself; here we
-    /// only pin that webd's schema annotated the three secret
-    /// columns correctly.
+    /// Secret annotations control uniform public schema and broadcast projections.
     #[test]
-    fn secrets_capability_redacts_cert_blob_id_without_secrets() {
+    fn secret_annotations_cover_certificate_ids_and_errors() {
         let s = schema();
         let by_name: BTreeMap<&str, &FieldSchema> =
             s.fields.iter().map(|f| (f.name.as_str(), f)).collect();
@@ -1640,7 +1511,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("schema must declare {name}"));
             assert!(
                 !f.secret,
-                "{name} must be non-secret in the schema (Phase 3 capability split)",
+                "{name} must be non-secret in the schema in public projections",
             );
         }
     }
