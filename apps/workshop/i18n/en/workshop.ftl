@@ -86,6 +86,7 @@ macro-delete = Delete
 macro-delete-confirm = Delete this user macro?
 macro-cancel = Cancel
 macro-target = Target app
+macro-source = Macro source
 macro-destination = Move to app
 macros-menu = Macros
 observe-traffic = Observe traffic

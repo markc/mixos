@@ -65,6 +65,9 @@ pub fn panel<R>(
     horizontal: bool,
     body: impl FnOnce(&mut egui::Ui) -> R,
 ) -> (egui::InnerResponse<R>, Option<f32>) {
+    if shared(ui.ctx()).is_none() {
+        Widgets::default().install(ui.ctx());
+    }
     let panel_id = ui.make_persistent_id(name);
     with(ui.ctx(), |w| {
         w.panel_ids.insert(name.into(), panel_id);
@@ -125,6 +128,9 @@ pub fn panel<R>(
 
 /// Set a share from a Bus command and invalidate egui's remembered pixels.
 pub fn set_panel(ctx: &egui::Context, name: &str, share: f32) {
+    if shared(ctx).is_none() {
+        Widgets::default().install(ctx);
+    }
     let id = with(ctx, |w| {
         w.panels.insert(name.into(), share);
         // A Bus choice made before the first layout must win over loading

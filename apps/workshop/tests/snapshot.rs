@@ -128,7 +128,9 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     engine.ui.dialog = dialog;
     let registry = actions::registry();
     let strings = strings();
+    let initial_theme = theme.clone();
     let mut harness = Harness::builder()
+        .with_context_setup(move |ctx| toolkit::install(ctx, &initial_theme))
         .with_size(size)
         .wgpu()
         .build_ui(move |ui| {

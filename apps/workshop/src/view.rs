@@ -758,7 +758,14 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             (ui.available_height() - 150.0).max(100.0),
         ),
         |ui| {
-            doc.show(ui, &palette, &editor::View::default());
+            doc.show(
+                ui,
+                &palette,
+                &editor::View {
+                    label: Some(label("macro-source")),
+                    ..editor::View::default()
+                },
+            );
         },
     );
     if doc.is_dirty()
@@ -821,7 +828,9 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                             target = app;
                         }
                     }
-                });
+                })
+                .response
+                .accessible_name(label("macro-target"));
         }
         if ui.button(label("macro-run")).clicked() {
             let has_target = entry.is_some_and(|entry| !entry["targets"].is_null());
@@ -853,7 +862,9 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                             destination = app.clone();
                         }
                     }
-                });
+                })
+                .response
+                .accessible_name(label("macro-destination"));
         }
         for (operation, label_key, args) in [
             ("macros.copy", "macro-copy", serde_json::json!({})),
