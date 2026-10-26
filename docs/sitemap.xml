@@ -63,6 +63,7 @@
   <url><loc>https://mixos.dev/docs/decisions/2026-10-24-bus-commands-and-actions/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-24-macro-file-write-authority/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-25-relocatable-layout/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-26-egui-037-font-bundle/</loc></url>
   <url><loc>https://mixos.dev/docs/dev/2026-10-21-source-and-build-map/</loc></url>
   <url><loc>https://mixos.dev/docs/dev/releasing/</loc></url>
   <url><loc>https://mixos.dev/docs/spec/bridge/</loc></url>

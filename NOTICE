@@ -58,7 +58,7 @@ Medium and SemiBold (The Inter Project Authors, SIL OFL 1.1) and JetBrains Mono
 1.1). The JetBrains Mono faces are also embedded by libs/assets for the
 headless terminal renderer, with the same source files and licence.
 
-The unmodified epaint_default_fonts 0.36.2 dependency embeds fallback faces:
+The unmodified epaint_default_fonts 0.37.0 dependency embeds fallback faces:
 Hack Regular (Copyright 2018 Source Foundry Authors, MIT; Bitstream Vera Sans
 Mono Copyright 2003 Bitstream Inc., Bitstream Vera terms; DejaVu contributions
 public domain), Noto Emoji Regular (Copyright 2013 Google Inc., SIL OFL 1.1),

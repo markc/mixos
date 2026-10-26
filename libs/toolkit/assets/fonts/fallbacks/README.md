@@ -1,7 +1,7 @@
 # Bundled fallback font notices
 
 The application fonts remain Inter and JetBrains Mono. The unmodified
-`epaint_default_fonts` 0.36.2 dependency embeds these additional fallback
+`epaint_default_fonts` 0.37.0 dependency embeds these additional fallback
 fonts. Its original licence texts are copied here byte for byte:
 
 | Font | Copyright notice | Licence text |
@@ -15,6 +15,10 @@ The Ubuntu and Noto notices above are also carried in the embedded upstream
 font metadata. This directory adds an accessible copy alongside the complete
 licence texts. No font files are modified or renamed.
 
-Source: the published `epaint_default_fonts` 0.36.2 crate, `fonts/` directory.
+Source: the published `epaint_default_fonts` 0.37.0 crate, `fonts/` directory.
 `libs/toolkit/assets/licenses.conf.mix` pins the copied text hashes. The native
 installer ships this README and those texts under `share/licenses/toolkit/`.
+
+The bundled egui-icons subset carries five private-use glyphs from Emoji Icon
+Font, under the same John Slegers MIT licence. The explicit monochrome emoji
+feature retains Noto Emoji and the full Emoji Icon Font as fallbacks.

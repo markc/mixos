@@ -11,9 +11,9 @@ allow = [
 
 [[licenses.exceptions]]
 # Bundled font data only; keep the general code-dependency policy unchanged.
-# See docs/docs/decisions/2026-10-13-bundled-font-licences.md.
+# See docs/docs/decisions/2026-10-26-egui-037-font-bundle.md.
 name = "epaint_default_fonts"
-version = "=0.36.2"
+version = "=0.37.0"
 allow = ["MIT", "Apache-2.0", "OFL-1.1", "Ubuntu-font-1.0"]
 
 [bans]

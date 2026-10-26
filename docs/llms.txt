@@ -242,6 +242,7 @@ One line per component with a page: kind, then install profiles. The
 - [Decision — Bus commands and app actions](https://mixos.dev/docs/decisions/2026-10-24-bus-commands-and-actions.md): A dotted name a service answers is a Bus command and an app's registry entry is an action; "verb" is retired, and each kind of unknown name has one refusal.
 - [Macro-file write authority](https://mixos.dev/docs/decisions/2026-10-24-macro-file-write-authority.md): Status: accepted, 2026-10-24.
 - [Relocatable layout](https://mixos.dev/docs/decisions/2026-10-25-relocatable-layout.md): Status: accepted, 2026-10-25; amended the same day to preserve main's uid, directory and installation rules.
+- [egui 0.37 fallback font bundle](https://mixos.dev/docs/decisions/2026-10-26-egui-037-font-bundle.md): Status: accepted, 2026-10-26.
 
 ### Specs
 
