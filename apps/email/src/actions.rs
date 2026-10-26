@@ -168,6 +168,17 @@ pub fn registry() -> Registry<State> {
         enabled: composable,
         run: State::compose,
     })
+    .add(Action {
+        id: "mail.send",
+        submenu: None,
+        group: 0,
+        label: "send",
+        menu: None,
+        shortcut: None,
+        icon: None,
+        enabled: State::compose_sendable,
+        run: State::send_compose,
+    })
     // Message: what can be done to the open email, Thunderbird's keys.
     .add(Action {
         id: "mail.reply",

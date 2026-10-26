@@ -227,6 +227,24 @@ pub fn pending(ctx: &Context) -> bool {
         .unwrap_or(false)
 }
 
+/// The request whose input was injected into this UI pass, if any. Queued
+/// requests and idle/report passes have no input origin. Apps can retain
+/// their caller identity until the request is answered and stamp effects
+/// triggered during this pass with the actual replayed request id.
+pub fn input_request(ctx: &Context) -> Option<u64> {
+    ctx.with_plugin(|drive: &mut Drive| {
+        if ctx.viewport_id() == egui::ViewportId::ROOT {
+            drive.input_request_id
+        } else {
+            drive
+                .children
+                .get(&ctx.viewport_id())
+                .and_then(|child| child.input_request_id)
+        }
+    })
+    .flatten()
+}
+
 /// No UI pass for this long means pending input cannot make progress.
 /// Keep brief desktop animations and GPU stalls (150–500 ms) intact, while
 /// releasing later Bus commands after a window stops producing frames.
@@ -537,6 +555,8 @@ struct Running {
 /// The plugin: the last widget tree, queued input and finished answers.
 #[derive(Default)]
 pub struct Drive {
+    /// Only the input injected in this pass, cleared before every step.
+    input_request_id: Option<u64>,
     /// Pending captures, tracked until completion, cancellation or shutdown.
     pending_captures: HashMap<u64, Instant>,
     last_ui_pass: Option<Instant>,
@@ -1370,6 +1390,7 @@ impl Drive {
 
     /// One pass of the running job: inject its next step.
     fn step(&mut self, ctx: &Context, input: &mut RawInput) {
+        self.input_request_id = None;
         // Owed releases go first, in a pass of their own.
         if !self.cleanup.is_empty() {
             input.events.append(&mut self.cleanup);
@@ -1387,6 +1408,7 @@ impl Drive {
         }
         match running.steps.pop_front() {
             Some(Step::Input(events)) => {
+                self.input_request_id = Some(running.id);
                 for event in &events {
                     if let Event::PointerButton {
                         button, pressed, ..
@@ -1787,6 +1809,25 @@ fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn input_origin_tracks_replayed_steps_and_clears_on_idle_passes() {
+        let ctx = Context::default();
+        install(&ctx, "demo");
+        assert!(request(&ctx, 42, "ui.key", &json!({"key":"Enter"})).is_none());
+        assert_eq!(input_request(&ctx), None, "accepting a job injects no input");
+        assert!(request(&ctx, 43, "ui.key", &json!({"key":"Escape"})).is_none());
+        let mut seen = Vec::new();
+        for _ in 0..10 {
+            ctx.run_ui(RawInput::default(), |ui| {
+                seen.push(input_request(ui.ctx()));
+            }).drop_without_applying_deltas();
+            let _answers = logic(&ctx);
+        }
+        assert_eq!(seen.first(), Some(&Some(42)), "{seen:?}");
+        assert!(seen.contains(&Some(43)), "the later job must get its own origin: {seen:?}");
+        assert_eq!(seen.last(), Some(&None), "idle passes must not keep a caller: {seen:?}");
+    }
 
     fn capture_context() -> (Context, tempfile::TempDir) {
         let temp = tempfile::tempdir().unwrap();

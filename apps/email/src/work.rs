@@ -128,6 +128,7 @@ pub enum Work {
         ticket: u64,
         draft: Composed,
         attempt: jmap::SendAttempt,
+        origin: crate::state::SendOrigin,
     },
     FetchCalendars {
         account: String,

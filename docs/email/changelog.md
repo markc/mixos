@@ -24,11 +24,15 @@ generated: by docs/_build/gen-site.mix from apps/email/CHANGELOG.md; do not edit
 - Standalone MIME builders impose no upload limit; Send applies the server's
   limit to the exact encoded bytes.
 - Sends with attachments log the caller key and paths in the Email app.
-  Window sends use `window`; toolkit drive requests log their request id and
-  caller key so input replayed on later frames can be correlated.
+  Person-initiated sends use `window`; `mail.send` through `email.execute`
+  retains the Bus caller. Driven sends retain the actual replayed request id
+  and caller through compose state and queued work for audit correlation.
 - Compose shows attachment chips under Subject with names, sizes, file status,
   removal and a total. Missing, unreadable and invalid files or an oversized
-  encoded message disable Send. Files are checked on open and before Send;
+  encoded message disable Send. Chips wrap, preserve text line height and
+  disambiguate colliding filenames with their parent directories. Oversize
+  warnings appear on the total line, with distinct account/default limits.
+  Files are checked on open, removal, send failure and before Send;
   text edits update the estimate from cached sizes without polling files.
 - `email.info` and the compose reply include the attachment metadata, total,
   warning and Send enablement. `email.compose.attachment.remove {path}` removes
@@ -37,3 +41,5 @@ generated: by docs/_build/gen-site.mix from apps/email/CHANGELOG.md; do not edit
   path and shows it as missing; draft schema 1 remains compatible.
 - Invalid logging configuration reports its error and lets the GUI start
   without a subscriber.
+- MIME size estimates use the same filename-based type as the send worker,
+  including long registered types and the octet-stream fallback.

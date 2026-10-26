@@ -27,7 +27,7 @@ use crate::actions;
 use crate::commands::{Forward, Then, Write};
 use crate::drafts::{DirStore, DraftStore, MemoryStore};
 use crate::secrets::{Secrets, SecretsFile};
-use crate::state::{DRAFT_DEBOUNCE, Mode, SessionInfo, Settled, State, Tag, UiState, code};
+use crate::state::{DRAFT_DEBOUNCE, Mode, SendOrigin, SessionInfo, Settled, State, Tag, UiState, code};
 use crate::view::{UiEvent, view};
 use crate::work::{Login, Work};
 use crate::{APP, APP_ID, label};
@@ -120,6 +120,8 @@ pub struct Shell {
     palette: editor::Palette,
     composer_light: bool,
     bus: citizen::Handle,
+    /// Caller identities outlive command() while toolkit input is replayed.
+    drive_callers: HashMap<u64, SendOrigin>,
     runtime: tokio::runtime::Runtime,
     tx: mpsc::Sender<Event>,
     rx: mpsc::Receiver<Event>,
@@ -166,9 +168,20 @@ pub struct Shell {
 }
 
 fn audit_attachments(caller: &str, draft: &jmap::Composed) {
+    audit_compose_attachments(
+        &SendOrigin {
+            caller_key: caller.into(),
+            drive_request_id: None,
+        },
+        draft,
+    );
+}
+
+fn audit_compose_attachments(origin: &SendOrigin, draft: &jmap::Composed) {
     if !draft.attachments.is_empty() {
         tracing::info!(
-            caller_key = caller,
+            caller_key = origin.caller_key.as_str(),
+            drive_request_id = ?origin.drive_request_id,
             attachments = ?draft.attachments,
             "sending email attachments"
         );
@@ -182,6 +195,65 @@ fn audit_drive(id: u64, caller: &str, command: &str) {
         command,
         "email drive request"
     );
+}
+
+fn request_drive(
+    ctx: &egui::Context,
+    callers: &mut HashMap<u64, SendOrigin>,
+    id: u64,
+    caller: String,
+    command: &str,
+    args: &Value,
+) -> Option<drive::Answer> {
+    audit_drive(id, &caller, command);
+    callers.insert(
+        id,
+        SendOrigin {
+            caller_key: caller,
+            drive_request_id: Some(id),
+        },
+    );
+    let answer = drive::request(ctx, id, command, args);
+    if answer.is_some() {
+        callers.remove(&id);
+    }
+    answer
+}
+
+fn driven_origin(ctx: &egui::Context, callers: &HashMap<u64, SendOrigin>) -> Option<SendOrigin> {
+    drive::input_request(ctx)
+        .and_then(|id| callers.get(&id))
+        .cloned()
+}
+
+fn apply_ui_events(
+    state: &mut State,
+    registry: &Registry<State>,
+    events: Vec<UiEvent>,
+    origin: Option<SendOrigin>,
+) {
+    state.with_send_origin(origin, |state| {
+        // Edits first so commands see every edit made in this frame.
+        let (closed, events): (Vec<_>, Vec<_>) = events
+            .into_iter()
+            .partition(|e| matches!(e, UiEvent::CloseMacros));
+        let (commands, edits): (Vec<_>, Vec<_>) = events
+            .into_iter()
+            .partition(|event| matches!(event, UiEvent::Command(..)));
+        for event in edits {
+            state.apply_ui(event);
+        }
+        for event in commands {
+            if let UiEvent::Command(id, origin) = event
+                && let Err(error) = registry.execute(id, state, origin)
+            {
+                eprintln!("email: {id}: {error}");
+            }
+        }
+        for event in closed {
+            state.apply_ui(event);
+        }
+    });
 }
 
 /// This host's name: the settingsd instance to try first (settingsd runs
@@ -601,6 +673,7 @@ impl Shell {
             strings: crate::strings(),
             theme: theme.clone(),
             bus,
+            drive_callers: HashMap::new(),
             runtime,
             tx,
             rx,
@@ -972,6 +1045,7 @@ impl Shell {
                 ticket,
                 draft,
                 attempt,
+                origin,
             } => {
                 // The send recipe needs the Drafts and Sent mailboxes;
                 // without the mail listing yet, there is nothing to file
@@ -980,7 +1054,7 @@ impl Shell {
                 let boxes = self.state.send_boxes(&account);
                 match (self.client(&account), boxes) {
                     (Some((tag, client)), Ok(boxes)) => {
-                        audit_attachments("window", &draft);
+                        audit_compose_attachments(&origin, &draft);
                         self.spawn(async move {
                             let (attempt, result) = client.send(&draft, &boxes, attempt).await;
                             Event::Account(tag, Done::Sent(ticket, attempt, result))
@@ -1338,22 +1412,34 @@ impl Shell {
     /// One Bus command: the commands layer answers or queues it; the drive
     /// commands and the window's activation are the shell's.
     fn command(&mut self, id: u64, command_name: &str, body: &str) {
-        let forward = crate::commands::command(
-            &mut self.state,
-            &self.commands,
-            &self.strings,
-            id,
-            command_name,
-            body,
-        );
+        let origin = SendOrigin {
+            caller_key: self.bus.caller_key(id),
+            drive_request_id: None,
+        };
+        let forward = self.state.with_send_origin(Some(origin), |state| {
+            crate::commands::command(
+                state,
+                &self.commands,
+                &self.strings,
+                id,
+                command_name,
+                body,
+            )
+        });
         match forward {
             Some(Forward::Drive {
                 id,
                 command: command_name,
                 args,
             }) => {
-                audit_drive(id, &self.bus.caller_key(id), &command_name);
-                if let Some(answer) = drive::request(&self.ctx, id, &command_name, &args) {
+                if let Some(answer) = request_drive(
+                    &self.ctx,
+                    &mut self.drive_callers,
+                    id,
+                    self.bus.caller_key(id),
+                    &command_name,
+                    &args,
+                ) {
                     self.bus.reply(answer.id, answer.rc, answer.body);
                 }
             }
@@ -1574,6 +1660,7 @@ impl Shell {
         // Drive answers first: a `window close` answer goes out before the
         // close it asked for is handled.
         for answer in drive::logic(ctx) {
+            self.drive_callers.remove(&answer.id);
             self.bus.reply(answer.id, answer.rc, answer.body);
         }
         self.pump();
@@ -1601,6 +1688,7 @@ impl Shell {
             self.state.save_draft();
             self.apply_drafts();
             for answer in drive::finish(&self.ctx) {
+                self.drive_callers.remove(&answer.id);
                 self.bus.reply(answer.id, answer.rc, answer.body);
             }
             // Every accepted command gets its answer before the Bus stops.
@@ -1649,27 +1737,8 @@ impl Shell {
                 .into_iter()
                 .map(|id| UiEvent::Command(id, Origin::Shortcut)),
         );
-        // Edits first, then commands, so a command sees every edit made in
-        // the same frame (the workshop ordering contract).
-        let (closed, events): (Vec<_>, Vec<_>) = events
-            .into_iter()
-            .partition(|e| matches!(e, UiEvent::CloseMacros));
-        let (commands, edits): (Vec<_>, Vec<_>) = events
-            .into_iter()
-            .partition(|event| matches!(event, UiEvent::Command(..)));
-        for event in edits {
-            self.state.apply_ui(event);
-        }
-        for event in commands {
-            if let UiEvent::Command(id, origin) = event
-                && let Err(error) = self.commands.execute(id, &mut self.state, origin)
-            {
-                eprintln!("email: {id}: {error}");
-            }
-        }
-        for event in closed {
-            self.state.apply_ui(event);
-        }
+        let origin = driven_origin(ui.ctx(), &self.drive_callers);
+        apply_ui_events(&mut self.state, &self.commands, events, origin);
         self.settle();
         // A theme change is installed by the next frame's logic, before any
         // drawing: never midway through the frame that saw the click. So is
@@ -1800,6 +1869,8 @@ mod tests {
 
     #[test]
     fn drive_audit_keeps_request_id_and_caller_for_later_frame_correlation() {
+        use egui_kittest::Harness;
+
         let bytes = Arc::new(Mutex::new(Vec::new()));
         let writer = bytes.clone();
         let subscriber = tracing_subscriber::fmt()
@@ -1807,14 +1878,54 @@ mod tests {
             .with_ansi(false)
             .with_writer(move || AuditWriter(writer.clone()))
             .finish();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        std::fs::write(&path, b"hello").unwrap();
+        let mut state = crate::state::tests::connected_many(&["a"]);
+        state.open_compose(Some("a"), jmap::Composed {
+            to: jmap::parse_addresses("ann@example.invalid").unwrap(),
+            subject: "Files".into(), attachments: vec![path], ..jmap::Composed::default()
+        });
+        let registry = actions::registry();
+        let strings = crate::strings();
+        let theme = Theme::for_context(design::DesignContext::default());
+        let palette = editor::Palette::from_theme(&theme);
+        let mut h = Harness::builder().with_size(egui::vec2(1180.0, 760.0)).build_ui_state(
+            move |ui, data: &mut (State, HashMap<u64, SendOrigin>)| {
+                for answer in drive::logic(ui.ctx()) {
+                    data.1.remove(&answer.id);
+                }
+                let events = view(ui, &data.0, &registry, &strings, &palette);
+                let origin = driven_origin(ui.ctx(), &data.1);
+                apply_ui_events(&mut data.0, &registry, events, origin);
+            }, (state, HashMap::new()),
+        );
+        toolkit::install(&h.ctx, &theme);
+        drive::install(&h.ctx, APP);
+        h.run_steps(2);
+        let ctx = h.ctx.clone();
         tracing::subscriber::with_default(subscriber, || {
-            audit_drive(42, "mesh:sender@peer", "email.ui.click");
+            assert!(request_drive(&ctx, &mut h.state_mut().1, 42, "mesh:sender@peer".into(), "ui.click", &json!({"label":label("send")})).is_none());
+            assert!(h.state().0.compose.as_ref().unwrap().send_origin.is_none());
+            // The actual drive plugin replays the click on later UI passes.
+            h.run_steps(8);
+            let (draft, origin) = h.state_mut().0.take_work().into_iter().find_map(|work| {
+                if let Work::Send { draft, origin, .. } = work { Some((draft, origin)) } else { None }
+            }).expect("the replayed click must queue a send");
+            assert_eq!(origin.caller_key, "mesh:sender@peer");
+            assert_eq!(origin.drive_request_id, Some(42));
+            assert_eq!(h.state().0.compose.as_ref().unwrap().send_origin.as_ref(), Some(&origin));
+            audit_compose_attachments(&origin, &draft);
         });
         let log = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
-        assert_eq!(log.lines().count(), 1, "{log}");
-        assert!(log.contains("request_id=42"), "{log}");
-        assert!(log.contains("caller_key=\"mesh:sender@peer\""), "{log}");
-        assert!(log.contains("email.ui.click"), "{log}");
+        let lines: Vec<_> = log.lines().collect();
+        assert_eq!(lines.len(), 2, "{log}");
+        assert!(lines[0].contains("request_id=42") && lines[0].contains("ui.click"), "{log}");
+        assert!(lines[1].contains("drive_request_id=Some(42)") && lines[1].contains("sending email attachments"), "{log}");
+        for line in lines {
+            assert!(line.contains("caller_key=\"mesh:sender@peer\""), "{log}");
+            assert!(!line.contains("caller_key=\"window\""), "{log}");
+        }
     }
 
     fn reply(rc: u8, body: &str) -> Result<citizen::Reply, citizen::CallError> {

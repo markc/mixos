@@ -152,14 +152,18 @@ A malformed file loads defaults and is never overwritten.
   human-readable size and an × button to remove it, followed by the total
   known file size. The row is hidden when there are no attachments. Missing,
   unreadable and non-regular files stay listed with their state and disable
-  Send. An encoded message over the account limit also disables Send and
-  shows the estimated message size and limit; its chips say **Message too
-  large** in the error colour. Files are checked when compose opens, on removal
+  Send. Chips wrap onto further rows and long names keep room for removal.
+  Files sharing a name include their parent directory in both the chip and
+  its accessible remove label. An oversized encoded message disables Send;
+  the total line shows its estimated size and the account or default limit.
+  Files are checked when compose opens, on removal, after a failed send
   and just before Send, with no polling. Text edits and sender changes update the
   size warning from cached file sizes. A draft whose file has vanished shows
   it as missing on restore, keeping its path. There is no file picker yet.
   Attached files follow the plain text part in `multipart/mixed`, with MIME
-  types from the desktop MIME database and base64 lines of at most 76 characters.
+  types guessed from filenames by the shared desktop MIME database (unknown
+  extensions use `application/octet-stream`). Estimate and worker use the same
+  type. Base64 lines contain at most 76 characters and end in CRLF.
   The whole encoded message must fit the session's `maxSizeUpload`, or 25 MiB
   when the server gives none. Paths and estimated size are checked on the Bus
   request; Send checks the files again and checks the exact encoded size.
@@ -169,8 +173,11 @@ A malformed file loads defaults and is never overwritten.
   before it queues a send.
   Sends with attachments log the caller key and attachment paths in Email's
   application log; these details are never added to the message.
-  Window sends use `window`; toolkit drive requests log the request id and
-  caller key separately, since their input runs on later frames.
+  A person's Send uses `window`; `email.execute {id:"mail.send"}` uses its
+  Bus caller. Sends triggered by toolkit input retain the caller key and
+  `drive_request_id` of the input replayed on that frame, matching the
+  separate drive-request audit line. All compose sends share the same
+  attachment check.
 - **The Message menu** holds everything that acts on the open email:
   reply (with or without the quote), reply all, forward, star, mark read
   or unread, junk or not junk, move, and delete to Trash (confirmed when
@@ -323,9 +330,11 @@ is published on `email.action.executed` with how it was reached.
 The `compose` object in `email.info` (also returned by `email.compose` and
 attachment removal) lists `attachments: [{path, name, size, state}]`. Sizes are raw bytes,
 or `null` when unknown; states are `ready`, `missing`, `not_file`, `unreadable`
-and `relative`. It also reports `attachment_size` (the sum of known raw file
+and `relative`. Names include a directory qualifier when basenames collide.
+It also reports `attachment_size` (the sum of known raw file
 sizes), `attachment_error`, `attachments_over_limit` and `sendable`, matching
-the dialog. Removal matches the supplied path exactly, preserving symlink
+the dialog, and `send_origin: {caller_key, drive_request_id}` after a send
+starts. Removal matches the supplied path exactly, preserving symlink
 paths, and updates the saved draft. UI fields remain drivable through the
 toolkit commands.
 

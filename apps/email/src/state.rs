@@ -538,6 +538,8 @@ pub struct ComposeState {
     pub error: Option<String>,
     /// The send this compose is waiting on: only its completion closes it.
     pub sending: Option<u64>,
+    /// Captured when this send starts; retained through deferred work.
+    pub send_origin: Option<SendOrigin>,
     /// The account's new address, when its login (URL or address) changed
     /// while this draft was open: Send waits until the person takes it.
     pub stale: Option<StaleFrom>,
@@ -574,6 +576,21 @@ pub struct ComposeAttachment {
     pub state: ComposeAttachmentState,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SendOrigin {
+    pub caller_key: String,
+    pub drive_request_id: Option<u64>,
+}
+
+impl Default for SendOrigin {
+    fn default() -> Self {
+        Self {
+            caller_key: "window".into(),
+            drive_request_id: None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ComposeAttachmentState {
@@ -597,6 +614,43 @@ impl ComposeAttachmentState {
 }
 
 impl ComposeAttachment {
+    fn inspect_all(paths: &[std::path::PathBuf]) -> Vec<Self> {
+        let mut attachments: Vec<_> = paths.iter().map(|path| Self::inspect(path)).collect();
+        let names: Vec<_> = attachments.iter().map(|a| a.name.clone()).collect();
+        for (index, attachment) in attachments.iter_mut().enumerate() {
+            if !paths
+                .iter()
+                .enumerate()
+                .any(|(other, path)| *path != paths[index] && names[other] == names[index])
+            {
+                continue;
+            }
+            let parent = paths[index]
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new(""));
+            let directory = parent.file_name().unwrap_or(parent.as_os_str());
+            // If even the immediate parents collide, include their full path.
+            let same_parent_name = paths.iter().enumerate().any(|(other, path)| {
+                *path != paths[index]
+                    && names[other] == names[index]
+                    && path.parent().and_then(std::path::Path::file_name) == parent.file_name()
+            });
+            let directory = if same_parent_name {
+                parent.as_os_str()
+            } else {
+                directory
+            };
+            attachment.name = crate::label_with(
+                "compose-attachment-name",
+                &[
+                    ("name", &names[index]),
+                    ("directory", &directory.to_string_lossy()),
+                ],
+            );
+        }
+        attachments
+    }
+
     fn inspect(path: &std::path::Path) -> Self {
         use std::os::unix::ffi::OsStrExt;
 
@@ -859,11 +913,7 @@ impl ComposeState {
             ),
         };
         let revision = u64::from(!draft.attachments.is_empty());
-        let attachments = draft
-            .attachments
-            .iter()
-            .map(|path| ComposeAttachment::inspect(path))
-            .collect();
+        let attachments = ComposeAttachment::inspect_all(&draft.attachments);
         Self {
             account: account.to_owned(),
             body,
@@ -878,6 +928,7 @@ impl ComposeState {
             busy: false,
             error,
             sending: None,
+            send_origin: None,
             stale: None,
             suggest: None,
             draft_id: String::new(),
@@ -1600,6 +1651,9 @@ const WRITE_ATTEMPTS: u32 = 3;
 
 /// Everything the window shows.
 pub struct State {
+    /// Origin of the command/input being applied now. Each accepted send
+    /// copies it onto the compose and work item before the scope ends.
+    input_origin: Option<SendOrigin>,
     /// The accounts, in tree order.
     pub accounts: Vec<AccountView>,
     /// The account the centre pane shows.
@@ -1702,6 +1756,7 @@ impl State {
     ) -> Self {
         cache.reset_legacy_composer_family();
         let mut state = Self {
+            input_origin: None,
             accounts: Vec::new(),
             selected,
             mode,
@@ -3679,6 +3734,7 @@ impl State {
                     compose.sending = None;
                     compose.error = Some(error.clone());
                     compose.attempt = attempt;
+                    self.refresh_compose_attachments();
                     self.store_draft(true);
                 } else if let Some(mut draft) = snapshot
                     && !self.discarded.contains(&draft.id)
@@ -4818,6 +4874,7 @@ impl State {
                 "attachment_error": c.attachment_error,
                 "attachments_over_limit": c.attachments_over_limit,
                 "sendable": self.compose_sendable(),
+                "send_origin": c.send_origin,
                 "in_reply_to": c.draft.in_reply_to,
                 "stale": c.stale,
                 "busy": c.busy,
@@ -5838,12 +5895,7 @@ impl State {
         if let Some(compose) = self.compose.as_mut()
             && !compose.busy
         {
-            compose.attachments = compose
-                .draft
-                .attachments
-                .iter()
-                .map(|path| ComposeAttachment::inspect(path))
-                .collect();
+            compose.attachments = ComposeAttachment::inspect_all(&compose.draft.attachments);
         }
         self.check_compose_attachment_size();
     }
@@ -5855,6 +5907,7 @@ impl State {
             .and_then(|c| self.account(&c.account))
             .and_then(|a| a.session.as_ref())
             .and_then(|s| s.max_size_upload);
+        let default_limit = limit.is_none();
         let Some(compose) = self.compose.as_mut() else {
             return;
         };
@@ -5892,7 +5945,11 @@ impl State {
                 jmap::Error::MessageTooLarge { size, limit } => {
                     compose.attachments_over_limit = true;
                     crate::label_with(
-                        "compose-attachments-too-large",
+                        if default_limit {
+                            "compose-attachments-too-large-default"
+                        } else {
+                            "compose-attachments-too-large"
+                        },
                         &[
                             ("size", &crate::attachments::human_size(size)),
                             ("limit", &crate::attachments::human_size(limit)),
@@ -5927,7 +5984,7 @@ impl State {
     }
 
     /// Send the open compose, when its recipients and attachments are valid.
-    fn send_compose(&mut self) {
+    pub fn send_compose(&mut self) {
         self.refresh_compose_attachments();
         let Some(compose) = &self.compose else {
             return;
@@ -5963,6 +6020,8 @@ impl State {
                 compose.busy = true;
                 compose.error = None;
                 compose.sending = Some(ticket);
+                let origin = self.input_origin.clone().unwrap_or_default();
+                compose.send_origin = Some(origin.clone());
                 let mut draft = compose.draft.clone();
                 draft.body = compose.body.contents();
                 let attempt = compose.attempt.clone();
@@ -5973,6 +6032,7 @@ impl State {
                     ticket,
                     draft,
                     attempt,
+                    origin,
                 });
                 // Kept on disk until the server confirms it went, so a
                 // crash or a lost reply mid-send loses nothing.
@@ -5985,6 +6045,17 @@ impl State {
     /// Launch Prefs on its Email section (where accounts are configured).
     pub fn open_prefs(&mut self) {
         self.queue(Work::OpenPrefs);
+    }
+
+    pub(crate) fn with_send_origin<R>(
+        &mut self,
+        origin: Option<SendOrigin>,
+        apply: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let previous = std::mem::replace(&mut self.input_origin, origin);
+        let result = apply(self);
+        self.input_origin = previous;
+        result
     }
 
     /// Whether a compose is sendable right now (the dialog's Send button).
@@ -7139,6 +7210,66 @@ pub(crate) mod tests {
                 .iter()
                 .any(|w| matches!(w, Work::Send { .. }))
         );
+    }
+
+    #[test]
+    fn failed_worker_send_refreshes_changed_files_before_enabling_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        for change in ["missing", "grown"] {
+            let path = dir.path().join(change);
+            std::fs::write(&path, b"hello").unwrap();
+            let mut state = connected();
+            state.accounts[0].session.as_mut().unwrap().max_size_upload = Some(4096);
+            compose_files(&mut state, vec![path.clone()]);
+            state.apply_ui(UiEvent::SendCompose);
+            let (_, ticket) = sent_ticket(&mut state);
+            assert!(state.compose.as_ref().unwrap().busy);
+            if change == "missing" {
+                std::fs::remove_file(&path).unwrap();
+            } else {
+                std::fs::File::create(&path).unwrap().set_len(8192).unwrap();
+            }
+            done(&mut state, "a", failed(ticket, jmap::Error::Protocol("refused after file changed".into())));
+            let compose = state.compose.as_ref().unwrap();
+            assert!(!compose.busy);
+            assert!(compose.error.is_some());
+            assert!(!state.compose_sendable());
+            assert_eq!(compose.attachments[0].state, if change == "missing" {
+                ComposeAttachmentState::Missing
+            } else { ComposeAttachmentState::Ready });
+            assert_eq!(compose.attachments_over_limit, change == "grown");
+        }
+    }
+
+    #[test]
+    fn fallback_limit_warning_is_distinct_from_an_advertised_account_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large.bin");
+        std::fs::File::create(&path).unwrap().set_len(jmap::DEFAULT_UPLOAD_LIMIT).unwrap();
+        for advertised in [None, Some(jmap::DEFAULT_UPLOAD_LIMIT)] {
+            let mut state = connected();
+            state.accounts[0].session.as_mut().unwrap().max_size_upload = advertised;
+            compose_files(&mut state, vec![path.clone()]);
+            let message = state.compose.as_ref().unwrap().attachment_error.as_ref().unwrap();
+            assert!(message.contains(if advertised.is_none() { "default upload limit" } else { "account limit" }));
+        }
+    }
+
+    #[test]
+    fn identical_parent_names_use_full_directory_qualifiers() {
+        let root = tempfile::tempdir().unwrap();
+        let paths: Vec<_> = ["first/reports", "second/reports"].into_iter().map(|parent| {
+            let dir = root.path().join(parent);
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join("note.txt");
+            std::fs::write(&path, b"hello").unwrap();
+            path
+        }).collect();
+        let attachments = ComposeAttachment::inspect_all(&paths);
+        assert_ne!(attachments[0].name, attachments[1].name);
+        for (attachment, path) in attachments.iter().zip(&paths) {
+            assert!(attachment.name.contains(&path.parent().unwrap().display().to_string()));
+        }
     }
 
     // Drafts: nothing typed is lost to Cancel, Escape, a close or a crash.

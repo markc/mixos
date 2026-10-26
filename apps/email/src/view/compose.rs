@@ -329,61 +329,68 @@ fn row_of<R>(
 fn attachment_chip(
     ui: &mut Ui,
     attachment: &ComposeAttachment,
-    over_limit: bool,
+    index: usize,
     icon: f32,
     events: &mut Vec<UiEvent>,
 ) {
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            let size = attachment
-                .size
-                .map(crate::attachments::human_size)
-                .unwrap_or_else(|| crate::label("compose-attachment-size-unknown"));
-            let text = crate::label_with(
-                "compose-attachment-chip",
-                &[("name", &attachment.name), ("size", &size)],
-            );
-            let bad = attachment.state != ComposeAttachmentState::Ready;
-            let text = if bad || over_limit {
-                let status = crate::label(if bad {
-                    attachment.state.label()
-                } else {
-                    "compose-attachment-too-large"
-                });
-                crate::label_with(
-                    "compose-attachment-status",
-                    &[("file", &text), ("state", &status)],
-                )
-            } else {
-                text
-            };
-            // Leave space for remove even with a very long filename.
-            let natural = ui
-                .painter()
-                .layout_no_wrap(
-                    text.clone(),
-                    egui::TextStyle::Body.resolve(ui.style()),
-                    ui.visuals().text_color(),
-                )
-                .size()
-                .x;
-            let width =
-                natural.min((ui.available_width() - icon - ui.spacing().item_spacing.x).max(icon));
-            let mut text = egui::RichText::new(text);
-            if bad || over_limit {
-                text = text.color(ui.visuals().error_fg_color);
-            }
-            ui.add_sized([width, icon], egui::Label::new(text).truncate())
-                .on_hover_text(attachment.path.display().to_string());
-            let remove = toolkit::button::IconButton::new(toolkit::Icon::X)
-                .size(icon)
-                .tooltip(crate::label_with(
-                    "compose-attachment-remove",
-                    &[("name", &attachment.name)],
-                ));
-            if ui.add(remove).clicked() {
-                events.push(UiEvent::ComposeAttachmentRemove(attachment.path.clone()));
-            }
+    let size = attachment
+        .size
+        .map(crate::attachments::human_size)
+        .unwrap_or_else(|| crate::label("compose-attachment-size-unknown"));
+    let text = crate::label_with(
+        "compose-attachment-chip",
+        &[("name", &attachment.name), ("size", &size)],
+    );
+    let bad = attachment.state != ComposeAttachmentState::Ready;
+    let text = if bad {
+        let status = crate::label(attachment.state.label());
+        crate::label_with(
+            "compose-attachment-status",
+            &[("file", &text), ("state", &status)],
+        )
+    } else {
+        text
+    };
+    // Decide wrapping before Frame::group consumes the row remainder. A
+    // long name gets the full row's label budget, rather than shrinking
+    // into the space left after the preceding chip.
+    let frame = egui::Frame::group(ui.style());
+    let margin = frame.total_margin().sum().x;
+    let spacing = ui.spacing().item_spacing.x;
+    let natural = ui
+        .painter()
+        .layout_no_wrap(
+            text.clone(),
+            egui::TextStyle::Body.resolve(ui.style()),
+            ui.visuals().text_color(),
+        )
+        .size();
+    let full_width = ui.max_rect().width();
+    let outer_width = (natural.x + icon + spacing + margin).min(full_width);
+    if outer_width > ui.available_width() && ui.available_width() < full_width {
+        ui.end_row();
+    }
+    let width = natural.x.min((full_width - icon - spacing - margin).max(0.0));
+    let height = icon.max(natural.y);
+    ui.push_id((index, &attachment.path), |ui| {
+        frame.show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let mut text = egui::RichText::new(text);
+                if bad {
+                    text = text.color(ui.visuals().error_fg_color);
+                }
+                ui.add_sized([width, height], egui::Label::new(text).truncate())
+                    .on_hover_text(attachment.path.display().to_string());
+                let remove = toolkit::button::IconButton::new(toolkit::Icon::X)
+                    .size(icon)
+                    .tooltip(crate::label_with(
+                        "compose-attachment-remove",
+                        &[("name", &attachment.name)],
+                    ));
+                if ui.add(remove).clicked() {
+                    events.push(UiEvent::ComposeAttachmentRemove(attachment.path.clone()));
+                }
+            });
         });
     });
 }
@@ -586,15 +593,7 @@ fn form(
                             chrome.palette.icon,
                         ));
                         for (index, attachment) in compose.attachments.iter().enumerate() {
-                            ui.push_id((index, &attachment.path), |ui| {
-                                attachment_chip(
-                                    ui,
-                                    attachment,
-                                    compose.attachments_over_limit,
-                                    icon,
-                                    events,
-                                );
-                            });
+                            attachment_chip(ui, attachment, index, icon, events);
                         }
                     });
                     ui.weak(crate::label_with(
@@ -680,5 +679,51 @@ fn form(
     }
     if compose.busy {
         ui.weak(crate::label("sending"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::{NodeT, Queryable};
+
+    #[test]
+    fn small_remove_icon_does_not_clip_the_text_line() {
+        let attachment = ComposeAttachment {
+            path: "/home/user/note.txt".into(),
+            name: "note.txt".into(),
+            size: Some(5),
+            state: ComposeAttachmentState::Ready,
+        };
+        let mut h = Harness::builder().build_ui(move |ui| {
+            ui.label("Reference line");
+            ui.horizontal_wrapped(|ui| {
+                attachment_chip(ui, &attachment, 0, 2.0, &mut Vec::new());
+            });
+        });
+        toolkit::install(&h.ctx, &toolkit::Theme::for_context(design::DesignContext::default()));
+        h.run();
+        let text = crate::label_with("compose-attachment-chip", &[("name", "note.txt"), ("size", "5 B")]);
+        assert!(h.get_by_label(&text).rect().height() >= h.get_by_label("Reference line").rect().height());
+    }
+
+    #[test]
+    fn attachment_catalogue_keys_resolve() {
+        for key in [
+            "compose-attachments", "compose-attachment-chip", "compose-attachment-status",
+            "compose-attachment-name", "compose-attachment-remove", "compose-attachment-ready",
+            "compose-attachment-missing", "compose-attachment-not-file", "compose-attachment-unreadable",
+            "compose-attachment-relative", "compose-attachment-size-unknown", "compose-attachments-total",
+            "compose-attachments-fix", "compose-attachments-too-large", "compose-attachments-too-large-default",
+            "compose-not-open", "no-such-attachment", "sending",
+        ] {
+            let text = crate::label_with(key, &[
+                ("name", "note.txt"), ("size", "5 B"), ("state", "Missing"),
+                ("file", "note.txt"), ("directory", "reports"), ("limit", "25 MB"),
+            ]);
+            assert_ne!(text, key, "missing Fluent key {key}");
+            assert!(!text.is_empty());
+        }
     }
 }
