@@ -15,7 +15,7 @@
 //! trickle gives a covered window. The timer is armed from the main loop pass
 //! that every client request wakes (not from the skipped frame: a VT switch
 //! that leaves pipes in flight swallows the redraw pings that would reach it),
-//! fires once, and re-arms only while something still waits. It never
+//! stops when its next tick finds nothing waiting. It never
 //! schedules a redraw, so an idle parked desktop costs nothing.
 //!
 //! One second per frame is too slow for work that needs a few frames in a row:
@@ -60,7 +60,7 @@ thread_local! {
     static IDLE: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
 }
 
-/// The delay before the next send, refilling the burst after a quiet spell.
+/// Delay before a send, refilling on quiet or restarted demand with spacing.
 fn next_period(
     last_send: Option<Instant>,
     now: Instant,
@@ -159,7 +159,7 @@ fn send(state: &Loop) {
 }
 
 /// Arm the parked trickle if frames are parked and some surface waits on a
-/// callback: a burst send after a quiet spell, else the 1 Hz trickle.
+/// callback: a burst after quiet or restarted demand, else the 1 Hz trickle.
 /// Called on every main-loop pass while parked. `parked` is the backend's own
 /// answer (`native.render.execute.frames_parked`), read again when the timer
 /// fires: once presentation resumes, the flip answers callbacks and the timer
@@ -177,18 +177,33 @@ pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
     let period = next_period(LAST_SEND.get(), Instant::now(), &mut burst, IDLE.get(), &mut last_refill);
     LAST_REFILL.set(last_refill);
     BURST.set(burst);
+    let mut next_send = Instant::now() + period;
     let armed = state.loop_handle.insert_source(
         Timer::from_duration(period),
         move |_, _, state: &mut Loop| {
-            ARMED.set(false);
-            if parked(state) {
-                send(state);
-                LAST_SEND.set(Some(Instant::now()));
-                BURST.set(BURST.get().saturating_sub(1));
-                let _ = state.inner.loader.display_handle.flush_clients();
-                arm(state, parked);
+            if !parked(state) || !waiting(state) {
+                ARMED.set(false);
+                IDLE.set(true);
+                return TimeoutAction::Drop;
             }
-            TimeoutAction::Drop
+            let now = Instant::now();
+            if now < next_send {
+                return TimeoutAction::ToDuration(next_send - now);
+            }
+            send(state);
+            LAST_SEND.set(Some(Instant::now()));
+            BURST.set(BURST.get().saturating_sub(1));
+            let _ = state.inner.loader.display_handle.flush_clients();
+            // Do not check waiting immediately after draining callbacks: a
+            // continuously animating client needs time to request its next one.
+            // Probe after 16 ms even when the next send is a second away, so
+            // short gaps between captures can establish idle promptly.
+            next_send = Instant::now() + if BURST.get() > 0 {
+                BURST_INTERVAL
+            } else {
+                PARKED_TRICKLE
+            };
+            TimeoutAction::ToDuration(BURST_INTERVAL)
         },
     );
     match armed {
