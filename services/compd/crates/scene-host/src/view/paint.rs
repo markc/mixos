@@ -518,13 +518,8 @@ fn paint_image(
         let size = number(node, "w")
             .unwrap_or(16.0)
             .min(number(node, "h").unwrap_or(16.0));
-        painter.text(
-            rect.center(),
-            Align2::CENTER_CENTER,
-            "▧",
-            font(size, false, false),
-            ink,
-        );
+        toolkit::icons::image_of(ui.ctx(), toolkit::icons::Icon::Image, size, ink)
+            .paint_at(ui, Rect::from_center_size(rect.center(), vec2(size, size)));
         return None;
     };
     let ppp = ui.ctx().pixels_per_point();
