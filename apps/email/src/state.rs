@@ -7229,14 +7229,26 @@ pub(crate) mod tests {
             } else {
                 std::fs::File::create(&path).unwrap().set_len(8192).unwrap();
             }
-            done(&mut state, "a", failed(ticket, jmap::Error::Protocol("refused after file changed".into())));
+            done(
+                &mut state,
+                "a",
+                failed(
+                    ticket,
+                    jmap::Error::Protocol("refused after file changed".into()),
+                ),
+            );
             let compose = state.compose.as_ref().unwrap();
             assert!(!compose.busy);
             assert!(compose.error.is_some());
             assert!(!state.compose_sendable());
-            assert_eq!(compose.attachments[0].state, if change == "missing" {
-                ComposeAttachmentState::Missing
-            } else { ComposeAttachmentState::Ready });
+            assert_eq!(
+                compose.attachments[0].state,
+                if change == "missing" {
+                    ComposeAttachmentState::Missing
+                } else {
+                    ComposeAttachmentState::Ready
+                }
+            );
             assert_eq!(compose.attachments_over_limit, change == "grown");
         }
     }
@@ -7245,30 +7257,50 @@ pub(crate) mod tests {
     fn fallback_limit_warning_is_distinct_from_an_advertised_account_limit() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("large.bin");
-        std::fs::File::create(&path).unwrap().set_len(jmap::DEFAULT_UPLOAD_LIMIT).unwrap();
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(jmap::DEFAULT_UPLOAD_LIMIT)
+            .unwrap();
         for advertised in [None, Some(jmap::DEFAULT_UPLOAD_LIMIT)] {
             let mut state = connected();
             state.accounts[0].session.as_mut().unwrap().max_size_upload = advertised;
             compose_files(&mut state, vec![path.clone()]);
-            let message = state.compose.as_ref().unwrap().attachment_error.as_ref().unwrap();
-            assert!(message.contains(if advertised.is_none() { "default upload limit" } else { "account limit" }));
+            let message = state
+                .compose
+                .as_ref()
+                .unwrap()
+                .attachment_error
+                .as_ref()
+                .unwrap();
+            assert!(message.contains(if advertised.is_none() {
+                "default upload limit"
+            } else {
+                "account limit"
+            }));
         }
     }
 
     #[test]
     fn identical_parent_names_use_full_directory_qualifiers() {
         let root = tempfile::tempdir().unwrap();
-        let paths: Vec<_> = ["first/reports", "second/reports"].into_iter().map(|parent| {
-            let dir = root.path().join(parent);
-            std::fs::create_dir_all(&dir).unwrap();
-            let path = dir.join("note.txt");
-            std::fs::write(&path, b"hello").unwrap();
-            path
-        }).collect();
+        let paths: Vec<_> = ["first/reports", "second/reports"]
+            .into_iter()
+            .map(|parent| {
+                let dir = root.path().join(parent);
+                std::fs::create_dir_all(&dir).unwrap();
+                let path = dir.join("note.txt");
+                std::fs::write(&path, b"hello").unwrap();
+                path
+            })
+            .collect();
         let attachments = ComposeAttachment::inspect_all(&paths);
         assert_ne!(attachments[0].name, attachments[1].name);
         for (attachment, path) in attachments.iter().zip(&paths) {
-            assert!(attachment.name.contains(&path.parent().unwrap().display().to_string()));
+            assert!(
+                attachment
+                    .name
+                    .contains(&path.parent().unwrap().display().to_string())
+            );
         }
     }
 

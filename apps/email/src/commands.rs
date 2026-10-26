@@ -2124,45 +2124,83 @@ mod tests {
         let path = dir.path().join("note.txt");
         std::fs::write(&path, b"hello").unwrap();
         let mut state = connected_many(&["a"]);
-        run(&mut state, "email.compose", json!({"to":"ann@example.invalid", "subject":"Files", "attachments":[path]}));
+        run(
+            &mut state,
+            "email.compose",
+            json!({"to":"ann@example.invalid", "subject":"Files", "attachments":[path]}),
+        );
         state.take_replies();
-        let origin = SendOrigin { caller_key: "mesh:sender@peer".into(), drive_request_id: None };
+        let origin = SendOrigin {
+            caller_key: "mesh:sender@peer".into(),
+            drive_request_id: None,
+        };
         state.with_send_origin(Some(origin.clone()), |state| {
             run(state, "email.execute", json!({"id":"mail.send"}));
         });
         assert_eq!(state.take_replies()[0].rc, 0);
-        assert_eq!(state.compose.as_ref().unwrap().send_origin.as_ref(), Some(&origin));
+        assert_eq!(
+            state.compose.as_ref().unwrap().send_origin.as_ref(),
+            Some(&origin)
+        );
         let work = state.take_work();
-        let ticket = work.iter().find_map(|w| match w {
-            Work::Send { origin: captured, ticket, .. } if captured == &origin => Some(*ticket),
-            _ => None,
-        }).expect("the accepted send must retain the Bus caller");
+        let ticket = work
+            .iter()
+            .find_map(|w| match w {
+                Work::Send {
+                    origin: captured,
+                    ticket,
+                    ..
+                } if captured == &origin => Some(*ticket),
+                _ => None,
+            })
+            .expect("the accepted send must retain the Bus caller");
         // A later person's retry must not inherit the earlier Bus caller.
         let tag = crate::state::Tag {
             account: "a".into(),
             generation: state.account("a").unwrap().generation(),
         };
-        state.apply(crate::shell::Event::Account(tag, crate::shell::Done::Sent(
-            ticket, jmap::SendAttempt::default(), Err(jmap::Error::Protocol("refused".into())),
-        )));
+        state.apply(crate::shell::Event::Account(
+            tag,
+            crate::shell::Done::Sent(
+                ticket,
+                jmap::SendAttempt::default(),
+                Err(jmap::Error::Protocol("refused".into())),
+            ),
+        ));
         state.apply_ui(crate::view::UiEvent::SendCompose);
-        assert_eq!(state.compose.as_ref().unwrap().send_origin, Some(SendOrigin::default()));
+        assert_eq!(
+            state.compose.as_ref().unwrap().send_origin,
+            Some(SendOrigin::default())
+        );
 
         for grow in [false, true] {
             let mut state = connected_many(&["a"]);
-            state.open_compose(Some("a"), Composed {
-                to: jmap::parse_addresses("ann@example.invalid").unwrap(),
-                subject: "Files".into(), attachments: vec![path.clone()], ..Composed::default()
-            });
+            state.open_compose(
+                Some("a"),
+                Composed {
+                    to: jmap::parse_addresses("ann@example.invalid").unwrap(),
+                    subject: "Files".into(),
+                    attachments: vec![path.clone()],
+                    ..Composed::default()
+                },
+            );
             state.take_work();
             // Change the file after the cached action guard said Send was enabled.
             if grow {
-                std::fs::File::create(&path).unwrap().set_len(jmap::DEFAULT_UPLOAD_LIMIT).unwrap();
+                std::fs::File::create(&path)
+                    .unwrap()
+                    .set_len(jmap::DEFAULT_UPLOAD_LIMIT)
+                    .unwrap();
             } else {
                 std::fs::remove_file(&path).unwrap();
             }
             run(&mut state, "email.execute", json!({"id":"mail.send"}));
-            assert!(!state.take_work().iter().any(|w| matches!(w, Work::Send { .. })));
+            assert!(
+                !state
+                    .take_work()
+                    .iter()
+                    .any(|w| matches!(w, Work::Send { .. }))
+            );
             assert!(!state.compose_sendable());
             assert!(state.compose.as_ref().unwrap().attachment_error.is_some());
             std::fs::write(&path, b"hello").unwrap();

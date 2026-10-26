@@ -1228,7 +1228,11 @@ mod tests {
                 let parts = read_parts(&message.attachments, None).unwrap();
                 let encoded = parts[0].split_once("\r\n\r\n").unwrap().1;
                 assert_eq!(encoded_file_size(len as u64), encoded.len() as u64);
-                assert!(encoded.split_terminator("\r\n").all(|line| line.len() <= 76));
+                assert!(
+                    encoded
+                        .split_terminator("\r\n")
+                        .all(|line| line.len() <= 76)
+                );
                 assert!(encoded.is_empty() || encoded.ends_with("\r\n"));
                 assert!(
                     String::from_utf8_lossy(&mime)

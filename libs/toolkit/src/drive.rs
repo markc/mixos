@@ -1815,18 +1815,30 @@ mod tests {
         let ctx = Context::default();
         install(&ctx, "demo");
         assert!(request(&ctx, 42, "ui.key", &json!({"key":"Enter"})).is_none());
-        assert_eq!(input_request(&ctx), None, "accepting a job injects no input");
+        assert_eq!(
+            input_request(&ctx),
+            None,
+            "accepting a job injects no input"
+        );
         assert!(request(&ctx, 43, "ui.key", &json!({"key":"Escape"})).is_none());
         let mut seen = Vec::new();
         for _ in 0..10 {
             ctx.run_ui(RawInput::default(), |ui| {
                 seen.push(input_request(ui.ctx()));
-            }).drop_without_applying_deltas();
+            })
+            .drop_without_applying_deltas();
             let _answers = logic(&ctx);
         }
         assert_eq!(seen.first(), Some(&Some(42)), "{seen:?}");
-        assert!(seen.contains(&Some(43)), "the later job must get its own origin: {seen:?}");
-        assert_eq!(seen.last(), Some(&None), "idle passes must not keep a caller: {seen:?}");
+        assert!(
+            seen.contains(&Some(43)),
+            "the later job must get its own origin: {seen:?}"
+        );
+        assert_eq!(
+            seen.last(),
+            Some(&None),
+            "idle passes must not keep a caller: {seen:?}"
+        );
     }
 
     fn capture_context() -> (Context, tempfile::TempDir) {

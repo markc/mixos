@@ -27,7 +27,9 @@ use crate::actions;
 use crate::commands::{Forward, Then, Write};
 use crate::drafts::{DirStore, DraftStore, MemoryStore};
 use crate::secrets::{Secrets, SecretsFile};
-use crate::state::{DRAFT_DEBOUNCE, Mode, SendOrigin, SessionInfo, Settled, State, Tag, UiState, code};
+use crate::state::{
+    DRAFT_DEBOUNCE, Mode, SendOrigin, SessionInfo, Settled, State, Tag, UiState, code,
+};
 use crate::view::{UiEvent, view};
 use crate::work::{Login, Work};
 use crate::{APP, APP_ID, label};
@@ -1417,14 +1419,7 @@ impl Shell {
             drive_request_id: None,
         };
         let forward = self.state.with_send_origin(Some(origin), |state| {
-            crate::commands::command(
-                state,
-                &self.commands,
-                &self.strings,
-                id,
-                command_name,
-                body,
-            )
+            crate::commands::command(state, &self.commands, &self.strings, id, command_name, body)
         });
         match forward {
             Some(Forward::Drive {
@@ -1882,46 +1877,84 @@ mod tests {
         let path = dir.path().join("note.txt");
         std::fs::write(&path, b"hello").unwrap();
         let mut state = crate::state::tests::connected_many(&["a"]);
-        state.open_compose(Some("a"), jmap::Composed {
-            to: jmap::parse_addresses("ann@example.invalid").unwrap(),
-            subject: "Files".into(), attachments: vec![path], ..jmap::Composed::default()
-        });
+        state.open_compose(
+            Some("a"),
+            jmap::Composed {
+                to: jmap::parse_addresses("ann@example.invalid").unwrap(),
+                subject: "Files".into(),
+                attachments: vec![path],
+                ..jmap::Composed::default()
+            },
+        );
         let registry = actions::registry();
         let strings = crate::strings();
         let theme = Theme::for_context(design::DesignContext::default());
         let palette = editor::Palette::from_theme(&theme);
-        let mut h = Harness::builder().with_size(egui::vec2(1180.0, 760.0)).build_ui_state(
-            move |ui, data: &mut (State, HashMap<u64, SendOrigin>)| {
-                for answer in drive::logic(ui.ctx()) {
-                    data.1.remove(&answer.id);
-                }
-                let events = view(ui, &data.0, &registry, &strings, &palette);
-                let origin = driven_origin(ui.ctx(), &data.1);
-                apply_ui_events(&mut data.0, &registry, events, origin);
-            }, (state, HashMap::new()),
-        );
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1180.0, 760.0))
+            .build_ui_state(
+                move |ui, data: &mut (State, HashMap<u64, SendOrigin>)| {
+                    for answer in drive::logic(ui.ctx()) {
+                        data.1.remove(&answer.id);
+                    }
+                    let events = view(ui, &data.0, &registry, &strings, &palette);
+                    let origin = driven_origin(ui.ctx(), &data.1);
+                    apply_ui_events(&mut data.0, &registry, events, origin);
+                },
+                (state, HashMap::new()),
+            );
         toolkit::install(&h.ctx, &theme);
         drive::install(&h.ctx, APP);
         h.run_steps(2);
         let ctx = h.ctx.clone();
         tracing::subscriber::with_default(subscriber, || {
-            assert!(request_drive(&ctx, &mut h.state_mut().1, 42, "mesh:sender@peer".into(), "ui.click", &json!({"label":label("send")})).is_none());
+            assert!(
+                request_drive(
+                    &ctx,
+                    &mut h.state_mut().1,
+                    42,
+                    "mesh:sender@peer".into(),
+                    "ui.click",
+                    &json!({"label":label("send")})
+                )
+                .is_none()
+            );
             assert!(h.state().0.compose.as_ref().unwrap().send_origin.is_none());
             // The actual drive plugin replays the click on later UI passes.
             h.run_steps(8);
-            let (draft, origin) = h.state_mut().0.take_work().into_iter().find_map(|work| {
-                if let Work::Send { draft, origin, .. } = work { Some((draft, origin)) } else { None }
-            }).expect("the replayed click must queue a send");
+            let (draft, origin) = h
+                .state_mut()
+                .0
+                .take_work()
+                .into_iter()
+                .find_map(|work| {
+                    if let Work::Send { draft, origin, .. } = work {
+                        Some((draft, origin))
+                    } else {
+                        None
+                    }
+                })
+                .expect("the replayed click must queue a send");
             assert_eq!(origin.caller_key, "mesh:sender@peer");
             assert_eq!(origin.drive_request_id, Some(42));
-            assert_eq!(h.state().0.compose.as_ref().unwrap().send_origin.as_ref(), Some(&origin));
+            assert_eq!(
+                h.state().0.compose.as_ref().unwrap().send_origin.as_ref(),
+                Some(&origin)
+            );
             audit_compose_attachments(&origin, &draft);
         });
         let log = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
         let lines: Vec<_> = log.lines().collect();
         assert_eq!(lines.len(), 2, "{log}");
-        assert!(lines[0].contains("request_id=42") && lines[0].contains("ui.click"), "{log}");
-        assert!(lines[1].contains("drive_request_id=Some(42)") && lines[1].contains("sending email attachments"), "{log}");
+        assert!(
+            lines[0].contains("request_id=42") && lines[0].contains("ui.click"),
+            "{log}"
+        );
+        assert!(
+            lines[1].contains("drive_request_id=Some(42)")
+                && lines[1].contains("sending email attachments"),
+            "{log}"
+        );
         for line in lines {
             assert!(line.contains("caller_key=\"mesh:sender@peer\""), "{log}");
             assert!(!line.contains("caller_key=\"window\""), "{log}");

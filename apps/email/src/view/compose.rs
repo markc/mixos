@@ -370,7 +370,9 @@ fn attachment_chip(
     if outer_width > ui.available_width() && ui.available_width() < full_width {
         ui.end_row();
     }
-    let width = natural.x.min((full_width - icon - spacing - margin).max(0.0));
+    let width = natural
+        .x
+        .min((full_width - icon - spacing - margin).max(0.0));
     let height = icon.max(natural.y);
     ui.push_id((index, &attachment.path), |ui| {
         frame.show(ui, |ui| {
@@ -702,26 +704,54 @@ mod tests {
                 attachment_chip(ui, &attachment, 0, 2.0, &mut Vec::new());
             });
         });
-        toolkit::install(&h.ctx, &toolkit::Theme::for_context(design::DesignContext::default()));
+        toolkit::install(
+            &h.ctx,
+            &toolkit::Theme::for_context(design::DesignContext::default()),
+        );
         h.run();
-        let text = crate::label_with("compose-attachment-chip", &[("name", "note.txt"), ("size", "5 B")]);
-        assert!(h.get_by_label(&text).rect().height() >= h.get_by_label("Reference line").rect().height());
+        let text = crate::label_with(
+            "compose-attachment-chip",
+            &[("name", "note.txt"), ("size", "5 B")],
+        );
+        assert!(
+            h.get_by_label(&text).rect().height()
+                >= h.get_by_label("Reference line").rect().height()
+        );
     }
 
     #[test]
     fn attachment_catalogue_keys_resolve() {
         for key in [
-            "compose-attachments", "compose-attachment-chip", "compose-attachment-status",
-            "compose-attachment-name", "compose-attachment-remove", "compose-attachment-ready",
-            "compose-attachment-missing", "compose-attachment-not-file", "compose-attachment-unreadable",
-            "compose-attachment-relative", "compose-attachment-size-unknown", "compose-attachments-total",
-            "compose-attachments-fix", "compose-attachments-too-large", "compose-attachments-too-large-default",
-            "compose-not-open", "no-such-attachment", "sending",
+            "compose-attachments",
+            "compose-attachment-chip",
+            "compose-attachment-status",
+            "compose-attachment-name",
+            "compose-attachment-remove",
+            "compose-attachment-ready",
+            "compose-attachment-missing",
+            "compose-attachment-not-file",
+            "compose-attachment-unreadable",
+            "compose-attachment-relative",
+            "compose-attachment-size-unknown",
+            "compose-attachments-total",
+            "compose-attachments-fix",
+            "compose-attachments-too-large",
+            "compose-attachments-too-large-default",
+            "compose-not-open",
+            "no-such-attachment",
+            "sending",
         ] {
-            let text = crate::label_with(key, &[
-                ("name", "note.txt"), ("size", "5 B"), ("state", "Missing"),
-                ("file", "note.txt"), ("directory", "reports"), ("limit", "25 MB"),
-            ]);
+            let text = crate::label_with(
+                key,
+                &[
+                    ("name", "note.txt"),
+                    ("size", "5 B"),
+                    ("state", "Missing"),
+                    ("file", "note.txt"),
+                    ("directory", "reports"),
+                    ("limit", "25 MB"),
+                ],
+            );
             assert_ne!(text, key, "missing Fluent key {key}");
             assert!(!text.is_empty());
         }

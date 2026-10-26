@@ -1298,27 +1298,53 @@ fn compose_attachment_chips_show_status_and_remove_through_the_window() {
 #[test]
 fn compose_chips_wrap_and_a_long_name_uses_the_full_row() {
     let dir = tempfile::tempdir().unwrap();
-    let mut names: Vec<_> = (0..8).map(|i| format!("quarterly-report-{i}.txt")).collect();
+    let mut names: Vec<_> = (0..8)
+        .map(|i| format!("quarterly-report-{i}.txt"))
+        .collect();
     names.push(format!("{}report.txt", "very-long-".repeat(16)));
-    let paths: Vec<_> = names.iter().map(|name| {
-        let path = dir.path().join(name);
-        std::fs::write(&path, b"hello").unwrap();
-        path
-    }).collect();
+    let paths: Vec<_> = names
+        .iter()
+        .map(|name| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, b"hello").unwrap();
+            path
+        })
+        .collect();
     let mut state = fixture();
-    state.open_compose(Some("home"), jmap::Composed {
-        attachments: paths,
-        ..jmap::Composed::default()
-    });
+    state.open_compose(
+        Some("home"),
+        jmap::Composed {
+            attachments: paths,
+            ..jmap::Composed::default()
+        },
+    );
     let h = harness(state);
-    let rects: Vec<_> = names.iter().map(|name| {
-        let text = email::label_with("compose-attachment-chip", &[("name", name), ("size", "5 B")]);
-        h.get_by_label(&text).rect()
-    }).collect();
-    assert!(rects.iter().skip(1).any(|rect| rect.top() > rects[0].bottom()), "chips must wrap: {rects:?}");
-    let remove = email::label_with("compose-attachment-remove", &[("name", names.last().unwrap())]);
+    let rects: Vec<_> = names
+        .iter()
+        .map(|name| {
+            let text = email::label_with(
+                "compose-attachment-chip",
+                &[("name", name), ("size", "5 B")],
+            );
+            h.get_by_label(&text).rect()
+        })
+        .collect();
+    assert!(
+        rects
+            .iter()
+            .skip(1)
+            .any(|rect| rect.top() > rects[0].bottom()),
+        "chips must wrap: {rects:?}"
+    );
+    let remove = email::label_with(
+        "compose-attachment-remove",
+        &[("name", names.last().unwrap())],
+    );
     let icon = h.get_by_label(&remove).rect();
-    assert!(rects.last().unwrap().width() > icon.width() * 2.0, "long label must not collapse to an icon");
+    assert!(
+        rects.last().unwrap().width() > icon.width() * 2.0,
+        "long label must not collapse to an icon"
+    );
 }
 
 #[test]
@@ -1333,48 +1359,94 @@ fn same_basename_chips_have_distinct_names_and_remove_buttons() {
         paths.push(path);
     }
     let mut state = fixture();
-    state.open_compose(Some("home"), jmap::Composed {
-        attachments: paths.clone(),
-        ..jmap::Composed::default()
-    });
+    state.open_compose(
+        Some("home"),
+        jmap::Composed {
+            attachments: paths.clone(),
+            ..jmap::Composed::default()
+        },
+    );
     let mut h = harness(state);
     for parent in ["invoices", "reports"] {
-        let name = email::label_with("compose-attachment-name", &[("name", "note.txt"), ("directory", parent)]);
-        let text = email::label_with("compose-attachment-chip", &[("name", &name), ("size", "5 B")]);
+        let name = email::label_with(
+            "compose-attachment-name",
+            &[("name", "note.txt"), ("directory", parent)],
+        );
+        let text = email::label_with(
+            "compose-attachment-chip",
+            &[("name", &name), ("size", "5 B")],
+        );
         assert!(h.query_by_label(&text).is_some());
         let remove = email::label_with("compose-attachment-remove", &[("name", &name)]);
         assert_eq!(h.query_all_by_label(&remove).count(), 1);
     }
-    let name = email::label_with("compose-attachment-name", &[("name", "note.txt"), ("directory", "invoices")]);
-    h.get_by_label(&email::label_with("compose-attachment-remove", &[("name", &name)])).click();
+    let name = email::label_with(
+        "compose-attachment-name",
+        &[("name", "note.txt"), ("directory", "invoices")],
+    );
+    h.get_by_label(&email::label_with(
+        "compose-attachment-remove",
+        &[("name", &name)],
+    ))
+    .click();
     h.run();
-    assert_eq!(h.state().state.compose.as_ref().unwrap().draft.attachments, &paths[1..]);
+    assert_eq!(
+        h.state().state.compose.as_ref().unwrap().draft.attachments,
+        &paths[1..]
+    );
     // The only remaining basename no longer needs a directory qualifier.
-    assert!(h.query_by_label(&email::label_with("compose-attachment-remove", &[("name", "note.txt")])).is_some());
+    assert!(
+        h.query_by_label(&email::label_with(
+            "compose-attachment-remove",
+            &[("name", "note.txt")]
+        ))
+        .is_some()
+    );
 }
 
 #[test]
 fn oversize_warning_belongs_to_the_total_rather_than_each_file() {
     let dir = tempfile::tempdir().unwrap();
-    let paths: Vec<_> = ["one.txt", "two.txt"].into_iter().map(|name| {
-        let path = dir.path().join(name);
-        std::fs::write(&path, b"hello").unwrap();
-        path
-    }).collect();
+    let paths: Vec<_> = ["one.txt", "two.txt"]
+        .into_iter()
+        .map(|name| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, b"hello").unwrap();
+            path
+        })
+        .collect();
     let mut state = fixture();
     state.accounts[0].session.as_mut().unwrap().max_size_upload = Some(100);
-    state.open_compose(Some("home"), jmap::Composed {
-        to: jmap::parse_addresses("ann@example.invalid").unwrap(),
-        subject: "Files".into(), attachments: paths, ..jmap::Composed::default()
-    });
-    let error = state.compose.as_ref().unwrap().attachment_error.clone().unwrap();
+    state.open_compose(
+        Some("home"),
+        jmap::Composed {
+            to: jmap::parse_addresses("ann@example.invalid").unwrap(),
+            subject: "Files".into(),
+            attachments: paths,
+            ..jmap::Composed::default()
+        },
+    );
+    let error = state
+        .compose
+        .as_ref()
+        .unwrap()
+        .attachment_error
+        .clone()
+        .unwrap();
     let h = harness(state);
     for name in ["one.txt", "two.txt"] {
-        let text = email::label_with("compose-attachment-chip", &[("name", name), ("size", "5 B")]);
+        let text = email::label_with(
+            "compose-attachment-chip",
+            &[("name", name), ("size", "5 B")],
+        );
         assert!(h.query_by_label(&text).is_some());
     }
     assert!(h.query_by_label(&error).is_some());
-    assert!(h.get_by_label(&label("send")).accesskit_node().is_disabled());
+    assert!(
+        h.get_by_label(&label("send"))
+            .accesskit_node()
+            .is_disabled()
+    );
 }
 
 #[test]
