@@ -483,7 +483,9 @@ impl Store {
     /// re-sealed under `to`, backup first, through the atomic replacement
     /// path. Nothing else changes: incarnation, revisions and receipts stay.
     /// The writer lock keeps a serving settingsd out. A profile already bound
-    /// to `to` is left alone.
+    /// to `to` is left alone, and a run interrupted between the two writes
+    /// (backup under `to`, primary under `from`) is finished by running it
+    /// again.
     pub fn rebind(root: &Path, from: &Binding, to: Binding) -> anyhow::Result<(Accepted, bool)> {
         to.validate().map_err(|e| anyhow::anyhow!(e.message))?;
         anyhow::ensure!(from != &to, "rebind needs a different binding");
@@ -502,8 +504,15 @@ impl Store {
         ) {
             Ok(file) => {
                 let previous: Accepted = read_typed(file)?;
-                previous.check(from)?;
-                Some(previous)
+                // A backup already under `to` is an interrupted earlier
+                // rebind (the backup is written first): keep it and finish
+                // the primary.
+                if previous.check(&to).is_ok() {
+                    None
+                } else {
+                    previous.check(from)?;
+                    Some(previous)
+                }
             }
             Err(e)
                 if e.downcast_ref::<std::io::Error>()
@@ -757,6 +766,44 @@ mod tests {
             profile: "default".into(),
         };
         assert!(Store::rebind(dir.path(), &other, binding()).is_err());
+    }
+    #[test]
+    fn rebind_finishes_a_run_interrupted_after_the_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut store, current) =
+            Store::create(dir.path(), binding(), Desktop::default()).unwrap();
+        let mut next = current.clone();
+        next.revision = Revision(2);
+        next.seal().unwrap();
+        store.commit(&current, &next).unwrap();
+        drop(store);
+        // The state a crash between the two writes leaves: backup under the
+        // new binding, primary still under the old one.
+        let renamed = Binding {
+            instance: "renamed".into(),
+            profile: "default".into(),
+        };
+        let mut backup = current.clone();
+        backup.binding = renamed.clone();
+        backup.seal().unwrap();
+        std::fs::write(
+            dir.path().join("desktop.previous.conf.mix"),
+            encode(&backup).unwrap(),
+        )
+        .unwrap();
+        assert!(Store::open(dir.path(), &renamed).is_err());
+
+        let (accepted, changed) = Store::rebind(dir.path(), &binding(), renamed.clone()).unwrap();
+        assert!(changed);
+        assert_eq!(accepted.revision, Revision(2));
+        let kept: Accepted = strict::from_str(
+            &std::fs::read_to_string(dir.path().join("desktop.previous.conf.mix")).unwrap(),
+        )
+        .unwrap();
+        kept.check(&renamed).unwrap();
+        assert_eq!(kept.revision, Revision(1));
+        let (_, opened) = Store::open(dir.path(), &renamed).unwrap();
+        assert_eq!(opened.revision, Revision(2));
     }
     #[test]
     fn writer_lock_and_missing_store_do_not_materialise_defaults() {
