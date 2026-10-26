@@ -1755,7 +1755,9 @@ mod tests {
                 );
             crate::install(&h.ctx, &crate::Theme::embedded());
             h.run_steps(5);
-            let editor = h.get_by_role(egui::accesskit::Role::TextInput).rect();
+            let editor = h
+                .get_by_role(egui::accesskit::Role::MultilineTextInput)
+                .rect();
             assert!(editor.height() > 280.0, "{editor:?}");
             if output.is_empty() {
                 assert!(editor.bottom() > 540.0, "{editor:?}");
