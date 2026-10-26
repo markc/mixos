@@ -252,7 +252,11 @@ for each $node in $ROSTER["all"]
 end
 
 $selection_args = args()
-if len($selection_args) >= 2 and $selection_args[0] == "--signed" then
+if len($selection_args) > 0 and $selection_args[0] == "--signed" then
+  if len($selection_args) < 2 or starts_with($selection_args[1], "-") then
+    print("  ERROR: --signed needs a signed inventory path")
+    exit(2)
+  end
   $SIGNED = $selection_args[1]
   $selection_args = slice($selection_args, 2)
   print("  verifying against " .. $SIGNED)
