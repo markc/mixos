@@ -10,110 +10,8 @@ use egui::{Context, ViewportId, ViewportIdMap, ViewportIdSet};
 use std::sync::Arc;
 
 #[cfg(test)]
-mod offscreen_tests {
-    use super::*;
-
-    /// No window, surface, compositor, or subsequent paint: callbacks must still complete.
-    #[test]
-    fn hidden_window_capture_without_surface() {
-        let config = WgpuConfiguration {
-            wgpu_setup: crate::WgpuSetup::CreateNew(
-                crate::WgpuSetupCreateNew::without_display_handle(),
-            ),
-            ..Default::default()
-        };
-        let options = RendererOptions::default();
-        let mut painter = pollster::block_on(Painter::new(
-            Context::default(),
-            config.clone(),
-            false,
-            options,
-        ));
-        painter.render_state = Some(
-            pollster::block_on(RenderState::create(
-                &config,
-                &painter.instance,
-                None,
-                options,
-            ))
-            .expect("headless wgpu adapter"),
-        );
-
-        for format in [
-            wgpu::TextureFormat::Rgba8Unorm,
-            wgpu::TextureFormat::Bgra8Unorm,
-        ] {
-            let state = painter.render_state.as_mut().unwrap();
-            state.target_format = format;
-            *state.renderer.write() = crate::Renderer::new(&state.device, format, options);
-            painter.screen_capture_state = None;
-            // Odd widths exercise padded rows; desktop size exercises bulk readback.
-            for size in [[67, 31], [79, 23], [3840, 2160]] {
-                let ctx = Context::default();
-                let output = ctx.run_ui(
-                    egui::RawInput {
-                        screen_rect: Some(egui::Rect::from_min_size(
-                            egui::Pos2::ZERO,
-                            egui::vec2(size[0] as f32 / 2.0, size[1] as f32 / 2.0),
-                        )),
-                        ..Default::default()
-                    },
-                    |ui| {
-                        ui.painter().rect_filled(
-                            egui::Rect::from_min_size(egui::pos2(2.0, 2.0), egui::vec2(8.0, 6.0)),
-                            0.0,
-                            egui::Color32::RED,
-                        );
-                    },
-                );
-                let primitives = ctx.tessellate(output.shapes, 2.0);
-                let mut delta = output.textures_delta;
-                delta.free.insert(epaint::TextureId::Managed(0));
-                let (tx, rx) = std::sync::mpsc::channel();
-                let callbacks = (0..2)
-                    .map(|_| {
-                        let sender = tx.clone();
-                        egui::ScreenshotCallback::new(move |image| {
-                            sender.send(image).unwrap();
-                        })
-                    })
-                    .collect();
-                drop(tx);
-                painter.paint_and_update_textures_impl(
-                    ViewportId::ROOT,
-                    size,
-                    2.0,
-                    [0.0, 0.0, 1.0, 1.0],
-                    &primitives,
-                    &mut delta,
-                    callbacks,
-                    None,
-                );
-                for _ in 0..2 {
-                    let image = rx
-                        .recv_timeout(core::time::Duration::from_secs(15))
-                        .expect("offscreen callback without another paint");
-                    assert_eq!(image.size, [size[0] as usize, size[1] as usize]);
-                    assert_eq!(image[(0, 0)], egui::Color32::BLUE);
-                    assert_eq!(image[(8, 8)], egui::Color32::RED);
-                }
-                assert!(delta.is_empty(), "texture uploads and frees consumed");
-                assert!(
-                    painter
-                        .render_state
-                        .as_ref()
-                        .unwrap()
-                        .renderer
-                        .read()
-                        .texture(&epaint::TextureId::Managed(0))
-                        .is_none(),
-                    "texture freed after submission"
-                );
-                assert!(painter.surfaces.is_empty(), "no surface was created");
-            }
-        }
-    }
-}
+#[path = "../../../tests/desktop/offscreen_gpu.rs"]
+mod offscreen_tests;
 
 struct SurfaceState {
     surface: wgpu::Surface<'static>,
@@ -635,6 +533,9 @@ impl Painter {
         capture_data: Vec<egui::ScreenshotCallback>,
     ) {
         let Some(surface) = self.surfaces.get(&viewport_id) else {
+            if !capture_data.is_empty() {
+                log::error!("Cannot capture viewport {viewport_id:?}: no surface state");
+            }
             return;
         };
         let size = [surface.width, surface.height];
@@ -705,6 +606,9 @@ impl Painter {
         }
 
         let Some(render_state) = self.render_state.as_mut() else {
+            if !capture_data.is_empty() {
+                log::error!("Cannot capture viewport {viewport_id:?}: no render state");
+            }
             return vsync_sec;
         };
 
@@ -714,6 +618,9 @@ impl Painter {
         };
 
         if size[0] == 0 || size[1] == 0 {
+            if !capture_data.is_empty() {
+                log::error!("Cannot capture viewport {viewport_id:?}: zero-sized viewport");
+            }
             return vsync_sec;
         }
 
@@ -907,7 +814,7 @@ impl Painter {
                 &screen_descriptor,
             );
 
-            if capture && let Some(capture_state) = &mut self.screen_capture_state {
+            if !capture_data.is_empty() && let Some(capture_state) = &mut self.screen_capture_state {
                 capture_buffer = Some(capture_state.copy_textures(
                     &render_state.device,
                     output_frame.as_ref(),
@@ -955,15 +862,7 @@ impl Painter {
             if offscreen {
                 // Mapping needs device progress, even when no further frame arrives.
                 // Keep the UI thread responsive while waiting for the GPU readback.
-                let device = render_state.device.clone();
-                std::thread::spawn(move || {
-                    if let Err(err) = device.poll(wgpu::PollType::Wait {
-                        submission_index: None,
-                        timeout: Some(core::time::Duration::from_secs(10)),
-                    }) {
-                        log::error!("Failed to poll offscreen screenshot: {err}");
-                    }
-                });
+                poll_offscreen(render_state.device.clone());
             }
         }
 
@@ -993,5 +892,33 @@ impl Painter {
     #[expect(clippy::needless_pass_by_ref_mut, clippy::unused_self)]
     pub fn destroy(&mut self) {
         // TODO(emilk): something here?
+    }
+}
+
+/// One sleeping worker and a bounded queue for the whole process, not a thread
+/// per capture. Polling a device services all its pending mapping callbacks.
+#[cfg(not(target_arch = "wasm32"))]
+fn poll_offscreen(device: wgpu::Device) {
+    static WORKER: std::sync::OnceLock<std::sync::mpsc::SyncSender<wgpu::Device>> =
+        std::sync::OnceLock::new();
+    let sender = WORKER.get_or_init(|| {
+        let (sender, receiver) = std::sync::mpsc::sync_channel::<wgpu::Device>(8);
+        std::thread::Builder::new()
+            .name("egui-readback".into())
+            .spawn(move || {
+                while let Ok(device) = receiver.recv() {
+                    if let Err(err) = device.poll(wgpu::PollType::Wait {
+                        submission_index: None,
+                        timeout: Some(core::time::Duration::from_secs(10)),
+                    }) {
+                        log::error!("Failed to poll offscreen screenshot: {err}");
+                    }
+                }
+            })
+            .expect("start bounded screenshot worker");
+        sender
+    });
+    if let Err(err) = sender.try_send(device) {
+        log::error!("Offscreen screenshot poll queue unavailable: {err}");
     }
 }

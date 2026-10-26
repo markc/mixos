@@ -721,6 +721,14 @@ impl Drive {
                 self.deadlines.remove(&id);
                 continue;
             }
+            // Await means the screenshot command has been emitted by a UI pass.
+            // Only its capture deadline may expire GPU work already in flight.
+            if self.running.as_ref().is_some_and(|running| {
+                running.id == id && matches!(running.steps.front(), Some(Step::Await { .. }))
+            }) {
+                self.pending_captures.insert(id, accepted);
+                continue;
+            }
             let since = self
                 .last_ui_pass
                 .map_or(accepted, |pass| pass.max(accepted));
@@ -857,6 +865,13 @@ impl Drive {
             Ok(job) => job,
             Err(message) => return Some(refusal(id, "ARGUMENT", &message)),
         };
+        if command_name == "ui.capture"
+            && ctx.input(|i| i.viewport().visible() == Some(false))
+            && ctx.data(|data| data.get_temp::<bool>(egui::Id::new("eframe.offscreen_capture")))
+                == Some(false)
+        {
+            return Some(refusal(id, "NOT_SHOWN", "this renderer cannot capture a hidden window: show the window first"));
+        }
         // A hidden window runs no passes, so its input would never be read.
         if command_name != "ui.capture" && ctx.input(|i| i.viewport().visible() == Some(false)) {
             return Some(refusal(
@@ -2165,7 +2180,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stalled_capture_keeps_not_shown_priority_over_gpu_timeout() {
+    fn painted_capture_uses_gpu_timeout_instead_of_not_shown() {
         let (ctx, _temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
         let _callback = requested_screenshot(&ctx);
@@ -2182,7 +2197,7 @@ mod tests {
                 panic!("capture awaits readback");
             }
         });
-        assert_eq!(logic_at(&ctx, now)[0].body["error_code"], "NOT_SHOWN");
+        assert_eq!(logic_at(&ctx, now)[0].body["error_code"], "CAPTURE");
     }
 
     #[test]
