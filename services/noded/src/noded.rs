@@ -2687,6 +2687,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                                 .with_header("type", "response")
                                 .with_header("from", "noded")
                                 .with_header("rc", "10")
+                                .with_header("command", "noded.register")
                                 .with_header("error", &format!("admission refused: {detail}"));
                             if let Some(id) = bus_msg.get("id") {
                                 resp.set("id", id);
@@ -2949,12 +2950,13 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                                 err.set("id", id);
                             }
                             if let Some(observation) = pending_observation.as_ref() {
-                                deliver_observed_response(
+                                deliver_observed_peer_response(
                                     &observation.manager,
                                     &tx_clone,
                                     &err,
                                     ObserveDirection::MeshIn,
                                     msg_id.as_deref(),
+                                    Some(&observation.peer),
                                 );
                             } else {
                                 let _ = tx_clone.try_send(err.to_wire());
@@ -3391,6 +3393,19 @@ fn deliver_observed_response(
     direction: ObserveDirection,
     correlation_id: Option<&str>,
 ) -> ObserveOutcome {
+    deliver_observed_peer_response(observe, target, response, direction, correlation_id, None)
+}
+
+/// [`deliver_observed_response`] for a response that crossed the mesh, so its
+/// observation names the peer.
+fn deliver_observed_peer_response(
+    observe: &ObserveManager,
+    target: &mpsc::Sender<String>,
+    response: &BusMessage,
+    direction: ObserveDirection,
+    correlation_id: Option<&str>,
+    peer: Option<&str>,
+) -> ObserveOutcome {
     let observing = observe.is_active();
     let wire = response.to_wire();
     if observing {
@@ -3399,13 +3414,12 @@ fn deliver_observed_response(
             Err(mpsc::error::TrySendError::Full(_)) => ObserveOutcome::Dropped,
             Err(mpsc::error::TrySendError::Closed(_)) => ObserveOutcome::Rejected,
         };
-        observe.observe(Observation::from_message(
-            direction,
-            outcome,
-            response,
-            &wire,
-            correlation_id,
-        ));
+        let observation =
+            Observation::from_message(direction, outcome, response, &wire, correlation_id);
+        observe.observe(match peer {
+            Some(peer) => observation.with_peer(peer),
+            None => observation,
+        });
         outcome
     } else {
         match target.try_send(wire) {
@@ -3883,6 +3897,14 @@ async fn handle_noded_command(
 
     match command {
         "noded.register" => {
+            // Every answer, refusals included, names its command: a mesh
+            // link registers without an ID, so the command is how the link
+            // tells the answer to its own registration from ingress traffic.
+            let respond = |rc: &str| -> BusMessage {
+                let mut resp = respond(rc);
+                resp.set("command", "noded.register");
+                resp
+            };
             if state
                 .principal
                 .as_ref()
@@ -4042,7 +4064,6 @@ async fn handle_noded_command(
             tracing::info!("Service '{}' registered", from);
 
             let mut resp = respond("0");
-            resp.set("command", "noded.register");
             resp.body = format!(r#"{{"registered": "{}"}}"#, from);
             let _ = tx.try_send(resp.to_wire());
 
@@ -7798,6 +7819,8 @@ mod tests {
                 let response = raw_call(sink, stream, request, &id).await;
                 assert_eq!(response.get("rc"), Some("10"), "{who} took {name}");
                 assert_eq!(response.get("error"), Some("reserved_name"), "{who} {name}");
+                // A refusal names its command, as a mesh link needs it to.
+                assert_eq!(response.command_name(), Some("noded.register"));
             }
         }
 
