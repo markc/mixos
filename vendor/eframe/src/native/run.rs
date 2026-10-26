@@ -7,7 +7,7 @@ use winit::{
     window::WindowId,
 };
 
-use ahash::HashMap;
+use ahash::{HashMap, HashSet};
 
 use super::winit_integration::{UserEvent, WinitApp};
 use crate::{
@@ -94,7 +94,7 @@ struct WinitAppWrapper<T: WinitApp> {
 
     /// A missed frame callback stays outstanding until RedrawRequested arrives.
     /// Do not pay the grace period again for every step of an offscreen capture.
-    windows_stalled_redraws: HashMap<WindowId, Instant>,
+    windows_stalled_redraws: HashSet<WindowId>,
 
     winit_app: T,
     return_result: Result<(), crate::Error>,
@@ -106,7 +106,7 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         Self {
             windows_next_repaint_times: HashMap::default(),
             windows_redraw_deadlines: HashMap::default(),
-            windows_stalled_redraws: HashMap::default(),
+            windows_stalled_redraws: HashSet::default(),
             winit_app,
             return_result: Ok(()),
             run_and_return,
@@ -225,15 +225,7 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                     // never be processed. We collect these windows to paint them
                     // directly below.
                     // See: https://github.com/emilk/egui/issues/5229
-                    if let Some(last_pass) = self.windows_stalled_redraws.get(window_id) {
-                        // Ordinary hidden logic retains the existing throttle. Only
-                        // explicit pixel work bypasses the callback grace period.
-                        if self.winit_app.overdue_pass_mode(*window_id) == PassMode::LogicOnly
-                            && now < *last_pass + MISSED_REDRAW_TIMEOUT
-                        {
-                            *repaint_time = *last_pass + MISSED_REDRAW_TIMEOUT;
-                            return true;
-                        }
+                    if self.windows_stalled_redraws.contains(window_id) {
                         stalled_window_ids.push(*window_id);
                     } else if is_invisible_or_minimized(&window) {
                         invisible_window_ids.push(*window_id);
@@ -257,7 +249,6 @@ impl<T: WinitApp> WinitAppWrapper<T> {
             });
 
         for window_id in stalled_window_ids {
-            self.windows_stalled_redraws.insert(window_id, now);
             let mode = self.winit_app.overdue_pass_mode(window_id);
             let event_result = self.winit_app.run_ui_and_paint(event_loop, window_id, mode);
             self.handle_event_result(event_loop, event_result);
@@ -298,7 +289,7 @@ impl<T: WinitApp> WinitAppWrapper<T> {
             // `handle_event_result` re-enters `check_redraw_requests`, which may already
             // have handled this window, so only run it if the deadline is still there:
             if self.windows_redraw_deadlines.remove(&window_id).is_some() {
-                self.windows_stalled_redraws.insert(window_id, now);
+                self.windows_stalled_redraws.insert(window_id);
                 log::trace!(
                     "RedrawRequested is overdue for {window_id:?}: running without a surface"
                 );
