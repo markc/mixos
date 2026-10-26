@@ -973,6 +973,11 @@ impl WgpuWinitRunning<'_> {
         window_id: WindowId,
         event: &winit::event::WindowEvent,
     ) -> EventResult {
+        if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some()
+            && matches!(event, winit::event::WindowEvent::Occluded(_))
+        {
+            eprintln!("offtrace {event:?}");
+        }
         let Self {
             integration,
             shared,

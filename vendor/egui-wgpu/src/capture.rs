@@ -191,6 +191,7 @@ impl CaptureState {
     /// Pass in the buffer returned from [`CaptureState::copy_textures`].
     /// Make sure to call this after the encoder has been submitted.
     pub fn read_screen_rgba(&self, buffer: wgpu::Buffer, callbacks: Vec<ScreenshotCallback>) {
+        let trace_start = std::time::Instant::now();
         #[allow(clippy::allow_attributes, clippy::arc_with_non_send_sync)] // For wasm
         let buffer = Arc::new(buffer);
         let buffer_clone = Arc::clone(&buffer);
@@ -209,6 +210,9 @@ impl CaptureState {
             }
         };
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
+                eprintln!("offtrace mapped {:?} after {:?}", result, trace_start.elapsed());
+            }
             if let Err(err) = result {
                 log::error!("Failed to map buffer for reading: {err}");
                 return;
@@ -227,6 +231,9 @@ impl CaptureState {
             // in bulk before swizzling: scalar per-channel reads directly from
             // that memory can take seconds for a desktop-sized capture.
             let bytes = mapped_range.to_vec();
+            if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
+                eprintln!("offtrace copied {} bytes after {:?}", bytes.len(), trace_start.elapsed());
+            }
             drop(mapped_range);
             buffer.unmap();
             for padded_row in bytes.chunks(padding.padded_bytes_per_row as usize) {
@@ -245,6 +252,9 @@ impl CaptureState {
                 pixels,
             ));
             for callback in callbacks {
+                if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
+                    eprintln!("offtrace converted after {:?}", trace_start.elapsed());
+                }
                 callback.complete(Arc::clone(&image));
             }
         });
