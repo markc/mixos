@@ -423,6 +423,7 @@ struct PendingMeshObservation {
     request: BusMessage,
     canonical_wire: String,
     correlation_id: Option<String>,
+    peer: String,
 }
 
 /// SPEC 13 §9a (2-c-2c) — a live enforce-admitted inter-node session, tracked so
@@ -729,12 +730,15 @@ async fn serve(
                     "Mesh ingress refused: cross-mesh routing not implemented"
                 );
                 if observing {
-                    observe_for_mesh.observe(Observation::canonical(
-                        ObserveDirection::MeshIn,
-                        ObserveOutcome::Rejected,
-                        &msg,
-                        correlation_id.as_deref(),
-                    ));
+                    observe_for_mesh.observe(
+                        Observation::canonical(
+                            ObserveDirection::MeshIn,
+                            ObserveOutcome::Rejected,
+                            &msg,
+                            correlation_id.as_deref(),
+                        )
+                        .with_peer(&peer),
+                    );
                 }
                 continue;
             }
@@ -766,12 +770,15 @@ async fn serve(
                             "Mesh ingress refused: malformed Bus target"
                         );
                         if observing {
-                            observe_for_mesh.observe(Observation::canonical(
-                                ObserveDirection::MeshIn,
-                                ObserveOutcome::Rejected,
-                                &msg,
-                                correlation_id.as_deref(),
-                            ));
+                            observe_for_mesh.observe(
+                                Observation::canonical(
+                                    ObserveDirection::MeshIn,
+                                    ObserveOutcome::Rejected,
+                                    &msg,
+                                    correlation_id.as_deref(),
+                                )
+                                .with_peer(&peer),
+                            );
                         }
                         continue;
                     }
@@ -839,20 +846,26 @@ async fn serve(
             };
             if observing {
                 if let Some(canonical_wire) = observed_wire.as_deref() {
-                    observe_for_mesh.observe(Observation::from_message(
-                        ObserveDirection::MeshIn,
-                        outcome,
-                        &msg,
-                        canonical_wire,
-                        correlation_id.as_deref(),
-                    ));
+                    observe_for_mesh.observe(
+                        Observation::from_message(
+                            ObserveDirection::MeshIn,
+                            outcome,
+                            &msg,
+                            canonical_wire,
+                            correlation_id.as_deref(),
+                        )
+                        .with_peer(&peer),
+                    );
                 } else {
-                    observe_for_mesh.observe(Observation::canonical(
-                        ObserveDirection::MeshIn,
-                        outcome,
-                        &msg,
-                        correlation_id.as_deref(),
-                    ));
+                    observe_for_mesh.observe(
+                        Observation::canonical(
+                            ObserveDirection::MeshIn,
+                            outcome,
+                            &msg,
+                            correlation_id.as_deref(),
+                        )
+                        .with_peer(&peer),
+                    );
                 }
             }
         }
@@ -2861,6 +2874,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                         request: bus_msg.clone(),
                         canonical_wire: bus_msg.to_wire(),
                         correlation_id: bus_msg.get("id").map(ToString::to_string),
+                        peer: target.name().to_owned(),
                     })
                 } else {
                     None
@@ -2873,13 +2887,16 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     match mesh.call(peer, bus_msg).await {
                         Ok(mut resp) => {
                             if let Some(observation) = pending_observation.as_ref() {
-                                observation.manager.observe(Observation::from_message(
-                                    ObserveDirection::MeshOut,
-                                    ObserveOutcome::Delivered,
-                                    &observation.request,
-                                    &observation.canonical_wire,
-                                    observation.correlation_id.as_deref(),
-                                ));
+                                observation.manager.observe(
+                                    Observation::from_message(
+                                        ObserveDirection::MeshOut,
+                                        ObserveOutcome::Delivered,
+                                        &observation.request,
+                                        &observation.canonical_wire,
+                                        observation.correlation_id.as_deref(),
+                                    )
+                                    .with_peer(&observation.peer),
+                                );
                             }
                             stamp_broker_origin(&mut resp, BrokerOrigin::Mesh);
                             strip_principal(&mut resp);
@@ -2897,26 +2914,32 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                                         ObserveOutcome::Rejected
                                     }
                                 };
-                                observation.manager.observe(Observation::from_message(
-                                    ObserveDirection::MeshIn,
-                                    outcome,
-                                    &resp,
-                                    &response_wire,
-                                    observation.correlation_id.as_deref(),
-                                ));
+                                observation.manager.observe(
+                                    Observation::from_message(
+                                        ObserveDirection::MeshIn,
+                                        outcome,
+                                        &resp,
+                                        &response_wire,
+                                        observation.correlation_id.as_deref(),
+                                    )
+                                    .with_peer(&observation.peer),
+                                );
                             } else {
                                 let _ = tx_clone.try_send(response_wire);
                             }
                         }
                         Err(e) => {
                             if let Some(observation) = pending_observation.as_ref() {
-                                observation.manager.observe(Observation::from_message(
-                                    ObserveDirection::MeshOut,
-                                    ObserveOutcome::Rejected,
-                                    &observation.request,
-                                    &observation.canonical_wire,
-                                    observation.correlation_id.as_deref(),
-                                ));
+                                observation.manager.observe(
+                                    Observation::from_message(
+                                        ObserveDirection::MeshOut,
+                                        ObserveOutcome::Rejected,
+                                        &observation.request,
+                                        &observation.canonical_wire,
+                                        observation.correlation_id.as_deref(),
+                                    )
+                                    .with_peer(&observation.peer),
+                                );
                             }
                             let mut err = BusMessage::new()
                                 .with_header("rc", "10")

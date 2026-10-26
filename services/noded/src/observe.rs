@@ -76,6 +76,10 @@ pub(crate) struct Observation<'a> {
     pub message: &'a BusMessage,
     pub canonical_size: Option<usize>,
     pub correlation_id: Option<&'a str>,
+    /// The mesh peer a message crossed to or from. Mesh ingress strips the
+    /// remote sender, so this is the only node an observer can attribute an
+    /// inbound mesh request to.
+    pub peer: Option<&'a str>,
 }
 
 impl<'a> Observation<'a> {
@@ -93,6 +97,7 @@ impl<'a> Observation<'a> {
             message,
             canonical_size: Some(canonical_wire.len()),
             correlation_id,
+            peer: None,
         }
     }
 
@@ -112,7 +117,13 @@ impl<'a> Observation<'a> {
             message,
             canonical_size: None,
             correlation_id,
+            peer: None,
         }
+    }
+
+    pub(crate) fn with_peer(mut self, peer: &'a str) -> Self {
+        self.peer = Some(peer);
+        self
     }
 
     pub(crate) fn with_class(mut self, class: TrafficClass) -> Self {
@@ -169,6 +180,8 @@ struct EventBody {
     command: Option<String>,
     size: usize,
     correlation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    peer: Option<String>,
     rc: Option<i64>,
     dropped_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -796,6 +809,7 @@ fn metadata_event(observation: &Observation<'_>) -> EventBody {
             .canonical_size
             .unwrap_or_else(|| observation.message.to_wire().len()),
         correlation_id: bounded(observation.correlation_id),
+        peer: bounded(observation.peer),
         rc: observation
             .message
             .get("rc")
@@ -1449,5 +1463,34 @@ mod tests {
         let event = bus::wire::parse(&rx.try_recv().unwrap()).unwrap();
         let body: Value = serde_json::from_str(&event.body).unwrap();
         assert_eq!(body["correlation_id"], "caller-42");
+    }
+
+    #[test]
+    fn mesh_events_name_their_peer() {
+        let manager = manager();
+        let (tx, mut rx) = mpsc::channel(8);
+        start(&manager, &tx, "{}");
+        let _ = rx.try_recv();
+        let request = message("musicd.play");
+        manager.observe(
+            Observation::canonical(Direction::MeshIn, Outcome::Delivered, &request, None)
+                .with_peer("gamma"),
+        );
+        manager.observe(Observation::canonical(
+            Direction::Local,
+            Outcome::Delivered,
+            &request,
+            None,
+        ));
+        manager.drain_once();
+        let mesh: Value =
+            serde_json::from_str(&bus::wire::parse(&rx.try_recv().unwrap()).unwrap().body)
+                .unwrap();
+        assert_eq!(mesh["direction"], "mesh_in");
+        assert_eq!(mesh["peer"], "gamma");
+        let local: Value =
+            serde_json::from_str(&bus::wire::parse(&rx.try_recv().unwrap()).unwrap().body)
+                .unwrap();
+        assert!(local.get("peer").is_none());
     }
 }

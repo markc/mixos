@@ -985,6 +985,7 @@ async fn connect_and_publish(
     let link_name = format!("bridge-{node_name}");
     let link_tx = connection.tx.clone();
     tokio::spawn(async move {
+        let mut registration_answered = false;
         loop {
             let next = tokio::select! {
                 biased;
@@ -1030,6 +1031,26 @@ async fn connect_and_publish(
                         "command": command,
                     }).to_string());
                 let _ = link_tx.send(reply.to_wire());
+                continue;
+            }
+
+            // The answer to this link's own `noded.register` carries no ID
+            // (the registration sent none) and no target. It belongs to the
+            // link, not to mesh ingress, where it would be refused for want
+            // of a recipient. A refused registration is logged, not lost.
+            if !registration_answered
+                && bus_msg.get("type") == Some("response")
+                && bus_msg.get("id").is_none()
+                && bus_msg.command_name() == Some("noded.register")
+            {
+                registration_answered = true;
+                if bus_msg.get("rc") != Some("0") {
+                    tracing::warn!(
+                        peer = %peer_name,
+                        rc = bus_msg.get("rc").unwrap_or(""),
+                        "Remote broker refused this link's registration"
+                    );
+                }
                 continue;
             }
 
@@ -1811,6 +1832,53 @@ mod tests {
         assert!(
             incoming.try_recv().is_err(),
             "link requests must not enter mesh ingress"
+        );
+        mesh.reconcile_endpoints(HashMap::new(), AuthorityRevision::default())
+            .await;
+    }
+
+    #[tokio::test]
+    async fn registration_answer_stays_on_the_link() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let beta = peer("beta", listener.local_addr().unwrap());
+        let (mesh, mut incoming) = test_mesh_with_peer(beta.clone());
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut websocket = tokio_tungstenite::accept_async(stream).await.unwrap();
+            websocket
+                .send(tungstenite::Message::Ping(Vec::new().into()))
+                .await
+                .unwrap();
+            let registration = next_bus_frame(&mut websocket).await;
+            assert_eq!(registration.command_name(), Some("noded.register"));
+            assert_eq!(registration.get("id"), None);
+            // What noded answers a registration with: no ID, no target. A
+            // second one is not this link's and goes to ingress as before.
+            for _ in 0..2 {
+                let answer = BusMessage::new()
+                    .with_header("type", "response")
+                    .with_header("from", "noded")
+                    .with_header("rc", "0")
+                    .with_header("command", "noded.register");
+                websocket
+                    .send(tungstenite::Message::Text(answer.to_wire().into()))
+                    .await
+                    .unwrap();
+            }
+            websocket
+        });
+        mesh.ensure_connected(&beta).await.unwrap();
+        let _websocket = server.await.unwrap();
+        let first = tokio::time::timeout(Duration::from_secs(2), incoming.recv())
+            .await
+            .unwrap()
+            .expect("the second answer reaches mesh ingress");
+        assert_eq!(first.message.command_name(), Some("noded.register"));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), incoming.recv())
+                .await
+                .is_err(),
+            "the link's own registration answer must not enter mesh ingress"
         );
         mesh.reconcile_endpoints(HashMap::new(), AuthorityRevision::default())
             .await;
