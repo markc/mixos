@@ -350,7 +350,7 @@ fn password(
                         .hint_text(label("email-password-hint"))
                         .desired_width(width)
                         .min_size(egui::vec2(0.0, field::height_of(ui.ctx())))
-                        .vertical_align(Align::Center),
+                        .align(egui::Align2::LEFT_CENTER),
                 );
                 if response.changed() {
                     events.push(UiEvent::EmailPassword(Secret::new(typed)));

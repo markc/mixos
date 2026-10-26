@@ -192,7 +192,7 @@ fn a_dialog_button_grows_when_its_installed_label_padding_grows() {
         let mut h = Harness::builder()
             .with_size(vec2(500.0, 240.0))
             .build_ui(|ui| {
-                toolkit::dialog::Dialog::new("padding", "Document")
+                toolkit::dialog::Dialog::new(egui::Id::unique("padding"), "Document")
                     .buttons(vec![toolkit::dialog::Choice::new(
                         "Apply document settings",
                         toolkit::dialog::Role::Default,

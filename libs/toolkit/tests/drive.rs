@@ -8,7 +8,7 @@
 mod fixture;
 
 use design::{Mode, Scheme};
-use egui::{Color32, ColorImage, Context, Event, FullOutput, ViewportCommand, ViewportId};
+use egui::{Color32, ColorImage, Context, FullOutput, ViewportCommand, ViewportId};
 use egui_kittest::Harness;
 use fixture::Fixture;
 use serde_json::{Value, json};

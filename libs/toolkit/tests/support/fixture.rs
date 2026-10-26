@@ -225,7 +225,7 @@ pub fn harness(builder: HarnessBuilder<Fixture>, theme: &Theme) -> Harness<'stat
                     Choice::new("OK", Role::Default),
                     Choice::new("Cancel", Role::Cancel),
                 ];
-                let shown = Dialog::new("image-size", "Image Size")
+                let shown = Dialog::new(egui::Id::unique("image-size"), "Image Size")
                     .buttons(choices)
                     .show(ui.ctx(), |ui| {
                         ui.allocate_space(egui::vec2(ui.available_width(), DIALOG_BODY));

@@ -292,7 +292,7 @@ fn enter_in_a_dialog_field_never_runs_the_default_button() {
         chosen: Vec::new(),
     };
     let mut h = pro(state, |ui, s| {
-        let r = Dialog::new("form", "Image Size")
+        let r = Dialog::new(egui::Id::unique("form"), "Image Size")
             .buttons(vec![
                 Choice::new("OK", DialogRole::Default),
                 Choice::new("Cancel", DialogRole::Cancel),
@@ -367,7 +367,7 @@ fn dialog() -> Harness<'static, Asked> {
             rect: Rect::NOTHING,
         },
         |ui, s| {
-            let r = Dialog::new("size", "Image Size")
+            let r = Dialog::new(egui::Id::unique("size"), "Image Size")
                 .buttons(vec![
                     Choice::new("OK", DialogRole::Default),
                     Choice::new("Cancel", DialogRole::Cancel),
@@ -380,7 +380,7 @@ fn dialog() -> Harness<'static, Asked> {
     );
     // The harness draws once before installing its theme. Reopen with the
     // installed fonts so the fixture measures a newly opened themed dialog.
-    Dialog::reset(&h.ctx, "size");
+    Dialog::reset(&h.ctx, egui::Id::unique("size"));
     h.run_steps(5);
     h
 }

@@ -179,7 +179,7 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
         ui.painter().rect_filled(page, 0.0, egui::Color32::WHITE);
     });
     if s.dialog {
-        let response = Dialog::new("image-size", "Image Size")
+        let response = Dialog::new(egui::Id::unique("image-size"), "Image Size")
             .buttons(vec![
                 Choice::new("OK", DialogRole::Default),
                 Choice::new("Cancel", DialogRole::Cancel),

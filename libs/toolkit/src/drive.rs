@@ -264,6 +264,8 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
             .passes
             .get(&std::thread::current().id())
             .is_none_or(Vec::is_empty);
+        drive.finish_capture();
+        for child in drive.children.values_mut() { child.finish_capture(); }
         let input_quiet_since = drive.input_quiet_since.get_or_insert(now);
         let quiet = now.saturating_duration_since(*input_quiet_since);
         drive.refuse_unshown_captures(ctx, now, egui::ViewportId::ROOT);
@@ -1267,19 +1269,18 @@ impl Drive {
         })
     }
 
-    /// One pass of the running job: inject its next step.
-    fn step(&mut self, ctx: &Context, input: &mut RawInput) {
-        // Owed releases go first, in a pass of their own.
-        if !self.cleanup.is_empty() {
-            input.events.append(&mut self.cleanup);
-            return;
+    fn finish_capture(&mut self) {
+        self.receive_capture();
+        if self.running.as_ref().is_some_and(|r| r.steps.is_empty() && r.answer.is_some()) {
+            let running = self.running.take().unwrap();
+            self.pending_captures.remove(&running.id);
+            self.answers.push(running.answer.unwrap());
         }
-        if self.running.is_none() {
-            self.start(ctx);
-        }
-        let Some(running) = &mut self.running else {
-            return;
-        };
+    }
+
+    /// GPU readback can finish even while the next UI frame is withheld.
+    fn receive_capture(&mut self) {
+        let Some(running) = &mut self.running else { return; };
         if let Some(Step::Await {
             tag,
             path,
@@ -1311,6 +1312,24 @@ impl Drive {
                 running.answer = answer;
                 running.steps.pop_front();
             }
+        }
+    }
+
+    /// One pass of the running job: inject its next step.
+    fn step(&mut self, ctx: &Context, input: &mut RawInput) {
+        // Owed releases go first, in a pass of their own.
+        if !self.cleanup.is_empty() {
+            input.events.append(&mut self.cleanup);
+            return;
+        }
+        if self.running.is_none() {
+            self.start(ctx);
+        }
+        let Some(running) = &mut self.running else {
+            return;
+        };
+        if matches!(running.steps.front(), Some(Step::Await { .. })) {
+            self.receive_capture();
             return;
         }
         match running.steps.pop_front() {
@@ -1822,6 +1841,17 @@ mod tests {
         assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
     }
 
+    fn requested_screenshot(ctx: &Context) -> egui::ScreenshotCallback {
+        let output = ctx.run_ui(RawInput::default(), |_| {});
+        let callback = output.viewport_output.values().flat_map(|v| &v.commands)
+            .find_map(|c| match c {
+                ViewportCommand::Screenshot(callback) => Some(callback.clone()),
+                _ => None,
+            }).expect("capture requested a screenshot");
+        output.drop_without_applying_deltas();
+        callback
+    }
+
     #[test]
     fn child_passes_do_not_reset_root_capture_clock() {
         let (ctx, _temp) = capture_context();
@@ -1937,22 +1967,18 @@ mod tests {
     fn ui_pass_before_logic_only_preserves_capture_until_screenshot() {
         let (ctx, temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({"name":"shown.png"})).is_none());
-        ctx.run_ui(RawInput::default(), |_| {})
-            .drop_without_applying_deltas();
-        // A real UI pass requested the screenshot. Logic-only must now leave
-        // it waiting for its event, even well beyond the input quiet period.
+        let callback = requested_screenshot(&ctx);
         assert!(logic_at(&ctx, Instant::now() + INPUT_QUIET_PERIOD).is_empty());
-        ctx.with_plugin(|drive: &mut Drive| {
-            drive.screenshots.lock().unwrap().push((
-                1,
-                std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
-            ));
-        });
-        ctx.run_ui(RawInput::default(), |_| {})
-            .drop_without_applying_deltas();
+        let duplicate = callback.clone();
+        callback.complete(std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)));
+        duplicate.complete(std::sync::Arc::new(ColorImage::filled([8, 9], egui::Color32::BLACK)));
+        let pass = ctx.cumulative_pass_nr();
         let answers = logic(&ctx);
+        assert_eq!(ctx.cumulative_pass_nr(), pass, "completion needs no UI pass");
         assert_eq!(answers.len(), 1);
         assert_eq!(answers[0].rc, 0);
+        assert_eq!(answers[0].body["width"], 4);
+        assert!(logic(&ctx).is_empty(), "a callback answers only once");
         assert!(temp.path().join("demo/captures/shown.png").is_file());
     }
 
@@ -1960,27 +1986,18 @@ mod tests {
     fn one_hz_ui_passes_keep_capture_alive_until_screenshot() {
         let (ctx, temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({"name":"trickle.png"})).is_none());
+        let callback = requested_screenshot(&ctx);
         let start = Instant::now();
         for seconds in 1..=5 {
-            ctx.run_ui(RawInput::default(), |_| {})
-                .drop_without_applying_deltas();
+            ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
             let pass = start + Duration::from_secs(seconds);
-            // Advance the viewport clock without sleeping in this unit test.
             ctx.with_plugin(|drive: &mut Drive| drive.last_ui_pass = Some(pass));
             assert!(logic_at(&ctx, pass + Duration::from_millis(999)).is_empty());
         }
-        ctx.with_plugin(|drive: &mut Drive| {
-            drive.screenshots.lock().unwrap().push((
-                1,
-                std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
-            ));
-        });
-        ctx.run_ui(RawInput::default(), |_| {})
-            .drop_without_applying_deltas();
+        callback.complete(std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)));
         assert_eq!(logic(&ctx)[0].rc, 0);
         assert!(temp.path().join("demo/captures/trickle.png").is_file());
     }
-
     #[test]
     fn child_capture_refuses_without_waiting_for_child_ui_or_deadline() {
         let (ctx, _temp) = capture_context();

@@ -481,7 +481,7 @@ fn quit_waits_for_drive_input_accepted_before_it() {
 #[test]
 fn a_bus_split_is_the_rendered_split() {
     let mut rig = rig();
-    let panel = egui::Id::unique("services");
+    let panel = egui::ViewportId::ROOT.root_ui_id().with("services");
     let width = |rig: &Rig| {
         egui::containers::panel::PanelState::load(&rig.h.ctx, panel).map(|s| s.size().x)
     };
@@ -518,7 +518,7 @@ fn a_bus_dock_size_replaces_the_remembered_panel_size() {
         rig.h.run_steps(5);
         let panel = egui::containers::panel::PanelState::load(
             &rig.h.ctx,
-            egui::Id::unique("traffic-bottom"),
+            egui::ViewportId::ROOT.root_ui_id().with("traffic-bottom"),
         )
         .unwrap();
         assert!((panel.size().y / 620.0 - size as f32).abs() < 0.02);
@@ -540,7 +540,7 @@ fn the_services_split_keeps_its_share_beside_the_right_dock() {
         wait(&mut rig, &[id]);
         rig.h.run_steps(5);
         let panel = |name| {
-            egui::containers::panel::PanelState::load(&rig.h.ctx, egui::Id::unique(name)).unwrap()
+            egui::containers::panel::PanelState::load(&rig.h.ctx, egui::ViewportId::ROOT.root_ui_id().with(name)).unwrap()
         };
         let remaining = 980.0 - panel("traffic-right").size().x;
         assert!((panel("services").size().x / remaining - split).abs() < 0.02);

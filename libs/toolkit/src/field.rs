@@ -24,7 +24,7 @@ use crate::chrome::{self, Chrome};
 use crate::icons::Icon;
 use egui::emath::GuiRounding;
 use egui::{
-    Align, EventFilter, FontFamily, FontId, Key, Margin, Rect, Response, Sense, Stroke, StrokeKind,
+    EventFilter, FontFamily, FontId, Key, Margin, Rect, Response, Sense, Stroke, StrokeKind,
     TextEdit, Ui, UiBuilder, Widget, WidgetInfo, pos2, vec2,
 };
 use std::ops::RangeInclusive;
