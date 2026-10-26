@@ -234,18 +234,7 @@ impl CaptureState {
             // Mapped readback memory can be uncached on integrated GPUs. Copy it
             // in bulk before swizzling: scalar per-channel reads directly from
             // that memory can take seconds for a desktop-sized capture.
-            // Small, fixed-width copies avoid libc's large-copy REP MOVSB path,
-            // which reads write-combined GPU mappings very slowly on some x86 GPUs.
-            // Each complete chunk can instead compile to vector loads/stores.
-            let mut bytes = vec![0; mapped_range.len()];
-            let mut source = mapped_range.chunks_exact(128);
-            let mut target = bytes.chunks_exact_mut(128);
-            for (src, dst) in source.by_ref().zip(target.by_ref()) {
-                let src: &[u8; 128] = src.try_into().unwrap();
-                let dst: &mut [u8; 128] = dst.try_into().unwrap();
-                *dst = *src;
-            }
-            target.into_remainder().copy_from_slice(source.remainder());
+            let bytes = copy_readback(&mapped_range);
             if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
                 eprintln!(
                     "offtrace copied {} bytes after {:?}",
@@ -278,6 +267,36 @@ impl CaptureState {
             }
         });
     }
+}
+
+fn copy_readback(source: &[u8]) -> Vec<u8> {
+    #[cfg(target_arch = "x86_64")]
+    if std::is_x86_feature_detected!("sse4.1") && source.as_ptr().align_offset(16) == 0 {
+        // SAFETY: the CPU feature and source alignment are checked above. The
+        // helper reads only complete vectors within this valid mapped slice.
+        return unsafe { copy_readback_streaming(source) };
+    }
+    source.to_vec()
+}
+
+/// MOVNTDQA uses the CPU's streaming-load buffer for write-combined GPU memory.
+/// Ordinary scalar/vector loads and libc memcpy can take hundreds of ms here.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse4.1")]
+unsafe fn copy_readback_streaming(source: &[u8]) -> Vec<u8> {
+    use std::arch::x86_64::{__m128i, _mm_storeu_si128, _mm_stream_load_si128};
+    let mut target = vec![0; source.len()];
+    let complete = source.len() / 16 * 16;
+    for offset in (0..complete).step_by(16) {
+        // SAFETY: caller guarantees SSE4.1 and 16-byte source alignment. Each
+        // load/store is within its slice; the destination accepts unaligned stores.
+        unsafe {
+            let value = _mm_stream_load_si128(source.as_ptr().add(offset).cast::<__m128i>());
+            _mm_storeu_si128(target.as_mut_ptr().add(offset).cast::<__m128i>(), value);
+        }
+    }
+    target[complete..].copy_from_slice(&source[complete..]);
+    target
 }
 
 #[derive(Copy, Clone)]

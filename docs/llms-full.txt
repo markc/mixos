@@ -35244,8 +35244,9 @@ pending screenshot or `RequestPaintWhileHidden` needs pixels. With wgpu,
 those requests run a full UI pass into an offscreen texture, without
 acquiring or presenting a compositor surface. A
 normal redraw cancels that fallback. Once a callback is overdue, subsequent
-requested passes use the fallback immediately until a callback arrives.
-Eframe installs no periodic wake; an idle hidden app sleeps. Queries and app actions still run. Paint-dependent input
+requested pixel passes use the fallback immediately until a callback arrives.
+Ordinary hidden logic retains the 250 ms throttle. Eframe installs no periodic
+wake; an idle hidden app sleeps. Queries and app actions still run. Paint-dependent input
 is preserved across brief stalls. After `drive::INPUT_QUIET_PERIOD` (1000 ms)
 without a UI pass, pending input is settled with the existing cancellation
 policy, releasing later Bus commands. The cancellation message reports how

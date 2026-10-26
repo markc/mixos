@@ -16,7 +16,8 @@ licences; LICENSE-MIT and LICENSE-APACHE are retained from egui's matching
   device poll (one process-wide worker, eight queued requests, ten-second
   wait limit) completes screenshot callbacks without requiring another paint;
   browser callbacks retain wgpu's event-loop-driven progress.
-- `src/capture.rs`: copy mapped readback bytes into host memory before
+- `src/capture.rs`: copy mapped readback bytes into host memory in fixed-width
+  chunks before
   RGBA/BGRA conversion and unmap immediately. Scalar channel reads from
   uncached integrated-GPU mappings can outlive the capture deadline and
   leave readback workers consuming CPU after the request has been refused.
