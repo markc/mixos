@@ -622,6 +622,16 @@ function resolve_zone_bundles($mesh, $overlay, $z)
     for each $owner in published_owners($overlay)
       $recs = gen_forward_records($owner, $z["__name"], mesh_ip_of($mesh, $owner))
       if contains($overlay["published_address_only"] ?? [], $owner) then
+        -- Address-only: exactly the A record. Authored extras would be
+        -- silently dropped, so they are refused instead.
+        if $z["extra"] != nil and $z["extra"][$owner] != nil then
+          print("ERROR: " .. $z["__name"] .. " has extra records for address-only owner " .. $owner .. ": move it to published[] or remove the extras")
+          mesh_fatal()
+        end
+        if $recs[0]["type"] != "A" then
+          print("ERROR: gen_forward_records no longer leads with the A record")
+          mesh_fatal()
+        end
         push($resolved, {owner:$owner, records:[$recs[0]]})
         continue
       end

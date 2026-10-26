@@ -18,8 +18,8 @@ if len(args()) > 0 then
   exit(0)
 end
 $m.validate_zone_emission($mesh,$ov)
-$forward = $m.resolve_zone_bundles($mesh,$ov,{kind:"mesh_forward",__name:"example.org",extra:{"node-a":[{type:"MX"}]}})
-check(deep_eq($forward[0].records,[{name:"node-a.example.org",type:"A",ttl:300,data:"192.0.2.7"}]),"address-only emits exactly A, excluding extras")
+$forward = $m.resolve_zone_bundles($mesh,$ov,{kind:"mesh_forward",__name:"example.org",extra:{}})
+check(deep_eq($forward[0].records,[{name:"node-a.example.org",type:"A",ttl:300,data:"192.0.2.7"}]),"address-only emits exactly A")
 $reverse = $m.resolve_zone_bundles($mesh,$ov,{kind:"mesh_reverse",__name:"2.0.192.in-addr.arpa",ptr_target:"example.org"})
 check($reverse[0].records[0].type == "PTR" and $reverse[0].records[0].data == "node-a.example.org","address-only PTR")
 $legacy = $ov
@@ -32,11 +32,25 @@ for $case in ["duplicate","serial","inactive","missing","mail","type"]
   $r = run_argv([env("MESH_MIX"),$0,$case])
   check($r.exit_code == 1 and contains($r.stdout,"ERROR:"),"reject " .. $case)
 end
-check($v.needs_target(false,"Unknown mesh node: 'node-a'"),"new member fallback")
-check($v.needs_target(false,"No route to host"),"no route fallback")
-check(not $v.needs_target(true,"Unknown mesh node"),"local target stays local")
-check(not $v.needs_target(false,"timeout"),"timeout does not change path")
-check(not $v.needs_target(false,"hash mismatch"),"mismatch does not change path")
+check($v.needs_target(false,true,"Unknown mesh node: 'node-a'"),"new member fallback")
+check(not $v.needs_target(false,false,"Unknown mesh node: 'node-a'"),"known member never falls back")
+check(not $v.needs_target(false,true,"No route to host"),"no route stays a failure")
+check(not $v.needs_target(true,true,"Unknown mesh node"),"local target stays local")
+check(not $v.needs_target(false,true,"timeout"),"timeout does not change path")
+check(not $v.needs_target(false,true,"hash mismatch"),"mismatch does not change path")
+$inv = {members:[
+  {name:"old",credentials:[{kind:"d2",from_epoch:5}]},
+  {name:"back",credentials:[{kind:"d2",from_epoch:21,until_epoch:22},{kind:"d2",from_epoch:23}]},
+  {name:"fresh",credentials:[{kind:"d2",from_epoch:23}]},
+  {name:"wgonly",credentials:[{kind:"wg",from_epoch:5}]}]}
+check(not $v.new_in_epoch($inv,"old",23),"long-standing member is not new")
+check($v.new_in_epoch($inv,"back",23),"reactivated member (closed at 22) is new at 23")
+check($v.new_in_epoch($inv,"fresh",23),"joined member is new")
+check($v.new_in_epoch($inv,"wgonly",23),"no d2 credential means not routable before")
+check(not $v.new_in_epoch($inv,"absent",23),"unknown name is not new")
+$extra_ov = {published:[],published_address_only:["node-a"],serials:{"node-a":1}}
+$x = run_argv([env("MESH_MIX"),"-"],{stdin:"$m = require(" .. json_encode(realpath(dirname($0) .. "/../_lib/mesh_lib.mix")) .. ")\n$m.resolve_zone_bundles(" .. json_encode($mesh) .. "," .. json_encode($extra_ov) .. ",{kind:\"mesh_forward\",__name:\"example.org\",extra:{\"node-a\":[{name:\"x\",type:\"TXT\",ttl:300,data:\"y\"}]}})\n"})
+check($x.exit_code != 0 and contains($x.stdout,"extra records for address-only owner"),"extras on an address-only owner are refused")
 for $posture in ["verified","unverified"]
   for $epoch in [23,22]
     for $hash in ["expected","wrong"]

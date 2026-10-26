@@ -46,15 +46,19 @@ DNS overlays accept `published` (A, MX, mail SRV and PTR) and optional
 `published_address_only` (A and PTR only). Owners must be unique across both
 lists, declared active inventory members and have numeric entries in `serials`.
 Only `published` requires `bus:true`, because it advertises mail services.
-Address-only bundles exclude forward `extra` records to keep that guarantee.
+An `extra` entry for an address-only owner is refused, not silently dropped.
 For example: `published_address_only: ["desktop"]` with `serials: {desktop: 1}`.
 `mesh_gen preview --out DIR` writes unsigned DNS output to `DIR/zones.mix` when
 the overlay and header exist; seal and `mesh_zones_check` share the same recipe.
 
-System-target sync verification uses the local broker first. An unknown-node
-or no-route reply switches verification to the target's local broker over the
-existing SSH/Mix transport. Both paths require verified posture and the exact
-epoch and canonical inventory hash; each successful target logs its path.
+System-target sync verification uses the local broker first. Only a member
+new in this epoch (no d2 credential admitted it at the previous epoch), when
+the local broker answers "Unknown mesh node", is verified on the target over
+the existing SSH/Mix transport instead; any other failure, including no route
+to a known member, stays a failure. Both paths require verified posture and
+the exact epoch and canonical inventory hash, and each target logs its path.
+Before publishing the canonical inventory, every member verified over SSH is
+checked again over the Bus, once every node runs the new epoch.
 Run `mix tests/new_members_test.mix` with the mesh environment set for offline
 policy, probe and DNS fixtures. It never contacts a broker or SSH host.
 

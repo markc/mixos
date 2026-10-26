@@ -1,7 +1,29 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Pure verification policy/source shared with offline tests.
-fn needs_target($is_local, $reply)
-  return not $is_local and (contains($reply, "Unknown mesh node") or contains($reply, "No route") or contains($reply, "no route"))
+
+-- A member is new in `epoch` when no d2 credential admitted it at epoch-1:
+-- the brokers still on epoch-1 cannot route to it yet. Credential windows are
+-- half-open, from_epoch <= e < until_epoch (until absent = open).
+fn new_in_epoch($inventory, $node, $epoch)
+  $prior = $epoch - 1
+  for each $member in $inventory["members"] ?? []
+    if $member["name"] == $node then
+      for each $c in $member["credentials"] ?? []
+        if $c["kind"] == "d2" and $c["from_epoch"] <= $prior and ($c["until_epoch"] == nil or $prior < $c["until_epoch"]) then
+          return false
+        end
+      end
+      return true
+    end
+  end
+  return false
+end
+
+-- Only a member new in this epoch may be verified on the target, and only
+-- when the local broker says it does not know it. Any other failure (no
+-- route to a known member, a broker down) stays a failure.
+fn needs_target($is_local, $is_new, $reply)
+  return not $is_local and $is_new and contains($reply, "Unknown mesh node")
 end
 
 fn probe($target, $epoch, $hash)
