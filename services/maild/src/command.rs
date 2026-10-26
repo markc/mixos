@@ -279,10 +279,8 @@ enum BayesianAction {
     },
 }
 
-/// Read-only inspection verbs against `maild.tls_identities`. The
-/// namespace's AuthPolicy doesn't grant a write cap to any peer and
-/// `before_set` / `before_delete` reject operator writes regardless;
-/// `add`/`remove` would be dead arms.
+/// Inspect the materialised TLS resolver view. The namespace is read-only
+/// for every Bus caller; changes go through the identity configuration.
 #[derive(Subcommand)]
 enum TlsIdentityAction {
     /// List every `maild.tls_identities` row (server name + default
@@ -454,9 +452,7 @@ enum AccountAction {
     /// Reads via `maild.props.get` so every substrate-visible field
     /// (quota, spam_enabled, spam_threshold, etc.) is rendered —
     /// `list` only shows email + display name. The `password`
-    /// field is `secret: true` and is redacted by the substrate
-    /// for any peer lacking the `props.read:maild.accounts:secrets`
-    /// capability.
+    /// field is included for every Bus caller.
     Show {
         /// Account email
         email: String,
@@ -1823,12 +1819,7 @@ async fn run_domain_cli(action: DomainAction) -> Result<()> {
 }
 
 /// Run a CLI `tls-identity` subcommand as a transient Bus client.
-/// Read-only against `maild.tls_identities`: the namespace's
-/// `auth_policy` does not grant a write cap to any peer
-/// (`crates/maild/src/props/tls_identities.rs`), and its
-/// `before_set` / `before_delete` reject every operator write with
-/// the `tls_identities_readonly:` prefix. Hence the CLI exposes
-/// `list` + `show` only.
+/// Read-only inspection of the materialised resolver identity view.
 async fn run_tls_identity_cli(action: TlsIdentityAction) -> Result<()> {
     use std::collections::BTreeMap;
     const NAMESPACE: &str = "tls_identities";

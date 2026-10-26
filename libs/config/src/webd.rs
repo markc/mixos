@@ -125,13 +125,6 @@ pub struct WebdConfig {
     /// validation rules.
     #[serde(default)]
     pub listener: Vec<WebdListenerConfig>,
-    /// Listener-control (SPEC-12 `webd.listeners` kill-switch + guard
-    /// namespace) settings. Currently just the operator allowlist for
-    /// the privileged `props.write:webd.listeners` capability (cutting
-    /// external traffic / retuning guards is operator-tier, unlike the
-    /// permissive every-WG-peer posture of `vhosts`/`accounts`).
-    #[serde(default)]
-    pub listeners: WebdListenersConfig,
     /// Operator-owned account roots. Invalid paths are skipped by webd at startup.
     #[serde(default)]
     pub shares: WebdSharesConfig,
@@ -142,24 +135,6 @@ pub struct WebdConfig {
 #[serde(deny_unknown_fields, default)]
 pub struct WebdSharesConfig {
     pub roots: std::collections::BTreeMap<String, PathBuf>,
-}
-
-/// `[webd.listeners]` — listener-control settings (the SPEC-12
-/// `webd.listeners` namespace's L0 seed). The namespace itself holds
-/// the live `enabled`/guard state; this block carries only the
-/// bootstrap-time policy that can't live in L1 (it gates *who* may
-/// write L1).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct WebdListenersConfig {
-    /// Bus sender names (`cmd.from`) allowed to `props.write` the
-    /// `webd.listeners` namespace — i.e. flip the `enabled` kill switch
-    /// or retune a listener's guards. Empty (the default) ⇒ no remote
-    /// peer may write (the daemon's own backend-origin writes — bootstrap
-    /// + the reaction loop's status writeback — still work). read/describe
-    ///   stay open to every WG peer. Tightens further when the cross-mesh
-    ///   principal model lands; the capability name is stable now.
-    pub operators: Vec<String>,
 }
 
 impl Default for WebdConfig {
@@ -184,7 +159,6 @@ impl Default for WebdConfig {
             autoconfig_mail_host: None,
             vhost: Vec::new(),
             listener: Vec::new(),
-            listeners: WebdListenersConfig::default(),
             shares: WebdSharesConfig::default(),
         }
     }

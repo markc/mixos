@@ -169,6 +169,20 @@ pub async fn dispatch(
     }
 }
 
+/// The actor is audit data only; it never selects the sending account.
+fn submission_actor(cmd: &IncomingCommand) -> String {
+    if !cmd.from.is_empty() {
+        cmd.from.clone()
+    } else if cmd.header("broker_origin") == Some("mesh") {
+        cmd.header("broker_peer")
+            .filter(|peer| !peer.is_empty())
+            .map(|peer| format!("mesh:{peer}"))
+            .unwrap_or_else(|| "bus".into())
+    } else {
+        "bus".into()
+    }
+}
+
 async fn submit(
     cmd: &IncomingCommand,
     db: &Db,
@@ -176,10 +190,8 @@ async fn submit(
     aliases: &Arc<Runtime>,
     max_message_size: usize,
 ) -> Result<String> {
-    ensure!(
-        !cmd.from.is_empty() && cmd.from.len() <= 256,
-        "missing native Bus actor"
-    );
+    let actor = submission_actor(cmd);
+    ensure!(actor.len() <= 256, "Bus actor exceeds byte bound");
     ensure!(
         cmd.body.len() <= MAX_REQUEST
             && cmd
@@ -253,7 +265,6 @@ async fn submit(
     .await??;
     // Hash the typed request, not generated Date/Message-ID bytes. Identical
     // retries remain identical after reconnect or process restart.
-    let actor = cmd.from.clone();
     let operation = request.operation_id.clone();
     let conn = db.conn.clone();
     let reservation = tokio::task::spawn_blocking(move || {
@@ -350,11 +361,15 @@ mod tests {
         ));
         let mut cmd = IncomingCommand {
             generation: 0,
-            from: "native-test".into(),
+            from: String::new(),
             command: "maild.submit".into(),
             id: None,
             args: Value::Null,
-            headers: Default::default(),
+            headers: [
+                ("broker_origin".into(), "mesh".into()),
+                ("broker_peer".into(), "peer-one".into()),
+            ]
+            .into(),
             body: json!({"operation_id":"once-1",
                 "account":"sender@example.test","to":["local@example.test","remote@outside.test"],
                 "subject":"Native test","text":"Plain text ✓"})
@@ -372,6 +387,17 @@ mod tests {
         );
         let first = dispatch(&cmd, &db, &store, &aliases, 1024 * 1024).await;
         assert_eq!(first.0, 0, "{}", first.1);
+        let actor: String = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT actor FROM bus_submissions WHERE operation_id='once-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(actor, "mesh:peer-one");
         assert_eq!(dispatch(&cmd, &db, &store, &aliases, 1).await, first);
         assert_eq!(
             dispatch(&cmd, &db, &store, &aliases, 1024 * 1024).await,
@@ -428,6 +454,26 @@ mod tests {
             crate::smtp::queue::list(&db.conn, 10).await.unwrap().len(),
             1
         );
+    }
+
+    #[test]
+    fn submission_actor_falls_back_without_rejecting_anonymous_callers() {
+        let mut cmd = IncomingCommand {
+            generation: 0,
+            from: String::new(),
+            command: "maild.submit".into(),
+            id: None,
+            args: Value::Null,
+            body: String::new(),
+            headers: Default::default(),
+        };
+        assert_eq!(submission_actor(&cmd), "bus");
+        cmd.headers.insert("broker_origin".into(), "mesh".into());
+        assert_eq!(submission_actor(&cmd), "bus");
+        cmd.headers.insert("broker_peer".into(), "peer-two".into());
+        assert_eq!(submission_actor(&cmd), "mesh:peer-two");
+        cmd.from = "local-agent".into();
+        assert_eq!(submission_actor(&cmd), "local-agent");
     }
 
     #[test]

@@ -598,26 +598,6 @@ impl VtokenStore {
         Ok(n > 0)
     }
 
-    /// Revoke an opaque token by `token_hmac` ONLY if its account still matches
-    /// `expected_account` — the TOCTOU-safe mutation the delegated path uses, so
-    /// a concurrent change between the domain-bind and the write can't disable a
-    /// row that has since moved to another account. Returns whether a row matched.
-    pub async fn disable_opaque_if_account(
-        &self,
-        token_hmac: &str,
-        expected_account: &str,
-    ) -> Result<bool> {
-        let conn = self.conn.lock().await;
-        let n = conn
-            .execute(
-                "UPDATE vtoken_opaque SET active = 0, updated_at = ?3 \
-                 WHERE token_hmac = ?1 AND account = ?2",
-                params![token_hmac, expected_account, unix_secs()],
-            )
-            .context("disable_if_account vtoken_opaque")?;
-        Ok(n > 0)
-    }
-
     /// Mint a new opaque token for `domain`, locked to `allowed_sender` at
     /// `verification_strength`, mapping to the single `service`. Length is derived
     /// from the strength (L=6 `local-auth` / L=10 `external-dmarc`). Returns the

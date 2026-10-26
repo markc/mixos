@@ -7,14 +7,13 @@
 //! a name (unqualified, per-service — e.g. `accounts`), a schema, a
 //! cardinality (singleton vs collection, carrying the canonical key /
 //! primary key field), a per-record lifecycle mode (`Simple` vs `Saga`),
-//! a chosen storage backend, an external-edit policy, an `AuthPolicy`,
+//! a chosen storage backend, an external-edit policy, a read-only flag,
 //! and the hook handler.
 //!
 //! The wire `namespace:` header carries the **unqualified** name
 //! (`accounts`). The fully-qualified form (`<svc>.<name>`, e.g.
 //! `demod.accounts`) is library-derived from the registration's owning
-//! service and only appears in capability strings (`props.write:demod.accounts`)
-//! and audit/event command strings (`demod.props.set`). The
+//! service and appears in audit/event command strings (`demod.props.set`). The
 //! two forms are distinct concepts and the substrate keeps them separate.
 //!
 use std::fmt;
@@ -23,7 +22,6 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::capability::CapabilitySet;
 use crate::hooks::{HookError, Hooks};
 use crate::value::PropValue;
 
@@ -33,7 +31,7 @@ use crate::value::PropValue;
 ///
 /// The fully-qualified form `<service>.<name>` is constructed via
 /// [`NamespaceName::qualified`] and is NOT a separate type; it is only
-/// used as a string in capability vocabularies and event commands.
+/// used as a string in event commands.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
 // INVARIANT: every value originates from `new` (FromStr and Deserialize
@@ -114,7 +112,7 @@ impl NamespaceName {
     }
 
     /// Compose the fully qualified `<service>.<name>` form. Used in
-    /// capability strings and audit/event commands; never on the
+    /// audit/event commands; never on the
     /// `namespace:` wire header (which carries `self.as_str()`).
     pub fn qualified(&self, service: &str) -> String {
         format!("{}.{}", service, self.0)
@@ -230,35 +228,14 @@ pub enum SubscribePayload {
     Full,
 }
 
-/// declarative deny-switch for the redacted public
-/// describe view. **Does not grant capabilities** — the `AuthPolicy`
-/// is the single source of truth for who holds
-/// `props.describe:<svc>.<ns>:public`. This setting only governs
-/// whether `view: public` is reachable *at all* on the namespace:
-///
-/// - `Allow` (default) — `view: public` is reachable for callers
-///   the `AuthPolicy` grants `props.describe:<svc>.<ns>:public` to.
-///   Without the capability, the command returns `auth_denied` as
-///   normal. This is *not* an "anyone can read" switch.
-/// - `Deny` — `view: public` returns `auth_denied` regardless of
-///   capability, even if the `AuthPolicy` would otherwise allow it.
-///   Appropriate for namespaces whose mere field-name surface is
-///   sensitive (e.g. peer-list shape on a node that doesn't wish to
-///   advertise it).
-///
-/// Namespaces that want a genuinely-public describe surface declare
-/// so by granting `props.describe:<svc>.<ns>:public` in the
-/// `AuthPolicy` to unauthenticated peers — the cap grant, not this
-/// enum, is the public-visibility decision.
+/// Availability of the redacted schema view. This applies equally to every
+/// caller; the full schema view remains available.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SchemaPublic {
-    /// `view: public` is reachable subject to the `AuthPolicy`
-    /// granting `props.describe:<svc>.<ns>:public`. Default.
     #[default]
     Allow,
-    /// `view: public` returns `auth_denied` unconditionally. Use when
-    /// the field-name surface is itself sensitive.
+    /// The namespace does not offer the public view (`validation_error`).
     Deny,
 }
 
@@ -388,9 +365,7 @@ impl<'de> Deserialize<'de> for SchemaVersion {
     }
 }
 
-/// caller identity attached by the Bus transport. The
-/// AuthPolicy reads this read-only and returns the matching capability
-/// set.
+/// Caller metadata attached by the Bus transport for audit and live delivery.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PeerIdentity {
     pub unix_uid: Option<u32>,
@@ -403,52 +378,6 @@ pub struct PeerIdentity {
     pub signed_ident: Option<String>,
     /// Broker-attached registered service name for service peers.
     pub service_name: Option<String>,
-}
-
-/// pure mapping from peer identity to capability set.
-/// Called once per Bus request, before command dispatch.
-///
-/// Stored as `Arc<dyn Fn>` so policies can close over per-namespace
-/// state (capability sets, in-memory trust/grants caches built from
-/// substrate watches, etc.) without resorting to globals. `Clone`
-/// (not `Copy`) — `NamespaceSpec` clones share the underlying
-/// closure through the `Arc`. Construction is via
-/// [`AuthPolicy::new`]; evaluation is via [`AuthPolicy::resolve`].
-#[derive(Clone)]
-pub struct AuthPolicy {
-    resolve: Arc<dyn Fn(&PeerIdentity) -> CapabilitySet + Send + Sync + 'static>,
-}
-
-impl fmt::Debug for AuthPolicy {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AuthPolicy").finish_non_exhaustive()
-    }
-}
-
-impl AuthPolicy {
-    /// Wrap a resolve closure into an `AuthPolicy`. The closure runs
-    /// once per Bus request before command dispatch and MUST stay
-    /// synchronous.
-    pub fn new<F>(resolve: F) -> Self
-    where
-        F: Fn(&PeerIdentity) -> CapabilitySet + Send + Sync + 'static,
-    {
-        Self {
-            resolve: Arc::new(resolve),
-        }
-    }
-
-    /// Evaluate the policy for the given peer identity.
-    pub fn resolve(&self, peer: &PeerIdentity) -> CapabilitySet {
-        (self.resolve)(peer)
-    }
-
-    /// Convenience: a policy that grants no capabilities to anyone.
-    /// Useful for read-only fixtures and for namespaces that intend to
-    /// be unreachable until a real policy is plugged in.
-    pub fn deny_all() -> Self {
-        Self::new(|_| CapabilitySet::empty())
-    }
 }
 
 /// narrow type system for schema fields. The
@@ -716,14 +645,13 @@ impl fmt::Debug for Validator {
 /// minimal `NamespaceSpec::new(name, schema, cardinality, storage)`
 /// call adopt the right behavior for a new namespace.
 ///
-/// Not `Serialize`/`Deserialize`: contains closure handles
-/// (`AuthPolicy`'s `Arc<dyn Fn>`), trait objects (`Hooks`,
+/// Not `Serialize`/`Deserialize`: contains trait objects (`Hooks`,
 /// `Validator.check`), and is a registration-time value, not a
 /// wire value.
 #[derive(Debug, Clone)]
 pub struct NamespaceSpec {
     /// Per-service unqualified name. The library composes
-    /// `<service>.<name>` when needed for capabilities and audit commands.
+    /// `<service>.<name>` when needed for audit commands.
     pub name: NamespaceName,
 
     /// Record schema.
@@ -732,8 +660,9 @@ pub struct NamespaceSpec {
     pub cardinality: Cardinality,
     pub storage: StorageBackendKind,
 
-    /// Maps peer identity → capability set.
-    pub auth: AuthPolicy,
+    /// Materialised views reject Bus mutations for every caller.
+    /// Internal runtime writes still update the projection.
+    pub read_only: bool,
 
     /// Side-effectful hooks fired around storage commits.
     pub hooks: Hooks,
@@ -779,7 +708,7 @@ impl NamespaceSpec {
             schema,
             cardinality,
             storage,
-            auth: AuthPolicy::deny_all(),
+            read_only: false,
             hooks: Hooks::noop(),
             validators: Vec::new(),
             delete_mode: DeleteMode::default(),
@@ -800,7 +729,7 @@ impl NamespaceSpec {
     }
 
     /// Compose the fully qualified `<service>.<name>` form for use in
-    /// capability strings and audit/event commands.
+    /// audit/event commands.
     pub fn fqn(&self, service: &str) -> String {
         self.name.qualified(service)
     }
@@ -959,13 +888,6 @@ mod tests {
         );
         spec.lifecycle = NamespaceLifecycle::Saga;
         assert!(spec.is_saga());
-    }
-
-    #[test]
-    fn deny_all_policy_returns_empty() {
-        let p = AuthPolicy::deny_all();
-        let caps = p.resolve(&PeerIdentity::default());
-        assert!(caps.is_empty());
     }
 
     #[test]

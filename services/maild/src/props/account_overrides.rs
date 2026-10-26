@@ -29,11 +29,10 @@
 use std::sync::{Arc, OnceLock};
 
 use ::props::bus::mutation::PropsRouter;
-use ::props::capability::{Capability, CapabilitySet};
 use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
 use ::props::namespace::{
-    AuthPolicy, Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName,
-    NamespaceSpec, PeerIdentity, PropertySchema, StorageBackendKind,
+    Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName, NamespaceSpec,
+    PropertySchema, StorageBackendKind,
 };
 use ::props::record::RecordKey;
 use ::props::runtime::Runtime;
@@ -135,26 +134,6 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// the props contract [`AuthPolicy`] — phase-2 grants every property
-/// capability to every reachable peer (WireGuard `/24` is the trust
-/// domain, same posture as `maild.accounts`). Phase 3+ narrows to
-/// operator vs service tiers.
-pub fn auth_policy() -> AuthPolicy {
-    fn resolve(_peer: &PeerIdentity) -> CapabilitySet {
-        [
-            "props.read:maild.account_overrides",
-            "props.write:maild.account_overrides",
-            "props.describe:maild.account_overrides:public",
-            "props.describe:maild.account_overrides:full",
-            "props.audit:maild.account_overrides",
-        ]
-        .into_iter()
-        .map(|s| Capability::new(s).expect("non-empty capability"))
-        .collect()
-    }
-    AuthPolicy::new(resolve)
-}
-
 /// [`NamespaceSpec`] builder; takes the hooks parameter so tests can
 /// substitute a fake handler. The storage adapter is the bundled
 /// `__props_values` JSON mapping (Phase 2 has no sidecar SQL table).
@@ -170,7 +149,6 @@ pub fn spec(hooks: Hooks) -> NamespaceSpec {
         },
     );
     s.lifecycle = NamespaceLifecycle::Simple;
-    s.auth = auth_policy();
     s.hooks = hooks;
     s
 }
@@ -623,23 +601,6 @@ mod tests {
         match &s.storage {
             StorageBackendKind::SqliteTable { table } => assert_eq!(table, "__props_values"),
             other => panic!("unexpected storage: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn auth_policy_grants_phase2_caps() {
-        let caps = auth_policy().resolve(&PeerIdentity::default());
-        for c in [
-            "props.read:maild.account_overrides",
-            "props.write:maild.account_overrides",
-            "props.describe:maild.account_overrides:public",
-            "props.describe:maild.account_overrides:full",
-            "props.audit:maild.account_overrides",
-        ] {
-            assert!(
-                caps.contains(&Capability::new(c).expect("non-empty capability")),
-                "cap {c} granted"
-            );
         }
     }
 

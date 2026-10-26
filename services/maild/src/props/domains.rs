@@ -32,11 +32,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use ::props::bus::mutation::PropsRouter;
-use ::props::capability::{Capability, CapabilitySet};
 use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
 use ::props::namespace::{
-    AuthPolicy, Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName,
-    NamespaceSpec, PeerIdentity, PropertySchema, StorageBackendKind,
+    Cardinality, FieldSchema, FieldType, NamespaceLifecycle, NamespaceName, NamespaceSpec,
+    PropertySchema, StorageBackendKind,
 };
 use ::props::record::Record;
 use ::props::runtime::Runtime;
@@ -376,97 +375,6 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// the props contract [`AuthPolicy`] — Phase 2 grants every property
-/// capability to every reachable peer (WireGuard `/24` trust domain,
-/// same posture as Phase 1/2/3 of the prior props contract carvings).
-///
-/// **Hardening obligation — Phases 3/4/5 MUST narrow this before
-/// their consumers go live.** Phase 2 rows are inert (no consumer
-/// reads them), so a hostile peer cannot change daemon behaviour by
-/// writing here yet. From Phase 3 on, the same writes steer RCPT TO
-/// acceptance, outbound DKIM signing, and TLS certificate selection;
-/// each consumer-cutover commit MUST land an `auth_policy` narrowing
-/// in the same diff. Recorded in the Phase 2 plan and on the umbrella
-/// roadmap so this is not lost.
-///
-/// **5a-commit-2 carry-over (accepted risk, to be closed in
-/// 5a-commit-2b).** The `maild.tls.reload` command shipped in
-/// 5a-commit-2 makes `tls_identity_name` writes load-bearing for
-/// live TLS resolution, so the obligation above applies, but the
-/// narrowing did not land in the same diff. The actor visible at
-/// the substrate write boundary for an Bus-driven write is derived
-/// from `PeerIdentity.service_name` (i.e. `cmd.from`), which noded
-/// strips for anonymous callers — including the legitimate
-/// `maild domain set` CLI path — so an `Actor::operator(...)` hook
-/// gate would reject the only working write path with no replacement
-/// primitive yet in place (the operator-form distinction over Bus is
-/// not yet available).
-///
-/// Threat model under this gap: a WG-trusted peer can plant
-/// `tls_identity_name = "<name>"` on a domain row, and after the next
-/// `maild.tls.reload` that domain will be served using the cert at
-/// `<tls_root>/<name>.cert.pem`. The substrate does not write PEMs
-/// (operator action does), so the redirect is bounded by what the
-/// operator has already deployed under `<tls_root>`. The worst case
-/// is not key exfiltration; it is unauthorised live TLS policy
-/// control — specifically, if `<tls_root>` contains a wildcard or
-/// multi-SAN cert whose SANs match a target hostname, a peer can
-/// redirect that hostname to serve a *validating* but
-/// operator-unintended cert.
-///
-/// **Disposition (2026-05-26).** Acceptable bridging risk; the
-/// narrowing remains open. The two original options — field-level
-/// hook gate or command-level capability check on `maild.tls.reload` —
-/// both depend on a substrate primitive that does not exist yet:
-///
-///   * Field-level: blocked on the operator-actor distinction over
-///     Bus.
-///   * Command-level: `maild-auth` carries no access-control
-///     vocabulary (it is mail authentication — SPF, DKIM, DMARC, ARC,
-///     iprev), and the sibling Bus commands (`maild.dkim.*`,
-///     `maild.rules.*`, `maild.accounts.*`, `maild.search.*`) are
-///     direct WG-trust surfaces — with audit cause where they perform
-///     substrate mutations (e.g. `maild.dkim.*` embeds `cmd.from`),
-///     but no shared maild Bus capability surface to plug into. A
-///     meaningful cap check therefore implies introducing a new authz
-///     surface in maild, not plumbing an existing one.
-///
-/// Until cross-mesh-authz lands, `maild.tls.reload` is gated by the
-/// WG trust boundary alone — the same posture as the rest of
-/// `maild.*`. Two near-options have been
-/// considered and **rejected** so a future reviewer doesn't
-/// re-propose them:
-///
-///   * Refusing reload when `cmd.from` is non-empty (so only the
-///     unauthenticated local-CLI path triggers swaps): `cmd.from`
-///     emptiness is not a capability boundary — noded does not
-///     cryptographically bind "empty `from`" to local-only — and it
-///     would block the planned webd → maild cert bridge (β-2) from
-///     driving a reload after a certificate refresh.
-///   * A config-driven `tls.reload_allowlist` of peer service
-///     names: a new policy surface that depends on `cmd.from` being
-///     authenticated and non-spoofable by noded, which is itself
-///     part of the cross-mesh-authz scope.
-///
-/// The right shape for the eventual narrowing lands with
-/// cross-mesh-authz; we deliberately do not paper over the gap with
-/// a weaker check that looks like a fix.
-pub fn auth_policy() -> AuthPolicy {
-    fn resolve(_peer: &PeerIdentity) -> CapabilitySet {
-        [
-            "props.read:maild.domains",
-            "props.write:maild.domains",
-            "props.describe:maild.domains:public",
-            "props.describe:maild.domains:full",
-            "props.audit:maild.domains",
-        ]
-        .into_iter()
-        .map(|s| Capability::new(s).expect("non-empty capability"))
-        .collect()
-    }
-    AuthPolicy::new(resolve)
-}
-
 pub fn spec(hooks: Hooks) -> NamespaceSpec {
     let mut s = NamespaceSpec::new(
         namespace_name(),
@@ -489,7 +397,6 @@ pub fn spec(hooks: Hooks) -> NamespaceSpec {
     // don't merge and so are individually safe — the rationale is
     // Patch-driven.
     s.require_version = true;
-    s.auth = auth_policy();
     s.hooks = hooks;
     s
 }
@@ -2165,29 +2072,6 @@ mod tests {
             "audit event should report tls_identity_name as changed: {:?}",
             transition.set_event.fields_changed
         );
-    }
-
-    #[test]
-    fn auth_policy_grants_phase2_caps() {
-        let caps = auth_policy().resolve(&PeerIdentity::default());
-        for want in [
-            "props.read:maild.domains",
-            "props.write:maild.domains",
-            "props.describe:maild.domains:public",
-            "props.describe:maild.domains:full",
-            "props.audit:maild.domains",
-        ] {
-            assert!(
-                caps.contains(&Capability::new(want).expect("non-empty capability")),
-                "missing cap {want}"
-            );
-        }
-        // `props.read:maild.domains:secrets` intentionally absent in
-        // Phase 2 — no secret-bucketed fields yet (`dkim_keys` is
-        // Phase 4).
-        assert!(!caps.contains(
-            &Capability::new("props.read:maild.domains:secrets").expect("non-empty capability")
-        ));
     }
 
     #[test]

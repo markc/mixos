@@ -228,10 +228,7 @@ enum TlsAction {
     /// Re-reads + re-validates the configured cert files and atomically
     /// swaps each listener's resolver; a bad cert returns rc=10 and keeps
     /// the prior cert serving. Manual-PEM nodes only — ACME-managed nodes
-    /// use `webd acme renew`. Operator-gated (the listeners
-    /// operator tier): the caller must be in `[webd.listeners] operators`,
-    /// so a bare anonymous CLI invocation is denied unless `""` is an
-    /// operator — drive it from an identity in that allowlist.
+    /// use `webd acme renew`. Every Bus caller may reload.
     Reload,
 }
 
@@ -300,12 +297,7 @@ enum AcmeAction {
         /// Primary FQDN of the vhost
         fqdn: String,
     },
-    /// Show ACME provisioner state + derived status for a vhost.
-    /// In the Phase 1 auth-policy stance (`vhosts_namespace.rs:489-517`)
-    /// every WG peer holds `props.read:webd.vhosts:secrets`, so
-    /// `last_error` is currently returned verbatim; this will narrow
-    /// once the policy graduates from "every WG peer" to a tighter
-    /// scope.
+    /// Show ACME provisioner state, derived status and full errors for a vhost.
     Status {
         /// Primary FQDN of the vhost
         fqdn: String,
@@ -983,11 +975,6 @@ struct NodeState {
     /// `enabled` field; the reaction loop applies it). `None` on the
     /// bootstrap / test fixtures ⇒ the commands return `rc=10`.
     listeners_runtime: Option<Arc<props::Runtime>>,
-    /// L0 operator allowlist (`[webd.listeners] operators`) — the
-    /// `listener_commands` resolve the operator-tier write cap against
-    /// this same list the namespace's AuthPolicy uses. Empty on
-    /// fixtures (no operator ⇒ no write).
-    listeners_operators: Vec<String>,
     /// Per-FQDN lock map shared with the ACME provisioner (C4b). The
     /// C5 `vhost.add` command acquires the same lock identity the
     /// provisioner's `VhostRemoved` arm holds, so a `vhost.add`
@@ -6534,7 +6521,6 @@ async fn run_static_dev_server(
         broker_handle: bus::subscribe_granter::new_broker_handle(),
         vhosts_runtime: None,
         listeners_runtime: None,
-        listeners_operators: Vec::new(),
         vhost_key_locks: None,
         acme_notify: None,
         acme_force_renew_queue: None,
@@ -7464,7 +7450,6 @@ async fn async_main() -> Result<()> {
                         // `rc=10` instead of panicking.
                         vhosts_runtime: None,
                         listeners_runtime: None,
-                        listeners_operators: Vec::new(),
                         vhost_key_locks: None,
                         acme_notify: None,
                         acme_force_renew_queue: None,
@@ -7654,16 +7639,12 @@ async fn async_main() -> Result<()> {
 
             // P3 — register the `webd.listeners` kill-switch + guard
             // namespace (before the router freeze, like the others).
-            // The L0 `[webd.listeners] operators` allowlist seeds the
-            // operator-tier write AuthPolicy; read/describe stay open.
             // The returned events_rx is moved into the reaction loop
             // (spawned after the listener set is built).
-            let listeners_operators: Vec<String> = webd_cfg.listeners.operators.clone();
             let (listeners_runtime, listeners_events_rx) =
                 listeners_namespace::register_listeners_namespace(
                     &mut props_router_inner,
                     &props_store,
-                    listeners_operators.clone(),
                 )
                 .context("registering webd.listeners substrate namespace")?;
 
@@ -8100,7 +8081,6 @@ async fn async_main() -> Result<()> {
                 broker_handle,
                 vhosts_runtime: Some(vhosts_runtime.clone()),
                 listeners_runtime: Some(listeners_runtime.clone()),
-                listeners_operators: listeners_operators.clone(),
                 vhost_key_locks: Some(webd_key_locks.clone()),
                 acme_notify: acme_notify_handle,
                 acme_force_renew_queue: acme_force_renew_handle,
@@ -9200,7 +9180,6 @@ vhost: [
             // module builds its own NodeState with these populated.
             vhosts_runtime: None,
             listeners_runtime: None,
-            listeners_operators: Vec::new(),
             vhost_key_locks: None,
             acme_notify: None,
             acme_force_renew_queue: None,
@@ -10559,7 +10538,6 @@ mod session_login_tests {
             broker_handle: bus::subscribe_granter::new_broker_handle(),
             vhosts_runtime: None,
             listeners_runtime: None,
-            listeners_operators: Vec::new(),
             vhost_key_locks: None,
             acme_notify: None,
             acme_force_renew_queue: None,

@@ -5,15 +5,10 @@
 
 //! Watch-mediated subscriber bridge trait.
 //!
-//! The owning service's `<svc>.props.watch` and
-//! `<svc>.props.audit.watch` handlers perform the capability check and
-//! then ask noded to subscribe the original caller to the reserved
-//! `<svc>.props.records.changed` / `<svc>.props.audit` topic — with a
-//! `namespace` body-filter so the granted subscription only receives
-//! events for the namespace the cap check authorised. The bridge
-//! between the in-process handler and the broker subscription is this
-//! trait.
-//!
+//! Watch handlers ask noded to subscribe the original caller to the reserved
+//! records-changed or audit topic, filtered to the requested namespace.
+//! The subscriber name is routing data, never an access policy.
+
 //! Production implementation wraps a `bus::native_client::NodedClient` and
 //! issues the `noded.props.subscribe_grant` Bus command. Test
 //! implementations (e.g. the recorder used in this crate's mutation

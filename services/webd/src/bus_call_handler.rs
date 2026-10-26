@@ -22,10 +22,8 @@
 //!   main `Handle` and awaits the reply over a `oneshot` (a oneshot is
 //!   runtime-agnostic) — never driving cross-runtime WS I/O directly.
 //!
-//! maild authorizes on the actor (`bus/vtoken.rs` delegated path): the peer
-//! (`cmd.from = webd`) must be allowlisted, the actor must be a real account,
-//! and the target must be in the actor's domain. webd is the policy decision
-//! point; maild is the binding enforcement point.
+//! maild token commands receive their arguments directly. Other HTTP bridges
+//! retain the envelopes their destination requires.
 //!
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -36,19 +34,12 @@ use mix::{BusCallFuture, BusCallHandler, MixError, MixResult};
 
 use crate::bus::subscribe_granter::SharedBrokerHandle;
 
-/// The EXPLICIT allowlist of delegated-Bus commands webd may grant a route. ONLY
-/// these implement a DAEMON-SIDE delegated-envelope authorization spine that
-/// interprets `$mixos_delegation` (maild `bus/vtoken.rs`; filesd `delegation.rs`,
-/// slice S6a). Any OTHER command authorizes by mesh-peer / operator rules and would
-/// IGNORE the envelope — granting it to a webd admin route would be a
-/// confused-deputy hole (e.g. `maild.accounts.*` is callable by any WG peer with
-/// no actor/target binding). A new command joins this list ONLY after its daemon
-/// dispatch implements delegated auth. This is the single source of truth; route
-/// capability validation rejects everything else.
+/// Commands available to embedded HTTP routes. HTTP route declarations and
+/// session/CSRF validation remain separate from native Bus command access.
 pub(crate) fn is_delegated_safe_bus_command(command: &str) -> bool {
     matches!(
         command,
-        // maild — vtoken C2 delegated path (bus/vtoken.rs).
+        // maild — ordinary token arguments, without an authority envelope.
         "maild.vtoken.mint_opaque"
             | "maild.vtoken.list_opaque"
             | "maild.vtoken.lookup_opaque"
@@ -385,6 +376,18 @@ fn build_delegated_body(
     }))
 }
 
+fn build_command_body(
+    command: &str,
+    inputs: &DelegationInputs,
+    args: &Value,
+) -> Result<serde_json::Value, String> {
+    if command.starts_with("maild.vtoken.") {
+        mix_to_json(args)
+    } else {
+        build_delegated_body(inputs, args)
+    }
+}
+
 impl BusCallHandler for WebdBusCallHandler {
     fn call<'a>(
         &'a self,
@@ -431,7 +434,7 @@ impl BusCallHandler for WebdBusCallHandler {
             });
         }
         // Build the trusted-state envelope NOW (sync), before crossing runtimes.
-        let body = match build_delegated_body(&self.inputs, args) {
+        let body = match build_command_body(command, &self.inputs, args) {
             Ok(b) => b,
             Err(e) => {
                 let msg = format!("bus_call: args not JSON-encodable: {e}");
@@ -459,7 +462,7 @@ impl BusCallHandler for WebdBusCallHandler {
             });
             match rx.await {
                 Ok(Ok(reply)) => Ok(json_to_mix(reply)),
-                // A daemon rc>=10 (auth_denied / not-found / …) or a transport
+                // A daemon rc>=10 (validation / not-found / …) or a transport
                 // failure both arrive here as an Err — the Mix handler can
                 // `try`/`catch` to render gracefully.
                 Ok(Err(e)) => Err(rt_err(format!("bus_call({service}) failed: {e}"))),
@@ -485,6 +488,15 @@ mod tests {
 
     fn commands(v: &[&str]) -> Arc<BTreeSet<String>> {
         Arc::new(v.iter().map(|s| s.to_string()).collect())
+    }
+
+    #[test]
+    fn maild_token_commands_receive_plain_arguments() {
+        let mut args = IndexMap::new();
+        args.insert("account".into(), Value::String("blog@other.example".into()));
+        let body =
+            build_command_body("maild.vtoken.mint_opaque", &inputs(), &Value::map(args)).unwrap();
+        assert_eq!(body, serde_json::json!({"account":"blog@other.example"}));
     }
 
     #[test]

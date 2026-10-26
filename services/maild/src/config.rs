@@ -106,44 +106,6 @@ pub struct Config {
     /// empty, the resolver consumes it directly and the legacy
     /// `tls_cert` / `tls_key` pair is ignored. See
     /// `resolve_tls_identities()`.
-    /// Bus sender names (`cmd.from`) permitted to **write** the
-    /// `maild.retention` config namespace — i.e. to arm/disarm automatic
-    /// Junk/Trash deletion. Reads stay open to every WG peer; only this
-    /// allowlist can flip a window non-zero or clear `dry_run`. **Empty
-    /// (the default) ⇒ no remote arming at all** — retention cannot be
-    /// turned on over Bus until an operator is named here. Mirrors the
-    /// `webd.listeners` operator-allowlist pattern.
-    #[serde(default)]
-    pub retention_operators: Vec<String>,
-
-    /// Optional Bus sender allowlist for `maild.bayesian.rebuild`. This is
-    /// deliberately inverse to `retention_operators`: **empty (the default)
-    /// means every Bus peer may rebuild** (the substrate's agentic-first
-    /// posture); a non-empty list restricts rebuilds to exact `cmd.from`
-    /// matches. Bayesian reads remain open in both states.
-    #[serde(default)]
-    pub bayesian_rebuild_operators: Vec<String>,
-
-    /// Bus senders (`cmd.from`) authorised for the `maild.vtoken.*` management
-    /// commands (add/list/rotate/disable/lookup). Token management mints the
-    /// publish capability, so EVERY vtoken command is gated on this allowlist (not
-    /// just the mutating ones). **Empty (the default) ⇒ nobody** — vtoken
-    /// management is unavailable over Bus until an operator is named. Same shape
-    /// as `retention_operators`.
-    #[serde(default)]
-    pub vtoken_operators: Vec<String>,
-
-    /// Bus peers (`cmd.from`) permitted to make DELEGATED `maild.vtoken.*`
-    /// calls — i.e. webd, relaying a logged-in vhost-admin actor via the
-    /// `$mixos_delegation` envelope. DISTINCT from
-    /// `vtoken_operators`: an operator is a trusted CLI acting globally; a
-    /// delegated peer is a front-door whose authority is bounded to the
-    /// envelope's actor and that actor's own domain. **Empty (the default) ⇒
-    /// no delegation at all** — a delegated call is refused until a peer is
-    /// named here, and the delegated path never falls back to operator auth.
-    #[serde(default)]
-    pub vtoken_delegated_peers: Vec<String>,
-
     #[serde(default)]
     pub tls: TlsConfig,
     /// Filesystem root for substrate-declared TLS identities. The
@@ -324,10 +286,6 @@ impl Default for Config {
             dkim: DkimSubsection::default(),
             tls_cert: None,
             tls_key: None,
-            retention_operators: Vec::new(),
-            bayesian_rebuild_operators: Vec::new(),
-            vtoken_operators: Vec::new(),
-            vtoken_delegated_peers: Vec::new(),
             tls: TlsConfig::default(),
             tls_key_root: None,
             imap_imaps: None,
@@ -429,21 +387,13 @@ impl From<&::config::node::NodeConfig> for Config {
             // The base-rate prior is an EXPERIMENT: it is set from
             // `config.conf.mix` (the path every mesh node actually boots from,
             // via `-c`), not from the NodeConfig fallback. `None` here is the
-            // safe posture — off — and matches the retention precedent below:
+            // default — off:
             // a schema that doesn't carry a field yet must not silently invent
             // one, least of all one that changes how mail is scored.
             spam_base_rate_prior: None,
             spam_base_rate_pseudocount: None,
             spam_base_rate_min: None,
             spam_base_rate_max: None,
-            // The `NodeConfig` schema doesn't carry a retention operator
-            // allowlist yet; default to empty (no remote arming) — the
-            // safe posture. A mesh node arms retention by adding the
-            // field once NodeConfig grows it.
-            retention_operators: Vec::new(),
-            bayesian_rebuild_operators: Vec::new(),
-            vtoken_operators: Vec::new(),
-            vtoken_delegated_peers: Vec::new(),
             tls_key_root: None,
             imap_imaps: None,
             imap_max_literal_bytes: None,
@@ -769,6 +719,20 @@ fn parse_canon(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn configs_with_removed_operator_lists_still_load() {
+        let config: super::Config = ::config::from_conf_mix_str(
+            r#"retention_operators: ["old-client"]
+bayesian_rebuild_operators: ["old-client"]
+vtoken_operators: ["old-client"]
+vtoken_delegated_peers: ["old-front-end"]
+hostname: "mail.example.test"
+"#,
+        )
+        .expect("unknown keys do not prevent loading deployed configs");
+        assert_eq!(config.hostname, "mail.example.test");
+    }
+
     use super::*;
 
     fn base() -> Config {
@@ -878,21 +842,6 @@ mod tests {
         // truncated.
         let bad = "max_message_size: 3.5\n";
         assert!(::config::from_conf_mix_str::<Config>(bad).is_err());
-    }
-
-    #[test]
-    fn bayesian_rebuild_operators_parses_and_defaults_open() {
-        let defaulted: Config = ::config::from_conf_mix_str("").expect("default config");
-        assert!(defaulted.bayesian_rebuild_operators.is_empty());
-
-        let configured: Config = ::config::from_conf_mix_str(
-            "bayesian_rebuild_operators: [ \"operator-one\", \"operator-two\" ]\n",
-        )
-        .expect("operator allowlist");
-        assert_eq!(
-            configured.bayesian_rebuild_operators,
-            vec!["operator-one".to_string(), "operator-two".to_string()]
-        );
     }
 
     #[test]

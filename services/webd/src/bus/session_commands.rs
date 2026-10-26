@@ -15,12 +15,7 @@
 //! hub) composes both so an operator can't do half a revocation — call
 //! that, not this command alone (see the `session.rs` module doc).
 //!
-//! Capability: `webd.session.revoke:webd.vhosts` — a narrow command-named
-//! cap following the `webd.acme.renew` precedent (not `props.write`:
-//! session epochs are runtime security state in the per-vhost SQLite,
-//! not a substrate row). Phase-1 policy grants it to every WG peer,
-//! same as the rest of [`crate::vhosts_namespace::auth_policy`];
-//! narrowing later keeps the wire shape.
+//! Every Bus caller may revoke sessions. Epoch checks on HTTP cookies remain.
 
 use std::sync::Arc;
 
@@ -28,7 +23,7 @@ use ::bus::native_client::IncomingCommand;
 use serde_json::json;
 
 use super::kwarg;
-use super::vhost_commands::{caller_error, require_cap};
+use super::vhost_commands::caller_error;
 use crate::NodeState;
 
 /// Dispatch entry from [`crate::bus::run`] — `suffix` is the command name
@@ -52,9 +47,6 @@ pub(crate) async fn dispatch(
 /// reported in-line rather than aborting the sweep: partial coverage is
 /// surfaced, not hidden, and the caller can retry.
 async fn session_revoke(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String) {
-    if let Err(rsp) = require_cap(cmd, "webd.session.revoke:webd.vhosts") {
-        return rsp;
-    }
     let email = match kwarg(cmd, "email") {
         Some(s) if !s.is_empty() => s,
         _ => return caller_error("missing required kwarg: email"),

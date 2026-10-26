@@ -52,18 +52,6 @@ use crate::NodeState;
 use crate::listeners_namespace;
 use crate::tls_status::TlsStatusSnapshot;
 
-/// Capability gating `webd.tls.reload`. The reload mutates the
-/// per-listener TLS resolvers, so it is gated to the SAME operator tier
-/// as the `webd.listener.{enable,disable}` kill switch — a caller in the
-/// `[webd.listeners] operators` L0 allowlist (resolved via
-/// `listeners_namespace::auth_policy`, which `listener_commands::require_cap`
-/// uses). Reusing the existing operator cap means no new policy grant to
-/// register and keeps "who may mutate listener/TLS state" a single tier.
-/// An anonymous caller (e.g. the bare `webd tls reload` CLI on a
-/// node where `""` is not an operator) is denied — operate via an
-/// identity in the operators allowlist, as with the kill switch.
-const RELOAD_CAP: &str = "props.write:webd.listeners";
-
 const RC_OK: u8 = 0;
 const RC_ERROR: u8 = 10;
 
@@ -143,34 +131,17 @@ impl TlsReloadState {
 /// `tls.status`, which stays on the synchronous `dispatch` path).
 pub async fn dispatch(
     suffix: &str,
-    cmd: &IncomingCommand,
+    _cmd: &IncomingCommand,
     node: &Arc<NodeState>,
 ) -> Option<(u8, String)> {
     match suffix {
-        "tls.reload" => Some(
-            // Mutating command — gate it to the listeners operator tier (the
-            // same gate as the `webd.listener.*` kill switch;
-            // `feedback_bus_wire_trust_boundary`: the WG trust domain does
-            // not make callers non-adversarial). Cap-check first so an
-            // unauthorised caller can't even probe the node's TLS posture
-            // via the availability message.
-            match crate::bus::listener_commands::require_cap(node, cmd, RELOAD_CAP) {
-                Err(rsp) => rsp,
-                Ok(()) => match &node.tls_reload {
-                    Some(state) => to_response(handle_reload(state).await),
-                    None => (
-                        RC_ERROR,
-                        err_body(
-                            "webd.tls.reload unavailable on this node: it has no \
-                             manual-PEM TLS listener to reload. An ACME-managed node \
-                             refreshes manual certs via `webd.acme.renew` (its \
-                             provisioner owns the per-listener resolvers); an \
-                             HTTP-only node has no TLS surface.",
-                        ),
-                    ),
-                },
-            },
-        ),
+        "tls.reload" => Some(match &node.tls_reload {
+            Some(state) => to_response(handle_reload(state).await),
+            None => (
+                RC_ERROR,
+                err_body("webd.tls.reload unavailable: no manual-PEM TLS listener"),
+            ),
+        }),
         _ => None,
     }
 }
@@ -330,7 +301,7 @@ mod tests {
         let store = Arc::new(SqliteStore::new("webd", conn).expect("store"));
         let mut router = PropsRouter::new("webd");
         let (runtime, _events_rx) =
-            listeners_namespace::register_listeners_namespace(&mut router, &store, Vec::new())
+            listeners_namespace::register_listeners_namespace(&mut router, &store)
                 .expect("register listeners namespace");
         runtime
     }

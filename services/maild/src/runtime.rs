@@ -413,11 +413,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     // dry_run:true) so registering it changes no behaviour; the worker
     // that consumes it lands in retention Phase 1. No bootstrap-write:
     // an absent row reads as the inert defaults.
-    let retention_runtime = props::retention::register(
-        &mut props_router,
-        &props_store,
-        cfg.retention_operators.clone(),
-    )?;
+    let retention_runtime = props::retention::register(&mut props_router, &props_store)?;
     // Retention worker — the in-process Junk/Trash age-trim loop. Reads
     // its cadence from the just-registered config (60 min default if the
     // row is absent/unreadable). Spawned unconditionally like the
@@ -437,13 +433,9 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     ));
     let retention_state = bus::retention::RetentionBusState {
         worker: retention_worker.clone(),
-        operators: Arc::new(cfg.retention_operators.clone()),
     };
     let vtoken_state = bus::vtoken::VtokenBusState {
         store: vtoken_store.clone(),
-        operators: Arc::new(cfg.vtoken_operators.clone()),
-        delegated_peers: Arc::new(cfg.vtoken_delegated_peers.clone()),
-        db: database.conn.clone(),
     };
     let _retention_handle = (*retention_worker).clone().spawn();
     tracing::info!(
@@ -698,8 +690,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
         jmap_activity: jmap_activity.clone(),
         started_at,
     };
-    let bayesian_state =
-        bus::bayesian::BayesianBusState::new(cfg.bayesian_rebuild_operators.clone());
+    let bayesian_state = bus::bayesian::BayesianBusState::new();
 
     // Clone `tls_state` BEFORE the `bus::run` move path so the
     // reload handle survives whether or not Bus is wired. Both

@@ -255,10 +255,13 @@ The watcher uses a namespace-private <code>Notify</code>, so it does not compete
 the property dispatcher. It lives until the Tokio runtime shuts down.</p>
 <p><code>format</code> remains stored introspection data and does not rebuild sinks.
 <code>applied_at</code>, <code>applied_by</code> and <code>source</code> remain mutable metadata; the watcher
-does not write them back. The current log policy grants every reachable
-peer the namespace's capabilities, including write access that can silence
-logging. Services needing narrower access must supply their policy.
+does not write them back. Every Bus caller can read and change the logging
+namespace, including write access that can silence logging.
 See the <a href="/docs/spec/props/#logging">contract</a> for the frozen schema.</p>
+<p><code>handle_snapshot_bus</code> serves every caller. Snapshots return raw labels and
+accept exact-value, key-presence and hash filters without capabilities.
+Filter validation and the 1 MiB response limit remain. Label sensitivity
+continues to control redaction in on-disk JSONL and Prometheus output.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/libs/logging"><code>libs/logging</code></a>.</p>
         </article>
         <p class="doc-source"><a href="/logging/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

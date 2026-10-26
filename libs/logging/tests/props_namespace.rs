@@ -187,25 +187,3 @@ async fn delete_is_refused() {
         "error should carry the undeletable prefix: {msg}"
     );
 }
-
-#[tokio::test(flavor = "multi_thread")]
-async fn set_carries_the_service_prefix_in_capability_names() {
-    // The capability set returned by `auth_policy("otherd")` must scope
-    // to `<service>.log`. This is what stops a misconfigured peer
-    // holding `props.write:demod.log` from silencing otherd's logging.
-    let otherd_policy = logging::props::auth_policy("otherd");
-    let caps = otherd_policy.resolve(&Default::default());
-    let names: Vec<String> = caps.iter().map(|c| c.as_str().to_string()).collect();
-    assert!(
-        names.iter().any(|n| n == "props.read:otherd.log"),
-        "expected props.read:otherd.log in {names:?}"
-    );
-    assert!(
-        names.iter().any(|n| n == "props.write:otherd.log"),
-        "expected props.write:otherd.log in {names:?}"
-    );
-    assert!(
-        !names.iter().any(|n| n.contains("demod.log")),
-        "otherd policy must not contain demod.log caps: {names:?}"
-    );
-}

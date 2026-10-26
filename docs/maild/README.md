@@ -21,9 +21,22 @@ namespace modules register their schemas, SQLite mappings and hooks during
 
 The router handles `maild.props.*` requests. Durable changes publish on
 `maild.props.records.changed` and `maild.props.audit`; replay and audit
-semantics, capability strings, error tokens and the five `__props_*`
+semantics, error tokens and the five `__props_*`
 SQLite table names follow the shared props contract unchanged. Account,
 alias and domain hooks reconcile the mail store after committed changes.
+
+Every Bus caller can read and write properties, including secret fields.
+`tls_identities` is a materialised resolver view: its Bus mutations return
+`validation_error` for every caller; internal reconciliation refreshes it.
+Vtoken management, retention sweeps and Bayesian rebuilds accept every caller
+without operator lists or delegation envelopes. Retention still validates
+its armed account set, deletion windows, dry-run flag and sweep limits.
+
+Submission accepts mesh requests with no `from` sender. Audit records use
+the broker peer when supplied, otherwise the stable actor `bus`; the typed
+request selects the sending account. Sender validation, size limits and
+operation replay protection still apply. Config loading ignores unknown
+keys, so existing files carrying removed operator lists continue to load.
 
 ## Shared libraries
 

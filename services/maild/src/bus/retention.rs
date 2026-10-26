@@ -4,16 +4,8 @@
 //! `maild.retention.*` Bus action commands — the retention worker's control
 //! surface.
 //!
-//! - `maild.retention.status` — observability (open to every WG peer):
-//!   the effective config (armed window, dry-run, cadence) plus the last
-//!   sweep's outcome.
-//! - `maild.retention.run [account=<email>] [dry_run=<bool>]` —
-//!   **destructive**: drives one sweep now. Operator-gated: only an Bus
-//!   sender (`cmd.from`) in the configured `retention_operators`
-//!   allowlist may invoke it (the same gate as the `props.write`
-//!   config-arming cap; empty allowlist ⇒ nobody). This is the Option-B
-//!   hook — a systemd timer could call exactly this command instead of the
-//!   in-process loop.
+//! Status and sweeps are available to every caller. Sweep scope, dry-run and
+//! deletion limits still come from the validated request and retention config.
 
 use std::sync::Arc;
 
@@ -23,13 +15,10 @@ use crate::retention_worker::{RetentionRunReport, RetentionWorker};
 
 const RC_ERROR: u8 = 10;
 
-/// Shared state for the `maild.retention.*` commands: the worker handle
-/// (its status cell is shared with the spawned loop) and the operator
-/// write-allowlist that gates the destructive `run` command.
+/// Shared worker handle; its status cell is shared with the spawned loop.
 #[derive(Clone)]
 pub struct RetentionBusState {
     pub worker: Arc<RetentionWorker>,
-    pub operators: Arc<Vec<String>>,
 }
 
 /// Dispatch a `maild.retention.*` command. Returns `(rc, body_json)`.
@@ -64,29 +53,14 @@ async fn handle_status(state: &RetentionBusState) -> (u8, String) {
         "max_deletes_per_sweep": cfg.max_deletes_per_sweep,
         "armed_accounts": cfg.armed_accounts,
         "armed_account_count": cfg.armed_accounts.len(),
-        "operators_configured": !state.operators.is_empty(),
         "last_sweep_epoch_ms": last_sweep_ms,
         "last_sweep": last.as_ref().map(report_json),
     });
     (0, body.to_string())
 }
 
-/// `maild.retention.run` — drive one sweep now (operator-gated).
+/// `maild.retention.run` — drive one sweep now (every caller).
 async fn handle_run(cmd: &IncomingCommand, state: &RetentionBusState) -> (u8, String) {
-    // Operator gate: the Bus sender must be in the allowlist. An
-    // anonymous caller (noded strips `from`) has an empty `from` and is
-    // refused; an empty allowlist refuses everyone.
-    let from = cmd.from.as_str();
-    let authorized = !from.is_empty() && state.operators.iter().any(|o| o == from);
-    if !authorized {
-        return (
-            RC_ERROR,
-            err_body(
-                "auth_denied: maild.retention.run requires an Bus sender in retention_operators",
-            ),
-        );
-    }
-
     // Strict args resolution: a present-but-malformed `args:` header or
     // body must FAIL the destructive command, not silently fall through to
     // config defaults with no account scope.

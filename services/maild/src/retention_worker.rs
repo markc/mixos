@@ -312,7 +312,7 @@ mod tests {
         _dbtmp: TempDir,
     }
 
-    async fn fixture(operators: Vec<String>) -> Fixture {
+    async fn fixture() -> Fixture {
         // Accounts db.
         let dbtmp = TempDir::new().unwrap();
         let db_path = dbtmp.path().join("mail.db");
@@ -347,7 +347,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         let pstore = Arc::new(SqliteStore::new("maild", conn).unwrap());
         let mut router = PropsRouter::new("maild");
-        let runtime = retention::register(&mut router, &pstore, operators.clone()).unwrap();
+        let runtime = retention::register(&mut router, &pstore).unwrap();
 
         let worker = RetentionWorker::new(store, db, Arc::clone(&runtime), 60);
         Fixture {
@@ -426,7 +426,7 @@ mod tests {
 
     #[tokio::test]
     async fn disabled_config_is_noop() {
-        let fx = fixture(Vec::new()).await;
+        let fx = fixture().await;
         // No arm → 0-day windows → disabled.
         let r = fx.worker.sweep(None, None).await.unwrap();
         assert!(r.disabled);
@@ -436,7 +436,7 @@ mod tests {
 
     #[tokio::test]
     async fn dry_run_default_removes_nothing_no_gc() {
-        let fx = fixture(Vec::new()).await;
+        let fx = fixture().await;
         let junk = mk_junk(&fx.mds);
         add_aged(&fx.mds, junk, 30);
         // Arm a 7-day window but leave dry_run TRUE (the shipped default).
@@ -452,7 +452,7 @@ mod tests {
 
     #[tokio::test]
     async fn armed_real_sweep_removes_and_runs_gc() {
-        let fx = fixture(Vec::new()).await;
+        let fx = fixture().await;
         let junk = mk_junk(&fx.mds);
         add_aged(&fx.mds, junk, 30);
         add_aged(&fx.mds, junk, 1); // fresh — survives a 7-day window
@@ -470,7 +470,7 @@ mod tests {
         // THE per-account gate: a window armed for real (days>0,
         // dry_run:false) must NOT touch an account that isn't opted in —
         // no fleet auto-default.
-        let fx = fixture(Vec::new()).await;
+        let fx = fixture().await;
         let junk = mk_junk(&fx.mds);
         add_aged(&fx.mds, junk, 30);
         // Armed for real, but the allowlist names a DIFFERENT account.
@@ -490,7 +490,7 @@ mod tests {
     #[tokio::test]
     async fn run_command_dry_run_override_forces_dry() {
         // Config armed for real, but the run command forces dry_run=true.
-        let fx = fixture(Vec::new()).await;
+        let fx = fixture().await;
         let junk = mk_junk(&fx.mds);
         add_aged(&fx.mds, junk, 30);
         arm(&fx.runtime, 7, false, &["u@example.com"]).await;
@@ -504,7 +504,7 @@ mod tests {
 
     #[tokio::test]
     async fn status_snapshot_records_last_sweep() {
-        let fx = fixture(Vec::new()).await;
+        let fx = fixture().await;
         assert_eq!(fx.worker.status().snapshot().0, None, "no sweep yet");
         let _ = fx.worker.sweep(None, None).await.unwrap();
         let (last_ms, last) = fx.worker.status().snapshot();
@@ -513,14 +513,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_command_operator_gate() {
+    async fn run_command_accepts_every_caller() {
         use crate::bus::retention::{RetentionBusState, dispatch};
         use ::bus::native_client::IncomingCommand;
 
-        let fx = fixture(vec!["ops-node".to_string()]).await;
+        let fx = fixture().await;
         let state = RetentionBusState {
             worker: Arc::new(fx.worker.clone()),
-            operators: Arc::new(vec!["ops-node".to_string()]),
         };
 
         let mk = |from: &str| IncomingCommand {
@@ -533,24 +532,13 @@ mod tests {
             body: String::new(),
         };
 
-        // Non-operator sender → auth_denied.
-        let (rc, body) = dispatch("run", &mk("random-node"), &state).await;
-        assert_eq!(rc, RC_ERROR_TEST);
-        assert!(body.contains("auth_denied"), "body: {body}");
-
-        // Anonymous (empty from) → auth_denied.
-        let (rc, _) = dispatch("run", &mk(""), &state).await;
-        assert_eq!(rc, RC_ERROR_TEST);
-
-        // Named operator → allowed (disabled config ⇒ rc 0, no-op).
-        let (rc, body) = dispatch("run", &mk("ops-node"), &state).await;
-        assert_eq!(rc, 0, "body: {body}");
+        for caller in ["random-client", "", "retention-agent"] {
+            let (rc, body) = dispatch("run", &mk(caller), &state).await;
+            assert_eq!(rc, 0, "caller={caller:?}: {body}");
+        }
 
         // status command is open (no gate).
         let (rc, _) = dispatch("status", &mk(""), &state).await;
         assert_eq!(rc, 0);
     }
-
-    // Local mirror of the bus module's error rc for the gate assertions.
-    const RC_ERROR_TEST: u8 = 10;
 }

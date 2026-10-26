@@ -10,8 +10,7 @@
 //!   replacing `labels`).
 //! - Cardinality-cap `warn` events (one per metric per hour) so an
 //!   operator can correlate disk records with warning entries.
-//! - `SeriesLabels::Hash(..)` in snapshot responses that don't carry
-//!   the per-host raw-labels capability.
+//! - Bus snapshot `labels_hash` filters, matched against the raw label set.
 //!
 //! # Encoding (frozen at v1)
 //!

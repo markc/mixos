@@ -10,9 +10,7 @@
 //! requests against them. Each command:
 //!
 //! 1. Resolves the `namespace` header to a registered [`Runtime`].
-//! 2. Runs the namespace's [`crate::namespace::AuthPolicy`] over the supplied
-//!    [`PeerIdentity`] to obtain the caller's [`CapabilitySet`], then
-//!    checks the capability token for the command.
+//! 2. Accepts every caller; peer identity supplies audit and delivery data.
 //! 3. Parses headers + body, calls the runtime / store, and
 //!    projects the result into the response shape.
 //! 4. Maps [`RuntimeError`] / [`StoreError`] back to the error
@@ -48,7 +46,6 @@ use serde::Serialize;
 use serde_json::{Value as Json, json};
 
 use crate::bus::PropsResponse;
-use crate::capability::{Capability, CapabilitySet};
 use crate::dispatcher::{audit_topic, records_changed_topic};
 use crate::lifecycle::Lifecycle;
 use crate::namespace::{
@@ -65,7 +62,6 @@ use crate::value::PropValue;
 /// require a spec amendment.
 #[derive(Debug, Clone, Copy)]
 enum ErrorCode {
-    AuthDenied,
     NotFound,
     ValidationError,
     Conflict,
@@ -84,7 +80,6 @@ enum ErrorCode {
 impl ErrorCode {
     fn token(self) -> &'static str {
         match self {
-            Self::AuthDenied => "auth_denied",
             Self::NotFound => "not_found",
             Self::ValidationError => "validation_error",
             Self::Conflict => "conflict",
@@ -176,7 +171,7 @@ impl PropsRouter {
 
     /// Install the watch-mediated subscriber bridge.
     /// `watch` / `audit.watch` will then ask `granter` to subscribe the
-    /// caller to the reserved topic after the cap check succeeds.
+    /// caller to the reserved topic.
     /// Idempotent: calling `set_granter` twice replaces the prior
     /// granter (production startup wires this exactly once at daemon
     /// init; tests may rebuild routers freely).
@@ -295,9 +290,8 @@ impl PropsRouter {
             Err(e) => return e,
         };
         let spec = rt.spec();
-
-        if let Err(e) = require_cap(spec, &self.service, peer, "write", None) {
-            return e;
+        if spec.read_only {
+            return err(ErrorCode::ValidationError, "namespace is read-only");
         }
 
         let key = match build_record_key(spec, req.get("key")) {
@@ -357,8 +351,8 @@ impl PropsRouter {
         };
         let spec = rt.spec();
 
-        if let Err(e) = require_cap(spec, &self.service, peer, "write", None) {
-            return e;
+        if spec.read_only {
+            return err(ErrorCode::ValidationError, "namespace is read-only");
         }
 
         // singleton namespaces cannot be deleted (only `set` to
@@ -401,7 +395,7 @@ impl PropsRouter {
         }
     }
 
-    async fn handle_get(&self, req: &BusMessage, peer: &PeerIdentity) -> PropsResponse {
+    async fn handle_get(&self, req: &BusMessage, _peer: &PeerIdentity) -> PropsResponse {
         if let Err(e) = refuse_flat_path(req) {
             return e;
         }
@@ -426,30 +420,18 @@ impl PropsRouter {
         };
         let spec = rt.spec();
 
-        let caps = spec.auth.resolve(peer);
-        if !caps.contains(&cap(spec, &self.service, "read", None)) {
-            return err(ErrorCode::AuthDenied, "missing capability");
-        }
-        let with_secrets = caps.contains(&cap(spec, &self.service, "read", Some("secrets")));
-
         let key = match build_record_key(spec, req.get("key")) {
             Ok(k) => k,
             Err(e) => return e,
         };
 
         match rt.store().get(&key).await {
-            Ok(snap) => ok(project_record_envelope(
-                ns,
-                &snap.value,
-                snap.observed_nseq,
-                &spec.schema,
-                with_secrets,
-            )),
+            Ok(snap) => ok(project_record_envelope(ns, &snap.value, snap.observed_nseq)),
             Err(e) => store_error_to_response(e),
         }
     }
 
-    async fn handle_list(&self, req: &BusMessage, peer: &PeerIdentity) -> PropsResponse {
+    async fn handle_list(&self, req: &BusMessage, _peer: &PeerIdentity) -> PropsResponse {
         if let Err(e) = refuse_flat_path(req) {
             return e;
         }
@@ -471,19 +453,9 @@ impl PropsRouter {
         };
         let spec = rt.spec();
 
-        let caps = spec.auth.resolve(peer);
-        if !caps.contains(&cap(spec, &self.service, "read", None)) {
-            return err(ErrorCode::AuthDenied, "missing capability");
-        }
-        let with_secrets = caps.contains(&cap(spec, &self.service, "read", Some("secrets")));
-
         match rt.store().list(&spec.name).await {
             Ok(snap) => {
-                let records: Vec<Json> = snap
-                    .value
-                    .iter()
-                    .map(|r| project_record_summary(r, &spec.schema, with_secrets))
-                    .collect();
+                let records: Vec<Json> = snap.value.iter().map(project_record_summary).collect();
                 ok(json!({
                     "namespace": ns,
                     "nseq": snap.observed_nseq.0,
@@ -495,7 +467,7 @@ impl PropsRouter {
         }
     }
 
-    async fn handle_describe(&self, req: &BusMessage, peer: &PeerIdentity) -> PropsResponse {
+    async fn handle_describe(&self, req: &BusMessage, _peer: &PeerIdentity) -> PropsResponse {
         if let Err(e) = refuse_flat_path(req) {
             return e;
         }
@@ -519,19 +491,13 @@ impl PropsRouter {
             "public" => {
                 if matches!(spec.schema_public, SchemaPublic::Deny) {
                     return err(
-                        ErrorCode::AuthDenied,
+                        ErrorCode::ValidationError,
                         "namespace declared schema_public: deny",
                     );
-                }
-                if let Err(e) = require_cap(spec, &self.service, peer, "describe", Some("public")) {
-                    return e;
                 }
                 ok(project_schema(spec, ns, /* full = */ false))
             }
             "full" => {
-                if let Err(e) = require_cap(spec, &self.service, peer, "describe", Some("full")) {
-                    return e;
-                }
                 ok(project_schema(spec, ns, /* full = */ true))
             }
             other => err(
@@ -541,7 +507,7 @@ impl PropsRouter {
         }
     }
 
-    /// watch command. After the capability check, if a
+    /// watch command. If a
     /// [`SubscribeGranter`] is installed, transition the caller
     /// to live broker delivery on `<svc>.props.records.changed`
     /// filtered to `namespace`, then replay events strictly newer than
@@ -549,11 +515,10 @@ impl PropsRouter {
     ///
     /// Replay/live ordering follows the public watch contract:
     ///
-    /// 1. cap-check
-    /// 2. grant → broker subscription is now live
-    /// 3. observed = store.list().observed_nseq (taken AFTER grant)
-    /// 4. events = events_since(ns, since_nseq) ∩ (·, observed]
-    /// 5. respond { observed_nseq, events, live }
+    /// 1. grant → broker subscription is now live
+    /// 2. observed = store.list().observed_nseq (taken AFTER grant)
+    /// 3. events = events_since(ns, since_nseq) ∩ (·, observed]
+    /// 4. respond { observed_nseq, events, live }
     ///
     /// The grant-then-observed order partitions events: any with
     /// `nseq > observed` is on the live side of the split (eligible
@@ -567,7 +532,6 @@ impl PropsRouter {
         self.handle_watch_inner(
             req,
             peer,
-            "read",
             records_changed_topic(&self.service),
             "watch",
             project_records_changed,
@@ -577,8 +541,7 @@ impl PropsRouter {
     }
 
     /// `audit.watch` command. Same flow as
-    /// [`Self::handle_watch`] but: gated on `props.audit:<fqn>` (a
-    /// capability distinct from `props.read`); projects per-row audit
+    /// [`Self::handle_watch`] but projects per-row audit
     /// rows including `audit_digest` (flat shape); transitions
     /// caller to live delivery on `<svc>.props.audit`.
     ///
@@ -588,7 +551,6 @@ impl PropsRouter {
         self.handle_watch_inner(
             req,
             peer,
-            "audit",
             audit_topic(&self.service),
             "audit.watch",
             project_audit_row,
@@ -598,7 +560,7 @@ impl PropsRouter {
     }
 
     /// Shared watch / audit.watch implementation. The differences
-    /// between the two commands are exactly the capability token, the
+    /// between the two commands are the
     /// reserved topic, the command name (for diagnostics), the
     /// event-projection function, and whether the
     /// `caught_up` marker is embedded in the response (`watch` does;
@@ -608,7 +570,6 @@ impl PropsRouter {
         &self,
         req: &BusMessage,
         peer: &PeerIdentity,
-        cap_token: &str,
         topic: String,
         command_name: &str,
         project: fn(&str, &PropertySchema, &RecordEvent) -> Json,
@@ -634,10 +595,6 @@ impl PropsRouter {
         };
         let spec = rt.spec();
 
-        if let Err(e) = require_cap(spec, &self.service, peer, cap_token, None) {
-            return e;
-        }
-
         let since_nseq = match parse_since_nseq(req.get("since_nseq")) {
             Ok(v) => v,
             Err(e) => return e,
@@ -649,21 +606,15 @@ impl PropsRouter {
         // cursor. See the watch contract's replay/live ordering.
         let live = match &self.granter {
             Some(granter) => {
-                // Anonymous peers (no registered service name) cannot
-                // be granted a broker subscription — noded's
-                // `subscribe_grant` requires `target_peer` to resolve
-                // in the connection registry. This is an authorisation
-                // failure, not a request-shape error: the caller is
-                // authenticated but not in the class of identities
-                // eligible for live delivery. Reject with `auth_denied`
-                // so wire-level error routing matches the taxonomy.
+                // Live delivery requires an address in the broker's connection registry.
+                // Missing routing data is malformed input, not an access decision.
                 let target_peer = match peer.service_name.as_deref() {
                     Some(s) if !s.is_empty() => s,
                     _ => {
                         return err(
-                            ErrorCode::AuthDenied,
+                            ErrorCode::ValidationError,
                             format!(
-                                "{command_name}: anonymous callers cannot receive live deliveries; \
+                                "{command_name}: missing registered subscriber for live delivery; \
                                  register as a service or omit live-watch usage"
                             ),
                         );
@@ -838,30 +789,6 @@ fn refuse_unsupported_list_options(req: &BusMessage) -> Result<(), PropsResponse
     Ok(())
 }
 
-fn cap(spec: &NamespaceSpec, service: &str, action: &str, scope: Option<&str>) -> Capability {
-    let fqn = spec.fqn(service);
-    let s = match scope {
-        Some(scope) => format!("props.{action}:{fqn}:{scope}"),
-        None => format!("props.{action}:{fqn}"),
-    };
-    Capability::new(s).expect("non-empty capability")
-}
-
-fn require_cap(
-    spec: &NamespaceSpec,
-    service: &str,
-    peer: &PeerIdentity,
-    action: &str,
-    scope: Option<&str>,
-) -> Result<CapabilitySet, PropsResponse> {
-    let caps = spec.auth.resolve(peer);
-    if caps.contains(&cap(spec, service, action, scope)) {
-        Ok(caps)
-    } else {
-        Err(err(ErrorCode::AuthDenied, "missing capability"))
-    }
-}
-
 fn build_record_key(
     spec: &NamespaceSpec,
     key_hdr: Option<&str>,
@@ -944,14 +871,8 @@ fn parse_set_body(body: &str) -> Result<PropValue, PropsResponse> {
     Ok(v)
 }
 
-/// derive the actor variant from the peer identity.
-/// Service peers register a `service_name`; the broker is the source of
-/// truth for that field. Human operators carry `unix_uid` and
-/// are surfaced as `operator:uid-<n>` until a signed principal
-/// arrives. Anonymous peers (neither service nor unix) fall back to the
-/// owning service token — this is benign because the
-/// capability check has already happened by the time we reach here, so
-/// only authorised callers ever materialise an event row.
+/// Derive audit metadata from the transport identity, with the owning service
+/// as a stable fallback when no sender metadata is available.
 fn peer_actor(
     peer: &PeerIdentity,
     fallback_service: &str,
@@ -1028,34 +949,25 @@ fn project_set(spec: &NamespaceSpec, ns: &str, key: &RecordKey, out: &SetOutcome
     }
 }
 
-fn project_record_envelope(
-    ns: &str,
-    record: &Record,
-    observed_nseq: Nseq,
-    schema: &PropertySchema,
-    with_secrets: bool,
-) -> Json {
+fn project_record_envelope(ns: &str, record: &Record, observed_nseq: Nseq) -> Json {
     json!({
         "namespace": ns,
         "key": record.key.key,
         "version": record.version.0,
         "nseq": observed_nseq.0,
-        "fields": project_fields(&record.value, schema, with_secrets),
+        "fields": project_fields(&record.value),
     })
 }
 
-fn project_record_summary(record: &Record, schema: &PropertySchema, with_secrets: bool) -> Json {
+fn project_record_summary(record: &Record) -> Json {
     json!({
         "key": record.key.key,
         "version": record.version.0,
-        "fields": project_fields(&record.value, schema, with_secrets),
+        "fields": project_fields(&record.value),
     })
 }
 
-/// record envelope's `fields`. When `with_secrets` is
-/// false, fields declared `secret: true` in the schema are emitted as
-/// `null` (the wire example pins this shape for password_hash:
-/// "secret, redacted"). When true, raw values pass through.
+/// Record envelope's fields, including secrets, for every caller.
 ///
 /// **Stored bytes are projected verbatim** — `project_fields` does NOT
 /// fill schema defaults for absent fields. This is load-bearing for
@@ -1089,19 +1001,8 @@ fn project_record_summary(record: &Record, schema: &PropertySchema, with_secrets
 /// present") is satisfied at the typed-consumer boundary, not at the
 /// substrate wire boundary, by design: substrate-wide default-fill
 /// would break the audit-digest contract above.
-fn project_fields(value: &PropValue, schema: &PropertySchema, with_secrets: bool) -> Json {
-    let mut out = Json::from(value);
-    if with_secrets {
-        return out;
-    }
-    if let Json::Object(map) = &mut out {
-        for name in schema.secret_field_names() {
-            if map.contains_key(name) {
-                map.insert(name.to_string(), Json::Null);
-            }
-        }
-    }
-    out
+fn project_fields(value: &PropValue) -> Json {
+    Json::from(value)
 }
 
 /// Project the records.changed wire body from a stored
@@ -1121,10 +1022,7 @@ fn project_fields(value: &PropValue, schema: &PropertySchema, with_secrets: bool
 /// - `lifecycle` flat-projects `{state,reason?}` and is emitted only
 ///   on `Completed` events from Saga namespaces.
 /// - `secret_fields_changed_count` is emitted only when non-zero.
-/// - `audit_digest` is intentionally absent — the records.changed
-///   topic is gated on `props.read`, separately from the
-///   `<svc>.props.audit` topic which is gated on the stronger
-///   `props.audit` capability.
+/// - `audit_digest` is absent; the separate audit stream carries it.
 pub(crate) fn project_records_changed(
     service: &str,
     schema: &PropertySchema,
@@ -1391,38 +1289,13 @@ mod tests {
     use crate::hooks::Hooks;
     use crate::memory::MemoryStore;
     use crate::namespace::{
-        AuthPolicy, Cardinality, FieldType, NamespaceLifecycle, NamespaceName, NamespaceSpec,
-        PropertySchema, StorageBackendKind,
+        Cardinality, FieldType, NamespaceLifecycle, NamespaceName, NamespaceSpec, PropertySchema,
+        StorageBackendKind,
     };
     use crate::store::PropertyStore;
 
     fn ns_name() -> NamespaceName {
         NamespaceName::new("accounts").unwrap()
-    }
-
-    /// Permissive AuthPolicy fixture: grant every capability shape the
-    /// `accounts` namespace exposes. Used so individual test cases don't
-    /// have to enumerate cap strings.
-    fn allow_all_resolve(_p: &PeerIdentity) -> CapabilitySet {
-        let strings = [
-            "props.read:demod.accounts",
-            "props.read:demod.accounts:secrets",
-            "props.write:demod.accounts",
-            "props.describe:demod.accounts:public",
-            "props.describe:demod.accounts:full",
-            "props.audit:demod.accounts",
-        ];
-        strings
-            .iter()
-            .map(|s| Capability::new(*s).expect("non-empty capability"))
-            .collect::<CapabilitySet>()
-    }
-
-    /// Capability-issuing fixture parameterised on a fixed set.
-    fn caps_from(list: &[&str]) -> CapabilitySet {
-        list.iter()
-            .map(|s| Capability::new(*s).expect("non-empty capability"))
-            .collect()
     }
 
     fn spec_simple() -> NamespaceSpec {
@@ -1455,7 +1328,6 @@ mod tests {
             },
             StorageBackendKind::Memory,
         );
-        spec.auth = AuthPolicy::new(allow_all_resolve);
         spec.hooks = Hooks::noop();
         spec
     }
@@ -1477,6 +1349,90 @@ mod tests {
         PeerIdentity {
             unix_uid: Some(1000),
             ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn every_caller_can_mutate_read_secrets_and_watch() {
+        for caller in [
+            PeerIdentity::default(),
+            peer(),
+            service_peer("agent"),
+            PeerIdentity {
+                signed_ident: Some("mesh-peer".into()),
+                ..Default::default()
+            },
+        ] {
+            let (router, _) = router_with(spec_simple());
+            let set = router
+                .dispatch(
+                    "set",
+                    &req(
+                        &[
+                            ("namespace", "accounts"),
+                            ("key", "u@h"),
+                            ("if_version", "0"),
+                        ],
+                        r#"{"email":"u@h","password_hash":"secret"}"#,
+                    ),
+                    &caller,
+                )
+                .await;
+            assert_eq!(set.rc, 0, "{}", set.body);
+            for command in ["get", "list", "describe", "watch", "audit.watch"] {
+                let response = router
+                    .dispatch(
+                        command,
+                        &req(
+                            &[("namespace", "accounts"), ("key", "u@h"), ("view", "full")],
+                            "",
+                        ),
+                        &caller,
+                    )
+                    .await;
+                assert_eq!(response.rc, 0, "{command}: {}", response.body);
+                if command == "get" {
+                    assert_eq!(body_json(&response)["fields"]["password_hash"], "secret");
+                }
+            }
+            let deleted = router
+                .dispatch(
+                    "delete",
+                    &req(
+                        &[
+                            ("namespace", "accounts"),
+                            ("key", "u@h"),
+                            ("if_version", "1"),
+                        ],
+                        "",
+                    ),
+                    &caller,
+                )
+                .await;
+            assert_eq!(deleted.rc, 0, "{}", deleted.body);
+        }
+    }
+
+    #[tokio::test]
+    async fn materialised_namespace_is_read_only_for_every_caller() {
+        let mut spec = spec_simple();
+        spec.read_only = true;
+        let (router, _) = router_with(spec);
+        for caller in [PeerIdentity::default(), peer(), service_peer("demod")] {
+            for command in ["set", "delete"] {
+                let response = router
+                    .dispatch(
+                        command,
+                        &req(
+                            &[("namespace", "accounts"), ("key", "u@h")],
+                            r#"{"email":"u@h"}"#,
+                        ),
+                        &caller,
+                    )
+                    .await;
+                assert_eq!(body_json(&response)["error_code"], "validation_error");
+                assert_eq!(body_json(&response)["message"], "namespace is read-only");
+            }
         }
     }
 
@@ -1610,34 +1566,6 @@ mod tests {
             .await;
         assert_eq!(r.rc, 10);
         assert_eq!(body_json(&r)["error_code"], "not_found");
-    }
-
-    #[tokio::test]
-    async fn set_without_capability_auth_denied() {
-        // Build a runtime whose policy grants only read, no write.
-        let mut spec = spec_simple();
-        fn read_only(_p: &PeerIdentity) -> CapabilitySet {
-            caps_from(&["props.read:demod.accounts"])
-        }
-        spec.auth = AuthPolicy::new(read_only);
-        let (router, _) = router_with(spec);
-
-        let r = router
-            .dispatch(
-                "set",
-                &req(
-                    &[
-                        ("namespace", "accounts"),
-                        ("key", "u@h"),
-                        ("if_version", "0"),
-                    ],
-                    r#"{"email":"u@h"}"#,
-                ),
-                &peer(),
-            )
-            .await;
-        assert_eq!(r.rc, 10);
-        assert_eq!(body_json(&r)["error_code"], "auth_denied");
     }
 
     #[tokio::test]
@@ -2038,46 +1966,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_redacts_secret_fields_without_secrets_cap() {
-        let mut spec = spec_simple();
-        // Restrict to plain read (no `:secrets`).
-        fn read_only(_p: &PeerIdentity) -> CapabilitySet {
-            caps_from(&["props.read:demod.accounts", "props.write:demod.accounts"])
-        }
-        spec.auth = AuthPolicy::new(read_only);
-        let (router, _) = router_with(spec);
-
-        // Seed a record carrying both visible and secret fields.
-        router
-            .dispatch(
-                "set",
-                &req(
-                    &[
-                        ("namespace", "accounts"),
-                        ("key", "u@h"),
-                        ("if_version", "0"),
-                    ],
-                    r#"{"email":"u@h","password_hash":"argon2:$x$"}"#,
-                ),
-                &peer(),
-            )
-            .await;
-
-        let r = router
-            .dispatch(
-                "get",
-                &req(&[("namespace", "accounts"), ("key", "u@h")], ""),
-                &peer(),
-            )
-            .await;
-        assert_eq!(r.rc, 0, "body: {}", r.body);
-        let body = body_json(&r);
-        assert_eq!(body["fields"]["email"], "u@h");
-        assert_eq!(body["fields"]["password_hash"], Json::Null);
-    }
-
-    #[tokio::test]
-    async fn get_with_secrets_cap_emits_secret_values() {
+    async fn get_emits_secret_values_for_every_caller() {
         let (router, _) = router_with(spec_simple());
         router
             .dispatch(
@@ -2191,7 +2080,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn describe_public_denied_when_schema_public_deny() {
+    async fn describe_unavailable_public_view_is_validation_error() {
         let mut spec = spec_simple();
         spec.schema_public = SchemaPublic::Deny;
         let (router, _) = router_with(spec);
@@ -2203,7 +2092,7 @@ mod tests {
             )
             .await;
         assert_eq!(r.rc, 10);
-        assert_eq!(body_json(&r)["error_code"], "auth_denied");
+        assert_eq!(body_json(&r)["error_code"], "validation_error");
     }
 
     #[tokio::test]
@@ -2236,25 +2125,6 @@ mod tests {
         assert_eq!(events[0]["nseq"], 2);
         assert_eq!(events[0]["command"], "demod.props.set");
         assert_eq!(events[0]["kind"], "created");
-    }
-
-    #[tokio::test]
-    async fn watch_without_read_cap_auth_denied() {
-        let mut spec = spec_simple();
-        fn deny(_p: &PeerIdentity) -> CapabilitySet {
-            CapabilitySet::empty()
-        }
-        spec.auth = AuthPolicy::new(deny);
-        let (router, _) = router_with(spec);
-        let r = router
-            .dispatch(
-                "watch",
-                &req(&[("namespace", "accounts"), ("since_nseq", "0")], ""),
-                &peer(),
-            )
-            .await;
-        assert_eq!(r.rc, 10);
-        assert_eq!(body_json(&r)["error_code"], "auth_denied");
     }
 
     // ---------------- caught_up marker ----------------
@@ -2597,31 +2467,6 @@ mod tests {
         assert_eq!(row["command"], "demod.props.set");
         assert_eq!(row["version"], 1);
         assert_eq!(row["nseq"], 1);
-    }
-
-    #[tokio::test]
-    async fn audit_watch_requires_audit_capability_not_read() {
-        // `props.audit:<fqn>` is its own capability. A peer with
-        // `props.read` MUST be refused; only `props.audit` (or `*`) lets
-        // them subscribe to the keyed-HMAC stream.
-        let mut spec = spec_simple();
-        fn read_only(_p: &PeerIdentity) -> CapabilitySet {
-            ["props.read:demod.accounts"]
-                .iter()
-                .map(|s| Capability::new(*s).expect("non-empty capability"))
-                .collect()
-        }
-        spec.auth = AuthPolicy::new(read_only);
-        let (router, _) = router_with(spec);
-        let r = router
-            .dispatch(
-                "audit.watch",
-                &req(&[("namespace", "accounts"), ("since_nseq", "0")], ""),
-                &peer(),
-            )
-            .await;
-        assert_eq!(r.rc, 10);
-        assert_eq!(body_json(&r)["error_code"], "auth_denied");
     }
 
     #[tokio::test]
@@ -3048,13 +2893,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn watch_with_anonymous_peer_rejected_when_granter_installed() {
-        // Anonymous caller (no registered service_name) cannot receive
-        // live deliveries — noded's subscribe_grant requires a
-        // connection-registry hit on target_peer. This is an
-        // *authorisation* failure (authenticated as unix uid only, not
-        // eligible for the live-delivery identity class), so we surface
-        // `auth_denied` per , not `validation_error`.
+    async fn watch_without_delivery_destination_is_validation_error() {
+        // Live deliveries need a registered destination in noded's connection registry.
         let (mut router, _) = router_with(spec_simple());
         let granter = Arc::new(RecorderGranter::new());
         router.set_granter(Arc::clone(&granter) as Arc<dyn SubscribeGranter>);
@@ -3070,22 +2910,22 @@ mod tests {
 
         assert_eq!(r.rc, 10);
         let body = body_json(&r);
-        assert_eq!(body["error_code"], "auth_denied");
+        assert_eq!(body["error_code"], "validation_error");
         assert!(
             body["message"]
                 .as_str()
                 .unwrap_or_default()
-                .contains("anonymous"),
-            "message should explain the anonymous-peer rejection"
+                .contains("subscriber"),
+            "message should identify missing subscriber routing data"
         );
         assert!(
             granter.recorded().await.is_empty(),
-            "granter must not be called for anonymous peer"
+            "granter must not be called without a delivery destination"
         );
     }
 
     #[tokio::test]
-    async fn watch_with_empty_service_name_rejected_when_granter_installed() {
+    async fn watch_with_empty_delivery_destination_is_validation_error() {
         // Defense against an attacker / buggy transport that attaches
         // `service_name: Some("")` — the guard checks `s.is_empty()`
         // explicitly so an empty-string identity does not bypass the
@@ -3101,7 +2941,7 @@ mod tests {
             )
             .await;
         assert_eq!(r.rc, 10);
-        assert_eq!(body_json(&r)["error_code"], "auth_denied");
+        assert_eq!(body_json(&r)["error_code"], "validation_error");
         assert!(granter.recorded().await.is_empty());
     }
 
