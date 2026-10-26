@@ -180,8 +180,10 @@ A malformed file loads defaults and is never overwritten.
   Bus caller. Sends triggered by toolkit input retain the caller key and
   `drive_request_id` of the input replayed on that frame, matching the
   separate drive-request audit line. All compose sends share the same
-  attachment check. Passes mixing local and injected input have no drive
-  attribution. `email.execute` refuses `mail.send` when its final checks
+  attachment check. Passes mixing local and injected input retain the drive
+  caller and request id, with `mixed_input=true` recording the ambiguity in
+  the send audit. Other send audits use `mixed_input=false`.
+  `email.execute` refuses `mail.send` when its final checks
   prevent a send from being queued, reporting the compose error.
 - **The Message menu** holds everything that acts on the open email:
   reply (with or without the quote), reply all, forward, star, mark read
@@ -339,7 +341,7 @@ and `relative`. `name` is the plain basename; `label` is the text shown by the
 chip, including a directory qualifier when basenames collide.
 It also reports `attachment_size` (the sum of known raw file
 sizes), `attachment_error`, `attachments_over_limit` and `sendable`, matching
-the dialog, and `send_origin: {caller_key, drive_request_id}` after a send
+the dialog, and `send_origin: {caller_key, drive_request_id, mixed_input}` after a send
 starts; failed sends clear that origin. Removal matches the supplied path
 exactly, preserving symlink paths, and updates the saved draft. UI fields remain drivable through the
 toolkit commands.

@@ -174,6 +174,7 @@ fn audit_attachments(caller: &str, draft: &jmap::Composed) {
         &SendOrigin {
             caller_key: caller.into(),
             drive_request_id: None,
+            mixed_input: false,
         },
         draft,
     );
@@ -184,6 +185,7 @@ fn audit_compose_attachments(origin: &SendOrigin, draft: &jmap::Composed) {
         tracing::info!(
             caller_key = origin.caller_key.as_str(),
             drive_request_id = ?origin.drive_request_id,
+            mixed_input = origin.mixed_input,
             attachments = ?draft.attachments,
             "sending email attachments"
         );
@@ -213,6 +215,7 @@ fn request_drive(
         SendOrigin {
             caller_key: caller,
             drive_request_id: Some(id),
+            mixed_input: false,
         },
     );
     let answer = drive::request(ctx, id, command, args);
@@ -226,6 +229,10 @@ fn driven_origin(ctx: &egui::Context, callers: &HashMap<u64, SendOrigin>) -> Opt
     drive::input_request(ctx)
         .and_then(|id| callers.get(&id))
         .cloned()
+        .map(|mut origin| {
+            origin.mixed_input = drive::input_mixed(ctx);
+            origin
+        })
 }
 
 fn apply_ui_events(
@@ -1417,6 +1424,7 @@ impl Shell {
         let origin = SendOrigin {
             caller_key: self.bus.caller_key(id),
             drive_request_id: None,
+            mixed_input: false,
         };
         let forward = self.state.with_send_origin(Some(origin), |state| {
             crate::commands::command(state, &self.commands, &self.strings, id, command_name, body)
@@ -1857,6 +1865,7 @@ mod tests {
             assert_eq!(log.lines().count(), 1, "{log}");
             assert!(log.contains("INFO"), "{log}");
             assert!(log.contains(&format!("caller_key=\"{caller}\"")), "{log}");
+            assert!(log.contains("mixed_input=false"), "{log}");
             assert!(log.contains("/home/user/report.pdf"), "{log}");
             assert!(!log.contains("private body") && !log.contains("private subject"));
         }
@@ -1864,6 +1873,15 @@ mod tests {
 
     #[test]
     fn drive_audit_keeps_request_id_and_caller_for_later_frame_correlation() {
+        check_drive_audit(false);
+    }
+
+    #[test]
+    fn mixed_input_audit_keeps_drive_caller_and_marks_ambiguity() {
+        check_drive_audit(true);
+    }
+
+    fn check_drive_audit(mixed_input: bool) {
         use egui_kittest::Harness;
 
         let bytes = Arc::new(Mutex::new(Vec::new()));
@@ -1921,7 +1939,18 @@ mod tests {
             );
             assert!(h.state().0.compose.as_ref().unwrap().send_origin.is_none());
             // The actual drive plugin replays the click on later UI passes.
-            h.run_steps(8);
+            for _ in 0..8 {
+                if mixed_input {
+                    // Local pointer movement shares the pass with the drive
+                    // click without changing the target under the pointer.
+                    let at = h
+                        .ctx
+                        .input(|input| input.pointer.latest_pos())
+                        .unwrap_or(egui::pos2(10.0, 20.0));
+                    h.input_mut().events.push(egui::Event::PointerMoved(at));
+                }
+                h.step();
+            }
             let (draft, origin) = h
                 .state_mut()
                 .0
@@ -1937,6 +1966,7 @@ mod tests {
                 .expect("the replayed click must queue a send");
             assert_eq!(origin.caller_key, "mesh:sender@peer");
             assert_eq!(origin.drive_request_id, Some(42));
+            assert_eq!(origin.mixed_input, mixed_input);
             assert_eq!(
                 h.state().0.compose.as_ref().unwrap().send_origin.as_ref(),
                 Some(&origin)
@@ -1953,6 +1983,10 @@ mod tests {
         assert!(
             lines[1].contains("drive_request_id=Some(42)")
                 && lines[1].contains("sending email attachments"),
+            "{log}"
+        );
+        assert!(
+            lines[1].contains(&format!("mixed_input={mixed_input}")),
             "{log}"
         );
         for line in lines {

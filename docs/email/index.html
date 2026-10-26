@@ -407,8 +407,10 @@ A person's Send uses <code>window</code>; <code>email.execute {id:"mail.send"}</
 Bus caller. Sends triggered by toolkit input retain the caller key and
 <code>drive_request_id</code> of the input replayed on that frame, matching the
 separate drive-request audit line. All compose sends share the same
-attachment check. Passes mixing local and injected input have no drive
-attribution. <code>email.execute</code> refuses <code>mail.send</code> when its final checks
+attachment check. Passes mixing local and injected input retain the drive
+caller and request id, with <code>mixed_input=true</code> recording the ambiguity in
+the send audit. Other send audits use <code>mixed_input=false</code>.
+<code>email.execute</code> refuses <code>mail.send</code> when its final checks
 prevent a send from being queued, reporting the compose error.</p>
 </li>
 <li>
@@ -570,7 +572,7 @@ and <code>relative</code>. <code>name</code> is the plain basename; <code>label<
 chip, including a directory qualifier when basenames collide.
 It also reports <code>attachment_size</code> (the sum of known raw file
 sizes), <code>attachment_error</code>, <code>attachments_over_limit</code> and <code>sendable</code>, matching
-the dialog, and <code>send_origin: {caller_key, drive_request_id}</code> after a send
+the dialog, and <code>send_origin: {caller_key, drive_request_id, mixed_input}</code> after a send
 starts; failed sends clear that origin. Removal matches the supplied path
 exactly, preserving symlink paths, and updates the saved draft. UI fields remain drivable through the
 toolkit commands.</p>

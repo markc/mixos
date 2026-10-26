@@ -6,8 +6,10 @@
   returning the compose error rather than a successful `executed` reply.
 - Compose attachment metadata keeps the plain basename in `name` and the
   qualified display text in `label`. Failed sends clear their audit origin.
-- Mixed local/drive input passes receive no drive attribution. Narrow chip
-  labels retain at least four em of width and truncate their text.
+- Mixed local/drive input passes retain the drive caller and request id in
+  send audits, with `mixed_input=true` recording the ambiguity. Other send
+  audits use `mixed_input=false`.
+- Narrow chip labels retain at least four em of width and truncate their text.
 - Attachment chips wrap within the compose form's field width. Scoped chip
   frames no longer expand the row and dialog instead of starting a new row.
 - `email.send` and `email.compose` accept an optional `attachments` list of

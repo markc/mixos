@@ -9,6 +9,12 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
 
+## Unreleased — 2026-10-27
+
+- Keep `drive::input_request` available when local and injected input share
+  a pass. Expose `drive::input_mixed` so apps can record that ambiguity without
+  losing the drive caller or changing input timing.
+
 ## Unreleased — 2026-10-24
 
 - Let sliders reserve modified arrow keys for the person's bindings.

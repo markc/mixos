@@ -2149,6 +2149,7 @@ mod tests {
         let origin = SendOrigin {
             caller_key: "mesh:sender@peer".into(),
             drive_request_id: None,
+            mixed_input: false,
         };
         state.with_send_origin(Some(origin.clone()), |state| {
             run(state, "email.execute", json!({"id":"mail.send"}));

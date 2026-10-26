@@ -583,6 +583,7 @@ pub struct ComposeAttachment {
 pub struct SendOrigin {
     pub caller_key: String,
     pub drive_request_id: Option<u64>,
+    pub mixed_input: bool,
 }
 
 impl Default for SendOrigin {
@@ -590,6 +591,7 @@ impl Default for SendOrigin {
         Self {
             caller_key: "window".into(),
             drive_request_id: None,
+            mixed_input: false,
         }
     }
 }

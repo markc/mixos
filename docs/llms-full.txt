@@ -8535,8 +8535,10 @@ A malformed file loads defaults and is never overwritten.
   Bus caller. Sends triggered by toolkit input retain the caller key and
   `drive_request_id` of the input replayed on that frame, matching the
   separate drive-request audit line. All compose sends share the same
-  attachment check. Passes mixing local and injected input have no drive
-  attribution. `email.execute` refuses `mail.send` when its final checks
+  attachment check. Passes mixing local and injected input retain the drive
+  caller and request id, with `mixed_input=true` recording the ambiguity in
+  the send audit. Other send audits use `mixed_input=false`.
+  `email.execute` refuses `mail.send` when its final checks
   prevent a send from being queued, reporting the compose error.
 - **The Message menu** holds everything that acts on the open email:
   reply (with or without the quote), reply all, forward, star, mark read
@@ -8694,7 +8696,7 @@ and `relative`. `name` is the plain basename; `label` is the text shown by the
 chip, including a directory qualifier when basenames collide.
 It also reports `attachment_size` (the sum of known raw file
 sizes), `attachment_error`, `attachments_over_limit` and `sendable`, matching
-the dialog, and `send_origin: {caller_key, drive_request_id}` after a send
+the dialog, and `send_origin: {caller_key, drive_request_id, mixed_input}` after a send
 starts; failed sends clear that origin. Removal matches the supplied path
 exactly, preserving symlink paths, and updates the saved draft. UI fields remain drivable through the
 toolkit commands.
@@ -36646,8 +36648,10 @@ the predecessor repository at revision
   returning the compose error rather than a successful `executed` reply.
 - Compose attachment metadata keeps the plain basename in `name` and the
   qualified display text in `label`. Failed sends clear their audit origin.
-- Mixed local/drive input passes receive no drive attribution. Narrow chip
-  labels retain at least four em of width and truncate their text.
+- Mixed local/drive input passes retain the drive caller and request id in
+  send audits, with `mixed_input=true` recording the ambiguity. Other send
+  audits use `mixed_input=false`.
+- Narrow chip labels retain at least four em of width and truncate their text.
 - Attachment chips wrap within the compose form's field width. Scoped chip
   frames no longer expand the row and dialog instead of starting a new row.
 - `email.send` and `email.compose` accept an optional `attachments` list of
@@ -37757,6 +37761,12 @@ their bytes.
 
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
+
+## Unreleased — 2026-10-27
+
+- Keep `drive::input_request` available when local and injected input share
+  a pass. Expose `drive::input_mixed` so apps can record that ambiguity without
+  losing the drive caller or changing input timing.
 
 ## Unreleased — 2026-10-24
 

@@ -227,27 +227,40 @@ pub fn pending(ctx: &Context) -> bool {
         .unwrap_or(false)
 }
 
-/// The request whose input was injected into this UI pass, if any. Queued
-/// requests, idle/report passes and passes with local input already present
-/// before injection have no input origin. Mixed passes are deliberately
-/// unattributed so a person's action is never assigned to the drive caller.
-/// Apps can retain their caller identity until the request is answered and
-/// stamp effects triggered during this pass with the replayed request id.
+/// The request whose input was injected into this UI pass, if any, including
+/// passes that also carried local input. Queued requests and idle/report
+/// passes have no input origin. Apps can retain their caller identity until
+/// the request is answered and stamp effects triggered during this pass with
+/// the replayed request id. Use [`input_mixed`] to record ambiguous attribution
+/// when local input shared the pass, rather than losing the drive caller.
 pub fn input_request(ctx: &Context) -> Option<u64> {
     ctx.with_plugin(|drive: &mut Drive| {
         if ctx.viewport_id() == egui::ViewportId::ROOT {
-            drive
-                .input_request_id
-                .filter(|_| !drive.input_had_local_events)
+            drive.input_request_id
         } else {
-            drive.children.get(&ctx.viewport_id()).and_then(|child| {
-                child
-                    .input_request_id
-                    .filter(|_| !child.input_had_local_events)
-            })
+            drive
+                .children
+                .get(&ctx.viewport_id())
+                .and_then(|child| child.input_request_id)
         }
     })
     .flatten()
+}
+
+/// Whether this pass injected request input alongside local events already
+/// present before injection. False for pure drive passes, local-only passes
+/// and idle/report passes. This does not defer or re-queue any input.
+pub fn input_mixed(ctx: &Context) -> bool {
+    ctx.with_plugin(|drive: &mut Drive| {
+        if ctx.viewport_id() == egui::ViewportId::ROOT {
+            drive.input_request_id.is_some() && drive.input_had_local_events
+        } else {
+            drive.children.get(&ctx.viewport_id()).is_some_and(|child| {
+                child.input_request_id.is_some() && child.input_had_local_events
+            })
+        }
+    })
+    .unwrap_or(false)
 }
 
 /// No UI pass for this long means pending input cannot make progress.
@@ -1850,7 +1863,7 @@ mod tests {
     }
 
     #[test]
-    fn input_origin_is_unknown_when_local_and_driven_events_share_a_pass() {
+    fn input_origin_keeps_request_and_marks_mixed_passes() {
         let ctx = Context::default();
         install(&ctx, "demo");
         assert!(request(&ctx, 42, "ui.key", &json!({"key":"Enter"})).is_none());
@@ -1866,9 +1879,10 @@ mod tests {
         );
         assert_eq!(
             input_request(&ctx),
-            None,
-            "a local action must not inherit the drive caller"
+            Some(42),
+            "mixed input must retain the injected request id"
         );
+        assert!(input_mixed(&ctx));
 
         let mut pure_input = RawInput::default();
         ctx.with_plugin(|drive: &mut Drive| drive.step(&ctx, &mut pure_input))
@@ -1878,6 +1892,16 @@ mod tests {
             Some(42),
             "the next pure drive pass is attributable again"
         );
+        assert!(!input_mixed(&ctx));
+
+        let mut idle_input = RawInput {
+            events: vec![Event::PointerMoved(pos2(10.0, 20.0))],
+            ..RawInput::default()
+        };
+        ctx.with_plugin(|drive: &mut Drive| drive.step(&ctx, &mut idle_input))
+            .unwrap();
+        assert_eq!(input_request(&ctx), None, "idle passes have no request");
+        assert!(!input_mixed(&ctx), "local input alone is not mixed input");
     }
 
     fn capture_context() -> (Context, tempfile::TempDir) {
