@@ -1209,10 +1209,7 @@ mod tests {
         fn check(name: &str, bytes: &[u8], expected: Option<&str>) {
             let (_dir, message) = attached(name, bytes);
             let len = bytes.len() as u64;
-            let size = estimated_message_size(
-                &message,
-                [(message.attachments[0].as_path(), len)],
-            );
+            let size = estimated_message_size(&message, [(message.attachments[0].as_path(), len)]);
             let mime = build_mime(&message).unwrap();
             let exact = mime.len() as u64;
             assert!(size >= exact, "{name}: estimated {size}, exact {exact}");
@@ -1227,7 +1224,9 @@ mod tests {
             let encoded = parts[0].split_once("\r\n\r\n").unwrap().1;
             assert_eq!(encoded_file_size(len), encoded.len() as u64);
             assert!(
-                encoded.split_terminator("\r\n").all(|line| line.len() <= 76)
+                encoded
+                    .split_terminator("\r\n")
+                    .all(|line| line.len() <= 76)
             );
             assert!(encoded.is_empty() || encoded.ends_with("\r\n"));
             assert!(validate_attachments(&message, Some(size)).is_ok());

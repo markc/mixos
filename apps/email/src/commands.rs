@@ -2289,10 +2289,20 @@ mod tests {
             assert_eq!(reply.body["error_code"], code::DISABLED);
             assert_eq!(
                 reply.body["message"],
-                state.compose.as_ref().unwrap().error.as_ref().unwrap().as_str()
+                state
+                    .compose
+                    .as_ref()
+                    .unwrap()
+                    .error
+                    .as_ref()
+                    .unwrap()
+                    .as_str()
             );
             assert!(
-                !state.take_work().iter().any(|w| matches!(w, Work::Send { .. }))
+                !state
+                    .take_work()
+                    .iter()
+                    .any(|w| matches!(w, Work::Send { .. }))
             );
         }
     }

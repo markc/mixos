@@ -240,12 +240,11 @@ pub fn input_request(ctx: &Context) -> Option<u64> {
                 .input_request_id
                 .filter(|_| !drive.input_had_local_events)
         } else {
-            drive
-                .children
-                .get(&ctx.viewport_id())
-                .and_then(|child| {
-                    child.input_request_id.filter(|_| !child.input_had_local_events)
-                })
+            drive.children.get(&ctx.viewport_id()).and_then(|child| {
+                child
+                    .input_request_id
+                    .filter(|_| !child.input_had_local_events)
+            })
         }
     })
     .flatten()
