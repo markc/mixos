@@ -355,7 +355,7 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                     return Some(refusal(id, "BUSY", "viewport request queue is full"));
                 }
                 if command_name == "ui.capture" {
-                    if ctx.input(|i| i.viewports.get(&target).is_some_and(viewport_not_shown)) {
+                    if ctx.input(|i| i.raw.viewports.get(&target).is_some_and(viewport_not_shown)) {
                         return Some(not_shown(id, Duration::ZERO));
                     }
                     child.unpainted_captures.insert(id, Instant::now());
