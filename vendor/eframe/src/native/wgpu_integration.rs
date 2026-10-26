@@ -801,7 +801,9 @@ impl WgpuWinitRunning<'_> {
                 .viewports
                 .get(&viewport_id)
                 .is_some_and(|info| info.visible() == Some(false));
-        shared.borrow_mut().offscreen = offscreen;
+        // A hidden parent can run solely for a visible child. Preserve that
+        // child's presentation unless this pass actually paints the parent offscreen.
+        shared.borrow_mut().offscreen = offscreen && is_visible;
         let full_output = integration.update(app.as_mut(), viewport_ui_cb.as_deref(), raw_input);
         shared.borrow_mut().offscreen = false;
 
