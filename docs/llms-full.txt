@@ -6336,7 +6336,9 @@ receipts for `hostd.undo`, rate limits and `freeze`.
   fields to every caller, and `noded.tap` mirrors traffic unredacted.
 - **Anonymous callers are told apart by connection.** The broker stamps
   every request with its connection, so callers with no registered name
-  never share a replay or rate namespace.
+  never share a replay or rate namespace. The exception is editd's
+  `op_id`: it exists to make a retry after a reconnect safe, so it is
+  shared by all anonymous callers, and each picks unique ids.
 
 ## What stays
 

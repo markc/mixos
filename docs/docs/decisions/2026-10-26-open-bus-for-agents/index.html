@@ -287,7 +287,9 @@ a local agent.</li>
 fields to every caller, and <code>noded.tap</code> mirrors traffic unredacted.</li>
 <li><strong>Anonymous callers are told apart by connection.</strong> The broker stamps
 every request with its connection, so callers with no registered name
-never share a replay or rate namespace.</li>
+never share a replay or rate namespace. The exception is editd's
+<code>op_id</code>: it exists to make a retry after a reconnect safe, so it is
+shared by all anonymous callers, and each picks unique ids.</li>
 </ul>
 <h2 id="what-stays">What stays</h2>
 <p>These checks prove where a request came from or keep state consistent.

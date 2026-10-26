@@ -179,7 +179,7 @@ try
   $m = $f.matches[0]
   $r1 = ok('edit.replace buffer=$a.b range={start: $a.s, end: $a.e} text="beta" expect_rev=$a.rev',
     {b: $b, s: $m.start.offset, e: $m.end.offset, rev: $f.rev})
-  check($r1.rev == 1 and $r1.base_rev == 0 and starts_with($r1.origin, "agent:connection/") and not $r1.origin_downgraded and $r1.dirty, "replace: " .. json_encode($r1))
+  check($r1.rev == 1 and $r1.base_rev == 0 and $r1.origin == "agent:anon" and not $r1.origin_downgraded and $r1.dirty, "replace: " .. json_encode($r1))
 
   -- anchor on line 3 ("third"), offset 21 now
   $an = ok('edit.anchor.set buffer=$a.b name="mark1" at={line: 3}', {b: $b})

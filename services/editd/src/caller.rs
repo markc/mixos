@@ -6,17 +6,16 @@
 //! (`mixos-noded/src/subscription.rs` `RESERVED_HEADERS`), stamps
 //! `broker_origin` from the source socket, sets `from` to the caller's
 //! REGISTERED service name (removed for anonymous connections), and stamps
-//! `broker_peer` + `broker_service` for admitted mesh callers. Anonymous
-//! connections carry the reserved `broker_connection` stamp.
+//! `broker_peer` + `broker_service` for admitted mesh callers.
 //!
 //! # Contract (frozen)
 //! 1. A mutating command with no `broker_origin` → INVALID_ARGUMENT `unstamped`.
 //! 2. [`CallerKey`] (holders + dedup, never a gate): local registered →
 //!    `local:<from>`; mesh → `mesh:<broker_service>@<broker_peer>`; local
-//!    anonymous (local or mesh) → `connection:<broker_connection>`.
+//!    anonymous → `anon`.
 //! 3. Origin = the caller's claim (`origin` on mutating commands; `as` on
 //!    undo/redo, where `origin` names the lane), else derived `agent:<from>` /
-//!    `agent:<service>@<peer>` / `agent:connection/<broker_connection>`. A claim that fails the label
+//!    `agent:<service>@<peer>` / `agent:anon`. A claim that fails the label
 //!    grammar → INVALID_ARGUMENT `bad_origin`. Derived labels over 64 chars →
 //!    first 55 chars + `+` + 8 lowercase hex of blake3(full label).
 //! 4. Kind rule, identical for `origin` and `as`: `human:` only for a local
@@ -33,7 +32,6 @@ pub enum CallerKey {
     Local(String),
     Mesh { service: String, peer: String },
     Anon,
-    Connection(String),
 }
 
 impl std::fmt::Display for CallerKey {
@@ -42,7 +40,6 @@ impl std::fmt::Display for CallerKey {
             CallerKey::Local(from) => write!(f, "local:{from}"),
             CallerKey::Mesh { service, peer } => write!(f, "mesh:{service}@{peer}"),
             CallerKey::Anon => f.write_str("anon"),
-            CallerKey::Connection(id) => write!(f, "connection:{id}"),
         }
     }
 }
@@ -82,7 +79,7 @@ pub fn resolve(
             "mutations require a broker-stamped caller (broker_origin local or mesh)",
         ));
     }
-    let key = key_of(&via, cmd.header("broker_connection"));
+    let key = key_of(&via);
     let local_registered = matches!(key, CallerKey::Local(_));
     let (origin, origin_downgraded) = match claimed {
         Some(origin) => downgrade(origin, local_registered),
@@ -127,26 +124,20 @@ pub fn via_of(cmd: &IncomingCommand) -> Via {
 }
 
 /// Rule 2. An unstamped (or partially stamped) caller is `anon`.
-pub fn key_of(via: &Via, connection: Option<&str>) -> CallerKey {
-    let anonymous = || {
-        connection
-            .filter(|id| !id.is_empty())
-            .map(|id| CallerKey::Connection(id.into()))
-            .unwrap_or(CallerKey::Anon)
-    };
+pub fn key_of(via: &Via) -> CallerKey {
     match via.broker_origin.as_str() {
         "local" => match &via.from {
             Some(from) => CallerKey::Local(from.clone()),
-            None => anonymous(),
+            None => CallerKey::Anon,
         },
-        "mesh" if via.broker_service.is_some() => CallerKey::Mesh {
+        "mesh" => CallerKey::Mesh {
             service: via
                 .broker_service
                 .clone()
                 .unwrap_or_else(|| "unknown".into()),
             peer: via.broker_peer.clone().unwrap_or_else(|| "unknown".into()),
         },
-        _ => anonymous(),
+        _ => CallerKey::Anon,
     }
 }
 
@@ -158,7 +149,6 @@ pub fn derived_label(key: &CallerKey) -> String {
         CallerKey::Local(from) => from.clone(),
         CallerKey::Mesh { service, peer } => format!("{service}@{peer}"),
         CallerKey::Anon => "anon".to_string(),
-        CallerKey::Connection(id) => format!("connection/{id}"),
     };
     let clean: String = raw
         .chars()
@@ -258,26 +248,6 @@ mod tests {
         let anon = resolve(&cmd("", &[("broker_origin", "local")]), None, true).unwrap();
         assert_eq!(anon.key.to_string(), "anon");
         assert_eq!(anon.origin.to_string(), "agent:anon");
-    }
-
-    #[test]
-    fn anonymous_connections_have_distinct_holder_and_dedup_keys() {
-        for origin in ["local", "mesh"] {
-            let resolve_id = |id| {
-                resolve(
-                    &cmd("", &[("broker_origin", origin), ("broker_connection", id)]),
-                    None,
-                    true,
-                )
-                .unwrap()
-            };
-            let a = resolve_id("epoch-1");
-            let b = resolve_id("epoch-2");
-            assert_ne!(a.key, b.key);
-            assert_ne!(holder_key(&a.key), holder_key(&b.key));
-            assert_ne!(a.origin, b.origin);
-            assert_eq!(resolve_id("epoch-1").key, a.key);
-        }
     }
 
     #[test]
