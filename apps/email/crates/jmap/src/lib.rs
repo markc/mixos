@@ -31,8 +31,8 @@ pub use auth::{Account, Token};
 pub use calendar::{Calendar, CalendarEvent, EventDraft, EventPatch, duration_between};
 pub use client::{Call, Client, backref};
 pub use compose::{
-    Composed, DEFAULT_UPLOAD_LIMIT, SendAttempt, SendBoxes, SendReport, build_mime, check_message_size,
-    format_address, parse_addresses, validate_attachments,
+    Composed, DEFAULT_UPLOAD_LIMIT, SendAttempt, SendBoxes, SendReport, build_mime,
+    check_message_size, format_address, parse_addresses, validate_attachments,
 };
 pub use contact::{AddressBook, Contact, ContactDraft, ContactPatch};
 pub use error::{Error, Result};

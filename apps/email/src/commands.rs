@@ -1630,14 +1630,13 @@ mod tests {
         let link = dir.path().join("link.txt");
         std::fs::write(&path, b"contents").unwrap();
         std::os::unix::fs::symlink(&path, &link).unwrap();
-        let args =
-            json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [link]});
+        let args = json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [link]});
         let mut state = connected_many(&["a"]);
         run(&mut state, "email.compose", args.clone());
         assert_eq!(state.take_replies()[0].rc, 0);
         assert_eq!(
             state.compose.as_ref().unwrap().draft.attachments,
-            [link.clone()]
+            std::slice::from_ref(&link)
         );
         state.apply_ui(crate::view::UiEvent::SendCompose);
         assert!(state.take_work().iter().any(

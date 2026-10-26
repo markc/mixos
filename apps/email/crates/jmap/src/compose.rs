@@ -1015,9 +1015,8 @@ mod tests {
         // SAFETY: fd is newly allocated and transferred to OwnedFd once.
         let _owned = unsafe { OwnedFd::from_raw_fd(fd) };
         // SAFETY: path is NUL-terminated and fd remains open.
-        let watch = unsafe {
-            libc::inotify_add_watch(fd, path.as_ptr(), libc::IN_OPEN | libc::IN_ACCESS)
-        };
+        let watch =
+            unsafe { libc::inotify_add_watch(fd, path.as_ptr(), libc::IN_OPEN | libc::IN_ACCESS) };
         assert!(watch >= 0);
         validate_attachments(&message, None).unwrap();
         let mut events = [0_u8; 4096];
@@ -1046,7 +1045,8 @@ mod tests {
             // Hold the sole blocking worker. Preparation must wait for it,
             // while the current-thread runtime can still poll other work.
             let blocker = tokio::task::spawn_blocking(move || {
-                wait.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+                wait.recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap();
             });
             let boxes = boxes();
             let mut sending = std::pin::pin!(send(&fake, &message, &boxes, SendAttempt::default()));

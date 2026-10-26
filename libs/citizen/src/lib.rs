@@ -844,12 +844,18 @@ mod tests {
     fn caller_keys_use_only_broker_attested_identity() {
         let mut command = request("email.send", None);
         assert_eq!(caller_key(&command), "anon");
-        command.headers.insert("broker_origin".into(), "local".into());
+        command
+            .headers
+            .insert("broker_origin".into(), "local".into());
         assert_eq!(caller_key(&command), "local:caller");
         command.from.clear();
         assert_eq!(caller_key(&command), "anon");
-        command.headers.insert("broker_origin".into(), "mesh".into());
-        command.headers.insert("broker_service".into(), "sender".into());
+        command
+            .headers
+            .insert("broker_origin".into(), "mesh".into());
+        command
+            .headers
+            .insert("broker_service".into(), "sender".into());
         command.headers.insert("broker_peer".into(), "peer".into());
         assert_eq!(caller_key(&command), "mesh:sender@peer");
         command.headers.remove("broker_peer");
@@ -860,7 +866,11 @@ mod tests {
     fn a_pending_callers_key_is_shared_and_removed_when_answered() {
         let handle = Handle::sink();
         let clone = handle.clone();
-        handle.callers.lock().unwrap().insert(7, "local:sender".into());
+        handle
+            .callers
+            .lock()
+            .unwrap()
+            .insert(7, "local:sender".into());
         assert_eq!(clone.caller_key(7), "local:sender");
         assert_eq!(clone.caller_key(0), "anon");
         clone.reply(7, 0, json!({}));

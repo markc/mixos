@@ -226,7 +226,10 @@ mod tests {
         let mut store = DirStore::new(root.path());
         store.save(&draft("0a", "2026-10-18T01:00:00Z")).unwrap();
         let mut newer = draft("0b", "2026-10-18T02:00:00Z");
-        newer.attachments = vec![root.path().join("report.pdf"), root.path().join("photo.png")];
+        newer.attachments = vec![
+            root.path().join("report.pdf"),
+            root.path().join("photo.png"),
+        ];
         newer.attempt.email_id = Some("E1".into());
         store.save(&newer).unwrap();
         let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
