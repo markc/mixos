@@ -76,7 +76,7 @@ socket's owner. System entries retain their existing description and transport.
   {node:"desk-a",host:"host-a",kind:"desk",machine:"desk-a",
    profile:"/var/lib/example/broker-a",session:3,
    client_account:"desktop",broker_account:"noded",
-   admission:"enforce",mesh_open:true}
+   admission:"enforce"}
 ]}
 ```
 
@@ -119,7 +119,7 @@ Both `mesh_sync` and `mesh_d2_seed` now consume the same optional private
 `$MESH_HUB/_etc/mesh_targets.conf.mix`. Without it, existing system-node dispatch
 is preserved. When present it must describe **every** fleet roster node exactly
 once; system entries retain `host == node`, and desk entries explicitly state
-`admission` (`off`, `observe` or `enforce`) and boolean `mesh_open`. Omission or
+`admission` (`off`, `observe` or `enforce`). Omission or
 malformation cannot silently fall back to system paths. For example:
 
 ```mix
@@ -127,7 +127,7 @@ malformation cannot silently fall back to system paths. For example:
   {node: "hub", host: "hub", kind: "system"},
   {node: "desktop", host: "host", kind: "desk", machine: "desktop",
    profile: "/var/lib/example/desktop-bus", session: 3, account: "desktop",
-   admission: "observe", mesh_open: true}
+   admission: "observe"}
 ]}
 ```
 

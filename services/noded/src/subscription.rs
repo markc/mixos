@@ -35,6 +35,8 @@ pub const STALE_SNAPSHOT_TTL: Duration = Duration::from_secs(60);
 pub const JANITOR_INTERVAL: Duration = Duration::from_secs(10);
 
 pub(crate) const BROKER_ORIGIN_HEADER: &str = "broker_origin";
+pub(crate) const BROKER_CONNECTION_HEADER: &str = "broker_connection";
+pub(crate) const BROKER_PROTECTED_HEADER: &str = "broker_protected";
 pub(crate) const BROKER_PEER_HEADER: &str = "broker_peer";
 pub(crate) const BROKER_SERVICE_HEADER: &str = "broker_service";
 /// Source broker assertion, consumed only over a proven direct bridge.
@@ -49,6 +51,8 @@ pub const RESERVED_HEADERS: &[&str] = &[
     "topic_stale",
     "topic_op",
     BROKER_ORIGIN_HEADER,
+    BROKER_CONNECTION_HEADER,
+    BROKER_PROTECTED_HEADER,
     BROKER_PEER_HEADER,
     BROKER_SERVICE_HEADER,
     MESH_FROM_HEADER,
@@ -76,6 +80,8 @@ pub(crate) fn strip_broker_origin(message: &mut BusMessage) -> bool {
     message.headers.retain(|name, _| {
         ![
             BROKER_ORIGIN_HEADER,
+            BROKER_CONNECTION_HEADER,
+            BROKER_PROTECTED_HEADER,
             BROKER_PEER_HEADER,
             BROKER_SERVICE_HEADER,
             MESH_FROM_HEADER,
@@ -336,9 +342,10 @@ mod native_session_tests {
             .with_header("type", "event")
             .with_header("BROKER_PRINCIPAL", "forgery")
             .with_header("Broker_Principal", "another forgery")
+            .with_header("Broker_Connection", "forged connection")
             .with_body(r#"{"value":"PRIVATE-SNAPSHOT"}"#);
         broker
-            .publish_with_principal(
+            .publish_with_context(
                 "native.snapshot",
                 &inner.to_wire(),
                 "publisher",
@@ -346,10 +353,13 @@ mod native_session_tests {
                 BrokerOrigin::Local,
                 true,
                 Some(&principal()),
+                Some("epoch-connection-1"),
             )
             .await
             .unwrap();
         let live = bus::parse(&live_rx.recv().await.unwrap()).unwrap();
+        assert_eq!(live.get("broker_connection"), Some("epoch-connection-1"));
+        assert_eq!(live.get("Broker_Connection"), None);
         assert_eq!(read_principal(&live).unwrap(), Some(principal()));
         let tcp_live = bus::parse(&tcp_live_rx.recv().await.unwrap()).unwrap();
         assert_eq!(read_principal(&tcp_live).unwrap(), None);
@@ -365,6 +375,7 @@ mod native_session_tests {
             .subscribe_topic_verified("native.snapshot", "later", replay, None, true)
             .await;
         let replay = bus::parse(&replay_rx.recv().await.unwrap()).unwrap();
+        assert_eq!(replay.get("broker_connection"), Some("epoch-connection-1"));
         assert_eq!(
             read_principal(&replay).unwrap(),
             Some(principal()),
@@ -704,6 +715,24 @@ impl SubscriptionBroker {
         retain: bool,
         principal: Option<&bus::native_session::BrokerPrincipal>,
     ) -> Result<PublishResult, PublishError> {
+        self.publish_with_context(
+            name, inner_body, from, from_tx, origin, retain, principal, None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn publish_with_context(
+        &self,
+        name: &str,
+        inner_body: &str,
+        from: &str,
+        from_tx: mpsc::Sender<String>,
+        origin: BrokerOrigin,
+        retain: bool,
+        principal: Option<&bus::native_session::BrokerPrincipal>,
+        connection: Option<&str>,
+    ) -> Result<PublishResult, PublishError> {
         if name.starts_with('$') {
             return Err(PublishError::ReservedName);
         }
@@ -777,6 +806,9 @@ impl SubscriptionBroker {
                 inner.headers.remove(*h);
             }
             stamp_broker_origin(&mut inner, origin);
+            if let Some(connection) = connection {
+                inner.set(BROKER_CONNECTION_HEADER, connection);
+            }
             // Reserved event owners are authenticated by noded before this
             // publish path. Stamp their identity independently of the opaque
             // inner `from`; directed client messages cannot supply this header.

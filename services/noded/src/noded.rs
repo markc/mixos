@@ -353,6 +353,7 @@ struct AppState {
     native_session_endpoint: Option<PathBuf>,
     broker_epoch: HexBytes<16>,
     principal: Option<BrokerPrincipal>,
+    session_admission: SessionAdmission,
     registry: Registry,
     pending_responses: PendingResponses,
     tap_subscribers: TapSubscribers,
@@ -708,7 +709,14 @@ async fn serve(
             // Canonicalise before route classification so both accepted and
             // route-rejected observations describe the broker-owned envelope.
             msg.headers.remove("from");
-            stamp_broker_origin(&mut msg, BrokerOrigin::Mesh);
+            let connection = msg.get("broker_connection").map(str::to_owned);
+            let protected = msg.get("broker_protected") == Some("true");
+            stamp_mesh_connection(&mut msg, &peer, connection.as_deref());
+            let observe_for_mesh = observe_for_mesh.for_class(if protected {
+                TrafficClass::NativeSession
+            } else {
+                TrafficClass::Legacy
+            });
             // SPEC 01 §4 cross-mesh routing is reserved-but-refused at the
             // parser until federation transport exists; if a remote hub
             // attempts to relay a `to: <local>@<fqdn>` address through this
@@ -791,6 +799,11 @@ async fn serve(
                         .map(|entry| entry.traffic_class)
                         .unwrap_or_default(),
                 )
+            };
+            let target_class = if protected {
+                TrafficClass::NativeSession
+            } else {
+                target_class
             };
             let observe_for_mesh = observe_for_mesh.for_class(target_class);
             let mut observed_wire = None;
@@ -893,6 +906,7 @@ async fn serve(
     let change_bus = crate::props::ChangeBus::new(broker.clone());
 
     let state = AppState {
+        session_admission: SessionAdmission::default(),
         sessions: Arc::new(tokio::sync::Mutex::new(
             session::Sessions::with_grant_limit(pending_grants_per_parent),
         )),
@@ -2099,11 +2113,12 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     // for topic operations when the peer has not called `noded.register`.
     // Dies with the connection; not federated.
     let anon_id = subscription::synth_anon_id();
+    let broker_connection = next_broker_connection(state.broker_epoch);
     let mut service_name: Option<String> = None;
 
     // SPEC 13 §9a (2-c-2b) — the per-session admission record, folded from each
     // admit response and consulted by the register-time enforce gate below.
-    let mut session_adm = match &transport {
+    state.session_admission = match &transport {
         TransportIdentity::Mesh { admission, .. } => SessionAdmission {
             admitted_node: admission.admitted_node.clone(),
             last_detail: admission.last_detail,
@@ -2348,7 +2363,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 None
             };
             if let Some(outcome) = outcome {
-                session_adm.apply(outcome);
+                state.session_admission.apply(outcome);
             }
             if let Some(observed_outcome) = observed_outcome {
                 canonicalize_connection_from(&mut bus_msg, service_name.as_deref());
@@ -2555,6 +2570,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     .expect("delivery fence poisoned");
                 canonicalize_routed_from_in_place(&mut bus_msg, service_name.as_deref());
                 stamp_broker_origin(&mut bus_msg, BrokerOrigin::Local);
+                bus_msg.set("broker_connection", &broker_connection);
                 sessions.private_event(principal, &guard, &mut bus_msg)
             } else {
                 Err(bus::native_session::SessionError::forbidden())
@@ -2614,7 +2630,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                         state.wg_bound,
                         verified,
                         &from,
-                        &session_adm,
+                        &state.session_admission,
                     ) {
                         RegisterGate::Ungated => {
                             tracing::debug!(
@@ -2723,6 +2739,37 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     }
                 }
                 if !refused {
+                    let mesh_connection = bus_msg.get("broker_connection").map(str::to_owned);
+                    let admitted_peer = {
+                        let registry = state.registry.read().await;
+                        let _fence = state
+                            .delivery_fence
+                            .read()
+                            .expect("delivery fence poisoned");
+                        admitted_delivery_peer(&state, source_ip).filter(|peer| {
+                            service_name
+                                .as_deref()
+                                .and_then(|name| registry.get(name))
+                                .is_some_and(|entry| entry.same_channel(&tx))
+                                && (state.admission_mode != AdmissionMode::Enforce
+                                    || service_name.as_deref()
+                                        == Some(format!("bridge-{peer}").as_str()))
+                        })
+                    };
+                    stamp_broker_origin(
+                        &mut bus_msg,
+                        broker_origin_for_delivery(source_ip, &state.bind),
+                    );
+                    bus_msg.set("broker_connection", &broker_connection);
+                    if let Some(peer) = admitted_peer {
+                        bus_msg.set("broker_peer", &peer);
+                        if let Some(id) = mesh_connection
+                            .as_deref()
+                            .filter(|id| valid_connection_stamp(id))
+                        {
+                            bus_msg.set("broker_connection", &format!("{peer}/{id}"));
+                        }
+                    }
                     let mut command_outcome = ObserveOutcome::BrokerHandled;
                     handle_noded_command(
                         &bus_msg,
@@ -2756,6 +2803,8 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
             }
             Route::LocalService(local_service) => {
+                let mesh_connection = bus_msg.get("broker_connection").map(str::to_owned);
+                let mesh_protected = bus_msg.get("broker_protected") == Some("true");
                 let mesh_from = bus_msg
                     .get(crate::subscription::MESH_FROM_HEADER)
                     .map(str::to_owned);
@@ -2768,6 +2817,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 canonicalize_routed_from_in_place(&mut bus_msg, service_name.as_deref());
                 let origin = broker_origin_for_delivery(source_ip, &state.bind);
                 stamp_broker_origin(&mut bus_msg, origin);
+                bus_msg.set("broker_connection", &broker_connection);
                 let canonical_text = bus_msg.to_wire();
                 let canonical_message = observing.then(|| bus_msg.clone());
                 // `route_local` mutates `bus_msg`'s `id` to the broker-local
@@ -2783,6 +2833,8 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     service_name.as_deref(),
                     source_ip,
                     mesh_from.as_deref(),
+                    mesh_connection.as_deref(),
+                    mesh_protected,
                 )
                 .await;
                 let observed_wire = route_result
@@ -2814,6 +2866,12 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             }
             Route::RemoteMesh { target } => {
                 canonicalize_routed_from_in_place(&mut bus_msg, service_name.as_deref());
+                bus_msg.set("broker_connection", &broker_connection);
+                if state.observe.traffic_class().protected()
+                    || state.protected_responses.load(Ordering::Acquire)
+                {
+                    bus_msg.set("broker_protected", "true");
+                }
                 // Only a local registered source acquires a direct-hop service
                 // assertion. A relay cannot borrow this node's clipboard grant.
                 if is_same_node_origin(source_ip, &state.bind)
@@ -3242,6 +3300,32 @@ fn canonicalize_connection_from(message: &mut BusMessage, service_name: Option<&
     }
 }
 
+fn next_broker_connection(epoch: HexBytes<16>) -> String {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    let counter = NEXT
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+        .expect("connection counter exhausted");
+    let epoch = epoch
+        .0
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("{epoch}-{counter}")
+}
+
+fn valid_connection_stamp(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 192 && id.bytes().all(|b| b.is_ascii_graphic())
+}
+
+// Called only for frames received through a current admitted mesh link.
+fn stamp_mesh_connection(message: &mut BusMessage, peer: &str, connection: Option<&str>) {
+    stamp_broker_origin(message, BrokerOrigin::Mesh);
+    message.set("broker_peer", peer);
+    if let Some(id) = connection.filter(|id| valid_connection_stamp(id)) {
+        message.set("broker_connection", &format!("{peer}/{id}"));
+    }
+}
+
 fn broker_origin_for_delivery(source_ip: std::net::IpAddr, bind: &str) -> BrokerOrigin {
     if is_same_node_origin(source_ip, bind) {
         BrokerOrigin::Local
@@ -3269,6 +3353,22 @@ fn admitted_delivery_peer(state: &AppState, source_ip: std::net::IpAddr) -> Opti
                 }
                 _ => None,
             })?;
+        if state.admission_mode == AdmissionMode::Enforce
+            && !matches!(
+                register_gate_decision(
+                    source_ip,
+                    &state.bind,
+                    state.admission_mode,
+                    state.wg_bound,
+                    true,
+                    &format!("bridge-{peer}"),
+                    &state.session_admission
+                ),
+                RegisterGate::Admit(_)
+            )
+        {
+            return None;
+        }
         return reload_revoke_detail(accepted.members_full.get(&peer), accepted.epoch)
             .is_none()
             .then_some(peer);
@@ -3421,6 +3521,7 @@ fn session_delivery_error(
     reply
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn route_local(
     state: &AppState,
     service: &str,
@@ -3429,11 +3530,25 @@ async fn route_local(
     caller_service: Option<&str>,
     source_ip: std::net::IpAddr,
     mesh_from: Option<&str>,
+    mesh_connection: Option<&str>,
+    mesh_protected: bool,
 ) -> LocalRouteResult {
     let registry = &state.registry;
     let pending_responses = &state.pending_responses;
     let reg = registry.read().await;
-    let traffic_class = state.observe.traffic_class().merge(
+    let admitted_peer = admitted_delivery_peer(state, source_ip).filter(|peer| {
+        caller_service
+            .and_then(|name| reg.get(name))
+            .is_some_and(|e| e.same_channel(caller_tx))
+            && (state.admission_mode != AdmissionMode::Enforce
+                || caller_service == Some(format!("bridge-{peer}").as_str()))
+    });
+    let source_class = if admitted_peer.is_some() && mesh_protected {
+        TrafficClass::NativeSession
+    } else {
+        state.observe.traffic_class()
+    };
+    let traffic_class = source_class.merge(
         reg.get(service)
             .map(|e| e.traffic_class)
             .unwrap_or_default(),
@@ -3492,11 +3607,21 @@ async fn route_local(
             let owns_registration = caller_service
                 .and_then(|name| reg.get(name))
                 .is_some_and(|entry| entry.same_channel(caller_tx));
+            let admitted_peer = admitted_delivery_peer(state, source_ip).filter(|peer| {
+                owns_registration
+                    && (state.admission_mode != AdmissionMode::Enforce
+                        || caller_service == Some(format!("bridge-{peer}").as_str()))
+            });
+            if let Some(peer) = &admitted_peer {
+                msg.set(crate::subscription::BROKER_PEER_HEADER, peer);
+                if let Some(connection) = mesh_connection.filter(|id| valid_connection_stamp(id)) {
+                    msg.set("broker_connection", &format!("{peer}/{connection}"));
+                }
+            }
             if owns_registration
                 && let Some(origin_service) = mesh_from.filter(|name| valid_service_name(name))
-                && let Some(peer) = admitted_delivery_peer(state, source_ip)
+                && admitted_peer.is_some()
             {
-                msg.set(crate::subscription::BROKER_PEER_HEADER, &peer);
                 msg.set(crate::subscription::BROKER_SERVICE_HEADER, origin_service);
             }
             // Recompute immediately before serialisation/enqueue, after every
@@ -3682,6 +3807,20 @@ async fn route_local(
     }
 }
 
+const MAX_TAP_SUBSCRIBERS: usize = 64;
+
+fn add_tap(taps: &mut Vec<mpsc::Sender<String>>, tx: &mpsc::Sender<String>) -> bool {
+    taps.retain(|tap| !tap.is_closed());
+    if taps.iter().any(|tap| tap.same_channel(tx)) {
+        return true;
+    }
+    if taps.len() >= MAX_TAP_SUBSCRIBERS {
+        return false;
+    }
+    taps.push(tx.clone());
+    true
+}
+
 /// Broadcast `raw` to every tap subscriber, except `exclude` if its channel
 /// matches one of the subscribers — that peer is the routed-to target and
 /// already received the message via `route_local`. The dedup avoids the
@@ -3703,8 +3842,8 @@ async fn broadcast_tap(
     if taps.is_empty() {
         return;
     }
-    let mut disconnected = Vec::new();
-    for (i, tap_tx) in taps.iter().enumerate() {
+    let mut disconnected = false;
+    for tap_tx in taps.iter() {
         if let Some(ex) = exclude
             && tap_tx.same_channel(ex)
         {
@@ -3721,16 +3860,14 @@ async fn broadcast_tap(
                 });
             }
             Err(mpsc::error::TrySendError::Closed(_)) => {
-                disconnected.push(i);
+                disconnected = true;
             }
         }
     }
     drop(taps);
-    if !disconnected.is_empty() {
+    if disconnected {
         let mut taps = tap_subscribers.write().await;
-        for i in disconnected.into_iter().rev() {
-            taps.remove(i);
-        }
+        taps.retain(|tap| !tap.is_closed());
     }
 }
 
@@ -4275,7 +4412,16 @@ async fn handle_noded_command(
         }
 
         "noded.tap" => {
-            state.tap_subscribers.write().await.push(tx.clone());
+            if !add_tap(&mut state.tap_subscribers.write().await, tx) {
+                outcome.rejected.store(true, Ordering::Relaxed);
+                let mut resp = respond("10");
+                resp.set("command", "noded.tap");
+                resp.body =
+                    r#"{"error":"RESOURCE_LIMIT","message":"tap subscriber capacity exhausted"}"#
+                        .into();
+                let _ = tx.try_send(resp.to_wire());
+                return;
+            }
             tracing::info!(source_ip = %source_ip, "Tap subscriber added");
 
             let mut resp = respond("0");
@@ -4337,7 +4483,7 @@ async fn handle_noded_command(
             let body_ref: &str = canonical_body.as_deref().unwrap_or(&msg.body);
             match state
                 .broker
-                .publish_with_principal(
+                .publish_with_context(
                     &name,
                     body_ref,
                     &peer_id,
@@ -4345,6 +4491,7 @@ async fn handle_noded_command(
                     broker_origin_for_delivery(source_ip, &state.bind),
                     retain,
                     state.principal.as_ref(),
+                    msg.get("broker_connection"),
                 )
                 .await
             {
@@ -4936,7 +5083,8 @@ mod tests {
     use tracing_subscriber::util::SubscriberInitExt;
 
     use super::{
-        AppState, PendingResponseTable, apply_inventory_reload, emit_listener_endpoint_state,
+        AppState, PendingResponseTable, SessionAdmission, apply_inventory_reload,
+        emit_listener_endpoint_state,
     };
     use crate::observe::ObserveManager;
     use crate::subscription::SubscriptionBroker;
@@ -5572,6 +5720,7 @@ mod tests {
         let broker = Arc::new(SubscriptionBroker::new());
         let started = Instant::now();
         AppState {
+            session_admission: SessionAdmission::default(),
             sessions: Default::default(),
             protected_responses: Default::default(),
             broker_epoch: super::HexBytes([1; 16]),
@@ -6172,10 +6321,6 @@ mod tests {
 
     /// Spawn the broker on a free loopback port and return the ws URL.
     async fn spawn_broker() -> Option<String> {
-        spawn_broker_with_observe().await
-    }
-
-    async fn spawn_broker_with_observe() -> Option<String> {
         let (listener, listen) = pick_listener()?;
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
         let listen_for_run = listen.clone();
@@ -6243,7 +6388,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn observe_wire_accepts_anonymous_and_arbitrary_registered_callers() {
-        let Some(url) = spawn_broker_with_observe().await else {
+        let Some(url) = spawn_broker().await else {
             return;
         };
 
@@ -6332,7 +6477,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn observe_covers_rejected_broker_response_and_route_outcomes_truthfully() {
-        let Some(url) = spawn_broker_with_observe().await else {
+        let Some(url) = spawn_broker().await else {
             return;
         };
 
@@ -6829,6 +6974,92 @@ mod tests {
     }
 
     #[test]
+    fn mesh_connection_stamps_are_prefixed_and_client_variants_removed() {
+        let a = super::next_broker_connection(super::HexBytes([1; 16]));
+        let b = super::next_broker_connection(super::HexBytes([1; 16]));
+        assert!(super::valid_connection_stamp(&a));
+        assert_ne!(a, b);
+        let mut msg = BusMessage::new()
+            .with_header("Broker_Connection", "forged")
+            .with_header("broker_peer", "forged");
+        super::stamp_mesh_connection(&mut msg, "beta", Some("epoch-3"));
+        assert_eq!(msg.get("broker_connection"), Some("beta/epoch-3"));
+        assert_eq!(msg.get("Broker_Connection"), None);
+        assert_eq!(msg.get("broker_peer"), Some("beta"));
+        super::stamp_mesh_connection(&mut msg, "beta", Some("bad\nstamp"));
+        assert_eq!(msg.get("broker_connection"), None);
+    }
+
+    #[tokio::test]
+    async fn tap_capacity_deduplicates_and_reclaims_closed_subscribers() {
+        let mut taps = Vec::new();
+        let mut receivers = Vec::new();
+        for _ in 0..super::MAX_TAP_SUBSCRIBERS {
+            let (tx, rx) = mpsc::channel(2);
+            assert!(super::add_tap(&mut taps, &tx));
+            assert!(super::add_tap(&mut taps, &tx));
+            receivers.push(rx);
+        }
+        let (extra, mut received) = mpsc::channel(2);
+        assert!(!super::add_tap(&mut taps, &extra));
+        receivers.pop();
+        assert!(super::add_tap(&mut taps, &extra));
+        assert_eq!(taps.len(), super::MAX_TAP_SUBSCRIBERS);
+        let taps = Arc::new(RwLock::new(taps));
+        super::broadcast_tap(&taps, "secret", None, super::TrafficClass::NativeSession).await;
+        assert!(received.try_recv().is_err());
+        super::broadcast_tap(&taps, "unredacted", None, super::TrafficClass::Legacy).await;
+        assert_eq!(received.try_recv().unwrap(), "unredacted");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn anonymous_connections_receive_distinct_unforgeable_stamps() {
+        let Some(url) = spawn_broker().await else {
+            return;
+        };
+        let (mut target, mut incoming) = raw_connect(&url).await;
+        raw_register(&mut target, &mut incoming, "recipient").await;
+        let (mut a, _a_rx) = raw_connect(&url).await;
+        let (mut b, _b_rx) = raw_connect(&url).await;
+        let mut stamps = Vec::new();
+        for index in 0..3 {
+            let caller = if index == 1 { &mut b } else { &mut a };
+            let msg = BusMessage::new()
+                .with_header("to", "recipient")
+                .with_header("command", "probe")
+                .with_header("Broker_Connection", "forged")
+                .with_header("broker_connection", "also-forged");
+            caller
+                .send(WsMessage::Text(msg.to_wire().into()))
+                .await
+                .unwrap();
+            let frame = tokio::time::timeout(Duration::from_secs(3), incoming.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            let WsMessage::Text(text) = frame else {
+                panic!("expected request")
+            };
+            let delivered = bus_mod::parse(&text).unwrap();
+            let id = delivered.get("broker_connection").unwrap();
+            assert_ne!(id, "forged");
+            assert_ne!(id, "also-forged");
+            assert_eq!(
+                delivered
+                    .headers
+                    .keys()
+                    .filter(|key| key.eq_ignore_ascii_case("broker_connection"))
+                    .count(),
+                1
+            );
+            stamps.push(id.to_owned());
+        }
+        assert_ne!(stamps[0], stamps[1]);
+        assert_eq!(stamps[0], stamps[2]);
+    }
+
+    #[test]
     fn broker_origin_comes_from_socket_location_not_registered_name_shape() {
         let bind = "192.0.2.5:4200";
         assert_eq!(
@@ -6948,6 +7179,8 @@ mod tests {
             None,
             "127.0.0.1".parse().unwrap(),
             None,
+            None,
+            false,
         )
         .await;
         assert_eq!(result.outcome, super::ObserveOutcome::Rejected);
@@ -6969,6 +7202,8 @@ mod tests {
             None,
             "127.0.0.1".parse().unwrap(),
             None,
+            None,
+            false,
         )
         .await;
         assert_eq!(result.outcome, super::ObserveOutcome::Delivered);
@@ -6998,6 +7233,8 @@ mod tests {
             None,
             "127.0.0.1".parse().unwrap(),
             None,
+            None,
+            false,
         );
         tokio::pin!(route);
         assert!(futures_util::poll!(&mut route).is_pending());
@@ -7052,6 +7289,8 @@ mod tests {
             None,
             "127.0.0.1".parse().unwrap(),
             None,
+            None,
+            false,
         );
         tokio::pin!(route);
         assert!(futures_util::poll!(&mut route).is_pending());
@@ -7087,6 +7326,11 @@ mod tests {
         }));
         let mut state = reload_test_state(posture, vec![]).await;
         state.admission_mode = AdmissionMode::Enforce;
+        state.session_admission = super::SessionAdmission {
+            admitted_node: Some("beta".into()),
+            response_seen: true,
+            last_detail: None,
+        };
         state
     }
 
@@ -7125,6 +7369,8 @@ mod tests {
             None,
             "127.0.0.1".parse().unwrap(),
             None,
+            None,
+            false,
         )
         .await;
         received.recv().await.unwrap();
@@ -7186,6 +7432,8 @@ mod tests {
             "relay",
             "bad-source",
             "non-wg",
+            "no-proof",
+            "wrong-proof",
             "revoked",
         ] {
             let mut state = mesh_delivery_test_state().await;
@@ -7196,6 +7444,8 @@ mod tests {
                 "off" => state.admission_mode = AdmissionMode::Off,
                 "observe" => state.admission_mode = AdmissionMode::Observe,
                 "non-wg" => state.wg_bound = false,
+                "no-proof" => state.session_admission = super::SessionAdmission::default(),
+                "wrong-proof" => state.session_admission.admitted_node = Some("gamma".into()),
                 "revoked" => apply_inventory_reload(&state, reload_posture(2, vec![])).await,
                 _ => {}
             }
@@ -7248,12 +7498,14 @@ mod tests {
                 Some("bridge-beta"),
                 source,
                 origin_service,
+                Some("epoch-1"),
+                false,
             )
             .await;
             let delivered = bus_mod::parse(&target_rx.recv().await.unwrap()).unwrap();
             assert_eq!(
                 delivered.get("broker_peer"),
-                if matches!(case, "valid" | "off" | "observe" | "non-wg") {
+                if matches!(case, "valid" | "off" | "observe" | "relay" | "bad-source") {
                     Some("beta")
                 } else {
                     None
@@ -7261,14 +7513,77 @@ mod tests {
                 "{case}"
             );
             assert_eq!(
+                delivered.get("broker_connection"),
+                if matches!(case, "valid" | "off" | "observe" | "relay" | "bad-source") {
+                    Some("beta/epoch-1")
+                } else {
+                    None
+                },
+                "{case}"
+            );
+            assert_eq!(
                 delivered.get("broker_service"),
-                if matches!(case, "valid" | "off" | "observe" | "non-wg") {
+                if matches!(case, "valid" | "off" | "observe") {
                     Some("desktopctl")
                 } else {
                     None
                 },
                 "{case}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn admitted_mesh_protection_survives_a_legacy_destination() {
+        for admitted in [true, false] {
+            let mut state = mesh_delivery_test_state().await;
+            if !admitted {
+                state.session_admission = super::SessionAdmission::default();
+            }
+            let (caller, _caller_rx) = mpsc::channel(4);
+            let (target, mut target_rx) = mpsc::channel(4);
+            {
+                let mut registry = state.registry.write().await;
+                for (name, tx) in [("bridge-beta", caller.clone()), ("recipient", target)] {
+                    registry.insert(
+                        name.into(),
+                        super::ServiceEntry {
+                            tx,
+                            protected_responses: Default::default(),
+                            traffic_class: super::TrafficClass::Legacy,
+                            info: Default::default(),
+                        },
+                    );
+                }
+            }
+            let mut msg = BusMessage::new()
+                .with_header("id", "protected-mesh")
+                .with_header("command", "probe.echo")
+                .with_body("private payload");
+            let result = super::route_local(
+                &state,
+                "recipient",
+                &mut msg,
+                &caller,
+                Some("bridge-beta"),
+                "192.0.2.2".parse().unwrap(),
+                Some("desktop"),
+                Some("epoch-1"),
+                true,
+            )
+            .await;
+            assert_eq!(result.outcome, super::ObserveOutcome::Delivered);
+            assert_eq!(result.traffic_class.protected(), admitted);
+            let wire = target_rx.recv().await.unwrap();
+            let (tap, mut tapped) = mpsc::channel(4);
+            let taps = Arc::new(RwLock::new(vec![tap]));
+            super::broadcast_tap(&taps, &wire, None, result.traffic_class).await;
+            assert_eq!(tapped.try_recv().is_err(), admitted);
+            let response_class = state
+                .pending_responses
+                .response_class(msg.get("id").unwrap(), false)
+                .await;
+            assert_eq!(response_class.protected(), admitted);
         }
     }
 
@@ -7317,6 +7632,8 @@ mod tests {
             Some("bridge-beta"),
             source,
             Some("desktopctl"),
+            None,
+            false,
         );
         tokio::pin!(route);
         // Poll directly to the held pending lock. Registry ownership is no
@@ -7354,6 +7671,10 @@ mod tests {
             "Broker_Service",
             "mesh_from",
             "Mesh_From",
+            "broker_connection",
+            "Broker_Connection",
+            "broker_protected",
+            "Broker_Protected",
         ] {
             msg.headers.insert(name.into(), "forged".into());
         }

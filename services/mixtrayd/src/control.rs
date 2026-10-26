@@ -1,6 +1,6 @@
 //! Start, stop and restart for the COS tab. A system unit is controlled
-//! through hostd's `unit.control` command: hostd is root, and its grant
-//! (`mixtray-units`) names the units this daemon may act on, so no sudo and no
+//! through hostd's `unit.control` command, available to every local caller.
+//! hostd runs as root, so no sudo and no
 //! polkit prompt is involved. The daemon refuses anything outside the COS list.
 
 use serde::Deserialize;
@@ -11,8 +11,7 @@ use tokio::net::UnixStream;
 
 use crate::units;
 
-/// hostd's local socket. Its peer is this daemon, so the grant's cgroup match
-/// is the `mixtrayd.service` cgroup.
+/// hostd's local socket; the kernel supplies caller identity for its audit log.
 pub const HOSTD_SOCKET: &str = "/run/hostd/hostd.sock";
 const HOSTD_COMMAND: &str = "unit.control";
 /// hostd waits for the unit job, so this covers its own budget plus a margin.

@@ -56,7 +56,13 @@ pub fn dispatch(
     };
     // Workshop owns app-targeted macro commands and opening the editor.
     if app == "workshop"
-        && (suffix == "open"
+        && command.body.len()
+            <= if suffix == "put" {
+                ::macros::commands::PUT_ENVELOPE_LIMIT
+            } else {
+                REQUEST_BODY_LIMIT
+            }
+        && (matches!(suffix, "new" | "open")
             || serde_json::from_str::<Value>(&command.body)
                 .ok()
                 .is_some_and(|body| body.get("app").is_some()))

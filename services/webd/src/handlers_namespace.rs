@@ -47,6 +47,14 @@
 //!
 //! Every Bus caller can read and mutate the namespace. Route capability
 //! declarations still validate what an embedded HTTP handler can execute.
+//!
+//! ## Reload signal
+//!
+//! `after_set`/`after_delete` fire a `tokio::sync::Notify` so the rebuild
+//! task reads a fresh namespace snapshot. `notify_one` is non-blocking and
+//! coalesces multiple writes into one rebuild of the latest state. It stores
+//! a permit if the task is busy, so no wakeup is missed while the task keeps
+//! looping back to `notified()`. The namespace remains the durable source.
 
 use std::sync::Arc;
 

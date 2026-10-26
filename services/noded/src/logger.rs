@@ -9,8 +9,7 @@
 //!    surface. Low-volume request/response — must deliver.
 //! 2. **Observer connection** registers under a process-scoped identity,
 //!    subscribes to metadata-only `noded.observe`, and receives the bounded,
-//!    drop-accounted broker stream. It requires an operator allowlist entry
-//!    matching `log-observe-*`.
+//!    drop-accounted broker stream, available to every Bus caller.
 //!
 //! Splitting the connections gives each its own bounded outbound mpsc, so a
 //! slow observer consumer (disk contention, log file rotation) can never starve

@@ -331,12 +331,23 @@ the Bus contracts otherwise match 0.18.2.</p>
 <p><code>noded.tap</code> and <code>noded.observe.start</code> accept callers from every node,
 including anonymous connections. Observation events are delivered on the
 connection that started the subscription; registration is unnecessary.
-Connection quotas, bounded queues, filtering and payload redaction still
-apply. Native-session traffic can cross nodes. Broker identity stamps,
+Tap has a broker-wide limit of 64 live subscriber connections, bounded queues
+and unredacted payloads. Repeated tap requests on one connection reuse its
+subscription. Observe alone applies filters and payload redaction. Native-session traffic can cross nodes. Broker identity stamps,
 mesh admission, topic ownership and session-record ownership remain enforced.</p>
-<p>Node config preserves unknown keys as unowned data, so existing files with
-<code>noded.mesh_open</code> or <code>observe.allowed_services</code> still load. Neither key
-controls broker behaviour.</p>
+<p>Node config preserves unknown keys as unowned data, so older files still load.
+Unknown keys do not control broker behaviour.</p>
+<p>Every delivered request carries <code>broker_origin</code> (<code>local</code> or <code>mesh</code>) and
+<code>broker_connection</code>, unique per client connection for the broker's lifetime.
+Anonymous callers use the connection stamp for replay, rate and audit identity.
+Client spellings of these reserved headers are stripped case-insensitively.
+An admitted mesh link carries the originating stamp; the receiving broker
+prefixes it with <code>&lt;peer&gt;/</code> and stamps <code>broker_peer</code> (and <code>broker_service</code> when
+the source registered a service). Enforce admission requires a matching node
+proof and WireGuard binding before a bridge can attest these fields.
+<code>broker_protected</code> carries the native-session traffic class only across admitted
+links; peer-side tap and observe skip its payload as they do local protected
+traffic.</p>
         </article>
         <p class="doc-source"><a href="/noded/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

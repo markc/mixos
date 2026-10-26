@@ -21,7 +21,7 @@ fn load_targets($path, $project, $roster)
       if $target.host != $target.node then fail("system target must preserve its existing node transport") end
       continue
     end
-    if $target.admission == nil or $target.mesh_open == nil then fail("desk rollout requires explicit admission and mesh_open posture") end
+    if $target.admission == nil then fail("desk rollout requires explicit node admission mode") end
     $out[$target.node] = $target
   end
   if len($parsed.targets) != len($roster) then fail("configured target set must cover every rostered node exactly once") end
@@ -37,7 +37,7 @@ end
 
 fn request($target, $inventory, $genesis, $mix_bin)
   $target = $targets.checked_target($target)
-  if $target.kind != "desk" or $target.admission == nil or type($target.mesh_open) != "bool" then fail("desk target lacks explicit policy") end
+  if $target.kind != "desk" or $target.admission == nil then fail("desk target lacks explicit policy") end
   $member = member_named($inventory,$target.node)
   $d2_keys = []
   for $credential in ($member.credentials ?? [])
@@ -46,7 +46,7 @@ fn request($target, $inventory, $genesis, $mix_bin)
   if len($d2_keys) == 0 then fail("desk has no current authenticated D2 identity") end
   if type($genesis) != "string" or not re_match($genesis,"^[A-Za-z0-9+/]{43}=$") then fail("invalid authenticated genesis public key") end
   return {target:$target,mesh:$inventory.mesh,ip:$member.mesh_ip,port:$member.noded_port ?? 4200,
-    admission:$target.admission,mesh_open:$target.mesh_open,genesis:$genesis,mix_bin:$mix_bin,d2_keys:$d2_keys}
+    admission:$target.admission,genesis:$genesis,mix_bin:$mix_bin,d2_keys:$d2_keys}
 end
 
 fn worker_program($path)

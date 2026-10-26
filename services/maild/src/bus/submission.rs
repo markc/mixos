@@ -173,13 +173,11 @@ pub async fn dispatch(
 fn submission_actor(cmd: &IncomingCommand) -> String {
     if !cmd.from.is_empty() {
         cmd.from.clone()
-    } else if cmd.header("broker_origin") == Some("mesh") {
-        cmd.header("broker_peer")
-            .filter(|peer| !peer.is_empty())
-            .map(|peer| format!("mesh:{peer}"))
-            .unwrap_or_else(|| "bus".into())
     } else {
-        "bus".into()
+        cmd.header("broker_connection")
+            .filter(|connection| !connection.is_empty())
+            .map(|connection| format!("connection:{connection}"))
+            .unwrap_or_else(|| "bus".into())
     }
 }
 
@@ -368,6 +366,7 @@ mod tests {
             headers: [
                 ("broker_origin".into(), "mesh".into()),
                 ("broker_peer".into(), "peer-one".into()),
+                ("broker_connection".into(), "peer-one/epoch-1".into()),
             ]
             .into(),
             body: json!({"operation_id":"once-1",
@@ -397,13 +396,15 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(actor, "mesh:peer-one");
+        assert_eq!(actor, "connection:peer-one/epoch-1");
         assert_eq!(dispatch(&cmd, &db, &store, &aliases, 1).await, first);
         assert_eq!(
             dispatch(&cmd, &db, &store, &aliases, 1024 * 1024).await,
             first
         );
         cmd.from = "reconnected-native-test".into();
+        cmd.headers
+            .insert("broker_connection".into(), "peer-one/epoch-2".into());
         assert_eq!(
             dispatch(&cmd, &db, &store, &aliases, 1024 * 1024).await,
             first
@@ -471,7 +472,13 @@ mod tests {
         cmd.headers.insert("broker_origin".into(), "mesh".into());
         assert_eq!(submission_actor(&cmd), "bus");
         cmd.headers.insert("broker_peer".into(), "peer-two".into());
-        assert_eq!(submission_actor(&cmd), "mesh:peer-two");
+        cmd.headers
+            .insert("broker_connection".into(), "peer-two/epoch-1".into());
+        let first = submission_actor(&cmd);
+        assert_eq!(first, "connection:peer-two/epoch-1");
+        cmd.headers
+            .insert("broker_connection".into(), "peer-two/epoch-2".into());
+        assert_ne!(first, submission_actor(&cmd));
         cmd.from = "local-agent".into();
         assert_eq!(submission_actor(&cmd), "local-agent");
     }

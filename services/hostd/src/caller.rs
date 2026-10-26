@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Who is calling. Identity comes from the kernel (`SO_PEERCRED`) and the
-//! caller's cgroup, never from anything the caller sends.
+//! Socket caller identity comes from `SO_PEERCRED` and the process cgroup.
+//! Bus caller identity comes from the broker's reserved name/connection stamps.
 use serde::{Deserialize, Serialize};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use tokio::net::UnixStream;
@@ -45,7 +45,14 @@ impl Origin {
     pub fn from_command(command: &bus::native_client::IncomingCommand) -> Self {
         match command.header("broker_origin") {
             Some("local") => Self::LocalBus {
-                from: command.from.clone(),
+                from: if command.from.is_empty() {
+                    format!(
+                        "connection:{}",
+                        command.header("broker_connection").unwrap_or("unstamped")
+                    )
+                } else {
+                    command.from.clone()
+                },
             },
             Some("mesh") => Self::Mesh,
             _ => Self::Unstamped,
@@ -205,9 +212,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn anonymous_bus_callers_have_separate_rates_and_audit_identities() {
+        let command = |id: &str| bus::native_client::IncomingCommand {
+            generation: 0,
+            from: String::new(),
+            command: "hostd.freeze".into(),
+            id: None,
+            args: serde_json::Value::Null,
+            body: "{}".into(),
+            headers: [
+                ("broker_origin".into(), "local".into()),
+                ("broker_connection".into(), id.into()),
+            ]
+            .into(),
+        };
+        let a = Origin::from_command(&command("epoch-1"));
+        let b = Origin::from_command(&command("epoch-2"));
+        assert_ne!(a.rate_key(), b.rate_key());
+        assert_ne!(
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap()
+        );
+        let mut rates = crate::rate::RateLimiter::default();
+        let now = std::time::Instant::now();
+        for _ in 0..crate::rate::COUNT {
+            assert!(rates.admit("hostd.freeze", &a.rate_key(), now));
+        }
+        assert!(!rates.admit("hostd.freeze", &a.rate_key(), now));
+        assert!(rates.admit("hostd.freeze", &b.rate_key(), now));
+    }
+
+    #[test]
     fn bus_origin_comes_from_the_broker_stamp() {
         for (stamp, expected) in [
-            (Some("local"), Origin::LocalBus { from: "".into() }),
+            (
+                Some("local"),
+                Origin::LocalBus {
+                    from: "connection:unstamped".into(),
+                },
+            ),
             (Some("mesh"), Origin::Mesh),
             (None, Origin::Unstamped),
             (Some("forged"), Origin::Unstamped),

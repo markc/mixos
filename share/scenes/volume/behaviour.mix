@@ -90,6 +90,7 @@ fn retry_watch()
 end
 
 on refresh async
+  if len(keys($event.headers)) != 0 then return end
   $state.queued = false
   $r.respond($r.refresh_result(fn() = refresh()))
 end
@@ -97,6 +98,7 @@ end
 -- A closed batch from the live handle re-subscribes after the backoff; one
 -- from an older handle (already replaced) changes nothing.
 on audio.changed async
+  if len(keys($event.headers)) != 0 then return end
   $batch = type($event.args) == "map" ? $event.args : {}
   if type($batch.closed) == "map" then
     eprint("volume: audio events ended: " .. to_string($batch.closed.message))
@@ -113,6 +115,7 @@ on audio.changed async
 end
 
 on audio.retry async
+  if len(keys($event.headers)) != 0 then return end
   try
     sleep($state.retry)
     $state.retry = min($state.retry * 2, 300)
@@ -133,7 +136,7 @@ on scenes.changed
   $state.open = $open
 end
 
--- ── writes (pactl, on relayed clicks only) ──────────────────────────────
+-- ── writes (pactl, from UI or Bus commands) ──────────────────────────────
 
 -- The one write guard ($m.vol_writes_allowed on the last snapshot). Every
 -- write path checks it before building a pactl argv: level, step and mute
@@ -307,6 +310,7 @@ on props.changed
   end
 end
 on bus.connected
+  if len(keys($event.headers)) != 0 then return end
   $state.ready = false
   $ready = $r.ready($ctx)
   $state.ready = $ready.ok

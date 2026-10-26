@@ -64,7 +64,7 @@ fn flow($base,$program,$execute)
 end
 
 $root = trim(run_argv_must(["mktemp","-d"]))
-$description = {schema_version:1,project:"example",targets:[{node:"desk",host:"host",kind:"desk",machine:"desk",profile:"/var/lib/example/desk-bus",session:3,account:"desktop",admission:"observe",mesh_open:true}]}
+$description = {schema_version:1,project:"example",targets:[{node:"desk",host:"host",kind:"desk",machine:"desk",profile:"/var/lib/example/desk-bus",session:3,account:"desktop",admission:"observe"}]}
 $target = $targets.parse_targets($description).targets[0]
 $inventory = {mesh:"example.internal",epoch:7,members:[{name:"desk",mesh_ip:"192.0.2.14",status:"active",bus:true,credentials:[{kind:"d2",from_epoch:1,pubkey:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}]}]}
 $base = $ops.request($target,$inventory,"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","/opt/example/bin/mix")

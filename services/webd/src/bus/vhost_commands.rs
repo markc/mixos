@@ -465,10 +465,6 @@ async fn acme_status(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, Strin
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Build the [`PeerIdentity`] noded forwards to the broker. Mirrors
-/// [`crate::vhosts_namespace::dispatch_props`] — `service_name` carries
-/// the registered sender; Unix peer creds + WireGuard fields stay
-/// `None` because noded doesn't surface them today.
 pub(crate) fn caller_error(msg: &str) -> (u8, String) {
     (
         RC_CALLER_ERROR,

@@ -1488,7 +1488,7 @@ pub(crate) mod tests {
         }
     }
     #[tokio::test]
-    async fn bus_is_mesh_open_and_revoke_is_account_scoped() {
+    async fn bus_is_open_and_revoke_is_account_scoped() {
         let (_tmp, node, vhost) = fixture().await;
         let mut cmd = ::bus::native_client::IncomingCommand {
             generation: 0,

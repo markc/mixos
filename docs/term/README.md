@@ -47,6 +47,12 @@ Callers can inspect and cancel each other's operations. Targets, current
 generations, request replay checks and bounded queues still apply. Input
 from different callers shares the PTY write queue.
 
+Request IDs are caller-scoped, using the broker's connection stamp for
+anonymous callers. Operation IDs are minted from one counter per Term control
+instance, so `(target, operation_id)` identifies one retained outcome across
+all callers. Forwarded shell operations use the same counter; Term translates
+their IDs when reading or cancelling the child operation.
+
 ## Configuration
 
 The desktop profile's `terminal.*` settings, held by

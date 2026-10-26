@@ -107,6 +107,7 @@ fn retry_watch()
 end
 
 on refresh async
+  if len(keys($event.headers)) != 0 then return end
   $state.queued = false
   $r.respond($r.refresh_result(fn() = refresh()))
 end
@@ -114,6 +115,7 @@ end
 -- A closed batch from the live handle re-subscribes after the backoff; one
 -- from an older handle (already replaced) changes nothing.
 on net.changed async
+  if len(keys($event.headers)) != 0 then return end
   $batch = type($event.args) == "map" ? $event.args : {}
   if type($batch.closed) == "map" then
     eprint("network: net_watch ended: " .. to_string($batch.closed.message))
@@ -131,6 +133,7 @@ on net.changed async
 end
 
 on net.retry async
+  if len(keys($event.headers)) != 0 then return end
   try
     sleep($state.retry)
     $state.retry = min($state.retry * 2, 300)
@@ -287,6 +290,7 @@ fn start_scan($device)
   end
 end
 on net.scan async
+  if len(keys($event.headers)) != 0 then return end
   $device = to_string(($event.args ?? {}).device)
   $gen = ($event.args ?? {}).gen
   if $state.edit == nil or $state.edit.kind != "wifi" or $state.edit.link != $device or $state.edit.scan_gen != $gen or not $state.edit.scanning then return end
@@ -349,6 +353,7 @@ end
 
 -- The write task validates the pending link and typed command.
 on net.write async
+  if len(keys($event.headers)) != 0 then return end
   $a = type($event.args) == "map" ? $event.args : {}
   $link = to_string($a.link)
   $command = $a.command
@@ -465,6 +470,7 @@ end
 -- standing poll. A VT switched away for longer leaves the field hidden;
 -- picking the network again starts a fresh reset.
 on net.pass.release async
+  if len(keys($event.headers)) != 0 then return end
   $gen = ($event.args ?? {}).gen
   $w = $r.call($ctx.host, "shell.scene.watch", {scene: $ctx.name})
   $want = ($w.ok and type($w.value) == "map") ? $w.value.revision : nil
@@ -543,6 +549,7 @@ on props.changed
   end
 end
 on bus.connected
+  if len(keys($event.headers)) != 0 then return end
   $state.ready = false
   $ready = $r.ready($ctx)
   $state.ready = $ready.ok

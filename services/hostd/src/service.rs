@@ -278,7 +278,7 @@ async fn serve(
         "hostd.status" => Ok(status(host, origin)),
         "hostd.receipt" => receipt_command(host, body),
         "hostd.freeze" => freeze_command(host, body, origin),
-        "hostd.thaw" => thaw_command(host, body),
+        "hostd.thaw" => thaw_command(host, body, origin),
         desk::RESTART | desk::STOP => {
             let request: desk::Request = decode(body)?;
             if !desk::valid_name(&request.desk) {
@@ -297,7 +297,7 @@ async fn serve(
             let request: unit::Request = decode(body)?;
             if !unit::valid_unit(&request.unit) {
                 return Err(
-                    json!({"status":"bad_request","message":"unit must be a .service name of letters, digits and -_.@:"}),
+                    json!({"status":"bad_request","message":"unit must have a known systemd suffix and a plain name without a leading dash"}),
                 );
             }
             if !unit::valid_action(&request.action) {
@@ -506,16 +506,32 @@ fn freeze_command(host: &Host, body: &Value, origin: &Origin) -> Result<Value, V
     if body.reason.as_ref().is_some_and(|r| r.len() > 200) {
         return Err(json!({"status":"bad_request","message":"reason over 200 bytes"}));
     }
+    control_rate(host, "hostd.freeze", origin)?;
     freeze::freeze(&host.state, origin, body.reason.as_deref())
         .map(|record| json!({"frozen": record}))
         .map_err(|e| json!({"status":"internal","message":e.to_string()}))
 }
 
-fn thaw_command(host: &Host, body: &Value) -> Result<Value, Value> {
+fn thaw_command(host: &Host, body: &Value, origin: &Origin) -> Result<Value, Value> {
     let _: Empty = decode(body)?;
+    control_rate(host, "hostd.thaw", origin)?;
     freeze::thaw(&host.state)
         .map(|thawed| json!({"thawed": thawed}))
         .map_err(|e| json!({"status":"internal","message":e.to_string()}))
+}
+
+// Freeze and thaw must remain available while frozen, but share write budgets.
+fn control_rate(host: &Host, command: &str, origin: &Origin) -> Result<(), Value> {
+    if host
+        .limiter
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .admit(command, &origin.rate_key(), Instant::now())
+    {
+        Ok(())
+    } else {
+        Err(refuse("rate_limited", command))
+    }
 }
 
 /// Only origin, freeze and rate constrain writes. Identity is for rate
@@ -709,6 +725,41 @@ mod tests {
             "rate_limited"
         );
         assert!(gate(&host, "net.link.apply", &socket_caller(), true).is_ok());
+    }
+
+    #[tokio::test]
+    async fn unit_control_refuses_systemctl_options() {
+        let (_dir, host) = fixture();
+        let result = dispatch(
+            &host,
+            "unit.control",
+            &json!({"unit":"--job-mode=replace-irreversibly","action":"restart"}),
+            &local_bus(),
+        )
+        .await;
+        assert_eq!(result.unwrap_err()["status"], "bad_request");
+    }
+
+    #[tokio::test]
+    async fn freeze_and_thaw_share_the_host_write_cap_even_when_frozen() {
+        let (_dir, host) = fixture();
+        dispatch(&host, "hostd.freeze", &json!({}), &local_bus())
+            .await
+            .unwrap();
+        for i in 1..crate::rate::COUNT * 4 {
+            assert!(host.limiter.lock().unwrap().admit(
+                "net.link.apply",
+                &i.to_string(),
+                Instant::now()
+            ));
+        }
+        for name in ["hostd.freeze", "hostd.thaw"] {
+            let error = dispatch(&host, name, &json!({}), &local_bus())
+                .await
+                .unwrap_err();
+            assert_eq!(error["status"], "rate_limited", "{name}");
+        }
+        assert!(freeze::blocks_writes(&host.state));
     }
 
     #[tokio::test]

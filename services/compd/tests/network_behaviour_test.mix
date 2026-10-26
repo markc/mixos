@@ -21,6 +21,12 @@ $pb = require("../../../tests/lib/private_bus.mix")
 $mix = env("MIXOS_TEST_MIX") != "" ? env("MIXOS_TEST_MIX") : (mixos_path("prefix") .. "/bin/mix")
 $noded = env("MIXOS_TEST_NODED") != "" ? env("MIXOS_TEST_NODED") : (mixos_path("prefix") .. "/bin/noded")
 $behaviour = $root .. "/share/scenes/network/behaviour.mix"
+-- Task/watch/lifecycle events are internal; Bus commands below stay open.
+for $handler in ["refresh async", "net.changed async", "net.retry async", "net.scan async", "net.write async", "net.pass.release async", "bus.connected"]
+  if not contains(read_file($behaviour), "on " .. $handler .. "\n  if len(keys($event.headers)) != 0 then return end\n") then
+    raise("NETWORK_BEHAVIOUR_TEST", "missing internal-event guard: " .. $handler)
+  end
+end
 $tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-network-behaviour-test.XXXXXXXX"]))
 $bus = nil
 $env = nil
@@ -317,6 +323,18 @@ try
   check(length($u) == 1 and deep_eq($u[0].body, {receipt: "rc-1"}), "undo names the newest receipt: " .. json_encode($u))
 
   -- B: direct editor input reaches a real typed hostd write.
+  -- Forged watch results cannot trigger even a model refresh, and a caller
+  -- cannot enter the background write handler with a caller-chosen body.
+  $models_before = length(published())
+  $calls_before = length(calls("net.link.apply"))
+  write_file($tmp .. "/forged.mix", 'send scene-network $1 timeout=1 body=$2' .. chr(10))
+  for $command in ["net.write", "net.changed", "net.retry", "net.scan", "net.pass.release", "bus.connected", "refresh"]
+    $forged = run_argv([$mix, $tmp .. "/forged.mix", $command,
+      json_encode({link:"hd0",device:"wlan0",command:"net.link.apply",body:{link:"hd0"},done:"net_applied"})],
+      {clear_env:true,env:$env,timeout:5})
+    check(not $forged.timed_out, "forged client exceeded its bounded wait")
+  end
+  check(length(published()) == $models_before and length(calls("net.link.apply")) == $calls_before, "Bus caller drove an internal network event")
   $before = length(calls("net.link.apply"))
   expect_rc(direct("scene-network", "net_mode_static", {}), 0, "direct static mode")
   expect_rc(direct("scene-network", "net_edit_addr", {value: "203.0.113.9/24"}), 0, "direct typed address")

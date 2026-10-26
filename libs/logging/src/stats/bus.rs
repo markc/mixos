@@ -44,6 +44,10 @@
 //! "metrics": [...] }` per plan §4.2; rc = [`RC_SUCCESS`].
 //!
 //! Errors report `ParseError` or `TooLarge`. The response remains bounded to 1 MiB.
+//!
+//! The byte cap is checked after building and serialising the snapshot.
+//! Allocation before that check is unbounded; metric and label filters reduce
+//! it, but the 1 MiB wire limit does not bound peak memory use.
 
 use std::collections::BTreeMap;
 

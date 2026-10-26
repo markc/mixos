@@ -8,7 +8,7 @@ end
 fn refuses($action)
   try $action(); return false catch $failure return true end
 end
-$raw = {node:"desk-a",host:"host-a",kind:"desk",machine:"desk-a",profile:"/var/lib/example/broker-a",session:3,client_account:"desktop",broker_account:"noded",admission:"enforce",mesh_open:true}
+$raw = {node:"desk-a",host:"host-a",kind:"desk",machine:"desk-a",profile:"/var/lib/example/broker-a",session:3,client_account:"desktop",broker_account:"noded",admission:"enforce"}
 $doc = {schema_version:2,project:"example",targets:[$raw]}
 $t = $targets.parse_targets($doc).targets[0]
 check($t.account=="desktop" and $t.client_account=="desktop" and $t.broker_account=="noded","principal split lost")

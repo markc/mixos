@@ -25,7 +25,7 @@ fn parse_targets($document)
   $seen = []
   $normal = []
   for $item in $document.targets
-    exact_keys($item, ["node", "host", "kind", "machine", "profile", "session", "account", "client_account", "broker_account", "admission", "mesh_open"], "target")
+    exact_keys($item, ["node", "host", "kind", "machine", "profile", "session", "account", "client_account", "broker_account", "admission"], "target")
     $node = plain_label($item.node, "node")
     $host = plain_label($item.host, "host")
     if contains($seen, $node) then fail("duplicate node " .. $node) end
@@ -33,7 +33,7 @@ fn parse_targets($document)
     $kind = $item.kind
     if $kind != "system" and $kind != "desk" then fail("kind must be system or desk") end
     if $kind == "system" then
-      for $key in ["machine", "profile", "session", "account", "client_account", "broker_account", "admission", "mesh_open"]
+      for $key in ["machine", "profile", "session", "account", "client_account", "broker_account", "admission"]
         if has_key($item, $key) then fail("system target cannot carry " .. $key) end
       end
       push($normal, {project:$project, node:$node, host:$host, kind:$kind, profile:nil, etc:"/etc/" .. $project, var:"/var/lib/" .. $project,
@@ -57,12 +57,10 @@ fn parse_targets($document)
       $profile = $item.profile
       if type($profile) != "string" or not re_match($profile, "^/var/lib/" .. $project .. "/[a-z][a-z0-9-]{0,31}$") then fail("profile must be one direct project state child") end
       $admission = $item.admission ?? nil
-      $mesh_open = $item.mesh_open ?? nil
       if $admission != nil and not contains(["off","observe","enforce"],$admission) then fail("invalid admission posture") end
-      if $mesh_open != nil and type($mesh_open) != "bool" then fail("mesh_open must be boolean") end
       $entry = {project:$project, node:$node, host:$host, kind:$kind, profile:$profile, etc:$profile .. "/etc", var:$profile .. "/var",
         unit:"noded@" .. to_string($session) .. ".service", account:$account, machine:$machine, session:$session,
-        run:"/run/" .. $project .. "/session/" .. to_string($session),admission:$admission,mesh_open:$mesh_open}
+        run:"/run/" .. $project .. "/session/" .. to_string($session),admission:$admission}
       if $broker != nil then
         $entry.identity_schema = 2
         $entry.client_account = $account
@@ -109,7 +107,6 @@ fn checked_target($target)
       $raw.account = $target.account
     end
     if $target.admission != nil then $raw.admission = $target.admission end
-    if $target.mesh_open != nil then $raw.mesh_open = $target.mesh_open end
   end
   $expected = parse_targets({schema_version:$target.identity_schema ?? 1,project:$target.project,targets:[$raw]}).targets[0]
   if not deep_eq($target, $expected) then fail("target must be the unchanged parsed description") end

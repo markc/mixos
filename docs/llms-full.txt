@@ -6324,6 +6324,20 @@ network. hostd keeps what makes a write safe rather than who may make it:
 typed commands, no generic exec, health checks with automatic revert,
 receipts for `hostd.undo`, rate limits and `freeze`.
 
+## Consequences, accepted with the decision
+
+- **hostd's mesh refusal covers the direct Bus path only.** Term, the pane
+  shell and the scenes act for mesh callers, and they reach hostd as local
+  callers. A caller on another node can therefore change a host through
+  them. Rate limits, health-check revert and receipts bound it.
+- **Any caller on a host may thaw hostd.** `freeze` stops mesh callers, not
+  a local agent.
+- **Secrets are readable from any node.** Property reads return secret
+  fields to every caller, and `noded.tap` mirrors traffic unredacted.
+- **Anonymous callers are told apart by connection.** The broker stamps
+  every request with its connection, so callers with no registered name
+  never share a replay or rate namespace.
+
 ## What stays
 
 These checks prove where a request came from or keep state consistent.
@@ -32843,13 +32857,25 @@ The source is
 `noded.tap` and `noded.observe.start` accept callers from every node,
 including anonymous connections. Observation events are delivered on the
 connection that started the subscription; registration is unnecessary.
-Connection quotas, bounded queues, filtering and payload redaction still
-apply. Native-session traffic can cross nodes. Broker identity stamps,
+Tap has a broker-wide limit of 64 live subscriber connections, bounded queues
+and unredacted payloads. Repeated tap requests on one connection reuse its
+subscription. Observe alone applies filters and payload redaction. Native-session traffic can cross nodes. Broker identity stamps,
 mesh admission, topic ownership and session-record ownership remain enforced.
 
-Node config preserves unknown keys as unowned data, so existing files with
-`noded.mesh_open` or `observe.allowed_services` still load. Neither key
-controls broker behaviour.
+Node config preserves unknown keys as unowned data, so older files still load.
+Unknown keys do not control broker behaviour.
+
+Every delivered request carries `broker_origin` (`local` or `mesh`) and
+`broker_connection`, unique per client connection for the broker's lifetime.
+Anonymous callers use the connection stamp for replay, rate and audit identity.
+Client spellings of these reserved headers are stripped case-insensitively.
+An admitted mesh link carries the originating stamp; the receiving broker
+prefixes it with `<peer>/` and stamps `broker_peer` (and `broker_service` when
+the source registered a service). Enforce admission requires a matching node
+proof and WireGuard binding before a bridge can attest these fields.
+`broker_protected` carries the native-session traffic class only across admitted
+links; peer-side tap and observe skip its payload as they do local protected
+traffic.
 
 ---
 
@@ -34867,6 +34893,12 @@ commands and forwards execution and isolated tasks to the pane shell.
 Callers can inspect and cancel each other's operations. Targets, current
 generations, request replay checks and bounded queues still apply. Input
 from different callers shares the PTY write queue.
+
+Request IDs are caller-scoped, using the broker's connection stamp for
+anonymous callers. Operation IDs are minted from one counter per Term control
+instance, so `(target, operation_id)` identifies one retained outcome across
+all callers. Forwarded shell operations use the same counter; Term translates
+their IDs when reading or cancelling the child operation.
 
 ## Configuration
 

@@ -543,6 +543,40 @@ fn every_caller_can_read_write_and_manage_sibling_panes() {
             call(&tcp, &parent.name, "term.type", request.clone()).await,
             first
         );
+        let tcp_other = NodedClient::connect_anonymous(&fixture.broker.url)
+            .await
+            .unwrap();
+        let mut other_request = request.clone();
+        other_request["text"] = json!("different anonymous caller");
+        let second = call(&tcp_other, &parent.name, "term.type", other_request.clone()).await;
+        assert_eq!(
+            second.0, 0,
+            "anonymous callers shared replay history: {second:?}"
+        );
+        assert_ne!(first.1["operation_id"], second.1["operation_id"]);
+        assert_eq!(
+            call(&tcp_other, &parent.name, "term.type", other_request).await,
+            second
+        );
+        let select = json!({"target":target,"request_id":"2"});
+        let selected_a = call(&tcp, &parent.name, "term.pane.select", select.clone()).await;
+        let selected_b = call(&tcp_other, &parent.name, "term.pane.select", select).await;
+        assert_eq!(selected_a.0, 0);
+        assert_eq!(selected_b.0, 0);
+        assert_ne!(selected_a.1["operation_id"], selected_b.1["operation_id"]);
+        for retained in [&selected_a, &selected_b] {
+            let answer = call(
+                caller.client(),
+                &parent.name,
+                "term.operation",
+                json!({"target":target,"operation_id":retained.1["operation_id"]}),
+            )
+            .await;
+            assert_eq!(
+                &answer, retained,
+                "lookup selected another caller's request id 2"
+            );
+        }
         assert_eq!(
             call(caller.client(), &parent.name, "term.type", request)
                 .await
@@ -702,7 +736,8 @@ fn p0i_08_queued_input_human_revoke_and_deadline() {
         assert_eq!(pane.lock().unwrap().stats.lock().unwrap().input_written - before, 2);
         listener.block_control_writes(true);
         let body = json!({"target":target,"request_id":"2","foreground_generation":listener.foreground_generation().to_string(),"text":"EXPIRED_INPUT"});
-        assert_eq!(call(owner.client(), &parent.name, "term.type", body).await.0, 0);
+        let accepted_expiry = call(owner.client(), &parent.name, "term.type", body).await;
+        assert_eq!(accepted_expiry.0, 0);
         let paused = fixture.broker.pause();
         tokio::time::sleep(Duration::from_millis(2200)).await;
         drop(paused);
@@ -728,7 +763,7 @@ fn p0i_08_queued_input_human_revoke_and_deadline() {
         let expired = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 let reply = call(owner.client(), &parent.name, "term.operation",
-                    json!({"target":target,"operation_id":"2"})).await;
+                    json!({"target":target,"operation_id":accepted_expiry.1["operation_id"]})).await;
                 if reply.1["reason"] == "input_lease_ended" { break reply.1; }
                 tokio::time::sleep(Duration::from_millis(25)).await;
             }

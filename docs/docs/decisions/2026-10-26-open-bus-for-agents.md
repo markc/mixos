@@ -45,6 +45,20 @@ network. hostd keeps what makes a write safe rather than who may make it:
 typed commands, no generic exec, health checks with automatic revert,
 receipts for `hostd.undo`, rate limits and `freeze`.
 
+## Consequences, accepted with the decision
+
+- **hostd's mesh refusal covers the direct Bus path only.** Term, the pane
+  shell and the scenes act for mesh callers, and they reach hostd as local
+  callers. A caller on another node can therefore change a host through
+  them. Rate limits, health-check revert and receipts bound it.
+- **Any caller on a host may thaw hostd.** `freeze` stops mesh callers, not
+  a local agent.
+- **Secrets are readable from any node.** Property reads return secret
+  fields to every caller, and `noded.tap` mirrors traffic unredacted.
+- **Anonymous callers are told apart by connection.** The broker stamps
+  every request with its connection, so callers with no registered name
+  never share a replay or rate namespace.
+
 ## What stays
 
 These checks prove where a request came from or keep state consistent.

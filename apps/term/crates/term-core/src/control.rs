@@ -47,11 +47,10 @@ fn caller_key(event: &VerifiedCommand) -> String {
     }
     let command = event.command();
     format!(
-        "bus:{:?}:{:?}:{:?}:{:?}",
+        "bus:{:?}:{:?}:{:?}",
         command.header("broker_origin"),
-        command.header("source_peer"),
-        command.header("signed_ident"),
-        command.from
+        command.from,
+        command.header("broker_connection")
     )
 }
 
@@ -72,8 +71,8 @@ fn caller_label(event: &VerifiedCommand) -> String {
             let command = event.command();
             format!(
                 "Bus {} {}",
-                command.header("source_peer").unwrap_or("local"),
-                command.from
+                command.header("broker_peer").unwrap_or("local"),
+                command.header("broker_connection").unwrap_or(&command.from)
             )
         })
 }
@@ -367,6 +366,8 @@ struct Entry {
     target: Target,
     outcome: Option<Reply>,
     sequence: u64,
+    operation: u64,
+    child_operation: Option<DecimalU64>,
     digest: [u8; 32],
     at: Instant,
     reply: Reply,
@@ -389,6 +390,7 @@ impl Default for History {
 }
 #[derive(Default)]
 struct State {
+    next_operation: u64,
     history: HashMap<String, History>,
     permits: Vec<std::sync::Weak<Permit>>,
     /// Request ids Term mints for what it forwards, and the caller request each
@@ -535,7 +537,7 @@ impl Control {
                         .find(|e| Some(DecimalU64(e.sequence)) == notice.request_id)
                 }) {
                     entry.outcome = Some(Reply::ok(json!({
-                        "operation_id":notice.request_id,
+                        "operation_id":DecimalU64(entry.operation),
                         "status":status,
                         "boundary":"pty_write", "reason":"input_lease_ended",
                         "delivered_bytes_lower_bound":notice.written,
@@ -681,18 +683,10 @@ impl Control {
             let state = self.state.lock().unwrap();
             return match state
                 .history
-                .get(&identity)
-                .into_iter()
-                .chain(
-                    state
-                        .history
-                        .iter()
-                        .filter(|(key, _)| *key != &identity)
-                        .map(|(_, history)| history),
-                )
+                .values()
                 .flat_map(|history| &history.entries)
                 .find(|entry| {
-                    entry.sequence == id.0
+                    entry.operation == id.0
                         && entry.target == request.target
                         && entry.at.elapsed() < RETENTION
                 }) {
@@ -928,10 +922,15 @@ impl Control {
             reply = Reply::error("UNKNOWN_OUTCOME");
         }
         if mutation {
+            state.next_operation = state
+                .next_operation
+                .checked_add(1)
+                .expect("operation id exhausted");
+            let operation = state.next_operation;
             if reply.rc == 0 {
                 let mut result: Value =
                     serde_json::from_str(&reply.body).expect("owned reply JSON");
-                result["operation_id"] = json!(request.request_id);
+                result["operation_id"] = json!(DecimalU64(operation));
                 reply.body = result.to_string();
             }
             let history = state.history.get_mut(&identity).unwrap();
@@ -940,6 +939,8 @@ impl Control {
                 target: request.target.clone(),
                 outcome: None,
                 sequence: request.request_id.unwrap().0,
+                operation,
+                child_operation: None,
                 digest,
                 at: Instant::now(),
                 reply: reply.clone(),
@@ -1052,9 +1053,23 @@ impl Control {
         target: &Target,
         sequence: u64,
         digest: [u8; 32],
-        reply: &Reply,
+        reply: &mut Reply,
     ) {
         let mut state = self.state.lock().unwrap();
+        state.next_operation = state
+            .next_operation
+            .checked_add(1)
+            .expect("operation id exhausted");
+        let operation = state.next_operation;
+        let mut body: Value = serde_json::from_str(&reply.body).expect("owned reply JSON");
+        let child_operation = body
+            .get("operation_id")
+            .cloned()
+            .and_then(|id| serde_json::from_value(id).ok());
+        if child_operation.is_some() {
+            body["operation_id"] = json!(DecimalU64(operation));
+            reply.body = body.to_string();
+        }
         let Some(history) = state.history.get_mut(identity) else {
             return;
         };
@@ -1063,6 +1078,8 @@ impl Control {
             target: target.clone(),
             outcome: None,
             sequence,
+            operation,
+            child_operation,
             digest,
             at: Instant::now(),
             reply: reply.clone(),
@@ -1224,6 +1241,22 @@ impl Control {
                 let Some(operation) = request.operation_id else {
                     return Reply::error("INVALID_ARGUMENT");
                 };
+                let child_operation = self
+                    .state
+                    .lock()
+                    .unwrap()
+                    .history
+                    .values()
+                    .flat_map(|history| &history.entries)
+                    .find(|entry| {
+                        entry.operation == operation.0
+                            && entry.target == request.target
+                            && entry.at.elapsed() < RETENTION
+                    })
+                    .and_then(|entry| entry.child_operation);
+                let Some(child_operation) = child_operation else {
+                    return Reply::error("UNKNOWN_OUTCOME");
+                };
                 // The pane shell resolves operation IDs and command families.
                 let shell_command = match command_name {
                     "term.exec.cancel" => "shell.execute.cancel",
@@ -1236,7 +1269,7 @@ impl Control {
                     json!({
                         "version": 1,
                         "target": child_target,
-                        "operation_id": operation,
+                        "operation_id": child_operation,
                     }),
                     None,
                 )
@@ -1260,6 +1293,8 @@ impl Control {
                 value["target"] = json!(request.target);
                 if let Some(sequence) = sequence {
                     value["operation_id_request"] = json!(DecimalU64(sequence));
+                } else {
+                    value["operation_id"] = json!(request.operation_id);
                 }
                 (Reply::ok(value), true)
             }
@@ -1309,7 +1344,7 @@ impl Control {
         if let Some(sequence) = sequence
             && retain
         {
-            self.record_outcome(identity, &request.target, sequence, digest, &reply);
+            self.record_outcome(identity, &request.target, sequence, digest, &mut reply);
         }
         reply
     }

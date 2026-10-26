@@ -632,19 +632,21 @@ impl Caller {
                 ),
             };
         }
-        let command = event.command();
+        Self::from_command(event.command())
+    }
+
+    fn from_command(command: &::bus::native_client::IncomingCommand) -> Self {
         Self {
             key: format!(
-                "bus:{:?}:{:?}:{:?}:{:?}",
+                "bus:{:?}:{:?}:{:?}",
                 command.header("broker_origin"),
-                command.header("source_peer"),
-                command.header("signed_ident"),
-                command.from
+                command.from,
+                command.header("broker_connection")
             ),
             label: format!(
                 "Bus {} {}",
-                command.header("source_peer").unwrap_or("local"),
-                command.from
+                command.header("broker_peer").unwrap_or("local"),
+                command.header("broker_connection").unwrap_or(&command.from)
             ),
         }
     }
@@ -1624,6 +1626,33 @@ async fn release(control: &Control, (generation, revision): (Generation, u64)) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn anonymous_connections_do_not_share_spent_request_ids() {
+        let command = |connection: &str| ::bus::native_client::IncomingCommand {
+            generation: 0,
+            from: String::new(),
+            command: SUBMIT.into(),
+            id: None,
+            args: Value::Null,
+            body: "{}".into(),
+            headers: [
+                ("broker_origin".into(), "mesh".into()),
+                ("broker_connection".into(), connection.into()),
+            ]
+            .into(),
+        };
+        let a = Caller::from_command(&command("peer/epoch-1"));
+        let b = Caller::from_command(&command("peer/epoch-2"));
+        assert_ne!(actor_key(&a), actor_key(&b));
+        let mut store = Store::default();
+        let mut first = record(1, true);
+        first.actor = actor_key(&a);
+        assert!(store.admit(first));
+        store.settle(1);
+        assert!(store.retired(&actor_key(&a), 2));
+        assert!(!store.retired(&actor_key(&b), 2));
+    }
 
     #[test]
     fn the_echo_cannot_carry_terminal_control_sequences() {

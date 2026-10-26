@@ -121,10 +121,22 @@ The source is
 `noded.tap` and `noded.observe.start` accept callers from every node,
 including anonymous connections. Observation events are delivered on the
 connection that started the subscription; registration is unnecessary.
-Connection quotas, bounded queues, filtering and payload redaction still
-apply. Native-session traffic can cross nodes. Broker identity stamps,
+Tap has a broker-wide limit of 64 live subscriber connections, bounded queues
+and unredacted payloads. Repeated tap requests on one connection reuse its
+subscription. Observe alone applies filters and payload redaction. Native-session traffic can cross nodes. Broker identity stamps,
 mesh admission, topic ownership and session-record ownership remain enforced.
 
-Node config preserves unknown keys as unowned data, so existing files with
-`noded.mesh_open` or `observe.allowed_services` still load. Neither key
-controls broker behaviour.
+Node config preserves unknown keys as unowned data, so older files still load.
+Unknown keys do not control broker behaviour.
+
+Every delivered request carries `broker_origin` (`local` or `mesh`) and
+`broker_connection`, unique per client connection for the broker's lifetime.
+Anonymous callers use the connection stamp for replay, rate and audit identity.
+Client spellings of these reserved headers are stripped case-insensitively.
+An admitted mesh link carries the originating stamp; the receiving broker
+prefixes it with `<peer>/` and stamps `broker_peer` (and `broker_service` when
+the source registered a service). Enforce admission requires a matching node
+proof and WireGuard binding before a bridge can attest these fields.
+`broker_protected` carries the native-session traffic class only across admitted
+links; peer-side tap and observe skip its payload as they do local protected
+traffic.

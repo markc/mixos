@@ -214,6 +214,14 @@ fn workshop_ui_commands_stay_open_to_other_callers() {
                     r#"{"service":"ced","command":"ced.macros.put"}"#,
                 ),
                 ("workshop.macros.new", r#"{"app":"global","title":"New"}"#),
+                ("workshop.macros.new", r#"{"app":"workshop","title":"New"}"#),
+                ("workshop.macros.new", r#"{"title":"New"}"#),
+                ("workshop.macros.open", r#"{"app":"global","id":"example"}"#),
+                (
+                    "workshop.macros.open",
+                    r#"{"app":"workshop","id":"example"}"#,
+                ),
+                ("workshop.macros.open", r#"{"app":"ced","id":"example"}"#),
                 ("workshop.ui.click", r#"{"label":"Save"}"#),
                 ("workshop.ui.key", r#"{"key":"S","modifiers":["ctrl"]}"#),
                 ("workshop.ui.pointer", r#"{"x":1,"y":1}"#),
@@ -238,6 +246,28 @@ fn workshop_ui_commands_stay_open_to_other_callers() {
                     "{command}"
                 );
             }
+        }
+        for command in [
+            "workshop.macros.new",
+            "workshop.macros.open",
+            "workshop.macros.put",
+        ] {
+            let incoming = bus::native_client::IncomingCommand {
+                generation: 0,
+                from: "agent-1".into(),
+                command: command.into(),
+                id: None,
+                args: serde_json::Value::Null,
+                body: format!(
+                    "{{\"app\":\"global\",\"text\":\"{}\"}}",
+                    "x".repeat(macros::commands::PUT_ENVELOPE_LIMIT + 1)
+                ),
+                headers: BTreeMap::new(),
+            };
+            assert!(
+                citizen::macros::dispatch("workshop", &incoming, client.clone(), &mut jobs),
+                "oversized {command} must be refused before the shell"
+            );
         }
         jobs.finish().await;
         client.close().await;

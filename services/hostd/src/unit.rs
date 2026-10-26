@@ -3,7 +3,7 @@
 //! Unit control: start, stop or restart one system unit on this host. The
 //! unit and action are typed request arguments, available to every local caller.
 //!
-//! hostd runs `systemctl ACTION UNIT` itself, so a caller needs no polkit
+//! hostd runs `systemctl ACTION -- UNIT` itself, so a caller needs no polkit
 //! rule and no sudo. The command never touches hostd's own units: a restart of
 //! hostd during a write would interrupt its transaction.
 use crate::{
@@ -30,13 +30,28 @@ pub struct Request {
     pub action: String,
 }
 
-/// A `.service` unit name: a stem of letters, digits and `-_.@:`, so a name
-/// can never carry a slash, a space or a path.
+/// A systemd unit name with a known suffix and a literal, bounded stem.
+/// Reject options, paths, patterns, whitespace and control characters.
 pub fn valid_unit(name: &str) -> bool {
-    let Some(stem) = name.strip_suffix(".service") else {
+    let Some((stem, suffix)) = name.rsplit_once('.') else {
         return false;
     };
     !stem.is_empty()
+        && !stem.starts_with('-')
+        && matches!(
+            suffix,
+            "service"
+                | "socket"
+                | "target"
+                | "device"
+                | "mount"
+                | "automount"
+                | "swap"
+                | "timer"
+                | "path"
+                | "slice"
+                | "scope"
+        )
         && stem.len() <= 120
         && stem
             .chars()
@@ -62,6 +77,9 @@ async fn act_with(
     action: &str,
     origin: &Origin,
 ) -> Result<Value, Value> {
+    if !valid_unit(unit) || !valid_action(action) {
+        return Err(json!({"status":"bad_request","command":COMMAND}));
+    }
     if REFUSED.contains(&unit) {
         return Err(json!({"status":"refused","command":COMMAND,"unit":unit,
             "message":"hostd does not control its own units"}));
@@ -69,7 +87,7 @@ async fn act_with(
     let run = tokio::time::timeout(
         BUDGET,
         tokio::process::Command::new(systemctl)
-            .args([action, unit])
+            .args([action, "--", unit])
             .output(),
     )
     .await
@@ -115,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn unit_names_are_plain_service_names() {
+    fn unit_names_have_known_suffixes_and_never_contain_options_or_controls() {
         assert!(valid_unit("noded.service"));
         assert!(valid_unit("monitord.service"));
         assert!(valid_unit("getty@tty1.service"));
@@ -123,7 +141,11 @@ mod tests {
         assert!(!valid_unit(".service"));
         assert!(!valid_unit("../noded.service"));
         assert!(!valid_unit("a b.service"));
-        assert!(!valid_unit("noded.socket"));
+        assert!(valid_unit("noded.socket"));
+        assert!(!valid_unit("--job-mode=replace-irreversibly"));
+        assert!(!valid_unit("-option.service"));
+        assert!(!valid_unit("a\n.service"));
+        assert!(!valid_unit("a.unknown"));
         assert!(!valid_unit(&format!("{}.service", "a".repeat(121))));
     }
 

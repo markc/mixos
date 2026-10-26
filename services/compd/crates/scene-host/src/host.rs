@@ -1764,7 +1764,7 @@ mod tests {
     }
 
     #[test]
-    fn provenance_is_one_broker_origin_mesh_open() {
+    fn provenance_requires_one_broker_origin() {
         let ok = |headers: &[(&str, &str)]| {
             verify_caller_provenance(&request(SceneCommand::Get, "a", headers, Value::Null))
         };
