@@ -670,14 +670,24 @@ impl Drive {
     /// The input quiet period only settles input, not GPU readback.
     fn settle_input(&mut self, ctx: &Context, why: &str) {
         let capture = self.running.as_ref().is_some_and(|running| {
-            running.steps.iter().any(|step| matches!(step,
-                Step::Viewport(ViewportCommand::Screenshot(_)) | Step::Await { .. }))
+            running.steps.iter().any(|step| {
+                matches!(
+                    step,
+                    Step::Viewport(ViewportCommand::Screenshot(_)) | Step::Await { .. }
+                )
+            })
         });
         let running = if capture { self.running.take() } else { None };
         let mut captures = VecDeque::new();
         self.queue.retain(|(id, job)| {
             if let Job::Capture { path, tag } = job {
-                captures.push_back((*id, Job::Capture { path: path.clone(), tag: *tag }));
+                captures.push_back((
+                    *id,
+                    Job::Capture {
+                        path: path.clone(),
+                        tag: *tag,
+                    },
+                ));
                 false
             } else {
                 true
@@ -697,10 +707,15 @@ impl Drive {
             self.queue.retain(|(queued, _)| *queued != id);
             self.traced.retain(|queued| *queued != id);
             self.deadlines.remove(&id);
-            if self.running.as_ref().is_some_and(|running| running.id == id) {
+            if self
+                .running
+                .as_ref()
+                .is_some_and(|running| running.id == id)
+            {
                 self.running = None;
             }
-            self.answers.push(not_shown(id, now.saturating_duration_since(accepted)));
+            self.answers
+                .push(not_shown(id, now.saturating_duration_since(accepted)));
         }
     }
 
@@ -1671,10 +1686,14 @@ mod tests {
     fn capture_context() -> (Context, tempfile::TempDir) {
         let temp = tempfile::tempdir().unwrap();
         let ctx = Context::default();
-        install_with(&ctx, "demo", Options {
-            runtime_dir: Some(temp.path().into()),
-            ..Options::default()
-        });
+        install_with(
+            &ctx,
+            "demo",
+            Options {
+                runtime_dir: Some(temp.path().into()),
+                ..Options::default()
+            },
+        );
         (ctx, temp)
     }
 
@@ -1696,7 +1715,11 @@ mod tests {
             assert_eq!(answers.len(), 1);
             assert_eq!(answers[0].id, 2);
             assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
-            assert!(logic_at(&ctx, now + INPUT_QUIET_PERIOD).iter().all(|a| a.id != 2));
+            assert!(
+                logic_at(&ctx, now + INPUT_QUIET_PERIOD)
+                    .iter()
+                    .all(|a| a.id != 2)
+            );
         }
     }
 
@@ -1720,7 +1743,7 @@ mod tests {
     fn ui_pass_before_logic_only_preserves_capture_until_screenshot() {
         let (ctx, temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({"name":"shown.png"})).is_none());
-        let _output = ctx.run_ui(RawInput::default(), |_| {});
+        ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
         // A real UI pass requested the screenshot. Logic-only must now leave
         // it waiting for its event, even well beyond the input quiet period.
         assert!(logic_at(&ctx, Instant::now() + INPUT_QUIET_PERIOD).is_empty());
@@ -1730,7 +1753,7 @@ mod tests {
             user_data: UserData::new(Shot(1)),
             image: std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
         });
-        let _output = ctx.run_ui(input, |_| {});
+        ctx.run_ui(input, |_| {}).drop_without_applying_deltas();
         let answers = logic(&ctx);
         assert_eq!(answers.len(), 1);
         assert_eq!(answers[0].rc, 0);
@@ -1754,7 +1777,7 @@ mod tests {
     fn painted_capture_without_screenshot_still_expires() {
         let (ctx, _temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
-        let _output = ctx.run_ui(RawInput::default(), |_| {});
+        ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
         ctx.with_plugin(|drive: &mut Drive| {
             let running = drive.running.as_mut().unwrap();
             let Some(Step::Await { deadline, .. }) = running.steps.front_mut() else {
