@@ -55,24 +55,29 @@ pub fn dispatch(
     // Workshop's generic dispatch must not bypass its macro mutation gate.
     // UI commands stay open: a save made through Workshop's window is
     // Workshop's own write, whoever drives it.
-    let proxy_write = app == "workshop"
-        && serde_json::from_str::<Value>(&command.body)
-            .ok()
-            .is_some_and(|body| match command.command.as_str() {
-                "workshop.execute" => body["id"].as_str().is_some_and(|id| {
-                    id == "bus.call"
-                        || id
-                            .strip_prefix("macro.")
-                            .is_some_and(::macros::commands::mutates)
-                }),
-                "workshop.call" => body["command"].as_str().is_none_or(|command_name| {
-                    command_name
-                        .rsplit_once(".macros.")
-                        .is_some_and(|(_, suffix)| ::macros::commands::mutates(suffix))
-                        || matches!(command_name, "workshop.call" | "workshop.execute")
-                }),
-                _ => false,
-            });
+    // Read the body as Workshop will: the delivery turns an empty body into
+    // `{}` (a call on the selection), so an empty body must not skip the
+    // check. A body that is not JSON reads as null and so names no command.
+    let proxy_write = app == "workshop" && {
+        let text = command.body.trim();
+        let body = serde_json::from_str::<Value>(if text.is_empty() { "{}" } else { text })
+            .unwrap_or(Value::Null);
+        match command.command.as_str() {
+            "workshop.execute" => body["id"].as_str().is_some_and(|id| {
+                id == "bus.call"
+                    || id
+                        .strip_prefix("macro.")
+                        .is_some_and(::macros::commands::mutates)
+            }),
+            "workshop.call" => body["command"].as_str().is_none_or(|command_name| {
+                command_name
+                    .rsplit_once(".macros.")
+                    .is_some_and(|(_, suffix)| ::macros::commands::mutates(suffix))
+                    || matches!(command_name, "workshop.call" | "workshop.execute")
+            }),
+            _ => false,
+        }
+    };
     let suffix = if proxy_write {
         "put"
     } else {

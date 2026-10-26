@@ -62,6 +62,10 @@ fn bus_macro_writes_refuse_other_services_and_workshop_deputy_calls() {
                 r#"{"service":"ced","command":"ced.macros.put"}"#,
             ),
             ("workshop.call", r#"{}"#),
+            // An empty body reaches Workshop as `{}`, a call on the selection.
+            ("workshop.call", ""),
+            ("workshop.call", "  "),
+            ("workshop.call", "not json"),
         ] {
             let reply = caller
                 .call_with_headers_raw("workshop-acl-test", command, &BTreeMap::new(), body)
