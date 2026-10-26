@@ -447,9 +447,14 @@ impl WinitApp for WgpuWinitApp<'_> {
     fn overdue_pass_mode(&self, window_id: WindowId) -> PassMode {
         if let Some(running) = &self.running {
             let shared = running.shared.borrow();
-            if let Some(viewport) = shared.viewport_from_window.get(&window_id)
+            if let Some(viewport) = shared
+                .viewport_from_window
+                .get(&window_id)
                 .and_then(|id| shared.viewports.get(id))
-                && viewport.actions_requested.iter().any(ActionRequested::wants_paint)
+                && viewport
+                    .actions_requested
+                    .iter()
+                    .any(ActionRequested::wants_paint)
             {
                 return PassMode::Offscreen;
             }
@@ -717,7 +722,10 @@ impl WgpuWinitRunning<'_> {
 
             let show_ui = (mode == PassMode::Full
                 || (mode == PassMode::Offscreen
-                    && viewport.actions_requested.iter().any(ActionRequested::wants_paint)))
+                    && viewport
+                        .actions_requested
+                        .iter()
+                        .any(ActionRequested::wants_paint)))
                 && (is_visible || is_viewport_or_descendant_visible(viewports, viewport_id));
 
             integration.pre_update();
@@ -789,7 +797,10 @@ impl WgpuWinitRunning<'_> {
         // Runs the update, which could call immediate viewports,
         // so make sure we hold no locks here!
         let offscreen = mode == PassMode::Offscreen
-            || raw_input.viewports.get(&viewport_id).is_some_and(|info| info.visible() == Some(false));
+            || raw_input
+                .viewports
+                .get(&viewport_id)
+                .is_some_and(|info| info.visible() == Some(false));
         shared.borrow_mut().offscreen = offscreen;
         let full_output = integration.update(app.as_mut(), viewport_ui_cb.as_deref(), raw_input);
         shared.borrow_mut().offscreen = false;
@@ -867,13 +878,13 @@ impl WgpuWinitRunning<'_> {
                 0.0
             } else {
                 painter.paint_and_update_textures(
-                viewport_id,
-                pixels_per_point,
-                clear_color,
-                &clipped_primitives,
-                pending_deltas,
-                screenshot_commands,
-                window,
+                    viewport_id,
+                    pixels_per_point,
+                    clear_color,
+                    &clipped_primitives,
+                    pending_deltas,
+                    screenshot_commands,
+                    window,
                 )
             };
 
@@ -1357,13 +1368,13 @@ fn render_immediate_viewport(
         );
     } else {
         painter.paint_and_update_textures(
-        ids.this,
-        pixels_per_point,
-        [0.0, 0.0, 0.0, 0.0],
-        &clipped_primitives,
-        &mut viewport.pending_delta,
-        vec![],
-        window,
+            ids.this,
+            pixels_per_point,
+            [0.0, 0.0, 0.0, 0.0],
+            &clipped_primitives,
+            &mut viewport.pending_delta,
+            vec![],
+            window,
         );
     }
 

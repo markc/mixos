@@ -24,45 +24,77 @@ mod offscreen_tests {
         };
         let options = RendererOptions::default();
         let mut painter = pollster::block_on(Painter::new(
-            Context::default(), config.clone(), false, options,
+            Context::default(),
+            config.clone(),
+            false,
+            options,
         ));
-        painter.render_state = Some(pollster::block_on(RenderState::create(
-            &config, &painter.instance, None, options,
-        )).expect("headless wgpu adapter"));
+        painter.render_state = Some(
+            pollster::block_on(RenderState::create(
+                &config,
+                &painter.instance,
+                None,
+                options,
+            ))
+            .expect("headless wgpu adapter"),
+        );
 
         // Odd widths exercise capture's padded rows; a second size exercises reuse.
         for size in [[67, 31], [79, 23]] {
             let ctx = Context::default();
-            let output = ctx.run_ui(egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO, egui::vec2(size[0] as f32 / 2.0, size[1] as f32 / 2.0),
-                )),
-                ..Default::default()
-            }, |ui| {
-                ui.painter().rect_filled(
-                    egui::Rect::from_min_size(egui::pos2(2.0, 2.0), egui::vec2(8.0, 6.0)),
-                    0.0, egui::Color32::RED,
-                );
-            });
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(size[0] as f32 / 2.0, size[1] as f32 / 2.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    ui.painter().rect_filled(
+                        egui::Rect::from_min_size(egui::pos2(2.0, 2.0), egui::vec2(8.0, 6.0)),
+                        0.0,
+                        egui::Color32::RED,
+                    );
+                },
+            );
             let primitives = ctx.tessellate(output.shapes, 2.0);
             let mut delta = output.textures_delta;
             delta.free.insert(epaint::TextureId::Managed(0));
             let (tx, rx) = std::sync::mpsc::channel();
-            let callback = egui::ScreenshotCallback::new(move |image| { tx.send(image).unwrap(); });
+            let callback = egui::ScreenshotCallback::new(move |image| {
+                tx.send(image).unwrap();
+            });
             painter.paint_and_update_textures_impl(
-                ViewportId::ROOT, size, 2.0, [0.0, 0.0, 1.0, 1.0],
-                &primitives, &mut delta, vec![callback.clone(), callback], None,
+                ViewportId::ROOT,
+                size,
+                2.0,
+                [0.0, 0.0, 1.0, 1.0],
+                &primitives,
+                &mut delta,
+                vec![callback.clone(), callback],
+                None,
             );
             for _ in 0..2 {
-                let image = rx.recv_timeout(core::time::Duration::from_secs(15))
+                let image = rx
+                    .recv_timeout(core::time::Duration::from_secs(15))
                     .expect("offscreen callback without another paint");
                 assert_eq!(image.size, [size[0] as usize, size[1] as usize]);
                 assert_eq!(image[(0, 0)], egui::Color32::BLUE);
                 assert_eq!(image[(8, 8)], egui::Color32::RED);
             }
             assert!(delta.is_empty(), "texture uploads and frees consumed");
-            assert!(painter.render_state.as_ref().unwrap().renderer.read()
-                .texture(&epaint::TextureId::Managed(0)).is_none(), "texture freed after submission");
+            assert!(
+                painter
+                    .render_state
+                    .as_ref()
+                    .unwrap()
+                    .renderer
+                    .read()
+                    .texture(&epaint::TextureId::Managed(0))
+                    .is_none(),
+                "texture freed after submission"
+            );
             assert!(painter.surfaces.is_empty(), "no surface was created");
         }
     }
@@ -561,8 +593,14 @@ impl Painter {
         };
         let size = [surface.width, surface.height];
         self.paint_and_update_textures_impl(
-            viewport_id, size, pixels_per_point, clear_color, clipped_primitives,
-            textures_delta, capture_data, Some(window),
+            viewport_id,
+            size,
+            pixels_per_point,
+            clear_color,
+            clipped_primitives,
+            textures_delta,
+            capture_data,
+            Some(window),
         )
     }
 
@@ -586,8 +624,14 @@ impl Painter {
         };
         let size = [surface.width, surface.height];
         self.paint_and_update_textures_impl(
-            viewport_id, size, pixels_per_point, clear_color, clipped_primitives,
-            textures_delta, capture_data, None,
+            viewport_id,
+            size,
+            pixels_per_point,
+            clear_color,
+            clipped_primitives,
+            textures_delta,
+            capture_data,
+            None,
         );
     }
 
@@ -636,9 +680,9 @@ impl Painter {
         // `self.render_state` / `self.surfaces` for the rest of the paint.
         if let Some(window) = window
             && self
-            .surfaces
-            .get(&viewport_id)
-            .is_some_and(|s| s.needs_recreate)
+                .surfaces
+                .get(&viewport_id)
+                .is_some_and(|s| s.needs_recreate)
             && let Err(err) = self.recreate_surface(viewport_id, window)
         {
             log::error!("Failed to recreate surface for {viewport_id:?}: {err}");
@@ -707,33 +751,37 @@ impl Painter {
             let output_frame = surface_state.surface.get_current_texture();
             vsync_sec += start.elapsed().as_secs_f32();
             match output_frame {
-            wgpu::CurrentSurfaceTexture::Success(frame) => Some(frame),
-            wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
-                surface_state.needs_reconfigure = true;
-                Some(frame)
-            }
-            other => {
-                match (*self.config.on_surface_status)(&other) {
-                    SurfaceErrorAction::Reconfigure => {
-                        Self::configure_surface(surface_state, render_state, &self.config.surface);
-                        self.context.request_repaint_of(viewport_id);
-                    }
-                    SurfaceErrorAction::RecreateSurface => {
-                        // Because of ownership, I could not find an easy way to do a full recovery here,
-                        // as that would involve dropping the old surface and creating a new one.
-                        // For now, we defer the recreation to the beginning of the next frame (which
-                        // we ensure to arrive via `request_repaint_of`). A cleaner solution would be
-                        // to untangle the ownership of `RenderState`.
-                        surface_state.needs_recreate = true;
-                        self.context.request_repaint_of(viewport_id);
-                    }
-                    SurfaceErrorAction::SkipFrame => {}
+                wgpu::CurrentSurfaceTexture::Success(frame) => Some(frame),
+                wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
+                    surface_state.needs_reconfigure = true;
+                    Some(frame)
                 }
-                if !capture {
-                    return vsync_sec;
+                other => {
+                    match (*self.config.on_surface_status)(&other) {
+                        SurfaceErrorAction::Reconfigure => {
+                            Self::configure_surface(
+                                surface_state,
+                                render_state,
+                                &self.config.surface,
+                            );
+                            self.context.request_repaint_of(viewport_id);
+                        }
+                        SurfaceErrorAction::RecreateSurface => {
+                            // Because of ownership, I could not find an easy way to do a full recovery here,
+                            // as that would involve dropping the old surface and creating a new one.
+                            // For now, we defer the recreation to the beginning of the next frame (which
+                            // we ensure to arrive via `request_repaint_of`). A cleaner solution would be
+                            // to untangle the ownership of `RenderState`.
+                            surface_state.needs_recreate = true;
+                            self.context.request_repaint_of(viewport_id);
+                        }
+                        SurfaceErrorAction::SkipFrame => {}
+                    }
+                    if !capture {
+                        return vsync_sec;
+                    }
+                    None
                 }
-                None
-            }
             }
         } else {
             None

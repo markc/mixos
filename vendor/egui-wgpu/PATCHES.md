@@ -18,7 +18,7 @@ licences; LICENSE-MIT and LICENSE-APACHE are retained from egui's matching
   window or surface, checks padded row widths, resizing, scaled primitives,
   clear colour, multiple callbacks and consumption of texture deltas.
 
-Guards: `cargo test -p egui-wgpu --lib --features winit,wayland
+Guards: `cargo test --manifest-path vendor/egui-wgpu/Cargo.toml --lib --features winit,wayland
 hidden_window_capture_without_surface` (requires a headless wgpu adapter),
 and `cargo test -p toolkit --test offscreen_patch` (re-vendor wiring).
 All Rust commands run on the build worker. Drop alongside the eframe patch

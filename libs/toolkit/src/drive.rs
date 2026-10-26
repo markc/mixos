@@ -661,7 +661,10 @@ impl Drive {
             && (!self.queue.is_empty()
                 || !self.requests.is_empty()
                 || self.running.as_ref().is_some_and(|running| {
-                    running.steps.front().is_some_and(|step| !matches!(step, Step::Await { .. }))
+                    running
+                        .steps
+                        .front()
+                        .is_some_and(|step| !matches!(step, Step::Await { .. }))
                 }))
         {
             ctx.send_viewport_cmd_to(viewport, ViewportCommand::RequestPaintWhileHidden);
@@ -848,9 +851,7 @@ impl Drive {
             Err(message) => return Some(refusal(id, "ARGUMENT", &message)),
         };
         // A hidden window runs no passes, so its input would never be read.
-        if command_name != "ui.capture"
-            && ctx.input(|i| i.viewport().visible() == Some(false))
-        {
+        if command_name != "ui.capture" && ctx.input(|i| i.viewport().visible() == Some(false)) {
             return Some(refusal(
                 id,
                 "BUSY",
@@ -1802,34 +1803,54 @@ mod tests {
             let mut input = RawInput::default();
             input.viewports.entry(target).or_default().occluded = Some(true);
             let bootstrap = ctx.run_logic(&input, |ctx| {
-                let args = if child { json!({"viewport":"child", "name":"hidden.png"}) }
-                    else { json!({"name":"hidden.png"}) };
+                let args = if child {
+                    json!({"viewport":"child", "name":"hidden.png"})
+                } else {
+                    json!({"name":"hidden.png"})
+                };
                 assert!(request(ctx, 7, "ui.capture", &args).is_none());
                 assert!(logic(ctx).is_empty());
             });
-            assert!(bootstrap.viewport_commands.get(&target).is_some_and(|commands| {
-                commands.iter().any(|command| matches!(command, ViewportCommand::RequestPaintWhileHidden))
-            }));
+            assert!(
+                bootstrap
+                    .viewport_commands
+                    .get(&target)
+                    .is_some_and(|commands| {
+                        commands.iter().any(|command| {
+                            matches!(command, ViewportCommand::RequestPaintWhileHidden)
+                        })
+                    })
+            );
             input.viewport_id = target;
             let mut screenshot = None;
             for _ in 0..4 {
                 let output = ctx.run_ui(input.clone(), |_| {});
-                screenshot = output.viewport_output.values()
+                screenshot = output
+                    .viewport_output
+                    .values()
                     .flat_map(|v| &v.commands)
                     .find_map(|command| match command {
                         ViewportCommand::Screenshot(callback) => Some(callback.clone()),
                         _ => None,
                     });
                 output.drop_without_applying_deltas();
-                if screenshot.is_some() { break; }
+                if screenshot.is_some() {
+                    break;
+                }
             }
             let callback = screenshot.expect("hidden pass requests screenshot");
-            let waiting = ctx.run_logic(&RawInput::default(), |ctx| { assert!(logic(ctx).is_empty()); });
-            assert!(waiting.viewport_commands.values().flatten().all(|command| {
-                !matches!(command, ViewportCommand::RequestPaintWhileHidden)
-            }), "readback alone does not keep painting");
+            let waiting = ctx.run_logic(&RawInput::default(), |ctx| {
+                assert!(logic(ctx).is_empty());
+            });
+            assert!(
+                waiting.viewport_commands.values().flatten().all(|command| {
+                    !matches!(command, ViewportCommand::RequestPaintWhileHidden)
+                }),
+                "readback alone does not keep painting"
+            );
             callback.complete(std::sync::Arc::new(ColorImage::filled(
-                [67, 31], egui::Color32::RED,
+                [67, 31],
+                egui::Color32::RED,
             )));
             let answers = logic(&ctx);
             assert_eq!(answers.len(), 1);

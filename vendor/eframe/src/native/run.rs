@@ -275,11 +275,11 @@ impl<T: WinitApp> WinitAppWrapper<T> {
             // `handle_event_result` re-enters `check_redraw_requests`, which may already
             // have handled this window, so only run it if the deadline is still there:
             if self.windows_redraw_deadlines.remove(&window_id).is_some() {
-                log::trace!("RedrawRequested is overdue for {window_id:?}: running without a surface");
+                log::trace!(
+                    "RedrawRequested is overdue for {window_id:?}: running without a surface"
+                );
                 let mode = self.winit_app.overdue_pass_mode(window_id);
-                let event_result =
-                    self.winit_app
-                        .run_ui_and_paint(event_loop, window_id, mode);
+                let event_result = self.winit_app.run_ui_and_paint(event_loop, window_id, mode);
                 self.handle_event_result(event_loop, event_result);
             }
         }
