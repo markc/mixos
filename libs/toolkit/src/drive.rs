@@ -1786,7 +1786,6 @@ mod tests {
                 ctx.with_plugin(|drive: &mut Drive| {
                     drive.queue.pop_front();
                     drive.start(&ctx);
-                    drive.running.as_mut().unwrap().steps.pop_front();
                 });
             }
             let now = Instant::now();
