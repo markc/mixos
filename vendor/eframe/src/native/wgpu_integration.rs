@@ -740,9 +740,6 @@ impl WgpuWinitRunning<'_> {
         };
 
         if !show_ui {
-            if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
-                eprintln!("offtrace pass {mode:?} show_ui=false");
-            }
             // Nothing will be shown, so we run no egui pass at all.
             // That way all ui state is left untouched, and is still there
             // when this viewport becomes visible again.
@@ -804,9 +801,6 @@ impl WgpuWinitRunning<'_> {
                 .viewports
                 .get(&viewport_id)
                 .is_some_and(|info| info.visible() == Some(false));
-        if std::env::var_os("MIXOS_OFFSCREEN_TRACE").is_some() {
-            eprintln!("offtrace pass {mode:?} show_ui=true offscreen={offscreen}");
-        }
         // A hidden parent can run solely for a visible child. Preserve that
         // child's presentation unless this pass actually paints the parent offscreen.
         shared.borrow_mut().offscreen = offscreen && is_visible;
