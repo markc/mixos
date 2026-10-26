@@ -111,7 +111,7 @@ fn contents(ui: &mut egui::Ui, strings: &Strings) {
             let _ = ui.button(strings.get("cmd-refresh"));
             let _ = toolkit::selectable(ui, true, strings.get("menu-bus"));
             let mut text = String::from("bus.call");
-            ui.text_edit_singleline(&mut text);
+            ui.text_edit_singleline(&mut text).accessible_name("Name");
         });
         ui.code("{\"rc\": 0}");
     }

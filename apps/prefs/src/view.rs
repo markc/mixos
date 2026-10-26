@@ -303,11 +303,11 @@ fn row<R>(ui: &mut Ui, key: &str, text: &str, control: impl FnOnce(&mut Ui) -> R
         .num_columns(2)
         .spacing([24.0, 10.0])
         .show(ui, |ui| {
-            field_label(ui, text);
+            let caption = field_label(ui, text);
             let result = ui
                 .vertical(|ui| {
                     ui.set_width(ui.available_width());
-                    control(ui)
+                    ui.label_inputs_by(caption.id, control)
                 })
                 .inner;
             ui.end_row();
@@ -579,6 +579,7 @@ fn family_picker(
         });
     let width = ui.available_width();
     toolkit::combo::show(ui, key, &mut selected, &options, Some(width))
+        .accessible_name(label(key))
         .changed()
         .then(|| values[selected].clone())
 }
@@ -1307,7 +1308,7 @@ fn number(ui: &mut Ui, spec: Numeric, current: f64, range: RangeInclusive<f64>) 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
                 let field = ValueField::new(&mut value, range.clone()).unit(spec.unit);
-                let response = ui.add(field);
+                let response = ui.add(field).accessible_name(spec.title.clone());
                 let cancelled = response.lost_focus() && escaped;
                 if cancelled {
                     ui.data_mut(|d| d.remove::<f64>(id));

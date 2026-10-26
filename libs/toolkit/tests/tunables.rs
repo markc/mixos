@@ -10,7 +10,7 @@ fn gallery(ui: &mut Ui, text: &mut String) {
     ui.add(toolkit::button::IconButton::new(Icon::Settings).tooltip("Settings"));
     field::text(ui, text, "Name", 200.0);
     let mut value = 1.0;
-    ui.add(field::ValueField::new(&mut value, 0.0..=100.0));
+    ui.add(field::ValueField::new(&mut value, 0.0..=100.0)).accessible_name("Value");
     toolkit::selectable(ui, true, "Selected row");
     let rect = Rect::from_min_size(ui.next_widget_position(), vec2(260.0, 130.0));
     canvas::surround(ui, rect);

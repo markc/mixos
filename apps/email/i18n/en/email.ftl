@@ -248,3 +248,6 @@ open-superseded = Another email was opened in the reader before this one loaded
 no-launcher = Can't open Prefs: no launcher
 prefs-silent = Prefs did not open its Email settings
 about-body = A pure JMAP client: mail, calendar and contacts over HTTPS to any RFC 8620/8621-shaped server. Mail is read, composed and sent; calendars and contacts are listed and shown.
+
+tree-expand = Expand { $name }
+tree-collapse = Collapse { $name }
