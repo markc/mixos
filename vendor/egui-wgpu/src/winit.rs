@@ -46,6 +46,7 @@ mod offscreen_tests {
             });
             let primitives = ctx.tessellate(output.shapes, 2.0);
             let mut delta = output.textures_delta;
+            delta.free.insert(epaint::TextureId::Managed(0));
             let (tx, rx) = std::sync::mpsc::channel();
             let callback = egui::ScreenshotCallback::new(move |image| { tx.send(image).unwrap(); });
             painter.paint_and_update_textures_impl(
@@ -60,6 +61,8 @@ mod offscreen_tests {
                 assert_eq!(image[(8, 8)], egui::Color32::RED);
             }
             assert!(delta.is_empty(), "texture uploads and frees consumed");
+            assert!(painter.render_state.as_ref().unwrap().renderer.read()
+                .texture(&epaint::TextureId::Managed(0)).is_none(), "texture freed after submission");
             assert!(painter.surfaces.is_empty(), "no surface was created");
         }
     }

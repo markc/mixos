@@ -260,8 +260,10 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
         let input_quiet_since = drive.input_quiet_since.get_or_insert(now);
         let quiet = now.saturating_duration_since(*input_quiet_since);
         drive.refuse_unshown_captures(ctx, now);
-        for child in drive.children.values_mut() {
+        drive.request_capture_pass(ctx, egui::ViewportId::ROOT);
+        for (&viewport, child) in &mut drive.children {
             child.refuse_unshown_captures(ctx, now);
+            child.request_capture_pass(ctx, viewport);
         }
         if logic_only && quiet >= INPUT_QUIET_PERIOD {
             drive.settle_input(
@@ -369,6 +371,7 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                 }
                 if command_name == "ui.capture" {
                     child.pending_captures.insert(id, Instant::now());
+                    ctx.send_viewport_cmd_to(target, ViewportCommand::RequestPaintWhileHidden);
                 }
                 child
                     .requests
@@ -651,6 +654,21 @@ impl egui::Plugin for Drive {
 }
 
 impl Drive {
+    fn request_capture_pass(&self, ctx: &Context, viewport: egui::ViewportId) {
+        // A capture behind input must advance through the same passes as a
+        // visible window. Stop asking for paint once only GPU readback remains.
+        if !self.pending_captures.is_empty()
+            && (!self.queue.is_empty()
+                || !self.requests.is_empty()
+                || self.running.as_ref().is_some_and(|running| {
+                    running.steps.front().is_some_and(|step| !matches!(step, Step::Await { .. }))
+                }))
+        {
+            ctx.send_viewport_cmd_to(viewport, ViewportCommand::RequestPaintWhileHidden);
+            ctx.request_repaint_of(viewport);
+        }
+    }
+
     /// A capture that has painted still gets its full screenshot budget.
     /// The input quiet period only settles input, not GPU readback.
     fn settle_input(&mut self, ctx: &Context, why: &str) {
@@ -830,7 +848,9 @@ impl Drive {
             Err(message) => return Some(refusal(id, "ARGUMENT", &message)),
         };
         // A hidden window runs no passes, so its input would never be read.
-        if ctx.input(|i| i.viewport().visible() == Some(false)) {
+        if command_name != "ui.capture"
+            && ctx.input(|i| i.viewport().visible() == Some(false))
+        {
             return Some(refusal(
                 id,
                 "BUSY",
@@ -851,6 +871,9 @@ impl Drive {
         self.queue.push_back((id, job));
         if command_name == "ui.capture" {
             self.pending_captures.insert(id, Instant::now());
+            // Bootstrap a full pass even when the request arrived in logic-only
+            // processing. The screenshot itself stays behind all earlier input.
+            ctx.send_viewport_cmd(ViewportCommand::RequestPaintWhileHidden);
             ctx.request_repaint_after_for(CAPTURE_QUIET_PERIOD, egui::ViewportId::ROOT);
         }
         None
@@ -1778,21 +1801,33 @@ mod tests {
             };
             let mut input = RawInput::default();
             input.viewports.entry(target).or_default().occluded = Some(true);
-            ctx.run_logic(&input, |ctx| {
+            let bootstrap = ctx.run_logic(&input, |ctx| {
                 let args = if child { json!({"viewport":"child", "name":"hidden.png"}) }
                     else { json!({"name":"hidden.png"}) };
                 assert!(request(ctx, 7, "ui.capture", &args).is_none());
                 assert!(logic(ctx).is_empty());
             });
+            assert!(bootstrap.viewport_commands.get(&target).is_some_and(|commands| {
+                commands.iter().any(|command| matches!(command, ViewportCommand::RequestPaintWhileHidden))
+            }));
             input.viewport_id = target;
-            let output = ctx.run_ui(input, |_| {});
-            let callback = output.viewport_output.values()
-                .flat_map(|v| &v.commands)
-                .find_map(|command| match command {
-                    ViewportCommand::Screenshot(callback) => Some(callback.clone()),
-                    _ => None,
-                }).expect("hidden pass requests screenshot");
-            output.drop_without_applying_deltas();
+            let mut screenshot = None;
+            for _ in 0..4 {
+                let output = ctx.run_ui(input.clone(), |_| {});
+                screenshot = output.viewport_output.values()
+                    .flat_map(|v| &v.commands)
+                    .find_map(|command| match command {
+                        ViewportCommand::Screenshot(callback) => Some(callback.clone()),
+                        _ => None,
+                    });
+                output.drop_without_applying_deltas();
+                if screenshot.is_some() { break; }
+            }
+            let callback = screenshot.expect("hidden pass requests screenshot");
+            let waiting = ctx.run_logic(&RawInput::default(), |ctx| { assert!(logic(ctx).is_empty()); });
+            assert!(waiting.viewport_commands.values().flatten().all(|command| {
+                !matches!(command, ViewportCommand::RequestPaintWhileHidden)
+            }), "readback alone does not keep painting");
             callback.complete(std::sync::Arc::new(ColorImage::filled(
                 [67, 31], egui::Color32::RED,
             )));
