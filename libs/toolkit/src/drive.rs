@@ -2062,6 +2062,62 @@ mod tests {
     }
 
     #[test]
+    fn capture_timeout_with_continuing_ui_passes_releases_queued_work() {
+        let (ctx, temp) = capture_context();
+        let budget = Duration::from_millis(100);
+        ctx.with_plugin(|drive: &mut Drive| drive.options.capture_timeout = budget);
+        assert!(request(&ctx, 1, "ui.capture", &json!({"name":"missing.png"})).is_none());
+        let _uncompleted = requested_screenshot(&ctx);
+        let deadline = ctx.with_plugin(|drive: &mut Drive| {
+            let Some(Step::Await { deadline, .. }) = drive.running.as_ref().unwrap().steps.front() else {
+                panic!("capture awaits readback");
+            };
+            *deadline
+        }).unwrap();
+        assert!(request(&ctx, 2, "ui.type", &json!({"text":"later"})).is_none());
+        let mut answers = Vec::new();
+        while Instant::now() < deadline + Duration::from_secs(1) {
+            ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+            answers.extend(logic(&ctx));
+            if answers.iter().any(|answer| answer.id == 1) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let capture = answers.iter().find(|answer| answer.id == 1).expect("capture expired");
+        assert!(Instant::now() >= deadline);
+        assert_eq!(capture.body["error_code"], "CAPTURE");
+        assert_eq!(capture.body["error"], "no screenshot arrived in time");
+        assert!(!temp.path().join("demo/captures/missing.png").exists());
+        for _ in 0..4 {
+            ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+            answers.extend(logic(&ctx));
+        }
+        assert!(answers.iter().any(|answer| answer.id == 2 && answer.rc == 0),
+            "queued typing completes after capture refusal: {answers:?}");
+        assert!(!pending(&ctx));
+    }
+
+    #[test]
+    fn capture_ignores_an_unrelated_callback_until_its_own_completes() {
+        let (ctx, temp) = capture_context();
+        assert!(request(&ctx, 1, "ui.capture", &json!({"name":"mine.png"})).is_none());
+        let callback = requested_screenshot(&ctx);
+        egui::ScreenshotCallback::new(|_| {}).complete(std::sync::Arc::new(
+            ColorImage::filled([8, 9], egui::Color32::BLACK)));
+        assert!(logic(&ctx).is_empty());
+        assert!(pending(&ctx));
+        assert!(!temp.path().join("demo/captures/mine.png").exists());
+        callback.complete(std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)));
+        let answers = logic(&ctx);
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].rc, 0);
+        assert_eq!(answers[0].body["width"], 4);
+        assert_eq!(answers[0].body["height"], 3);
+        assert!(temp.path().join("demo/captures/mine.png").is_file());
+    }
+
+    #[test]
     fn pending_input_survives_until_exactly_the_quiet_deadline() {
         let ctx = Context::default();
         install(&ctx, "demo");

@@ -16,6 +16,8 @@ pub struct Widgets {
     applied: BTreeSet<String>,
     #[serde(skip)]
     panel_ids: BTreeMap<String, egui::Id>,
+    #[serde(skip)]
+    pending_panels: BTreeSet<String>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Scroll {
@@ -51,6 +53,7 @@ fn with<R>(ctx: &egui::Context, f: impl FnOnce(&mut Widgets) -> R) -> Option<R> 
 /// dragging records a changed size, so content minimums cannot feed back.
 /// Construct the egui Panel with the same `name` as its ID. The resize handle
 /// ID below follows pinned egui 0.37; the drag regression test guards it.
+/// Panel names must be unique per viewport.
 #[expect(
     clippy::too_many_arguments,
     reason = "thin adapter retains the panel builder and size policy"
@@ -71,6 +74,12 @@ pub fn panel<R>(
     let panel_id = ui.make_persistent_id(name);
     with(ui.ctx(), |w| {
         w.panel_ids.insert(name.into(), panel_id);
+        // A reinstall may have discarded the runtime ID map. Apply a Bus
+        // invalidation once the panel's persistent ID is available again.
+        if w.pending_panels.remove(name) {
+            ui.ctx()
+                .data_mut(|d| d.remove::<egui::containers::panel::PanelState>(panel_id));
+        }
     });
     let (share, restored) = with(ui.ctx(), |w| {
         if w.applied.insert(format!("panel:{name}")) {
@@ -136,6 +145,7 @@ pub fn set_panel(ctx: &egui::Context, name: &str, share: f32) {
         // A Bus choice made before the first layout must win over loading
         // the previous session's share on that first layout.
         w.applied.insert(format!("panel:{name}"));
+        w.pending_panels.insert(name.into());
         w.panel_ids.get(name).copied()
     })
     .flatten();
@@ -427,6 +437,25 @@ mod tests {
         });
         widgets.collect(&ctx);
         assert_eq!(widgets.panels["left"], 0.6);
+    }
+    #[test]
+    fn a_panel_command_after_reinstall_replaces_remembered_pixels() {
+        let ctx = egui::Context::default();
+        let widgets = Widgets::default();
+        widgets.install(&ctx);
+        draw(&ctx, |ui| {
+            let (out, _) = panel(ui, "left", egui::Panel::left("left"), 1000.0,
+                0.3, 0.1..=0.8, true, |_| {});
+            assert!((out.response.rect.width() - 300.0).abs() < 2.0);
+        });
+        widgets.install(&ctx);
+        assert!(shared(&ctx).unwrap().lock().unwrap().panel_ids.is_empty());
+        set_panel(&ctx, "left", 0.6);
+        draw(&ctx, |ui| {
+            let (out, _) = panel(ui, "left", egui::Panel::left("left"), 1000.0,
+                0.6, 0.1..=0.8, true, |_| {});
+            assert!((out.response.rect.width() - 600.0).abs() < 2.0);
+        });
     }
     #[test]
     fn scroll_applies_once_after_layout_clamped_and_only_for_its_key() {

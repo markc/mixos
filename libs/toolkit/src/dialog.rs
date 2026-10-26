@@ -186,6 +186,7 @@ impl Dialog {
             .area(area)
             .backdrop_color(Color32::TRANSPARENT)
             .show(ctx, |ui| {
+                ctx.accesskit_node_builder(id, |node| node.set_modal());
                 if resize.is_none() {
                     ui.set_min_width(width.min);
                     ui.set_max_width(width.max);

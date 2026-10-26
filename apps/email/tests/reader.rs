@@ -1059,6 +1059,30 @@ fn compose_rows_put_labels_outside_and_open_cc_bcc_and_reply_to_from_the_to_row(
 }
 
 #[test]
+fn compose_sender_and_recipient_controls_have_fluent_accessible_names() {
+    use egui_kittest::kittest::NodeT;
+    let mut state = opened("text/plain", PLAIN);
+    let entry = &mut state.accounts[0].entry;
+    let first = entry.senders()[0].clone();
+    let mut second = first.clone();
+    second.id = "other".into();
+    second.address = "other@example.invalid".into();
+    entry.identities = vec![first, second];
+    assert!(state.open_compose(Some("home"), Default::default()));
+    let mut h = window(state, &theme(Scheme::Studio, Mode::Dark));
+    h.run();
+    assert!(h.query_all_by_label(&label("from")).any(|node|
+        node.accesskit_node().role() == egui::accesskit::Role::ComboBox));
+    for tip in ["show-cc", "show-bcc"] {
+        h.get_by_label(&label(tip)).click();
+        h.run();
+    }
+    for key in ["to", "cc", "bcc"] {
+        assert!(field(&h, &label(key)).is_some(), "{key} editor has its Fluent name");
+    }
+}
+
+#[test]
 fn identities_dialog_studio_dark() {
     let (mut state, _) = composing("an");
     state.apply_ui(UiEvent::OpenIdentities("home".into()));

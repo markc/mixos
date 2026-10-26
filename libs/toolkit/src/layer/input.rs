@@ -137,6 +137,40 @@ pub(crate) fn shape(icon: egui::CursorIcon) -> Shape {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn move_only_wheel_sources_have_identical_smoothing_and_zoom() {
+        fn sample(source: egui::MouseWheelSource, unit: egui::MouseWheelUnit,
+            modifiers: egui::Modifiers) -> Vec<(egui::Vec2, f32, bool)> {
+            let ctx = egui::Context::default();
+            let mut samples = Vec::new();
+            for frame in 0..40 {
+                let events = if frame == 0 {
+                    vec![egui::Event::MouseWheel {
+                        source, unit, modifiers, phase: egui::TouchPhase::Move,
+                        delta: egui::vec2(0.0, -12.0),
+                    }]
+                } else { Vec::new() };
+                ctx.run_ui(egui::RawInput {
+                    time: Some(f64::from(frame) / 60.0), events,
+                    ..Default::default()
+                }, |ui| {
+                    samples.push(ui.input(|i|
+                        (i.smooth_scroll_delta(), i.zoom_delta(), i.is_scrolling())));
+                }).drop_without_applying_deltas();
+            }
+            samples
+        }
+        for unit in [egui::MouseWheelUnit::Line, egui::MouseWheelUnit::Point] {
+            for modifiers in [egui::Modifiers::NONE, egui::Modifiers::COMMAND] {
+                let unknown = sample(egui::MouseWheelSource::Unknown, unit, modifiers);
+                assert!(unknown.iter().any(|(delta, zoom, _)|
+                    *delta != egui::Vec2::ZERO || *zoom != 1.0));
+                for source in [egui::MouseWheelSource::MouseWheel, egui::MouseWheelSource::Trackpad] {
+                    assert_eq!(unknown, sample(source, unit, modifiers));
+                }
+            }
+        }
+    }
     use super::*;
 
     #[test]
