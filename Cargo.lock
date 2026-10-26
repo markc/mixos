@@ -2692,6 +2692,7 @@ dependencies = [
  "futures",
  "jmap",
  "libc",
+ "logging",
  "pulldown-cmark",
  "serde",
  "serde_json",
@@ -2699,6 +2700,8 @@ dependencies = [
  "tempfile",
  "tokio",
  "toolkit",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -4705,6 +4708,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",
+ "tokio",
  "uuid",
 ]
 
