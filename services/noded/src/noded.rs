@@ -7315,7 +7315,14 @@ mod tests {
 
     async fn mesh_delivery_test_state() -> AppState {
         use base64::Engine as _;
-        let mut posture = reload_posture(1, vec![]);
+        let mut posture = reload_posture(
+            1,
+            vec![active_route(
+                "beta",
+                "192.0.2.2".parse().unwrap(),
+                DEFAULT_NODED_PORT,
+            )],
+        );
         let crate::authority::Posture::Verified(accepted) = &mut posture else {
             unreachable!()
         };
@@ -7632,7 +7639,7 @@ mod tests {
             Some("bridge-beta"),
             source,
             Some("desktopctl"),
-            None,
+            Some("epoch-1"),
             false,
         );
         tokio::pin!(route);
@@ -7659,6 +7666,7 @@ mod tests {
         let delivered = bus_mod::parse(&target_rx.try_recv().unwrap()).unwrap();
         assert_eq!(delivered.get("broker_peer"), None);
         assert_eq!(delivered.get("broker_service"), None);
+        assert_eq!(delivered.get("broker_connection"), None);
     }
 
     #[test]

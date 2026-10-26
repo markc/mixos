@@ -628,7 +628,15 @@ impl Caller {
                 key,
                 label: actor.session.as_ref().map_or_else(
                     || format!("uid {} pid {}", actor.unix_uid, actor.peer_pid),
-                    |session| format!("{:?} {:?}", session.role, session.record_id),
+                    |session| {
+                        let record: String = session
+                            .record_id
+                            .0
+                            .iter()
+                            .map(|byte| format!("{byte:02x}"))
+                            .collect();
+                        format!("{:?} {record}", session.role)
+                    },
                 ),
             };
         }
@@ -1645,6 +1653,9 @@ mod tests {
         let a = Caller::from_command(&command("peer/epoch-1"));
         let b = Caller::from_command(&command("peer/epoch-2"));
         assert_ne!(actor_key(&a), actor_key(&b));
+        assert_ne!(principal_label(&a), principal_label(&b));
+        assert!(principal_label(&a).contains("peer/epoch-1"));
+        assert!(principal_label(&b).contains("peer/epoch-2"));
         let mut store = Store::default();
         let mut first = record(1, true);
         first.actor = actor_key(&a);

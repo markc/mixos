@@ -1039,13 +1039,13 @@ fn status_pump_scenarios(editor: &str) {
 }
 
 #[test]
-fn status_restricted_identity_rejection_and_unsupported_commands() {
+fn status_is_open_under_restricted_policy_and_keeps_integrity_checks() {
     for editor in ["owned", "legacy"] {
-        status_restricted_scenarios(editor);
+        status_open_scenarios(editor);
     }
 }
 
-fn status_restricted_scenarios(editor: &str) {
+fn status_open_scenarios(editor: &str) {
     let _fixture = fixture_guard();
     let broker = Broker::start();
     runtime().block_on(async {
@@ -1073,10 +1073,11 @@ fn status_restricted_scenarios(editor: &str) {
                     .call(&bound.name, "shell.status", status_request(&bound)),
             )
             .await;
-            let error = result
-                .expect("denial must reply, not time out")
-                .unwrap_err();
-            assert_eq!(error.to_string(), r#"{"error_code":"REFUSED"}"#);
+            let value = result.expect("status must reply, not time out").unwrap();
+            assert_eq!(
+                value["status"]["snapshot"]["source"],
+                status_request(&bound)["target"]
+            );
         }
         let tcp = NodedClient::connect_anonymous(&broker.url).await.unwrap();
         let result = tokio::time::timeout(
@@ -1084,10 +1085,13 @@ fn status_restricted_scenarios(editor: &str) {
             tcp.call(&bound.name, "shell.status", status_request(&bound)),
         )
         .await;
-        let error = result
-            .expect("unverified denial must reply, not time out")
-            .unwrap_err();
-        assert_eq!(error.to_string(), r#"{"error_code":"REFUSED"}"#);
+        let value = result
+            .expect("anonymous TCP status must reply, not time out")
+            .unwrap();
+        assert_eq!(
+            value["status"]["snapshot"]["source"],
+            status_request(&bound)["target"]
+        );
         tcp.close().await;
         for command_name in [
             "shell.jobs",
@@ -1182,9 +1186,9 @@ fn status_flood_preserves_lease_and_restart_ack() {
         phase(&mut parent, &bound, "prompt-ready").await;
         let mut flood = tokio::task::JoinSet::new();
         let refused = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        // The flood is other same-UID processes, not the owning Term: this
-        // child's policy admits ambient callers, so they compete for the very
-        // dispatch slots the Term needs.
+        let answered = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        // All callers, including the parent, share the bounded dispatch slots.
+        // Saturation may refuse any of them, but cannot starve lease/restart work.
         let mut ambient = Vec::new();
         for _ in 0..8 {
             ambient.push(std::sync::Arc::new(connect(&broker).await));
@@ -1193,6 +1197,7 @@ fn status_flood_preserves_lease_and_restart_ack() {
             let connection = ambient[index % ambient.len()].clone();
             let target = bound.clone();
             let refused = refused.clone();
+            let answered = answered.clone();
             flood.spawn(async move {
                 loop {
                     let result = tokio::time::timeout(
@@ -1206,10 +1211,13 @@ fn status_flood_preserves_lease_and_restart_ack() {
                     .await
                     .expect("flood request must be answered or explicitly refused");
                     match result {
-                        Ok(value) => assert_eq!(
-                            value["status"]["snapshot"]["source"],
-                            status_request(&target)["target"]
-                        ),
+                        Ok(value) => {
+                            assert_eq!(
+                                value["status"]["snapshot"]["source"],
+                                status_request(&target)["target"]
+                            );
+                            answered.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
                         Err(error) => {
                             assert_eq!(error.to_string(), r#"{"error_code":"REFUSED"}"#);
                             refused.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1222,7 +1230,6 @@ fn status_flood_preserves_lease_and_restart_ack() {
         // Longer than the initial 15s child lease: only the resident's renew
         // arm can keep this exact attachment alive under a continuously full load.
         let deadline = Instant::now() + Duration::from_secs(17);
-        let mut answered = 0;
         while Instant::now() < deadline {
             parent.renew().await;
             assert!(flood.try_join_next().is_none(), "flood worker failed");
@@ -1238,9 +1245,7 @@ fn status_flood_preserves_lease_and_restart_ack() {
                 bound.reference(),
                 "overflow must not reconnect"
             );
-            // One dispatch slot is the owning Term's, so a saturating flood by
-            // other same-UID callers cannot starve it into uniform refusals.
-            let value = tokio::time::timeout(
+            let result = tokio::time::timeout(
                 Duration::from_secs(3),
                 parent.connection.client().call(
                     &bound.name,
@@ -1249,16 +1254,23 @@ fn status_flood_preserves_lease_and_restart_ack() {
                 ),
             )
             .await
-            .expect("the owning Term must be answered during a flood")
-            .expect("the owning Term must not be refused during a flood");
-            assert_eq!(
-                value["status"]["snapshot"]["source"],
-                status_request(&bound)["target"]
-            );
-            answered += 1;
+            .expect("parent request must be answered or explicitly refused during a flood");
+            match result {
+                Ok(value) => {
+                    assert_eq!(
+                        value["status"]["snapshot"]["source"],
+                        status_request(&bound)["target"]
+                    );
+                    answered.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                Err(error) => {
+                    assert_eq!(error.to_string(), r#"{"error_code":"REFUSED"}"#);
+                    refused.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        assert!(answered > 0);
+        assert!(answered.load(std::sync::atomic::Ordering::Relaxed) > 0);
         assert!(refused.load(std::sync::atomic::Ordering::Relaxed) > 0);
         std::fs::write(child.home.path().join(".claude-resume"), "").unwrap();
         let started = Instant::now();
@@ -1457,8 +1469,10 @@ fn stage_d_admits_at_an_idle_prompt_echoes_and_reports_a_structured_result() {
         // The announcement names a real caller, not a type name and not an
         // empty slot: a human reading the pane has to be able to tell two
         // agents apart.
+        let caller_record = serde_json::to_value(f.parent.record.record_id).unwrap();
         assert!(
-            announcement.contains("Term ") && !announcement.contains("HexBytes"),
+            announcement.contains(&format!("Term {}", caller_record.as_str().unwrap()))
+                && !announcement.contains("HexBytes"),
             "the echo must name the principal: {announcement}"
         );
 
@@ -1805,10 +1819,9 @@ fn stage_d_is_unsupported_rather_than_busy_without_the_owned_editor() {
 }
 
 /// The capability report under the owned editor says what the surface actually
-/// does, and a caller without `execute` authority is refused before learning
-/// anything about it.
+/// does. Every caller sees that capability and can use it with a fresh prompt.
 #[test]
-fn stage_d_reports_its_own_capability_and_refuses_unauthorised_callers() {
+fn stage_d_reports_its_own_capability_and_accepts_other_callers() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
         let mut f = stage_d_fixture("owned").await;
@@ -1821,72 +1834,132 @@ fn stage_d_reports_its_own_capability_and_refuses_unauthorised_callers() {
             view["capabilities"]["evaluation_inspect"],
             "result-and-cancel"
         );
-        let generation = prompt_generation(&mut f.parent, &f.bound).await;
-        // An unrelated Term instance holds every capability on its OWN records
-        // and none on this one.
+        // A different Term and an anonymous TCP connection may both execute on
+        // this pane. Their independent request sequences may both start at 1.
         let foreign = Parent::new(&f.broker).await;
-        let error = tokio::time::timeout(
-            Duration::from_secs(5),
-            foreign.connection.client().call(
-                &f.bound.name,
-                "shell.execute",
-                execute_request(&f.bound, 1, generation, "print(\"STOLEN\")"),
-            ),
-        )
-        .await
-        .expect("a denial must reply, not time out")
-        .unwrap_err()
-        .to_string();
-        assert!(error.contains("REFUSED"), "{error}");
         let tcp = NodedClient::connect_anonymous(&f.broker.url).await.unwrap();
-        let error = tokio::time::timeout(
-            Duration::from_secs(5),
-            tcp.call(
-                &f.bound.name,
-                "shell.execute",
-                execute_request(&f.bound, 2, generation, "print(\"STOLEN\")"),
-            ),
-        )
-        .await
-        .expect("an unverified denial must reply, not time out")
-        .unwrap_err()
-        .to_string();
-        assert!(error.contains("REFUSED"), "{error}");
-        tcp.close().await;
+        let mut operations = Vec::new();
+        for (index, client) in [foreign.connection.client(), &tcp].into_iter().enumerate() {
+            let value = tokio::time::timeout(
+                Duration::from_secs(5),
+                client.call(&f.bound.name, "shell.status", status_request(&f.bound)),
+            )
+            .await
+            .expect("every caller receives status")
+            .unwrap();
+            assert_eq!(value["capabilities"], view["capabilities"]);
+            assert_eq!(
+                value["status"]["snapshot"]["source"],
+                status_request(&f.bound)["target"]
+            );
+            let generation = prompt_generation(&mut f.parent, &f.bound).await;
+            let marker = format!("OPEN_CALLER_{index}");
+            let source = format!("print(\"{marker}\")");
+            let request = execute_request(&f.bound, 1, generation, &source);
+            let accepted = tokio::time::timeout(
+                Duration::from_secs(5),
+                client.call(&f.bound.name, "shell.execute", request.clone()),
+            )
+            .await
+            .expect("every caller receives an admission answer")
+            .unwrap();
+            assert_eq!(accepted["status"], "accepted");
+            let operation = counter(&accepted["operation_id"]);
+            assert!(!operations.contains(&operation));
+            operations.push(operation);
+            let output = f.child.until(&format!("{marker}\r\n"));
+            let echo = format!("mix: execute #{operation} admitted for ");
+            let echoed = output.find(&echo).expect("the caller must be announced");
+            let printed = output.find(&format!("{marker}\r\n")).unwrap();
+            assert!(echoed < printed, "{output}");
+            let announcement = &output[echoed..printed];
+            assert!(announcement.contains(&source), "{announcement}");
+            assert!(!announcement.contains("HexBytes"), "{announcement}");
+            if index == 0 {
+                let record = serde_json::to_value(foreign.record.record_id).unwrap();
+                assert!(
+                    announcement.contains(&format!("Term {}", record.as_str().unwrap())),
+                    "{announcement}"
+                );
+            } else {
+                assert!(announcement.contains("Bus local "), "{announcement}");
+            }
+            // An unrelated caller can inspect the completed operation too.
+            let result = result_of(&mut f.parent, &f.bound, operation).await;
+            assert_eq!(result["result"]["outcome"], "completed");
+            let replay = tokio::time::timeout(
+                Duration::from_secs(5),
+                client.call(&f.bound.name, "shell.execute", request),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(counter(&replay["operation_id"]), operation);
+            assert_eq!(replay["state"], "finished");
 
-        // An unauthorised caller must not be able to tell a command that EXISTS
-        // from one that does not. If a known command answered REFUSED and an
-        // unknown one UNSUPPORTED, the refusal would itself be a probe of the
-        // command table — so both answer the same, and the distinction is only
-        // ever visible to a caller that was admitted.
-        for command_name in [
-            "shell.status",
-            "shell.execute",
-            "shell.execute.result",
-            "shell.execute.cancel",
-            "shell.does.not.exist",
-        ] {
+            // Open access does not bypass prompt freshness.
+            assert!(prompt_generation(&mut f.parent, &f.bound).await > generation);
             let error = tokio::time::timeout(
                 Duration::from_secs(5),
-                foreign.connection.client().call(
+                client.call(
                     &f.bound.name,
-                    command_name,
-                    execute_request(&f.bound, 3, generation, "print(1)"),
+                    "shell.execute",
+                    execute_request(&f.bound, 2, generation, "print(\"NEVER_STALE\")"),
                 ),
             )
             .await
-            .expect("a denial must reply, not time out")
+            .unwrap()
             .unwrap_err()
             .to_string();
-            assert_eq!(
-                error, r#"{"error_code":"REFUSED"}"#,
-                "{command_name} leaked: {error}"
-            );
+            assert!(error.contains("STALE_GENERATION"), "{error}");
         }
 
+        for client in [foreign.connection.client(), &tcp] {
+            for &operation in &operations {
+                let result = tokio::time::timeout(
+                    Duration::from_secs(5),
+                    client.call(
+                        &f.bound.name,
+                        "shell.execute.result",
+                        operation_request(&f.bound, operation),
+                    ),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                assert_eq!(counter(&result["operation_id"]), operation);
+                assert_eq!(result["result"]["outcome"], "completed");
+                let cancel = tokio::time::timeout(
+                    Duration::from_secs(5),
+                    client.call(
+                        &f.bound.name,
+                        "shell.execute.cancel",
+                        operation_request(&f.bound, operation),
+                    ),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                assert_eq!(cancel["outcome"], "already_finished");
+            }
+            let error = tokio::time::timeout(
+                Duration::from_secs(5),
+                client.call(&f.bound.name, "shell.does.not.exist", serde_json::json!({})),
+            )
+            .await
+            .unwrap()
+            .unwrap_err()
+            .to_string();
+            assert!(error.contains("UNSUPPORTED"), "{error}");
+        }
         f.child.send("print(\"SWEEP_DONE\")\n");
         let pane = f.child.until("SWEEP_DONE\r\n");
-        assert!(!pane.contains("STOLEN"), "{pane}");
+        assert!(!pane.contains("NEVER_STALE"), "{pane}");
+        assert!(
+            !pane.contains("OPEN_CALLER_"),
+            "replay executed again: {pane}"
+        );
+        tcp.close().await;
         foreign.revoke_and_verify(&f.broker).await;
         teardown(f).await;
     });

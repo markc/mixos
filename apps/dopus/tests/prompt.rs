@@ -92,6 +92,10 @@ fn bus_file_operations_accept_driven_prompts_confirmations_and_drops() {
     let strings = strings();
     let mut harness = Harness::builder()
         .with_size(egui::vec2(980.0, 620.0))
+        .with_context_setup(|ctx| {
+            toolkit::install(ctx, &toolkit::Theme::embedded());
+            drive::install(ctx, "dopus");
+        })
         .build_ui_state(
             move |ui, window: &mut Window| {
                 for event in window.events.try_iter() {
@@ -110,8 +114,6 @@ fn bus_file_operations_accept_driven_prompts_confirmations_and_drops() {
                 answers: Vec::new(),
             },
         );
-    toolkit::install(&harness.ctx, &toolkit::Theme::embedded());
-    drive::install(&harness.ctx, "dopus");
     let meta = ServerMeta {
         service: "dopus".into(),
         headless: false,
