@@ -35163,8 +35163,8 @@ prefix (`<app>.ui.tree` and so on):
 `window`, `window.state`
 
 The app forwards each request, with the prefix removed, to
-`drive::request` from inside a frame. It sends back whatever `request`, or
-`drive::logic` (called once per frame), returns. It holds later commands
+`drive::request` from app logic, including logic-only wakes. It sends back whatever `request`, or
+`drive::logic` (called once per logic wake), returns. It holds later commands
 while `drive::pending` is true, and calls `drive::finish` before closing.
 Reads answer at once. Input commands run one at a time, one step per pass,
 and answer one pass after their last step. At most 32 input requests can

@@ -512,8 +512,8 @@ prefix (<code>&lt;app&gt;.ui.tree</code> and so on):</p>
 <code>ui.menu</code>, <code>ui.menu.list</code>, <code>ui.menu.open</code>, <code>ui.menu.close</code>, <code>ui.capture</code>,
 <code>window</code>, <code>window.state</code></p>
 <p>The app forwards each request, with the prefix removed, to
-<code>drive::request</code> from inside a frame. It sends back whatever <code>request</code>, or
-<code>drive::logic</code> (called once per frame), returns. It holds later commands
+<code>drive::request</code> from app logic, including logic-only wakes. It sends back whatever <code>request</code>, or
+<code>drive::logic</code> (called once per logic wake), returns. It holds later commands
 while <code>drive::pending</code> is true, and calls <code>drive::finish</code> before closing.
 Reads answer at once. Input commands run one at a time, one step per pass,
 and answer one pass after their last step. At most 32 input requests can

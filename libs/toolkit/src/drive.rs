@@ -11,8 +11,8 @@
 //!
 //! The commands ([`COMMANDS`]) are namespaced under the app (`<app>.ui.tree`,
 //! `<app>.window`, …). The app forwards each one, without its prefix, to
-//! [`request`] from inside a frame, sends whatever [`request`] or [`logic`]
-//! (once a frame) hands back, and holds later commands while [`pending`];
+//! [`request`] from app logic (including logic-only wakes), sends whatever
+//! [`request`] or [`logic`] hands back, and holds later commands while [`pending`];
 //! [`finish`] answers everything before it closes. Reads answer at once. Input commands run one at
 //! a time, one step per pass, and answer one pass after their last step with
 //! the menu, focus and pointer the input left, so a caller can step the
@@ -326,8 +326,8 @@ pub fn finish(ctx: &Context) -> Vec<Answer> {
 }
 
 /// Answer or queue the drive command `command` (without the app prefix). Call it
-/// inside a frame. `None` means queued: its answer comes from [`logic`]
-/// in a later frame.
+/// from app logic, including logic-only wakes. `None` means queued: its
+/// answer comes from [`logic`] on a later wake.
 pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Option<Answer> {
     if let Some(name) = args.get("viewport") {
         let Some(name) = name.as_str() else {
@@ -1685,6 +1685,7 @@ mod tests {
                 ctx.with_plugin(|drive: &mut Drive| {
                     drive.queue.pop_front();
                     drive.start();
+                    drive.running.as_mut().unwrap().steps.pop_front();
                 });
             }
             let now = Instant::now();
@@ -1744,6 +1745,24 @@ mod tests {
         assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
         assert!(!pending(&ctx));
         assert!(logic(&ctx).is_empty());
+    }
+
+    #[test]
+    fn painted_capture_without_screenshot_still_expires() {
+        let (ctx, _temp) = capture_context();
+        assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
+        let _output = ctx.run_ui(RawInput::default(), |_| {});
+        ctx.with_plugin(|drive: &mut Drive| {
+            let running = drive.running.as_mut().unwrap();
+            let Some(Step::Await { deadline, .. }) = running.steps.front_mut() else {
+                panic!("capture must await its screenshot");
+            };
+            *deadline = Instant::now() - Duration::from_millis(1);
+        });
+        let answers = logic(&ctx);
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].body["error_code"], "CAPTURE");
+        assert!(!pending(&ctx));
     }
 
     #[test]
