@@ -7038,7 +7038,7 @@ pub(crate) mod tests {
         let mut state = connected();
         compose_files(&mut state, vec![path.clone()]);
         assert!(state.compose_sendable());
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0)).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
         state.apply_ui(UiEvent::SendCompose);
         assert_eq!(
             state.compose.as_ref().unwrap().attachments[0].state,
