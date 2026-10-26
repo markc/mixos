@@ -327,7 +327,7 @@ impl<'app> GlowWinitApp<'app> {
             .take()
             .unwrap_or_else(|| create_egui_context(storage.as_deref()));
         egui_ctx.data_mut(|data| {
-            data.insert_temp(egui::Id::new("eframe.offscreen_capture"), false);
+            data.insert_temp(egui::Id::unique("eframe.offscreen_capture"), false);
         });
 
         let (mut glutin, painter) = Self::create_glutin_windowed_context(

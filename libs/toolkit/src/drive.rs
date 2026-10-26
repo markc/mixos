@@ -867,7 +867,7 @@ impl Drive {
         };
         if command_name == "ui.capture"
             && ctx.input(|i| i.viewport().visible() == Some(false))
-            && ctx.data(|data| data.get_temp::<bool>(egui::Id::new("eframe.offscreen_capture")))
+            && ctx.data(|data| data.get_temp::<bool>(egui::Id::unique("eframe.offscreen_capture")))
                 == Some(false)
         {
             return Some(refusal(id, "NOT_SHOWN", "this renderer cannot capture a hidden window: show the window first"));
@@ -1978,8 +1978,7 @@ mod tests {
         for pass_after_acceptance in [false, true] {
             let (ctx, _temp) = capture_context();
             assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
-            ctx.run_ui(RawInput::default(), |_| {})
-                .drop_without_applying_deltas();
+            // Still queued: emitted screenshots use capture_timeout instead.
             let start = Instant::now();
             let later = start + Duration::from_secs(2);
             ctx.with_plugin(|drive: &mut Drive| {
@@ -2202,7 +2201,7 @@ mod tests {
     #[test]
     fn hidden_glow_capture_refuses_immediately() {
         let (ctx, _temp) = capture_context();
-        ctx.data_mut(|data| data.insert_temp(egui::Id::new("eframe.offscreen_capture"), false));
+        ctx.data_mut(|data| data.insert_temp(egui::Id::unique("eframe.offscreen_capture"), false));
         let mut input = RawInput::default();
         input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().minimized = Some(true);
         ctx.run_ui(input, |_| {}).drop_without_applying_deltas();
