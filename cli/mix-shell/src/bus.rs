@@ -1543,7 +1543,8 @@ mod connection_events_tests {
         let delivered = Cell::new(0);
         let disconnected = Cell::new(false);
         let generation = Cell::new(1);
-        let next = || next_connection_change(&state, &delivered, &disconnected, || generation.get());
+        let next =
+            || next_connection_change(&state, &delivered, &disconnected, || generation.get());
         assert_eq!(next().await, ("bus.connected", 1));
         let mut cx = Context::from_waker(Waker::noop());
         {
@@ -1574,7 +1575,8 @@ mod connection_events_tests {
         let delivered = Cell::new(0);
         let disconnected = Cell::new(false);
         let generation = Cell::new(1);
-        let next = || next_connection_change(&state, &delivered, &disconnected, || generation.get());
+        let next =
+            || next_connection_change(&state, &delivered, &disconnected, || generation.get());
         assert_eq!(next().await, ("bus.connected", 1));
         tx.send(ConnState::Disconnected).unwrap();
         assert_eq!(next().await, ("bus.disconnected", 1));
@@ -1598,7 +1600,8 @@ mod connection_events_tests {
         let delivered = Cell::new(0);
         let disconnected = Cell::new(false);
         let generation = Cell::new(0);
-        let next = || next_connection_change(&state, &delivered, &disconnected, || generation.get());
+        let next =
+            || next_connection_change(&state, &delivered, &disconnected, || generation.get());
         let mut cx = Context::from_waker(Waker::noop());
         {
             let mut waiting = pin!(next());
@@ -1624,7 +1627,8 @@ mod connection_events_tests {
         let delivered = Cell::new(0);
         let disconnected = Cell::new(false);
         let generation = Cell::new(1);
-        let next = || next_connection_change(&state, &delivered, &disconnected, || generation.get());
+        let next =
+            || next_connection_change(&state, &delivered, &disconnected, || generation.get());
         assert_eq!(next().await, ("bus.connected", 1));
         let mut cx = Context::from_waker(Waker::noop());
         {
@@ -1653,7 +1657,8 @@ mod connection_events_tests {
         let delivered = Cell::new(0);
         let disconnected = Cell::new(false);
         let generation = Cell::new(1);
-        let next = || next_connection_change(&state, &delivered, &disconnected, || generation.get());
+        let next =
+            || next_connection_change(&state, &delivered, &disconnected, || generation.get());
         assert_eq!(next().await, ("bus.connected", 1));
         tx.send(ConnState::ShuttingDown).unwrap();
         let mut cx = Context::from_waker(Waker::noop());
