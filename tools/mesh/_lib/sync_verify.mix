@@ -1,0 +1,12 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Pure verification policy/source shared with offline tests.
+fn needs_target($is_local, $reply)
+  return not $is_local and (contains($reply, "Unknown mesh node") or contains($reply, "No route") or contains($reply, "no route"))
+end
+
+fn probe($target, $epoch, $hash)
+  return "$t = " .. json_encode($target) .. "\n" ..
+    "send $t noded.inventory timeout=15\n" ..
+    "if type($result) == \"map\" and $result.posture == \"verified\" and (\"\" .. $result.epoch) == " .. json_encode("" .. $epoch) .. " and $result.hash == " .. json_encode($hash) .. " then\n" ..
+    "  print(\"MESH_VERIFY_OK\")\nelse\n  print(json_encode($result))\nend\n"
+end

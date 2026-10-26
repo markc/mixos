@@ -1,0 +1,51 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m = require("../_lib/mesh_lib.mix")
+$v = require("../_lib/sync_verify.mix")
+fn check($ok, $message)
+  if not $ok then raise("TEST", $message) end
+end
+$mesh = {members:[{name:"node-a",status:"active",bus:false,mesh_ip:"192.0.2.7"}]}
+$ov = {published:[],published_address_only:["node-a"],serials:{"node-a":1},zone_order:[]}
+if len(args()) > 0 then
+  $case = args()[0]
+  if $case == "duplicate" then $ov.published = ["node-a"] end
+  if $case == "serial" then $ov.serials = {} end
+  if $case == "inactive" then $mesh.members[0].status = "tombstoned" end
+  if $case == "missing" then $ov.published_address_only = ["absent"] end
+  if $case == "mail" then $ov.published = ["node-a"]; $ov.published_address_only = [] end
+  if $case == "type" then $ov.published_address_only = "node-a" end
+  $m.validate_zone_emission($mesh,$ov)
+  exit(0)
+end
+$m.validate_zone_emission($mesh,$ov)
+$forward = $m.resolve_zone_bundles($mesh,$ov,{kind:"mesh_forward",__name:"example.org",extra:{"node-a":[{type:"MX"}]}})
+check(deep_eq($forward[0].records,[{name:"node-a.example.org",type:"A",ttl:300,data:"192.0.2.7"}]),"address-only emits exactly A, excluding extras")
+$reverse = $m.resolve_zone_bundles($mesh,$ov,{kind:"mesh_reverse",__name:"2.0.192.in-addr.arpa",ptr_target:"example.org"})
+check($reverse[0].records[0].type == "PTR" and $reverse[0].records[0].data == "node-a.example.org","address-only PTR")
+$legacy = $ov
+$legacy.published = ["node-a"]
+$legacy.published_address_only = []
+check(len($m.resolve_zone_bundles($mesh,$legacy,{kind:"mesh_forward",__name:"example.org",extra:{}})[0].records) == 4,"mail records preserved")
+$old_overlay = {published:["node-a"]}
+check(deep_eq($m.published_owners($old_overlay),["node-a"]),"legacy overlay without optional field")
+for $case in ["duplicate","serial","inactive","missing","mail","type"]
+  $r = run_argv([env("MESH_MIX"),$0,$case])
+  check($r.exit_code == 1 and contains($r.stdout,"ERROR:"),"reject " .. $case)
+end
+check($v.needs_target(false,"Unknown mesh node: 'node-a'"),"new member fallback")
+check($v.needs_target(false,"No route to host"),"no route fallback")
+check(not $v.needs_target(true,"Unknown mesh node"),"local target stays local")
+check(not $v.needs_target(false,"timeout"),"timeout does not change path")
+check(not $v.needs_target(false,"hash mismatch"),"mismatch does not change path")
+for $posture in ["verified","unverified"]
+  for $epoch in [23,22]
+    for $hash in ["expected","wrong"]
+      $src = $v.probe("noded",23,"expected")
+      $src = replace($src,"send $t noded.inventory timeout=15", "$result = " .. json_encode({posture:$posture,epoch:$epoch,hash:$hash}))
+      $r = run_argv([env("MESH_MIX"),"-"],{stdin:$src})
+      check($r.exit_code == 0,"probe fixture executes")
+      check((trim($r.stdout) == "MESH_VERIFY_OK") == ($posture == "verified" and $epoch == 23 and $hash == "expected"),"posture/epoch/hash must all match")
+    end
+  end
+end
+print("PASS new member verification policy and address-only DNS generation/refusals")

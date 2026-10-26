@@ -254,7 +254,12 @@ print("")
 print("generated " .. ("" .. $count) .. " node bundle(s) under " .. $dest_root)
 
 if not $sealed then
-  print("zones.mix + hub wg.conf NOT written (preview mode)")
+  if is_file($OVERLAY) and is_file($ZHEADER) then
+    $ztext = $m.gen_zones_text($mesh, load_data($OVERLAY)["overlay"], read_file($ZHEADER))
+    $m.write_leaf($out_dir .. "/zones.mix", "-- UNSIGNED PREVIEW; not deployable\n" .. $ztext)
+    print("unsigned zones.mix preview -> " .. $out_dir .. "/zones.mix")
+  end
+  print("hub wg.conf NOT written (preview mode)")
 else
   if $nodes_only then
     print("zones.mix NOT regenerated (--nodes-only; a full seal regenerates it)")

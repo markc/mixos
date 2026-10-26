@@ -42,6 +42,22 @@ Both are found through `project_bin()` and `installed_bin()` in `deploy_lib.mix`
 
 ## Checks
 
+DNS overlays accept `published` (A, MX, mail SRV and PTR) and optional
+`published_address_only` (A and PTR only). Owners must be unique across both
+lists, declared active inventory members and have numeric entries in `serials`.
+Only `published` requires `bus:true`, because it advertises mail services.
+Address-only bundles exclude forward `extra` records to keep that guarantee.
+For example: `published_address_only: ["desktop"]` with `serials: {desktop: 1}`.
+`mesh_gen preview --out DIR` writes unsigned DNS output to `DIR/zones.mix` when
+the overlay and header exist; seal and `mesh_zones_check` share the same recipe.
+
+System-target sync verification uses the local broker first. An unknown-node
+or no-route reply switches verification to the target's local broker over the
+existing SSH/Mix transport. Both paths require verified posture and the exact
+epoch and canonical inventory hash; each successful target logs its path.
+Run `mix tests/new_members_test.mix` with the mesh environment set for offline
+policy, probe and DNS fixtures. It never contacts a broker or SSH host.
+
 `mix _bin/mesh_targets.mix TARGETS.conf.mix` previews explicit system and
 desk target paths without contacting a host or writing anything. Optional
 `--probe` uses the existing native SSH/Mix path and a namespace stdin pipe to
