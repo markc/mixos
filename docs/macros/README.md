@@ -255,15 +255,11 @@ The completion body includes the retained output `text`, captured before a
 subsequent run can reset it. Weak change observers wake every live viewport
 for Bus starts, catalogue changes and completion without idle polling.
 
-Macro-file writes (`put`, `remove`, `move`, `copy`, `new`) require the owning
-process’s registered local service or Workshop (`workshop`, `workshop-*`).
-Global writes and moves into another app’s catalogue require Workshop.
-Workshop’s own mutating macro commands, including forwarding with `app`, accept
-only Workshop callers, preventing arbitrary callers from using it as a write
-proxy. Refusals use rc 10, `DENIED`, and name the command and rule before any
-file effects. Read/run/status/output/stop/reload remain open.
-
-The broker stamps service identity and local/mesh origin; mesh writes are
-refused. Local service registration is not executable authentication: a
-client able to register an unused Workshop service name gains its authority.
-This is a Bus access rule, not filesystem or same-user code isolation.
+Every macro command accepts every caller, local or mesh. Writes (`put`,
+`remove`, `move`, `copy`, `new`) include global and cross-app operations.
+Workshop’s forwarding commands and action registry use the same open path.
+Built-in files stay read-only, and storage paths remain confined to the
+macro roots. Argument validation, request limits and single-flight execution
+still apply. Workshop can create and immediately open a macro with
+`workshop.macros.new {app:"ced",title:"Tidy imports"}`; use `app:"global"`
+for the global tier.

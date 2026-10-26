@@ -7,12 +7,10 @@
 //! Every command is open to local and mesh callers with no authorisation gate.
 //! Success is rc 0; a refusal is rc 10 with a [`Refusal`] body.
 //!
-//! `dopus.action` serves the navigation, view, pane, selection and theme
-//! actions. The file operations (`file.open`, `file.new-folder`,
-//! `file.rename`, `file.copy-other-pane`, `file.move-other-pane`,
-//! `file.delete`) run from the keyboard, the menus and the dialogs, and
-//! every `file.*` id is refused over the Bus with [`code::FORBIDDEN`]
-//! before [`apply_action_in`] runs. `dopus.open` navigates the two panes.
+//! `dopus.action` serves navigation, view, pane, selection, theme and file
+//! actions through the same path as the keyboard and menus. File operations
+//! keep their prompts and confirmations, answered through drive input.
+//! `dopus.open` navigates the two panes.
 //!
 //! The window also serves the toolkit's drive commands (`dopus.window`,
 //! `dopus.ui.click` and the rest, [`toolkit::drive`]); `dopus.describe`
@@ -59,8 +57,6 @@ pub mod code {
     pub const UNAVAILABLE: &str = "UNAVAILABLE";
     pub const INTERNAL: &str = "INTERNAL";
     pub const UNKNOWN_COMMAND: &str = "UNKNOWN_COMMAND";
-    /// The file operations are not served over the Bus.
-    pub const FORBIDDEN: &str = "FORBIDDEN";
 }
 
 /// Every refusal body.
@@ -379,8 +375,8 @@ pub fn accepted_action(command: &Command, served: &[Served]) -> Option<String> {
         .map(|req| req.id)
 }
 
-/// The action table: `(id, label)`. `file.*` rows run from the keyboard and
-/// menus only; their `enabled` flags follow the core ([`apply_availability`]).
+/// The action table: `(id, label)`. Availability follows the core for every
+/// input path ([`apply_availability`]).
 pub const ACTIONS: &[(&str, &str)] = &[
     ("view.toggle-places", "Show or hide Places"),
     ("view.toggle-properties", "Show or hide Properties"),
@@ -662,12 +658,6 @@ pub fn apply_availability(
     }
 }
 
-/// Why `what` was refused to the Bus, whether asked by `dopus.action` or by
-/// drive input (`dopus.ui.*`).
-pub fn keyboard_only(what: &str) -> String {
-    format!("{what} is keyboard-only — the Bus never mutates the filesystem through a file manager")
-}
-
 /// `dopus.actions.list`'s table: the actions with the chords `keys` gives
 /// each (the effective ones in the window, the defaults headless).
 pub fn action_table(keys: impl Fn(&str) -> Vec<String>) -> Vec<ActionRow> {
@@ -893,8 +883,7 @@ pub fn serve_command(
                 engine: "egui".to_owned(),
                 version: info.version.to_owned(),
                 description: "the MixOS twin-pane file manager: Places and Properties panels; \
-                              file operations from the keyboard, menus and dialogs; file.* is \
-                              not served over the Bus"
+                              file operations from the keyboard, menus, Bus and drive input"
                     .to_owned(),
                 controls: Vec::new(),
                 commands: COMMANDS
@@ -944,9 +933,6 @@ pub fn serve_command(
                     )];
                 }
             };
-            if req.id.starts_with("file.") {
-                return vec![Served::error(id, code::FORBIDDEN, keyboard_only(&req.id))];
-            }
             let pane = req.pane.resolve(core);
             match apply_action_in(&req.id, core, pane) {
                 Ok(Applied::ToggleSidebar(_)) if !window => vec![window_refusal(
@@ -1138,9 +1124,7 @@ mod tests {
         assert_eq!(entries[0].name, "HELP");
         for entry in entries {
             if let Some(suffix) = entry.name.strip_prefix("dopus.macros.") {
-                let result =
-                    citizen::macros::request("dopus", citizen::macros::Caller::Other, suffix, "{}")
-                        .wait();
+                let result = citizen::macros::request("dopus", suffix, "{}").wait();
                 assert!(
                     !result.is_err_and(|error| error.code == "UNKNOWN_COMMAND"),
                     "{}",
@@ -1223,8 +1207,12 @@ mod tests {
                 &serde_json::json!({ "id": action }).to_string(),
             );
             let code = refusal(&served);
-            if action.starts_with("file.") {
-                assert_eq!(code.as_deref(), Some(code::FORBIDDEN), "{action}");
+            if action.starts_with("file.") && *action != "file.new-folder" {
+                assert_eq!(
+                    code.as_deref(),
+                    Some(code::UNAVAILABLE),
+                    "{action}: no selection"
+                );
             } else if action.starts_with("theme.")
                 || [
                     "location.focus",

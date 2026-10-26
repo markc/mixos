@@ -71,7 +71,6 @@ pub fn always<S>(_: &S) -> bool {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CommandError {
     Unknown(String),
-    Denied(&'static str),
     Disabled(&'static str),
 }
 
@@ -79,7 +78,6 @@ impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unknown(id) => write!(f, "unknown command {id:?}"),
-            Self::Denied(id) => write!(f, "command {id:?} is denied"),
             Self::Disabled(id) => write!(f, "command {id:?} is disabled"),
         }
     }
@@ -457,7 +455,6 @@ impl<S> Registry<S> {
             .map(|_| ())
             .map_err(|err| match err {
                 Error::Unknown(id) => CommandError::Unknown(id),
-                Error::Denied { id, .. } => CommandError::Denied(id),
                 Error::Disabled { id, .. } => CommandError::Disabled(id),
                 Error::BadParams { .. } | Error::Failed(_) => CommandError::Disabled(
                     "legacy nullary dispatch: invalid parameters or handler failure",
@@ -1056,14 +1053,6 @@ mod tests {
         assert!(
             matches!(r.execute("bad", &mut state, Origin::Bus), Err(CommandError::Disabled(message)) if message.contains("invalid parameters"))
         );
-        r.core.authorize = Some(|_| Err("refused"));
-        for locked in [false, true] {
-            state.locked = locked;
-            assert_eq!(
-                r.execute("count.bump", &mut state, Origin::Bus),
-                Err(CommandError::Denied("count.bump"))
-            );
-        }
     }
 
     #[test]

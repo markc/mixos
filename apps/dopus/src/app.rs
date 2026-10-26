@@ -113,11 +113,6 @@ pub struct App {
     /// publish on `dopus.action.executed` once their effects are done.
     pub ran: Vec<String>,
     pub quitting: bool,
-    /// Bus drive input (`dopus.ui.*`) is playing this frame. File actions,
-    /// accepting a dialog that changes files, and opening files are refused
-    /// then, as `dopus.action` refuses `file.*`: the Bus never changes the
-    /// filesystem through dopus.
-    pub driven: bool,
     /// The Properties preview: the active selection's thumbnail, decoded
     /// once from the shared cache, keyed by what it shows.
     pub preview: Option<PreviewImage>,
@@ -185,7 +180,6 @@ impl App {
             effects: Vec::new(),
             ran: Vec::new(),
             quitting: false,
-            driven: false,
             preview: None,
             decoder: toolkit::thumbnail::Decoder::new("dopus-preview"),
         }
@@ -245,10 +239,6 @@ impl App {
     /// activates its pane first).
     pub fn action_in(&mut self, action: &str, pane: PaneId) {
         if self.dialog.is_some() || self.quitting {
-            return;
-        }
-        if self.driven && action.starts_with("file.") {
-            self.status = Some(commands::keyboard_only(action));
             return;
         }
         match commands::apply_action_in(action, &mut self.core, pane) {
@@ -401,15 +391,6 @@ impl App {
         let Some(dialog) = self.dialog.clone() else {
             return;
         };
-        // Drive input may dismiss a dialog, never accept one that changes files.
-        let changes_files = matches!(
-            dialog,
-            Dialog::Confirm { .. } | Dialog::Prompt { .. } | Dialog::Drop { .. }
-        );
-        if self.driven && changes_files && answer != Answer::Cancel {
-            self.status = Some(commands::keyboard_only("a file dialog"));
-            return;
-        }
         match (dialog, answer) {
             (Dialog::Confirm { token, .. }, Answer::Accept) => {
                 self.core.confirm(token, ConfirmAnswer::Yes);
@@ -643,8 +624,8 @@ mod tests {
             &a.effects[..],
             [Effect::Reply { id: 9, rc: 0, .. }]
         ));
-        // An accepted action is left for dopus.action.executed; refused
-        // ones (a file action, an unknown id) are not.
+        // An accepted action is left for dopus.action.executed; unavailable
+        // actions (no selection) and unknown ids are not.
         for (id, body) in [
             (10, r#"{"id":"view.toggle-hidden"}"#),
             (11, r#"{"id":"file.delete"}"#),
@@ -660,24 +641,16 @@ mod tests {
         assert_eq!(a.ran, ["view.toggle-places", "view.toggle-hidden"]);
     }
 
-    /// Drive input (`dopus.ui.*`) runs no file action and accepts no dialog
-    /// that changes files; it may still dismiss one.
     #[test]
-    fn drive_input_never_changes_files() {
+    fn file_actions_and_dialog_answers_share_the_keyboard_path() {
         let (_dir, mut a) = app();
-        a.driven = true;
         a.action("file.new-folder");
+        let events = a.core.tick(std::time::Instant::now());
+        a.absorb(events);
+        assert!(matches!(a.dialog, Some(Dialog::Prompt { .. })));
+        *a.prompt_text().unwrap() = "Fresh".into();
+        a.answer(Answer::Accept);
         assert!(a.dialog.is_none());
-        assert!(
-            a.status
-                .as_deref()
-                .is_some_and(|s| s.contains("keyboard-only"))
-        );
-        a.action("view.toggle-hidden");
-        assert!(
-            a.core.pane(a.core.active()).show_hidden,
-            "other actions run"
-        );
         for dialog in [
             Dialog::Confirm {
                 token: 7,
@@ -691,9 +664,7 @@ mod tests {
         ] {
             a.open(dialog);
             a.answer(Answer::Accept);
-            assert!(a.dialog.is_some(), "not accepted under drive input");
-            a.answer(Answer::Cancel);
-            assert!(a.dialog.is_none(), "dismissed");
+            assert!(a.dialog.is_none(), "file dialog accepted");
         }
     }
 }

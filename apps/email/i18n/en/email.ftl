@@ -222,7 +222,6 @@ no-account = No account is selected
 no-such = Nothing here has the id { $id }
 compose-open = A compose dialog is already open
 unknown-action = No such command
-command-denied = That command was denied
 command-disabled = That command cannot run now
 unknown-command = Unknown Email command
 quitting = Email is closing

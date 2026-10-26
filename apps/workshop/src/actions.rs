@@ -104,6 +104,17 @@ pub fn registry() -> Registry<Engine> {
             }
         },
     });
+    r.add(Action {
+        id: "macro.new",
+        label: "macro-new",
+        menu: Some("macros-menu"),
+        submenu: None,
+        group: 0,
+        shortcut: None,
+        icon: None,
+        enabled: Engine::can_new_macro,
+        run: Engine::new_macro,
+    });
     for (id, label, run) in [
         (
             "macro.put",
@@ -266,6 +277,48 @@ pub(crate) fn set_choice(e: &mut Engine, choice: toolkit::theme_menu::Choice) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_macro_is_enabled_for_groups_and_macros_only_while_idle() {
+        let r = registry();
+        let mut e = Engine::new(crate::label);
+        let inspector::Effect::Discover { ticket } = e.take_effects().pop().unwrap() else {
+            panic!("discovery")
+        };
+        e.discovered(ticket, inspector::Snapshot::default());
+        e.take_effects();
+        assert!(
+            r.execute("macro.new", &mut e, toolkit::action::Origin::Bus)
+                .is_err()
+        );
+        for app in ["global", "ced"] {
+            e.ui.row_key = Some(format!("macros:{app}"));
+            r.execute("macro.new", &mut e, toolkit::action::Origin::Bus)
+                .unwrap();
+            assert_eq!(e.ui.dialog, Some(Dialog::NewMacro));
+            assert!(
+                r.execute("macro.new", &mut e, toolkit::action::Origin::Bus)
+                    .is_err()
+            );
+            e.close_dialog();
+        }
+        e.ui.row_key = None;
+        e.workshop.selected = Some(("ced".into(), "existing".into()));
+        r.execute("macro.new", &mut e, toolkit::action::Origin::Bus)
+            .unwrap();
+        e.close_dialog();
+        e.workshop.pending = 1;
+        assert!(
+            r.execute("macro.new", &mut e, toolkit::action::Origin::Bus)
+                .is_err()
+        );
+        e.workshop.pending = 0;
+        e.quitting = true;
+        assert!(
+            r.execute("macro.new", &mut e, toolkit::action::Origin::Bus)
+                .is_err()
+        );
+    }
 
     #[test]
     fn traffic_placement_actions_set_and_tick_the_saved_side() {

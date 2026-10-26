@@ -19,7 +19,6 @@ search = Filter processes
 search-processes = Filter processes
 toggle-mode = Light or dark interface
 unknown-action = Unknown Monitor command
-command-denied = That command was denied
 command-disabled = That command is not available right now
 about-body = Processes and performance for this node or any node on the mesh, read from monitord. End task and Kill act only on this node's processes, as you.
 this-node = This node

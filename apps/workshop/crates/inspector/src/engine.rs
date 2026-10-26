@@ -68,6 +68,7 @@ pub enum Effect {
 pub enum Dialog {
     About,
     Shortcuts,
+    NewMacro,
 }
 
 /// What the tree shows for one row.
@@ -1544,6 +1545,7 @@ fn dialog_name(dialog: Option<Dialog>) -> Option<&'static str> {
     dialog.map(|d| match d {
         Dialog::About => "about",
         Dialog::Shortcuts => "shortcuts",
+        Dialog::NewMacro => "new-macro",
     })
 }
 

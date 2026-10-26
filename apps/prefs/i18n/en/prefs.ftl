@@ -337,7 +337,6 @@ uncertain = The change to { $app } may or may not have happened ({ $message }). 
 settled = The list shows the current state of { $app } again.
 all-apps = the installed applications
 unknown-action = Unknown Preferences command
-command-denied = That command was denied
 command-disabled = That command is not available right now
 about-body = Preferences holds MixOS's preference editors in one window, a nod to the AmigaOS Prefs drawer. Appearance sets the theme, widget style, density and wallpaper. Text & Fonts sets interface text and monospace defaults. Windows sets title bars and buttons. Apps holds Email, Term and Ced preferences. Accessibility sets Larger text and Reduce motion. Software & Updates follows upstream releases. Passwords go to Email itself, never to the settings service.
 category-overview = Overview

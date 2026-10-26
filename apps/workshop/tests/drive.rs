@@ -18,6 +18,7 @@ struct Window {
     engine: Engine,
     inbox: Vec<(u64, &'static str, Value)>,
     answers: Vec<Answer>,
+    workshop_requests: Vec<(String, Value)>,
 }
 
 fn engine() -> Engine {
@@ -54,6 +55,7 @@ fn window() -> Harness<'static, Window> {
         engine: engine(),
         inbox: Vec::new(),
         answers: Vec::new(),
+        workshop_requests: Vec::new(),
     };
     let mut harness = Harness::builder()
         .with_size(egui::vec2(980.0, 620.0))
@@ -82,6 +84,9 @@ fn window() -> Harness<'static, Window> {
                         } => w
                             .answers
                             .extend(drive::request(ui.ctx(), id, &command_name, &args)),
+                        Effect::Workshop {
+                            operation, args, ..
+                        } => w.workshop_requests.push((operation, args)),
                         _ => {}
                     }
                 }
@@ -106,6 +111,43 @@ fn ok(h: &mut Harness<'_, Window>, id: u64, command_name: &'static str, args: Va
         }
     }
     panic!("{command_name} was never answered");
+}
+
+#[test]
+fn new_macro_button_title_and_confirm_use_the_registered_action() {
+    let mut h = window();
+    h.state_mut().engine.ui.row_key = Some("macros:global".into());
+    h.state_mut()
+        .engine
+        .workshop
+        .catalogues
+        .insert("global".into(), json!({"macros":[]}));
+    h.run_steps(3);
+    ok(
+        &mut h,
+        1,
+        "workshop.ui.click",
+        json!({"label":label("macro-new")}),
+    );
+    assert_eq!(
+        h.state().engine.ui.dialog,
+        Some(inspector::Dialog::NewMacro)
+    );
+    ok(&mut h, 2, "workshop.ui.type", json!({"text":"Fresh macro"}));
+    ok(
+        &mut h,
+        3,
+        "workshop.ui.click",
+        json!({"label":label("macro-create")}),
+    );
+    assert!(h.state().engine.ui.dialog.is_none());
+    assert_eq!(
+        h.state().workshop_requests,
+        [(
+            "macros.new".into(),
+            json!({"app":"global","title":"Fresh macro"})
+        )]
+    );
 }
 
 #[test]

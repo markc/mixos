@@ -121,10 +121,6 @@ macro_rules! nullary {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     Unknown(String),
-    Denied {
-        id: &'static str,
-        reason: &'static str,
-    },
     Disabled {
         id: &'static str,
         reason: &'static str,
@@ -140,7 +136,6 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unknown(id) => write!(f, "unknown command {id:?}"),
-            Self::Denied { id, reason } => write!(f, "command {id:?} is denied: {reason}"),
             Self::Disabled { id, reason } => write!(f, "command {id:?} is disabled: {reason}"),
             Self::BadParams { id, msg } => write!(f, "bad parameters for command {id:?}: {msg}"),
             Self::Failed(msg) => f.write_str(msg),
@@ -149,15 +144,6 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
-
-/// Authorisation input. Identity is not yet part of the v1 dispatch contract.
-pub struct Call<'a> {
-    pub id: &'static str,
-    pub origin: Origin,
-    pub params: &'a Value,
-}
-
-pub type Authorize = fn(&Call<'_>) -> Result<(), &'static str>;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Described {
@@ -210,7 +196,6 @@ pub struct Registry<S> {
     labels: HashMap<&'static str, Relabel<S>>,
     bindings: keymap::Bindings,
     journal: RefCell<Journal>,
-    pub authorize: Option<Authorize>,
 }
 
 impl<S> Default for Registry<S> {
@@ -224,7 +209,6 @@ impl<S> Default for Registry<S> {
             labels: HashMap::new(),
             bindings: keymap::Bindings::default(),
             journal: RefCell::new(Journal::default()),
-            authorize: None,
         }
     }
 }
@@ -407,14 +391,6 @@ impl<S> Registry<S> {
         origin: Origin,
     ) -> Result<Value, Error> {
         let c = self.get(id).ok_or_else(|| Error::Unknown(id.to_owned()))?;
-        if let Some(authorize) = self.authorize {
-            authorize(&Call {
-                id: c.id,
-                origin,
-                params: &params,
-            })
-            .map_err(|reason| Error::Denied { id: c.id, reason })?;
-        }
         self.enabled(id, state)
             .map_err(|reason| Error::Disabled { id: c.id, reason })?;
         if c.params.is_none()

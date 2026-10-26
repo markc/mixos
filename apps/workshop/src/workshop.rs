@@ -16,14 +16,9 @@ pub async fn perform(
             let library = macros::Library::scan(&roots).map_err(|error| error.to_string())?;
             let mut catalogues = serde_json::Map::new();
             let session = macros::Session::for_app("workshop");
-            let global = macros::commands::handle(
-                &session,
-                macros::commands::Caller::Workshop,
-                "reload",
-                &json!({}),
-            )
-            .wait()
-            .map_err(|e| e.to_string())?;
+            let global = macros::commands::handle(&session, "reload", &json!({}))
+                .wait()
+                .map_err(|e| e.to_string())?;
             catalogues.insert("global".into(), global);
             for (app, catalogue) in library.apps {
                 if !macros::valid_destination(&app) {
@@ -31,14 +26,9 @@ pub async fn perform(
                 }
                 let session = macros::Session::with_roots(&app, Some(roots.clone()));
                 session.replace_catalogue(catalogue);
-                let mut list = macros::commands::handle(
-                    &session,
-                    macros::commands::Caller::Workshop,
-                    "list",
-                    &json!({}),
-                )
-                .wait()
-                .map_err(|e| e.to_string())?;
+                let mut list = macros::commands::handle(&session, "list", &json!({}))
+                    .wait()
+                    .map_err(|e| e.to_string())?;
                 list["running"] = json!(false);
                 catalogues.insert(app, list);
             }
@@ -146,9 +136,18 @@ pub async fn perform(
     if let Some(object) = args.as_object_mut() {
         object.remove("app");
     }
-    if suffix == "open" {
-        let mut document = request_macro(&bus, &app, "get", args, &running).await?;
+    if matches!(suffix.as_str(), "open" | "new") {
+        let mut get_args = args;
+        if suffix == "new" {
+            let created = request_macro(&bus, &app, "new", get_args, &running).await?;
+            if created.get("error_code").is_some() {
+                return Ok(created);
+            }
+            get_args = json!({"id":created["id"]});
+        }
+        let mut document = request_macro(&bus, &app, "get", get_args, &running).await?;
         if document.get("error_code").is_none() {
+            document["app"] = json!(app);
             document["catalogue"] = request_macro(&bus, &app, "list", json!({}), &running).await?;
             document["catalogue"]["running"] = json!(running.contains_key(&app));
         }
@@ -269,9 +268,7 @@ async fn request_macro(
         } else {
             macros::Session::with_roots(&app, macros::Roots::resolve())
         };
-        match macros::commands::handle(&session, macros::commands::Caller::Workshop, &suffix, &args)
-            .wait()
-        {
+        match macros::commands::handle(&session, &suffix, &args).wait() {
             Ok(answer) => Ok(answer),
             Err(error) => Ok(json!({"error_code":error.code,"message":error.message})),
         }
@@ -283,6 +280,85 @@ async fn request_macro(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_returns_the_document_for_global_stopped_and_running_apps() {
+        const CHILD: &str = "MIXOS_WORKSHOP_NEW_TEST";
+        if std::env::var_os(CHILD).is_none() {
+            let root = tempfile::tempdir().unwrap();
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "workshop::tests::new_returns_the_document_for_global_stopped_and_running_apps",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env("HOME", root.path())
+                .env("XDG_CONFIG_HOME", root.path().join("config"))
+                .env("MIXOS_PREFIX", root.path().join("prefix"))
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout)
+                        .contains("test result: ok. 1 passed"),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        let broker = test_broker::Broker::start();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (agent, _) = inspector::bus::start("agent-1", &broker.url, &[]).unwrap();
+        // The app uses the ordinary citizen macro interception lane.
+        let (app, _) = inspector::bus::start("example", &broker.url, &[]).unwrap();
+        runtime.block_on(async {
+            for (app_name, running) in [
+                ("global", BTreeMap::new()),
+                ("ced", BTreeMap::new()),
+                (
+                    "workshop",
+                    BTreeMap::from([("workshop".into(), "example".into())]),
+                ),
+            ] {
+                let document = perform(
+                    agent.clone(),
+                    "macros.new",
+                    json!({"app":app_name,"title":"Fresh"}),
+                    running,
+                )
+                .await
+                .unwrap();
+                assert_eq!(document["app"], app_name);
+                assert!(document["id"].as_str().unwrap().starts_with("fresh"));
+                assert!(
+                    document["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("-- title: Fresh")
+                );
+                assert_eq!(
+                    std::fs::read_to_string(document["path"].as_str().unwrap()).unwrap(),
+                    document["text"].as_str().unwrap()
+                );
+                assert!(
+                    document["catalogue"]["macros"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|entry| entry["id"] == document["id"])
+                );
+            }
+        });
+        for handle in [agent, app] {
+            handle.quit();
+            handle.wait_done().unwrap();
+        }
+    }
     #[tokio::test]
     async fn failed_stop_cleans_up_the_replacement() {
         let mut calls = Vec::new();
@@ -316,7 +392,7 @@ mod tests {
         assert_eq!(calls[2].1["subscription_id"], "new");
     }
     #[test]
-    fn observation_refusal_is_visible_and_leaves_topics_available() {
+    fn arbitrary_caller_can_observe_and_use_macro_commands() {
         let broker = test_broker::Broker::start();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -324,7 +400,7 @@ mod tests {
             .unwrap();
         let (allowed, mut observed) =
             inspector::bus::start("workshop-observe-test", &broker.url, &[]).unwrap();
-        let (denied, _) = inspector::bus::start("workshop-denied-test", &broker.url, &[]).unwrap();
+        let (agent, _) = inspector::bus::start("agent-1", &broker.url, &[]).unwrap();
         runtime.block_on(async {
             let started = perform(
                 allowed.clone(),
@@ -388,23 +464,26 @@ mod tests {
             .await
             .unwrap();
             assert_eq!(stopped["stopped"], true);
-            let refused = perform(
-                denied.clone(),
+            let observed = perform(
+                agent.clone(),
                 "observe",
                 json!({"on":true}),
                 BTreeMap::new(),
             )
             .await
             .unwrap();
-            assert_eq!(refused["error_code"], "UNAVAILABLE");
-            assert!(
-                refused["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("observe_unauthorised")
-            );
-            denied.subscribe("ced.action.executed").await.unwrap();
-            denied.unsubscribe("ced.action.executed").await.unwrap();
+            assert!(observed["subscription_id"].is_string());
+            let stopped = perform(
+                agent.clone(),
+                "observe",
+                json!({"on":false,"subscription_id":observed["subscription_id"]}),
+                BTreeMap::new(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(stopped["stopped"], true);
+            agent.subscribe("ced.action.executed").await.unwrap();
+            agent.unsubscribe("ced.action.executed").await.unwrap();
             for args in [
                 json!({}),
                 json!({"on":true,"body":"raw"}),
@@ -413,14 +492,14 @@ mod tests {
                 json!({"on":true,"filter":false}),
             ] {
                 assert_eq!(
-                    perform(denied.clone(), "observe", args, BTreeMap::new())
+                    perform(agent.clone(), "observe", args, BTreeMap::new())
                         .await
                         .unwrap()["error_code"],
                     "INVALID_ARGUMENT"
                 );
             }
             let stopped_app = perform(
-                denied.clone(),
+                agent.clone(),
                 "macros.run",
                 json!({"app":"ced","id":"test"}),
                 BTreeMap::new(),
@@ -438,7 +517,7 @@ mod tests {
                 json!({"app":"ced","extra":true}),
             ] {
                 assert_eq!(
-                    perform(denied.clone(), "macros.open", args, BTreeMap::new())
+                    perform(agent.clone(), "macros.open", args, BTreeMap::new())
                         .await
                         .unwrap()["error_code"],
                     "INVALID_ARGUMENT"
@@ -446,8 +525,8 @@ mod tests {
             }
         });
         allowed.quit();
-        denied.quit();
+        agent.quit();
         allowed.wait_done().unwrap();
-        denied.wait_done().unwrap();
+        agent.wait_done().unwrap();
     }
 }
