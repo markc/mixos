@@ -16,7 +16,7 @@ use crate::icons::Icon;
 use crate::menu::{self, Entry, Menu, Row};
 use crate::strings::Strings;
 pub use ::action::{Action as EngineAction, Registry as EngineRegistry};
-pub use ::action::{Call, Class, Described, Error, ParamSpec, Place, Scope};
+pub use ::action::{Class, Described, Error, ParamSpec, Place, Scope};
 use egui::KeyboardShortcut;
 use std::collections::HashMap;
 use std::fmt;

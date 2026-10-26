@@ -45,7 +45,7 @@ pub(crate) async fn dispatch(
     let result = match suffix {
         "vhost.add" => vhost_add(node, cmd).await,
         "vhost.remove" => vhost_remove(node, cmd).await,
-        "vhost.list" => vhost_list(node, cmd).await,
+        "vhost.list" => vhost_list(node).await,
         "acme.renew" => acme_renew(node, cmd).await,
         "acme.status" => acme_status(node, cmd).await,
         _ => return None,
@@ -263,7 +263,7 @@ async fn vhost_remove(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, Stri
 }
 
 /// List vhosts with derived ACME status and full stored fields.
-async fn vhost_list(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String) {
+async fn vhost_list(node: &Arc<NodeState>) -> (u8, String) {
     let Some(runtime) = node.vhosts_runtime.as_ref() else {
         return server_error("webd.vhosts runtime not attached — bootstrap node or wiring bug");
     };
@@ -1036,8 +1036,7 @@ mod tests {
         let (rc, _) = vhost_add(&node, &add).await;
         assert_eq!(rc, 0);
 
-        let cmd = cmd_with_headers("webd.vhost.list", &[]);
-        let (rc, body) = vhost_list(&node, &cmd).await;
+        let (rc, body) = vhost_list(&node).await;
         assert_eq!(rc, 0, "list happy path rc=0; body={body}");
         let v: JsonValue = serde_json::from_str(&body).unwrap();
         assert_eq!(v["count"], 1);

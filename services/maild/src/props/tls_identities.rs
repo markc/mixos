@@ -609,7 +609,6 @@ async fn project_identities(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::props::record::{Actor, Version};
     use rusqlite::Connection;
 
     fn test_store() -> Arc<SqliteStore> {
