@@ -603,10 +603,8 @@ impl Painter {
         capture_data: Vec<egui::ScreenshotCallback>,
         window: &Arc<winit::window::Window>,
     ) -> f32 {
-        let Some(surface) = self.surfaces.get(&viewport_id) else {
-            return 0.0;
-        };
-        let size = [surface.width, surface.height];
+        let size = self.surfaces.get(&viewport_id)
+            .map_or([0, 0], |surface| [surface.width, surface.height]);
         self.paint_and_update_textures_impl(
             viewport_id,
             size,
@@ -951,6 +949,7 @@ impl Painter {
             && !capture_data.is_empty()
         {
             screen_capture_state.read_screen_rgba(capture_buffer, capture_data);
+            #[cfg(not(target_arch = "wasm32"))]
             if offscreen {
                 // Mapping needs device progress, even when no further frame arrives.
                 // Keep the UI thread responsive while waiting for the GPU readback.

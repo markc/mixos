@@ -11,8 +11,9 @@ licences; LICENSE-MIT and LICENSE-APACHE are retained from egui's matching
   the normal painting implementation. It uses the viewport's configured
   size, renderer target format, scale, clear colour, depth/MSAA attachments,
   texture uploads/frees and existing CaptureState. It never acquires,
-  reconfigures, recreates or presents a surface. A bounded background device
-  poll completes screenshot callbacks without requiring another paint.
+  reconfigures, recreates or presents a surface. A bounded native background
+  device poll completes screenshot callbacks without requiring another paint;
+  browser callbacks retain wgpu's event-loop-driven progress.
 - `Cargo.toml`, `Cargo.lock`: add pollster as a dev dependency for the headless GPU guard.
   `offscreen_tests::hidden_window_capture_without_surface` renders without a
   window or surface, checks padded row widths, resizing, scaled primitives,
