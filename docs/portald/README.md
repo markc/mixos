@@ -174,21 +174,13 @@ Nothing is captured until the request is granted, in this order:
 | `portald.screencast.grant` | `{app?, count?, ttl_ms?}` | covers the next `count` (default 1, at most 100) Starts by `app` (any app when absent) for `ttl_ms` (default 5 minutes, at most an hour); at most 16 grants |
 | `portald.screencast.revoke` | `{id?}` | withdraws one grant, or all of them |
 
-These commands answer **callers on this node only**. A request with
-`broker_origin` other than `local` is refused with rc 13 `FORBIDDEN`, because a
-grant hands over the whole screen. notifyd holds the same line for the
-buttons: `notify.action`, `notify.dismiss`, `notify.close` and
-`notify.close_all` are refused for callers off this node, so no mesh peer can
-press Allow either. Every grant, answer and decision is logged with the
-caller.
+These commands accept every broker-stamped caller, local or mesh.
+Missing provenance is a malformed request (rc 10). notifyd likewise accepts
+answers and withdrawals from any node, so a remote agent can press Allow.
+Every grant, answer and decision is logged with the caller.
 
-The trust model, plainly: consent keeps the screen from other nodes and from
-an app that shares by accident. It is not a wall between local processes:
-any process on this node that can reach the Bus (`local` means this node,
-not this session) can answer or grant, and any
-Wayland client of this desk can already capture the screen through compd, so
-an app that wants to approve its own share can. Sandboxed apps, where that
-would matter, are out of scope for now.
+Consent prevents accidental sharing. Any caller on the Bus can answer or
+grant access; it is not an access boundary between mesh nodes or processes.
 
 To share the screen from a script with nobody at the desk:
 

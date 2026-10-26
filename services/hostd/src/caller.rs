@@ -18,7 +18,7 @@ pub struct Caller {
     /// True when the cgroup provably belongs to the connecting process: the
     /// kernel gave hostd a pidfd for it (`SO_PEERPIDFD`), and that process
     /// was still alive after the cgroup was read, so its pid was not reused
-    /// in between. A grant is never matched on an unverified cgroup.
+    /// in between. Used for diagnostics, never for access control.
     pub verified: bool,
     /// True when the caller shares hostd's pid and user namespaces: it runs
     /// on the host itself, not inside a container. Proven the same way.
@@ -26,27 +26,53 @@ pub struct Caller {
     pub host_ns: bool,
 }
 
-impl Caller {
-    /// Root on the host itself: uid 0, verified, and outside any container.
-    /// Container root is not this, with or without uid remapping.
-    pub fn host_root(&self) -> bool {
-        self.uid == 0 && self.verified && self.host_ns
-    }
-}
-
 /// Where a request came in.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "via", rename_all = "snake_case")]
 pub enum Origin {
     Local(Caller),
-    /// The Bus carries reads only; mesh writes come later, signed.
-    Bus,
+    /// A same-host request, stamped by the local broker.
+    LocalBus {
+        from: String,
+    },
+    /// A request delivered from another node.
+    Mesh,
+    /// Missing or invalid broker provenance.
+    Unstamped,
+}
+
+impl Origin {
+    pub fn from_command(command: &bus::native_client::IncomingCommand) -> Self {
+        match command.header("broker_origin") {
+            Some("local") => Self::LocalBus {
+                from: command.from.clone(),
+            },
+            Some("mesh") => Self::Mesh,
+            _ => Self::Unstamped,
+        }
+    }
+
+    pub fn is_local(&self) -> bool {
+        matches!(self, Self::Local(_) | Self::LocalBus { .. })
+    }
+
+    /// Rate accounting only; this identity never determines access.
+    pub fn rate_key(&self) -> String {
+        match self {
+            Self::Local(caller) => format!(
+                "socket:{}:{}",
+                caller.uid,
+                caller.cgroup.as_deref().unwrap_or_default()
+            ),
+            Self::LocalBus { from } => format!("bus:{from}"),
+            Self::Mesh => "mesh".into(),
+            Self::Unstamped => "unstamped".into(),
+        }
+    }
 }
 
 /// The process at the other end of a connection, held for the connection's
-/// life. Its cgroup and namespaces are read afresh for every request, so a
-/// process that moves out of a granted cgroup loses the grant at once, and a
-/// connection whose connecting process has exited proves nothing.
+/// life. Its cgroup and namespaces are read afresh for diagnostic records.
 pub struct Peer {
     uid: u32,
     gid: u32,
@@ -179,6 +205,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn bus_origin_comes_from_the_broker_stamp() {
+        for (stamp, expected) in [
+            (Some("local"), Origin::LocalBus { from: "".into() }),
+            (Some("mesh"), Origin::Mesh),
+            (None, Origin::Unstamped),
+            (Some("forged"), Origin::Unstamped),
+        ] {
+            let command = bus::native_client::IncomingCommand {
+                generation: 0,
+                from: "".into(),
+                command: "net.link.apply".into(),
+                id: None,
+                args: serde_json::Value::Null,
+                body: "{}".into(),
+                headers: stamp
+                    .map(|stamp| ("broker_origin".into(), stamp.into()))
+                    .into_iter()
+                    .collect(),
+            };
+            assert_eq!(Origin::from_command(&command), expected);
+        }
+    }
+
+    #[test]
     fn nspid_counts_pid_namespaces() {
         assert_eq!(nspid_depth("Name:\tx\nNSpid:\t42\n"), Some(1));
         assert_eq!(nspid_depth("NSpid:\t4242\t17\t1\n"), Some(3));
@@ -215,7 +265,6 @@ mod tests {
         assert!(caller.verified);
         // The test runs on the host side of its own namespaces.
         assert!(caller.host_ns);
-        assert_eq!(caller.host_root(), caller.uid == 0);
     }
 
     /// A connection whose connecting process has gone proves nothing, even
@@ -237,6 +286,5 @@ mod tests {
         };
         let caller = peer.caller();
         assert!(!caller.verified);
-        assert!(!caller.host_root());
     }
 }

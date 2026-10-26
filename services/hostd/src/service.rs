@@ -3,9 +3,9 @@
 //! The command table and dispatch. Every command is closed and typed: no command runs
 //! a caller-supplied command, script or shell string.
 use crate::{
-    caller::{Caller, Origin, Peer},
+    caller::{Origin, Peer},
     desk, freeze, info, link, net,
-    policy::{self, Policy, RateLimiter},
+    rate::RateLimiter,
     receipt::{self, Outcome, Receipt},
     txn, unit, wg, wifi,
 };
@@ -24,7 +24,7 @@ pub enum Tier {
     Read,
     /// The kill switch: local callers only, with rules of its own.
     Control,
-    /// Changes the host: local callers holding a grant, while not frozen.
+    /// Changes the host: any local caller, while not frozen.
     Write,
 }
 
@@ -47,22 +47,22 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "hostd.status",
-        summary: "Frozen or not, the policy's state, and the grants the caller holds",
+        summary: "Frozen or not, and the caller's origin",
         tier: Tier::Read,
     },
     Command {
         name: "hostd.receipt",
-        summary: "One write's receipt: what it changed, under which grant, and how it ended",
+        summary: "One write's receipt: what it changed, its origin, and how it ended",
         tier: Tier::Read,
     },
     Command {
         name: "hostd.freeze",
-        summary: "Refuse every write until local root thaws hostd",
+        summary: "Refuse every write until a local caller thaws hostd",
         tier: Tier::Control,
     },
     Command {
         name: "hostd.thaw",
-        summary: "Accept writes again and lift grant suspensions (local root only)",
+        summary: "Accept writes again (any local caller)",
         tier: Tier::Control,
     },
     Command {
@@ -77,7 +77,7 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "net.wifi.scan",
-        summary: "Scan for Wi-Fi networks on one device (iwd); drives the radio, so it needs a grant",
+        summary: "Scan for Wi-Fi networks on one device (iwd); drives the radio",
         tier: Tier::Write,
     },
     Command {
@@ -92,17 +92,17 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "desk.restart",
-        summary: "Restart the desk machine this session's grant names; the host stays up",
+        summary: "Restart the named desk machine; the host stays up",
         tier: Tier::Write,
     },
     Command {
         name: "desk.stop",
-        summary: "Power off the desk machine this session's grant names; the host stays up",
+        summary: "Power off the named desk machine; the host stays up",
         tier: Tier::Write,
     },
     Command {
         name: "unit.control",
-        summary: "Start, stop or restart one system unit the caller's grant names; hostd never controls its own units",
+        summary: "Start, stop or restart one named system unit; hostd never controls its own units",
         tier: Tier::Write,
     },
 ];
@@ -131,10 +131,7 @@ pub fn manifest() -> Vec<bus::CommandDescriptor> {
 #[derive(Clone)]
 pub struct Host {
     pub root: PathBuf,
-    pub policy: PathBuf,
     pub state: PathBuf,
-    /// Refuse a policy file that anyone but root could change.
-    pub require_root_policy: bool,
     pub limiter: Arc<Mutex<RateLimiter>>,
     /// One write transaction at a time, host-wide.
     pub writer: Arc<tokio::sync::Mutex<()>>,
@@ -147,9 +144,7 @@ impl Host {
     pub fn system() -> Self {
         Self {
             root: "/".into(),
-            policy: policy::POLICY.into(),
             state: STATE.into(),
-            require_root_policy: true,
             limiter: Arc::default(),
             writer: Arc::default(),
             blocked: Arc::default(),
@@ -184,14 +179,11 @@ impl Host {
         }
     }
 
-    /// Everything under one directory, the policy not required to be
-    /// root-owned: for tests and `--root` runs.
+    /// Everything under one directory, for tests and `--root` runs.
     pub fn fixture(dir: &std::path::Path) -> Self {
         Self {
             root: dir.into(),
-            policy: dir.join("etc/hostd/policy.mx"),
             state: dir.join("var/lib/hostd"),
-            require_root_policy: false,
             limiter: Arc::default(),
             writer: Arc::default(),
             blocked: Arc::default(),
@@ -260,14 +252,16 @@ async fn serve(
     origin: &Origin,
     peer: Option<Arc<Peer>>,
 ) -> Result<Value, Value> {
+    if matches!(origin, Origin::Unstamped) {
+        return Err(refuse("unstamped", name));
+    }
     if name == "HELP" {
         return Ok(json!(manifest()));
     }
     let Some(command_name) = command_name(name) else {
         return Err(unknown_command(name));
     };
-    if command_name.tier != Tier::Read && *origin == Origin::Bus {
-        // Mesh writes arrive later, signed by a listed controller.
+    if command_name.tier != Tier::Read && !origin.is_local() {
         return Err(refuse("local_only", name));
     }
     match name {
@@ -283,35 +277,20 @@ async fn serve(
         .await),
         "hostd.status" => Ok(status(host, origin)),
         "hostd.receipt" => receipt_command(host, body),
-        "hostd.freeze" => freeze_command(host, body, local(origin)),
-        "hostd.thaw" => thaw_command(host, body, local(origin)),
+        "hostd.freeze" => freeze_command(host, body, origin),
+        "hostd.thaw" => thaw_command(host, body),
         desk::RESTART | desk::STOP => {
-            // The command takes no machine name: the grant names the desk.
-            let policy = load_policy(host).map_err(|e| policy_invalid(&e))?;
-            let Origin::Local(caller) = origin else {
-                return Err(refuse("local_only", name));
-            };
-            let desk = desk::target(&policy, caller, name, chrono::Utc::now())
-                .map_err(|status| refuse(status, name))?;
+            let request: desk::Request = decode(body)?;
+            if !desk::valid_name(&request.desk) {
+                return Err(
+                    json!({"status":"bad_request","message":"desk must be a valid machine name"}),
+                );
+            }
+            let desk = request.desk;
             let (command_name, run_desk) = (name.to_owned(), desk.clone());
-            write(
-                host,
-                origin,
-                peer,
-                name,
-                vec![(desk::LIMIT.to_owned(), desk)],
-                move |host, origin, grant| async move {
-                    desk::act(
-                        &host.root,
-                        &host.state,
-                        &command_name,
-                        &run_desk,
-                        &grant,
-                        &origin,
-                    )
-                    .await
-                },
-            )
+            write(host, origin, peer, name, move |host, origin| async move {
+                desk::act(&host.root, &host.state, &command_name, &run_desk, &origin).await
+            })
             .await
         }
         unit::COMMAND => {
@@ -326,34 +305,17 @@ async fn serve(
                     json!({"status":"bad_request","message":"action must be start, stop or restart"}),
                 );
             }
-            let limits = vec![
-                (unit::LIMIT_UNITS.to_owned(), request.unit.clone()),
-                (unit::LIMIT_ACTIONS.to_owned(), request.action.clone()),
-            ];
             let (run_unit, run_action) = (request.unit, request.action);
-            write(
-                host,
-                origin,
-                peer,
-                name,
-                limits,
-                move |host, origin, grant| async move {
-                    unit::act(&host.state, &run_unit, &run_action, &grant, &origin).await
-                },
-            )
+            write(host, origin, peer, name, move |host, origin| async move {
+                unit::act(&host.state, &run_unit, &run_action, &origin).await
+            })
             .await
         }
         "net.link.apply" => {
             let plan = link::plan(&host.root, decode(body)?)?;
-            let limits = vec![("links".to_owned(), plan.link.clone())];
-            write(
-                host,
-                origin,
-                peer,
-                name,
-                limits,
-                move |host, origin, grant| link::apply(host, plan, grant, origin),
-            )
+            write(host, origin, peer, name, move |host, origin| {
+                link::apply(host, plan, origin)
+            })
             .await
         }
         "net.wg.apply" => {
@@ -363,20 +325,12 @@ async fn serve(
                     json!({"status":"bad_request","message":"name must be 1-15 characters of [A-Za-z0-9._-]"}),
                 );
             }
-            let limits = vec![("links".to_owned(), request.name.clone())];
             // The plan reads or makes the key, so it is built under the
             // writer lock: two applies to one link never make two keys.
-            write(
-                host,
-                origin,
-                peer,
-                name,
-                limits,
-                move |host, origin, grant| async move {
-                    let plan = wg::plan(&host.root, request)?;
-                    wg::apply(host, plan, grant, origin).await
-                },
-            )
+            write(host, origin, peer, name, move |host, origin| async move {
+                let plan = wg::plan(&host.root, request)?;
+                wg::apply(host, plan, origin).await
+            })
             .await
         }
         "net.wifi.scan" => {
@@ -386,34 +340,19 @@ async fn serve(
                     json!({"status":"bad_request","message":"device must be 1-15 characters of [A-Za-z0-9._-]"}),
                 );
             }
-            let limits = vec![("links".to_owned(), request.device.clone())];
             // Nothing durable changes, so no receipt; the writer lock keeps a
             // scan from overlapping a connect on the same radio.
-            write(
-                host,
-                origin,
-                peer,
-                name,
-                limits,
-                move |_host, _origin, _grant| async move { wifi::scan(&request.device).await },
-            )
+            write(host, origin, peer, name, move |_host, _origin| async move {
+                wifi::scan(&request.device).await
+            })
             .await
         }
         "net.wifi.connect" => {
             let request: wifi::ConnectRequest = decode(body)?;
             let window = request.check()?;
-            let limits = vec![
-                ("links".to_owned(), request.device.clone()),
-                ("ssids".to_owned(), request.ssid.clone()),
-            ];
-            write(
-                host,
-                origin,
-                peer,
-                name,
-                limits,
-                move |host, origin, grant| wifi::connect(host, request, window, grant, origin),
-            )
+            write(host, origin, peer, name, move |host, origin| {
+                wifi::connect(host, request, window, origin)
+            })
             .await
         }
         "hostd.undo" => undo_command(host, body, origin, peer).await,
@@ -429,12 +368,9 @@ const QUEUE: std::time::Duration = std::time::Duration::from_secs(15);
 /// its own: a caller that hangs up, or a request deadline, never interrupts
 /// a write or its rollback halfway.
 ///
-/// The gate runs twice: before queueing (counting the call against the
-/// grant's rate), and again once the lock is held, so a freeze, a breaker
-/// trip, an expiry or a policy edit that lands while the write waits is
-/// obeyed. The second gate reads the caller afresh from its kernel handle
-/// (`peer`): a caller that left its granted cgroup, or exited, while it
-/// waited, is refused.
+/// The gate runs before queueing (counting the rate) and under the lock,
+/// so a freeze that lands while a write waits is obeyed. Socket identity is
+/// refreshed for the receipt, without restricting who may write.
 ///
 /// Under the lock, a change hostd couldn't finish earlier is finished
 /// first; while that fails, every write is refused `recovery_pending`.
@@ -443,18 +379,13 @@ async fn write<F, Fut>(
     origin: &Origin,
     peer: Option<Arc<Peer>>,
     command_name: &str,
-    limits: Vec<(String, String)>,
     run: F,
 ) -> Result<Value, Value>
 where
-    F: FnOnce(Host, Origin, String) -> Fut + Send + 'static,
+    F: FnOnce(Host, Origin) -> Fut + Send + 'static,
     Fut: Future<Output = Result<Value, Value>> + Send + 'static,
 {
-    let borrowed: Vec<(&str, &str)> = limits
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
-    authorise(host, command_name, origin, &borrowed)?;
+    gate(host, command_name, origin, true)?;
     let (host, origin, command_name) = (host.clone(), origin.clone(), command_name.to_owned());
     tokio::spawn(async move {
         let Ok(_writer) = tokio::time::timeout(QUEUE, host.writer.clone().lock_owned()).await
@@ -472,12 +403,8 @@ where
             Some(peer) => Origin::Local(peer.caller()),
             None => origin,
         };
-        let borrowed: Vec<(&str, &str)> = limits
-            .iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
-            .collect();
-        let grant = gate(&host, &command_name, &origin, &borrowed, false)?;
-        run(host, origin, grant).await
+        gate(&host, &command_name, &origin, false)?;
+        run(host, origin).await
     })
     .await
     .unwrap_or_else(|e| Err(json!({"status":"internal","message":e.to_string()})))
@@ -495,15 +422,14 @@ fn receipt_command(host: &Host, body: &Value) -> Result<Value, Value> {
         .map(|r| {
             // Never hand back file contents: they may hold secrets.
             let files: Vec<_> = r.files.iter().map(|f| &f.path).collect();
-            json!({"id": r.id, "command": r.command, "grant": r.grant, "origin": r.origin, "at": r.at,
+            json!({"id": r.id, "command": r.command, "origin": r.origin, "at": r.at,
                    "summary": r.summary, "files": files, "outcome": r.outcome, "reason": r.reason})
         })
         .map_err(|_| refuse("no_such_receipt", "hostd.receipt"))
 }
 
-/// Undo needs the same authority as the write it reverses: a grant that
-/// covers the original command and its limits. An undo that failed part way
-/// (`undoing`) can be retried.
+/// Any local caller may undo an applied receipt. An undo that failed part
+/// way (`undoing`) can be retried; file ownership is checked by the transaction.
 async fn undo_command(
     host: &Host,
     body: &Value,
@@ -517,40 +443,26 @@ async fn undo_command(
     if !undoable(&receipt.outcome) {
         return Err(json!({"status":"not_applied","outcome":receipt.outcome}));
     }
-    let limits: Vec<(String, String)> = match receipt.command.as_str() {
-        // Both commands record their link under `link`, and grants limit both
-        // by `links`.
-        link::COMMAND | wg::COMMAND => receipt
-            .summary
-            .get("link")
-            .and_then(Value::as_str)
-            .map(|l| vec![("links".to_owned(), l.to_owned())])
-            .unwrap_or_default(),
-        wifi::COMMAND => {
-            let get = |k: &str| {
-                receipt
-                    .summary
-                    .get(k)
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            };
-            match (get("link"), get("ssid")) {
-                (Some(device), Some(ssid)) => {
-                    vec![("links".to_owned(), device), ("ssids".to_owned(), ssid)]
-                }
-                _ => return Err(refuse("not_undoable", &receipt.command)),
-            }
-        }
-        _ => return Err(refuse("not_undoable", &receipt.command)),
-    };
+    if !matches!(
+        receipt.command.as_str(),
+        link::COMMAND | wg::COMMAND | wifi::COMMAND
+    ) {
+        return Err(refuse("not_undoable", &receipt.command));
+    }
+    if receipt.command == wifi::COMMAND
+        && ["link", "ssid"]
+            .iter()
+            .any(|key| receipt.summary.get(key).and_then(Value::as_str).is_none())
+    {
+        return Err(refuse("not_undoable", &receipt.command));
+    }
     let command_name = receipt.command.clone();
     write(
         host,
         origin,
         peer,
         &command_name,
-        limits,
-        move |host, _origin, _grant| async move {
+        move |host, _origin| async move {
             // Re-read under the lock: two undos of one receipt run one after
             // the other, and the second must see the first's result.
             let mut receipt = Receipt::load(&host.state, &receipt.id)
@@ -565,48 +477,12 @@ async fn undo_command(
     .await
 }
 
-fn local(origin: &Origin) -> &Caller {
-    match origin {
-        Origin::Local(caller) => caller,
-        Origin::Bus => unreachable!("non-read commands are refused on the Bus above"),
-    }
-}
-
-fn load_policy(host: &Host) -> anyhow::Result<Policy> {
-    Policy::load(&host.policy, host.require_root_policy)
-}
-
 fn status(host: &Host, origin: &Origin) -> Value {
-    // One load, so every part describes the same policy. `held` names the
-    // caller's grants; `held_grants` gives each in full (commands, limits,
-    // expiry, rate), so a UI offers only what the caller may do.
-    let (policy, held, held_grants) = match load_policy(host) {
-        Ok(policy) => {
-            let grants = match origin {
-                Origin::Local(caller) => policy.held_grants(caller, chrono::Utc::now()),
-                Origin::Bus => vec![],
-            };
-            let names: Vec<&str> = grants.iter().map(|g| g.name.as_str()).collect();
-            (
-                json!({"grants": policy.grants.len()}),
-                json!(names),
-                json!(grants),
-            )
-        }
-        Err(error) => (json!({"error": error.to_string()}), json!([]), json!([])),
-    };
     let frozen = match freeze::state(&host.state) {
         Ok(record) => json!(record),
-        // Unreadable counts as frozen; say so.
         Err(error) => json!({"record": "unreadable", "error": error.to_string()}),
     };
-    json!({
-        "frozen": frozen,
-        "policy": policy,
-        "caller": origin,
-        "held": held,
-        "held_grants": held_grants,
-    })
+    json!({"frozen": frozen, "caller": origin})
 }
 
 #[derive(Deserialize, Default)]
@@ -625,92 +501,49 @@ fn decode<T: serde::de::DeserializeOwned>(body: &Value) -> Result<T, Value> {
         .map_err(|e| json!({"status":"bad_request","message":e.to_string()}))
 }
 
-/// Root on the host may always freeze; anyone else, container root
-/// included, needs a grant naming `hostd.freeze`, so an agent can stop
-/// itself and others.
-fn freeze_command(host: &Host, body: &Value, caller: &Caller) -> Result<Value, Value> {
+fn freeze_command(host: &Host, body: &Value, origin: &Origin) -> Result<Value, Value> {
     let body: FreezeBody = decode(body)?;
     if body.reason.as_ref().is_some_and(|r| r.len() > 200) {
         return Err(json!({"status":"bad_request","message":"reason over 200 bytes"}));
     }
-    if !caller.host_root() {
-        let policy = load_policy(host).map_err(|e| policy_invalid(&e))?;
-        policy
-            .grant_for(caller, "hostd.freeze", chrono::Utc::now())
-            .map_err(|r| refuse(r.status(), "hostd.freeze"))?;
-    }
-    freeze::freeze(&host.state, caller, body.reason.as_deref())
+    freeze::freeze(&host.state, origin, body.reason.as_deref())
         .map(|record| json!({"frozen": record}))
         .map_err(|e| json!({"status":"internal","message":e.to_string()}))
 }
 
-/// Only root on the host itself thaws: never container root, never a
-/// grant. Thawing also lifts every grant suspension.
-fn thaw_command(host: &Host, body: &Value, caller: &Caller) -> Result<Value, Value> {
+fn thaw_command(host: &Host, body: &Value) -> Result<Value, Value> {
     let _: Empty = decode(body)?;
-    if !caller.host_root() {
-        return Err(refuse("root_only", "hostd.thaw"));
+    freeze::thaw(&host.state)
+        .map(|thawed| json!({"thawed": thawed}))
+        .map_err(|e| json!({"status":"internal","message":e.to_string()}))
+}
+
+/// Only origin, freeze and rate constrain writes. Identity is for rate
+/// accounting and audit, never for permission.
+fn gate(host: &Host, command_name: &str, origin: &Origin, count: bool) -> Result<(), Value> {
+    if !origin.is_local() {
+        return Err(refuse(
+            if matches!(origin, Origin::Unstamped) {
+                "unstamped"
+            } else {
+                "local_only"
+            },
+            command_name,
+        ));
     }
-    let internal = |e: anyhow::Error| json!({"status":"internal","message":e.to_string()});
-    let thawed = freeze::thaw(&host.state).map_err(internal)?;
-    let lifted = receipt::clear(&host.state).map_err(internal)?;
-    Ok(json!({"thawed": thawed, "suspensions_lifted": lifted}))
-}
-
-fn policy_invalid(error: &anyhow::Error) -> Value {
-    json!({"status":"policy_invalid","message":error.to_string()})
-}
-
-/// The gate every write command passes before it touches the host: not frozen,
-/// a local verified caller, a matching unexpired grant whose allow-lists
-/// cover `limits`, not suspended by the circuit breaker, and within its
-/// rate. Returns the name of the grant that allowed the call.
-pub fn authorise(
-    host: &Host,
-    command_name: &str,
-    origin: &Origin,
-    limits: &[(&str, &str)],
-) -> Result<String, Value> {
-    gate(host, command_name, origin, limits, true)
-}
-
-/// The gate itself. `count` records the call against the grant's rate; the
-/// re-check under the writer lock doesn't count it twice.
-fn gate(
-    host: &Host,
-    command_name: &str,
-    origin: &Origin,
-    limits: &[(&str, &str)],
-    count: bool,
-) -> Result<String, Value> {
     if freeze::blocks_writes(&host.state) {
         return Err(refuse("frozen", command_name));
     }
-    let Origin::Local(caller) = origin else {
-        return Err(refuse("local_only", command_name));
-    };
-    let policy = load_policy(host).map_err(|e| policy_invalid(&e))?;
-    let candidates = policy
-        .grants_for(caller, command_name, chrono::Utc::now())
-        .map_err(|r| refuse(r.status(), command_name))?;
-    let Some(grant) = candidates
-        .into_iter()
-        .find(|g| limits.iter().all(|(key, value)| g.allows(key, value)))
-    else {
-        return Err(json!({"status":"outside_grant","command":command_name,"limits":limits}));
-    };
-    if let Some(why) = receipt::suspended(&host.state, &grant.name) {
-        return Err(json!({"status":"grant_suspended","grant":grant.name,"reason":why}));
-    }
-    if count {
-        let who = caller.cgroup.as_deref().unwrap_or_default();
-        host.limiter
+    if count
+        && !host
+            .limiter
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .admit(grant, command_name, who, Instant::now())
-            .map_err(|r| refuse(r.status(), command_name))?;
+            .unwrap_or_else(|p| p.into_inner())
+            .admit(command_name, &origin.rate_key(), Instant::now())
+    {
+        return Err(refuse("rate_limited", command_name));
     }
-    Ok(grant.name.clone())
+    Ok(())
 }
 
 /// One journald record per call. Bodies are not logged: write commands will
@@ -730,50 +563,35 @@ fn audit(command_name: &str, origin: &Origin, result: &Result<Value, Value>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::caller::Caller;
 
-    /// A verified caller in a container (not in hostd's namespaces).
-    fn caller(uid: u32, cgroup: &str) -> Origin {
+    fn socket_caller() -> Origin {
         Origin::Local(Caller {
-            uid,
-            gid: uid,
-            pid: Some(1),
-            cgroup: Some(cgroup.into()),
-            verified: true,
+            uid: 1000,
+            gid: 1000,
+            pid: None,
+            cgroup: None,
+            verified: false,
             host_ns: false,
         })
     }
 
-    /// Root on the host itself.
-    fn host_root() -> Origin {
-        Origin::Local(Caller {
-            uid: 0,
-            gid: 0,
-            pid: Some(1),
-            cgroup: Some("/user.slice/root".into()),
-            verified: true,
-            host_ns: true,
-        })
+    fn local_bus() -> Origin {
+        Origin::LocalBus {
+            from: "arbitrary-agent".into(),
+        }
     }
 
-    fn fixture(policy: &str) -> (tempfile::TempDir, Host) {
+    fn fixture() -> (tempfile::TempDir, Host) {
         let dir = tempfile::tempdir().unwrap();
         let host = Host::fixture(dir.path());
-        std::fs::create_dir_all(host.policy.parent().unwrap()).unwrap();
-        std::fs::write(&host.policy, policy).unwrap();
         (dir, host)
     }
 
-    const POLICY: &str = r#"{schema: 1, grants: [
-        {name: "agent", caller: {cgroup: "/agent.slice/*"}, commands: ["net.*", "hostd.freeze"],
-         limits: {links: ["hd0"]}, rate: {count: 1, per_s: 600}},
-        {name: "agent-wide", caller: {cgroup: "/agent.slice/*"}, commands: ["net.link.apply"],
-         limits: {links: ["hd1"]}}
-    ]}"#;
-
     #[tokio::test]
     async fn unknown_commands_are_not_served() {
-        let (_dir, host) = fixture(POLICY);
-        let err = dispatch(&host, "net.exec", &json!({}), &Origin::Bus)
+        let (_dir, host) = fixture();
+        let err = dispatch(&host, "net.exec", &json!({}), &Origin::Mesh)
             .await
             .unwrap_err();
         assert_eq!(err["error_code"], "UNKNOWN_COMMAND");
@@ -815,133 +633,88 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn writes_are_local_only() {
-        let (_dir, host) = fixture(POLICY);
-        let body = json!({"link":"hd0","config":{"mode":"dhcp"}});
-        let err = dispatch(&host, "net.link.apply", &body, &Origin::Bus)
+    async fn bus_and_socket_writes_need_no_grant_or_verified_process() {
+        for origin in [local_bus(), socket_caller()] {
+            let (_dir, host) = fixture();
+            let result = write(
+                &host,
+                &origin,
+                None,
+                "net.link.apply",
+                |host, origin| async move {
+                    let mut receipt =
+                        Receipt::new("net.link.apply", &origin, json!({"link":"hd0"}));
+                    receipt.outcome = Outcome::Applied;
+                    receipt.save(&host.state).unwrap();
+                    Ok(json!({"receipt":receipt.id}))
+                },
+            )
             .await
-            .unwrap_err();
-        assert_eq!(err["status"], "local_only");
-    }
-
-    #[tokio::test]
-    async fn control_commands_are_local_only() {
-        let (_dir, host) = fixture(POLICY);
-        for name in ["hostd.freeze", "hostd.thaw"] {
-            let err = dispatch(&host, name, &json!({}), &Origin::Bus)
-                .await
-                .unwrap_err();
-            assert_eq!(err["status"], "local_only");
+            .unwrap();
+            let receipt = Receipt::load(&host.state, result["receipt"].as_str().unwrap()).unwrap();
+            assert_eq!(receipt.origin, origin);
         }
     }
 
     #[tokio::test]
-    async fn freeze_needs_root_or_a_grant_and_only_root_thaws() {
-        let (_dir, host) = fixture(POLICY);
-        let stranger = caller(1000, "/user.slice/x");
-        let agent = caller(1000, "/agent.slice/run");
-        // Root inside a container, without uid remapping: uid 0, but not
-        // in hostd's namespaces.
-        let container_root = caller(0, "/machine.slice/systemd-nspawn@desk.service/payload");
-
-        let err = dispatch(&host, "hostd.freeze", &json!({}), &stranger)
-            .await
-            .unwrap_err();
-        assert_eq!(err["status"], "no_grant");
-        let err = dispatch(&host, "hostd.freeze", &json!({}), &container_root)
-            .await
-            .unwrap_err();
-        assert_eq!(err["status"], "no_grant");
-        dispatch(&host, "hostd.freeze", &json!({"reason":"stop"}), &agent)
-            .await
-            .unwrap();
-        assert!(freeze::blocks_writes(&host.state));
-
-        for not_root in [&agent, &container_root] {
-            let err = dispatch(&host, "hostd.thaw", &json!({}), not_root)
+    async fn mesh_writes_and_controls_are_refused() {
+        let (_dir, host) = fixture();
+        for name in COMMANDS
+            .iter()
+            .filter(|command| command.tier != Tier::Read)
+            .map(|command| command.name)
+        {
+            let err = dispatch(&host, name, &json!({}), &Origin::Mesh)
                 .await
                 .unwrap_err();
-            assert_eq!(err["status"], "root_only");
+            assert_eq!(err["status"], "local_only", "{name}");
         }
-        let ok = dispatch(&host, "hostd.thaw", &json!({}), &host_root())
-            .await
-            .unwrap();
-        assert_eq!(ok["thawed"], true);
+        assert_eq!(
+            dispatch(&host, "host.info", &json!({}), &Origin::Unstamped)
+                .await
+                .unwrap_err()["status"],
+            "unstamped"
+        );
+    }
+
+    #[tokio::test]
+    async fn any_local_caller_can_freeze_and_thaw() {
+        let (_dir, host) = fixture();
+        for origin in [local_bus(), socket_caller()] {
+            dispatch(&host, "hostd.freeze", &json!({"reason":"stop"}), &origin)
+                .await
+                .unwrap();
+            assert_eq!(
+                gate(&host, "net.link.apply", &origin, true).unwrap_err()["status"],
+                "frozen"
+            );
+            let other = local_bus();
+            let thawed = dispatch(&host, "hostd.thaw", &json!({}), &other)
+                .await
+                .unwrap();
+            assert_eq!(thawed["thawed"], true);
+            assert!(gate(&host, "net.link.apply", &origin, true).is_ok());
+        }
     }
 
     #[test]
-    fn authorise_gates_writes() {
-        let (_dir, host) = fixture(POLICY);
-        let agent = caller(1000, "/agent.slice/run");
-        let hd0 = [("links", "hd0")];
+    fn write_rates_still_apply() {
+        let (_dir, host) = fixture();
+        for _ in 0..crate::rate::COUNT {
+            gate(&host, "net.link.apply", &local_bus(), true).unwrap();
+        }
         assert_eq!(
-            authorise(&host, "net.link.apply", &Origin::Bus, &hd0).unwrap_err()["status"],
-            "local_only"
-        );
-        assert_eq!(
-            authorise(&host, "power.reboot", &agent, &[]).unwrap_err()["status"],
-            "no_grant"
-        );
-        assert_eq!(
-            authorise(&host, "net.link.apply", &agent, &[("links", "eth0")]).unwrap_err()["status"],
-            "outside_grant"
-        );
-        assert_eq!(
-            authorise(&host, "net.link.apply", &agent, &hd0).unwrap(),
-            "agent"
-        );
-        // The first grant allows one call per ten minutes per caller.
-        assert_eq!(
-            authorise(&host, "net.link.apply", &agent, &hd0).unwrap_err()["status"],
+            gate(&host, "net.link.apply", &local_bus(), true).unwrap_err()["status"],
             "rate_limited"
         );
-        // The second grant covers another link, with no rate.
-        assert_eq!(
-            authorise(&host, "net.link.apply", &agent, &[("links", "hd1")]).unwrap(),
-            "agent-wide"
-        );
-        freeze::freeze(&host.state, local(&agent), None).unwrap();
-        assert_eq!(
-            authorise(&host, "net.link.apply", &agent, &[("links", "hd1")]).unwrap_err()["status"],
-            "frozen"
-        );
-    }
-
-    #[test]
-    fn a_suspended_grant_refuses_until_thawed() {
-        let (_dir, host) = fixture(POLICY);
-        let agent = caller(1000, "/agent.slice/run");
-        let hd1 = [("links", "hd1")];
-        receipt::record(&host.state, "agent-wide", true).unwrap();
-        assert!(receipt::record(&host.state, "agent-wide", true).unwrap());
-        assert_eq!(
-            authorise(&host, "net.link.apply", &agent, &hd1).unwrap_err()["status"],
-            "grant_suspended"
-        );
-        receipt::clear(&host.state).unwrap();
-        assert!(authorise(&host, "net.link.apply", &agent, &hd1).is_ok());
-    }
-
-    #[test]
-    fn a_broken_policy_refuses_writes() {
-        let (_dir, host) = fixture("{schema: 9}");
-        let agent = caller(1000, "/agent.slice/run");
-        assert_eq!(
-            authorise(&host, "net.link.apply", &agent, &[]).unwrap_err()["status"],
-            "policy_invalid"
-        );
+        assert!(gate(&host, "net.link.apply", &socket_caller(), true).is_ok());
     }
 
     #[tokio::test]
     async fn receipts_never_return_file_contents() {
-        let (_dir, host) = fixture(POLICY);
-        let mut r = Receipt::new(
-            "net.link.apply",
-            "agent",
-            &Origin::Bus,
-            json!({"link":"hd0"}),
-        );
-        r.files.push(receipt::FileChange {
+        let (_dir, host) = fixture();
+        let mut receipt = Receipt::new("net.link.apply", &local_bus(), json!({"link":"hd0"}));
+        receipt.files.push(receipt::FileChange {
             path: "/etc/systemd/network/50-hostd-hd0.network".into(),
             previous: Some("PrivateKey=secret".into()),
             installed: None,
@@ -949,121 +722,97 @@ mod tests {
             group: None,
             owner: None,
         });
-        r.save(&host.state).unwrap();
+        receipt.save(&host.state).unwrap();
         let got = dispatch(
             &host,
             "hostd.receipt",
-            &json!({"receipt": r.id}),
-            &Origin::Bus,
+            &json!({"receipt":receipt.id}),
+            &Origin::Mesh,
         )
         .await
         .unwrap();
         assert!(!got.to_string().contains("secret"));
         assert_eq!(got["files"][0], "/etc/systemd/network/50-hostd-hd0.network");
+        assert_eq!(
+            dispatch(
+                &host,
+                "hostd.receipt",
+                &json!({"receipt":"../breaker"}),
+                &Origin::Mesh
+            )
+            .await
+            .unwrap_err()["status"],
+            "no_such_receipt"
+        );
+    }
+
+    #[tokio::test]
+    async fn undo_needs_an_applied_receipt_and_preserves_later_edits() {
+        let (_dir, host) = fixture();
+        let mut receipt = Receipt::new("net.link.apply", &socket_caller(), json!({"link":"hd0"}));
+        receipt.outcome = Outcome::RolledBack;
+        receipt.save(&host.state).unwrap();
+        assert_eq!(
+            dispatch(
+                &host,
+                "hostd.undo",
+                &json!({"receipt":receipt.id}),
+                &local_bus()
+            )
+            .await
+            .unwrap_err()["status"],
+            "not_applied"
+        );
+        let path = host.root.join("later.network");
+        std::fs::write(&path, "later edit").unwrap();
+        receipt.files.push(receipt::FileChange {
+            path: path.clone(),
+            previous: Some("before".into()),
+            installed: Some(receipt::digest(b"ours")),
+            mode: 0o644,
+            group: None,
+            owner: None,
+        });
+        receipt.outcome = Outcome::Applied;
+        receipt.save(&host.state).unwrap();
         let err = dispatch(
             &host,
-            "hostd.receipt",
-            &json!({"receipt": "../breaker"}),
-            &Origin::Bus,
+            "hostd.undo",
+            &json!({"receipt":receipt.id}),
+            &local_bus(),
         )
         .await
         .unwrap_err();
-        assert_eq!(err["status"], "no_such_receipt");
+        assert_eq!(err["status"], "superseded");
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "later edit");
     }
 
     #[tokio::test]
-    async fn undo_needs_an_applied_receipt_and_the_same_authority() {
-        let (_dir, host) = fixture(POLICY);
-        let stranger = caller(1000, "/user.slice/x");
-        let mut r = Receipt::new(
-            "net.link.apply",
-            "agent",
-            &Origin::Bus,
-            json!({"link":"hd0"}),
-        );
-        r.outcome = Outcome::RolledBack;
-        r.save(&host.state).unwrap();
-        let err = dispatch(&host, "hostd.undo", &json!({"receipt": r.id}), &stranger)
-            .await
-            .unwrap_err();
-        assert_eq!(err["status"], "not_applied");
-        r.outcome = Outcome::Applied;
-        r.save(&host.state).unwrap();
-        let err = dispatch(&host, "hostd.undo", &json!({"receipt": r.id}), &stranger)
-            .await
-            .unwrap_err();
-        assert_eq!(err["status"], "no_grant");
-    }
-
-    /// A write that passed the gate and then waited behind another must
-    /// obey a freeze or a breaker trip that landed while it waited.
-    #[tokio::test]
-    async fn queued_writes_are_gated_again_under_the_lock() {
-        let (_dir, host) = fixture(POLICY);
-        let agent = caller(1000, "/agent.slice/run");
-        for trip in ["freeze", "breaker"] {
-            let held = host.writer.clone().lock_owned().await;
-            let queued = {
-                let (host, agent) = (host.clone(), agent.clone());
-                tokio::spawn(async move {
-                    write(
-                        &host,
-                        &agent,
-                        None,
-                        "net.link.apply",
-                        vec![("links".into(), "hd1".into())],
-                        |_, _, _| async { Ok(json!({"ran": true})) },
-                    )
-                    .await
+    async fn queued_writes_obey_a_freeze_under_the_lock() {
+        let (_dir, host) = fixture();
+        let held = host.writer.clone().lock_owned().await;
+        let queued = {
+            let host = host.clone();
+            tokio::spawn(async move {
+                write(&host, &local_bus(), None, "net.link.apply", |_, _| async {
+                    Ok(json!({"ran":true}))
                 })
-            };
-            // Let the write pass the first gate and queue for the lock.
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            match trip {
-                "freeze" => {
-                    freeze::freeze(&host.state, local(&agent), None).unwrap();
-                }
-                _ => {
-                    receipt::record(&host.state, "agent-wide", true).unwrap();
-                    receipt::record(&host.state, "agent-wide", true).unwrap();
-                }
-            }
-            drop(held);
-            let err = queued.await.unwrap().unwrap_err();
-            let want = if trip == "freeze" {
-                "frozen"
-            } else {
-                "grant_suspended"
-            };
-            assert_eq!(err["status"], want, "{trip}");
-            freeze::thaw(&host.state).unwrap();
-            receipt::clear(&host.state).unwrap();
-        }
+                .await
+            })
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        freeze::freeze(&host.state, &socket_caller(), None).unwrap();
+        drop(held);
+        assert_eq!(queued.await.unwrap().unwrap_err()["status"], "frozen");
     }
 
     #[tokio::test]
-    async fn status_reports_held_grants() {
-        let (_dir, host) = fixture(POLICY);
-        let agent = caller(1000, "/agent.slice/run");
-        let s = dispatch(&host, "hostd.status", &json!({}), &agent)
+    async fn status_reports_origin_and_freeze() {
+        let (_dir, host) = fixture();
+        let result = dispatch(&host, "hostd.status", &json!({}), &local_bus())
             .await
             .unwrap();
-        assert_eq!(s["held"], json!(["agent", "agent-wide"]));
-        assert_eq!(s["policy"]["grants"], 2);
-        assert_eq!(s["frozen"], Value::Null);
-        // Each held grant comes back in full, limits verbatim.
-        assert_eq!(s["held_grants"][0]["name"], "agent");
-        assert_eq!(s["held_grants"][0]["limits"]["links"], json!(["hd0"]));
-        assert_eq!(s["held_grants"][1]["commands"], json!(["net.link.apply"]));
-        assert_eq!(
-            s["held_grants"][0]["rate"],
-            json!({"count": 1, "per_s": 600})
-        );
-        // A caller with no grant gets empty lists, never someone else's.
-        let stranger = caller(1000, "/user.slice/x");
-        let s = dispatch(&host, "hostd.status", &json!({}), &stranger)
-            .await
-            .unwrap();
-        assert_eq!(s["held_grants"], json!([]));
+        assert_eq!(result["caller"], json!(local_bus()));
+        assert!(result["frozen"].is_null());
     }
 }

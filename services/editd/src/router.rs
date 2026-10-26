@@ -9,7 +9,6 @@
 //! 2. argument shape (serde into the `wire` request type; both `expect_rev`
 //!    and `base_rev` → `both_cas`) → INVALID_ARGUMENT;
 //! 3. mutating command without a `broker_origin` stamp → INVALID_ARGUMENT `unstamped`;
-//! 4. mesh lock (`MIXOS_MESH_OPEN=0`, mutating command, `broker_origin != local`) → FORBIDDEN `mesh_locked`;
 //! 5. buffer lookup: wrong epoch → NOT_FOUND `epoch_mismatch`; unknown → `unknown_buffer`;
 //! 6. inbox full → RESOURCE_LIMIT `busy`;
 //! 7. (in the actor) op_id duplicate → the cached original reply, `duplicate: true`;
@@ -275,7 +274,6 @@ pub struct Router {
     pub budget: Arc<Budget>,
     pub buffer_count: usize,
     pub next_buffer: u64,
-    pub mesh_open: bool,
     entries: BTreeMap<BufferId, Entry>,
     actors: ActorTable,
     publisher: Arc<Publisher>,
@@ -1015,7 +1013,6 @@ impl Router {
             buffers,
             dirty,
             volatile: self.lifecycle().volatile,
-            mesh_open: self.mesh_open,
             event_seq: self.publisher.event_seq(),
             publisher_loss: self.publisher.loss(),
             limits: limits.as_object().cloned().unwrap_or_default(),
@@ -1135,7 +1132,6 @@ fn path_open(path: &std::path::Path, other: &str) -> Refusal {
 pub struct Config {
     /// 8 lowercase hex, fresh per start.
     pub epoch: String,
-    pub mesh_open: bool,
     pub budget_cap: u64,
 }
 
@@ -1143,7 +1139,6 @@ impl Config {
     pub fn from_env() -> Self {
         Self {
             epoch: format!("{:08x}", rand::random::<u32>()),
-            mesh_open: caller::mesh_open_from_env(),
             budget_cap: MAX_TOTAL_BYTES,
         }
     }
@@ -1154,7 +1149,6 @@ pub type ReplyFuture = Pin<Box<dyn Future<Output = Reply> + Send>>;
 /// The running daemon minus its Bus connection (so tests drive it in-process).
 pub struct Editd {
     epoch: String,
-    mesh_open: bool,
     router_tx: mpsc::Sender<RouterCmd>,
     actors: ActorTable,
     publisher: Arc<Publisher>,
@@ -1478,7 +1472,6 @@ impl Editd {
             budget: budget.clone(),
             buffer_count: 0,
             next_buffer: 0,
-            mesh_open: config.mesh_open,
             entries: BTreeMap::new(),
             actors: actors.clone(),
             publisher: publisher.clone(),
@@ -1491,7 +1484,6 @@ impl Editd {
         tokio::spawn(router.run(router_rx, internal_rx));
         Arc::new(Editd {
             epoch: config.epoch,
-            mesh_open: config.mesh_open,
             router_tx,
             actors,
             publisher,
@@ -1609,7 +1601,7 @@ impl Editd {
                 if let Err(r) = check_language(req.language.as_deref()) {
                     return refused(r);
                 }
-                let caller = match caller::resolve(cmd, req.meta.origin.as_deref(), mutating, self.mesh_open) {
+                let caller = match caller::resolve(cmd, req.meta.origin.as_deref(), mutating) {
                     Ok(c) => c,
                     Err(r) => return refused(r),
                 };
@@ -1623,7 +1615,7 @@ impl Editd {
                 if let Err(r) = check_op_id(req.meta.op_id.as_deref()) {
                     return refused(with_buffer(r));
                 }
-                let caller = match caller::resolve(cmd, req.meta.origin.as_deref(), mutating, self.mesh_open) {
+                let caller = match caller::resolve(cmd, req.meta.origin.as_deref(), mutating) {
                     Ok(c) => c,
                     Err(r) => return refused(with_buffer(r)),
                 };
@@ -1638,7 +1630,7 @@ impl Editd {
                     Ok(p) => p,
                     Err(r) => return refused(with_buffer(r)),
                 };
-                let caller = match caller::resolve(cmd, claim.as_deref(), mutating, self.mesh_open) {
+                let caller = match caller::resolve(cmd, claim.as_deref(), mutating) {
                     Ok(c) => c,
                     Err(r) => return refused(with_buffer(r)),
                 };
@@ -1809,7 +1801,6 @@ mod tests {
             budget: Arc::new(Budget::new(MAX_TOTAL_BYTES)),
             buffer_count: 1,
             next_buffer: 1,
-            mesh_open: true,
             entries: BTreeMap::new(),
             actors: Arc::new(RwLock::new(HashMap::new())),
             publisher: Publisher::new("00000000"),

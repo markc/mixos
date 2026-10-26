@@ -48,4 +48,3 @@ loads unchanged.
   injector is `inputd virtual pointer`.
 - The keymap is `keymap.json` in the state directory
   (`/var/lib/mixos/inputd/`), or `--keymap PATH`.
-- The mesh lock is `MIXOS_MESH_OPEN=0`.

@@ -115,3 +115,16 @@ the Bus contracts otherwise match 0.18.2.
 
 The source is
 [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded).
+
+## Open Bus commands
+
+`noded.tap` and `noded.observe.start` accept callers from every node,
+including anonymous connections. Observation events are delivered on the
+connection that started the subscription; registration is unnecessary.
+Connection quotas, bounded queues, filtering and payload redaction still
+apply. Native-session traffic can cross nodes. Broker identity stamps,
+mesh admission, topic ownership and session-record ownership remain enforced.
+
+Node config preserves unknown keys as unowned data, so existing files with
+`noded.mesh_open` or `observe.allowed_services` still load. Neither key
+controls broker behaviour.

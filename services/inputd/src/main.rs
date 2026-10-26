@@ -106,18 +106,7 @@ fn main() -> anyhow::Result<()> {
         version: KEYMAP_SCHEMA_VERSION,
         physical: opened.rows,
     };
-    let mesh_open = service::mesh_open_from_env();
-    tracing::info!(
-        mesh_open,
-        "mesh access {}",
-        if mesh_open {
-            "open: every command reachable by mesh callers"
-        } else {
-            "locked (MIXOS_MESH_OPEN=0): keymap changes node-local only"
-        }
-    );
-    let store = service::Store::new(Some(path), opened.recovered_from, opened.persist_disabled)
-        .with_mesh_open(mesh_open);
+    let store = service::Store::new(Some(path), opened.recovered_from, opened.persist_disabled);
     let resolver: Shared = Arc::new(Mutex::new(Resolver::new(keymap)));
 
     // The reader thread sends resolved commands to the Bus side. The original

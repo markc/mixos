@@ -29,7 +29,6 @@ struct H {
 fn config() -> Config {
     Config {
         epoch: EPOCH.into(),
-        mesh_open: true,
         budget_cap: editd::limits::MAX_TOTAL_BYTES,
     }
 }
@@ -449,10 +448,7 @@ async fn refusals_carry_code_and_reason() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn refusal_precedence_order() {
-    let h = start_with(Config {
-        mesh_open: false,
-        ..config()
-    });
+    let h = start();
     let f = h.file("p.txt", "p\n");
     let b = h.open(&f).await;
     let mesh = Who::Mesh("term", "beta");
@@ -470,7 +466,7 @@ async fn refusal_precedence_order() {
         "INVALID_ARGUMENT",
         Some("bad_args"),
     );
-    // 3 unstamped beats the mesh lock and the buffer lookup.
+    // 3 unstamped beats the buffer lookup.
     refused(
         &h.call_as(
             Who::Unstamped,
@@ -481,7 +477,7 @@ async fn refusal_precedence_order() {
         "INVALID_ARGUMENT",
         Some("unstamped"),
     );
-    // 4 mesh lock beats the lookup; reads stay open.
+    // 4 mesh callers reach the lookup; reads stay open.
     refused(
         &h.call_as(
             mesh,
@@ -489,8 +485,8 @@ async fn refusal_precedence_order() {
             json!({"buffer": "b9_0badf00d", "at": 0, "text": "x"}),
         )
         .await,
-        "FORBIDDEN",
-        Some("mesh_locked"),
+        "NOT_FOUND",
+        Some("epoch_mismatch"),
     );
     assert_eq!(h.call_as(mesh, "edit.get", json!({"buffer": b})).await.0, 0);
     // 5 lookup beats CAS.
@@ -629,37 +625,21 @@ async fn caller_rules() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn mesh_lock_blocks_mutations_only() {
-    let h = start_with(Config {
-        mesh_open: false,
-        ..config()
-    });
-    let b = h.scratch().await;
+async fn mesh_callers_can_open_and_mutate() {
+    let h = start();
     let mesh = Who::Mesh("x", "beta");
-    refused(
-        &h.call_as(
+    let (rc, opened) = h.call_as(mesh, "edit.open", json!({})).await;
+    assert_eq!(rc, 0, "{opened}");
+    let b = opened["buffer"].clone();
+    let (rc, inserted) = h
+        .call_as(
             mesh,
             "edit.insert",
             json!({"buffer": b, "at": 0, "text": "x"}),
         )
-        .await,
-        "FORBIDDEN",
-        Some("mesh_locked"),
-    );
-    refused(
-        &h.call_as(mesh, "edit.open", json!({})).await,
-        "FORBIDDEN",
-        Some("mesh_locked"),
-    );
-    for command_name in ["edit.get", "edit.history", "edit.anchor.get"] {
-        assert_eq!(
-            h.call_as(mesh, command_name, json!({"buffer": b})).await.0,
-            0,
-            "{command_name}"
-        );
-    }
-    assert_eq!(h.call_as(mesh, "edit.list", json!({})).await.0, 0);
-    assert_eq!(h.ok("edit.info", json!({})).await["mesh_open"], false);
+        .await;
+    assert_eq!(rc, 0, "{inserted}");
+    assert_eq!(h.call_as(mesh, "edit.get", json!({"buffer": b})).await.0, 0);
 }
 
 // ── dedup ───────────────────────────────────────────────────────────────────

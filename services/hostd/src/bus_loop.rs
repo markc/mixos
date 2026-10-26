@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! hostd on the Bus: the read commands, and `host.info` as a retained topic.
+//! hostd on the Bus: typed commands, and `host.info` as a retained topic.
 //! The broker is optional. hostd keeps serving its local socket while noded
 //! is down, and joins whenever it appears.
 use crate::{
@@ -75,7 +75,8 @@ pub async fn serve(host: Host, noded_url: String) -> anyhow::Result<()> {
                     let (client, host) = (client.clone(), host.clone());
                     tokio::spawn(async move {
                         let body: Value = serde_json::from_str(&command.body).unwrap_or_else(|_| json!({}));
-                        let reply = service::dispatch(&host, &command.command, &body, &Origin::Bus).await;
+                        let origin = Origin::from_command(&command);
+                        let reply = service::dispatch(&host, &command.command, &body, &origin).await;
                         let (rc, value) = match reply { Ok(v) => (0, v), Err(e) => (10, e) };
                         match tokio::time::timeout(REPLY, client.respond(&command, rc, &value.to_string())).await {
                             Ok(Ok(())) => {}

@@ -1,20 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Receipts and the circuit breaker. Every write keeps the previous content
+//! Receipts. Every write keeps the previous content
 //! of each file it replaces, under a receipt id, so `hostd.undo` can put it
-//! back. Two rollbacks in a row under one grant suspend that grant until
-//! local root thaws hostd.
+//! back. Undo checks that the receipt still owns the changed files.
 use crate::caller::Origin;
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
-
-/// Rollbacks in a row that suspend a grant.
-pub const BREAKER: u32 = 2;
 
 /// A receipt's durable state. `Applying` and `Undoing` are in flight: a
 /// receipt left in either after a stop or crash is finished at the next
@@ -136,7 +131,6 @@ pub fn digest(bytes: &[u8]) -> String {
 pub struct Receipt {
     pub id: String,
     pub command: String,
-    pub grant: String,
     pub origin: Origin,
     pub at: String,
     /// The non-secret arguments, as the command chose to record them.
@@ -158,11 +152,10 @@ pub fn valid_id(id: &str) -> bool {
 }
 
 impl Receipt {
-    pub fn new(command: &str, grant: &str, origin: &Origin, summary: serde_json::Value) -> Self {
+    pub fn new(command: &str, origin: &Origin, summary: serde_json::Value) -> Self {
         Self {
             id: uuid::Uuid::now_v7().hyphenated().to_string(),
             command: command.into(),
-            grant: grant.into(),
             origin: origin.clone(),
             at: chrono::Utc::now().to_rfc3339(),
             summary,
@@ -339,62 +332,6 @@ pub fn restore(files: &[FileChange]) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Default, Serialize, Deserialize)]
-struct Breaker {
-    /// Rollbacks in a row, per grant.
-    streak: BTreeMap<String, u32>,
-    /// Suspended grants and why.
-    suspended: BTreeMap<String, String>,
-}
-
-fn breaker_path(state: &Path) -> PathBuf {
-    state.join("breaker.json")
-}
-
-fn load_breaker(state: &Path) -> Breaker {
-    std::fs::read(breaker_path(state))
-        .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
-}
-
-fn save_breaker(state: &Path, breaker: &Breaker) -> anyhow::Result<()> {
-    std::fs::create_dir_all(state)?;
-    write_private(&breaker_path(state), &serde_json::to_vec(breaker)?)
-}
-
-pub fn suspended(state: &Path, grant: &str) -> Option<String> {
-    load_breaker(state).suspended.get(grant).cloned()
-}
-
-/// Records one write's result. Returns true when this rollback suspended
-/// the grant.
-pub fn record(state: &Path, grant: &str, rolled_back: bool) -> anyhow::Result<bool> {
-    let mut breaker = load_breaker(state);
-    let streak = breaker.streak.entry(grant.to_owned()).or_default();
-    *streak = if rolled_back { *streak + 1 } else { 0 };
-    let tripped = rolled_back && *streak >= BREAKER;
-    if tripped {
-        breaker.suspended.insert(
-            grant.to_owned(),
-            format!(
-                "{BREAKER} rollbacks in a row at {}",
-                chrono::Utc::now().to_rfc3339()
-            ),
-        );
-    }
-    save_breaker(state, &breaker)?;
-    Ok(tripped)
-}
-
-/// Clears every suspension and streak (`hostd.thaw`).
-pub fn clear(state: &Path) -> anyhow::Result<Vec<String>> {
-    let breaker = load_breaker(state);
-    let cleared = breaker.suspended.keys().cloned().collect();
-    save_breaker(state, &Breaker::default())?;
-    Ok(cleared)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -404,8 +341,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let r = Receipt::new(
             "net.link.apply",
-            "g",
-            &Origin::Bus,
+            &Origin::Mesh,
             serde_json::json!({"link":"x"}),
         );
         r.save(dir.path()).unwrap();
@@ -517,7 +453,7 @@ mod tests {
     #[test]
     fn unfinished_fails_closed_on_a_broken_receipt() {
         let dir = tempfile::tempdir().unwrap();
-        let mut r = Receipt::new("net.link.apply", "g", &Origin::Bus, serde_json::json!({}));
+        let mut r = Receipt::new("net.link.apply", &Origin::Mesh, serde_json::json!({}));
         r.save(dir.path()).unwrap();
         assert_eq!(unfinished(dir.path()).unwrap().len(), 1);
         r.outcome = Outcome::Applied;
@@ -526,18 +462,5 @@ mod tests {
         let broken = uuid::Uuid::now_v7().hyphenated().to_string();
         std::fs::write(receipts(dir.path()).join(format!("{broken}.json")), "{").unwrap();
         assert!(unfinished(dir.path()).is_err());
-    }
-
-    #[test]
-    fn two_rollbacks_in_a_row_suspend_and_thaw_clears() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(!record(dir.path(), "g", true).unwrap());
-        assert!(!record(dir.path(), "g", false).unwrap());
-        assert!(!record(dir.path(), "g", true).unwrap());
-        assert!(suspended(dir.path(), "g").is_none());
-        assert!(record(dir.path(), "g", true).unwrap());
-        assert!(suspended(dir.path(), "g").is_some());
-        assert_eq!(clear(dir.path()).unwrap(), vec!["g".to_string()]);
-        assert!(suspended(dir.path(), "g").is_none());
     }
 }

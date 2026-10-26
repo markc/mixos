@@ -5,8 +5,7 @@
 //! keep or put back; recovery of changes a stop or crash cut short; undo.
 //!
 //! A command supplies the files it writes and how to make the host use them
-//! (`reapply`). Everything about ordering, durability, the circuit breaker
-//! and blocked writes lives here, once.
+//! (`reapply`). Everything about ordering, durability and blocked writes lives here, once.
 use crate::{
     link,
     receipt::{self, Holds, Outcome, Receipt},
@@ -33,23 +32,13 @@ pub fn begin(host: &Host, receipt: &Receipt) -> Result<(), Value> {
     })
 }
 
-/// Ends a change: keeps it (`passed`) or puts it back, counts it toward the
-/// grant's circuit breaker, and records the outcome. Returns whether the
-/// grant is now suspended.
-///
-/// Breaker order, so a crash at any point errs toward suspending:
-/// - a failure is counted before the receipt leaves `applying` (as in
-///   recovery): a crash in between leaves an in-flight receipt that
-///   recovery counts again, twice at worst, never not at all;
-/// - a success resets the streak only after `applied` is durable: a crash
-///   before that leaves the streak as it was, and recovery then puts the
-///   change back and counts it.
+/// Ends a change: keeps it or puts it back, then records the outcome.
 pub async fn conclude(
     host: &Host,
     receipt: &mut Receipt,
     passed: bool,
     reason: Option<String>,
-) -> Result<bool, Value> {
+) -> Result<(), Value> {
     if passed {
         receipt.outcome = Outcome::Applied;
     } else {
@@ -74,19 +63,6 @@ pub async fn conclude(
             }
         }
     }
-    let mut suspended = false;
-    if !passed {
-        match receipt::record(&host.state, &receipt.grant, true) {
-            Ok(tripped) => suspended = tripped,
-            Err(e) => {
-                host.block(format!(
-                    "breaker for {} could not be recorded: {e:#}",
-                    receipt.id
-                ));
-                return Err(internal(e));
-            }
-        }
-    }
     if let Err(e) = receipt.save(&host.state) {
         // The durable receipt still says `applying`. Block writes so nothing
         // builds on a change hostd can't account for; the retry, or the next
@@ -97,12 +73,7 @@ pub async fn conclude(
         ));
         return Err(internal(e));
     }
-    if passed && let Err(e) = receipt::record(&host.state, &receipt.grant, false) {
-        // The streak stays as it was: stricter, never looser. Not a reason
-        // to block writes.
-        tracing::warn!(error = %e, grant = %receipt.grant, "breaker reset not recorded");
-    }
-    Ok(suspended)
+    Ok(())
 }
 
 /// What `put_back` did.
@@ -172,13 +143,6 @@ async fn finish(host: &Host, receipt: &mut Receipt) -> anyhow::Result<()> {
         (Outcome::Undone, _) => "undo finished".into(),
         _ => "interrupted; rolled back".into(),
     });
-    // An apply that never proved healthy is a failed change, however it
-    // ended: it counts toward the grant's circuit breaker. Counted before
-    // the receipt is saved, so a save that fails and is retried may count
-    // it twice, but never not at all.
-    if was == Outcome::Applying {
-        receipt::record(&host.state, &receipt.grant, true)?;
-    }
     receipt.save(&host.state)?;
     // A finished undo is routine; recovering an interrupted change is not.
     if was == Outcome::Undoing && receipt.outcome == Outcome::Undone {

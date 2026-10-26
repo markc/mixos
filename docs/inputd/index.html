@@ -349,8 +349,8 @@ body. A row with <code>"passthrough": true</code> re-emits its stroke instead.</
 <tr><td><code>input.key</code></td><td>inject a key press, release or tap</td></tr>
 <tr><td><code>input.pointer.move</code>, <code>.button</code>, <code>.scroll</code></td><td>inject pointer input</td></tr>
 </tbody></table>
-<p>Bindings are written through to the keymap file. <code>MIXOS_MESH_OPEN=0</code>
-limits the keymap changes to node-local callers.</p>
+<p>Bindings are written through to the keymap file. Both local and mesh
+callers can change the keymap; mutations require the broker's origin stamp.</p>
         </article>
         <p class="doc-source"><a href="/inputd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

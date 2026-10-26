@@ -543,7 +543,7 @@ fn summary(plan: &Plan) -> Value {
 }
 
 /// Runs the transaction, under the writer lock, in its own task.
-pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Result<Value, Value> {
+pub async fn apply(host: Host, plan: Plan, origin: Origin) -> Result<Value, Value> {
     let internal = |e: anyhow::Error| json!({"status":"internal","message":format!("{e:#}")});
     let current = networkd::describe(&host.root, &plan.name)
         .await
@@ -572,7 +572,7 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
     }
 
     let networkd = Networkd::connect().await.map_err(internal)?;
-    let mut receipt = Receipt::new(COMMAND, &grant, &origin, summary(&plan));
+    let mut receipt = Receipt::new(COMMAND, &origin, summary(&plan));
     let mut files = vec![];
     if let Some(key) = &plan.new_key {
         let mut change = FileChange::backup(&plan.key).map_err(internal)?;
@@ -642,13 +642,11 @@ pub async fn apply(host: Host, plan: Plan, grant: String, origin: Origin) -> Res
         ),
         Err(e) => (false, Value::Null, Some(format!("{e:#}"))),
     };
-    let suspended = txn::conclude(&host, &mut receipt, passed, reason).await?;
+    txn::conclude(&host, &mut receipt, passed, reason).await?;
     let reply = json!({
         "receipt": receipt.id,
         "outcome": receipt.outcome,
         "reason": receipt.reason,
-        "grant": grant,
-        "grant_suspended": suspended,
         "public_key": plan.public_key,
         "link": {"admin": last.get("AdministrativeState"), "operational": last.get("OperationalState")},
     });

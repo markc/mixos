@@ -14,7 +14,7 @@ $listener = realpath($here .. "/fixtures/listener.mix")
 $noded = (mixos_path("prefix") .. "/bin/noded")
 $a = args()
 if len($a) == 2 and $a[0] == "--noded" then $noded = $a[1] end
-$tmp = "/var/tmp/notifyd-test." .. uuid()
+$tmp = env("TMPDIR", "/tmp") .. "/notifyd-test." .. uuid()
 $results = []
 $pids = []
 

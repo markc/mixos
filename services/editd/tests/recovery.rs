@@ -50,7 +50,6 @@ async fn boot(recdir: &Path, epoch: &str) -> H {
     let sink = Arc::new(RecordingSink::default());
     let config = Config {
         epoch: epoch.into(),
-        mesh_open: true,
         budget_cap: MAX_TOTAL_BYTES,
     };
     let editd = Editd::start_recovering(
@@ -735,7 +734,6 @@ async fn recovery_off_is_volatile() {
     let sink = Arc::new(RecordingSink::default());
     let config = Config {
         epoch: "00000001".into(),
-        mesh_open: true,
         budget_cap: MAX_TOTAL_BYTES,
     };
     let editd = Editd::start(config, sink as Arc<dyn EventSink>);

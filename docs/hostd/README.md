@@ -1,6 +1,6 @@
 ---
 title: The host service
-description: How hostd answers questions about the host and carries out privileged host changes through closed, typed commands behind standing grants, receipts and rollback, so agents never need sudo.
+description: How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo.
 ---
 
 # The host service
@@ -19,8 +19,8 @@ behind it are in the
 
 ## Calling it
 
-Locally, hostd listens on `/run/hostd/hostd.sock` (mode 0660, group
-`hostd`). Frames are JSON, each ended by a NUL byte, many per connection:
+Locally, hostd listens on `/run/hostd/hostd.sock` (mode 0666). Frames are
+JSON, each ended by a NUL byte, many per connection:
 
 ```text
 -> {"command":"net.state","body":{}}\0
@@ -35,8 +35,9 @@ hostd call host.info
 hostd call net.link.apply '{"link":"eth1","config":{"mode":"dhcp"}}'
 ```
 
-Read commands are also on the Bus, owned by `hostd`. Changes are never taken
-from the Bus.
+Every command is also on the Bus, owned by `hostd`. Writes accept local
+Bus requests stamped `broker_origin: local`, and Unix-socket callers.
+Mesh-origin writes remain refused.
 
 There is one hostd per host, run as root and socket-activated:
 
@@ -53,19 +54,22 @@ hostd serve --no-bus             # local socket only
 |---|---|---|
 | `host.info` | read | hostname, kernel, OS, MixOS mode, container, uptime, CPU, memory |
 | `net.state` | read | which network managers run, networkd links and files, resolved DNS, iwd stations, hostd's own files |
-| `hostd.status` | read | frozen or not, the policy's state, the caller's identity, and the grants it holds: `held` (names) and `held_grants` (each in full: commands, limits, expiry, rate) |
-| `hostd.receipt` | read | one change's receipt: what it changed, under which grant, how it ended (never file contents) |
-| `hostd.freeze` | control | refuse every change until thawed: root on the host, or a grant naming it |
-| `hostd.thaw` | control | accept changes again and lift grant suspensions: root on the host only |
+| `hostd.status` | read | frozen or not, and the caller's origin |
+| `hostd.receipt` | read | one change's receipt: what it changed, its origin, how it ended (never file contents) |
+| `hostd.freeze` | control | refuse every change until thawed: any local caller |
+| `hostd.thaw` | control | accept changes again: any local caller |
 | `net.link.apply` | write | configure one link through networkd, rolled back unless it comes up |
-| `hostd.undo` | write | put back what an applied change replaced; needs no grant of its own (see below) |
+| `net.wifi.scan` | write | scan for Wi-Fi networks on one device (iwd); drives the radio |
+| `net.wifi.connect` | write | connect a Wi-Fi device to a network (iwd), put back unless connected in time |
+| `hostd.undo` | write | put back what an applied change replaced; any local caller |
+| `unit.control` | write | start, stop or restart a named `.service` unit with `{unit, action}`; hostd's own units are protected |
 | `net.wg.apply` | write | configure a WireGuard link through networkd, rolled back unless it comes up and its peers complete a handshake |
-| `desk.restart` | write | restart the desk machine that the caller's grant names, session and console included (starts `desk-restart@DESK.service`); the host stays up; no undo |
-| `desk.stop` | write | power off the desk machine that the caller's grant names and give the console back (starts `desk-stop@DESK.service`); the host stays up; no undo |
+| `desk.restart` | write | restart the named desk machine, session and console included (starts `desk-restart@DESK.service`); the host stays up; no undo |
+| `desk.stop` | write | power off the named desk machine and give the console back (starts `desk-stop@DESK.service`); the host stays up; no undo |
 
-The desk commands take no machine name. A grant gives the caller one desk through
-its `desks` limit, which must name exactly one machine. A grant with no desk,
-or with two, is refused.
+The desk commands take `{"desk":"desk-2"}`. The name must start with a
+lowercase letter, contain only lowercase letters, digits and hyphens, and
+be at most 32 characters. Every local caller may target any desk.
 
 A desk power action is a cycle that outlives the caller: a restart stops the
 desk's session, reboots the machine, starts the session again and switches
@@ -80,59 +84,29 @@ unit is missing, the command is refused `unit_failed`.
 
 Only hostd on the host can do this. A hostd running inside a desk refuses
 both commands `in_container`. The desk reaches the host's hostd through its
-socket bound into the machine, so the grant names the caller by its cgroup as
-the host sees it, under the machine's payload:
-`/machine.slice/systemd-nspawn@DESK.service/payload/system.slice/system-scenes.slice/scenes@VT.service/*`.
+socket bound into the machine.
 Every refusal is logged at warn under `hostd::audit`.
-| `net.wifi.scan` | write | scan for Wi-Fi networks on one device (iwd). It changes nothing durable, but it drives the radio, so it needs a grant |
-| `net.wifi.connect` | write | connect a Wi-Fi device to a network (iwd), put back unless connected in time |
 
 `host.info` is also published as the retained topic `hostd.info`.
 
 ## Who may change what
 
-Reads are open to anyone who can reach hostd. Changes need a **standing
-grant** in `/etc/hostd/policy.mx`, a strict-data document that only root
-can change:
+Reads are open to every caller. Writes and control commands accept every
+caller on the same host, over the Unix socket or the local Bus. No policy
+file, cgroup membership, uid or grant determines access. Broker provenance
+is required; unstamped Bus requests are malformed. Writes from other nodes
+are refused with `local_only`.
 
-```text
-{
-  schema: 1,
-  grants: [
-    {name: "desk-network",
-     caller: {cgroup: "/machine.slice/systemd-nspawn@desk.service/*"},
-     commands: ["net.link.apply"],
-     limits: {links: ["eth0", "wlan0"]},
-     expires: "2027-01-01T00:00:00Z",
-     rate: {count: 3, per_s: 600}}
-  ]
-}
-```
-
-- **The caller is matched by what the kernel says,** never by what it
-  sends: its uid and its cgroup. A cgroup only counts when hostd holds a
-  pidfd for the caller and the caller was alive after the cgroup was read.
-  Both are read again for every request.
-- **`X/*` matches the cgroup `X` and everything below it.** Name a subtree
-  the caller can't move itself into, such as one under `machine.slice`.
-- **Commands** are exact names or a family such as `net.*`. No grant can name
-  `hostd.thaw`.
-- **Limits** are allow-lists the command checks its arguments against
-  (`links` for `net.link.apply`). A key the grant doesn't list is
-  unrestricted.
-- **Rate** applies per caller, with a grant-wide cap of four callers' worth.
-- **Default deny.** No policy file means no grants.
-
-The policy is read for every change, so an edit takes effect at once. A
-file that anyone but root could change, or that sits in a directory anyone
-but root could change, is refused.
+Writes are limited to 30 calls per minute per caller and command, plus a
+host-wide cap of 120 writes per minute. Socket identity (uid and cgroup)
+and broker-stamped sender names provide rate-accounting keys only.
 
 ## What a change does
 
 Every write follows the same pattern:
 
 1. **Check:** the request is typed and validated (no free text reaches a
-   file), then the grant, limits, rate and freeze state.
+   file), then local origin, rate and freeze state.
 2. **Record:** a receipt keeps the previous content of every file the change
    replaces.
 3. **Apply:** hostd writes only files it names itself, and never edits a file
@@ -144,8 +118,7 @@ Every write follows the same pattern:
 
 One change runs at a time, host-wide. A change waits at most 15 seconds
 behind others (`busy` after that), and the whole gate runs again once it
-holds the lock, so a freeze, a suspension, an expiry or a policy edit that
-lands while it waits is obeyed. A change runs to the end, rollback
+holds the lock, so a freeze that lands while it waits is obeyed. A change runs to the end, rollback
 included, even if the caller hangs up.
 
 **A stop waits for a running change** (up to 80 seconds), and a change that
@@ -164,8 +137,6 @@ still holds what that change installed. If a later change, or anyone's
 edit, has replaced it since, undo is refused (`superseded`): undo the later
 change first.
 
-**Two rollbacks in a row** under one grant suspend that grant until root on
-the host thaws hostd.
 
 ## Network links
 
@@ -201,8 +172,7 @@ the host thaws hostd.
 The reply to a change that passed (`rc` 0):
 
 ```text
-{"receipt": "<id>", "outcome": "applied", "reason": null, "grant": "<grant>",
- "grant_suspended": false, "link": {"admin": "configured", "operational": "routable"}}
+{"receipt": "<id>", "outcome": "applied", "reason": null, "link": {"admin": "configured", "operational": "routable"}}
 ```
 
 A change that failed and was reversed comes back with `rc` 10, as
@@ -210,11 +180,8 @@ A change that failed and was reversed comes back with `rc` 10, as
 keys. Keep the `receipt` id to undo the change later, or to look it up with
 `hostd.receipt`.
 
-**Undo needs no grant of its own.** `hostd.undo {receipt}` is allowed to
-whoever holds a grant that covers the original change: its command and its
-limits (for `net.link.apply`, that link). A grant that may configure `hd0`
-may undo its own changes to `hd0`. Naming `hostd.undo` in a grant adds
-nothing.
+Any local caller may undo an applied receipt, even one created by another
+caller. Receipt and file-integrity checks still apply.
 
 ## WireGuard links
 
@@ -241,7 +208,6 @@ nothing.
 - A link of that name hostd didn't create is refused (`foreign_config`).
 - A changed `.netdev` takes effect because hostd deletes its own link and
   networkd creates it again. Peers reconnect within a keepalive.
-- Grants limit WireGuard links by `links`, like other links.
 
 hostd's unit has two capabilities, both for this command:
 - `CAP_CHOWN`, to give the key file to group `systemd-network`;
@@ -278,13 +244,12 @@ Wi-Fi commands answer `no_iwd`.
 - **Undo** puts the device back the same way. It is refused (`superseded`)
   once the device has moved to another network since. If someone else
   moved the device during a change, the put-back leaves it alone.
-- Grants limit Wi-Fi by `links` (the device) and `ssids`.
 
 ## Stopping it
 
 `hostd.freeze` stops every change at once and survives restarts and
-reboots. An unreadable freeze record counts as frozen. Only root on the
-host itself thaws it, never root inside a container.
+reboots. An unreadable freeze record counts as frozen. Any local caller
+may freeze or thaw hostd.
 
 ## Refusals
 
@@ -295,15 +260,10 @@ refusal names its reason in `status`:
 | Status | Meaning |
 |---|---|
 | `bad_request` | the body doesn't fit the command's schema |
-| `local_only` | a control or write command arrived over the Bus |
-| `caller_unverified` | hostd couldn't prove the caller's cgroup |
-| `no_grant` | no unexpired grant covers this caller and command |
-| `outside_grant` | a grant covers the command but not these arguments |
-| `grant_suspended` | the circuit breaker suspended the grant |
-| `rate_limited` | the grant's rate is used up |
+| `local_only` | a control or write command arrived from another node |
+| `unstamped` | a Bus request has no valid broker origin stamp |
+| `rate_limited` | the caller or host-wide write rate is used up |
 | `frozen` | hostd is frozen |
-| `policy_invalid` | the policy can't be loaded; changes are refused |
-| `root_only` | only root on the host may do this |
 | `foreign_config`, `unmanaged_configured`, `no_such_link` | `net.link.apply` or `net.wg.apply` won't touch this link |
 | `no_iwd`, `no_such_station`, `no_such_network`, `unsupported` | Wi-Fi: iwd isn't running, the device isn't an iwd station, the SSID isn't in range, or the security type isn't handled |
 | `rolled_back` | the change failed its health check and was reversed |
@@ -322,30 +282,29 @@ The source is
 |---|---|
 | `src/local.rs` | the local socket: NUL-framed JSON, per-uid and per-connection limits |
 | `src/caller.rs` | caller identity from `SO_PEERCRED`, a held pidfd, cgroup and namespaces, read per request |
-| `src/service.rs` | the command table, tiers, dispatch and the `authorise` gate |
-| `src/policy.rs` | grants: loading (one `O_NOFOLLOW` open, root-only), matching, rate limits |
+| `src/service.rs` | the command table, tiers, dispatch and the write gate |
+| `src/rate.rs` | sliding-window write limits per caller and command, plus a host cap |
 | `src/freeze.rs` | the kill switch, failing closed |
-| `src/receipt.rs` | receipts, durable atomic writes, restore, the circuit breaker |
-| `src/txn.rs` | the transaction every write runs through: receipt first, conclude (keep or put back, breaker, durable outcome), recovery, undo |
+| `src/receipt.rs` | receipts, durable atomic writes, restore |
+| `src/txn.rs` | the transaction every write runs through: receipt first, conclude (keep or put back, durable outcome), recovery, undo |
 | `src/link.rs` | `net.link.apply`: validation, rendering, the change, its proof |
 | `src/wg.rs` | `net.wg.apply`: WireGuard netdev, network and key files, the handshake proof |
 | `src/wgnl.rs` | WireGuard generic netlink (peer handshakes) and deleting a link |
 | `src/wifi.rs` | `net.wifi.scan` and `net.wifi.connect` through iwd: the one-connect passphrase agent, runtime put-back |
 | `src/networkd.rs` | networkd over D-Bus and Varlink, the event-driven health wait |
 | `src/net.rs`, `src/info.rs` | the read commands |
-| `units/` | `hostd.socket`, `hostd.service` (sandboxed), `sysusers.conf` |
+| `units/` | `hostd.socket`, `hostd.service` (sandboxed) |
 
 ## Adding a write command
 
 1. A typed request with `deny_unknown_fields`, validated into a plan before
    anything else happens. Anything the plan reads from the host (a key, a
    file) is read inside the writer lock.
-2. `service::write(host, origin, peer, command, limits, ...)` with the
-   allow-list keys the command checks: it gates the call, takes the writer
+2. `service::write(host, origin, peer, command, ...)`: it gates the call, takes the writer
    lock, gates it again and runs the change in its own task.
 3. The change through `txn`: `FileChange::backup` for every file (with the
    mode and group a new file needs), `txn::begin`, the change and its proof,
-   then `txn::conclude`. Never order the breaker or the receipt by hand.
+   then `txn::conclude`. Never order the receipt by hand.
 4. A `reapply` for the command in `txn::put_back`, so rollback, recovery and
    undo can make the host use the restored files. Without it the command
    doesn't ship.

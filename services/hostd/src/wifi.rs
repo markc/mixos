@@ -316,7 +316,6 @@ pub async fn connect(
     host: Host,
     request: ConnectRequest,
     window: Duration,
-    grant: String,
     origin: Origin,
 ) -> Result<Value, Value> {
     let conn = iwd(window + STEP)
@@ -351,7 +350,6 @@ pub async fn connect(
 
     let mut receipt = Receipt::new(
         COMMAND,
-        &grant,
         &origin,
         json!({"link": request.device, "ssid": request.ssid, "security": target.security,
                "was_known": target.known, "previous": previous, "window_s": window.as_secs()}),
@@ -375,10 +373,9 @@ pub async fn connect(
         Ok(false) => (false, Some("not connected in time".to_owned())),
         Err(e) => (false, Some(format!("{e:#}"))),
     };
-    let suspended = txn::conclude(&host, &mut receipt, passed, reason).await?;
+    txn::conclude(&host, &mut receipt, passed, reason).await?;
     let reply = json!({
         "receipt": receipt.id, "outcome": receipt.outcome, "reason": receipt.reason,
-        "grant": receipt.grant, "grant_suspended": suspended,
         "device": request.device, "ssid": request.ssid,
     });
     if passed {

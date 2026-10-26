@@ -36,7 +36,7 @@ yet. They are listed on both this page and the server page until they do.
 - [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
-- [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed commands behind standing grants, receipts and rollback, so agents never need sudo.
+- [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo.
 - [inputd](../inputd/README.md) (service): How inputd turns keys into Bus commands below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.
 - [mesh-sign](../mesh-sign/README.md) (cli): Signs and verifies the mesh inventory, the trust root of a MixOS mesh.
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.

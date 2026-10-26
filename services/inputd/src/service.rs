@@ -7,9 +7,6 @@
 //! reachable by node-local and mesh callers (full mesh access): the broker
 //! stamps `broker_origin` (`local` or `mesh`) from the source socket, and
 //! membership of the mesh is the whole authorization.
-//! The opt-in lock `MIXOS_MESH_OPEN=0` (read once at process start) restores
-//! the old rule for the keymap mutations (`bind`/`unbind`/`mode`/`reload`):
-//! node-local callers only. Reads and key/pointer injection are never gated.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -76,20 +73,7 @@ pub fn command_manifest() -> Vec<bus::CommandDescriptor> {
 /// The resolver shared between the Bus service and the (optional) evdev reader.
 pub type Shared = Arc<Mutex<Resolver>>;
 
-/// The mesh posture from the environment: open (the default) unless
-/// `MIXOS_MESH_OPEN` is exactly `0`, the opt-in lock. The same switch, same
-/// name and same rule as the clipboard citizen's `mesh_open()`. `main` reads
-/// it ONCE at start, so a running unit must be restarted to flip it.
-pub fn mesh_open_from_env() -> bool {
-    mesh_open_value(std::env::var("MIXOS_MESH_OPEN").ok().as_deref())
-}
-
-fn mesh_open_value(value: Option<&str>) -> bool {
-    value != Some("0")
-}
-
-/// Where the keymap lives, whether this process may write it, and the mesh
-/// posture the mutation commands are served under.
+/// Where the keymap lives and whether this process may write it.
 ///
 /// The CONFIGURED path is kept even when writing is disabled, so `input.reload`
 /// can still read it (and re-enable writing once the operator has fixed it) and
@@ -100,9 +84,6 @@ pub struct Store {
     recovered_from: Option<PathBuf>,
     /// `Some("<path>: <reason>")` while the path must not be written.
     persist_disabled: Mutex<Option<String>>,
-    /// `true` (the default): mesh callers reach the keymap mutations. `false`
-    /// is the opt-in lock (`MIXOS_MESH_OPEN=0`): node-local callers only.
-    mesh_open: bool,
 }
 
 impl Default for Store {
@@ -121,14 +102,7 @@ impl Store {
             path,
             recovered_from,
             persist_disabled: Mutex::new(persist_disabled),
-            mesh_open: true,
         }
-    }
-
-    /// Set the mesh posture (see [`mesh_open_from_env`]).
-    pub fn with_mesh_open(mut self, mesh_open: bool) -> Self {
-        self.mesh_open = mesh_open;
-        self
     }
 
     fn disabled(&self) -> Option<String> {
@@ -150,10 +124,10 @@ pub fn dispatch(
 ) -> (u8, String) {
     match cmd.command.as_str() {
         commands::QUERY => query(resolver, store),
-        commands::BIND => guard_mutation(store, cmd, || bind(resolver, store, &cmd.body)),
-        commands::UNBIND => guard_mutation(store, cmd, || unbind(resolver, store, &cmd.body)),
-        commands::MODE => guard_mutation(store, cmd, || mode(resolver, &cmd.body)),
-        commands::RELOAD => guard_mutation(store, cmd, || reload(resolver, store)),
+        commands::BIND => guard_mutation(cmd, || bind(resolver, store, &cmd.body)),
+        commands::UNBIND => guard_mutation(cmd, || unbind(resolver, store, &cmd.body)),
+        commands::MODE => guard_mutation(cmd, || mode(resolver, &cmd.body)),
+        commands::RELOAD => guard_mutation(cmd, || reload(resolver, store)),
         commands::KEY => key(injector, &cmd.body),
         commands::POINTER_MOVE | commands::POINTER_BUTTON | commands::POINTER_SCROLL => {
             pointer(injector, &cmd.command, &cmd.body)
@@ -229,25 +203,16 @@ fn persist(resolver: &Shared, store: &Store, reply: &mut Value) {
 /// Admission for the keymap mutations. noded stamps `broker_origin` from the
 /// source socket (a client-supplied value is stripped, so it cannot be
 /// forged): `local` for a same-node caller, `mesh` for an admitted WG peer.
-/// Open posture (the default): both are admitted — being on the mesh is the
-/// whole authorization. Lock (`MIXOS_MESH_OPEN=0`): `local` only. A command
-/// with neither stamp did not come through the broker and is refused in both.
-fn guard_mutation(
-    store: &Store,
-    cmd: &IncomingCommand,
-    apply: impl FnOnce() -> (u8, String),
-) -> (u8, String) {
+/// Both local and mesh callers are admitted. A command with neither stamp
+/// did not come through the broker and is refused.
+fn guard_mutation(cmd: &IncomingCommand, apply: impl FnOnce() -> (u8, String)) -> (u8, String) {
     let origin = cmd
         .headers
         .iter()
         .find(|(name, _)| name.eq_ignore_ascii_case("broker_origin"))
         .map(|(_, value)| value.as_str());
     match origin {
-        Some("local") => apply(),
-        Some("mesh") if store.mesh_open => apply(),
-        Some("mesh") => error(
-            "input mutations require a node-local caller (mesh access locked: MIXOS_MESH_OPEN=0)",
-        ),
+        Some("local" | "mesh") => apply(),
         _ => error("input mutations require a broker-stamped caller (broker_origin local or mesh)"),
     }
 }
@@ -656,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn pointer_write_errors_are_reported_and_keymap_gate_is_preserved() {
+    fn pointer_and_key_write_errors_are_reported() {
         let mut injector =
             Injector::with_test_file(File::options().write(true).open("/dev/full").unwrap());
         let cmd = command(
@@ -675,30 +640,22 @@ mod tests {
         let (rc, reply) = dispatch(&resolver(), &Store::default(), &mut injector, &cmd);
         assert_eq!(rc, 10);
         assert!(reply.contains("key injection failed"));
-        // Under the opt-in lock the keymap gate is still in force for mesh.
-        let cmd = command(commands::MODE, json!({"mode": "transparent"}), Some("mesh"));
-        let locked = Store::default().with_mesh_open(false);
-        let (rc, reply) = dispatch(&resolver(), &locked, &mut injector, &cmd);
-        assert_eq!(rc, 10);
-        assert!(reply.contains("node-local caller"));
     }
 
     #[test]
-    fn the_lock_never_gates_injection() {
-        // The lock covers the four keymap mutations only: a mesh key and
-        // pointer injection still reach the device under it.
+    fn mesh_injection_reaches_the_device() {
         let (writer, mut reader) = UnixStream::pair().unwrap();
         reader
             .set_read_timeout(Some(Duration::from_secs(1)))
             .unwrap();
         let mut injector = Injector::with_test_file(File::from(OwnedFd::from(writer)));
-        let locked = Store::default().with_mesh_open(false);
+        let store = Store::default();
         for (command_name, body, frames) in [
             (commands::KEY, json!({"key": "F9", "action": "press"}), 2),
             (commands::POINTER_MOVE, json!({"dx": 1, "dy": 2}), 3),
         ] {
             let cmd = command(command_name, body, Some("mesh"));
-            let (rc, reply) = dispatch(&resolver(), &locked, &mut injector, &cmd);
+            let (rc, reply) = dispatch(&resolver(), &store, &mut injector, &cmd);
             assert_eq!(rc, 0, "{command_name}: {reply}");
             let mut event = [0; 24];
             for _ in 0..frames {
@@ -712,17 +669,6 @@ mod tests {
             matches!(&extra, Err(error) if error.kind() == std::io::ErrorKind::WouldBlock),
             "unexpected extra frame: {extra:?}"
         );
-    }
-
-    #[test]
-    fn mesh_open_switch_locks_only_on_exactly_zero() {
-        // Same rule as the clipboard citizen: env("MIXOS_MESH_OPEN","1") != "0".
-        assert!(mesh_open_value(None));
-        assert!(mesh_open_value(Some("1")));
-        assert!(mesh_open_value(Some("")));
-        assert!(mesh_open_value(Some("false")));
-        assert!(!mesh_open_value(Some("0")));
-        assert!(Store::default().mesh_open, "open is the default posture");
     }
 
     fn run_as(
@@ -739,8 +685,8 @@ mod tests {
     }
 
     #[test]
-    fn a_mesh_caller_reaches_every_keymap_mutation_by_default() {
-        let (dir, path) = keymap_dir("mesh-open", r#"{"version":1,"physical":[]}"#);
+    fn a_mesh_caller_reaches_every_keymap_mutation() {
+        let (dir, path) = keymap_dir("mesh", r#"{"version":1,"physical":[]}"#);
         let store = Store::new(Some(path.clone()), None, None);
         let resolver = resolver();
         let before = resolver.lock().unwrap().generation();
@@ -816,64 +762,18 @@ mod tests {
     }
 
     #[test]
-    fn the_lock_restores_the_node_local_rule() {
-        let (dir, path) = keymap_dir("mesh-locked", r#"{"version":1,"physical":[]}"#);
-        let store = Store::new(Some(path.clone()), None, None).with_mesh_open(false);
+    fn an_unstamped_caller_is_refused() {
+        let store = Store::default();
         let resolver = resolver();
-        let before = resolver.lock().unwrap().generation();
-        let rows_before = resolver.lock().unwrap().physical_rows().to_vec();
-        for (command_name, body) in [
-            (commands::BIND, bind_row()),
-            (
-                commands::UNBIND,
-                json!({"code":106,"modifiers":{"right_ctrl":true}}),
-            ),
-            (commands::MODE, json!({"mode":"transparent"})),
-            (commands::RELOAD, json!({})),
-        ] {
-            let (rc, reply) = run_as(&resolver, &store, Some("mesh"), command_name, body);
-            assert_eq!(rc, 10, "{command_name}: {reply}");
-            let error = reply["error"].as_str().unwrap();
+        for origin in [None, Some("peer"), Some("")] {
+            let (rc, reply) = run_as(&resolver, &store, origin, commands::BIND, bind_row());
+            assert_eq!(rc, 10, "{origin:?}: {reply}");
             assert!(
-                error.contains("node-local caller"),
-                "{command_name}: {error}"
-            );
-            assert!(
-                error.contains("MIXOS_MESH_OPEN=0"),
-                "{command_name}: {error}"
+                reply["error"].as_str().unwrap().contains("broker-stamped"),
+                "{reply}"
             );
         }
-        {
-            let live = resolver.lock().unwrap();
-            assert_eq!(live.generation(), before, "nothing applied");
-            assert_eq!(live.physical_rows(), rows_before.as_slice());
-            assert_eq!(live.mode(), InputMode::Normal);
-        }
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            r#"{"version":1,"physical":[]}"#,
-            "file untouched"
-        );
-        // Local callers are unaffected by the lock.
-        let (rc, reply) = run_as(&resolver, &store, Some("local"), commands::BIND, bind_row());
-        assert_eq!(rc, 0, "{reply}");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn an_unstamped_caller_is_refused_in_both_postures() {
-        for store in [Store::default(), Store::default().with_mesh_open(false)] {
-            let resolver = resolver();
-            for origin in [None, Some("peer"), Some("")] {
-                let (rc, reply) = run_as(&resolver, &store, origin, commands::BIND, bind_row());
-                assert_eq!(rc, 10, "{origin:?}: {reply}");
-                assert!(
-                    reply["error"].as_str().unwrap().contains("broker-stamped"),
-                    "{reply}"
-                );
-            }
-            assert_eq!(resolver.lock().unwrap().generation(), 0);
-        }
+        assert_eq!(resolver.lock().unwrap().generation(), 0);
     }
 
     #[test]

@@ -314,17 +314,11 @@ mod native_session_tests {
 
     #[tokio::test]
     async fn publisher_stamp_and_protection_survive_retained_replay_and_route_loss() {
-        let observe = crate::observe::ObserveManager::new(vec!["audit-observer".into()]);
+        let observe = crate::observe::ObserveManager::new();
         observe.spawn_drainer();
         let (observer, mut observed) = mpsc::channel(32);
         observe
-            .start(
-                Some("audit-observer"),
-                true,
-                &observer,
-                Some("start"),
-                r#"{"body":"redacted"}"#,
-            )
+            .start(&observer, Some("start"), r#"{"body":"redacted"}"#)
             .unwrap();
         observed.recv().await.unwrap();
         let broker = SubscriptionBroker::with_observe(observe);

@@ -5,8 +5,7 @@ Description=MixOS host service socket
 [Socket]
 ListenStream=/run/hostd/hostd.sock
 SocketUser=root
-SocketGroup=hostd
-SocketMode=0660
+SocketMode=0666
 DirectoryMode=0755
 Accept=no
 

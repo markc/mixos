@@ -133,7 +133,7 @@ async fn two_production_brokers_route_verified_native_clients() {
             write(&root.join("var/noded/inventory.signed"), &signed);
             write(&root.join("etc/node.conf.mix"), &json!({
                 "node":names[i], "wg_ip":ips[i],
-                "noded":{"port":ports[i],"unix_socket":root.join("run/bus.sock"),"mesh_open":true}
+                "noded":{"port":ports[i],"unix_socket":root.join("run/bus.sock")}
             }));
             write(&root.join("etc/mesh.conf.mix"), &json!({"node_name":names[i],"peers":[]}));
             let log = fs::File::create(root.join("noded.log")).unwrap();

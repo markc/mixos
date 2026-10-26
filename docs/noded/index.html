@@ -212,6 +212,7 @@
                         <a href="#running-it">Running it</a>
                         <a href="#tests">Tests</a>
                         <a href="#provenance">Provenance</a>
+                        <a href="#open-bus-commands">Open Bus commands</a>
                     </nav>
                 </div>
             </div>
@@ -326,6 +327,16 @@ structured registration-rejection body (additive only; see the
 the Bus contracts otherwise match 0.18.2.</p>
 <p>The source is
 <a href="https://github.com/markc/mixos/tree/main/services/noded"><code>services/noded</code></a>.</p>
+<h2 id="open-bus-commands">Open Bus commands</h2>
+<p><code>noded.tap</code> and <code>noded.observe.start</code> accept callers from every node,
+including anonymous connections. Observation events are delivered on the
+connection that started the subscription; registration is unnecessary.
+Connection quotas, bounded queues, filtering and payload redaction still
+apply. Native-session traffic can cross nodes. Broker identity stamps,
+mesh admission, topic ownership and session-record ownership remain enforced.</p>
+<p>Node config preserves unknown keys as unowned data, so existing files with
+<code>noded.mesh_open</code> or <code>observe.allowed_services</code> still load. Neither key
+controls broker behaviour.</p>
         </article>
         <p class="doc-source"><a href="/noded/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

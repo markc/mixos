@@ -21,9 +21,6 @@
 //! 4. Kind rule, identical for `origin` and `as`: `human:` only for a local
 //!    registered caller; `tool:` never; otherwise the label is kept with kind
 //!    `agent` and the reply says `origin_downgraded: true`.
-//! 5. `MIXOS_MESH_OPEN=0` (read once at start): mutating commands from
-//!    `broker_origin != local` → FORBIDDEN `mesh_locked`. Reads always allowed.
-//!    This is the only authorization-shaped check in editd, and it is opt-in.
 
 use ::bus::native_client::IncomingCommand;
 use edit::error::{ErrorCode, reason};
@@ -57,15 +54,14 @@ pub struct Caller {
 }
 
 /// Resolve the caller of `cmd` (contract above). `claim` is the `origin`
-/// (or, for undo/redo, `as`) argument; `mutating` selects rules 1 and 5.
+/// (or, for undo/redo, `as`) argument; `mutating` selects rule 1.
 ///
 /// Check order follows the router's refusal precedence: the claim's grammar
-/// (argument shape) first, then the unstamped refusal, then the mesh lock.
+/// (argument shape) first, then the unstamped refusal.
 pub fn resolve(
     cmd: &IncomingCommand,
     claim: Option<&str>,
     mutating: bool,
-    mesh_open: bool,
 ) -> Result<Caller, Refusal> {
     let claimed = match claim {
         Some(text) => Some(
@@ -81,13 +77,6 @@ pub fn resolve(
             ErrorCode::InvalidArgument,
             Some(reason::UNSTAMPED),
             "mutations require a broker-stamped caller (broker_origin local or mesh)",
-        ));
-    }
-    if mutating && !mesh_open && via.broker_origin != "local" {
-        return Err(crate::refusal::refusal(
-            ErrorCode::Forbidden,
-            Some(reason::MESH_LOCKED),
-            "edit mutations are node-local only (mesh access locked: MIXOS_MESH_OPEN=0)",
         ));
     }
     let key = key_of(&via);
@@ -203,13 +192,6 @@ pub fn holder_key(key: &CallerKey) -> String {
     format!("{prefix}+{}", &hash.as_str()[..8])
 }
 
-/// `MIXOS_MESH_OPEN`, read once at start: only `0` locks mutations to local callers.
-pub fn mesh_open_from_env() -> bool {
-    std::env::var("MIXOS_MESH_OPEN")
-        .map(|v| v.trim() != "0")
-        .unwrap_or(true)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,15 +219,15 @@ mod tests {
     #[test]
     fn unstamped_mutation_is_refused_but_reads_pass() {
         let c = cmd("x", &[]);
-        let err = resolve(&c, None, true, true).unwrap_err();
+        let err = resolve(&c, None, true).unwrap_err();
         assert_eq!(code(&err), (ErrorCode::InvalidArgument, Some("unstamped")));
-        let read = resolve(&c, None, false, true).unwrap();
+        let read = resolve(&c, None, false).unwrap();
         assert_eq!(read.key, CallerKey::Anon);
     }
 
     #[test]
     fn keys_and_derived_origins() {
-        let local = resolve(&cmd("ced", &[("broker_origin", "local")]), None, true, true).unwrap();
+        let local = resolve(&cmd("ced", &[("broker_origin", "local")]), None, true).unwrap();
         assert_eq!(local.key.to_string(), "local:ced");
         assert_eq!(local.origin.to_string(), "agent:ced");
         let mesh = resolve(
@@ -259,12 +241,11 @@ mod tests {
             ),
             None,
             true,
-            true,
         )
         .unwrap();
         assert_eq!(mesh.key.to_string(), "mesh:term@beta");
         assert_eq!(mesh.origin.to_string(), "agent:term@beta");
-        let anon = resolve(&cmd("", &[("broker_origin", "local")]), None, true, true).unwrap();
+        let anon = resolve(&cmd("", &[("broker_origin", "local")]), None, true).unwrap();
         assert_eq!(anon.key.to_string(), "anon");
         assert_eq!(anon.origin.to_string(), "agent:anon");
     }
@@ -272,18 +253,18 @@ mod tests {
     #[test]
     fn human_only_for_local_registered_and_tool_never() {
         let local = cmd("ced", &[("broker_origin", "local")]);
-        let r = resolve(&local, Some("human:mark"), true, true).unwrap();
+        let r = resolve(&local, Some("human:mark"), true).unwrap();
         assert_eq!(
             (r.origin.to_string(), r.origin_downgraded),
             ("human:mark".into(), false)
         );
-        let r = resolve(&local, Some("tool:disk"), true, true).unwrap();
+        let r = resolve(&local, Some("tool:disk"), true).unwrap();
         assert_eq!(
             (r.origin.to_string(), r.origin_downgraded),
             ("agent:disk".into(), true)
         );
         let anon = cmd("", &[("broker_origin", "local")]);
-        let r = resolve(&anon, Some("human:mark"), true, true).unwrap();
+        let r = resolve(&anon, Some("human:mark"), true).unwrap();
         assert_eq!(
             (r.origin.to_string(), r.origin_downgraded),
             ("agent:mark".into(), true)
@@ -296,12 +277,12 @@ mod tests {
                 ("broker_peer", "beta"),
             ],
         );
-        let r = resolve(&mesh, Some("human:mark"), true, true).unwrap();
+        let r = resolve(&mesh, Some("human:mark"), true).unwrap();
         assert_eq!(
             (r.origin.to_string(), r.origin_downgraded),
             ("agent:mark".into(), true)
         );
-        let r = resolve(&mesh, Some("agent:bot"), true, true).unwrap();
+        let r = resolve(&mesh, Some("agent:bot"), true).unwrap();
         assert_eq!(
             (r.origin.to_string(), r.origin_downgraded),
             ("agent:bot".into(), false)
@@ -310,14 +291,14 @@ mod tests {
 
     #[test]
     fn bad_claim_precedes_unstamped() {
-        let err = resolve(&cmd("", &[]), Some("agent:has space"), true, true).unwrap_err();
+        let err = resolve(&cmd("", &[]), Some("agent:has space"), true).unwrap_err();
         assert_eq!(code(&err), (ErrorCode::InvalidArgument, Some("bad_origin")));
-        let err = resolve(&cmd("", &[]), Some("nokind"), true, true).unwrap_err();
+        let err = resolve(&cmd("", &[]), Some("nokind"), true).unwrap_err();
         assert_eq!(code(&err), (ErrorCode::InvalidArgument, Some("bad_origin")));
     }
 
     #[test]
-    fn mesh_lock_refuses_mesh_mutations_only() {
+    fn mesh_mutations_and_reads_are_open() {
         let mesh = cmd(
             "",
             &[
@@ -326,11 +307,10 @@ mod tests {
                 ("broker_peer", "b"),
             ],
         );
-        let err = resolve(&mesh, None, true, false).unwrap_err();
-        assert_eq!(code(&err), (ErrorCode::Forbidden, Some("mesh_locked")));
-        assert!(resolve(&mesh, None, false, false).is_ok());
+        assert!(resolve(&mesh, None, true).is_ok());
+        assert!(resolve(&mesh, None, false).is_ok());
         let local = cmd("x", &[("broker_origin", "local")]);
-        assert!(resolve(&local, None, true, false).is_ok());
+        assert!(resolve(&local, None, true).is_ok());
     }
 
     #[test]

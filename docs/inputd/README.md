@@ -134,5 +134,5 @@ body. A row with `"passthrough": true` re-emits its stroke instead.
 | `input.key` | inject a key press, release or tap |
 | `input.pointer.move`, `.button`, `.scroll` | inject pointer input |
 
-Bindings are written through to the keymap file. `MIXOS_MESH_OPEN=0`
-limits the keymap changes to node-local callers.
+Bindings are written through to the keymap file. Both local and mesh
+callers can change the keymap; mutations require the broker's origin stamp.

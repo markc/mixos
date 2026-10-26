@@ -70,7 +70,7 @@ try
   write_new($root .. "/etc/nsswitch.conf","passwd: files\ngroup: files\nhosts: files\n",0o644)
   $s=stat($root)
   write_new($root .. "/.broker-rootfs.json",json_encode({kind:"native-broker-rootfs",dev:$s.dev,ino:$s.ino}),0o600)
-  $spec={project:"mixos",session:3,profile:"/var/lib/mixos/broker-a",client:{name:"desktop",uid:2000,gid:2000},broker:{name:"noded",uid:1999,gid:1999},node:{name:"desk-a",mesh:"example.internal",ip:"192.0.2.14",port:4200,admission:"observe",mesh_open:true}}
+  $spec={project:"mixos",session:3,profile:"/var/lib/mixos/broker-a",client:{name:"desktop",uid:2000,gid:2000},broker:{name:"noded",uid:1999,gid:1999},node:{name:"desk-a",mesh:"example.internal",ip:"192.0.2.14",port:4200,admission:"observe"}}
   mkdir($root .. "/var/lib/mixos/desktop-a",{parents:true})
   write_new($root .. "/var/lib/mixos/desktop-a/settings","preserved-desktop-state",0o600)
   chown($root .. "/var/lib/mixos/desktop-a/settings",2000,2000)

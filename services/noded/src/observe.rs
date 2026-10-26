@@ -236,7 +236,6 @@ struct Inner {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ObserveError {
-    Unauthorised,
     InvalidArgs,
     FilterInvalid,
     LimitExceeded,
@@ -253,7 +252,6 @@ impl ObserveError {
 
     pub(crate) fn code(self) -> &'static str {
         match self {
-            Self::Unauthorised => "observe_unauthorised",
             Self::InvalidArgs => "observe_invalid_args",
             Self::FilterInvalid => "observe_filter_invalid",
             Self::LimitExceeded => "observe_limit_exceeded",
@@ -264,7 +262,6 @@ impl ObserveError {
 
 #[derive(Clone)]
 pub(crate) struct ObserveManager {
-    allowed_services: Arc<Vec<String>>,
     next_id: Arc<AtomicU64>,
     active_subscriptions: Arc<AtomicUsize>,
     inner: Arc<Mutex<Inner>>,
@@ -272,22 +269,8 @@ pub(crate) struct ObserveManager {
 }
 
 impl ObserveManager {
-    pub(crate) fn new(allowed_services: Vec<String>) -> Arc<Self> {
-        let allowed_services = allowed_services
-            .into_iter()
-            .filter(|pattern| {
-                let valid = validate_glob(pattern, MAX_SERVICE_BYTES);
-                if !valid {
-                    tracing::warn!(
-                        pattern,
-                        "ignoring invalid [observe].allowed_services pattern"
-                    );
-                }
-                valid
-            })
-            .collect();
+    pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
-            allowed_services: Arc::new(allowed_services),
             next_id: Arc::new(AtomicU64::new(1)),
             active_subscriptions: Arc::new(AtomicUsize::new(0)),
             inner: Arc::new(Mutex::new(Inner::default())),
@@ -334,13 +317,10 @@ impl ObserveManager {
 
     pub(crate) fn start(
         &self,
-        service_name: Option<&str>,
-        same_node: bool,
         owner_tx: &mpsc::Sender<String>,
         request_id: Option<&str>,
         body: &str,
     ) -> Result<String, ObserveError> {
-        self.authorise(service_name, same_node)?;
         let mut request = parse_start_request(body)?;
         normalise_filter(&mut request.filter)?;
         request.capacity = request.capacity.clamp(MIN_CAPACITY, MAX_CAPACITY);
@@ -525,25 +505,6 @@ impl ObserveManager {
             subscription.queued_bytes = subscription.queued_bytes.saturating_add(accounted_bytes);
             subscription.queue.push_back(queued);
         }
-    }
-
-    fn authorise<'a>(
-        &self,
-        service_name: Option<&'a str>,
-        same_node: bool,
-    ) -> Result<&'a str, ObserveError> {
-        let service = service_name
-            .filter(|service| !service.is_empty())
-            .ok_or(ObserveError::Unauthorised)?;
-        if !same_node
-            || !self
-                .allowed_services
-                .iter()
-                .any(|pattern| anchored_glob_matches(pattern, service))
-        {
-            return Err(ObserveError::Unauthorised);
-        }
-        Ok(service)
     }
 
     fn drain_once(&self) {
@@ -1150,34 +1111,11 @@ mod tests {
     }
 
     fn manager() -> Arc<ObserveManager> {
-        ObserveManager::new(vec!["tower-bevy-*".into()])
+        ObserveManager::new()
     }
 
     fn start(manager: &ObserveManager, tx: &mpsc::Sender<String>, body: &str) -> String {
-        manager
-            .start(Some("tower-bevy-9"), true, tx, Some("start-1"), body)
-            .unwrap()
-    }
-
-    #[test]
-    fn authorisation_requires_registered_local_allowlisted_service() {
-        let manager = manager();
-        assert_eq!(
-            manager.authorise(None, true),
-            Err(ObserveError::Unauthorised)
-        );
-        assert_eq!(
-            manager.authorise(Some("tower-bevy-9"), false),
-            Err(ObserveError::Unauthorised)
-        );
-        assert_eq!(
-            manager.authorise(Some("studio-bevy-9"), true),
-            Err(ObserveError::Unauthorised)
-        );
-        assert_eq!(
-            manager.authorise(Some("tower-bevy-9"), true),
-            Ok("tower-bevy-9")
-        );
+        manager.start(tx, Some("start-1"), body).unwrap()
     }
 
     #[test]

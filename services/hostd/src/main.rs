@@ -25,8 +25,8 @@ enum Command {
         /// Serve the local socket only.
         #[arg(long)]
         no_bus: bool,
-        /// Read the host, policy and state from this directory instead of
-        /// the system paths (tests). The policy need not be root-owned.
+        /// Read the host and state from this directory instead of
+        /// the system paths (tests).
         #[arg(long, hide = true)]
         root: Option<PathBuf>,
     },
