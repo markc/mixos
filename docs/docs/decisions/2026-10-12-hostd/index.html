@@ -217,6 +217,7 @@
                         <a href="#consequences">Consequences</a>
                         <a href="#amendments">Amendments</a>
                         <a href="#2026-10-13-desk-power-commands-are-an-exception-to-no-irreversible-commands" class="toc-h3">2026-10-13: desk power commands are an exception to &quot;no irreversible commands&quot;</a>
+                        <a href="#2026-10-26-writes-are-open-to-every-caller-on-the-host" class="toc-h3">2026-10-26: writes are open to every caller on the host</a>
                     </nav>
                 </div>
             </div>
@@ -341,6 +342,13 @@ refuses both commands.</li>
 that the reboot tier requires is not built for <code>desk.*</code>. Security gates are
 added once the desktop is ready for daily use, where they are needed. Until
 then, the grant's rate limit and expiry are the only second check.</p>
+<h3 id="2026-10-26-writes-are-open-to-every-caller-on-the-host">2026-10-26: writes are open to every caller on the host</h3>
+<p><em>The Bus is open to every caller</em> (2026-10-26) amends this decision. Every
+caller on the same host may make hostd writes, over the local Bus or the
+Unix socket, with no standing grant and no second signature. Writes from
+other nodes stay refused. Typed commands, no generic exec, health checks
+with automatic revert, <code>hostd.undo</code> receipts, rate limits and <code>freeze</code>
+stay. The grant file <code>/etc/hostd/policy.mx</code> is no longer read.</p>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-12-hostd.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

@@ -4,16 +4,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Status: accepted, 2026-10-24.">
+    <meta name="description" content="Every Bus command in every app and service on every node answers every caller; refusals by caller identity or origin are removed, integrity checks stay.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>Macro-file write authority — MixOS</title>
-    <link rel="canonical" href="https://mixos.dev/docs/decisions/2026-10-24-macro-file-write-authority/">
-    <link rel="alternate" type="text/markdown" href="/docs/decisions/2026-10-24-macro-file-write-authority.md" title="Markdown source">
+    <title>Decision — the Bus is open to every caller — MixOS</title>
+    <link rel="canonical" href="https://mixos.dev/docs/decisions/2026-10-26-open-bus-for-agents/">
+    <link rel="alternate" type="text/markdown" href="/docs/decisions/2026-10-26-open-bus-for-agents.md" title="Markdown source">
     <meta name="mixos-build" content="0e230d24c4f9">
     <link rel="preload" href="/_web/fonts/sans.woff2?v=22f05185ef" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/_web/fonts.css?v=d8bbe7c76c"><!-- generated: Inter / Quicksand / JetBrains Mono / emoji cut from the asset set -->
@@ -208,7 +208,10 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <div class="toc-empty">No sections on this page</div>
+                        <a href="#the-decision">The decision</a>
+                        <a href="#hostd">hostd</a>
+                        <a href="#what-stays">What stays</a>
+                        <a href="#why">Why</a>
                     </nav>
                 </div>
             </div>
@@ -233,33 +236,67 @@
 <main id="content" tabindex="-1">
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
-<h1 id="macro-file-write-authority">Macro-file write authority</h1>
-<p>Status: accepted, 2026-10-24.</p>
-<p>Macro-file mutations are a deliberate exception to default-open Bus access.
-<code>&lt;app&gt;.macros.put</code>, <code>remove</code>, <code>move</code>, <code>copy</code> and <code>new</code> accept the owning
-process's local registered service and Workshop (<code>workshop</code> or <code>workshop-*</code>).
-Global catalogue writes and cross-app moves require Workshop.</p>
-<p>Workshop is the trusted catalogue manager. Its mutating macro commands must
-themselves accept only Workshop callers, including requests forwarded to
-another app. Its generic execute/call paths must not bypass this restriction.
-A person using Workshop's UI retains the manager's authority.</p>
-<p>The broker's canonical service name and stamped local origin establish the
-caller. Mesh callers cannot mutate macro files. Service registration on a
-default-open node is not executable authentication: a local process able to
-claim an unused Workshop service name gains that authority. This rule does
-not isolate code running under the same filesystem user.</p>
-<p>Refusals use <code>DENIED</code>, name the command and rule, and precede file effects.
-<code>list</code>, <code>get</code>, <code>run</code>, <code>status</code>, <code>output</code>, <code>stop</code> and <code>reload</code> remain open.
-Running user code retains its existing authority and is not a sandbox.</p>
-<p>Workshop’s Bus <code>execute</code> for mutating <code>macro.*</code> actions and <code>bus.call</code>,
-implicit-target <code>call</code>, and calls forwarding macro mutations or these proxy
-operations require Workshop too. These paths can otherwise turn an untrusted
-caller into the manager. Explicit <code>call</code> requests for read/run commands remain
-open. Workshop’s UI commands (<code>workshop.ui.*</code>) are open to every caller, so an
-agent can drive its window: a save made there is Workshop’s own write, as if
-a person had pressed Save.</p>
+<h1 id="decision--the-bus-is-open-to-every-caller">Decision — the Bus is open to every caller</h1>
+<p>Status: accepted 2026-10-26. Replaces <em>Macro-file write authority</em>
+(2026-10-24) and amends <em>hostd, the host service</em> (2026-10-12).</p>
+<h2 id="the-decision">The decision</h2>
+<ul>
+<li><strong>Every Bus command answers every caller.</strong> An agent can do over the Bus
+anything a person can do at the keyboard, in every app and service, on
+every node. No command refuses a request because of who sent it (service
+name, account, uid, grant, operator list, allowlist) or where it came
+from (local or mesh, Bus or keyboard, drive input or a real click).</li>
+<li><strong>There is no strict mode.</strong> <code>MIXOS_MESH_OPEN=0</code> and every posture it
+switched are removed. The open posture is the only one.</li>
+<li><strong>Macro files are ordinary Bus state.</strong> <code>&lt;app&gt;.macros.put</code>, <code>remove</code>,
+<code>move</code>, <code>copy</code> and <code>new</code> accept any caller, global and cross-app writes
+included. Workshop's <code>workshop.macros.*</code>, <code>workshop.execute</code> and
+<code>workshop.call</code> forward them without a gate.</li>
+<li><strong>Workshop and the apps' windows add nothing a caller lacks.</strong> Workshop's
+window is a convenience, not an authority.</li>
+<li><strong>File managers and panels act on Bus requests.</strong> Dopus runs <code>file.*</code>
+actions and accepts its dialogs from the Bus and from drive input, as
+from the keyboard. The volume and network panels take changes from any
+caller.</li>
+<li><strong>Node-local answers are gone.</strong> notifyd answers and dismisses, and
+portald answers screen-share consent, for callers on any node.</li>
+<li><strong>Operator lists are gone.</strong> maild and webd commands that named operators
+(vtokens, retention, Bayesian rebuild, listeners, TLS reload) accept any
+caller; property namespaces grant every capability to every caller.</li>
+<li><strong>The broker opens its own commands.</strong> <code>noded.observe.start</code> and
+<code>noded.tap</code> accept any caller on any node; native-session traffic may
+cross nodes.</li>
+</ul>
+<h2 id="hostd">hostd</h2>
+<p>hostd's writes are open to <strong>every caller on the same host</strong>, over the
+local Bus or its Unix socket, with no grant file. Writes from another node
+stay refused: a compromised node must not be able to rewrite every host's
+network. hostd keeps what makes a write safe rather than who may make it:
+typed commands, no generic exec, health checks with automatic revert,
+receipts for <code>hostd.undo</code>, rate limits and <code>freeze</code>.</p>
+<h2 id="what-stays">What stays</h2>
+<p>These checks prove where a request came from or keep state consistent.
+They refuse no honest caller:</p>
+<ul>
+<li>The broker stamps every request with its origin and sender; a request
+with no stamp is malformed.</li>
+<li>A local request may not carry mesh provenance fields (forged origin).</li>
+<li>A topic is published by the service that owns it, so a settings change on
+the Bus is always settingsd's.</li>
+<li>A session record is changed by the account that owns it.</li>
+<li>A node joins the mesh only through admission.</li>
+<li>Argument validation, size and rate limits, freshness and replay checks,
+path containment, and read-only built-in files.</li>
+</ul>
+<h2 id="why">Why</h2>
+<p>An LLM has no hands. Every job an agent performs, it performs through the
+Bus, so every gate that tells an agent "only a person, only Workshop, only
+this node" is a job the agent cannot do. MixOS is agentic-first and
+default-open (ADR §1.9). Gates that defended against other processes of the
+same user, or against the user's own mesh, protected nothing and blocked
+the agents.</p>
         </article>
-        <p class="doc-source"><a href="/docs/decisions/2026-10-24-macro-file-write-authority.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
+        <p class="doc-source"><a href="/docs/decisions/2026-10-26-open-bus-for-agents.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>
