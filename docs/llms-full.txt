@@ -10508,7 +10508,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   emit            Fire-and-forget Bus message (no reply is waited for): emit PORT COMMAND [ARGS...]
   address         Set the default Bus target for a block: address PORT ... end (bare send lines inside go to PORT)
   on              Register a Bus handler: on COMMAND ... end. A serve citizen answers COMMAND calls; reply() sends the answer. Topic subscribers match on the inner command
-  reply           Answer the in-flight request the serve pump is dispatching (only inside an on handler); payload becomes the caller's $result
+  reply           Answer the in-flight request the serve pump is dispatching (only inside an on handler): reply(body) or reply(rc, body); a string body goes out as it is, nil as an empty body, anything else as JSON; it becomes the caller's $result
   subscribe       Register interest in a Bus topic so deliveries reach a matching on handler: subscribe("topic.name")
   unsubscribe     Drop interest in a Bus topic: unsubscribe("topic.name")
   port_exists     True when a Bus port exists on the broker
@@ -25854,6 +25854,16 @@ hard error. `rc` 15 and 16 are the runtime's own (`HANDLER_FAULT` and
 pick another `rc >= 10` for your own refusals, and treat `error_code` as the
 authoritative signal.
 
+A string body goes out as it is (`reply("pong")` sends `pong`), so
+`reply(json_encode(...))` still works. `nil` sends an empty body, which the
+caller reads as `nil`. Anything else goes out as compact JSON in its own key
+order, so `reply({ok: true, items: $list})` reaches the caller's `$result` as
+a map. A NaN, an infinity, or raw bytes has no JSON form and raises
+(`base64_encode` bytes first). For a refusal map, put the reason in
+`error_code`. `publish` is stricter: it still wants a string body and refuses
+a map. Before this release a map went out as Mix display text (`{ok: true}`)
+and `nil` as the text `nil`, which no caller could read.
+
 ```mix
 on do.validate
   if is_empty($event.body) then
@@ -36627,6 +36637,14 @@ loads unchanged.
 
 ### Fixed
 
+- `reply(map)` and `reply(rc, map)` send the map (or a list, number or bool)
+  as compact JSON in its own key order, so the caller's `send` gets a map in
+  `$result`. They used to send Mix display text (`{ok: true}`), which no
+  caller could parse. A string body is still sent as it is.
+- `reply(nil)` sends an empty body, which the caller reads as `nil`; it used
+  to send the text `nil`. A body with no JSON form (NaN, infinity, raw bytes,
+  a function) raises instead of going out mangled. The JSON conversion module
+  is now built without the `json` feature.
 - HTTP idle/stream responses now negotiate gzip only, regenerate Host on
   redirects, and match ureq's literal URL-userinfo authentication. Buffered
   successes keep their existing keys; `stopped` is stream-only and received

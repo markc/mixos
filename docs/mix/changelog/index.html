@@ -315,6 +315,18 @@ scenes found no live script affected.</li>
 <h3 id="fixed">Fixed</h3>
 <ul>
 <li>
+<p><code>reply(map)</code> and <code>reply(rc, map)</code> send the map (or a list, number or bool)
+as compact JSON in its own key order, so the caller's <code>send</code> gets a map in
+<code>$result</code>. They used to send Mix display text (<code>{ok: true}</code>), which no
+caller could parse. A string body is still sent as it is.</p>
+</li>
+<li>
+<p><code>reply(nil)</code> sends an empty body, which the caller reads as <code>nil</code>; it used
+to send the text <code>nil</code>. A body with no JSON form (NaN, infinity, raw bytes,
+a function) raises instead of going out mangled. The JSON conversion module
+is now built without the <code>json</code> feature.</p>
+</li>
+<li>
 <p>HTTP idle/stream responses now negotiate gzip only, regenerate Host on
 redirects, and match ureq's literal URL-userinfo authentication. Buffered
 successes keep their existing keys; <code>stopped</code> is stream-only and received

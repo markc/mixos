@@ -2294,6 +2294,68 @@ async fn reply_two_arg_form_passes_rc() {
     assert_eq!(calls[0].4, "boom");
 }
 
+/// A map or list body goes out as compact JSON in its own key order, in both
+/// forms, so the caller's `send` reads a map back. It used to go out as Mix
+/// display text (`{ok: true}`), which no caller can parse. A string
+/// stays raw.
+#[tokio::test]
+async fn reply_encodes_map_and_list_bodies_as_json() {
+    let log: ReplyLog = Rc::new(RefCell::new(Vec::new()));
+    let handler: Rc<dyn BusHandler> = Rc::new(ReplyRecorder(log.clone()));
+    let req = |cmd: &str| mk_event(cmd, "", &[("from", "c"), ("id", "1"), ("type", "request")]);
+    let source = "on m\n    reply({zeta: 1, alpha: [\"a b\", true, nil], n: 2.5})\ndone\n\
+                  on l\n    reply(10, [{ok: false}, \"x\"])\ndone\n\
+                  on s\n    reply(\"plain text\")\ndone\n\
+                  on n\n    reply(2.5)\ndone\n\
+                  on b\n    reply(true)\ndone\n\
+                  on z\n    reply(nil)\ndone\n";
+    for cmd in ["m", "l", "s", "n", "b", "z"] {
+        run_then_dispatch(source, Some(handler.clone()), req(cmd)).await;
+    }
+    let calls = log.borrow();
+    let bodies: Vec<(u8, &str)> = calls.iter().map(|c| (c.3, c.4.as_str())).collect();
+    assert_eq!(
+        bodies,
+        vec![
+            (0, r#"{"zeta":1,"alpha":["a b",true,null],"n":2.5}"#),
+            (10, r#"[{"ok":false},"x"]"#),
+            (0, "plain text"),
+            (0, "2.5"),
+            (0, "true"),
+            (0, ""),
+        ]
+    );
+}
+
+/// A body with no JSON form (a NaN inside a map or on its own, raw bytes) is
+/// a loud error, never a silently mangled reply. The handler catches it and
+/// returns, so the only thing on the wire is the runtime's NO_REPLY answer.
+#[tokio::test]
+async fn reply_refuses_a_body_with_no_json_form() {
+    for body in ["{x: sqrt(-1)}", "sqrt(-1)", "string_to_bytes(\"x\")"] {
+        let log: ReplyLog = Rc::new(RefCell::new(Vec::new()));
+        let source = format!(
+            "on q\n    try\n        reply({body})\n    catch $e\n        print \"caught: \" .. $e\n    end\ndone\n"
+        );
+        let out = run_then_dispatch(
+            &source,
+            Some(Rc::new(ReplyRecorder(log.clone()))),
+            mk_event("q", "", &[("from", "c"), ("id", "1"), ("type", "request")]),
+        )
+        .await;
+        assert!(out.contains("has no JSON form"), "{body}: got {out}");
+        let wire: Vec<(u8, String)> = log.borrow().iter().map(|c| (c.3, c.4.clone())).collect();
+        assert_eq!(
+            wire,
+            vec![(
+                mix::evaluator::NO_REPLY_RC,
+                mix::evaluator::NO_REPLY_BODY.to_string()
+            )],
+            "{body}: only the NO_REPLY boundary may go on the wire"
+        );
+    }
+}
+
 /// An id-less request still replies (id omitted, not fabricated).
 #[tokio::test]
 async fn reply_without_inbound_id_omits_id() {

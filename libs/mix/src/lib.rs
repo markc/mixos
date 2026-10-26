@@ -37,7 +37,8 @@ mod dns;
 #[cfg(feature = "crypto")]
 mod jwt;
 
-#[cfg(feature = "json")]
+// Always built: it needs only serde_json, and reply() encodes map bodies with
+// it in every build. The `json` feature gates the jq builtins, not this.
 pub mod json;
 
 #[cfg(feature = "regex")]

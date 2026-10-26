@@ -120,7 +120,7 @@ const EXTRA_STATEMENTS: &[ExtraStatement] = &[
     ExtraStatement {
         name: "reply",
         category: "bus",
-        description: "Answer the in-flight request the serve pump is dispatching (only inside an on handler); payload becomes the caller's $result",
+        description: "Answer the in-flight request the serve pump is dispatching (only inside an on handler): reply(body) or reply(rc, body); a string body goes out as it is, nil as an empty body, anything else as JSON; it becomes the caller's $result",
         capability: "bus",
         contract: mix::contract!((payload?: any) -> nil),
     },

@@ -236,6 +236,31 @@ fn parse_event_args(body: &str) -> Value {
     }
 }
 
+/// The wire body for `reply(body)`: a string goes out as it is
+/// (`reply("pong")` is `pong`, not `"pong"`), nil as an empty body (the
+/// caller reads nil), and everything else as compact JSON in its own key
+/// order, so the caller's `send` parses a map back into a map. Maps used to
+/// go out as Mix display text (`{ok: true}`) and nil as the text `nil`,
+/// which no caller could read. A NaN or infinity has no JSON form and raises.
+fn reply_body(v: &Value) -> MixResult<String> {
+    match v {
+        Value::String(s) => Ok(s.clone()),
+        Value::Nil => Ok(String::new()),
+        // JSON would turn these into null without a word; refuse instead.
+        Value::Bytes(_) | Value::Buffer(_) | Value::Function(_) => Err(MixError::RuntimeError {
+            span: None,
+            msg: format!(
+                "reply(): a {} body has no JSON form (base64_encode bytes first)",
+                v.type_name()
+            ),
+        }),
+        _ => crate::json::mix_to_json_ordered(v, false).map_err(|e| MixError::RuntimeError {
+            span: None,
+            msg: format!("reply(): body has no JSON form: {e}"),
+        }),
+    }
+}
+
 /// A JSON string literal for `s`, without the optional `json` feature —
 /// the runtime's own refusal bodies must encode in every build.
 fn json_quote(s: &str) -> String {
@@ -15027,7 +15052,7 @@ impl Evaluator {
                             "reply",
                         )?;
                         let (rc, body) = match eval_args.len() {
-                            1 => (0u8, eval_args[0].to_mix_string()),
+                            1 => (0u8, reply_body(&eval_args[0])?),
                             2 => {
                                 let rc = match &eval_args[0] {
                                     Value::Number(n)
@@ -15044,7 +15069,7 @@ impl Evaluator {
                                         });
                                     }
                                 };
-                                (rc, eval_args[1].to_mix_string())
+                                (rc, reply_body(&eval_args[1])?)
                             }
                             _ => {
                                 return Err(MixError::RuntimeError {

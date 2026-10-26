@@ -440,7 +440,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   emit            Fire-and-forget Bus message (no reply is waited for): emit PORT COMMAND [ARGS...]
   address         Set the default Bus target for a block: address PORT ... end (bare send lines inside go to PORT)
   on              Register a Bus handler: on COMMAND ... end. A serve citizen answers COMMAND calls; reply() sends the answer. Topic subscribers match on the inner command
-  reply           Answer the in-flight request the serve pump is dispatching (only inside an on handler); payload becomes the caller's $result
+  reply           Answer the in-flight request the serve pump is dispatching (only inside an on handler): reply(body) or reply(rc, body); a string body goes out as it is, nil as an empty body, anything else as JSON; it becomes the caller's $result
   subscribe       Register interest in a Bus topic so deliveries reach a matching on handler: subscribe("topic.name")
   unsubscribe     Drop interest in a Bus topic: unsubscribe("topic.name")
   port_exists     True when a Bus port exists on the broker

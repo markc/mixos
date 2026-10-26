@@ -323,6 +323,16 @@ hard error. `rc` 15 and 16 are the runtime's own (`HANDLER_FAULT` and
 pick another `rc >= 10` for your own refusals, and treat `error_code` as the
 authoritative signal.
 
+A string body goes out as it is (`reply("pong")` sends `pong`), so
+`reply(json_encode(...))` still works. `nil` sends an empty body, which the
+caller reads as `nil`. Anything else goes out as compact JSON in its own key
+order, so `reply({ok: true, items: $list})` reaches the caller's `$result` as
+a map. A NaN, an infinity, or raw bytes has no JSON form and raises
+(`base64_encode` bytes first). For a refusal map, put the reason in
+`error_code`. `publish` is stricter: it still wants a string body and refuses
+a map. Before this release a map went out as Mix display text (`{ok: true}`)
+and `nil` as the text `nil`, which no caller could read.
+
 ```mix
 on do.validate
   if is_empty($event.body) then

@@ -511,6 +511,15 @@ hard error. <code>rc</code> 15 and 16 are the runtime's own (<code>HANDLER_FAULT
 <code>HANDLER_CANCELLED</code>, see <a href="#handler-fault-isolation-the-per-request-boundary">handler fault isolation</a>);
 pick another <code>rc &gt;= 10</code> for your own refusals, and treat <code>error_code</code> as the
 authoritative signal.</p>
+<p>A string body goes out as it is (<code>reply("pong")</code> sends <code>pong</code>), so
+<code>reply(json_encode(...))</code> still works. <code>nil</code> sends an empty body, which the
+caller reads as <code>nil</code>. Anything else goes out as compact JSON in its own key
+order, so <code>reply({ok: true, items: $list})</code> reaches the caller's <code>$result</code> as
+a map. A NaN, an infinity, or raw bytes has no JSON form and raises
+(<code>base64_encode</code> bytes first). For a refusal map, put the reason in
+<code>error_code</code>. <code>publish</code> is stricter: it still wants a string body and refuses
+a map. Before this release a map went out as Mix display text (<code>{ok: true}</code>)
+and <code>nil</code> as the text <code>nil</code>, which no caller could read.</p>
 <pre><code class="language-mix">on do.validate
   if is_empty($event.body) then
     reply(10, "missing input")   -- caller sees $rc = 10

@@ -2,8 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! JSON ↔ Mix Value conversion.
 //!
-//! Enabled by the `json` feature flag. Provides bidirectional conversion
-//! between `serde_json::Value` and Mix `Value` types.
+//! Built in every configuration (it needs only serde_json). Provides
+//! bidirectional conversion between `serde_json::Value` and Mix `Value` types.
 
 use indexmap::IndexMap;
 use serde_json;

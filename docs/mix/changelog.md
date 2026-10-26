@@ -56,6 +56,14 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 
 ### Fixed
 
+- `reply(map)` and `reply(rc, map)` send the map (or a list, number or bool)
+  as compact JSON in its own key order, so the caller's `send` gets a map in
+  `$result`. They used to send Mix display text (`{ok: true}`), which no
+  caller could parse. A string body is still sent as it is.
+- `reply(nil)` sends an empty body, which the caller reads as `nil`; it used
+  to send the text `nil`. A body with no JSON form (NaN, infinity, raw bytes,
+  a function) raises instead of going out mangled. The JSON conversion module
+  is now built without the `json` feature.
 - HTTP idle/stream responses now negotiate gzip only, regenerate Host on
   redirects, and match ureq's literal URL-userinfo authentication. Buffered
   successes keep their existing keys; `stopped` is stream-only and received
