@@ -367,6 +367,9 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                     .deadlines
                     .insert(id, Instant::now() + child.options.capture_timeout);
                 ctx.request_repaint_of(target);
+                // App logic belongs to the root. Wake it too so a parked
+                // child capture is checked before the child deadline.
+                ctx.request_repaint();
                 ctx.request_repaint_after(child.options.capture_timeout);
                 None
             })
