@@ -1953,7 +1953,9 @@ mod tests {
         assert!(logic_at(&ctx, now).is_empty());
         let delays = delays.lock().unwrap();
         assert!(
-            delays.iter().any(|delay| !delay.is_zero() && *delay <= budget),
+            delays
+                .iter()
+                .any(|delay| !delay.is_zero() && *delay <= budget),
             "child deadline must schedule a root wake within its budget: {delays:?}"
         );
     }
