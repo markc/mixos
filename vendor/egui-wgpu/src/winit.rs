@@ -39,8 +39,13 @@ mod offscreen_tests {
             .expect("headless wgpu adapter"),
         );
 
-        // Odd widths exercise capture's padded rows; a second size exercises reuse.
-        for size in [[67, 31], [79, 23]] {
+        for format in [wgpu::TextureFormat::Rgba8Unorm, wgpu::TextureFormat::Bgra8Unorm] {
+            let state = painter.render_state.as_mut().unwrap();
+            state.target_format = format;
+            *state.renderer.write() = crate::Renderer::new(&state.device, format, options);
+            painter.screen_capture_state = None;
+            // Odd widths exercise capture's padded rows; a second size exercises reuse.
+            for size in [[67, 31], [79, 23]] {
             let ctx = Context::default();
             let output = ctx.run_ui(
                 egui::RawInput {
@@ -62,9 +67,11 @@ mod offscreen_tests {
             let mut delta = output.textures_delta;
             delta.free.insert(epaint::TextureId::Managed(0));
             let (tx, rx) = std::sync::mpsc::channel();
-            let callback = egui::ScreenshotCallback::new(move |image| {
-                tx.send(image).unwrap();
-            });
+            let callbacks = (0..2).map(|_| {
+                let sender = tx.clone();
+                egui::ScreenshotCallback::new(move |image| { sender.send(image).unwrap(); })
+            }).collect();
+            drop(tx);
             painter.paint_and_update_textures_impl(
                 ViewportId::ROOT,
                 size,
@@ -72,7 +79,7 @@ mod offscreen_tests {
                 [0.0, 0.0, 1.0, 1.0],
                 &primitives,
                 &mut delta,
-                vec![callback.clone(), callback],
+                callbacks,
                 None,
             );
             for _ in 0..2 {
@@ -96,6 +103,7 @@ mod offscreen_tests {
                 "texture freed after submission"
             );
             assert!(painter.surfaces.is_empty(), "no surface was created");
+            }
         }
     }
 }

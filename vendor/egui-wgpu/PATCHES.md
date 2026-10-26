@@ -13,10 +13,10 @@ licences; LICENSE-MIT and LICENSE-APACHE are retained from egui's matching
   texture uploads/frees and existing CaptureState. It never acquires,
   reconfigures, recreates or presents a surface. A bounded background device
   poll completes screenshot callbacks without requiring another paint.
-- `Cargo.toml`: add pollster as a dev dependency for the headless GPU guard.
+- `Cargo.toml`, `Cargo.lock`: add pollster as a dev dependency for the headless GPU guard.
   `offscreen_tests::hidden_window_capture_without_surface` renders without a
   window or surface, checks padded row widths, resizing, scaled primitives,
-  clear colour, multiple callbacks and consumption of texture deltas.
+  clear colour, RGBA/BGRA ordering, multiple callbacks and consumption of texture deltas.
 
 Guards: `cargo test --manifest-path vendor/egui-wgpu/Cargo.toml --lib --features winit,wayland
 hidden_window_capture_without_surface` (requires a headless wgpu adapter),
