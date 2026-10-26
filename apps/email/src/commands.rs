@@ -1117,7 +1117,23 @@ fn dispatch(
         "email.execute" => {
             let command = required(args, "id")?;
             match commands.execute(&command, state, Origin::Bus) {
-                Ok(()) => state.reply(id, 0, json!({ "executed": command })),
+                Ok(()) => {
+                    if command == "mail.send"
+                        && !state
+                            .compose
+                            .as_ref()
+                            .is_some_and(|c| c.busy && c.sending.is_some())
+                    {
+                        let message = state
+                            .compose
+                            .as_ref()
+                            .and_then(|c| c.attachment_error.as_ref().or(c.error.as_ref()))
+                            .cloned()
+                            .unwrap_or_else(|| crate::label("command-disabled"));
+                        return Err(Bad(code::DISABLED, message));
+                    }
+                    state.reply(id, 0, json!({ "executed": command }));
+                }
                 Err(CommandError::Unknown(_)) => {
                     return Err(Bad(code::UNKNOWN_ACTION, crate::label("unknown-action")));
                 }
@@ -1611,7 +1627,7 @@ mod tests {
         );
         let reply = state.take_replies().remove(0);
         assert_eq!(reply.rc, 0);
-        let expected = json!({ "path": path, "name": "note.txt", "size": 5, "state": "ready" });
+        let expected = json!({ "path": path, "name": "note.txt", "label": "note.txt", "size": 5, "state": "ready" });
         assert_eq!(reply.body["compose"]["attachments"], json!([expected]));
         run(&mut state, "email.info", json!({}));
         assert_eq!(
@@ -2195,6 +2211,20 @@ mod tests {
                 std::fs::remove_file(&path).unwrap();
             }
             run(&mut state, "email.execute", json!({"id":"mail.send"}));
+            let reply = state.take_replies().remove(0);
+            assert_ne!(reply.rc, 0, "an unqueued send must be a refusal");
+            assert_eq!(reply.body["error_code"], code::DISABLED);
+            assert_eq!(
+                reply.body["message"],
+                state
+                    .compose
+                    .as_ref()
+                    .unwrap()
+                    .attachment_error
+                    .as_ref()
+                    .unwrap()
+                    .as_str()
+            );
             assert!(
                 !state
                     .take_work()
@@ -2225,6 +2255,44 @@ mod tests {
                 state.take_replies().iter().any(|r| r.id == 1),
                 "{}",
                 command_.id
+            );
+        }
+    }
+
+    #[test]
+    fn execute_send_refuses_stale_senders_and_unparsable_recipients() {
+        for stale in [false, true] {
+            let mut state = connected_many(&["a"]);
+            state.open_compose(
+                Some("a"),
+                Composed {
+                    to: jmap::parse_addresses("ann@example.invalid").unwrap(),
+                    subject: "Files".into(),
+                    ..Composed::default()
+                },
+            );
+            let generation = state.account("a").unwrap().generation();
+            let compose = state.compose.as_mut().unwrap();
+            if stale {
+                compose.stale = Some(crate::state::StaleFrom {
+                    account: "a".into(),
+                    generation,
+                    address: "new@example.invalid".into(),
+                });
+            } else {
+                compose.to_text = "invalid-address".into();
+            }
+            state.take_work();
+            run(&mut state, "email.execute", json!({"id":"mail.send"}));
+            let reply = state.take_replies().remove(0);
+            assert_ne!(reply.rc, 0);
+            assert_eq!(reply.body["error_code"], code::DISABLED);
+            assert_eq!(
+                reply.body["message"],
+                state.compose.as_ref().unwrap().error.as_ref().unwrap().as_str()
+            );
+            assert!(
+                !state.take_work().iter().any(|w| matches!(w, Work::Send { .. }))
             );
         }
     }

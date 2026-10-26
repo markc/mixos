@@ -1277,7 +1277,7 @@ fn compose_attachment_chips_show_status_and_remove_through_the_window() {
     assert_eq!(
         h.state().state.info()["compose"]["attachments"],
         serde_json::json!([
-            { "path": path, "name": "note.txt", "size": 5, "state": "ready" },
+            { "path": path, "name": "note.txt", "label": "note.txt", "size": 5, "state": "ready" },
         ])
     );
     h.get_by_label(&remove("note.txt")).click();
@@ -1380,6 +1380,10 @@ fn same_basename_chips_have_distinct_names_and_remove_buttons() {
         let remove = email::label_with("compose-attachment-remove", &[("name", &name)]);
         assert_eq!(h.query_all_by_label(&remove).count(), 1);
     }
+    let info = h.state().state.info();
+    let attachments = info["compose"]["attachments"].as_array().unwrap();
+    assert!(attachments.iter().all(|a| a["name"] == "note.txt"));
+    assert_ne!(attachments[0]["label"], attachments[1]["label"]);
     let name = email::label_with(
         "compose-attachment-name",
         &[("name", "note.txt"), ("directory", "invoices")],

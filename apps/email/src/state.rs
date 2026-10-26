@@ -571,7 +571,10 @@ pub struct ComposeState {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ComposeAttachment {
     pub path: std::path::PathBuf,
+    /// Plain file base name; the display qualifier is separate.
     pub name: String,
+    /// Text shown by the chip, qualified by its directory when needed.
+    pub label: String,
     pub size: Option<u64>,
     pub state: ComposeAttachmentState,
 }
@@ -640,7 +643,7 @@ impl ComposeAttachment {
             } else {
                 directory
             };
-            attachment.name = crate::label_with(
+            attachment.label = crate::label_with(
                 "compose-attachment-name",
                 &[
                     ("name", &names[index]),
@@ -654,13 +657,15 @@ impl ComposeAttachment {
     fn inspect(path: &std::path::Path) -> Self {
         use std::os::unix::ffi::OsStrExt;
 
+        let name = path
+            .file_name()
+            .unwrap_or(path.as_os_str())
+            .to_string_lossy()
+            .into_owned();
         let mut attachment = Self {
             path: path.to_owned(),
-            name: path
-                .file_name()
-                .unwrap_or(path.as_os_str())
-                .to_string_lossy()
-                .into_owned(),
+            label: name.clone(),
+            name,
             size: None,
             state: ComposeAttachmentState::Ready,
         };
@@ -3732,6 +3737,7 @@ impl State {
                 if mine && let Some(compose) = &mut self.compose {
                     compose.busy = false;
                     compose.sending = None;
+                    compose.send_origin = None;
                     compose.error = Some(error.clone());
                     compose.attempt = attempt;
                     self.refresh_compose_attachments();
@@ -7239,6 +7245,7 @@ pub(crate) mod tests {
             );
             let compose = state.compose.as_ref().unwrap();
             assert!(!compose.busy);
+            assert!(compose.send_origin.is_none());
             assert!(compose.error.is_some());
             assert!(!state.compose_sendable());
             assert_eq!(
@@ -7294,11 +7301,13 @@ pub(crate) mod tests {
             })
             .collect();
         let attachments = ComposeAttachment::inspect_all(&paths);
-        assert_ne!(attachments[0].name, attachments[1].name);
+        assert_eq!(attachments[0].name, "note.txt");
+        assert_eq!(attachments[1].name, "note.txt");
+        assert_ne!(attachments[0].label, attachments[1].label);
         for (attachment, path) in attachments.iter().zip(&paths) {
             assert!(
                 attachment
-                    .name
+                    .label
                     .contains(&path.parent().unwrap().display().to_string())
             );
         }

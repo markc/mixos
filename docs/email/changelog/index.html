@@ -239,6 +239,12 @@
 </blockquote>
 <h2 id="unreleased">Unreleased</h2>
 <ul>
+<li><code>email.execute</code> refuses <code>mail.send</code> when final validation prevents queueing,
+returning the compose error rather than a successful <code>executed</code> reply.</li>
+<li>Compose attachment metadata keeps the plain basename in <code>name</code> and the
+qualified display text in <code>label</code>. Failed sends clear their audit origin.</li>
+<li>Mixed local/drive input passes receive no drive attribution. Narrow chip
+labels retain at least four em of width and truncate their text.</li>
 <li>Attachment chips wrap within the compose form's field width. Scoped chip
 frames no longer expand the row and dialog instead of starting a new row.</li>
 <li><code>email.send</code> and <code>email.compose</code> accept an optional <code>attachments</code> list of
@@ -272,8 +278,10 @@ a path through the same state mutation as the chip's remove button.</li>
 path and shows it as missing; draft schema 1 remains compatible.</li>
 <li>Invalid logging configuration reports its error and lets the GUI start
 without a subscriber.</li>
-<li>MIME size estimates use the same filename-based type as the send worker,
-including long registered types and the octet-stream fallback.</li>
+<li>MIME size estimates reserve the maximum 255-byte media type per part,
+without loading the MIME database or reading file contents. Send restores
+name/content sniffing on its worker; estimates bound actual MIME size with
+under 300 bytes of headroom per part.</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/email/changelog.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

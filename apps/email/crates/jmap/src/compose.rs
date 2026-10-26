@@ -370,7 +370,7 @@ fn attachment_headers(name: &str, mime: &str) -> String {
 }
 
 /// Cheap command-time validation: stat paths and estimate encoded size.
-/// Attachment contents are opened and read only on the send worker.
+/// Opening, reading and MIME database loading happen only on the send worker.
 pub fn validate_attachments(composed: &Composed, max_size_upload: Option<u64>) -> Result<()> {
     let files = composed
         .attachments
@@ -381,17 +381,19 @@ pub fn validate_attachments(composed: &Composed, max_size_upload: Option<u64>) -
 }
 
 /// The same encoded-size estimate, using already inspected file sizes. Compose
-/// can update its warning after text edits without inspecting attachment files.
+/// can update its warning without file reads or loading the MIME database.
+/// Reserve the RFC 6838 maximum media type length: 127 + '/' + 127 bytes.
 pub fn estimated_message_size<'a>(
     composed: &Composed,
     files: impl IntoIterator<Item = (&'a Path, u64)>,
 ) -> u64 {
     let mut parts = Vec::new();
     let mut encoded = 0_u64;
+    let padded_media_type = "x".repeat(255);
     for (path, size) in files {
         encoded = encoded.saturating_add(encoded_file_size(size));
         let name = file_name(path);
-        parts.push(attachment_headers(&name, &attachment_mime(&name)));
+        parts.push(attachment_headers(&name, &padded_media_type));
     }
     (render_mime(composed, &new_message_id(&composed.from), &parts).len() as u64)
         .saturating_add(encoded)
@@ -402,17 +404,12 @@ fn mime_database() -> &'static mimedb::Database {
     DB.get_or_init(mimedb::Database::load)
 }
 
-/// Use the same name-only decision for the estimate and the actual part.
-/// Unknown names remain octet-stream; file contents never change header size.
-fn attachment_mime(name: &str) -> String {
-    mime_database().guess(Some(name), None).mime
-}
-
 /// `limit` is absent for standalone builders, which impose no upload policy.
 fn read_parts(paths: &[PathBuf], limit: Option<u64>) -> Result<Vec<String>> {
     if paths.is_empty() {
         return Ok(Vec::new());
     }
+    let db = mime_database();
     let mut parts = Vec::new();
     let mut encoded = 0_u64;
     for path in paths {
@@ -435,7 +432,9 @@ fn read_parts(paths: &[PathBuf], limit: Option<u64>) -> Result<Vec<String>> {
             check_message_size(encoded, Some(limit))?;
         }
         let name = file_name(path);
-        let mime = attachment_mime(&name);
+        let mime = db
+            .guess(Some(&name), Some(&bytes[..bytes.len().min(db.sniff_len())]))
+            .mime;
         let mut part = attachment_headers(&name, &mime);
         let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
         for line in data.as_bytes().chunks(76) {
@@ -1206,53 +1205,59 @@ mod tests {
     }
 
     #[test]
-    fn cached_size_estimate_matches_real_mime_for_long_and_unknown_types() {
-        for (name, expected) in [
-            (
-                "report.docx",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            ),
-            (
-                "report.unknown-extension-for-email",
-                "application/octet-stream",
-            ),
-        ] {
-            // Cross both the base64 76-column and final partial-line edges.
-            for len in [0, 1, 2, 3, 56, 57, 58, 114, 115, 1024] {
-                let (_dir, message) = attached(name, &vec![b'x'; len]);
-                let size = estimated_message_size(
-                    &message,
-                    [(message.attachments[0].as_path(), len as u64)],
-                );
-                let mime = build_mime(&message).unwrap();
-                let parts = read_parts(&message.attachments, None).unwrap();
-                let encoded = parts[0].split_once("\r\n\r\n").unwrap().1;
-                assert_eq!(encoded_file_size(len as u64), encoded.len() as u64);
-                assert!(
-                    encoded
-                        .split_terminator("\r\n")
-                        .all(|line| line.len() <= 76)
-                );
-                assert!(encoded.is_empty() || encoded.ends_with("\r\n"));
+    fn cached_size_estimate_bounds_real_mime_with_small_per_part_padding() {
+        fn check(name: &str, bytes: &[u8], expected: Option<&str>) {
+            let (_dir, message) = attached(name, bytes);
+            let len = bytes.len() as u64;
+            let size = estimated_message_size(
+                &message,
+                [(message.attachments[0].as_path(), len)],
+            );
+            let mime = build_mime(&message).unwrap();
+            let exact = mime.len() as u64;
+            assert!(size >= exact, "{name}: estimated {size}, exact {exact}");
+            assert!(size - exact < 300, "{name}: too much padding");
+            if let Some(expected) = expected {
                 assert!(
                     String::from_utf8_lossy(&mime)
                         .contains(&format!("Content-Type: {expected}\r\n"))
                 );
-                assert_eq!(size, mime.len() as u64, "{name}, {len} bytes");
-                assert!(validate_attachments(&message, Some(size)).is_ok());
-                assert!(matches!(
-                    validate_attachments(&message, Some(size - 1)),
-                    Err(Error::MessageTooLarge { .. })
-                ));
-                std::fs::remove_file(&message.attachments[0]).unwrap();
-                assert_eq!(
-                    estimated_message_size(
-                        &message,
-                        [(message.attachments[0].as_path(), len as u64)],
-                    ),
-                    size
-                );
             }
+            let parts = read_parts(&message.attachments, None).unwrap();
+            let encoded = parts[0].split_once("\r\n\r\n").unwrap().1;
+            assert_eq!(encoded_file_size(len), encoded.len() as u64);
+            assert!(
+                encoded.split_terminator("\r\n").all(|line| line.len() <= 76)
+            );
+            assert!(encoded.is_empty() || encoded.ends_with("\r\n"));
+            assert!(validate_attachments(&message, Some(size)).is_ok());
+            assert!(matches!(
+                validate_attachments(&message, Some(size - 1)),
+                Err(Error::MessageTooLarge { .. })
+            ));
+            std::fs::remove_file(&message.attachments[0]).unwrap();
+            assert_eq!(
+                estimated_message_size(&message, [(message.attachments[0].as_path(), len)]),
+                size
+            );
+        }
+
+        // No extension: the worker must recognise the PNG signature from bytes.
+        let png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0";
+        check("image", png, Some("image/png"));
+        check(
+            "report.docx",
+            b"contents",
+            Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        );
+        check(
+            "payload.unknown-extension-for-email",
+            &[0, 255, 0, 255],
+            Some("application/octet-stream"),
+        );
+        // Cross both the base64 76-column and final partial-line edges.
+        for len in [0, 1, 2, 3, 56, 57, 58, 114, 115, 1024] {
+            check("payload", &vec![b'x'; len], None);
         }
     }
 

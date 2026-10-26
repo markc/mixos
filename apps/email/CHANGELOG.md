@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `email.execute` refuses `mail.send` when final validation prevents queueing,
+  returning the compose error rather than a successful `executed` reply.
+- Compose attachment metadata keeps the plain basename in `name` and the
+  qualified display text in `label`. Failed sends clear their audit origin.
+- Mixed local/drive input passes receive no drive attribution. Narrow chip
+  labels retain at least four em of width and truncate their text.
 - Attachment chips wrap within the compose form's field width. Scoped chip
   frames no longer expand the row and dialog instead of starting a new row.
 - `email.send` and `email.compose` accept an optional `attachments` list of
@@ -35,5 +41,7 @@
   path and shows it as missing; draft schema 1 remains compatible.
 - Invalid logging configuration reports its error and lets the GUI start
   without a subscriber.
-- MIME size estimates use the same filename-based type as the send worker,
-  including long registered types and the octet-stream fallback.
+- MIME size estimates reserve the maximum 255-byte media type per part,
+  without loading the MIME database or reading file contents. Send restores
+  name/content sniffing on its worker; estimates bound actual MIME size with
+  under 300 bytes of headroom per part.

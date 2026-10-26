@@ -388,9 +388,12 @@ and just before Send, with no polling. Text edits and sender changes update the
 size warning from cached file sizes. A draft whose file has vanished shows
 it as missing on restore, keeping its path. There is no file picker yet.
 Attached files follow the plain text part in <code>multipart/mixed</code>, with MIME
-types guessed from filenames by the shared desktop MIME database (unknown
-extensions use <code>application/octet-stream</code>). Estimate and worker use the same
-type. Base64 lines contain at most 76 characters and end in CRLF.
+types guessed from names and leading bytes by the shared desktop MIME
+database on the send worker. The estimate loads no MIME database and reads
+no file contents: it reserves the maximum 255-byte media type per part.
+It therefore has a small conservative margin (under 300 bytes per part)
+compared with the exact message. Base64 lines contain at most 76 characters
+and end in CRLF.
 The whole encoded message must fit the session's <code>maxSizeUpload</code>, or 25 MiB
 when the server gives none. Paths and estimated size are checked on the Bus
 request; Send checks the files again and checks the exact encoded size.
@@ -404,7 +407,9 @@ A person's Send uses <code>window</code>; <code>email.execute {id:"mail.send"}</
 Bus caller. Sends triggered by toolkit input retain the caller key and
 <code>drive_request_id</code> of the input replayed on that frame, matching the
 separate drive-request audit line. All compose sends share the same
-attachment check.</p>
+attachment check. Passes mixing local and injected input have no drive
+attribution. <code>email.execute</code> refuses <code>mail.send</code> when its final checks
+prevent a send from being queued, reporting the compose error.</p>
 </li>
 <li>
 <p><strong>The Message menu</strong> holds everything that acts on the open email:
@@ -559,14 +564,15 @@ never waits on them.</p>
 <p>Every command the window runs (menu, shortcut, button or <code>email.execute</code>)
 is published on <code>email.action.executed</code> with how it was reached.</p>
 <p>The <code>compose</code> object in <code>email.info</code> (also returned by <code>email.compose</code> and
-attachment removal) lists <code>attachments: [{path, name, size, state}]</code>. Sizes are raw bytes,
-or <code>null</code> when unknown; states are <code>ready</code>, <code>missing</code>, <code>not_file</code>, <code>unreadable</code>
-and <code>relative</code>. Names include a directory qualifier when basenames collide.
+attachment removal) lists <code>attachments: [{path, name, label, size, state}]</code>.
+Sizes are raw bytes, or <code>null</code> when unknown; states are <code>ready</code>, <code>missing</code>, <code>not_file</code>, <code>unreadable</code>
+and <code>relative</code>. <code>name</code> is the plain basename; <code>label</code> is the text shown by the
+chip, including a directory qualifier when basenames collide.
 It also reports <code>attachment_size</code> (the sum of known raw file
 sizes), <code>attachment_error</code>, <code>attachments_over_limit</code> and <code>sendable</code>, matching
 the dialog, and <code>send_origin: {caller_key, drive_request_id}</code> after a send
-starts. Removal matches the supplied path exactly, preserving symlink
-paths, and updates the saved draft. UI fields remain drivable through the
+starts; failed sends clear that origin. Removal matches the supplied path
+exactly, preserving symlink paths, and updates the saved draft. UI fields remain drivable through the
 toolkit commands.</p>
 <p><code>email.info</code> reports how the open email is shown under each account's
 <code>mail.reader</code>: <code>{"format": "markdown" | "plain", "auto": true | false}</code>,

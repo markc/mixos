@@ -339,7 +339,7 @@ fn attachment_chip(
         .unwrap_or_else(|| crate::label("compose-attachment-size-unknown"));
     let text = crate::label_with(
         "compose-attachment-chip",
-        &[("name", &attachment.name), ("size", &size)],
+        &[("name", &attachment.label), ("size", &size)],
     );
     let bad = attachment.state != ComposeAttachmentState::Ready;
     let text = if bad {
@@ -357,16 +357,18 @@ fn attachment_chip(
     let frame = egui::Frame::group(ui.style());
     let margin = frame.total_margin().sum().x;
     let spacing = ui.spacing().item_spacing.x;
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let minimum_label_width = font.size * 4.0;
     let natural = ui
         .painter()
-        .layout_no_wrap(
-            text.clone(),
-            egui::TextStyle::Body.resolve(ui.style()),
-            ui.visuals().text_color(),
-        )
+        .layout_no_wrap(text.clone(), font, ui.visuals().text_color())
         .size();
     let full_width = ui.max_rect().width();
-    let outer_width = (natural.x + icon + spacing + margin).min(full_width);
+    let width = natural
+        .x
+        .min((full_width - icon - spacing - margin).max(0.0))
+        .max(minimum_label_width);
+    let outer_width = width + icon + spacing + margin;
     // available_width() is the full row width in a wrapping layout. Scopes
     // advance their already drawn rect without wrapping it, so wrap before
     // push_id/Frame using the space left on this row instead.
@@ -374,9 +376,6 @@ fn attachment_chip(
     if outer_width > remaining_width && remaining_width < full_width {
         ui.end_row();
     }
-    let width = natural
-        .x
-        .min((full_width - icon - spacing - margin).max(0.0));
     let height = icon.max(natural.y);
     ui.push_id((index, &attachment.path), |ui| {
         frame.show(ui, |ui| {
@@ -391,7 +390,7 @@ fn attachment_chip(
                     .size(icon)
                     .tooltip(crate::label_with(
                         "compose-attachment-remove",
-                        &[("name", &attachment.name)],
+                        &[("name", &attachment.label)],
                     ));
                 if ui.add(remove).clicked() {
                     events.push(UiEvent::ComposeAttachmentRemove(attachment.path.clone()));
@@ -704,6 +703,7 @@ mod tests {
         let attachment = ComposeAttachment {
             path: "/home/user/note.txt".into(),
             name: "note.txt".into(),
+            label: "note.txt".into(),
             size: Some(5),
             state: ComposeAttachmentState::Ready,
         };
@@ -726,6 +726,42 @@ mod tests {
             h.get_by_label(&text).rect().height()
                 >= h.get_by_label("Reference line").rect().height()
         );
+    }
+
+    #[test]
+    fn narrow_chip_keeps_four_em_of_its_name_visible() {
+        let attachment = ComposeAttachment {
+            path: "/home/user/quarterly-report.txt".into(),
+            name: "quarterly-report.txt".into(),
+            label: "quarterly-report.txt".into(),
+            size: Some(5),
+            state: ComposeAttachmentState::Ready,
+        };
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(240.0, 120.0))
+            .build_ui(move |ui| {
+                ui.set_max_width(40.0);
+                ui.horizontal_wrapped(|ui| {
+                    let icon = field::height_of(ui.ctx());
+                    attachment_chip(ui, &attachment, 0, icon, &mut Vec::new());
+                });
+            });
+        toolkit::install(
+            &h.ctx,
+            &toolkit::Theme::for_context(design::DesignContext::default()),
+        );
+        h.run();
+        let text = crate::label_with(
+            "compose-attachment-chip",
+            &[("name", "quarterly-report.txt"), ("size", "5 B")],
+        );
+        let rect = h.get_by_label(&text).rect();
+        let minimum = egui::TextStyle::Body.resolve(&h.ctx.global_style()).size * 4.0;
+        assert!(
+            rect.width() >= minimum - 0.5,
+            "{rect:?} must retain about {minimum} points of the filename"
+        );
+        assert!(rect.intersects(h.ctx.content_rect()));
     }
 
     #[test]

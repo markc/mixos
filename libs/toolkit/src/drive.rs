@@ -228,18 +228,24 @@ pub fn pending(ctx: &Context) -> bool {
 }
 
 /// The request whose input was injected into this UI pass, if any. Queued
-/// requests and idle/report passes have no input origin. Apps can retain
-/// their caller identity until the request is answered and stamp effects
-/// triggered during this pass with the actual replayed request id.
+/// requests, idle/report passes and passes with local input already present
+/// before injection have no input origin. Mixed passes are deliberately
+/// unattributed so a person's action is never assigned to the drive caller.
+/// Apps can retain their caller identity until the request is answered and
+/// stamp effects triggered during this pass with the replayed request id.
 pub fn input_request(ctx: &Context) -> Option<u64> {
     ctx.with_plugin(|drive: &mut Drive| {
         if ctx.viewport_id() == egui::ViewportId::ROOT {
-            drive.input_request_id
+            drive
+                .input_request_id
+                .filter(|_| !drive.input_had_local_events)
         } else {
             drive
                 .children
                 .get(&ctx.viewport_id())
-                .and_then(|child| child.input_request_id)
+                .and_then(|child| {
+                    child.input_request_id.filter(|_| !child.input_had_local_events)
+                })
         }
     })
     .flatten()
@@ -557,6 +563,8 @@ struct Running {
 pub struct Drive {
     /// Only the input injected in this pass, cleared before every step.
     input_request_id: Option<u64>,
+    /// Events already present before the drive step appended its own input.
+    input_had_local_events: bool,
     /// Pending captures, tracked until completion, cancellation or shutdown.
     pending_captures: HashMap<u64, Instant>,
     last_ui_pass: Option<Instant>,
@@ -1391,6 +1399,7 @@ impl Drive {
     /// One pass of the running job: inject its next step.
     fn step(&mut self, ctx: &Context, input: &mut RawInput) {
         self.input_request_id = None;
+        self.input_had_local_events = !input.events.is_empty();
         // Owed releases go first, in a pass of their own.
         if !self.cleanup.is_empty() {
             input.events.append(&mut self.cleanup);
@@ -1838,6 +1847,37 @@ mod tests {
             seen.last(),
             Some(&None),
             "idle passes must not keep a caller: {seen:?}"
+        );
+    }
+
+    #[test]
+    fn input_origin_is_unknown_when_local_and_driven_events_share_a_pass() {
+        let ctx = Context::default();
+        install(&ctx, "demo");
+        assert!(request(&ctx, 42, "ui.key", &json!({"key":"Enter"})).is_none());
+        let mut input = RawInput {
+            events: vec![Event::PointerMoved(pos2(10.0, 20.0))],
+            ..RawInput::default()
+        };
+        ctx.with_plugin(|drive: &mut Drive| drive.step(&ctx, &mut input))
+            .unwrap();
+        assert!(
+            input.events.len() > 1,
+            "the local event and injected key must both be kept"
+        );
+        assert_eq!(
+            input_request(&ctx),
+            None,
+            "a local action must not inherit the drive caller"
+        );
+
+        let mut pure_input = RawInput::default();
+        ctx.with_plugin(|drive: &mut Drive| drive.step(&ctx, &mut pure_input))
+            .unwrap();
+        assert_eq!(
+            input_request(&ctx),
+            Some(42),
+            "the next pure drive pass is attributable again"
         );
     }
 
