@@ -20,9 +20,9 @@ $LAUNCH = {term: {app: "dev.mixos.term", icon: "dev.mixos.term-symbolic", label:
   files: {app: "dev.mixos.dopus", icon: "dev.mixos.dopus-symbolic", label: "Files"},
   shot: {app: "dev.mixos.screenshot", icon: "dev.mixos.screenshot-symbolic", label: "Screenshot"},
   settings: {app: "dev.mixos.prefs", icon: "dev.mixos.prefs-symbolic", label: "Settings"}}
--- Desk power actions. Each names a hostd command scoped to the caller's own desk
--- (hostd identifies the desk by its cgroup): restart and stop this machine
--- only, never the host. Writes go only through hostd.
+-- Desk power actions. Each names a hostd command and passes this desk's name:
+-- restart and stop this machine only, never the host. Writes go only through
+-- hostd.
 $POWER = {restart: "desk.restart", poweroff: "desk.stop"}
 $CONFIRM_S = 5
 -- How long a refusal, or a sent action, stays on the bar.
@@ -169,7 +169,7 @@ fn power($key)
   end
   $state.armed = nil
   -- hostd answers once the host has queued the cycle; the desk goes down after.
-  $out = $h.call($POWER[$key], {}, 15)
+  $out = $h.call($POWER[$key], {desk: $IDENTITY.desk}, 15)
   if $out.ok then
     eprint("topbar power: " .. $POWER[$key] .. " sent: " .. json_encode($out.body))
     $state.notice[$key] = {text: "", sent: true, at: monotonic()}

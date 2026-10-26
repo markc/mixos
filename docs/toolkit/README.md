@@ -18,8 +18,7 @@ The UI-free registry and Fluent `Strings` now live in
 existing nullary command API, with the moved data types re-exported.
 Core and toolkit `describe()` emit stored chords in the keymaps grammar
 (`Ctrl+=`, `ArrowLeft`, or short forms), ordered Ctrl, Alt, Shift. Executed
-events use the command 0.2.0 v2 body with bounded params and result, and the
-legacy wrapper maps authorisation refusals to `CommandError::Denied`.
+events use the command 0.2.0 v2 body with bounded params and result.
 
 It gives each app:
 

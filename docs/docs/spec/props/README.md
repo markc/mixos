@@ -1,6 +1,6 @@
 ---
 title: Service property contract
-description: Structured property commands, capabilities, replay and live topics, errors and SQLite table ownership.
+description: Structured property commands, redaction, replay and live topics, errors and SQLite table ownership.
 ---
 
 # Service property contract
@@ -14,7 +14,7 @@ must be registered under that owner in the [Bus registry](../bus/commands.conf.m
 ## Addressing
 
 Commands are `<svc>.props.<suffix>`. The `namespace` header names a
-registered unqualified namespace; its capability name is `<svc>.<namespace>`.
+registered unqualified namespace.
 Collection records require a non-empty `key`. Singleton requests omit `key`
 or send an empty key; replies use the schema's canonical key.
 
@@ -49,28 +49,26 @@ Get/list/describe are queries; set/delete/watch/audit.watch are intents.
 Watch commands install an observable broker subscription. Replay-only
 `live:false` is available exclusively in the library's unit tests.
 
-## Capabilities and redaction
+## Access and redaction
 
-Policies resolve `PeerIdentity` into exact capability strings:
-`props.read:<svc>.<ns>`, `props.write:<svc>.<ns>`,
-`props.describe:<svc>.<ns>:public`, `props.describe:<svc>.<ns>:full`,
-`props.audit:<svc>.<ns>` and `props.read:<svc>.<ns>:secrets`.
-Set/delete require write, get/list/watch require read, and audit.watch
-requires audit independently of read. Describe requires the selected view's
-capability; `schema_public=deny` refuses public describe.
+Every command serves every caller, local or mesh
+([open Bus decision](../../decisions/2026-10-26-open-bus-for-agents.md)):
+set, delete, get, list, watch, audit.watch and both describe views. A
+namespace that is a computed view (no stored records) refuses set and
+delete for everyone with `validation_error`.
 
-Get/list replace fields declared `secret:true` with null unless the caller
-also has the explicit secrets capability. Stored values are projected
+Get/list return fields declared `secret:true` to every caller. Stored values are projected
 verbatim without filling missing defaults, preserving audit reproducibility.
 Public describe omits secret fields and redacts secret validator names.
-Passive event topics never carry record values or secret field names.
+A namespace that does not provide a public view answers public describe
+with `validation_error`. Passive event topics never carry record values or secret field names.
 Audit keys remain in the owner's private storage and never enter the Bus.
 
 ## Watch and topics
 
 The reserved topics are `<svc>.props.records.changed` and `<svc>.props.audit`.
 Only the owner publishes; direct `topic.subscribe` is refused, including
-for the owner. After its capability check, the service calls
+for the owner. To start a watch, the service calls
 `noded.props.subscribe_grant` with non-empty `topic`, `target_peer` and
 `namespace` headers. The broker authenticates the topic owner, requires a
 connected registered target, and installs a top-level namespace body filter.
@@ -107,7 +105,7 @@ the human message. Success is rc 0. The closed vocabulary is:
 
 | rc | `error_code` |
 | --- | --- |
-| 10 | `auth_denied`, `not_found`, `validation_error`, `conflict`, `version_mismatch`, `replay_window_exceeded`, `grant_failed` |
+| 10 | `not_found`, `validation_error`, `conflict`, `version_mismatch`, `replay_window_exceeded`, `grant_failed` |
 | 20 | `storage_error`, `hook_error`, `unavailable` |
 
 Version mismatches add `expected_version,current_version`; replay-window

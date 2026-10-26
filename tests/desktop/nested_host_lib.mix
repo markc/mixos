@@ -24,7 +24,7 @@
 --   require_binary(name, override, dirs)
 --   harness_file(name)             a fixture beside the gates, absolute
 --   log_has / await_log            read what a child process wrote
---   private_bus({dir, name, noded?, fixed_port?, listen_ip?, peers?, mesh_open?})
+--   private_bus({dir, name, noded?, fixed_port?, listen_ip?, peers?})
 --                                  one owned broker; returns a self-contained
 --                                  ownership record for restart_private_bus
 --   private_bus_pair({dir, noded?, run_token?})
@@ -272,10 +272,8 @@ end
 fn _write_owned_config($spec)
   $endpoint = $spec.dir .. "/run/noded/bus.sock"
   $noded_cfg = {port: $spec.port, admission: "off", unix_socket: $endpoint}
-  if $spec.mesh_open != nil then $noded_cfg["mesh_open"] = $spec.mesh_open end
   write_file($spec.conf, json_encode({node: $spec.name, wg_ip: $spec.wg_ip,
-    mesh: $spec.name .. ".invalid", noded: $noded_cfg,
-    observe: {allowed_services: ["workshop*"]}}))
+    mesh: $spec.name .. ".invalid", noded: $noded_cfg}))
   $serve = [$spec.noded, "serve", "--listen", $spec.listen_ip .. ":" .. to_string($spec.port),
     "--node", $spec.name, "--no-monitor", "--no-log"]
   if len($spec.peers) > 0 then
@@ -301,7 +299,7 @@ fn _spawn_owned($spec, $serve)
     port:$spec.port, log:$spec.log, node:$spec.name, dir:$spec.dir,
     endpoint:$spec.dir .. "/run/noded/bus.sock", mesh_conf:$mesh_conf,
     listen_ip:$spec.listen_ip, peers:$spec.peers, fixed_port:$spec.fixed_port,
-    mesh_open:$spec.mesh_open, wg_ip:$spec.wg_ip, exe:$spec.noded,
+    wg_ip:$spec.wg_ip, exe:$spec.noded,
     path_env:$spec.path_env, user_env:$spec.user_env, account:$spec.account}
 end
 
@@ -331,19 +329,17 @@ end
 -- start(); stop_bus() at the end.
 --
 --   private_bus({dir: PATH, name: "desk-gate", noded: PATH?,
---                fixed_port: N?, listen_ip: "127.0.0.1"?, peers: [...]?,
---                mesh_open: BOOL?})
+--                fixed_port: N?, listen_ip: "127.0.0.1"?, peers: [...]?})
 --
 -- fixed_port rebinds that exact port on every attempt: a bind/ownership
 -- failure fails this start, it never silently moves to another port.
 -- listen_ip is the explicit loopback bind (default 127.0.0.1). peers is a
 -- roster of {name, mesh_ip, noded_port} written to an owned mesh.conf.mix
 -- and passed with --mesh-config (Unverified etc-roster-fallback routing;
--- no signed trust root is created or implied). mesh_open is written into
--- the owned node config explicitly when given.
+-- no signed trust root is created or implied).
 --
 -- Returns an owned broker record {pid, conf, url, port, log, node, dir,
--- endpoint, mesh_conf, listen_ip, peers, fixed_port, mesh_open, wg_ip, exe,
+-- endpoint, mesh_conf, listen_ip, peers, fixed_port, wg_ip, exe,
 -- path_env, user_env, account}, or exits 2 when it never answers.
 fn private_bus($opts)
   $dir = $opts["dir"]
@@ -368,7 +364,7 @@ fn private_bus($opts)
   $listen_ip = $opts["listen_ip"] ?? "127.0.0.1"
   $peers = $opts["peers"] ?? []
   $spec = {noded:$noded, dir:$dir, name:$name, listen_ip:$listen_ip,
-    wg_ip:"", peers:$peers, mesh_open:$opts["mesh_open"],
+    wg_ip:"", peers:$peers,
     conf:$conf, mesh_conf:$dir .. "/mesh.conf.mix", fixed_port:$opts["fixed_port"],
     path_env:env("PATH"), user_env:env("USER"), account:env("MIXOS_BROKER_ACCOUNT")}
   for $attempt = 1 to 10
@@ -478,7 +474,7 @@ fn private_bus_pair($opts)
   $name_a = "fixture-a-" .. $token
   $name_b = "fixture-b-" .. $token
   $account = trim(run_argv_must(["id", "-un"]))
-  $common = {noded:$noded, listen_ip:"127.0.0.1", wg_ip:"127.0.0.1", mesh_open:true,
+  $common = {noded:$noded, listen_ip:"127.0.0.1", wg_ip:"127.0.0.1",
     path_env:env("PATH"), user_env:env("USER"), account:$account}
   $dir_a = $dir .. "/a"
   $dir_b = $dir .. "/b"

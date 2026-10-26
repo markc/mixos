@@ -58,8 +58,6 @@ remain available through toolkit for citizen's publisher, which updates dropped.
 refuses unknown fields, and defaults omitted or null params to None. Existing
 apps retain their current parsers during migration.
 
-Authorisation refusal returns Denied before checking enablement, parameters
-or running the handler. Toolkit maps it to legacy `CommandError::Denied`.
 Both adapters report stored `shortcut` and `more` strings in the keymaps
 grammar, in Ctrl, Alt, Shift order. Keys preserve the stored spelling, such as
 `ArrowLeft` or `Left`, `=`, `-` and `/`.

@@ -279,9 +279,7 @@ remain available through toolkit for citizen's publisher, which updates dropped.
 <code>&lt;app&gt;.execute</code> row in command registry schema 4. It derives serde and JsonSchema,
 refuses unknown fields, and defaults omitted or null params to None. Existing
 apps retain their current parsers during migration.</p>
-<p>Authorisation refusal returns Denied before checking enablement, parameters
-or running the handler. Toolkit maps it to legacy <code>CommandError::Denied</code>.
-Both adapters report stored <code>shortcut</code> and <code>more</code> strings in the keymaps
+<p>Both adapters report stored <code>shortcut</code> and <code>more</code> strings in the keymaps
 grammar, in Ctrl, Alt, Shift order. Keys preserve the stored spelling, such as
 <code>ArrowLeft</code> or <code>Left</code>, <code>=</code>, <code>-</code> and <code>/</code>.</p>
 <p>The application layering table (<code>apps/layers.conf.mix</code>) prevents engine

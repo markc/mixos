@@ -141,6 +141,10 @@ mod tests {
             Some(Event::Command(EditCommand::Insert(block.into()))),
             "a typed block goes in verbatim"
         );
-        assert_eq!(text("a\u{8}b"), None, "other control characters still refuse");
+        assert_eq!(
+            text("a\u{8}b"),
+            None,
+            "other control characters still refuse"
+        );
     }
 }

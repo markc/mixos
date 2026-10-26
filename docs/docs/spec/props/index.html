@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Structured property commands, capabilities, replay and live topics, errors and SQLite table ownership.">
+    <meta name="description" content="Structured property commands, redaction, replay and live topics, errors and SQLite table ownership.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -210,7 +210,7 @@
                     <nav id="toc-nav">
                         <a href="#addressing">Addressing</a>
                         <a href="#commands">Commands</a>
-                        <a href="#capabilities-and-redaction">Capabilities and redaction</a>
+                        <a href="#access-and-redaction">Access and redaction</a>
                         <a href="#watch-and-topics">Watch and topics</a>
                         <a href="#errors">Errors</a>
                         <a href="#storage">Storage</a>
@@ -247,7 +247,7 @@ places it in <code>libs/props</code>. Commands belong to the service exposing th
 must be registered under that owner in the <a href="/docs/spec/bus/commands.conf.mix">Bus registry</a>.</p>
 <h2 id="addressing">Addressing</h2>
 <p>Commands are <code>&lt;svc&gt;.props.&lt;suffix&gt;</code>. The <code>namespace</code> header names a
-registered unqualified namespace; its capability name is <code>&lt;svc&gt;.&lt;namespace&gt;</code>.
+registered unqualified namespace.
 Collection records require a non-empty <code>key</code>. Singleton requests omit <code>key</code>
 or send an empty key; replies use the schema's canonical key.</p>
 <p><code>if_version</code> is an optional decimal u64 fence, required when the namespace
@@ -276,24 +276,22 @@ prefixes <code>field_path_deferred</code>, <code>get_projection_deferred</code> 
 <p>Get/list/describe are queries; set/delete/watch/audit.watch are intents.
 Watch commands install an observable broker subscription. Replay-only
 <code>live:false</code> is available exclusively in the library's unit tests.</p>
-<h2 id="capabilities-and-redaction">Capabilities and redaction</h2>
-<p>Policies resolve <code>PeerIdentity</code> into exact capability strings:
-<code>props.read:&lt;svc&gt;.&lt;ns&gt;</code>, <code>props.write:&lt;svc&gt;.&lt;ns&gt;</code>,
-<code>props.describe:&lt;svc&gt;.&lt;ns&gt;:public</code>, <code>props.describe:&lt;svc&gt;.&lt;ns&gt;:full</code>,
-<code>props.audit:&lt;svc&gt;.&lt;ns&gt;</code> and <code>props.read:&lt;svc&gt;.&lt;ns&gt;:secrets</code>.
-Set/delete require write, get/list/watch require read, and audit.watch
-requires audit independently of read. Describe requires the selected view's
-capability; <code>schema_public=deny</code> refuses public describe.</p>
-<p>Get/list replace fields declared <code>secret:true</code> with null unless the caller
-also has the explicit secrets capability. Stored values are projected
+<h2 id="access-and-redaction">Access and redaction</h2>
+<p>Every command serves every caller, local or mesh
+(<a href="/docs/decisions/2026-10-26-open-bus-for-agents/">open Bus decision</a>):
+set, delete, get, list, watch, audit.watch and both describe views. A
+namespace that is a computed view (no stored records) refuses set and
+delete for everyone with <code>validation_error</code>.</p>
+<p>Get/list return fields declared <code>secret:true</code> to every caller. Stored values are projected
 verbatim without filling missing defaults, preserving audit reproducibility.
 Public describe omits secret fields and redacts secret validator names.
-Passive event topics never carry record values or secret field names.
+A namespace that does not provide a public view answers public describe
+with <code>validation_error</code>. Passive event topics never carry record values or secret field names.
 Audit keys remain in the owner's private storage and never enter the Bus.</p>
 <h2 id="watch-and-topics">Watch and topics</h2>
 <p>The reserved topics are <code>&lt;svc&gt;.props.records.changed</code> and <code>&lt;svc&gt;.props.audit</code>.
 Only the owner publishes; direct <code>topic.subscribe</code> is refused, including
-for the owner. After its capability check, the service calls
+for the owner. To start a watch, the service calls
 <code>noded.props.subscribe_grant</code> with non-empty <code>topic</code>, <code>target_peer</code> and
 <code>namespace</code> headers. The broker authenticates the topic owner, requires a
 connected registered target, and installs a top-level namespace body filter.
@@ -321,7 +319,7 @@ grant failure returns <code>grant_failed</code> without leaking upstream routing
 <p>Failure bodies contain <code>{error_code,message}</code>; the Bus error field carries
 the human message. Success is rc 0. The closed vocabulary is:</p>
 <table><thead><tr><th>rc</th><th><code>error_code</code></th></tr></thead><tbody>
-<tr><td>10</td><td><code>auth_denied</code>, <code>not_found</code>, <code>validation_error</code>, <code>conflict</code>, <code>version_mismatch</code>, <code>replay_window_exceeded</code>, <code>grant_failed</code></td></tr>
+<tr><td>10</td><td><code>not_found</code>, <code>validation_error</code>, <code>conflict</code>, <code>version_mismatch</code>, <code>replay_window_exceeded</code>, <code>grant_failed</code></td></tr>
 <tr><td>20</td><td><code>storage_error</code>, <code>hook_error</code>, <code>unavailable</code></td></tr>
 </tbody></table>
 <p>Version mismatches add <code>expected_version,current_version</code>; replay-window

@@ -147,13 +147,6 @@ noded: {
   port: 4201,
   admission: "off",
 }
-
-observe: {
-  allowed_services: [
-    "tower-*",
-    "log-*",
-  ]
-}
 "#;
         assert_eq!(
             url_from_node_config(source).as_deref(),

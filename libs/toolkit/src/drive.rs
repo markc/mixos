@@ -1223,7 +1223,9 @@ impl Drive {
             // A multi-line field takes the whole text at once, line breaks
             // and all, as a paste would: pressing Enter there auto-indents,
             // and the text's own indent would stack on top of it.
-            Job::Type { text } if !text.is_empty() && self.focused_role() == Some(Role::MultilineTextInput) => {
+            Job::Type { text }
+                if !text.is_empty() && self.focused_role() == Some(Role::MultilineTextInput) =>
+            {
                 (
                     vec![input(vec![Event::Text(text)]), Step::Idle],
                     Report::Ui,
@@ -2533,9 +2535,7 @@ mod tests {
         let ctx = Context::default();
         let text = "if $a then\n  print(1)\nend";
         let events = |drive: &Drive| -> Vec<Vec<Event>> {
-            let (steps, _, _) = drive
-                .plan(&ctx, Job::Type { text: text.into() })
-                .unwrap();
+            let (steps, _, _) = drive.plan(&ctx, Job::Type { text: text.into() }).unwrap();
             steps
                 .into_iter()
                 .filter_map(|step| match step {
@@ -2553,7 +2553,11 @@ mod tests {
         assert_eq!(single[0], vec![Event::Text("if $a then".into())]);
         assert!(matches!(
             single[1][0],
-            Event::Key { key: Key::Enter, pressed: true, .. }
+            Event::Key {
+                key: Key::Enter,
+                pressed: true,
+                ..
+            }
         ));
     }
 }
