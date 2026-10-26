@@ -678,24 +678,8 @@ impl Drive {
             })
         });
         let running = if capture { self.running.take() } else { None };
-        let mut captures = VecDeque::new();
-        self.queue.retain(|(id, job)| {
-            if let Job::Capture { path, tag } = job {
-                captures.push_back((
-                    *id,
-                    Job::Capture {
-                        path: path.clone(),
-                        tag: *tag,
-                    },
-                ));
-                false
-            } else {
-                true
-            }
-        });
         self.settle(ctx, why);
         self.running = running;
-        self.queue = captures;
     }
 
     fn refuse_unshown_captures(&mut self, now: Instant) {
