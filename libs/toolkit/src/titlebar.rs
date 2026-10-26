@@ -541,7 +541,8 @@ fn right_group<S>(
                 selected,
                 options,
             } => {
-                crate::combo::show(&mut cell, *id, selected, options, Some(width)).accessible_name(*label);
+                crate::combo::show(&mut cell, *id, selected, options, Some(width))
+                    .accessible_name(*label);
                 None
             }
             Control::Icon {

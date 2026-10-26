@@ -79,7 +79,10 @@ fn line(
 ) {
     let caption = ui.label(crate::label(label));
     let mut buffer = value.to_owned();
-    if field::text(ui, &mut buffer, hint, 300.0_f32.max(ui.available_width())).labelled_by(caption.id).changed() {
+    if field::text(ui, &mut buffer, hint, 300.0_f32.max(ui.available_width()))
+        .labelled_by(caption.id)
+        .changed()
+    {
         events.push(UiEvent::FormField(field, buffer));
     }
     ui.end_row();

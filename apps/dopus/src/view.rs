@@ -693,11 +693,13 @@ fn location_bar(ui: &mut Ui, app: &App, pane: PaneId, active: bool, events: &mut
             match &app.editing {
                 Some((editing, text)) if *editing == pane => {
                     let mut text = text.clone();
-                    let response = ui.add(
-                        egui::TextEdit::singleline(&mut text)
-                            .id(id)
-                            .desired_width(width),
-                    ).accessible_name(label("prop-path"));
+                    let response = ui
+                        .add(
+                            egui::TextEdit::singleline(&mut text)
+                                .id(id)
+                                .desired_width(width),
+                        )
+                        .accessible_name(label("prop-path"));
                     if app.focus_location {
                         // The whole path selected, so typing replaces it.
                         response.request_focus();

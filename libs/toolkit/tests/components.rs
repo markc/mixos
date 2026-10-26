@@ -99,7 +99,8 @@ const WORKSPACES: [&str; 4] = ["Essentials", "Photography", "Painting", "Graphic
 #[test]
 fn an_open_combo_steps_its_selection_with_the_arrow_keys() {
     let mut h = pro(Pick::default(), |ui, s| {
-        let r = combo::show(ui, "workspace", &mut s.index, &WORKSPACES, None).accessible_name("Workspace");
+        let r = combo::show(ui, "workspace", &mut s.index, &WORKSPACES, None)
+            .accessible_name("Workspace");
         s.focused = r.has_focus();
         s.changes += u32::from(r.changed());
     });
@@ -140,7 +141,8 @@ fn value_field(value: f64) -> Harness<'static, Num> {
         },
         |ui, s| {
             s.rect = ui
-                .add(ValueField::new(&mut s.value, 0.0..=1000.0).unit("%")).accessible_name("Value")
+                .add(ValueField::new(&mut s.value, 0.0..=1000.0).unit("%"))
+                .accessible_name("Value")
                 .rect;
         },
     )
@@ -212,7 +214,10 @@ fn opening_one_value_field_never_renumbers_the_next() {
     };
     let mut h = pro(state, |ui, s| {
         for (value, rect) in s.values.iter_mut().zip(&mut s.rects) {
-            *rect = ui.add(ValueField::new(value, 0.0..=1000.0)).accessible_name("Value").rect;
+            *rect = ui
+                .add(ValueField::new(value, 0.0..=1000.0))
+                .accessible_name("Value")
+                .rect;
         }
     });
     let [first, second, _] = h.state().rects;
@@ -244,9 +249,18 @@ fn pending_arithmetic_applies_when_focus_moves_before_or_after_the_field() {
             rects: [Rect::NOTHING; 3],
         };
         let mut h = pro(state, |ui, s| {
-            s.rects[0] = ui.text_edit_singleline(&mut s.before).accessible_name("Before").rect;
-            s.rects[1] = ui.add(ValueField::new(&mut s.value, 0.0..=1000.0)).accessible_name("Value").rect;
-            s.rects[2] = ui.text_edit_singleline(&mut s.after).accessible_name("After").rect;
+            s.rects[0] = ui
+                .text_edit_singleline(&mut s.before)
+                .accessible_name("Before")
+                .rect;
+            s.rects[1] = ui
+                .add(ValueField::new(&mut s.value, 0.0..=1000.0))
+                .accessible_name("Value")
+                .rect;
+            s.rects[2] = ui
+                .text_edit_singleline(&mut s.after)
+                .accessible_name("After")
+                .rect;
         });
         let rects = h.state().rects;
         click_at(&mut h, rects[1].center());
@@ -300,7 +314,8 @@ fn enter_in_a_dialog_field_never_runs_the_default_button() {
             ])
             .show(ui.ctx(), |ui| {
                 ui.text_edit_singleline(&mut s.name).accessible_name("Name");
-                ui.add(ValueField::new(&mut s.width, 0.0..=1000.0)).accessible_name("Width");
+                ui.add(ValueField::new(&mut s.width, 0.0..=1000.0))
+                    .accessible_name("Width");
             });
         s.chosen.extend(r.chosen);
     });

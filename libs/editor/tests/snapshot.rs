@@ -62,7 +62,12 @@ fn harness(app: App, theme: &Theme, size: egui::Vec2) -> Harness<'static, App> {
     harness_with_missing_glyphs(app, theme, size, false)
 }
 
-fn harness_with_missing_glyphs(mut app: App, theme: &Theme, size: egui::Vec2, allow_missing: bool) -> Harness<'static, App> {
+fn harness_with_missing_glyphs(
+    mut app: App,
+    theme: &Theme,
+    size: egui::Vec2,
+    allow_missing: bool,
+) -> Harness<'static, App> {
     app.view.label = Some("Document".into());
     let initial_theme = theme.clone();
     let harness = Harness::builder()
@@ -70,22 +75,26 @@ fn harness_with_missing_glyphs(mut app: App, theme: &Theme, size: egui::Vec2, al
             toolkit::install(ctx, &initial_theme);
             // This one code fixture deliberately includes unsupported CJK;
             // preserve its visible tofu rather than changing its test text.
-            if allow_missing { ctx.set_missing_glyph_policy(egui::MissingGlyphPolicy::Tofu); }
-        })
-        .with_size(size).wgpu().build_ui_state(
-        |ui, app: &mut App| {
-            let (palette, view) = (app.palette.clone(), app.view.clone());
-            let output = app.doc.show(ui, &palette, &view);
-            for event in output.events {
-                if let editor::Event::Layout(layout) = event {
-                    ui.ctx().data_mut(|d| {
-                        d.insert_temp(egui::Id::unique("test-editor-layout"), layout)
-                    });
-                }
+            if allow_missing {
+                ctx.set_missing_glyph_policy(egui::MissingGlyphPolicy::Tofu);
             }
-        },
-        app,
-    );
+        })
+        .with_size(size)
+        .wgpu()
+        .build_ui_state(
+            |ui, app: &mut App| {
+                let (palette, view) = (app.palette.clone(), app.view.clone());
+                let output = app.doc.show(ui, &palette, &view);
+                for event in output.events {
+                    if let editor::Event::Layout(layout) = event {
+                        ui.ctx().data_mut(|d| {
+                            d.insert_temp(egui::Id::unique("test-editor-layout"), layout)
+                        });
+                    }
+                }
+            },
+            app,
+        );
     toolkit::install(&harness.ctx, theme);
     harness
 }

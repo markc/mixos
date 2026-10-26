@@ -581,7 +581,10 @@ impl Shell {
             commands.takes(e, app)
                 || matches!(
                     e,
-                    egui::Event::Cut | egui::Event::Copy | egui::Event::Paste(_) | egui::Event::PasteImage(_)
+                    egui::Event::Cut
+                        | egui::Event::Copy
+                        | egui::Event::Paste(_)
+                        | egui::Event::PasteImage(_)
                 )
         };
         let rest = ctx.input_mut(|i| {

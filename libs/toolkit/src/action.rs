@@ -1680,9 +1680,20 @@ mod tests {
             ["cut.more"]
         );
         assert!(fire(Modifiers::COMMAND, egui::Event::Cut).is_empty());
-        assert_eq!(fire(Modifiers::COMMAND, egui::Event::Paste("p".into())), ["paste"]);
-        assert_eq!(fire(Modifiers::COMMAND, egui::Event::PasteImage(std::sync::Arc::new(
-            egui::ColorImage::filled([1, 1], egui::Color32::WHITE)))), ["paste"]);
+        assert_eq!(
+            fire(Modifiers::COMMAND, egui::Event::Paste("p".into())),
+            ["paste"]
+        );
+        assert_eq!(
+            fire(
+                Modifiers::COMMAND,
+                egui::Event::PasteImage(std::sync::Arc::new(egui::ColorImage::filled(
+                    [1, 1],
+                    egui::Color32::WHITE
+                )))
+            ),
+            ["paste"]
+        );
     }
 
     fn fired_key(

@@ -1290,12 +1290,7 @@ impl Drive {
             self.screenshots.lock().unwrap().clear();
             return;
         };
-        if let Some(Step::Await {
-            tag,
-            path,
-            ..
-        }) = running.steps.front_mut()
-        {
+        if let Some(Step::Await { tag, path, .. }) = running.steps.front_mut() {
             let image = self
                 .screenshots
                 .lock()
@@ -2031,7 +2026,9 @@ mod tests {
             let stalled = now - CAPTURE_QUIET_PERIOD;
             drive.last_ui_pass = Some(stalled);
             drive.pending_captures.insert(1, stalled);
-            if let Some(Step::Await { deadline, .. }) = drive.running.as_mut().unwrap().steps.front_mut() {
+            if let Some(Step::Await { deadline, .. }) =
+                drive.running.as_mut().unwrap().steps.front_mut()
+            {
                 *deadline = now;
             } else {
                 panic!("capture awaits readback");
@@ -2250,16 +2247,27 @@ mod tests {
             }),
         );
         let ctx = Context::default();
-        let (steps, _, _) = drive.children[&editor].plan(&ctx, Job::Capture {
-            path: path.clone(), tag: 7,
-        }).unwrap();
-        let callback = steps.into_iter().find_map(|step| match step {
-            Step::Viewport(ViewportCommand::Screenshot(callback)) => Some(callback),
-            _ => None,
-        }).unwrap();
+        let (steps, _, _) = drive.children[&editor]
+            .plan(
+                &ctx,
+                Job::Capture {
+                    path: path.clone(),
+                    tag: 7,
+                },
+            )
+            .unwrap();
+        let callback = steps
+            .into_iter()
+            .find_map(|step| match step {
+                Step::Viewport(ViewportCommand::Screenshot(callback)) => Some(callback),
+                _ => None,
+            })
+            .unwrap();
         ctx.add_plugin(drive);
         callback.complete(std::sync::Arc::new(ColorImage::filled(
-            [4, 3], egui::Color32::WHITE)));
+            [4, 3],
+            egui::Color32::WHITE,
+        )));
         let answers = logic(&ctx);
         assert_eq!(answers.len(), 1);
         let answer = &answers[0];

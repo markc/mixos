@@ -251,8 +251,8 @@ fn a_large_table_and_core_grid() {
         let strings = strings();
         let theme = dark();
         let initial_theme = theme.clone();
-    let mut harness = Harness::builder()
-        .with_context_setup(move |ctx| toolkit::install(ctx, &initial_theme))
+        let mut harness = Harness::builder()
+            .with_context_setup(move |ctx| toolkit::install(ctx, &initial_theme))
             .with_size(egui::vec2(1040.0, 680.0))
             .build_ui(move |ui| {
                 let _ = view(ui, &engine, &registry, &strings);

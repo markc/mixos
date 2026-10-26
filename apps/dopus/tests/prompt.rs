@@ -36,12 +36,12 @@ fn answers_after_enter(name: &str) -> Vec<Answer> {
     let mut harness = Harness::builder()
         .with_context_setup(|ctx| toolkit::install(ctx, &toolkit::Theme::embedded()))
         .build_ui_state(
-        |ui, s: &mut State| {
-            let events = view(ui, &s.app, &s.registry, &s.strings);
-            s.events.extend(events);
-        },
-        state,
-    );
+            |ui, s: &mut State| {
+                let events = view(ui, &s.app, &s.registry, &s.strings);
+                s.events.extend(events);
+            },
+            state,
+        );
     // The field takes the keyboard on the first frames.
     harness.run();
     harness.key_press(egui::Key::Enter);
