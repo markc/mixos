@@ -522,6 +522,10 @@ pub struct ComposeState {
     pub account: String,
     /// The message headers. Its wire body stays empty while composing.
     pub draft: Composed,
+    /// File information checked on compose events, never by drawing a frame.
+    pub attachments: Vec<ComposeAttachment>,
+    pub attachment_error: Option<String>,
+    pub attachments_over_limit: bool,
     pub body: Body,
     /// The reply-position check copies text only after a body edit.
     reply_movable: std::cell::Cell<Option<(u64, bool)>>,
@@ -559,6 +563,88 @@ pub struct ComposeState {
     /// The optional rows (Cc, Bcc, Reply-To) the person opened from the To
     /// row's buttons. A row that holds something shows whatever this says.
     pub extra: Vec<ComposeField>,
+}
+
+/// Paths and metadata only. File contents belong to the send worker.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ComposeAttachment {
+    pub path: std::path::PathBuf,
+    pub name: String,
+    pub size: Option<u64>,
+    pub state: ComposeAttachmentState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComposeAttachmentState {
+    Ready,
+    Missing,
+    NotFile,
+    Unreadable,
+    Relative,
+}
+
+impl ComposeAttachmentState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ready => "compose-attachment-ready",
+            Self::Missing => "compose-attachment-missing",
+            Self::NotFile => "compose-attachment-not-file",
+            Self::Unreadable => "compose-attachment-unreadable",
+            Self::Relative => "compose-attachment-relative",
+        }
+    }
+}
+
+impl ComposeAttachment {
+    fn inspect(path: &std::path::Path) -> Self {
+        use std::os::unix::ffi::OsStrExt;
+
+        let mut attachment = Self {
+            path: path.to_owned(),
+            name: path
+                .file_name()
+                .unwrap_or(path.as_os_str())
+                .to_string_lossy()
+                .into_owned(),
+            size: None,
+            state: ComposeAttachmentState::Ready,
+        };
+        attachment.state = if !path.is_absolute() {
+            ComposeAttachmentState::Relative
+        } else {
+            match std::fs::metadata(path) {
+                Ok(metadata) if metadata.is_file() => {
+                    attachment.size = Some(metadata.len());
+                    // Check effective-user read permission without opening the
+                    // file or reading any bytes. Send still opens and checks it.
+                    let readable = std::ffi::CString::new(path.as_os_str().as_bytes())
+                        .is_ok_and(|path| {
+                            // SAFETY: path is a live NUL-terminated string.
+                            unsafe {
+                                libc::faccessat(
+                                    libc::AT_FDCWD,
+                                    path.as_ptr(),
+                                    libc::R_OK,
+                                    libc::AT_EACCESS,
+                                ) == 0
+                            }
+                        });
+                    if readable {
+                        ComposeAttachmentState::Ready
+                    } else {
+                        ComposeAttachmentState::Unreadable
+                    }
+                }
+                Ok(_) => ComposeAttachmentState::NotFile,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    ComposeAttachmentState::Missing
+                }
+                Err(_) => ComposeAttachmentState::Unreadable,
+            }
+        };
+        attachment
+    }
 }
 
 /// The quote a reply carries: the attribution and quoted original, the
@@ -712,7 +798,17 @@ impl ComposeState {
     /// Whether closing this compose could lose something: it was edited,
     /// restored from a kept draft, or has been sent before.
     pub fn keepable(&self) -> bool {
-        self.revision > 0 || self.restored || self.attempt != jmap::SendAttempt::default()
+        self.revision > 0
+            || self.restored
+            || !self.draft.attachments.is_empty()
+            || self.attempt != jmap::SendAttempt::default()
+    }
+
+    pub fn attachment_size(&self) -> u64 {
+        self.attachments
+            .iter()
+            .filter_map(|a| a.size)
+            .fold(0, u64::saturating_add)
     }
 
     /// The compose as the draft store keeps it.
@@ -762,6 +858,12 @@ impl ComposeState {
                 Some(error.to_string()),
             ),
         };
+        let revision = u64::from(!draft.attachments.is_empty());
+        let attachments = draft
+            .attachments
+            .iter()
+            .map(|path| ComposeAttachment::inspect(path))
+            .collect();
         Self {
             account: account.to_owned(),
             body,
@@ -770,13 +872,16 @@ impl ComposeState {
             cc_text: text(&draft.cc),
             bcc_text: text(&draft.bcc),
             draft,
+            attachments,
+            attachment_error: None,
+            attachments_over_limit: false,
             busy: false,
             error,
             sending: None,
             stale: None,
             suggest: None,
             draft_id: String::new(),
-            revision: 0,
+            revision,
             saved: 0,
             restored: false,
             attempt: jmap::SendAttempt::default(),
@@ -2713,7 +2818,10 @@ impl State {
     pub fn apply(&mut self, event: crate::shell::Event) {
         use crate::shell::{Done, Event};
         match event {
-            Event::Connected(tag, result) => self.connected(tag, result),
+            Event::Connected(tag, result) => {
+                self.connected(tag, result);
+                self.check_compose_attachment_size();
+            }
             // A Bus request is answered whatever became of the account
             // since: only the view's update depends on it.
             Event::Account(tag, Done::Answered(reply, then, result)) => {
@@ -3778,6 +3886,7 @@ impl State {
         compose.restored = true;
         compose.attempt = saved.attempt;
         self.compose = Some(compose);
+        self.check_compose_attachment_size();
         true
     }
 
@@ -4704,6 +4813,11 @@ impl State {
                 "bcc": c.bcc_text,
                 "subject": c.draft.subject,
                 "body": c.body.contents(),
+                "attachments": c.attachments,
+                "attachment_size": c.attachment_size(),
+                "attachment_error": c.attachment_error,
+                "attachments_over_limit": c.attachments_over_limit,
+                "sendable": self.compose_sendable(),
                 "in_reply_to": c.draft.in_reply_to,
                 "stale": c.stale,
                 "busy": c.busy,
@@ -5237,6 +5351,7 @@ impl State {
         compose.draft_id = self.new_draft_id();
         compose.identity = identity;
         self.compose = Some(compose);
+        self.check_compose_attachment_size();
         true
     }
 
@@ -5423,7 +5538,20 @@ impl State {
     /// Apply one frame's interactions.
     pub fn apply_ui(&mut self, event: crate::view::UiEvent) {
         use crate::view::UiEvent;
+        let check_size = matches!(
+            &event,
+            UiEvent::ComposeField(..)
+                | UiEvent::ComposeEdit(..)
+                | UiEvent::ComposeIdentity { .. }
+                | UiEvent::ComposeAccount(..)
+                | UiEvent::ComposeUseNewFrom
+                | UiEvent::ComposeReplyPosition(..)
+                | UiEvent::SuggestAccept(..)
+        );
         match event {
+            UiEvent::ComposeAttachmentRemove(path) => {
+                self.remove_compose_attachment(&path);
+            }
             UiEvent::CloseMacros => self.ui.macros_open = false,
             UiEvent::Command(id, origin) => {
                 let _ = (id, origin);
@@ -5699,14 +5827,112 @@ impl State {
                 self.ui.theme.mode = Some(mode);
             }
         }
+        if check_size {
+            self.check_compose_attachment_size();
+        }
     }
 
-    /// Send the open compose, when its recipients parse.
-    fn send_compose(&mut self) {
-        let Some(compose) = &self.compose else {
+    /// Refresh file metadata and the whole encoded-message estimate on an
+    /// explicit compose event. No file contents are opened or kept here.
+    fn refresh_compose_attachments(&mut self) {
+        if let Some(compose) = self.compose.as_mut()
+            && !compose.busy
+        {
+            compose.attachments = compose
+                .draft
+                .attachments
+                .iter()
+                .map(|path| ComposeAttachment::inspect(path))
+                .collect();
+        }
+        self.check_compose_attachment_size();
+    }
+
+    pub(crate) fn check_compose_attachment_size(&mut self) {
+        let limit = self
+            .compose
+            .as_ref()
+            .and_then(|c| self.account(&c.account))
+            .and_then(|a| a.session.as_ref())
+            .and_then(|s| s.max_size_upload);
+        let Some(compose) = self.compose.as_mut() else {
             return;
         };
         if compose.busy {
+            return;
+        }
+        compose.attachments_over_limit = false;
+        compose.attachment_error = None;
+        if compose.attachments.is_empty() {
+            return;
+        }
+        if compose
+            .attachments
+            .iter()
+            .any(|a| a.state != ComposeAttachmentState::Ready)
+        {
+            compose.attachment_error = Some(crate::label("compose-attachments-fix"));
+        }
+        let draft = Composed {
+            to: jmap::parse_addresses(&compose.to_text).unwrap_or_default(),
+            cc: jmap::parse_addresses(&compose.cc_text).unwrap_or_default(),
+            bcc: jmap::parse_addresses(&compose.bcc_text).unwrap_or_default(),
+            body: compose.body.contents(),
+            ..compose.draft.clone()
+        };
+        let size = jmap::compose::estimated_message_size(
+            &draft,
+            compose
+                .attachments
+                .iter()
+                .map(|a| (a.path.as_path(), a.size.unwrap_or(0))),
+        );
+        if let Err(error) = jmap::check_message_size(size, limit) {
+            let message = match error {
+                jmap::Error::MessageTooLarge { size, limit } => {
+                    compose.attachments_over_limit = true;
+                    crate::label_with(
+                        "compose-attachments-too-large",
+                        &[
+                            ("size", &crate::attachments::human_size(size)),
+                            ("limit", &crate::attachments::human_size(limit)),
+                        ],
+                    )
+                }
+                _ => crate::label("compose-attachments-fix"),
+            };
+            compose.attachment_error = Some(match compose.attachment_error.take() {
+                Some(files) => format!("{files}\n{message}"),
+                None => message,
+            });
+        }
+    }
+
+    /// The chip and Bus intent share this mutation, including draft revision.
+    pub fn remove_compose_attachment(&mut self, path: &std::path::Path) -> bool {
+        let Some(compose) = self.compose.as_mut() else {
+            return false;
+        };
+        if compose.busy {
+            return false;
+        }
+        let before = compose.draft.attachments.len();
+        compose.draft.attachments.retain(|p| p != path);
+        if compose.draft.attachments.len() == before {
+            return false;
+        }
+        compose.revision += 1;
+        self.refresh_compose_attachments();
+        true
+    }
+
+    /// Send the open compose, when its recipients and attachments are valid.
+    fn send_compose(&mut self) {
+        self.refresh_compose_attachments();
+        let Some(compose) = &self.compose else {
+            return;
+        };
+        if compose.busy || compose.attachment_error.is_some() {
             return;
         }
         // The account's login changed under this draft: it is not sent
@@ -5766,6 +5992,7 @@ impl State {
         match &self.compose {
             Some(compose) => {
                 !compose.busy
+                    && compose.attachment_error.is_none()
                     && self.account(&compose.account).is_some()
                     && !compose.to_text.trim().is_empty()
                     && !compose.draft.subject.trim().is_empty()
@@ -6682,6 +6909,218 @@ pub(crate) mod tests {
         let mut state = connected();
         state.apply_ui(UiEvent::Compose);
         assert!(!state.compose_sendable());
+    }
+
+    fn compose_files(state: &mut State, paths: Vec<std::path::PathBuf>) {
+        assert!(state.open_compose(
+            Some("a"),
+            Composed {
+                to: jmap::parse_addresses("bob@example.invalid").unwrap(),
+                subject: "Files".into(),
+                attachments: paths,
+                ..Composed::default()
+            }
+        ));
+        state.take_work();
+    }
+
+    #[test]
+    fn compose_lists_paths_sizes_and_removes_through_the_chip_event() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        std::fs::write(&path, b"hello").unwrap();
+        let mut state = connected();
+        compose_files(&mut state, vec![path.clone(), path.clone()]);
+        let compose = state.compose.as_ref().unwrap();
+        assert_eq!(compose.attachments.len(), 2);
+        assert_eq!(compose.attachments[0].name, "note.txt");
+        assert_eq!(compose.attachments[0].size, Some(5));
+        assert_eq!(compose.attachments[0].state, ComposeAttachmentState::Ready);
+        assert_eq!(compose.attachment_size(), 10);
+        assert!(
+            compose.keepable(),
+            "paths alone are worth keeping as a draft"
+        );
+        assert!(state.compose_sendable());
+        let revision = compose.revision;
+        state.apply_ui(UiEvent::ComposeAttachmentRemove(path));
+        let compose = state.compose.as_ref().unwrap();
+        assert!(compose.draft.attachments.is_empty());
+        assert!(compose.attachments.is_empty());
+        assert_eq!(compose.revision, revision + 1);
+        assert!(state.compose_sendable());
+        assert!(compose.saved_draft().attachments.is_empty());
+    }
+
+    #[test]
+    fn bad_compose_files_disable_send_and_remain_listed() {
+        let dir = tempfile::tempdir().unwrap();
+        let loop_path = dir.path().join("loop");
+        std::os::unix::fs::symlink(&loop_path, &loop_path).unwrap();
+        for (path, expected) in [
+            (dir.path().join("missing"), ComposeAttachmentState::Missing),
+            (dir.path().to_owned(), ComposeAttachmentState::NotFile),
+            (loop_path, ComposeAttachmentState::Unreadable),
+            ("relative.txt".into(), ComposeAttachmentState::Relative),
+        ] {
+            let mut state = connected();
+            compose_files(&mut state, vec![path.clone()]);
+            assert!(!state.compose_sendable());
+            assert_eq!(
+                state.info()["compose"]["attachments"][0]["state"],
+                serde_json::to_value(expected).unwrap()
+            );
+            state.apply_ui(UiEvent::SendCompose);
+            assert!(
+                !state.take_work().iter().any(|w| matches!(w, Work::Send { .. }))
+            );
+            let compose = state.compose.as_ref().unwrap();
+            assert_eq!(compose.attachments[0].state, expected);
+            assert_eq!(compose.draft.attachments, std::slice::from_ref(&path));
+            assert!(compose.attachment_error.is_some());
+            assert!(state.remove_compose_attachment(&path));
+            assert!(state.compose_sendable());
+        }
+    }
+
+    #[test]
+    fn compose_send_rechecks_vanished_replaced_and_grown_files() {
+        let dir = tempfile::tempdir().unwrap();
+        for change in ["vanish", "directory", "grow"] {
+            let path = dir.path().join(change);
+            std::fs::write(&path, b"before").unwrap();
+            let mut state = connected();
+            compose_files(&mut state, vec![path.clone()]);
+            assert!(state.compose_sendable());
+            std::fs::remove_file(&path).unwrap();
+            let expected = match change {
+                "vanish" => ComposeAttachmentState::Missing,
+                "directory" => {
+                    std::fs::create_dir(&path).unwrap();
+                    ComposeAttachmentState::NotFile
+                }
+                _ => {
+                    std::fs::File::create(&path)
+                        .unwrap()
+                        .set_len(jmap::DEFAULT_UPLOAD_LIMIT)
+                        .unwrap();
+                    ComposeAttachmentState::Ready
+                }
+            };
+            // Idle reads do not stat files. The explicit Send rechecks them.
+            assert!(state.info()["compose"]["sendable"].as_bool().unwrap());
+            state.apply_ui(UiEvent::SendCompose);
+            assert!(!state.compose_sendable());
+            assert!(
+                !state.take_work().iter().any(|w| matches!(w, Work::Send { .. }))
+            );
+            assert_eq!(state.compose.as_ref().unwrap().attachments[0].state, expected);
+            assert_eq!(
+                state.compose.as_ref().unwrap().attachments_over_limit,
+                change == "grow"
+            );
+        }
+    }
+
+    #[test]
+    fn compose_rechecks_read_permission_without_reading_the_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // Root can still read mode 000 files. Exercise effective-user access
+        // under the normal unprivileged test runner.
+        // SAFETY: geteuid has no arguments or memory preconditions.
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("private.txt");
+        std::fs::write(&path, b"hello").unwrap();
+        let mut state = connected();
+        compose_files(&mut state, vec![path.clone()]);
+        assert!(state.compose_sendable());
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0)).unwrap();
+        state.apply_ui(UiEvent::SendCompose);
+        assert_eq!(
+            state.compose.as_ref().unwrap().attachments[0].state,
+            ComposeAttachmentState::Unreadable
+        );
+        assert!(!state.compose_sendable());
+        assert!(
+            !state.take_work().iter().any(|w| matches!(w, Work::Send { .. }))
+        );
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+
+    #[test]
+    fn compose_limits_include_encoding_body_edits_and_sender_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large.bin");
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(2048)
+            .unwrap();
+        let mut state = connected_many(&["a", "b"]);
+        state.accounts[0].session.as_mut().unwrap().max_size_upload = Some(2048);
+        state.accounts[1].session.as_mut().unwrap().max_size_upload = Some(16 * 1024);
+        compose_files(&mut state, vec![path.clone()]);
+        assert!(!state.compose_sendable(), "base64 and headers count too");
+        assert!(state.compose.as_ref().unwrap().attachments_over_limit);
+        state.apply_ui(UiEvent::ComposeAccount("b".into()));
+        assert!(state.compose_sendable());
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::Body,
+            "x".repeat(16 * 1024),
+        ));
+        assert!(!state.compose_sendable(), "the limit covers the whole message");
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "small".into()));
+        assert!(state.compose_sendable());
+        state.apply_ui(UiEvent::SendCompose);
+        assert!(state.compose.as_ref().unwrap().busy);
+        assert!(
+            !state.remove_compose_attachment(&path),
+            "in-flight message is immutable"
+        );
+        assert!(state.take_work().iter().any(
+            |w| matches!(w, Work::Send { draft, .. } if draft.attachments == std::slice::from_ref(&path))
+        ));
+    }
+
+    #[test]
+    fn saved_paths_round_trip_and_a_vanished_file_restores_as_missing() {
+        use crate::drafts::DirStore;
+
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("note.txt");
+        std::fs::write(&path, b"contents never saved in the draft").unwrap();
+        let mut store = DirStore::new(root.path());
+        let mut state = connected();
+        compose_files(&mut state, vec![path.clone()]);
+        assert!(state.draft_unsaved().is_some());
+        state.save_draft();
+        assert!(crate::drafts::apply(&mut store, state.take_draft_ops()).is_empty());
+        let saved = store.list();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].schema_version, 1);
+        assert_eq!(saved[0].attachments, std::slice::from_ref(&path));
+        let encoded = serde_json::to_string(&saved[0]).unwrap();
+        assert!(!encoded.contains("contents never saved"));
+        let mut restored = connected();
+        restored.offer_drafts(store.list());
+        restored.apply_ui(UiEvent::RestoreDraft(DraftChoice::Keep));
+        assert!(restored.compose_sendable());
+        std::fs::remove_file(&path).unwrap();
+        let mut vanished = connected();
+        vanished.offer_drafts(store.list());
+        vanished.apply_ui(UiEvent::RestoreDraft(DraftChoice::Keep));
+        let compose = vanished.compose.as_ref().unwrap();
+        assert_eq!(compose.draft.attachments, [path]);
+        assert_eq!(compose.attachments[0].state, ComposeAttachmentState::Missing);
+        assert_eq!(compose.attachments[0].size, None);
+        assert!(!vanished.compose_sendable());
+        vanished.apply_ui(UiEvent::SendCompose);
+        assert!(
+            !vanished.take_work().iter().any(|w| matches!(w, Work::Send { .. }))
+        );
     }
 
     // Drafts: nothing typed is lost to Cancel, Escape, a close or a crash.

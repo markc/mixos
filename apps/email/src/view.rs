@@ -61,6 +61,7 @@ pub enum UiEvent {
     ComposeAccount(String),
     ComposeField(crate::state::ComposeField, String),
     ComposeEdit(editor::Event),
+    ComposeAttachmentRemove(std::path::PathBuf),
     /// The To row's Cc, Bcc or Reply-To button: show or hide that row.
     ComposeShow(crate::state::ComposeField),
     /// Cancel or Escape on the compose: it closes, or (something typed)

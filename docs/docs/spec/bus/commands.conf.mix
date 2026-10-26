@@ -388,6 +388,7 @@
     {name:"email.delete", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.send", owner:"email", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.compose", owner:"email", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"email.compose.attachment.remove", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.reply", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.forward", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.attachments", owner:"email", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},

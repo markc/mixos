@@ -250,3 +250,19 @@ about-body = A pure JMAP client: mail, calendar and contacts over HTTPS to any R
 
 tree-expand = Expand { $name }
 tree-collapse = Collapse { $name }
+
+compose-attachments = Files
+compose-attachment-chip = { $name } · { $size }
+compose-attachment-status = { $file } · { $state }
+compose-attachment-too-large = Message too large
+compose-attachment-remove = Remove { $name }
+compose-attachment-ready = Ready
+compose-attachment-missing = Missing
+compose-attachment-not-file = Not a regular file
+compose-attachment-unreadable = Unreadable
+compose-attachment-relative = Path is not absolute
+compose-attachment-size-unknown = Unknown size
+compose-attachments-total = Total: { $size }
+compose-attachments-fix = Send is disabled. Remove missing, unreadable or invalid attachments.
+compose-attachments-too-large = Send is disabled. Estimated message size { $size } exceeds the account limit of { $limit }.
+compose-not-open = No compose dialog is open.

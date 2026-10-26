@@ -372,17 +372,29 @@ fn attachment_headers(name: &str, mime: &str) -> String {
 /// Cheap command-time validation: stat paths and estimate encoded size.
 /// Opening, reading and MIME database loading happen only on the send worker.
 pub fn validate_attachments(composed: &Composed, max_size_upload: Option<u64>) -> Result<()> {
+    let files = composed
+        .attachments
+        .iter()
+        .map(|path| Ok((path.as_path(), attachment_metadata(path)?.len())))
+        .collect::<Result<Vec<_>>>()?;
+    check_message_size(estimated_message_size(composed, files), max_size_upload)
+}
+
+/// The same encoded-size estimate, using already inspected file sizes. Compose
+/// can update its warning after text edits without touching the filesystem.
+pub fn estimated_message_size<'a>(
+    composed: &Composed,
+    files: impl IntoIterator<Item = (&'a Path, u64)>,
+) -> u64 {
     let mut parts = Vec::new();
     let mut encoded = 0_u64;
-    for path in &composed.attachments {
-        let size = attachment_metadata(path)?.len();
+    for (path, size) in files {
         encoded = encoded.saturating_add(encoded_file_size(size));
         let name = file_name(path);
         parts.push(attachment_headers(&name, "application/octet-stream"));
     }
-    let size = (render_mime(composed, &new_message_id(&composed.from), &parts).len() as u64)
-        .saturating_add(encoded);
-    check_message_size(size, max_size_upload)
+    (render_mime(composed, &new_message_id(&composed.from), &parts).len() as u64)
+        .saturating_add(encoded)
 }
 
 fn mime_database() -> &'static mimedb::Database {
@@ -1188,6 +1200,22 @@ mod tests {
             try_send(&fake, &message, SendAttempt::default()).1,
             Err(Error::AttachmentNotFile(_))
         ));
+    }
+
+    #[test]
+    fn cached_size_estimate_matches_command_validation_without_reading_files() {
+        let (_dir, message) = attached("note.txt", b"hello");
+        let size = estimated_message_size(&message, [(message.attachments[0].as_path(), 5)]);
+        assert!(validate_attachments(&message, Some(size)).is_ok());
+        assert!(matches!(
+            validate_attachments(&message, Some(size - 1)),
+            Err(Error::MessageTooLarge { .. })
+        ));
+        std::fs::remove_file(&message.attachments[0]).unwrap();
+        assert_eq!(
+            estimated_message_size(&message, [(message.attachments[0].as_path(), 5)]),
+            size
+        );
     }
 
     fn bare(email: &str) -> EmailAddress {

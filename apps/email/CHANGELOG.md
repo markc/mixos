@@ -16,4 +16,16 @@
 - Standalone MIME builders impose no upload limit; Send applies the server's
   limit to the exact encoded bytes.
 - Sends with attachments log the caller key and paths in the Email app.
-  Attachment controls will follow separately.
+  Window sends use `window`; toolkit drive requests log their request id and
+  caller key so input replayed on later frames can be correlated.
+- Compose shows attachment chips under Subject with names, sizes, file status,
+  removal and a total. Missing, unreadable and invalid files or an oversized
+  encoded message disable Send. Files are checked on open and before Send;
+  text edits update the estimate from cached sizes without polling files.
+- `email.info` and the compose reply include the attachment metadata, total,
+  warning and Send enablement. `email.compose.attachment.remove {path}` removes
+  a path through the same state mutation as the chip's remove button.
+- Attachment-only drafts are kept too. Restoring a vanished file preserves its
+  path and shows it as missing; draft schema 1 remains compatible.
+- Invalid logging configuration reports its error and lets the GUI start
+  without a subscriber.

@@ -15,7 +15,9 @@ use toolkit::field;
 use toolkit::toggle::Toggle;
 
 use super::UiEvent;
-use crate::state::{ComposeField, ComposeState, Confirm, DraftChoice, State};
+use crate::state::{
+    ComposeAttachment, ComposeAttachmentState, ComposeField, ComposeState, Confirm, DraftChoice, State,
+};
 
 /// The close or quit question over a draft: Keep Draft (the default, and
 /// Enter), Discard, or Keep Editing (Escape).
@@ -322,6 +324,70 @@ fn row_of<R>(
     .inner
 }
 
+/// One removable file chip. It draws only the state's last inspection.
+fn attachment_chip(
+    ui: &mut Ui,
+    attachment: &ComposeAttachment,
+    over_limit: bool,
+    icon: f32,
+    events: &mut Vec<UiEvent>,
+) {
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            let size = attachment
+                .size
+                .map(crate::attachments::human_size)
+                .unwrap_or_else(|| crate::label("compose-attachment-size-unknown"));
+            let text = crate::label_with(
+                "compose-attachment-chip",
+                &[("name", &attachment.name), ("size", &size)],
+            );
+            let bad = attachment.state != ComposeAttachmentState::Ready;
+            let text = if bad || over_limit {
+                let status = crate::label(if bad {
+                    attachment.state.label()
+                } else {
+                    "compose-attachment-too-large"
+                });
+                crate::label_with(
+                    "compose-attachment-status",
+                    &[("file", &text), ("state", &status)],
+                )
+            } else {
+                text
+            };
+            // Leave space for remove even with a very long filename.
+            let natural = ui
+                .painter()
+                .layout_no_wrap(
+                    text.clone(),
+                    egui::TextStyle::Body.resolve(ui.style()),
+                    ui.visuals().text_color(),
+                )
+                .size()
+                .x;
+            let width = natural.min(
+                (ui.available_width() - icon - ui.spacing().item_spacing.x).max(icon),
+            );
+            let mut text = egui::RichText::new(text);
+            if bad || over_limit {
+                text = text.color(ui.visuals().error_fg_color);
+            }
+            ui.add_sized([width, icon], egui::Label::new(text).truncate())
+                .on_hover_text(attachment.path.display().to_string());
+            let remove = toolkit::button::IconButton::new(toolkit::Icon::X)
+                .size(icon)
+                .tooltip(crate::label_with(
+                    "compose-attachment-remove",
+                    &[("name", &attachment.name)],
+                ));
+            if ui.add(remove).clicked() {
+                events.push(UiEvent::ComposeAttachmentRemove(attachment.path.clone()));
+            }
+        });
+    });
+}
+
 /// The dialog's fields. Each edit is one event; the state owns the draft.
 ///
 /// The rows, labels outside on the left: From (the identity, with
@@ -379,7 +445,7 @@ fn form(
         .chain(ComposeField::OPTIONAL)
         .chain([ComposeField::Subject])
         .map(|f| crate::label(row_label(f)))
-        .chain([crate::label("from")])
+        .chain([crate::label("from"), crate::label("compose-attachments")])
         .map(|text| {
             ui.painter()
                 .layout_no_wrap(text, font.clone(), egui::Color32::PLACEHOLDER)
@@ -508,6 +574,42 @@ fn form(
                 events.push(UiEvent::ComposeField(ComposeField::Subject, buffer));
             }
         });
+        if !compose.attachments.is_empty() {
+            row(ui, &crate::label("compose-attachments"), column, |ui, _| {
+                ui.vertical(|ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        let chrome = toolkit::chrome::Chrome::of(ui.ctx());
+                        ui.add(toolkit::icons::image_of(
+                            ui.ctx(),
+                            toolkit::Icon::Paperclip,
+                            icon * chrome.style.button_icon_share as f32,
+                            chrome.palette.icon,
+                        ));
+                        for (index, attachment) in compose.attachments.iter().enumerate() {
+                            ui.push_id((index, &attachment.path), |ui| {
+                                attachment_chip(
+                                    ui,
+                                    attachment,
+                                    compose.attachments_over_limit,
+                                    icon,
+                                    events,
+                                );
+                            });
+                        }
+                    });
+                    ui.weak(crate::label_with(
+                        "compose-attachments-total",
+                        &[(
+                            "size",
+                            &crate::attachments::human_size(compose.attachment_size()),
+                        )],
+                    ));
+                    if let Some(error) = &compose.attachment_error {
+                        ui.colored_label(ui.visuals().error_fg_color, error);
+                    }
+                });
+            });
+        }
         ui.add_space(4.0);
         // The text takes the composer's own padding, font and size.
         toolkit::content::surface(ui, &state.settings.composer, |ui| {

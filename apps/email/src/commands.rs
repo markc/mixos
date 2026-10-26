@@ -275,6 +275,12 @@ pub const COMMANDS: &[Command] = &[
         "Open the compose dialog, filled in",
     ),
     command_spec(
+        "email.compose.attachment.remove",
+        false,
+        r#"{"path":"attachment path as listed by email.info"}"#,
+        "Remove every occurrence of a path from the open compose; answers with compose state",
+    ),
+    command_spec(
         "email.reply",
         false,
         r#"{"account":"optional account id","id":"email id","all":"optional bool","quote":"optional bool (absent: email.compose.quote_on_reply)"}"#,
@@ -1305,6 +1311,10 @@ fn dispatch(
             if let Some(error) = state.close_failed_compose() {
                 return Err(invalid(&error));
             }
+            if let (Some(reply_to), Some(compose)) = (reply_to, state.compose.as_mut()) {
+                compose.draft.reply_to = Some(reply_to);
+            }
+            state.check_compose_attachment_size();
             if let Some(compose) = &state.compose {
                 let draft = Composed {
                     body: compose.body.contents(),
@@ -1315,10 +1325,25 @@ fn dispatch(
                     return Err(error);
                 }
             }
-            if let (Some(reply_to), Some(compose)) = (reply_to, state.compose.as_mut()) {
-                compose.draft.reply_to = Some(reply_to);
+            state.reply(
+                id,
+                0,
+                json!({ "composing": account, "compose": state.info()["compose"] }),
+            );
+        }
+        "email.compose.attachment.remove" => {
+            let path = std::path::PathBuf::from(required(args, "path")?);
+            let compose = state
+                .compose
+                .as_ref()
+                .ok_or_else(|| Bad(code::NOT_FOUND, crate::label("compose-not-open")))?;
+            if compose.busy {
+                return Err(Bad(code::BUSY, crate::label("sending")));
             }
-            state.reply(id, 0, json!({ "composing": account }));
+            if !state.remove_compose_attachment(&path) {
+                return Err(Bad(code::NOT_FOUND, crate::label("no-such-attachment")));
+            }
+            state.reply(id, 0, json!({ "compose": state.info()["compose"] }));
         }
         "email.reply" | "email.forward" => {
             let account = connected(state, args)?;
@@ -1572,6 +1597,85 @@ mod tests {
     use super::*;
     use crate::state::tests::connected_many;
     use crate::work::Work;
+
+    #[test]
+    fn compose_reply_and_info_expose_the_chips_and_removal_saves_the_edit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        std::fs::write(&path, b"hello").unwrap();
+        let mut state = connected_many(&["a"]);
+        run(
+            &mut state,
+            "email.compose",
+            json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [path]}),
+        );
+        let reply = state.take_replies().remove(0);
+        assert_eq!(reply.rc, 0);
+        let expected = json!({ "path": path, "name": "note.txt", "size": 5, "state": "ready" });
+        assert_eq!(reply.body["compose"]["attachments"], json!([expected]));
+        run(&mut state, "email.info", json!({}));
+        assert_eq!(
+            state.take_replies()[0].body["compose"],
+            reply.body["compose"]
+        );
+        let revision = state.compose.as_ref().unwrap().revision;
+        run(
+            &mut state,
+            "email.compose.attachment.remove",
+            json!({"path": path}),
+        );
+        let reply = state.take_replies().remove(0);
+        assert_eq!(reply.rc, 0);
+        assert_eq!(reply.body["compose"]["attachments"], json!([]));
+        assert_eq!(reply.body["compose"]["attachment_size"], 0);
+        assert_eq!(reply.body["compose"]["sendable"], true);
+        assert_eq!(state.compose.as_ref().unwrap().revision, revision + 1);
+        state.save_draft();
+        assert!(state.take_draft_ops().iter().any(
+            |op| matches!(op, crate::drafts::DraftOp::Save(draft) if draft.attachments.is_empty())
+        ));
+        run(
+            &mut state,
+            "email.compose.attachment.remove",
+            json!({"path": path}),
+        );
+        assert_eq!(state.take_replies()[0].body["error_code"], code::NOT_FOUND);
+    }
+
+    #[test]
+    fn attachment_removal_checks_arguments_open_compose_and_busy_state() {
+        let mut state = connected_many(&["a"]);
+        for args in [json!({}), json!({"path": 7})] {
+            run(&mut state, "email.compose.attachment.remove", args);
+            assert_eq!(
+                state.take_replies()[0].body["error_code"],
+                code::INVALID_ARGUMENT
+            );
+        }
+        run(
+            &mut state,
+            "email.compose.attachment.remove",
+            json!({"path": "/home/user/file"}),
+        );
+        assert_eq!(state.take_replies()[0].body["error_code"], code::NOT_FOUND);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        std::fs::write(&path, b"hello").unwrap();
+        run(
+            &mut state,
+            "email.compose",
+            json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [path]}),
+        );
+        state.take_replies();
+        state.apply_ui(crate::view::UiEvent::SendCompose);
+        run(
+            &mut state,
+            "email.compose.attachment.remove",
+            json!({"path": path}),
+        );
+        assert_eq!(state.take_replies()[0].body["error_code"], code::BUSY);
+        assert_eq!(state.compose.as_ref().unwrap().draft.attachments, [path]);
+    }
 
     #[test]
     fn both_outgoing_commands_refuse_bad_attachment_paths_and_size_distinctly() {

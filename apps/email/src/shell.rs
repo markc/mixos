@@ -120,8 +120,6 @@ pub struct Shell {
     palette: editor::Palette,
     composer_light: bool,
     bus: citizen::Handle,
-    /// Caller while a Bus command and its immediate effects are dispatched.
-    command_caller: Option<String>,
     runtime: tokio::runtime::Runtime,
     tx: mpsc::Sender<Event>,
     rx: mpsc::Receiver<Event>,
@@ -175,6 +173,15 @@ fn audit_attachments(caller: &str, draft: &jmap::Composed) {
             "sending email attachments"
         );
     }
+}
+
+fn audit_drive(id: u64, caller: &str, command: &str) {
+    tracing::info!(
+        request_id = id,
+        caller_key = caller,
+        command,
+        "email drive request"
+    );
 }
 
 /// This host's name: the settingsd instance to try first (settingsd runs
@@ -594,7 +601,6 @@ impl Shell {
             strings: crate::strings(),
             theme: theme.clone(),
             bus,
-            command_caller: None,
             runtime,
             tx,
             rx,
@@ -974,11 +980,7 @@ impl Shell {
                 let boxes = self.state.send_boxes(&account);
                 match (self.client(&account), boxes) {
                     (Some((tag, client)), Ok(boxes)) => {
-                        let caller = self
-                            .command_caller
-                            .clone()
-                            .unwrap_or_else(|| format!("local:{}", self.bus.service()));
-                        audit_attachments(&caller, &draft);
+                        audit_attachments("window", &draft);
                         self.spawn(async move {
                             let (attempt, result) = client.send(&draft, &boxes, attempt).await;
                             Event::Account(tag, Done::Sent(ticket, attempt, result))
@@ -1336,7 +1338,6 @@ impl Shell {
     /// One Bus command: the commands layer answers or queues it; the drive
     /// commands and the window's activation are the shell's.
     fn command(&mut self, id: u64, command_name: &str, body: &str) {
-        self.command_caller = Some(self.bus.caller_key(id));
         let forward = crate::commands::command(
             &mut self.state,
             &self.commands,
@@ -1351,6 +1352,7 @@ impl Shell {
                 command: command_name,
                 args,
             }) => {
+                audit_drive(id, &self.bus.caller_key(id), &command_name);
                 if let Some(answer) = drive::request(&self.ctx, id, &command_name, &args) {
                     self.bus.reply(answer.id, answer.rc, answer.body);
                 }
@@ -1363,7 +1365,6 @@ impl Shell {
             None => {}
         }
         self.settle();
-        self.command_caller = None;
     }
 
     /// Persist the config when the state says it changed, and rewrite it as
@@ -1770,7 +1771,7 @@ mod tests {
 
     #[test]
     fn attachment_audit_logs_one_line_with_caller_and_paths_only() {
-        for caller in ["local:sender", "mesh:sender@peer"] {
+        for caller in ["window", "local:sender", "mesh:sender@peer"] {
             let bytes = Arc::new(Mutex::new(Vec::new()));
             let writer = bytes.clone();
             let subscriber = tracing_subscriber::fmt()
@@ -1795,6 +1796,25 @@ mod tests {
             assert!(log.contains("/home/user/report.pdf"), "{log}");
             assert!(!log.contains("private body") && !log.contains("private subject"));
         }
+    }
+
+    #[test]
+    fn drive_audit_keeps_request_id_and_caller_for_later_frame_correlation() {
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let writer = bytes.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_writer(move || AuditWriter(writer.clone()))
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            audit_drive(42, "mesh:sender@peer", "email.ui.click");
+        });
+        let log = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+        assert_eq!(log.lines().count(), 1, "{log}");
+        assert!(log.contains("request_id=42"), "{log}");
+        assert!(log.contains("caller_key=\"mesh:sender@peer\""), "{log}");
+        assert!(log.contains("email.ui.click"), "{log}");
     }
 
     fn reply(rc: u8, body: &str) -> Result<citizen::Reply, citizen::CallError> {

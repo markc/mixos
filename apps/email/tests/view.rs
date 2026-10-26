@@ -1229,6 +1229,65 @@ fn typing() -> State {
 }
 
 #[test]
+fn compose_attachment_chips_show_status_and_remove_through_the_window() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("note.txt");
+    std::fs::write(&path, b"hello").unwrap();
+    let missing = dir.path().join("missing.txt");
+    let mut state = fixture();
+    state.open_compose(
+        Some("home"),
+        jmap::Composed {
+            to: jmap::parse_addresses("bob@example.invalid").unwrap(),
+            subject: "Files".into(),
+            attachments: vec![path.clone(), missing],
+            ..jmap::Composed::default()
+        },
+    );
+    let mut h = harness(state);
+    assert!(h.query_by_label(&label("compose-attachments")).is_some());
+    let missing_file = email::label_with(
+        "compose-attachment-chip",
+        &[
+            ("name", "missing.txt"),
+            ("size", &label("compose-attachment-size-unknown")),
+        ],
+    );
+    let missing_status = email::label_with(
+        "compose-attachment-status",
+        &[
+            ("file", &missing_file),
+            ("state", &label("compose-attachment-missing")),
+        ],
+    );
+    assert!(h.query_by_label(&missing_status).is_some());
+    assert!(h.get_by_label(&label("send")).accesskit_node().is_disabled());
+    let remove = |name| email::label_with("compose-attachment-remove", &[("name", name)]);
+    h.get_by_label(&remove("missing.txt")).click();
+    h.run();
+    assert!(!h.get_by_label(&label("send")).accesskit_node().is_disabled());
+    assert_eq!(
+        h.state().state.info()["compose"]["attachments"],
+        serde_json::json!([
+            { "path": path, "name": "note.txt", "size": 5, "state": "ready" },
+        ])
+    );
+    h.get_by_label(&remove("note.txt")).click();
+    h.run();
+    assert!(h.query_by_label(&label("compose-attachments")).is_none());
+    assert!(
+        h.state()
+            .state
+            .compose
+            .as_ref()
+            .unwrap()
+            .saved_draft()
+            .attachments
+            .is_empty()
+    );
+}
+
+#[test]
 fn escape_on_a_typed_compose_asks_and_keeps_the_draft() {
     let mut h = harness(typing());
     h.key_press(egui::Key::Escape);
