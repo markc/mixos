@@ -22,6 +22,27 @@ use workshop::shell::{APP, Shell};
 mod logic_wake;
 
 #[test]
+fn capture_refuses_on_logic_only_wake_and_releases_later_commands() {
+    let mut rig = rig();
+    let ctx = rig.h.ctx.clone();
+    let pass = ctx.cumulative_pass_nr();
+    send(&mut rig, 7100, "workshop.ui.capture", json!({}));
+    send(&mut rig, 7101, "workshop.ping", json!({}));
+    rig.h.state().as_ref().unwrap().forward_pending();
+    let started = std::time::Instant::now();
+    for _ in 0..2 {
+        let _output = ctx.run_logic(&egui::RawInput::default(), |ctx| {
+            rig.h.state_mut().as_mut().unwrap().logic(ctx);
+        });
+    }
+    assert_eq!(ctx.cumulative_pass_nr(), pass);
+    assert_eq!(reply(&rig, 7100).unwrap().2["error_code"], "NOT_SHOWN");
+    assert_eq!(reply(&rig, 7101).unwrap().1, 0);
+    assert!(started.elapsed() < drive::INPUT_QUIET_PERIOD);
+    assert!(!drive::pending(&ctx));
+}
+
+#[test]
 fn queued_bus_requests_answer_through_logic_without_a_ui_pass() {
     let mut rig = rig();
     let ctx = rig.h.ctx.clone();

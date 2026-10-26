@@ -69,6 +69,21 @@ fn refusal(id: u64, code: &str, message: &str) -> Answer {
     }
 }
 
+fn viewport_not_shown(viewport: &egui::ViewportInfo) -> bool {
+    viewport.minimized == Some(true) || viewport.occluded == Some(true)
+}
+
+fn not_shown(id: u64, quiet: Duration) -> Answer {
+    refusal(
+        id,
+        "NOT_SHOWN",
+        &format!(
+            "the window is not being drawn (no frames for {} ms): show the window or switch to its VT, then retry the capture",
+            quiet.as_millis()
+        ),
+    )
+}
+
 /// Every drive command under `app`, as `HELP` / `app.describe` list them.
 pub fn describe(app: &str) -> Vec<Value> {
     let command_names = [
@@ -222,7 +237,8 @@ pub fn pending(ctx: &Context) -> bool {
 pub const INPUT_QUIET_PERIOD: Duration = Duration::from_secs(1);
 
 /// Run from app logic, including logic-only wakes. Settle pending input after
-/// [`INPUT_QUIET_PERIOD`] without a UI pass, expire captures and return answers.
+/// [`INPUT_QUIET_PERIOD`] without a UI pass, refuse captures without a UI pass
+/// on a logic-only wake, expire screenshots and return answers.
 pub fn logic(ctx: &Context) -> Vec<Answer> {
     logic_at(ctx, Instant::now())
 }
@@ -238,8 +254,14 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
             .is_none_or(Vec::is_empty);
         let input_quiet_since = drive.input_quiet_since.get_or_insert(now);
         let quiet = now.saturating_duration_since(*input_quiet_since);
+        if logic_only {
+            drive.refuse_unshown_captures(now);
+            for child in drive.children.values_mut() {
+                child.refuse_unshown_captures(now);
+            }
+        }
         if logic_only && quiet >= INPUT_QUIET_PERIOD {
-            drive.settle(
+            drive.settle_input(
                 ctx,
                 &format!(
                     "the window produced no frames for {} ms before this input was read",
@@ -250,6 +272,11 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
             ctx.request_repaint_after(INPUT_QUIET_PERIOD.saturating_sub(quiet));
         }
         drive.expire();
+        if let Some(running) = &drive.running
+            && let Some(Step::Await { deadline, .. }) = running.steps.front()
+        {
+            ctx.request_repaint_after(deadline.saturating_duration_since(now));
+        }
         let mut answers = std::mem::take(&mut drive.answers);
         for child in drive.children.values_mut() {
             child.expire();
@@ -326,6 +353,12 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                 });
                 if child.requests.len() >= QUEUE_LIMIT {
                     return Some(refusal(id, "BUSY", "viewport request queue is full"));
+                }
+                if command_name == "ui.capture" {
+                    if ctx.input(|i| i.viewports.get(&target).is_some_and(viewport_not_shown)) {
+                        return Some(not_shown(id, Duration::ZERO));
+                    }
+                    child.unpainted_captures.insert(id, Instant::now());
                 }
                 child
                     .requests
@@ -475,6 +508,9 @@ struct Shot(u64);
 /// The plugin: the last widget tree, queued input and finished answers.
 #[derive(Default)]
 pub struct Drive {
+    /// Captures waiting for their first UI pass after acceptance.
+    /// Only this viewport's output clears them.
+    unpainted_captures: HashMap<u64, Instant>,
     /// Quiet time starts when input first waits, and restarts on root UI passes.
     /// Idle time before a request must not shorten its tolerance for a stall.
     input_quiet_since: Option<Instant>,
@@ -627,6 +663,44 @@ impl egui::Plugin for Drive {
 }
 
 impl Drive {
+    /// A capture that has painted still gets its full screenshot budget.
+    /// The input quiet period only settles input, not GPU readback.
+    fn settle_input(&mut self, ctx: &Context, why: &str) {
+        let capture = self.running.as_ref().is_some_and(|running| {
+            running.steps.iter().any(|step| matches!(step,
+                Step::Viewport(ViewportCommand::Screenshot(_)) | Step::Await { .. }))
+        });
+        let running = if capture { self.running.take() } else { None };
+        let mut captures = VecDeque::new();
+        self.queue.retain(|(id, job)| {
+            if let Job::Capture { path, tag } = job {
+                captures.push_back((*id, Job::Capture { path: path.clone(), tag: *tag }));
+                false
+            } else {
+                true
+            }
+        });
+        self.settle(ctx, why);
+        self.running = running;
+        self.queue = captures;
+    }
+
+    fn refuse_unshown_captures(&mut self, now: Instant) {
+        for (id, accepted) in std::mem::take(&mut self.unpainted_captures) {
+            if self.answers.iter().any(|answer| answer.id == id) {
+                continue;
+            }
+            self.requests.retain(|(queued, _, _)| *queued != id);
+            self.queue.retain(|(queued, _)| *queued != id);
+            self.traced.retain(|queued| *queued != id);
+            self.deadlines.remove(&id);
+            if self.running.as_ref().is_some_and(|running| running.id == id) {
+                self.running = None;
+            }
+            self.answers.push(not_shown(id, now.saturating_duration_since(accepted)));
+        }
+    }
+
     fn has_pending(&self) -> bool {
         self.running.is_some()
             || !self.queue.is_empty()
@@ -636,6 +710,7 @@ impl Drive {
     }
 
     fn output(&mut self, ctx: &Context, output: &mut FullOutput) {
+        self.unpainted_captures.clear();
         if let Some(update) = &output.platform_output.accesskit_update {
             self.tree = Some(update.clone());
         }
@@ -678,6 +753,9 @@ impl Drive {
     ) -> Option<Answer> {
         if !args.is_object() {
             return Some(refusal(id, "ARGUMENT", "arguments must be a JSON object"));
+        }
+        if command_name == "ui.capture" && ctx.input(|i| viewport_not_shown(i.viewport())) {
+            return Some(not_shown(id, Duration::ZERO));
         }
         let job = match command_name {
             "ui.tree" => return Some(self.tree_answer(id, args)),
@@ -755,6 +833,9 @@ impl Drive {
             self.input_quiet_since = Some(Instant::now());
         }
         self.queue.push_back((id, job));
+        if command_name == "ui.capture" {
+            self.unpainted_captures.insert(id, Instant::now());
+        }
         None
     }
 
@@ -1583,6 +1664,87 @@ fn write_png(path: &Path, image: &ColorImage) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn capture_context() -> (Context, tempfile::TempDir) {
+        let temp = tempfile::tempdir().unwrap();
+        let ctx = Context::default();
+        install_with(&ctx, "demo", Options {
+            runtime_dir: Some(temp.path().into()),
+            ..Options::default()
+        });
+        (ctx, temp)
+    }
+
+    #[test]
+    fn logic_only_refuses_queued_and_running_captures_before_input_settles() {
+        for running in [false, true] {
+            let (ctx, _temp) = capture_context();
+            assert!(request(&ctx, 1, "ui.type", &json!({"text":"waiting"})).is_none());
+            assert!(request(&ctx, 2, "ui.capture", &json!({})).is_none());
+            if running {
+                ctx.with_plugin(|drive: &mut Drive| {
+                    drive.queue.pop_front();
+                    drive.start();
+                });
+            }
+            let now = Instant::now();
+            let answers = logic_at(&ctx, now + Duration::from_millis(1));
+            assert_eq!(answers.len(), 1);
+            assert_eq!(answers[0].id, 2);
+            assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
+            assert!(logic_at(&ctx, now + INPUT_QUIET_PERIOD).iter().all(|a| a.id != 2));
+        }
+    }
+
+    #[test]
+    fn minimized_and_occluded_captures_refuse_during_logic() {
+        for minimized in [false, true] {
+            let (ctx, _temp) = capture_context();
+            let mut input = RawInput::default();
+            let viewport = input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap();
+            viewport.minimized = Some(minimized);
+            viewport.occluded = Some(!minimized);
+            let _output = ctx.run_logic(&input, |ctx| {
+                let answer = request(ctx, 1, "ui.capture", &json!({})).unwrap();
+                assert_eq!(answer.body["error_code"], "NOT_SHOWN");
+                assert!(!pending(ctx));
+            });
+        }
+    }
+
+    #[test]
+    fn ui_pass_before_logic_only_preserves_capture_until_screenshot() {
+        let (ctx, temp) = capture_context();
+        assert!(request(&ctx, 1, "ui.capture", &json!({"name":"shown.png"})).is_none());
+        let _output = ctx.run_ui(RawInput::default(), |_| {});
+        // A real UI pass requested the screenshot. Logic-only must now leave
+        // it waiting for its event, even well beyond the input quiet period.
+        assert!(logic_at(&ctx, Instant::now() + INPUT_QUIET_PERIOD).is_empty());
+        let mut input = RawInput::default();
+        input.events.push(Event::Screenshot {
+            viewport_id: egui::ViewportId::ROOT,
+            user_data: UserData::new(Shot(1)),
+            image: std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
+        });
+        let _output = ctx.run_ui(input, |_| {});
+        let answers = logic(&ctx);
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].rc, 0);
+        assert!(temp.path().join("demo/captures/shown.png").is_file());
+    }
+
+    #[test]
+    fn child_capture_refuses_without_waiting_for_child_ui_or_deadline() {
+        let (ctx, _temp) = capture_context();
+        let child = egui::ViewportId::from_hash_of("child");
+        register_viewport(&ctx, egui::ViewportId::ROOT, "child", child);
+        assert!(request(&ctx, 3, "ui.capture", &json!({"viewport":"child"})).is_none());
+        let answers = logic_at(&ctx, Instant::now() + Duration::from_millis(1));
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
+        assert!(!pending(&ctx));
+        assert!(logic(&ctx).is_empty());
+    }
 
     #[test]
     fn pending_input_survives_until_exactly_the_quiet_deadline() {

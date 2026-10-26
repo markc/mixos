@@ -313,6 +313,17 @@ many milliseconds the window produced no frames. Retry when frames resume.
 The quiet period starts when input first waits and restarts on each root UI
 pass; idle time before that input does not shorten it.
 
+Captures use a separate rule: if a logic-only wake runs before any UI pass
+since acceptance, queued and running captures return `NOT_SHOWN` (rc 10)
+immediately, without waiting for the input quiet period or capture timeout.
+Minimised or occluded viewports refuse immediately too. Show the window or
+switch to its VT, then retry. Idle time alone does not refuse a capture;
+a normal redraw arriving first preserves the existing screenshot path.
+After a UI pass, `Options::capture_timeout` remains the backstop for missing
+screenshot events (`CAPTURE`), independently of input settling. The rule
+also applies to child captures still awaiting dispatch to their UI, and
+does not depend on the integration's logic-only fallback delay.
+
 `viewport: "macro-editor"` addresses the editor owned by the app window
 handling the request. Names become available on the first native child
 pass; an embedded editor has no separately drivable viewport. Closing one

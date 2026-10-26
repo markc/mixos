@@ -36,6 +36,7 @@ and a body naming the reason:
 | `BUSY` | Not now: work is in flight, a dialog is open, the window is hidden, no frame has been drawn yet, or the app is closing. |
 | `CANCELLED` | Input that was accepted but never delivered: the window was hidden or minimised first, or the app closed. |
 | `CAPTURE` | A screenshot could not be taken or written. |
+| `NOT_SHOWN` | The capture received no UI pass before a logic-only wake, or its viewport is minimised or occluded. Show the window or switch to its VT, then retry. |
 | `UNAVAILABLE` | The app does not offer the drive commands. |
 
 An app's own commands may add codes of their own; Workshop's are listed
@@ -211,7 +212,13 @@ Captures are confined to the app's own directory:
   followed.
 - Without `XDG_RUNTIME_DIR` there is nowhere to capture to, and every
   capture is refused.
-- The screenshot is waited for for 10 seconds at most, then the capture is
+- A pending capture with no UI pass since acceptance is refused with
+  `NOT_SHOWN` on a logic-only wake, including captures queued behind input
+  and captures for child viewports. A minimised or occluded viewport refuses
+  immediately. Show the window or switch to its VT, then retry.
+  A visible idle window gets its requested redraw normally; idle time alone
+  never causes this refusal. This rule does not depend on eframe's fallback delay.
+- Once a UI pass has arrived, the screenshot is waited for for 10 seconds at most, then the capture is
   refused with `CAPTURE`.
 
 ### `<app>.window`
