@@ -170,7 +170,8 @@ fn bus_file_operations_accept_driven_prompts_confirmations_and_drops() {
         let immediate = drive::request(&h.ctx, 2, command, &args);
         h.state_mut().answers.extend(immediate);
         wait(h, &|w| w.answers.iter().any(|a| a.id == 2));
-        assert_eq!(h.state().answers.iter().find(|a| a.id == 2).unwrap().rc, 0);
+        let answer = h.state().answers.iter().find(|a| a.id == 2).unwrap();
+        assert_eq!(answer.rc, 0, "{command} {args}: {}", answer.body);
     };
     wait(&mut harness, &|w| !w.app.core.pane(PaneId::Left).listing);
     action(&mut harness, "file.new-folder");
