@@ -160,10 +160,10 @@ pub(crate) fn tokens(mut style: ResolvedStyle, ui: &CommonUi) -> ResolvedStyle {
 
 /// The installed desktop values, also used by independently sized content.
 pub fn of(ctx: &egui::Context) -> CommonUi {
-    ctx.data(|data| data.get_temp(egui::Id::new("toolkit.common-ui")))
+    ctx.data(|data| data.get_temp(egui::Id::unique("toolkit.common-ui")))
         .unwrap_or_default()
 }
 
 pub(crate) fn install(ctx: &egui::Context, ui: &CommonUi) {
-    ctx.data_mut(|data| data.insert_temp(egui::Id::new("toolkit.common-ui"), ui.clone()));
+    ctx.data_mut(|data| data.insert_temp(egui::Id::unique("toolkit.common-ui"), ui.clone()));
 }

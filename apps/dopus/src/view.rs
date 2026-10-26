@@ -145,7 +145,7 @@ fn cached_column_widths(
 }
 
 fn widths_for_key(ui: &Ui, key: ColumnKey, rows: &[VisibleRow]) -> ColumnWidths {
-    let id = ui.id().with("metadata-widths");
+    let id = ui.scope_id().with("metadata-widths");
     let previous = ui.data(|d| d.get_temp::<ColumnCache>(id));
     if let Some(cache) = &previous
         && cache.key == key
@@ -239,7 +239,7 @@ mod column_tests {
                 if key.is_none() {
                     let _ = cached_column_widths(ui, model, &rows);
                     key = Some(
-                        ui.data(|d| d.get_temp::<ColumnCache>(ui.id().with("metadata-widths")))
+                        ui.data(|d| d.get_temp::<ColumnCache>(ui.scope_id().with("metadata-widths")))
                             .unwrap()
                             .key,
                     );
@@ -255,7 +255,7 @@ mod column_tests {
                 // lookup with controlled revision/font changes.
                 let _ = widths_for_key(ui, key.clone(), &rows);
                 let measured = ui
-                    .data(|d| d.get_temp::<ColumnCache>(ui.id().with("metadata-widths")))
+                    .data(|d| d.get_temp::<ColumnCache>(ui.scope_id().with("metadata-widths")))
                     .unwrap()
                     .measured_rows;
                 assert_eq!(
@@ -566,7 +566,7 @@ fn panes(
     let divider = Rect::from_min_size(pos2(left.right(), area.top()), vec2(DIVIDER, area.height()));
     let right = Rect::from_min_max(pos2(divider.right(), area.top()), area.max);
     // Law 7: the divider sets the split ratio; a double-click restores half.
-    let grip = ui.interact(divider, Id::new("dopus-divider"), Sense::click_and_drag());
+    let grip = ui.interact(divider, Id::unique("dopus-divider"), Sense::click_and_drag());
     if grip.hovered() || grip.dragged() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
     }
@@ -630,7 +630,7 @@ fn pane_view(
     // lands in its folder, and its context menu offers the pane's commands.
     let background = ui.interact(
         Rect::from_min_size(ui.cursor().min, vec2(width, list_h)),
-        Id::new(("pane-background", pane.index())),
+        Id::unique(("pane-background", pane.index())),
         Sense::click(),
     );
     ui.allocate_ui(vec2(width, list_h), |ui| {
@@ -683,7 +683,7 @@ fn location_bar(ui: &mut Ui, app: &App, pane: PaneId, active: bool, events: &mut
         |ui| {
             ui.add_space(4.0);
             let width = (ui.available_width() - 4.0).max(40.0);
-            let id = Id::new(("location", pane.index()));
+            let id = Id::unique(("location", pane.index()));
             match &app.editing {
                 Some((editing, text)) if *editing == pane => {
                     let mut text = text.clone();
@@ -780,10 +780,10 @@ fn header(
     ] {
         let Some(cell) = cell else { continue };
         let response = ui
-            .interact(cell, Id::new(("header", pane.index(), key)), Sense::click())
+            .interact(cell, Id::unique(("header", pane.index(), key)), Sense::click())
             .on_hover_text(label_with("sort-by", &[("column", &label(key))]));
         response
-            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label(key)));
+            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label(key)));
         if response.hovered() {
             ui.painter()
                 .rect_filled(cell, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
@@ -856,7 +856,7 @@ fn row(
         ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click_and_drag());
     response.widget_info(|| {
         egui::WidgetInfo::selected(
-            egui::WidgetType::SelectableLabel,
+            egui::Role::ListBoxOption,
             true,
             selected,
             &entry.name,
@@ -912,7 +912,7 @@ fn row(
             if expanded { "collapse" } else { "expand" },
             &[("name", &entry.name)],
         );
-        toggle.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+        toggle.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
         let icon = if expanded {
             Icon::ChevronDown
         } else {
@@ -1092,7 +1092,7 @@ fn drag_preview(ctx: &egui::Context) {
     let Some(pointer) = ctx.pointer_latest_pos() else {
         return;
     };
-    egui::Area::new(Id::new("dopus-drag-preview"))
+    egui::Area::new(Id::unique("dopus-drag-preview"))
         .order(egui::Order::Tooltip)
         .fixed_pos(pointer + vec2(12.0, 8.0))
         .interactable(false)
@@ -1117,7 +1117,7 @@ fn dialogs(
     let Some(dialog) = &app.dialog else {
         return;
     };
-    let id = Id::new("dopus-dialog").with(match dialog {
+    let id = Id::unique("dopus-dialog").with(match dialog {
         Dialog::Confirm { token, .. } | Dialog::Prompt { token, .. } => *token,
         Dialog::Drop { .. } => u64::MAX - 2,
         Dialog::Shortcuts => u64::MAX - 1,

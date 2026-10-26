@@ -527,7 +527,7 @@ pub fn confirmation(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         ),
         _ => return,
     };
-    let id = egui::Id::new("dialog").with(salt);
+    let id = egui::Id::unique("dialog").with(salt);
     let shown = toolkit::dialog::Dialog::new(id, title)
         .buttons(vec![
             toolkit::dialog::Choice::new(confirm, toolkit::dialog::Role::Other),

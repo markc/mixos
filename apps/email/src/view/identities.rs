@@ -16,7 +16,7 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
     let Some(editor) = &state.identity_editor else {
         return;
     };
-    let id = egui::Id::new("identities");
+    let id = egui::Id::unique("identities");
     let choices = vec![
         Choice::new(crate::label("identity-save"), dialog::Role::Default),
         Choice::new(crate::label("identity-close"), dialog::Role::Cancel),

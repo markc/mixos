@@ -35,7 +35,7 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
             Some(crate::label("save")),
         ),
     };
-    let id = egui::Id::new(key);
+    let id = egui::Id::unique(key);
     let busy = match form {
         Form::Event(f) => f.busy,
         Form::Contact(f) => f.busy,

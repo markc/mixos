@@ -94,7 +94,7 @@ pub fn view(
             Dialog::About => "about",
             Dialog::Shortcuts => "shortcuts",
         };
-        let id = egui::Id::new("dialog").with(title);
+        let id = egui::Id::unique("dialog").with(title);
         let shown = dialog::Dialog::new(id, label(title))
             .buttons(vec![Choice::new(label("done"), dialog::Role::Default)])
             .show(ui.ctx(), |ui| match dialog {
@@ -180,7 +180,7 @@ fn tool_bar(
         let before = chosen;
         let response = combo::show(ui, "node", &mut chosen, &options, Some(150.0));
         response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, label("node"))
+            egui::WidgetInfo::labeled(egui::Role::ComboBox, true, label("node"))
         });
         if chosen != before {
             events.push(UiEvent::Node((chosen > 0).then(|| options[chosen].clone())));

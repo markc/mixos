@@ -224,7 +224,7 @@ pub fn picker(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     if !picker.open {
         return;
     }
-    let id = egui::Id::new("wallpaper-picker");
+    let id = egui::Id::unique("wallpaper-picker");
     let shown = dialog::Dialog::new(id, label("wallpaper-browser"))
         .width(egui::Rangef::new(560.0, 640.0))
         .buttons(vec![

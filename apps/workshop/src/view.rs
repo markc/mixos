@@ -157,7 +157,7 @@ pub fn view(
     let window = ui.max_rect().size();
     let side = engine.ui.dock_side.effective(window.x);
     if ui.ctx().data_mut(|d| {
-        let key = egui::Id::new("workshop-dock-viewport-width");
+        let key = egui::Id::unique("workshop-dock-viewport-width");
         let changed = d.get_temp::<f32>(key) != Some(window.x);
         d.insert_temp(key, window.x);
         changed
@@ -228,7 +228,7 @@ pub fn view(
             Dialog::About => "about",
             Dialog::Shortcuts => "shortcuts",
         };
-        let id = egui::Id::new("dialog").with(title);
+        let id = egui::Id::unique("dialog").with(title);
         // The shortcuts in force, from the registry: the profile can rebind them.
         let shown = dialog::Dialog::new(id, label(title))
             .buttons(vec![Choice::new(label("done"), dialog::Role::Default)])
@@ -257,7 +257,7 @@ fn services(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         let mut filter = engine.ui.filter.clone();
         let search = field::search(ui, &mut filter, &label("search"), ui.available_width());
         search.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, ui.is_enabled(), label("search"))
+            egui::WidgetInfo::labeled(egui::Role::TextInput, ui.is_enabled(), label("search"))
         });
         if search.changed() {
             events.push(UiEvent::Filter(filter));
@@ -268,7 +268,7 @@ fn services(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         }
         let ready = ui
             .ctx()
-            .data(|d| d.get_temp::<bool>(egui::Id::new("workshop-restore-ready")))
+            .data(|d| d.get_temp::<bool>(egui::Id::unique("workshop-restore-ready")))
             .unwrap_or(true);
         toolkit::saved::widgets::scroll(
             ui,
@@ -323,7 +323,7 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
                 &[("name", &row_name(engine, row))],
             );
             toggle.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name)
+                egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &name)
             });
             if toggle.clicked() {
                 events.push(UiEvent::Toggle(row.key.clone()));
@@ -353,7 +353,7 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
         let response = toolkit::selectable(ui, selected, text);
         if selected
             && ui.ctx().data_mut(|d| {
-                let key = egui::Id::new("workshop-restore-selection");
+                let key = egui::Id::unique("workshop-restore-selection");
                 let show = d.get_temp::<bool>(key).unwrap_or(false);
                 if show {
                     d.insert_temp(key, false);
@@ -733,7 +733,7 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             ));
         }
     }
-    let key = egui::Id::new(("workshop-document", app, id));
+    let key = egui::Id::unique(("workshop-document", app, id));
     let doc = cached_document(ui.ctx(), key, document["text"].as_str().unwrap_or_default());
     let Some(doc) = doc else {
         return;
@@ -750,7 +750,7 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     }
     let palette = ui
         .ctx()
-        .data(|data| data.get_temp::<editor::Palette>(egui::Id::new("toolkit.editor-palette")))
+        .data(|data| data.get_temp::<editor::Palette>(egui::Id::unique("toolkit.editor-palette")))
         .unwrap_or_else(|| editor::Palette::from_theme(&toolkit::Theme::embedded()));
     ui.allocate_ui(
         egui::vec2(
@@ -914,7 +914,7 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
 type Document = std::sync::Arc<std::sync::Mutex<editor::local::Document>>;
 fn cached_document(ctx: &egui::Context, key: egui::Id, source: &str) -> Option<Document> {
     ctx.data_mut(|data| {
-        let index = egui::Id::new("workshop-documents");
+        let index = egui::Id::unique("workshop-documents");
         let mut keys = data.get_temp::<Vec<egui::Id>>(index).unwrap_or_default();
         keys.retain(|old| {
             let keep = *old == key
@@ -949,20 +949,20 @@ mod cache_tests {
     #[test]
     fn clean_documents_are_evicted_and_dirty_edits_survive_selection() {
         let ctx = egui::Context::default();
-        let dirty_key = egui::Id::new(("workshop-document", "ced", "dirty"));
+        let dirty_key = egui::Id::unique(("workshop-document", "ced", "dirty"));
         let dirty = cached_document(&ctx, dirty_key, "original").unwrap();
         dirty.lock().unwrap().set_contents("unsaved edit").unwrap();
         assert!(dirty.lock().unwrap().is_dirty());
         for n in 0..100 {
             cached_document(
                 &ctx,
-                egui::Id::new(("workshop-document", "ced", n)),
+                egui::Id::unique(("workshop-document", "ced", n)),
                 "clean",
             )
             .unwrap();
         }
         let keys = ctx
-            .data(|data| data.get_temp::<Vec<egui::Id>>(egui::Id::new("workshop-documents")))
+            .data(|data| data.get_temp::<Vec<egui::Id>>(egui::Id::unique("workshop-documents")))
             .unwrap();
         assert_eq!(keys.len(), 2);
         let restored = cached_document(&ctx, dirty_key, "original").unwrap();

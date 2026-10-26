@@ -49,7 +49,7 @@ use egui::accesskit::{Role, SortDirection};
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
 use egui::{
     Color32, EventFilter, FontId, Id, Key, Layout, Modifiers, Rect, Sense, Stroke, StrokeKind,
-    TextStyle, Ui, UiBuilder, WidgetInfo, WidgetType, pos2, vec2,
+    TextStyle, Ui, UiBuilder, WidgetInfo, Role, pos2, vec2,
 };
 use egui_extras::TableBuilder;
 use serde_json::{Value, json};
@@ -189,7 +189,7 @@ pub fn row_height(ui: &Ui, density: Density) -> f32 {
 
 /// The keyboard focus target of the table with target id `id`.
 pub fn focus_id(id: &str) -> Id {
-    Id::new(("toolkit.datatable", id))
+    Id::unique(("toolkit.datatable", id))
 }
 
 /// Whether the table with target id `id` has the keyboard: what an app's
@@ -560,7 +560,7 @@ impl<'a> DataTable<'a> {
                         header_cell(ui, column, &label, sorted, pad, rule, n < last);
                     });
                     response.widget_info(|| {
-                        WidgetInfo::labeled(WidgetType::Button, column.sortable, &label)
+                        WidgetInfo::labeled(Role::Button, column.sortable, &label)
                     });
                     header_node(&response, whole, sorted);
                     if column.sortable && response.clicked() {
@@ -601,7 +601,7 @@ impl<'a> DataTable<'a> {
                     let response = row.response();
                     let label = texts.join(", ");
                     response.widget_info(|| {
-                        WidgetInfo::selected(WidgetType::Button, true, selected, &label)
+                        WidgetInfo::selected(Role::Button, true, selected, &label)
                     });
                     // The whole row, this pass: the cells' own responses
                     // carry the last pass's content rects.

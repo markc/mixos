@@ -42,7 +42,7 @@ use egui::emath::GuiRounding;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
     Align, CursorIcon, Frame, Layout, Pos2, Rect, ResizeDirection, Sense, Stroke, StrokeKind, Ui,
-    UiBuilder, ViewportBuilder, ViewportCommand, WidgetInfo, WidgetType, pos2, vec2,
+    UiBuilder, ViewportBuilder, ViewportCommand, WidgetInfo, Role, pos2, vec2,
 };
 
 fn label(key: &str) -> String {
@@ -225,11 +225,11 @@ pub fn show_with<S>(
             );
             return;
         }
-        let gap_id = ui.id().with("titlebar-gap");
+        let gap_id = ui.scope_id().with("titlebar-gap");
         let gap = ui.data(|d| d.get_temp::<Rect>(gap_id)).unwrap_or(bar);
         // Registered first and over the free gap only, so nothing drawn
         // later loses its clicks to it.
-        let drag = ui.interact(gap, ui.id().with("titlebar-drag"), Sense::click_and_drag());
+        let drag = ui.interact(gap, ui.scope_id().with("titlebar-drag"), Sense::click_and_drag());
 
         // The caption buttons take one end, Close in its corner: at the
         // right Minimize, Maximize, Close; at the left Close, Minimize,
@@ -465,7 +465,7 @@ fn menus<S>(
 /// what this window last asked for. The window opens undecorated
 /// ([`viewport`]), so a client-side window asks nothing.
 fn request_decorations(ctx: &egui::Context, server: bool) {
-    let id = egui::Id::new("toolkit.decorations");
+    let id = egui::Id::unique("toolkit.decorations");
     let asked = ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     if asked != server {
         ctx.data_mut(|d| d.insert_temp(id, server));
@@ -631,8 +631,8 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
         Caption::Close => "window-close",
     };
     let name = label(key);
-    let response = ui.interact(rect, ui.id().with(("toolkit-caption", key)), Sense::click());
-    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &name));
+    let response = ui.interact(rect, ui.scope_id().with(("toolkit-caption", key)), Sense::click());
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &name));
     let p = &chrome.palette;
     let pressed = response.is_pointer_button_down_on();
     let hovered = response.hovered() || pressed;
@@ -781,7 +781,7 @@ pub fn edges(ui: &mut Ui) {
     for (direction, zone, cursor) in zones {
         let response = ui.interact(
             zone,
-            ui.id().with(("toolkit-resize", format!("{direction:?}"))),
+            ui.scope_id().with(("toolkit-resize", format!("{direction:?}"))),
             Sense::drag(),
         );
         if response

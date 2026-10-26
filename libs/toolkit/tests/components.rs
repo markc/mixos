@@ -615,7 +615,7 @@ fn document_tabs_select_and_close() {
     ] {
         let docs = docs.clone();
         let mut h = harness(scheme, mode, Docs::default(), move |ui, s| {
-            let events = tabs::documents(ui, egui::Id::new("docs"), &docs, s.selected, None);
+            let events = tabs::documents(ui, egui::Id::unique("docs"), &docs, s.selected, None);
             if let Some(index) = events.selected {
                 s.selected = index;
             }
@@ -705,7 +705,7 @@ fn clicking_a_canvas_track_pages_and_dragging_the_thumb_scrolls() {
     let mut h = pro(View::default(), move |ui, s| {
         let _ = canvas::scrollbars(
             ui,
-            egui::Id::new("canvas"),
+            egui::Id::unique("canvas"),
             viewport,
             vec2(1600.0, 1200.0),
             &mut s.offset,
@@ -739,7 +739,7 @@ fn canvas_view() -> Harness<'static, View> {
     pro(View::default(), move |ui, s| {
         let _ = canvas::scrollbars(
             ui,
-            egui::Id::new("canvas"),
+            egui::Id::unique("canvas"),
             viewport,
             vec2(1600.0, 1200.0),
             &mut s.offset,

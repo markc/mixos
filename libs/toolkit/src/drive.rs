@@ -21,7 +21,7 @@ use crate::menu;
 use egui::accesskit::{Node, NodeId, Role, Toggled, TreeUpdate};
 use egui::{
     ColorImage, Context, Event, FullOutput, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2,
-    RawInput, TouchPhase, Ui, UserData, Vec2, ViewportCommand, pos2, vec2,
+    RawInput, TouchPhase, Ui, Vec2, ViewportCommand, pos2, vec2,
 };
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -355,7 +355,7 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
         };
         let owner = ctx.viewport_id();
         let target = ctx.data(|d| {
-            d.get_temp::<egui::ViewportId>(egui::Id::new(("drive-viewport", owner, name)))
+            d.get_temp::<egui::ViewportId>(egui::Id::unique(("drive-viewport", owner, name)))
         });
         let Some(target) = target else {
             return Some(refusal(id, "NOT_FOUND", "viewport is not open"));
@@ -424,7 +424,7 @@ pub fn register_viewport(
     name: &str,
     viewport: egui::ViewportId,
 ) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new(("drive-viewport", owner, name)), viewport));
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(("drive-viewport", owner, name)), viewport));
 }
 
 pub fn unregister_viewport(
@@ -434,7 +434,7 @@ pub fn unregister_viewport(
     viewport: egui::ViewportId,
 ) {
     let target = ctx.data_mut(|d| {
-        let key = egui::Id::new(("drive-viewport", owner, name));
+        let key = egui::Id::unique(("drive-viewport", owner, name));
         if d.get_temp::<egui::ViewportId>(key) == Some(viewport) {
             d.remove_temp::<egui::ViewportId>(key)
         } else {
@@ -525,10 +525,6 @@ struct Running {
     pass_events: Vec<String>,
 }
 
-/// The tag a capture's screenshot request carries.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Shot(u64);
-
 /// The plugin: the last widget tree, queued input and finished answers.
 #[derive(Default)]
 pub struct Drive {
@@ -542,7 +538,7 @@ pub struct Drive {
     requests: VecDeque<(u64, String, Value)>,
     passes: HashMap<std::thread::ThreadId, Vec<egui::ViewportId>>,
     deadlines: HashMap<u64, Instant>,
-    screenshots: Vec<Event>,
+    screenshots: std::sync::Arc<std::sync::Mutex<Vec<(u64, std::sync::Arc<ColorImage>)>>>,
     app: String,
     options: Options,
     tree: Option<TreeUpdate>,
@@ -578,19 +574,6 @@ impl egui::Plugin for Drive {
             .push(input.viewport_id);
         // The platform may switch AccessKit off when a screen reader leaves.
         ctx.enable_accesskit();
-        let current = input.viewport_id;
-        input.events.retain(|event| {
-            if let Event::Screenshot { viewport_id, .. } = event
-                && *viewport_id != current
-                && let Some(child) = self.children.get_mut(viewport_id)
-            {
-                // eframe delivers completed GPU captures to the parent input.
-                child.screenshots.push(event.clone());
-                ctx.request_repaint_of(*viewport_id);
-                return false;
-            }
-            true
-        });
         if input.viewport_id != egui::ViewportId::ROOT {
             let app = self.app.clone();
             let options = self.options.clone();
@@ -601,29 +584,26 @@ impl egui::Plugin for Drive {
                     ..Drive::default()
                 })
             });
-            input.events.append(&mut child.screenshots);
             child.last_ui_pass = Some(Instant::now());
-            child.step(input);
+            child.step(ctx, input);
             if let Some(running) = &mut child.running
                 && running.trace.is_some()
             {
                 running.pass_events = input
                     .events
                     .iter()
-                    .filter(|e| !matches!(e, Event::Screenshot { .. }))
                     .map(|e| format!("{e:?}"))
                     .collect();
             }
             return;
         }
-        self.step(input);
+        self.step(ctx, input);
         if let Some(running) = &mut self.running
             && running.trace.is_some()
         {
             running.pass_events = input
                 .events
                 .iter()
-                .filter(|e| !matches!(e, Event::Screenshot { .. }))
                 .map(|e| format!("{e:?}"))
                 .collect();
         }
@@ -1134,9 +1114,9 @@ impl Drive {
     }
 
     /// Start the next queued job, answering any that cannot start.
-    fn start(&mut self) {
+    fn start(&mut self, ctx: &Context) {
         while let Some((id, job)) = self.queue.pop_front() {
-            match self.plan(job) {
+            match self.plan(ctx, job) {
                 Ok((steps, report, extra)) => {
                     let trace = self.traced.contains(&id).then(Vec::new);
                     self.traced.retain(|t| *t != id);
@@ -1159,7 +1139,7 @@ impl Drive {
 
     /// The steps of `job`, one per pass, ending with a pass that redraws
     /// what the input changed.
-    fn plan(&self, job: Job) -> Result<(Vec<Step>, Report, Value), String> {
+    fn plan(&self, ctx: &Context, job: Job) -> Result<(Vec<Step>, Report, Value), String> {
         let input = Step::Input;
         let press = |pos, button, pressed| Event::PointerButton {
             pos,
@@ -1269,7 +1249,13 @@ impl Drive {
                 json!({"requested":action}),
             ),
             Job::Capture { path, tag } => {
-                let shot = ViewportCommand::Screenshot(UserData::new(Shot(tag)));
+                let completed = self.screenshots.clone();
+                let ctx = ctx.clone();
+                let viewport = ctx.viewport_id();
+                let shot = ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |image| {
+                    completed.lock().unwrap().push((tag, image));
+                    ctx.request_repaint_of(viewport);
+                }));
                 let deadline = Instant::now() + self.options.capture_timeout;
                 (
                     vec![
@@ -1288,14 +1274,14 @@ impl Drive {
     }
 
     /// One pass of the running job: inject its next step.
-    fn step(&mut self, input: &mut RawInput) {
+    fn step(&mut self, ctx: &Context, input: &mut RawInput) {
         // Owed releases go first, in a pass of their own.
         if !self.cleanup.is_empty() {
             input.events.append(&mut self.cleanup);
             return;
         }
         if self.running.is_none() {
-            self.start();
+            self.start(ctx);
         }
         let Some(running) = &mut self.running else {
             return;
@@ -1306,19 +1292,8 @@ impl Drive {
             deadline,
         }) = running.steps.front_mut()
         {
-            let image = input.events.iter().find_map(|event| match event {
-                Event::Screenshot {
-                    user_data, image, ..
-                } if user_data
-                    .data
-                    .as_ref()
-                    .and_then(|d| (**d).downcast_ref::<Shot>())
-                    == Some(&Shot(*tag)) =>
-                {
-                    Some(image.clone())
-                }
-                _ => None,
-            });
+            let image = self.screenshots.lock().unwrap().drain(..)
+                .find_map(|(completed_tag, image)| (completed_tag == *tag).then_some(image));
             let answer = match image {
                 Some(image) => match write_png(path, &image) {
                     Ok(()) => Some(ok(
@@ -1759,7 +1734,7 @@ mod tests {
             if running {
                 ctx.with_plugin(|drive: &mut Drive| {
                     drive.queue.pop_front();
-                    drive.start();
+                    drive.start(&ctx);
                     drive.running.as_mut().unwrap().steps.pop_front();
                 });
             }
@@ -1969,13 +1944,11 @@ mod tests {
         // A real UI pass requested the screenshot. Logic-only must now leave
         // it waiting for its event, even well beyond the input quiet period.
         assert!(logic_at(&ctx, Instant::now() + INPUT_QUIET_PERIOD).is_empty());
-        let mut input = RawInput::default();
-        input.events.push(Event::Screenshot {
-            viewport_id: egui::ViewportId::ROOT,
-            user_data: UserData::new(Shot(1)),
-            image: std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
+        ctx.with_plugin(|drive: &mut Drive| {
+            drive.screenshots.lock().unwrap().push((1,
+                std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE))));
         });
-        ctx.run_ui(input, |_| {}).drop_without_applying_deltas();
+        ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
         let answers = logic(&ctx);
         assert_eq!(answers.len(), 1);
         assert_eq!(answers[0].rc, 0);
@@ -1995,13 +1968,11 @@ mod tests {
             ctx.with_plugin(|drive: &mut Drive| drive.last_ui_pass = Some(pass));
             assert!(logic_at(&ctx, pass + Duration::from_millis(999)).is_empty());
         }
-        let mut input = RawInput::default();
-        input.events.push(Event::Screenshot {
-            viewport_id: egui::ViewportId::ROOT,
-            user_data: UserData::new(Shot(1)),
-            image: std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
+        ctx.with_plugin(|drive: &mut Drive| {
+            drive.screenshots.lock().unwrap().push((1,
+                std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE))));
         });
-        ctx.run_ui(input, |_| {}).drop_without_applying_deltas();
+        ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
         assert_eq!(logic(&ctx)[0].rc, 0);
         assert!(temp.path().join("demo/captures/trickle.png").is_file());
     }
@@ -2190,7 +2161,7 @@ mod tests {
     }
 
     #[test]
-    fn gpu_capture_delivered_to_parent_reaches_the_editor() {
+    fn gpu_capture_completion_reaches_the_editor() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("editor.png");
         let editor = egui::ViewportId::from_hash_of("captured-editor");
@@ -2216,14 +2187,8 @@ mod tests {
             }),
         );
         let ctx = Context::default();
-        let mut parent = RawInput::default();
-        parent.events.push(Event::Screenshot {
-            viewport_id: editor,
-            user_data: UserData::new(Shot(7)),
-            image: std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
-        });
-        egui::Plugin::input_hook(&mut drive, &ctx, &mut parent);
-        assert!(parent.events.is_empty());
+        drive.children[&editor].screenshots.lock().unwrap().push((7,
+            std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE))));
         let mut input = RawInput {
             viewport_id: editor,
             ..Default::default()

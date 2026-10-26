@@ -432,7 +432,7 @@ pub struct Chrome {
 }
 
 fn key() -> Id {
-    Id::new("toolkit.chrome")
+    Id::unique("toolkit.chrome")
 }
 
 impl Chrome {

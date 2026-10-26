@@ -96,5 +96,5 @@ pub(crate) fn window_id(
     viewport: egui::ViewportId,
     name: impl std::hash::Hash + std::fmt::Debug,
 ) -> egui::Id {
-    egui::Id::new((viewport, name))
+    egui::Id::unique((viewport, name))
 }

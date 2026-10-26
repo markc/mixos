@@ -254,7 +254,7 @@ pub fn autofocus(tree: &ResolvedScene) -> Option<&str> {
 
 /// The egui id of a document field, for focus.
 pub fn field_id(id: &str) -> egui::Id {
-    egui::Id::new(("scene-field", id))
+    egui::Id::unique(("scene-field", id))
 }
 
 /// The embedded design a scene draws with before the session look arrives:

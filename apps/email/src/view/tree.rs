@@ -24,7 +24,7 @@ const ICON: f32 = 12.0;
 
 /// The tree's focus target.
 fn tree_id() -> Id {
-    Id::new("account-tree")
+    Id::unique("account-tree")
 }
 
 /// Give the tree the keyboard.

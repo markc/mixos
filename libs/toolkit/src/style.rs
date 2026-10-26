@@ -293,7 +293,7 @@ pub fn apply(ctx: &egui::Context, theme: &Theme) {
     crate::ui_scale::install(ctx, theme.ui());
     ctx.data_mut(|d| {
         d.insert_temp(
-            egui::Id::new("toolkit.editor-palette"),
+            egui::Id::unique("toolkit.editor-palette"),
             editor::Palette::from_theme(theme),
         )
     });

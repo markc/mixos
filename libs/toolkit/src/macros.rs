@@ -882,7 +882,7 @@ impl State {
                 );
                 let palette = ctx
                     .data(|d| {
-                        d.get_temp::<editor::Palette>(egui::Id::new("toolkit.editor-palette"))
+                        d.get_temp::<editor::Palette>(egui::Id::unique("toolkit.editor-palette"))
                     })
                     .unwrap_or_else(|| editor::Palette::from_theme(&crate::Theme::embedded()));
                 let height = ui.available_height().max(0.0);
@@ -1267,7 +1267,7 @@ pub fn close_app(ctx: &egui::Context, app: &str) {
             crate::drive::unregister_viewport(ctx, owner, "macro-editor", editor);
         }
     }
-    let owners_id = egui::Id::new("macro-viewport-owners");
+    let owners_id = egui::Id::unique("macro-viewport-owners");
     ctx.data_mut(|d| {
         let mut owners = d
             .get_temp::<Vec<(egui::ViewportId, egui::Id)>>(owners_id)
@@ -1285,7 +1285,7 @@ pub fn close_app(ctx: &egui::Context, app: &str) {
 
 fn window_state(ctx: &egui::Context, app: &str, open: bool) -> Option<WindowState> {
     let viewport = ctx.viewport_id();
-    let owners_id = egui::Id::new("macro-viewport-owners");
+    let owners_id = egui::Id::unique("macro-viewport-owners");
     let mut owners = ctx
         .data(|d| d.get_temp::<Vec<(egui::ViewportId, egui::Id)>>(owners_id))
         .unwrap_or_default();

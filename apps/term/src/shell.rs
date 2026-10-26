@@ -82,6 +82,7 @@ fn takes(event: &Event) -> bool {
             | Event::Copy
             | Event::Cut
             | Event::Paste(_)
+            | Event::PasteImage(_)
             | Event::Ime(_)
     )
 }
@@ -150,7 +151,7 @@ impl Shell {
             exiting: false,
             clipboard,
             ctx,
-            focus: egui::Id::new("term.panes"),
+            focus: egui::Id::unique("term.panes"),
             font: Persistence::default(),
             font_ops: (operation_prefix(), 0),
         }

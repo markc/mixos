@@ -49,7 +49,7 @@ pub fn theme() -> Arc<Theme> {
 
 /// Where a context records the generation it installed.
 fn installed_id() -> Id {
-    Id::new("capture-style-generation")
+    Id::unique("capture-style-generation")
 }
 
 /// Install the current theme on `ctx` (style, chrome, icons and fonts) and
@@ -167,7 +167,7 @@ fn contrast(fill: Color32) -> Color32 {
 
 /// A dialog panel centred on the surface, outlined in `border`.
 pub fn centred_dialog(ui: &mut Ui, id: &str, border: Color32, body: impl FnOnce(&mut Ui)) {
-    egui::Area::new(Id::new(id))
+    egui::Area::new(Id::unique(id))
         .anchor(Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style())

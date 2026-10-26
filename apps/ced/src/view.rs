@@ -217,7 +217,7 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
         .active()
         .and_then(|a| list.iter().position(|t| t.id == a))
         .unwrap_or(0);
-    let picked = toolkit::tabs::documents(ui, egui::Id::new("ced.tabs"), &shown, selected, None);
+    let picked = toolkit::tabs::documents(ui, egui::Id::unique("ced.tabs"), &shown, selected, None);
     if let Some(i) = picked.selected
         && let Some(t) = list.get(i)
     {
@@ -589,7 +589,7 @@ fn selected_chars(ctx: &egui::Context, tab: &Tab) -> Option<usize> {
         sel.anchor.max(sel.head).min(text.len()),
     );
     let key = (tab.id, m.view_gen(), a, b);
-    let id = egui::Id::new("ced.selected_chars");
+    let id = egui::Id::unique("ced.selected_chars");
     if let Some((k, n)) = ctx.data(|d| d.get_temp::<((TabId, u64, usize, usize), usize)>(id))
         && k == key
     {
@@ -758,7 +758,7 @@ fn dialogs(
             None,
         ),
     };
-    let id = egui::Id::new(("ced.dialog", std::mem::discriminant(&dialog)));
+    let id = egui::Id::unique(("ced.dialog", std::mem::discriminant(&dialog)));
     let response = dialog::Dialog::new(id, title)
         .buttons(buttons)
         .show(ctx, |ui| match &dialog {

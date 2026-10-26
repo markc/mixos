@@ -294,7 +294,7 @@ fn toggle(ui: &mut Ui, value: &mut bool, key: &str) -> bool {
     let response = ui.add(Toggle::new(value, ""));
     response.widget_info(|| {
         egui::WidgetInfo::selected(
-            egui::WidgetType::Checkbox,
+            egui::Role::CheckBox,
             ui.is_enabled(),
             *value,
             label(key),
@@ -353,7 +353,7 @@ fn signpost(ui: &mut Ui, engine: &Engine, key: &str, target: Section, events: &m
 /// The flat sidebar and its searchable section list.
 fn editors(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, events: &mut Vec<UiEvent>) {
     let mut query = engine.ui.search.clone();
-    let id = egui::Id::new("preferences-search");
+    let id = egui::Id::unique("preferences-search");
     let focused = ui.memory(|m| m.has_focus(id));
     // Escape clears a live filter even after Enter moved focus into the opened section,
     // but never while a dialog, the picker or the macros drawer owns it.
@@ -640,7 +640,7 @@ fn scale_control(
     range: RangeInclusive<f64>,
     percent: bool,
 ) -> Option<f64> {
-    let id = egui::Id::new(key);
+    let id = egui::Id::unique(key);
     let mut value = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(current);
     let mut commit = false;
     row(ui, key, &label(key), |ui| {
@@ -1304,7 +1304,7 @@ struct Numeric {
 /// focus, a drag when the pointer lets go, so no keystroke is sent. `Some`
 /// is the value to apply, rounded, when it differs from `current`.
 fn number(ui: &mut Ui, spec: Numeric, current: f64, range: RangeInclusive<f64>) -> Option<f64> {
-    let id = egui::Id::new(spec.key);
+    let id = egui::Id::unique(spec.key);
     let mut value = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(current);
     let mut commit = false;
     row(ui, spec.key, &spec.title, |ui| {
@@ -1348,7 +1348,7 @@ fn number(ui: &mut Ui, spec: Numeric, current: f64, range: RangeInclusive<f64>) 
 /// per keystroke. While it is not being edited it shows `current`. `Some`
 /// is the trimmed text to apply when it differs from `current`.
 fn text_field(ui: &mut Ui, key: &'static str, current: &str, hint: &str) -> Option<String> {
-    let id = egui::Id::new(key);
+    let id = egui::Id::unique(key);
     let mut text = ui
         .data(|d| d.get_temp::<String>(id))
         .unwrap_or_else(|| current.to_owned());
@@ -1375,7 +1375,7 @@ fn checked_text(
     hint: &str,
     setting: impl Fn(&str) -> Setting,
 ) -> Option<Setting> {
-    let refused_id = egui::Id::new(key).with("refused");
+    let refused_id = egui::Id::unique(key).with("refused");
     let committed = text_field(ui, key, current, hint).map(|text| setting(&text));
     if let Some(committed) = &committed {
         ui.data_mut(|d| match committed.refusal() {
@@ -1647,7 +1647,7 @@ fn dialogs(
         Dialog::About | Dialog::Shortcuts => {
             let about = *dialog == Dialog::About;
             let title = if about { "about" } else { "shortcuts" };
-            let id = egui::Id::new("dialog").with(title);
+            let id = egui::Id::unique("dialog").with(title);
             // The shortcuts in force, from the registry: the profile can rebind them.
             let shown = dialog::Dialog::new(id, label(title))
                 .buttons(vec![Choice::new(label("done"), dialog::Role::Default)])
@@ -1665,7 +1665,7 @@ fn dialogs(
             }
         }
         Dialog::Remove(app) => {
-            let id = egui::Id::new("dialog").with("remove");
+            let id = egui::Id::unique("dialog").with("remove");
             let args = [("app", app.as_str())];
             // Cancel is the default: Enter never removes.
             let shown = dialog::Dialog::new(id, label_with("remove-title", &args))
@@ -2273,7 +2273,7 @@ mod numeric_tests {
         assert_eq!(h.state().value, 250.0);
         assert!(
             h.ctx
-                .data(|d| d.get_temp::<f64>(egui::Id::new("numeric-test")))
+                .data(|d| d.get_temp::<f64>(egui::Id::unique("numeric-test")))
                 .is_none()
         );
         h.get_by_role(Role::SpinButton).click();

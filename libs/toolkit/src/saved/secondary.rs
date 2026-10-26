@@ -21,7 +21,7 @@ struct Windows {
 type Shared = Arc<Mutex<Windows>>;
 
 fn key(app: &str) -> egui::Id {
-    egui::Id::new(("toolkit.saved.windows", app))
+    egui::Id::unique(("toolkit.saved.windows", app))
 }
 
 pub(super) fn install(

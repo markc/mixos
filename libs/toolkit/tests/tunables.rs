@@ -15,7 +15,7 @@ fn gallery(ui: &mut Ui, text: &mut String) {
     let rect = Rect::from_min_size(ui.next_widget_position(), vec2(260.0, 130.0));
     canvas::surround(ui, rect);
     let mut offset = egui::Vec2::ZERO;
-    canvas::scrollbars(ui, Id::new("canvas"), rect, vec2(900.0, 700.0), &mut offset);
+    canvas::scrollbars(ui, Id::unique("canvas"), rect, vec2(900.0, 700.0), &mut offset);
     ui.allocate_rect(rect, egui::Sense::hover());
 }
 
@@ -239,13 +239,13 @@ fn field_focus_width_is_drawn_from_the_installed_style() {
                 .wgpu()
                 .build_ui_state(
                     |ui, text| {
-                        ui.add(field::text_edit(text, "Name", 240.0).id(Id::new("focus-field")));
+                        ui.add(field::text_edit(text, "Name", 240.0).id(Id::unique("focus-field")));
                     },
                     "Focused field".into(),
                 );
             toolkit::install(&h.ctx, &theme);
             h.ctx
-                .memory_mut(|memory| memory.request_focus(Id::new("focus-field")));
+                .memory_mut(|memory| memory.request_focus(Id::unique("focus-field")));
             h.run();
             results.add(h.try_snapshot(format!("field_focus_{}_{width}", style.name())));
         }
@@ -263,7 +263,7 @@ fn the_canvas_hot_distance_repaints_under_an_idle_pointer() {
                 let content = vec2(1000.0, 700.0);
                 let inner = canvas::scrollbars(
                     ui,
-                    Id::new("idle-bar"),
+                    Id::unique("idle-bar"),
                     viewport,
                     content,
                     &mut state.offset,

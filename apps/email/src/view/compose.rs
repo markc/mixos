@@ -37,7 +37,7 @@ pub fn confirm(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
             "discard-draft-quit",
         ),
     };
-    let id = egui::Id::new(key);
+    let id = egui::Id::unique(key);
     let choices = vec![
         Choice::new(crate::label(keep), dialog::Role::Default),
         Choice::new(crate::label(discard), dialog::Role::Other),
@@ -70,7 +70,7 @@ pub fn restore(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
     let Some(draft) = state.restore.first() else {
         return;
     };
-    let id = egui::Id::new("restore-draft");
+    let id = egui::Id::unique("restore-draft");
     let choices = vec![
         Choice::new(crate::label("restore-draft"), dialog::Role::Default),
         Choice::new(crate::label("discard-draft"), dialog::Role::Other),
@@ -126,7 +126,7 @@ pub fn restore(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
 
 /// The compose dialog, when a draft is open.
 pub fn body_focused(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp::<egui::Id>(egui::Id::new("email.compose.body.focus")))
+    ctx.data(|d| d.get_temp::<egui::Id>(egui::Id::unique("email.compose.body.focus")))
         .is_some_and(|id| ctx.memory(|m| m.has_focus(id)))
 }
 
@@ -135,7 +135,7 @@ pub fn dialog(ui: &mut Ui, state: &State, palette: &editor::Palette, events: &mu
     let Some(compose) = &state.compose else {
         return;
     };
-    let id = egui::Id::new("compose");
+    let id = egui::Id::unique("compose");
     let mut send = Choice::new(crate::label("send"), dialog::Role::Default);
     send.enabled = state.compose_sendable();
     let choices = vec![
@@ -172,7 +172,7 @@ fn recipients(
     width: f32,
     events: &mut Vec<UiEvent>,
 ) {
-    let id = egui::Id::new("compose-recipients").with(row_label(field));
+    let id = egui::Id::unique("compose-recipients").with(row_label(field));
     let suggest = compose
         .suggest
         .as_ref()
@@ -499,7 +499,7 @@ fn form(
             let mut buffer = compose.draft.subject.clone();
             let width = ui.available_width();
             let response = ui
-                .add(field::text_edit(&mut buffer, "", width).id(egui::Id::new("compose-subject")))
+                .add(field::text_edit(&mut buffer, "", width).id(egui::Id::unique("compose-subject")))
                 .labelled_by(label);
             if response.changed() {
                 events.push(UiEvent::ComposeField(ComposeField::Subject, buffer));
@@ -527,7 +527,7 @@ fn form(
                 );
                 ui.ctx().data_mut(|d| {
                     d.insert_temp(
-                        egui::Id::new("email.compose.body.focus"),
+                        egui::Id::unique("email.compose.body.focus"),
                         output.response.id,
                     )
                 });

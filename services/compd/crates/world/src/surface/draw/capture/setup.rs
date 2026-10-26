@@ -164,7 +164,7 @@ impl UiProgram for SetupOverlay {
         // masked or clear background.
         let background = ui.interact(
             ui.max_rect(),
-            egui::Id::new("capture-setup-background"),
+            egui::Id::unique("capture-setup-background"),
             egui::Sense::click_and_drag(),
         );
         let (pointer, pressed, released) = ui.ctx().input(|input| {
@@ -198,7 +198,7 @@ impl UiProgram for SetupOverlay {
         } else if enter {
             emit.push(CaptureMessage::Confirm);
         }
-        egui::Area::new(egui::Id::new("capture-setup-chooser"))
+        egui::Area::new(egui::Id::unique("capture-setup-chooser"))
             .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 28.0))
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| self.chooser(ui, accent, emit));

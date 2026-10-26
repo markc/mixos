@@ -35,7 +35,7 @@ use egui::emath::GuiRounding;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
     Color32, FontFamily, FontId, Frame, Galley, Id, Margin, Popup, Rect, Sense, Shape, Stroke,
-    StrokeKind, Ui, WidgetInfo, WidgetType, pos2, vec2,
+    StrokeKind, Ui, WidgetInfo, Role, pos2, vec2,
 };
 use std::f32::consts::{FRAC_PI_2, PI};
 use std::sync::Arc;
@@ -152,7 +152,7 @@ pub fn chevron(ui: &mut Ui, id: Id, rect: Rect, hidden: &[(usize, String)]) -> O
     let response = ui.interact(rect, id, Sense::click());
     response.widget_info(|| {
         WidgetInfo::labeled(
-            WidgetType::Button,
+            Role::Button,
             ui.is_enabled(),
             crate::strings::own("more-tabs"),
         )
@@ -469,7 +469,7 @@ fn doc_tab(
     let (p, pro) = (&chrome.palette, is_strip(chrome));
     let response = ui.interact(rect, id, Sense::click());
     response
-        .widget_info(|| WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), selected, name));
+        .widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), selected, name));
     let (close_size, close_from_right, close_icon) = if pro {
         (
             crate::chrome::Chrome::of(ui.ctx()).style.tabs_pro_close as f32,
@@ -498,7 +498,7 @@ fn doc_tab(
     let close = ui.interact(close_rect, id.with("close"), Sense::click());
     close.widget_info(|| {
         WidgetInfo::labeled(
-            WidgetType::Button,
+            Role::Button,
             ui.is_enabled(),
             crate::strings::own_with("close-document", &[("name", name)]),
         )

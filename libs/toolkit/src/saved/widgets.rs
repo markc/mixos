@@ -26,7 +26,7 @@ impl Widgets {
     pub fn install(&self, ctx: &egui::Context) {
         ctx.data_mut(|d| {
             d.insert_temp(
-                egui::Id::new("toolkit.saved.widgets"),
+                egui::Id::unique("toolkit.saved.widgets"),
                 Arc::new(Mutex::new(self.clone())),
             )
         });
@@ -38,7 +38,7 @@ impl Widgets {
     }
 }
 fn shared(ctx: &egui::Context) -> Option<Arc<Mutex<Widgets>>> {
-    ctx.data(|d| d.get_temp(egui::Id::new("toolkit.saved.widgets")))
+    ctx.data(|d| d.get_temp(egui::Id::unique("toolkit.saved.widgets")))
 }
 fn with<R>(ctx: &egui::Context, f: impl FnOnce(&mut Widgets) -> R) -> Option<R> {
     let shared = shared(ctx)?;
@@ -75,11 +75,11 @@ pub fn panel<R>(
     // egui remembers pixels. Invalidate them only when the available extent
     // changes, retaining the saved share when a window or adjacent dock resizes.
     ui.ctx().data_mut(|d| {
-        let key = egui::Id::new(("saved-panel-extent", name));
+        let key = egui::Id::unique(("saved-panel-extent", name));
         if d.get_temp::<f32>(key)
             .is_some_and(|old| (old - extent).abs() > 0.5)
         {
-            d.remove::<egui::containers::panel::PanelState>(egui::Id::new(name));
+            d.remove::<egui::containers::panel::PanelState>(egui::Id::unique(name));
         }
         d.insert_temp(key, extent);
     });
@@ -101,7 +101,7 @@ pub fn panel<R>(
         shown.response.rect.height()
     };
     let changed = ui
-        .read_response(egui::Id::new(name).with("__resize"))
+        .read_response(egui::Id::unique(name).with("__resize"))
         .is_some_and(|r| r.dragged() || r.drag_stopped())
         .then_some((size / extent.max(1.0)).clamp(*limits.start(), *limits.end()))
         .filter(|v| (*v - share).abs() > 0.005)
@@ -125,7 +125,7 @@ pub fn set_panel(ctx: &egui::Context, name: &str, share: f32) {
         // the previous session's share on that first layout.
         w.applied.insert(format!("panel:{name}"));
     });
-    ctx.data_mut(|d| d.remove::<egui::containers::panel::PanelState>(egui::Id::new(name)));
+    ctx.data_mut(|d| d.remove::<egui::containers::panel::PanelState>(egui::Id::unique(name)));
 }
 
 /// A restored selection's visibility takes priority over the old raw offset.
@@ -210,7 +210,7 @@ pub fn collapsing<R>(
     let open = with(ctx, |w| w.open.get(name).copied().unwrap_or(default)).unwrap_or(default);
     let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
         ctx,
-        egui::Id::new(("saved-open", name)),
+        egui::Id::unique(("saved-open", name)),
         open,
     );
     state.set_open(open);
@@ -367,7 +367,7 @@ mod tests {
                 0.3,
             );
         h.run();
-        let edge = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new("left"))
+        let edge = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::unique("left"))
             .unwrap()
             .outer_rect
             .right();

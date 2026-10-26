@@ -166,7 +166,7 @@ pub fn show(
     let response = ui.interact(rect, id, Sense::click_and_drag());
     response.widget_info(|| {
         egui::WidgetInfo::labeled(
-            egui::WidgetType::TextEdit,
+            egui::Role::TextInput,
             ui.is_enabled() && !view.read_only,
             view.label.as_deref().unwrap_or_default(),
         )

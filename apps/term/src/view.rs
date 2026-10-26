@@ -69,7 +69,7 @@ pub fn tab_strip(ui: &mut Ui, app: &App) -> Vec<UiEvent> {
         })
         .collect();
     let selected = tabs.iter().position(|tab| tab.active).unwrap_or(0);
-    let picked = toolkit::tabs::documents(ui, egui::Id::new("term.tabs"), &shown, selected, None);
+    let picked = toolkit::tabs::documents(ui, egui::Id::unique("term.tabs"), &shown, selected, None);
     let mut events = Vec::new();
     if let Some(tab) = picked.selected.and_then(|i| tabs.get(i)) {
         events.push(UiEvent::SelectTab(tab.id));
@@ -180,7 +180,7 @@ fn preedit(ui: &Ui, app: &App, chrome: &Chrome) {
 
 /// The Keyboard Shortcuts dialog; true when it was closed.
 pub fn keys_dialog(ctx: &egui::Context, commands: &Registry<App>, strings: &Strings) -> bool {
-    let response = dialog::Dialog::new(egui::Id::new("term.keys"), label("keys-title"))
+    let response = dialog::Dialog::new(egui::Id::unique("term.keys"), label("keys-title"))
         .buttons(vec![Choice::new(label("close"), Role::Default)])
         .show(ctx, |ui| {
             egui::ScrollArea::vertical()
@@ -221,7 +221,7 @@ pub fn about_text(settings_connected: bool) -> String {
 
 /// The toolkit's standard About dialog; true when it was closed.
 pub fn about_dialog(ctx: &egui::Context, settings_connected: bool) -> bool {
-    let response = dialog::Dialog::new(egui::Id::new("term.about"), label("about-title"))
+    let response = dialog::Dialog::new(egui::Id::unique("term.about"), label("about-title"))
         .buttons(vec![Choice::new(label("close"), Role::Default)])
         .show(ctx, |ui| {
             ui.add(egui::Label::new(about_text(settings_connected)).wrap());

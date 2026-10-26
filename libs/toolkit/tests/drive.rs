@@ -916,12 +916,10 @@ fn a_capture_ignores_other_screenshots() {
         .push((7, "ui.capture", json!({"name":"mine.png"})));
     h.step();
     h.step();
-    // A screenshot someone else asked for arrives while this one waits.
-    h.event(Event::Screenshot {
-        viewport_id: ViewportId::ROOT,
-        user_data: egui::UserData::new(7_u64),
-        image: Arc::new(ColorImage::filled([4, 3], Color32::RED)),
-    });
+    // An unrelated callback has its own recipient and cannot fulfil this capture.
+    egui::ScreenshotCallback::new(|_| {}).complete(
+        Arc::new(ColorImage::filled([4, 3], Color32::RED)),
+    );
     for _ in 0..20 {
         h.step();
     }

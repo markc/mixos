@@ -176,7 +176,7 @@ fn executed_commands_are_published_with_their_origin() {
 fn slash_focuses_search_enter_opens_first_match_and_escape_clears_and_unfocuses() {
     use egui::accesskit::Role;
     let mut rig = rig();
-    let search = egui::Id::new("preferences-search");
+    let search = egui::Id::unique("preferences-search");
     rig.h.key_press(egui::Key::Slash);
     rig.h.run_steps(3);
     assert!(rig.h.ctx.memory(|m| m.has_focus(search)));

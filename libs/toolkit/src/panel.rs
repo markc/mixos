@@ -25,7 +25,7 @@ use crate::tabs;
 use egui::emath::GuiRounding;
 use egui::{
     Color32, FontId, Frame, Id, Margin, Pos2, Rect, Response, Sense, Stroke, Ui, WidgetInfo,
-    WidgetType, pos2, vec2,
+    Role, pos2, vec2,
 };
 
 /// A group's view state.
@@ -239,7 +239,7 @@ fn section<R>(
             let response = ui.interact(rect, id.with(("pill", index)), Sense::click());
             let selected = index == state.selected;
             response.widget_info(|| {
-                WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), selected, name)
+                WidgetInfo::selected(Role::Button, ui.is_enabled(), selected, name)
             });
             let (galley, cut) = tabs::label(
                 ui,

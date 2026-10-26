@@ -25,7 +25,7 @@ fn harness(render: bool) -> Harness<'static, Model> {
                 };
                 if let Some(pick) = menu::anchored(
                     ui,
-                    egui::Id::new("test-macros"),
+                    egui::Id::unique("test-macros"),
                     egui::Rect::from_min_size(egui::pos2(300.0, 20.0), egui::vec2(24.0, 24.0)),
                     &mut state.open,
                     menu,

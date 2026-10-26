@@ -292,7 +292,7 @@ fn inks(ui: &mut Ui, app: &App, editable: bool, events: &mut Vec<UiEvent>) {
         let (rect, response) = ui.allocate_exact_size(vec2(SWATCH, SWATCH), Sense::click());
         let name = label(ink.label);
         response.widget_info(|| {
-            egui::WidgetInfo::selected(egui::WidgetType::Button, editable, selected, &name)
+            egui::WidgetInfo::selected(egui::Role::Button, editable, selected, &name)
         });
         let visuals = ui.visuals();
         let outline = if selected {
@@ -866,7 +866,7 @@ fn dialogs(
     let Some(dialog) = app.ui.dialog else {
         return;
     };
-    let id = Id::new("screenshot-dialog").with(dialog.name());
+    let id = Id::unique("screenshot-dialog").with(dialog.name());
     let mut closed = false;
     match dialog {
         Dialog::Discard => {

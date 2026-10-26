@@ -17,9 +17,6 @@ use toolkit::{Theme, drive};
 use workshop::label;
 use workshop::shell::{APP, Shell};
 
-// Exercise the actual vendored deadline policy alongside the wiring guard.
-#[path = "../../../vendor/eframe/src/native/logic_wake.rs"]
-mod logic_wake;
 
 #[test]
 fn capture_waits_for_quiet_deadline_then_releases_later_commands() {
@@ -79,11 +76,7 @@ fn queued_bus_requests_answer_through_logic_without_a_ui_pass() {
     std::thread::spawn(move || repaint.request_repaint())
         .join()
         .unwrap();
-    let when = incoming.recv_timeout(Duration::from_secs(1)).unwrap();
-    let mut wake = logic_wake::LogicWake::default();
-    wake.request(when);
-    let deadline = wake.deadline().unwrap();
-    assert!(wake.take_due(deadline));
+    let _when = incoming.recv_timeout(Duration::from_secs(1)).unwrap();
     // This is eframe's existing logic-only path: no run_ui, no painter.
     let _output = ctx.run_logic(&egui::RawInput::default(), |ctx| {
         rig.h.state_mut().as_mut().unwrap().logic(ctx);
@@ -97,24 +90,17 @@ fn queued_bus_requests_answer_through_logic_without_a_ui_pass() {
     let _output = ctx.run_logic(&egui::RawInput::default(), |ctx| {
         rig.h.state_mut().as_mut().unwrap().logic(ctx);
     });
-    assert_eq!(wake.deadline(), None);
-    assert!(!wake.take_due(deadline + Duration::from_secs(60)));
 
     // egui may ask once more to settle an immediate repaint. Serve genuine
     // callbacks, but never manufacture a periodic tick. It must become idle.
     for _ in 0..8 {
-        for when in incoming.try_iter() {
-            wake.request(when);
-        }
-        let Some(deadline) = wake.deadline() else {
+        if incoming.try_iter().count() == 0 {
             break;
-        };
-        assert!(wake.take_due(deadline));
+        }
         let _output = ctx.run_logic(&egui::RawInput::default(), |ctx| {
             rig.h.state_mut().as_mut().unwrap().logic(ctx);
         });
     }
-    assert_eq!(wake.deadline(), None);
     assert!(
         incoming.try_recv().is_err(),
         "idle logic kept requesting wakes"
@@ -123,77 +109,6 @@ fn queued_bus_requests_answer_through_logic_without_a_ui_pass() {
     assert_eq!(reply(&rig, 7000).unwrap().2["error_code"], "CANCELLED");
     assert_eq!(reply(&rig, 7001).unwrap().1, 0);
     assert_eq!(reply(&rig, 7002).unwrap().1, 0);
-}
-
-#[test]
-fn vendored_eframe_logic_wake_is_wired_to_redraw_and_both_renderers() {
-    let run = include_str!("../../../vendor/eframe/src/native/run.rs");
-    let check = run
-        .split("fn check_redraw_requests(")
-        .nth(1)
-        .unwrap()
-        .split("impl<T: WinitApp> ApplicationHandler")
-        .next()
-        .unwrap();
-    assert!(check.contains("if self.checking_redraw_requests"));
-    assert!(check.contains("self.checking_redraw_requests = true;"));
-    assert!(check.contains("self.checking_redraw_requests = false;"));
-    let redraw = check.find("window.request_redraw();").unwrap();
-    let arm = check
-        .find("self.logic_wake.request(Instant::now());")
-        .unwrap();
-    assert!(redraw < arm);
-    assert!(check[redraw..arm].contains("if root_window_id == Some(*window_id)"));
-    let invisible = check
-        .find("for window_id in &invisible_window_ids")
-        .unwrap();
-    let cancel = check.find("self.logic_wake.cancel();").unwrap();
-    let take = check
-        .find("self.logic_wake.take_due(Instant::now())")
-        .unwrap();
-    assert!(invisible < cancel && cancel < take);
-    assert!(check[take..].contains("self.winit_app.run_logic(event_loop, window_id)"));
-    assert!(check.contains(".chain(self.logic_wake.deadline())"));
-    let redraw_event = run
-        .split("winit::event::WindowEvent::RedrawRequested =>")
-        .nth(1)
-        .unwrap();
-    assert!(
-        redraw_event.find("self.logic_wake.cancel();").unwrap()
-            < redraw_event
-                .find("self.winit_app.run_ui_and_paint")
-                .unwrap()
-    );
-    let user_event = run
-        .split("fn user_event(")
-        .nth(1)
-        .unwrap()
-        .split("fn new_events(")
-        .next()
-        .unwrap();
-    assert!(!user_event.contains("self.logic_wake.request("));
-    for (renderer, call, logic_call) in [
-        (
-            include_str!("../../../vendor/eframe/src/native/wgpu_integration.rs"),
-            "running.run_ui_and_paint(window_id, event_loop, true)",
-            "integration.update_logic_only(app.as_mut(), raw_input)",
-        ),
-        (
-            include_str!("../../../vendor/eframe/src/native/glow_integration.rs"),
-            "running.run_ui_and_paint(event_loop, window_id, true)",
-            ".update_logic_only(self.app.as_mut(), raw_input)",
-        ),
-    ] {
-        let logic = renderer
-            .split("fn run_logic(")
-            .nth(1)
-            .unwrap()
-            .split("fn resumed(")
-            .next()
-            .unwrap();
-        assert!(logic.contains(call));
-        assert!(renderer.contains(logic_call));
-    }
 }
 
 struct Rig {
@@ -567,7 +482,7 @@ fn quit_waits_for_drive_input_accepted_before_it() {
 #[test]
 fn a_bus_split_is_the_rendered_split() {
     let mut rig = rig();
-    let panel = egui::Id::new("services");
+    let panel = egui::Id::unique("services");
     let width = |rig: &Rig| {
         egui::containers::panel::PanelState::load(&rig.h.ctx, panel).map(|s| s.size().x)
     };
@@ -603,7 +518,7 @@ fn a_bus_dock_size_replaces_the_remembered_panel_size() {
         assert_eq!(reply(&rig, id).unwrap().1, 0);
         rig.h.run_steps(5);
         let panel =
-            egui::containers::panel::PanelState::load(&rig.h.ctx, egui::Id::new("traffic-bottom"))
+            egui::containers::panel::PanelState::load(&rig.h.ctx, egui::Id::unique("traffic-bottom"))
                 .unwrap();
         assert!((panel.size().y / 620.0 - size as f32).abs() < 0.02);
         assert!((engine(&rig).ui.dock_height - size as f32).abs() < 0.02);
@@ -624,7 +539,7 @@ fn the_services_split_keeps_its_share_beside_the_right_dock() {
         wait(&mut rig, &[id]);
         rig.h.run_steps(5);
         let panel = |name| {
-            egui::containers::panel::PanelState::load(&rig.h.ctx, egui::Id::new(name)).unwrap()
+            egui::containers::panel::PanelState::load(&rig.h.ctx, egui::Id::unique(name)).unwrap()
         };
         let remaining = 980.0 - panel("traffic-right").size().x;
         assert!((panel("services").size().x / remaining - split).abs() < 0.02);

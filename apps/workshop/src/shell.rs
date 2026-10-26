@@ -1155,9 +1155,9 @@ impl Shell {
                 toolkit::saved::widgets::forget_scroll(ui.ctx(), "services");
             }
             ui.ctx().data_mut(|d| {
-                d.insert_temp(egui::Id::new("workshop-restore-ready"), restore.ready());
+                d.insert_temp(egui::Id::unique("workshop-restore-ready"), restore.ready());
                 if std::mem::take(&mut restore.show_selection) {
-                    d.insert_temp(egui::Id::new("workshop-restore-selection"), true);
+                    d.insert_temp(egui::Id::unique("workshop-restore-selection"), true);
                 }
             });
         }

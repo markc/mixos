@@ -72,7 +72,7 @@ fn auto_dock_is_right_when_wide_and_bottom_when_narrow() {
         if right {
             assert!(traffic.left() > details.right(), "{traffic:?} {details:?}");
             let panel = |name| {
-                egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new(name))
+                egui::containers::panel::PanelState::load(&h.ctx, egui::Id::unique(name))
                     .unwrap()
                     .outer_rect
             };
@@ -102,7 +102,7 @@ fn explicit_bottom_and_saved_sizes_are_honoured() {
             assert!(traffic.top() > details.bottom());
             ("traffic-bottom", 1080.0)
         };
-        let panel = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new(id)).unwrap();
+        let panel = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::unique(id)).unwrap();
         let size = if side == inspector::DockSide::Right {
             panel.size().x
         } else {
@@ -124,7 +124,7 @@ fn dock_sizes_remain_proportional_when_the_window_resizes() {
         let mut h = sized_harness(e, egui::vec2(1920.0, 1080.0));
         h.set_size(egui::vec2(1400.0, 800.0));
         h.run();
-        let panel = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new(id)).unwrap();
+        let panel = egui::containers::panel::PanelState::load(&h.ctx, egui::Id::unique(id)).unwrap();
         let share = if side == inspector::DockSide::Right {
             panel.size().x / 1400.0
         } else {

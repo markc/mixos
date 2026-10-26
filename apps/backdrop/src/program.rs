@@ -269,12 +269,12 @@ fn texture_options(fit: Fit) -> TextureOptions {
 /// Take the context's textures out of its data. The caller drops them, so their
 /// bytes return to the budget outside egui's data lock.
 fn take_slots(ctx: &egui::Context) -> Slots {
-    ctx.data_mut(|d| d.remove_temp::<Slots>(Id::new(SLOTS)))
+    ctx.data_mut(|d| d.remove_temp::<Slots>(Id::unique(SLOTS)))
         .unwrap_or_default()
 }
 
 fn store_slots(ctx: &egui::Context, slots: Slots) {
-    ctx.data_mut(|d| d.insert_temp(Id::new(SLOTS), slots));
+    ctx.data_mut(|d| d.insert_temp(Id::unique(SLOTS), slots));
 }
 
 /// Make `resident` the context's current texture. Nothing is uploaded while the
@@ -408,7 +408,7 @@ impl LayerProgram for Backdrop {
         // this context's entry again without comparing contexts.
         self.next_owner += 1;
         let owner = self.next_owner;
-        ctx.data_mut(|d| d.insert_temp(Id::new(OWNER), owner));
+        ctx.data_mut(|d| d.insert_temp(Id::unique(OWNER), owner));
         lock(&self.wakers).push((owner, ctx.clone()));
     }
 
@@ -438,7 +438,7 @@ impl LayerProgram for Backdrop {
     /// The surface is going away: forget its context, free its texture (its
     /// reservation goes back to the budget) and its output's status.
     fn removed(&mut self, ctx: &egui::Context, surface: &SurfaceInfo) {
-        if let Some(owner) = ctx.data(|d| d.get_temp::<u64>(Id::new(OWNER))) {
+        if let Some(owner) = ctx.data(|d| d.get_temp::<u64>(Id::unique(OWNER))) {
             lock(&self.wakers).retain(|(token, _)| *token != owner);
         }
         // The textures go with the surface; dropping them releases their bytes.

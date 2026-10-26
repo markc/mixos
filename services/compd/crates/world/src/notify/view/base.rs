@@ -46,7 +46,7 @@ impl UiProgram for NotifyUi {
         let text = egui::RichText::new(self.message.clone())
             .size(14.0)
             .color(egui::Color32::from_rgba_unmultiplied(240, 245, 255, 245));
-        egui::Area::new(egui::Id::new("notify-pill"))
+        egui::Area::new(egui::Id::unique("notify-pill"))
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ui.ctx(), |ui| {
                 egui::Frame::NONE

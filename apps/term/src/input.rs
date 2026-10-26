@@ -178,7 +178,7 @@ pub fn clipboard_event(event: &egui::Event, modifiers: Modifiers) -> Option<Clip
     let letter = match event {
         egui::Event::Copy => 'c',
         egui::Event::Cut => 'x',
-        egui::Event::Paste(_) => 'v',
+        egui::Event::Paste(_) | Event::PasteImage(_) => 'v',
         _ => return None,
     };
     if modifiers.alt {

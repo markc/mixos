@@ -110,7 +110,7 @@ pub fn list(
         } else {
             egui::Rect::NOTHING
         };
-        let menu = ui.id().with("list-menu");
+        let menu = ui.scope_id().with("list-menu");
         if let Some(id) = commands.context_menu_over(ui, area, menu, "message", state, strings) {
             events.push(UiEvent::Command(id, Origin::Menu));
         }
@@ -166,7 +166,7 @@ impl Rows for EmailRows<'_> {
 
 /// The context data a pinned clock lives under.
 fn clock_id() -> egui::Id {
-    egui::Id::new("email.clock")
+    egui::Id::unique("email.clock")
 }
 
 /// Draw dates as if it were `unix` (seconds) at `offset` seconds east of
@@ -329,7 +329,7 @@ pub fn reader(
     } else {
         ui.weak(crate::label("select-email"));
     }
-    let menu = ui.id().with("reader-menu");
+    let menu = ui.scope_id().with("reader-menu");
     if let Some(id) = commands.context_menu_over(ui, area, menu, "message", state, strings) {
         events.push(UiEvent::Command(id, Origin::Menu));
     }
@@ -583,7 +583,7 @@ fn attachments_popup(
 /// The reader's focus target. Tab reaches it; while it has the keyboard, Up
 /// and Down scroll the message a line and Page Up and Page Down a page.
 pub fn reader_id() -> Id {
-    Id::new("email.reader")
+    Id::unique("email.reader")
 }
 
 /// Give the reader the keyboard.

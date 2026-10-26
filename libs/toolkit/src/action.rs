@@ -1797,7 +1797,7 @@ mod tests {
         assert_eq!(fired_key(&r, &s, bare), ["count.bare"], "nothing focused");
         // The same presses with a text field focused.
         let ctx = egui::Context::default();
-        let field = egui::Id::new("field");
+        let field = egui::Id::unique("field");
         let mut text = String::new();
         let mut frame = |events: Vec<egui::Event>| {
             let mut out = Vec::new();

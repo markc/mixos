@@ -386,7 +386,7 @@ impl UiProgram for MenuUi {
                 let enabled = item.enabled();
                 let response = ui.interact(
                     rect,
-                    egui::Id::new(("corner-menu", index)),
+                    egui::Id::unique(("corner-menu", index)),
                     if enabled {
                         egui::Sense::click()
                     } else {

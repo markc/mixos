@@ -165,12 +165,12 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
                 marker: None,
             },
         ];
-        tabs::documents(ui, Id::new("docs"), &docs, 0, None);
+        tabs::documents(ui, Id::unique("docs"), &docs, 0, None);
         let rect = ui.available_rect_before_wrap();
         canvas::surround(ui, rect);
         let view = canvas::scrollbars(
             ui,
-            Id::new("canvas"),
+            Id::unique("canvas"),
             rect,
             vec2(1600.0, 1200.0),
             &mut s.offset,

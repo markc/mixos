@@ -933,7 +933,7 @@ fn compose_suggestions_studio_dark() {
     ));
     let mut h = window(state, &theme(Scheme::Studio, Mode::Dark));
     h.ctx
-        .memory_mut(|m| m.request_focus(egui::Id::new("compose-recipients").with("to")));
+        .memory_mut(|m| m.request_focus(egui::Id::unique("compose-recipients").with("to")));
     h.run();
     h.snapshot("compose_suggestions_studio_dark");
 }

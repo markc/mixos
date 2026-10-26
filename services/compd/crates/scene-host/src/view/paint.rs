@@ -157,7 +157,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             continue;
         }
         let painter = ui.painter().with_clip_rect(clip);
-        let id = Id::new(("scene-node", &item.key));
+        let id = Id::unique(("scene-node", &item.key));
         if item.cell {
             // The whole row is the list's click target (Quoin's ClickRow).
             let response = ui.interact(visible, id, Sense::click());
@@ -331,7 +331,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 let field = if item.source == Source::Tree {
                     field_id(&item.id)
                 } else {
-                    Id::new(("scene-field-row", &item.key))
+                    Id::unique(("scene-field-row", &item.key))
                 };
                 let edit = egui::TextEdit::singleline(&mut text)
                     .id(field)
@@ -480,7 +480,7 @@ fn paint_frame(
     };
     let response = ui.interact(
         close,
-        Id::new(("scene-node", super::CLOSE_ID)),
+        Id::unique(("scene-node", super::CLOSE_ID)),
         Sense::click(),
     );
     if response.hovered() {

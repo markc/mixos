@@ -29,7 +29,7 @@ use crate::chrome::Chrome;
 use egui::emath::GuiRounding;
 use egui::{
     Area, Color32, Context, Frame, Id, Key, Modifiers, Order, PointerButton, Pos2, Rect,
-    ScrollArea, Sense, Stroke, TextEdit, Ui, UiKind, Vec2, WidgetInfo, WidgetType, pos2,
+    ScrollArea, Sense, Stroke, TextEdit, Ui, UiKind, Vec2, WidgetInfo, Role, pos2,
     text::Galley, vec2,
 };
 use std::sync::Arc;
@@ -512,7 +512,7 @@ struct State {
 }
 
 fn state_id() -> Id {
-    Id::new("toolkit.menu")
+    Id::unique("toolkit.menu")
 }
 
 /// Whether a menu is open (and so has the keyboard) on `ctx`.
@@ -1231,7 +1231,7 @@ pub fn bar_picked(
             metrics.menu_title_height,
         );
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-        response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &menu.title));
+        response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &menu.title));
         let open = st.nav.open == Some(index);
         if pressed && response.hovered() {
             on_title = true;
@@ -1737,7 +1737,7 @@ fn search_header(
     if empty && !query.trim().is_empty() {
         let (row, response) =
             ui.allocate_exact_size(vec2(width, m.menu_row_height), Sense::hover());
-        response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &search.empty));
+        response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &search.empty));
         let ink = chrome
             .palette
             .text
@@ -1785,7 +1785,7 @@ fn level_rows(
         let response = ui.interact(*row_rect, id.with(index), Sense::click());
         if let Entry::Row(row) = entry {
             response
-                .widget_info(|| WidgetInfo::labeled(WidgetType::Button, row.enabled, &row.label));
+                .widget_info(|| WidgetInfo::labeled(Role::Button, row.enabled, &row.label));
             if let Some(checked) = row.checked {
                 // A choice is one of a group, ticked or not: a radio menu
                 // item to assistive technology and the drive layer.
@@ -1953,7 +1953,7 @@ mod tests {
                     };
                     let _ = anchored(
                         ui,
-                        Id::new("short-menu"),
+                        Id::unique("short-menu"),
                         anchor,
                         &mut open,
                         menu.clone(),
@@ -2275,7 +2275,7 @@ mod tests {
     fn anchored_input_is_taken_before_the_application_draws() {
         let ctx = Context::default();
         let viewport = ctx.viewport_id();
-        let id = Id::new("anchored-test");
+        let id = Id::unique("anchored-test");
         let scoped = id.with(ctx.viewport_id());
         let menus = vec![Menu {
             title: "Macros".into(),

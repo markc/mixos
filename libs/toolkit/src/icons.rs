@@ -168,7 +168,7 @@ pub fn stroke_width(theme: &Theme) -> f32 {
 }
 
 fn stroke_key() -> egui::Id {
-    egui::Id::new("toolkit.icon-stroke")
+    egui::Id::unique("toolkit.icon-stroke")
 }
 
 /// Make `stroke` the width [`stroke_of`] returns on `ctx` (done by

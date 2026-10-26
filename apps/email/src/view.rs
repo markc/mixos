@@ -176,7 +176,7 @@ pub fn view(
             Dialog::About => "about",
             Dialog::Shortcuts => "shortcuts",
         };
-        let id = egui::Id::new("dialog").with(title);
+        let id = egui::Id::unique("dialog").with(title);
         let shown = dialog::Dialog::new(id, crate::label(title))
             .buttons(vec![Choice::new(
                 crate::label("done"),
@@ -397,7 +397,7 @@ pub fn reader_menu(
     button: &egui::Response,
     events: &mut Vec<UiEvent>,
 ) {
-    let id = egui::Id::new("reader-menu-open");
+    let id = egui::Id::unique("reader-menu-open");
     let mut open = ui.ctx().data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     if button.clicked() {
         open = !open;
