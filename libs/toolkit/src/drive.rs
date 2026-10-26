@@ -1287,12 +1287,13 @@ impl Drive {
     /// GPU readback can finish even while the next UI frame is withheld.
     fn receive_capture(&mut self) {
         let Some(running) = &mut self.running else {
+            self.screenshots.lock().unwrap().clear();
             return;
         };
         if let Some(Step::Await {
             tag,
             path,
-            deadline,
+            ..
         }) = running.steps.front_mut()
         {
             let image = self
@@ -1309,11 +1310,6 @@ impl Drive {
                     )),
                     Err(error) => Some(refusal(running.id, "CAPTURE", &error)),
                 },
-                None if Instant::now() >= *deadline => Some(refusal(
-                    running.id,
-                    "CAPTURE",
-                    "no screenshot arrived in time",
-                )),
                 None => None,
             };
             if answer.is_some() {
@@ -2024,6 +2020,26 @@ mod tests {
         assert_eq!(logic(&ctx)[0].rc, 0);
         assert!(temp.path().join("demo/captures/trickle.png").is_file());
     }
+
+    #[test]
+    fn a_stalled_capture_keeps_not_shown_priority_over_gpu_timeout() {
+        let (ctx, _temp) = capture_context();
+        assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
+        let _callback = requested_screenshot(&ctx);
+        let now = Instant::now();
+        ctx.with_plugin(|drive: &mut Drive| {
+            let stalled = now - CAPTURE_QUIET_PERIOD;
+            drive.last_ui_pass = Some(stalled);
+            drive.pending_captures.insert(1, stalled);
+            if let Some(Step::Await { deadline, .. }) = drive.running.as_mut().unwrap().steps.front_mut() {
+                *deadline = now;
+            } else {
+                panic!("capture awaits readback");
+            }
+        });
+        assert_eq!(logic_at(&ctx, now)[0].body["error_code"], "NOT_SHOWN");
+    }
+
     #[test]
     fn child_capture_refuses_without_waiting_for_child_ui_or_deadline() {
         let (ctx, _temp) = capture_context();
@@ -2234,22 +2250,19 @@ mod tests {
             }),
         );
         let ctx = Context::default();
-        drive.children[&editor].screenshots.lock().unwrap().push((
-            7,
-            std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
-        ));
-        let mut input = RawInput {
-            viewport_id: editor,
-            ..Default::default()
-        };
-        egui::Plugin::input_hook(&mut drive, &ctx, &mut input);
-        let answer = drive.children[&editor]
-            .running
-            .as_ref()
-            .unwrap()
-            .answer
-            .as_ref()
-            .unwrap();
+        let (steps, _, _) = drive.children[&editor].plan(&ctx, Job::Capture {
+            path: path.clone(), tag: 7,
+        }).unwrap();
+        let callback = steps.into_iter().find_map(|step| match step {
+            Step::Viewport(ViewportCommand::Screenshot(callback)) => Some(callback),
+            _ => None,
+        }).unwrap();
+        ctx.add_plugin(drive);
+        callback.complete(std::sync::Arc::new(ColorImage::filled(
+            [4, 3], egui::Color32::WHITE)));
+        let answers = logic(&ctx);
+        assert_eq!(answers.len(), 1);
+        let answer = &answers[0];
         assert_eq!(answer.rc, 0);
         assert_eq!(
             (
