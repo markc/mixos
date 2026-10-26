@@ -93,6 +93,7 @@ impl Phase {
 pub struct SessionInfo {
     pub account_name: String,
     pub account_id: String,
+    pub max_size_upload: Option<u64>,
 }
 
 /// Which account's connection an answer came from: an answer whose
@@ -1342,6 +1343,10 @@ pub struct Reply {
 
 /// Refusal codes (`error_code`), rc 10.
 pub mod code {
+    pub const ATTACHMENT_RELATIVE: &str = "ATTACHMENT_RELATIVE";
+    pub const ATTACHMENT_NOT_FILE: &str = "ATTACHMENT_NOT_FILE";
+    pub const ATTACHMENT_UNREADABLE: &str = "ATTACHMENT_UNREADABLE";
+    pub const MESSAGE_TOO_LARGE: &str = "MESSAGE_TOO_LARGE";
     pub const INVALID_ARGUMENT: &str = "INVALID_ARGUMENT";
     /// No account has the id given.
     pub const UNKNOWN_ACCOUNT: &str = "UNKNOWN_ACCOUNT";
@@ -5299,7 +5304,7 @@ impl State {
     /// unquoted, threaded to nothing. It sends as the identity the original
     /// came from when that is one of the account's, else the default; the
     /// body is taken as it is (its signature included), never re-signed.
-    /// Attachments do not come along: a compose carries none yet.
+    /// Received attachments do not come along when sending as new.
     pub fn send_as_new(&mut self, account: &str, email: &Email) -> bool {
         let list = |list: &Option<Vec<EmailAddress>>| list.clone().unwrap_or_default();
         let body = email.text_body_value().unwrap_or_default().to_owned();
@@ -6147,6 +6152,7 @@ pub(crate) mod tests {
         SessionInfo {
             account_name: "Account 7".into(),
             account_id: "7".into(),
+            max_size_upload: None,
         }
     }
 

@@ -11,6 +11,17 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Everything that can go wrong on the wire.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("attachment path must be absolute: {0}")]
+    AttachmentRelative(std::path::PathBuf),
+    #[error("attachment is not a regular file: {0}")]
+    AttachmentNotFile(std::path::PathBuf),
+    #[error("cannot read attachment {path}: {source}")]
+    AttachmentUnreadable {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
+    #[error("encoded message is {size} bytes; upload limit is {limit} bytes")]
+    MessageTooLarge { size: u64, limit: u64 },
     /// The HTTPS transport itself failed.
     #[error("transport: {0}")]
     Transport(#[from] reqwest::Error),
@@ -56,7 +67,13 @@ impl Error {
                 status.is_server_error() || *status == reqwest::StatusCode::REQUEST_TIMEOUT
             }
             Error::Wire(_) | Error::Protocol(_) => true,
-            Error::Unauthorized(_) | Error::Method { .. } | Error::AlreadySent => false,
+            Error::Unauthorized(_)
+            | Error::Method { .. }
+            | Error::AlreadySent
+            | Error::AttachmentRelative(_)
+            | Error::AttachmentNotFile(_)
+            | Error::AttachmentUnreadable { .. }
+            | Error::MessageTooLarge { .. } => false,
         }
     }
 }

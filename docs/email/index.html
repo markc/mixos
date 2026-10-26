@@ -367,10 +367,19 @@ several accounts), reply, reply all and forward. If the account's login
 (server or address) changes while a draft is open, Send waits: the
 dialog shows the new address and <strong>Use New Address</strong>. Mail is sent through
 the proven recipe: build the message, upload it, create the Email in
-Sent, then submit. <strong>Sending requires maild</strong>, because the create step
+Drafts, submit it, then file it in Sent. <strong>Sending requires maild</strong>, because the create step
 uses maild's extension of a top-level <code>blobId</code> on <code>Email/set</code>. A strict
 RFC 8621 server builds an Email from uploaded MIME with <code>Email/import</code>,
-so it refuses the send; <code>Email/import</code> is future work.</p>
+so it refuses the send; <code>Email/import</code> is future work.
+<code>email.compose</code> and <code>email.send</code> accept <code>attachments: ["/home/user/report.pdf"]</code>.
+Paths must be absolute, readable regular files; symlinks are followed.
+Compose keeps the paths in memory and Send reads their current contents.
+The dialog does not show attachments yet, and local drafts do not save them.
+Attached files follow the plain text part in <code>multipart/mixed</code>, with MIME
+types from the desktop MIME database and base64 lines of at most 76 characters.
+The whole encoded message must fit the session's <code>maxSizeUpload</code>, or 25 MiB
+when the server gives none. Paths and estimated size are checked on the Bus
+request; Send checks the files again and checks the exact encoded size.</p>
 </li>
 <li>
 <p><strong>The Message menu</strong> holds everything that acts on the open email:
@@ -484,6 +493,10 @@ removed, until that finishes), <code>CANCELLED</code> (Email closed before the
 request ran; a write that may have run answers <code>OUTCOME_UNKNOWN</code>),
 <code>SERVER</code>,
 <code>BUSY</code>, <code>UNKNOWN_COMMAND</code>, <code>UNKNOWN_ACTION</code> and <code>DISABLED</code>.</p>
+<p>Outgoing attachment refusals have separate codes: <code>ATTACHMENT_RELATIVE</code>
+(path is relative), <code>ATTACHMENT_NOT_FILE</code> (missing or not a regular file),
+<code>ATTACHMENT_UNREADABLE</code> (cannot inspect, open or read the file), and
+<code>MESSAGE_TOO_LARGE</code> (the encoded message exceeds the upload limit).</p>
 <p>Queries that need the server answer when the server does. The window
 never waits on them.</p>
 <table><thead><tr><th>Command</th><th>Class</th><th>Does</th></tr></thead><tbody>
@@ -510,8 +523,9 @@ never waits on them.</p>
 <tr><td><code>email.contacts.suggest {text, limit?}</code></td><td>query</td><td>address completions for <code>text</code>: contacts first, then addresses the account has seen; at most <code>limit</code> (8)</td></tr>
 <tr><td><code>email.print {id?}</code></td><td>intent</td><td>write the print page (the open email by default) and open it in the browser; answers <code>{path, opened}</code></td></tr>
 <tr><td><code>email.junk {ids, junk}</code></td><td>intent</td><td>move to the Junk mailbox (<code>junk: true</code>) or back to the inbox; maild trains spam or ham on the move; answers <code>{ids, mailbox}</code></td></tr>
-<tr><td><code>email.send {to, cc?, bcc?, subject, body, in_reply_to?}</code></td><td>intent</td><td>send without the dialog</td></tr>
-<tr><td><code>email.compose {…}</code>, <code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose dialog, filled in</td></tr>
+<tr><td><code>email.send {to, cc?, bcc?, subject, body, in_reply_to?, attachments?}</code></td><td>intent</td><td>send without the dialog; attachments are absolute file paths</td></tr>
+<tr><td><code>email.compose {to?, cc?, bcc?, reply_to?, subject?, body?, attachments?}</code></td><td>intent</td><td>open compose with optional absolute attachment paths; Send reads the files</td></tr>
+<tr><td><code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose dialog, filled in</td></tr>
 <tr><td><code>email.calendar.select</code>, <code>email.event.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code>; <code>end</code> or an ISO 8601 <code>duration</code></td></tr>
 <tr><td><code>email.book.select</code>, <code>email.contact.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code></td></tr>
 <tr><td><code>email.ui.*</code>, <code>email.window</code>, <code>email.window.state</code></td><td>input, query</td><td>the toolkit <a href="/docs/drive/">drive commands</a></td></tr>

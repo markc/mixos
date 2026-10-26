@@ -41,6 +41,8 @@ pub struct Session {
     pub account_id: String,
     /// The account's display name, when the Session carried one.
     pub account_name: Option<String>,
+    /// Maximum encoded upload size from the core capability, in bytes.
+    pub max_size_upload: Option<u64>,
     /// Where JMAP requests are POSTed (absolute).
     pub api_url: String,
     /// The blob upload template, carrying `{accountId}`.
@@ -86,6 +88,7 @@ impl Session {
             using,
             account_id,
             account_name,
+            max_size_upload: value["capabilities"][urn::CORE]["maxSizeUpload"].as_u64(),
             api_url: template("apiUrl")?,
             upload_url: template("uploadUrl")?,
             download_url: template("downloadUrl")?,
@@ -138,6 +141,7 @@ mod tests {
         let s = Session::from_json(&session()).unwrap();
         assert_eq!(s.account_id, "7");
         assert_eq!(s.account_name.as_deref(), Some("Account 7"));
+        assert_eq!(s.max_size_upload, Some(50_000_000));
         assert_eq!(s.using.len(), 5);
         assert_eq!(s.api_url, "https://example.invalid/jmap");
         assert_eq!(s.upload_for("7"), "https://example.invalid/jmap/upload/7");
@@ -152,5 +156,14 @@ mod tests {
             Session::from_json(&value),
             Err(Error::Protocol(_))
         ));
+    }
+
+    #[test]
+    fn missing_upload_limit_stays_optional_and_zero_is_a_limit() {
+        let mut value = session();
+        value["capabilities"][urn::CORE] = json!({});
+        assert_eq!(Session::from_json(&value).unwrap().max_size_upload, None);
+        value["capabilities"][urn::CORE]["maxSizeUpload"] = json!(0);
+        assert_eq!(Session::from_json(&value).unwrap().max_size_upload, Some(0));
     }
 }

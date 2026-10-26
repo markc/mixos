@@ -386,8 +386,9 @@
     {name:"email.move", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.junk", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.delete", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"email.send", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"email.compose", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    -- Optional attachments: a list of absolute regular-file paths, read at send time.
+    {name:"email.send", owner:"email", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"email.compose", owner:"email", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.reply", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.forward", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.attachments", owner:"email", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},

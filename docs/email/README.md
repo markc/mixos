@@ -140,10 +140,19 @@ A malformed file loads defaults and is never overwritten.
   (server or address) changes while a draft is open, Send waits: the
   dialog shows the new address and **Use New Address**. Mail is sent through
   the proven recipe: build the message, upload it, create the Email in
-  Sent, then submit. **Sending requires maild**, because the create step
+  Drafts, submit it, then file it in Sent. **Sending requires maild**, because the create step
   uses maild's extension of a top-level `blobId` on `Email/set`. A strict
   RFC 8621 server builds an Email from uploaded MIME with `Email/import`,
   so it refuses the send; `Email/import` is future work.
+  `email.compose` and `email.send` accept `attachments: ["/home/user/report.pdf"]`.
+  Paths must be absolute, readable regular files; symlinks are followed.
+  Compose keeps the paths in memory and Send reads their current contents.
+  The dialog does not show attachments yet, and local drafts do not save them.
+  Attached files follow the plain text part in `multipart/mixed`, with MIME
+  types from the desktop MIME database and base64 lines of at most 76 characters.
+  The whole encoded message must fit the session's `maxSizeUpload`, or 25 MiB
+  when the server gives none. Paths and estimated size are checked on the Bus
+  request; Send checks the files again and checks the exact encoded size.
 - **The Message menu** holds everything that acts on the open email:
   reply (with or without the quote), reply all, forward, star, mark read
   or unread, junk or not junk, move, and delete to Trash (confirmed when
@@ -249,6 +258,11 @@ request ran; a write that may have run answers `OUTCOME_UNKNOWN`),
 `SERVER`,
 `BUSY`, `UNKNOWN_COMMAND`, `UNKNOWN_ACTION` and `DISABLED`.
 
+Outgoing attachment refusals have separate codes: `ATTACHMENT_RELATIVE`
+(path is relative), `ATTACHMENT_NOT_FILE` (missing or not a regular file),
+`ATTACHMENT_UNREADABLE` (cannot inspect, open or read the file), and
+`MESSAGE_TOO_LARGE` (the encoded message exceeds the upload limit).
+
 Queries that need the server answer when the server does. The window
 never waits on them.
 
@@ -277,8 +291,9 @@ never waits on them.
 | `email.contacts.suggest {text, limit?}` | query | address completions for `text`: contacts first, then addresses the account has seen; at most `limit` (8) |
 | `email.print {id?}` | intent | write the print page (the open email by default) and open it in the browser; answers `{path, opened}` |
 | `email.junk {ids, junk}` | intent | move to the Junk mailbox (`junk: true`) or back to the inbox; maild trains spam or ham on the move; answers `{ids, mailbox}` |
-| `email.send {to, cc?, bcc?, subject, body, in_reply_to?}` | intent | send without the dialog |
-| `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
+| `email.send {to, cc?, bcc?, subject, body, in_reply_to?, attachments?}` | intent | send without the dialog; attachments are absolute file paths |
+| `email.compose {to?, cc?, bcc?, reply_to?, subject?, body?, attachments?}` | intent | open compose with optional absolute attachment paths; Send reads the files |
+| `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
 | `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |
 | `email.book.select`, `email.contact.create/update/delete` | intent | `create` answers `{id}` |
 | `email.ui.*`, `email.window`, `email.window.state` | input, query | the toolkit [drive commands](../docs/drive.md) |

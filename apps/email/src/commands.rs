@@ -265,13 +265,13 @@ pub const COMMANDS: &[Command] = &[
     command_spec(
         "email.send",
         false,
-        r#"{"account":"optional account id","to":"addresses","cc":"optional addresses","bcc":"optional addresses","subject":"string","body":"string","in_reply_to":"optional Message-ID"}"#,
+        r#"{"account":"optional account id","to":"addresses","cc":"optional addresses","bcc":"optional addresses","subject":"string","body":"string","in_reply_to":"optional Message-ID","attachments":"optional list of absolute file paths"}"#,
         "Send an email without the dialog",
     ),
     command_spec(
         "email.compose",
         false,
-        r#"{"account":"optional account id","to":"optional addresses","cc":"optional addresses","bcc":"optional addresses","reply_to":"optional address (absent: the identity's)","subject":"optional string","body":"optional string"}"#,
+        r#"{"account":"optional account id","to":"optional addresses","cc":"optional addresses","bcc":"optional addresses","reply_to":"optional address (absent: the identity's)","subject":"optional string","body":"optional string","attachments":"optional list of absolute file paths"}"#,
         "Open the compose dialog, filled in",
     ),
     command_spec(
@@ -740,6 +740,16 @@ pub fn batch_answer(write: &Write, outcome: jmap::SetOutcome) -> Result<Value, j
 /// read by its message. A typed `jmap::Error::NotFound` is the follow-up.
 pub fn server_refusal(error: &jmap::Error) -> (&'static str, String) {
     let message = error.to_string();
+    let attachment_code = match error {
+        jmap::Error::AttachmentRelative(_) => Some(code::ATTACHMENT_RELATIVE),
+        jmap::Error::AttachmentNotFile(_) => Some(code::ATTACHMENT_NOT_FILE),
+        jmap::Error::AttachmentUnreadable { .. } => Some(code::ATTACHMENT_UNREADABLE),
+        jmap::Error::MessageTooLarge { .. } => Some(code::MESSAGE_TOO_LARGE),
+        _ => None,
+    };
+    if let Some(code) = attachment_code {
+        return (code, message);
+    }
     let gone = match error {
         jmap::Error::Method { error_type, .. } => error_type == "notFound",
         // The engine's single-object reads say "… is gone".
@@ -840,6 +850,26 @@ fn ids(args: &Value) -> Checked<Vec<String>> {
 fn addresses(args: &Value, key: &str) -> Checked<Vec<jmap::EmailAddress>> {
     let joined = list(args, key)?.unwrap_or_default().join(", ");
     jmap::parse_addresses(&joined).map_err(|e| invalid(format!("{key}: {e}")))
+}
+
+fn attachment_paths(args: &Value) -> Checked<Vec<std::path::PathBuf>> {
+    match args.get("attachments") {
+        None => Ok(Vec::new()),
+        Some(Value::Array(items)) => items.iter().map(|item| {
+            item.as_str().map(std::path::PathBuf::from)
+                .ok_or_else(|| invalid("attachments must hold absolute file paths"))
+        }).collect(),
+        _ => Err(invalid("attachments must be a list of absolute file paths")),
+    }
+}
+
+fn validate_message(state: &State, account: &str, draft: &Composed) -> Checked<()> {
+    let limit = state.account(account).and_then(|view| view.session.as_ref())
+        .and_then(|session| session.max_size_upload);
+    jmap::validate_attachments(draft, limit).map_err(|error| {
+        let (code, message) = server_refusal(&error);
+        Bad(code, message)
+    })
 }
 
 /// The account named by `account` (or the selected one).
@@ -1239,10 +1269,12 @@ fn dispatch(
                 bcc: addresses(args, "bcc")?,
                 subject: required(args, "subject")?,
                 body: text(args, "body")?.unwrap_or_default(),
+                attachments: attachment_paths(args)?,
                 in_reply_to: text(args, "in_reply_to")?,
                 from_name: String::new(),
                 reply_to: None,
             };
+            validate_message(state, &account, &draft)?;
             state.write_server(account, Some(id), Write::Send { draft });
         }
         "email.compose" => {
@@ -1256,10 +1288,12 @@ fn dispatch(
                 bcc: addresses(args, "bcc")?,
                 subject: text(args, "subject")?.unwrap_or_default(),
                 body: text(args, "body")?.unwrap_or_default(),
+                attachments: attachment_paths(args)?,
                 ..Composed::default()
             };
             // The identity sets Reply-To; an explicit one replaces it.
             let reply_to = text(args, "reply_to")?.filter(|r| !r.trim().is_empty());
+            validate_message(state, &account, &draft)?;
             state.open_compose(Some(&account), draft);
             if let Some(error) = state.close_failed_compose() {
                 return Err(invalid(&error));
@@ -1521,6 +1555,67 @@ mod tests {
     use super::*;
     use crate::state::tests::connected_many;
     use crate::work::Work;
+
+    #[test]
+    fn both_outgoing_commands_refuse_bad_attachment_paths_and_size_distinctly() {
+        let dir = tempfile::tempdir().unwrap();
+        let loop_path = dir.path().join("unreadable");
+        std::os::unix::fs::symlink(&loop_path, &loop_path).unwrap();
+        let oversized = dir.path().join("large.bin");
+        std::fs::File::create(&oversized).unwrap().set_len(jmap::DEFAULT_UPLOAD_LIMIT).unwrap();
+        for command_name in ["email.send", "email.compose"] {
+            for (path, expected) in [
+                (std::path::PathBuf::from("relative.txt"), code::ATTACHMENT_RELATIVE),
+                (dir.path().to_owned(), code::ATTACHMENT_NOT_FILE),
+                (dir.path().join("missing"), code::ATTACHMENT_NOT_FILE),
+                (loop_path.clone(), code::ATTACHMENT_UNREADABLE),
+                (oversized.clone(), code::MESSAGE_TOO_LARGE),
+            ] {
+                let mut state = connected_many(&["a"]);
+                run(&mut state, command_name, json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [path]}));
+                let reply = &state.take_replies()[0];
+                assert_eq!((reply.rc, reply.body["error_code"].as_str()), (10, Some(expected)), "{command_name}: {reply:?}");
+                assert!(!reply.body["message"].as_str().unwrap().is_empty());
+                assert!(state.compose.is_none());
+                assert!(state.take_work().is_empty());
+            }
+            let mut state = connected_many(&["a"]);
+            run(&mut state, command_name, json!({"to": "ann@example.invalid", "subject": "Files", "attachments": "relative.txt"}));
+            assert_eq!(state.take_replies()[0].body["error_code"], code::INVALID_ARGUMENT);
+        }
+    }
+
+    #[test]
+    fn compose_and_direct_send_keep_symlink_paths_for_the_send() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file.txt");
+        let link = dir.path().join("link.txt");
+        std::fs::write(&path, b"contents").unwrap();
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        let args = json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [link]});
+        let mut state = connected_many(&["a"]);
+        run(&mut state, "email.compose", args.clone());
+        assert_eq!(state.take_replies()[0].rc, 0);
+        assert_eq!(state.compose.as_ref().unwrap().draft.attachments, [link.clone()]);
+        state.apply_ui(crate::view::UiEvent::SendCompose);
+        assert!(state.take_work().iter().any(|work| matches!(work, Work::Send { draft, .. } if draft.attachments == [link.clone()])));
+        let mut state = connected_many(&["a"]);
+        run(&mut state, "email.send", args);
+        assert!(matches!(queued_write(&mut state), Write::Send { draft } if draft.attachments == [link]));
+    }
+
+    #[test]
+    fn outgoing_commands_use_the_selected_accounts_advertised_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file.txt");
+        std::fs::write(&file, b"contents").unwrap();
+        for command_name in ["email.send", "email.compose"] {
+            let mut state = connected_many(&["a"]);
+            state.accounts.iter_mut().find(|view| view.id() == "a").unwrap().session.as_mut().unwrap().max_size_upload = Some(10);
+            run(&mut state, command_name, json!({"to": "ann@example.invalid", "subject": "Files", "attachments": [file]}));
+            assert_eq!(state.take_replies()[0].body["error_code"], code::MESSAGE_TOO_LARGE);
+        }
+    }
 
     fn run(state: &mut State, command_name: &str, args: Value) -> Option<Forward> {
         command(

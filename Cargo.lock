@@ -4696,10 +4696,14 @@ dependencies = [
 name = "jmap"
 version = "0.1.2"
 dependencies = [
+ "base64",
  "chrono",
+ "libc",
+ "mimedb",
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.20",
  "uuid",
 ]

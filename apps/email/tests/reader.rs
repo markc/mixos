@@ -113,6 +113,7 @@ fn opened(kind: &str, body: &str) -> State {
         Ok(SessionInfo {
             account_name: "Account 7".into(),
             account_id: "7".into(),
+            max_size_upload: None,
         }),
     ));
     done(

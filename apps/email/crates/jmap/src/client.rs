@@ -213,6 +213,7 @@ impl Client {
                 using: Vec::new(),
                 account_id: String::new(),
                 account_name: None,
+                max_size_upload: None,
                 api_url: String::new(),
                 upload_url: String::new(),
                 download_url: String::new(),

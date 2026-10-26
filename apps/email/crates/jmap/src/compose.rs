@@ -17,6 +17,11 @@
 //! every header input is stripped of CR/LF before it reaches the wire
 //! (header injection).
 
+use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
+
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -35,6 +40,8 @@ pub struct Composed {
     pub bcc: Vec<EmailAddress>,
     pub subject: String,
     pub body: String,
+    /// Absolute file paths. Bytes are read afresh for each send attempt.
+    pub attachments: Vec<PathBuf>,
     /// The message being replied to, as `Email.messageId` gives it
     /// (bracketed). Sent as `In-Reply-To`/`References`.
     pub in_reply_to: Option<String>,
@@ -153,7 +160,7 @@ pub fn format_address(address: &EmailAddress) -> String {
 /// Build the MIME message for [`Composed`]. Headers are CRLF-stripped;
 /// `In-Reply-To` keeps exactly one pair of angle brackets; Bcc rides its
 /// own header for the server's envelope to read and strip.
-pub fn build_mime(composed: &Composed) -> Vec<u8> {
+pub fn build_mime(composed: &Composed) -> Result<Vec<u8>> {
     build_mime_with_id(composed, &new_message_id(&composed.from))
 }
 
@@ -170,7 +177,12 @@ fn new_message_id(from: &str) -> String {
 
 /// [`build_mime`] under a given `Message-ID`: a retried send keeps the id
 /// of its first attempt, so a recipient can recognise a repeat.
-fn build_mime_with_id(composed: &Composed, message_id: &str) -> Vec<u8> {
+fn build_mime_with_id(composed: &Composed, message_id: &str) -> Result<Vec<u8>> {
+    let parts = read_parts(composed, None)?;
+    Ok(render_mime(composed, message_id, &parts))
+}
+
+fn render_mime(composed: &Composed, message_id: &str, parts: &[String]) -> Vec<u8> {
     let clean = |value: &str| value.replace(['\r', '\n'], " ");
     let address_list = |list: &[EmailAddress]| {
         list.iter()
@@ -216,12 +228,162 @@ fn build_mime_with_id(composed: &Composed, message_id: &str) -> Vec<u8> {
         header(&mut mime, "References", &wrapped);
     }
     mime.push_str("MIME-Version: 1.0\r\n");
+    if !parts.is_empty() {
+        let text = text_part(&composed.body);
+        let boundary = choose_boundary(&text, parts, || {
+            format!("=_email_{}", uuid::Uuid::now_v7().simple())
+        });
+        mime.push_str(&format!("Content-Type: multipart/mixed; boundary=\"{boundary}\"\r\n\r\n"));
+        for part in std::iter::once(&text).chain(parts) {
+            mime.push_str(&format!("--{boundary}\r\n{part}\r\n"));
+        }
+        mime.push_str(&format!("--{boundary}--\r\n"));
+        return mime.into_bytes();
+    }
+    mime.push_str(&text_part(&composed.body));
+    mime.into_bytes()
+}
+
+fn text_part(body: &str) -> String {
+    let mut mime = String::new();
     mime.push_str("Content-Type: text/plain; charset=utf-8\r\n");
     mime.push_str("Content-Transfer-Encoding: 8bit\r\n");
     mime.push_str("\r\n");
     // RFC 5322 wants CRLF on every line; a text editor hands over bare LF.
-    mime.push_str(&composed.body.replace("\r\n", "\n").replace('\n', "\r\n"));
-    mime.into_bytes()
+    mime.push_str(&body.replace("\r\n", "\n").replace('\n', "\r\n"));
+    mime
+}
+
+fn choose_boundary(text: &str, parts: &[String], mut candidate: impl FnMut() -> String) -> String {
+    loop {
+        let boundary = candidate();
+        if !text.contains(&boundary) && parts.iter().all(|part| !part.contains(&boundary)) {
+            return boundary;
+        }
+    }
+}
+
+/// The local limit applies only when the server advertises no limit.
+pub const DEFAULT_UPLOAD_LIMIT: u64 = 25 * 1024 * 1024;
+
+/// Pure check of the whole encoded message, including headers and boundaries.
+pub fn check_message_size(size: u64, max_size_upload: Option<u64>) -> Result<()> {
+    let limit = max_size_upload.unwrap_or(DEFAULT_UPLOAD_LIMIT);
+    if size > limit {
+        Err(Error::MessageTooLarge { size, limit })
+    } else {
+        Ok(())
+    }
+}
+
+fn encoded_file_size(size: u64) -> u64 {
+    let chars = size.saturating_add(2) / 3;
+    let chars = chars.saturating_mul(4);
+    chars.saturating_add(chars.div_ceil(76).saturating_mul(2))
+}
+
+fn unreadable(path: &Path, source: std::io::Error) -> Error {
+    Error::AttachmentUnreadable { path: path.to_owned(), source }
+}
+
+/// Follow symlinks, then check the opened file too. O_NONBLOCK prevents a
+/// path replaced by a FIFO between stat and open from hanging the caller.
+fn open_attachment(path: &Path) -> Result<std::fs::File> {
+    if !path.is_absolute() {
+        return Err(Error::AttachmentRelative(path.to_owned()));
+    }
+    let metadata = std::fs::metadata(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            Error::AttachmentNotFile(path.to_owned())
+        } else {
+            unreadable(path, error)
+        }
+    })?;
+    if !metadata.is_file() {
+        return Err(Error::AttachmentNotFile(path.to_owned()));
+    }
+    let file = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK)
+        .open(path).map_err(|error| unreadable(path, error))?;
+    if !file.metadata().map_err(|error| unreadable(path, error))?.is_file() {
+        return Err(Error::AttachmentNotFile(path.to_owned()));
+    }
+    Ok(file)
+}
+
+fn file_name(path: &Path) -> String {
+    path.file_name().unwrap_or_default().to_string_lossy().into_owned()
+}
+
+fn attachment_headers(name: &str, mime: &str) -> String {
+    // Quoted ASCII fallback, with no header controls or unescaped specials.
+    let fallback: String = name.chars().map(|c| {
+        if c.is_ascii() && !c.is_control() { c } else { '_' }
+    }).collect();
+    let fallback = fallback.replace('\\', "\\\\").replace('"', "\\\"");
+    let mut headers = format!(
+        "Content-Type: {mime}\r\nContent-Transfer-Encoding: base64\r\nContent-Disposition: attachment; filename=\"{fallback}\""
+    );
+    if !name.is_ascii() {
+        let mut encoded = String::new();
+        for byte in name.bytes() {
+            if byte.is_ascii_alphanumeric() || b"!#$&+-.^_`|~".contains(&byte) {
+                encoded.push(char::from(byte));
+            } else {
+                encoded.push_str(&format!("%{byte:02X}"));
+            }
+        }
+        headers.push_str(&format!(";\r\n filename*=UTF-8''{encoded}"));
+    }
+    headers.push_str("\r\n\r\n");
+    headers
+}
+
+/// Cheap command-time validation: check paths and readability without reading
+/// contents. MIME overhead is estimated using filename types; send checks the
+/// exact encoded size again after sniffing the bytes.
+pub fn validate_attachments(composed: &Composed, max_size_upload: Option<u64>) -> Result<()> {
+    let db = mimedb::Database::load();
+    let mut parts = Vec::new();
+    let mut encoded = 0_u64;
+    for path in &composed.attachments {
+        let file = open_attachment(path)?;
+        let size = file.metadata().map_err(|error| unreadable(path, error))?.len();
+        encoded = encoded.saturating_add(encoded_file_size(size));
+        parts.push(attachment_headers(&file_name(path), &db.guess(Some(&file_name(path)), None).mime));
+    }
+    let size = (render_mime(composed, &new_message_id(&composed.from), &parts).len() as u64)
+        .saturating_add(encoded);
+    check_message_size(size, max_size_upload)
+}
+
+fn read_parts(composed: &Composed, max_size_upload: Option<u64>) -> Result<Vec<String>> {
+    validate_attachments(composed, max_size_upload)?;
+    if composed.attachments.is_empty() {
+        return Ok(Vec::new());
+    }
+    let db = mimedb::Database::load();
+    let limit = max_size_upload.unwrap_or(DEFAULT_UPLOAD_LIMIT);
+    let mut parts = Vec::new();
+    let mut encoded = 0_u64;
+    for path in &composed.attachments {
+        let file = open_attachment(path)?;
+        let mut bytes = Vec::new();
+        // Bound reads even when a file grows after metadata validation.
+        file.take(limit.saturating_add(1)).read_to_end(&mut bytes)
+            .map_err(|error| unreadable(path, error))?;
+        encoded = encoded.saturating_add(encoded_file_size(bytes.len() as u64));
+        check_message_size(encoded, max_size_upload)?;
+        let name = file_name(path);
+        let mime = db.guess(Some(&name), Some(&bytes[..bytes.len().min(db.sniff_len())])).mime;
+        let mut part = attachment_headers(&name, &mime);
+        let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        for line in data.as_bytes().chunks(76) {
+            part.push_str(std::str::from_utf8(line).expect("base64 is ASCII"));
+            part.push_str("\r\n");
+        }
+        parts.push(part);
+    }
+    Ok(parts)
 }
 
 /// Wrap a message id in angle brackets exactly once. A JMAP `messageId`
@@ -300,11 +462,15 @@ pub struct SendReport {
 /// test's fake server.
 pub(crate) trait Wire {
     fn account(&self) -> &str;
+    fn max_size_upload(&self) -> Option<u64> { None }
     async fn calls(&self, calls: &[Call]) -> Result<Vec<Value>>;
     async fn upload(&self, data: Vec<u8>, content_type: &str) -> Result<String>;
 }
 
 impl Wire for Client {
+    fn max_size_upload(&self) -> Option<u64> {
+        self.session().max_size_upload
+    }
     fn account(&self) -> &str {
         self.account_id()
     }
@@ -329,7 +495,7 @@ async fn one<W: Wire>(wire: &W, method: &str, args: Value) -> Result<Value> {
 
 /// A stable fingerprint of what is sent (FNV-1a over every field, each
 /// one length-prefixed), the same in every build.
-fn fingerprint(composed: &Composed) -> String {
+fn fingerprint(composed: &Composed, parts: &[String]) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     let mut feed = |text: &str| {
         for byte in (text.len() as u64)
@@ -354,6 +520,10 @@ fn fingerprint(composed: &Composed) -> String {
     feed(&composed.subject);
     feed(&composed.body);
     feed(composed.in_reply_to.as_deref().unwrap_or(""));
+    for (path, part) in composed.attachments.iter().zip(parts) {
+        feed(&path.to_string_lossy());
+        feed(part);
+    }
     format!("{hash:016x}")
 }
 
@@ -397,11 +567,9 @@ async fn submission_of<W: Wire>(wire: &W, email_id: &str) -> Result<Option<Strin
 /// Create the message in Drafts; the new Email's id.
 async fn create_draft<W: Wire>(
     wire: &W,
-    composed: &Composed,
-    message_id: &str,
+    mime: Vec<u8>,
     drafts: &str,
 ) -> Result<String> {
-    let mime = build_mime_with_id(composed, message_id);
     let blob_id = wire.upload(mime, "message/rfc822").await?;
     // A top-level `blobId` on `Email/set` create is maild's extension:
     // RFC 8621 builds an Email from uploaded MIME with `Email/import`
@@ -518,7 +686,11 @@ pub(crate) async fn send<W: Wire>(
     boxes: &SendBoxes,
     mut attempt: SendAttempt,
 ) -> (SendAttempt, Result<SendReport>) {
-    let print = fingerprint(composed);
+    let parts = match read_parts(composed, wire.max_size_upload()) {
+        Ok(parts) => parts,
+        Err(error) => return (attempt, Err(error)),
+    };
+    let print = fingerprint(composed, &parts);
     let mut earlier = false;
     if attempt.ambiguous && !attempt.submitted {
         match attempt.email_id.clone() {
@@ -566,7 +738,11 @@ pub(crate) async fn send<W: Wire>(
                     .message_id
                     .get_or_insert_with(|| new_message_id(&composed.from))
                     .clone();
-                match create_draft(wire, composed, &message_id, &boxes.drafts).await {
+                let mime = render_mime(composed, &message_id, &parts);
+                if let Err(error) = check_message_size(mime.len() as u64, wire.max_size_upload()) {
+                    return (attempt, Err(error));
+                }
+                match create_draft(wire, mime, &boxes.drafts).await {
                     Ok(email_id) => {
                         attempt.email_id = Some(email_id.clone());
                         attempt.fingerprint = Some(print.clone());
@@ -610,6 +786,112 @@ pub(crate) async fn send<W: Wire>(
 mod tests {
     use super::*;
 
+    #[test]
+    fn no_attachments_keep_the_original_wire_bytes() {
+        let mime = String::from_utf8(build_mime_with_id(&composed(), "fixed@example.invalid").unwrap()).unwrap();
+        let date = mime.lines().find(|line| line.starts_with("Date: ")).unwrap();
+        assert_eq!(mime, format!(
+            "From: bob@example.invalid\r\nTo: ann@example.invalid\r\nCc: carol@example.invalid\r\nSubject: Lunch\r\n{date}\r\nMessage-ID: <fixed@example.invalid>\r\nIn-Reply-To: <m1@example.invalid>\r\nReferences: <m1@example.invalid>\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\nNoon?"
+        ));
+    }
+
+    fn attached(name: &str, bytes: &[u8]) -> (tempfile::TempDir, Composed) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        let message = Composed { attachments: vec![path], ..composed() };
+        (dir, message)
+    }
+
+    #[test]
+    fn multipart_text_first_then_files_with_wrapped_base64_and_mime_types() {
+        let bytes: Vec<u8> = (0..255).collect();
+        let (dir, mut message) = attached("image.png", &bytes);
+        let empty = dir.path().join("empty.txt");
+        std::fs::write(&empty, []).unwrap();
+        message.attachments.push(empty);
+        let mime = String::from_utf8(build_mime(&message).unwrap()).unwrap();
+        let boundary = mime.split("boundary=\"").nth(1).unwrap().split('"').next().unwrap();
+        let sections: Vec<&str> = mime.split(&format!("--{boundary}")).collect();
+        assert_eq!(sections.len(), 5);
+        assert!(sections[1].starts_with("\r\nContent-Type: text/plain; charset=utf-8\r\n"));
+        assert!(sections[1].ends_with("\r\n\r\nNoon?\r\n"));
+        assert!(sections[2].contains("Content-Type: image/png\r\n"));
+        assert!(sections[2].contains("filename=\"image.png\""));
+        assert!(sections[3].contains("filename=\"empty.txt\""));
+        let data = sections[2].split_once("\r\n\r\n").unwrap().1.trim_end();
+        let lines: Vec<&str> = data.split("\r\n").collect();
+        assert!(lines[..lines.len() - 1].iter().all(|line| line.len() == 76));
+        assert!(lines.last().unwrap().len() <= 76);
+        assert_eq!(base64::engine::general_purpose::STANDARD.decode(lines.concat()).unwrap(), bytes);
+        assert!(sections[1..4].iter().all(|part| !part.contains(boundary)));
+        assert_eq!(sections[4], "--\r\n");
+    }
+
+    #[test]
+    fn non_ascii_filename_uses_rfc2231_and_headers_escape_specials() {
+        let (_dir, message) = attached("résumé \"2026\".txt", b"hello");
+        let mime = String::from_utf8(build_mime(&message).unwrap()).unwrap();
+        assert!(mime.contains("filename=\"r_sum_ \\\"2026\\\".txt\""));
+        assert!(mime.contains("filename*=UTF-8''r%C3%A9sum%C3%A9%20%222026%22.txt"));
+        let headers = attachment_headers("evil\r\nInjected: yes\\.txt", "text/plain");
+        assert!(!headers.contains("\r\nInjected:"));
+        assert!(headers.contains("yes\\\\.txt"));
+    }
+
+    #[test]
+    fn boundary_candidates_are_checked_against_text_and_attachment_headers() {
+        let mut candidates = ["text-collision", "file-collision", "safe"].into_iter();
+        let boundary = choose_boundary("text-collision", &["filename=file-collision".into()], || candidates.next().unwrap().into());
+        assert_eq!(boundary, "safe");
+    }
+
+    #[test]
+    fn encoded_limits_include_base64_wrapping_and_allow_the_exact_limit() {
+        for size in [0, 1, 2, 3, 56, 57, 58, 114, 115] {
+            let encoded = base64::engine::general_purpose::STANDARD.encode(vec![0; size]);
+            assert_eq!(encoded_file_size(size as u64), (encoded.len() + encoded.len().div_ceil(76) * 2) as u64);
+        }
+        assert!(check_message_size(DEFAULT_UPLOAD_LIMIT, None).is_ok());
+        assert!(matches!(check_message_size(DEFAULT_UPLOAD_LIMIT + 1, None), Err(Error::MessageTooLarge { .. })));
+        assert!(check_message_size(DEFAULT_UPLOAD_LIMIT + 1, Some(DEFAULT_UPLOAD_LIMIT + 1)).is_ok());
+        assert!(check_message_size(123, Some(123)).is_ok());
+        assert!(check_message_size(124, Some(123)).is_err());
+        assert!(check_message_size(1, Some(0)).is_err());
+    }
+
+    #[test]
+    fn send_reads_current_bytes_and_replaces_a_refused_draft_after_file_edits() {
+        let (_dir, message) = attached("note.txt", b"before");
+        validate_attachments(&message, None).unwrap();
+        std::fs::write(&message.attachments[0], b"after").unwrap();
+        let fake = Fake::new(&[Submit::Refuse]);
+        let (attempt, result) = try_send(&fake, &message, SendAttempt::default());
+        assert!(result.is_err());
+        assert!(String::from_utf8(fake.server().uploads[0].clone()).unwrap().contains("YWZ0ZXI=\r\n"));
+        std::fs::write(&message.attachments[0], b"again").unwrap();
+        let (_, result) = try_send(&fake, &message, attempt);
+        assert!(result.is_ok());
+        assert_eq!(fake.server().uploads.len(), 2);
+        assert_eq!(fake.server().emails.len(), 1);
+    }
+
+    #[test]
+    fn send_rechecks_missing_files_and_exact_encoded_size_before_upload() {
+        let (_dir, message) = attached("note.txt", b"hello");
+        let fake = Fake::new(&[]);
+        let parts = read_parts(&message, None).unwrap();
+        let id = new_message_id(&message.from);
+        let size = render_mime(&message, &id, &parts).len() as u64;
+        fake.server().limit = Some(size - 1);
+        assert!(matches!(try_send(&fake, &message, SendAttempt::default()).1, Err(Error::MessageTooLarge { .. })));
+        assert!(fake.server().uploads.is_empty());
+        fake.server().limit = Some(size);
+        assert!(try_send(&fake, &message, SendAttempt::default()).1.is_ok());
+        std::fs::remove_file(&message.attachments[0]).unwrap();
+        assert!(matches!(try_send(&fake, &message, SendAttempt::default()).1, Err(Error::AttachmentNotFile(_))));
+    }
+
     fn bare(email: &str) -> EmailAddress {
         EmailAddress {
             name: None,
@@ -632,6 +914,7 @@ mod tests {
             bcc: vec![bare("dave@example.invalid")],
             subject: "Lunch".into(),
             body: "Noon?".into(),
+            attachments: Vec::new(),
             in_reply_to: Some("<m1@example.invalid>".into()),
             from_name: String::new(),
             reply_to: None,
@@ -646,7 +929,7 @@ mod tests {
             reply_to: Some("help@work.example.invalid".into()),
             ..composed()
         };
-        let mime = String::from_utf8(build_mime(&identity)).unwrap();
+        let mime = String::from_utf8(build_mime(&identity).unwrap()).unwrap();
         assert!(
             mime.contains("From: \"Ann, Work\" <ann@work.example.invalid>\r\n"),
             "{mime}"
@@ -656,14 +939,14 @@ mod tests {
             "{mime}"
         );
         // Without a name or reply-to, the headers read as they did before.
-        let plain = String::from_utf8(build_mime(&composed())).unwrap();
+        let plain = String::from_utf8(build_mime(&composed()).unwrap()).unwrap();
         assert!(!plain.contains("\r\nReply-To:"), "{plain}");
         assert!(!plain.contains("From: \""), "{plain}");
     }
 
     #[test]
     fn bcc_stays_out_of_the_bytes() {
-        let mime = String::from_utf8(build_mime(&composed())).unwrap();
+        let mime = String::from_utf8(build_mime(&composed()).unwrap()).unwrap();
         assert!(
             !mime.contains("Bcc:"),
             "the bytes must not name Bcc recipients"
@@ -673,13 +956,13 @@ mod tests {
 
     #[test]
     fn in_reply_to_is_wrapped_exactly_once() {
-        let mime = String::from_utf8(build_mime(&composed())).unwrap();
+        let mime = String::from_utf8(build_mime(&composed()).unwrap()).unwrap();
         assert!(mime.contains("In-Reply-To: <m1@example.invalid>\r\n"));
         let bare = Composed {
             in_reply_to: Some("m2@example.invalid".into()),
             ..composed()
         };
-        let mime = String::from_utf8(build_mime(&bare)).unwrap();
+        let mime = String::from_utf8(build_mime(&bare).unwrap()).unwrap();
         assert!(mime.contains("In-Reply-To: <m2@example.invalid>\r\n"));
     }
 
@@ -690,7 +973,7 @@ mod tests {
             to: vec![bare("ann@example.invalid\r\nBcc: eve@example.invalid")],
             ..composed()
         };
-        let mime = String::from_utf8(build_mime(&evil)).unwrap();
+        let mime = String::from_utf8(build_mime(&evil).unwrap()).unwrap();
         assert!(!mime.contains("\nBcc: eve"));
         // Each stripped control character leaves one space.
         assert!(mime.contains("Subject: Hi  Bcc: eve@example.invalid\r\n"));
@@ -745,7 +1028,7 @@ mod tests {
             cc: Vec::new(),
             ..composed()
         };
-        let mime = String::from_utf8(build_mime(&message)).unwrap();
+        let mime = String::from_utf8(build_mime(&message).unwrap()).unwrap();
         assert!(
             mime.contains("To: \"Lee, Cy\" <cy@example.invalid>, Bob <bob@example.invalid>\r\n")
         );
@@ -753,7 +1036,7 @@ mod tests {
 
     #[test]
     fn the_body_follows_the_blank_line() {
-        let mime = String::from_utf8(build_mime(&composed())).unwrap();
+        let mime = String::from_utf8(build_mime(&composed()).unwrap()).unwrap();
         let (_, body) = mime.split_once("\r\n\r\n").unwrap();
         assert_eq!(body, "Noon?");
     }
@@ -777,6 +1060,8 @@ mod tests {
 
     #[derive(Default)]
     struct Server {
+        uploads: Vec<Vec<u8>>,
+        limit: Option<u64>,
         /// Email id -> its mailbox ids.
         emails: BTreeMap<String, Vec<String>>,
         /// (submission id, email id).
@@ -819,12 +1104,15 @@ mod tests {
     }
 
     impl Wire for Fake {
+        fn max_size_upload(&self) -> Option<u64> { self.server().limit }
         fn account(&self) -> &str {
             "A1"
         }
 
-        async fn upload(&self, _data: Vec<u8>, _content_type: &str) -> Result<String> {
+        async fn upload(&self, data: Vec<u8>, content_type: &str) -> Result<String> {
             let mut server = self.server();
+            assert_eq!(content_type, "message/rfc822");
+            server.uploads.push(data);
             server.next += 1;
             Ok(format!("B{}", server.next))
         }
@@ -1068,7 +1356,7 @@ mod tests {
     #[test]
     fn a_retry_keeps_the_first_message_id() {
         let message = composed();
-        let first = String::from_utf8(build_mime_with_id(&message, "x1@example.invalid")).unwrap();
+        let first = String::from_utf8(build_mime_with_id(&message, "x1@example.invalid").unwrap()).unwrap();
         assert!(first.contains("Message-ID: <x1@example.invalid>\r\n"));
         let fake = Fake::new(&[Submit::Refuse]);
         let (attempt, _) = try_send(&fake, &message, SendAttempt::default());

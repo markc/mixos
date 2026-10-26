@@ -766,6 +766,7 @@ impl Shell {
                                     .clone()
                                     .unwrap_or_else(|| login.email.clone()),
                                 account_id: client.account_id().to_owned(),
+                                max_size_upload: client.session().max_size_upload,
                             })
                         }
                         Err(error) => Err(error),
