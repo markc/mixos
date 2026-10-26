@@ -165,13 +165,35 @@ fn bus_file_operations_accept_driven_prompts_confirmations_and_drops() {
         // placement and keyboard focus before submitting drive input.
         h.run();
     };
-    let drive_input = |h: &mut Harness<'_, Window>, command: &str, args: serde_json::Value| {
+    let drive_answer = |h: &mut Harness<'_, Window>,
+                        command: &str,
+                        args: serde_json::Value|
+     -> serde_json::Value {
         h.state_mut().answers.clear();
         let immediate = drive::request(&h.ctx, 2, command, &args);
         h.state_mut().answers.extend(immediate);
         wait(h, &|w| w.answers.iter().any(|a| a.id == 2));
         let answer = h.state().answers.iter().find(|a| a.id == 2).unwrap();
         assert_eq!(answer.rc, 0, "{command} {args}: {}", answer.body);
+        answer.body.clone()
+    };
+    let drive_input = |h: &mut Harness<'_, Window>, command: &str, args: serde_json::Value| {
+        drive_answer(h, command, args);
+    };
+    // "Name" also labels both panes' column headers, so find the prompt's
+    // text field in the tree and click it by id.
+    let click_name_field = |h: &mut Harness<'_, Window>| {
+        let tree = drive_answer(h, "ui.tree", json!({}));
+        let id = tree["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["role"] == "TextInput" && n["label"] == dopus::label("prop-name"))
+            .expect("the prompt's name field")["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        drive_input(h, "ui.click", json!({"id": id}));
     };
     wait(&mut harness, &|w| !w.app.core.pane(PaneId::Left).listing);
     action(&mut harness, "file.new-folder");
@@ -179,11 +201,7 @@ fn bus_file_operations_accept_driven_prompts_confirmations_and_drops() {
         harness.state().app.dialog,
         Some(Dialog::Prompt { .. })
     ));
-    drive_input(
-        &mut harness,
-        "ui.click",
-        json!({"label":dopus::label("prop-name")}),
-    );
+    click_name_field(&mut harness);
     drive_input(
         &mut harness,
         "ui.key",
@@ -218,11 +236,7 @@ fn bus_file_operations_accept_driven_prompts_confirmations_and_drops() {
         .core
         .select_path(PaneId::Left, Some(left.join("original.txt")));
     action(&mut harness, "file.rename");
-    drive_input(
-        &mut harness,
-        "ui.click",
-        json!({"label":dopus::label("prop-name")}),
-    );
+    click_name_field(&mut harness);
     drive_input(
         &mut harness,
         "ui.key",
