@@ -36,7 +36,7 @@ and a body naming the reason:
 | `BUSY` | Not now: work is in flight, a dialog is open, the window is hidden, no frame has been drawn yet, or the app is closing. |
 | `CANCELLED` | Input that was accepted but never delivered: the window was hidden or minimised first, or the app closed. |
 | `CAPTURE` | A screenshot could not be taken or written. |
-| `NOT_SHOWN` | The capture's viewport had no UI pass for 1.5 seconds, measured from the later of acceptance and its last UI pass, or is minimised or occluded. Show the window or switch to its VT, then retry. |
+| `NOT_SHOWN` | Refused after at least 1.5 s without a frame, measured from the later of acceptance and its last UI pass, or immediately when the platform reports minimised or occluded in that pass. Wayland does not report this; the 1.5 s rule applies. Show the window or switch to its VT, then retry. |
 | `UNAVAILABLE` | The app does not offer the drive commands. |
 
 An app's own commands may add codes of their own; Workshop's are listed
@@ -212,13 +212,14 @@ Captures are confined to the app's own directory:
   followed.
 - Without `XDG_RUNTIME_DIR` there is nowhere to capture to, and every
   capture is refused.
-- Pending captures return `NOT_SHOWN` after 1.5 seconds without a viewport UI
-  pass, measured from the later of acceptance and the last pass. This covers
+- Pending captures return `NOT_SHOWN` after at least 1.5 s without a frame (a viewport UI
+  pass), measured from the later of acceptance and the last pass. This covers
   queued captures, child requests awaiting dispatch and screenshot readback.
-  A scheduled logic wake checks the deadline independently of eframe's fallback
-  delay. The threshold leaves margin above compd's 1 Hz parked callback trickle,
+  A scheduled logic wake checks the deadline, plus up to the toolkit's logic-wake
+  grace. The threshold leaves margin above compd's 1 Hz parked callback trickle,
   so captures progressing there continue. Minimised or occluded viewports
-  refuse immediately. Show the window or switch to its VT, then retry.
+  refuse immediately only when the platform reports that state in that pass.
+  Wayland does not; the 1.5 s rule applies. Show the window or switch to its VT, then retry.
 - A window that keeps painting but never delivers its screenshot still has
   the 10 second capture timeout backstop (`CAPTURE`).
 

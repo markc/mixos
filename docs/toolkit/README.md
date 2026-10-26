@@ -316,15 +316,17 @@ pass; idle time before that input does not shorten it.
 Captures use a separate 1.5 second no-UI-pass threshold, measured from the
 later of acceptance and the viewport's last UI pass. Queued captures, child
 requests awaiting dispatch and running screenshots return `NOT_SHOWN` (rc 10)
-at that deadline, with a scheduled logic wake to check it. The threshold stays
+after at least 1.5 s without a frame, with a scheduled logic wake to check it
+(the deadline plus up to the toolkit's logic-wake grace). The threshold stays
 above compd's 1 Hz parked/occluded callback trickle with margin, so captures
 progressing there continue.
-Minimised or occluded viewports refuse immediately too. Show the window or
+Minimised or occluded viewports refuse immediately only when the platform
+reports that state in that pass. Wayland does not; the 1.5 s rule applies. Show the window or
 switch to its VT, then retry. Idle time alone does not refuse a capture;
 a UI pass restarts the quiet clock. `Options::capture_timeout` remains the backstop for missing
 screenshot events (`CAPTURE`), independently of input settling. The rule
 also applies to child captures still awaiting dispatch to their UI, and
-does not depend on the integration's logic-only fallback delay.
+uses the integration's scheduled logic wake.
 
 `viewport: "macro-editor"` addresses the editor owned by the app window
 handling the request. Names become available on the first native child

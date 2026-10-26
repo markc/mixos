@@ -74,6 +74,9 @@ fn viewport_not_shown(viewport: &egui::ViewportInfo) -> bool {
 }
 
 fn not_shown(id: u64, quiet: Duration) -> Answer {
+    if quiet.is_zero() {
+        return refusal(id, "NOT_SHOWN", "the window is minimised or hidden: show the window or switch to its VT, then retry the capture");
+    }
     refusal(
         id,
         "NOT_SHOWN",
@@ -283,6 +286,14 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
         let mut answers = std::mem::take(&mut drive.answers);
         for child in drive.children.values_mut() {
             child.expire();
+            if let Some(running) = &child.running
+                && let Some(Step::Await { deadline, .. }) = running.steps.front()
+            {
+                ctx.request_repaint_after_for(
+                    deadline.saturating_duration_since(now),
+                    egui::ViewportId::ROOT,
+                );
+            }
             answers.append(&mut child.answers);
         }
         answers
@@ -676,6 +687,7 @@ impl Drive {
     /// A capture that has painted still gets its full screenshot budget.
     /// The input quiet period only settles input, not GPU readback.
     fn settle_input(&mut self, ctx: &Context, why: &str) {
+        // Protection follows step shape (Screenshot/Await), not the job's identity.
         let capture = self.running.as_ref().is_some_and(|running| {
             running.steps.iter().any(|step| {
                 matches!(
@@ -711,6 +723,15 @@ impl Drive {
             if self.answers.iter().any(|answer| answer.id == id) {
                 continue;
             }
+            if let Some(running) = &mut self.running
+                && running.id == id
+                && let Some(answer) = running.answer.take()
+            {
+                self.answers.push(answer);
+                self.running = None;
+                self.deadlines.remove(&id);
+                continue;
+            }
             let since = self
                 .last_ui_pass
                 .map_or(accepted, |pass| pass.max(accepted));
@@ -731,7 +752,7 @@ impl Drive {
             {
                 self.running = None;
             }
-            self.answers.push(not_shown(id, quiet));
+            self.answers.push(not_shown(id, if hidden { Duration::ZERO } else { quiet }));
         }
     }
 
@@ -1745,7 +1766,8 @@ mod tests {
             );
             let answers = logic_at(&ctx, now + CAPTURE_QUIET_PERIOD);
             let answer = answers.iter().find(|a| a.id == 2).unwrap();
-            assert_eq!(answer.body["error_code"], "NOT_SHOWN");
+            assert_eq!(answer.rc, 10);
+                assert_eq!(answer.body["error_code"], "NOT_SHOWN");
             assert!(logic_at(&ctx, now + CAPTURE_QUIET_PERIOD).is_empty());
         }
     }
@@ -1760,6 +1782,7 @@ mod tests {
             viewport.occluded = Some(!minimized);
             let _output = ctx.run_logic(&input, |ctx| {
                 let answer = request(ctx, 1, "ui.capture", &json!({})).unwrap();
+                assert_eq!(answer.rc, 10);
                 assert_eq!(answer.body["error_code"], "NOT_SHOWN");
                 assert!(!pending(ctx));
             });
@@ -1790,7 +1813,8 @@ mod tests {
             );
             let answers = logic_at(&ctx, later + CAPTURE_QUIET_PERIOD);
             assert_eq!(answers.len(), 1);
-            assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
+            assert_eq!(answers[0].rc, 10);
+        assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
             assert!(!pending(&ctx));
         }
     }
@@ -1808,7 +1832,57 @@ mod tests {
         let answers = logic_at(&ctx, now + CAPTURE_QUIET_PERIOD);
         assert_eq!(answers.len(), 1);
         assert_eq!(answers[0].id, 3);
+        assert_eq!(answers[0].rc, 10);
         assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
+    }
+
+    #[test]
+    fn child_passes_do_not_reset_root_capture_clock() {
+        let (ctx, _temp) = capture_context();
+        ctx.set_embed_viewports(false);
+        let child = egui::ViewportId::from_hash_of("clock-child");
+        assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
+        let start = Instant::now();
+        ctx.with_plugin(|drive: &mut Drive| {
+            drive.pending_captures.insert(1, start);
+            drive.last_ui_pass = Some(start);
+        });
+        for _ in 0..3 {
+            ctx.run_ui(RawInput { viewport_id: child, ..Default::default() }, |_| {})
+                .drop_without_applying_deltas();
+            ctx.with_plugin(|drive: &mut Drive| assert_eq!(drive.last_ui_pass, Some(start)));
+        }
+        let answers = logic_at(&ctx, start + CAPTURE_QUIET_PERIOD);
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].rc, 10);
+        assert_eq!(answers[0].rc, 10);
+        assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
+    }
+
+    #[test]
+    fn completed_screenshot_survives_hidden_refusal_check() {
+        let (ctx, temp) = capture_context();
+        assert!(request(&ctx, 1, "ui.capture", &json!({"name":"finished.png"})).is_none());
+        ctx.run_ui(RawInput::default(), |_| {}).drop_without_applying_deltas();
+        let mut input = RawInput::default();
+        input.events.push(Event::Screenshot {
+            viewport_id: egui::ViewportId::ROOT,
+            user_data: UserData::new(Shot(1)),
+            image: std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
+        });
+        ctx.with_plugin(|drive: &mut Drive| drive.step(&mut input));
+        assert!(temp.path().join("demo/captures/finished.png").is_file());
+        let mut hidden = RawInput::default();
+        hidden.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().minimized = Some(true);
+        let _output = ctx.run_logic(&hidden, |ctx| {
+            ctx.with_plugin(|drive: &mut Drive| {
+                drive.refuse_unshown_captures(ctx, Instant::now() + CAPTURE_QUIET_PERIOD, egui::ViewportId::ROOT);
+            });
+        });
+        let answers = logic(&ctx);
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].rc, 0);
+        assert!(logic(&ctx).is_empty());
     }
 
     #[test]
@@ -1866,6 +1940,7 @@ mod tests {
         assert!(logic_at(&ctx, Instant::now() + Duration::from_millis(1)).is_empty());
         let answers = logic_at(&ctx, Instant::now() + CAPTURE_QUIET_PERIOD);
         assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].rc, 10);
         assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
         assert!(!pending(&ctx));
         assert!(logic(&ctx).is_empty());

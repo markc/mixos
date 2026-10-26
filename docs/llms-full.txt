@@ -365,7 +365,7 @@ and a body naming the reason:
 | `BUSY` | Not now: work is in flight, a dialog is open, the window is hidden, no frame has been drawn yet, or the app is closing. |
 | `CANCELLED` | Input that was accepted but never delivered: the window was hidden or minimised first, or the app closed. |
 | `CAPTURE` | A screenshot could not be taken or written. |
-| `NOT_SHOWN` | The capture's viewport had no UI pass for 1.5 seconds, measured from the later of acceptance and its last UI pass, or is minimised or occluded. Show the window or switch to its VT, then retry. |
+| `NOT_SHOWN` | Refused after at least 1.5 s without a frame, measured from the later of acceptance and its last UI pass, or immediately when the platform reports minimised or occluded in that pass. Wayland does not report this; the 1.5 s rule applies. Show the window or switch to its VT, then retry. |
 | `UNAVAILABLE` | The app does not offer the drive commands. |
 
 An app's own commands may add codes of their own; Workshop's are listed
@@ -541,13 +541,14 @@ Captures are confined to the app's own directory:
   followed.
 - Without `XDG_RUNTIME_DIR` there is nowhere to capture to, and every
   capture is refused.
-- Pending captures return `NOT_SHOWN` after 1.5 seconds without a viewport UI
-  pass, measured from the later of acceptance and the last pass. This covers
+- Pending captures return `NOT_SHOWN` after at least 1.5 s without a frame (a viewport UI
+  pass), measured from the later of acceptance and the last pass. This covers
   queued captures, child requests awaiting dispatch and screenshot readback.
-  A scheduled logic wake checks the deadline independently of eframe's fallback
-  delay. The threshold leaves margin above compd's 1 Hz parked callback trickle,
+  A scheduled logic wake checks the deadline, plus up to the toolkit's logic-wake
+  grace. The threshold leaves margin above compd's 1 Hz parked callback trickle,
   so captures progressing there continue. Minimised or occluded viewports
-  refuse immediately. Show the window or switch to its VT, then retry.
+  refuse immediately only when the platform reports that state in that pass.
+  Wayland does not; the 1.5 s rule applies. Show the window or switch to its VT, then retry.
 - A window that keeps painting but never delivers its screenshot still has
   the 10 second capture timeout backstop (`CAPTURE`).
 
@@ -35187,15 +35188,17 @@ pass; idle time before that input does not shorten it.
 Captures use a separate 1.5 second no-UI-pass threshold, measured from the
 later of acceptance and the viewport's last UI pass. Queued captures, child
 requests awaiting dispatch and running screenshots return `NOT_SHOWN` (rc 10)
-at that deadline, with a scheduled logic wake to check it. The threshold stays
+after at least 1.5 s without a frame, with a scheduled logic wake to check it
+(the deadline plus up to the toolkit's logic-wake grace). The threshold stays
 above compd's 1 Hz parked/occluded callback trickle with margin, so captures
 progressing there continue.
-Minimised or occluded viewports refuse immediately too. Show the window or
+Minimised or occluded viewports refuse immediately only when the platform
+reports that state in that pass. Wayland does not; the 1.5 s rule applies. Show the window or
 switch to its VT, then retry. Idle time alone does not refuse a capture;
 a UI pass restarts the quiet clock. `Options::capture_timeout` remains the backstop for missing
 screenshot events (`CAPTURE`), independently of input settling. The rule
 also applies to child captures still awaiting dispatch to their UI, and
-does not depend on the integration's logic-only fallback delay.
+uses the integration's scheduled logic wake.
 
 `viewport: "macro-editor"` addresses the editor owned by the app window
 handling the request. Names become available on the first native child

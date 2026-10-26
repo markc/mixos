@@ -42,7 +42,9 @@ fn capture_waits_for_quiet_deadline_then_releases_later_commands() {
         });
     }
     assert_eq!(ctx.cumulative_pass_nr(), pass);
-    assert_eq!(reply(&rig, 7100).unwrap().2["error_code"], "NOT_SHOWN");
+    let capture = reply(&rig, 7100).unwrap();
+    assert_eq!(capture.1, 10);
+    assert_eq!(capture.2["error_code"], "NOT_SHOWN");
     assert_eq!(reply(&rig, 7101).unwrap().1, 0);
     assert!(started.elapsed() < drive::Options::default().capture_timeout);
     assert!(!drive::pending(&ctx));

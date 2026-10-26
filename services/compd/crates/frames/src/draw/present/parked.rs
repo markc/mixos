@@ -20,11 +20,12 @@
 //!
 //! One second per frame is too slow for work that needs a few frames in a row:
 //! a capture settles, draws and collects over about five frames, which took
-//! 5–6 s parked. Demand after a quiet spell or an idle timer gets a short burst:
+//! 5–6 s parked. Demand returning more than [`DEMAND_IDLE`] after a send gets a burst:
 //! the next [`BURST_FRAMES`] sends come [`BURST_INTERVAL`] apart, then 1 Hz
 //! resumes. Refills are at least [`BURST_MIN_SPACING`] apart, bounding clients
-//! that toggle idle/busy. Continuous animation never restarts demand or goes
-//! quiet, so it never refills the burst.
+//! that toggle idle/busy to eight fast callbacks per 250 ms, plus the trickle.
+//! Turnaround up to 250 ms stays continuous and gets only the initial burst,
+//! then 1 Hz. Longer turnaround is indistinguishable from a new capture.
 
 use crate::draw::present::callbacks::{OCCLUDED_TRICKLE, surface_awaits_frame, tree_awaits_frame};
 use smithay::desktop::layer_map_for_output;
@@ -43,8 +44,9 @@ pub const PARKED_TRICKLE: Duration = OCCLUDED_TRICKLE;
 pub const BURST_FRAMES: u32 = 8;
 /// The spacing of burst sends (about one 60 Hz frame).
 pub const BURST_INTERVAL: Duration = Duration::from_millis(16);
-/// How long the trickle must have sent nothing before the burst refills.
-pub const BURST_QUIET: Duration = Duration::from_secs(2);
+/// Maximum continuous client turnaround. Below a 300 ms capture gap, but
+/// comfortably above a frame and ordinary 20–100 ms render turnaround.
+pub const DEMAND_IDLE: Duration = Duration::from_millis(250);
 /// Minimum spacing between refills, including when demand restarts.
 pub const BURST_MIN_SPACING: Duration = Duration::from_millis(250);
 
@@ -56,8 +58,6 @@ thread_local! {
     /// When the trickle last answered callbacks.
     static LAST_SEND: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
     static LAST_REFILL: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
-    /// A timer was not re-armed because no surface awaited a callback.
-    static IDLE: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
 }
 
 /// Delay before a send, refilling on quiet or restarted demand with spacing.
@@ -68,7 +68,7 @@ fn next_period(
     restarted: bool,
     last_refill: &mut Option<Instant>,
 ) -> Duration {
-    if (restarted || last_send.is_none_or(|sent| now.duration_since(sent) >= BURST_QUIET))
+    if (restarted || last_send.is_none())
         && last_refill.is_none_or(|refill| now.duration_since(refill) >= BURST_MIN_SPACING)
     {
         *burst = BURST_FRAMES;
@@ -79,6 +79,11 @@ fn next_period(
     } else {
         PARKED_TRICKLE
     }
+}
+
+/// Preserve the rate limit across timer drop/re-arm during client rendering.
+fn send_deadline(last_send: Option<Instant>, now: Instant, period: Duration) -> Instant {
+    last_send.map_or(now + period, |sent| (sent + period).max(now))
 }
 
 /// The output callbacks are attributed to: the active one, else any mapped one.
@@ -169,7 +174,6 @@ pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
         return;
     }
     if !waiting(state) {
-        IDLE.set(true);
         return;
     }
     let mut burst = BURST.get();
@@ -178,18 +182,20 @@ pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
         LAST_SEND.get(),
         Instant::now(),
         &mut burst,
-        IDLE.get(),
+        LAST_SEND.get().is_none_or(|sent| sent.elapsed() > DEMAND_IDLE),
         &mut last_refill,
     );
     LAST_REFILL.set(last_refill);
     BURST.set(burst);
-    let mut next_send = Instant::now() + period;
+    // Dropping and re-arming during client rendering must preserve the send
+    // deadline; otherwise each commit can advance or postpone the rate limit.
+    let now = Instant::now();
+    let mut next_send = send_deadline(LAST_SEND.get(), now, period);
     let armed = state.loop_handle.insert_source(
-        Timer::from_duration(period),
+        Timer::from_duration(next_send.saturating_duration_since(now)),
         move |_, _, state: &mut Loop| {
             if !parked(state) || !waiting(state) {
                 ARMED.set(false);
-                IDLE.set(true);
                 return TimeoutAction::Drop;
             }
             let now = Instant::now();
@@ -202,8 +208,8 @@ pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
             let _ = state.inner.loader.display_handle.flush_clients();
             // Do not check waiting immediately after draining callbacks: a
             // continuously animating client needs time to request its next one.
-            // Probe after 16 ms even when the next send is a second away, so
-            // short gaps between captures can establish idle promptly.
+            // Drop the timer promptly when idle; a commit re-arms it without
+            // treating ordinary render turnaround as restarted demand.
             next_send = Instant::now()
                 + if BURST.get() > 0 {
                     BURST_INTERVAL
@@ -215,7 +221,6 @@ pub fn arm(state: &Loop, parked: fn(&Loop) -> bool) {
     );
     match armed {
         Ok(_) => {
-            IDLE.set(false);
             ARMED.set(true);
         }
         Err(error) => warn!("parked frame trickle not armed: {error}"),
@@ -237,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn spent_burst_trickles_until_quiet() {
+    fn spent_burst_does_not_refill_just_because_time_passed() {
         let sent = Instant::now();
         let mut burst = 0;
         assert_eq!(
@@ -254,14 +259,14 @@ mod tests {
         assert_eq!(
             next_period(
                 Some(sent),
-                sent + BURST_QUIET,
+                sent + Duration::from_secs(20),
                 &mut burst,
                 false,
                 &mut Some(sent)
             ),
-            BURST_INTERVAL
+            PARKED_TRICKLE
         );
-        assert_eq!(burst, BURST_FRAMES);
+        assert_eq!(burst, 0);
     }
 
     #[test]
@@ -324,5 +329,71 @@ mod tests {
         }
         assert_eq!(burst, 0);
         assert_eq!(refill, Some(start));
+    }
+
+    // Model the production probe: callbacks drain, the 16 ms probe sees no
+    // waiting callback and drops the timer, then the client's commit re-arms.
+    fn client_cycle(turnaround: Duration, sends: usize) -> Vec<Duration> {
+        let start = Instant::now();
+        let mut last_send = None;
+        let mut refill = None;
+        let mut burst = 0;
+        let mut now = start;
+        let mut times = Vec::new();
+        let mut armed = false;
+        for _ in 0..sends {
+            assert!(!armed, "the idle probe dropped the previous timer");
+            let restarted = last_send.is_none_or(|sent| now.duration_since(sent) > DEMAND_IDLE);
+            let period = next_period(last_send, now, &mut burst, restarted, &mut refill);
+            armed = true;
+            // A second main-loop arm observes ARMED and cannot alter this deadline.
+            let deadline = send_deadline(last_send, now, period);
+            assert!(armed);
+            now = deadline;
+            times.push(now.duration_since(start));
+            last_send = Some(now);
+            burst = burst.saturating_sub(1);
+            now += BURST_INTERVAL;
+            assert!(turnaround > BURST_INTERVAL);
+            armed = false; // no callback waiting at the probe: no idle timer
+            now += turnaround - BURST_INTERVAL;
+        }
+        times
+    }
+
+    #[test]
+    fn rendering_clients_drop_and_rearm_without_refilling() {
+        for ms in [20, 100, 250] {
+            let times = client_cycle(Duration::from_millis(ms), 20);
+            for pair in times[BURST_FRAMES as usize - 1..].windows(2) {
+                assert_eq!(pair[1] - pair[0], PARKED_TRICKLE);
+            }
+        }
+    }
+
+    #[test]
+    fn capture_gap_refills_after_probe_drop() {
+        let start = Instant::now();
+        let mut now = start;
+        let mut last_send = None;
+        let mut refill = None;
+        let mut burst = 0;
+        for _ in 0..3 {
+            // No timer survived the idle probe between captures.
+            let period = next_period(last_send, now, &mut burst, true, &mut refill);
+            assert_eq!(period, BURST_INTERVAL);
+            assert_eq!(burst, BURST_FRAMES);
+            for _ in 0..BURST_FRAMES {
+                now = send_deadline(last_send, now, BURST_INTERVAL);
+                last_send = Some(now);
+                burst = burst.saturating_sub(1);
+                // A 20 ms render drops the 16 ms probe then re-arms.
+                now += Duration::from_millis(20);
+                let period = next_period(last_send, now, &mut burst, false, &mut refill);
+                assert_eq!(period, if burst == 0 { PARKED_TRICKLE } else { BURST_INTERVAL });
+            }
+            now = last_send.unwrap() + Duration::from_millis(300);
+            assert!(now.duration_since(last_send.unwrap()) > DEMAND_IDLE);
+        }
     }
 }
