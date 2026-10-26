@@ -25639,7 +25639,9 @@ that connection is lost. Delivery order is `bus.connected {N}`, then
 If drops and reconnects coalesce while the pump is busy, it still delivers one
 disconnect for the last delivered N before one connect for the newest live M;
 intermediate connections that were never delivered produce no disconnect.
-There is no disconnect before the first connected event or at clean shutdown /
+A pending connection event is delivered before queued Bus traffic, so a
+message that arrived on a newer connection never runs ahead of
+`bus.disconnected {N}`. There is no disconnect before the first connected event or at clean shutdown /
 `QUIT`. An unhandled event is dropped. Both events share the connection observer
 across hot reloads; a reload alone emits neither event. These are connection
 generations, independent of script reload generations.

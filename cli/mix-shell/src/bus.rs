@@ -1818,9 +1818,13 @@ impl BusHandler for MixServeHandler {
                 Some(g) => g,
                 None => return None,
             };
+            // Connection events first: traffic already queued from a newer
+            // connection must not run before the script hears of the drop
+            // (Disconnected is published before any reconnect).
             let result = tokio::select! {
-                command = guard.as_mut().recv() => command,
+                biased;
                 event = self.next_connection_event() => return Some(event),
+                command = guard.as_mut().recv() => command,
             };
             drop(guard);
 
