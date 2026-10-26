@@ -269,6 +269,7 @@ impl CaptureState {
     }
 }
 
+#[cfg_attr(target_arch = "x86_64", expect(unsafe_code))]
 pub(crate) fn copy_readback(source: &[u8]) -> Vec<u8> {
     #[cfg(target_arch = "x86_64")]
     if std::is_x86_feature_detected!("sse4.1") && source.as_ptr().align_offset(16) == 0 {
@@ -283,6 +284,7 @@ pub(crate) fn copy_readback(source: &[u8]) -> Vec<u8> {
 /// Ordinary scalar/vector loads and libc memcpy can take hundreds of ms here.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse4.1")]
+#[expect(unsafe_code)]
 unsafe fn copy_readback_streaming(source: &[u8]) -> Vec<u8> {
     use std::arch::x86_64::{__m128i, _mm_storeu_si128, _mm_stream_load_si128};
     let mut target = vec![0; source.len()];
