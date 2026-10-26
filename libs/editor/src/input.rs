@@ -52,9 +52,13 @@ pub fn key(key: Key, mods: Modifiers, page: usize) -> Option<Event> {
 }
 
 /// Typed text, unless it is empty or carries control characters (those are
-/// keys, not text).
+/// keys, not text). Line breaks and tabs inside longer text go in verbatim,
+/// as a paste would: drive input types a whole block into a multi-line field
+/// this way, so the Enter key's auto-indent never stacks on its own indent.
 pub fn text(s: &str) -> Option<Event> {
-    (!s.is_empty() && !s.chars().any(char::is_control))
+    let single = s.chars().nth(1).is_none();
+    let typed = |c: char| !c.is_control() || (!single && matches!(c, '\n' | '\r' | '\t'));
+    (!s.is_empty() && s.chars().all(typed))
         .then(|| Event::Command(EditCommand::Insert(s.to_string())))
 }
 
@@ -129,5 +133,14 @@ mod tests {
         );
         assert_eq!(text("\u{8}"), None, "control characters are keys");
         assert_eq!(text(""), None);
+        assert_eq!(text("\n"), None, "a lone line break is the Enter key");
+        assert_eq!(text("\t"), None, "a lone tab is the Tab key");
+        let block = "if $a then\n  print(1)\nend\r\n\tx";
+        assert_eq!(
+            text(block),
+            Some(Event::Command(EditCommand::Insert(block.into()))),
+            "a typed block goes in verbatim"
+        );
+        assert_eq!(text("a\u{8}b"), None, "other control characters still refuse");
     }
 }

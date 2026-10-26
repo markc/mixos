@@ -127,7 +127,7 @@ pub fn describe(app: &str) -> Vec<Value> {
         (
             "ui.type",
             json!({"text":"string"}),
-            "Type text into the focused widget; a newline presses Enter",
+            "Type text into the focused widget. A multi-line field takes it verbatim; elsewhere a newline presses Enter",
             false,
         ),
         (
@@ -1220,6 +1220,16 @@ impl Drive {
                     json!({}),
                 )
             }
+            // A multi-line field takes the whole text at once, line breaks
+            // and all, as a paste would: pressing Enter there auto-indents,
+            // and the text's own indent would stack on top of it.
+            Job::Type { text } if !text.is_empty() && self.focused_role() == Some(Role::MultilineTextInput) => {
+                (
+                    vec![input(vec![Event::Text(text)]), Step::Idle],
+                    Report::Ui,
+                    json!({}),
+                )
+            }
             Job::Type { text } => {
                 let enter = |pressed| Event::Key {
                     key: Key::Enter,
@@ -1360,6 +1370,11 @@ impl Drive {
 
     fn focus(&self) -> Option<NodeId> {
         self.tree.as_ref().map(|t| t.focus)
+    }
+
+    fn focused_role(&self) -> Option<Role> {
+        let focus = self.focus()?;
+        self.nodes().get(&focus).map(|node| node.role())
     }
 
     /// The node `target` names: by id, or the one node with that label (or,
@@ -2499,5 +2514,46 @@ mod tests {
         let ctx = Context::default();
         let answer = request(&ctx, 3, "ui.tree", &json!({})).unwrap();
         assert_eq!(answer.body["error_code"], "UNAVAILABLE");
+    }
+
+    /// Typing into a multi-line field sends the text whole, so an editor's
+    /// Enter auto-indent never stacks on the text's own indent; a single-line
+    /// field still gets Enter for each line break.
+    #[test]
+    fn typing_into_a_multi_line_field_keeps_the_text_verbatim() {
+        let focused = |role| Drive {
+            tree: Some(TreeUpdate {
+                nodes: vec![(NodeId(5), Node::new(role))],
+                tree: None,
+                tree_id: egui::accesskit::TreeId::ROOT,
+                focus: NodeId(5),
+            }),
+            ..Drive::default()
+        };
+        let ctx = Context::default();
+        let text = "if $a then\n  print(1)\nend";
+        let events = |drive: &Drive| -> Vec<Vec<Event>> {
+            let (steps, _, _) = drive
+                .plan(&ctx, Job::Type { text: text.into() })
+                .unwrap();
+            steps
+                .into_iter()
+                .filter_map(|step| match step {
+                    Step::Input(events) => Some(events),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(
+            events(&focused(Role::MultilineTextInput)),
+            vec![vec![Event::Text(text.into())]]
+        );
+        let single = events(&focused(Role::TextInput));
+        assert_eq!(single.len(), 5, "three lines and two Enter presses");
+        assert_eq!(single[0], vec![Event::Text("if $a then".into())]);
+        assert!(matches!(
+            single[1][0],
+            Event::Key { key: Key::Enter, pressed: true, .. }
+        ));
     }
 }
