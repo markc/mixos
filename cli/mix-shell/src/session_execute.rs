@@ -1634,7 +1634,7 @@ mod tests {
             from: String::new(),
             command: SUBMIT.into(),
             id: None,
-            args: Value::Null,
+            args: serde_json::Value::Null,
             body: "{}".into(),
             headers: [
                 ("broker_origin".into(), "mesh".into()),
