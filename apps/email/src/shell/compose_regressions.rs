@@ -50,7 +50,7 @@ fn bus_answer(
     command: &str,
     args: Value,
 ) -> (u8, Value) {
-    bus_answer_with(shell, broker, command, args, |_| {})
+    bus_answer_with(shell, broker, command, args, |_| true)
 }
 
 fn bus_answer_with(
@@ -58,7 +58,7 @@ fn bus_answer_with(
     broker: &test_broker::Broker,
     command: &str,
     args: Value,
-    mut before_frame: impl FnMut(&mut Shell),
+    mut before_frame: impl FnMut(&mut Shell) -> bool,
 ) -> (u8, Value) {
     let url = broker.url.clone();
     let command = command.to_owned();
@@ -75,8 +75,9 @@ fn bus_answer_with(
     });
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     loop {
-        before_frame(shell);
-        logic_frame(shell);
+        if before_frame(shell) {
+            logic_frame(shell);
+        }
         shell
             .runtime
             .block_on(async { tokio::time::sleep(std::time::Duration::from_millis(2)).await });
@@ -101,11 +102,13 @@ fn review_fetched_reply_and_forward_answer_with_their_new_windows() {
                 // Hold only the server effect; use the real command validation,
                 // Then value and completion path, without an external mail server.
                 let mut events = Vec::new();
+                let mut handled = false;
                 while let Ok(event) = shell.rx.try_recv() {
                     if let Event::Delivery(citizen::Delivery::Command { id, command, body }) =
                         &event
                         && matches!(command.as_str(), "email.reply" | "email.forward")
                     {
+                        handled = true;
                         crate::commands::command(
                             &mut shell.state,
                             &shell.commands,
@@ -141,6 +144,7 @@ fn review_fetched_reply_and_forward_answer_with_their_new_windows() {
                 for event in events {
                     shell.tx.send(event).unwrap();
                 }
+                handled
             },
         );
         assert_eq!(rc, 0, "{body}");
