@@ -418,7 +418,10 @@ fn policy_place_during_an_armed_drag_keeps_the_placed_floating_frame() {
             h.wire.inner.space.state.element_location(&window),
             Some((500, 300).into())
         );
-        assert_eq!(slot::size_of(&window).unwrap_or(window.geometry().size), size);
+        assert_eq!(
+            slot::size_of(&window).unwrap_or(window.geometry().size),
+            size
+        );
         assert!(!decor::window::constrained(&window));
         for edge in [
             State::TiledLeft,
