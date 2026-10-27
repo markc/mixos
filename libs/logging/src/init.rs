@@ -18,7 +18,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use crate::defaults::{LogDefaults, RotationMode};
 use crate::handle::{LogError, LogHandle};
 use crate::opts::{LogFormat, LogLevel, LogOpts, StatsOpts, TriState};
-use crate::sink::Sink;
+use crate::sink::{Sink, Stderr};
 use crate::stats::{JsonlSink, StatsRecorderBuilder};
 
 // Core copies of the plan §4.3 numeric bounds. Held literally here
@@ -233,7 +233,11 @@ pub(crate) fn init_inner(
         crate::journal::LazyJournal::new(
             &defaults.identity,
             journal_fallback.then(|| {
-                make_fmt_layer(format, ansi_on, std::io::stderr as fn() -> std::io::Stderr)
+                Box::new(Stderr(make_fmt_layer(
+                    format,
+                    ansi_on,
+                    std::io::stderr as fn() -> std::io::Stderr,
+                ))) as Box<dyn tracing_subscriber::Layer<_> + Send + Sync>
             }),
         )
     });
@@ -252,11 +256,11 @@ pub(crate) fn init_inner(
         TriState::Auto => !journald_active,
     };
     let stderr_layer = if stderr_on {
-        Some(make_fmt_layer(
+        Some(Stderr(make_fmt_layer(
             format,
             ansi_on,
             std::io::stderr as fn() -> std::io::Stderr,
-        ))
+        )))
     } else {
         None
     };

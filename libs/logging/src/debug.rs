@@ -21,13 +21,13 @@ pub fn answered(service: &str, command: &str, rc: u8) {
 
 #[inline]
 pub fn failure(app: &str, error: &impl std::fmt::Display) {
-    if tracing::enabled!(tracing::Level::ERROR) {
-        tracing::error!(app, %error, "application error");
-    } else {
-        // Startup failures and an explicit off filter still need one message.
-        eprintln!("{app}: {error}");
-    }
+    // Fatal errors are part of the CLI contract, independent of log sinks/levels.
+    eprintln!("{app}: {error}");
+    tracing::error!(target: FAILURE_TARGET, app, %error, "application error");
 }
+
+// Stderr sinks suppress this event because failure() already printed it.
+pub(crate) const FAILURE_TARGET: &str = "logging::failure";
 
 /// Own targets use Rust crate names (hyphens become underscores).
 const WORKSPACE_TARGETS: &[&str] = &[

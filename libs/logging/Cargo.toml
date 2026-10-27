@@ -85,6 +85,7 @@ bus = { workspace = true, features = ["client"], optional = true }
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "sync", "macros"], optional = true }
 
 [dev-dependencies]
+libc.workspace = true
 # Property tests exercise a real in-memory SQLite store and async hooks.
 tempfile = "3"
 rusqlite.workspace = true

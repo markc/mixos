@@ -256,6 +256,12 @@ journalctl -t compd -f
 under a different Bus service name. A terminal also receives stderr output;
 without a terminal, stderr is used if journald cannot be installed. A working
 journal and a non-terminal stderr produce one copy, in the journal.</p>
+<p>Fatal command-line and startup errors always print one plain
+<code>&lt;app&gt;: &lt;error&gt;</code> line on stderr, including without a terminal or with logging
+off. When ERROR is enabled, the <code>logging::failure</code> event also reaches the
+journal with <code>app</code> and <code>error</code> fields (journal <code>F_APP</code> and <code>F_ERROR</code>), and the
+recent-event ring while recording. Stderr formatting and the journal's stderr
+fallback suppress that event to avoid printing the fatal error twice.</p>
 <table><thead><tr><th>Level</th><th>MixOS crates</th><th>Other dependencies</th><th>Clamped dependencies</th></tr></thead><tbody>
 <tr><td><code>off</code></td><td>off</td><td>off</td><td>off</td></tr>
 <tr><td><code>error</code></td><td>error</td><td>error</td><td>error</td></tr>

@@ -26,6 +26,13 @@ under a different Bus service name. A terminal also receives stderr output;
 without a terminal, stderr is used if journald cannot be installed. A working
 journal and a non-terminal stderr produce one copy, in the journal.
 
+Fatal command-line and startup errors always print one plain
+`<app>: <error>` line on stderr, including without a terminal or with logging
+off. When ERROR is enabled, the `logging::failure` event also reaches the
+journal with `app` and `error` fields (journal `F_APP` and `F_ERROR`), and the
+recent-event ring while recording. Stderr formatting and the journal's stderr
+fallback suppress that event to avoid printing the fatal error twice.
+
 | Level | MixOS crates | Other dependencies | Clamped dependencies |
 |---|---|---|---|
 | `off` | off | off | off |

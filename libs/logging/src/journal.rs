@@ -122,7 +122,11 @@ where
         let sink = slot.get_or_insert_with(|| {
             tracing_journald::layer()
                 .map(|layer| layer.with_syslog_identifier(self.identity.clone()))
-                .inspect_err(|error| eprintln!("logging: journald sink disabled: {error}"))
+                .inspect_err(|error| {
+                    if event.metadata().target() != crate::debug::FAILURE_TARGET {
+                        eprintln!("logging: journald sink disabled: {error}");
+                    }
+                })
         });
         let sink: &dyn Layer<S> = match sink {
             Ok(sink) => sink,
@@ -182,6 +186,27 @@ mod tests {
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn failed_journal_does_not_echo_an_already_printed_fatal_error() {
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let captured = bytes.clone();
+        let fallback = crate::sink::Stderr(
+            tracing_subscriber::fmt::layer().with_writer(move || Writer(captured.clone())),
+        );
+        let layer = LazyJournal::new("fixture", Some(Box::new(fallback)));
+        *layer.sink.lock().unwrap() = Some(Err(std::io::Error::from(std::io::ErrorKind::NotFound)));
+        let subscriber = tracing_subscriber::registry().with(layer);
+        tracing::subscriber::with_default(subscriber, || {
+            crate::debug::failure("fixture", &"service already registered");
+            tracing::error!("ordinary error still reaches fallback");
+        });
+        let output = bytes.lock().unwrap();
+        let text = std::str::from_utf8(&output).unwrap();
+        assert!(!text.contains("application error"), "{text}");
+        assert!(!text.contains("service already registered"), "{text}");
+        assert!(text.contains("ordinary error still reaches fallback"), "{text}");
     }
 
     #[test]
