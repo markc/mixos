@@ -9322,7 +9322,6 @@ A second launch raises the first window.
 Compose, Reply, Reply All, Forward, Send as New, restored drafts and dropped
 mail documents each open a separate window in Email's process. Each composer
 has its own draft, attachments, chooser, autosave timer and document operations.
-There is no compose window.
 
 The window chrome holds **File** (New, Open…, Save As…, Send, Close, Quit),
 **Edit** (body Undo, Redo, Cut, Copy, Paste), **Attachments** (Attach files…,
@@ -9703,7 +9702,7 @@ never waits on them.
 
 | Command | Class | Does |
 |---|---|---|
-| `email.ping`, `email.info`, `email.actions` | query | probe; the whole window state (no secret), including reader attachment choices and preview states; the command registry |
+| `email.ping`, `email.info {window?}`, `email.actions` | query | probe; the whole window state (no secret), including reader attachment choices and preview states; the command registry |
 | `email.accounts` | query | the accounts with `has_password` and `state`, never a password |
 | `email.mailboxes {account?}` | query | mailboxes with roles, parents and counts |
 | `email.list {account?, mailbox?, offset?, limit?, query?}` | query | one page, newest first, with `total` |
@@ -9712,7 +9711,7 @@ never waits on them.
 | `email.calendars`, `email.events {calendar?, from?, to?}`, `email.event.get {id}` | query | calendars and events |
 | `email.books`, `email.contacts {book?, filter?}`, `email.contact.get {id}` | query | address books and contacts |
 | `email.show`, `email.quit` | system, intent | raise, close |
-| `email.execute {id}` | intent | run any registry command (published with origin `bus`), including `mail.attachments` and `view.attachments_inline` |
+| `email.execute {id, window?}` | intent | run any registry command (published with origin `bus`); `window` selects a composer for compose actions |
 | `email.mode {name}`, `email.refresh {account?}` | intent | switch surface; fetch again (a failed account reconnects) |
 | `email.account.set {id?, name, url, email, password?, ca_path?, enabled?, signature?}` | intent | create or update in settingsd; answers `{id}` once settingsd accepts |
 | `email.account.remove {id}`, `email.account.default {id}` | intent | through settingsd, fenced |

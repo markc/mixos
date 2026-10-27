@@ -256,8 +256,7 @@ action can also be done over the Bus.</p>
 <h2 id="compose">Compose</h2>
 <p>Compose, Reply, Reply All, Forward, Send as New, restored drafts and dropped
 mail documents each open a separate window in Email's process. Each composer
-has its own draft, attachments, chooser, autosave timer and document operations.
-There is no compose window.</p>
+has its own draft, attachments, chooser, autosave timer and document operations.</p>
 <p>The window chrome holds <strong>File</strong> (New, Open…, Save As…, Send, Close, Quit),
 <strong>Edit</strong> (body Undo, Redo, Cut, Copy, Paste), <strong>Attachments</strong> (Attach files…,
 Remove all attachments) and <strong>View</strong> (theme). Ctrl+N opens another composer;
@@ -631,7 +630,7 @@ request ran; a write that may have run answers <code>OUTCOME_UNKNOWN</code>),
 <p>Queries that need the server answer when the server does. The window
 never waits on them.</p>
 <table><thead><tr><th>Command</th><th>Class</th><th>Does</th></tr></thead><tbody>
-<tr><td><code>email.ping</code>, <code>email.info</code>, <code>email.actions</code></td><td>query</td><td>probe; the whole window state (no secret), including reader attachment choices and preview states; the command registry</td></tr>
+<tr><td><code>email.ping</code>, <code>email.info {window?}</code>, <code>email.actions</code></td><td>query</td><td>probe; the whole window state (no secret), including reader attachment choices and preview states; the command registry</td></tr>
 <tr><td><code>email.accounts</code></td><td>query</td><td>the accounts with <code>has_password</code> and <code>state</code>, never a password</td></tr>
 <tr><td><code>email.mailboxes {account?}</code></td><td>query</td><td>mailboxes with roles, parents and counts</td></tr>
 <tr><td><code>email.list {account?, mailbox?, offset?, limit?, query?}</code></td><td>query</td><td>one page, newest first, with <code>total</code></td></tr>
@@ -640,7 +639,7 @@ never waits on them.</p>
 <tr><td><code>email.calendars</code>, <code>email.events {calendar?, from?, to?}</code>, <code>email.event.get {id}</code></td><td>query</td><td>calendars and events</td></tr>
 <tr><td><code>email.books</code>, <code>email.contacts {book?, filter?}</code>, <code>email.contact.get {id}</code></td><td>query</td><td>address books and contacts</td></tr>
 <tr><td><code>email.show</code>, <code>email.quit</code></td><td>system, intent</td><td>raise, close</td></tr>
-<tr><td><code>email.execute {id}</code></td><td>intent</td><td>run any registry command (published with origin <code>bus</code>), including <code>mail.attachments</code> and <code>view.attachments_inline</code></td></tr>
+<tr><td><code>email.execute {id, window?}</code></td><td>intent</td><td>run any registry command (published with origin <code>bus</code>); <code>window</code> selects a composer for compose actions</td></tr>
 <tr><td><code>email.mode {name}</code>, <code>email.refresh {account?}</code></td><td>intent</td><td>switch surface; fetch again (a failed account reconnects)</td></tr>
 <tr><td><code>email.account.set {id?, name, url, email, password?, ca_path?, enabled?, signature?}</code></td><td>intent</td><td>create or update in settingsd; answers <code>{id}</code> once settingsd accepts</td></tr>
 <tr><td><code>email.account.remove {id}</code>, <code>email.account.default {id}</code></td><td>intent</td><td>through settingsd, fenced</td></tr>
