@@ -279,7 +279,9 @@ impl FileChooser {
         let layer = egui::LayerId::new(egui::Order::Foreground, self.id);
         // Raising both areas gives them equal priority and can leave a
         // reopened replacement question behind the chooser.
-        if self.replace.is_none() { ctx.move_to_top(layer); }
+        if self.replace.is_none() {
+            ctx.move_to_top(layer);
+        }
         let choices = vec![
             Choice::new(&self.confirm, Role::Default).enabled(self.can_confirm()),
             Choice::new(own("file-chooser-cancel"), Role::Cancel),
@@ -902,7 +904,10 @@ mod tests {
         assert!(h.query_by_label("Replace").is_some());
         h.get_by_label("Replace").focus();
         h.run();
-        assert!(h.get_by_label("Replace").is_focused(), "replacement button must own focus");
+        assert!(
+            h.get_by_label("Replace").is_focused(),
+            "replacement button must own focus"
+        );
         h.key_press(Key::Enter);
         h.run();
         assert_eq!(
