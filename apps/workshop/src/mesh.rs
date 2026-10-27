@@ -101,19 +101,41 @@ struct Placement {
     label: Rect,
 }
 
-fn peer_angle(index: usize, count: usize) -> f32 {
-    use std::f32::consts::{PI, TAU};
+/// The lines x = +/- slope*y separate the centre plate (with clearance) from
+/// the two sides of the map. Coordinates are relative to the centre node.
+fn label_slope(width: f32, unit: f32) -> f32 {
+    // The plate starts at local radius + label gap. Inflate its upper corners
+    // horizontally and upwards so the separator also leaves stroke clearance.
+    (width * 0.5 + unit * 0.5) / (unit * (1.3 + 0.4 - 0.25))
+}
+
+fn peer_arc_end(axes: Vec2, label_width: f32, unit: f32) -> f32 {
+    let slope = label_slope(label_width, unit);
+    let normal_length = Vec2::new(1.0, slope).length();
+    // Leave circle clearance at either lower boundary. Solve
+    // axes.x*cos(t) - slope*axes.y*sin(t) = clearance*normal_length.
+    // If neither boundary fits below horizontal, reserve the entire lower half.
+    let ellipse = Vec2::new(axes.x, slope * axes.y);
+    let clearance = unit * (0.9 + 0.5) * normal_length;
+    let phase = ellipse.y.atan2(ellipse.x);
+    ((clearance / ellipse.length().max(f32::EPSILON))
+        .clamp(0.0, 1.0)
+        .acos()
+        - phase)
+        .max(0.0)
+}
+
+fn peer_angle(index: usize, count: usize, arc_end: f32) -> f32 {
+    use std::f32::consts::PI;
+    if count == 1 {
+        return 0.0;
+    }
     if count == 2 {
         return if index == 0 { PI } else { 0.0 };
     }
-    // Start horizontally, rotating a half step only when a regular polygon
-    // would otherwise put peers directly above and below this node.
-    let offset = if count.is_multiple_of(4) {
-        PI / count as f32
-    } else {
-        0.0
-    };
-    offset + index as f32 * TAU / count as f32
+    // Fill the remaining arc through the top, including its two boundaries.
+    // The omitted lower wedge is sized by the measured label and the ellipse.
+    arc_end - index as f32 * (PI + 2.0 * arc_end) / (count - 1) as f32
 }
 
 fn map_layout(rect: Rect, labels: &[Vec2], unit: f32) -> Vec<Placement> {
@@ -129,6 +151,7 @@ fn map_layout(rect: Rect, labels: &[Vec2], unit: f32) -> Vec<Placement> {
         margin.max(half * 1.5 + Vec2::splat(common))
     });
     let axes = (rect.size() * 0.5 - margin).max(Vec2::ZERO);
+    let arc_end = peer_arc_end(axes, labels[0].x, unit);
     labels
         .iter()
         .enumerate()
@@ -136,7 +159,7 @@ fn map_layout(rect: Rect, labels: &[Vec2], unit: f32) -> Vec<Placement> {
             let (at, radius, direction) = if i == 0 {
                 (centre, unit * 1.3, Vec2::Y)
             } else {
-                let angle = peer_angle(i - 1, labels.len() - 1);
+                let angle = peer_angle(i - 1, labels.len() - 1, arc_end);
                 let delta = Vec2::new(angle.cos() * axes.x, angle.sin() * axes.y);
                 (
                     centre + delta,
@@ -157,25 +180,30 @@ fn map_layout(rect: Rect, labels: &[Vec2], unit: f32) -> Vec<Placement> {
 
 /// Both directions use separate side ports on this node, leaving room for its
 /// label below. The peer ports face inward, away from its outward label plate.
-fn spoke(local: Placement, peer: Placement, out: bool, unit: f32) -> Vec<Pos2> {
+fn spoke_controls(local: Placement, peer: Placement, out: bool, unit: f32) -> [Pos2; 4] {
     let delta = peer.at - local.at;
     let radial = delta / delta.length().max(f32::EPSILON);
     let normal = Vec2::new(-radial.y, radial.x);
     let side = if delta.x < 0.0 { -1.0 } else { 1.0 };
     let lane = if out { -1.0 } else { 1.0 };
-    let port = 0.35_f32;
+    let slope = label_slope(local.label.width(), unit);
+    let port = 0.35_f32.min(0.5 / Vec2::new(1.0, slope).length());
     let along = (1.0 - port * port).sqrt();
     let a = local.at + Vec2::new(side * along, side * lane * port) * local.radius;
     let b = peer.at - radial * along * peer.radius + normal * lane * port * peer.radius;
-    let lead = (local.label.width() * 0.5 + unit * 2.0).min(delta.length() * 0.5);
+    let lead = (local.label.width() * 0.5 + unit * 2.0)
+        .min(delta.length() * 0.5)
+        .min((delta.length() - local.radius - unit * 0.5).max(0.0));
     let c = a + Vec2::new(side * lead, 0.0);
-    let mut d = b - radial * lead + normal * lane * unit * 0.8;
-    if delta.y > 0.0 {
-        // Near-vertical lower spokes stay beside the centre plate until they
-        // turn towards their peer, rather than cutting back through the text.
-        let clearance = local.label.width() * 0.5 + unit * 0.5;
-        d.x = local.at.x + side * ((d.x - local.at.x) * side).max(clearance);
-    }
+    // All four controls stay on the peer's side of the centre-label wedge and
+    // inward of the peer. A Bezier lies in their convex hull, so neither label
+    // can be crossed, including between the sampled painter points.
+    let d = c.lerp(b, 0.5);
+    [a, c, d, b]
+}
+
+fn spoke(local: Placement, peer: Placement, out: bool, unit: f32) -> Vec<Pos2> {
+    let [a, c, d, b] = spoke_controls(local, peer, out, unit);
     let mut points: Vec<_> = (0..=40)
         .map(|i| {
             let t = i as f32 / 40.0;
@@ -741,20 +769,24 @@ mod tests {
 
     #[test]
     fn ellipse_uses_rect_aspect_with_even_angles_and_outward_labels() {
-        use std::f32::consts::{PI, TAU};
+        use std::f32::consts::PI;
+        let axes = Vec2::new(220.0, 150.0);
+        let end = peer_arc_end(axes, 104.0, 18.0);
+        assert!(end > 0.0 && end < PI * 0.5);
+        assert!(peer_arc_end(axes, 208.0, 18.0) < end);
+        assert!(peer_arc_end(Vec2::new(440.0, 150.0), 104.0, 18.0) > end);
         for count in 3..=64 {
             for i in 0..count {
-                let angle = peer_angle(i, count);
-                assert!(
-                    angle.cos().abs() > 0.001,
-                    "avoidable vertical peer: {count}"
-                );
+                let angle = peer_angle(i, count, end);
+                assert!((-PI - end - 0.001..=end + 0.001).contains(&angle));
                 if i > 0 {
-                    assert!((angle - peer_angle(i - 1, count) - TAU / count as f32).abs() < 0.001);
+                    let step = (PI + 2.0 * end) / (count - 1) as f32;
+                    assert!((angle - peer_angle(i - 1, count, end) + step).abs() < 0.001);
                 }
             }
+            assert!((peer_angle(0, count, end) - end).abs() < 0.001);
+            assert!((peer_angle(count - 1, count, end) + PI + end).abs() < 0.001);
         }
-        assert!((peer_angle(0, 4) - PI / 4.0).abs() < 0.001);
         for size in [Vec2::new(900.0, 440.0), Vec2::new(440.0, 900.0)] {
             let rect = Rect::from_min_size(Pos2::ZERO, size);
             let nodes = layout(8, size);
@@ -781,6 +813,50 @@ mod tests {
                 assert!(extent.x > extent.y * 2.0);
             } else {
                 assert!(extent.y > extent.x * 2.0);
+            }
+        }
+    }
+
+    #[test]
+    fn measured_wedge_separates_peer_circles_and_every_spoke_control_from_labels() {
+        let unit = 18.0;
+        for size in [
+            Vec2::new(700.0, 480.0),
+            Vec2::new(900.0, 440.0),
+            Vec2::new(440.0, 900.0),
+        ] {
+            for label_width in [52.0, 104.0, 208.0] {
+                for count in 1..=64 {
+                    let mut labels = vec![Vec2::new(104.0, 40.0); count + 1];
+                    labels[0].x = label_width;
+                    let nodes = map_layout(Rect::from_min_size(Pos2::ZERO, size), &labels, unit);
+                    let local = nodes[0];
+                    let slope = label_slope(local.label.width(), unit);
+                    for peer in nodes.iter().skip(1) {
+                        let delta = peer.at - local.at;
+                        let radial = delta.normalized();
+                        let side = if delta.x < 0.0 { -1.0 } else { 1.0 };
+                        let separator = Vec2::new(side, -slope);
+                        assert!(
+                            !Rect::from_center_size(peer.at, Vec2::splat(peer.radius * 2.0))
+                                .intersects(local.label)
+                        );
+                        for out in [true, false] {
+                            for point in spoke_controls(local, *peer, out, unit) {
+                                // Both are linear inequalities, hence hold for
+                                // the full Bezier and every painter segment.
+                                assert!(
+                                    (point - local.at).dot(separator) > 0.0,
+                                    "centre separator: {count} peers, {size:?}, label {label_width}"
+                                );
+                                assert!(
+                                    (point - peer.at).dot(radial) < 0.0,
+                                    "peer separator: {count} peers, {size:?}, label {label_width}"
+                                );
+                            }
+                        }
+                    }
+                }
             }
         }
     }
