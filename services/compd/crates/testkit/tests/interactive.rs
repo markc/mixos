@@ -250,6 +250,24 @@ fn begin_move(h: &mut Harness, window: &Window) {
     apply(h, window);
 }
 
+#[test]
+fn client_move_released_before_first_host_pass_commits_and_saves_start_frame() {
+    let mut h = Harness::new();
+    let (surface,_,top) = h.mapped_toplevel(640,480);
+    let (id,window) = window(&h,&surface);
+    h.wire.inner.space.state.map_element(window.clone(),(100,80),false);
+    let serial = press_at(&mut h,&window,(300.0,200.0),false);
+    top._move(h.client.seat(PRIMARY),serial);
+    h.roundtrip();
+    motion(&mut h,(0.0,540.0));
+    let_go(&mut h);
+    apply(&mut h,&window);
+    assert_eq!(h.comp().placement(id),Placement::Tiled {slot:world::comp::TileSlot::Left,output:"testkit-0".into()});
+    let saved = h.comp().float_geometry(id).unwrap();
+    assert_eq!((saved.location,saved.size),((100,80).into(),(640,480).into()));
+    assert!(h.comp().interactive.is_none());
+}
+
 fn preview(h: &Harness) -> Vec<smithay::backend::renderer::element::solid::SolidColorRenderElement> {
     world::comp::tiling::preview(h.comp(), &h.wire.inner.space.state, "testkit-0")
 }
@@ -387,7 +405,7 @@ fn escape_restores_start_geometry_placement_and_saved_float_without_client_keys(
             geometry::set_placement(&mut host.comp,&mut host.space.state,id,&window,start.clone());
         }
         let origin = h.wire.inner.space.state.element_location(&window);
-        let size = slot::decided_size(&window);
+        let size = slot::size_of(&window);
         let saved = h.comp().float_geometry(id);
         begin_move(&mut h,&window);
         motion(&mut h,(0.0,540.0)); apply(&mut h,&window);
@@ -399,7 +417,7 @@ fn escape_restores_start_geometry_placement_and_saved_float_without_client_keys(
         assert!(h.comp().interactive.is_none());
         assert_eq!(h.comp().placement(id),start);
         assert_eq!(h.wire.inner.space.state.element_location(&window),origin);
-        assert_eq!(slot::decided_size(&window),size);
+        assert_eq!(slot::size_of(&window),size);
         assert_eq!(h.comp().float_geometry(id),saved);
         assert!(preview(&h).is_empty());
         assert!(h.key(9,false,false),"Escape release consumed after grab end");
@@ -438,6 +456,7 @@ fn release_on_an_engaged_corner_still_reaches_the_move_grab_and_commits() {
     let corners = &mut h.wire.inner.comp.corners;
     let mut config = corners.config(); config.dwell_ms = 0; corners.set_config(config);
     corners.sample("testkit-0",(1920.0,1080.0),(1.0,1.0),(0.0,0.0),false);
+    std::thread::sleep(std::time::Duration::from_millis(2));
     corners.tick();
     assert!(corners.engaged().is_some());
     assert!(!corners.release(BTN_LEFT),"the titlebar press never belonged to the corner");

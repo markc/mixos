@@ -118,6 +118,7 @@ fn x11_moveresize_restores_maximised_placement_and_fullscreen_stays_refused() {
             &candidate,
             &mut grab
         ));
+        host.comp.interactive = Some(grab);
     }
     assert_eq!(h.comp().placement(id), Placement::Floating);
     assert_eq!(slot::decided_size(&candidate), Some((1200, 800).into()));
@@ -126,6 +127,12 @@ fn x11_moveresize_restores_maximised_placement_and_fullscreen_stays_refused() {
         Some((20, 30).into())
     );
     assert!(!x11.is_maximized());
+    let saved = h.comp().float_geometry(id);
+    pointer.motion(
+        &mut h.wire.state,
+        None,
+        &MotionEvent { location: (1919.0, 1079.0).into(), serial: SERIAL_COUNTER.next_serial(), time: 0 },
+    );
     pointer.button(
         &mut h.wire.state,
         &ButtonEvent {
@@ -136,7 +143,17 @@ fn x11_moveresize_restores_maximised_placement_and_fullscreen_stays_refused() {
         },
     );
     h.roundtrip();
-    h.wire.inner.comp.interactive = None;
+    {
+        let host = &mut h.wire.inner;
+        let mut grab = host.comp.interactive.take().unwrap();
+        assert!(grab.ended);
+        geometry::apply_interactive(&mut host.comp, &mut host.space.state, &candidate, &mut grab);
+    }
+    assert_eq!(h.comp().placement(id), Placement::Tiled { slot: world::comp::TileSlot::BottomRight, output: "testkit-0".into() });
+    assert_eq!(slot::decided_size(&candidate), Some((960, 540).into()));
+    assert_eq!(h.wire.inner.space.state.element_location(&candidate), Some((960, 540).into()));
+    assert_eq!(h.comp().float_geometry(id), saved);
+    assert!(h.comp().drag.is_none());
     let _ = x11.set_fullscreen(true); // offline property I/O fails; mirror is authoritative
     h.press(&surface, 0x110);
     h.wire.state.x11_interactive(&x11, 0);
