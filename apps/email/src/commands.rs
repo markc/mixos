@@ -1331,7 +1331,7 @@ fn dispatch(
             }
             let reply_to = text(args, "reply_to")?.filter(|v| !v.trim().is_empty());
             let from = text(args, "from")?;
-            let sender = crate::documents::identity(state, &account, from.as_deref(), reply_to.as_deref())
+            let sender = crate::documents::identity(state, &account, from.as_deref())
                 .map_err(|(c, m)| Bad(c, m))?;
             let draft = Composed {
                 from: sender.address,

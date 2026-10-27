@@ -40,6 +40,7 @@ enum Mode {
 struct Entry {
     path: PathBuf,
     name: String,
+    focus_name: bool,
     directory: bool,
     size: u64,
     modified: Option<SystemTime>,
@@ -150,6 +151,7 @@ impl FileChooser {
             confirm: confirm.into(),
             mode: Mode::Multiple,
             name: String::new(),
+            focus_name: false,
             replace: None,
             path: directory.display().to_string(),
             browsing: None,
@@ -187,6 +189,7 @@ impl FileChooser {
     ) -> Self {
         Self {
             mode: Mode::Save,
+            focus_name: true,
             ..Self::new(start, title, confirm)
         }
     }
@@ -357,14 +360,24 @@ impl FileChooser {
             self.open(&ctx, resolve_path(&self.directory, &self.path, &home()));
         }
         if self.mode == Mode::Save {
-            ui.add(
+            let id = self.id.with("name");
+            let submit = ui.is_enabled()
+                && ctx.memory(|m| m.has_focus(id))
+                && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
+            let response = ui.add(
                 field::text_edit(
                     &mut self.name,
                     &own("file-chooser-name"),
                     ui.available_width(),
                 )
-                .id(self.id.with("name")),
+                .id(id),
             );
+            if std::mem::take(&mut self.focus_name) {
+                response.request_focus();
+            }
+            if submit && self.pending.is_none() {
+                self.pick(&ctx);
+            }
         }
         ui.horizontal(|ui| {
             if ui
@@ -635,8 +648,11 @@ impl FileChooser {
 }
 
 fn save_path(directory: &Path, name: &str) -> Result<PathBuf, String> {
-    if name.trim().is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
+    if name.trim().is_empty() {
         return Err(own("file-chooser-name-required"));
+    }
+    if name == "." || name == ".." || name.contains(['/', '\0']) {
+        return Err(own("file-chooser-name-invalid"));
     }
     Ok(directory.join(name))
 }
@@ -644,7 +660,7 @@ fn save_path(directory: &Path, name: &str) -> Result<PathBuf, String> {
 fn check_save(path: PathBuf) -> Result<Answer, String> {
     match std::fs::metadata(&path) {
         Ok(meta) if meta.is_file() => Ok(Answer::Save(path, true)),
-        Ok(_) => Err(own("file-chooser-name-required")),
+        Ok(_) => Err(own("file-chooser-name-invalid")),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Answer::Save(path, false)),
         Err(error) => Err(error.to_string()),
     }
@@ -653,31 +669,50 @@ fn check_save(path: PathBuf) -> Result<Answer, String> {
 /// Resolve XDG's Documents folder on a worker, since user-dirs.dirs is a file.
 pub fn documents() -> PathBuf {
     let home = home();
-    if let Some(path) = std::env::var_os("XDG_DOCUMENTS_DIR")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-    {
-        return path;
-    }
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
         .unwrap_or_else(|| home.join(".config"));
-    if let Ok(text) = std::fs::read_to_string(config.join("user-dirs.dirs")) {
+    let text = std::fs::read_to_string(config.join("user-dirs.dirs")).ok();
+    let env = std::env::var("XDG_DOCUMENTS_DIR").ok();
+    documents_dir(env.as_deref(), text.as_deref(), &home)
+}
+
+fn documents_dir(env: Option<&str>, user_dirs: Option<&str>, home: &Path) -> PathBuf {
+    user_directory(env, user_dirs, "XDG_DOCUMENTS_DIR", home).unwrap_or_else(|| {
+        let documents = home.join("Documents");
+        if documents.is_dir() { documents } else { home.to_owned() }
+    })
+}
+
+/// Resolve an XDG user directory from the environment or user-dirs.dirs.
+/// Filesystem access and the caller's default belong on its worker.
+pub fn user_directory(
+    env: Option<&str>, user_dirs: Option<&str>, key: &str, home: &Path,
+) -> Option<PathBuf> {
+    let expand = |value: &str| {
+        let value = value.trim().trim_matches('"');
+        let path = if value == "$HOME" {
+            home.to_owned()
+        } else if let Some(relative) = value.strip_prefix("$HOME/") {
+            home.join(relative)
+        } else {
+            PathBuf::from(value)
+        };
+        path.is_absolute().then_some(path)
+    };
+    if let Some(path) = env.and_then(expand) {
+        return Some(path);
+    }
+    if let Some(text) = user_dirs {
         for line in text.lines() {
-            if let Some(value) = line.trim().strip_prefix("XDG_DOCUMENTS_DIR=") {
-                let value = value
-                    .trim()
-                    .trim_matches('"')
-                    .replace("$HOME", &home.to_string_lossy());
-                let path = PathBuf::from(value);
-                if path.is_absolute() {
-                    return path;
-                }
+            if let Some(value) = line.trim().strip_prefix(&format!("{key}="))
+                && let Some(path) = expand(value) {
+                return Some(path);
             }
         }
     }
-    home
+    None
 }
 
 /// The user's home; no stat is needed on the UI thread.
@@ -815,6 +850,67 @@ fn modified_date(time: SystemTime) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_name_and_folder_separators_have_distinct_messages() {
+        for name in ["", " "] {
+            assert_eq!(save_path(Path::new("/tmp"), name).unwrap_err(), "Enter a file name.");
+        }
+        for name in ["sub/mail.md", "mail\0.md", ".", ".."] {
+            assert_eq!(save_path(Path::new("/tmp"), name).unwrap_err(),
+                "Enter a file name without a folder separator.");
+        }
+    }
+
+    #[test]
+    fn documents_resolves_xdg_then_existing_documents_then_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        assert_eq!(documents_dir(None, None, home), home);
+        std::fs::create_dir(home.join("Documents")).unwrap();
+        assert_eq!(documents_dir(None, None, home), home.join("Documents"));
+        let config = "XDG_DOCUMENTS_DIR=\"$HOME/Papers\"\n";
+        assert_eq!(documents_dir(None, Some(config), home), home.join("Papers"));
+        assert_eq!(documents_dir(Some("\"$HOME/Letters\""), Some(config), home), home.join("Letters"));
+        assert_eq!(documents_dir(Some("/tmp/letters"), Some(config), home), Path::new("/tmp/letters"));
+        assert_eq!(documents_dir(Some("relative"), None, home), home.join("Documents"));
+        assert_eq!(documents_dir(None, Some("XDG_DOCUMENTS_DIR=\"$HOME\""), home), home);
+    }
+
+    #[test]
+    fn save_opens_with_filename_focus_and_typing_then_enter_confirms() {
+        use egui_kittest::kittest::Queryable;
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(900.0, 700.0))
+            .build_ui_state(
+                |ui, state: &mut (FileChooser, Option<Outcome>)| {
+                    if state.1.is_none() { state.1 = state.0.show(ui.ctx()); }
+                },
+                (FileChooser::save(dir.path(), "Save document", "Write"), None),
+            );
+        crate::install(&h.ctx, &crate::Theme::embedded());
+        h.run_steps(5);
+        assert!(h.get_by_label("File name").is_focused());
+        h.event(egui::Event::Text("typed.md".into()));
+        h.run();
+        assert_eq!(h.state().0.name, "typed.md");
+        // Let the real directory worker finish before submitting.
+        for _ in 0..100 {
+            if h.state().0.pending.is_none() { break; }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            h.run();
+        }
+        assert!(h.state().0.pending.is_none());
+        h.key_press(Key::Enter);
+        h.run();
+        for _ in 0..100 {
+            if h.state().1.is_some() { break; }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            h.run();
+        }
+        assert_eq!(h.state().1, Some(Outcome::Save { path: dir.path().join("typed.md"), replace: false }));
+    }
 
     fn entry(name: &str, directory: bool) -> Entry {
         Entry {

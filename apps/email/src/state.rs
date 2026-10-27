@@ -3762,7 +3762,7 @@ impl State {
                     self.discard_draft(&draft.id);
                 }
                 if mine {
-                    self.compose = None;
+                    self.take_compose();
                     self.confirm = None;
                 }
                 self.status = match report.unfiled {
@@ -3861,18 +3861,26 @@ impl State {
     }
 
     /// Remove draft `id` from the store for good.
-    fn discard_draft(&mut self, id: &str) {
+    pub(crate) fn discard_draft(&mut self, id: &str) {
         if !id.is_empty() {
             self.discarded.insert(id.to_owned());
             self.draft_ops.push(DraftOp::Remove(id.to_owned()));
         }
     }
 
+    pub(crate) fn take_compose(&mut self) -> Option<ComposeState> {
+        let compose = self.compose.take();
+        if compose.is_some() {
+            self.cancel_document_open();
+        }
+        compose
+    }
+
     /// Close the compose without asking, keeping its draft: saved, and
     /// offered again once nothing else is open.
     fn set_aside_compose(&mut self) {
         self.store_draft(false);
-        if let Some(compose) = self.compose.take()
+        if let Some(compose) = self.take_compose()
             && compose.keepable()
             && !compose.draft_id.is_empty()
             && !self.restore.iter().any(|d| d.id == compose.draft_id)
@@ -3890,7 +3898,7 @@ impl State {
                 self.store_draft(false);
                 self.confirm = Some(Confirm::CloseCompose);
             }
-            Some(_) => self.compose = None,
+            Some(_) => { self.take_compose(); },
             None => {}
         }
     }
@@ -3904,12 +3912,12 @@ impl State {
             DraftChoice::Back => return,
             DraftChoice::Keep => {
                 self.store_draft(false);
-                if self.compose.take().is_some() {
+                if self.take_compose().is_some() {
                     self.status = crate::label("draft-kept");
                 }
             }
             DraftChoice::Discard => {
-                if let Some(compose) = self.compose.take() {
+                if let Some(compose) = self.take_compose() {
                     self.discard_draft(&compose.draft_id);
                     self.status = crate::label("draft-discarded");
                 }
@@ -5521,7 +5529,7 @@ impl State {
     /// callers must report the refusal instead of claiming it opened.
     pub fn close_failed_compose(&mut self) -> Option<String> {
         let error = self.compose.as_ref()?.error.clone()?;
-        self.compose = None;
+        self.take_compose();
         Some(error)
     }
 
@@ -6149,7 +6157,7 @@ impl State {
             Err((code, message)) => {
                 // An invalid new compose closes only the version that asked.
                 if inspection.opening && !superseded {
-                    self.compose = None;
+                    self.take_compose();
                 }
                 if let Some(reply) = inspection.reply {
                     self.refuse(reply, code, &message);
@@ -6268,7 +6276,6 @@ impl State {
                 self,
                 &compose.account,
                 Some(&compose.draft.from),
-                compose.draft.reply_to.as_deref(),
             )
         {
             if let Some(compose) = &mut self.compose {

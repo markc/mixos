@@ -158,30 +158,8 @@ pub use toolkit::text::human_size;
 /// `XDG_DOWNLOAD_DIR` line of `user-dirs.dirs` (`user_dirs`, its text),
 /// else `~/Downloads`.
 pub fn download_dir(env: Option<&str>, user_dirs: Option<&str>, home: &Path) -> PathBuf {
-    let expand = |value: &str| -> Option<PathBuf> {
-        let value = value.trim().trim_matches('"');
-        if value.is_empty() {
-            return None;
-        }
-        let path = match value.strip_prefix("$HOME") {
-            Some(rest) => home.join(rest.trim_start_matches('/')),
-            None => PathBuf::from(value),
-        };
-        path.is_absolute().then_some(path)
-    };
-    if let Some(dir) = env.and_then(expand) {
-        return dir;
-    }
-    if let Some(text) = user_dirs {
-        for line in text.lines() {
-            if let Some(value) = line.trim().strip_prefix("XDG_DOWNLOAD_DIR=")
-                && let Some(dir) = expand(value)
-            {
-                return dir;
-            }
-        }
-    }
-    home.join("Downloads")
+    toolkit::file_chooser::user_directory(env, user_dirs, "XDG_DOWNLOAD_DIR", home)
+        .unwrap_or_else(|| home.join("Downloads"))
 }
 
 /// The downloads directory of this session.

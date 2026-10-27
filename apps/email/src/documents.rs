@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use maildoc::{MailDocument, Refusal};
 
@@ -53,6 +54,43 @@ pub fn read(path: &std::path::Path) -> Result<MailDocument> {
     maildoc::parse(&text).map_err(refusal)
 }
 
+/// Keep an approved replacement intact until its sibling is fully written.
+fn save_file(
+    path: &std::path::Path,
+    replace: bool,
+    write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true).mode(0o600)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
+    if !replace {
+        let mut file = options.open(path)?;
+        return write(&mut file).and_then(|()| file.sync_all());
+    }
+    // Refuse links and special files just as the non-replacement path does.
+    if !std::fs::symlink_metadata(path)?.is_file() {
+        return Err(std::io::Error::other(crate::label("document-not-file")));
+    }
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+    let (temporary, mut file) = loop {
+        let temporary = path.with_file_name(format!(
+            ".email-save-{}-{}", std::process::id(), NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+        ));
+        match options.open(&temporary) {
+            Ok(file) => break (temporary, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    };
+    let result = write(&mut file)
+        .and_then(|()| file.sync_all())
+        .and_then(|()| std::fs::rename(&temporary, path));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum DocumentWork {
     Folder {
@@ -91,28 +129,7 @@ impl DocumentWork {
                 let result = maildoc::write(&document).map_err(refusal).and_then(|text| {
                     // A destination which appeared after the chooser checked it
                     // must never be overwritten without the replacement question.
-                    let mut options = std::fs::OpenOptions::new();
-                    options
-                        .write(true)
-                        .mode(0o600)
-                        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
-                    if replace {
-                        options.truncate(true);
-                    } else {
-                        options.create_new(true);
-                    }
-                    let mut file = options
-                        .open(&path)
-                        .map_err(|e| (code::DOCUMENT_IO, e.to_string()))?;
-                    if !file
-                        .metadata()
-                        .map_err(|e| (code::DOCUMENT_IO, e.to_string()))?
-                        .is_file()
-                    {
-                        return Err((code::DOCUMENT_IO, crate::label("document-not-file")));
-                    }
-                    file.write_all(text.as_bytes())
-                        .and_then(|()| file.sync_all())
+                    save_file(&path, replace, |file| file.write_all(text.as_bytes()))
                         .map_err(|e| (code::DOCUMENT_IO, e.to_string()))
                 });
                 (ticket, Answer::Saved(result))
@@ -152,6 +169,21 @@ impl DocumentState {
 }
 
 impl State {
+    pub(crate) fn reset_document_modals(&mut self) {
+        self.documents.chooser = None;
+        self.documents.replace = None;
+        self.documents.folder = None;
+    }
+
+    pub(crate) fn cancel_document_open(&mut self) {
+        self.reset_document_modals();
+        let tickets: Vec<_> = self.documents.pending.iter()
+            .filter_map(|(&ticket, request)| (!request.send).then_some(ticket)).collect();
+        for ticket in tickets {
+            self.finish_document_error(ticket, (code::CANCELLED, crate::label("closing-cancelled")));
+        }
+    }
+
     fn document_fence(&self) -> Option<(String, u64)> {
         self.compose
             .as_ref()
@@ -252,7 +284,7 @@ impl State {
     /// Called by the shell after drawing; I/O remains queued as effects.
     pub fn document_chooser_ui(&mut self, ctx: &egui::Context) {
         if self.compose.is_none() {
-            self.documents.chooser = None;
+            self.reset_document_modals();
         }
         let outcome = self.documents.chooser.as_mut().and_then(|c| c.show(ctx));
         if let Some(outcome) = outcome {
@@ -367,16 +399,12 @@ impl State {
                 }
             }
             Answer::Saved(result) => {
-                if self
-                    .documents
-                    .saving
-                    .remove(&ticket)
-                    .is_some_and(|f| f == self.document_fence())
-                {
+                if let Some(fence) = self.documents.saving.remove(&ticket) {
                     match result {
                         Err(error) => self.document_error(error),
                         Ok(()) => {
-                            if let Some(compose) = &mut self.compose {
+                            if fence == self.document_fence()
+                                && let Some(compose) = &mut self.compose {
                                 compose.error = None;
                             }
                         }
@@ -407,14 +435,7 @@ impl State {
                             self.finish_document_error(ticket, error);
                         } else if !request.send
                             && request.reply.is_none()
-                            && self.compose.as_ref().is_some_and(|c| {
-                                !c.to_text.is_empty()
-                                    || !c.cc_text.is_empty()
-                                    || !c.bcc_text.is_empty()
-                                    || !c.draft.subject.is_empty()
-                                    || !c.body.contents().is_empty()
-                                    || !c.draft.attachments.is_empty()
-                            })
+                            && self.compose.as_ref().is_some_and(|c| c.keepable())
                         {
                             self.documents.replace = Some((ticket, document));
                         } else {
@@ -498,6 +519,9 @@ impl State {
                 );
             } else {
                 let paths = std::mem::take(&mut draft.attachments);
+                if let Some(compose) = self.take_compose() {
+                    self.discard_draft(&compose.draft_id);
+                }
                 self.open_compose(Some(&request.account), draft.clone());
                 let compose = self
                     .compose
@@ -525,13 +549,11 @@ impl State {
     }
 }
 
-/// Account-owned addresses only, including Reply-To. Display names on a
-/// document address do not let it bypass ownership of the parsed mailbox.
+/// Select an account-owned From address. Inline mail may use any Reply-To.
 pub fn identity(
     state: &State,
     account: &str,
     from: Option<&str>,
-    reply_to: Option<&str>,
 ) -> Result<settings::email::Identity> {
     let senders = state.senders(account);
     let mailbox = |value: &str| -> Result<String> {
@@ -551,20 +573,15 @@ pub fn identity(
         })
         .cloned()
         .ok_or_else(|| (code::IDENTITY_MISMATCH, crate::label("document-identity")))?;
-    if let Some(reply) = reply_to {
-        let reply = mailbox(reply)?;
-        if !senders
-            .iter()
-            .any(|s| s.address.eq_ignore_ascii_case(&reply))
-        {
-            return Err((code::IDENTITY_MISMATCH, crate::label("document-identity")));
-        }
-    }
     Ok(sender)
 }
 
 fn composed(state: &State, account: &str, doc: &MailDocument) -> Result<(jmap::Composed, String)> {
-    let sender = identity(state, account, doc.from.as_deref(), doc.reply_to.as_deref())?;
+    let sender = identity(state, account, doc.from.as_deref())?;
+    // Decision 1 restricts document Reply-To to an owned identity too.
+    if let Some(reply_to) = doc.reply_to.as_deref() {
+        identity(state, account, Some(reply_to))?;
+    }
     let addresses = |values: &[String]| {
         jmap::parse_addresses(&values.join(", "))
             .map_err(|e| (code::DOCUMENT_INVALID_VALUE, e.to_string()))
@@ -782,12 +799,32 @@ mod tests {
         command(
             &mut state,
             "email.send",
-            json!({"to": "bob@example.invalid", "subject": "Refuse", "reply_to": "foreign@example.invalid"}),
+            json!({"to": "bob@example.invalid", "subject": "Inline Reply-To", "reply_to": "foreign@example.invalid"}),
         );
-        assert_eq!(
-            state.take_replies()[0].body["error_code"],
-            code::IDENTITY_MISMATCH
-        );
+        assert!(state.take_replies().is_empty());
+        assert!(state.take_work().iter().any(|w| matches!(w,
+            Work::Write { write: crate::commands::Write::Send { draft }, .. }
+            if draft.reply_to.as_deref() == Some("foreign@example.invalid"))));
+    }
+
+    #[test]
+    fn composer_sends_with_an_identitys_unowned_reply_to() {
+        let mut state = connected_many(&["a"]);
+        state.accounts[0].entry.identities = vec![settings::email::Identity {
+            id: "ann".into(), name: "Ann".into(), address: "ann@a.example.invalid".into(),
+            signature: String::new(), reply_to: Some("help@example.invalid".into()),
+        }];
+        assert!(state.open_compose(Some("a"), jmap::Composed {
+            to: jmap::parse_addresses("bob@example.invalid").unwrap(),
+            subject: "Composer Reply-To".into(), ..Default::default()
+        }));
+        state.send_compose();
+        let draft = state.take_work().into_iter().find_map(|w| match w {
+            Work::Send { draft, .. } => Some(draft), _ => None,
+        }).expect("composer must send");
+        assert_eq!(draft.reply_to.as_deref(), Some("help@example.invalid"));
+        assert!(String::from_utf8(jmap::build_mime(&draft).unwrap()).unwrap()
+            .contains("Reply-To: help@example.invalid\r\n"));
     }
 
     #[test]
@@ -879,13 +916,17 @@ mod tests {
                 ..Default::default()
             },
         );
+        state.apply_ui(crate::view::UiEvent::ComposeField(
+            crate::state::ComposeField::Subject, "Keep edited".into(),
+        ));
+        let old_id = state.compose.as_ref().unwrap().draft_id.clone();
         state
             .read_document("a".into(), path.clone(), None, false, false)
             .unwrap();
         finish(&mut state);
         assert!(state.documents.replace.is_some());
         state.confirm_document_replace(false);
-        assert_eq!(state.compose.as_ref().unwrap().draft.subject, "Keep");
+        assert_eq!(state.compose.as_ref().unwrap().draft.subject, "Keep edited");
         state
             .read_document("a".into(), path.clone(), None, false, false)
             .unwrap();
@@ -903,6 +944,110 @@ mod tests {
         state.confirm_document_replace(true);
         assert_eq!(state.compose.as_ref().unwrap().draft.subject, "Loaded");
         assert_eq!(state.compose.as_ref().unwrap().body.contents(), "Body");
+        assert!(state.restore.is_empty(), "Replace must not offer the discarded message");
+        assert!(state.take_draft_ops().iter().any(|op| matches!(op,
+            crate::drafts::DraftOp::Remove(id) if id == &old_id)));
+    }
+
+    #[test]
+    fn opening_over_an_untouched_signature_does_not_ask_to_replace() {
+        let mut state = connected_many(&["a"]);
+        state.accounts[0].entry.signature = "Ann's signature".into();
+        assert!(state.open_compose(Some("a"), jmap::Composed::default()));
+        assert!(!state.compose.as_ref().unwrap().body.contents().is_empty());
+        assert!(!state.compose.as_ref().unwrap().keepable());
+        state.read_document("a".into(), "/tmp/mail.md".into(), None, false, false).unwrap();
+        let ticket = *state.documents.pending.keys().next().unwrap();
+        state.document_done(ticket, Answer::Read(Ok(MailDocument {
+            subject: "Opened".into(), ..Default::default()
+        })));
+        assert!(state.documents.replace.is_none());
+        assert_eq!(state.compose.as_ref().unwrap().draft.subject, "Opened");
+    }
+
+    #[test]
+    fn removing_the_compose_account_cancels_document_modals_and_late_answers() {
+        for modal in ["folder", "chooser", "replace"] {
+            let mut state = connected_many(&["a", "b"]);
+            assert!(state.open_compose(Some("a"), jmap::Composed::default()));
+            state.save_document_as();
+            let folder_ticket = state.documents.folder.as_ref().unwrap().0;
+            if modal == "chooser" {
+                state.document_done(folder_ticket, Answer::Folder("/tmp".into()));
+            }
+            if modal == "replace" {
+                state.apply_ui(crate::view::UiEvent::ComposeField(
+                    crate::state::ComposeField::Subject, "Edited".into(),
+                ));
+                state.read_document("a".into(), "/tmp/mail.md".into(), None, false, false).unwrap();
+                let ticket = *state.documents.pending.keys().next().unwrap();
+                state.document_done(ticket, Answer::Read(Ok(MailDocument::default())));
+                assert!(state.documents.replace.is_some());
+            }
+            assert!(state.documents.modal());
+            state.read_document("b".into(), "/tmp/send.md".into(), Some(72), true, false).unwrap();
+            let send_ticket = *state.documents.pending.iter().find(|(_, r)| r.send).unwrap().0;
+            state.set_settings(crate::state::tests::settings(&["b"]));
+            assert!(state.compose.is_none());
+            assert!(!state.documents.modal(), "{modal}");
+            assert!(!state.documents.opening(), "{modal}");
+            assert!(state.documents.pending.contains_key(&send_ticket), "send survives");
+            state.document_done(folder_ticket, Answer::Folder("/tmp".into()));
+            assert!(!state.documents.modal(), "late folder must not reopen a chooser");
+            command(&mut state, "email.compose", json!({"account": "b"}));
+            assert_eq!(state.take_replies()[0].rc, 0, "compose must not stay BUSY");
+        }
+    }
+
+    #[test]
+    fn failed_save_reports_after_an_edit_or_close_and_stale_success_keeps_errors() {
+        for close in [false, true] {
+            let mut state = connected_many(&["a"]);
+            state.open_compose(Some("a"), jmap::Composed::default());
+            state.write_document("/tmp/mail.md".into(), false);
+            let ticket = *state.documents.saving.keys().next().unwrap();
+            if close { state.take_compose(); } else {
+                state.apply_ui(crate::view::UiEvent::ComposeField(
+                    crate::state::ComposeField::Subject, "Edited".into(),
+                ));
+            }
+            state.document_done(ticket, Answer::Saved(Err((code::DOCUMENT_IO, "disk full".into()))));
+            if close { assert_eq!(state.status, "disk full"); } else {
+                assert_eq!(state.compose.as_ref().unwrap().error.as_deref(), Some("disk full"));
+                state.write_document("/tmp/mail.md".into(), false);
+                let ticket = *state.documents.saving.keys().next().unwrap();
+                state.compose.as_mut().unwrap().revision += 1;
+                state.document_done(ticket, Answer::Saved(Ok(())));
+                assert_eq!(state.compose.as_ref().unwrap().error.as_deref(), Some("disk full"));
+            }
+        }
+    }
+
+    #[test]
+    fn replacement_write_failure_preserves_the_old_file_and_cleans_the_sibling() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mail.md");
+        std::fs::write(&path, "old document").unwrap();
+        let inode = std::fs::metadata(&path).unwrap().ino();
+        let result = save_file(&path, true, |file| {
+            file.write_all(b"partial")?;
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), "old document");
+            Err(std::io::Error::other("disk full"))
+        });
+        assert!(result.is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "old document");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        save_file(&path, true, |file| file.write_all(b"new document")).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new document");
+        let metadata = std::fs::metadata(&path).unwrap();
+        assert_ne!(metadata.ino(), inode, "replacement must use a new inode");
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+        assert!(save_file(&path, false, |_| panic!("must not overwrite")).is_err());
+        let link = dir.path().join("link.md");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(save_file(&link, true, |_| panic!("must not follow links")).is_err());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
     }
 
     #[test]
