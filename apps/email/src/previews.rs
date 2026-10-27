@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 
 pub const MAX_BYTES: u64 = 16 * 1024 * 1024;
 pub const MAX_JOBS: usize = 2;
+const MAX_DISPLAY_SIDE: u32 = 2048;
 
 /// The format is chosen from MIME, never sniffed into an unapproved decoder.
 pub fn format(part: &jmap::Attachment) -> Option<ImageFormat> {
@@ -45,14 +46,24 @@ pub fn decode(bytes: &[u8], kind: ImageFormat) -> Result<ColorImage, String> {
     limits.max_alloc = Some(256 * 1024 * 1024);
     let mut reader = ImageReader::with_format(Cursor::new(bytes), kind);
     reader.limits(limits);
-    let rgba = reader
-        .decode()
-        .map_err(|error| error.to_string())?
-        .into_rgba8();
-    Ok(ColorImage::from_rgba_unmultiplied(
-        [rgba.width() as usize, rgba.height() as usize],
-        rgba.as_raw(),
-    ))
+    let decoded = reader.decode().map_err(|error| error.to_string())?;
+    // Resize in the decoded colour format before allocating RGBA or egui
+    // pixels. Neither the CPU preview nor its texture needs the full image.
+    let display = if decoded.width().max(decoded.height()) > MAX_DISPLAY_SIDE {
+        let thumbnail = decoded.thumbnail(MAX_DISPLAY_SIDE, MAX_DISPLAY_SIDE);
+        drop(decoded);
+        thumbnail
+    } else {
+        decoded
+    };
+    let rgba = display.into_rgba8();
+    let size = [rgba.width() as usize, rgba.height() as usize];
+    let pixels = rgba
+        .into_raw()
+        .chunks_exact(4)
+        .map(|pixel| egui::Color32::from_rgba_unmultiplied(pixel[0], pixel[1], pixel[2], pixel[3]))
+        .collect();
+    Ok(ColorImage::new(size, pixels))
 }
 
 pub enum Preview {
@@ -73,8 +84,9 @@ impl Preview {
     }
 }
 
-/// Account, connection generation, email and open ticket distinguish even
-/// a close/reopen of the same email from an earlier request.
+/// Account, connection generation, email and the ticket that installed it
+/// distinguish even a close/reopen from an earlier request. A pending open
+/// does not change the displayed email's owner.
 pub type Owner = (String, u64, String, u64);
 
 #[derive(Default)]
@@ -97,7 +109,7 @@ impl Cache {
         if self.owner.is_some() {
             for part in parts {
                 if format(part).is_some()
-                    && let Some(id) = &part.part_id
+                    && let Some(id) = &part.blob_id
                 {
                     self.entries.insert(id.clone(), Preview::Queued);
                 }
@@ -105,8 +117,8 @@ impl Cache {
         }
     }
 
-    pub fn get(&self, part: &str) -> Option<&Preview> {
-        self.entries.get(part)
+    pub fn get(&self, blob: &str) -> Option<&Preview> {
+        self.entries.get(blob)
     }
 
     pub fn is_for(&self, owner: &Owner) -> bool {
@@ -124,18 +136,18 @@ impl Cache {
             if self.jobs.len() >= MAX_JOBS {
                 break;
             }
-            let Some(id) = &part.part_id else { continue };
+            let Some(id) = &part.blob_id else { continue };
             if !matches!(self.entries.get(id), Some(Preview::Queued)) {
                 continue;
             }
-            if let (Some(blob), Some(kind)) = (&part.blob_id, format(part)) {
+            if let Some(kind) = format(part) {
                 self.next += 1;
                 self.jobs.insert(self.next, (self.epoch, id.clone()));
                 self.entries.insert(id.clone(), Preview::Loading);
                 work.push(crate::work::Work::Preview {
                     account: account.clone(),
                     ticket: self.next,
-                    blob: blob.clone(),
+                    blob: id.clone(),
                     kind,
                 });
             }
@@ -144,12 +156,12 @@ impl Cache {
     }
 
     pub fn complete(&mut self, ticket: u64, result: Result<ColorImage, String>) {
-        if let Some((epoch, part)) = self.jobs.remove(&ticket)
+        if let Some((epoch, blob)) = self.jobs.remove(&ticket)
             && epoch == self.epoch
             && self.owner.is_some()
         {
             self.entries.insert(
-                part,
+                blob,
                 match result {
                     Ok(image) => Preview::Ready(image),
                     Err(reason) => Preview::Failed(reason),
@@ -161,7 +173,7 @@ impl Cache {
     /// Called only on the window thread, before drawing or reporting shown.
     pub fn upload(&mut self, ctx: &Context) {
         let max = ctx.input(|input| input.max_texture_side);
-        for (part, preview) in &mut self.entries {
+        for (blob, preview) in &mut self.entries {
             if matches!(preview, Preview::Ready(_)) {
                 let Preview::Ready(image) = std::mem::replace(preview, Preview::Loading) else {
                     unreachable!();
@@ -170,7 +182,7 @@ impl Cache {
                     Preview::Failed(crate::label("preview-texture-limit"))
                 } else {
                     Preview::Shown(ctx.load_texture(
-                        format!("email-preview-{}-{part}", self.epoch),
+                        format!("email-preview-{}-{blob}", self.epoch),
                         image,
                         egui::TextureOptions::LINEAR,
                     ))
@@ -247,7 +259,7 @@ mod tests {
         assert!(cache.schedule(&parts).is_empty());
         cache.complete(ticket(&first[0]), Err("invalid image".into()));
         assert_eq!(
-            cache.get("0").unwrap().info(),
+            cache.get("blob-0").unwrap().info(),
             json!({"state": "failed", "reason": "invalid image"})
         );
         let next = cache.schedule(&parts);
@@ -258,10 +270,10 @@ mod tests {
         cache.sync(owner("second"), &parts);
         assert!(cache.schedule(&parts).is_empty());
         cache.complete(ticket(&first[1]), Err("old failure".into()));
-        assert!(matches!(cache.get("1"), Some(Preview::Queued)));
+        assert!(matches!(cache.get("blob-1"), Some(Preview::Queued)));
         assert_eq!(cache.schedule(&parts).len(), 1);
         cache.complete(ticket(&next[0]), Err("another old failure".into()));
-        assert!(matches!(cache.get("2"), Some(Preview::Queued)));
+        assert!(matches!(cache.get("blob-2"), Some(Preview::Queued)));
         assert_eq!(cache.schedule(&parts).len(), 1);
         assert_eq!(cache.jobs.len(), MAX_JOBS);
     }
@@ -276,7 +288,49 @@ mod tests {
         cache.sync(owner("first"), &parts);
         let image = ColorImage::from_rgba_unmultiplied([1, 1], &[255, 0, 0, 255]);
         cache.complete(ticket(&work[0]), Ok(image));
-        assert!(matches!(cache.get("1"), Some(Preview::Queued)));
+        assert!(matches!(cache.get("blob-1"), Some(Preview::Queued)));
+    }
+
+    #[test]
+    fn repeated_part_ids_have_distinct_blob_entries() {
+        let mut cache = Cache::default();
+        let first = part("2", "image/png");
+        let mut second = first.clone();
+        second.blob_id = Some("second-blob".into());
+        let parts = [first, second];
+        cache.sync(owner("first"), &parts);
+        let work = cache.schedule(&parts);
+        assert_eq!(work.len(), 2, "part ids must not merge different blobs");
+        cache.complete(
+            ticket(&work[0]),
+            Ok(ColorImage::new([1, 1], vec![egui::Color32::RED])),
+        );
+        cache.sync(owner("second"), &parts[1..]);
+        assert!(cache.get("blob-2").is_none());
+        assert!(matches!(cache.get("second-blob"), Some(Preview::Queued)));
+        cache.complete(ticket(&work[1]), Err("stale result".into()));
+        assert!(matches!(cache.get("second-blob"), Some(Preview::Queued)));
+    }
+
+    #[test]
+    fn large_png_previews_are_bounded_and_keep_their_aspect() {
+        for (width, height, expected) in [(4096, 1024, [2048, 512]), (1024, 4096, [512, 2048])] {
+            let rgb = image::RgbImage::from_pixel(width, height, image::Rgb([255, 0, 0]));
+            let mut png = Vec::new();
+            image::codecs::png::PngEncoder::new(&mut png)
+                .write_image(rgb.as_raw(), width, height, image::ExtendedColorType::Rgb8)
+                .unwrap();
+            let preview = decode(&png, ImageFormat::Png).unwrap();
+            assert_eq!(preview.size, expected);
+            assert!(preview.size.into_iter().max().unwrap() <= MAX_DISPLAY_SIDE as usize);
+            assert_eq!(preview.pixels.len(), expected[0] * expected[1]);
+            assert!(
+                preview
+                    .pixels
+                    .iter()
+                    .all(|pixel| *pixel == egui::Color32::RED)
+            );
+        }
     }
 
     #[test]

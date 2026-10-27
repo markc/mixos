@@ -727,10 +727,19 @@ fn attachment_tile(
 }
 
 /// Remote URLs are never image sources. Only attachment blobs enter this cache.
-fn inline_images(ui: &mut Ui, state: &State, email: &Email, events: &mut Vec<UiEvent>) -> bool {
+fn inline_images(
+    ui: &mut Ui,
+    state: &State,
+    view: &AccountView,
+    email: &Email,
+    events: &mut Vec<UiEvent>,
+) -> bool {
     if !state.ui.attachments_inline {
         return false;
     }
+    let current = state.preview_owner().is_some_and(|owner| {
+        owner.0 == view.id() && owner.2 == email.id && state.previews.is_for(&owner)
+    });
     let mut context = false;
     for (index, part) in email.attachments.iter().flatten().enumerate() {
         if crate::previews::format(part).is_none() {
@@ -750,8 +759,9 @@ fn inline_images(ui: &mut Ui, state: &State, email: &Email, events: &mut Vec<UiE
             ui.painter().hline(line.x_range(), line.center().y, stroke);
         });
         match part
-            .part_id
+            .blob_id
             .as_deref()
+            .filter(|_| current)
             .and_then(|id| state.previews.get(id))
         {
             Some(crate::previews::Preview::Shown(texture)) => {
@@ -764,9 +774,7 @@ fn inline_images(ui: &mut Ui, state: &State, email: &Email, events: &mut Vec<UiE
                         .sense(Sense::click())
                         .alt_text(crate::label_with("preview-image", &[("name", &name)])),
                 );
-                // The reader menu watches raw input, so exclude the image's
-                // clipped rectangle even before its Response reports a click.
-                context |= ui.rect_contains_pointer(response.rect) || response.secondary_clicked();
+                context |= response.secondary_clicked();
                 attachment_menu(&response, part, &name, events);
                 context |= response.context_menu_opened();
             }
@@ -937,7 +945,7 @@ fn message(
                     }
                 },
             }
-            attachment_context = inline_images(ui, state, email, events);
+            attachment_context = inline_images(ui, state, view, email, events);
         });
         ui.data_mut(|d| d.insert_temp(ui.make_persistent_id(BODY_SCROLL), shown.id));
     });

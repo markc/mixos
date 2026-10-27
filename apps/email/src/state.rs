@@ -131,6 +131,8 @@ pub struct MailState {
     pub emails: Vec<Email>,
     pub total: u64,
     pub open: Option<Email>,
+    /// The request that installed `open`, independent of any pending open.
+    pub open_ticket: u64,
     /// How the open email's text body is shown, and its cached parse.
     pub reader: crate::reader::Reader,
     pub busy: bool,
@@ -2109,6 +2111,7 @@ impl State {
             self.ui.cursor = None;
         }
         self.config_dirty = true;
+        self.refresh_previews();
     }
 
     /// `view`'s login (URL, address or CA) changed: a draft open on it is
@@ -2177,6 +2180,7 @@ impl State {
             self.status = crate::label("connecting");
         }
         self.accounts.insert(index, view);
+        self.refresh_previews();
         true
     }
 
@@ -2983,6 +2987,7 @@ impl State {
                             && view.mail.selected.as_deref() != Some(id.as_str())
                         {
                             view.select_mailbox(id, limit, &mut self.work);
+                            self.refresh_previews();
                         }
                     }
                     Done::Page(ticket, _) if ticket != view.tickets.page => {}
@@ -3006,24 +3011,28 @@ impl State {
                     Done::Opened(ticket, _, _)
                         if ticket != view.tickets.open
                             || view.tickets.open_mailbox != view.mail.selected => {}
-                    Done::Opened(_, _, result) => match *result {
-                        Ok(email) => {
-                            view.mail.reader.open(&email);
-                            // Another email: its own attachment transfers.
-                            if view.mail.open.as_ref().is_none_or(|o| o.id != email.id) {
-                                view.mail.transfers.clear();
+                    Done::Opened(ticket, _, result) => {
+                        match *result {
+                            Ok(email) => {
+                                view.mail.reader.open(&email);
+                                // Another email: its own attachment transfers.
+                                if view.mail.open.as_ref().is_none_or(|o| o.id != email.id) {
+                                    view.mail.transfers.clear();
+                                }
+                                view.mail.open = Some(email);
+                                view.mail.open_ticket = ticket;
                             }
-                            view.mail.open = Some(email);
+                            Err(ref error) => {
+                                // Nothing is loading now: the email shown stays
+                                // the one its actions answer, and the failed row
+                                // can be clicked again to retry.
+                                view.tickets.open_requested =
+                                    view.mail.open.as_ref().map(|e| e.id.clone());
+                                self.status = error.to_string();
+                            }
                         }
-                        Err(ref error) => {
-                            // Nothing is loading now: the email shown stays
-                            // the one its actions answer, and the failed row
-                            // can be clicked again to retry.
-                            view.tickets.open_requested =
-                                view.mail.open.as_ref().map(|e| e.id.clone());
-                            self.status = error.to_string();
-                        }
-                    },
+                        self.refresh_previews();
+                    }
                     Done::Marked(Ok(())) => self.work.push(Work::FetchMailboxes {
                         account: tag.account.clone(),
                     }),
@@ -3220,6 +3229,7 @@ impl State {
         view.select_mailbox(id, limit, &mut self.work);
         self.focus(account);
         self.set_mode_only(Mode::Mail);
+        self.refresh_previews();
         true
     }
 
@@ -3689,6 +3699,7 @@ impl State {
                 }
             }
         }
+        self.refresh_previews();
         // The open email left: the reader moves on to its neighbour, as a
         // row click would open it.
         if let Some(id) = advance {
@@ -4313,6 +4324,7 @@ impl State {
                 ],
             );
         }
+        self.refresh_previews();
         if let Some(id) = advance {
             self.open_email(&tag.account, id);
         }
@@ -4409,7 +4421,7 @@ impl State {
         self.refresh_previews();
     }
 
-    fn preview_owner(&self) -> Option<crate::previews::Owner> {
+    pub(crate) fn preview_owner(&self) -> Option<crate::previews::Owner> {
         let view = self.current()?;
         let email = view.mail.open.as_ref()?;
         (self.ui.attachments_inline && self.mode == Mode::Mail).then(|| {
@@ -4417,7 +4429,7 @@ impl State {
                 view.id().to_owned(),
                 view.generation,
                 email.id.clone(),
-                view.tickets.open,
+                view.mail.open_ticket,
             )
         })
     }
@@ -4430,7 +4442,9 @@ impl State {
             .and_then(|e| e.attachments.clone())
             .unwrap_or_default();
         self.previews.sync(owner, &parts);
-        self.work.extend(self.previews.schedule(&parts));
+        if !self.current().is_some_and(AccountView::opening_another) {
+            self.work.extend(self.previews.schedule(&parts));
+        }
     }
 
     /// Reconcile the current email and upload completed images on the UI thread.
@@ -4882,7 +4896,7 @@ impl State {
                             owner.0 == view.id() && self.previews.is_for(&owner)
                         });
                         reader["attachments"] = json!(e.attachments.iter().flatten().map(|a| {
-                            let preview = a.part_id.as_deref().filter(|_| current)
+                            let preview = a.blob_id.as_deref().filter(|_| current)
                                 .and_then(|id| self.previews.get(id))
                                 .map(crate::previews::Preview::info)
                                 .unwrap_or_else(|| json!({"state": "none"}));

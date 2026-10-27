@@ -181,6 +181,16 @@ fn theme(scheme: Scheme, mode: Mode) -> Theme {
 /// The reader panel alone, as the window frames it, over `state`; it
 /// keeps the events it reported.
 fn harness(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>)> {
+    reader_harness(state, theme, true)
+}
+
+/// Disabling preparation exercises the frame between a state transition and
+/// the next preview refresh, including the view's independent owner check.
+fn reader_harness(
+    state: State,
+    theme: &Theme,
+    prepare: bool,
+) -> Harness<'static, (State, Vec<UiEvent>)> {
     // SAFETY: every test sets the same value before any date is drawn.
     unsafe { std::env::set_var("TZ", "UTC") };
     let registry = actions::registry();
@@ -189,7 +199,9 @@ fn harness(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>
         .with_size(egui::vec2(620.0, 980.0))
         .build_ui_state(
             move |ui, (state, seen): &mut (State, Vec<UiEvent>)| {
-                state.prepare_previews(ui.ctx());
+                if prepare {
+                    state.prepare_previews(ui.ctx());
+                }
                 let mut events = Vec::new();
                 egui::CentralPanel::default()
                     .frame(toolkit::bars::dock_frame(ui.ctx()))
@@ -1008,16 +1020,43 @@ fn keyboard_scrolling_without_attachments() {
 }
 
 fn with_image(mut state: State) -> State {
-    state.accounts[0].mail.open.as_mut().unwrap().attachments = Some(
+    let mut email = state.accounts[0].mail.open.clone().unwrap();
+    email.attachments = Some(
         serde_json::from_value(serde_json::json!([
             { "partId": "2", "blobId": "B2", "size": 100, "name": "preview.png", "type": "image/png" }
         ])).unwrap(),
     );
+    let ticket = request_open(&mut state, &email);
+    done(
+        &mut state,
+        "home",
+        Done::Opened(ticket, None, Box::new(Ok(email))),
+    );
     state
 }
 
+fn request_open(state: &mut State, email: &jmap::Email) -> u64 {
+    if !state.accounts[0]
+        .mail
+        .emails
+        .iter()
+        .any(|row| row.id == email.id)
+    {
+        state.accounts[0].mail.emails.push(email.clone());
+    }
+    assert!(state.open_email("home", email.id.clone()));
+    state
+        .take_work()
+        .into_iter()
+        .find_map(|work| match work {
+            Work::OpenEmail { ticket, .. } => Some(ticket),
+            _ => None,
+        })
+        .expect("an open is issued")
+}
+
 /// A PNG built here rather than an external asset, delivered through the
-/// real completion event; the harness uploads it on its next UI frame.
+/// real completion event and uploaded before the next UI frame.
 fn finish_preview(h: &mut Harness<'static, (State, Vec<UiEvent>)>) {
     use image::ImageEncoder;
     let ticket = h
@@ -1041,7 +1080,157 @@ fn finish_preview(h: &mut Harness<'static, (State, Vec<UiEvent>)>) {
         .unwrap();
     let image = email::previews::decode(&png, image::ImageFormat::Png).unwrap();
     h.state_mut().0.apply(Event::Preview(ticket, Ok(image)));
+    let ctx = h.ctx.clone();
+    h.state_mut().0.previews.upload(&ctx);
     h.run();
+}
+
+#[test]
+fn switching_emails_preserves_previews_until_the_new_email_is_installed() {
+    let mut h = reader_harness(
+        with_image(opened("text/plain", PLAIN)),
+        &theme(Scheme::Studio, Mode::Dark),
+        false,
+    );
+    finish_preview(&mut h);
+    let image = email::label_with("preview-image", &[("name", "preview.png")]);
+    let first_texture = match h.state().0.previews.get("B2") {
+        Some(email::previews::Preview::Shown(texture)) => texture.id(),
+        _ => panic!("first image is shown"),
+    };
+    let mut second = h.state().0.accounts[0].mail.open.clone().unwrap();
+    second.id = "E2".into();
+    second.attachments.as_mut().unwrap()[0].blob_id = Some("B3".into());
+    assert_eq!(
+        second.attachments.as_ref().unwrap()[0].part_id.as_deref(),
+        Some("2")
+    );
+    let ticket = request_open(&mut h.state_mut().0, &second);
+    let ctx = h.ctx.clone();
+    h.state_mut().0.prepare_previews(&ctx);
+    assert!(h.state().0.accounts[0].opening_another());
+    assert!(matches!(
+        h.state().0.previews.get("B2"),
+        Some(email::previews::Preview::Shown(texture)) if texture.id() == first_texture
+    ));
+    assert!(
+        h.state_mut().0.take_work().is_empty(),
+        "no preview is re-downloaded while B loads"
+    );
+    h.run();
+    assert!(
+        h.query_by_label(&image).is_some(),
+        "A stays visible while B loads"
+    );
+
+    done(
+        &mut h.state_mut().0,
+        "home",
+        Done::Opened(ticket, None, Box::new(Ok(second))),
+    );
+    // Inspect and draw before prepare_previews: the installation itself must
+    // reconcile ownership, without waiting for another window update.
+    assert!(h.state().0.previews.get("B2").is_none());
+    assert!(matches!(
+        h.state().0.previews.get("B3"),
+        Some(email::previews::Preview::Loading)
+    ));
+    h.run();
+    assert!(
+        h.query_by_label(&image).is_none(),
+        "B must never draw A's texture"
+    );
+    let loading = email::label_with("preview-loading", &[("name", "preview.png")]);
+    assert!(h.query_by_label(&loading).is_some());
+    finish_preview(&mut h);
+    assert!(h.query_by_label(&image).is_some());
+    assert!(matches!(
+        h.state().0.previews.get("B3"),
+        Some(email::previews::Preview::Shown(texture)) if texture.id() != first_texture
+    ));
+}
+
+#[test]
+fn inline_view_rejects_a_cache_owned_by_another_email() {
+    let mut h = reader_harness(
+        with_image(opened("text/plain", PLAIN)),
+        &theme(Scheme::Studio, Mode::Dark),
+        false,
+    );
+    finish_preview(&mut h);
+    // Even a shared blob must not make the view trust a stale cache owner.
+    h.state_mut().0.accounts[0].mail.open.as_mut().unwrap().id = "E2".into();
+    h.run();
+    assert!(matches!(
+        h.state().0.previews.get("B2"),
+        Some(email::previews::Preview::Shown(_))
+    ));
+    let image = email::label_with("preview-image", &[("name", "preview.png")]);
+    assert!(h.query_by_label(&image).is_none());
+    assert_eq!(
+        reader_info(&h.state().0)["attachments"][0]["preview"]["state"],
+        "none"
+    );
+}
+
+#[test]
+fn reopening_an_email_replaces_previews_only_when_installed() {
+    let mut h = reader_harness(
+        with_image(opened("text/plain", PLAIN)),
+        &theme(Scheme::Studio, Mode::Dark),
+        false,
+    );
+    finish_preview(&mut h);
+    let email = h.state().0.accounts[0].mail.open.clone().unwrap();
+    let ticket = request_open(&mut h.state_mut().0, &email);
+    let ctx = h.ctx.clone();
+    h.state_mut().0.prepare_previews(&ctx);
+    assert!(matches!(
+        h.state().0.previews.get("B2"),
+        Some(email::previews::Preview::Shown(_))
+    ));
+    assert!(h.state_mut().0.take_work().is_empty());
+    done(
+        &mut h.state_mut().0,
+        "home",
+        Done::Opened(ticket, None, Box::new(Ok(email))),
+    );
+    assert!(matches!(
+        h.state().0.previews.get("B2"),
+        Some(email::previews::Preview::Loading)
+    ));
+    assert_eq!(h.state().0.accounts[0].mail.open_ticket, ticket);
+}
+
+#[test]
+fn mailbox_changes_clear_previews_before_the_next_frame() {
+    for refresh in [false, true] {
+        let mut state = with_image(opened("text/plain", PLAIN));
+        assert!(state.previews.get("B2").is_some());
+        let mailbox = jmap::Mailbox {
+            id: "m-other".into(),
+            name: "Other".into(),
+            ..jmap::Mailbox::default()
+        };
+        if refresh {
+            // The selected mailbox disappeared from the server's list.
+            done(&mut state, "home", Done::Mailboxes(Ok(vec![mailbox])));
+        } else {
+            state.accounts[0].mail.mailboxes.push(mailbox);
+            assert!(state.select_mailbox("home", "m-other".into()));
+        }
+        assert!(state.accounts[0].mail.open.is_none());
+        assert!(state.previews.get("B2").is_none());
+    }
+}
+
+#[test]
+fn reconnecting_clears_previews_before_the_next_frame() {
+    let mut state = with_image(opened("text/plain", PLAIN));
+    assert!(state.previews.get("B2").is_some());
+    assert!(state.reconnect("home"));
+    assert!(state.accounts[0].mail.open.is_none());
+    assert!(state.previews.get("B2").is_none());
 }
 
 #[test]
@@ -1103,7 +1292,7 @@ fn reader_inline_off_studio_dark() {
     assert!(h.query_by_label(&image).is_none());
     assert!(h.query_by_label("preview.png").is_none());
     assert!(h.query_by_label("1 attachment").is_some());
-    assert!(h.state().0.previews.get("2").is_none(), "texture freed");
+    assert!(h.state().0.previews.get("B2").is_none(), "texture freed");
     assert_eq!(
         reader_info(&h.state().0)["attachments"][0]["preview"]["state"],
         "none"
@@ -1180,6 +1369,47 @@ fn inline_image_context_menu_saves_and_failed_previews_keep_the_bar() {
 }
 
 #[test]
+fn hovering_an_inline_image_keeps_the_reader_context_menu_open() {
+    let mut h = harness(
+        with_image(opened("text/plain", PLAIN)),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+    finish_preview(&mut h);
+    let image = email::label_with("preview-image", &[("name", "preview.png")]);
+    let image_at = h.get_by_label(&image).rect().center();
+    let reply_alls = h.query_all_by_label(&label("reply-all")).count();
+    // Keep the popup to the right of the small image, so the hover reaches
+    // the image's layer rather than a menu row covering it.
+    let at = h.get_by_label(PLAIN).rect().right_center() - egui::vec2(1.0, 0.0);
+    h.hover_at(at);
+    h.run();
+    for pressed in [true, false] {
+        h.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    h.run();
+    assert_eq!(
+        h.query_all_by_label(&label("reply-all")).count(),
+        reply_alls + 1
+    );
+    h.hover_at(image_at);
+    h.run();
+    assert_eq!(
+        h.query_all_by_label(&label("reply-all")).count(),
+        reply_alls + 1,
+        "hovering the image must not hide the reader's Message menu"
+    );
+    assert!(
+        h.query_by_label(&label("open")).is_none(),
+        "no attachment menu opened"
+    );
+}
+
+#[test]
 fn turning_inline_off_drops_an_in_flight_result() {
     let mut h = harness(
         with_image(opened("text/plain", PLAIN)),
@@ -1189,7 +1419,7 @@ fn turning_inline_off_drops_an_in_flight_result() {
         .execute("view.attachments_inline", &mut h.state_mut().0, Origin::Bus)
         .unwrap();
     finish_preview(&mut h);
-    assert!(h.state().0.previews.get("2").is_none());
+    assert!(h.state().0.previews.get("B2").is_none());
     assert!(h.query_by_label("1 attachment").is_some());
     assert_eq!(
         reader_info(&h.state().0)["attachments"][0]["preview"]["state"],
@@ -1211,7 +1441,7 @@ fn closed_email_preview_results_never_reach_the_new_reader() {
         .unwrap();
     state.accounts[0].mail.open = None;
     state.apply(Event::Preview(ticket, Err("old failure".into())));
-    assert!(state.previews.get("2").is_none());
+    assert!(state.previews.get("B2").is_none());
 }
 
 /// A contact card for the completion tests.
