@@ -607,7 +607,7 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
 
     let registry = actions::registry();
     h.state_mut().1.clear();
-    // The compose dialog's own commands (File and Attachments) are
+    // The compose window's own commands (File and Attachments) are
     // meant to work while the body has the keyboard, as in Thunderbird.
     for command in registry.iter().filter(|c| {
         !matches!(
