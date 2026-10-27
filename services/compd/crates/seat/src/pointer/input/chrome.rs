@@ -125,6 +125,11 @@ fn apply(lp: &mut Loop, window: &Window, intent: Intent) {
             handle,
             request: WindowRequest::Close,
         }),
+        Intent::Action { revision, index } => {
+            if !decor::window::click_action(window, revision, index) {
+                model::warn!("window action Bus call was not queued");
+            }
+        }
         Intent::Menu => {
             if !decor::window::open_menu(window) {
                 model::warn!("window menu Bus call was not queued");

@@ -228,28 +228,46 @@ impl From<Decorations> for RequestedDecorations {
     }
 }
 
-/// Which end of a client-side title bar carries the caption buttons.
+/// Window control alignment in client and server title bands.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CaptionSide {
-    /// Minimize, Maximize, Close at the right, Close in the corner.
     #[default]
+    Auto,
+    /// Minimize, Maximize, Close at the right, Close in the corner.
     Right,
     /// Close, Minimize, Maximize at the left, Close in the corner.
     Left,
+    Center,
 }
 
 impl CaptionSide {
-    pub const ALL: [Self; 2] = [Self::Right, Self::Left];
+    pub const ALL: [Self; 4] = [Self::Auto, Self::Left, Self::Center, Self::Right];
+    pub const NAMES: &'static [&'static str] = &["auto", "left", "center", "right"];
 
     pub const fn name(self) -> &'static str {
         match self {
+            Self::Auto => "auto",
             Self::Right => "right",
             Self::Left => "left",
+            Self::Center => "center",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|side| side.name() == name)
+    }
+
+    pub fn resolve(name: &str) -> Self { Self::from_name(name).unwrap_or_default() }
+    pub fn valid_name(name: &str) -> bool { valid_appearance_name(name) }
+    pub fn label_id(self) -> &'static str {
+        match self {
+            Self::Auto => "look-align-auto", Self::Left => "look-menu-side-left",
+            Self::Center => "look-menu-side-center", Self::Right => "look-menu-side-right",
+        }
+    }
+    pub fn alignment(self, own: crate::title_band::Alignment) -> crate::title_band::Alignment {
+        use crate::title_band::Alignment;
+        match self { Self::Auto => own, Self::Left => Alignment::Left, Self::Center => Alignment::Center, Self::Right => Alignment::Right }
     }
 }
 
@@ -309,6 +327,7 @@ macro_rules! menu_sides {
         $registry! {
             #[default]
             Left => ("left", "look-menu-side-left"),
+            Center => ("center", "look-menu-side-center"),
             Right => ("right", "look-menu-side-right"),
         }
     };
@@ -354,6 +373,43 @@ macro_rules! menu_side_registry {
 }
 menu_styles!(menu_style_registry);
 menu_sides!(menu_side_registry);
+
+menu_axis!(TitleAlign,
+    #[default] Auto => ("auto", "look-align-auto"),
+    Left => ("left", "look-menu-side-left"),
+    Center => ("center", "look-menu-side-center"),
+    Right => ("right", "look-menu-side-right"),
+);
+menu_axis!(ActionsAlign,
+    Left => ("left", "look-menu-side-left"),
+    Center => ("center", "look-menu-side-center"),
+    #[default] Right => ("right", "look-menu-side-right"),
+);
+menu_axis!(ActionsPlace,
+    #[default] Row => ("row", "look-actions-place-row"),
+    Titlebar => ("titlebar", "look-actions-place-titlebar"),
+);
+
+impl MenuSide {
+    pub fn alignment(self) -> crate::title_band::Alignment {
+        use crate::title_band::Alignment;
+        match self { Self::Left => Alignment::Left, Self::Center => Alignment::Center, Self::Right => Alignment::Right }
+    }
+}
+impl ActionsAlign {
+    pub fn alignment(self) -> crate::title_band::Alignment {
+        MenuSide::from_name(self.name()).unwrap().alignment()
+    }
+}
+impl TitleAlign {
+    pub fn alignment(self, style: WindowStyle) -> crate::title_band::Alignment {
+        use crate::title_band::Alignment;
+        match self {
+            Self::Auto => if style == WindowStyle::Win11 { Alignment::Left } else { Alignment::Center },
+            Self::Left => Alignment::Left, Self::Center => Alignment::Center, Self::Right => Alignment::Right,
+        }
+    }
+}
 
 impl MenuStyle {
     pub fn effective(self, decorations: Decorations) -> Self {

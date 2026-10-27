@@ -149,6 +149,7 @@ pub struct Theme {
     captions: CaptionSide,
     menu_style: design::MenuStyle,
     menu_side: design::MenuSide,
+    band: design::title_band::Settings,
     overlay: Overlay,
     overlay_style: Option<ResolvedStyle>,
 }
@@ -314,6 +315,7 @@ impl Theme {
                     captions: CaptionSide::default(),
                     menu_style: design::MenuStyle::default(),
                     menu_side: design::MenuSide::default(),
+                    band: Default::default(),
                     overlay: Overlay::default(),
                     overlay_style: None,
                 })
@@ -344,6 +346,7 @@ impl Theme {
                 theme.captions = self.captions;
                 theme.menu_style = self.menu_style;
                 theme.menu_side = self.menu_side;
+                theme.band = self.band;
                 theme.ui = self.ui.clone();
                 // A rebuilt design drops the session's choices; carry them across.
                 theme.with_overlay(self.overlay.clone())?
@@ -370,6 +373,9 @@ impl Theme {
         self.menu_side = side;
         self
     }
+
+    pub fn with_band(mut self, band: design::title_band::Settings) -> Self { self.band = band; self }
+    pub fn band(&self) -> design::title_band::Settings { self.band }
 
     pub fn menu_style(&self) -> design::MenuStyle {
         self.menu_style
@@ -822,7 +828,7 @@ mod tests {
         let plain = Theme::from_source("test", "scheme: \"pro\"\n").unwrap();
         assert_eq!(
             (plain.style_axis(), plain.decorations(), plain.captions()),
-            (None, Decorations::Client, CaptionSide::Right)
+            (None, Decorations::Client, CaptionSide::Auto)
         );
         let bad = Theme::from_source("test", "style: \"neon\"\n").unwrap_err();
         assert_eq!(bad.to_string(), "unknown style \"neon\"");
@@ -859,7 +865,7 @@ mod tests {
         let plain = Theme::from_source("test", design::EMBEDDED_DEFAULT_SOURCE).unwrap();
         assert_eq!(
             (plain.style_axis(), plain.decorations(), plain.captions()),
-            (None, Decorations::Client, CaptionSide::Right)
+            (None, Decorations::Client, CaptionSide::Auto)
         );
         for (extra, field) in [
             ("style: \"neon\"\n", "style"),

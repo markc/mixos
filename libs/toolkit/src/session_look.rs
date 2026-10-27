@@ -34,7 +34,7 @@ pub fn theme(appearance: &Appearance) -> Option<Theme> {
         ..DesignContext::default()
     };
     let decorations = Decorations::from_name(&appearance.decorations)?;
-    let captions = CaptionSide::from_name(&appearance.caption_side)?;
+    let captions = CaptionSide::resolve(&appearance.caption_side);
     // The icon and type choices ride on the theme, so every app that installs
     // this look draws with them; a choice left unset keeps the design's value.
     Theme::for_context(context)
@@ -43,6 +43,7 @@ pub fn theme(appearance: &Appearance) -> Option<Theme> {
             design::MenuStyle::resolve(&appearance.menu_style),
             design::MenuSide::resolve(&appearance.menu_side),
         )
+        .with_band(band(appearance))
         .with_overlay(Overlay::from_appearance(appearance))
         .ok()
 }
@@ -58,13 +59,17 @@ pub fn theme_or(appearance: &Appearance, session: &Theme) -> Theme {
             .framed(
                 Decorations::from_name(&appearance.decorations)
                     .unwrap_or(session.requested_decorations()),
-                CaptionSide::from_name(&appearance.caption_side).unwrap_or(session.captions()),
+                CaptionSide::resolve(&appearance.caption_side),
             )
             .with_menus(
                 design::MenuStyle::resolve(&appearance.menu_style),
                 design::MenuSide::resolve(&appearance.menu_side),
-            )
+            ).with_band(band(appearance))
     })
+}
+
+pub fn band(appearance: &Appearance) -> design::title_band::Settings {
+    design::title_band::Settings::from_names(&appearance.title_align, &appearance.actions_align, &appearance.actions_place, &appearance.window_style)
 }
 
 #[cfg(test)]
@@ -90,6 +95,7 @@ mod tests {
             window_style: "win11".into(),
             menu_style: "titlebar".into(),
             menu_side: "right".into(),
+            title_align: "auto".into(), actions_align: "right".into(), actions_place: "row".into(),
             icon_stroke: None,
             font_family: None,
             font_weight: None,

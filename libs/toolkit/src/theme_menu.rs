@@ -127,6 +127,8 @@ const fn decorations_label(decorations: Decorations) -> &'static str {
 /// The command id of choosing the caption side.
 pub const fn captions_id(side: CaptionSide) -> &'static str {
     match side {
+        CaptionSide::Auto => "view.captions.auto",
+        CaptionSide::Center => "view.captions.center",
         CaptionSide::Left => "view.captions.left",
         CaptionSide::Right => "view.captions.right",
     }
@@ -134,6 +136,8 @@ pub const fn captions_id(side: CaptionSide) -> &'static str {
 
 const fn captions_label(side: CaptionSide) -> &'static str {
     match side {
+        CaptionSide::Auto => "toolkit-captions-auto",
+        CaptionSide::Center => "toolkit-captions-center",
         CaptionSide::Left => "toolkit-captions-left",
         CaptionSide::Right => "toolkit-captions-right",
     }

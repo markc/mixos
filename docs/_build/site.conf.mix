@@ -12,14 +12,14 @@ site: {
   llms_summary: "MixOS is an agent-operable computing system: a Linux userland where every app is a service, every service speaks one message bus, and Mix is the shell. It is tried as a small signed systemd-nspawn image that runs on its own virtual terminal beside the user's existing desktop, at native GPU, input and audio speed.",
 
   -- Icons: Lucide, the checked-in SVG set the MixOS desktop draws from
-  -- (libs/toolkit/assets/icons). gen-site.mix verifies each file it uses by
+  -- (libs/icons/assets). gen-site.mix verifies each file it uses by
   -- sha256, writes a copy at the desktop's stroke width to _web/icons/, and
   -- emits one CSS mask per data-lucide name in _web/icons.css. No icon font,
   -- no script, no CDN. Upstream files are never edited.
   icons: {
     version: "1.54.0",
     -- Repo-relative directory of the upstream SVGs, one <file>.svg each.
-    source: "libs/toolkit/assets/icons",
+    source: "libs/icons/assets",
     -- Stroke width of the generated copies only, matching the desktop.
     stroke: "1.5",
     -- Lucide licence, copied to _web/icons/ and verified by sha256 like the icons.

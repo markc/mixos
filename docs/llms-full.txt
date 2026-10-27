@@ -754,6 +754,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [files](../files/README.md) | lib | none (library) | [`libs/files`](https://github.com/markc/mixos/tree/main/libs/files) | Rooted reads and the files-as-truth markdown corpus model. |
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo. |
+| [icons](../icons/README.md) | lib | none (library) | [`libs/icons`](https://github.com/markc/mixos/tree/main/libs/icons) |  |
 | [indexd](../indexd/README.md) | service | desktop | [`services/indexd`](https://github.com/markc/mixos/tree/main/services/indexd) | Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI. |
 | [inputd](../inputd/README.md) · [changelog](../inputd/changelog.md) | service | unclassified | [`services/inputd`](https://github.com/markc/mixos/tree/main/services/inputd) | How inputd turns keys into Bus commands below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
@@ -836,6 +837,7 @@ checked separately by the layering gate.
 | [editor](https://github.com/markc/mixos/blob/main/libs/editor/Cargo.toml) | editor | lib | desktop | none | 0.1.2 |
 | [expr](https://github.com/markc/mixos/blob/main/libs/expr/Cargo.toml) | expr | lib | core | none | 0.1.2 |
 | [files](https://github.com/markc/mixos/blob/main/libs/files/Cargo.toml) | files | lib | core | none | 0.1.2 |
+| [icons](https://github.com/markc/mixos/blob/main/libs/icons/Cargo.toml) | icons | lib | bus | none | 0.1.2 |
 | [logging](https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml) | logging | lib | core | none | 0.1.2 |
 | [macros](https://github.com/markc/mixos/blob/main/libs/macros/Cargo.toml) | macros | lib | core | none | 0.1.2 |
 | [maildoc](https://github.com/markc/mixos/blob/main/libs/maildoc/Cargo.toml) | maildoc | lib | core | none | 0.1.2 |
@@ -2152,8 +2154,8 @@ tiling with a real Super modifier or `comp.window.tile_key`.
 
 ## Settings at startup
 
-The session's `appearance.menu_style: "titlebar"` adds a menu caption beside
-the caption cluster or at the opposite edge, according to `appearance.menu_side`.
+The session's `appearance.menu_style: "titlebar"` adds a menu caption aligned
+left, centre or right, according to `appearance.menu_side`.
 It appears only on SSD windows whose `dev.mixos.NAME` app has a registered
 `NAME` Bus service. Clicking queues `NAME.ui.menu.popup {side, x}` through the scene
 host's existing port; failures are logged without blocking the compositor.
@@ -2172,6 +2174,19 @@ The scene host subscribes before reading a full broker registry at startup and
 after reconnect. Registry publications identify the broker through either
 `from: noded` or its `broker_service: noded` stamp; scene ownership does not
 limit the set of app services.
+
+The menu, title, Action Bar and controls use the same title band layout as CSD.
+`title_align` and `caption_side` offer style default, left, centre and right;
+`actions_align` offers left, centre and right. MixOS titles centre by default.
+With `actions_place: "titlebar"`, the scene-host port reads registered,
+decorated apps' revisioned `<app>.ui.titlebar.form` properties at most four
+times per second. It draws the shared Lucide icons, enabled and toggled states,
+and the existing tooltip cards. A click or
+`comp.window.action {id, generation, command}` queues `<app>.execute {id}`
+through that same port. Disabled and stale pointer actions refuse.
+`comp.props` exposes `decoration.actions` and
+`surfaces.s<ID>.action_count`. See the
+[title band decision](../docs/decisions/2026-10-27-title-band.md).
 
 Quoin prepares cached or embedded settings while its existing Bus
 supervisor registers. Its persistent cache is service-owned under the
@@ -6549,6 +6564,79 @@ Status: accepted 2026-10-27.
 
 ---
 
+<!-- page: https://mixos.dev/docs/decisions/2026-10-27-title-band/ (source: https://mixos.dev/docs/decisions/2026-10-27-title-band.md) -->
+
+# Title band layout
+
+Status: accepted. Mark, 2026-10-27.
+
+The menu group, title, Action Bar and window controls each align left, centre
+or right. CSD and SSD use `design::title_band::layout`. The app mark belongs
+to the menu group. MixOS titles centre by default; mac centres and win11
+starts at the left.
+
+| Appearance key | Names | Default |
+| --- | --- | --- |
+| `menu_side` | left, center, right | left |
+| `title_align` | auto, left, center, right | auto |
+| `actions_align` | left, center, right | right |
+| `actions_place` | row, titlebar | row |
+| `caption_side` | auto, left, center, right | auto |
+
+These are named registries in `libs/design`. Unknown plain names survive
+storage and resolve as defaults. Defaults are omitted in full and compact
+settings, preserving existing profile seals. Caption auto resolves to right
+in CSD and the preset's cluster side in SSD. Previously omitted captions
+were right in CSD; SSD did not read them. Explicit right remains explicit
+right. The appearance portal keeps its older effective right default and
+omission rule independently of the stored request.
+
+`layout(width: f32, groups: &[Group]) -> Vec<Rect>` uses logical coordinates.
+Each group supplies preferred width, minimum width, alignment, optional
+shrink priority and centre reading order. Rectangles contain x and width;
+the caller supplies the common band's y and height. Input order is controls,
+menu, actions, title, so groups stack from either edge in that order. Centre
+reading order is menu, title, actions, controls. The centre pack uses the
+whole band's centre if free, otherwise the gap between the side stacks.
+Title shrink priority is 0, Action Bar priority 1. Controls and menus are
+fixed. Action Bars drop app actions from the left and retain the standard
+tail. SSD retains enough frame width for fixed groups and that tail.
+
+Action Bar hosting shares the compact-menu registration agreement:
+`drive::set_service` must match the app's own drive, and decorations must be
+SSD. The compositor uses the same scene-host registry snapshot and exact
+`dev.mixos.NAME` to registered `NAME` mapping. Disconnection removes hosting
+data. CSD or an unregistered drive keeps the app's bar.
+
+Apps expose a revisioned `bar` in `<app>.ui.titlebar.form` only while hosting
+is possible. Toolkit coalesces item changes for 100 ms and schedules the
+trailing update. The scene-host worker reads the property at most four times
+per second while titlebar placement is selected, through its existing Bus
+client. It retains the last good bar on read failure, fences replies by
+connection generation and removes departed services' bars. No new topic,
+connection or registry is introduced.
+
+Pointer actions carry the bar revision and index; stale presses are refused.
+`comp.window.action {id, generation, command}` uses the same enabled-item
+check and scene-host event sink to send `<app>.execute {id}`. Calls are
+non-blocking and failures are logged. `comp.props` exposes
+`decoration.actions` and each surface's
+`action_count`. `ui.titlebar.form` reports requested and effective placement,
+alignments, the matched service and hosted items.
+
+Tooltips use the existing compositor tooltip delay and card renderer, with
+the session tokens and output clamping. Lucide names and SVGs belong to
+`libs/icons`; toolkit loads them through egui and decor rasterises them with
+the workspace resvg.
+
+A future group adds an input in each renderer and its rendering and hit
+targets; the generic layout function stays unchanged. A future alignment
+extends `Alignment`, the named registries and their conversions, placement
+logic, Prefs labels and combination tests. Per-app overrides and new styles
+are outside this decision.
+
+---
+
 <!-- page: https://mixos.dev/docs/dev/2026-10-21-source-and-build-map/ (source: https://mixos.dev/docs/dev/2026-10-21-source-and-build-map.md) -->
 
 ## Read first
@@ -9401,6 +9489,30 @@ The source is
 `cargo test -p hostd`: no test needs root. The live gate for network writes
 runs as root on a disposable networkd host, on dummy links only, and
 removes everything it made.
+
+---
+
+<!-- page: https://mixos.dev/icons/ (source: https://mixos.dev/icons/README.md) -->
+
+# Icons
+
+The `icons` library owns the pinned Lucide 1.54.0 SVGs and their names. It has
+no egui dependency. `Icon::from_name`, `Icon::name`, `Icon::ALL` and
+`Icon::svg` let a renderer load the same source by name. Toolkit re-exports
+`Icon` and keeps its `bytes://lucide/` loader and design stroke token.
+
+`Bar` contains a revision and a list of `BarItem` values: command, icon name,
+tooltip, enabled and toggled. `Bar::valid` bounds incoming bars and rejects
+unknown icons, invalid command names and duplicate commands. `standard`
+identifies the retained macros, search, keyboard and theme tail.
+
+The compositor reads registered apps' `ui.titlebar.form` through its existing
+scene-host port. It rasterises the shared SVGs with resvg and caches the
+result by icon, physical size, tint and stroke. See the
+[title band decision](../docs/decisions/2026-10-27-title-band.md).
+
+SVGs retain the upstream ISC and Feather-derived MIT notices in
+`libs/icons/assets/LICENSE-lucide.txt` and the repository's `NOTICE`.
 
 ---
 
@@ -34412,16 +34524,21 @@ Preferences answers on the Bus as `prefs`. `prefs.info` reports the whole state;
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; `prefs.appearance.set`
 changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
-`contrast`, `decorations`, `caption_side`, `window_style`, `menu_style`, `menu_side`, `font_family`, `mono_family`,
+`contrast`, `decorations`, `caption_side`, `window_style`, `menu_style`, `menu_side`,
+`title_align`, `actions_align`, `actions_place`, `font_family`, `mono_family`,
 `text_scale`, `density`, `reduced_motion`). Family values are strings or null;
 text scale and density reset with 1.0, and reduced motion takes a boolean.
 Desktop → Windows places the window style picker beside caption placement.
 Its choices and labels come from the design registry; compd applies the chosen
-server-side furniture live. It does not change application-drawn captions.
+server-side furniture live. Title alignment's style default follows this choice.
 The same section offers Menus (Menu bar, Menu button, In the title bar) and
-Menu button (Left, Right). The side picker is enabled when menus are collapsed.
+Menu button (Left, Centre, Right). The side picker is enabled when menus are collapsed.
 In the title bar uses compd's button in SSD mode and the app's button in CSD mode.
 An offline or aliased app keeps its own menu button in SSD mode too.
+Title and Window buttons offer Style default, Left, Centre and Right. Actions
+offers In the app or In the title bar; Action icons offers Left, Centre and Right.
+These settings share one layout in CSD and SSD. Titlebar Action Bars use the
+same live registration agreement as menus; unregistered apps keep their own bar.
 The section ids in tree order are `appearance`, `text_and_fonts`, `wallpaper`,
 `windows`, `apps_email`, `apps_term`, `apps_ced`, `accessibility`, and `software`.
 Navigation actions use `view.section.<id>`; retired section ids have no aliases. Search includes their `ui.*`
@@ -37294,6 +37411,15 @@ written in Mix on `tcp_listen`.
 
 > Mirrored from [`services/compd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/compd/CHANGELOG.md), where releases update it. The component's page is [compd](README.md). This page describes the current `main` branch of MixOS.
 
+## Unreleased
+
+- Use the shared design title band layout for all four groups and centre
+  MixOS titles by default. Host registered apps' revisioned Action Bars through
+  the existing scene-host registry and Bus client, with shared Lucide rasters,
+  hover and toggle states, disabled colours and the existing tooltip cards.
+  `comp.window.action` dispatches enabled registry commands; `comp.props`
+  reports hosting and per-surface item counts.
+
 ## 0.2.0
 
 - Add `comp.window.place_as`, `comp.window.tile_key` and `comp.tiles.get`.
@@ -38322,6 +38448,11 @@ Use strict MixOS configuration and owned shutdown signalling.
 
 ## Unreleased — 2026-10-27
 
+- Desktop > Windows offers registry-driven menu, title, Action Bar and window
+  button alignment, plus Action Bar hosting in the title bar. Window buttons
+  stay editable in CSD and SSD. All axes apply immediately and are described
+  by `prefs.appearance.set`.
+
 - Delegate Email launching and registration waits to citizen's shared async
   helper. Keep passwords outside effect bodies until sending, preserve
   refusals, and return a failed password to its field. Account status reads
@@ -38336,6 +38467,13 @@ Use strict MixOS configuration and owned shutdown signalling.
 > Mirrored from [`libs/settings/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md), where releases update it. The component's page is [settings](README.md). This page describes the current `main` branch of MixOS.
 
 ## Unreleased
+
+Title band names add `appearance.title_align`, `appearance.actions_align` and
+`appearance.actions_place`. Menu and caption positions accept centre. Caption
+placement now defaults to `auto`: right in CSD and the style's own side in SSD.
+Unknown names are retained, and defaults remain omitted from full and compact
+data, so old seals still verify. Explicit right remains right. The appearance
+portal keeps its independent effective right default for older readers.
 
 `appearance.menu_style` and `appearance.menu_side` select the session's menu
 form and button position. Their design registries supply names and Prefs labels.
@@ -38632,6 +38770,12 @@ their bytes.
 # Changelog
 
 ## Unreleased — 2026-10-27
+
+- Use the shared design title band layout for menus, title, Action Bar and
+  captions. Follow all four group alignments and preserve the Action Bar tail
+  as app icons give way. Registered SSD apps expose revisioned icons through
+  `ui.titlebar.form`; unregistered or CSD windows keep their own bar. Shared
+  Lucide sources now live in `icons`, with the same egui image loader.
 
 - Add a reusable multi-file chooser with asynchronous directory/path probes,
   bounded listings and outstanding workers, keyboard navigation, hidden files,

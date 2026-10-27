@@ -15,7 +15,7 @@ const THEME: &str = "mixos";
 pub fn merge(existing: Option<&str>, side: CaptionSide) -> Option<String> {
     let text = existing.unwrap_or_default();
     let layout = match side {
-        CaptionSide::Right => "menu:minimize,maximize,close",
+        CaptionSide::Auto | CaptionSide::Center | CaptionSide::Right => "menu:minimize,maximize,close",
         CaptionSide::Left => "close,minimize,maximize:menu",
     };
     let keys = [(LAYOUT, layout), (ICON_THEME, THEME)];
@@ -198,6 +198,8 @@ mod tests {
     fn creates_missing_and_empty_files_for_both_sides() {
         for (side, layout) in [
             (CaptionSide::Right, "menu:minimize,maximize,close"),
+            (CaptionSide::Auto, "menu:minimize,maximize,close"),
+            (CaptionSide::Center, "menu:minimize,maximize,close"),
             (CaptionSide::Left, "close,minimize,maximize:menu"),
         ] {
             let expected =

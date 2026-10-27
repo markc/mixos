@@ -86,10 +86,13 @@ pub struct Look {
     pub mode: Mode,
     pub contrast: Contrast,
     pub decorations: Decorations,
-    pub captions: CaptionSide,
+    pub captions: String,
     pub window_style: String,
     pub menu_style: String,
     pub menu_side: String,
+    pub actions_place: String,
+    pub actions_align: String,
+    pub title_align: String,
     pub font_family: Option<String>,
     pub mono_family: Option<String>,
     pub text_scale: f64,
@@ -105,10 +108,13 @@ impl Default for Look {
             mode: Mode::default(),
             contrast: Contrast::default(),
             decorations: Decorations::default(),
-            captions: CaptionSide::default(),
+            captions: CaptionSide::default().name().into(),
             window_style: design::WindowStyle::default().name().into(),
             menu_style: design::MenuStyle::default().name().into(),
             menu_side: design::MenuSide::default().name().into(),
+            actions_place: design::ActionsPlace::default().name().into(),
+            actions_align: design::ActionsAlign::default().name().into(),
+            title_align: design::TitleAlign::default().name().into(),
             font_family: None,
             mono_family: None,
             text_scale: 1.0,
@@ -134,8 +140,11 @@ impl Look {
         json!({"scheme":self.scheme.name(),"style":self.style.map_or("own", Style::name),
             "mode":self.mode.name(),"contrast":self.contrast.name(),
             "decorations":resolved.mode.name(),"decorations_reason":resolved.reason,
-            "caption_side":self.captions.name(),
+            "caption_side":CaptionSide::resolve(&self.captions).name(),
             "window_style":design::WindowStyle::resolve(&self.window_style).name(),
+            "title_align":design::TitleAlign::resolve(&self.title_align).name(),
+            "actions_align":design::ActionsAlign::resolve(&self.actions_align).name(),
+            "actions_place":design::ActionsPlace::resolve(&self.actions_place).name(),
             "menu_style":design::MenuStyle::resolve(&self.menu_style).name(),
             "menu_side":design::MenuSide::resolve(&self.menu_side).name()})
     }
@@ -151,10 +160,13 @@ impl Look {
             mode: named("mode", &stored.mode, Mode::from_name)?,
             contrast: named("contrast", &stored.contrast, Contrast::from_name)?,
             decorations: named("decorations", &stored.decorations, Decorations::from_name)?,
-            captions: named("caption side", &stored.caption_side, CaptionSide::from_name)?,
+            captions: stored.caption_side.clone(),
             window_style: stored.window_style.clone(),
             menu_style: stored.menu_style.clone(),
             menu_side: stored.menu_side.clone(),
+            actions_place: stored.actions_place.clone(),
+            actions_align: stored.actions_align.clone(),
+            title_align: stored.title_align.clone(),
             font_family: stored.font_family.clone(),
             mono_family: stored.mono_family.clone(),
             ..Self::default()
@@ -205,7 +217,7 @@ impl Look {
         put(
             "caption_side",
             self.captions != base.captions,
-            json!(self.captions.name()),
+            json!(self.captions),
         );
         put(
             "window_style",
@@ -222,6 +234,9 @@ impl Look {
             self.menu_style != base.menu_style,
             json!(self.menu_style),
         );
+        put("title_align", self.title_align != base.title_align, json!(self.title_align));
+        put("actions_align", self.actions_align != base.actions_align, json!(self.actions_align));
+        put("actions_place", self.actions_place != base.actions_place, json!(self.actions_place));
         put(
             "menu_side",
             self.menu_side != base.menu_side,
@@ -295,9 +310,6 @@ impl Look {
         if let Some(decorations) = axis(args, "decorations", Decorations::from_name)? {
             look.decorations = decorations;
         }
-        if let Some(captions) = axis(args, "caption_side", CaptionSide::from_name)? {
-            look.captions = captions;
-        }
         if let Some(value) = args.get("window_style") {
             let name = value
                 .as_str()
@@ -306,6 +318,10 @@ impl Look {
             look.window_style = name.into();
         }
         for (key, slot, valid) in [
+            ("actions_place", &mut look.actions_place, design::ActionsPlace::valid_name as fn(&str) -> bool),
+            ("actions_align", &mut look.actions_align, design::ActionsAlign::valid_name as fn(&str) -> bool),
+            ("title_align", &mut look.title_align, design::TitleAlign::valid_name as fn(&str) -> bool),
+            ("caption_side", &mut look.captions, CaptionSide::valid_name as fn(&str) -> bool),
             (
                 "menu_style",
                 &mut look.menu_style,
@@ -370,8 +386,11 @@ impl Serialize for Look {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         json!({"scheme":self.scheme.name(),"style":self.style.map_or("own", Style::name),
             "mode":self.mode.name(),"contrast":self.contrast.name(),
-            "decorations":self.decorations.name(),"caption_side":self.captions.name(),
+            "decorations":self.decorations.name(),"caption_side":self.captions,
             "window_style":self.window_style,
+            "title_align":self.title_align,
+            "actions_align":self.actions_align,
+            "actions_place":self.actions_place,
             "menu_style":self.menu_style,"menu_side":self.menu_side,
             "font_family":self.font_family,"mono_family":self.mono_family,
             "text_scale":self.text_scale,"density":self.density,"reduced_motion":self.reduced_motion})
@@ -402,6 +421,9 @@ pub enum Axis {
     WindowStyle,
     MenuStyle,
     MenuSide,
+    ActionsPlace,
+    ActionsAlign,
+    TitleAlign,
     FontFamily,
     MonoFamily,
     TextScale,
@@ -410,7 +432,7 @@ pub enum Axis {
 }
 
 impl Axis {
-    pub const ALL: [Axis; 14] = [
+    pub const ALL: [Axis; 17] = [
         Axis::Scheme,
         Axis::Style,
         Axis::Mode,
@@ -420,6 +442,9 @@ impl Axis {
         Axis::WindowStyle,
         Axis::MenuStyle,
         Axis::MenuSide,
+        Axis::ActionsPlace,
+        Axis::ActionsAlign,
+        Axis::TitleAlign,
         Axis::FontFamily,
         Axis::MonoFamily,
         Axis::TextScale,
@@ -439,6 +464,9 @@ impl Axis {
             Axis::WindowStyle => a.window_style != b.window_style,
             Axis::MenuStyle => a.menu_style != b.menu_style,
             Axis::MenuSide => a.menu_side != b.menu_side,
+            Axis::ActionsPlace => a.actions_place != b.actions_place,
+            Axis::ActionsAlign => a.actions_align != b.actions_align,
+            Axis::TitleAlign => a.title_align != b.title_align,
             Axis::FontFamily => a.font_family != b.font_family,
             Axis::MonoFamily => a.mono_family != b.mono_family,
             Axis::TextScale => a.text_scale != b.text_scale,
@@ -455,10 +483,13 @@ impl Axis {
             Axis::Mode => to.mode = from.mode,
             Axis::Contrast => to.contrast = from.contrast,
             Axis::Decorations => to.decorations = from.decorations,
-            Axis::CaptionSide => to.captions = from.captions,
+            Axis::CaptionSide => to.captions = from.captions.clone(),
             Axis::WindowStyle => to.window_style = from.window_style.clone(),
             Axis::MenuStyle => to.menu_style = from.menu_style.clone(),
             Axis::MenuSide => to.menu_side = from.menu_side.clone(),
+            Axis::ActionsPlace => to.actions_place = from.actions_place.clone(),
+            Axis::ActionsAlign => to.actions_align = from.actions_align.clone(),
+            Axis::TitleAlign => to.title_align = from.title_align.clone(),
             Axis::FontFamily => to.font_family = from.font_family.clone(),
             Axis::MonoFamily => to.mono_family = from.mono_family.clone(),
             Axis::TextScale => to.text_scale = from.text_scale,
@@ -504,6 +535,9 @@ impl Submitted {
                     | Axis::WindowStyle
                     | Axis::MenuStyle
                     | Axis::MenuSide
+                    | Axis::TitleAlign
+                    | Axis::ActionsAlign
+                    | Axis::ActionsPlace
             )
         }) {
             crate::Section::Windows
@@ -1118,6 +1152,12 @@ impl Engine {
         let shown = self.look.shown().unwrap_or_else(|| expected.clone());
         self.look.status_source = if look.decorations != shown.decorations
             || look.captions != shown.captions
+            || look.window_style != shown.window_style
+            || look.menu_style != shown.menu_style
+            || look.menu_side != shown.menu_side
+            || look.title_align != shown.title_align
+            || look.actions_align != shown.actions_align
+            || look.actions_place != shown.actions_place
         {
             crate::Section::Windows
         } else if look.text_scale != shown.text_scale || look.reduced_motion != shown.reduced_motion
@@ -1665,6 +1705,9 @@ fn axis_key(axis: Axis) -> &'static str {
         Axis::WindowStyle => "appearance.window_style",
         Axis::MenuStyle => "appearance.menu_style",
         Axis::MenuSide => "appearance.menu_side",
+        Axis::ActionsPlace => "appearance.actions_place",
+        Axis::ActionsAlign => "appearance.actions_align",
+        Axis::TitleAlign => "appearance.title_align",
         Axis::FontFamily => "appearance.font_family",
         Axis::MonoFamily => "appearance.mono_family",
         Axis::TextScale => "ui.text_scale",
@@ -2126,6 +2169,10 @@ mod tests {
         for (key, names, default) in [
             ("menu_style", design::MenuStyle::NAMES, "bar"),
             ("menu_side", design::MenuSide::NAMES, "left"),
+            ("title_align", design::TitleAlign::NAMES, "auto"),
+            ("actions_align", design::ActionsAlign::NAMES, "right"),
+            ("actions_place", design::ActionsPlace::NAMES, "row"),
+            ("caption_side", design::CaptionSide::NAMES, "auto"),
         ] {
             for name in names
                 .iter()

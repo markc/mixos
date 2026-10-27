@@ -66,6 +66,7 @@
   <url><loc>https://mixos.dev/docs/decisions/2026-10-26-open-bus-for-agents/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-27-email-sends-no-html/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-27-mail-document/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-27-title-band/</loc></url>
   <url><loc>https://mixos.dev/docs/dev/2026-10-21-source-and-build-map/</loc></url>
   <url><loc>https://mixos.dev/docs/dev/releasing/</loc></url>
   <url><loc>https://mixos.dev/docs/spec/bridge/</loc></url>
@@ -84,6 +85,7 @@
   <url><loc>https://mixos.dev/expr/</loc></url>
   <url><loc>https://mixos.dev/files/</loc></url>
   <url><loc>https://mixos.dev/hostd/</loc></url>
+  <url><loc>https://mixos.dev/icons/</loc></url>
   <url><loc>https://mixos.dev/indexd/</loc></url>
   <url><loc>https://mixos.dev/inputd/</loc></url>
   <url><loc>https://mixos.dev/logging/</loc></url>

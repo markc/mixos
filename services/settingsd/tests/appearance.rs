@@ -381,3 +381,30 @@ fn menu_axes_survive_a_sealed_reopen() {
         }
     }
 }
+
+#[test]
+fn title_band_axes_survive_a_sealed_reopen() {
+    for (key, names) in [
+        ("title_align", design::TitleAlign::NAMES),
+        ("actions_align", design::ActionsAlign::NAMES),
+        ("actions_place", design::ActionsPlace::NAMES),
+        ("caption_side", design::CaptionSide::NAMES),
+    ] {
+        for name in names.iter().copied().chain(["future-choice"]) {
+            let dir = tempfile::tempdir().unwrap();
+            let mut authority = authority(dir.path());
+            authority.apply(ApplyRequest {
+                binding: binding(), expected_incarnation: authority.accepted.incarnation.clone(),
+                expected_revision: authority.accepted.revision, operation_id: format!("{key}-{name}"),
+                changes: BTreeMap::from([(format!("appearance.{key}"),json!(name))]),
+                reset: vec![],request_digest:None,
+            }).unwrap();
+            drop(authority);
+            let (_, reopened) = Store::open(dir.path(),&binding()).unwrap();
+            let saved = serde_json::to_value(&reopened.desktop.appearance).unwrap();
+            let default = match key { "actions_align" => "right", "actions_place" => "row", _ => "auto" };
+            assert_eq!(saved.get(key).and_then(serde_json::Value::as_str).unwrap_or(default),name);
+            reopened.check(&binding()).unwrap();
+        }
+    }
+}

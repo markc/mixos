@@ -64,6 +64,7 @@ fn fixture() -> CompSnapshot {
         workspace: None,
         decoration: None,
         menu_button: false,
+        action_count: 0,
         layer: Some(LayerSnapshot {
             stratum: "top",
             interactivity: "exclusive",
@@ -99,6 +100,7 @@ fn fixture() -> CompSnapshot {
         workspace: Some(1),
         decoration: Some("server"),
         menu_button: false,
+        action_count: 0,
         layer: None,
         foreign_id: Some("foreign-2".into()),
         generation: 4,
@@ -256,6 +258,7 @@ fn fixture() -> CompSnapshot {
             style: "mac",
             menu_button: false,
             menu_side: "left",
+            actions: false,
             menu_services: vec![],
         },
         bindings: BindingsSnapshot {

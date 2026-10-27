@@ -12,6 +12,7 @@ use std::sync::mpsc::Receiver;
 
 use serde_json::{Value, json};
 use smithay::utils::{Physical, Rectangle};
+use dispatcher::wire::trait_::wire_trait::WireTrait;
 
 use crate::command::SceneCommand;
 use crate::port::{HostConfig, Inbound, Port, Request, Waker};
@@ -688,6 +689,7 @@ pub struct SceneHost {
     /// The surface that asked for `tooltip` (its scene's incarnation).
     tooltip_handle: Option<ui::HandleId>,
     tooltip_surfaces: crate::tooltip::Surfaces,
+    action_tooltip: crate::tooltip::actions::Actions,
     settings: crate::lane::native::Ui<Arc<crate::appearance::Look>>,
     appearance_generation: u64,
     input_geometry: Option<InputGeometry>,
@@ -700,6 +702,11 @@ struct InputGeometry {
     handles: BTreeMap<String, (ui::HandleId, Rectangle<i32, Physical>, f32)>,
     menu_handle: Option<(ui::HandleId, Rectangle<i32, Physical>, f32)>,
     outputs: Vec<(String, Vec<SceneSurface>)>,
+}
+
+fn action_services(lp: &world::state::Loop) -> Vec<String> {
+    lp.inner.all_world_spaces().iter().flat_map(|space| space.state.elements())
+        .filter_map(decor::window::action_service).collect::<BTreeSet<_>>().into_iter().collect()
 }
 
 impl SceneHost {
@@ -723,6 +730,10 @@ impl SceneHost {
                 json!({"side": side.name(), "x": x}),
             )
         });
+        let action_sink = port.event_sink();
+        decor::window::action_emitter(move |service, command| {
+            action_sink.emit(service, &format!("{service}.execute"), json!({"id":command}))
+        });
         // conf.mix's page order, as Quoin reads it at start.
         let mut host = Host::default();
         host.panels.load_state();
@@ -742,6 +753,7 @@ impl SceneHost {
             tooltip: None,
             tooltip_handle: None,
             tooltip_surfaces: Default::default(),
+            action_tooltip: Default::default(),
             settings,
             appearance_generation: 0,
             input_geometry: None,
@@ -808,6 +820,7 @@ impl SceneHost {
             // Open capture panels take the new look without waiting for input.
             world::surface::draw::capture::style::restyle(lp);
         }
+        self.port.titlebar_services(action_services(lp));
         let Some(monitor) =
             dispatcher::wire::trait_::wire_trait::WireTrait::active_output(&lp.inner)
         else {
@@ -948,6 +961,15 @@ impl SceneHost {
         {
             match message {
                 Inbound::Registered(name) => self.service = Some(name),
+                Inbound::Repaint => serviced.changed = true,
+                Inbound::Titlebar { generation, service, form } => {
+                    if self.port.settings_generation() == Some(generation) && !form.is_null() {
+                        let bar = if form["hosted"] == true && form["service"].as_str() == Some(service.as_str()) {
+                            serde_json::from_value(form["bar"].clone()).unwrap_or_default()
+                        } else { Default::default() };
+                        serviced.changed |= decor::window::update_actions(&service, bar);
+                    }
+                }
                 Inbound::Refused(reason) => {
                     serviced.changed |= decor::window::menu_services(BTreeSet::new());
                     self.refused = Some(reason);
@@ -999,6 +1021,7 @@ impl SceneHost {
                         "scene host: applying live registry to window menus"
                     );
                     serviced.changed |= decor::window::menu_services(live.clone());
+                    self.port.titlebar_services(action_services(lp));
                     let notices = self.host.services_live(live);
                     self.host.panels.sync(&self.host.store);
                     serviced.changed |= !notices.is_empty();
@@ -1149,11 +1172,16 @@ impl SceneHost {
                 .is_some_and(|surface| surface.output() == current)
         });
         if here {
-            let tip = self.tooltip.as_ref();
+            let action = self.action_tooltip.update(state, &self.port, prepared.as_deref(), self.appearance_generation,
+                self.tooltip.is_some() || self.host.panels.menu().is_some() || self.host.store.dialog_seat().is_some());
+            let mut placed = self.placed.clone();
+            if let Some(((key,_),rect)) = &action { placed.insert(key.clone(),*rect); }
+            let action = action.map(|(tip,_)|tip);
+            let tip = self.tooltip.as_ref().or(action.as_ref());
             self.host.tooltip = crate::tooltip::reconcile(
                 tip,
                 &mut self.tooltip_surfaces,
-                &self.placed,
+                &placed,
                 self.settings
                     .session()
                     .host()

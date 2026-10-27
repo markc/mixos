@@ -212,16 +212,21 @@ Preferences answers on the Bus as `prefs`. `prefs.info` reports the whole state;
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; `prefs.appearance.set`
 changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
-`contrast`, `decorations`, `caption_side`, `window_style`, `menu_style`, `menu_side`, `font_family`, `mono_family`,
+`contrast`, `decorations`, `caption_side`, `window_style`, `menu_style`, `menu_side`,
+`title_align`, `actions_align`, `actions_place`, `font_family`, `mono_family`,
 `text_scale`, `density`, `reduced_motion`). Family values are strings or null;
 text scale and density reset with 1.0, and reduced motion takes a boolean.
 Desktop → Windows places the window style picker beside caption placement.
 Its choices and labels come from the design registry; compd applies the chosen
-server-side furniture live. It does not change application-drawn captions.
+server-side furniture live. Title alignment's style default follows this choice.
 The same section offers Menus (Menu bar, Menu button, In the title bar) and
-Menu button (Left, Right). The side picker is enabled when menus are collapsed.
+Menu button (Left, Centre, Right). The side picker is enabled when menus are collapsed.
 In the title bar uses compd's button in SSD mode and the app's button in CSD mode.
 An offline or aliased app keeps its own menu button in SSD mode too.
+Title and Window buttons offer Style default, Left, Centre and Right. Actions
+offers In the app or In the title bar; Action icons offers Left, Centre and Right.
+These settings share one layout in CSD and SSD. Titlebar Action Bars use the
+same live registration agreement as menus; unregistered apps keep their own bar.
 The section ids in tree order are `appearance`, `text_and_fonts`, `wallpaper`,
 `windows`, `apps_email`, `apps_term`, `apps_ced`, `accessibility`, and `software`.
 Navigation actions use `view.section.<id>`; retired section ids have no aliases. Search includes their `ui.*`

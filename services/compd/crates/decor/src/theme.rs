@@ -50,6 +50,10 @@ pub struct ChromeTheme {
     pub deco: DecoTheme,
     pub menu_style: design::MenuStyle,
     pub menu_side: design::MenuSide,
+    pub band: design::title_band::Settings,
+    pub captions: design::CaptionSide,
+    pub action_style: design::ResolvedStyle,
+    pub action_stroke: f32,
     pub tokens: TokenSource,
     /// The same design's tokens for in-compositor content (Mix Scenes): one
     /// compile serves both, so the scene host never loads the theme again.
@@ -132,6 +136,10 @@ impl ChromeTheme {
             deco,
             menu_style: design::MenuStyle::default(),
             menu_side: design::MenuSide::default(),
+            band: Default::default(),
+            captions: Default::default(),
+            action_style: dictionary.style.unwrap_or_else(|| toolkit::theme::Theme::embedded().style()),
+            action_stroke: toolkit::icons::DEFAULT_STROKE,
             tokens: TokenSource::Prepared,
             palette: Palette::from_dictionary(dictionary),
         }
@@ -161,6 +169,10 @@ impl ChromeTheme {
             deco,
             menu_style: design::MenuStyle::default(),
             menu_side: design::MenuSide::default(),
+            band: Default::default(),
+            captions: Default::default(),
+            action_style: design.dictionary().style.unwrap_or_else(|| toolkit::theme::Theme::embedded().style()),
+            action_stroke: toolkit::icons::DEFAULT_STROKE,
             tokens,
             palette,
         }

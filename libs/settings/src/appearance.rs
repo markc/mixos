@@ -24,8 +24,8 @@ pub struct AppearanceProjection {
     pub contrast: String,
     /// `right` or `left`, from the desktop context's caption placement.
     #[serde(
-        default = "crate::default_caption_side",
-        skip_serializing_if = "crate::is_default_caption_side"
+        default = "projection_caption_side",
+        skip_serializing_if = "is_projection_caption_side"
     )]
     pub caption_side: String,
     /// Accent as sRGB, 0.0..=1.0 per channel, alpha excluded.
@@ -58,7 +58,10 @@ impl AppearanceProjection {
             design_revision: snapshot.design_revision,
             mode: effective.mode.clone(),
             contrast: effective.contrast.clone(),
-            caption_side: effective.caption_side.clone(),
+            caption_side: match design::CaptionSide::resolve(&effective.caption_side) {
+                design::CaptionSide::Auto => "right".into(),
+                side => side.name().into(),
+            },
             accent,
         };
         projection.validate()?;
@@ -124,6 +127,9 @@ impl AppearanceProjection {
         (&self.incarnation, self.revision, self.design_revision)
     }
 }
+
+fn projection_caption_side() -> String { "right".into() }
+fn is_projection_caption_side(value: &str) -> bool { value == "right" }
 
 #[cfg(test)]
 mod tests {

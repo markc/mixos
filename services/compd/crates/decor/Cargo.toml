@@ -21,6 +21,8 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+resvg.workspace = true
+icons.workspace = true
 # Title shaping and glyph rasterisation, over the faces the apps embed.
 cosmic-text = { workspace = true }
 toolkit = { workspace = true }

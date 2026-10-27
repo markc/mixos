@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// The drive commands, after the app's prefix.
-pub const COMMANDS: [&str; 15] = [
+pub const COMMANDS: [&str; 16] = [
     "ui.tree",
     "ui.click",
     "ui.pointer",
@@ -42,6 +42,7 @@ pub const COMMANDS: [&str; 15] = [
     "ui.menu.close",
     "ui.menu.popup",
     "ui.menu.form",
+    "ui.titlebar.form",
     "ui.capture",
     "window",
     "window.state",
@@ -155,6 +156,12 @@ pub fn describe(app: &str) -> Vec<Value> {
             "ui.menu.form",
             Value::Null,
             "The selected menu style and side, the effective form after resolving decorations and the app's own drive registration, whether the app is hosted, and the Bus service it matched",
+            true,
+        ),
+        (
+            "ui.titlebar.form",
+            Value::Null,
+            "Effective Action Bar placement and title band alignments, matching live drive service, and revisioned hosted icon items",
             true,
         ),
         (
@@ -953,6 +960,7 @@ impl Drive {
             }
             "ui.menu.close" => return Some(ok(id, json!({"closed":menu::close(ctx)}))),
             "ui.menu.form" => return Some(ok(id, menu::form(ctx))),
+            "ui.titlebar.form" => return Some(ok(id, crate::titlebar::hosting::form(ctx))),
             "ui.menu.popup" => {
                 let side = match args.get("side") {
                     None => None,

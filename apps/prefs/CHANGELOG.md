@@ -3,6 +3,11 @@
 
 ## Unreleased — 2026-10-27
 
+- Desktop > Windows offers registry-driven menu, title, Action Bar and window
+  button alignment, plus Action Bar hosting in the title bar. Window buttons
+  stay editable in CSD and SSD. All axes apply immediately and are described
+  by `prefs.appearance.set`.
+
 - Delegate Email launching and registration waits to citizen's shared async
   helper. Keep passwords outside effect bodies until sending, preserve
   refusals, and return a failed password to its field. Account status reads

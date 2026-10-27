@@ -11,6 +11,12 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
 
 ## Unreleased — 2026-10-27
 
+- Use the shared design title band layout for menus, title, Action Bar and
+  captions. Follow all four group alignments and preserve the Action Bar tail
+  as app icons give way. Registered SSD apps expose revisioned icons through
+  `ui.titlebar.form`; unregistered or CSD windows keep their own bar. Shared
+  Lucide sources now live in `icons`, with the same egui image loader.
+
 - Add a reusable multi-file chooser with asynchronous directory/path probes,
   bounded listings and outstanding workers, keyboard navigation, hidden files,
   Ctrl/Shift selection, stable accessible labels and stacked modal behaviour.

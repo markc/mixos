@@ -93,6 +93,7 @@ One line per component with a page: kind, then install profiles. The
 - [files](https://mixos.dev/files/README.md): lib; profiles: none (library). Rooted reads and the files-as-truth markdown corpus model.
 - [hostd](https://mixos.dev/hostd/README.md): service; profiles: unclassified. How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo.
   - [hostd — changelog](https://mixos.dev/hostd/changelog.md): Release notes of the hostd component, mirrored from services/hostd/CHANGELOG.md.
+- [icons](https://mixos.dev/icons/README.md): lib; profiles: none (library). The icons library owns the pinned Lucide 1.54.0 SVGs and their names. It has no egui dependency. Icon::from_name, Icon::name, Icon::ALL and Icon::svg let a…
 - [indexd](https://mixos.dev/indexd/README.md): service; profiles: desktop. Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI.
 - [inputd](https://mixos.dev/inputd/README.md): service; profiles: unclassified. How inputd turns keys into Bus commands below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.
   - [inputd — changelog](https://mixos.dev/inputd/changelog.md): Release notes of the inputd component, mirrored from services/inputd/CHANGELOG.md.
@@ -251,6 +252,7 @@ One line per component with a page: kind, then install profiles. The
 - [Decision — the Bus is open to every caller](https://mixos.dev/docs/decisions/2026-10-26-open-bus-for-agents.md): Every Bus command in every app and service on every node answers every caller; refusals by caller identity or origin are removed, integrity checks stay.
 - [Decision — Email never creates HTML](https://mixos.dev/docs/decisions/2026-10-27-email-sends-no-html.md): MixOS Email sends text/plain only; a Markdown body goes out as plain text, never converted to HTML. This is a security choice, not a missing feature.
 - [Decision — the mail document](https://mixos.dev/docs/decisions/2026-10-27-mail-document.md): A message saved by Email is a Markdown file framed as an ABP header block with mail-* headers only; it is never a live Bus request, and one address field never spans mail and the Bus.
+- [Title band layout](https://mixos.dev/docs/decisions/2026-10-27-title-band.md): Status: accepted. Mark, 2026-10-27.
 
 ### Specs
 

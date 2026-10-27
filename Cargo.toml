@@ -126,6 +126,7 @@ action = { path = "libs/action" }
 daemon = { path = "libs/daemon" }
 files = { path = "libs/files" }
 design = { path = "libs/design" }
+icons = { path = "libs/icons" }
 edit = { path = "libs/edit" }
 editor = { path = "libs/editor" }
 # The Mix lexer is opt-in (ced enables it); a plain-text editor does not need Mix.

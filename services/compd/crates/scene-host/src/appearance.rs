@@ -48,8 +48,7 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
     })?;
     let decorations = RequestedDecorations::from_name(&effective.decorations)
         .ok_or_else(|| unsupported("appearance.decorations", "Unknown decorations"))?;
-    let captions = CaptionSide::from_name(&effective.caption_side)
-        .ok_or_else(|| unsupported("appearance.caption_side", "Unknown caption side"))?;
+    let captions = CaptionSide::resolve(&effective.caption_side);
     let style = match &effective.style {
         None => None,
         Some(name) => Some(
@@ -81,7 +80,7 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
     Ok(theme.framed(decorations, captions).with_menus(
         design::MenuStyle::resolve(&effective.menu_style),
         design::MenuSide::resolve(&effective.menu_side),
-    ))
+    ).with_band(design::title_band::Settings::from_names(&effective.title_align, &effective.actions_align, &effective.actions_place, &effective.window_style)))
 }
 
 /// Build the whole look from an accepted snapshot (on the worker).
@@ -117,6 +116,11 @@ pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
             );
             chrome.menu_style = theme.menu_style();
             chrome.menu_side = theme.menu_side();
+            chrome.band = theme.band();
+            chrome.captions = theme.captions();
+            chrome.action_style = theme.style();
+            chrome.action_stroke = snapshot.effective.get(CONTEXT).and_then(|e| e.icon_stroke)
+                .map(|stroke|stroke as f32).unwrap_or_else(||toolkit::icons::stroke_width(&theme));
             chrome
         })
         .collect();

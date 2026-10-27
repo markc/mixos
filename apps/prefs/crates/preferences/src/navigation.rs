@@ -78,7 +78,7 @@ sections! {
     Appearance => ("appearance", Appearance, "section-appearance", &["themes", "colour", "style", "density", "spacing", "compact"], &["appearance.scheme", "appearance.style", "appearance.mode", "appearance.contrast", "ui.density"]),
     TextAndFonts => ("text_and_fonts", Appearance, "section-text-and-fonts", &["typeface", "typography", "size"], &["appearance.font", "appearance.mono_family"]),
     Wallpapers => ("wallpaper", Appearance, "section-wallpapers", &["wallpapers", "background"], &[]),
-    Windows => ("windows", Desktop, "section-windows", &["title bars", "window buttons", "window style", "menus", "hamburger"], &["appearance.decorations", "appearance.caption_side", "appearance.window_style", "appearance.menu_style", "appearance.menu_side"]),
+    Windows => ("windows", Desktop, "section-windows", &["title bars", "window buttons", "window style", "menus", "hamburger"], &["appearance.decorations", "appearance.caption_side", "appearance.window_style", "appearance.menu_style", "appearance.menu_side", "appearance.title_align", "appearance.actions_align", "appearance.actions_place"]),
     Email => ("apps_email", Apps, "section-email", &["mail", "accounts", "reader", "composer"], &["email."]),
     Terminal => ("apps_term", Apps, "nav-terminal", &["shell", "console"], &["terminal."]),
     Ced => ("apps_ced", Apps, "section-ced", &["editor"], &["ced.editor."]),

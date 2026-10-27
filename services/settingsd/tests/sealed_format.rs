@@ -161,6 +161,10 @@ fn window_style_defaults_preserve_existing_fixture_seals() {
         assert_eq!(accepted.desktop.appearance.window_style, "mac");
         assert_eq!(accepted.desktop.appearance.menu_style, "bar");
         assert_eq!(accepted.desktop.appearance.menu_side, "left");
+        assert_eq!(accepted.desktop.appearance.caption_side, "auto");
+        assert_eq!(accepted.desktop.appearance.title_align, "auto");
+        assert_eq!(accepted.desktop.appearance.actions_align, "right");
+        assert_eq!(accepted.desktop.appearance.actions_place, "row");
         accepted.check(&accepted.binding).unwrap();
         let sealed = accepted.content_digest.clone();
         accepted.seal().unwrap();
@@ -169,5 +173,8 @@ fn window_style_defaults_preserve_existing_fixture_seals() {
         assert!(saved["desktop"]["appearance"].get("window_style").is_none());
         assert!(saved["desktop"]["appearance"].get("menu_style").is_none());
         assert!(saved["desktop"]["appearance"].get("menu_side").is_none());
+        for key in ["caption_side", "title_align", "actions_align", "actions_place"] {
+            assert!(saved["desktop"]["appearance"].get(key).is_none());
+        }
     }
 }

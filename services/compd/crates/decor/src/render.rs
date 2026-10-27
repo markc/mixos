@@ -195,7 +195,7 @@ struct ShadowKey {
 }
 
 /// The title an xdg toplevel set, or an X11 window's `_NET_WM_NAME`/`WM_NAME`.
-fn title_of(window: &Window) -> String {
+pub(crate) fn title_of(window: &Window) -> String {
     if let Some(x11) = window.x11_surface() {
         return x11.title();
     }
@@ -238,6 +238,13 @@ fn refresh(
     next.maximized = crate::window::constrained(window);
     next.title = title_of(window);
     next.menu_side = crate::window::menu_side(window);
+    if let Some(theme) = crate::window::installed() {
+        next.band = theme.band;
+        next.captions = theme.captions;
+        next.action_style = Some(theme.action_style);
+        next.action_stroke = theme.action_stroke;
+    }
+    next.actions = crate::window::actions(window);
     next.content_size = (content_size.w, content_size.h);
     chrome.update(next, crate::window::generation());
     chrome.state().clone()
@@ -266,7 +273,6 @@ pub fn set_pointer(
 /// The chrome's layout for `window` at its current state, in its frame space
 /// (logical px, the frame's top-left at 0,0), for hit-testing.
 pub fn layout_of(window: &Window) -> Option<ChromeLayout> {
-    let theme = crate::window::installed()?;
     if !crate::window::decorated(window) {
         return None;
     }
@@ -274,7 +280,12 @@ pub fn layout_of(window: &Window) -> Option<ChromeLayout> {
         .user_data()
         .get_or_insert(|| RefCell::new(WindowChrome::default()));
     let wc = cell.borrow();
-    Some(wc.chrome.state().layout(&theme.deco))
+    let size = wc.chrome.state().content_size;
+    let size = if size.0 > 1 && size.1 > 1 { crate::state::content_vec(size) } else {
+        let size = window.geometry().size;
+        crate::layout::vec2(size.w.max(1) as f32,size.h.max(1) as f32)
+    };
+    crate::window::layout(window,size)
 }
 
 fn ensure_ids<const N: usize>(slot: &mut Option<[Id; N]>) -> [Id; N] {

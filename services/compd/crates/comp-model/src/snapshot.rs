@@ -210,6 +210,7 @@ pub struct SurfaceSnapshot {
     pub decoration: Option<&'static str>,
     /// Actual SSD menu eligibility, using chrome's live service lookup.
     pub menu_button: bool,
+    pub action_count: usize,
     pub layer: Option<LayerSnapshot>,
     pub foreign_id: Option<String>,
     pub generation: u64,
@@ -376,6 +377,7 @@ pub struct DecorationSnapshot {
     pub menu_button: bool,
     pub menu_side: &'static str,
     pub menu_services: Vec<String>,
+    pub actions: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -857,7 +859,8 @@ flat_snapshot!(
     style,
     menu_button,
     menu_side,
-    menu_services
+    menu_services,
+    actions
 );
 flat_snapshot!(BindingsSnapshot, enabled, profile, table, user);
 flat_snapshot!(
@@ -973,6 +976,7 @@ impl SurfaceSnapshot {
             ["workspace"] => serialise_selected(&self.workspace),
             ["decoration"] => serialise_selected(&self.decoration),
             ["menu_button"] => serialise_selected(&self.menu_button),
+            ["action_count"] => serialise_selected(&self.action_count),
             ["layer"] => serialise_selected(&self.layer),
             ["layer", tail @ ..] => self.layer.as_ref()?.select(tail),
             ["foreign_id"] => serialise_selected(&self.foreign_id),
@@ -988,7 +992,7 @@ impl SurfaceSnapshot {
                 "id" | "role" | "mapped" | "visible" | "x" | "y" | "width" | "height" | "band"
                 | "sequence" | "tree_index" | "parent" | "output" | "title" | "app_id" | "focused"
                 | "activated" | "maximized" | "fullscreen" | "minimized" | "workspace"
-                | "decoration" | "menu_button" | "foreign_id" | "generation",
+                | "decoration" | "menu_button" | "action_count" | "foreign_id" | "generation",
             ] => Some(SnapshotNodeKind::Leaf),
             ["layer"] => Some(if self.layer.is_some() {
                 SnapshotNodeKind::Object
@@ -1843,6 +1847,8 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         Bool,
         "Whether the session requests an SSD menu button; each window also needs a registered app service"
     ),
+    descriptor!(&[L("decoration"), L("actions")], Bool, "Registered SSD Action Bar hosting is selected"),
+    descriptor!(&[L("surfaces"), S, L("action_count")], Number, "Number of visible hosted action icons"),
     descriptor!(&[L("decoration"), L("menu_side")], String, "The SSD menu button side", enum = design::MenuSide::NAMES),
     descriptor!(
         &[L("decoration"), L("menu_services")],

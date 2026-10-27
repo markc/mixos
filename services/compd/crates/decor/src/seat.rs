@@ -22,6 +22,8 @@ struct Seat {
     hovered: Option<Window>,
     /// The cursor this module put in the seat's override, if any.
     cursor: Option<CursorIcon>,
+    part: Option<crate::layout::CaptionButton>,
+    tip_pressed: bool,
 }
 
 thread_local! {
@@ -62,6 +64,7 @@ pub(crate) fn maximized(window: &Window) -> bool {
 pub fn hover(target: Option<(&Window, ChromeHit)>) -> Hover {
     SEAT.with_borrow_mut(|seat| {
         let mut out = Hover::default();
+        seat.part = target.and_then(|(_,hit)| match hit.part { ChromePart::Button(button) => Some(button), _ => None });
         let pressed = |seat: &Seat, window: &Window| seat.clicks.pressed(window);
         if let Some(previous) = seat.hovered.clone()
             && target.is_none_or(|(window, _)| *window != previous)
@@ -92,6 +95,21 @@ pub fn hover(target: Option<(&Window, ChromeHit)>) -> Hover {
     })
 }
 
+pub fn action_tip() -> Option<(Window, crate::layout::Rect, String, String, bool)> {
+    SEAT.with_borrow_mut(|seat| {
+        let window = seat.hovered.as_ref()?;
+        let crate::layout::CaptionButton::Action(revision,index) = seat.part? else { return None; };
+        let actions = crate::window::actions(window);
+        if actions.revision != revision { return None; }
+        let item = actions.items.get(index)?;
+        let layout = crate::render::layout_of(window)?;
+        let rect = layout.action_buttons.iter().find(|(i,_)| *i == index)?.1;
+        let pressed = seat.tip_pressed || seat.clicks.pressed(window).is_some();
+        seat.tip_pressed = false;
+        Some((window.clone(),rect,item.tooltip.clone(),format!("{:p}:{revision}:{index}",window.user_data()),pressed))
+    })
+}
+
 /// A primary-button press on `hit` of `window`, at event `time` (ms) and
 /// `content_relative` to the slot. Returns the intent to start now: a move or
 /// resize grab, or a maximise toggle on a titlebar double-click. A caption
@@ -108,6 +126,7 @@ pub fn press(
             .clicks
             .press(window, hit.part, position, time, maximized(window));
         if let ChromePart::Button(button) = hit.part {
+            seat.tip_pressed |= matches!(button,crate::layout::CaptionButton::Action(..));
             let hovered = Some(button);
             crate::render::set_pointer(window, hovered, hit.in_cluster, Some(button));
         }

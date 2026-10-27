@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Use the shared design title band layout for all four groups and centre
+  MixOS titles by default. Host registered apps' revisioned Action Bars through
+  the existing scene-host registry and Bus client, with shared Lucide rasters,
+  hover and toggle states, disabled colours and the existing tooltip cards.
+  `comp.window.action` dispatches enabled registry commands; `comp.props`
+  reports hosting and per-surface item counts.
+
 ## 0.2.0
 
 - Add `comp.window.place_as`, `comp.window.tile_key` and `comp.tiles.get`.

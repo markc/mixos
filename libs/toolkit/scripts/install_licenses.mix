@@ -23,6 +23,12 @@ if $manifest.schema != 1 or type($manifest.files) != "list" or len($manifest.fil
   raise("MANIFEST","expected toolkit licence schema 1 and files")
 end
 $seen = {}
+fn license_source($assets, $source)
+  if starts_with($source, "icons/") then
+    return dirname(dirname($assets)) .. "/icons/assets/" .. substr($source, 6)
+  end
+  return $assets .. "/" .. $source
+end
 -- Check every source before creating or writing any destination.
 for $file in $manifest.files
   if not re_match($file.source ?? "","^[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)+$") or contains($file.source,"..") then
@@ -33,7 +39,7 @@ for $file in $manifest.files
   end
   if not re_match($file.sha256 ?? "","^[a-f0-9]{64}$") then raise("MANIFEST","invalid SHA256") end
   $seen[$file.name] = true
-  $source = $assets .. "/" .. $file.source
+  $source = license_source($assets, $file.source)
   if not is_file($source) or hash_file($source,"sha256") != $file.sha256 then
     raise("SOURCE","licence missing or changed: " .. $file.source)
   end
@@ -55,7 +61,7 @@ if $g.opts.verify then
 end
 mkdir($dest,{parents:true})
 for $file in $manifest.files
-  copy($assets .. "/" .. $file.source,$dest .. "/" .. $file.name)
+  copy(license_source($assets, $file.source),$dest .. "/" .. $file.name)
   chmod($dest .. "/" .. $file.name,0o644)
 end
 print("toolkit licences: installed " .. to_string(len($manifest.files)) .. " notices")

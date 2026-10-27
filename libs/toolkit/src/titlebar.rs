@@ -1,42 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The window's own title bar (client-side decorations; chrome specification
-//! §3.1–3.2). An application opens its window undecorated ([`viewport`])
-//! and the top row of the window is drawn here, edge to edge in the
-//! `chrome` role, left to right:
-//!
-//! - the app mark, after the bar's inner margin;
-//! - the registry's menus ([`crate::menu`]), starting one mark gap later;
-//! - the window title, centred on the whole bar and sliding or eliding to
-//!   keep clear of the menus and the controls;
-//! - an optional right-hand group of [`Control`]s ([`show_with`]): a
-//!   dropdown, icon buttons and a link, which give way as the bar narrows
-//!   ([`fit`]);
-//! - minimize, maximize/restore and close, [`BUTTON_WIDTH`] wide each and
-//!   the full bar height, with Close flush in the top-right corner.
-//!
-//! With the captions at the left (the theme's caption side) the order is
-//! Close, Minimize, Maximize from the top-left corner, the mark and menus
-//! follow them, and the right-hand group keeps the bar's inner margin from
-//! the right end. With server-side decorations the compositor draws the
-//! title, captions and drag zone: the window asks for them
-//! (`ViewportCommand::Decorations`), and this row becomes the menu bar, the
-//! menus from the inner margin and the right-hand group at the far end,
-//! with no mark, title, captions or resize zones.
-//!
-//! Only the free gap between the menus and the caption buttons drags the
-//! window, so a press on a menu title opens the menu and never moves the
-//! window; a double-click there maximizes or restores. The gap is last
-//! frame's, because the menus are laid out after the drag zone is
-//! registered. [`edges`] adds invisible resize zones; call it last in the
-//! frame so it wins at the borders. Every colour and size comes from the
-//! theme's [`Chrome`].
+//! The menu group, title, Action Bar and captions share the design title band
+//! layout with SSD. The mark stays with the menu. Registered SSD apps may
+//! expose their Action Bar through the drive for compd to host.
 
 use crate::action::{Origin, Registry};
 use crate::button::{IconButton, Link};
 use crate::chrome::Chrome;
 use crate::icons::{self, Icon};
 use crate::strings::Strings;
+pub mod hosting;
 use design::{CaptionSide, Decorations};
 use egui::emath::GuiRounding;
 use egui::text::{LayoutJob, TextWrapping};
@@ -182,8 +155,7 @@ pub fn show<S>(
     show_with(ui, title, icon, registry, state, strings, &mut [])
 }
 
-/// [`show`] with a right-hand group of `controls` before the caption
-/// buttons. The ids of commands run from the controls join the menus'.
+/// [`show`] with a group of `controls` in the selected actions alignment. The ids of commands run from the controls join the menus'.
 pub fn show_with<S>(
     ui: &mut Ui,
     title: &str,
@@ -201,124 +173,75 @@ pub fn show_with<S>(
     request_decorations(ui.ctx(), server);
     let mut fired = Vec::new();
     let panel = egui::Panel::top("toolkit-titlebar")
-        .exact_size(m.title_bar_height)
+        .exact_size(if server && controls.is_empty() && crate::menu::effective(ui.ctx()) == design::MenuStyle::Titlebar { 0.0 } else { m.title_bar_height })
         .frame(Frame::new().fill(p.chrome));
     panel.show(ui, |ui| {
         let bar = ui.max_rect();
-        if server {
-            // Server-side decorations: the compositor draws the title,
-            // captions and drag zone; this is the menu-bar row, the menus
-            // from the inner margin and the right-hand group at its end.
-            let mut menus_left = bar.left() + m.title_bar_margin;
-            let mut group_right = bar.right() - m.title_bar_margin;
-            let anchor = menu_button(ui, &chrome, &mut menus_left, &mut group_right);
-            let room =
-                Rect::from_min_max(pos2(menus_left, bar.top()), pos2(group_right, bar.bottom()));
-            let menus_right = menus(ui, room, registry, state, strings, anchor, &mut fired);
-            right_group(
-                ui,
-                controls,
-                registry,
-                state,
-                strings,
-                menus_right + m.title_gap,
-                group_right,
-                &mut fired,
-            );
-            return;
-        }
-        let gap_id = ui.scope_id().with("titlebar-gap");
-        let gap = ui.data(|d| d.get_temp::<Rect>(gap_id)).unwrap_or(bar);
-        // Registered first and over the free gap only, so nothing drawn
-        // later loses its clicks to it.
-        let drag = ui.interact(
-            gap,
-            ui.scope_id().with("titlebar-drag"),
-            Sense::click_and_drag(),
-        );
-
-        // The caption buttons take one end, Close in its corner: at the
-        // right Minimize, Maximize, Close; at the left Close, Minimize,
-        // Maximize. The mark and menus start after the left-hand captions,
-        // and the right-hand group keeps the inner margin from the bar's
-        // right end instead.
-        let left = chrome.captions == CaptionSide::Left;
-        let captions_width = 3.0 * m.caption_width;
-        let (mut start, mut room_end, mut end) = if left {
-            let end = bar.right() - m.title_bar_margin;
-            (bar.left() + captions_width, end, end)
-        } else {
-            let captions = bar.right() - captions_width;
-            (bar.left(), captions, captions - m.caption_gap)
+        use design::title_band::{Alignment, Group};
+        let drag = (!server).then(|| ui.interact(bar, ui.scope_id().with("titlebar-drag"), Sense::click_and_drag()));
+        let form = crate::menu::effective(ui.ctx());
+        let mark = if !server && icon.is_some() { m.mark + m.mark_gap } else { 0.0 };
+        let menu_width = match form {
+            design::MenuStyle::Bar => registry.model(ui.ctx(), state, strings).iter().map(|menu| {
+                ui.painter().layout_no_wrap(menu.title.clone(), Chrome::menu_font(ui.style()), p.text).size().x
+                    + 2.0 * m.menu_title_padding.x
+            }).sum(),
+            design::MenuStyle::Button => chrome.style.icon_button as f32,
+            design::MenuStyle::Titlebar => 0.0,
         };
-        let mut menu_start = start + m.title_bar_margin;
-        let anchor = menu_button(ui, &chrome, &mut menu_start, &mut end);
-        start = menu_start - m.title_bar_margin;
-        if crate::menu::effective(ui.ctx()) == design::MenuStyle::Button
-            && chrome.menu_side == design::MenuSide::Right
-        {
-            room_end = end;
-        }
-        if let Some(icon) = icon {
-            let at = pos2(start + m.title_bar_margin, bar.center().y - m.mark / 2.0);
-            let mark = Rect::from_min_size(at, vec2(m.mark, m.mark))
-                .round_to_pixels(ui.pixels_per_point());
-            icons::image_of(ui.ctx(), icon, m.mark, p.icon).paint_at(ui, mark);
-        }
-
-        let menus_left = start + m.title_bar_margin + m.mark + m.mark_gap;
-        let room = Rect::from_min_max(pos2(menus_left, bar.top()), pos2(room_end, bar.bottom()));
-        let menus_right = menus(ui, room, registry, state, strings, anchor, &mut fired);
-
-        let group_left = right_group(
-            ui,
-            controls,
-            registry,
-            state,
-            strings,
-            menus_right + m.title_gap,
-            end,
-            &mut fired,
-        );
-
-        let (order, from) = if left {
-            (
-                [Caption::Close, Caption::Minimize, Caption::Maximize],
-                bar.left(),
-            )
-        } else {
-            (
-                [Caption::Minimize, Caption::Maximize, Caption::Close],
-                bar.right() - captions_width,
-            )
+        let control_width = |control: &Control<'_>| match control {
+            Control::Combo { .. } => chrome.style.title_combo_max_width as f32,
+            Control::Icon { .. } => chrome.style.icon_button as f32,
+            Control::Link { command, .. } => registry.get(command)
+                .map_or(0.0, |c| Link::width(ui, &crate::action::label_text(strings, c.label))),
+        } + chrome.style.title_control_spacing as f32;
+        let actions_width: f32 = controls.iter().map(control_width).sum::<f32>()
+            + if controls.iter().any(|control| matches!(control,Control::Link { .. })) { chrome.style.title_link_room as f32 } else { 0.0 };
+        let actions_min: f32 = controls.iter().filter(|c| match c {
+            Control::Icon { command, .. } => ::icons::standard(command),
+            _ => false,
+        }).map(control_width).sum();
+        let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(m.title_size));
+        let title_width = if server || title.is_empty() { 0.0 } else {
+            ui.painter().layout_no_wrap(title.into(), font, p.text_dim).size().x + 2.0 * m.title_gap
         };
-        for (index, caption) in order.into_iter().enumerate() {
-            let x = from + index as f32 * m.caption_width;
-            let rect = Rect::from_min_size(pos2(x, bar.top()), vec2(m.caption_width, bar.height()));
-            caption_button(ui, rect, caption, &chrome);
+        let captions = if server { 0.0 } else { 3.0 * m.caption_width };
+        let menu_width = menu_width + mark;
+        let groups = design::title_band::layout(bar.width(), &[
+            Group { preferred: captions, minimum: captions, align: chrome.captions.alignment(Alignment::Right), shrink: None, order: 3 },
+            Group { preferred: menu_width, minimum: menu_width, align: chrome.menu_side.alignment(), shrink: None, order: 0 },
+            Group { preferred: actions_width, minimum: actions_min, align: chrome.band.actions.alignment(), shrink: Some(1), order: 2 },
+            Group { preferred: title_width, minimum: 0.0, align: chrome.band.title.alignment(chrome.band.style), shrink: Some(0), order: 1 },
+        ]);
+        let group = |i: usize| Rect::from_min_size(pos2(bar.left() + groups[i].x, bar.top()), vec2(groups[i].width, bar.height()));
+        let menu = group(1);
+        if mark > 0.0 && let Some(icon) = icon {
+            let rect = Rect::from_center_size(pos2(menu.left() + m.mark / 2.0, bar.center().y), vec2(m.mark,m.mark));
+            icons::image_of(ui.ctx(), icon, m.mark, p.icon).paint_at(ui, rect);
         }
-
-        let title_right = if controls.is_empty() {
-            room_end
-        } else {
-            group_left
-        };
-        window_title(
-            ui,
-            &chrome,
-            title,
-            bar,
-            menus_right + m.title_gap,
-            title_right - m.title_gap,
-        );
-
-        let free = Rect::from_min_max(pos2(menus_right, bar.top()), pos2(group_left, bar.bottom()));
-        ui.data_mut(|d| d.insert_temp(gap_id, free));
-        if drag.double_clicked() {
-            ui.ctx()
-                .send_viewport_cmd(ViewportCommand::Maximized(!maximized(ui)));
-        } else if drag.drag_started_by(egui::PointerButton::Primary) {
-            ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
+        let room = Rect::from_min_max(pos2(menu.left() + mark, bar.top()), menu.right_bottom());
+        let anchor = if form == design::MenuStyle::Button { menu_button_at(ui, room) } else { None };
+        menus(ui, room, registry, state, strings, anchor, &mut fired);
+        let actions = group(2);
+        let inset = chrome.style.title_control_spacing as f32 / 2.0;
+        right_group(ui, controls, registry, state, strings, actions.left() - inset, actions.right() - inset, &mut fired);
+        if !server {
+            let order = if chrome.captions == CaptionSide::Left {
+                [Caption::Close, Caption::Minimize, Caption::Maximize]
+            } else { [Caption::Minimize, Caption::Maximize, Caption::Close] };
+            for (i, caption) in order.into_iter().enumerate() {
+                let rect = Rect::from_min_size(pos2(group(0).left() + i as f32 * m.caption_width, bar.top()), vec2(m.caption_width,bar.height()));
+                caption_button(ui, rect, caption, &chrome);
+            }
+            let slot = group(3);
+            window_title(ui, &chrome, title, slot, slot.left() + m.title_gap, slot.right() - m.title_gap);
+        }
+        if let Some(drag) = drag {
+            if drag.double_clicked() {
+                ui.ctx().send_viewport_cmd(ViewportCommand::Maximized(!maximized(ui)));
+            } else if drag.drag_started_by(egui::PointerButton::Primary) {
+                ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
+            }
         }
     });
     fired
@@ -366,12 +289,7 @@ pub struct IconBarItem {
 
 /// The standard tail, left to right: macros, search, the shortcuts sheet, light
 /// and dark. Each slot takes the first id the app registers.
-const TAIL: [&[&str]; 4] = [
-    &["help.macros"],
-    &["app.runner", "view.search"],
-    &["help.shortcuts", "help.keys"],
-    &["view.mode"],
-];
+const TAIL: &[&[&str]] = ::icons::TAIL;
 
 /// The icon bar, left to right: the app's `actions` that it registers, then
 /// the standard tail for the commands it registers. `dark` picks the
@@ -428,8 +346,11 @@ pub fn show_bar<S>(
 ) -> Vec<(&'static str, Origin)> {
     let dark = ui.visuals().dark_mode;
     let items = icon_bar(ui.ctx(), registry, state, strings, actions, dark);
-    // The group runs right to left from the captions, and drops from its
-    // far end, so the tail goes first.
+    hosting::publish(ui.ctx(), &items);
+    if hosting::hosted(ui.ctx()) {
+        return show_with(ui, title, icon, registry, state, strings, &mut []);
+    }
+    // Fit keeps the tail and drops app actions from the left.
     let mut controls: Vec<Control<'_>> = items
         .iter()
         .rev()
@@ -478,10 +399,10 @@ fn menus<S>(
     } else {
         let anchor = anchor.unwrap_or_else(|| {
             let content = ui.ctx().content_rect();
-            let x = if chrome.menu_side == design::MenuSide::Left {
-                content.left()
-            } else {
-                content.right()
+            let x = match chrome.menu_side {
+                design::MenuSide::Left => content.left(),
+                design::MenuSide::Center => content.center().x,
+                design::MenuSide::Right => content.right(),
             };
             Rect::from_min_size(pos2(x, content.top()), egui::Vec2::ZERO)
         });
@@ -490,24 +411,7 @@ fn menus<S>(
     row.min_rect().right().max(room.left())
 }
 
-fn menu_button(ui: &mut Ui, chrome: &Chrome, left: &mut f32, right: &mut f32) -> Option<Rect> {
-    if crate::menu::effective(ui.ctx()) != design::MenuStyle::Button {
-        return None;
-    }
-    let width = chrome.style.icon_button as f32;
-    let x = match chrome.menu_side {
-        design::MenuSide::Left => {
-            let x = *left;
-            *left += width;
-            x
-        }
-        design::MenuSide::Right => {
-            *right -= width;
-            *right
-        }
-    };
-    let bar = ui.max_rect();
-    let rect = Rect::from_min_max(pos2(x, bar.top()), pos2(x + width, bar.bottom()));
+fn menu_button_at(ui: &mut Ui, rect: Rect) -> Option<Rect> {
     let mut cell = ui.new_child(
         UiBuilder::new()
             .max_rect(rect)
@@ -668,9 +572,7 @@ fn window_title(ui: &Ui, chrome: &Chrome, title: &str, bar: Rect, left: f32, rig
         painter.layout_no_wrap(title.to_owned(), font.clone(), chrome.palette.text_dim);
     let width = galley.size().x;
     let x = if width <= room {
-        // Centred on the bar inside its inner margin (measured: 645 on a
-        // 1280 pt bar with a 10 pt margin).
-        let centre = (bar.left() + chrome.metrics.title_bar_margin + bar.right()) / 2.0;
+        let centre = bar.center().x;
         (centre - width / 2.0).clamp(left, right - width)
     } else if room > crate::chrome::Chrome::of(ui.ctx()).style.title_min_room as f32 {
         let mut job = LayoutJob::simple_singleline(title.to_owned(), font, chrome.palette.text_dim);

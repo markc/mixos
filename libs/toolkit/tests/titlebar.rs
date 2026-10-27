@@ -281,3 +281,40 @@ fn titlebar_without_a_drive_keeps_an_app_menu_button() {
     h.run();
     h.get_by_label("Quit");
 }
+
+#[test]
+fn title_band_layouts_and_hosted_actions() {
+    let mut results = egui_kittest::SnapshotResults::new();
+    for (name, decorations, service, title, menu, actions, captions) in [
+        ("csd_center", design::Decorations::Client, true, "center", "left", "right", "auto"),
+        ("csd_right", design::Decorations::Client, true, "right", "center", "left", "center"),
+        ("ssd_hosted", design::Decorations::Server, true, "center", "center", "left", "left"),
+        ("ssd_fallback", design::Decorations::Server, false, "left", "right", "center", "right"),
+    ] {
+        let registry = registry();
+        let strings = Strings::new(FTL);
+        let mut h = Harness::builder().with_size(egui::vec2(640.0,200.0)).wgpu().build_ui(move |ui| {
+            titlebar::show_bar(ui,"Demo",Some(Icon::Server),&registry,&(),&strings,
+                &[titlebar::Action::new("file.quit",Icon::X)]);
+            egui::CentralPanel::default().show(ui, |_| {});
+        });
+        toolkit::drive::install(&h.ctx,"demo");
+        toolkit::drive::set_service(&h.ctx,service.then_some("demo"));
+        toolkit::install(&h.ctx,&Theme::embedded().framed(decorations,design::CaptionSide::resolve(captions))
+            .with_menus(design::MenuStyle::Titlebar,design::MenuSide::resolve(menu))
+            .with_band(design::title_band::Settings::from_names(title,actions,"titlebar","mixos")));
+        h.run();
+        let hosted = decorations == design::Decorations::Server && service;
+        let form = titlebar::hosting::form(&h.ctx);
+        assert_eq!(form["hosted"],hosted);
+        if hosted {
+            assert_eq!(form["bar"]["items"][0]["command"],"file.quit");
+            assert!(form["bar"]["revision"].as_u64().unwrap() > 0);
+            assert!(h.get_all_by_label("Quit").next().is_none());
+        } else {
+            assert_eq!(form["effective"],"row");
+        }
+        h.snapshot(format!("title_band_{name}"));
+        results.extend(h.take_snapshot_results());
+    }
+}

@@ -21,6 +21,7 @@ use world::state::Loop;
 use world::surface::draw::handle::{UiSpace, load};
 
 use crate::view::tip::{self, Tip, TipAt};
+pub(crate) mod actions;
 
 /// Transparent margin around the card for its shadow (logical px).
 pub const MARGIN: f32 = 12.0;
@@ -38,8 +39,8 @@ const RADIUS: f32 = 6.0;
 pub fn place(scene: (f32, f32, f32, f32), at: &TipAt, output: (f32, f32)) -> (f32, f32, f32, f32) {
     let (sx, sy, sw, sh) = scene;
     let (ax, ay, aw, ah) = at.anchor;
-    let (cw, ch) = at.size;
     let (ow, oh) = output;
+    let (cw, ch) = (at.size.0.min((ow - 2.0 * EDGE).max(0.0)), at.size.1.min((oh - 2.0 * EDGE).max(0.0)));
     let (cx, cy) = (sx + ax + aw / 2.0, sy + ay + ah / 2.0);
     let clamp = |v: f32, size: f32, extent: f32| v.min(extent - size - EDGE).max(EDGE);
     if sw >= sh {
@@ -462,6 +463,18 @@ mod tests {
             (1536.0, 864.0),
         );
         assert_eq!(y, 40.0 + GAP);
+    }
+
+    #[test]
+    fn action_tips_follow_the_icon_and_stay_inside_the_output() {
+        for scene in [(0.0,0.0,28.0,28.0),(1520.0,0.0,28.0,28.0),(1520.0,840.0,28.0,28.0)] {
+            let (x,y,w,h) = place(scene,&at((0.0,0.0,28.0,28.0),(120.0,40.0)),(1536.0,864.0));
+            assert!(x >= EDGE && y >= EDGE && x+w <= 1536.0-EDGE && y+h <= 864.0-EDGE);
+            if scene.1 == 0.0 { assert_eq!(y,28.0+GAP); }
+            else { assert!(y+h < scene.1); }
+        }
+        let (x,y,w,h) = place((90.0,0.0,28.0,28.0),&at((0.0,0.0,28.0,28.0),(400.0,200.0)),(100.0,60.0));
+        assert!(x >= EDGE && y >= EDGE && x+w <= 100.0-EDGE && y+h <= 60.0-EDGE);
     }
 
     #[test]

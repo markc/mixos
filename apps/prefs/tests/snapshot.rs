@@ -339,13 +339,13 @@ fn appearance_applying_forest_pro_light() {
         scheme: Scheme::Forest,
         style: Some(Style::Pro),
         mode: Mode::Light,
-        captions: CaptionSide::Left,
+        captions: "left".into(),
         ..engine.look.current.clone().expect("read")
     };
     engine.edit_look(draft.clone());
     assert_eq!(engine.look.shown(), Some(draft.clone()));
     // As the shell installs it: the expected look over the embedded design.
-    let theme = Theme::for_context(draft.context()).framed(draft.decorations, draft.captions);
+    let theme = Theme::for_context(draft.context()).framed(draft.decorations, CaptionSide::resolve(&draft.captions));
     draw(theme, "appearance_applying_forest_pro_light", engine);
 }
 
@@ -394,7 +394,7 @@ fn appearance_conflict_studio_dark() {
     );
     assert!(!engine.look.conflicts.is_empty());
     let look = engine.look.shown().expect("shown");
-    let theme = Theme::for_context(look.context()).framed(look.decorations, look.captions);
+    let theme = Theme::for_context(look.context()).framed(look.decorations, CaptionSide::resolve(&look.captions));
     draw(theme, "appearance_conflict_studio_dark", engine);
 }
 

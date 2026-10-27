@@ -10,6 +10,13 @@ generated: by docs/_build/gen-site.mix from libs/settings/CHANGELOG.md; do not e
 
 ## Unreleased
 
+Title band names add `appearance.title_align`, `appearance.actions_align` and
+`appearance.actions_place`. Menu and caption positions accept centre. Caption
+placement now defaults to `auto`: right in CSD and the style's own side in SSD.
+Unknown names are retained, and defaults remain omitted from full and compact
+data, so old seals still verify. Explicit right remains right. The appearance
+portal keeps its independent effective right default for older readers.
+
 `appearance.menu_style` and `appearance.menu_side` select the session's menu
 form and button position. Their design registries supply names and Prefs labels.
 Unknown plain names survive round-trips and render as the defaults, `bar` and

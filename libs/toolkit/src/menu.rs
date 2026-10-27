@@ -1034,6 +1034,7 @@ pub fn popup(ctx: &Context, side: Option<design::MenuSide>, x: Option<f32>) -> R
     let x = x
         .unwrap_or(match side {
             design::MenuSide::Left => bounds.left(),
+            design::MenuSide::Center => bounds.center().x,
             design::MenuSide::Right => bounds.right(),
         })
         .clamp(bounds.left(), bounds.right());

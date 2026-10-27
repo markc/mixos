@@ -107,6 +107,11 @@ pub enum WindowOp {
         id: u64,
         generation: u64,
     },
+    Action {
+        id: u64,
+        generation: u64,
+        command: String,
+    },
     /// The polite close (xdg `close` / X11 `WM_DELETE_WINDOW`).
     Close {
         id: u64,
@@ -825,6 +830,14 @@ pub fn parse_window_command(
             let object = args_object(args, &empty, &["id", "generation"])?;
             let (id, generation) = required_target(object)?;
             Ok(WindowCommand::Op(WindowOp::Menu { id, generation }))
+        }
+        "comp.window.action" => {
+            let object = args_object(args, &empty, &["id", "generation", "command"])?;
+            let (id, generation) = required_target(object)?;
+            let command = object.get("command").and_then(Value::as_str)
+                .filter(|id| !id.is_empty() && id.len() <= 128 && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'-' | b'_')))
+                .ok_or_else(|| invalid_argument("command", "registry command id", "required, up to 128 bytes"))?.to_owned();
+            Ok(WindowCommand::Op(WindowOp::Action { id, generation, command }))
         }
         "comp.window.close" => {
             const ALLOWED: &[&str] = &["id", "generation", "force", "timeout_ms"];

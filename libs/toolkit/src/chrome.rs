@@ -431,6 +431,7 @@ pub struct Chrome {
     pub captions: CaptionSide,
     pub menu_style: design::MenuStyle,
     pub menu_side: design::MenuSide,
+    pub band: design::title_band::Settings,
 }
 
 fn key() -> Id {
@@ -476,6 +477,7 @@ impl Chrome {
             captions: theme.captions(),
             menu_style: theme.menu_style(),
             menu_side: theme.menu_side(),
+            band: theme.band(),
         }
     }
 
@@ -506,6 +508,7 @@ impl Chrome {
                 captions: CaptionSide::default(),
                 menu_style: design::MenuStyle::default(),
                 menu_side: design::MenuSide::default(),
+                band: Default::default(),
             }
         })
     }

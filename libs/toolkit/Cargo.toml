@@ -20,6 +20,7 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+icons.workspace = true
 paths = { path = "../../libs/paths" }
 assets.workspace = true
 bus = { workspace = true, features = ["native"] }

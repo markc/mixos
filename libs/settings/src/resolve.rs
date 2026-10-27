@@ -49,9 +49,12 @@ fn describe_base() -> Value {
             "appearance.style": {"type":"string|null", "enum":["plain","pro","studio","classic","breeze","adwaita"], "null":"the scheme's own style"},
             "appearance.mode": {"type":"string", "enum":["light","dark"]},
             "appearance.decorations": {"type":"string", "enum":["auto","csd","ssd"]},
-            "appearance.caption_side": {"type":"string", "enum":["right","left"]},
+            "appearance.caption_side": {"type":"string", "known_values":design::CaptionSide::NAMES, "unknown":"retained; renders as the default", "max_bytes":64},
             "appearance.window_style": {"type":"string", "known_values":design::WindowStyle::NAMES, "unknown":"retained; renders as the default", "max_bytes":64},
             "appearance.menu_style": {"type":"string", "known_values":design::MenuStyle::NAMES, "unknown":"retained; renders as the default", "max_bytes":64},
+            "appearance.title_align": {"type":"string", "known_values":design::TitleAlign::NAMES, "unknown":"retained; renders as the default", "max_bytes":64},
+            "appearance.actions_align": {"type":"string", "known_values":design::ActionsAlign::NAMES, "unknown":"retained; renders as the default", "max_bytes":64},
+            "appearance.actions_place": {"type":"string", "known_values":design::ActionsPlace::NAMES, "unknown":"retained; renders as the default", "max_bytes":64},
             "appearance.menu_side": {"type":"string", "known_values":design::MenuSide::NAMES, "unknown":"retained; renders as the default", "max_bytes":64},
             "appearance.icon_stroke": {"type":"number|null", "minimum":1.0, "maximum":3.0, "step":0.25, "null":"the design's own icon.stroke_width token"},
             "appearance.font_family": {"type":"string|null", "max_bytes":128, "null":"Inter"},
@@ -268,7 +271,7 @@ pub fn resolve_with_embedded_and_accents(
         if design::RequestedDecorations::from_name(&desktop.appearance.decorations).is_none() {
             return Err(error("appearance.decorations", "Unknown decorations"));
         }
-        if design::CaptionSide::from_name(&desktop.appearance.caption_side).is_none() {
+        if !design::CaptionSide::valid_name(&desktop.appearance.caption_side) {
             return Err(error("appearance.caption_side", "Unknown caption side"));
         }
         if !design::WindowStyle::valid_name(&desktop.appearance.window_style) {
@@ -278,6 +281,9 @@ pub fn resolve_with_embedded_and_accents(
             ));
         }
         for (path, name, valid) in [
+            ("appearance.actions_place", &desktop.appearance.actions_place, design::ActionsPlace::valid_name as fn(&str) -> bool),
+            ("appearance.actions_align", &desktop.appearance.actions_align, design::ActionsAlign::valid_name as fn(&str) -> bool),
+            ("appearance.title_align", &desktop.appearance.title_align, design::TitleAlign::valid_name as fn(&str) -> bool),
             (
                 "appearance.menu_style",
                 &desktop.appearance.menu_style,
@@ -452,6 +458,9 @@ pub fn resolve_with_embedded_and_accents(
                 window_style: appearance.window_style,
                 menu_style: appearance.menu_style,
                 menu_side: appearance.menu_side,
+                actions_place: appearance.actions_place,
+                actions_align: appearance.actions_align,
+                title_align: appearance.title_align,
                 icon_stroke: appearance.icon_stroke,
                 font_family: appearance.font_family,
                 font_weight: appearance.font_weight,
@@ -528,6 +537,9 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
             desktop.appearance.menu_style =
                 typed(path, value.unwrap_or(json!(defaults.appearance.menu_style)))?
         }
+        "appearance.title_align" => { desktop.appearance.title_align = typed(path, value.unwrap_or(json!(defaults.appearance.title_align)))?; }
+        "appearance.actions_place" => { desktop.appearance.actions_place = typed(path, value.unwrap_or(json!(defaults.appearance.actions_place)))?; }
+        "appearance.actions_align" => { desktop.appearance.actions_align = typed(path, value.unwrap_or(json!(defaults.appearance.actions_align)))?; }
         "appearance.menu_side" => {
             desktop.appearance.menu_side =
                 typed(path, value.unwrap_or(json!(defaults.appearance.menu_side)))?
@@ -962,7 +974,7 @@ mod tests {
                 current.appearance.decorations.as_str(),
                 current.appearance.caption_side.as_str()
             ),
-            ("auto", "right")
+            ("auto", "auto")
         );
         let effective = resolve(&current).unwrap();
         assert_eq!(effective["desktop"].style, None);
@@ -995,7 +1007,7 @@ mod tests {
         for (path, value) in [
             ("appearance.style", json!("neon")),
             ("appearance.decorations", json!("both")),
-            ("appearance.caption_side", json!("top")),
+            ("appearance.caption_side", json!("bad name")),
         ] {
             let bad = patch(&current, &BTreeMap::from([(path.into(), value)]), &[]).unwrap();
             let errors = resolve(&bad).unwrap_err();

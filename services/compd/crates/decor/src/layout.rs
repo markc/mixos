@@ -107,6 +107,8 @@ pub struct ChromeLayout {
     /// Buttons in the same order as `theme.buttons.order`.
     pub buttons: [(CaptionButton, Rect); 3],
     pub menu_button: Option<Rect>,
+    pub action_buttons: Vec<(usize, Rect)>,
+    pub action_revision: u64,
     /// Bounding rectangle of all caption buttons, including the gaps between
     /// them.
     pub button_cluster: Rect,
@@ -152,12 +154,17 @@ impl ChromeLayout {
         content_size: Vec2,
         menu_side: Option<design::MenuSide>,
     ) -> ChromeLayout {
+        Self::compute_band(theme, content_size, menu_side, Default::default(), Default::default(), &icons::Bar::default(), content_size.x)
+    }
+
+    pub fn compute_band(theme: &DecoTheme, content_size: Vec2, menu_side: Option<design::MenuSide>, band: design::title_band::Settings, captions: design::CaptionSide, actions: &icons::Bar, title_width: f32) -> ChromeLayout {
         let m = &theme.metrics;
         let ext = DecoExtents::of(theme);
         let mut min = Self::min_content_size(theme);
         if menu_side.is_some() {
             min.x += m.titlebar_height + theme.buttons.gap;
         }
+        min.x += actions.items.iter().filter(|item| icons::standard(&item.command)).count() as f32 * m.titlebar_height;
         let chrome_size = vec2(content_size.x.max(min.x), content_size.y.max(min.y));
         let content_size = vec2(content_size.x.max(1.0), content_size.y.max(1.0));
         let win = ext.window_size_for_content(chrome_size);
@@ -170,104 +177,46 @@ impl ChromeLayout {
         );
         let content = rect(ext.left, ext.top, content_size.x, content_size.y);
 
+        use design::title_band::{Alignment, Group};
         let c = &theme.buttons;
-        let mut buttons = [(CaptionButton::Close, Rect::default()); 3];
         let (bw, bh, gap) = match c.shape {
             ButtonShape::Circle { diameter } => (diameter, diameter, c.gap),
             ButtonShape::FullHeightRect { width } => (width, titlebar.h, 0.0),
         };
+        let own = if c.side == ButtonSide::Left { Alignment::Left } else { Alignment::Right };
+        let caption_align = captions.alignment(own);
+        let inset = if caption_align == Alignment::Center { 0.0 } else { c.edge_inset };
+        let cluster_width = inset + 3.0 * bw + 2.0 * gap;
+        let menu_width = if menu_side.is_some() { titlebar.h } else { 0.0 };
+        let action_cell = titlebar.h;
+        let minimum = actions.items.iter().filter(|item| icons::standard(&item.command)).count() as f32 * action_cell;
+        let groups = design::title_band::layout(titlebar.w, &[
+            Group { preferred: cluster_width, minimum: cluster_width, align: caption_align, shrink: None, order: 3 },
+            Group { preferred: menu_width, minimum: menu_width, align: menu_side.unwrap_or_default().alignment(), shrink: None, order: 0 },
+            Group { preferred: actions.items.len() as f32 * action_cell, minimum, align: band.actions.alignment(), shrink: Some(1), order: 2 },
+            Group { preferred: title_width + 2.0 * m.title_pad, minimum: 0.0, align: band.title.alignment(theme.style), shrink: Some(0), order: 1 },
+        ]);
         let by = titlebar.y + (titlebar.h - bh) / 2.0;
+        let mut buttons = [(CaptionButton::Close, Rect::default()); 3];
         for (i, &kind) in c.order.iter().enumerate() {
-            let offset = c.edge_inset + i as f32 * (bw + gap);
-            let bx = match c.side {
-                ButtonSide::Left => titlebar.x + offset,
-                ButtonSide::Right => titlebar.x + titlebar.w - offset - bw,
-            };
-            buttons[i] = (kind, rect(bx, by, bw, bh));
+            let offset = i as f32 * (bw + gap);
+            let x = if caption_align == Alignment::Right || (caption_align == Alignment::Center && own == Alignment::Right) {
+                groups[0].x + groups[0].width - inset - offset - bw
+            } else { groups[0].x + inset + offset };
+            buttons[i] = (kind, rect(titlebar.x + x, by, bw, bh));
         }
-        let cluster_left = buttons
-            .iter()
-            .map(|(_, b)| b.x)
-            .fold(f32::INFINITY, f32::min);
-        let cluster_top = buttons
-            .iter()
-            .map(|(_, b)| b.y)
-            .fold(f32::INFINITY, f32::min);
-        let cluster_right = buttons
-            .iter()
-            .map(|(_, b)| b.x + b.w)
-            .fold(f32::NEG_INFINITY, f32::max);
-        let cluster_bottom = buttons
-            .iter()
-            .map(|(_, b)| b.y + b.h)
-            .fold(f32::NEG_INFINITY, f32::max);
         let button_cluster = rect(
-            cluster_left,
-            cluster_top,
-            cluster_right - cluster_left,
-            cluster_bottom - cluster_top,
+            buttons.iter().map(|(_,r)| r.x).fold(f32::INFINITY,f32::min), by,
+            3.0 * bw + 2.0 * gap, bh,
         );
-
-        // The span the button cluster occupies from its window edge.
-        let cluster_span = c.edge_inset + 3.0 * bw + 2.0 * gap + m.title_pad;
-        let mut title_slot = match (m.title_align, c.side) {
-            // Centred titles keep symmetric margins so the text stays truly
-            // centred; the margin is the cluster span on both sides.
-            (TitleAlign::Center, _) => rect(
-                titlebar.x + cluster_span,
-                titlebar.y,
-                (titlebar.w - 2.0 * cluster_span).max(0.0),
-                titlebar.h,
-            ),
-            (TitleAlign::Leading, ButtonSide::Left) => rect(
-                titlebar.x + cluster_span,
-                titlebar.y,
-                (titlebar.w - cluster_span - m.title_pad).max(0.0),
-                titlebar.h,
-            ),
-            (TitleAlign::Leading, ButtonSide::Right) => rect(
-                titlebar.x + m.title_pad,
-                titlebar.y,
-                (titlebar.w - cluster_span - m.title_pad).max(0.0),
-                titlebar.h,
-            ),
-        };
-
-        let menu_button = menu_side.map(|side| {
-            let width = m.titlebar_height;
-            let x = match (side, c.side) {
-                (design::MenuSide::Left, ButtonSide::Left) => {
-                    button_cluster.x + button_cluster.w + c.gap
-                }
-                (design::MenuSide::Right, ButtonSide::Right) => button_cluster.x - c.gap - width,
-                (design::MenuSide::Left, _) => titlebar.x,
-                (design::MenuSide::Right, _) => titlebar.x + titlebar.w - width,
-            };
-            let button = rect(x, titlebar.y, width, titlebar.h);
-            let left = if side == design::MenuSide::Left {
-                button.x + button.w + m.title_pad
-            } else {
-                title_slot.x
-            };
-            let right = if side == design::MenuSide::Right {
-                button.x - m.title_pad
-            } else {
-                title_slot.x + title_slot.w
-            };
-            if m.title_align == TitleAlign::Center {
-                let inset = (left - titlebar.x).max(titlebar.x + titlebar.w - right);
-                title_slot = rect(
-                    titlebar.x + inset,
-                    titlebar.y,
-                    (titlebar.w - 2.0 * inset).max(0.0),
-                    titlebar.h,
-                );
-            } else {
-                let left = left.max(title_slot.x);
-                title_slot = rect(left, titlebar.y, (right - left).max(0.0), titlebar.h);
-            }
-            button
-        });
+        let title_slot = rect(titlebar.x + groups[3].x + m.title_pad.min(groups[3].width / 2.0), titlebar.y,
+            (groups[3].width - 2.0 * m.title_pad).max(0.0),titlebar.h);
+        let menu_button = menu_side.map(|_| rect(titlebar.x + groups[1].x,titlebar.y,menu_width,titlebar.h));
+        let shown = (groups[2].width / action_cell).floor() as usize;
+        let first = actions.items.len().saturating_sub(shown);
+        let action_buttons = (first..actions.items.len()).enumerate().map(|(slot,index)| {
+            (index, rect(titlebar.x + groups[2].x + slot as f32 * action_cell, titlebar.y, action_cell, titlebar.h))
+        }).collect();
 
         let s = &m.shadow;
         let shadow = window.inflate(s.softness);
@@ -279,6 +228,8 @@ impl ChromeLayout {
             content,
             buttons,
             menu_button,
+            action_buttons,
+            action_revision: actions.revision,
             button_cluster,
             title_slot,
             shadow,
@@ -303,6 +254,9 @@ impl ChromeLayout {
     /// zone is a few pixels per corner.
     pub fn hit_test(&self, p: Vec2) -> ChromePart {
         if self.window.contains(p) {
+            for &(index, rect) in &self.action_buttons {
+                if rect.contains(p) { return ChromePart::Button(CaptionButton::Action(self.action_revision,index)); }
+            }
             if self.menu_button.is_some_and(|r| r.contains(p)) {
                 return ChromePart::Button(CaptionButton::Menu);
             }
@@ -451,7 +405,7 @@ mod tests {
                         (design::MenuSide::Left, ButtonSide::Left)
                             | (design::MenuSide::Right, ButtonSide::Right)
                     );
-                    if !same_side {
+                    if !same_side && side != design::MenuSide::Center {
                         if side == design::MenuSide::Left {
                             assert_eq!(button.x, layout.titlebar.x);
                         } else {
@@ -475,6 +429,35 @@ mod tests {
                     assert!(!overlap, "{:?}: buttons {i} and {j} overlap", theme.style);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn all_title_band_alignments_have_disjoint_hit_targets() {
+        let actions = icons::Bar { revision:7, items:["file.open","file.save","view.mode"].into_iter().map(|command| icons::BarItem {
+            command:command.into(),icon:"sun".into(),tooltip:command.into(),enabled:true,toggled:false,
+        }).collect() };
+        for theme in themes() {
+            for title in design::TitleAlign::NAMES { for menu in design::MenuSide::ALL {
+                for align in design::ActionsAlign::NAMES { for captions in design::CaptionSide::ALL {
+                    for width in [120.0,800.0] {
+                        let band = design::title_band::Settings::from_names(title,align,"titlebar",theme.style.name());
+                        let layout = ChromeLayout::compute_band(&theme,vec2(width,480.0),Some(menu),band,captions,&actions,200.0);
+                        let mut targets: Vec<_> = layout.buttons.iter().map(|&(button,rect)|(button,rect)).collect();
+                        targets.push((CaptionButton::Menu,layout.menu_button.unwrap()));
+                        for &(index,rect) in &layout.action_buttons {
+                            targets.push((CaptionButton::Action(7,index),rect));
+                        }
+                        assert!(!layout.action_buttons.is_empty(),"the standard tail is retained");
+                        for (i,&(button,rect)) in targets.iter().enumerate() {
+                            assert_eq!(layout.hit_test(rect.center()),ChromePart::Button(button));
+                            for &(_,other) in &targets[i+1..] {
+                                assert!(rect.x + rect.w <= other.x || other.x + other.w <= rect.x);
+                            }
+                        }
+                    }
+                }}
+            }}
         }
     }
 

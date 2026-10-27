@@ -87,6 +87,7 @@ pub const WINDOW_COMMANDS: &[&str] = &[
     "comp.window.raise",
     "comp.window.close",
     "comp.window.menu",
+    "comp.window.action",
     "comp.window.place",
     "comp.window.wait",
     "comp.window.stats",

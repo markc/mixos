@@ -79,7 +79,7 @@ share/licenses/toolkit, through libs/toolkit/scripts/install_licenses.mix.
 
 Icons, unmodified SVGs from Lucide 1.54.0 (https://github.com/lucide-icons/lucide),
 Lucide Icons and Contributors, ISC; the Feather-derived icons among them are
-also Cole Bemis (Feather), MIT. Licence in libs/toolkit/assets/icons/LICENSE-lucide.txt.
+also Cole Bemis (Feather), MIT. Licence in libs/icons/assets/LICENSE-lucide.txt.
 The toolkit's panel-bottom.svg is also an unmodified Lucide 1.54.0 icon,
 as is accessibility.svg, used by Preferences' Accessibility page,
 under the same ISC licence and attribution.

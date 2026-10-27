@@ -73,7 +73,7 @@ pub struct Appearance {
     /// `auto` (session detection), `csd` (the app) or `ssd` (the compositor).
     #[serde(skip_serializing_if = "is_default_decorations")]
     pub decorations: String,
-    /// Where a client-side title bar puts its captions: `right` or `left`.
+    /// Window controls: auto follows the style; explicit positions survive upgrades.
     #[serde(skip_serializing_if = "is_default_caption_side")]
     pub caption_side: String,
     /// The server-side furniture preset; unknown names render as the default.
@@ -83,6 +83,12 @@ pub struct Appearance {
     pub menu_style: String,
     #[serde(skip_serializing_if = "is_default_menu_side")]
     pub menu_side: String,
+    #[serde(default = "default_actions_place", skip_serializing_if = "is_default_actions_place")]
+    pub actions_place: String,
+    #[serde(default = "default_actions_align", skip_serializing_if = "is_default_actions_align")]
+    pub actions_align: String,
+    #[serde(default = "default_title_align", skip_serializing_if = "is_default_title_align")]
+    pub title_align: String,
     /// The session icon stroke on Lucide's 24-unit grid, in quarter steps
     /// from [`ICON_STROKE_MIN`] to [`ICON_STROKE_MAX`]. None is the design's
     /// own `icon.stroke_width` token. Omitted at the default (see above).
@@ -117,10 +123,13 @@ impl Default for Appearance {
             mode: "dark".into(),
             contrast: "normal".into(),
             decorations: "auto".into(),
-            caption_side: "right".into(),
+            caption_side: "auto".into(),
             window_style: default_window_style(),
             menu_style: default_menu_style(),
             menu_side: default_menu_side(),
+            actions_place: default_actions_place(),
+            actions_align: default_actions_align(),
+            title_align: default_title_align(),
             icon_stroke: None,
             font_family: None,
             font_weight: None,
@@ -410,6 +419,12 @@ pub struct Effective {
         skip_serializing_if = "is_default_menu_side"
     )]
     pub menu_side: String,
+    #[serde(default = "default_actions_place", skip_serializing_if = "is_default_actions_place")]
+    pub actions_place: String,
+    #[serde(default = "default_actions_align", skip_serializing_if = "is_default_actions_align")]
+    pub actions_align: String,
+    #[serde(default = "default_title_align", skip_serializing_if = "is_default_title_align")]
+    pub title_align: String,
     // The session type and stroke choices, omitted when unset (see above).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_stroke: Option<f64>,
@@ -435,7 +450,7 @@ pub(crate) fn is_default_decorations(value: &str) -> bool {
     value == "auto"
 }
 pub(crate) fn is_default_caption_side(value: &str) -> bool {
-    value == "right"
+    value == "auto"
 }
 pub(crate) fn default_window_style() -> String {
     design::WindowStyle::default().name().into()
@@ -516,3 +531,12 @@ mod tests {
         );
     }
 }
+
+pub(crate) fn default_title_align() -> String { design::TitleAlign::default().name().into() }
+pub(crate) fn is_default_title_align(value: &str) -> bool { value == design::TitleAlign::default().name() }
+
+pub(crate) fn default_actions_align() -> String { design::ActionsAlign::default().name().into() }
+pub(crate) fn is_default_actions_align(value: &str) -> bool { value == design::ActionsAlign::default().name() }
+
+pub(crate) fn default_actions_place() -> String { design::ActionsPlace::default().name().into() }
+pub(crate) fn is_default_actions_place(value: &str) -> bool { value == design::ActionsPlace::default().name() }

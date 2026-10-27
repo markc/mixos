@@ -14,14 +14,14 @@
     <title>Preferences — MixOS</title>
     <link rel="canonical" href="https://mixos.dev/prefs/">
     <link rel="alternate" type="text/markdown" href="/prefs/README.md" title="Markdown source">
-    <meta name="mixos-build" content="0e230d24c4f9">
+    <meta name="mixos-build" content="7af43e1ca197">
     <link rel="preload" href="/_web/fonts/sans.woff2?v=22f05185ef" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/_web/fonts.css?v=d8bbe7c76c"><!-- generated: Inter / Quicksand / JetBrains Mono / emoji cut from the asset set -->
     <!-- FOUC prevention: paint theme/scheme synchronously before first paint (dcs.spa convention). -->
     <script>(function(){var s=JSON.parse(localStorage.getItem('base-state')||'{}'),t=s.theme,c=(s.scheme||'mono'),h=document.documentElement;h.className='preload '+(t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'))+(c&&c!=='default'?' scheme-'+c:'')+(s.width==='wide'?' wide':(s.width==='narrow'?' narrow':''));})()</script>
     <link rel="stylesheet" href="/_web/base.css?v=3b777a1623">
     <link rel="stylesheet" href="/_web/site.css?v=038db1ab0c">
-    <link rel="stylesheet" href="/_web/icons.css?v=a8f852d1ff"><!-- generated: Lucide CSS masks -->
+    <link rel="stylesheet" href="/_web/icons.css?v=bbf3ffd3f2"><!-- generated: Lucide CSS masks -->
     <!-- Icons are CSS masks keyed on data-lucide (_web/icons.css), so base.js's
          lucide.createIcons() calls only need this no-op stand-in. -->
     <script>window.lucide={createIcons:function(){}};</script>
@@ -426,16 +426,21 @@ For scripts that do not need Preferences open, call <code>settings.apply</code> 
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; <code>prefs.appearance.set</code>
 changes it at once (<code>scheme</code>, <code>style</code> with <code>own</code> for the scheme's own, <code>mode</code>,
-<code>contrast</code>, <code>decorations</code>, <code>caption_side</code>, <code>window_style</code>, <code>menu_style</code>, <code>menu_side</code>, <code>font_family</code>, <code>mono_family</code>,
+<code>contrast</code>, <code>decorations</code>, <code>caption_side</code>, <code>window_style</code>, <code>menu_style</code>, <code>menu_side</code>,
+<code>title_align</code>, <code>actions_align</code>, <code>actions_place</code>, <code>font_family</code>, <code>mono_family</code>,
 <code>text_scale</code>, <code>density</code>, <code>reduced_motion</code>). Family values are strings or null;
 text scale and density reset with 1.0, and reduced motion takes a boolean.
 Desktop → Windows places the window style picker beside caption placement.
 Its choices and labels come from the design registry; compd applies the chosen
-server-side furniture live. It does not change application-drawn captions.
+server-side furniture live. Title alignment's style default follows this choice.
 The same section offers Menus (Menu bar, Menu button, In the title bar) and
-Menu button (Left, Right). The side picker is enabled when menus are collapsed.
+Menu button (Left, Centre, Right). The side picker is enabled when menus are collapsed.
 In the title bar uses compd's button in SSD mode and the app's button in CSD mode.
 An offline or aliased app keeps its own menu button in SSD mode too.
+Title and Window buttons offer Style default, Left, Centre and Right. Actions
+offers In the app or In the title bar; Action icons offers Left, Centre and Right.
+These settings share one layout in CSD and SSD. Titlebar Action Bars use the
+same live registration agreement as menus; unregistered apps keep their own bar.
 The section ids in tree order are <code>appearance</code>, <code>text_and_fonts</code>, <code>wallpaper</code>,
 <code>windows</code>, <code>apps_email</code>, <code>apps_term</code>, <code>apps_ced</code>, <code>accessibility</code>, and <code>software</code>.
 Navigation actions use <code>view.section.&lt;id&gt;</code>; retired section ids have no aliases. Search includes their <code>ui.*</code>

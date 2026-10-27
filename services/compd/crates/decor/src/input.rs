@@ -35,6 +35,7 @@ pub enum Intent {
     ToggleMaximize,
     Minimize,
     Menu,
+    Action { revision: u64, index: usize },
 }
 
 /// `xdg_toplevel.resize_edge` for a chrome edge.
@@ -169,6 +170,7 @@ impl<K: Clone + PartialEq> Clicks<K> {
             CaptionButton::Maximize => Intent::ToggleMaximize,
             CaptionButton::Minimize => Intent::Minimize,
             CaptionButton::Menu => Intent::Menu,
+            CaptionButton::Action(revision,index) => Intent::Action { revision,index },
         })
     }
 
@@ -316,6 +318,7 @@ mod tests {
             (CaptionButton::Maximize, Intent::ToggleMaximize),
             (CaptionButton::Minimize, Intent::Minimize),
             (CaptionButton::Menu, Intent::Menu),
+            (CaptionButton::Action(7,2), Intent::Action { revision:7,index:2 }),
         ] {
             clicks.press(&W, ChromePart::Button(button), vec2(0.0, 0.0), 0, false);
             assert_eq!(

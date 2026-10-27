@@ -25,6 +25,11 @@ pub struct ChromeState {
     /// The caption button held down, if any.
     pub pressed: Option<CaptionButton>,
     pub menu_side: Option<design::MenuSide>,
+    pub band: design::title_band::Settings,
+    pub captions: design::CaptionSide,
+    pub actions: icons::Bar,
+    pub action_style: Option<design::ResolvedStyle>,
+    pub action_stroke: f32,
 }
 
 impl ChromeState {
@@ -47,7 +52,9 @@ impl ChromeState {
     }
 
     pub fn layout(&self, theme: &DecoTheme) -> ChromeLayout {
-        ChromeLayout::compute_with_menu(theme, content_vec(self.content_size), self.menu_side)
+        let m = &theme.metrics;
+        let width = crate::text::title_width(&self.title, &m.title_font_family, m.title_size_px, m.title_font_weight.resolved().0);
+        ChromeLayout::compute_band(theme, content_vec(self.content_size), self.menu_side, self.band, self.captions, &self.actions, width)
     }
 }
 

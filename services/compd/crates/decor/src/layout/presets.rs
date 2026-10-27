@@ -317,7 +317,7 @@ pub fn mixos(scheme: Scheme, mode: Mode) -> DecoTheme {
             title_size_px: pt_to_px(DEFAULT_TITLE_SIZE_PT),
             title_font_family: default_title_font_family(),
             title_font_weight: DEFAULT_TITLE_FONT_WEIGHT,
-            title_align: TitleAlign::Leading,
+            title_align: TitleAlign::Center,
             title_pad: 10.0,
             shadow: ShadowSpec {
                 softness: 28.0,

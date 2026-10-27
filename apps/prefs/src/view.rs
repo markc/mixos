@@ -1400,6 +1400,9 @@ fn axis_label(axis: Axis) -> &'static str {
         Axis::WindowStyle => "look-window-style",
         Axis::MenuStyle => "look-menu-style",
         Axis::MenuSide => "look-menu-side",
+        Axis::ActionsPlace => "look-actions-place",
+        Axis::ActionsAlign => "look-actions-align",
+        Axis::TitleAlign => "look-title-align",
         Axis::FontFamily => "fonts-family",
         Axis::MonoFamily => "fonts-mono-family",
         Axis::TextScale => "size-text-scale",
@@ -1563,20 +1566,34 @@ fn decoration_controls(ui: &mut Ui, look: Look, events: &mut Vec<UiEvent>) {
     );
     ui.end_row();
 
-    // The system's title bar places its own buttons.
+    macro_rules! band_picker {
+        ($field:ident, $axis:ty, $label:literal) => {{
+            field_label(ui, &label($label));
+            let options: Vec<_> = <$axis>::ALL.into_iter()
+                .map(|v| (v.name(), label(v.label_id()))).collect();
+            if let Some(value) = choices(ui, look.$field.as_str(), &options) {
+                events.push(UiEvent::Look(Look { $field: value.into(), ..look.clone() }));
+            }
+            ui.end_row();
+        }};
+    }
+    band_picker!(title_align, design::TitleAlign, "look-title-align");
+    band_picker!(actions_place, design::ActionsPlace, "look-actions-place");
+    band_picker!(actions_align, design::ActionsAlign, "look-actions-align");
+
     field_label(ui, &label("look-captions"));
-    ui.add_enabled_ui(resolved.mode == design::Decorations::Client, |ui| {
-        let sides: Vec<_> = [CaptionSide::Left, CaptionSide::Right]
+    {
+        let sides: Vec<_> = CaptionSide::ALL
             .into_iter()
-            .map(|c| (c, label(&format!("look-captions-{}", c.name()))))
+            .map(|c| (c.name(), label(c.label_id())))
             .collect();
-        if let Some(captions) = choices(ui, look.captions, &sides) {
+        if let Some(captions) = choices(ui, look.captions.as_str(), &sides) {
             events.push(UiEvent::Look(Look {
-                captions,
+                captions: captions.into(),
                 ..look.clone()
             }));
         }
-    });
+    }
     ui.end_row();
 }
 
@@ -2224,11 +2241,11 @@ mod numeric_tests {
     }
 
     #[test]
-    fn automatic_titlebar_shows_effective_mode_and_gates_caption_side() {
+    fn automatic_titlebar_shows_effective_mode_and_keeps_window_buttons_editable() {
         use design::decorations::{Resolver, SessionFacts, with_resolver};
         use std::sync::Arc;
         for (desktop, expected, enabled) in [
-            ("KDE", "Currently drawn by the system", false),
+            ("KDE", "Currently drawn by the system", true),
             ("MixOS", "Currently drawn by the app", true),
         ] {
             let resolver = Arc::new(Resolver::new(
@@ -2242,7 +2259,7 @@ mod numeric_tests {
             ));
             with_resolver(resolver, || {
                 let mut h = Harness::builder()
-                    .with_size(egui::vec2(720.0, 240.0))
+                    .with_size(egui::vec2(720.0, 600.0))
                     .build_ui_state(
                         |ui, look: &mut Look| {
                             let mut events = Vec::new();
@@ -2328,6 +2345,26 @@ mod numeric_tests {
                     assert_eq!(h.state().menu_side, side.name());
                 }
             }
+        }
+        for value in design::TitleAlign::ALL {
+            h.get_all_by_label(&label(value.label_id())).nth(if value == design::TitleAlign::Auto { 0 } else { 1 }).unwrap().click();
+            h.run();
+            assert_eq!(h.state().title_align,value.name());
+        }
+        for value in design::ActionsPlace::ALL {
+            h.get_all_by_label(&label(value.label_id())).last().unwrap().click();
+            h.run();
+            assert_eq!(h.state().actions_place,value.name());
+        }
+        for value in design::ActionsAlign::ALL {
+            h.get_all_by_label(&label(value.label_id())).nth(2).unwrap().click();
+            h.run();
+            assert_eq!(h.state().actions_align,value.name());
+        }
+        for value in design::CaptionSide::ALL {
+            h.get_all_by_label(&label(value.label_id())).last().unwrap().click();
+            h.run();
+            assert_eq!(h.state().captions,value.name());
         }
     }
 

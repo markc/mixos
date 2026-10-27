@@ -97,8 +97,8 @@ tiling with a real Super modifier or `comp.window.tile_key`.
 
 ## Settings at startup
 
-The session's `appearance.menu_style: "titlebar"` adds a menu caption beside
-the caption cluster or at the opposite edge, according to `appearance.menu_side`.
+The session's `appearance.menu_style: "titlebar"` adds a menu caption aligned
+left, centre or right, according to `appearance.menu_side`.
 It appears only on SSD windows whose `dev.mixos.NAME` app has a registered
 `NAME` Bus service. Clicking queues `NAME.ui.menu.popup {side, x}` through the scene
 host's existing port; failures are logged without blocking the compositor.
@@ -117,6 +117,19 @@ The scene host subscribes before reading a full broker registry at startup and
 after reconnect. Registry publications identify the broker through either
 `from: noded` or its `broker_service: noded` stamp; scene ownership does not
 limit the set of app services.
+
+The menu, title, Action Bar and controls use the same title band layout as CSD.
+`title_align` and `caption_side` offer style default, left, centre and right;
+`actions_align` offers left, centre and right. MixOS titles centre by default.
+With `actions_place: "titlebar"`, the scene-host port reads registered,
+decorated apps' revisioned `<app>.ui.titlebar.form` properties at most four
+times per second. It draws the shared Lucide icons, enabled and toggled states,
+and the existing tooltip cards. A click or
+`comp.window.action {id, generation, command}` queues `<app>.execute {id}`
+through that same port. Disabled and stale pointer actions refuse.
+`comp.props` exposes `decoration.actions` and
+`surfaces.s<ID>.action_count`. See the
+[title band decision](../docs/decisions/2026-10-27-title-band.md).
 
 Quoin prepares cached or embedded settings while its existing Bus
 supervisor registers. Its persistent cache is service-owned under the

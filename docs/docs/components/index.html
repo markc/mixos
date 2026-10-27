@@ -14,14 +14,14 @@
     <title>Components — MixOS</title>
     <link rel="canonical" href="https://mixos.dev/docs/components/">
     <link rel="alternate" type="text/markdown" href="/docs/components.md" title="Markdown source">
-    <meta name="mixos-build" content="0e230d24c4f9">
+    <meta name="mixos-build" content="7af43e1ca197">
     <link rel="preload" href="/_web/fonts/sans.woff2?v=22f05185ef" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/_web/fonts.css?v=d8bbe7c76c"><!-- generated: Inter / Quicksand / JetBrains Mono / emoji cut from the asset set -->
     <!-- FOUC prevention: paint theme/scheme synchronously before first paint (dcs.spa convention). -->
     <script>(function(){var s=JSON.parse(localStorage.getItem('base-state')||'{}'),t=s.theme,c=(s.scheme||'mono'),h=document.documentElement;h.className='preload '+(t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'))+(c&&c!=='default'?' scheme-'+c:'')+(s.width==='wide'?' wide':(s.width==='narrow'?' narrow':''));})()</script>
     <link rel="stylesheet" href="/_web/base.css?v=3b777a1623">
     <link rel="stylesheet" href="/_web/site.css?v=038db1ab0c">
-    <link rel="stylesheet" href="/_web/icons.css?v=a8f852d1ff"><!-- generated: Lucide CSS masks -->
+    <link rel="stylesheet" href="/_web/icons.css?v=bbf3ffd3f2"><!-- generated: Lucide CSS masks -->
     <!-- Icons are CSS masks keyed on data-lucide (_web/icons.css), so base.js's
          lucide.createIcons() calls only need this no-op stand-in. -->
     <script>window.lucide={createIcons:function(){}};</script>
@@ -264,6 +264,7 @@ profile: <a href="/docs/desktop/">desktop</a> and <a href="/docs/server/">server
 <tr><td><a href="/expr/">expr</a></td><td>lib</td><td>none (library)</td><td><a href="https://github.com/markc/mixos/tree/main/libs/expr"><code>libs/expr</code></a></td><td>The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits.</td></tr>
 <tr><td><a href="/files/">files</a></td><td>lib</td><td>none (library)</td><td><a href="https://github.com/markc/mixos/tree/main/libs/files"><code>libs/files</code></a></td><td>Rooted reads and the files-as-truth markdown corpus model.</td></tr>
 <tr><td><a href="/hostd/">hostd</a> · <a href="/hostd/changelog/">changelog</a></td><td>service</td><td>unclassified</td><td><a href="https://github.com/markc/mixos/tree/main/services/hostd"><code>services/hostd</code></a></td><td>How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo.</td></tr>
+<tr><td><a href="/icons/">icons</a></td><td>lib</td><td>none (library)</td><td><a href="https://github.com/markc/mixos/tree/main/libs/icons"><code>libs/icons</code></a></td><td></td></tr>
 <tr><td><a href="/indexd/">indexd</a></td><td>service</td><td>desktop</td><td><a href="https://github.com/markc/mixos/tree/main/services/indexd"><code>services/indexd</code></a></td><td>Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI.</td></tr>
 <tr><td><a href="/inputd/">inputd</a> · <a href="/inputd/changelog/">changelog</a></td><td>service</td><td>unclassified</td><td><a href="https://github.com/markc/mixos/tree/main/services/inputd"><code>services/inputd</code></a></td><td>How inputd turns keys into Bus commands below the compositor, keeps the user keys for the person, and holds its keyboard grab only while its own VT is active.</td></tr>
 <tr><td><a href="/logging/">logging</a></td><td>lib</td><td>none (library)</td><td><a href="https://github.com/markc/mixos/tree/main/libs/logging"><code>libs/logging</code></a></td><td>Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell.</td></tr>
@@ -343,6 +344,7 @@ checked separately by the layering gate.</p>
 <tr><td><a href="https://github.com/markc/mixos/blob/main/libs/editor/Cargo.toml">editor</a></td><td>editor</td><td>lib</td><td>desktop</td><td>none</td><td>0.1.2</td></tr>
 <tr><td><a href="https://github.com/markc/mixos/blob/main/libs/expr/Cargo.toml">expr</a></td><td>expr</td><td>lib</td><td>core</td><td>none</td><td>0.1.2</td></tr>
 <tr><td><a href="https://github.com/markc/mixos/blob/main/libs/files/Cargo.toml">files</a></td><td>files</td><td>lib</td><td>core</td><td>none</td><td>0.1.2</td></tr>
+<tr><td><a href="https://github.com/markc/mixos/blob/main/libs/icons/Cargo.toml">icons</a></td><td>icons</td><td>lib</td><td>bus</td><td>none</td><td>0.1.2</td></tr>
 <tr><td><a href="https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml">logging</a></td><td>logging</td><td>lib</td><td>core</td><td>none</td><td>0.1.2</td></tr>
 <tr><td><a href="https://github.com/markc/mixos/blob/main/libs/macros/Cargo.toml">macros</a></td><td>macros</td><td>lib</td><td>core</td><td>none</td><td>0.1.2</td></tr>
 <tr><td><a href="https://github.com/markc/mixos/blob/main/libs/maildoc/Cargo.toml">maildoc</a></td><td>maildoc</td><td>lib</td><td>core</td><td>none</td><td>0.1.2</td></tr>

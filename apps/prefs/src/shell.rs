@@ -579,10 +579,10 @@ impl Shell {
             _ => self.theme.clone(),
         };
         let base = match &look {
-            Some(look) => base.framed(look.decorations, look.captions).with_menus(
+            Some(look) => base.framed(look.decorations, design::CaptionSide::resolve(&look.captions)).with_menus(
                 design::MenuStyle::resolve(&look.menu_style),
                 design::MenuSide::resolve(&look.menu_side),
-            ),
+            ).with_band(design::title_band::Settings::from_names(&look.title_align, &look.actions_align, &look.actions_place, &look.window_style)),
             None => base,
         };
         // Desktop values only; per-app text overrides are not in Summary.

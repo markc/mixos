@@ -190,6 +190,7 @@ fn named_window(op: &WindowOp) -> Option<u64> {
         | WindowOp::Focus { id, .. }
         | WindowOp::Raise { id, .. }
         | WindowOp::Menu { id, .. }
+        | WindowOp::Action { id, .. }
         | WindowOp::Close { id, .. }
         | WindowOp::SendToWorkspace { id, .. } => Some(*id),
         WindowOp::Restore { target, .. } => target.map(|(id, _)| id),
@@ -382,6 +383,12 @@ fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
             raise,
         } => Some(focus(lp, *id, *generation, *raise)),
         WindowOp::Raise { id, generation } => Some(raise(lp, *id, *generation)),
+        WindowOp::Action { id, generation, command } => Some(match motion_window(lp, *id, *generation) {
+            Ok((_, window)) if decor::window::execute_action(&window, command) => ControlReply::Body(
+                serde_json::json!({"id":id, "generation":generation, "queued":true})),
+            Ok(_) => ControlReply::refused("action_unavailable", serde_json::json!({"id":id})),
+            Err(reply) => reply,
+        }),
         WindowOp::Menu { id, generation } => Some(match motion_window(lp, *id, *generation) {
             Ok((_, window)) => {
                 if decor::window::open_menu(&window) {
