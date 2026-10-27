@@ -19,6 +19,8 @@ try
   expect($n.wait_ready($session, 40), "nested compd did not start: " .. $session.log)
   $initial = $n.call($session.service, "comp.debug", {})
   expect($initial.rc == 0 and $initial.result.level == "info" and $initial.result.baseline == "warn,compd=info", "nested default/baseline: " .. json_encode($initial))
+  $recent = $n.call($session.service, "comp.debug.recent", {})
+  expect($recent.rc == 0 and not $recent.result.recording and len($recent.result.events) == 0, "comp startup ring must be off: " .. json_encode($recent))
   for $level in ["off", "error", "warn", "info", "debug", "trace"]
     $set = $n.call($session.service, "comp.debug.set", {level: $level})
     expect($set.rc == 0 and $set.result.level == $level, "set: " .. json_encode($set))
@@ -28,7 +30,7 @@ try
   $set = $n.call($session.service, "comp.debug.set", {on: true})
   expect($set.rc == 0 and $set.result.on, "on shorthand")
   $recent = $n.call($session.service, "comp.debug.recent", {})
-  expect($recent.rc == 0, "recent query")
+  expect($recent.rc == 0 and $recent.result.recording, "recent query after enabling debug")
   $cursor = $recent.result.seq
   expect($n.call($session.service, "comp.ping", {}).rc == 0, "drive compositor command")
   $recent = $n.call($session.service, "comp.debug.recent", {since: $cursor})
@@ -44,9 +46,11 @@ try
   expect(contains($journal, "backend") and contains($journal, "built"), "default startup build/backend missing from journal")
   $set = $n.call($session.service, "comp.debug.set", {on: false})
   expect($set.rc == 0 and not $set.result.on and $set.result.filter == "warn,compd=info", "baseline shorthand")
+  $recent = $n.call($session.service, "comp.debug.recent", {})
+  expect($recent.rc == 0 and not $recent.result.recording and len($recent.result.events) == 0, "comp ring freed at info baseline")
   $set = $n.call($session.service, "comp.debug.set", {level: "warn"})
   $recent = $n.call($session.service, "comp.debug.recent", {})
-  expect($recent.rc == 0 and len($recent.result.events) == 0, "comp ring freed at warn")
+  expect($recent.rc == 0 and not $recent.result.recording and len($recent.result.events) == 0, "comp ring freed at warn")
   for $body in [{}, {level: "invalid"}, {on: true, level: "debug"}, {level: "info", extra: 1}]
     $bad = $n.call($session.service, "comp.debug.set", $body)
     expect($bad.rc == 10, "invalid set accepted: " .. json_encode($body))

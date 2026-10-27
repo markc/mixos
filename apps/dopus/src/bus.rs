@@ -343,8 +343,8 @@ pub fn spawn(
     }
 }
 
-async fn respond(client: &SupervisedClient, cmd: &IncomingCommand, rc: u8, body: &str) {
-    citizen::debug::answered("dopus", &cmd.command, rc);
+async fn respond(service: &str, client: &SupervisedClient, cmd: &IncomingCommand, rc: u8, body: &str) {
+    citizen::debug::answered(service, &cmd.command, rc);
     if let Err(error) = tokio::time::timeout(REPLY_TIMEOUT, client.respond(cmd, rc, body))
         .await
         .map_err(|_| "timed out".to_owned())
@@ -407,7 +407,7 @@ async fn run(
                 }
                 citizen::debug::received(&service, &cmd.command);
                 if let Some((rc, body)) = citizen::debug::request_for(&service, "dopus", &cmd.command, &cmd.body) {
-                    respond(&client, &cmd, rc, &body.to_string()).await;
+                    respond(&service, &client, &cmd, rc, &body.to_string()).await;
                     continue;
                 }
                 if citizen::macros::dispatch("dopus", &cmd, client.clone(), &mut macro_jobs) { continue; }
@@ -436,7 +436,7 @@ async fn run(
                         // Awaited in place, so a reply is on the wire before a
                         // later quit closes the client.
                         if let Some(cmd) = commands.remove(&id) {
-                            respond(&client, &cmd, rc, &body).await;
+                            respond(&service, &client, &cmd, rc, &body).await;
                         }
                     }
                     Some(Work::Subscribe(topic)) => {
@@ -484,7 +484,7 @@ async fn run(
                         // Replies queued behind the quit still go out.
                         while let Ok(Work::Respond { id, rc, body }) = work.try_recv() {
                             if let Some(cmd) = commands.remove(&id) {
-                                respond(&client, &cmd, rc, &body).await;
+                                respond(&service, &client, &cmd, rc, &body).await;
                             }
                         }
                         break;
@@ -510,7 +510,7 @@ async fn run(
     // No caller is left waiting on a closed dopus.
     let closing = r#"{"error_code":"BUSY","message":"dopus is closing"}"#;
     for (_, cmd) in commands.drain() {
-        respond(&client, &cmd, 10, closing).await;
+        respond(&service, &client, &cmd, 10, closing).await;
     }
     macro_jobs.finish().await;
     let _ = tokio::time::timeout(REPLY_TIMEOUT, client.close()).await;

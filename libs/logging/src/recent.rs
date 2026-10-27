@@ -40,9 +40,8 @@ struct Ring {
 
 impl Ring {
     fn new() -> Self {
-        let entries = VecDeque::with_capacity(MAX_EVENTS);
-        let bytes = entries.capacity() * std::mem::size_of::<(Entry, usize)>()
-            + std::mem::size_of::<Self>();
+        let entries = VecDeque::new();
+        let bytes = std::mem::size_of::<Self>();
         Self { entries, bytes }
     }
 
@@ -71,11 +70,20 @@ impl Ring {
     }
 }
 
-pub(crate) fn configure(filter: &tracing_subscriber::EnvFilter) {
-    let enabled = filter
+pub(crate) fn configure(
+    filter: &tracing_subscriber::EnvFilter,
+    baseline: &tracing_subscriber::EnvFilter,
+) {
+    let verbosity = |filter: &tracing_subscriber::EnvFilter| {
+        filter
         .max_level_hint()
         .unwrap_or(tracing::level_filters::LevelFilter::TRACE)
-        >= tracing::level_filters::LevelFilter::INFO;
+    };
+    // Baselines may already include info, debug or trace directives. Retain
+    // diagnostics only while the live verbosity exceeds that recorded level.
+    let level = verbosity(filter);
+    let enabled = level > tracing::level_filters::LevelFilter::WARN
+        && level > verbosity(baseline);
     let mut ring = RING.lock().unwrap_or_else(|e| e.into_inner());
     if enabled {
         ring.get_or_insert_with(|| Box::new(Ring::new()));
@@ -127,7 +135,7 @@ pub(crate) fn query(request: RecentRequest) -> Result<Value, String> {
     let next = events
         .last()
         .map_or(request.since.unwrap_or(seq), |entry| entry.seq);
-    Ok(json!({"events": events, "seq": seq, "next": next}))
+    Ok(json!({"events": events, "seq": seq, "next": next, "recording": ring.is_some()}))
 }
 
 pub(crate) struct RecentLayer;
@@ -221,6 +229,45 @@ impl Visit for Fields {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn info_baseline_allocates_only_while_raised() {
+        const CHILD: &str = "MIXOS_RECENT_BASELINE_TEST";
+        let Ok(flag) = std::env::var(CHILD) else {
+            for flag in ["baseline", "--debug", "--debug=info", "--debug=warn"] {
+                let output = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", "recent::tests::info_baseline_allocates_only_while_raised"])
+                    .env(CHILD, flag)
+                    .env_remove("RUST_LOG")
+                    .output()
+                    .unwrap();
+                assert!(output.status.success(), "{flag}: {output:?}");
+            }
+            return;
+        };
+        let mut args = vec!["fixture".into()];
+        if flag != "baseline" {
+            args.push(flag.clone());
+        }
+        let _guard = crate::debug::init("fixture", "warn,fixture=info", &mut args).unwrap();
+        assert_eq!(allocated(), flag == "--debug");
+        let initial = query(RecentRequest::default()).unwrap();
+        assert_eq!(initial["recording"], flag == "--debug");
+        if flag == "baseline" {
+            tracing::info!(target: "fixture", "baseline startup");
+            assert_eq!(query(RecentRequest::default()).unwrap(), initial);
+        }
+        assert_eq!(crate::debug::request("fixture", "fixture.debug.set", r#"{"level":"debug"}"#).unwrap().0, 0);
+        assert!(allocated());
+        let seq = query(RecentRequest::default()).unwrap()["seq"].clone();
+        assert_eq!(crate::debug::request("fixture", "fixture.debug.set", r#"{"on":false}"#).unwrap().0, 0);
+        assert!(!allocated());
+        let stopped = query(RecentRequest::default()).unwrap();
+        assert_eq!(stopped["recording"], false);
+        assert_eq!(stopped["events"], json!([]));
+        assert_eq!(stopped["seq"], seq);
+    }
+
     fn entry(seq: u64, message: String) -> Entry {
         Entry {
             seq,
@@ -234,6 +281,7 @@ mod tests {
     #[test]
     fn count_and_byte_bounds_evict_oldest() {
         let mut ring = Ring::new();
+        assert_eq!(ring.entries.capacity(), 0);
         for seq in 1..=2_100 {
             ring.push(entry(seq, String::new()));
         }

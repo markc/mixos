@@ -14,9 +14,14 @@ fn call(suffix: &str, body: Value) -> Value {
 
 #[test]
 fn recent_fields_paging_filter_limits_and_release() {
-    let _guard = logging::debug::init("fixture", "warn", &mut vec!["fixture".into()]).unwrap();
-    assert_eq!(call(".recent", json!({}))["events"], json!([]));
+    let _guard = logging::debug::init("fixture", "warn,fixture=info", &mut vec!["fixture".into()]).unwrap();
+    let initial = call(".recent", json!({}));
+    assert_eq!(initial["recording"], false);
+    assert_eq!(initial["events"], json!([]));
+    tracing::info!(target: "fixture", "baseline event is not retained");
+    assert_eq!(call(".recent", json!({})), initial);
     call(".set", json!({"level":"debug"}));
+    assert_eq!(call(".recent", json!({}))["recording"], true);
     let cursor = call(".recent", json!({}))["seq"].as_u64().unwrap();
     for id in 0..5 {
         tracing::debug!(target: "logging", window_id = id, generation = 7, app_id = "example.app", success = true, "window placed");
@@ -78,9 +83,17 @@ fn recent_fields_paging_filter_limits_and_release() {
             .len()
             <= 1000
     );
+    call(".set", json!({"on":false}));
+    let stopped = call(".recent", json!({}));
+    assert_eq!(stopped["recording"], false);
+    assert_eq!(stopped["events"], json!([]));
+    assert!(stopped["seq"].as_u64().unwrap() > initial["seq"].as_u64().unwrap());
+    tracing::info!(target: "fixture", "restored baseline event is not retained");
+    assert_eq!(call(".recent", json!({})), stopped);
     for level in ["warn", "off", "info", "warn"] {
         call(".set", json!({"level":level}));
         assert_eq!(call(".recent", json!({}))["events"], json!([]));
+        assert_eq!(call(".recent", json!({}))["recording"], false);
     }
     call(".set", json!({"level":"debug"}));
     tracing::debug!(target: "logging", generation = 8, "new epoch");

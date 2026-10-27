@@ -237,9 +237,10 @@ impl Control {
             }
         };
         let parsed = parse_filter(&filter)?;
-        crate::recent::configure(&parsed);
+        let baseline = parse_filter(&self.baseline)?;
+        crate::recent::configure(&parsed, &baseline);
         if let Err(error) = self.reload.reload_filter(parsed) {
-            crate::recent::configure(&parse_filter(&self.filter)?);
+            crate::recent::configure(&parse_filter(&self.filter)?, &baseline);
             return Err(error);
         }
         self.filter = filter;
@@ -329,7 +330,8 @@ pub fn init(
     }
     let filter = level.map(filter_for).unwrap_or_else(|| baseline.clone());
     let parsed = parse_filter(&filter)?;
-    crate::recent::configure(&parsed);
+    let parsed_baseline = parse_filter(&baseline)?;
+    crate::recent::configure(&parsed, &parsed_baseline);
     let guard = match crate::init::init_inner(
         &LogOpts {
             log_stderr: Some(stderr_mode(std::io::stderr().is_terminal(), true)),
@@ -341,7 +343,7 @@ pub fn init(
     ) {
         Ok(guard) => guard,
         Err(error) => {
-            crate::recent::configure(&EnvFilter::new("off"));
+            crate::recent::configure(&EnvFilter::new("off"), &parsed_baseline);
             return Err(error);
         }
     };
@@ -616,7 +618,7 @@ mod tests {
             assert_eq!(answer(true, "{}").1["level"], level);
             assert_eq!(
                 crate::recent::allocated(),
-                matches!(level, "info" | "debug" | "trace")
+                matches!(level, "debug" | "trace")
             );
             assert_eq!(
                 answer(true, "{}").1["on"],
@@ -627,6 +629,7 @@ mod tests {
             answer(false, r#"{"on":false}"#).1["filter"],
             "warn,email=info"
         );
+        assert!(!crate::recent::allocated());
         for body in [
             "{}",
             r#"{"on":"yes"}"#,

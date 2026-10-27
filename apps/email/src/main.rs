@@ -43,9 +43,9 @@ fn init_logging(args: &mut Vec<String>) -> Option<logging::LogHandle> {
         Ok(handle) => Some(handle),
         Err(error) => {
             toolkit::debug::failure("email", &error);
-            // Retain Email's non-fatal policy for other logging failures.
-            // Malformed environment filters recover inside the shared helper.
-            None
+            // Malformed RUST_LOG recovers inside the shared helper. Remaining
+            // errors, including invalid --debug values, are fatal like other apps.
+            std::process::exit(2);
         }
     }
 }

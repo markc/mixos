@@ -20,9 +20,10 @@ for $app in ["backdrop", "ced", "dopus", "email", "monitor", "prefs", "screensho
       expect($info.exit_code == 0 and $info.stderr == "", $app .. " " .. $flag .. " touched logging: " .. $info.stderr)
     end
   end
-  $bad = run_argv([$bin .. "/" .. $app, "--debug=invalid"], {env: {RUST_LOG: "warn"}})
-  expect($bad.exit_code != 0, $app .. " accepted an invalid level")
-  if $app == "workshop" then expect($bad.exit_code == 2, "workshop logging failure must exit 2") end
+  for $prefix in [[], ["--help"], ["--version"]]
+    $bad = run_argv(concat([$bin .. "/" .. $app], $prefix, ["--debug=invalid"]), {env: {RUST_LOG: "warn"}})
+    expect($bad.exit_code == 2 and contains($bad.stderr, "unknown debug level"), $app .. " invalid debug flag must exit 2: " .. json_encode($bad))
+  end
 end
 $dir = trim(run_argv_must(["mktemp", "-d", "/var/tmp/app-debug.XXXXXX"]))
 $broker = nil
@@ -64,6 +65,8 @@ try
     if type($recent) == "string" then $recent = json_parse($recent) end
     $seams = filter($recent.events, fn($entry) = $entry.message == "Bus command received" and $entry.fields.command == $app .. ".debug")
     expect(len($seams) >= 1, $app .. " missing structured seam: " .. json_encode($recent))
+    $answers = filter($recent.events, fn($entry) = $entry.message == "Bus command answered" and $entry.fields.command == $app .. ".debug")
+    expect(len($answers) >= 1 and $answers[0].fields.service == $service and $answers[0].fields.rc == 0, $app .. " wrong instance in answered seam: " .. json_encode($recent))
     $command = $service .. ".debug.set"
     for $body in ['{"level":"trace"}', '{"on":false}']
       send $service $command body=$body timeout=3

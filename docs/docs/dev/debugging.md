@@ -100,7 +100,7 @@ $body = json_encode({limit: 200, level: "debug"})
 send workshop workshop.debug.recent body=$body
 ```
 
-The reply is `{events, seq, next}`. Entries contain
+The reply is `{events, seq, next, recording}`. Entries contain
 `{seq, ts, level, target, message, fields}`; `ts` is UTC RFC 3339 and `fields`
 preserves numbers and booleans. `seq` is the newest captured sequence,
 including events outside the selected page. `next` is the last returned
@@ -110,9 +110,13 @@ With `since`, it returns the earliest matching entries after that cursor.
 `level` selects that severity and more severe events (`warn` includes errors;
 `off` selects none). `limit` defaults to 200 and must be 1–1,000.
 
-The ring exists only while the filter permits `info` or more verbose events
-(including Email's and compd's info baselines). Returning to `warn`, `error` or `off`
-frees it. Its sequence survives that reset. The ring drops oldest entries
+The ring exists only while the live filter's maximum verbosity exceeds the
+recorded baseline and is above `warn`. Every baseline, including Email's and
+compd's info baselines, starts without a ring. Raising the level through
+`.debug.set` or `--debug` enables recording; returning to the baseline or to
+`warn`, `error` or `off` frees it. While off, recent queries return an empty
+list, `recording: false` and the current sequence. The sequence survives that
+reset. The deque grows on demand and drops oldest entries
 at 2,000 events or a conservative 1 MB resident-size budget; expired cursors
 resume at the oldest retained event. Individual text fields truncate at
 4,096 UTF-8 bytes and entries retain at most 32 fields. Use journald for the

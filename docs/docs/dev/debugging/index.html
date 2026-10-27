@@ -314,7 +314,7 @@ as <code>.debug</code>. There is no log topic: log traffic never streams over th
 <pre><code class="language-mix">$body = json_encode({limit: 200, level: "debug"})
 send workshop workshop.debug.recent body=$body
 </code></pre>
-<p>The reply is <code>{events, seq, next}</code>. Entries contain
+<p>The reply is <code>{events, seq, next, recording}</code>. Entries contain
 <code>{seq, ts, level, target, message, fields}</code>; <code>ts</code> is UTC RFC 3339 and <code>fields</code>
 preserves numbers and booleans. <code>seq</code> is the newest captured sequence,
 including events outside the selected page. <code>next</code> is the last returned
@@ -323,9 +323,13 @@ With no <code>since</code>, the query returns the newest matching page, oldest f
 With <code>since</code>, it returns the earliest matching entries after that cursor.
 <code>level</code> selects that severity and more severe events (<code>warn</code> includes errors;
 <code>off</code> selects none). <code>limit</code> defaults to 200 and must be 1–1,000.</p>
-<p>The ring exists only while the filter permits <code>info</code> or more verbose events
-(including Email's and compd's info baselines). Returning to <code>warn</code>, <code>error</code> or <code>off</code>
-frees it. Its sequence survives that reset. The ring drops oldest entries
+<p>The ring exists only while the live filter's maximum verbosity exceeds the
+recorded baseline and is above <code>warn</code>. Every baseline, including Email's and
+compd's info baselines, starts without a ring. Raising the level through
+<code>.debug.set</code> or <code>--debug</code> enables recording; returning to the baseline or to
+<code>warn</code>, <code>error</code> or <code>off</code> frees it. While off, recent queries return an empty
+list, <code>recording: false</code> and the current sequence. The sequence survives that
+reset. The deque grows on demand and drops oldest entries
 at 2,000 events or a conservative 1 MB resident-size budget; expired cursors
 resume at the oldest retained event. Individual text fields truncate at
 4,096 UTF-8 bytes and entries retain at most 32 fields. Use journald for the
