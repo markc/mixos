@@ -794,9 +794,9 @@ impl Shell {
                 .as_ref()
                 .and_then(|c| window.view.account(&c.account))
                 .map(|a| a.entry.clone());
-            crate::composer::swap(&mut self.state, &mut window.view);
+            window.swap(&mut self.state);
             self.state.recheck_composer(previous.as_ref());
-            crate::composer::swap(&mut self.state, &mut window.view);
+            window.swap(&mut self.state);
         }
         let removed = self.composers.refresh(&self.ctx, &self.state, &palette);
         if added || removed {
@@ -823,7 +823,7 @@ impl Shell {
         let mut dropped_documents = Vec::new();
         for window in windows {
             let mut window = window.lock().unwrap();
-            crate::composer::swap(&mut self.state, &mut window.view);
+            window.swap(&mut self.state);
             std::mem::swap(&mut self.draft_due, &mut window.draft_due);
             for mut input in std::mem::take(&mut window.pending) {
                 for event in &mut input.events {
@@ -918,7 +918,7 @@ impl Shell {
             self.draft_timer();
             self.settle_for(Some(&window.name));
             std::mem::swap(&mut self.draft_due, &mut window.draft_due);
-            crate::composer::swap(&mut self.state, &mut window.view);
+            window.swap(&mut self.state);
         }
         if cancelled_quit {
             self.state.cancel_quit();
@@ -1018,7 +1018,7 @@ impl Shell {
         }
         let mut target = target.as_ref().map(|w| w.lock().unwrap());
         if let Some(window) = &mut target {
-            crate::composer::swap(&mut self.state, &mut window.view);
+            window.swap(&mut self.state);
         }
         if self.state.compose.is_none() {
             self.state.compose();
@@ -1028,7 +1028,7 @@ impl Shell {
         }
         self.settle_for(target.as_ref().map(|w| w.name.as_str()));
         if let Some(window) = &mut target {
-            crate::composer::swap(&mut self.state, &mut window.view);
+            window.swap(&mut self.state);
             self.ctx.request_repaint_of(window.viewport);
         }
         drop(target);
@@ -1057,7 +1057,7 @@ impl Shell {
             if let Some(window) = next {
                 let mut window = window.lock().unwrap();
                 if window.view.confirm.is_none() {
-                    crate::composer::swap(&mut self.state, &mut window.view);
+                    window.swap(&mut self.state);
                     self.state.apply_ui(UiEvent::CloseCompose);
                     if self.state.confirm.is_some() {
                         self.state.confirm = Some(crate::state::Confirm::Quit);
@@ -1065,7 +1065,7 @@ impl Shell {
                         window.closed = true;
                     }
                     self.settle();
-                    crate::composer::swap(&mut self.state, &mut window.view);
+                    window.swap(&mut self.state);
                     self.ctx
                         .send_viewport_cmd_to(window.viewport, egui::ViewportCommand::Focus);
                     self.ctx.request_repaint_of(window.viewport);
@@ -1778,7 +1778,7 @@ impl Shell {
                     Event::Account(_, Done::Sent(..))
                         | Event::MailDocument(_, crate::documents::Answer::Saved(_))
                 );
-                crate::composer::swap(&mut self.state, &mut window.view);
+                window.swap(&mut self.state);
                 self.state.apply(event);
                 let notice =
                     (outcome && self.state.compose.is_none()).then(|| self.state.status.clone());
@@ -1786,7 +1786,7 @@ impl Shell {
                 if let Some(notice) = &notice {
                     self.state.status = notice.clone();
                 }
-                crate::composer::swap(&mut self.state, &mut window.view);
+                window.swap(&mut self.state);
                 if let Some(notice) = notice {
                     self.state.status = notice;
                 }
@@ -1982,7 +1982,7 @@ impl Shell {
         });
         let mut target = target.as_ref().map(|w| w.lock().unwrap());
         if let Some(window) = &mut target {
-            crate::composer::swap(&mut self.state, &mut window.view);
+            window.swap(&mut self.state);
         }
         let origin = SendOrigin {
             caller_key: self.bus.caller_key(id),
@@ -2005,7 +2005,7 @@ impl Shell {
         }
         self.settle_for(target.as_ref().map(|w| w.name.as_str()));
         if let Some(window) = &mut target {
-            crate::composer::swap(&mut self.state, &mut window.view);
+            window.swap(&mut self.state);
             self.ctx.request_repaint_of(window.viewport);
         }
         drop(target);
@@ -2320,10 +2320,10 @@ impl Shell {
             self.state.save_draft();
             for window in self.composers.windows.values() {
                 let mut window = window.lock().unwrap();
-                crate::composer::swap(&mut self.state, &mut window.view);
+                window.swap(&mut self.state);
                 self.state.save_draft();
                 self.state.cancel_document_open();
-                crate::composer::swap(&mut self.state, &mut window.view);
+                window.swap(&mut self.state);
             }
             toolkit::saved::secondary::close(ctx, APP);
             self.apply_drafts();

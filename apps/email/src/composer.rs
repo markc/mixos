@@ -38,7 +38,6 @@ pub(crate) struct Window {
 pub(crate) fn swap(a: &mut State, b: &mut State) {
     std::mem::swap(&mut a.compose, &mut b.compose);
     std::mem::swap(&mut a.confirm, &mut b.confirm);
-    std::mem::swap(&mut a.restore, &mut b.restore);
     std::mem::swap(&mut a.attachment_chooser, &mut b.attachment_chooser);
     std::mem::swap(&mut a.attachment_notice, &mut b.attachment_notice);
     std::mem::swap(&mut a.identity_editor, &mut b.identity_editor);
@@ -109,7 +108,7 @@ impl Windows {
             return;
         };
         let mut root = root.lock().unwrap();
-        swap(state, &mut root.view);
+        root.swap(state);
         root.had_compose = root.view.compose.is_some();
     }
 
@@ -136,9 +135,6 @@ impl Windows {
         };
         let mut view = context(state);
         swap(state, &mut view);
-        // Offers stay with the mailbox; only fill_root transfers the launch
-        // offer to a compose-only owner. Thereafter swap owns it like input.
-        std::mem::swap(&mut state.restore, &mut view.restore);
         let had_compose = view.compose.is_some() || view.documents.opening();
         self.windows.insert(
             name.clone(),
@@ -270,6 +266,15 @@ impl Windows {
 }
 
 impl Window {
+    pub fn swap(&mut self, state: &mut State) {
+        swap(state, &mut self.view);
+        // Only the compose-only root owns startup offers. Ordinary children
+        // leave kept-draft bookkeeping with the mailbox engine.
+        if self.viewport == ViewportId::ROOT {
+            std::mem::swap(&mut state.restore, &mut self.view.restore);
+        }
+    }
+
     fn finished(&self) -> bool {
         !self.view.documents.saving()
             && (self.closed
@@ -897,6 +902,31 @@ mod tests {
             } else {
                 "Save As"
             }));
+        }
+    }
+
+    #[test]
+    fn restore_offers_belong_to_the_mailbox_or_compose_only_owner() {
+        for standalone in [false, true] {
+            let (mut state, mut windows, theme, ctx) = fixture(standalone);
+            let palette = editor::Palette::from_theme(&theme);
+            state.offer_drafts(vec![crate::drafts::SavedDraft {
+                id: "initial".into(), account: "a".into(), ..Default::default()
+            }]);
+            windows.insert(&mut state, palette.clone());
+            if standalone { windows.fill_root(&mut state); }
+            let window = windows.windows["compose-1"].clone();
+            {
+                let mut window = window.lock().unwrap();
+                window.swap(&mut state);
+                state.offer_drafts(vec![crate::drafts::SavedDraft {
+                    id: "synchronous".into(), account: "a".into(), ..Default::default()
+                }]);
+                window.swap(&mut state);
+            }
+            windows.refresh(&ctx, &state, &palette);
+            assert_eq!(state.restore.len(), if standalone { 0 } else { 2 });
+            assert_eq!(window.lock().unwrap().view.restore.len(), if standalone { 2 } else { 0 });
         }
     }
 
