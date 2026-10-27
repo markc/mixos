@@ -77,6 +77,11 @@ pub struct CompactEffective {
         skip_serializing_if = "is_default_caption_side"
     )]
     pub caption_side: String,
+    #[serde(
+        default = "crate::model::default_window_style",
+        skip_serializing_if = "crate::model::is_default_window_style"
+    )]
+    pub window_style: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_stroke: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -111,6 +116,7 @@ pub fn encode(snapshot: &Snapshot) -> Result<CompactSnapshot, serde_json::Error>
                 contrast: e.contrast.clone(),
                 decorations: e.decorations.clone(),
                 caption_side: e.caption_side.clone(),
+                window_style: e.window_style.clone(),
                 icon_stroke: e.icon_stroke,
                 font_family: e.font_family.clone(),
                 font_weight: e.font_weight,
@@ -157,6 +163,7 @@ impl CompactSnapshot {
                     contrast: e.contrast,
                     decorations: e.decorations,
                     caption_side: e.caption_side,
+                    window_style: e.window_style,
                     icon_stroke: e.icon_stroke,
                     font_family: e.font_family,
                     font_weight: e.font_weight,
@@ -276,6 +283,33 @@ mod tests {
     fn schema_1_still_decodes() {
         let full = snapshot(Desktop::default());
         assert_eq!(decode(serde_json::to_value(&full).unwrap()).unwrap(), full);
+    }
+
+    #[test]
+    fn window_style_round_trips_in_both_schemas_and_legacy_defaults_are_omitted() {
+        let old = snapshot(Desktop::default());
+        for value in [
+            serde_json::to_value(&old).unwrap(),
+            serde_json::to_value(encode(&old).unwrap()).unwrap(),
+        ] {
+            assert!(value["desktop"]["appearance"].get("window_style").is_none());
+            assert!(value["effective"]["desktop"].get("window_style").is_none());
+            assert_eq!(decode(value).unwrap().effective["desktop"].window_style, "mac");
+        }
+        for name in design::WindowStyle::NAMES
+            .iter()
+            .copied()
+            .chain(["future-style"])
+        {
+            let mut desktop = Desktop::default();
+            desktop.appearance.window_style = name.into();
+            let full = snapshot(desktop);
+            assert_eq!(decode(serde_json::to_value(&full).unwrap()).unwrap(), full);
+            assert_eq!(
+                decode(serde_json::to_value(encode(&full).unwrap()).unwrap()).unwrap(),
+                full
+            );
+        }
     }
 
     #[test]

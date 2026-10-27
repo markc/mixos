@@ -785,9 +785,7 @@ impl SceneHost {
             |presentation| {
                 let look = presentation.content();
                 panels.set_preferences(look.preferences.clone());
-                let style = decor::window::installed()
-                    .map_or(decor::ChromeStyle::Mac, |theme| theme.deco.style);
-                decor::window::install(look.chrome(style));
+                decor::window::install(look.chrome(look.window_style));
                 // The region-select overlay and the capture panels draw in
                 // the session look too.
                 world::comp::region::follow(&look.theme);

@@ -1449,6 +1449,7 @@ dependencies = [
 name = "comp-model"
 version = "0.1.2"
 dependencies = [
+ "design",
  "ledger",
  "motion",
  "serde",

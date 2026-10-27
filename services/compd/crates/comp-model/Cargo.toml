@@ -21,6 +21,7 @@ default = ["xwayland"]
 xwayland = []
 
 [dependencies]
+design.workspace = true
 surfaces.workspace = true
 ledger.workspace = true
 motion.workspace = true

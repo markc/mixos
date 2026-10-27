@@ -81,6 +81,16 @@ with scheme/mode/contrast/text scale. Describe supplies exact ranges. Unknown
 fields/scopes are refused. Field reset restores a package default; removing an
 app override restores profile inheritance. Per-field authored provenance beyond
 these initial concrete profile values is later work.
+
+`appearance.window_style` selects compd's server-side furniture independently
+of widget style. It is a plain name of up to 64 lower-case ASCII letters,
+digits or dashes. `settings.describe` derives its known values from the design
+registry. Unknown names are retained and render as the registry's default.
+The default is omitted from authored and effective data, preserving existing
+sealed bytes without a store format or snapshot schema change. Compd applies
+the effective desktop value live; `decoration.style` reports the installed
+preset and remains read-only.
+
 The package source is pinned in accepted storage at profile creation. Null
 appearance.source selects that pinned source, including after binary upgrades;
 it does not silently adopt the upgraded binary's embedded defaults. Adopting a

@@ -18,35 +18,7 @@
 
 use super::geom::Srgba;
 
-/// Which chrome family to draw. The names are the config values.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ChromeStyle {
-    /// macOS-like: traffic lights top-left, tall rounded corners, big soft
-    /// shadow. The default: windows come up in this style.
-    #[default]
-    Mac,
-    /// Windows 11-like: caption buttons top-right, wide flat hover targets,
-    /// red close.
-    Win11,
-    /// The native MixOS look: scheme-accented, symmetric.
-    Mixos,
-}
-
-impl ChromeStyle {
-    pub const ALL: [ChromeStyle; 3] = [ChromeStyle::Mac, ChromeStyle::Win11, ChromeStyle::Mixos];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            ChromeStyle::Mac => "mac",
-            ChromeStyle::Win11 => "win11",
-            ChromeStyle::Mixos => "mixos",
-        }
-    }
-
-    pub fn from_name(s: &str) -> Option<ChromeStyle> {
-        ChromeStyle::ALL.into_iter().find(|c| c.name() == s)
-    }
-}
+pub use design::WindowStyle as ChromeStyle;
 
 /// The colour scheme the mixos preset takes its accent hue from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

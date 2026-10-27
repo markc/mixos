@@ -25,6 +25,7 @@ pub struct Look {
     pub theme: Arc<Theme>,
     /// The profile's text scale (`ui.text_scale`), applied to every text style.
     pub text_scale: f32,
+    pub window_style: ChromeStyle,
     pub(crate) preferences: crate::preferences::Preferences,
     chrome: Vec<ChromeTheme>,
 }
@@ -84,6 +85,10 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
 pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
     let preferences = crate::preferences::Preferences::prepare(&snapshot.desktop.shell)?;
     let theme = theme_of(snapshot)?;
+    let window_style = snapshot
+        .effective
+        .get(CONTEXT)
+        .map_or_else(ChromeStyle::default, |effective| ChromeStyle::resolve(&effective.window_style));
     let text_scale = snapshot
         .effective
         .get(CONTEXT)
@@ -110,6 +115,7 @@ pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
     Ok(Look {
         theme: Arc::new(theme),
         text_scale,
+        window_style,
         preferences,
         chrome,
     })
@@ -200,6 +206,34 @@ mod tests {
         let title = light.chrome(ChromeStyle::ALL[0]);
         let unscaled = dark.chrome(ChromeStyle::ALL[0]);
         assert!(title.deco.metrics.title_size_px > unscaled.deco.metrics.title_size_px);
+    }
+
+    #[test]
+    fn chrome_uses_the_effective_window_style_with_mac_for_unknown_names() {
+        for name in ChromeStyle::NAMES.iter().copied().chain(["future-style"]) {
+            let desktop = settings::Desktop::default();
+            let mut effective = settings::resolve(&desktop).unwrap();
+            effective.get_mut(CONTEXT).unwrap().window_style = name.into();
+            let snapshot = Snapshot {
+                schema: settings::SCHEMA,
+                binding: settings::Binding {
+                    instance: "fixture".into(),
+                    profile: "default".into(),
+                },
+                incarnation: "test".into(),
+                revision: settings::Revision(1),
+                design_revision: settings::Revision(1),
+                source_digest: settings::source_digest(settings::EMBEDDED_DEFAULT_SOURCE),
+                desktop,
+                effective,
+            };
+            let look = build(&snapshot).unwrap();
+            assert_eq!(look.window_style, ChromeStyle::resolve(name));
+            assert_eq!(
+                look.chrome(look.window_style).deco.style,
+                ChromeStyle::resolve(name)
+            );
+        }
     }
 
     /// A profile's own design source is drawn at the selection settingsd

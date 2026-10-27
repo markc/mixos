@@ -290,6 +290,39 @@ fn breeze_and_adwaita_choices_apply_and_survive_a_sealed_reopen() {
 }
 
 #[test]
+fn window_style_applies_and_survives_a_sealed_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    drop(authority(dir.path()));
+    for (index, name) in design::WindowStyle::NAMES
+        .iter()
+        .copied()
+        .chain(["future-style"])
+        .enumerate()
+    {
+        let (store, accepted) = Store::open(dir.path(), &binding()).unwrap();
+        let mut authority = Authority::new(store, accepted).unwrap();
+        let request = ApplyRequest {
+            binding: binding(),
+            expected_incarnation: authority.accepted.incarnation.clone(),
+            expected_revision: authority.accepted.revision,
+            operation_id: format!("window-style-{index}"),
+            changes: BTreeMap::from([("appearance.window_style".into(), json!(name))]),
+            reset: vec![],
+            request_digest: None,
+        };
+        authority.apply(request).unwrap();
+        let reply =
+            service::dispatch(&mut authority, "settings.appearance.get", &body("fixture")).unwrap();
+        let snapshot = settings::compact::decode(reply["snapshot"].clone()).unwrap();
+        assert_eq!(snapshot.effective["desktop"].window_style, name);
+        drop(authority);
+        let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
+        assert_eq!(reopened.desktop.appearance.window_style, name);
+        assert_eq!(reopened.effective().unwrap()["desktop"].window_style, name);
+    }
+}
+
+#[test]
 fn unknown_commands_get_the_shared_refusal() {
     let dir = tempfile::tempdir().unwrap();
     let mut authority = authority(dir.path());

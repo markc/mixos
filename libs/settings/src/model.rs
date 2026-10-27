@@ -76,6 +76,9 @@ pub struct Appearance {
     /// Where a client-side title bar puts its captions: `right` or `left`.
     #[serde(skip_serializing_if = "is_default_caption_side")]
     pub caption_side: String,
+    /// The server-side furniture preset; unknown names render as the default.
+    #[serde(skip_serializing_if = "is_default_window_style")]
+    pub window_style: String,
     /// The session icon stroke on Lucide's 24-unit grid, in quarter steps
     /// from [`ICON_STROKE_MIN`] to [`ICON_STROKE_MAX`]. None is the design's
     /// own `icon.stroke_width` token. Omitted at the default (see above).
@@ -111,6 +114,7 @@ impl Default for Appearance {
             contrast: "normal".into(),
             decorations: "auto".into(),
             caption_side: "right".into(),
+            window_style: default_window_style(),
             icon_stroke: None,
             font_family: None,
             font_weight: None,
@@ -385,6 +389,11 @@ pub struct Effective {
         skip_serializing_if = "is_default_caption_side"
     )]
     pub caption_side: String,
+    #[serde(
+        default = "default_window_style",
+        skip_serializing_if = "is_default_window_style"
+    )]
+    pub window_style: String,
     // The session type and stroke choices, omitted when unset (see above).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_stroke: Option<f64>,
@@ -411,6 +420,12 @@ pub(crate) fn is_default_decorations(value: &str) -> bool {
 }
 pub(crate) fn is_default_caption_side(value: &str) -> bool {
     value == "right"
+}
+pub(crate) fn default_window_style() -> String {
+    design::WindowStyle::default().name().into()
+}
+pub(crate) fn is_default_window_style(value: &str) -> bool {
+    value == design::WindowStyle::default().name()
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

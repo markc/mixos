@@ -253,6 +253,62 @@ impl CaptionSide {
     }
 }
 
+/// Window style names, Prefs labels and compositor preset entry points.
+#[macro_export]
+macro_rules! window_styles {
+    ($registry:ident) => {
+        $registry! {
+            #[default]
+            Mac => ("mac", "look-window-style-mac", mac_preset),
+            Win11 => ("win11", "look-window-style-win11", win11_preset),
+            Mixos => ("mixos", "look-window-style-mixos", mixos),
+        }
+    };
+}
+
+macro_rules! window_style_registry {
+    ($($(#[$meta:meta])* $variant:ident => ($name:literal, $label:literal, $preset:ident),)*) => {
+        /// Server-side window furniture, independent of widget style.
+        #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum WindowStyle { $($(#[$meta])* $variant,)* }
+
+        impl WindowStyle {
+            pub const ALL: [Self; Self::NAMES.len()] = [$(Self::$variant,)*];
+            pub const NAMES: &'static [&'static str] = &[$($name,)*];
+
+            pub const fn name(self) -> &'static str {
+                match self { $(Self::$variant => $name,)* }
+            }
+
+            pub const fn label_id(self) -> &'static str {
+                match self { $(Self::$variant => $label,)* }
+            }
+        }
+    };
+}
+
+window_styles!(window_style_registry);
+
+impl WindowStyle {
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|style| style.name() == name)
+    }
+
+    pub fn resolve(name: &str) -> Self {
+        Self::from_name(name).unwrap_or_default()
+    }
+
+    /// Unknown names are retained for profiles shared with newer binaries.
+    pub fn valid_name(name: &str) -> bool {
+        Self::from_name(name).is_some()
+            || (!name.is_empty()
+                && name.len() <= 64
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'))
+    }
+}
+
 /// The compile-time selection used to flatten a design source.
 ///
 /// Per-app overlays are compile-time selections, never runtime fallbacks.
@@ -285,5 +341,25 @@ impl DesignContext {
             style: None,
             app: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod window_style_tests {
+    use super::WindowStyle;
+
+    #[test]
+    fn registry_names_labels_and_fallback() {
+        for style in WindowStyle::ALL {
+            assert!(WindowStyle::valid_name(style.name()));
+            assert_eq!(WindowStyle::from_name(style.name()), Some(style));
+            assert!(style.label_id().starts_with("look-window-style-"));
+        }
+        assert!(WindowStyle::valid_name("future-style"));
+        assert_eq!(WindowStyle::resolve("future-style"), WindowStyle::Mac);
+        for name in ["", "MAC", "two words", "../style"] {
+            assert!(!WindowStyle::valid_name(name));
+        }
+        assert!(!WindowStyle::valid_name(&"a".repeat(65)));
     }
 }

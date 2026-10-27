@@ -87,6 +87,7 @@ pub struct Look {
     pub contrast: Contrast,
     pub decorations: Decorations,
     pub captions: CaptionSide,
+    pub window_style: String,
     pub font_family: Option<String>,
     pub mono_family: Option<String>,
     pub text_scale: f64,
@@ -103,6 +104,7 @@ impl Default for Look {
             contrast: Contrast::default(),
             decorations: Decorations::default(),
             captions: CaptionSide::default(),
+            window_style: design::WindowStyle::default().name().into(),
             font_family: None,
             mono_family: None,
             text_scale: 1.0,
@@ -128,7 +130,8 @@ impl Look {
         json!({"scheme":self.scheme.name(),"style":self.style.map_or("own", Style::name),
             "mode":self.mode.name(),"contrast":self.contrast.name(),
             "decorations":resolved.mode.name(),"decorations_reason":resolved.reason,
-            "caption_side":self.captions.name()})
+            "caption_side":self.captions.name(),
+            "window_style":design::WindowStyle::resolve(&self.window_style).name()})
     }
 
     /// The profile's stored appearance.
@@ -143,6 +146,7 @@ impl Look {
             contrast: named("contrast", &stored.contrast, Contrast::from_name)?,
             decorations: named("decorations", &stored.decorations, Decorations::from_name)?,
             captions: named("caption side", &stored.caption_side, CaptionSide::from_name)?,
+            window_style: stored.window_style.clone(),
             font_family: stored.font_family.clone(),
             mono_family: stored.mono_family.clone(),
             ..Self::default()
@@ -196,6 +200,11 @@ impl Look {
             json!(self.captions.name()),
         );
         put(
+            "window_style",
+            self.window_style != base.window_style,
+            json!(self.window_style),
+        );
+        put(
             "font_family",
             self.font_family != base.font_family,
             json!(self.font_family),
@@ -230,7 +239,7 @@ impl Look {
     }
 
     /// This look with the axes `args` names: `scheme`, `style` (a style or
-    /// "own"), `mode`, `contrast`, `decorations`, `caption_side`, font families,
+    /// "own"), `mode`, `contrast`, `decorations`, `caption_side`, `window_style`, font families,
     /// text scale, density and reduced motion. An absent key leaves its axis;
     /// every present one is checked before any applies.
     pub fn with(&self, args: &Value) -> Result<Self, String> {
@@ -270,6 +279,13 @@ impl Look {
         }
         if let Some(captions) = axis(args, "caption_side", CaptionSide::from_name)? {
             look.captions = captions;
+        }
+        if let Some(value) = args.get("window_style") {
+            let name = value
+                .as_str()
+                .filter(|name| design::WindowStyle::valid_name(name))
+                .ok_or("window_style must be a plain name of up to 64 bytes")?;
+            look.window_style = name.into();
         }
         for (key, family) in [
             ("font_family", &mut look.font_family),
@@ -317,6 +333,7 @@ impl Serialize for Look {
         json!({"scheme":self.scheme.name(),"style":self.style.map_or("own", Style::name),
             "mode":self.mode.name(),"contrast":self.contrast.name(),
             "decorations":self.decorations.name(),"caption_side":self.captions.name(),
+            "window_style":self.window_style,
             "font_family":self.font_family,"mono_family":self.mono_family,
             "text_scale":self.text_scale,"density":self.density,"reduced_motion":self.reduced_motion})
         .serialize(s)
@@ -343,6 +360,7 @@ pub enum Axis {
     Contrast,
     Decorations,
     CaptionSide,
+    WindowStyle,
     FontFamily,
     MonoFamily,
     TextScale,
@@ -351,13 +369,14 @@ pub enum Axis {
 }
 
 impl Axis {
-    pub const ALL: [Axis; 11] = [
+    pub const ALL: [Axis; 12] = [
         Axis::Scheme,
         Axis::Style,
         Axis::Mode,
         Axis::Contrast,
         Axis::Decorations,
         Axis::CaptionSide,
+        Axis::WindowStyle,
         Axis::FontFamily,
         Axis::MonoFamily,
         Axis::TextScale,
@@ -374,6 +393,7 @@ impl Axis {
             Axis::Contrast => a.contrast != b.contrast,
             Axis::Decorations => a.decorations != b.decorations,
             Axis::CaptionSide => a.captions != b.captions,
+            Axis::WindowStyle => a.window_style != b.window_style,
             Axis::FontFamily => a.font_family != b.font_family,
             Axis::MonoFamily => a.mono_family != b.mono_family,
             Axis::TextScale => a.text_scale != b.text_scale,
@@ -391,6 +411,7 @@ impl Axis {
             Axis::Contrast => to.contrast = from.contrast,
             Axis::Decorations => to.decorations = from.decorations,
             Axis::CaptionSide => to.captions = from.captions,
+            Axis::WindowStyle => to.window_style = from.window_style.clone(),
             Axis::FontFamily => to.font_family = from.font_family.clone(),
             Axis::MonoFamily => to.mono_family = from.mono_family.clone(),
             Axis::TextScale => to.text_scale = from.text_scale,
@@ -431,7 +452,7 @@ impl Submitted {
         if self
             .axes
             .iter()
-            .any(|a| matches!(a, Axis::Decorations | Axis::CaptionSide))
+            .any(|a| matches!(a, Axis::Decorations | Axis::CaptionSide | Axis::WindowStyle))
         {
             crate::Section::Windows
         } else if self
@@ -1589,6 +1610,7 @@ fn axis_key(axis: Axis) -> &'static str {
         Axis::Contrast => "appearance.contrast",
         Axis::Decorations => "appearance.decorations",
         Axis::CaptionSide => "appearance.caption_side",
+        Axis::WindowStyle => "appearance.window_style",
         Axis::FontFamily => "appearance.font_family",
         Axis::MonoFamily => "appearance.mono_family",
         Axis::TextScale => "ui.text_scale",
@@ -2008,6 +2030,41 @@ mod tests {
         assert_eq!(e.look.current.as_ref().unwrap().scheme, Scheme::Studio);
         assert_eq!(e.look.revision(), Some(7));
         assert!(e.look.draft.is_none() && !e.can_apply_look());
+    }
+
+    #[test]
+    fn window_style_uses_the_immediate_apply_path_and_keeps_future_names() {
+        for name in design::WindowStyle::NAMES
+            .iter()
+            .copied()
+            .chain(["future-style"])
+        {
+            let mut e = read();
+            assert_eq!(e.look.current.as_ref().unwrap().window_style, "mac");
+            if name == "mac" {
+                continue;
+            }
+            e.set_look(&json!({"window_style":name})).unwrap();
+            let (_, command, request) = next(&mut e);
+            assert_eq!(command, "settings.apply");
+            assert_eq!(request["changes"], json!({"appearance.window_style":name}));
+            assert_eq!(request["expected_revision"], "7");
+            assert_eq!(e.look.shown().unwrap().window_style, name);
+        }
+        let stored = Stored {
+            window_style: "future-style".into(),
+            ..Stored::default()
+        };
+        let look = Look::from_stored(&stored).unwrap();
+        assert_eq!(
+            look.with(&json!({"mode":"light"})).unwrap().window_style,
+            "future-style"
+        );
+        assert_eq!(look.effective()["window_style"], "mac");
+        assert_eq!(
+            serde_json::to_value(look).unwrap()["window_style"],
+            "future-style"
+        );
     }
 
     #[test]

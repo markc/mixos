@@ -1397,6 +1397,7 @@ fn axis_label(axis: Axis) -> &'static str {
         Axis::Contrast => "look-contrast",
         Axis::Decorations => "look-titlebar",
         Axis::CaptionSide => "look-captions",
+        Axis::WindowStyle => "look-window-style",
         Axis::FontFamily => "fonts-family",
         Axis::MonoFamily => "fonts-mono-family",
         Axis::TextScale => "size-text-scale",
@@ -1514,6 +1515,19 @@ fn decoration_controls(ui: &mut Ui, look: Look, events: &mut Vec<UiEvent>) {
             )));
         }
     });
+    ui.end_row();
+
+    field_label(ui, &label("look-window-style"));
+    let styles: Vec<_> = design::WindowStyle::ALL
+        .into_iter()
+        .map(|style| (style.name(), label(style.label_id())))
+        .collect();
+    if let Some(style) = choices(ui, look.window_style.as_str(), &styles) {
+        events.push(UiEvent::Look(Look {
+            window_style: style.into(),
+            ..look.clone()
+        }));
+    }
     ui.end_row();
 
     // The system's title bar places its own buttons.
@@ -2137,6 +2151,43 @@ mod numeric_tests {
         h.get_by_label("Design default (Inter)").click();
         h.run();
         assert!(h.state().is_none());
+    }
+
+    #[test]
+    fn window_style_picker_labels_and_choices_follow_the_registry() {
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(720.0, 300.0))
+            .build_ui_state(
+                |ui, look: &mut Look| {
+                    let mut events = Vec::new();
+                    egui::Grid::new("test-window-styles")
+                        .num_columns(2)
+                        .show(ui, |ui| decoration_controls(ui, look.clone(), &mut events));
+                    for event in events {
+                        if let UiEvent::Look(next) = event {
+                            *look = next;
+                        }
+                    }
+                },
+                Look {
+                    window_style: "future-style".into(),
+                    ..Look::default()
+                },
+            );
+        toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+        h.run();
+        h.get_by_label("Window style");
+        assert_eq!(label(design::WindowStyle::Mac.label_id()), "MacOS");
+        assert_eq!(label(design::WindowStyle::Win11.label_id()), "Win11");
+        assert_eq!(label(design::WindowStyle::Mixos.label_id()), "MixOS");
+        h.get_by_label("MacOS").click();
+        h.run();
+        assert_eq!(h.state().window_style, "mac");
+        for style in design::WindowStyle::ALL.into_iter().rev() {
+            h.get_by_label(&label(style.label_id())).click();
+            h.run();
+            assert_eq!(h.state().window_style, style.name());
+        }
     }
 
     #[test]

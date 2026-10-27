@@ -385,17 +385,31 @@ pub fn mixos(scheme: Scheme, mode: Mode) -> DecoTheme {
 /// Resolve a full theme from the selection triple: the one entry point the
 /// theme loader calls.
 pub fn resolve(style: ChromeStyle, scheme: Scheme, mode: Mode) -> DecoTheme {
-    let mut theme = match style {
-        ChromeStyle::Mac => mac(mode),
-        ChromeStyle::Win11 => win11(mode),
-        ChromeStyle::Mixos => mixos(scheme, mode),
-    };
+    let mut theme = preset(style, scheme, mode);
     // Mac and win11 palettes ignore the scheme, but the resolved triple must
     // still record the caller's selection: a later style switch re-resolves
     // from `theme.scheme`, and Mono here would silently drop the choice.
     theme.scheme = scheme;
     theme
 }
+
+fn mac_preset(_: Scheme, mode: Mode) -> DecoTheme {
+    mac(mode)
+}
+
+fn win11_preset(_: Scheme, mode: Mode) -> DecoTheme {
+    win11(mode)
+}
+
+macro_rules! preset_registry {
+    ($($(#[$meta:meta])* $variant:ident => ($name:literal, $label:literal, $preset:ident),)*) => {
+        fn preset(style: ChromeStyle, scheme: Scheme, mode: Mode) -> DecoTheme {
+            match style { $(ChromeStyle::$variant => $preset(scheme, mode),)* }
+        }
+    };
+}
+
+design::window_styles!(preset_registry);
 
 #[cfg(test)]
 mod tests {

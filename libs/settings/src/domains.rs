@@ -99,6 +99,7 @@ fn view(effective: &Effective) -> &DesignReadProjection {
         contrast: _,
         decorations: _,
         caption_side: _,
+        window_style: _,
         // Their classes are in `compare`: stroke paints, fonts reshape text.
         icon_stroke: _,
         font_family: _,
@@ -161,8 +162,12 @@ fn compare(old: &Effective, new: &Effective) -> ChangePlan {
     // A style changes the chrome's forms and lengths; the framing, the
     // title bar's layout.
     let style = old.style != new.style;
-    let framing = old.decorations != new.decorations || old.caption_side != new.caption_side;
-    let paint = style
+    let window_style = design::WindowStyle::resolve(&old.window_style)
+        != design::WindowStyle::resolve(&new.window_style);
+    let framing =
+        old.decorations != new.decorations || old.caption_side != new.caption_side || window_style;
+    let paint = window_style
+        || style
         || old.icon_stroke != new.icon_stroke
         || old.scheme != new.scheme
         || old.mode != new.mode
@@ -218,5 +223,23 @@ fn compare(old: &Effective, new: &Effective) -> ChangePlan {
         resources,
         motion: old.ui.reduced_motion != new.ui.reduced_motion,
         shell: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_style_invalidates_chrome_paint_and_layout() {
+        let resolved = crate::resolve(&crate::Desktop::default()).unwrap();
+        let before = &resolved["desktop"];
+        let mut after = before.clone();
+        after.window_style = "win11".into();
+        let plan = compare(before, &after);
+        assert!(plan.paint && plan.layout);
+        assert!(!plan.resources && !plan.text);
+        after.window_style = "future-style".into();
+        assert!(compare(before, &after).is_empty());
     }
 }

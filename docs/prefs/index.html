@@ -426,9 +426,12 @@ For scripts that do not need Preferences open, call <code>settings.apply</code> 
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; <code>prefs.appearance.set</code>
 changes it at once (<code>scheme</code>, <code>style</code> with <code>own</code> for the scheme's own, <code>mode</code>,
-<code>contrast</code>, <code>decorations</code>, <code>caption_side</code>, <code>font_family</code>, <code>mono_family</code>,
+<code>contrast</code>, <code>decorations</code>, <code>caption_side</code>, <code>window_style</code>, <code>font_family</code>, <code>mono_family</code>,
 <code>text_scale</code>, <code>density</code>, <code>reduced_motion</code>). Family values are strings or null;
 text scale and density reset with 1.0, and reduced motion takes a boolean.
+Desktop → Windows places the window style picker beside caption placement.
+Its choices and labels come from the design registry; compd applies the chosen
+server-side furniture live. It does not change application-drawn captions.
 The section ids in tree order are <code>appearance</code>, <code>text_and_fonts</code>, <code>wallpaper</code>,
 <code>windows</code>, <code>apps_email</code>, <code>apps_term</code>, <code>apps_ced</code>, <code>accessibility</code>, and <code>software</code>.
 Navigation actions use <code>view.section.&lt;id&gt;</code>; retired section ids have no aliases. Search includes their <code>ui.*</code>

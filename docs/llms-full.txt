@@ -7557,6 +7557,16 @@ with scheme/mode/contrast/text scale. Describe supplies exact ranges. Unknown
 fields/scopes are refused. Field reset restores a package default; removing an
 app override restores profile inheritance. Per-field authored provenance beyond
 these initial concrete profile values is later work.
+
+`appearance.window_style` selects compd's server-side furniture independently
+of widget style. It is a plain name of up to 64 lower-case ASCII letters,
+digits or dashes. `settings.describe` derives its known values from the design
+registry. Unknown names are retained and render as the registry's default.
+The default is omitted from authored and effective data, preserving existing
+sealed bytes without a store format or snapshot schema change. Compd applies
+the effective desktop value live; `decoration.style` reports the installed
+preset and remains read-only.
+
 The package source is pinned in accepted storage at profile creation. Null
 appearance.source selects that pinned source, including after binary upgrades;
 it does not silently adopt the upgraded binary's embedded defaults. Adopting a
@@ -33888,9 +33898,12 @@ Preferences answers on the Bus as `prefs`. `prefs.info` reports the whole state;
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; `prefs.appearance.set`
 changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
-`contrast`, `decorations`, `caption_side`, `font_family`, `mono_family`,
+`contrast`, `decorations`, `caption_side`, `window_style`, `font_family`, `mono_family`,
 `text_scale`, `density`, `reduced_motion`). Family values are strings or null;
 text scale and density reset with 1.0, and reduced motion takes a boolean.
+Desktop → Windows places the window style picker beside caption placement.
+Its choices and labels come from the design registry; compd applies the chosen
+server-side furniture live. It does not change application-drawn captions.
 The section ids in tree order are `appearance`, `text_and_fonts`, `wallpaper`,
 `windows`, `apps_email`, `apps_term`, `apps_ced`, `accessibility`, and `software`.
 Navigation actions use `view.section.<id>`; retired section ids have no aliases. Search includes their `ui.*`
@@ -37607,6 +37620,12 @@ Use strict MixOS configuration and owned shutdown signalling.
 > Mirrored from [`libs/settings/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md), where releases update it. The component's page is [settings](README.md). This page describes the current `main` branch of MixOS.
 
 ## Unreleased
+
+`appearance.window_style` carries the server-side furniture name in authored,
+effective, summary and compact snapshot data. The design registry supplies
+known names and Prefs labels; unknown plain names survive round-trips and
+render as the default. The default is omitted from both authored and effective
+bytes, preserving existing seals. Store and wire schemas are unchanged.
 
 Appearance projection schema 2 carries the effective desktop `caption_side`
 for portald's GTK settings export and session cache. Schema 1 remains readable

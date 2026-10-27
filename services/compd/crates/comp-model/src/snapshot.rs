@@ -1767,7 +1767,7 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         Bool,
         "Whether server-side decoration is enabled"
     ),
-    descriptor!(&[L("decoration"), L("style")], String, "Startup decoration style", enum = &["mac", "win11", "mixos"]),
+    descriptor!(&[L("decoration"), L("style")], String, "Live installed decoration style", enum = design::WindowStyle::NAMES),
     descriptor!(
         &[L("bindings"), L("enabled")],
         Bool,

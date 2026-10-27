@@ -74,6 +74,13 @@ fn an_old_primary_and_backup_upgrade_on_open_and_accept_changes() {
         "the new keys take their defaults"
     );
     assert_eq!(data.format, FORMAT);
+    assert_eq!(data.desktop.appearance.window_style, "mac");
+    assert!(
+        data.effective()
+            .unwrap()
+            .values()
+            .all(|e| e.window_style == "mac")
+    );
     assert_eq!(
         format_of(dir.path(), "desktop.conf.mix"),
         Some(f64::from(FORMAT)),

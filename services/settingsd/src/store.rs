@@ -26,6 +26,8 @@ use std::path::{Path, PathBuf};
 ///   first with `settings.reset` or a null value.
 /// - 4: Workshop replaces the retired app context; drop its old authored
 ///   section and re-derive the effective map through the sealed upgrade path.
+/// Window style is omitted at mac in both authored and effective values,
+/// preserving existing digests without a format change.
 pub const FORMAT: u32 = 4;
 
 const MAX_STORE_BYTES: u64 = 2 * 1024 * 1024;
@@ -101,8 +103,8 @@ impl Accepted {
     /// - an authored field (in [`Desktop`] or here) is `#[serde(default)]`
     ///   and `skip_serializing_if` its default, so an older record still
     ///   re-serialises as it was written and its seal verifies;
-    /// - a field of the derived interpretation ([`Effective`]) changes the
-    ///   effective digest: bump [`FORMAT`], add a line to its history, and
+    /// - a field of the derived interpretation ([`Effective`]) that changes
+    ///   existing effective bytes needs a bump to [`FORMAT`] and its history;
     ///   this function re-derives older records on their next open.
     pub fn upgrade(mut self) -> anyhow::Result<(Self, bool)> {
         anyhow::ensure!(

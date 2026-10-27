@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+`appearance.window_style` carries the server-side furniture name in authored,
+effective, summary and compact snapshot data. The design registry supplies
+known names and Prefs labels; unknown plain names survive round-trips and
+render as the default. The default is omitted from both authored and effective
+bytes, preserving existing seals. Store and wire schemas are unchanged.
+
 Appearance projection schema 2 carries the effective desktop `caption_side`
 for portald's GTK settings export and session cache. Schema 1 remains readable
 with a default of `right`. `settings.appearance.get` keeps its original schema 1

@@ -50,6 +50,7 @@ fn describe_base() -> Value {
             "appearance.mode": {"type":"string", "enum":["light","dark"]},
             "appearance.decorations": {"type":"string", "enum":["auto","csd","ssd"]},
             "appearance.caption_side": {"type":"string", "enum":["right","left"]},
+            "appearance.window_style": {"type":"string", "known_values":design::WindowStyle::NAMES, "unknown":"retained; renders as the default", "max_bytes":64},
             "appearance.icon_stroke": {"type":"number|null", "minimum":1.0, "maximum":3.0, "step":0.25, "null":"the design's own icon.stroke_width token"},
             "appearance.font_family": {"type":"string|null", "max_bytes":128, "null":"Inter"},
             "appearance.font_weight": {"type":"integer|null", "minimum":100, "maximum":900, "step":100, "null":"the scheme's own weight"},
@@ -268,6 +269,12 @@ pub fn resolve_with_embedded_and_accents(
         if design::CaptionSide::from_name(&desktop.appearance.caption_side).is_none() {
             return Err(error("appearance.caption_side", "Unknown caption side"));
         }
+        if !design::WindowStyle::valid_name(&desktop.appearance.window_style) {
+            return Err(error(
+                "appearance.window_style",
+                "Use a plain window style name of up to 64 bytes",
+            ));
+        }
         if let Some(stroke) = desktop.appearance.icon_stroke {
             // Quarter steps only: a stroke that is not on the grid is refused,
             // so every client quantises the same way.
@@ -350,7 +357,7 @@ pub fn resolve_with_embedded_and_accents(
         let overlay = app.and_then(|id| desktop.apps.get(id));
         let mut appearance = desktop.appearance.clone();
         let mut ui = desktop.ui.clone();
-        // Style, decorations and caption side come only from the profile and
+        // Styles, decorations and caption side come only from the profile and
         // record no provenance, so a profile from before them keeps its
         // effective digest.
         let mut provenance = BTreeMap::from([
@@ -424,6 +431,7 @@ pub fn resolve_with_embedded_and_accents(
                 contrast: appearance.contrast,
                 decorations: appearance.decorations,
                 caption_side: appearance.caption_side,
+                window_style: appearance.window_style,
                 icon_stroke: appearance.icon_stroke,
                 font_family: appearance.font_family,
                 font_weight: appearance.font_weight,
@@ -488,6 +496,12 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
             desktop.appearance.caption_side = typed(
                 path,
                 value.unwrap_or(json!(defaults.appearance.caption_side)),
+            )?
+        }
+        "appearance.window_style" => {
+            desktop.appearance.window_style = typed(
+                path,
+                value.unwrap_or(json!(defaults.appearance.window_style)),
             )?
         }
         // Each type setting is optional: null (or a reset) clears it back to
@@ -812,6 +826,59 @@ mod tests {
         assert_eq!(
             patch(&next, &BTreeMap::new(), &["apps.term".into()]).unwrap(),
             current
+        );
+    }
+
+    #[test]
+    fn window_style_resolves_retains_unknown_names_and_resets() {
+        let original = Desktop::default();
+        assert_eq!(resolve(&original).unwrap()["desktop"].window_style, "mac");
+        for name in design::WindowStyle::NAMES
+            .iter()
+            .copied()
+            .chain(["future-style"])
+        {
+            let changed = patch(
+                &original,
+                &BTreeMap::from([("appearance.window_style".into(), json!(name))]),
+                &[],
+            )
+            .unwrap();
+            let resolved = resolve(&changed).unwrap();
+            assert!(
+                resolved
+                    .values()
+                    .all(|effective| effective.window_style == name)
+            );
+            assert!(
+                !resolved["desktop"]
+                    .provenance
+                    .contains_key("appearance.window_style")
+            );
+            let reset = patch(
+                &changed,
+                &BTreeMap::new(),
+                &["appearance.window_style".into()],
+            )
+            .unwrap();
+            assert_eq!(reset, original);
+        }
+        for value in [json!("bad name"), json!(""), json!(false)] {
+            let result = patch(
+                &original,
+                &BTreeMap::from([("appearance.window_style".into(), value)]),
+                &[],
+            )
+            .and_then(|desktop| {
+                resolve(&desktop)
+                    .map(|_| desktop)
+                    .map_err(|errors| errors[0].clone())
+            });
+            assert_eq!(result.unwrap_err().path, "appearance.window_style");
+        }
+        assert_eq!(
+            describe()["fields"]["appearance.window_style"]["known_values"],
+            json!(design::WindowStyle::NAMES)
         );
     }
 

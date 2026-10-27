@@ -309,7 +309,7 @@ fn apply_dictionary(theme: &mut DecoTheme, dictionary: &ResolvedDictionary) {
     recolour(&mut c.border_unfocused, non_text("border"));
     let focus_border = match theme.style {
         ChromeStyle::Mixos => non_text("ring"),
-        ChromeStyle::Mac | ChromeStyle::Win11 => non_text("border"),
+        _ => non_text("border"),
     };
     recolour(&mut c.border_focused, focus_border);
 
@@ -325,7 +325,7 @@ fn apply_dictionary(theme: &mut DecoTheme, dictionary: &ResolvedDictionary) {
                 recolour(&mut button.fill_unfocused, non_text("border"));
             }
         }
-        ChromeStyle::Win11 | ChromeStyle::Mixos => {
+        _ => {
             let glyph = foreground("card");
             // Idle and unfocused fills are translucent overlays of the text
             // colour; hover takes the accent (mixos) or the text overlay
