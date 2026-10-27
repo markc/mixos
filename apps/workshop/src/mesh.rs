@@ -898,38 +898,36 @@ mod tests {
     fn geometry_cache_reuses_curves_and_invalidates_rect_peers_unit_and_theme() {
         let ctx = egui::Context::default();
         toolkit::install(&ctx, &toolkit::Theme::embedded());
-        let _ = ctx.run(Default::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                let key = GeometryKey {
-                    rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(700.0, 480.0)),
-                    unit: 18.0,
-                    chrome: Chrome::of(ctx),
-                    nodes: vec![
-                        ("alpha".into(), None, true),
-                        ("beta".into(), None, false),
-                        ("gamma".into(), None, false),
-                    ],
-                };
-                let first = geometry_for(ui, key.clone());
-                assert!(Arc::ptr_eq(&first, &geometry_for(ui, key.clone())));
-                assert!(!first.dashes.is_empty());
-                assert!(first.curve("beta", true).unwrap().out);
-                assert!(!first.curve("beta", false).unwrap().out);
-                assert!(first.curve("delta", true).is_none());
-                for i in 0..4 {
-                    let baseline = geometry_for(ui, key.clone());
-                    let mut changed = key.clone();
-                    match i {
-                        0 => changed.rect.max.x += 20.0,
-                        1 => changed.nodes[1].0 = "delta".into(),
-                        2 => changed.unit += 1.0,
-                        _ => changed.chrome.palette.accent = changed.chrome.palette.warning,
-                    }
-                    let next = geometry_for(ui, changed.clone());
-                    assert!(!Arc::ptr_eq(&baseline, &next));
-                    assert!(Arc::ptr_eq(&next, &geometry_for(ui, changed)));
+        let _ = ctx.run_ui(Default::default(), |ui| {
+            let key = GeometryKey {
+                rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(700.0, 480.0)),
+                unit: 18.0,
+                chrome: Chrome::of(ui.ctx()),
+                nodes: vec![
+                    ("alpha".into(), None, true),
+                    ("beta".into(), None, false),
+                    ("gamma".into(), None, false),
+                ],
+            };
+            let first = geometry_for(ui, key.clone());
+            assert!(Arc::ptr_eq(&first, &geometry_for(ui, key.clone())));
+            assert!(!first.dashes.is_empty());
+            assert!(first.curve("beta", true).unwrap().out);
+            assert!(!first.curve("beta", false).unwrap().out);
+            assert!(first.curve("delta", true).is_none());
+            for i in 0..4 {
+                let baseline = geometry_for(ui, key.clone());
+                let mut changed = key.clone();
+                match i {
+                    0 => changed.rect.max.x += 20.0,
+                    1 => changed.nodes[1].0 = "delta".into(),
+                    2 => changed.unit += 1.0,
+                    _ => changed.chrome.palette.accent = changed.chrome.palette.warning,
                 }
-            });
+                let next = geometry_for(ui, changed.clone());
+                assert!(!Arc::ptr_eq(&baseline, &next));
+                assert!(Arc::ptr_eq(&next, &geometry_for(ui, changed)));
+            }
         });
     }
     fn layout(peers: usize, size: Vec2) -> Vec<Placement> {
