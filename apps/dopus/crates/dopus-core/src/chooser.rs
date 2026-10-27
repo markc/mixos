@@ -554,6 +554,12 @@ impl Request {
             .collect()
     }
 
+    /// A presenter checks before disabling input; the engine checks again
+    /// against its original request when it receives the acceptance.
+    pub fn validate_acceptance(&self, acceptance: &Acceptance) -> Result<()> {
+        accepted(self, acceptance.clone()).map(|_| ())
+    }
+
     /// Apply the single-pattern extension rule only in save mode.
     pub fn save_name(&self, name: &[u8]) -> Vec<u8> {
         if self.mode == Mode::Save

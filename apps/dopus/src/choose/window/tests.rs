@@ -143,6 +143,17 @@ fn original_non_utf8_name_survives_without_lossy_round_trip() {
 }
 
 #[test]
+fn directory_acceptance_resolves_dot_components_before_ending() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("sub")).unwrap();
+    let mut window = window(json!({"directory":true,"current_folder":dir.path().join("sub/..")}));
+    window.accept();
+    let Some(End::Accept(accept)) = window.take_end() else { panic!("expected acceptance"); };
+    assert_eq!(path(&accept.paths[0]), dir.path());
+    assert!(window.request.validate_acceptance(&accept).is_ok());
+}
+
+#[test]
 fn filtered_rows_and_keyboard_selection_share_the_same_projection() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join("folder")).unwrap();

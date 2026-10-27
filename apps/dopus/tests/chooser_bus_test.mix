@@ -46,6 +46,36 @@ fn ready($id)
   raise("CHOOSER_TEST", "chooser viewport did not draw: " .. $id .. " " .. json_encode($r))
 end
 
+fn native_count($service, $expected)
+  for $i = 1 to 80
+    $r = $n.call($service,"comp.windows.list",{})
+    if $r.rc == 0 then
+      $choosers = filter($r.result.windows,fn($w) = starts_with($w.app_id ?? "","dev.mixos.dopus.choose."))
+      check(not any($r.result.windows,fn($w) = $w.app_id == "dev.mixos.dopus.files" and $w.visible == true), "provider mapped a main window")
+      if len($choosers) == $expected then return end
+    end
+    sleep(0.1)
+  end
+  raise("CHOOSER_TEST","native chooser count differs from " .. to_string($expected) .. ": " .. json_encode($r))
+end
+
+fn centred($service, $id)
+  for $i = 1 to 80
+    $r = $n.call($service,"comp.windows.list",{})
+    $window = if $r.rc == 0 then filter($r.result.windows,fn($w) = $w.app_id == "dev.mixos.dopus.choose." .. $id) else [] end
+    if len($window) == 1 then
+      $w = $window[0]
+      $output = $n.call($service,"comp.props.get",{path:"outputs." .. $w.output})
+      if $output.rc == 0 then
+        $o = $output.result
+        if abs($w.window_x - $o.x - ($o.width - $w.window_width) / 2) <= 2 and abs($w.window_y - $o.y - ($o.height - $w.window_height) / 2) <= 2 then return end
+      end
+    end
+    sleep(0.1)
+  end
+  raise("CHOOSER_TEST","chooser did not centre on its output: " .. json_encode($r))
+end
+
 fn click_end($id, $label)
   -- Closing the viewport can settle the drive input with CANCELLED. The
   -- request's outcome, checked below, is the authoritative acceptance.
@@ -118,6 +148,8 @@ try
   -- Drive the real path bar and name field, with no file writes by the chooser.
   $id = choose({mode:"save", current_folder:$tmp .. "/home", current_name:"draft", on_behalf_of:"test-app"})
   ready($id)
+  native_count($session.service,1)
+  centred($session.service,$id)
   drive($id, "ui.click", {label:"Path"})
   drive($id, "ui.key", {key:"A", modifiers:["ctrl"]})
   drive($id, "ui.type", {text:$tmp .. "/home/Documents"})
@@ -142,6 +174,7 @@ try
   $b = choose({directory:true, current_folder:$tmp .. "/home/Documents", title:"Chooser B"})
   ready($a)
   ready($b)
+  native_count($session.service,2)
   $ambiguous = $n.call("files", "files.ui.tree", {})
   check($ambiguous.rc == 10 and $ambiguous.result.error_code == "ARGUMENT", "ambiguous drive was accepted")
   drive($a, "ui.click", {label:"notes.txt"})
@@ -157,6 +190,12 @@ try
   call("files.choose.cancel", {request:$id})
   ended($id,1,"caller")
   topic($id)
+  $id = choose({})
+  ready($id)
+  $r = $n.call("files", "files.ui.key", {viewport:$id, key:"Escape"})
+  ended($id,1,"cancelled")
+  topic($id)
+  native_count($session.service,0)
   call("files.choose.cancel", {request:$id})
   check(len(call("files.choose.list", {}).requests) == 0, "chooser leaked after cancel")
   $id = choose({})
@@ -164,6 +203,7 @@ try
   $r = $n.call("files", "files.window", {viewport:$id, action:"close"})
   ended($id,1,"cancelled")
   topic($id)
+  native_count($session.service,0)
   $passed = true
   print("PASS chooser window Bus, native viewports, save, open, directory, cancel, close, remembered folder and concurrent drive")
 finally

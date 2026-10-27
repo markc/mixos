@@ -240,7 +240,11 @@ impl Window {
                     self.message = Some(label("chooser-select-entry"));
                     return;
                 }
-                selected
+                selected.into_iter().map(|p| {
+                    if self.request.directory && p.components().any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir)) {
+                        p.canonicalize().unwrap_or(p)
+                    } else { p }
+                }).collect()
             }
             Mode::Save => {
                 let raw: &[u8] = if self.name == self.original_name.0 {
@@ -287,6 +291,10 @@ impl Window {
             current_filter: self.request.current_filter.clone(),
             choices: self.choices.clone(),
         };
+        if self.request.validate_acceptance(&accept).is_err() {
+            self.message = Some(label("chooser-invalid-selection"));
+            return;
+        }
         if self.request.mode != Mode::Open && paths.iter().any(|p| p.symlink_metadata().is_ok()) {
             self.replace = Some(accept);
         } else {
