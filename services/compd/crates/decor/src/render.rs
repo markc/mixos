@@ -295,7 +295,9 @@ pub fn set_pointer(
         .get_or_insert(|| RefCell::new(WindowChrome::default()));
     let mut wc = cell.borrow_mut();
     let state = wc.chrome.state();
-    if state.hovered == hovered && state.cluster_hovered == cluster_hovered && state.pressed == pressed
+    if state.hovered == hovered
+        && state.cluster_hovered == cluster_hovered
+        && state.pressed == pressed
     {
         return false;
     }

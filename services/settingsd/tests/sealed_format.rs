@@ -173,7 +173,12 @@ fn window_style_defaults_preserve_existing_fixture_seals() {
         assert!(saved["desktop"]["appearance"].get("window_style").is_none());
         assert!(saved["desktop"]["appearance"].get("menu_style").is_none());
         assert!(saved["desktop"]["appearance"].get("menu_side").is_none());
-        for key in ["caption_side", "title_align", "actions_align", "actions_place"] {
+        for key in [
+            "caption_side",
+            "title_align",
+            "actions_align",
+            "actions_place",
+        ] {
             assert!(saved["desktop"]["appearance"].get(key).is_none());
         }
     }

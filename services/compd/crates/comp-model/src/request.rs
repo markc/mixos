@@ -847,7 +847,11 @@ pub fn parse_window_command(
                         })
                 })
                 .ok_or_else(|| {
-                    invalid_argument("command", "registry command id", "required, up to 128 bytes")
+                    invalid_argument(
+                        "command",
+                        "registry command id",
+                        "required, up to 128 bytes",
+                    )
                 })?
                 .to_owned();
             Ok(WindowCommand::Op(WindowOp::Action {

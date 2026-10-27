@@ -54,11 +54,11 @@ mod recipe;
 mod recipe_compiler;
 mod source;
 mod state;
+pub mod title_band;
 #[cfg(test)]
 mod trial;
 mod tunable;
 mod typography;
-pub mod title_band;
 
 pub use tunable::{Tunable, TunableRange, tunables};
 
@@ -69,11 +69,11 @@ pub use colour_model::{
     ResolvedPair, TEXT_PAIR_NAMES, contrast_ratio,
 };
 pub use compiler::compile_design;
+pub use context::{ActionsAlign, ActionsPlace, TitleAlign};
 pub use context::{
     CaptionSide, Contrast, Decorations, DesignContext, MenuSide, MenuStyle, Mode,
     RequestedDecorations, Scheme, Style, WindowStyle,
 };
-pub use context::{ActionsAlign, ActionsPlace, TitleAlign};
 pub use design_model::{
     AuthoredMetric, DesignApplyDecision, DesignApplyTransition, DesignCompileFailure,
     DesignCompileOutcome, DesignCompileResult, DesignCompileStatus, DesignCompileSuccess,

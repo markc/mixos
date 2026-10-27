@@ -1569,10 +1569,15 @@ fn decoration_controls(ui: &mut Ui, look: Look, events: &mut Vec<UiEvent>) {
     macro_rules! band_picker {
         ($field:ident, $axis:ty, $label:literal) => {{
             field_label(ui, &label($label));
-            let options: Vec<_> = <$axis>::ALL.into_iter()
-                .map(|v| (v.name(), label(v.label_id()))).collect();
+            let options: Vec<_> = <$axis>::ALL
+                .into_iter()
+                .map(|v| (v.name(), label(v.label_id())))
+                .collect();
             if let Some(value) = choices(ui, look.$field.as_str(), &options) {
-                events.push(UiEvent::Look(Look { $field: value.into(), ..look.clone() }));
+                events.push(UiEvent::Look(Look {
+                    $field: value.into(),
+                    ..look.clone()
+                }));
             }
             ui.end_row();
         }};

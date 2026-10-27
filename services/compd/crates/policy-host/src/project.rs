@@ -234,8 +234,7 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
             menu_side: decor::window::installed().map_or("left", |theme| theme.menu_side.name()),
             menu_services: decor::window::live_menu_services(),
             actions: decor::window::ssd_enabled()
-                && decor::window::installed()
-                    .is_some_and(|theme| theme.band.place == design::ActionsPlace::Titlebar),
+                && decor::window::installed().is_some_and(|theme| theme.hosts_actions()),
         },
         // The binding filter and tables. Before the first Bus pass
         // builds the state, the profile's default table, enabled.

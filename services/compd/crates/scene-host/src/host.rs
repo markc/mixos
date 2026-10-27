@@ -10,9 +10,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
+use dispatcher::wire::trait_::wire_trait::WireTrait;
 use serde_json::{Value, json};
 use smithay::utils::{Physical, Rectangle};
-use dispatcher::wire::trait_::wire_trait::WireTrait;
 
 use crate::command::SceneCommand;
 use crate::port::{HostConfig, Inbound, Port, Request, Waker};
@@ -738,7 +738,11 @@ impl SceneHost {
         });
         let action_sink = port.event_sink();
         decor::window::action_emitter(move |service, command| {
-            action_sink.emit(service, &format!("{service}.execute"), json!({"id":command}))
+            action_sink.emit(
+                service,
+                &format!("{service}.execute"),
+                json!({"id":command}),
+            )
         });
         // conf.mix's page order, as Quoin reads it at start.
         let mut host = Host::default();
@@ -1149,7 +1153,7 @@ impl SceneHost {
             &mut self.host.panels,
             &mut self.menu_surface,
             palette,
-            prepared,
+            prepared.clone(),
             self.appearance_generation,
             &self.wiring,
             state,

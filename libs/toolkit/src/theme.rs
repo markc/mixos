@@ -378,7 +378,9 @@ impl Theme {
         self.band = band;
         self
     }
-    pub fn band(&self) -> design::title_band::Settings { self.band }
+    pub fn band(&self) -> design::title_band::Settings {
+        self.band
+    }
 
     pub fn menu_style(&self) -> design::MenuStyle {
         self.menu_style

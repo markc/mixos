@@ -114,6 +114,11 @@ impl Palette {
 }
 
 impl ChromeTheme {
+    /// Whether this theme puts the Action Bar in the SSD title bar.
+    pub fn hosts_actions(&self) -> bool {
+        self.band.place == design::ActionsPlace::Titlebar
+    }
+
     /// Renderer-ready settings read data. Font selection and validation belong
     /// to the host resource worker, using the process's existing font system.
     pub fn from_read(

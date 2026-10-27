@@ -216,11 +216,7 @@ pub fn show_with<S>(
 
         let bar = ui.max_rect();
         let form = crate::menu::effective(ui.ctx());
-        let mark = if !server {
-            m.mark + m.mark_gap
-        } else {
-            0.0
-        };
+        let mark = if !server { m.mark + m.mark_gap } else { 0.0 };
         let menu_width: f32 = match form {
             design::MenuStyle::Bar => registry
                 .model(ui.ctx(), state, strings)
@@ -262,8 +258,8 @@ pub fn show_with<S>(
             .band
             .title
             .alignment(chrome.band.style.title_alignment());
-        let legacy_center = chrome.band.title == design::TitleAlign::Auto
-            && title_align == Alignment::Center;
+        let legacy_center =
+            chrome.band.title == design::TitleAlign::Auto && title_align == Alignment::Center;
         let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(m.title_size));
         let title_width = if server || title.is_empty() {
             0.0
@@ -279,11 +275,7 @@ pub fn show_with<S>(
                     0.0
                 }
         };
-        let captions = if server {
-            0.0
-        } else {
-            3.0 * m.caption_width
-        };
+        let captions = if server { 0.0 } else { 3.0 * m.caption_width };
         let caption_align = chrome.captions.alignment(Alignment::Right);
         let menu_align = chrome.menu_side.alignment();
         let actions_align = chrome.band.actions.alignment();
@@ -366,7 +358,9 @@ pub fn show_with<S>(
         } else {
             None
         };
-        if mark > 0.0 && let Some(icon) = icon {
+        if mark > 0.0
+            && let Some(icon) = icon
+        {
             let at = pos2(menu.left(), bar.center().y - m.mark / 2.0);
             let rect = Rect::from_min_size(at, vec2(m.mark, m.mark))
                 .round_to_pixels(ui.pixels_per_point());

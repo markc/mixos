@@ -550,16 +550,22 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
                 typed(path, value.unwrap_or(json!(defaults.appearance.menu_style)))?
         }
         "appearance.title_align" => {
-            desktop.appearance.title_align =
-                typed(path, value.unwrap_or(json!(defaults.appearance.title_align)))?;
+            desktop.appearance.title_align = typed(
+                path,
+                value.unwrap_or(json!(defaults.appearance.title_align)),
+            )?;
         }
         "appearance.actions_place" => {
-            desktop.appearance.actions_place =
-                typed(path, value.unwrap_or(json!(defaults.appearance.actions_place)))?;
+            desktop.appearance.actions_place = typed(
+                path,
+                value.unwrap_or(json!(defaults.appearance.actions_place)),
+            )?;
         }
         "appearance.actions_align" => {
-            desktop.appearance.actions_align =
-                typed(path, value.unwrap_or(json!(defaults.appearance.actions_align)))?;
+            desktop.appearance.actions_align = typed(
+                path,
+                value.unwrap_or(json!(defaults.appearance.actions_align)),
+            )?;
         }
         "appearance.menu_side" => {
             desktop.appearance.menu_side =

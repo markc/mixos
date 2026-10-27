@@ -211,4 +211,3 @@ icons! {
     ZoomIn => "zoom-in",
     ZoomOut => "zoom-out",
 }
-

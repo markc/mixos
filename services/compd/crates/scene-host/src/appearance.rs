@@ -127,8 +127,12 @@ pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
             chrome.band = theme.band();
             chrome.captions = theme.captions();
             chrome.action_style = theme.style();
-            chrome.action_stroke = snapshot.effective.get(CONTEXT).and_then(|e| e.icon_stroke)
-                .map(|stroke|stroke as f32).unwrap_or_else(||toolkit::icons::stroke_width(&theme));
+            chrome.action_stroke = snapshot
+                .effective
+                .get(CONTEXT)
+                .and_then(|e| e.icon_stroke)
+                .map(|stroke| stroke as f32)
+                .unwrap_or_else(|| toolkit::icons::stroke_width(&theme));
             chrome
         })
         .collect();

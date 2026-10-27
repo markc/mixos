@@ -31,9 +31,9 @@ impl Default for Published {
 
 fn published(ctx: &Context) -> Arc<Mutex<Published>> {
     ctx.data_mut(|data| {
-        data.get_temp_mut_or_default::<Arc<Mutex<Published>>>(
-            egui::Id::unique("toolkit.titlebar.published"),
-        )
+        data.get_temp_mut_or_default::<Arc<Mutex<Published>>>(egui::Id::unique(
+            "toolkit.titlebar.published",
+        ))
         .clone()
     })
 }

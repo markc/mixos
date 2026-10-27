@@ -1847,8 +1847,16 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         Bool,
         "Whether the session requests an SSD menu button; each window also needs a registered app service"
     ),
-    descriptor!(&[L("decoration"), L("actions")], Bool, "Registered SSD Action Bar hosting is selected"),
-    descriptor!(&[L("surfaces"), S, L("action_count")], Number, "Number of visible hosted action icons"),
+    descriptor!(
+        &[L("decoration"), L("actions")],
+        Bool,
+        "Registered SSD Action Bar hosting is selected"
+    ),
+    descriptor!(
+        &[L("surfaces"), S, L("action_count")],
+        Number,
+        "Number of visible hosted action icons"
+    ),
     descriptor!(&[L("decoration"), L("menu_side")], String, "The SSD menu button side", enum = design::MenuSide::NAMES),
     descriptor!(
         &[L("decoration"), L("menu_services")],

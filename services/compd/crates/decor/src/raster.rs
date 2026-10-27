@@ -9,7 +9,9 @@
 //! This is the frame shader's maths run once per state change instead of once
 //! per frame: chrome repaints only when what it shows changes.
 
-use crate::layout::{ButtonShape, CaptionButton, ChromeLayout, DecoTheme, GlyphPolicy, Rect, Srgba};
+use crate::layout::{
+    ButtonShape, CaptionButton, ChromeLayout, DecoTheme, GlyphPolicy, Rect, Srgba,
+};
 
 use crate::state::ChromeState;
 use crate::text::TextMask;
@@ -313,9 +315,11 @@ pub fn titlebar(
             } else {
                 colours.fill(bstate, focus)
             };
-            for y in (rect.y * scale).max(0.0) as u32..((rect.y + rect.h) * scale).min(h as f32) as u32 {
-                for x in
-                    (rect.x * scale).max(0.0) as u32..((rect.x + rect.w) * scale).min(w as f32) as u32
+            for y in
+                (rect.y * scale).max(0.0) as u32..((rect.y + rect.h) * scale).min(h as f32) as u32
+            {
+                for x in (rect.x * scale).max(0.0) as u32
+                    ..((rect.x + rect.w) * scale).min(w as f32) as u32
                 {
                     img.over(x, y, premul(fill, 1.0));
                 }
@@ -336,7 +340,8 @@ pub fn titlebar(
         } else {
             toolkit::icons::DEFAULT_STROKE
         };
-        let Some(icon) = icon_image(icon, (size * scale).round().max(1.0) as u32, tint, stroke) else {
+        let Some(icon) = icon_image(icon, (size * scale).round().max(1.0) as u32, tint, stroke)
+        else {
             continue;
         };
         let (ox, oy) = (
@@ -446,7 +451,7 @@ mod tests {
 
     #[test]
     fn lucide_rasters_are_tinted_premultiplied_and_cached() {
-        let colour = Srgba::new(0.8,0.2,0.1,0.5);
+        let colour = Srgba::new(0.8, 0.2, 0.1, 0.5);
         let a = icon_image(icons::Icon::Sun, 20, colour, 1.5).unwrap();
         let b = icon_image(icons::Icon::Sun, 20, colour, 1.5).unwrap();
         assert!(std::rc::Rc::ptr_eq(&a, &b));

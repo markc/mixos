@@ -93,7 +93,11 @@ pub enum Inbound {
     Request(Request),
     /// The broker's full set of registered services from a fresh snapshot.
     Live(BTreeSet<String>),
-    Titlebar { generation: u64, service: String, form: Value },
+    Titlebar {
+        generation: u64,
+        service: String,
+        form: Value,
+    },
     Repaint,
 }
 
@@ -111,7 +115,10 @@ enum Outbound {
     /// A topic wire: `<service>.scene.changed`, or with `panel`
     /// `<service>.panel.changed`, retained as Quoin's is (a loader that
     /// subscribes late still reads the current panels).
-    Publish { panel: bool, wire: String },
+    Publish {
+        panel: bool,
+        wire: String,
+    },
 }
 
 struct Event {
@@ -1379,10 +1386,16 @@ mod tests {
         let services = vec!["prefs".into()];
         assert_eq!(titlebar_change(&command, &services), Some("prefs"));
         assert_eq!(titlebar_change(&command, &[]), None);
-        command.headers.insert("broker_service".into(), "other".into());
+        command
+            .headers
+            .insert("broker_service".into(), "other".into());
         assert_eq!(titlebar_change(&command, &services), None);
-        command.headers.insert("broker_service".into(), "prefs".into());
-        command.headers.insert("broker_origin".into(), "remote".into());
+        command
+            .headers
+            .insert("broker_service".into(), "prefs".into());
+        command
+            .headers
+            .insert("broker_origin".into(), "remote".into());
         assert_eq!(titlebar_change(&command, &services), None);
     }
 
@@ -1662,7 +1675,10 @@ mod tests {
         async fn changed(client: &SupervisedClient, revision: u64) -> u8 {
             let topic = "prefs.ui.titlebar.changed";
             let headers = BTreeMap::from([("name".into(), topic.into())]);
-            let wire = format!("---\ncommand: {topic}\n---\n{}", json!({"revision": revision}));
+            let wire = format!(
+                "---\ncommand: {topic}\n---\n{}",
+                json!({"revision": revision})
+            );
             let (rc, _, _) = client
                 .call_with_headers_raw("noded", "topic.publish", &headers, &wire)
                 .await

@@ -15,7 +15,9 @@ const THEME: &str = "mixos";
 pub fn merge(existing: Option<&str>, side: CaptionSide) -> Option<String> {
     let text = existing.unwrap_or_default();
     let layout = match side {
-        CaptionSide::Auto | CaptionSide::Center | CaptionSide::Right => "menu:minimize,maximize,close",
+        CaptionSide::Auto | CaptionSide::Center | CaptionSide::Right => {
+            "menu:minimize,maximize,close"
+        }
         CaptionSide::Left => "close,minimize,maximize:menu",
     };
     let keys = [(LAYOUT, layout), (ICON_THEME, THEME)];

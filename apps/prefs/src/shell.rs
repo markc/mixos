@@ -580,7 +580,10 @@ impl Shell {
         };
         let base = match &look {
             Some(look) => base
-                .framed(look.decorations, design::CaptionSide::resolve(&look.captions))
+                .framed(
+                    look.decorations,
+                    design::CaptionSide::resolve(&look.captions),
+                )
                 .with_menus(
                     design::MenuStyle::resolve(&look.menu_style),
                     design::MenuSide::resolve(&look.menu_side),

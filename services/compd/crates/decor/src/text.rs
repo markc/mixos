@@ -26,9 +26,10 @@ thread_local! {
 
 pub fn title_width(title: &str, family: &DecoFontFamily, size: f32, weight: u16) -> f32 {
     WIDTHS.with_borrow_mut(|cache| {
-        if let Some(entry) = cache.iter().find(|e| {
-            e.0 == title && &e.1 == family && e.2 == size.to_bits() && e.3 == weight
-        }) {
+        if let Some(entry) = cache
+            .iter()
+            .find(|e| e.0 == title && &e.1 == family && e.2 == size.to_bits() && e.3 == weight)
+        {
             return entry.4;
         }
         let Ok(mut fonts) = font_system().lock() else {

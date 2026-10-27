@@ -419,7 +419,7 @@ mod tests {
             ("caption_side", design::CaptionSide::NAMES),
         ] {
             for name in names.iter().copied().chain(["future-choice"]) {
-                let desktop = crate::patch(
+                let desktop = crate::resolve::patch(
                     &Desktop::default(),
                     &std::collections::BTreeMap::from([(
                         format!("appearance.{axis}"),

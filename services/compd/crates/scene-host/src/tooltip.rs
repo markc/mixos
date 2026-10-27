@@ -470,7 +470,11 @@ mod tests {
 
     #[test]
     fn action_tips_follow_the_icon_and_stay_inside_the_output() {
-        for scene in [(0.0,0.0,28.0,28.0),(1520.0,0.0,28.0,28.0),(1520.0,840.0,28.0,28.0)] {
+        for scene in [
+            (0.0, 0.0, 28.0, 28.0),
+            (1520.0, 0.0, 28.0, 28.0),
+            (1520.0, 840.0, 28.0, 28.0),
+        ] {
             let (x, y, w, h) = place(
                 scene,
                 &at((0.0, 0.0, 28.0, 28.0), (120.0, 40.0)),

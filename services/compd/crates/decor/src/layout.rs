@@ -216,11 +216,7 @@ impl ChromeLayout {
             c.edge_inset
         };
         let cluster_width = inset + 3.0 * bw + 2.0 * gap;
-        let menu_width = if menu_side.is_some() {
-            titlebar.h
-        } else {
-            0.0
-        };
+        let menu_width = if menu_side.is_some() { titlebar.h } else { 0.0 };
         let action_cell = titlebar.h;
         let minimum = actions
             .items
@@ -279,7 +275,10 @@ impl ChromeLayout {
             buttons[i] = (kind, rect(titlebar.x + x, by, bw, bh));
         }
         let button_cluster = rect(
-            buttons.iter().map(|(_, r)| r.x).fold(f32::INFINITY, f32::min),
+            buttons
+                .iter()
+                .map(|(_, r)| r.x)
+                .fold(f32::INFINITY, f32::min),
             by,
             3.0 * bw + 2.0 * gap,
             bh,
