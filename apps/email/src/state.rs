@@ -3980,7 +3980,9 @@ impl State {
         };
         match choice {
             DraftChoice::Back => {
-                if asked == Confirm::Quit { self.cancel_quit(); }
+                if asked == Confirm::Quit {
+                    self.cancel_quit();
+                }
                 return;
             }
             DraftChoice::Keep => {

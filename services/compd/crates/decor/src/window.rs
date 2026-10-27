@@ -78,7 +78,10 @@ pub fn execute_action(window: &Window, command: &str) -> bool {
         return false;
     }
     let app = app_id(window).unwrap_or_default();
-    ACTION_EMIT.with_borrow(|emit| emit.as_ref().is_some_and(|emit| emit(&service, menu_viewport(&app), command)))
+    ACTION_EMIT.with_borrow(|emit| {
+        emit.as_ref()
+            .is_some_and(|emit| emit(&service, menu_viewport(&app), command))
+    })
 }
 
 pub fn click_action(window: &Window, revision: u64, index: usize) -> bool {
@@ -143,8 +146,11 @@ pub fn menu_service<'a>(app_id: &'a str, services: &BTreeSet<String>) -> Option<
 /// A dotted app-id suffix names the application's drive viewport. The first
 /// segment remains the registered Bus service (e.g. email.compose-2).
 pub fn menu_viewport(app_id: &str) -> Option<&str> {
-    app_id.strip_prefix("dev.mixos.")?.split_once('.')
-        .map(|(_, viewport)| viewport).filter(|v| !v.is_empty())
+    app_id
+        .strip_prefix("dev.mixos.")?
+        .split_once('.')
+        .map(|(_, viewport)| viewport)
+        .filter(|v| !v.is_empty())
 }
 
 fn app_id(window: &Window) -> Option<String> {
@@ -172,7 +178,13 @@ fn menu_target(window: &Window) -> Option<(String, Option<String>, design::MenuS
     }
     let app_id = app_id(window)?;
     MENU_SERVICES.with_borrow(|live| {
-        menu_service(&app_id, live).map(|service| (service.to_owned(), menu_viewport(&app_id).map(str::to_owned), theme.menu_side))
+        menu_service(&app_id, live).map(|service| {
+            (
+                service.to_owned(),
+                menu_viewport(&app_id).map(str::to_owned),
+                theme.menu_side,
+            )
+        })
     })
 }
 
@@ -493,12 +505,7 @@ mod tests {
     fn only_registered_mixos_app_services_get_a_menu() {
         let services = BTreeSet::from(["ced".into(), "prefs".into()]);
         assert_eq!(menu_service("dev.mixos.ced", &services), Some("ced"));
-        for id in [
-            "ced",
-            "org.example.ced",
-            "dev.mixos.",
-            "dev.mixos.term",
-        ] {
+        for id in ["ced", "org.example.ced", "dev.mixos.", "dev.mixos.term"] {
             assert_eq!(menu_service(id, &services), None);
         }
     }
@@ -506,7 +513,10 @@ mod tests {
     #[test]
     fn composers_share_the_service_but_address_their_own_menu() {
         let live = BTreeSet::from(["email".into()]);
-        for (app, viewport) in [("dev.mixos.email", None), ("dev.mixos.email.compose-2", Some("compose-2"))] {
+        for (app, viewport) in [
+            ("dev.mixos.email", None),
+            ("dev.mixos.email.compose-2", Some("compose-2")),
+        ] {
             assert_eq!(menu_service(app, &live), Some("email"));
             assert_eq!(menu_viewport(app), viewport);
         }

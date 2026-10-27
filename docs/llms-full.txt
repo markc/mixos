@@ -38360,8 +38360,8 @@ the predecessor repository at revision
   quit permission and deferred owner close; both empty and object Quit bodies
   return the same fields and publish the registry execution.
 - Batch mixed mailbox drops into one composer and register document drops by
-  the returned read ticket. Add the missing closed-composer label and check
-  literal source label keys against the English catalogue.
+  the returned read ticket. Test the existing closed-composer label on a late
+  drop failure and check literal source label keys against the English catalogue.
 - Refuse `window` on compose, reply and forward, which always create windows;
   stamp opened window names only on compose-opening command replies.
 

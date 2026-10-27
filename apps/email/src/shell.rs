@@ -879,7 +879,10 @@ impl Shell {
                     .events
                     .iter()
                     .any(|e| matches!(e, UiEvent::Command("file.quit", _)));
-                let restore = input.events.iter().any(|e| matches!(e, UiEvent::RestoreDraft(_)));
+                let restore = input
+                    .events
+                    .iter()
+                    .any(|e| matches!(e, UiEvent::RestoreDraft(_)));
                 let origin = input
                     .request
                     .and_then(|id| self.drive_callers.get(&id))
@@ -889,9 +892,11 @@ impl Shell {
                         o
                     });
                 apply_ui_events(&mut self.state, &registry, input.events, origin);
-                if restore && self.composers.compose_only
+                if restore
+                    && self.composers.compose_only
                     && window.viewport == egui::ViewportId::ROOT
-                    && self.state.restore.is_empty() && self.state.compose.is_none()
+                    && self.state.restore.is_empty()
+                    && self.state.compose.is_none()
                 {
                     self.state.compose();
                 }
@@ -902,7 +907,10 @@ impl Shell {
                 if quit || quit_question {
                     self.state.exiting = false;
                 }
-                if (close || quit_question) && self.state.compose.is_none() && !self.state.documents.opening() {
+                if (close || quit_question)
+                    && self.state.compose.is_none()
+                    && !self.state.documents.opening()
+                {
                     window.closed = true;
                 }
                 self.ctx.request_repaint_of(window.viewport);
@@ -953,20 +961,20 @@ impl Shell {
             });
         let ticket = match result {
             Err((_, message)) => {
-            if let Some(window) = origin
-                .as_ref()
-                .and_then(|name| self.composers.windows.get(name))
-            {
-                let mut window = window.lock().unwrap();
-                if let Some(compose) = &mut window.view.compose {
-                    compose.error = Some(message);
+                if let Some(window) = origin
+                    .as_ref()
+                    .and_then(|name| self.composers.windows.get(name))
+                {
+                    let mut window = window.lock().unwrap();
+                    if let Some(compose) = &mut window.view.compose {
+                        compose.error = Some(message);
+                    } else {
+                        window.view.status = message;
+                    }
+                    self.ctx.request_repaint_of(window.viewport);
                 } else {
-                    window.view.status = message;
+                    self.state.status = message;
                 }
-                self.ctx.request_repaint_of(window.viewport);
-            } else {
-                self.state.status = message;
-            }
                 None
             }
             Ok(ticket) => {
@@ -981,7 +989,8 @@ impl Shell {
 
     fn mailbox_drop(&mut self, paths: Vec<PathBuf>) {
         let (documents, attachments): (Vec<_>, Vec<_>) = paths.into_iter().partition(|path| {
-            path.extension().is_some_and(|e| e.eq_ignore_ascii_case("md"))
+            path.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("md"))
         });
         let mut first = None;
         for path in documents {
@@ -1001,6 +1010,7 @@ impl Shell {
         let target = origin
             .as_ref()
             .and_then(|name| self.composers.windows.get(name))
+            .filter(|window| !window.lock().unwrap().closed)
             .cloned();
         if origin.is_some() && target.is_none() {
             self.state.status = label("compose-not-open");
@@ -1745,9 +1755,18 @@ impl Shell {
                         .remove(ticket)
                         .filter(|_| target.is_some())
                         .map(|(origin, mut paths)| {
-                            if result.is_ok() { paths.remove(0); }
+                            if result.is_ok() {
+                                paths.remove(0);
+                            }
                             let name = target.as_ref().unwrap().lock().unwrap().name.clone();
-                            (if result.is_err() { origin.unwrap_or(name) } else { name }, paths)
+                            (
+                                if result.is_err() {
+                                    origin.unwrap_or(name)
+                                } else {
+                                    name
+                                },
+                                paths,
+                            )
                         })
                 } else {
                     None
@@ -1781,7 +1800,9 @@ impl Shell {
                     self.state.status = notice;
                 }
             }
-            if let Some((origin, paths)) = dropped && !paths.is_empty() {
+            if let Some((origin, paths)) = dropped
+                && !paths.is_empty()
+            {
                 // Attach before refresh retires the document's loading window.
                 self.attach_drop(Some(origin), paths);
             }
@@ -1925,7 +1946,9 @@ impl Shell {
                 })
                 .collect();
             self.composers.quitting = true;
-            let _ = self.commands.execute("file.quit", &mut self.state, toolkit::action::Origin::Bus);
+            let _ =
+                self.commands
+                    .execute("file.quit", &mut self.state, toolkit::action::Origin::Bus);
             self.publish_executed();
             self.bus.reply(id, 0, json!({"quitting":windows.is_empty(), "confirming":!windows.is_empty(), "windows":windows}));
             self.advance_close();
@@ -1966,8 +1989,11 @@ impl Shell {
             drive_request_id: None,
             mixed_input: false,
         };
-        if args.is_some() && (matches!(command_name, "email.compose" | "email.reply" | "email.forward")
-            || (command_name == "email.execute" && action == Some("compose.new")))
+        if args.is_some()
+            && (matches!(
+                command_name,
+                "email.compose" | "email.reply" | "email.forward"
+            ) || (command_name == "email.execute" && action == Some("compose.new")))
         {
             self.compose_replies.insert(id);
         }
@@ -2567,7 +2593,9 @@ mod tests {
     }
 
     fn tick(shell: &mut Shell) {
-        shell.runtime.block_on(async { tokio::time::sleep(std::time::Duration::from_millis(5)).await });
+        shell
+            .runtime
+            .block_on(async { tokio::time::sleep(std::time::Duration::from_millis(5)).await });
         shell.pump();
     }
 
@@ -2576,8 +2604,17 @@ mod tests {
         shell.command(id, command, body);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
         loop {
-            if let Some((_, rc, body)) = shell.bus.responses().into_iter().find(|(reply, _, _)| *reply == id) {
-                return citizen::Reply { rc, body: body.to_string(), error: None };
+            if let Some((_, rc, body)) = shell
+                .bus
+                .responses()
+                .into_iter()
+                .find(|(reply, _, _)| *reply == id)
+            {
+                return citizen::Reply {
+                    rc,
+                    body: body.to_string(),
+                    error: None,
+                };
             }
             assert!(std::time::Instant::now() < deadline);
             tick(shell);
@@ -2590,7 +2627,10 @@ mod tests {
         for choice in [DraftChoice::Keep, DraftChoice::Back, DraftChoice::Discard] {
             let (mut shell, _broker) = compose_fixture(true);
             shell.state.offer_drafts(vec![crate::drafts::SavedDraft {
-                id: "kept".into(), account: "a".into(), subject: "kept subject".into(), ..Default::default()
+                id: "kept".into(),
+                account: "a".into(),
+                subject: "kept subject".into(),
+                ..Default::default()
             }]);
             shell.compose_launch(true, None);
             let owner = shell.composers.windows["compose-1"].clone();
@@ -2598,15 +2638,26 @@ mod tests {
             shell.sync_composers();
             assert_eq!(owner.lock().unwrap().view.restore.len(), 1);
             owner.lock().unwrap().pending.push(crate::composer::Input {
-                events: vec![UiEvent::RestoreDraft(choice)], request: None, mixed: false,
+                events: vec![UiEvent::RestoreDraft(choice)],
+                request: None,
+                mixed: false,
             });
             shell.composer_input();
             shell.sync_composers();
             shell.sync_composers();
             let owner = owner.lock().unwrap();
-            assert!(owner.view.restore.is_empty(), "a dismissed offer must stay dismissed");
-            assert_eq!(owner.view.compose.as_ref().unwrap().draft.subject,
-                if choice == DraftChoice::Keep { "kept subject" } else { "" });
+            assert!(
+                owner.view.restore.is_empty(),
+                "a dismissed offer must stay dismissed"
+            );
+            assert_eq!(
+                owner.view.compose.as_ref().unwrap().draft.subject,
+                if choice == DraftChoice::Keep {
+                    "kept subject"
+                } else {
+                    ""
+                }
+            );
             assert!(!shell.state.exiting);
             shell.bus.quit();
         }
@@ -2615,21 +2666,74 @@ mod tests {
     #[test]
     fn round2_document_launch_suppresses_kept_draft_offer() {
         let (mut shell, _broker) = compose_fixture(true);
-        shell.state.offer_drafts(vec![crate::drafts::SavedDraft { id: "kept".into(), account: "a".into(), ..Default::default() }]);
+        shell.state.offer_drafts(vec![crate::drafts::SavedDraft {
+            id: "kept".into(),
+            account: "a".into(),
+            ..Default::default()
+        }]);
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("message.md");
-        std::fs::write(&path, "---\nmail-to: ann@example.invalid\nmail-subject: Document\n---\nbody\n").unwrap();
+        std::fs::write(
+            &path,
+            "---\nmail-to: ann@example.invalid\nmail-subject: Document\n---\nbody\n",
+        )
+        .unwrap();
         shell.compose_launch(true, Some(path));
-        assert!(shell.composers.windows["compose-1"].lock().unwrap().view.documents.opening());
-        assert!(shell.composers.windows["compose-1"].lock().unwrap().view.restore.is_empty());
+        assert!(
+            shell.composers.windows["compose-1"]
+                .lock()
+                .unwrap()
+                .view
+                .documents
+                .opening()
+        );
+        assert!(
+            shell.composers.windows["compose-1"]
+                .lock()
+                .unwrap()
+                .view
+                .restore
+                .is_empty()
+        );
         for _ in 0..40 {
             tick(&mut shell);
-            if shell.composers.windows["compose-1"].lock().unwrap().view.compose.is_some() { break; }
+            if shell.composers.windows["compose-1"]
+                .lock()
+                .unwrap()
+                .view
+                .compose
+                .is_some()
+            {
+                break;
+            }
         }
         shell.sync_composers();
         let owner = shell.composers.windows["compose-1"].lock().unwrap();
-        assert_eq!(owner.view.compose.as_ref().unwrap().draft.subject, "Document");
+        assert_eq!(
+            owner.view.compose.as_ref().unwrap().draft.subject,
+            "Document"
+        );
         assert!(owner.view.restore.is_empty());
+        shell.bus.quit();
+    }
+
+    #[test]
+    fn round2_refresh_preserves_a_synchronous_window_restore_offer() {
+        let (mut shell, _broker) = compose_fixture(true);
+        shell.composers.insert(&mut shell.state, shell.palette.clone());
+        let owner = shell.composers.windows["compose-1"].clone();
+        owner.lock().unwrap().view.offer_drafts(vec![crate::drafts::SavedDraft {
+            id: "synchronous".into(), account: "a".into(), subject: "kept".into(), ..Default::default()
+        }]);
+        shell.sync_composers();
+        assert_eq!(owner.lock().unwrap().view.restore[0].id, "synchronous");
+        owner.lock().unwrap().pending.push(crate::composer::Input {
+            events: vec![UiEvent::RestoreDraft(crate::state::DraftChoice::Back)], request: None, mixed: false,
+        });
+        shell.composer_input();
+        shell.sync_composers();
+        assert!(owner.lock().unwrap().view.restore.is_empty());
+        assert!(owner.lock().unwrap().view.compose.is_some());
         shell.bus.quit();
     }
 
@@ -2640,10 +2744,20 @@ mod tests {
         let window = shell.composers.windows["compose-1"].clone();
         let ticket = {
             let mut window = window.lock().unwrap();
-            window.view.write_document("/home/user/message.md".into(), false);
-            window.view.take_work().into_iter().find_map(|work| match work {
-                Work::MailDocument(crate::documents::DocumentWork::Save { ticket, .. }) => Some(ticket), _ => None
-            }).unwrap()
+            window
+                .view
+                .write_document("/home/user/message.md".into(), false);
+            window
+                .view
+                .take_work()
+                .into_iter()
+                .find_map(|work| match work {
+                    Work::MailDocument(crate::documents::DocumentWork::Save { ticket, .. }) => {
+                        Some(ticket)
+                    }
+                    _ => None,
+                })
+                .unwrap()
         };
         shell.composers.quitting = true;
         shell.advance_close();
@@ -2651,15 +2765,27 @@ mod tests {
         assert!(window.lock().unwrap().view.documents.saving());
         let ctx = shell.ctx.clone();
         // Drain the first close/focus, then check subsequent frames emit none.
-        ctx.run_ui(Default::default(), |_| {}).drop_without_applying_deltas();
+        ctx.run_ui(Default::default(), |_| {})
+            .drop_without_applying_deltas();
         for _ in 0..4 {
             let output = ctx.run_ui(Default::default(), |_| shell.advance_close());
-            assert!(output.viewport_output.values().all(|v| !v.commands.contains(&egui::ViewportCommand::Focus)));
+            assert!(
+                output
+                    .viewport_output
+                    .values()
+                    .all(|v| !v.commands.contains(&egui::ViewportCommand::Focus))
+            );
             assert!(window.lock().unwrap().pending.is_empty());
             assert!(!shell.state.exiting);
             output.drop_without_applying_deltas();
         }
-        shell.tx.send(Event::MailDocument(ticket, crate::documents::Answer::Saved(Ok(())))).unwrap();
+        shell
+            .tx
+            .send(Event::MailDocument(
+                ticket,
+                crate::documents::Answer::Saved(Ok(())),
+            ))
+            .unwrap();
         shell.pump();
         shell.advance_close();
         assert!(shell.state.exiting);
@@ -2668,7 +2794,10 @@ mod tests {
 
     #[test]
     fn round2_mixed_mailbox_drop_uses_one_composer_for_document_or_readme() {
-        for markdown in ["# README\n", "---\nmail-to: ann@example.invalid\nmail-subject: Document\n---\nbody\n"] {
+        for markdown in [
+            "# README\n",
+            "---\nmail-to: ann@example.invalid\nmail-subject: Document\n---\nbody\n",
+        ] {
             let (mut shell, _broker) = compose_fixture(false);
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("message.md");
@@ -2678,10 +2807,26 @@ mod tests {
             shell.mailbox_drop(vec![path.clone(), photo.clone()]);
             for _ in 0..80 {
                 tick(&mut shell);
-                if shell.composers.windows.values().any(|w| w.lock().unwrap().view.compose.as_ref().is_some_and(|c| c.draft.attachments.contains(&photo))) { break; }
+                if shell.composers.windows.values().any(|w| {
+                    w.lock()
+                        .unwrap()
+                        .view
+                        .compose
+                        .as_ref()
+                        .is_some_and(|c| c.draft.attachments.contains(&photo))
+                }) {
+                    break;
+                }
             }
             assert_eq!(shell.composers.windows.len(), 1);
-            let window = shell.composers.windows.values().next().unwrap().lock().unwrap();
+            let window = shell
+                .composers
+                .windows
+                .values()
+                .next()
+                .unwrap()
+                .lock()
+                .unwrap();
             let draft = &window.view.compose.as_ref().unwrap().draft;
             assert!(draft.attachments.contains(&photo));
             assert_eq!(draft.attachments.contains(&path), markdown.starts_with('#'));
@@ -2693,14 +2838,28 @@ mod tests {
     fn round2_two_document_reads_in_one_frame_keep_their_drop_tickets() {
         let (mut shell, _broker) = compose_fixture(false);
         for name in ["first", "second"] {
-            shell.open_dropped_document(None, Some("a".into()), PathBuf::from(format!("/home/user/{name}.md")));
+            shell.open_dropped_document(
+                None,
+                Some("a".into()),
+                PathBuf::from(format!("/home/user/{name}.md")),
+            );
         }
         assert_eq!(shell.composers.drops.len(), 2);
         let mut owners = std::collections::BTreeSet::new();
         for (ticket, (_, paths)) in &shell.composers.drops {
-            let window = shell.composers.target(&Event::MailDocument(*ticket, crate::documents::Answer::Read(Err((code::DOCUMENT_IO, "test".into()))))).unwrap();
+            let window = shell
+                .composers
+                .target(&Event::MailDocument(
+                    *ticket,
+                    crate::documents::Answer::Read(Err((code::DOCUMENT_IO, "test".into()))),
+                ))
+                .unwrap();
             let window = window.lock().unwrap();
-            let expected = if window.name == "compose-1" { "first.md" } else { "second.md" };
+            let expected = if window.name == "compose-1" {
+                "first.md"
+            } else {
+                "second.md"
+            };
             assert_eq!(paths[0].file_name().unwrap(), expected);
             owners.insert(window.name.clone());
         }
@@ -2709,18 +2868,44 @@ mod tests {
     }
 
     #[test]
+    fn round2_failed_drop_after_origin_closes_has_a_translated_notice() {
+        let (mut shell, _broker) = compose_fixture(false);
+        add_composer(&mut shell, "origin");
+        let ticket = shell.open_dropped_document(Some("compose-1".into()), Some("a".into()), "/home/user/README.md".into()).unwrap();
+        shell.composers.windows["compose-1"].lock().unwrap().closed = true;
+        shell.sync_composers();
+        shell.tx.send(Event::MailDocument(ticket, crate::documents::Answer::Read(Err((code::DOCUMENT_IO, "read failed".into()))))).unwrap();
+        shell.pump();
+        assert_eq!(shell.state.status, label("compose-not-open"));
+        assert_ne!(shell.state.status, "compose-not-open");
+        shell.bus.quit();
+    }
+
+    #[test]
     fn round2_noncompose_reply_does_not_acquire_a_window() {
         let (mut shell, _broker) = compose_fixture(false);
         add_composer(&mut shell, "one");
         // A success payload may describe composition without opening a window.
-        shell.state.reply(77, 0, json!({"composing":"a", "subject":"existing"}));
+        shell
+            .state
+            .reply(77, 0, json!({"composing":"a", "subject":"existing"}));
         shell.settle_for(Some("compose-1"));
-        let body = shell.bus.responses().into_iter().find(|(id, _, _)| *id == 77).unwrap().2;
+        let body = shell
+            .bus
+            .responses()
+            .into_iter()
+            .find(|(id, _, _)| *id == 77)
+            .unwrap()
+            .2;
         assert!(body.get("window").is_none(), "{body}");
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("attachment.txt");
         std::fs::write(&path, "one").unwrap();
-        let reply = bus_command(&mut shell, "email.compose.attachment.add", &json!({"paths":[path]}).to_string());
+        let reply = bus_command(
+            &mut shell,
+            "email.compose.attachment.add",
+            &json!({"paths":[path]}).to_string(),
+        );
         assert_eq!(reply.rc, 0);
         let body: Value = serde_json::from_str(&reply.body).unwrap();
         assert!(body.get("window").is_none(), "{body}");
@@ -2737,7 +2922,10 @@ mod tests {
             add_composer(&mut shell, "one");
             let reply = bus_command(&mut shell, "email.quit", body);
             assert_eq!(reply.rc, 0);
-            assert_eq!(serde_json::from_str::<Value>(&reply.body).unwrap(), json!({"quitting":false,"confirming":true,"windows":["compose-1"]}));
+            assert_eq!(
+                serde_json::from_str::<Value>(&reply.body).unwrap(),
+                json!({"quitting":false,"confirming":true,"windows":["compose-1"]})
+            );
             assert!(shell.composers.quitting);
             assert!(shell.bus.log().iter().any(|entry| matches!(entry,
                 citizen::Logged::Publish { topic, body } if topic.ends_with(".action.executed") && body["id"] == "file.quit"
@@ -2754,15 +2942,28 @@ mod tests {
         shell.composers.owner_closing = true;
         let child = shell.composers.windows["compose-2"].clone();
         child.lock().unwrap().pending.push(crate::composer::Input {
-            events: vec![UiEvent::Command("file.quit", Origin::Menu)], request: None, mixed: false,
+            events: vec![UiEvent::Command("file.quit", Origin::Menu)],
+            request: None,
+            mixed: false,
         });
         shell.composer_input();
-        assert_eq!(child.lock().unwrap().view.confirm, Some(crate::state::Confirm::Quit));
+        assert_eq!(
+            child.lock().unwrap().view.confirm,
+            Some(crate::state::Confirm::Quit)
+        );
         composer_choice(&mut shell, "compose-2", crate::state::DraftChoice::Back);
         shell.advance_close();
-        assert!(!shell.composers.quitting && !shell.composers.owner_closing && !shell.state.exiting);
+        assert!(
+            !shell.composers.quitting && !shell.composers.owner_closing && !shell.state.exiting
+        );
         assert_eq!(shell.composers.windows.len(), 2);
-        assert!(shell.composers.windows.values().all(|w| w.lock().unwrap().view.confirm.is_none()));
+        assert!(
+            shell
+                .composers
+                .windows
+                .values()
+                .all(|w| w.lock().unwrap().view.confirm.is_none())
+        );
         shell.bus.quit();
     }
 
@@ -2776,8 +2977,14 @@ mod tests {
         composer_choice(&mut shell, "compose-1", crate::state::DraftChoice::Keep);
         composer_choice(&mut shell, "compose-2", crate::state::DraftChoice::Back);
         shell.state.compose();
-        shell.state.apply_ui(UiEvent::ComposeField(crate::state::ComposeField::Subject, "new draft".into()));
-        assert!(!shell.state.request_quit(), "Keep from an abandoned quit must not authorise a later quit");
+        shell.state.apply_ui(UiEvent::ComposeField(
+            crate::state::ComposeField::Subject,
+            "new draft".into(),
+        ));
+        assert!(
+            !shell.state.request_quit(),
+            "Keep from an abandoned quit must not authorise a later quit"
+        );
         assert_eq!(shell.state.confirm, Some(crate::state::Confirm::Quit));
         shell.bus.quit();
     }
