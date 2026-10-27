@@ -240,6 +240,11 @@
 <h1 id="changelog">Changelog</h1>
 <h2 id="unreleased--2026-10-27">Unreleased — 2026-10-27</h2>
 <ul>
+<li>Make <code>write</code> fallible and expose <code>validate</code>: refuse header injection,
+control characters, non-canonical fields, non-UTF-8 paths and oversized
+encoded output without panicking.</li>
+<li>Refuse bare CR as well as CRLF, and report colon-free header lines as
+malformed rather than forbidden names.</li>
 <li>Add <code>MailDocument</code>, <code>parse</code>, <code>write</code> and typed <code>Refusal</code> errors for inert
 Markdown mail documents using the Bus framing and nine mail headers.</li>
 <li>Bound input to 8 MiB, refuse routing and unknown headers, and validate

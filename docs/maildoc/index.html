@@ -245,7 +245,9 @@ transport work; Email checks sender identities and real addresses when sending.<
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/libs/maildoc"><code>libs/maildoc</code></a>.</p>
 <h2 id="api-and-format">API and format</h2>
 <p><code>parse(&amp;str) -&gt; Result&lt;MailDocument, Refusal&gt;</code> reads the document;
-<code>write(&amp;MailDocument) -&gt; String</code> serialises it. <code>MailDocument</code> derives
+<code>write(&amp;MailDocument) -&gt; Result&lt;String, Refusal&gt;</code> serialises it;
+<code>validate(&amp;MailDocument) -&gt; Result&lt;(), Refusal&gt;</code> checks canonical fields and
+encoded size for Email and ced without file I/O. <code>MailDocument</code> derives
 <code>Default</code>, <code>Clone</code>, <code>Debug</code>, <code>PartialEq</code> and <code>Eq</code>.</p>
 <pre><code class="language-text">---
 mail-attachments: ["/home/user/report.pdf"]
@@ -268,20 +270,22 @@ The **build** is ready.
 <tr><td><code>mail-attachments</code></td><td><code>Vec&lt;PathBuf&gt;</code></td><td>JSON array of absolute UTF-8 paths; never opened</td></tr>
 </tbody></table>
 <p>Address validation here checks only that each entry is non-empty and contains
-<code>@</code>. Commas always separate list entries, including commas inside display names;
+<code>@</code>, is trimmed and contains no comma. Commas always separate list entries, including commas inside display names;
 full RFC address parsing belongs to Email.</p>
 <p>An ordinary value starting with <code>"</code> must be a JSON string and is decoded.
 Other ordinary values are taken as written after the wire parser trims them;
 even an unquoted <code>[PATCH]</code> is accepted. The wire parser's advisory JSON errors
 do not reject ordinary mail text. Attachments must always be a valid JSON
 array of strings, never a JSON string containing an array. Decoded values,
-including each attachment path, must contain no CR or LF.</p>
+including each attachment path, must contain no control characters (including
+CR, LF and tab). Raw header values have the same restriction.</p>
 <p>Every other header is refused by name, including unknown <code>mail-*</code> names and
 all routing or broker names. Malformed and duplicate header lines are refused
 before the lenient parser can skip or overwrite them. Empty values, including
 <code>""</code> and bare <code>mail-subject:</code>, are refused; omit the header instead. Empty
 lists are accepted and disappear when written. Both fences are required.
-CRLF anywhere in the document has a separate <code>Refusal::Crlf</code> error.</p>
+Any CR anywhere in the document, including bare CR and CRLF, has a separate
+<code>Refusal::CarriageReturn</code> error with guidance to use LF.</p>
 <p>Input larger than <code>MAX_DOCUMENT_BYTES</code> (8 MiB, the broker relay frame cap) is
 refused with <code>Refusal::TooLarge</code>. The bound counts UTF-8 bytes for the complete
 document, including framing; exactly 8 MiB is accepted. It applies locally too.</p>
@@ -303,25 +307,25 @@ separators become one space. Their original separator bytes are not kept.</li>
 <code>wire::parse_lenient</code>: spaces at the very end and trailing blank lines
 disappear. Leading whitespace and interior line endings/spaces survive.</li>
 </ul>
-<p>For example, a body <code>hello  \n\n</code> reads as <code>hello</code>. The writer preserves the
-given body; the parser performs this normalisation. Equality is document
-equality after normalisation, never byte identity.</p>
-<p><code>parse(write(d)) == d</code> holds for every canonical valid document: header values
-contain no CR/LF; address-list entries are trimmed, non-empty, contain <code>@</code> and
-no comma; From/Reply-To contain <code>@</code>; optional strings are non-empty; reference
-entries are non-empty whitespace-free tokens; attachment paths are absolute
-UTF-8 without CR/LF; the body has no CRLF or trailing whitespace; and the
-encoded document fits 8 MiB. All parsed documents have canonical field forms.
-If added JSON quoting expands a near-limit input over 8 MiB, its output must
-be reduced before parsing again. The writer assumes these preconditions,
-does not return validation errors, and panics for non-UTF-8 attachment paths.
-Callers constructing structs must honour them.</p>
+<p>For example, a body <code>hello  \n\n</code> reads as <code>hello</code>. Before writing that parsed
+document, the caller gets the normalised body <code>hello</code>. The writer refuses a
+body with trailing whitespace rather than silently changing its content.</p>
+<p><code>write</code> refuses non-canonical input. Header values contain no controls;
+all address entries (including From/Reply-To) are trimmed, non-empty, contain
+<code>@</code> and no comma; optional strings are non-empty; reference entries are
+non-empty whitespace-free tokens; attachment paths are absolute UTF-8 without
+controls; the body has no CR or trailing whitespace; and the encoded document
+fits 8 MiB, including any expansion from JSON quoting. Non-UTF-8 paths return
+<code>InvalidValue { header: "mail-attachments", reason: "path is not UTF-8" }</code>.
+Parsing applies the same checks after normalisation. Every successful write
+parses back to an equal document: <code>parse(&amp;write(&amp;d)?)? == d</code>.</p>
 <p>Adding these names to <code>bus::wire::KNOWN_HEADERS</code> only silences advisory
 <code>validate()</code> warnings. This crate's allowlist enforces the document boundary.</p>
 <h2 id="tests">Tests</h2>
 <p>Run <code>cargo test -p maildoc -p bus --locked</code> through the build cluster.
 Unit tests cover refusals, quoting, normalisation, framing, sorted headers
-and the relay bound; proptest checks canonical document round-trip equality.</p>
+and the relay bound; proptest checks canonical document round-trip equality
+and that arbitrary documents either fail writing or round-trip unchanged.</p>
         </article>
         <p class="doc-source"><a href="/maildoc/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

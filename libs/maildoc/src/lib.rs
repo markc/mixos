@@ -50,7 +50,7 @@ pub struct MailDocument {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refusal {
     TooLarge { bytes: usize },
-    Crlf,
+    CarriageReturn,
     Framing(String),
     HeaderNotAllowed(String),
     MalformedHeader(String),
@@ -66,8 +66,8 @@ impl fmt::Display for Refusal {
                 f,
                 "mail document is {bytes} bytes; maximum is {MAX_DOCUMENT_BYTES} bytes (8 MiB)"
             ),
-            Self::Crlf => {
-                f.write_str("mail document uses CRLF; use LF and an opening '---\\n' fence")
+            Self::CarriageReturn => {
+                f.write_str("mail document contains CR (including CRLF); use LF and an opening '---\\n' fence")
             }
             Self::Framing(reason) => write!(f, "invalid mail document framing: {reason}"),
             Self::HeaderNotAllowed(name) => {
@@ -94,12 +94,19 @@ fn single_line(header: &str, value: &str) -> Result<(), Refusal> {
     if value.contains(['\r', '\n']) {
         return Err(invalid(header, "CR or LF in a value"));
     }
+    if value.contains(char::is_control) {
+        return Err(invalid(header, "control character in a value"));
+    }
     Ok(())
 }
 
 fn address(header: &str, value: &str) -> Result<(), Refusal> {
+    single_line(header, value)?;
     if value.trim().is_empty() || !value.contains('@') {
         return Err(invalid(header, "address must be non-empty and contain @"));
+    }
+    if value.trim() != value || value.contains(',') {
+        return Err(invalid(header, "address must be trimmed and contain no comma"));
     }
     Ok(())
 }
@@ -125,8 +132,8 @@ pub fn parse(text: &str) -> Result<MailDocument, Refusal> {
     if text.len() > MAX_DOCUMENT_BYTES {
         return Err(Refusal::TooLarge { bytes: text.len() });
     }
-    if text.contains("\r\n") {
-        return Err(Refusal::Crlf);
+    if text.contains('\r') {
+        return Err(Refusal::CarriageReturn);
     }
     let content = text
         .strip_prefix("---\n")
@@ -144,7 +151,10 @@ pub fn parse(text: &str) -> Result<MailDocument, Refusal> {
         if line.is_empty() {
             continue;
         }
-        let name = line.split_once(':').map_or(line, |(name, _)| name).trim();
+        let (name, _) = line
+            .split_once(':')
+            .ok_or_else(|| Refusal::MalformedHeader(line.to_owned()))?;
+        let name = name.trim();
         if !HEADERS.contains(&name) {
             return Err(Refusal::HeaderNotAllowed(name.to_owned()));
         }
@@ -231,41 +241,99 @@ pub fn parse(text: &str) -> Result<MailDocument, Refusal> {
             _ => return Err(Refusal::HeaderNotAllowed(name)),
         }
     }
+    validate(&document)?;
     Ok(document)
 }
 
-fn set(message: &mut BusMessage, name: &str, value: &str) {
+fn set(message: &mut BusMessage, name: &str, value: &str) -> Result<(), Refusal> {
     if value.is_empty() {
-        return;
+        return Ok(());
     }
     let encoded;
     let value = if value.starts_with(['[', '{', '"']) || value.trim() != value {
-        encoded = serde_json::to_string(value).expect("strings are JSON serialisable");
+        encoded = serde_json::to_string(value).map_err(|err| invalid(name, err.to_string()))?;
         &encoded
     } else {
         value
     };
     message.set(name, value);
+    Ok(())
+}
+
+fn validate_fields(document: &MailDocument) -> Result<(), Refusal> {
+    for (name, values) in [
+        ("mail-to", &document.to),
+        ("mail-cc", &document.cc),
+        ("mail-bcc", &document.bcc),
+    ] {
+        for value in values {
+            address(name, value)?;
+        }
+    }
+    for (name, value) in [
+        ("mail-from", document.from.as_deref()),
+        ("mail-reply-to", document.reply_to.as_deref()),
+        ("mail-in-reply-to", document.in_reply_to.as_deref()),
+    ] {
+        if let Some(value) = value {
+            single_line(name, value)?;
+            if value.is_empty() {
+                return Err(Refusal::EmptyValue(name.into()));
+            }
+            if name != "mail-in-reply-to" {
+                address(name, value)?;
+            }
+        }
+    }
+    single_line("mail-subject", &document.subject)?;
+    for value in &document.references {
+        single_line("mail-references", value)?;
+        if value.is_empty() || value.contains(char::is_whitespace) {
+            return Err(invalid("mail-references", "reference must be a non-empty token without whitespace"));
+        }
+    }
+    for path in &document.attachments {
+        let value = path
+            .to_str()
+            .ok_or_else(|| invalid("mail-attachments", "path is not UTF-8"))?;
+        single_line("mail-attachments", value)?;
+        if !path.is_absolute() {
+            return Err(invalid("mail-attachments", "attachment path must be absolute"));
+        }
+    }
+    if document.body.contains('\r') {
+        return Err(Refusal::CarriageReturn);
+    }
+    if document.body.trim_end() != document.body {
+        return Err(invalid("body", "trailing whitespace is not canonical"));
+    }
+    Ok(())
+}
+
+/// Check canonical fields and the complete encoded size without file I/O.
+/// Email and ced can use this before saving or considering a send.
+pub fn validate(document: &MailDocument) -> Result<(), Refusal> {
+    write(document).map(|_| ())
 }
 
 /// Write sorted headers with LF framing, omitting empty/absent values.
 /// The body is appended exactly as given, without adding a newline.
 ///
-/// For `parse(write(d)) == d`, `d` must be canonical: no header value contains
-/// CR/LF; address-list entries are trimmed, non-empty, contain @ and contain no
+/// Refuses non-canonical input: no header value may contain control characters;
+/// address entries must be trimmed, non-empty, contain @ and contain no
 /// comma; optional strings are non-empty; references are non-empty tokens with
-/// no whitespace; paths are absolute UTF-8 without CR/LF; the body has no CRLF
+/// no whitespace; paths are absolute UTF-8 without controls; the body has no CR
 /// or trailing whitespace; and the entire encoded document fits the size cap.
-/// Single From/Reply-To values need @. This function assumes valid input;
-/// parsing validates it. A non-UTF-8 attachment path panics during encoding.
-pub fn write(document: &MailDocument) -> String {
+/// Every successful write parses back to an equal document.
+pub fn write(document: &MailDocument) -> Result<String, Refusal> {
+    validate_fields(document)?;
     let mut message = BusMessage::new();
     for (name, values) in [
         ("mail-to", &document.to),
         ("mail-cc", &document.cc),
         ("mail-bcc", &document.bcc),
     ] {
-        set(&mut message, name, &values.join(", "));
+        set(&mut message, name, &values.join(", "))?;
     }
     for (name, value) in [
         ("mail-from", document.from.as_deref()),
@@ -274,19 +342,19 @@ pub fn write(document: &MailDocument) -> String {
         ("mail-in-reply-to", document.in_reply_to.as_deref()),
     ] {
         if let Some(value) = value {
-            set(&mut message, name, value);
+            set(&mut message, name, value)?;
         }
     }
     set(
         &mut message,
         "mail-references",
         &document.references.join(" "),
-    );
+    )?;
     if !document.attachments.is_empty() {
         message.set(
             "mail-attachments",
             &serde_json::to_string(&document.attachments)
-                .expect("valid attachment paths are UTF-8"),
+                .map_err(|err| invalid("mail-attachments", err.to_string()))?,
         );
     }
     // A blank header line keeps empty documents readable by wire::parse_lenient.
@@ -296,7 +364,10 @@ pub fn write(document: &MailDocument) -> String {
         message.to_wire()
     };
     output.push_str(&document.body);
-    output
+    if output.len() > MAX_DOCUMENT_BYTES {
+        return Err(Refusal::TooLarge { bytes: output.len() });
+    }
+    Ok(output)
 }
 
 #[cfg(test)]
