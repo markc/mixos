@@ -370,6 +370,8 @@ pub fn view(
             ui.push_id(ctx.viewport_id(), |ui| {
                 crate::view::compose::form(ui, compose, state, palette, &mut events)
             });
+        } else if state.documents.opening() {
+            ui.weak(crate::label("loading"));
         } else {
             ui.label(if state.status.is_empty() {
                 crate::label("no-accounts-body")

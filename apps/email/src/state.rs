@@ -8194,11 +8194,10 @@ pub(crate) mod tests {
         let theme = toolkit::Theme::embedded();
         toolkit::install(&ctx, &theme);
         let palette = editor::Palette::from_theme(&theme);
-        let registry = crate::actions::registry();
-        let strings = crate::strings();
+        let registry = crate::composer::registry();
         let frame = |state: &State| {
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-                let _ = crate::view::view(ui, state, &registry, &strings, &palette);
+                let _ = crate::composer::view(ui, state, &registry, &palette);
             });
             output.textures_delta.clear();
         };
