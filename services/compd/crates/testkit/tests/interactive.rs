@@ -231,12 +231,26 @@ fn press_at(h: &mut Harness, window: &Window, at: (f64, f64), chrome: bool) -> u
 }
 
 fn apply(h: &mut Harness, window: &Window) -> bool {
-    let shift = h.wire.state.seat.seat.get_keyboard().unwrap().modifier_state().shift;
+    let shift = h
+        .wire
+        .state
+        .seat
+        .seat
+        .get_keyboard()
+        .unwrap()
+        .modifier_state()
+        .shift;
     let host = &mut h.wire.inner;
     let mut grab = host.comp.interactive.take().unwrap();
     let pointer = grab.pointer_start + Point::from(grab.delta);
-    let changed =
-        geometry::apply_interactive_at(&mut host.comp, &mut host.space.state, window, &mut grab, pointer, shift);
+    let changed = geometry::apply_interactive_at(
+        &mut host.comp,
+        &mut host.space.state,
+        window,
+        &mut grab,
+        pointer,
+        shift,
+    );
     if !grab.ended {
         host.comp.interactive = Some(grab);
     }
@@ -245,7 +259,11 @@ fn apply(h: &mut Harness, window: &Window) -> bool {
 
 fn begin_move(h: &mut Harness, window: &Window) {
     press_at(h, window, (300.0, 200.0), true);
-    assert!(dispatcher::wayland::grab::interactive::start_chrome(&mut h.wire.state, window, 0));
+    assert!(dispatcher::wayland::grab::interactive::start_chrome(
+        &mut h.wire.state,
+        window,
+        0
+    ));
     h.roundtrip();
     apply(h, window);
 }
@@ -253,22 +271,37 @@ fn begin_move(h: &mut Harness, window: &Window) {
 #[test]
 fn client_move_released_before_first_host_pass_commits_and_saves_start_frame() {
     let mut h = Harness::new();
-    let (surface,_,top) = h.mapped_toplevel(640,480);
-    let (id,window) = window(&h,&surface);
-    h.wire.inner.space.state.map_element(window.clone(),(100,80),false);
-    let serial = press_at(&mut h,&window,(300.0,200.0),false);
-    top._move(h.client.seat(PRIMARY),serial);
+    let (surface, _, top) = h.mapped_toplevel(640, 480);
+    let (id, window) = window(&h, &surface);
+    h.wire
+        .inner
+        .space
+        .state
+        .map_element(window.clone(), (100, 80), false);
+    let serial = press_at(&mut h, &window, (300.0, 200.0), false);
+    top._move(h.client.seat(PRIMARY), serial);
     h.roundtrip();
-    motion(&mut h,(0.0,540.0));
+    motion(&mut h, (0.0, 540.0));
     let_go(&mut h);
-    apply(&mut h,&window);
-    assert_eq!(h.comp().placement(id),Placement::Tiled {slot:world::comp::TileSlot::Left,output:"testkit-0".into()});
+    apply(&mut h, &window);
+    assert_eq!(
+        h.comp().placement(id),
+        Placement::Tiled {
+            slot: world::comp::TileSlot::Left,
+            output: "testkit-0".into()
+        }
+    );
     let saved = h.comp().float_geometry(id).unwrap();
-    assert_eq!((saved.location,saved.size),((100,80).into(),(640,480).into()));
+    assert_eq!(
+        (saved.location, saved.size),
+        ((100, 80).into(), (640, 480).into())
+    );
     assert!(h.comp().interactive.is_none());
 }
 
-fn preview(h: &Harness) -> Vec<smithay::backend::renderer::element::solid::SolidColorRenderElement> {
+fn preview(
+    h: &Harness,
+) -> Vec<smithay::backend::renderer::element::solid::SolidColorRenderElement> {
     world::comp::tiling::preview(h.comp(), &h.wire.inner.space.state, "testkit-0")
 }
 
@@ -276,47 +309,138 @@ fn preview(h: &Harness) -> Vec<smithay::backend::renderer::element::solid::Solid
 fn every_drag_zone_commits_its_placement_frame_and_protocol_states() {
     use world::comp::{TileSlot, TileSplit};
     for (point, tile) in [
-        ((0.0,540.0), Some(TileSlot::Left)), ((1919.0,540.0), Some(TileSlot::Right)),
-        ((0.0,0.0), Some(TileSlot::TopLeft)), ((1919.0,0.0), Some(TileSlot::TopRight)),
-        ((0.0,1079.0), Some(TileSlot::BottomLeft)), ((1919.0,1079.0), Some(TileSlot::BottomRight)),
-        ((960.0,0.0), None),
+        ((0.0, 540.0), Some(TileSlot::Left)),
+        ((1919.0, 540.0), Some(TileSlot::Right)),
+        ((0.0, 0.0), Some(TileSlot::TopLeft)),
+        ((1919.0, 0.0), Some(TileSlot::TopRight)),
+        ((0.0, 1079.0), Some(TileSlot::BottomLeft)),
+        ((1919.0, 1079.0), Some(TileSlot::BottomRight)),
+        ((960.0, 0.0), None),
     ] {
         let mut h = Harness::new();
-        let (surface,_,_) = h.mapped_toplevel(640,480);
-        let (id, window) = window(&h,&surface);
-        h.wire.inner.space.state.map_element(window.clone(), (100,100), false);
-        begin_move(&mut h,&window);
-        motion(&mut h,point);
-        apply(&mut h,&window);
-        assert_eq!(preview(&h).len(),5);
-        let area = smithay::utils::Rectangle::new((0,0).into(),(1920,1080).into());
-        let expected = tile.map_or(area, |tile| tile.rectangle(area,TileSplit::default()));
-        assert_eq!(h.comp().drag.as_ref().unwrap().armed.as_ref().unwrap().rectangle,expected);
+        let (surface, _, _) = h.mapped_toplevel(640, 480);
+        let (id, window) = window(&h, &surface);
+        h.wire
+            .inner
+            .space
+            .state
+            .map_element(window.clone(), (100, 100), false);
+        begin_move(&mut h, &window);
+        motion(&mut h, point);
+        apply(&mut h, &window);
+        assert_eq!(preview(&h).len(), 5);
+        let area = smithay::utils::Rectangle::new((0, 0).into(), (1920, 1080).into());
+        let expected = tile.map_or(area, |tile| tile.rectangle(area, TileSplit::default()));
+        assert_eq!(
+            h.comp()
+                .drag
+                .as_ref()
+                .unwrap()
+                .armed
+                .as_ref()
+                .unwrap()
+                .rectangle,
+            expected
+        );
         let_go(&mut h);
-        apply(&mut h,&window);
-        assert_eq!(h.comp().placement(id), tile.map_or(Placement::Maximized { output: "testkit-0".into() }, |slot| Placement::Tiled {slot,output:"testkit-0".into()}));
-        assert_eq!(h.wire.inner.space.state.element_location(&window),Some(expected.loc));
-        assert_eq!(slot::decided_size(&window),Some(expected.size));
+        apply(&mut h, &window);
+        assert_eq!(
+            h.comp().placement(id),
+            tile.map_or(
+                Placement::Maximized {
+                    output: "testkit-0".into()
+                },
+                |slot| Placement::Tiled {
+                    slot,
+                    output: "testkit-0".into()
+                }
+            )
+        );
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some(expected.loc)
+        );
+        assert_eq!(slot::decided_size(&window), Some(expected.size));
         assert!(decor::window::constrained(&window));
         assert!(preview(&h).is_empty());
         let saved = h.comp().float_geometry(id).unwrap();
-        assert_eq!((saved.location,saved.size), ((100,100).into(),(640,480).into()), "save the start, not release frame");
+        assert_eq!(
+            (saved.location, saved.size),
+            ((100, 100).into(), (640, 480).into()),
+            "save the start, not release frame"
+        );
         h.roundtrip();
-        for edge in [State::TiledLeft,State::TiledRight,State::TiledTop,State::TiledBottom] {
-            assert_eq!(window.toplevel().unwrap().with_pending_state(|state|state.states.contains(edge)), tile.is_some());
-            assert_eq!(h.client.state.toplevel_configures.last().unwrap().states.contains(&(edge as u32)),tile.is_some(),"tiled state reaches the client");
+        for edge in [
+            State::TiledLeft,
+            State::TiledRight,
+            State::TiledTop,
+            State::TiledBottom,
+        ] {
+            assert_eq!(
+                window
+                    .toplevel()
+                    .unwrap()
+                    .with_pending_state(|state| state.states.contains(edge)),
+                tile.is_some()
+            );
+            assert_eq!(
+                h.client
+                    .state
+                    .toplevel_configures
+                    .last()
+                    .unwrap()
+                    .states
+                    .contains(&(edge as u32)),
+                tile.is_some(),
+                "tiled state reaches the client"
+            );
         }
-        assert_eq!(window.toplevel().unwrap().with_pending_state(|state|state.states.contains(State::Maximized)),tile.is_none());
+        assert_eq!(
+            window
+                .toplevel()
+                .unwrap()
+                .with_pending_state(|state| state.states.contains(State::Maximized)),
+            tile.is_none()
+        );
         {
             let host = &mut h.wire.inner;
-            geometry::set_placement(&mut host.comp,&mut host.space.state,id,&window,Placement::Floating);
+            geometry::set_placement(
+                &mut host.comp,
+                &mut host.space.state,
+                id,
+                &window,
+                Placement::Floating,
+            );
         }
-        for edge in [State::TiledLeft,State::TiledRight,State::TiledTop,State::TiledBottom] {
-            assert!(!window.toplevel().unwrap().with_pending_state(|state|state.states.contains(edge)));
+        for edge in [
+            State::TiledLeft,
+            State::TiledRight,
+            State::TiledTop,
+            State::TiledBottom,
+        ] {
+            assert!(
+                !window
+                    .toplevel()
+                    .unwrap()
+                    .with_pending_state(|state| state.states.contains(edge))
+            );
         }
         h.roundtrip();
-        for edge in [State::TiledLeft,State::TiledRight,State::TiledTop,State::TiledBottom] {
-            assert!(!h.client.state.toplevel_configures.last().unwrap().states.contains(&(edge as u32)));
+        for edge in [
+            State::TiledLeft,
+            State::TiledRight,
+            State::TiledTop,
+            State::TiledBottom,
+        ] {
+            assert!(
+                !h.client
+                    .state
+                    .toplevel_configures
+                    .last()
+                    .unwrap()
+                    .states
+                    .contains(&(edge as u32))
+            );
         }
     }
 }
@@ -325,30 +449,38 @@ fn every_drag_zone_commits_its_placement_frame_and_protocol_states() {
 fn preview_changes_rectangle_hides_and_reuses_ids() {
     use smithay::backend::renderer::element::Element;
     let mut h = Harness::new();
-    let (surface,_,_) = h.mapped_toplevel(640,480);
-    let (_, window) = window(&h,&surface);
-    begin_move(&mut h,&window);
-    motion(&mut h,(0.0,540.0));
-    apply(&mut h,&window);
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (_, window) = window(&h, &surface);
+    begin_move(&mut h, &window);
+    motion(&mut h, (0.0, 540.0));
+    apply(&mut h, &window);
     let left = preview(&h);
-    assert_eq!(left[4].geometry(1.0.into()),smithay::utils::Rectangle::new((0,0).into(),(960,1080).into()));
-    assert_eq!(left[4].alpha(),world::comp::tiling::PREVIEW_ALPHA);
-    motion(&mut h,(1919.0,0.0));
-    apply(&mut h,&window);
+    assert_eq!(
+        left[4].geometry(1.0.into()),
+        smithay::utils::Rectangle::new((0, 0).into(), (960, 1080).into())
+    );
+    assert_eq!(left[4].alpha(), world::comp::tiling::PREVIEW_ALPHA);
+    motion(&mut h, (1919.0, 0.0));
+    apply(&mut h, &window);
     let right = preview(&h);
-    assert_eq!(right[4].geometry(1.0.into()),smithay::utils::Rectangle::new((960,0).into(),(960,540).into()));
-    for (a,b) in left.iter().zip(&right) { assert_eq!(a.id(),b.id()); }
-    h.key(50,true,false);
-    apply(&mut h,&window); // no pointer motion: every host pass sees modifiers
+    assert_eq!(
+        right[4].geometry(1.0.into()),
+        smithay::utils::Rectangle::new((960, 0).into(), (960, 540).into())
+    );
+    for (a, b) in left.iter().zip(&right) {
+        assert_eq!(a.id(), b.id());
+    }
+    h.key(50, true, false);
+    apply(&mut h, &window); // no pointer motion: every host pass sees modifiers
     assert!(preview(&h).is_empty());
-    h.key(50,false,false);
-    apply(&mut h,&window);
-    assert_eq!(preview(&h).len(),5);
-    motion(&mut h,(960.0,1079.0));
-    apply(&mut h,&window);
+    h.key(50, false, false);
+    apply(&mut h, &window);
+    assert_eq!(preview(&h).len(), 5);
+    motion(&mut h, (960.0, 1079.0));
+    apply(&mut h, &window);
     assert!(preview(&h).is_empty());
     let_go(&mut h);
-    apply(&mut h,&window);
+    apply(&mut h, &window);
     assert!(preview(&h).is_empty());
     assert!(h.comp().drag.is_none());
 }
@@ -357,82 +489,178 @@ fn preview_changes_rectangle_hides_and_reuses_ids() {
 fn panel_coordinates_count_and_shift_fixed_size_and_max_hints_skip_zones() {
     for scenario in ["panel", "shift", "fixed", "max", "bottom"] {
         let mut h = Harness::new();
-        let (surface,_,top) = h.mapped_toplevel(640,480);
-        let (id,window) = window(&h,&surface);
+        let (surface, _, top) = h.mapped_toplevel(640, 480);
+        let (id, window) = window(&h, &surface);
         if scenario == "panel" {
-            h.wire.inner.comp.reserved.insert("testkit-0".into(),world::comp::usable::Reserved {left:60,..Default::default()});
+            h.wire.inner.comp.reserved.insert(
+                "testkit-0".into(),
+                world::comp::usable::Reserved {
+                    left: 60,
+                    ..Default::default()
+                },
+            );
         } else if scenario == "fixed" {
-            top.set_min_size(640,480); top.set_max_size(640,480);
-            h.client.commit(&surface); h.roundtrip();
+            top.set_min_size(640, 480);
+            top.set_max_size(640, 480);
+            h.client.commit(&surface);
+            h.roundtrip();
         } else if scenario == "max" {
-            top.set_max_size(800,600);
-            h.client.commit(&surface); h.roundtrip();
-        } else if scenario == "shift" { h.key(50,true,false); }
-        begin_move(&mut h,&window);
-        let point = match scenario { "max" => (960.0,0.0), "bottom" => (960.0,1079.0), _ => (0.0,540.0) };
-        motion(&mut h,point); apply(&mut h,&window);
-        let_go(&mut h); apply(&mut h,&window);
+            top.set_max_size(800, 600);
+            h.client.commit(&surface);
+            h.roundtrip();
+        } else if scenario == "shift" {
+            h.key(50, true, false);
+        }
+        begin_move(&mut h, &window);
+        let point = match scenario {
+            "max" => (960.0, 0.0),
+            "bottom" => (960.0, 1079.0),
+            _ => (0.0, 540.0),
+        };
+        motion(&mut h, point);
+        apply(&mut h, &window);
+        let_go(&mut h);
+        apply(&mut h, &window);
         if scenario == "panel" {
-            assert_eq!(h.comp().placement(id),Placement::Tiled {slot:world::comp::TileSlot::Left,output:"testkit-0".into()});
-            assert_eq!(h.wire.inner.space.state.element_location(&window),Some((60,0).into()));
-            assert_eq!(slot::decided_size(&window),Some((930,1080).into()));
-        } else { assert_eq!(h.comp().placement(id),Placement::Floating); }
+            assert_eq!(
+                h.comp().placement(id),
+                Placement::Tiled {
+                    slot: world::comp::TileSlot::Left,
+                    output: "testkit-0".into()
+                }
+            );
+            assert_eq!(
+                h.wire.inner.space.state.element_location(&window),
+                Some((60, 0).into())
+            );
+            assert_eq!(slot::decided_size(&window), Some((930, 1080).into()));
+        } else {
+            assert_eq!(h.comp().placement(id), Placement::Floating);
+        }
     }
 }
 
 #[test]
 fn shared_edges_do_not_arm_but_outer_edges_on_both_outputs_do() {
-    use smithay::output::{Output, PhysicalProperties, Subpixel, Mode};
+    use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
     let mut h = Harness::new();
-    let secondary = Output::new("testkit-1".into(),PhysicalProperties { size:(0,0).into(), subpixel:Subpixel::Unknown, make:"testkit".into(), model:"headless".into(), serial_number:"testkit-1".into() });
-    secondary.change_current_state(Some(Mode {size:(1280,720).into(),refresh:60000}),None,None,None);
-    h.wire.inner.space.state.map_output(&secondary,(1920,0));
-    let (surface,_,_) = h.mapped_toplevel(640,480);
-    let (id,window) = window(&h,&surface);
-    begin_move(&mut h,&window);
-    for point in [(1919.0,400.0),(1920.0,400.0),(1919.0,0.0),(1920.0,0.0)] {
-        motion(&mut h,point); apply(&mut h,&window);
+    let secondary = Output::new(
+        "testkit-1".into(),
+        PhysicalProperties {
+            size: (0, 0).into(),
+            subpixel: Subpixel::Unknown,
+            make: "testkit".into(),
+            model: "headless".into(),
+            serial_number: "testkit-1".into(),
+        },
+    );
+    secondary.change_current_state(
+        Some(Mode {
+            size: (1280, 720).into(),
+            refresh: 60000,
+        }),
+        None,
+        None,
+        None,
+    );
+    h.wire.inner.space.state.map_output(&secondary, (1920, 0));
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (id, window) = window(&h, &surface);
+    begin_move(&mut h, &window);
+    for point in [
+        (1919.0, 400.0),
+        (1920.0, 400.0),
+        (1919.0, 0.0),
+        (1920.0, 0.0),
+    ] {
+        motion(&mut h, point);
+        apply(&mut h, &window);
         assert!(h.comp().drag.as_ref().unwrap().armed.is_none());
     }
-    motion(&mut h,(0.0,540.0)); apply(&mut h,&window);
+    motion(&mut h, (0.0, 540.0));
+    apply(&mut h, &window);
     assert!(h.comp().drag.as_ref().unwrap().armed.is_some());
-    motion(&mut h,(3199.0,400.0)); apply(&mut h,&window);
-    let_go(&mut h); apply(&mut h,&window);
-    assert_eq!(h.comp().placement(id),Placement::Tiled { slot:world::comp::TileSlot::Right, output:"testkit-1".into() });
-    assert_eq!(h.wire.inner.space.state.element_location(&window),Some((2560,0).into()));
-    assert_eq!(slot::decided_size(&window),Some((640,720).into()));
+    motion(&mut h, (3199.0, 400.0));
+    apply(&mut h, &window);
+    let_go(&mut h);
+    apply(&mut h, &window);
+    assert_eq!(
+        h.comp().placement(id),
+        Placement::Tiled {
+            slot: world::comp::TileSlot::Right,
+            output: "testkit-1".into()
+        }
+    );
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&window),
+        Some((2560, 0).into())
+    );
+    assert_eq!(slot::decided_size(&window), Some((640, 720).into()));
 }
 
 #[test]
 fn escape_restores_start_geometry_placement_and_saved_float_without_client_keys() {
-    for start in [Placement::Floating,Placement::Maximized {output:"testkit-0".into()},Placement::Tiled {slot:world::comp::TileSlot::Left,output:"testkit-0".into()}] {
+    for start in [
+        Placement::Floating,
+        Placement::Maximized {
+            output: "testkit-0".into(),
+        },
+        Placement::Tiled {
+            slot: world::comp::TileSlot::Left,
+            output: "testkit-0".into(),
+        },
+    ] {
         let mut h = Harness::new();
-        let (surface,_,_) = h.mapped_toplevel(640,480);
-        let (id,window) = window(&h,&surface);
-        h.client.bind_keyboards(); h.focus_keyboard(&surface);
+        let (surface, _, _) = h.mapped_toplevel(640, 480);
+        let (id, window) = window(&h, &surface);
+        h.client.bind_keyboards();
+        h.focus_keyboard(&surface);
         {
             let host = &mut h.wire.inner;
-            host.space.state.map_element(window.clone(),(100,80),false);
-            geometry::set_placement(&mut host.comp,&mut host.space.state,id,&window,start.clone());
+            host.space
+                .state
+                .map_element(window.clone(), (100, 80), false);
+            geometry::set_placement(
+                &mut host.comp,
+                &mut host.space.state,
+                id,
+                &window,
+                start.clone(),
+            );
         }
         let origin = h.wire.inner.space.state.element_location(&window);
         let size = slot::size_of(&window);
         let saved = h.comp().float_geometry(id);
-        begin_move(&mut h,&window);
-        motion(&mut h,(0.0,540.0)); apply(&mut h,&window);
-        assert_eq!(h.comp().placement(id),Placement::Floating);
+        begin_move(&mut h, &window);
+        motion(&mut h, (0.0, 540.0));
+        apply(&mut h, &window);
+        assert_eq!(h.comp().placement(id), Placement::Floating);
         assert!(!preview(&h).is_empty());
-        assert!(h.key(9,true,false),"Escape press consumed");
-        assert!(!h.wire.state.seat.seat.get_pointer().unwrap().with_grab(|_,grab|grab.is::<dispatcher::wayland::grab::interactive::InteractiveGrab>()).unwrap_or(false));
+        assert!(h.key(9, true, false), "Escape press consumed");
+        assert!(
+            !h.wire
+                .state
+                .seat
+                .seat
+                .get_pointer()
+                .unwrap()
+                .with_grab(
+                    |_, grab| grab.is::<dispatcher::wayland::grab::interactive::InteractiveGrab>()
+                )
+                .unwrap_or(false)
+        );
         assert!(h.comp().interactive.unwrap().cancelled);
-        apply(&mut h,&window);
+        apply(&mut h, &window);
         assert!(h.comp().interactive.is_none());
-        assert_eq!(h.comp().placement(id),start);
-        assert_eq!(h.wire.inner.space.state.element_location(&window),origin);
-        assert_eq!(slot::size_of(&window),size);
-        assert_eq!(h.comp().float_geometry(id),saved);
+        assert_eq!(h.comp().placement(id), start);
+        assert_eq!(h.wire.inner.space.state.element_location(&window), origin);
+        assert_eq!(slot::size_of(&window), size);
+        assert_eq!(h.comp().float_geometry(id), saved);
         assert!(preview(&h).is_empty());
-        assert!(h.key(9,false,false),"Escape release consumed after grab end");
+        assert!(
+            h.key(9, false, false),
+            "Escape release consumed after grab end"
+        );
         assert!(h.client.state.keys.is_empty());
         let_go(&mut h);
         assert!(h.comp().interactive.is_none());
@@ -442,39 +670,67 @@ fn escape_restores_start_geometry_placement_and_saved_float_without_client_keys(
 #[test]
 fn a_tiled_start_keeps_its_original_float_when_released_in_another_tile() {
     let mut h = Harness::new();
-    let (surface,_,_) = h.mapped_toplevel(640,480);
-    let (id,window) = window(&h,&surface);
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (id, window) = window(&h, &surface);
     {
         let host = &mut h.wire.inner;
-        geometry::set_placement(&mut host.comp,&mut host.space.state,id,&window,Placement::Tiled {slot:world::comp::TileSlot::Left,output:"testkit-0".into()});
+        geometry::set_placement(
+            &mut host.comp,
+            &mut host.space.state,
+            id,
+            &window,
+            Placement::Tiled {
+                slot: world::comp::TileSlot::Left,
+                output: "testkit-0".into(),
+            },
+        );
     }
     let saved = h.comp().float_geometry(id);
-    begin_move(&mut h,&window);
-    motion(&mut h,(1919.0,1079.0));
+    begin_move(&mut h, &window);
+    motion(&mut h, (1919.0, 1079.0));
     let_go(&mut h); // coalesced motion + release, before a host pass
-    apply(&mut h,&window);
-    assert_eq!(h.comp().placement(id),Placement::Tiled {slot:world::comp::TileSlot::BottomRight,output:"testkit-0".into()});
-    assert_eq!(h.comp().float_geometry(id),saved);
+    apply(&mut h, &window);
+    assert_eq!(
+        h.comp().placement(id),
+        Placement::Tiled {
+            slot: world::comp::TileSlot::BottomRight,
+            output: "testkit-0".into()
+        }
+    );
+    assert_eq!(h.comp().float_geometry(id), saved);
 }
 
 #[test]
 fn release_on_an_engaged_corner_still_reaches_the_move_grab_and_commits() {
     let mut h = Harness::new();
-    let (surface,_,_) = h.mapped_toplevel(640,480);
-    let (id,window) = window(&h,&surface);
-    assert!(!h.wire.inner.comp.corners.press(BTN_LEFT,Vec::new(),false));
-    begin_move(&mut h,&window);
-    motion(&mut h,(1.0,1.0)); apply(&mut h,&window);
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (id, window) = window(&h, &surface);
+    assert!(!h.wire.inner.comp.corners.press(BTN_LEFT, Vec::new(), false));
+    begin_move(&mut h, &window);
+    motion(&mut h, (1.0, 1.0));
+    apply(&mut h, &window);
     let corners = &mut h.wire.inner.comp.corners;
-    let mut config = corners.config(); config.dwell_ms = 0; corners.set_config(config);
-    corners.sample("testkit-0",(1920.0,1080.0),(1.0,1.0),(0.0,0.0),false);
+    let mut config = corners.config();
+    config.dwell_ms = 0;
+    corners.set_config(config);
+    corners.sample("testkit-0", (1920.0, 1080.0), (1.0, 1.0), (0.0, 0.0), false);
     std::thread::sleep(std::time::Duration::from_millis(2));
     corners.tick();
     assert!(corners.engaged().is_some());
-    assert!(!corners.release(BTN_LEFT),"the titlebar press never belonged to the corner");
-    let_go(&mut h); apply(&mut h,&window);
+    assert!(
+        !corners.release(BTN_LEFT),
+        "the titlebar press never belonged to the corner"
+    );
+    let_go(&mut h);
+    apply(&mut h, &window);
     assert!(h.comp().interactive.is_none());
-    assert_eq!(h.comp().placement(id),Placement::Tiled {slot:world::comp::TileSlot::TopLeft,output:"testkit-0".into()});
+    assert_eq!(
+        h.comp().placement(id),
+        Placement::Tiled {
+            slot: world::comp::TileSlot::TopLeft,
+            output: "testkit-0".into()
+        }
+    );
 }
 
 fn drag_maximised(chrome: bool) {

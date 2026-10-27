@@ -277,8 +277,14 @@ pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut 
         },
     );
 
-    if world::comp::tiling::key(&mut _loop.inner.comp, &mut _loop.state,
-        key_code.raw(), key_state == KeyState::Pressed, Some(keysym.raw()), time) {
+    if world::comp::tiling::key(
+        &mut _loop.inner.comp,
+        &mut _loop.state,
+        key_code.raw(),
+        key_state == KeyState::Pressed,
+        Some(keysym.raw()),
+        time,
+    ) {
         return;
     }
 
@@ -361,8 +367,14 @@ pub fn inject_key(_loop: &mut Loop, key_code: Keycode, pressed: bool, time: u32)
         key_state,
         |_d, modifiers, handle| (handle.modified_sym(), *modifiers),
     );
-    if world::comp::tiling::key(&mut _loop.inner.comp, &mut _loop.state,
-        key_code.raw(), pressed, Some(keysym.raw()), time) {
+    if world::comp::tiling::key(
+        &mut _loop.inner.comp,
+        &mut _loop.state,
+        key_code.raw(),
+        pressed,
+        Some(keysym.raw()),
+        time,
+    ) {
         return;
     }
     let ui_focused = _loop

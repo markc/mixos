@@ -430,11 +430,15 @@ pub fn apply_interactive_at(
         grab.ended = true;
         return comp.drag.take().is_some();
     }
-    let mut drag = comp.drag.take().unwrap_or_else(|| super::tiling::Drag::new(comp.placement(grab.id), comp.float_geometry(grab.id)));
-    let start = *drag.start.get_or_insert_with(|| Rectangle::new(
-        space.element_location(window).unwrap_or_default(),
-        slot::size_of(window).unwrap_or(window.geometry().size),
-    ));
+    let mut drag = comp.drag.take().unwrap_or_else(|| {
+        super::tiling::Drag::new(comp.placement(grab.id), comp.float_geometry(grab.id))
+    });
+    let start = *drag.start.get_or_insert_with(|| {
+        Rectangle::new(
+            space.element_location(window).unwrap_or_default(),
+            slot::size_of(window).unwrap_or(window.geometry().size),
+        )
+    });
     if drag.start_output.is_none() {
         drag.start_output = target(comp, space, grab.id, window).map(|(name, _)| name);
     }
@@ -456,8 +460,14 @@ pub fn apply_interactive_at(
     if grab.ended {
         if let Some(armed) = drag.armed {
             let saved = if drag.placement == Placement::Floating {
-                drag.start_output.map(|output| FloatGeometry { location: start.loc, size: start.size, output })
-            } else { drag.float_geometry };
+                drag.start_output.map(|output| FloatGeometry {
+                    location: start.loc,
+                    size: start.size,
+                    output,
+                })
+            } else {
+                drag.float_geometry
+            };
             transition(comp, space, grab.id, window, armed.placement, false);
             restore_saved(comp, grab.id, saved);
             return true;
@@ -470,8 +480,12 @@ pub fn apply_interactive_at(
 
 fn restore_saved(comp: &mut CompState, id: SurfaceId, saved: Option<FloatGeometry>) {
     match saved {
-        Some(saved) => { comp.float_geometries.insert(id, saved); }
-        None => { comp.float_geometries.remove(&id); }
+        Some(saved) => {
+            comp.float_geometries.insert(id, saved);
+        }
+        None => {
+            comp.float_geometries.remove(&id);
+        }
     }
 }
 

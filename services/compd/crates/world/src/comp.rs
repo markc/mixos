@@ -412,7 +412,9 @@ impl CompState {
                 };
                 match op {
                     InteractiveOp::Begin { edges, pointer } => {
-                        self.drag = (edges == 0).then(|| tiling::Drag::new(self.placement(id), self.float_geometry(id)));
+                        self.drag = (edges == 0).then(|| {
+                            tiling::Drag::new(self.placement(id), self.float_geometry(id))
+                        });
                         self.interactive = Some(Interactive {
                             id,
                             edges,

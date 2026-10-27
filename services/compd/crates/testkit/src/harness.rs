@@ -453,9 +453,19 @@ impl Harness {
         let code = smithay::input::keyboard::Keycode::new(keycode);
         let ((modifier, sym), mods_changed) =
             keyboard.input_intercept(&mut self.wire.state, code, state, |_, _, handle| {
-                (handle.modified_sym().is_modifier_key(), handle.modified_sym().raw())
+                (
+                    handle.modified_sym().is_modifier_key(),
+                    handle.modified_sym().raw(),
+                )
             });
-        if world::comp::tiling::key(&mut self.wire.inner.comp, &mut self.wire.state, keycode, pressed, Some(sym), 0) {
+        if world::comp::tiling::key(
+            &mut self.wire.inner.comp,
+            &mut self.wire.state,
+            keycode,
+            pressed,
+            Some(sym),
+            0,
+        ) {
             self.roundtrip();
             return true;
         }

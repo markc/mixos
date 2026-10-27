@@ -846,11 +846,20 @@ pub fn apply_interactive(lp: &mut Loop) {
         lp.inner.comp.drag = None;
         return;
     };
-    let shift = lp.state.seat.seat.get_keyboard().is_some_and(|keyboard| keyboard.modifier_state().shift);
+    let shift = lp
+        .state
+        .seat
+        .seat
+        .get_keyboard()
+        .is_some_and(|keyboard| keyboard.modifier_state().shift);
     // Pointer motion is physical output-local, despite its historical Logical
     // marker. The dispatcher's pointer location is world/camera coordinates.
     let cursor = lp.inner.pointer().motion;
-    let pointer = lp.inner.space_state().state.outputs()
+    let pointer = lp
+        .inner
+        .space_state()
+        .state
+        .outputs()
         .find(|output| lp.inner.cursor_output.as_ref() == Some(&world::state::output_key(output)))
         .and_then(|output| {
             let area = lp.inner.space_state().state.output_geometry(output)?;

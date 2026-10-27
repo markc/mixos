@@ -523,9 +523,17 @@ pub fn set_maximized(window: &Window, maximized: bool) {
 pub fn set_tiled(window: &Window, tiled: bool) {
     if let Some(toplevel) = window.toplevel() {
         toplevel.with_pending_state(|state| {
-            for edge in [xdg_toplevel::State::TiledLeft, xdg_toplevel::State::TiledRight,
-                xdg_toplevel::State::TiledTop, xdg_toplevel::State::TiledBottom] {
-                if tiled { state.states.set(edge); } else { state.states.unset(edge); }
+            for edge in [
+                xdg_toplevel::State::TiledLeft,
+                xdg_toplevel::State::TiledRight,
+                xdg_toplevel::State::TiledTop,
+                xdg_toplevel::State::TiledBottom,
+            ] {
+                if tiled {
+                    state.states.set(edge);
+                } else {
+                    state.states.unset(edge);
+                }
             }
         });
     }
