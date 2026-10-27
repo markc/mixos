@@ -46,8 +46,8 @@ fn init_logging(args: &mut Vec<String>) -> Option<logging::LogHandle> {
         Err(error) => {
             toolkit::debug::failure("email", &error);
             eprintln!("email: {error}");
-            // Logging must never prevent the GUI from starting. Continue
-            // without a subscriber if the environment filter is malformed.
+            // Retain Email's non-fatal policy for other logging failures.
+            // Malformed environment filters recover inside the shared helper.
             None
         }
     }
