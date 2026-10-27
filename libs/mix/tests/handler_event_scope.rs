@@ -454,6 +454,51 @@ async fn shutdown_refusal_stays_drain_visible_without_a_handler_fault() {
 }
 
 #[tokio::test]
+async fn a_real_fault_after_a_caught_shutdown_refusal_is_still_a_fault() {
+    // The refusal sets the handle's shutdown flag; only the refusal itself may
+    // be quiet. An unrelated raise afterwards must stay an observable fault.
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let records = ErrorRecords::default();
+            let _guard = tracing::subscriber::set_default(records.clone());
+            let mut s = setup(
+                "on refresh async\n try\n reply(0, \"ok\")\n catch $err\n end\n raise(\"OTHER\", \"real bug\")\nend\n",
+            )
+            .await;
+            let runtime = Rc::new(RecordingRuntime {
+                faults: RefCell::new(Vec::new()),
+            });
+            let bus = Rc::new(RefusedReply {
+                shutdown: true,
+                terminal: RefCell::new(Vec::new()),
+            });
+            s.eval.set_serve_runtime(runtime.clone());
+            s.eval.set_bus_handler(bus.clone());
+            s.eval
+                .dispatch_event(mk_event(
+                    "refresh",
+                    "",
+                    &[("type", "request"), ("from", "caller"), ("id", "request-1")],
+                ))
+                .await
+                .unwrap();
+            let outcome = s
+                .eval
+                .drain_class_c_for_shutdown(std::time::Duration::from_secs(1), true)
+                .await;
+            assert_eq!(runtime.faults.borrow().len(), 1, "the raise is a fault");
+            assert!(records.0.load(std::sync::atomic::Ordering::Relaxed) >= 1);
+            assert!(s.stderr.to_string_lossy().contains("OTHER"));
+            assert_eq!(outcome.synth_sent, 1, "{outcome:?}");
+            let terminal = bus.terminal.borrow();
+            assert_eq!(terminal.len(), 1, "exactly one terminal reply");
+            // 16 today; 15 (HANDLER_FAULT) once the drain labels faulted handles.
+            assert!(matches!(terminal[0].0, 15 | 16), "{:?}", terminal[0]);
+        })
+        .await;
+}
+
+#[tokio::test]
 async fn other_reply_failure_remains_an_observable_handler_fault() {
     let records = ErrorRecords::default();
     let _guard = tracing::subscriber::set_default(records.clone());
