@@ -36,7 +36,7 @@ and a body naming the reason:
 | `BUSY` | Not now: work is in flight, a dialog is open, the window is hidden, no frame has been drawn yet, or the app is closing. |
 | `CANCELLED` | Input that was accepted but never delivered: the window was hidden or minimised first, or the app closed. |
 | `CAPTURE` | A screenshot could not be taken or written. |
-| `NOT_SHOWN` | Refused after at least 1.5 s without a frame, measured from the later of acceptance and its last UI pass, or immediately when the platform reports minimised or occluded in that pass. Wayland does not report this; the 1.5 s rule applies. Show the window or switch to its VT, then retry. |
+| `NOT_SHOWN` | Refused after at least 1.5 s without a viewport UI pass, or after emitting a screenshot whose GPU copy is never submitted. A hidden window also refuses immediately if the renderer cannot capture it offscreen. Show the window or switch to its VT, then retry. |
 | `UNAVAILABLE` | The app does not offer the drive commands. |
 
 An app's own commands may add codes of their own; Workshop's are listed
@@ -212,16 +212,36 @@ Captures are confined to the app's own directory:
   followed.
 - Without `XDG_RUNTIME_DIR` there is nowhere to capture to, and every
   capture is refused.
-- Pending captures return `NOT_SHOWN` after at least 1.5 s without a frame (a viewport UI
-  pass), measured from the later of acceptance and the last pass. This covers
-  queued captures, child requests awaiting dispatch and screenshot readback.
-  A scheduled logic wake checks the deadline, plus up to the toolkit's logic-wake
-  grace. The threshold leaves margin above compd's 1 Hz parked callback trickle,
-  so captures progressing there continue. Minimised or occluded viewports
-  refuse immediately only when the platform reports that state in that pass.
-  Wayland does not; the 1.5 s rule applies. Show the window or switch to its VT, then retry.
-- A window that keeps painting but never delivers its screenshot still has
-  the 10 second capture timeout backstop (`CAPTURE`).
+- Pending captures return `NOT_SHOWN` after at least 1.5 s without a viewport
+  UI pass, measured from the later of acceptance and the last pass, while
+  queued or awaiting child dispatch. Once a screenshot command is emitted,
+  `Await` also returns `NOT_SHOWN` if no GPU copy is submitted within 1.5 s
+  of emission, even if UI passes continue. Emitting that command does not prove
+  the frame was presented or GPU readback started. The wgpu renderer records
+  a receipt only after submitting the screenshot's GPU copy. A receipt for
+  the target viewport and emitting pass protects readback from the quiet
+  refusal until the absolute deadline. A scheduled root logic wake checks
+  the quiet period, plus up to the toolkit's logic-wake grace.
+- Completed screenshots are collected before quiet-period checks, including
+  on logic-only wakes. The shorter one-second input quiet period does not
+  cancel GPU readback; the 1.5 s capture quiet period tolerates brief GPU
+  stalls and compd's 1 Hz parked callback trickle. Each pass of the target
+  viewport restarts a queued capture's quiet clock; submitted GPU work keeps
+  its remaining absolute budget. A new screenshot clears its viewport's
+  previous submission receipt. A callback arriving after refusal is
+  discarded by its screenshot attempt tag and cannot answer a later capture.
+- Hidden viewports can capture offscreen with the wgpu renderer. A renderer
+  without that capability refuses a reported hidden viewport immediately.
+  Wayland may withhold frames without reporting hidden state; the 1.5 s rule
+  applies. Show the window or switch to its VT, then retry.
+- Every capture also has an absolute deadline from acceptance, including time
+  queued behind input or awaiting child dispatch. `Options::capture_timeout`
+  defaults to five seconds and is capped at five seconds, leaving delivery
+  margin before a ten-second caller timeout. If UI passes keep arriving or
+  GPU readback is in flight but no screenshot completes by that deadline,
+  the answer is `CAPTURE`, with a refusal message stating the 5000 ms maximum.
+  Both deadlines need app logic
+  to run; they cannot bound delivery while the app thread itself is blocked.
 
 ### `<app>.window`
 

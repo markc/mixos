@@ -1,6 +1,16 @@
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
 
+## Unreleased — 2026-10-28
+
+- Refuse captures with `NOT_SHOWN` after 1.5 seconds without a viewport UI
+  pass, or after emitting a screenshot whose GPU copy is never submitted.
+  Collect completed GPU readbacks first and discard late callbacks by
+  screenshot attempt tag.
+  A renderer receipt protects submitted GPU copies until the capture deadline.
+- Default and cap capture deadlines at five seconds from acceptance,
+  including queue time, so refusals precede a ten-second caller timeout.
+
 ## Unreleased — 2026-10-27
 
 - Use the shared design title band layout for menus, title, Action Bar and

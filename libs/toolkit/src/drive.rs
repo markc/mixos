@@ -52,6 +52,9 @@ pub const COMMANDS: [&str; 16] = [
 /// unanswered commands per app anyway).
 const QUEUE_LIMIT: usize = 32;
 
+/// Leave time to deliver a refusal before a caller's ten-second timeout.
+const CAPTURE_TIMEOUT_MAX: Duration = Duration::from_secs(5);
+
 /// One Bus answer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Answer {
@@ -81,6 +84,18 @@ fn not_shown(id: u64, quiet: Duration) -> Answer {
             quiet.as_millis()
         ),
     )
+}
+
+fn capture_timed_out(id: u64) -> Answer {
+    refusal(
+        id,
+        "CAPTURE",
+        "no screenshot arrived in time (capture deadline is at most 5000 ms from acceptance)",
+    )
+}
+
+fn capture_submission_key(viewport: egui::ViewportId) -> egui::Id {
+    egui::Id::unique(("egui-wgpu.capture_submitted", viewport))
 }
 
 /// Every drive command under `app`, as `HELP` / `app.describe` list them.
@@ -203,7 +218,8 @@ pub struct Options {
     /// The runtime directory captures live under, in `<app>/captures`
     /// (default `$XDG_RUNTIME_DIR`; without it, captures are refused).
     pub runtime_dir: Option<PathBuf>,
-    /// Budget for a screenshot, and for an entire auxiliary viewport request.
+    /// Budget from capture acceptance, and for an entire auxiliary viewport
+    /// request. Values above five seconds are capped at five seconds.
     pub capture_timeout: Duration,
 }
 
@@ -211,8 +227,14 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             runtime_dir: std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
-            capture_timeout: Duration::from_secs(10),
+            capture_timeout: CAPTURE_TIMEOUT_MAX,
         }
+    }
+}
+
+impl Options {
+    fn capture_budget(&self) -> Duration {
+        self.capture_timeout.min(CAPTURE_TIMEOUT_MAX)
     }
 }
 
@@ -333,13 +355,14 @@ pub fn input_mixed(ctx: &Context) -> bool {
 /// releasing later Bus commands after a window stops producing frames.
 pub const INPUT_QUIET_PERIOD: Duration = Duration::from_secs(1);
 
-/// No UI pass for this long refuses a pending capture. Stay above compd's
-/// one-second parked/occluded callback trickle with margin. This is independent
-/// of eframe's logic-wake grace period.
+/// Refuse a queued capture without a UI pass, or an emitted screenshot without
+/// a GPU submission receipt, after this long. Stay above compd's one-second
+/// parked/occluded callback trickle with margin. Submitted readback retains its
+/// absolute capture deadline. This is independent of eframe's logic-wake grace.
 pub const CAPTURE_QUIET_PERIOD: Duration = Duration::from_millis(1500);
 
 /// Run from app logic, including logic-only wakes. Settle pending input after
-/// [`INPUT_QUIET_PERIOD`] without a UI pass, refuse captures without a UI pass
+/// [`INPUT_QUIET_PERIOD`] without a UI pass, refuse captures without progress
 /// for [`CAPTURE_QUIET_PERIOD`], expire screenshots and return answers.
 pub fn logic(ctx: &Context) -> Vec<Answer> {
     logic_at(ctx, Instant::now())
@@ -360,10 +383,10 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
         }
         let input_quiet_since = drive.input_quiet_since.get_or_insert(now);
         let quiet = now.saturating_duration_since(*input_quiet_since);
-        drive.refuse_unshown_captures(ctx, now);
+        drive.refuse_unshown_captures(ctx, now, egui::ViewportId::ROOT);
         drive.request_capture_pass(ctx, egui::ViewportId::ROOT);
         for (&viewport, child) in &mut drive.children {
-            child.refuse_unshown_captures(ctx, now);
+            child.refuse_unshown_captures(ctx, now, viewport);
             child.request_capture_pass(ctx, viewport);
         }
         if logic_only && quiet >= INPUT_QUIET_PERIOD {
@@ -377,7 +400,7 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
         } else if logic_only && drive.has_pending() {
             ctx.request_repaint_after(INPUT_QUIET_PERIOD.saturating_sub(quiet));
         }
-        drive.expire();
+        drive.expire(now);
         if let Some(running) = &drive.running
             && let Some(Step::Await { deadline, .. }) = running.steps.front()
         {
@@ -385,7 +408,7 @@ fn logic_at(ctx: &Context, now: Instant) -> Vec<Answer> {
         }
         let mut answers = std::mem::take(&mut drive.answers);
         for child in drive.children.values_mut() {
-            child.expire();
+            child.expire(now);
             if let Some(running) = &child.running
                 && let Some(Step::Await { deadline, .. }) = running.steps.front()
             {
@@ -486,8 +509,9 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                 if child.requests.len() >= QUEUE_LIMIT {
                     return Some(refusal(id, "BUSY", "viewport request queue is full"));
                 }
+                let accepted = Instant::now();
                 if command_name == "ui.capture" {
-                    child.pending_captures.insert(id, Instant::now());
+                    child.pending_captures.insert(id, accepted);
                     ctx.send_viewport_cmd_to(target, ViewportCommand::RequestPaintWhileHidden);
                 }
                 child
@@ -495,13 +519,13 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                     .push_back((id, command_name.into(), args.clone()));
                 child
                     .deadlines
-                    .insert(id, Instant::now() + child.options.capture_timeout);
+                    .insert(id, accepted + child.options.capture_budget());
                 ctx.request_repaint_of(target);
                 // App logic belongs to the root. Wake it too so a parked
                 // child capture is checked before the child deadline.
                 ctx.request_repaint();
                 ctx.request_repaint_after(CAPTURE_QUIET_PERIOD);
-                ctx.request_repaint_after(child.options.capture_timeout);
+                ctx.request_repaint_after(child.options.capture_budget());
                 None
             })
             .unwrap_or_else(|| {
@@ -612,6 +636,9 @@ enum Step {
         tag: u64,
         path: PathBuf,
         deadline: Instant,
+        /// Completed pass count of the pass emitting this screenshot.
+        pass: u64,
+        emitted: Instant,
     },
 }
 
@@ -800,8 +827,8 @@ impl Drive {
         }
     }
 
-    /// A capture that has painted still gets its full screenshot budget.
-    /// The input quiet period only settles input, not GPU readback.
+    /// The shorter input quiet period only settles input, not GPU readback.
+    /// Captures have their own quiet check and absolute deadline.
     fn settle_input(&mut self, ctx: &Context, why: &str) {
         // Protection follows step shape (Screenshot/Await), not the job's identity.
         let capture = self.running.as_ref().is_some_and(|running| {
@@ -828,7 +855,7 @@ impl Drive {
         self.running = running;
     }
 
-    fn refuse_unshown_captures(&mut self, ctx: &Context, now: Instant) {
+    fn refuse_unshown_captures(&mut self, ctx: &Context, now: Instant, viewport: egui::ViewportId) {
         for (id, accepted) in std::mem::take(&mut self.pending_captures) {
             if self.answers.iter().any(|answer| answer.id == id) {
                 continue;
@@ -842,17 +869,27 @@ impl Drive {
                 self.deadlines.remove(&id);
                 continue;
             }
-            // Await means the screenshot command has been emitted by a UI pass.
-            // Only its capture deadline may expire GPU work already in flight.
+            // Emitting Screenshot does not prove GPU work was submitted. Only
+            // the renderer's receipt for this pass protects in-flight readback
+            // until its absolute deadline. Completed images were drained first.
             if self.running.as_ref().is_some_and(|running| {
-                running.id == id && matches!(running.steps.front(), Some(Step::Await { .. }))
+                running.id == id
+                    && matches!(running.steps.front(), Some(Step::Await { pass, .. })
+                        if ctx.data(|data| data.get_temp::<u64>(capture_submission_key(viewport)))
+                            .is_some_and(|submitted| submitted >= *pass))
             }) {
                 self.pending_captures.insert(id, accepted);
                 continue;
             }
-            let since = self
-                .last_ui_pass
-                .map_or(accepted, |pass| pass.max(accepted));
+            let since = match self.running.as_ref() {
+                Some(running) if running.id == id => match running.steps.front() {
+                    // UI passes alone cannot extend a screenshot that never
+                    // reached the renderer (for example, a headless app).
+                    Some(Step::Await { emitted, .. }) => *emitted,
+                    _ => self.last_ui_pass.map_or(accepted, |pass| pass.max(accepted)),
+                },
+                _ => self.last_ui_pass.map_or(accepted, |pass| pass.max(accepted)),
+            };
             let quiet = now.saturating_duration_since(since);
             if quiet < CAPTURE_QUIET_PERIOD {
                 self.pending_captures.insert(id, accepted);
@@ -1044,11 +1081,20 @@ impl Drive {
         }
         self.queue.push_back((id, job));
         if command_name == "ui.capture" {
-            self.pending_captures.insert(id, Instant::now());
+            let accepted = Instant::now();
+            self.pending_captures.entry(id).or_insert(accepted);
+            let deadline = *self
+                .deadlines
+                .entry(id)
+                .or_insert(accepted + self.options.capture_budget());
             // Bootstrap a full pass even when the request arrived in logic-only
             // processing. The screenshot itself stays behind all earlier input.
             ctx.send_viewport_cmd(ViewportCommand::RequestPaintWhileHidden);
             ctx.request_repaint_after_for(CAPTURE_QUIET_PERIOD, egui::ViewportId::ROOT);
+            ctx.request_repaint_after_for(
+                deadline.saturating_duration_since(accepted),
+                egui::ViewportId::ROOT,
+            );
         }
         None
     }
@@ -1238,12 +1284,11 @@ impl Drive {
     }
 
     /// Give up on a screenshot past its deadline.
-    fn expire(&mut self) {
+    fn expire(&mut self, now: Instant) {
         for answer in &self.answers {
             self.deadlines.remove(&answer.id);
             self.pending_captures.remove(&answer.id);
         }
-        let now = Instant::now();
         let expired: Vec<_> = self
             .deadlines
             .iter()
@@ -1262,20 +1307,20 @@ impl Drive {
                 let running = self.running.take().expect("expired input");
                 self.release(&running.down);
             }
-            self.answers.push(refusal(
-                id,
-                "TIMEOUT",
-                "the viewport did not finish the request in time",
-            ));
+            self.answers.push(if self.pending_captures.contains_key(&id) {
+                capture_timed_out(id)
+            } else {
+                refusal(
+                    id,
+                    "TIMEOUT",
+                    "the viewport did not finish the request in time",
+                )
+            });
         }
-        let late = |r: &Running| matches!(r.steps.front(), Some(Step::Await { deadline, .. }) if Instant::now() >= *deadline);
+        let late = |r: &Running| matches!(r.steps.front(), Some(Step::Await { deadline, .. }) if now >= *deadline);
         if self.running.as_ref().is_some_and(late) {
             let running = self.running.take().expect("a late capture");
-            self.answers.push(refusal(
-                running.id,
-                "CAPTURE",
-                "no screenshot arrived in time",
-            ));
+            self.answers.push(capture_timed_out(running.id));
         }
         for answer in &self.answers {
             self.pending_captures.remove(&answer.id);
@@ -1439,7 +1484,7 @@ impl Drive {
                         // App::logic runs on the root even for child captures.
                         ctx.request_repaint_of(egui::ViewportId::ROOT);
                     }));
-                let deadline = Instant::now() + self.options.capture_timeout;
+                let deadline = Instant::now() + self.options.capture_budget();
                 (
                     vec![
                         Step::Viewport(shot),
@@ -1447,6 +1492,8 @@ impl Drive {
                             tag,
                             path,
                             deadline,
+                            pass: u64::MAX,
+                            emitted: Instant::now(),
                         },
                     ],
                     Report::Ui,
@@ -1476,6 +1523,9 @@ impl Drive {
             return;
         };
         if let Some(Step::Await { tag, path, .. }) = running.steps.front_mut() {
+            // Tags belong to screenshot attempts, not Bus request ids. Drain
+            // and discard late callbacks from refused attempts, even if a
+            // later capture reuses the same request id.
             let image = self
                 .screenshots
                 .lock()
@@ -1534,7 +1584,20 @@ impl Drive {
                 }
                 input.events.extend(events);
             }
-            Some(Step::Viewport(command)) => self.outbox.push(command),
+            Some(Step::Viewport(command)) => {
+                if matches!(&command, ViewportCommand::Screenshot(_))
+                    && let Some(Step::Await { pass, emitted, .. }) = running.steps.front_mut()
+                {
+                    // input_hook precedes begin_pass, so this pass will finish
+                    // at the next count. Child hooks must use the input's id.
+                    *pass = ctx.cumulative_pass_nr_for(input.viewport_id) + 1;
+                    *emitted = Instant::now();
+                    ctx.data_mut(|data| {
+                        data.remove::<u64>(capture_submission_key(input.viewport_id));
+                    });
+                }
+                self.outbox.push(command);
+            }
             Some(Step::Idle | Step::Await { .. }) | None => {}
         }
     }
@@ -2216,7 +2279,7 @@ mod tests {
         for pass_after_acceptance in [false, true] {
             let (ctx, _temp) = capture_context();
             assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
-            // Still queued: emitted screenshots use capture_timeout instead.
+            // Still queued: the same quiet clock also applies during Await.
             let start = Instant::now();
             let later = start + Duration::from_secs(2);
             ctx.with_plugin(|drive: &mut Drive| {
@@ -2351,6 +2414,8 @@ mod tests {
                             tag: 7,
                             path: PathBuf::from("unused.png"),
                             deadline: now + budget,
+                            pass: 0,
+                            emitted: now,
                         }]),
                         report: Report::Ui,
                         extra: json!({}),
@@ -2403,12 +2468,19 @@ mod tests {
     }
 
     #[test]
-    fn one_hz_ui_passes_keep_capture_alive_until_screenshot() {
+    fn submitted_readback_with_one_hz_ui_passes_keeps_capture_alive() {
         let (ctx, temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({"name":"trickle.png"})).is_none());
         let callback = requested_screenshot(&ctx);
+        let submitted = ctx.cumulative_pass_nr();
+        ctx.data_mut(|data| {
+            data.insert_temp(
+                capture_submission_key(egui::ViewportId::ROOT),
+                submitted,
+            );
+        });
         let start = Instant::now();
-        for seconds in 1..=5 {
+        for seconds in 1..=3 {
             ctx.run_ui(RawInput::default(), |_| {})
                 .drop_without_applying_deltas();
             let pass = start + Duration::from_secs(seconds);
@@ -2424,16 +2496,61 @@ mod tests {
     }
 
     #[test]
-    fn readback_survives_quiet_period_without_another_ui_pass() {
+    fn readback_survives_brief_gpu_stall_without_another_ui_pass() {
         let (ctx, _temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
         let callback = requested_screenshot(&ctx);
-        assert!(logic_at(&ctx, Instant::now() + CAPTURE_QUIET_PERIOD * 2).is_empty());
+        let quiet_deadline = ctx
+            .with_plugin(|drive: &mut Drive| {
+                let Some(Step::Await { emitted, .. }) =
+                    drive.running.as_ref().unwrap().steps.front()
+                else {
+                    panic!("capture awaits readback");
+                };
+                *emitted + CAPTURE_QUIET_PERIOD
+            })
+            .unwrap();
+        assert!(logic_at(&ctx, quiet_deadline - Duration::from_millis(1)).is_empty());
         callback.complete(std::sync::Arc::new(ColorImage::filled(
             [4, 3],
             egui::Color32::WHITE,
         )));
-        assert_eq!(logic(&ctx)[0].rc, 0);
+        assert_eq!(logic_at(&ctx, quiet_deadline)[0].rc, 0);
+    }
+
+    #[test]
+    fn submitted_gpu_readback_survives_quiet_but_not_capture_deadline() {
+        for completes in [false, true] {
+            let (ctx, _temp) = capture_context();
+            assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
+            let callback = requested_screenshot(&ctx);
+            let (pass, deadline, last_pass) = ctx
+                .with_plugin(|drive: &mut Drive| {
+                    let Some(Step::Await { pass, .. }) =
+                        drive.running.as_ref().unwrap().steps.front()
+                    else {
+                        panic!("capture awaits readback");
+                    };
+                    (*pass, drive.deadlines[&1], drive.last_ui_pass.unwrap())
+                })
+                .unwrap();
+            assert_eq!(pass, ctx.cumulative_pass_nr());
+            ctx.data_mut(|data| {
+                data.insert_temp(capture_submission_key(egui::ViewportId::ROOT), pass);
+            });
+            assert!(logic_at(&ctx, last_pass + CAPTURE_QUIET_PERIOD * 2).is_empty());
+            assert!(logic_at(&ctx, deadline - Duration::from_millis(1)).is_empty());
+            if completes {
+                callback.complete(std::sync::Arc::new(ColorImage::filled(
+                    [4, 3],
+                    egui::Color32::WHITE,
+                )));
+                assert_eq!(logic_at(&ctx, deadline)[0].rc, 0);
+            } else {
+                assert_eq!(logic_at(&ctx, deadline), vec![capture_timed_out(1)]);
+            }
+            assert!(!pending(&ctx));
+        }
     }
 
     #[test]
@@ -2485,24 +2602,117 @@ mod tests {
     }
 
     #[test]
-    fn painted_capture_uses_gpu_timeout_instead_of_not_shown() {
+    fn awaiting_capture_without_ui_pass_refuses_at_quiet_period() {
         let (ctx, _temp) = capture_context();
         assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
         let _callback = requested_screenshot(&ctx);
-        let now = Instant::now();
-        ctx.with_plugin(|drive: &mut Drive| {
-            let stalled = now - CAPTURE_QUIET_PERIOD;
-            drive.last_ui_pass = Some(stalled);
-            drive.pending_captures.insert(1, stalled);
-            if let Some(Step::Await { deadline, .. }) =
-                drive.running.as_mut().unwrap().steps.front_mut()
-            {
-                *deadline = now;
-            } else {
-                panic!("capture awaits readback");
-            }
+        // A receipt for another viewport cannot protect this capture.
+        ctx.data_mut(|data| {
+            data.insert_temp(
+                capture_submission_key(egui::ViewportId::from_hash_of("other")),
+                u64::MAX,
+            );
         });
-        assert_eq!(logic_at(&ctx, now)[0].body["error_code"], "CAPTURE");
+        let emitted = ctx
+            .with_plugin(|drive: &mut Drive| {
+                let Some(Step::Await { emitted, .. }) =
+                    drive.running.as_ref().unwrap().steps.front()
+                else {
+                    panic!("capture awaits readback");
+                };
+                *emitted
+            })
+            .unwrap();
+        assert!(
+            logic_at(
+                &ctx,
+                emitted + CAPTURE_QUIET_PERIOD - Duration::from_millis(1)
+            )
+            .is_empty()
+        );
+        let answers = logic_at(&ctx, emitted + CAPTURE_QUIET_PERIOD);
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].id, 1);
+        assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
+        assert!(!pending(&ctx));
+        assert!(logic_at(&ctx, emitted + CAPTURE_QUIET_PERIOD).is_empty());
+    }
+
+    #[test]
+    fn late_screenshot_after_not_shown_cannot_complete_next_capture() {
+        let (ctx, temp) = capture_context();
+        assert!(request(&ctx, 1, "ui.capture", &json!({"name":"late.png"})).is_none());
+        let late = requested_screenshot(&ctx);
+        let last_pass = ctx
+            .with_plugin(|drive: &mut Drive| drive.last_ui_pass.unwrap())
+            .unwrap();
+        assert_eq!(
+            logic_at(&ctx, last_pass + CAPTURE_QUIET_PERIOD)[0].body["error_code"],
+            "NOT_SHOWN"
+        );
+        // Reuse the Bus id: screenshot attempt tags must still differ.
+        assert!(request(&ctx, 1, "ui.capture", &json!({"name":"next.png"})).is_none());
+        ctx.data_mut(|data| {
+            data.insert_temp(capture_submission_key(egui::ViewportId::ROOT), u64::MAX);
+        });
+        let next = requested_screenshot(&ctx);
+        assert_eq!(
+            ctx.data(|data| {
+                data.get_temp::<u64>(capture_submission_key(egui::ViewportId::ROOT))
+            }),
+            None,
+            "a new screenshot clears the previous submission receipt"
+        );
+        late.complete(std::sync::Arc::new(ColorImage::filled(
+            [8, 9],
+            egui::Color32::BLACK,
+        )));
+        assert!(logic(&ctx).is_empty());
+        assert!(pending(&ctx));
+        assert!(!temp.path().join("demo/captures/late.png").exists());
+        assert!(!temp.path().join("demo/captures/next.png").exists());
+        next.complete(std::sync::Arc::new(ColorImage::filled(
+            [4, 3],
+            egui::Color32::WHITE,
+        )));
+        let answers = logic(&ctx);
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].rc, 0);
+        assert_eq!(answers[0].body["width"], 4);
+        assert_eq!(answers[0].body["height"], 3);
+        assert!(temp.path().join("demo/captures/next.png").is_file());
+        assert!(!pending(&ctx));
+    }
+
+    #[test]
+    fn ui_passes_without_gpu_submission_cannot_extend_await() {
+        let (ctx, _temp) = capture_context();
+        assert!(request(&ctx, 1, "ui.capture", &json!({})).is_none());
+        let _callback = requested_screenshot(&ctx);
+        let emitted = ctx
+            .with_plugin(|drive: &mut Drive| {
+                let Some(Step::Await { emitted, .. }) =
+                    drive.running.as_ref().unwrap().steps.front()
+                else {
+                    panic!("capture awaits readback");
+                };
+                *emitted
+            })
+            .unwrap();
+        for millis in [500, 1000, 1500] {
+            ctx.run_ui(RawInput::default(), |_| {})
+                .drop_without_applying_deltas();
+            let now = emitted + Duration::from_millis(millis);
+            ctx.with_plugin(|drive: &mut Drive| drive.last_ui_pass = Some(now));
+            let answers = logic_at(&ctx, now);
+            if millis < 1500 {
+                assert!(answers.is_empty());
+            } else {
+                assert_eq!(answers.len(), 1);
+                assert_eq!(answers[0].body["error_code"], "NOT_SHOWN");
+            }
+        }
+        assert!(!pending(&ctx));
     }
 
     #[test]
@@ -2548,32 +2758,23 @@ mod tests {
         let _uncompleted = requested_screenshot(&ctx);
         let deadline = ctx
             .with_plugin(|drive: &mut Drive| {
-                let Some(Step::Await { deadline, .. }) =
-                    drive.running.as_ref().unwrap().steps.front()
-                else {
-                    panic!("capture awaits readback");
-                };
-                *deadline
+                assert!(matches!(
+                    drive.running.as_ref().unwrap().steps.front(),
+                    Some(Step::Await { .. })
+                ));
+                drive.deadlines[&1]
             })
             .unwrap();
         assert!(request(&ctx, 2, "ui.type", &json!({"text":"later"})).is_none());
-        let mut answers = Vec::new();
-        while Instant::now() < deadline + Duration::from_secs(1) {
-            ctx.run_ui(RawInput::default(), |_| {})
-                .drop_without_applying_deltas();
-            answers.extend(logic(&ctx));
-            if answers.iter().any(|answer| answer.id == 1) {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        }
+        ctx.with_plugin(|drive: &mut Drive| drive.last_ui_pass = Some(deadline));
+        assert!(logic_at(&ctx, deadline - Duration::from_millis(1)).is_empty());
+        let mut answers = logic_at(&ctx, deadline);
         let capture = answers
             .iter()
             .find(|answer| answer.id == 1)
             .expect("capture expired");
-        assert!(Instant::now() >= deadline);
         assert_eq!(capture.body["error_code"], "CAPTURE");
-        assert_eq!(capture.body["message"], "no screenshot arrived in time");
+        assert_eq!(capture, &capture_timed_out(1));
         assert!(!temp.path().join("demo/captures/missing.png").exists());
         for _ in 0..4 {
             ctx.run_ui(RawInput::default(), |_| {})
@@ -2587,6 +2788,52 @@ mod tests {
             "queued typing completes after capture refusal: {answers:?}"
         );
         assert!(!pending(&ctx));
+    }
+
+    #[test]
+    fn capture_deadline_is_capped_from_acceptance_even_while_queued() {
+        assert_eq!(Options::default().capture_timeout, CAPTURE_TIMEOUT_MAX);
+        for child in [false, true] {
+            for configured in [Duration::from_secs(5), Duration::from_secs(30)] {
+                let (ctx, _temp) = capture_context();
+                ctx.with_plugin(|drive: &mut Drive| drive.options.capture_timeout = configured);
+                let viewport = egui::ViewportId::from_hash_of("deadline-child");
+                register_viewport(&ctx, egui::ViewportId::ROOT, "child", viewport);
+                let args = if child {
+                    json!({"viewport":"child"})
+                } else {
+                    json!({})
+                };
+                let before = Instant::now();
+                assert!(request(&ctx, 1, "ui.capture", &args).is_none());
+                let deadline = ctx
+                    .with_plugin(|drive: &mut Drive| {
+                        let target = if child {
+                            drive.children.get_mut(&viewport).unwrap().as_mut()
+                        } else {
+                            drive
+                        };
+                        let accepted = target.pending_captures[&1];
+                        let deadline = target.deadlines[&1];
+                        assert!(accepted >= before);
+                        assert_eq!(deadline - accepted, CAPTURE_TIMEOUT_MAX);
+                        // Simulate UI progress while the capture is still queued.
+                        target.last_ui_pass = Some(deadline);
+                        deadline
+                    })
+                    .unwrap();
+                assert!(logic_at(&ctx, deadline - Duration::from_millis(1)).is_empty());
+                let answers = logic_at(&ctx, deadline);
+                assert_eq!(answers, vec![capture_timed_out(1)]);
+                assert!(
+                    answers[0].body["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("5000 ms")
+                );
+                assert!(!pending(&ctx));
+            }
+        }
     }
 
     #[test]
@@ -2776,7 +3023,9 @@ mod tests {
                     steps: VecDeque::from([Step::Await {
                         tag: 7,
                         path: path.clone(),
-                        deadline: Instant::now() + Duration::from_secs(10),
+                        deadline: Instant::now() + CAPTURE_TIMEOUT_MAX,
+                        pass: 0,
+                        emitted: Instant::now(),
                     }]),
                     report: Report::Ui,
                     extra: json!({}),

@@ -91,6 +91,7 @@ fn hidden_window_capture_without_surface() {
                 },
             );
             let primitives = ctx.tessellate(output.shapes, 2.0);
+            painter.context = ctx.clone();
             let mut delta = output.textures_delta;
             delta.free.insert(epaint::TextureId::Managed(0));
             let (tx, rx) = std::sync::mpsc::channel();
@@ -113,6 +114,12 @@ fn hidden_window_capture_without_surface() {
                 callbacks,
                 None,
             );
+            let receipt = egui::Id::unique(("egui-wgpu.capture_submitted", ViewportId::ROOT));
+            assert_eq!(
+                ctx.data(|data| data.get_temp::<u64>(receipt)),
+                Some(ctx.cumulative_pass_nr()),
+                "only the submitted GPU copy protects readback from quiet refusal"
+            );
             for _ in 0..2 {
                 let image = rx
                     .recv_timeout(core::time::Duration::from_secs(15))
@@ -134,6 +141,22 @@ fn hidden_window_capture_without_surface() {
                 "texture freed after submission"
             );
             assert!(painter.surfaces.is_empty(), "no surface was created");
+            ctx.data_mut(|data| data.remove::<u64>(receipt));
+            painter.paint_and_update_textures_impl(
+                ViewportId::ROOT,
+                size,
+                2.0,
+                [0.0, 0.0, 1.0, 1.0],
+                &[],
+                &mut delta,
+                Vec::new(),
+                None,
+            );
+            assert_eq!(
+                ctx.data(|data| data.get_temp::<u64>(receipt)),
+                None,
+                "painting without a screenshot must not claim a submitted copy"
+            );
         }
     }
 }

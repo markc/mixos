@@ -28,4 +28,5 @@ fn hidden_window_vendor_patch_guard() {
         painter.contains("if !capture_data.is_empty()\n                && let Some(capture_state)")
     );
     assert!(painter.contains("sync_channel::<wgpu::Device>(8)"));
+    assert!(painter.contains("egui-wgpu.capture_submitted"));
 }

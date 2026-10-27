@@ -25,6 +25,14 @@ licences; LICENSE-MIT and LICENSE-APACHE are retained from egui's matching
 - `src/winit.rs` logs missing surface/render state and zero-size captures.
   ScreenshotCallback has no error completion and dropping it does not panic;
   callers retain their capture timeout as the failure backstop.
+- `src/winit.rs` records a screenshot submission receipt in egui context data
+  only after submitting a GPU copy with screenshot callbacks. The key is
+  `Id::unique(("egui-wgpu.capture_submitted", viewport_id))`, value `u64`:
+  the viewport's completed pass count. Toolkit records the emitting pass,
+  clears the previous receipt and uses a matching or later receipt to protect
+  actual GPU readback from its no-frame quiet refusal. Early returns and
+  paint-only passes never publish this receipt. The headless GPU guard checks
+  both paths; toolkit's time-injection tests check quiet and absolute deadlines.
 - The headless GPU guard lives in `tests/desktop/offscreen_gpu.rs`, included
   as a unit-test module for private painter access. It needs no extra dependency
   or vendored manifest/lockfile changes. It renders without a

@@ -208,6 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#unreleased--2026-10-28">Unreleased — 2026-10-28</a>
                         <a href="#unreleased--2026-10-27">Unreleased — 2026-10-27</a>
                         <a href="#unreleased--2026-10-24">Unreleased — 2026-10-24</a>
                         <a href="#unreleased--2026-10-23">Unreleased — 2026-10-23</a>
@@ -241,6 +242,16 @@
 </blockquote>
 &lt;!-- SPDX-License-Identifier: MIT OR Apache-2.0 --&gt;
 <h1 id="changelog">Changelog</h1>
+<h2 id="unreleased--2026-10-28">Unreleased — 2026-10-28</h2>
+<ul>
+<li>Refuse captures with <code>NOT_SHOWN</code> after 1.5 seconds without a viewport UI
+pass, or after emitting a screenshot whose GPU copy is never submitted.
+Collect completed GPU readbacks first and discard late callbacks by
+screenshot attempt tag.
+A renderer receipt protects submitted GPU copies until the capture deadline.</li>
+<li>Default and cap capture deadlines at five seconds from acceptance,
+including queue time, so refusals precede a ten-second caller timeout.</li>
+</ul>
 <h2 id="unreleased--2026-10-27">Unreleased — 2026-10-27</h2>
 <ul>
 <li>

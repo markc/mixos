@@ -859,6 +859,17 @@ impl Painter {
             && let Some(screen_capture_state) = &mut self.screen_capture_state
             && !capture_data.is_empty()
         {
+            // Receipt for toolkit's quiet-period check: a screenshot command
+            // alone does not prove readback was submitted. Publish only after
+            // the copy's command buffer reached Queue::submit, never on an
+            // early return or a paint-only pass. Viewports have separate counts.
+            let pass = self.context.cumulative_pass_nr_for(viewport_id);
+            self.context.data_mut(|data| {
+                data.insert_temp(
+                    egui::Id::unique(("egui-wgpu.capture_submitted", viewport_id)),
+                    pass,
+                );
+            });
             screen_capture_state.read_screen_rgba(capture_buffer, capture_data);
             #[cfg(not(target_arch = "wasm32"))]
             if offscreen {
