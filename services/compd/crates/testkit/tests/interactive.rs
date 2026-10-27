@@ -413,11 +413,24 @@ fn policy_place_during_an_armed_drag_keeps_the_placed_floating_frame() {
         }
         assert_eq!(h.comp().placement(id), Placement::Floating);
         assert_eq!(h.comp().float_geometry(id), saved);
-        assert_eq!(h.wire.inner.space.state.element_location(&window), Some((500, 300).into()));
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some((500, 300).into())
+        );
         assert_eq!(slot::size_of(&window), Some((640, 480).into()));
         assert!(!decor::window::constrained(&window));
-        for edge in [State::TiledLeft, State::TiledRight, State::TiledTop, State::TiledBottom] {
-            assert!(!window.toplevel().unwrap().with_pending_state(|state| state.states.contains(edge)));
+        for edge in [
+            State::TiledLeft,
+            State::TiledRight,
+            State::TiledTop,
+            State::TiledBottom,
+        ] {
+            assert!(
+                !window
+                    .toplevel()
+                    .unwrap()
+                    .with_pending_state(|state| state.states.contains(edge))
+            );
         }
         let_go(&mut h);
         assert!(h.comp().interactive.is_none());
