@@ -1313,7 +1313,8 @@ fn inline_image_context_menu_saves_and_failed_previews_keep_the_bar() {
     h.run();
     // The toolbar always has Reply All; the reader's context menu would add
     // a second one.
-    let reply_alls = h.query_all_by_label(&label("reply-all")).count();
+    // Only the reader's Message menu has Mark as Unread (egui labels menu
+    // rows with their shortcut, so match by contains).
     for pressed in [true, false] {
         h.event(egui::Event::PointerButton {
             pos: at,
@@ -1324,9 +1325,8 @@ fn inline_image_context_menu_saves_and_failed_previews_keep_the_bar() {
     }
     h.run();
     assert!(h.query_by_label(&label("open")).is_some());
-    assert_eq!(
-        h.query_all_by_label(&label("reply-all")).count(),
-        reply_alls,
+    assert!(
+        !h.query_by_label_contains(&label("mark-unread")).is_some(),
         "the reader's context menu opened over the image's"
     );
     h.get_by_label(&label("save")).click();
@@ -1377,7 +1377,7 @@ fn hovering_an_inline_image_keeps_the_reader_context_menu_open() {
     finish_preview(&mut h);
     let image = email::label_with("preview-image", &[("name", "preview.png")]);
     let image_at = h.get_by_label(&image).rect().center();
-    let reply_alls = h.query_all_by_label(&label("reply-all")).count();
+    assert!(!h.query_by_label_contains(&label("mark-unread")).is_some());
     // Open the menu at the text's centre: the popup hangs right of that
     // point, clear of the small image at the left edge, so the hover below
     // reaches the image rather than a menu row covering it.
@@ -1395,15 +1395,11 @@ fn hovering_an_inline_image_keeps_the_reader_context_menu_open() {
     }
     h.run();
     h.run();
-    assert_eq!(
-        h.query_all_by_label(&label("reply-all")).count(),
-        reply_alls + 1
-    );
+    assert!(h.query_by_label_contains(&label("mark-unread")).is_some(), "reader menu did not open");
     h.hover_at(image_at);
     h.run();
-    assert_eq!(
-        h.query_all_by_label(&label("reply-all")).count(),
-        reply_alls + 1,
+    assert!(
+        h.query_by_label_contains(&label("mark-unread")).is_some(),
         "hovering the image must not hide the reader's Message menu"
     );
     assert!(
@@ -1918,7 +1914,7 @@ fn the_reader_menu_opens_over_the_text_with_inline_images_off() {
 }
 
 fn right_click_the_text_opens_the_reader_menu(h: &mut Harness<'static, (State, Vec<UiEvent>)>) {
-    let before = h.query_all_by_label(&label("reply-all")).count();
+    assert!(!h.query_by_label_contains(&label("mark-unread")).is_some());
     let at = h.get_by_label(PLAIN).rect().center();
     h.hover_at(at);
     h.run();
@@ -1926,5 +1922,5 @@ fn right_click_the_text_opens_the_reader_menu(h: &mut Harness<'static, (State, V
         h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE });
     }
     h.run();
-    assert_eq!(h.query_all_by_label(&label("reply-all")).count(), before + 1, "reader menu did not open");
+    assert!(h.query_by_label_contains(&label("mark-unread")).is_some(), "reader menu did not open");
 }
