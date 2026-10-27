@@ -349,8 +349,7 @@ impl FileChooser {
                             let size_width = measure("1023 MB");
                             let date_width = measure("0000-00-00");
                             let height = field::height_of(ui.ctx());
-                            let tail =
-                                size_width + date_width + 2.0 * ui.spacing().item_spacing.x;
+                            let tail = size_width + date_width + 2.0 * ui.spacing().item_spacing.x;
                             let width = (ui.available_width() - tail).max(height);
                             let response = ui
                                 .allocate_ui(egui::vec2(width, field::height_of(ui.ctx())), |ui| {
