@@ -737,12 +737,12 @@ mod tests {
     }
 
     #[test]
-    fn requests_encode_uapi_all_states_and_tcp_info_without_privileged_extensions() {
+    fn requests_encode_uapi_full_socket_states_and_tcp_info_without_privileged_extensions() {
         // nlmsghdr + req_v2, also accepted by the kernel in the live test.
         // Native words are little endian in these x86-64 fixtures.
         if cfg!(target_endian = "little") {
             let expected = hex(
-                &("4800000014000103010000000000000002060200ffffffff".to_owned()
+                &("4800000014000103010000000000000002060200bfefffff".to_owned()
                     + &"00".repeat(40)
                     + &"ff".repeat(8)),
             );
