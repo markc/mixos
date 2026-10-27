@@ -144,6 +144,7 @@ pub fn set_placement(
     placement: Placement,
 ) -> GeometryChange {
     let previous = comp.placement(id);
+    let restoring_float = previous.constrained() && placement == Placement::Floating;
     if placement.constrained() && previous == Placement::Floating {
         let Some((output, area)) = target(comp, space, id, window) else {
             return GeometryChange::default();
@@ -172,6 +173,16 @@ pub fn set_placement(
     }
     comp.set_placement(id, window, placement);
     if fullscreen_owns(window) {
+        // Fullscreen retains the visible slot until exit. A transition back to
+        // Floating changes where that exit must land, without moving it now.
+        if restoring_float
+            && let Some(mut restore) = window.fullscreen()
+            && let Some(area) = floating_area(comp, space, id, window)
+        {
+            restore.restore_loc = area.loc;
+            restore.restore_size = area.size;
+            window.set_fullscreen(Some(restore));
+        }
         return GeometryChange::default();
     }
     let area = if comp.placement(id) == Placement::Floating {
@@ -180,12 +191,7 @@ pub fn set_placement(
             shell::send(window);
             return GeometryChange::default();
         }
-        comp.float_geometry(id)
-            .map(|saved| Rectangle::new(saved.location, saved.size))
-            .or_else(|| {
-                target(comp, space, id, window)
-                    .map(|(_, area)| decor::window::content_area(window, default_float(area)))
-            })
+        floating_area(comp, space, id, window)
     } else {
         placement_area(comp, space, id, window)
     };
@@ -193,10 +199,35 @@ pub fn set_placement(
         return GeometryChange::default();
     };
     apply(space, window, area, comp.placement(id).maximized());
+    // An external restore may arrive after a move captured the maximised frame
+    // but before its first motion. Keep the host start on the restored frame;
+    // the dispatcher still reports cumulative travel from the original press.
+    if restoring_float
+        && let Some(grab) = comp
+            .interactive
+            .as_mut()
+            .filter(|grab| grab.id == id && grab.edges == 0)
+    {
+        grab.start = Some((area.loc, area.size));
+    }
     GeometryChange {
         usable: false,
         windows: true,
     }
+}
+
+fn floating_area(
+    comp: &CompState,
+    space: &Space<Window>,
+    id: SurfaceId,
+    window: &Window,
+) -> Option<Rectangle<i32, Logical>> {
+    comp.float_geometry(id)
+        .map(|saved| Rectangle::new(saved.location, saved.size))
+        .or_else(|| {
+            target(comp, space, id, window)
+                .map(|(_, area)| decor::window::content_area(window, default_float(area)))
+        })
 }
 
 fn default_float(area: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {

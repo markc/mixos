@@ -457,3 +457,73 @@ fn a_tiled_move_restores_pre_tile_geometry_even_if_released_in_the_first_pass() 
     );
     assert!(h.comp().interactive.is_none());
 }
+
+#[test]
+fn external_unmaximise_before_first_motion_rebases_the_host_move_start() {
+    for chrome in [false, true] {
+        let mut h = Harness::new();
+        let (surface, _, top) = h.mapped_toplevel(640, 480);
+        let (id, window) = window(&h, &surface);
+        h.wire
+            .inner
+            .space
+            .state
+            .map_element(window.clone(), (80, 60), false);
+        {
+            let host = &mut h.wire.inner;
+            geometry::set_maximized(&mut host.comp, &mut host.space.state, id, &window, true);
+        }
+        let serial = press_at(&mut h, &window, (1280.0, 10.0), chrome);
+        if chrome {
+            assert!(dispatcher::wayland::grab::interactive::start_chrome(
+                &mut h.wire.state,
+                &window,
+                0,
+            ));
+        } else {
+            top._move(h.client.seat(PRIMARY), serial);
+        }
+        h.roundtrip();
+        assert!(!apply(&mut h, &window));
+        assert_eq!(
+            h.comp().interactive.unwrap().start,
+            Some(((0, 0).into(), (1920, 1080).into()))
+        );
+
+        // Another request restores the window after the host captured M but
+        // before the pointer has travelled. The next pass must start from A.
+        {
+            let host = &mut h.wire.inner;
+            assert!(
+                geometry::set_maximized(&mut host.comp, &mut host.space.state, id, &window, false)
+                    .windows
+            );
+        }
+        assert_eq!(h.comp().placement(id), Placement::Floating);
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some((80, 60).into())
+        );
+        motion(&mut h, (1300.0, 40.0));
+        assert!(apply(&mut h, &window));
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some((100, 90).into())
+        );
+        assert_eq!(slot::decided_size(&window), Some((640, 480).into()));
+        let grab = h.comp().interactive.unwrap();
+        assert_eq!(grab.pointer_start, (1280.0, 10.0).into());
+        assert_eq!(grab.delta, (20.0, 30.0));
+        assert_eq!(grab.start, Some(((80, 60).into(), (640, 480).into())));
+
+        motion(&mut h, (1307.0, 45.0));
+        assert!(apply(&mut h, &window));
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some((107, 95).into())
+        );
+        let_go(&mut h);
+        apply(&mut h, &window);
+        assert!(h.comp().interactive.is_none());
+    }
+}

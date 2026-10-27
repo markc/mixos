@@ -100,8 +100,8 @@ pub fn fullscreen_set_in_space(
         };
         window.set_fullscreen(None);
 
-        // Where to land: fullscreen covered the output, so the window goes back
-        // to the rectangle it had before it.
+        // Recompute constrained placement. Floating uses this restore slot,
+        // updated if it left a constrained placement while fullscreen.
         let id = dispatcher::wire::trait_::surface_event::SurfaceHandle::of_window(window)
             .and_then(|handle| comp.registry.id_for_handle(&handle));
         let placement =

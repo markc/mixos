@@ -837,3 +837,192 @@ fn fullscreen_exit_reinstates_the_chrome_inset_before_the_exit_ack() {
         Some(expected.loc)
     );
 }
+
+fn fullscreen(h: &mut Harness, window: &Window, enabled: bool) {
+    let host = &mut h.wire.inner;
+    assert!(
+        world::window::interface::draw::fullscreen::fullscreen_set_in_space(
+            &host.comp,
+            &mut host.space.state,
+            window,
+            enabled,
+            enabled.then_some(((0, 0).into(), (1920, 1080).into())),
+            false,
+        )
+    );
+}
+
+#[test]
+fn unmaximise_during_fullscreen_restores_pre_maximise_floating_geometry_on_exit() {
+    use dispatcher::wire::trait_::surface_event::WindowRequest;
+    use world::comp::{Placement, TileSlot};
+
+    for tiled in [false, true] {
+        for client_request in [false, true] {
+            let mut h = Harness::new();
+            let (surface, xdg, top) = h.mapped_toplevel(640, 480);
+            let (id, window) = window(&h, &surface);
+            h.wire
+                .inner
+                .space
+                .state
+                .map_element(window.clone(), (123, 57), false);
+            bottom(&mut h, 80);
+            if tiled {
+                tile(&mut h, id, &window, TileSlot::BottomRight);
+            } else {
+                maximize(&mut h, id, &window, true);
+            }
+            let saved = h.comp().float_geometry(id).unwrap();
+            fullscreen(&mut h, &window, true);
+            h.roundtrip();
+            h.client.commit(&surface);
+            h.roundtrip();
+
+            if client_request {
+                top.unset_maximized();
+                h.roundtrip();
+                assert_eq!(
+                    h.wire.inner.comp.take_requests(),
+                    vec![(id, WindowRequest::Maximize(false))]
+                );
+            }
+            // Both request paths reach this same executor after policy admission.
+            assert_eq!(
+                maximize(&mut h, id, &window, false),
+                GeometryChange::default()
+            );
+            assert_eq!(h.comp().placement(id), Placement::Floating);
+            assert_eq!(h.comp().float_geometry(id), Some(saved.clone()));
+            assert_eq!(slot::decided_size(&window), Some((1920, 1080).into()));
+            assert_eq!(
+                h.wire.inner.space.state.element_location(&window),
+                Some((0, 0).into())
+            );
+
+            h.client.state.hold_xdg_configures = true;
+            fullscreen(&mut h, &window, false);
+            assert_eq!(
+                h.wire.inner.space.state.element_location(&window),
+                Some(saved.location)
+            );
+            assert_eq!(slot::decided_size(&window), Some(saved.size));
+            assert_eq!(h.comp().float_geometry(id), Some(saved.clone()));
+            h.roundtrip();
+            configured(&h, &top, (640, 480), false);
+            xdg.ack_configure(serial(&h, &xdg));
+            h.client.commit(&surface);
+            h.roundtrip();
+            h.client.state.hold_xdg_configures = false;
+
+            // A later maximise must save A again, never the old maximised slot M.
+            assert!(maximize(&mut h, id, &window, true).windows);
+            assert_eq!(h.comp().float_geometry(id), Some(saved.clone()));
+            assert!(maximize(&mut h, id, &window, false).windows);
+            assert_eq!(
+                h.wire.inner.space.state.element_location(&window),
+                Some(saved.location)
+            );
+            assert_eq!(slot::decided_size(&window), Some(saved.size));
+        }
+    }
+}
+
+#[test]
+fn maximise_during_fullscreen_reapplies_new_placement_and_preserves_floating_geometry() {
+    use world::comp::{Placement, TileSlot};
+
+    for tiled in [false, true] {
+        let mut h = Harness::new();
+        let (surface, xdg, top) = h.mapped_toplevel(640, 480);
+        let (id, window) = window(&h, &surface);
+        h.wire
+            .inner
+            .space
+            .state
+            .map_element(window.clone(), (123, 57), false);
+        fullscreen(&mut h, &window, true);
+        h.roundtrip();
+        h.client.commit(&surface);
+        h.roundtrip();
+
+        let change = if tiled {
+            tile(&mut h, id, &window, TileSlot::BottomRight)
+        } else {
+            top.set_maximized();
+            h.roundtrip();
+            assert_eq!(
+                h.wire.inner.comp.take_requests(),
+                vec![(
+                    id,
+                    dispatcher::wire::trait_::surface_event::WindowRequest::Maximize(true)
+                )]
+            );
+            maximize(&mut h, id, &window, true)
+        };
+        assert_eq!(change, GeometryChange::default());
+        let saved = h.comp().float_geometry(id).unwrap();
+        assert_eq!(
+            (saved.location, saved.size),
+            ((123, 57).into(), (640, 480).into())
+        );
+        let placement = h.comp().placement(id);
+        assert!(placement.constrained());
+        assert_eq!(slot::decided_size(&window), Some((1920, 1080).into()));
+
+        // Exit computes the new placement against the latest work area, even
+        // without a refresh and while its configure ACK is held.
+        bottom(&mut h, 160);
+        h.client.state.hold_xdg_configures = true;
+        fullscreen(&mut h, &window, false);
+        let (origin, size) = if tiled {
+            ((960, 460), (960, 460))
+        } else {
+            ((0, 0), (1920, 920))
+        };
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some(origin.into())
+        );
+        assert_eq!(slot::decided_size(&window), Some(size.into()));
+        assert_eq!(h.comp().placement(id), placement);
+        assert_eq!(h.comp().float_geometry(id), Some(saved.clone()));
+        h.roundtrip();
+        configured(&h, &top, size, !tiled);
+        xdg.ack_configure(serial(&h, &xdg));
+        h.client.commit(&surface);
+        h.roundtrip();
+        assert!(maximize(&mut h, id, &window, false).windows);
+        assert_eq!(h.comp().placement(id), Placement::Floating);
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some(saved.location)
+        );
+        assert_eq!(slot::decided_size(&window), Some(saved.size));
+    }
+}
+
+#[test]
+fn unchanged_floating_placement_exits_fullscreen_at_its_current_geometry() {
+    let mut h = Harness::new();
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (id, window) = window(&h, &surface);
+    maximize(&mut h, id, &window, true);
+    maximize(&mut h, id, &window, false);
+    let old_saved = h.comp().float_geometry(id);
+    h.wire
+        .inner
+        .space
+        .state
+        .map_element(window.clone(), (123, 57), false);
+    slot::set_expected_size(&window, (800, 600).into());
+    fullscreen(&mut h, &window, true);
+    h.roundtrip();
+    fullscreen(&mut h, &window, false);
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&window),
+        Some((123, 57).into())
+    );
+    assert_eq!(slot::decided_size(&window), Some((800, 600).into()));
+    assert_eq!(h.comp().float_geometry(id), old_saved);
+}
