@@ -94,9 +94,10 @@ fn unjunkable(state: &State) -> bool {
         })
 }
 
-/// The open email has attachments.
+/// The displayed email has attachments, even while another email loads.
 fn attached(state: &State) -> bool {
-    reading(state)
+    idle(state)
+        && state.mode == Mode::Mail
         && state
             .current()
             .and_then(|v| v.mail.open.as_ref())
@@ -403,7 +404,7 @@ pub fn registry() -> Registry<State> {
         menu: Some("message"),
         shortcut: None,
         icon: Some(Icon::Download),
-        enabled: attached,
+        enabled: |state| reading(state) && attached(state),
         run: State::save_all_attachments,
     })
     .add(Action {

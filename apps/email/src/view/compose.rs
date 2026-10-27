@@ -719,7 +719,7 @@ fn form(
 mod tests {
     use super::*;
     use egui_kittest::Harness;
-    use egui_kittest::kittest::{NodeT, Queryable};
+    use egui_kittest::kittest::Queryable;
 
     #[test]
     fn small_remove_icon_does_not_clip_the_text_line() {

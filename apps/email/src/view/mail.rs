@@ -356,7 +356,7 @@ pub fn reader(
                 tile_limit,
                 &mut Vec::new(),
             );
-            let height = measure.min_rect().height();
+            let height = measure.min_rect().height().min(tile_limit);
             let bar = egui::Panel::bottom("reader-attachments")
                 .frame(egui::Frame::new())
                 .exact_size(height)
@@ -445,9 +445,11 @@ fn toolbar_shown(view: &AccountView) -> bool {
 }
 
 fn toolbar(ui: &mut Ui, view: &AccountView) {
-    if let Some(line) = view.mail.target_line() {
-        ui.label(RichText::new(line).weak());
-    }
+    ui.horizontal(|ui| {
+        if let Some(line) = view.mail.target_line() {
+            ui.label(RichText::new(line).weak());
+        }
+    });
 }
 
 /// The type icon for an attachment of type `mime`.
@@ -515,17 +517,19 @@ fn attachment_bar(
             });
         },
         |ui| {
+            // Sides lays out this group right to left: the menu is last visually.
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
                 let any = parts.iter().any(jmap::Attachment::downloadable);
+                let more = ui.add(
+                    IconButton::new(Icon::ChevronDown).tooltip(crate::label("attachment-actions")),
+                );
                 if ui
                     .add_enabled(any, egui::Button::new(crate::label("save-all")))
                     .clicked()
                 {
                     events.push(UiEvent::Command("mail.save_attachments", Origin::Ui));
                 }
-                let more = ui.add(
-                    IconButton::new(Icon::ChevronDown).tooltip(crate::label("attachment-actions")),
-                );
                 egui::Popup::menu(&more).show(|ui| {
                     if ui
                         .add_enabled(any, egui::Button::new(crate::label("save-all")))
@@ -571,12 +575,16 @@ fn attachment_bar(
         ScrollArea::vertical()
             .id_salt("attachment-tiles")
             .max_height(tile_limit)
+            .auto_shrink([false, true])
             .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    for (index, part) in parts.iter().enumerate() {
-                        attachment_tile(ui, view, part, index, events);
-                    }
-                });
+                ui.with_layout(
+                    egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true),
+                    |ui| {
+                        for (index, part) in parts.iter().enumerate() {
+                            attachment_tile(ui, view, part, index, events);
+                        }
+                    },
+                );
             });
     }
 }
@@ -641,17 +649,13 @@ fn attachment_tile(
     let name = attachment_name(part, index);
     let body = ui.text_style_height(&egui::TextStyle::Body);
     let frame = egui::Frame::group(ui.style());
-    let width = (body * 16.0).min(ui.max_rect().width());
-    // Wrap before the frame, whose scope otherwise consumes the remainder.
-    let remaining = ui.available_size_before_wrap().x;
-    if remaining < width && remaining < ui.max_rect().width() {
-        ui.end_row();
-    }
+    let em = egui::TextStyle::Body.resolve(ui.style()).size;
+    let width = (em * 16.0).min(ui.max_rect().width());
+    // Give the wrapping layout the tile's width before creating its frame.
     let shown = ui
-        .scope_builder(
-            egui::UiBuilder::new()
-                .id_salt(("attachment", index))
-                .layout(egui::Layout::top_down(egui::Align::Min)),
+        .allocate_ui_with_layout(
+            egui::vec2(width, 0.0),
+            egui::Layout::top_down(egui::Align::Min),
             |ui| {
                 frame
                     .show(ui, |ui| {
@@ -760,8 +764,11 @@ fn inline_images(ui: &mut Ui, state: &State, email: &Email, events: &mut Vec<UiE
                         .sense(Sense::click())
                         .alt_text(crate::label_with("preview-image", &[("name", &name)])),
                 );
-                context |= response.secondary_clicked();
+                // The reader menu watches raw input, so exclude the image's
+                // clipped rectangle even before its Response reports a click.
+                context |= ui.rect_contains_pointer(response.rect) || response.secondary_clicked();
                 attachment_menu(&response, part, &name, events);
+                context |= response.context_menu_opened();
             }
             Some(crate::previews::Preview::Failed(reason)) => {
                 ui.weak(crate::label_with(
@@ -804,7 +811,8 @@ fn scroll_with_keys(ui: &mut Ui, focused: bool) -> Option<f32> {
     if !focused {
         return None;
     }
-    let body = ui.make_persistent_id(BODY_SCROLL);
+    // Use the area's returned id rather than reproducing egui's salt hashing.
+    let body = ui.data(|d| d.get_temp::<Id>(ui.make_persistent_id(BODY_SCROLL)))?;
     let page = ui.available_height() * 0.9;
     let step = ui.input_mut(|i| {
         let mut step = 0.0;
@@ -893,7 +901,7 @@ fn message(
     toolkit::bars::hairline(ui);
     let mut attachment_context = false;
     toolkit::content::surface(ui, content, |ui| {
-        // The keys and the area share this ui, so they share the scroll state.
+        // The keys use the actual id returned by this area's previous frame.
         let offset = scroll_with_keys(ui, focused);
         let area = ScrollArea::vertical();
         let area = if let Some(offset) = offset {
@@ -901,7 +909,7 @@ fn message(
         } else {
             area
         };
-        area.id_salt(BODY_SCROLL).auto_shrink(false).show(ui, |ui| {
+        let shown = area.id_salt(BODY_SCROLL).auto_shrink(false).show(ui, |ui| {
             match email.text_body_value() {
                 Some(body) if format == Format::Markdown => {
                     let parsed;
@@ -931,6 +939,7 @@ fn message(
             }
             attachment_context = inline_images(ui, state, email, events);
         });
+        ui.data_mut(|d| d.insert_temp(ui.make_persistent_id(BODY_SCROLL), shown.id));
     });
     attachment_context
 }

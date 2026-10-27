@@ -854,6 +854,7 @@ fn attachment_choices_default_toggle_and_persist() {
     assert!(restored.ui.attachments_expanded);
     assert!(!restored.ui.attachments_inline);
     state.accounts[0].mail.open.as_mut().unwrap().id = "another-email".into();
+    assert!(state.accounts[0].opening_another());
     assert!(state.ui.attachments_expanded);
     registry
         .execute("mail.attachments", &mut state, Origin::Bus)
@@ -892,6 +893,17 @@ fn expanded_tiles_open_safe_files_and_save_scripts() {
     let mut h = harness(state, &theme(Scheme::Studio, Mode::Dark));
     assert!(h.query_by_label("winmail.dat").is_some());
     assert!(h.query_by_label(&label("attachment-undecodable")).is_some());
+    let first = h
+        .get_by_label("Quarterly build cluster capacity plan (final, revised).pdf")
+        .rect();
+    let second = h.get_by_label("install.sh").rect();
+    let third = h.get_by_label("winmail.dat").rect();
+    assert_eq!(first.top(), second.top());
+    assert!(second.left() > first.right());
+    assert!(third.top() > first.bottom());
+    let save = h.get_by_label(&label("save-all")).rect();
+    let more = h.get_by_label(&label("attachment-actions")).rect();
+    assert!(more.left() >= save.right());
     h.get_by_label("Quarterly build cluster capacity plan (final, revised).pdf")
         .click();
     h.run();
@@ -965,6 +977,34 @@ fn attachment_bar_stays_pinned_while_the_body_scrolls() {
     h.run();
     assert!(h.get_by_label(&text).rect().top() < body_before.top());
     assert_eq!(h.get_by_label(&label("save-all")).rect(), before);
+    h.key_press(egui::Key::PageUp);
+    h.run();
+    assert_eq!(h.get_by_label(&text).rect(), body_before);
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    assert!(h.get_by_label(&text).rect().top() < body_before.top());
+    h.key_press(egui::Key::ArrowUp);
+    h.run();
+    assert_eq!(h.get_by_label(&text).rect(), body_before);
+    assert_eq!(h.get_by_label(&label("save-all")).rect(), before);
+}
+
+#[test]
+fn keyboard_scrolling_without_attachments() {
+    let text = (0..120).map(|i| format!("Line {i}\n")).collect::<String>();
+    let mut h = harness(
+        opened("text/plain", &text),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+    let before = h.get_by_label(&text).rect();
+    email::view::mail::focus_reader(&h.ctx);
+    h.key_press(egui::Key::PageDown);
+    h.run();
+    assert!(h.get_by_label(&text).rect().top() < before.top());
+    h.key_press(egui::Key::PageUp);
+    h.run();
+    assert_eq!(h.get_by_label(&text).rect(), before);
+    assert!(h.query_by_label(&label("save-all")).is_none());
 }
 
 fn with_image(mut state: State) -> State {
