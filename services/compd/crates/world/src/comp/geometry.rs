@@ -517,13 +517,36 @@ pub fn placement_area(
             let area = decor::window::content_area(window, tile.rectangle(outer, split));
             let (w, h) = clamp_size((area.size.w, area.size.h), size_hints(window));
             let usable = decor::window::content_area(window, outer);
-            let right = matches!(tile, super::TileSlot::Right | super::TileSlot::TopRight | super::TileSlot::BottomRight);
-            let bottom = matches!(tile, super::TileSlot::Bottom | super::TileSlot::BottomLeft | super::TileSlot::BottomRight);
+            let right = matches!(
+                tile,
+                super::TileSlot::Right | super::TileSlot::TopRight | super::TileSlot::BottomRight
+            );
+            let bottom = matches!(
+                tile,
+                super::TileSlot::Bottom
+                    | super::TileSlot::BottomLeft
+                    | super::TileSlot::BottomRight
+            );
             Some(Rectangle::new(
                 (
-                    tile_axis(area.loc.x, area.size.w, w, usable.loc.x, usable.size.w, right),
-                    tile_axis(area.loc.y, area.size.h, h, usable.loc.y, usable.size.h, bottom),
-                ).into(),
+                    tile_axis(
+                        area.loc.x,
+                        area.size.w,
+                        w,
+                        usable.loc.x,
+                        usable.size.w,
+                        right,
+                    ),
+                    tile_axis(
+                        area.loc.y,
+                        area.size.h,
+                        h,
+                        usable.loc.y,
+                        usable.size.h,
+                        bottom,
+                    ),
+                )
+                    .into(),
                 (w, h).into(),
             ))
         }

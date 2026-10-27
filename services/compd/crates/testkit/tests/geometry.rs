@@ -848,7 +848,10 @@ fn all_tiles_anchor_oversized_clients_before_and_after_their_min_size_commit() {
             );
             assert_eq!(h.comp().placement(id).name(), tiled.name());
             assert_eq!(h.comp().float_geometry(id), saved);
-            assert_eq!(h.comp().tile_split_for("testkit-0", 1), world::comp::TileSplit::default());
+            assert_eq!(
+                h.comp().tile_split_for("testkit-0", 1),
+                world::comp::TileSplit::default()
+            );
             let before = count(&h, &top);
             assert!(!refresh(&mut h, id, &window).windows);
             h.roundtrip();
@@ -867,7 +870,13 @@ fn tiles_larger_than_the_usable_output_start_at_its_top_left() {
         // use the usable rectangle rather than zero or the raw output.
         let output = h.wire.inner.output.clone();
         h.wire.inner.space.state.map_output(&output, (-300, 140));
-        h.wire.inner.comp.reserved.get_mut(&output.name()).unwrap().left = 61;
+        h.wire
+            .inner
+            .comp
+            .reserved
+            .get_mut(&output.name())
+            .unwrap()
+            .left = 61;
         let (surface, _, top) = h.mapped_toplevel(640, 480);
         let (id, window) = window(&h, &surface);
         top.set_min_size(1700, 1000);
@@ -885,6 +894,52 @@ fn tiles_larger_than_the_usable_output_start_at_its_top_left() {
             "{tiled:?}"
         );
     }
+}
+
+#[test]
+fn oversized_tile_refits_after_panel_and_output_changes() {
+    use world::comp::TileSlot;
+    let mut h = Harness::new();
+    panelled_output(&mut h);
+    let (surface, _, top) = h.mapped_toplevel(640, 500);
+    let (id, window) = window(&h, &surface);
+    top.set_min_size(0, 500);
+    h.client.commit(&surface);
+    h.roundtrip();
+    for (tiled, origin, size) in [
+        (TileSlot::Top, (0, 28), (1536, 500)),
+        (TileSlot::BottomLeft, (0, 312), (768, 500)),
+    ] {
+        tile(&mut h, id, &window, tiled);
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some(origin.into())
+        );
+        assert_eq!(slot::decided_size(&window), Some(size.into()));
+    }
+    bottom(&mut h, 80);
+    assert!(refresh(&mut h, id, &window).windows);
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&window),
+        Some((0, 284).into())
+    );
+    h.wire.inner.output.change_current_state(
+        Some(Mode {
+            size: (1280, 720).into(),
+            refresh: 60_000,
+        }),
+        None,
+        None,
+        None,
+    );
+    assert!(refresh(&mut h, id, &window).windows);
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&window),
+        Some((0, 140).into())
+    );
+    assert_eq!(slot::decided_size(&window), Some((640, 500).into()));
+    assert_eq!(h.comp().placement(id).name(), "bottom_left");
+    assert!(!refresh(&mut h, id, &window).windows);
 }
 
 #[test]
@@ -909,7 +964,10 @@ fn maximized_clients_with_size_limits_anchor_to_the_usable_top_left() {
         h.roundtrip();
         configured(&h, &top, size, true);
         assert_eq!(slot::decided_size(&window), Some(size.into()));
-        assert_eq!(h.wire.inner.space.state.element_location(&window), Some((0, 28).into()));
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some((0, 28).into())
+        );
         assert!(!refresh(&mut h, id, &window).windows);
     }
 }
