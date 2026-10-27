@@ -263,8 +263,19 @@ fn run_host(url: &str, mut presenter: impl Presenter, mut events: tokio::sync::m
                     }
                 }
                 answer = async { match &mut driver { Some(driver) => driver.answers.recv().await, None => std::future::pending().await } } => {
-                    if let Some(answer) = answer && let Some(cmd) = pending.remove(&answer.id) {
-                        let _ = client.respond(&cmd, answer.rc, &answer.body.to_string()).await;
+                    match answer {
+                        Some(presenter::Report::Drive(answer)) => if let Some(cmd) = pending.remove(&answer.id) {
+                            let _ = client.respond(&cmd, answer.rc, &answer.body.to_string()).await;
+                        },
+                        Some(presenter::Report::Executed(bodies)) => {
+                            let topic = toolkit::executed::topic(SERVICE);
+                            for body in bodies {
+                                let headers = BTreeMap::from([("name".into(), topic.clone()), ("retain".into(), "false".into())]);
+                                let frame = citizen::outbox::frame(&topic, &body);
+                                let _ = client.call_with_headers_raw("noded", "topic.publish", &headers, &frame).await;
+                            }
+                        }
+                        None => {}
                     }
                 }
                 event = events.recv(), if events_open => {

@@ -354,7 +354,11 @@ impl DopusCore {
         Self::new_inner(config, None, true)
     }
 
-    fn new_inner(config: DOpusConfig, config_file: Option<ConfigFile>, chooser: bool) -> (Self, mpsc::Receiver<CoreEvent>) {
+    fn new_inner(
+        config: DOpusConfig,
+        config_file: Option<ConfigFile>,
+        chooser: bool,
+    ) -> (Self, mpsc::Receiver<CoreEvent>) {
         let (tx, rx) = mpsc::channel();
         let workers = WorkerHandle::new(tx);
         workers.thumbs.set_remote(config.remote_previews);
@@ -409,7 +413,9 @@ impl DopusCore {
         core.panes[PaneId::Left.index()].previews = config.left.previews;
         core.panes[PaneId::Right.index()].previews = config.right.previews;
         core.start_listing(PaneId::Left);
-        if !chooser { core.start_listing(PaneId::Right); }
+        if !chooser {
+            core.start_listing(PaneId::Right);
+        }
         (core, rx)
     }
 
@@ -448,11 +454,19 @@ impl DopusCore {
         if self.chooser {
             visible.retain(|row| {
                 let entry = &row.entry;
-                if entry.is_dir { return true; }
-                if self.chooser_directories { return false; }
+                if entry.is_dir {
+                    return true;
+                }
+                if self.chooser_directories {
+                    return false;
+                }
                 self.chooser_filter.as_ref().is_none_or(|filter| {
                     let name = entry.path.file_name().unwrap_or_default().to_string_lossy();
-                    let mime = self.chooser_mime.as_ref().map(|db| db.guess(Some(&name), None).mime).unwrap_or_default();
+                    let mime = self
+                        .chooser_mime
+                        .as_ref()
+                        .map(|db| db.guess(Some(&name), None).mime)
+                        .unwrap_or_default();
                     filter.matches(&name, false, &mime)
                 })
             });
@@ -461,13 +475,23 @@ impl DopusCore {
     }
 
     /// Filtering is shared by drawing, range selection and keyboard movement.
-    pub fn set_chooser_filter(&mut self, filter: Option<crate::chooser::Filter>, directories: bool) {
+    pub fn set_chooser_filter(
+        &mut self,
+        filter: Option<crate::chooser::Filter>,
+        directories: bool,
+    ) {
         self.chooser_filter = filter;
         self.chooser_directories = directories;
-        let visible: HashSet<_> = self.visible_rows(PaneId::Left).into_iter().map(|r| r.entry.path).collect();
+        let visible: HashSet<_> = self
+            .visible_rows(PaneId::Left)
+            .into_iter()
+            .map(|r| r.entry.path)
+            .collect();
         let pane = &mut self.panes[0];
         pane.selected_paths.retain(|p| visible.contains(p));
-        if pane.selected.as_ref().is_some_and(|p| !visible.contains(p)) { pane.selected = None; }
+        if pane.selected.as_ref().is_some_and(|p| !visible.contains(p)) {
+            pane.selected = None;
+        }
         pane.listing_revision += 1;
     }
 

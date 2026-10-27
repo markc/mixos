@@ -11,6 +11,9 @@ generated: by docs/_build/gen-site.mix from apps/dopus/CHANGELOG.md; do not edit
 
 ## Unreleased — 2026-10-27
 
+- Add native file chooser windows in `--choose-service`, with shared DOpus
+  panes, filters, caller choices, replacement confirmation and request-scoped
+  toolkit drive commands. Cover both themes and a private nested compositor.
 - Add Mail selection to File, the row context menu and Ctrl+M, available for
   selections of regular files (symlinks followed). Listing workers supply
   regular-file metadata, keeping availability checks off the filesystem.

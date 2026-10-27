@@ -1,28 +1,38 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Chooser snapshots use the real one-pane core and shared DOpus view.
-use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
-use std::time::{Duration, SystemTime};
 use design::{DesignContext, Mode, Scheme};
 use dopus::choose::{defaults, window::Window};
 use dopus_core::chooser::Request;
 use egui_kittest::Harness;
 use serde_json::json;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use std::time::{Duration, SystemTime};
 
 fn home() -> &'static Path {
     static HOME: OnceLock<PathBuf> = OnceLock::new();
     HOME.get_or_init(|| {
         let home = std::env::temp_dir().join("dopus-chooser-snapshots/home");
         std::fs::create_dir_all(home.join("Documents")).unwrap();
-        for (name, contents) in [("notes.txt", "Notes"), ("report.pdf", "Report"), ("photo.png", "Picture")] {
+        for (name, contents) in [
+            ("notes.txt", "Notes"),
+            ("report.pdf", "Report"),
+            ("photo.png", "Picture"),
+        ] {
             std::fs::write(home.join(name), contents).unwrap();
         }
         let when = SystemTime::UNIX_EPOCH + Duration::from_secs(1_791_711_000);
         for entry in std::fs::read_dir(&home).unwrap() {
-            std::fs::File::open(entry.unwrap().path()).unwrap().set_modified(when).unwrap();
+            std::fs::File::open(entry.unwrap().path())
+                .unwrap()
+                .set_modified(when)
+                .unwrap();
         }
         // SAFETY: set once before the first core is made; every test uses it.
-        unsafe { std::env::set_var("HOME", &home); std::env::set_var("TZ", "UTC"); }
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::set_var("TZ", "UTC");
+        }
         home
     })
 }
@@ -55,20 +65,47 @@ fn snapshot(kind: &str, mode: Mode) {
     }
     if kind == "multiple" {
         for name in ["notes.txt", "report.pdf"] {
-            window.app.core.select_modified(dopus_core::PaneId::Left, folder.join(name), true, false);
+            window.app.core.select_modified(
+                dopus_core::PaneId::Left,
+                folder.join(name),
+                true,
+                false,
+            );
         }
     }
-    if kind == "replace" { window.accept(); assert!(window.replace.is_some()); }
-    let theme = toolkit::Theme::for_context(DesignContext { scheme: Scheme::Studio, mode, ..Default::default() });
-    let mut harness = Harness::builder().with_context_setup(move |ctx| toolkit::install(ctx, &theme))
-        .with_size(egui::vec2(820.0, 600.0)).wgpu().build_ui(move |ui| window.show(ui));
+    if kind == "replace" {
+        window.accept();
+        assert!(window.replace.is_some());
+    }
+    let theme = toolkit::Theme::for_context(DesignContext {
+        scheme: Scheme::Studio,
+        mode,
+        ..Default::default()
+    });
+    let mut harness = Harness::builder()
+        .with_context_setup(move |ctx| toolkit::install(ctx, &theme))
+        .with_size(egui::vec2(820.0, 600.0))
+        .wgpu()
+        .build_ui(move |ui| window.show(ui));
     harness.run();
-    harness.snapshot(format!("chooser_{kind}_{}", if mode == Mode::Dark { "dark" } else { "light" }));
+    harness.snapshot(format!(
+        "chooser_{kind}_{}",
+        if mode == Mode::Dark { "dark" } else { "light" }
+    ));
 }
 
 #[test]
 fn all_chooser_windows_dark_and_light() {
     for mode in [Mode::Dark, Mode::Light] {
-        for kind in ["open", "multiple", "directory", "save", "save_files", "replace"] { snapshot(kind, mode); }
+        for kind in [
+            "open",
+            "multiple",
+            "directory",
+            "save",
+            "save_files",
+            "replace",
+        ] {
+            snapshot(kind, mode);
+        }
     }
 }

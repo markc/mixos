@@ -613,12 +613,33 @@ fn pane_view(
 }
 
 /// The file manager's pane, with destructive menus and drag/drop removed.
-pub(crate) fn chooser_pane(ui: &mut Ui, app: &App, commands: &Registry<App>, events: &mut Vec<UiEvent>) {
-    pane_body(ui, app, commands, &crate::strings(), PaneId::Left, true, events);
+pub(crate) fn chooser_pane(
+    ui: &mut Ui,
+    app: &App,
+    commands: &Registry<App>,
+    events: &mut Vec<UiEvent>,
+) {
+    pane_body(
+        ui,
+        app,
+        commands,
+        &crate::strings(),
+        PaneId::Left,
+        true,
+        events,
+    );
 }
 
 #[expect(clippy::too_many_arguments, reason = "shared pane inputs")]
-fn pane_body(ui: &mut Ui, app: &App, commands: &Registry<App>, strings: &Strings, pane: PaneId, chooser: bool, events: &mut Vec<UiEvent>) {
+fn pane_body(
+    ui: &mut Ui,
+    app: &App,
+    commands: &Registry<App>,
+    strings: &Strings,
+    pane: PaneId,
+    chooser: bool,
+    events: &mut Vec<UiEvent>,
+) {
     let active = app.core.active() == pane;
     let model = app.core.pane(pane);
     let accent = ui.visuals().selection.bg_fill;
@@ -675,17 +696,17 @@ fn pane_body(ui: &mut Ui, app: &App, commands: &Registry<App>, strings: &Strings
         events.push(UiEvent::Activate(pane));
     }
     if !chooser {
-      drop_target(&background, pane, model.path.clone(), events);
-      background.context_menu(|ui| {
-        for id in [
-            "file.new-folder",
-            "view.refresh",
-            "view.toggle-hidden",
-            "view.toggle-previews",
-        ] {
-            context_item(ui, app, commands, strings, id, pane, events);
-        }
-      });
+        drop_target(&background, pane, model.path.clone(), events);
+        background.context_menu(|ui| {
+            for id in [
+                "file.new-folder",
+                "view.refresh",
+                "view.toggle-hidden",
+                "view.toggle-previews",
+            ] {
+                context_item(ui, app, commands, strings, id, pane, events);
+            }
+        });
     }
     ui.horizontal(|ui| {
         ui.add_space(6.0);
@@ -1053,7 +1074,9 @@ fn row(
     if !chooser && entry.is_dir {
         drop_target(&response, pane, entry.path.clone(), events);
     }
-    if chooser { return; }
+    if chooser {
+        return;
+    }
     response.context_menu(|ui| {
         for id in [
             "file.open",

@@ -26,7 +26,7 @@
 //! - [`bus`]: the Bus thread (`dopus.*` commands, topics, the session look);
 //! - [`commands`]: the `dopus.v1` Bus surface, shared by window and headless;
 //! - [`choose`]: the separate `files` Bus provider, backed by the pure
-//!   [`dopus_core::chooser`] engine; no twin-pane window or core workers;
+//!   [`dopus_core::chooser`] engine and one read-only pane per secondary window;
 //! - [`keymap`]: the default chords (the person's own come from the desktop
 //!   profile);
 //! - [`app`]: the window's state around the core; [`commands`]: the
