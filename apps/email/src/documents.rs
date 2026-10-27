@@ -411,15 +411,18 @@ impl State {
                 }
             }
             Answer::Saved(result) => {
-                if let Some(fence) = self.documents.saving.remove(&ticket) {
-                    match result {
-                        Err(error) => self.document_error(error),
-                        Ok(()) => {
-                            if fence == self.document_fence()
-                                && let Some(compose) = &mut self.compose
-                            {
-                                compose.error = None;
-                            }
+                let current = self
+                    .documents
+                    .saving
+                    .remove(&ticket)
+                    .is_some_and(|fence| fence == self.document_fence());
+                match result {
+                    Err(error) => self.document_error(error),
+                    Ok(()) => {
+                        if current
+                            && let Some(compose) = &mut self.compose
+                        {
+                            compose.error = None;
                         }
                     }
                 }
@@ -1063,6 +1066,7 @@ mod tests {
             let ticket = *state.documents.saving.keys().next().unwrap();
             if close {
                 state.take_compose();
+                state.close_out();
             } else {
                 state.apply_ui(crate::view::UiEvent::ComposeField(
                     crate::state::ComposeField::Subject,
