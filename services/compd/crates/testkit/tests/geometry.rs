@@ -744,10 +744,10 @@ fn tiled_window_refits_after_a_usable_area_change_without_configure_churn() {
 }
 
 #[test]
-fn tile_centres_min_and_max_size_clients_and_records_the_clamped_size() {
+fn tile_anchors_min_size_and_centres_max_size_clients_without_configure_churn() {
     use world::comp::TileSlot;
     for (min, max, expected_size, expected_origin) in [
-        ((1200, 1200), (0, 0), (1200, 1200), (-120, -60)),
+        ((1200, 1200), (0, 0), (1200, 1200), (0, 0)),
         ((0, 0), (600, 400), (600, 400), (180, 340)),
     ] {
         let mut h = Harness::new();
@@ -776,6 +776,141 @@ fn tile_centres_min_and_max_size_clients_and_records_the_clamped_size() {
             before,
             "hint-clamped tile cannot re-fit forever"
         );
+    }
+}
+
+fn panelled_output(h: &mut Harness) {
+    h.wire.inner.output.change_current_state(
+        Some(Mode {
+            size: (1536, 864).into(),
+            refresh: 60_000,
+        }),
+        None,
+        None,
+        None,
+    );
+    h.wire.inner.comp.reserved.insert(
+        h.wire.inner.output.name(),
+        Reserved {
+            top: 28,
+            bottom: 52,
+            ..Reserved::default()
+        },
+    );
+}
+
+#[test]
+fn all_tiles_anchor_oversized_clients_before_and_after_their_min_size_commit() {
+    use world::comp::TileSlot;
+    for late_min in [false, true] {
+        for (tiled, origin, size) in [
+            (TileSlot::Left, (0, 28), (820, 784)),
+            (TileSlot::Right, (716, 28), (820, 784)),
+            (TileSlot::Top, (0, 28), (1536, 520)),
+            (TileSlot::Bottom, (0, 292), (1536, 520)),
+            (TileSlot::TopLeft, (0, 28), (820, 520)),
+            (TileSlot::TopRight, (716, 28), (820, 520)),
+            (TileSlot::BottomLeft, (0, 292), (820, 520)),
+            (TileSlot::BottomRight, (716, 292), (820, 520)),
+        ] {
+            let mut h = Harness::new();
+            panelled_output(&mut h);
+            let (surface, _, top) = h.mapped_toplevel(640, 480);
+            let (id, window) = window(&h, &surface);
+            if !late_min {
+                top.set_min_size(820, 520);
+                h.client.commit(&surface);
+                h.roundtrip();
+            }
+            tile(&mut h, id, &window, tiled);
+            h.roundtrip();
+            let saved = h.comp().float_geometry(id);
+            if late_min {
+                let area = tiled.rectangle(
+                    smithay::utils::Rectangle::new((0, 28).into(), (1536, 784).into()),
+                    world::comp::TileSplit::default(),
+                );
+                configured(&h, &top, (area.size.w, area.size.h), false);
+                // The real late-client path: ACK the tile configure, then
+                // commit its minimum and a larger buffer through Wayland.
+                top.set_min_size(820, 520);
+            }
+            h.client.attach(&surface, size.0, size.1);
+            h.roundtrip();
+            refresh(&mut h, id, &window);
+            h.roundtrip();
+            assert_eq!(window.geometry().size, size.into());
+            assert_eq!(slot::decided_size(&window), Some(size.into()));
+            assert_eq!(
+                h.wire.inner.space.state.element_location(&window),
+                Some(origin.into()),
+                "{tiled:?}, late minimum: {late_min}"
+            );
+            assert_eq!(h.comp().placement(id).name(), tiled.name());
+            assert_eq!(h.comp().float_geometry(id), saved);
+            assert_eq!(h.comp().tile_split_for("testkit-0", 1), world::comp::TileSplit::default());
+            let before = count(&h, &top);
+            assert!(!refresh(&mut h, id, &window).windows);
+            h.roundtrip();
+            assert_eq!(count(&h, &top), before);
+        }
+    }
+}
+
+#[test]
+fn tiles_larger_than_the_usable_output_start_at_its_top_left() {
+    use world::comp::TileSlot;
+    for tiled in TileSlot::ALL {
+        let mut h = Harness::new();
+        panelled_output(&mut h);
+        // Include a negative output origin and side panel, so clamping must
+        // use the usable rectangle rather than zero or the raw output.
+        let output = h.wire.inner.output.clone();
+        h.wire.inner.space.state.map_output(&output, (-300, 140));
+        h.wire.inner.comp.reserved.get_mut(&output.name()).unwrap().left = 61;
+        let (surface, _, top) = h.mapped_toplevel(640, 480);
+        let (id, window) = window(&h, &surface);
+        top.set_min_size(1700, 1000);
+        h.client.commit(&surface);
+        h.roundtrip();
+        tile(&mut h, id, &window, tiled);
+        h.roundtrip();
+        h.client.attach(&surface, 1700, 1000);
+        h.roundtrip();
+        refresh(&mut h, id, &window);
+        assert_eq!(slot::decided_size(&window), Some((1700, 1000).into()));
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some((-239, 168).into()),
+            "{tiled:?}"
+        );
+    }
+}
+
+#[test]
+fn maximized_clients_with_size_limits_anchor_to_the_usable_top_left() {
+    for (min, max, size) in [
+        ((1700, 1000), (0, 0), (1700, 1000)),
+        ((0, 0), (800, 500), (800, 500)),
+    ] {
+        let mut h = Harness::new();
+        panelled_output(&mut h);
+        let (surface, _, top) = h.mapped_toplevel(640, 480);
+        let (id, window) = window(&h, &surface);
+        // A client may announce new limits after it was maximised.
+        maximize(&mut h, id, &window, true);
+        h.roundtrip();
+        configured(&h, &top, (1536, 784), true);
+        top.set_min_size(min.0, min.1);
+        top.set_max_size(max.0, max.1);
+        h.client.attach(&surface, size.0, size.1);
+        h.roundtrip();
+        refresh(&mut h, id, &window);
+        h.roundtrip();
+        configured(&h, &top, size, true);
+        assert_eq!(slot::decided_size(&window), Some(size.into()));
+        assert_eq!(h.wire.inner.space.state.element_location(&window), Some((0, 28).into()));
+        assert!(!refresh(&mut h, id, &window).windows);
     }
 }
 

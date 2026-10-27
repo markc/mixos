@@ -502,7 +502,11 @@ pub fn placement_area(
     let (_, outer) = target(comp, space, id, window)?;
     match comp.placement(id) {
         Placement::Floating => None,
-        Placement::Maximized { .. } => Some(decor::window::content_area(window, outer)),
+        Placement::Maximized { .. } => {
+            let area = decor::window::content_area(window, outer);
+            let (w, h) = clamp_size((area.size.w, area.size.h), size_hints(window));
+            Some(Rectangle::new(area.loc, (w, h).into()))
+        }
         Placement::Tiled { slot: tile, output } => {
             let workspace = comp
                 .registry
@@ -512,12 +516,32 @@ pub fn placement_area(
             let split = comp.tile_split_for(&output, workspace);
             let area = decor::window::content_area(window, tile.rectangle(outer, split));
             let (w, h) = clamp_size((area.size.w, area.size.h), size_hints(window));
+            let usable = decor::window::content_area(window, outer);
+            let right = matches!(tile, super::TileSlot::Right | super::TileSlot::TopRight | super::TileSlot::BottomRight);
+            let bottom = matches!(tile, super::TileSlot::Bottom | super::TileSlot::BottomLeft | super::TileSlot::BottomRight);
             Some(Rectangle::new(
-                area.loc + Point::from(((area.size.w - w) / 2, (area.size.h - h) / 2)),
+                (
+                    tile_axis(area.loc.x, area.size.w, w, usable.loc.x, usable.size.w, right),
+                    tile_axis(area.loc.y, area.size.h, h, usable.loc.y, usable.size.h, bottom),
+                ).into(),
                 (w, h).into(),
             ))
         }
     }
+}
+
+/// Oversized clients grow towards the shared split from the slot's outer edge.
+/// Keep the entire frame inside the usable output where possible. A smaller
+/// max-size client retains its existing centred position within the tile.
+fn tile_axis(start: i32, extent: i32, size: i32, low: i32, usable: i32, end: bool) -> i32 {
+    let offset = if size <= extent {
+        (extent - size) / 2
+    } else if end {
+        extent - size
+    } else {
+        0
+    };
+    (start + offset).clamp(low, low + (usable - size).max(0))
 }
 
 /// Refresh work areas and their maximised or tiled windows. The candidates
