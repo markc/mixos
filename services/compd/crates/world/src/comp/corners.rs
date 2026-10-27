@@ -388,16 +388,16 @@ mod tests {
     fn outward_push_engages_and_a_click_is_owned() {
         let mut corners = Corners::default();
         assert!(
-            corners.sample("DP-1", SIZE, (5.0, 5.0), (0.0, 0.0), false),
+            corners.sample("DP-1", SIZE, (2.0, 2.0), (0.0, 0.0), false),
             "in the hotspot"
         );
         assert!(corners.engaged().is_none(), "not dwelled yet");
         assert!(corners.next_deadline().is_some(), "a dwell is pending");
         // Same position, a later sample with an outward push: early engage.
         std::thread::sleep(std::time::Duration::from_millis(2));
-        corners.sample("DP-1", SIZE, (5.0, 5.0), (0.0, 0.0), false);
+        corners.sample("DP-1", SIZE, (2.0, 2.0), (0.0, 0.0), false);
         std::thread::sleep(std::time::Duration::from_millis(2));
-        corners.sample("DP-1", SIZE, (5.0, 5.0), (-3.0, 0.0), false);
+        corners.sample("DP-1", SIZE, (2.0, 2.0), (-3.0, 0.0), false);
         assert_eq!(corners.engaged(), Some(Corner::TopLeft));
         assert_eq!(
             entered(&corners.take_topics()),
@@ -419,11 +419,11 @@ mod tests {
     #[test]
     fn leaving_the_hotspot_leaves_and_cancels_the_owed_click() {
         let mut corners = Corners::default();
-        corners.sample("DP-1", SIZE, (995.0, 795.0), (0.0, 0.0), false);
+        corners.sample("DP-1", SIZE, (998.0, 798.0), (0.0, 0.0), false);
         std::thread::sleep(std::time::Duration::from_millis(2));
-        corners.sample("DP-1", SIZE, (995.0, 795.0), (0.0, 0.0), false);
+        corners.sample("DP-1", SIZE, (998.0, 798.0), (0.0, 0.0), false);
         std::thread::sleep(std::time::Duration::from_millis(2));
-        corners.sample("DP-1", SIZE, (995.0, 795.0), (2.0, 2.0), false);
+        corners.sample("DP-1", SIZE, (998.0, 798.0), (2.0, 2.0), false);
         assert_eq!(corners.engaged(), Some(Corner::BottomRight));
         assert!(corners.press(0x110, Vec::new(), false));
         assert!(!corners.sample("DP-1", SIZE, (500.0, 400.0), (0.0, 0.0), false));
@@ -452,11 +452,11 @@ mod tests {
         corners.set_config(config);
         corners.set_config(config);
         assert_eq!(corners.changes(), 1, "an unchanged set is not a change");
-        corners.sample("DP-1", SIZE, (5.0, 5.0), (0.0, 0.0), false);
+        corners.sample("DP-1", SIZE, (2.0, 2.0), (0.0, 0.0), false);
         std::thread::sleep(std::time::Duration::from_millis(2));
-        corners.sample("DP-1", SIZE, (5.0, 5.0), (0.0, 0.0), false);
+        corners.sample("DP-1", SIZE, (2.0, 2.0), (0.0, 0.0), false);
         std::thread::sleep(std::time::Duration::from_millis(2));
-        corners.sample("DP-1", SIZE, (5.0, 5.0), (-1.0, 0.0), false);
+        corners.sample("DP-1", SIZE, (2.0, 2.0), (-1.0, 0.0), false);
         assert_eq!(corners.engaged(), Some(Corner::TopLeft));
         assert!(!corners.config().discovery);
         assert_eq!(corners.changes(), 2);
@@ -467,7 +467,7 @@ mod tests {
         let mut corners = Corners::default();
         assert!(!corners.press(0x110, Vec::new(), false));
         assert!(!corners.release(0x110));
-        corners.sample("DP-1", SIZE, (5.0, 5.0), (0.0, 0.0), false);
+        corners.sample("DP-1", SIZE, (2.0, 2.0), (0.0, 0.0), false);
         assert_eq!(corners.output(), Some("DP-1"));
         corners.sample("HDMI-A-1", SIZE, (500.0, 400.0), (0.0, 0.0), false);
         assert_eq!(corners.output(), Some("HDMI-A-1"));
