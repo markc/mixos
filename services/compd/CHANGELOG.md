@@ -10,8 +10,9 @@
   reports hosting and per-surface item counts.
 - Add `--debug[=LEVEL]`, `comp.debug` and `comp.debug.set` for live tracing
   levels from off through trace, with a warn baseline and per-binary journal
-  identity. Record mapping, placement, grabs and configures at debug; keep
-  motion detail at trace. The separate developer logger is unchanged.
+  identity. Record mapping, placement, grabs and initial placement configures
+  at debug; keep configure streams and motion detail at trace. The separate
+  developer logger is unchanged.
 
 ## 0.2.0
 

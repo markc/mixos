@@ -3,7 +3,7 @@
 Every MixOS app and compd accepts `--debug[=LEVEL]`. `--debug` means
 `--debug=debug`; the levels are `off`, `error`, `warn`, `info`, `debug` and
 `trace`. The default baseline is `warn`, except Email's `warn,email=info`.
-`RUST_LOG`, when set, supplies the baseline instead. An explicit debug flag
+Non-empty `RUST_LOG` supplies the baseline instead. An explicit debug flag
 selects the initial live level while preserving that baseline for restoration.
 The last debug flag wins. Flags after `--` are preserved for the app's parser.
 
@@ -71,7 +71,8 @@ Daemons' durable `<service>.log` properties remain a separate namespace.
 
 Debug events describe Bus commands and their return codes, window and
 viewport lifecycle, and settings application. compd also records mapping,
-placement, grab start/end and actual configures. Motion detail is trace;
+placement, grab start/end and initial placement configures. Configure streams
+and motion detail are trace;
 debug adds no periodic or per-frame events. Disabled debug events do not
 format a message or write to the journal. Emitted events cost log volume.
 

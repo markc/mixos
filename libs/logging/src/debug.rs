@@ -262,7 +262,9 @@ pub fn strip_args(args: &mut Vec<String>) -> Result<Option<Level>, LogError> {
 }
 
 fn baseline(off_filter: &str, rust_log: Option<String>) -> String {
-    rust_log.unwrap_or_else(|| off_filter.to_owned())
+    rust_log
+        .filter(|filter| !filter.is_empty())
+        .unwrap_or_else(|| off_filter.to_owned())
 }
 
 pub(crate) fn stderr_mode(tty: bool, journal_active: bool) -> TriState {
@@ -324,8 +326,8 @@ pub fn describe(service: &str) -> Vec<Value> {
 
 /// Intercept this service's debug family; other commands remain with the owner.
 pub fn request(service: &str, command: &str, body: &str) -> Option<(u8, Value)> {
-    let query = command == format!("{service}.debug");
-    if !query && command != format!("{service}.debug.set") {
+    let query = command.strip_suffix(".debug") == Some(service);
+    if !query && command.strip_suffix(".debug.set") != Some(service) {
         return None;
     }
     Some(answer(query, body))
@@ -452,7 +454,7 @@ mod tests {
     fn baseline_and_sink_rules() {
         assert_eq!(baseline("warn,email=info", None), "warn,email=info");
         assert_eq!(baseline("warn", Some("off".into())), "off");
-        assert_eq!(baseline("warn", Some(String::new())), "");
+        assert_eq!(baseline("warn", Some(String::new())), "warn");
         assert_eq!(stderr_mode(true, true), TriState::Always);
         assert_eq!(stderr_mode(false, true), TriState::Never);
         assert_eq!(stderr_mode(false, false), TriState::Always);

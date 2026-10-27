@@ -237,7 +237,7 @@
 <p>Every MixOS app and compd accepts <code>--debug[=LEVEL]</code>. <code>--debug</code> means
 <code>--debug=debug</code>; the levels are <code>off</code>, <code>error</code>, <code>warn</code>, <code>info</code>, <code>debug</code> and
 <code>trace</code>. The default baseline is <code>warn</code>, except Email's <code>warn,email=info</code>.
-<code>RUST_LOG</code>, when set, supplies the baseline instead. An explicit debug flag
+Non-empty <code>RUST_LOG</code> supplies the baseline instead. An explicit debug flag
 selects the initial live level while preserving that baseline for restoration.
 The last debug flag wins. Flags after <code>--</code> are preserved for the app's parser.</p>
 <pre><code class="language-console">workshop --debug
@@ -291,7 +291,8 @@ process only: it is not saved to SQLite or app settings and resets at restart.
 Daemons' durable <code>&lt;service&gt;.log</code> properties remain a separate namespace.</p>
 <p>Debug events describe Bus commands and their return codes, window and
 viewport lifecycle, and settings application. compd also records mapping,
-placement, grab start/end and actual configures. Motion detail is trace;
+placement, grab start/end and initial placement configures. Configure streams
+and motion detail are trace;
 debug adds no periodic or per-frame events. Disabled debug events do not
 format a message or write to the journal. Emitted events cost log volume.</p>
 <p>Under <code>apps@N</code>, all apps share a systemd unit and its journal rate limit.

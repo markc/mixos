@@ -377,7 +377,16 @@ pub fn unstage_resizing(window: &Window) {
 pub fn send(window: &Window) {
     if let Some(toplevel) = window.toplevel() {
         let serial = toplevel.send_configure();
-        logging::debug!(?serial, "window configure sent");
+        // This path also serves animation and the frame-driven resize debounce.
+        logging::trace!(?serial, "window configure sent");
+    }
+}
+
+/// The one configure at initial placement: a lifecycle seam, never a frame tick.
+pub fn send_initial_placement(window: &Window) {
+    if let Some(toplevel) = window.toplevel() {
+        let serial = toplevel.send_configure();
+        logging::debug!(?serial, "initial placement configure sent");
     }
 }
 
@@ -387,7 +396,7 @@ pub fn send_pending(window: &Window) {
     if let Some(toplevel) = window.toplevel()
         && let Some(serial) = toplevel.send_pending_configure()
     {
-        logging::debug!(?serial, "pending window configure sent");
+        logging::trace!(?serial, "pending window configure sent");
     }
 }
 

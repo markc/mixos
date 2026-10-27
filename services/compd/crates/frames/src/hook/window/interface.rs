@@ -407,7 +407,7 @@ fn _initial_mapped(state: &mut Loop, window: Window) {
     } else {
         slot::set_expected_size(&window, geometry.size);
         shell::stage(&window, geometry.size, false);
-        shell::send(&window);
+        shell::send_initial_placement(&window);
         dispatcher::wayland::compositor::place::arm_size_propagation(&window, geometry.size);
     }
 
