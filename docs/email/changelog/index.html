@@ -240,6 +240,22 @@
 <h2 id="unreleased">Unreleased</h2>
 <ul>
 <li>
+<p>Fix mailbox Quit with simultaneous composer input, retain pending Save As
+writes through Close and Quit, and carry completed send/save outcomes to
+the mailbox. Only Cancel on a Quit question revokes a deferred owner close.</p>
+</li>
+<li>
+<p>Return the opened <code>window</code> from Bus compose, reply, forward, document opens
+and <code>compose.new</code>. Default targeting follows the latest creation or focus;
+refuse unknown and non-string window targets. Report draft questions from
+<code>email.quit</code> and paint Bus-created composers immediately.</p>
+</li>
+<li>
+<p>Attach ordinary Markdown to its drop target, open composers for ordinary
+mailbox file drops, and retire failed document-loading children. Offer kept
+drafts in compose-only startup and set child app IDs explicitly.</p>
+</li>
+<li>
 <p>Replace the modal composer with one window per message, with File, Edit,
 Attachments and View menus in its chrome. Add <code>email --compose [FILE.md]</code>
 and single-instance forwarding through the citizen probe.</p>

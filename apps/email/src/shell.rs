@@ -1678,8 +1678,11 @@ impl Shell {
                 let outcome = matches!(&event, Event::Account(_, Done::Sent(..)) | Event::MailDocument(_, crate::documents::Answer::Saved(_)));
                 crate::composer::swap(&mut self.state, &mut window.view);
                 self.state.apply(event);
-                self.settle_for(Some(&window.name));
                 let notice = (outcome && self.state.compose.is_none()).then(|| self.state.status.clone());
+                self.settle_for(Some(&window.name));
+                if let Some(notice) = &notice {
+                    self.state.status = notice.clone();
+                }
                 crate::composer::swap(&mut self.state, &mut window.view);
                 if let Some(notice) = notice {
                     self.state.status = notice;
@@ -2390,12 +2393,13 @@ fn prefs_open_error(error: citizen::AppCallError) -> String {
 }
 
 #[cfg(test)]
+mod compose_regressions;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    include!("shell/compose_regressions.rs");
-
-    fn compose_fixture(standalone: bool) -> (Shell, test_broker::Broker) {
+    pub(super) fn compose_fixture(standalone: bool) -> (Shell, test_broker::Broker) {
         let broker = test_broker::Broker::start();
         let (bus, _deliveries) = citizen::start(APP, "email-windows-test", &broker.url).unwrap();
         let ctx = egui::Context::default();
@@ -2451,7 +2455,7 @@ mod tests {
         (shell, broker)
     }
 
-    fn add_composer(shell: &mut Shell, subject: &str) {
+    pub(super) fn add_composer(shell: &mut Shell, subject: &str) {
         shell.state.compose();
         shell.state.apply_ui(UiEvent::ComposeField(
             crate::state::ComposeField::Subject,
@@ -2460,7 +2464,7 @@ mod tests {
         shell.sync_composers();
     }
 
-    fn composer_choice(shell: &mut Shell, name: &str, choice: crate::state::DraftChoice) {
+    pub(super) fn composer_choice(shell: &mut Shell, name: &str, choice: crate::state::DraftChoice) {
         shell.composers.windows[name]
             .lock()
             .unwrap()

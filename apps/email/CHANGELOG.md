@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Fix mailbox Quit with simultaneous composer input, retain pending Save As
+  writes through Close and Quit, and carry completed send/save outcomes to
+  the mailbox. Only Cancel on a Quit question revokes a deferred owner close.
+- Return the opened `window` from Bus compose, reply, forward, document opens
+  and `compose.new`. Default targeting follows the latest creation or focus;
+  refuse unknown and non-string window targets. Report draft questions from
+  `email.quit` and paint Bus-created composers immediately.
+- Attach ordinary Markdown to its drop target, open composers for ordinary
+  mailbox file drops, and retire failed document-loading children. Offer kept
+  drafts in compose-only startup and set child app IDs explicitly.
+
 - Replace the modal composer with one window per message, with File, Edit,
   Attachments and View menus in its chrome. Add `email --compose [FILE.md]`
   and single-instance forwarding through the citizen probe.

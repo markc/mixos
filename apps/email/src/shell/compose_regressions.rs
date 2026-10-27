@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Regression coverage for the compose window review. All frames are offscreen.
+use super::*;
+use super::tests::{add_composer, compose_fixture, composer_choice};
 
 fn queued(shell: &mut Shell, name: &str, events: Vec<UiEvent>) {
     shell.composers.windows[name].lock().unwrap().pending.push(crate::composer::Input {
@@ -31,6 +33,10 @@ fn bus_fixture() -> (Shell, test_broker::Broker) {
 }
 
 fn bus_answer(shell: &mut Shell, broker: &test_broker::Broker, command: &str, args: Value) -> (u8, Value) {
+    bus_answer_with(shell, broker, command, args, |_| {})
+}
+
+fn bus_answer_with(shell: &mut Shell, broker: &test_broker::Broker, command: &str, args: Value, mut before_frame: impl FnMut(&mut Shell)) -> (u8, Value) {
     let url = broker.url.clone();
     let command = command.to_owned();
     let (tx, rx) = mpsc::channel();
@@ -43,6 +49,7 @@ fn bus_answer(shell: &mut Shell, broker: &test_broker::Broker, command: &str, ar
     });
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     loop {
+        before_frame(shell);
         logic_frame(shell);
         shell.runtime.block_on(async { tokio::time::sleep(std::time::Duration::from_millis(2)).await });
         if let Ok(answer) = rx.try_recv() {
@@ -51,6 +58,39 @@ fn bus_answer(shell: &mut Shell, broker: &test_broker::Broker, command: &str, ar
         }
         assert!(std::time::Instant::now() < deadline, "Bus answer timed out");
     }
+}
+
+#[test]
+fn review_fetched_reply_and_forward_answer_with_their_new_windows() {
+    let (mut shell, broker) = bus_fixture();
+    for (command, name) in [("email.reply", "compose-1"), ("email.forward", "compose-2")] {
+        let (rc, body) = bus_answer_with(&mut shell, &broker, command, json!({"id":"E1"}), |shell| {
+            // Hold only the server effect; use the real command validation,
+            // Then value and completion path, without an external mail server.
+            let mut events = Vec::new();
+            while let Ok(event) = shell.rx.try_recv() {
+                if let Event::Delivery(citizen::Delivery::Command { id, command, body }) = &event
+                    && matches!(command.as_str(), "email.reply" | "email.forward")
+                {
+                    crate::commands::command(&mut shell.state, &shell.commands, &shell.strings, *id, command, body);
+                    let work = shell.state.take_work();
+                    for work in work {
+                        if let Work::Query { account, reply, then, .. } = work {
+                            let tag = Tag { generation: shell.state.account(&account).unwrap().generation(), account };
+                            events.push(Event::Account(tag, Done::Answered(reply, then, Ok(json!({
+                                "id":"E1", "subject":"original", "from":[{"email":"bob@example.invalid"}], "text":"body"
+                            })))));
+                        } else { shell.state.queue_work(work); }
+                    }
+                } else { events.push(event); }
+            }
+            for event in events { shell.tx.send(event).unwrap(); }
+        });
+        assert_eq!(rc, 0, "{body}");
+        assert_eq!(body["window"], name);
+        assert!(shell.composers.windows.contains_key(name));
+    }
+    shell.bus.quit();
 }
 
 #[test]
@@ -212,7 +252,7 @@ fn review_mailbox_drops_open_a_composer_with_attachments() {
             shell.pump();
         }
         assert_eq!(shell.composers.windows.len(), 1);
-        assert_eq!(shell.composers.windows["compose-1"].lock().unwrap().view.compose.as_ref().unwrap().draft.attachments, vec![path]);
+        assert_eq!(shell.composers.windows.values().next().unwrap().lock().unwrap().view.compose.as_ref().unwrap().draft.attachments, vec![path]);
         shell.bus.quit();
     }
 }

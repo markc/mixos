@@ -9330,18 +9330,31 @@ Ctrl+W closes this one. Close asks **Keep Draft / Discard / Keep Editing**
 when there is content. Ctrl+Q asks Keep Draft / Discard / Cancel for each
 draft in turn; Cancel stops the quit. Drafts already kept or discarded during that quit remain
 closed. Unsaved drafts are also autosaved in the private draft store.
+Save As writes finish before a closed composer is retired or Quit exits;
+write failures and send outcomes, including failure to file into Sent, reach
+the mailbox status after a child closes.
 
 `email --compose` starts with a composer as the root window, without a
 mailbox. An optional file loads through the same mail-document path as Open…;
 relative CLI paths are resolved before forwarding. If Email is running,
 the citizen probe forwards `email.compose` and opens another composer there.
 A plain launch raises the existing owner, including a compose-only owner.
+Without a file, compose-only startup offers kept drafts before starting a
+blank message. File › New starts a blank message if the offer is deferred.
+Document read failures leave no empty child behind; compose-only root errors
+remain visible in that window.
+
+Drop a mail document to open another composer. Ordinary files dropped on the
+mailbox open a new composer with the files attached, extending the stage 2
+attachment behaviour to the separate windows. Ordinary Markdown such as a
+README dropped on a composer is attached to that composer. Drops never send.
 
 **Root ownership on Wayland:** the first native window remains the process
 owner for its whole lifetime. Closing the mailbox while composers remain
 keeps that owner visible with a notice; it exits after the final composer
 closes. Closing a root composer similarly waits for its children, then asks
-about its own draft. Keep Editing cancels the pending close. A successful send
+about its own draft. Keep Editing leaves a deferred owner close in place;
+only Cancel on a Quit question cancels quitting and the deferred owner close. A successful send
 can leave an empty root owner until its children finish. A child's draft is
 never promoted into the root surface: changing a surface's logical identity
 would leave its original Wayland app ID and break placement. No hidden root
@@ -9355,8 +9368,14 @@ within a process. Mailbox and compose frames keep separate placement keys.
 `email.info {window:"compose-2"}` returns that composer's state and the
 `compose_windows` list. `email.compose.attachment.add/remove` and compose
 actions through `email.execute` accept the same `window` argument. Omission
-selects the most recently focused composer; an unknown name is refused.
-`email.compose` always creates a new composer. Toolkit commands instead use
+selects the most recently created or focused composer, whichever happened
+last. This also works when Wayland grants a new Bus composer no focus event.
+An unknown name returns `NOT_FOUND`; a non-string `window` returns
+`INVALID_ARGUMENT`. `email.compose`, reply, forward, document opens and
+`email.execute {id:"compose.new"}` answer with the `window` they opened.
+`email.compose` always creates a new composer. `email.quit` reports
+`confirming` and the `windows` that will ask about their drafts.
+Toolkit commands instead use
 `viewport`, for example `email.ui.tree {viewport:"compose-2"}` and
 `email.ui.menu.list {viewport:"compose-2"}`; menu open and all other drive
 commands honour the same target.
@@ -38316,6 +38335,17 @@ the predecessor repository at revision
 > Mirrored from [`apps/email/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/email/CHANGELOG.md), where releases update it. The component's page is [email](README.md). This page describes the current `main` branch of MixOS.
 
 ## Unreleased
+
+- Fix mailbox Quit with simultaneous composer input, retain pending Save As
+  writes through Close and Quit, and carry completed send/save outcomes to
+  the mailbox. Only Cancel on a Quit question revokes a deferred owner close.
+- Return the opened `window` from Bus compose, reply, forward, document opens
+  and `compose.new`. Default targeting follows the latest creation or focus;
+  refuse unknown and non-string window targets. Report draft questions from
+  `email.quit` and paint Bus-created composers immediately.
+- Attach ordinary Markdown to its drop target, open composers for ordinary
+  mailbox file drops, and retire failed document-loading children. Offer kept
+  drafts in compose-only startup and set child app IDs explicitly.
 
 - Replace the modal composer with one window per message, with File, Edit,
   Attachments and View menus in its chrome. Add `email --compose [FILE.md]`

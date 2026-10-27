@@ -263,17 +263,29 @@ Remove all attachments) and <strong>View</strong> (theme). Ctrl+N opens another 
 Ctrl+W closes this one. Close asks <strong>Keep Draft / Discard / Keep Editing</strong>
 when there is content. Ctrl+Q asks Keep Draft / Discard / Cancel for each
 draft in turn; Cancel stops the quit. Drafts already kept or discarded during that quit remain
-closed. Unsaved drafts are also autosaved in the private draft store.</p>
+closed. Unsaved drafts are also autosaved in the private draft store.
+Save As writes finish before a closed composer is retired or Quit exits;
+write failures and send outcomes, including failure to file into Sent, reach
+the mailbox status after a child closes.</p>
 <p><code>email --compose</code> starts with a composer as the root window, without a
 mailbox. An optional file loads through the same mail-document path as Open…;
 relative CLI paths are resolved before forwarding. If Email is running,
 the citizen probe forwards <code>email.compose</code> and opens another composer there.
-A plain launch raises the existing owner, including a compose-only owner.</p>
+A plain launch raises the existing owner, including a compose-only owner.
+Without a file, compose-only startup offers kept drafts before starting a
+blank message. File › New starts a blank message if the offer is deferred.
+Document read failures leave no empty child behind; compose-only root errors
+remain visible in that window.</p>
+<p>Drop a mail document to open another composer. Ordinary files dropped on the
+mailbox open a new composer with the files attached, extending the stage 2
+attachment behaviour to the separate windows. Ordinary Markdown such as a
+README dropped on a composer is attached to that composer. Drops never send.</p>
 <p><strong>Root ownership on Wayland:</strong> the first native window remains the process
 owner for its whole lifetime. Closing the mailbox while composers remain
 keeps that owner visible with a notice; it exits after the final composer
 closes. Closing a root composer similarly waits for its children, then asks
-about its own draft. Keep Editing cancels the pending close. A successful send
+about its own draft. Keep Editing leaves a deferred owner close in place;
+only Cancel on a Quit question cancels quitting and the deferred owner close. A successful send
 can leave an empty root owner until its children finish. A child's draft is
 never promoted into the root surface: changing a surface's logical identity
 would leave its original Wayland app ID and break placement. No hidden root
@@ -285,8 +297,14 @@ within a process. Mailbox and compose frames keep separate placement keys.</p>
 <p><code>email.info {window:"compose-2"}</code> returns that composer's state and the
 <code>compose_windows</code> list. <code>email.compose.attachment.add/remove</code> and compose
 actions through <code>email.execute</code> accept the same <code>window</code> argument. Omission
-selects the most recently focused composer; an unknown name is refused.
-<code>email.compose</code> always creates a new composer. Toolkit commands instead use
+selects the most recently created or focused composer, whichever happened
+last. This also works when Wayland grants a new Bus composer no focus event.
+An unknown name returns <code>NOT_FOUND</code>; a non-string <code>window</code> returns
+<code>INVALID_ARGUMENT</code>. <code>email.compose</code>, reply, forward, document opens and
+<code>email.execute {id:"compose.new"}</code> answer with the <code>window</code> they opened.
+<code>email.compose</code> always creates a new composer. <code>email.quit</code> reports
+<code>confirming</code> and the <code>windows</code> that will ask about their drafts.
+Toolkit commands instead use
 <code>viewport</code>, for example <code>email.ui.tree {viewport:"compose-2"}</code> and
 <code>email.ui.menu.list {viewport:"compose-2"}</code>; menu open and all other drive
 commands honour the same target.</p>
