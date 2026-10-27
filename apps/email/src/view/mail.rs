@@ -356,7 +356,7 @@ pub fn reader(
                 tile_limit,
                 &mut Vec::new(),
             );
-            let height = measure.min_rect().height().min(tile_limit);
+            let height = measure.min_rect().height().ceil().min(tile_limit);
             let bar = egui::Panel::bottom("reader-attachments")
                 .frame(egui::Frame::new())
                 .exact_size(height)
@@ -586,6 +586,9 @@ fn attachment_bar(
                     },
                 );
             });
+        // Room under the last row, so the tiles' frames are never cut by
+        // the window edge; measured with the rest of the bar.
+        ui.add_space(ui.spacing().item_spacing.y * 2.0);
     }
 }
 
