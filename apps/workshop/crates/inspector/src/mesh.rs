@@ -208,6 +208,10 @@ pub struct Mesh {
     pub self_name: String,
     pub observer: String,
     pub started_ms: u64,
+    /// Arrival time of any accepted observation, including our own traffic.
+    /// Broker timestamps still own traffic windows; they can be reused on a
+    /// delayed reply, so they cannot measure the stream's liveness.
+    pub last_observe_ms: Option<u64>,
     pub observing: bool,
     pub observe_error: Option<String>,
     pub nodes_error: Option<String>,
@@ -226,7 +230,7 @@ pub struct Mesh {
     pub(crate) ping_queue: VecDeque<String>,
     pub(crate) ping_ticket: Option<u64>,
     pub(crate) nodes_ticket: Option<u64>,
-    pub(crate) observe_ticket: Option<u64>,
+    pub observe_ticket: Option<u64>,
     #[serde(skip)]
     pub clock: fn() -> u64,
 }
@@ -241,6 +245,7 @@ impl Mesh {
             self_name: text(node),
             observer: text(observer),
             started_ms: clock(),
+            last_observe_ms: None,
             observing: false,
             observe_error: None,
             nodes_error: None,
@@ -357,6 +362,7 @@ impl Mesh {
         self.prune(now);
     }
     pub fn add_event_at(&mut self, event: &Value, now: u64) {
+        self.last_observe_ms = Some(now);
         self.seen = self.seen.saturating_add(1);
         self.ring_dropped = self
             .ring_dropped
@@ -407,7 +413,15 @@ impl Mesh {
             let mut peer = text(
                 named
                     .or(address)
-                    .or_else(|| pending.map(|p| p.node.as_str()))
+                    // A reused correlation on an unrelated incoming request
+                    // must not place it on the outgoing request's link.
+                    .or_else(|| {
+                        pending
+                            .filter(|p| {
+                                message_type == "response" && now.saturating_sub(p.t) <= PENDING_MS
+                            })
+                            .map(|p| p.node.as_str())
+                    })
                     .unwrap_or(UNKNOWN),
             );
             if !self.links.contains_key(&peer) && self.links.len() >= MAX_LINKS {
@@ -422,7 +436,7 @@ impl Mesh {
                             t,
                         },
                     );
-                } else if !out && message_type == "response" {
+                } else if message_type == "response" {
                     self.pending.remove(corr);
                 }
             }
@@ -549,6 +563,8 @@ impl Mesh {
             "peers":self.nodes.iter().filter(|n| !n.local).collect::<Vec<_>>(),"nodes":self.nodes,
             "observer":{"name":self.observer,"node":self.self_name,"started_at":iso_ms(self.started_ms),
                 "observing":self.observing,"observe_error":self.observe_error,"events_seen":self.seen,
+                "last_event_at":self.last_observe_ms.map(iso_ms),
+                "last_event_age_ms":self.last_observe_ms.map(|last| now.saturating_sub(last)),
                 "ring_dropped":self.ring_dropped,"recent_capped":self.recent_capped},
             "nodes_error":self.nodes_error,"links":links,
             "local":{"msgs":self.local.msgs,"bytes":self.local.bytes,"msgs_1m":self.window("local",m1),
@@ -683,6 +699,257 @@ mod tests {
     }
     fn state() -> Mesh {
         Mesh::new("alpha", "observer", clock)
+    }
+    #[test]
+    fn custom_observer_excludes_from_and_to_in_every_direction_but_counts_stream_health() {
+        let mut st = Mesh::new("alpha", "workshop-example", base);
+        let mut seen = 0;
+        for direction in ["local", "mesh_out", "mesh_in"] {
+            for own_field in ["from", "to"] {
+                seen += 1;
+                let mut event = json!({"direction":direction,"peer":"beta","from":"other","to":"webd",
+                    "message_type":"request","correlation_id":"self","dropped_count":seen});
+                event[own_field] = json!("workshop-example");
+                st.add_event_at(&event, base());
+            }
+        }
+        assert_eq!(st.seen, 6);
+        assert_eq!(st.ring_dropped, 21);
+        assert_eq!(st.last_observe_ms, Some(base()));
+        assert_eq!(st.local.msgs, 0);
+        assert!(
+            st.links.is_empty()
+                && st.recent.is_empty()
+                && st.pending.is_empty()
+                && st.buckets.is_empty()
+        );
+        st.add_event_at(
+            &json!({"direction":"local","from":"workshop","to":"webd"}),
+            base(),
+        );
+        assert_eq!(
+            st.local.msgs, 1,
+            "only this instance's Bus name is excluded"
+        );
+    }
+
+    #[test]
+    fn placement_prefers_peer_then_directional_address_then_response_correlation() {
+        let mut st = state();
+        st.add_event_at(
+            &json!({"direction":"mesh_out","peer":"gamma","to":"noded.beta.bus",
+            "message_type":"request","correlation_id":"named"}),
+            base(),
+        );
+        assert_eq!(st.links["gamma"].out_msgs, 1);
+        assert_eq!(st.pending["named"].node, "gamma");
+        st.add_event_at(
+            &json!({"direction":"mesh_in","peer":"delta","from":"noded.beta.bus",
+            "message_type":"response","correlation_id":"named"}),
+            base(),
+        );
+        assert_eq!(st.links["delta"].in_msgs, 1);
+        assert!(!st.pending.contains_key("named"));
+        for peer in [json!(""), json!(null), json!(17)] {
+            st.add_event_at(
+                &json!({"direction":"mesh_out","peer":peer,"to":"noded.beta.bus"}),
+                base(),
+            );
+            st.add_event_at(
+                &json!({"direction":"mesh_in","peer":peer,"from":"noded.beta.bus"}),
+                base(),
+            );
+        }
+        assert_eq!(
+            (st.links["beta"].out_msgs, st.links["beta"].in_msgs),
+            (3, 3)
+        );
+        st.add_event_at(&json!({"direction":"mesh_out","to":"beta.bus","message_type":"request","correlation_id":"c1"}),base());
+        st.add_event_at(&json!({"direction":"mesh_in","from":"noded","message_type":"response","correlation_id":"c1"}),base());
+        assert_eq!(st.links["beta"].in_msgs, 4);
+        assert!(st.pending.is_empty());
+        st.add_event_at(&json!({"direction":"mesh_out","peer":"beta","message_type":"request","correlation_id":"address"}),base());
+        st.add_event_at(&json!({"direction":"mesh_in","from":"noded.gamma.bus","message_type":"response","correlation_id":"address"}),base());
+        assert_eq!(
+            st.links["gamma"].in_msgs, 1,
+            "a sender address wins over pending correlation"
+        );
+        assert_eq!(st.links["beta"].in_msgs, 4);
+        assert!(st.pending.is_empty());
+    }
+
+    #[test]
+    fn only_requests_create_correlations_and_only_responses_can_use_them() {
+        let mut st = state();
+        st.add_event_at(&json!({"direction":"mesh_in","peer":"beta","message_type":"request","correlation_id":"inbound"}),base());
+        st.add_event_at(&json!({"direction":"mesh_out","peer":"beta","message_type":"event","correlation_id":"event"}),base());
+        assert!(st.pending.is_empty());
+        st.add_event_at(&json!({"direction":"mesh_out","peer":"beta","message_type":"request","correlation_id":"c1"}),base());
+        for message_type in ["request", "event"] {
+            st.add_event_at(&json!({"direction":"mesh_in","from":"noded","message_type":message_type,"correlation_id":"c1"}),base());
+        }
+        assert_eq!(st.links[UNKNOWN].in_msgs, 2);
+        assert_eq!(st.pending.len(), 1);
+        st.add_event_at(&json!({"direction":"mesh_in","from":"noded","message_type":"response","correlation_id":"c1"}),base());
+        assert_eq!(st.links["beta"].in_msgs, 2);
+        assert!(st.pending.is_empty());
+        st.add_event_at(&json!({"direction":"mesh_out","peer":"beta","message_type":"request","correlation_id":"c2"}),base());
+        st.add_event_at(
+            &json!({"direction":"mesh_out","message_type":"response","correlation_id":"c2"}),
+            base(),
+        );
+        assert!(
+            st.pending.is_empty(),
+            "a response consumes its pending correlation"
+        );
+    }
+
+    #[test]
+    fn expired_correlation_cannot_place_a_reply_even_before_explicit_prune() {
+        let mut st = state();
+        st.add_event_at(&json!({"direction":"mesh_out","peer":"beta","message_type":"request","correlation_id":"c1"}),base());
+        st.add_event_at(
+            &json!({"direction":"mesh_in","message_type":"response","correlation_id":"c1"}),
+            base() + PENDING_MS + 1,
+        );
+        assert_eq!(st.links[UNKNOWN].in_msgs, 1);
+        assert_eq!(st.links["beta"].in_msgs, 0);
+        assert!(st.pending.is_empty());
+        let later = base() + PENDING_MS + 1;
+        st.add_event_at(&json!({"direction":"mesh_out","peer":"beta","message_type":"request","correlation_id":"c2"}),later);
+        st.prune(later + PENDING_MS + 1);
+        assert!(
+            st.pending.is_empty(),
+            "unanswered requests expire after 60 seconds"
+        );
+    }
+
+    #[test]
+    fn link_commands_and_services_overflow_into_other_without_losing_counts() {
+        let mut st = state();
+        for i in 0..70 {
+            st.add_event_at(&json!({"direction":"mesh_out","to":format!("service-{i}.beta.bus"),"command":format!("command-{i}")}),base());
+        }
+        let link = &st.links["beta"];
+        assert_eq!(
+            (link.out_msgs, link.commands.len(), link.services.len()),
+            (70, MAX_KEYS + 1, MAX_KEYS + 1)
+        );
+        assert_eq!((link.commands[OTHER], link.services[OTHER]), (30, 30));
+        assert_eq!(st.snapshot_at(base())["links"][0]["out_1m"], 70);
+    }
+
+    #[test]
+    fn stream_health_counts_loss_before_own_traffic_exclusion_and_saturates() {
+        let mut engine = crate::Engine::new(str::to_owned);
+        engine.take_effects();
+        engine.workshop.mesh = Mesh::new("alpha", "workshop-example", base);
+        engine.workshop.subscription = Some("live".into());
+        engine.workshop.mesh.set_observing(true, None);
+        engine.workshop.paused = true;
+        for dropped in [u64::MAX, 1] {
+            engine.workshop_command(
+                0,
+                "noded.observe.event",
+                &json!({"subscription_id":"live",
+                "direction":"local","from":"workshop-example","dropped_count":dropped}),
+            );
+        }
+        engine.command(42, "workshop.mesh", "{}");
+        let crate::Effect::Reply { rc, body, .. } = engine.take_effects().pop().unwrap() else {
+            panic!("mesh reply")
+        };
+        assert_eq!(rc, 0);
+        assert_eq!(body["observer"]["ring_dropped"], u64::MAX);
+        assert_eq!(body["observer"]["events_seen"], 2);
+        assert_eq!(body["observer"]["last_event_age_ms"], 0);
+        assert_eq!(body["local"]["msgs"], 0);
+        assert!(engine.workshop.traffic.is_empty());
+    }
+
+    #[test]
+    fn last_observe_age_uses_arrival_clock_including_own_events_and_survives_disconnect() {
+        let mut st = state();
+        assert!(st.snapshot_at(base())["observer"]["last_event_at"].is_null());
+        assert!(st.snapshot_at(base())["observer"]["last_event_age_ms"].is_null());
+        st.set_observing(true, None);
+        st.add_event_at(
+            &json!({"direction":"local","from":"observer","ts":iso_ms(base()-90_000)}),
+            base(),
+        );
+        let snap = st.snapshot_at(base() + 45_000);
+        assert_eq!(snap["observer"]["last_event_at"], iso_ms(base()));
+        assert_eq!(snap["observer"]["last_event_age_ms"], 45_000);
+        assert_eq!(
+            snap["observer"]["observing"], true,
+            "silence does not stop a live subscription"
+        );
+        assert_eq!(st.local.msgs, 0);
+        st.set_observing(false, Some("broker disconnected"));
+        let snap = st.snapshot_at(base() + 50_000);
+        assert_eq!(snap["observer"]["last_event_age_ms"], 50_000);
+        assert_eq!(snap["observer"]["observing"], false);
+        assert_eq!(snap["observer"]["observe_error"], "broker disconnected");
+    }
+
+    #[test]
+    fn observing_and_reading_a_quiet_mesh_never_queue_a_ping_or_topology_poll() {
+        let mut engine = crate::Engine::new(str::to_owned);
+        engine.take_effects();
+        nodes(&mut engine.workshop.mesh);
+        engine.workshop.mesh.clock = base;
+        engine.workshop.mesh.set_observing(true, None);
+        engine.workshop.subscription = Some("live".into());
+        for _ in 0..3 {
+            engine.workshop_command(
+                0,
+                "noded.observe.event",
+                &json!({"subscription_id":"live","direction":"mesh_in","peer":"beta"}),
+            );
+            assert!(engine.take_effects().is_empty());
+            engine.command(42, "workshop.mesh", "{}");
+            assert!(matches!(
+                &engine.take_effects()[..],
+                [crate::Effect::Reply { rc: 0, .. }]
+            ));
+        }
+        engine.delivery(crate::bus::Delivery::Disconnected);
+        assert!(engine.take_effects().is_empty());
+        assert!(engine.workshop.subscription.is_none());
+        assert!(!engine.workshop.mesh.observing);
+    }
+
+    #[test]
+    fn mesh_retains_only_headers_and_does_not_infer_rtt_from_broker_timestamps() {
+        let mut st = state();
+        for (direction, message_type) in [("mesh_out", "request"), ("mesh_in", "response")] {
+            st.add_event_at(
+                &json!({"direction":direction,"message_type":message_type,"peer":"beta",
+                "command":"noded.info","correlation_id":"c1","ts":iso_ms(base()),
+                "body":"BODY_ONLY_MARKER","payload":{"data":"PAYLOAD_ONLY_MARKER"}}),
+                base(),
+            );
+        }
+        let snap = st.snapshot_at(base());
+        assert_eq!(
+            (st.links["beta"].out_msgs, st.links["beta"].in_msgs),
+            (1, 1)
+        );
+        assert!(snap["probe"]["results"].as_object().unwrap().is_empty());
+        for value in snap["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(snap["recent"].as_array().unwrap())
+        {
+            for key in ["ms", "rtt", "body", "payload"] {
+                assert!(value.get(key).is_none(), "{key}");
+            }
+        }
+        for retained in [snap.to_string(), serde_json::to_string(&st).unwrap()] {
+            assert!(!retained.contains("BODY_ONLY_MARKER"));
+            assert!(!retained.contains("PAYLOAD_ONLY_MARKER"));
+        }
     }
     // Keep the reference oracle's event argument order visible in the port.
     #[allow(clippy::too_many_arguments)]

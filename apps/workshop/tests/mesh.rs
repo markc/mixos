@@ -45,11 +45,135 @@ fn fixture() -> Engine {
         ]}),
     );
     engine.workshop.mesh.set_observing(true, None);
+    engine.workshop.subscription = Some("live".into());
     engine
         .workshop
         .mesh
         .set_probe(&json!({"gamma":{"ok":false,"rc":10,"at":95_000}}), clock());
     engine
+}
+
+fn status_harness(engine: Engine) -> Harness<'static, Vec<workshop::view::UiEvent>> {
+    let registry = actions::registry();
+    let strings = strings();
+    let mut h = Harness::builder()
+        .with_context_setup(|ctx| toolkit::install(ctx, &Theme::embedded()))
+        .with_size(egui::vec2(1400.0, 1100.0))
+        .build_ui_state(
+            move |ui, events: &mut Vec<workshop::view::UiEvent>| {
+                events.extend(view(ui, &engine, &registry, &strings));
+            },
+            Vec::new(),
+        );
+    h.run();
+    h
+}
+
+#[test]
+fn lossy_observation_is_visible_even_when_only_own_traffic_was_dropped() {
+    let mut engine = fixture();
+    engine.workshop.mesh.add_event_at(
+        &json!({"direction":"local","from":"workshop","dropped_count":7}),
+        clock(),
+    );
+    let h = status_harness(engine);
+    assert!(
+        h.query_by_label(&workshop::label_with(
+            "mesh-ring-dropped",
+            &[("count", "7")]
+        ))
+        .is_some()
+    );
+    assert!(h.query_by_label(&label("mesh-observe-live")).is_some());
+}
+
+#[test]
+fn unknown_traffic_is_counted_beside_the_map_without_a_node_widget() {
+    let mut engine = fixture();
+    engine.workshop.mesh.add_event_at(
+        &json!({"direction":"mesh_in","from":"noded","message_type":"request",
+        "ts":"1970-01-01T00:01:10.000Z"}),
+        clock(),
+    );
+    let h = status_harness(engine);
+    assert!(h.query_by_label("?").is_none());
+    assert!(
+        h.query_by_label(&workshop::label_with(
+            "mesh-unnamed",
+            &[("out", "0"), ("in", "1")]
+        ))
+        .is_some()
+    );
+}
+
+#[test]
+fn quiet_live_observation_and_disconnected_observation_have_distinct_status() {
+    fn later() -> u64 {
+        145_000
+    }
+    for disconnected in [false, true] {
+        let mut engine = fixture();
+        // An excluded event still demonstrates that the stream delivered data.
+        engine.workshop.mesh.add_event_at(
+            &json!({"direction":"local","from":"workshop",
+            "ts":"1970-01-01T00:01:10.000Z"}),
+            clock(),
+        );
+        engine.workshop.mesh.clock = later;
+        if disconnected {
+            engine.delivery(inspector::bus::Delivery::Disconnected);
+        }
+        let h = status_harness(engine);
+        assert!(
+            h.query_by_label(&label(if disconnected {
+                "mesh-observe-stopped"
+            } else {
+                "mesh-observe-live"
+            }))
+            .is_some()
+        );
+        assert!(
+            h.query_by_label(&workshop::label_with("mesh-last-observe", &[("age", "45")]))
+                .is_some()
+        );
+        if !disconnected {
+            assert!(
+                h.query_by_label(&workshop::label_with(
+                    "mesh-observe-unavailable",
+                    &[("reason", &label("mesh-waiting"))]
+                ))
+                .is_none()
+            );
+        }
+    }
+    let h = status_harness(fixture());
+    assert!(h.query_by_label(&label("mesh-observe-live")).is_some());
+    assert!(h.query_by_label(&label("mesh-no-observe-events")).is_some());
+}
+
+#[test]
+fn mesh_details_never_draws_payload_or_a_body_inspector() {
+    let mut engine = fixture();
+    engine.ui.body = "DRAFT_BODY_ONLY_MARKER".into();
+    engine.workshop.mesh.add_event_at(
+        &json!({"direction":"mesh_in","peer":"beta","command":"noded.info",
+        "ts":"1970-01-01T00:01:10.000Z","body":"BODY_ONLY_MARKER",
+        "payload":{"data":"PAYLOAD_ONLY_MARKER"}}),
+        clock(),
+    );
+    let h = status_harness(engine);
+    for text in [
+        "DRAFT_BODY_ONLY_MARKER",
+        "BODY_ONLY_MARKER",
+        "PAYLOAD_ONLY_MARKER",
+        &label("body"),
+        &label("reply"),
+    ] {
+        assert!(
+            h.query_by_label(text).is_none(),
+            "unexpected body inspector: {text}"
+        );
+    }
 }
 
 #[test]

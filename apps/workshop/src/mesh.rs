@@ -103,6 +103,28 @@ fn curve(a: Pos2, b: Pos2, bow: f32) -> Vec<Pos2> {
         .collect()
 }
 
+/// Peer pairs have no observed counters on this broker. Their painter accepts
+/// geometry and theme roles only, so it cannot imply measured traffic.
+fn unobserved_links(
+    positions: &[Pos2],
+    unit: f32,
+    palette: &toolkit::chrome::Palette,
+) -> Vec<Shape> {
+    let mut shapes = Vec::new();
+    for i in 1..positions.len() {
+        for j in i + 1..positions.len() {
+            let points = curve(positions[i], positions[j], -unit * 2.0);
+            shapes.extend(Shape::dashed_line(
+                &points,
+                Stroke::new(unit * 0.06, palette.separator),
+                unit * 0.2,
+                unit * 0.5,
+            ));
+        }
+    }
+    shapes
+}
+
 /// Sample by arc length, matching SVG getPointAtLength rather than letting
 /// a quadratic's varying derivative change the dot's speed along a spoke.
 fn point_at(points: &[Pos2], fraction: f32) -> Pos2 {
@@ -143,6 +165,7 @@ pub fn view(
     events: &mut Vec<UiEvent>,
 ) {
     let mesh = &engine.workshop.mesh;
+    let snapshot = mesh.snapshot();
     let chrome = Chrome::of(ui.ctx());
     let p = &chrome.palette;
     ui.horizontal(|ui| {
@@ -158,6 +181,33 @@ pub fn view(
             events.push(UiEvent::Command("mesh.ping", Origin::Ui));
         }
     });
+    ui.horizontal_wrapped(|ui| {
+        ui.colored_label(
+            if mesh.observing { p.accent } else { p.text_dim },
+            label(if mesh.observing {
+                "mesh-observe-live"
+            } else {
+                "mesh-observe-stopped"
+            }),
+        );
+        if let Some(age) = snapshot["observer"]["last_event_age_ms"].as_u64() {
+            ui.label(label_with(
+                "mesh-last-observe",
+                &[("age", &(age / 1000).to_string())],
+            ));
+        } else {
+            ui.label(label("mesh-no-observe-events"));
+        }
+    });
+    if mesh.ring_dropped > 0 {
+        ui.colored_label(
+            p.warning,
+            label_with(
+                "mesh-ring-dropped",
+                &[("count", &mesh.ring_dropped.to_string())],
+            ),
+        );
+    }
     if !mesh.observing {
         let reason = mesh
             .observe_error
@@ -211,19 +261,7 @@ pub fn view(
             }
         })
         .collect();
-    // These links exist, but this broker cannot observe peer-to-peer traffic.
-    for i in 1..positions.len() {
-        for j in i + 1..positions.len() {
-            let points = curve(positions[i], positions[j], -unit * 2.0);
-            painter.extend(Shape::dashed_line(
-                &points,
-                Stroke::new(unit * 0.06, p.separator),
-                unit * 0.2,
-                unit * 0.5,
-            ));
-        }
-    }
-    let snapshot = mesh.snapshot();
+    painter.extend(unobserved_links(&positions, unit, p));
     let links = snapshot["links"].as_array().unwrap();
     let mut curves = Vec::new();
     for (i, node) in mesh.nodes.iter().enumerate().skip(1) {
@@ -551,6 +589,34 @@ mod tests {
     use super::*;
     fn clock() -> u64 {
         100_000
+    }
+    #[test]
+    fn peer_pair_painter_draws_only_short_unobserved_dashes_and_excludes_this_node() {
+        let ctx = egui::Context::default();
+        toolkit::install(&ctx, &toolkit::Theme::embedded());
+        let chrome = Chrome::of(&ctx);
+        let positions = [
+            egui::pos2(-100.0, -100.0),
+            egui::pos2(0.0, 0.0),
+            egui::pos2(100.0, 0.0),
+        ];
+        let unit = 10.0;
+        let shapes = unobserved_links(&positions, unit, &chrome.palette);
+        assert!(!shapes.is_empty());
+        for shape in shapes {
+            let Shape::LineSegment { points, stroke } = shape else {
+                panic!("peer pair must be dashed")
+            };
+            assert_eq!(stroke.color, chrome.palette.separator);
+            assert_eq!(stroke.width, unit * 0.06);
+            assert!(points[0].distance(points[1]) <= unit * 0.2 + 0.001);
+            for point in points {
+                assert!((-0.001..=100.001).contains(&point.x));
+                assert!(point.y <= 0.001);
+                assert!(point.distance(positions[0]) > 100.0);
+            }
+        }
+        assert!(unobserved_links(&positions[..2], unit, &chrome.palette).is_empty());
     }
     #[test]
     fn animation_preserves_spacing_delays_replies_and_finishes() {

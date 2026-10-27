@@ -62,7 +62,15 @@ impl Workshop {
                 self.bytes -= request.to_string().len();
                 request["pending"] = json!(false);
                 request["rc"] = frame["rc"].clone();
-                if let (Some(start), Some(end)) = (clock_ms(&request["ts"]), clock_ms(&frame["ts"]))
+                // Mesh replies reuse their request's broker timestamp. Only
+                // local observations have a meaningful timestamp difference;
+                // mesh RTT comes from an explicitly timed noded.ping.
+                let mesh = [&request, &frame].iter().any(|event| {
+                    matches!(event["direction"].as_str(), Some("mesh_out" | "mesh_in"))
+                });
+                if !mesh
+                    && let (Some(start), Some(end)) =
+                        (clock_ms(&request["ts"]), clock_ms(&frame["ts"]))
                 {
                     request["ms"] = json!((end + 86_400_000 - start) % 86_400_000);
                 }
@@ -528,6 +536,24 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn joined_mesh_observations_do_not_report_a_false_round_trip() {
+        let mut state = Workshop::default();
+        state.observe(
+            json!({"direction":"mesh_out","message_type":"request","peer":"beta",
+            "from":"caller","to":"noded.beta.bus","correlation_id":"c1","command":"noded.info",
+            "ts":"2026-10-25T13:09:40.000Z"}),
+        );
+        state.observe(
+            json!({"direction":"mesh_in","message_type":"response","peer":"beta",
+            "from":"noded.beta.bus","to":"caller","correlation_id":"c1","command":"noded.info",
+            "ts":"2026-10-25T13:09:40.000Z","rc":0}),
+        );
+        assert_eq!(state.traffic.len(), 1);
+        assert_eq!(state.traffic[0]["pending"], false);
+        assert!(state.traffic[0].get("ms").is_none());
+        assert!(state.mesh.pings.is_empty());
+    }
     #[test]
     fn title_dialog_confirms_in_the_selected_app_or_global_group() {
         for app in ["ced", "global"] {
