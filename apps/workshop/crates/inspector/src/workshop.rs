@@ -9,6 +9,7 @@ pub const TRAFFIC_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Default, serde::Serialize)]
 pub struct Workshop {
+    pub mesh: crate::mesh::Mesh,
     pub new_title: String,
     pub focus_editor: bool,
     pub destination: String,
@@ -41,6 +42,8 @@ impl Workshop {
     /// Join native request/response observations without a second pending map:
     /// the bounded ring itself owns incomplete calls.
     pub fn observe(&mut self, mut frame: Value) {
+        // Map traffic is independent of the Traffic dock's pause and ring.
+        self.mesh.add_event(&frame);
         self.dropped = self
             .dropped
             .saturating_add(frame["dropped_count"].as_u64().unwrap_or_default());
@@ -421,6 +424,12 @@ impl Engine {
         if operation == "catalogues" {
             self.workshop.latest_catalogues = ticket;
         }
+        match operation {
+            "mesh.nodes" => self.workshop.mesh.nodes_ticket = Some(ticket),
+            "mesh.ping" => self.workshop.mesh.ping_ticket = Some(ticket),
+            "observe" => self.workshop.mesh.observe_ticket = Some(ticket),
+            _ => {}
+        }
         self.push_workshop(Effect::Workshop {
             ticket,
             operation: operation.into(),
@@ -430,6 +439,21 @@ impl Engine {
     }
 
     pub fn workshop_command(&mut self, id: u64, command_name: &str, args: &Value) -> bool {
+        if matches!(command_name, "workshop.mesh" | "workshop.mesh.ping") {
+            let answer = if args.as_object().is_none_or(|args| !args.is_empty()) {
+                Err(("ARGUMENT", "expected an empty object".to_owned()))
+            } else if command_name == "workshop.mesh" {
+                Ok(self.workshop.mesh.snapshot())
+            } else {
+                self.mesh_ping()
+            };
+            let (rc, body) = match answer {
+                Ok(body) => (0, body),
+                Err((code, message)) => (10, json!({"error_code":code,"message":message})),
+            };
+            self.push_workshop(Effect::Reply { id, rc, body });
+            return true;
+        }
         if command_name == "workshop.traffic" {
             let valid = args.as_object().is_some_and(|args| {
                 args.keys()
@@ -476,6 +500,10 @@ impl Engine {
                 .strip_prefix("workshop.macros.")
                 .is_some_and(|suffix| macros::commands::SUFFIXES.contains(&suffix))
         {
+            if command_name == "workshop.observe" && self.workshop.mesh.observe_ticket.is_some() {
+                self.push_workshop(Effect::Reply {id,rc:10,body:json!({"error_code":"BUSY","message":"an observe change is already running"})});
+                return true;
+            }
             if self.quitting {
                 self.push_workshop(Effect::Reply {
                     id,

@@ -113,7 +113,9 @@ fn window(theme: Theme, name: &str) {
 /// The window, optionally with `dialog` open.
 fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     let mut engine = engine();
-    let size = if name == "traffic_right" {
+    let size = if name.starts_with("mesh_") {
+        egui::vec2(1400.0, 1000.0)
+    } else if name == "traffic_right" {
         egui::vec2(1920.0, 1080.0)
     } else {
         egui::vec2(1100.0, 760.0)
@@ -124,6 +126,9 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
         engine.ui.row_key = Some("macro:global:mesh-ping".into());
         engine.workshop.document = serde_json::json!({"tier":"user-global","path":"/home/user/.config/mixos/macros/mesh-ping.mix","text":"-- title: Mesh ping\n-- target: any\nsend noded noded.ping\nprint($result)\n"});
         engine.workshop.message = "run 4 · exited 0".into();
+    }
+    if name.starts_with("mesh_") {
+        mesh_fixture(&mut engine);
     }
     engine.ui.dialog = dialog;
     let registry = actions::registry();
@@ -139,6 +144,60 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     toolkit::install(&harness.ctx, &theme);
     harness.run();
     harness.snapshot(name);
+}
+
+fn mesh_clock() -> u64 {
+    inspector::mesh::ts_ms("2026-10-25T14:00:00.000Z").unwrap()
+}
+
+/// Fixed event timestamps and no recent animation make the map deterministic.
+fn mesh_fixture(engine: &mut Engine) {
+    use serde_json::json;
+    engine.ui.selected = None;
+    engine.workshop.selected = None;
+    engine.ui.row_key = Some("nodes:mesh".into());
+    engine.workshop.mesh = inspector::mesh::Mesh::new("local", "workshop", mesh_clock);
+    let mesh = &mut engine.workshop.mesh;
+    mesh.set_nodes(
+        &json!({"name":"local","wg_ip":"192.0.2.1"}),
+        &json!({"peers":[
+            {"name":"alpha","wg_ip":"192.0.2.2"},{"name":"beta","wg_ip":"192.0.2.3"}
+        ]}),
+    );
+    mesh.set_observing(true, None);
+    for (peer, direction, count) in [
+        ("alpha", "mesh_out", 32),
+        ("alpha", "mesh_in", 24),
+        ("beta", "mesh_out", 8),
+        ("beta", "mesh_in", 4),
+        ("local", "local", 20),
+    ] {
+        for _ in 0..count {
+            mesh.add_event_at(
+                &json!({"ts":"2026-10-25T13:59:40.000Z","direction":direction,
+                "peer":peer,"from":"webd","to":"noded","command":"noded.info","size":64}),
+                mesh_clock(),
+            );
+        }
+    }
+    mesh.set_probe(
+        &json!({"alpha":{"ok":true,"rc":0,"ms":3,"at":mesh_clock()-7000},
+        "beta":{"ok":false,"rc":10,"ms":2000,"at":mesh_clock()-5000}}),
+        mesh_clock(),
+    );
+    mesh.prune(mesh_clock());
+    assert!(mesh.recent.is_empty());
+}
+
+// Generate both PNGs on CBC with UPDATE_SNAPSHOTS=1, then inspect them.
+#[test]
+fn mesh_studio_dark() {
+    window(chrome(Scheme::Studio, Mode::Dark), "mesh_studio_dark");
+}
+
+#[test]
+fn mesh_pro_light() {
+    window(chrome(Scheme::Pro, Mode::Light), "mesh_pro_light");
 }
 
 #[test]

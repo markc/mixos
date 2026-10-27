@@ -74,6 +74,8 @@ pub enum Dialog {
 /// What the tree shows for one row.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RowKind {
+    Nodes,
+    Mesh,
     MacroGroup(String),
     Macro {
         app: String,
@@ -178,7 +180,7 @@ impl Default for UiState {
             selected: None,
             row_key: None,
             filter: String::new(),
-            expanded: BTreeSet::new(),
+            expanded: BTreeSet::from(["nodes".into()]),
             body: String::new(),
             split: 0.34,
             dialog: None,
@@ -747,6 +749,10 @@ impl Engine {
             return;
         }
         self.ui.row_key = Some(row.key.clone());
+        if row.kind == RowKind::Mesh {
+            self.refresh_mesh();
+            self.ensure_observing();
+        }
         if let RowKind::Macro { app, id, .. } = &row.kind {
             self.queue_workshop("macros.open", json!({"app":app,"id":id}), None);
         } else {
@@ -766,6 +772,31 @@ impl Engine {
     pub fn tree(&self) -> Vec<Row> {
         let mut rows = self.service_tree();
         self.macro_tree(&mut rows);
+        // Areas are branches. The Mesh map belongs beside node rows under
+        // Nodes; global macros remain a separate root.
+        let mut children = vec![Row {
+            key: "nodes:mesh".into(),
+            kind: RowKind::Mesh,
+            expanded: false,
+            children: Vec::new(),
+        }];
+        rows.retain(|row| {
+            if row.key == "macros:global" {
+                true
+            } else {
+                children.push(row.clone());
+                false
+            }
+        });
+        rows.insert(
+            0,
+            Row {
+                key: "nodes".into(),
+                kind: RowKind::Nodes,
+                expanded: self.ui.expanded.contains("nodes") || !self.ui.filter.is_empty(),
+                children,
+            },
+        );
         rows
     }
 
@@ -960,9 +991,18 @@ impl Engine {
             Delivery::Connected => {
                 self.connected = true;
                 self.refresh(None);
+                self.refresh_mesh();
+                self.ensure_observing();
             }
             Delivery::Disconnected => {
                 self.connected = false;
+                self.workshop.subscription = None;
+                self.workshop.mesh.observe_ticket = None;
+                self.workshop.mesh.nodes_ticket = None;
+                self.workshop.mesh.ping_ticket = None;
+                self.workshop.mesh.ping_queue.clear();
+                let reason = self.label("disconnected");
+                self.workshop.mesh.set_observing(false, Some(&reason));
                 self.status = self.label("disconnected");
             }
             // The shell reloads the theme; the engine has nothing to do.
@@ -1269,6 +1309,8 @@ impl Engine {
         fn walk(engine: &Engine, rows: &[Row], depth: usize, out: &mut Vec<Value>) {
             for row in rows {
                 let (kind, label) = match &row.kind {
+                    RowKind::Nodes => ("nodes", engine.label("nodes-root")),
+                    RowKind::Mesh => ("mesh", engine.label("mesh-map")),
                     RowKind::MacroGroup(title) => ("macros", title.clone()),
                     RowKind::Macro { title, .. } => ("macro", title.clone()),
                     RowKind::Node(name) => ("node", engine.node_label(name)),
@@ -1780,9 +1822,9 @@ mod tests {
         assert_eq!(e.ui.selected, Some(target()));
         assert_eq!(e.snapshot.failures(), 1);
         let tree = e.tree();
-        let broken = tree.iter().find(|r| r.key == "service:broken").unwrap();
+        let broken = find(&tree, "service:broken").unwrap();
         assert!(matches!(broken.children[0].kind, RowKind::Error(_)));
-        let example = tree.iter().find(|r| r.key == "service:example").unwrap();
+        let example = find(&tree, "service:example").unwrap();
         assert!(example.expanded, "the selected command's service is open");
     }
 
@@ -1977,11 +2019,8 @@ mod tests {
         let mut e = engine();
         e.set_filter("echo".into());
         let tree = e.tree();
-        assert!(
-            tree.iter()
-                .any(|r| r.key == "service:example" && r.expanded)
-        );
-        assert!(!tree.iter().any(|r| r.key == "service:broken"));
+        assert!(find(&tree, "service:example").is_some_and(|row| row.expanded));
+        assert!(find(&tree, "service:broken").is_none());
     }
 
     /// Send `command` with `body` and return the one reply.
@@ -2066,6 +2105,8 @@ mod tests {
         assert_eq!(
             keys,
             [
+                "nodes",
+                "nodes:mesh",
                 "service:example",
                 "command:example:echo",
                 "mesh",
@@ -2145,12 +2186,18 @@ mod tests {
             .collect();
         assert_eq!(
             keys,
-            ["service:broken", "service:example", "mesh"],
-            "everything starts closed"
+            [
+                "nodes",
+                "nodes:mesh",
+                "service:broken",
+                "service:example",
+                "mesh"
+            ],
+            "Nodes starts open; service branches start closed"
         );
-        assert_eq!(rows[1]["kind"], "service");
-        assert_eq!(rows[1]["children"], 1);
-        assert_eq!(rows[2]["label"], "peers");
+        assert_eq!(rows[3]["kind"], "service");
+        assert_eq!(rows[3]["children"], 1);
+        assert_eq!(rows[4]["label"], "peers");
         assert_eq!(rows[0]["depth"], 0);
     }
 
@@ -2175,7 +2222,7 @@ mod tests {
                 command_name["kind"].as_str(),
                 command_name["depth"].as_u64()
             ),
-            (Some("command"), Some(1))
+            (Some("command"), Some(2))
         );
         assert_eq!(
             command_name["selection"],

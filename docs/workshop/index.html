@@ -215,6 +215,7 @@
                         <a href="#rules">Rules</a>
                         <a href="#bus">Bus</a>
                         <a href="#commands-and-keys">Commands and keys</a>
+                        <a href="#mesh-map">Mesh map</a>
                         <a href="#traffic-dock">Traffic dock</a>
                         <a href="#running-it">Running it</a>
                         <a href="#testing">Testing</a>
@@ -306,6 +307,7 @@ reply can never land on a newer operation.</p>
 <table><thead><tr><th>Module</th><th>What it holds</th></tr></thead><tbody>
 <tr><td><code>model</code></td><td><code>Command</code>, <code>Snapshot</code> (services, each with its commands or an error; peers), <code>Selection</code>, the parsers for <code>noded.list</code>, <code>noded.peers</code>, <code>HELP</code> and <code>app.describe</code>, the limits, and <code>describe()</code>, the app's own command list</td></tr>
 <tr><td><code>engine</code></td><td><code>Engine</code>, <code>Effect</code>, <code>Dialog</code>, <code>Row</code> and <code>RowKind</code> (the services tree), <code>UiState</code> (what a person arranges), <code>Session</code> (the session theme)</td></tr>
+<tr><td><code>mesh</code></td><td>bounded per-link and local traffic tally, event windows, reply correlation, topology, pings and injectable clock</td></tr>
 <tr><td><code>bus</code></td><td>the connection, through the shared <a href="/citizen/">citizen</a> library: <code>start</code>, <code>probe</code>, <code>forward</code>, <code>show</code>, and <code>discover</code></td></tr>
 </tbody></table>
 <p>Discovery reads <code>noded.info</code>, <code>noded.list</code> and <code>noded.peers</code>. The local node
@@ -337,6 +339,7 @@ identity including binary and dirty state.</p>
 <tr><td><code>src/lib.rs</code></td><td>the string catalogue: <code>strings()</code>, <code>label()</code>, <code>label_with()</code></td></tr>
 <tr><td><code>src/shell.rs</code></td><td><code>Shell</code>: applies events, settles effects, runs Bus work, follows the desktop profile, wires the toolkit drive layer</td></tr>
 <tr><td><code>src/view.rs</code></td><td><code>view()</code>: draws the engine's state and returns what the person did as <code>UiEvent</code>s; it never changes state itself</td></tr>
+<tr><td><code>src/mesh.rs</code></td><td>the native Mesh map, accessible nodes and links, and bounded dot animation state</td></tr>
 <tr><td><code>src/commands.rs</code></td><td><code>registry()</code>: every command, with its menu, shortcut, icon and when it is enabled</td></tr>
 <tr><td><code>i18n/en/workshop.ftl</code></td><td>the English strings</td></tr>
 </tbody></table>
@@ -367,12 +370,12 @@ registered in
 with owner <code>workshop</code>.</p>
 <ul>
 <li>Reading: <code>workshop.ping</code>, <code>workshop.info</code>, <code>workshop.tree</code>,
-<code>workshop.reply</code>, <code>workshop.actions</code>, plus <code>HELP</code> and <code>app.describe</code>.</li>
+<code>workshop.reply</code>, <code>workshop.actions</code>, <code>workshop.mesh</code>, plus <code>HELP</code> and <code>app.describe</code>.</li>
 <li>Changing state: <code>workshop.filter</code>, <code>workshop.expand</code>,
 <code>workshop.select_row</code>, <code>workshop.select</code>, <code>workshop.body</code>,
 <code>workshop.split</code>, <code>workshop.dock</code>, <code>workshop.dialog</code>, <code>workshop.theme</code>,
 <code>workshop.call</code>, <code>workshop.execute</code>, <code>workshop.refresh</code>,
-<code>workshop.show</code>, <code>workshop.quit</code>.</li>
+<code>workshop.show</code>, <code>workshop.quit</code>, <code>workshop.mesh.ping</code>.</li>
 <li>The window's drive commands, from the toolkit: <code>workshop.ui.tree</code>,
 <code>workshop.ui.click</code>, <code>workshop.ui.pointer</code>, <code>workshop.ui.scroll</code>,
 <code>workshop.ui.key</code>, <code>workshop.ui.type</code>, <code>workshop.ui.menu</code>,
@@ -403,6 +406,7 @@ print $result
 <tr><td><code>edit.clear</code></td><td>Edit › Clear body</td><td></td></tr>
 <tr><td><code>edit.copy</code></td><td>Edit › Copy reply</td><td></td></tr>
 <tr><td><code>bus.call</code></td><td>Bus › Call command</td><td>Ctrl+Enter</td></tr>
+<tr><td><code>mesh.ping</code></td><td>Bus › Ping peers</td><td></td></tr>
 <tr><td><code>help.shortcuts</code></td><td>Help › Keyboard shortcuts</td><td>Ctrl+/</td></tr>
 <tr><td><code>help.about</code></td><td>Help › About Workshop</td><td></td></tr>
 <tr><td><code>view.search</code></td><td>title bar search button</td><td>Ctrl+F</td></tr>
@@ -418,6 +422,49 @@ this window only; the session's theme file is never written. The Help menu
 opens with a field that searches every command. The desktop profile can
 rebind the shortcuts (<code>keymaps.workshop.&lt;id&gt;</code>), and <code>workshop.actions</code>
 reports the ones in force.</p>
+<h2 id="mesh-map">Mesh map</h2>
+<p>Select <strong>Nodes → Mesh</strong> (<code>nodes:mesh</code>) to draw this node in the centre and
+its peers around an ellipse in Details. Selecting Mesh refreshes <code>noded.info</code>
+and <code>noded.peers</code>, and starts the same observation stream as Traffic's
+<strong>Observe traffic</strong> action if it is off. Reconnecting refreshes the nodes and
+starts a new stream. A refused stream shows the broker's reason in Details.</p>
+<p>Each spoke has separate outgoing and incoming curves. Their widths follow
+the last five minutes of messages. Dots show observed messages in their
+original order and spacing; replies launch after the request's travel time.
+Rejected and dropped messages use the theme's danger colour. Local messages
+make an expanding ring. Animation requests repaints only while moving, with
+one scheduled wake for a delayed dot; a quiet map does not repaint on a timer.</p>
+<p>Hover or focus a node to read its counts since start, over one minute and
+five minutes, top services and commands, and its latest ping and age. The
+local node panel includes local service traffic and totals across mesh links.
+Every map node is keyboard focusable and labelled with its node name for
+screen readers and <code>workshop.ui.click {label:"beta"}</code>. Clicking a node selects
+its <code>node:&lt;name&gt;</code> tree row; clicking a spoke opens Traffic filtered to its peer.</p>
+<p><strong>Ping peers</strong> in Details or <strong>Bus → Ping peers</strong> (<code>mesh.ping</code>) pings each
+known peer once, sequentially, with a two-second deadline per peer. Nothing
+pings on a timer. A failed ping leaves a danger ring until inbound traffic
+from that peer or a newer successful ping clears it. Ping age is measured
+from each peer's completion, rather than the start of the whole round.</p>
+<p><code>workshop.mesh {}</code> reads the map as JSON: <code>this_node</code>, <code>peers</code>, <code>nodes</code>,
+<code>links</code> (message and byte totals, <code>out_1m</code>, <code>in_1m</code>, <code>out_5m</code>, <code>in_5m</code>,
+top services and commands), <code>local</code>, <code>probe.results</code> (including <code>age_ms</code>),
+<code>observer</code> (observation state, error and dropped counters), <code>nodes_error</code>,
+and <code>recent</code>. <code>workshop.mesh.ping {}</code> starts a round and immediately returns
+<code>{pinging:["beta","gamma"]}</code>; read <code>workshop.mesh</code> for its results. Both
+commands accept every caller, local or mesh. Overlapping ping rounds return
+<code>BUSY</code>; no known peers returns <code>UNAVAILABLE</code>.</p>
+<p>Only this node's broker is observed. Dashed links between peers represent
+traffic that Workshop cannot see. Broker events with <code>peer</code> identify the link
+directly. Older events fall back to mesh addresses and reply correlation IDs;
+unidentifiable messages appear in the unnamed-node count. Workshop excludes
+its own observe, discovery and ping traffic from the tally. Pausing Traffic
+does not pause the map, and its counters are independent of Traffic's ring.</p>
+<p>All retained state is bounded: 64 named traffic links plus an unknown link,
+40 distinct count keys plus an overflow key, 2,000 pending correlations,
+2,000 recent events over 15 seconds, and a five-minute second-bucket window
+(301 slots including the lower boundary, matching the reference tally).
+The node list and ping results are capped at 64 peers. Retained event labels
+are limited to 256 characters; oversized correlation IDs are not matched.</p>
 <h2 id="traffic-dock">Traffic dock</h2>
 <p>Traffic uses the right pane when Auto sees a window at least 1280 logical
 pixels wide, and the bottom pane otherwise. View › Traffic placement selects
@@ -475,6 +522,12 @@ and the search field through kittest.</li>
 <li><code>tests/snapshot.rs</code> takes offscreen snapshots in several themes into
 <code>tests/snapshots/</code>. Regenerate with <code>UPDATE_SNAPSHOTS=1</code> and look at the
 images before committing them.</li>
+<li><code>crates/inspector/src/mesh.rs</code> ports the Mesh Watch tally oracle with
+public example names and addresses, plus bounds, expiry, pause and engine
+effect tests. <code>tests/mesh.rs</code> checks accessible map controls and node panels;
+<code>tests/drive.rs</code> also drives map nodes and links through <code>workshop.ui.click</code>.
+The map snapshots <code>mesh_studio_dark.png</code> and <code>mesh_pro_light.png</code> use a fixed
+clock and no animation.</li>
 <li><code>tests/registry.rs</code> checks that the command registry lists exactly the
 commands Workshop describes, and that read-only commands are class <code>query</code>
 (<a href="/docs/decisions/2026-10-11-verb-classes/">command classes</a>).</li>

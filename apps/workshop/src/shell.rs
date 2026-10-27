@@ -355,10 +355,10 @@ impl Shell {
             look_retry: 0,
         };
         shell.engine.session = session_of(&shell.theme);
+        shell.engine.workshop.mesh.observer = shell.bus.service().to_owned();
+        shell.engine.refresh_mesh();
         shell.engine.queue_workshop("catalogues", json!({}), None);
-        shell
-            .engine
-            .queue_workshop("observe", json!({"on":true}), None);
+        shell.engine.ensure_observing();
         shell.settle();
         shell.read_look();
         Ok(shell)
@@ -572,6 +572,18 @@ impl Shell {
                     |message| json!({"error_code":"UNAVAILABLE","message":message}),
                 );
                 let refused = body.get("error_code").is_some();
+                if !self.engine.mesh_completed(ticket, &operation, &args, &body) {
+                    if let Some(id) = reply {
+                        self.bus.reply(
+                            id,
+                            10,
+                            json!({"error_code":"DISCONNECTED","message":label("disconnected")}),
+                        );
+                    }
+                    self.engine.workshop_settled();
+                    self.settle();
+                    continue;
+                }
                 if operation == "catalogues" && !refused {
                     self.engine.workshop.catalogues =
                         serde_json::from_value(body.clone()).unwrap_or_default();
@@ -609,7 +621,7 @@ impl Shell {
                         self.engine.workshop.subscription =
                             body["subscription_id"].as_str().map(str::to_owned);
                     }
-                } else {
+                } else if !matches!(operation.as_str(), "mesh.nodes" | "mesh.ping") {
                     self.engine.workshop.message = body.to_string();
                     if operation == "macros.put"
                         && !refused
@@ -1559,6 +1571,12 @@ mod tests {
         for command in commands.iter() {
             let mut e = engine();
             e.ui.selected = Some(target("a"));
+            if command.id == "mesh.ping" {
+                e.workshop.mesh.set_nodes(
+                    &json!({"name":"alpha"}),
+                    &json!({"peers":[{"name":"beta"}]}),
+                );
+            }
             if command.id.starts_with("macro.") {
                 e.workshop.selected = Some(("global".into(), "test".into()));
                 e.workshop.document = json!({"text":"print(1)\n"});

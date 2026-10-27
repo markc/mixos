@@ -234,6 +234,19 @@ pub fn registry() -> Registry<Engine> {
         );
     }
     r.add(Action {
+        id: "mesh.ping",
+        label: "mesh-ping",
+        menu: Some("bus"),
+        submenu: None,
+        group: 1,
+        shortcut: None,
+        icon: None,
+        enabled: Engine::can_ping_mesh,
+        run: |e| {
+            let _ = e.mesh_ping();
+        },
+    });
+    r.add(Action {
         id: "bus.observe",
         label: "observe-traffic",
         menu: Some("bus"),
@@ -241,7 +254,9 @@ pub fn registry() -> Registry<Engine> {
         group: 1,
         shortcut: None,
         icon: None,
-        enabled: undialogued,
+        enabled: |e| {
+            undialogued(e) && !e.quitting && e.connected && e.workshop.mesh.observe_ticket.is_none()
+        },
         run: |e| {
             e.queue_workshop(
                 "observe",

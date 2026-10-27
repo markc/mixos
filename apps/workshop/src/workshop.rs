@@ -10,6 +10,40 @@ pub async fn perform(
     mut args: Value,
     running: BTreeMap<String, String>,
 ) -> Result<Value, String> {
+    if operation == "mesh.nodes" {
+        async fn read(bus: &Handle, command: &str) -> Result<Value, String> {
+            let reply = bus
+                .raw_within(
+                    "noded",
+                    command,
+                    String::new(),
+                    std::time::Duration::from_secs(3),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            if reply.rc >= 10 {
+                return Err(format!("{command}: {} {}", reply.rc, reply.body));
+            }
+            serde_json::from_str(&reply.body).map_err(|e| e.to_string())
+        }
+        let (info, peers) = futures::join!(read(&bus, "noded.info"), read(&bus, "noded.peers"));
+        return Ok(json!({"info":info?,"peers":peers?}));
+    }
+    if operation == "mesh.ping" {
+        let node = args["node"].as_str().ok_or("missing ping node")?;
+        let start = std::time::Instant::now();
+        let reply = bus
+            .raw_within(
+                &format!("noded.{node}.bus"),
+                "noded.ping",
+                String::new(),
+                std::time::Duration::from_secs(2),
+            )
+            .await;
+        let rc = reply.as_ref().ok().map(|r| r.rc);
+        return Ok(json!({"ok":rc.is_some_and(|rc| rc < 10),"rc":rc,
+            "ms":start.elapsed().as_millis() as u64,"at":inspector::mesh::now_ms()}));
+    }
     if operation == "catalogues" {
         let local = tokio::task::spawn_blocking(|| {
             let roots = macros::Roots::resolve().ok_or("macro roots unavailable")?;
@@ -280,6 +314,73 @@ async fn request_macro(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn mesh_pings_use_one_native_call_and_keep_return_code_and_completion_time() {
+        for rc in [0, 10] {
+            let bus = Handle::scripted(vec![Ok(inspector::bus::Reply {
+                rc,
+                body: "{}".into(),
+                error: None,
+            })]);
+            let result = perform(
+                bus.clone(),
+                "mesh.ping",
+                json!({"node":"beta"}),
+                BTreeMap::new(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(result["ok"], rc < 10);
+            assert_eq!(result["rc"], rc);
+            assert!(result["ms"].is_u64() && result["at"].is_u64());
+            assert_eq!(
+                bus.log(),
+                vec![inspector::bus::Logged::Call {
+                    service: "noded.beta.bus".into(),
+                    command: "noded.ping".into(),
+                    body: String::new()
+                }]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn mesh_topology_reads_both_local_broker_commands() {
+        let info = json!({"name":"alpha","wg_ip":"192.0.2.1"});
+        let peers = json!({"peers":[{"name":"beta","wg_ip":"192.0.2.2"}]});
+        let bus = Handle::scripted(
+            [&info, &peers]
+                .into_iter()
+                .map(|body| {
+                    Ok(inspector::bus::Reply {
+                        rc: 0,
+                        body: body.to_string(),
+                        error: None,
+                    })
+                })
+                .collect(),
+        );
+        let result = perform(bus.clone(), "mesh.nodes", json!({}), BTreeMap::new())
+            .await
+            .unwrap();
+        assert_eq!(result, json!({"info":info,"peers":peers}));
+        assert_eq!(
+            bus.log(),
+            vec![
+                inspector::bus::Logged::Call {
+                    service: "noded".into(),
+                    command: "noded.info".into(),
+                    body: String::new()
+                },
+                inspector::bus::Logged::Call {
+                    service: "noded".into(),
+                    command: "noded.peers".into(),
+                    body: String::new()
+                },
+            ]
+        );
+    }
 
     #[test]
     fn new_returns_the_document_for_global_stopped_and_running_apps() {

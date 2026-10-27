@@ -113,6 +113,53 @@ fn ok(h: &mut Harness<'_, Window>, id: u64, command_name: &'static str, args: Va
     panic!("{command_name} was never answered");
 }
 
+fn mesh_window() -> Harness<'static, Window> {
+    fn clock() -> u64 {
+        100_000
+    }
+    let mut h = window();
+    let engine = &mut h.state_mut().engine;
+    engine.snapshot.nodes = vec![
+        inspector::model::Node {
+            name: "alpha".into(),
+            local: true,
+            ..Default::default()
+        },
+        inspector::model::Node {
+            name: "beta".into(),
+            ..Default::default()
+        },
+    ];
+    engine.ui.row_key = Some("nodes:mesh".into());
+    engine.workshop.mesh = inspector::mesh::Mesh::new("alpha", "workshop", clock);
+    engine.workshop.mesh.set_nodes(
+        &json!({"name":"alpha","wg_ip":"192.0.2.1"}),
+        &json!({"peers":[{"name":"beta","wg_ip":"192.0.2.2"}]}),
+    );
+    engine.workshop.mesh.set_observing(true, None);
+    h.run_steps(3);
+    h
+}
+
+#[test]
+fn mesh_node_is_clickable_by_its_accessible_name_over_the_bus() {
+    let mut h = mesh_window();
+    ok(&mut h, 1, "workshop.ui.click", json!({"label":"beta"}));
+    assert_eq!(h.state().engine.ui.row_key.as_deref(), Some("node:beta"));
+}
+
+#[test]
+fn mesh_link_opens_traffic_filtered_to_its_peer_over_the_bus() {
+    let mut h = mesh_window();
+    let name = workshop::label_with(
+        "mesh-link-filter",
+        &[("name", "beta"), ("direction", &label("mesh-out"))],
+    );
+    ok(&mut h, 1, "workshop.ui.click", json!({"label":name}));
+    assert_eq!(h.state().engine.workshop.filter, "beta");
+    assert!(h.state().engine.workshop.dock_open);
+}
+
 #[test]
 fn new_macro_button_title_and_confirm_use_the_registered_action() {
     let mut h = window();

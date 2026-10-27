@@ -183,7 +183,7 @@ pub fn bounded(body: &str, marker: &str) -> String {
 
 /// Every command the engine answers itself. The window-level commands
 /// (`workshop.ui.*`, `workshop.window*`) belong to the toolkit drive layer.
-pub const COMMANDS: [&str; 21] = [
+pub const COMMANDS: [&str; 23] = [
     "HELP",
     "app.describe",
     "workshop.ping",
@@ -205,6 +205,8 @@ pub const COMMANDS: [&str; 21] = [
     "workshop.select_row",
     "workshop.dialog",
     "workshop.theme",
+    "workshop.mesh",
+    "workshop.mesh.ping",
 ];
 
 /// The engine's Bus surface (`HELP` / `app.describe` add the drive commands).
@@ -230,7 +232,9 @@ pub fn describe() -> Value {
         {"name":"workshop.expand","args":{"key":"row key","open":"bool"},"description":"Open or close a tree row that has children","read_only":false},
         {"name":"workshop.select_row","args":{"key":"row key"},"description":"Select any tree row; a command row also selects its command","read_only":false},
         {"name":"workshop.dialog","args":{"open":"\"about\", \"shortcuts\" or null"},"description":"Open a dialog, or close the open one","read_only":false},
-        {"name":"workshop.theme","args":{"scheme":"optional scheme name (ocean, crimson, stone, forest, sunset, mono, pro, studio, classic, breeze, adwaita) or null to follow the session","style":"optional style (plain, pro, studio, classic, breeze, adwaita), own for the scheme's own, or null to follow the session","mode":"optional light, dark or null to follow the session","decorations":"optional auto, csd, ssd or null to follow the session","caption_side":"optional right, left or null to follow the session"},"description":"Choose the window's theme: a present key sets that axis, an absent one leaves it; answers the choice and every effective axis, including decorations and decorations_reason","read_only":false}
+        {"name":"workshop.theme","args":{"scheme":"optional scheme name (ocean, crimson, stone, forest, sunset, mono, pro, studio, classic, breeze, adwaita) or null to follow the session","style":"optional style (plain, pro, studio, classic, breeze, adwaita), own for the scheme's own, or null to follow the session","mode":"optional light, dark or null to follow the session","decorations":"optional auto, csd, ssd or null to follow the session","caption_side":"optional right, left or null to follow the session"},"description":"Choose the window's theme: a present key sets that axis, an absent one leaves it; answers the choice and every effective axis, including decorations and decorations_reason","read_only":false},
+        {"name":"workshop.mesh","args":{},"description":"Read this node, peers, bounded per-link and local traffic totals, one and five minute windows, top services and commands, ping results with age, and observation state; only this broker is observed","read_only":true},
+        {"name":"workshop.mesh.ping","args":{},"description":"Ping each known peer once with a two second deadline; returns {pinging:[names]} immediately; results appear in workshop.mesh; refuses overlapping rounds","read_only":false}
     ]})
 }
 

@@ -141,6 +141,8 @@
     {name:"workshop.select_row", owner:"workshop", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"workshop.dialog", owner:"workshop", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"workshop.theme", owner:"workshop", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
+    {name:"workshop.mesh", owner:"workshop", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
+    {name:"workshop.mesh.ping", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"workshop.traffic", owner:"workshop", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"workshop.observe", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"workshop.macros.open", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},

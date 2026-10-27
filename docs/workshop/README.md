@@ -80,6 +80,7 @@ reply can never land on a newer operation.
 |---|---|
 | `model` | `Command`, `Snapshot` (services, each with its commands or an error; peers), `Selection`, the parsers for `noded.list`, `noded.peers`, `HELP` and `app.describe`, the limits, and `describe()`, the app's own command list |
 | `engine` | `Engine`, `Effect`, `Dialog`, `Row` and `RowKind` (the services tree), `UiState` (what a person arranges), `Session` (the session theme) |
+| `mesh` | bounded per-link and local traffic tally, event windows, reply correlation, topology, pings and injectable clock |
 | `bus` | the connection, through the shared [citizen](../citizen/README.md) library: `start`, `probe`, `forward`, `show`, and `discover` |
 
 Discovery reads `noded.info`, `noded.list` and `noded.peers`. The local node
@@ -114,6 +115,7 @@ The limits are fixed in `model`:
 | `src/lib.rs` | the string catalogue: `strings()`, `label()`, `label_with()` |
 | `src/shell.rs` | `Shell`: applies events, settles effects, runs Bus work, follows the desktop profile, wires the toolkit drive layer |
 | `src/view.rs` | `view()`: draws the engine's state and returns what the person did as `UiEvent`s; it never changes state itself |
+| `src/mesh.rs` | the native Mesh map, accessible nodes and links, and bounded dot animation state |
 | `src/commands.rs` | `registry()`: every command, with its menu, shortcut, icon and when it is enabled |
 | `i18n/en/workshop.ftl` | the English strings |
 
@@ -146,12 +148,12 @@ registered in
 with owner `workshop`.
 
 - Reading: `workshop.ping`, `workshop.info`, `workshop.tree`,
-  `workshop.reply`, `workshop.actions`, plus `HELP` and `app.describe`.
+  `workshop.reply`, `workshop.actions`, `workshop.mesh`, plus `HELP` and `app.describe`.
 - Changing state: `workshop.filter`, `workshop.expand`,
   `workshop.select_row`, `workshop.select`, `workshop.body`,
   `workshop.split`, `workshop.dock`, `workshop.dialog`, `workshop.theme`,
   `workshop.call`, `workshop.execute`, `workshop.refresh`,
-  `workshop.show`, `workshop.quit`.
+  `workshop.show`, `workshop.quit`, `workshop.mesh.ping`.
 - The window's drive commands, from the toolkit: `workshop.ui.tree`,
   `workshop.ui.click`, `workshop.ui.pointer`, `workshop.ui.scroll`,
   `workshop.ui.key`, `workshop.ui.type`, `workshop.ui.menu`,
@@ -190,6 +192,7 @@ Every menu item, shortcut and `workshop.execute` id is one command in
 | `edit.clear` | Edit › Clear body | |
 | `edit.copy` | Edit › Copy reply | |
 | `bus.call` | Bus › Call command | Ctrl+Enter |
+| `mesh.ping` | Bus › Ping peers | |
 | `help.shortcuts` | Help › Keyboard shortcuts | Ctrl+/ |
 | `help.about` | Help › About Workshop | |
 | `view.search` | title bar search button | Ctrl+F |
@@ -205,6 +208,57 @@ this window only; the session's theme file is never written. The Help menu
 opens with a field that searches every command. The desktop profile can
 rebind the shortcuts (`keymaps.workshop.<id>`), and `workshop.actions`
 reports the ones in force.
+
+## Mesh map
+
+Select **Nodes → Mesh** (`nodes:mesh`) to draw this node in the centre and
+its peers around an ellipse in Details. Selecting Mesh refreshes `noded.info`
+and `noded.peers`, and starts the same observation stream as Traffic's
+**Observe traffic** action if it is off. Reconnecting refreshes the nodes and
+starts a new stream. A refused stream shows the broker's reason in Details.
+
+Each spoke has separate outgoing and incoming curves. Their widths follow
+the last five minutes of messages. Dots show observed messages in their
+original order and spacing; replies launch after the request's travel time.
+Rejected and dropped messages use the theme's danger colour. Local messages
+make an expanding ring. Animation requests repaints only while moving, with
+one scheduled wake for a delayed dot; a quiet map does not repaint on a timer.
+
+Hover or focus a node to read its counts since start, over one minute and
+five minutes, top services and commands, and its latest ping and age. The
+local node panel includes local service traffic and totals across mesh links.
+Every map node is keyboard focusable and labelled with its node name for
+screen readers and `workshop.ui.click {label:"beta"}`. Clicking a node selects
+its `node:<name>` tree row; clicking a spoke opens Traffic filtered to its peer.
+
+**Ping peers** in Details or **Bus → Ping peers** (`mesh.ping`) pings each
+known peer once, sequentially, with a two-second deadline per peer. Nothing
+pings on a timer. A failed ping leaves a danger ring until inbound traffic
+from that peer or a newer successful ping clears it. Ping age is measured
+from each peer's completion, rather than the start of the whole round.
+
+`workshop.mesh {}` reads the map as JSON: `this_node`, `peers`, `nodes`,
+`links` (message and byte totals, `out_1m`, `in_1m`, `out_5m`, `in_5m`,
+top services and commands), `local`, `probe.results` (including `age_ms`),
+`observer` (observation state, error and dropped counters), `nodes_error`,
+and `recent`. `workshop.mesh.ping {}` starts a round and immediately returns
+`{pinging:["beta","gamma"]}`; read `workshop.mesh` for its results. Both
+commands accept every caller, local or mesh. Overlapping ping rounds return
+`BUSY`; no known peers returns `UNAVAILABLE`.
+
+Only this node's broker is observed. Dashed links between peers represent
+traffic that Workshop cannot see. Broker events with `peer` identify the link
+directly. Older events fall back to mesh addresses and reply correlation IDs;
+unidentifiable messages appear in the unnamed-node count. Workshop excludes
+its own observe, discovery and ping traffic from the tally. Pausing Traffic
+does not pause the map, and its counters are independent of Traffic's ring.
+
+All retained state is bounded: 64 named traffic links plus an unknown link,
+40 distinct count keys plus an overflow key, 2,000 pending correlations,
+2,000 recent events over 15 seconds, and a five-minute second-bucket window
+(301 slots including the lower boundary, matching the reference tally).
+The node list and ping results are capped at 64 peers. Retained event labels
+are limited to 256 characters; oversized correlation IDs are not matched.
 
 ## Traffic dock
 
@@ -274,6 +328,12 @@ cargo test --locked -p inspector -p workshop
 - `tests/snapshot.rs` takes offscreen snapshots in several themes into
   `tests/snapshots/`. Regenerate with `UPDATE_SNAPSHOTS=1` and look at the
   images before committing them.
+- `crates/inspector/src/mesh.rs` ports the Mesh Watch tally oracle with
+  public example names and addresses, plus bounds, expiry, pause and engine
+  effect tests. `tests/mesh.rs` checks accessible map controls and node panels;
+  `tests/drive.rs` also drives map nodes and links through `workshop.ui.click`.
+  The map snapshots `mesh_studio_dark.png` and `mesh_pro_light.png` use a fixed
+  clock and no animation.
 - `tests/registry.rs` checks that the command registry lists exactly the
   commands Workshop describes, and that read-only commands are class `query`
   ([command classes](../docs/decisions/2026-10-11-verb-classes.md)).

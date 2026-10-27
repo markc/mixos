@@ -22,7 +22,7 @@ impl Default for Arrangement {
         Self {
             selected: None,
             row_key: None,
-            expanded: BTreeSet::new(),
+            expanded: BTreeSet::from(["nodes".into()]),
             filter: String::new(),
             macros_open: false,
             dock_side: DockSide::Auto,

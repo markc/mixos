@@ -5,6 +5,7 @@
 //! `workshop` renders it with egui (AGENTS.md §4.1, engine first).
 pub mod bus;
 pub mod engine;
+pub mod mesh;
 pub mod model;
 pub mod workshop;
 
