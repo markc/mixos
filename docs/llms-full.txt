@@ -32843,7 +32843,10 @@ watched from one that has one. The reasons are in the
   segments or a missing counter makes the percentage unavailable.
   The top 20 connections by throughput show remote endpoint, local port,
   state, receive/send bytes per second, RTT, lifetime retransmits and owning
-  user. Monitor calls `monitord.connections` only while this page is selected,
+  user. Measured throughput sorts before unavailable rates; listeners only fill
+  spare rows after non-listening sockets. The compact Port and Retx headers
+  give their full names in tooltips.
+  Monitor calls `monitord.connections` only while this page is selected,
   once a second unless paused. A cold read takes about a second to establish
   real rates; errors and unavailable values are shown explicitly. The same
   node chooser selects a remote host's TCP page and peers. Sockstat counts
@@ -32855,8 +32858,10 @@ Monitor reads once a second. Pause (Ctrl+P) holds the readings still;
 Refresh (Ctrl+R) reads once.
 
 The main Performance graphs use interactive `egui_plot` charts: seconds ago
-on x (zero at the right), resource units on y, and legends for disk read/write
-and network receive/send. Hover shows sampled values and their age for visible
+on x (zero at the right), resource units on y, and compact legends in wrapping
+rows above multi-series charts, including disk read/write, network receive/send
+and TCP. Legends reserve space outside the plot and never cover data. Click
+a series name to hide or restore it. Hover shows sampled values and their age for visible
 series. Scroll or pinch to zoom time; while zoomed, drag to pan. At the full
 window, dragging scrolls the page. Double-click resets the range. Time stays
 within the collected window, with a minimum span of four sample intervals.
@@ -33038,6 +33043,10 @@ reader uses the existing `libc` dependency and Linux UAPI byte layouts.
 - `limit` defaults to 20 and is clamped to 1–1000.
 - `sort`: `throughput` (rx + tx, default), `rx`, `tx`, `rtt` or
   `retransmits`, largest first; ties use the socket cookie.
+  Throughput puts every measured rate, including zero, before unavailable
+  rates. Listening sockets rank last and only fill spare places after
+  non-listening sockets; a full top 20 with traffic contains no listeners.
+  An explicit `state: "listen"` query still returns listeners.
 - `state`: optional kernel state name: `established`, `syn-sent`,
   `syn-recv`, `fin-wait-1`, `fin-wait-2`, `time-wait`, `close`,
   `close-wait`, `last-ack`, `listen`, `closing` or `new-syn-recv`.

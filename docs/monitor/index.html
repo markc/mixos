@@ -267,7 +267,10 @@ divided by sent segments as a percentage for that interval; no sent
 segments or a missing counter makes the percentage unavailable.
 The top 20 connections by throughput show remote endpoint, local port,
 state, receive/send bytes per second, RTT, lifetime retransmits and owning
-user. Monitor calls <code>monitord.connections</code> only while this page is selected,
+user. Measured throughput sorts before unavailable rates; listeners only fill
+spare rows after non-listening sockets. The compact Port and Retx headers
+give their full names in tooltips.
+Monitor calls <code>monitord.connections</code> only while this page is selected,
 once a second unless paused. A cold read takes about a second to establish
 real rates; errors and unavailable values are shown explicitly. The same
 node chooser selects a remote host's TCP page and peers. Sockstat counts
@@ -278,8 +281,10 @@ Peer addresses and users are open on the Bus, like <code>ss</code>; see
 <p>Monitor reads once a second. Pause (Ctrl+P) holds the readings still;
 Refresh (Ctrl+R) reads once.</p>
 <p>The main Performance graphs use interactive <code>egui_plot</code> charts: seconds ago
-on x (zero at the right), resource units on y, and legends for disk read/write
-and network receive/send. Hover shows sampled values and their age for visible
+on x (zero at the right), resource units on y, and compact legends in wrapping
+rows above multi-series charts, including disk read/write, network receive/send
+and TCP. Legends reserve space outside the plot and never cover data. Click
+a series name to hide or restore it. Hover shows sampled values and their age for visible
 series. Scroll or pinch to zoom time; while zoomed, drag to pan. At the full
 window, dragging scrolls the page. Double-click resets the range. Time stays
 within the collected window, with a minimum span of four sample intervals.

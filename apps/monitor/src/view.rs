@@ -1011,18 +1011,18 @@ fn tcp(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
             .column(Width::exact(width * 0.09).clip(true))
             .column(Width::exact(width * 0.10).clip(true))
             .header(row_height, |mut header| {
-                for key in [
-                    "tcp-remote",
-                    "tcp-local-port",
-                    "state",
-                    "tcp-rx",
-                    "tcp-tx",
-                    "tcp-rtt",
-                    "tcp-retransmits",
-                    "column-user",
+                for (key, tooltip) in [
+                    ("tcp-remote", "tcp-remote"),
+                    ("tcp-port", "tcp-local-port"),
+                    ("state", "state"),
+                    ("tcp-rx", "tcp-rx-full"),
+                    ("tcp-tx", "tcp-tx-full"),
+                    ("tcp-rtt", "tcp-rtt-full"),
+                    ("tcp-retx", "tcp-retransmits"),
+                    ("column-user", "column-user"),
                 ] {
                     header.col(|ui| {
-                        ui.strong(label(key)).on_hover_text(label(key));
+                        ui.strong(label(key)).on_hover_text(label(tooltip));
                     });
                 }
             })

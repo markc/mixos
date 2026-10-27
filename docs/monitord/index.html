@@ -315,7 +315,11 @@ reader uses the existing <code>libc</code> dependency and Linux UAPI byte layout
 <ul>
 <li><code>limit</code> defaults to 20 and is clamped to 1–1000.</li>
 <li><code>sort</code>: <code>throughput</code> (rx + tx, default), <code>rx</code>, <code>tx</code>, <code>rtt</code> or
-<code>retransmits</code>, largest first; ties use the socket cookie.</li>
+<code>retransmits</code>, largest first; ties use the socket cookie.
+Throughput puts every measured rate, including zero, before unavailable
+rates. Listening sockets rank last and only fill spare places after
+non-listening sockets; a full top 20 with traffic contains no listeners.
+An explicit <code>state: "listen"</code> query still returns listeners.</li>
 <li><code>state</code>: optional kernel state name: <code>established</code>, <code>syn-sent</code>,
 <code>syn-recv</code>, <code>fin-wait-1</code>, <code>fin-wait-2</code>, <code>time-wait</code>, <code>close</code>,
 <code>close-wait</code>, <code>last-ack</code>, <code>listen</code>, <code>closing</code> or <code>new-syn-recv</code>.</li>

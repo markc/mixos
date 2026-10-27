@@ -145,6 +145,7 @@ fn engine(cores: usize, rows: usize, tab: Tab) -> Engine {
             "rtt_us":if i == 2 {Value::Null} else {json!(1500+i*200)},
             "retransmits":if i == 2 {Value::Null} else {json!(i)}, "user":if i == 1 {"1001"} else {"alice"}
         })).collect::<Vec<_>>() })).unwrap());
+    e.connections.as_mut().unwrap().rank_throughput();
     e.take_effects();
     e
 }
@@ -306,6 +307,12 @@ fn tcp_page_exposes_charts_and_connections_in_both_themes() {
                 "{text} missing"
             );
         }
+        assert!(h.get_by_label("Retx").rect().width() < 50.0);
+        let port = h.get_by_label("Port").rect();
+        assert!(port.width() < 50.0);
+        h.hover_at(port.center());
+        h.run();
+        assert!(h.query_by_label("Local port").is_some());
     }
 }
 

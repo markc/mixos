@@ -92,6 +92,10 @@ reader uses the existing `libc` dependency and Linux UAPI byte layouts.
 - `limit` defaults to 20 and is clamped to 1–1000.
 - `sort`: `throughput` (rx + tx, default), `rx`, `tx`, `rtt` or
   `retransmits`, largest first; ties use the socket cookie.
+  Throughput puts every measured rate, including zero, before unavailable
+  rates. Listening sockets rank last and only fill spare places after
+  non-listening sockets; a full top 20 with traffic contains no listeners.
+  An explicit `state: "listen"` query still returns listeners.
 - `state`: optional kernel state name: `established`, `syn-sent`,
   `syn-recv`, `fin-wait-1`, `fin-wait-2`, `time-wait`, `close`,
   `close-wait`, `last-ack`, `listen`, `closing` or `new-syn-recv`.

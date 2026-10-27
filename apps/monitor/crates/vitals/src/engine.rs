@@ -443,7 +443,7 @@ impl Engine {
                     serde_json::from_value::<Connections>(v).map_err(|e| e.to_string())
                 }) {
                     Ok(mut table) => {
-                        table.rows.truncate(20);
+                        table.rank_throughput();
                         self.connections = Some(table);
                         self.connections_error = None;
                     }

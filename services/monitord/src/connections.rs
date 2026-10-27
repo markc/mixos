@@ -380,9 +380,20 @@ pub fn select(table: &[Connection], query: &Query) -> (Vec<Connection>, usize) {
         "tx" => r.tx_bps.unwrap_or(-1.0),
         "rtt" => r.rtt_us.map(f64::from).unwrap_or(-1.0),
         "retransmits" => r.retransmits.map(f64::from).unwrap_or(-1.0),
-        _ => r.rx_bps.unwrap_or(0.0) + r.tx_bps.unwrap_or(0.0),
+        _ => match (r.rx_bps, r.tx_bps) {
+            (None, None) => -1.0,
+            (rx, tx) => rx.unwrap_or(0.0) + tx.unwrap_or(0.0),
+        },
     };
-    rows.sort_by(|a, b| score(b).total_cmp(&score(a)).then(a.cookie.cmp(&b.cookie)));
+    let throughput = query.sort.as_deref().unwrap_or("throughput") == "throughput";
+    rows.sort_by(|a, b| {
+        // Listeners only fill spare places after every non-listening
+        // socket. Unknown rates sort behind measured rates, including zero.
+        (throughput && a.state == "listen")
+            .cmp(&(throughput && b.state == "listen"))
+            .then_with(|| score(b).total_cmp(&score(a)))
+            .then(a.cookie.cmp(&b.cookie))
+    });
     let total = rows.len();
     rows.truncate(query.limit.unwrap_or(20).clamp(1, 1000));
     (rows, total)
@@ -618,6 +629,37 @@ mod tests {
             rtt_us: Some(1500),
             retransmits: Some(2),
         }
+    }
+
+    #[test]
+    fn throughput_ranking_backfills_listeners_and_puts_unknown_after_measured_zero() {
+        let users = Users::default();
+        let mut rows = table(&[raw(1,0)], &[raw(1,0)], 1.0, &users);
+        let zero = rows[0].clone();
+        let mut unknown = zero.clone();
+        unknown.cookie = [0,0];
+        unknown.rx_bps = None;
+        unknown.tx_bps = None;
+        let mut listener = unknown.clone();
+        listener.state = "listen".into();
+        listener.cookie = [2,0];
+        rows = vec![listener.clone(), unknown, zero];
+        for i in 3..23 {
+            let mut traffic = rows[2].clone();
+            traffic.cookie = [i,0];
+            traffic.rx_bps = Some(f64::from(i)*1024.0);
+            rows.push(traffic);
+        }
+        let (top, total) = select(&rows, &Query::default());
+        assert_eq!(total,23);
+        assert_eq!(top.len(),20);
+        assert!(top.iter().all(|r| r.state != "listen" && r.rx_bps.unwrap() > 0.0));
+        let all = select(&rows, &Query { limit:Some(100), ..Query::default() }).0;
+        assert_eq!(all[20].cookie,[1,0], "measured zero before unavailable");
+        assert_eq!(all[21].cookie,[0,0]);
+        assert_eq!(all[22].state,"listen", "listeners only backfill spare rows");
+        let filtered = select(&rows, &Query { state:Some("listen".into()), ..Query::default() }).0;
+        assert_eq!(filtered.len(),1, "explicit listener queries still work");
     }
 
     #[test]

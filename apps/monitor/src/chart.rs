@@ -4,7 +4,7 @@
 //! used by painted sparklines; plotting types never enter that data path.
 use egui::{Ui, Vec2};
 use egui_plot::{
-    AxisHints, GridMark, HoverPosition, ItemId, ItemIdSet, Legend, Line, Plot, PlotMemory,
+    AxisHints, GridMark, HoverPosition, ItemId, ItemIdSet, Line, Plot, PlotMemory,
     PlotResponse,
 };
 use std::{cell::Cell, collections::HashMap};
@@ -275,6 +275,25 @@ fn render(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) ->
     render_custom(ui, id, size, chart, None)
 }
 
+/// A wrapping row outside the plot. Series names remain clickable, and the
+/// same hidden set controls both the lines and the sampled hover readout.
+fn legend(ui: &mut Ui, series: &[Series<'_>], hidden: &mut ItemIdSet) -> egui::Response {
+    ui.horizontal_wrapped(|ui| {
+        for series in series {
+            let id = ItemId::new(series.name);
+            let visible = !hidden.contains(&id);
+            let colour = if visible { graph::tint(ui, series.hue) } else { ui.visuals().weak_text_color() };
+            let response = ui.add(egui::Button::new(
+                egui::RichText::new(format!("● {}", series.name)).small().color(colour)
+            ).frame(false).selected(visible));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, series.name));
+            if response.clicked() {
+                if visible { hidden.insert(id); } else { hidden.remove(&id); }
+            }
+        }
+    }).response
+}
+
 fn render_custom(
     ui: &mut Ui,
     id: impl egui::AsIdSalt,
@@ -293,9 +312,21 @@ fn render_custom(
     let text_height = ui.text_style_height(&egui::TextStyle::Body);
     // Top labels extend above the plot. This padding is part of the supplied
     // height, not an extra row that pushes the rest of the pane down.
+    let plot_id = ui.make_persistent_id(id);
+    let mut hidden = PlotMemory::load(ui.ctx(), plot_id)
+        .map(|memory| memory.hidden_items)
+        .unwrap_or_default();
+    let legend_height = if chart.series.len() > 1 {
+        let top = ui.next_widget_position().y;
+        ui.push_id(plot_id.with("legend"), |ui| legend(ui, chart.series, &mut hidden));
+        ui.next_widget_position().y - top
+    } else { 0.0 };
     let padding = text_height * 0.5 + ui.spacing().item_spacing.y;
     ui.add_space(padding);
-    let plot_id = ui.make_persistent_id(id);
+    if let Some(mut memory) = PlotMemory::load(ui.ctx(), plot_id) {
+        memory.hidden_items = hidden.clone();
+        memory.store(ui.ctx(), plot_id);
+    }
     let mut range = ui
         .ctx()
         .data_mut(|data| {
@@ -307,18 +338,15 @@ fn render_custom(
         })
         .clamped(window, minimum);
     let zoomed = range.span() < window - f64::EPSILON * window;
-    let hidden = PlotMemory::load(ui.ctx(), plot_id)
-        .map(|memory| memory.hidden_items)
-        .unwrap_or_default();
     let pointer_time = Cell::new(None);
     let y_axis = AxisHints::new_y()
         .formatter(|mark, _| tick_label(chart.format, mark.value))
         .tick_label_color(ui.visuals().text_color())
         .label_spacing(0.0..=text_height);
-    let mut plot = Plot::new(plot_id)
+    let plot = Plot::new(plot_id)
         .id(plot_id)
         .width(size.x)
-        .height((size.y - padding).max(text_height * 2.0))
+        .height((size.y - padding - legend_height).max(text_height * 2.0))
         .default_x_bounds(-window, 0.0)
         .default_y_bounds(0.0, ticks.max())
         // egui_plot applies its own navigation after the build callback. Own
@@ -348,9 +376,6 @@ fn render_custom(
             let x = pointer_time.get().unwrap_or(position.x);
             annotated_readout(&chart, x, interval_s, &hidden, annotation)
         });
-    if chart.series.len() > 1 {
-        plot = plot.legend(Legend::default());
-    }
     let colours: Vec<_> = chart
         .series
         .iter()
@@ -389,6 +414,7 @@ fn render_custom(
         plot_ui.set_plot_bounds_x(range.left..=range.right);
         plot_ui.set_plot_bounds_y(0.0..=ticks.max());
         for (series, colour) in chart.series.iter().zip(colours) {
+            if hidden.contains(&ItemId::new(series.name)) { continue; }
             plot_ui.line(
                 Line::new(
                     series.name,
@@ -399,6 +425,10 @@ fn render_custom(
             );
         }
     });
+    if let Some(mut memory) = PlotMemory::load(ui.ctx(), plot_id) {
+        memory.hidden_items = hidden;
+        memory.store(ui.ctx(), plot_id);
+    }
     ui.ctx().data_mut(|data| {
         data.get_temp_mut_or_default::<Charts>(state_id())
             .ranges
@@ -410,6 +440,39 @@ fn render_custom(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_legends_stay_above_the_plot_and_toggle_lines_and_readouts() {
+        use egui_kittest::{Harness, kittest::Queryable};
+        let mut h = Harness::builder().with_size(egui::vec2(380.0,220.0)).build_ui_state(
+            |ui, state: &mut (egui::Rect, ItemIdSet, String)| {
+                let series = [
+                    Series { name:"Active opens", hue:Hue::Series(1), values:&[1.0,2.0] },
+                    Series { name:"Passive opens", hue:Hue::Series(2), values:&[3.0,4.0] },
+                    Series { name:"Sent resets", hue:Hue::Series(3), values:&[5.0,6.0] },
+                    Series { name:"Established resets", hue:Hue::Series(4), values:&[7.0,8.0] },
+                ];
+                let id = ui.make_persistent_id("legend-test");
+                let chart = Chart {series:&series,samples:60,interval_s:1.0,scale:Scale::Count(10.0),format:vitals::format::percent};
+                let output = render(ui,"legend-test",egui::vec2(360.0,150.0),chart);
+                state.0 = *output.transform.frame();
+                state.1 = PlotMemory::load(ui.ctx(),id).unwrap().hidden_items;
+                state.2 = readout_at(&Chart {series:&series,samples:60,interval_s:1.0,scale:Scale::Count(10.0),format:vitals::format::percent},0.0,1.0,&state.1).unwrap();
+            }, (egui::Rect::NOTHING,ItemIdSet::default(),String::new()));
+        h.run();
+        for name in ["Active opens","Passive opens","Sent resets","Established resets"] {
+            assert!(h.get_by_label(name).rect().bottom() <= h.state().0.top(), "{name} overlaps the data");
+        }
+        h.get_by_label("Active opens").click();
+        h.run();
+        assert!(h.state().1.contains(&ItemId::new("Active opens")));
+        assert!(!h.state().2.contains("Active opens"));
+        assert!(h.state().2.contains("Passive opens"));
+        h.get_by_label("Active opens").click();
+        h.run();
+        assert!(!h.state().1.contains(&ItemId::new("Active opens")));
+        assert!(h.state().2.contains("Active opens"));
+    }
 
     #[test]
     fn tcp_counts_use_decimal_ticks_and_derived_hover_uses_the_same_sample() {
