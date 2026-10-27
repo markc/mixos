@@ -2669,6 +2669,22 @@ impl Controller {
             }
             "ced.execute" => {
                 let r = parse!(action::ExecuteRequest);
+                // The whole body is checked before the id is looked up, and a
+                // misspelt key in `params` is refused rather than ignored
+                // (serde's flatten cannot deny unknown fields).
+                let raw = r.params.clone().unwrap_or_else(|| json!({}));
+                if let Some(key) = raw.as_object().and_then(|m| {
+                    m.keys()
+                        .find(|k| !matches!(k.as_str(), "tab" | "buffer" | "args"))
+                }) {
+                    return refuse(
+                        fx,
+                        code::INVALID_ARGUMENT,
+                        format!("unknown params key {key}"),
+                        Some("unknown_param"),
+                    );
+                }
+                let params = parse!(commands::ExecuteParams, raw);
                 let Some(action) = ActionId::from_id(&r.id) else {
                     return refuse(
                         fx,
@@ -2677,7 +2693,6 @@ impl Controller {
                         Some("unknown_action"),
                     );
                 };
-                let params = parse!(commands::ExecuteParams, r.params.unwrap_or_else(|| json!({})));
                 let tab = match (params.sel.tab, &params.sel.buffer) {
                     (None, None) => self.active,
                     _ => match self.resolve_tab(&params.sel) {
@@ -3651,6 +3666,11 @@ mod tests {
                 json!({"id": "file.new", "params": []}),
                 json!({"id": "file.new", "params": {"tab": "bad"}}),
                 json!({"id": "file.new", "params": {"buffer": 42}}),
+                // The whole body is checked before the id is looked up.
+                json!({"id": "no.such.action", "params": {"tab": "bad"}}),
+                // A misspelt key is refused, not ignored.
+                json!({"id": "file.close", "params": {"arg": {"force": true}}}),
+                json!({"id": "file.new", "params": {"tabs": 1}}),
             ] {
                 let fx = c.on_bus_command(cmd("ced.execute", body.clone()));
                 let (rc, v) = response(&fx);
@@ -3662,6 +3682,22 @@ mod tests {
                 assert_eq!(fx.len(), 1, "invalid arguments cannot execute: {body}");
             }
         }
+    }
+
+    #[test]
+    fn execute_runs_without_params_and_refuses_an_unknown_tab() {
+        for body in [json!({"id": "file.new"}), json!({"id": "file.new", "params": null})] {
+            let mut c = ctl();
+            let fx = c.on_bus_command(cmd("ced.execute", body.clone()));
+            assert_eq!(response(&fx).0, 0, "{body}");
+            assert_eq!(c.tabs.len(), 1, "file.new opened a tab: {body}");
+        }
+        let mut c = ctl();
+        let (rc, v) = response(&c.on_bus_command(cmd(
+            "ced.execute",
+            json!({"id": "file.close", "params": {"tab": 9999}}),
+        )));
+        assert_eq!((rc, v["error_code"].as_str()), (10, Some("NOT_FOUND")));
     }
 
     #[test]
