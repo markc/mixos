@@ -246,7 +246,9 @@
 <ul>
 <li>
 <p>Allow a viewport to require its own complete client frame independently of
-the session decoration preference and later theme changes.</p>
+the session decoration preference and later theme changes. Each viewport
+remembers its own decoration request, so a client-framed child beside a
+server-decorated root no longer re-asks and repaints both every frame.</p>
 </li>
 <li>
 <p>Scope menu models, navigation and search state to each viewport. Every

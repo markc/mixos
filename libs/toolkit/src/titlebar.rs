@@ -604,11 +604,41 @@ fn menu_button_at(ui: &mut Ui, rect: Rect) -> Option<Rect> {
 /// what this window last asked for. The window opens undecorated
 /// ([`viewport`]), so a client-side window asks nothing.
 fn request_decorations(ctx: &egui::Context, server: bool) {
-    let id = egui::Id::unique("toolkit.decorations");
+    let viewport = ctx.viewport_id();
+    if decorations_changed(ctx, viewport, server) {
+        ctx.send_viewport_cmd(ViewportCommand::Decorations(server));
+    }
+}
+
+/// Record what `viewport` asks for and say whether that differs from its
+/// last ask. Each viewport keeps its own answer: a client-side composer
+/// beside a server-decorated mailbox must not flip a shared flag, or each
+/// pass would re-ask and repaint the other forever.
+fn decorations_changed(ctx: &egui::Context, viewport: egui::ViewportId, server: bool) -> bool {
+    let id = crate::window_id(viewport, "toolkit.decorations");
     let asked = ctx.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     if asked != server {
         ctx.data_mut(|d| d.insert_temp(id, server));
-        ctx.send_viewport_cmd(ViewportCommand::Decorations(server));
+    }
+    asked != server
+}
+
+#[cfg(test)]
+mod decoration_tests {
+    use super::decorations_changed;
+
+    #[test]
+    fn each_viewport_keeps_its_own_decoration_ask() {
+        let ctx = egui::Context::default();
+        let root = egui::ViewportId::ROOT;
+        let child = egui::ViewportId::from_hash_of("compose-2");
+        assert!(decorations_changed(&ctx, root, true));
+        assert!(!decorations_changed(&ctx, child, false));
+        // A shared flag would flip here and re-ask on every pass.
+        assert!(!decorations_changed(&ctx, root, true));
+        assert!(!decorations_changed(&ctx, child, false));
+        assert!(decorations_changed(&ctx, child, true));
+        assert!(!decorations_changed(&ctx, root, true));
     }
 }
 
