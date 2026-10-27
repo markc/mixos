@@ -334,6 +334,8 @@ mod tests {
             assert!(!entry.name.starts_with("term."));
             assert!(
                 answers(&name)
+                    // The core Bus lane serves debug before window dispatch.
+                    || citizen::debug::request(service, &entry.name, "{}").is_some()
                     || name
                         .strip_prefix("term.macros.")
                         .is_some_and(|suffix| citizen::macros::SUFFIXES.contains(&suffix))
