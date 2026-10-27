@@ -886,9 +886,13 @@ impl Drive {
                     // UI passes alone cannot extend a screenshot that never
                     // reached the renderer (for example, a headless app).
                     Some(Step::Await { emitted, .. }) => *emitted,
-                    _ => self.last_ui_pass.map_or(accepted, |pass| pass.max(accepted)),
+                    _ => self
+                        .last_ui_pass
+                        .map_or(accepted, |pass| pass.max(accepted)),
                 },
-                _ => self.last_ui_pass.map_or(accepted, |pass| pass.max(accepted)),
+                _ => self
+                    .last_ui_pass
+                    .map_or(accepted, |pass| pass.max(accepted)),
             };
             let quiet = now.saturating_duration_since(since);
             if quiet < CAPTURE_QUIET_PERIOD {
@@ -1307,15 +1311,16 @@ impl Drive {
                 let running = self.running.take().expect("expired input");
                 self.release(&running.down);
             }
-            self.answers.push(if self.pending_captures.contains_key(&id) {
-                capture_timed_out(id)
-            } else {
-                refusal(
-                    id,
-                    "TIMEOUT",
-                    "the viewport did not finish the request in time",
-                )
-            });
+            self.answers
+                .push(if self.pending_captures.contains_key(&id) {
+                    capture_timed_out(id)
+                } else {
+                    refusal(
+                        id,
+                        "TIMEOUT",
+                        "the viewport did not finish the request in time",
+                    )
+                });
         }
         let late = |r: &Running| matches!(r.steps.front(), Some(Step::Await { deadline, .. }) if now >= *deadline);
         if self.running.as_ref().is_some_and(late) {
@@ -2474,10 +2479,7 @@ mod tests {
         let callback = requested_screenshot(&ctx);
         let submitted = ctx.cumulative_pass_nr();
         ctx.data_mut(|data| {
-            data.insert_temp(
-                capture_submission_key(egui::ViewportId::ROOT),
-                submitted,
-            );
+            data.insert_temp(capture_submission_key(egui::ViewportId::ROOT), submitted);
         });
         let start = Instant::now();
         for seconds in 1..=3 {
