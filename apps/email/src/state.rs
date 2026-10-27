@@ -2020,7 +2020,12 @@ impl State {
                 self.refuse(reply, code::CANCELLED, &cancelled);
             }
         }
+        self.documents = crate::documents::DocumentState::default();
         self.work.clear();
+    }
+
+    pub(crate) fn await_document(&mut self, id: u64) {
+        self.outstanding.insert(id, false);
     }
 
     /// Answer Bus request `id` with a refusal.

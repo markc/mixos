@@ -165,6 +165,13 @@ A malformed file loads defaults and is never overwritten.
   (`DOCUMENT_INLINE`). From and Reply-To must match identities in that
   account (`IDENTITY_MISMATCH`); an omitted From uses its default identity.
   Reply-To and ordered References are written into the MIME headers.
+  Format refusals are `DOCUMENT_TOO_LARGE`, `DOCUMENT_CARRIAGE_RETURN`,
+  `DOCUMENT_FRAMING`, `DOCUMENT_HEADER_NOT_ALLOWED`,
+  `DOCUMENT_MALFORMED_HEADER`, `DOCUMENT_DUPLICATE_HEADER`,
+  `DOCUMENT_EMPTY_VALUE` and `DOCUMENT_INVALID_VALUE`. File failures use
+  `DOCUMENT_PATH` (relative path), `DOCUMENT_IO` or `DOCUMENT_ENCODING`
+  (UTF-8 required). A changed account or compose refuses a late read as
+  `STALE` or `SUPERSEDED`.
   A dropped `.md` mail document opens a composer and never sends. Ordinary
   Markdown joins the attachments while composing; otherwise its format
   refusal appears in the status line. Local drafts remain private JSON.

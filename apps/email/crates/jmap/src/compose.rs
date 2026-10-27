@@ -604,8 +604,13 @@ fn fingerprint(composed: &Composed, parts: &[String]) -> String {
     feed(&composed.subject);
     feed(&composed.body);
     feed(composed.in_reply_to.as_deref().unwrap_or(""));
-    for reference in &composed.references {
-        feed(reference);
+    // Preserve fingerprints of older JSON drafts with no explicit references.
+    if !composed.references.is_empty() {
+        feed("references");
+        feed(&composed.references.len().to_string());
+        for reference in &composed.references {
+            feed(reference);
+        }
     }
     for (path, part) in composed.attachments.iter().zip(parts) {
         feed(&path.to_string_lossy());
@@ -1377,6 +1382,7 @@ mod tests {
             reply_to: Some("bob@example.invalid\r\nBcc: eve@example.invalid".into()),
             ..composed()
         };
+        assert_ne!(compose_fingerprint(&draft), compose_fingerprint(&composed()));
         let mime = String::from_utf8(build_mime(&draft).unwrap()).unwrap();
         assert!(mime.contains("References: <first@example.invalid> <second@example.invalid>\r\n"));
         assert!(mime.contains("Reply-To: bob@example.invalid  Bcc: eve@example.invalid\r\n"));

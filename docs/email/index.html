@@ -392,6 +392,13 @@ Documents folder, then Home if it is not configured.
 (<code>DOCUMENT_INLINE</code>). From and Reply-To must match identities in that
 account (<code>IDENTITY_MISMATCH</code>); an omitted From uses its default identity.
 Reply-To and ordered References are written into the MIME headers.
+Format refusals are <code>DOCUMENT_TOO_LARGE</code>, <code>DOCUMENT_CARRIAGE_RETURN</code>,
+<code>DOCUMENT_FRAMING</code>, <code>DOCUMENT_HEADER_NOT_ALLOWED</code>,
+<code>DOCUMENT_MALFORMED_HEADER</code>, <code>DOCUMENT_DUPLICATE_HEADER</code>,
+<code>DOCUMENT_EMPTY_VALUE</code> and <code>DOCUMENT_INVALID_VALUE</code>. File failures use
+<code>DOCUMENT_PATH</code> (relative path), <code>DOCUMENT_IO</code> or <code>DOCUMENT_ENCODING</code>
+(UTF-8 required). A changed account or compose refuses a late read as
+<code>STALE</code> or <code>SUPERSEDED</code>.
 A dropped <code>.md</code> mail document opens a composer and never sends. Ordinary
 Markdown joins the attachments while composing; otherwise its format
 refusal appears in the status line. Local drafts remain private JSON.
