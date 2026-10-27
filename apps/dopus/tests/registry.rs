@@ -65,6 +65,7 @@ fn chooser_commands_match_the_chooser_registry_entries() {
     let expected: Vec<_> = dopus_core::chooser::COMMANDS
         .iter()
         .map(|(name, _)| (*name).to_owned())
+        .chain(toolkit::drive::COMMANDS.iter().map(|v| format!("files.{v}")))
         .collect();
     assert_eq!(served, expected);
     let registered: Vec<_> = registered("dopus")
@@ -82,6 +83,7 @@ fn both_modes_account_for_every_owned_entry() {
             .iter()
             .map(|(name, _)| (*name).to_owned()),
     );
+    expected.extend(toolkit::drive::COMMANDS.iter().map(|v| format!("files.{v}")));
     expected.sort();
     let mut registered = registered("dopus");
     registered.sort();

@@ -1,0 +1,315 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Read-only chooser around the file manager's pane, listing and commands.
+use std::collections::BTreeMap;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::path::PathBuf;
+use std::sync::mpsc;
+use std::time::Instant;
+
+use dopus_core::chooser::{Acceptance, End, Mode, OpenRequest, Request};
+use dopus_core::{CoreEvent, DOpusConfig, DopusCore, PaneId};
+use toolkit::{Action, Registry, action::Origin};
+
+use crate::{app::App, label, label_with, view::UiEvent};
+
+pub struct Window {
+    pub id: String,
+    pub caller: String,
+    pub request: Request,
+    pub app: App,
+    pub ready: bool,
+    pub ending: bool,
+    pub name: String,
+    original_name: (String, Vec<u8>),
+    pub choices: BTreeMap<String, String>,
+    pub replace: Option<Acceptance>,
+    pub message: Option<String>,
+    events: mpsc::Receiver<CoreEvent>,
+    end: Option<End>,
+}
+
+pub fn path(bytes: &[u8]) -> PathBuf {
+    std::ffi::OsString::from_vec(bytes.to_vec()).into()
+}
+
+impl Window {
+    pub fn new(open: &OpenRequest) -> Self {
+        Self::for_request(&open.id, &open.caller, open.request.clone())
+    }
+
+    pub fn for_request(id: &str, caller: &str, request: Request) -> Self {
+        let mut config = DOpusConfig::default();
+        config.left.path = request.current_folder.as_deref().map(path).unwrap_or_else(dopus_core::home_directory);
+        config.left.previews = false;
+        let (mut core, events) = DopusCore::new_chooser(config);
+        core.set_chooser_filter(request.current_filter.clone(), request.directory || request.mode == Mode::SaveFiles);
+        let raw = request.current_name.clone().unwrap_or_default();
+        let name = dopus_core::sanitise_display_text(&String::from_utf8_lossy(&raw));
+        Self {
+            id: id.into(), caller: caller.into(), choices: request.choice_defaults(),
+            request, app: App::new(core), ready: false, ending: false,
+            original_name: (name.clone(), raw), name, replace: None, message: None, events, end: None,
+        }
+    }
+
+    /// Install an event waker without polling; only the UI thread feeds on_event.
+    pub fn wake_events(&mut self, ctx: &egui::Context) -> Result<(), std::io::Error> {
+        let (tx, rx) = mpsc::channel();
+        let source = std::mem::replace(&mut self.events, rx);
+        let ctx = ctx.clone();
+        std::thread::Builder::new().name("files-listing".into()).spawn(move || {
+            while let Ok(event) = source.recv() {
+                if tx.send(event).is_err() { break; }
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            }
+        })?;
+        Ok(())
+    }
+
+    pub fn pump(&mut self) {
+        while let Ok(event) = self.events.try_recv() {
+            let derived = self.app.core.on_event(event);
+            self.absorb(derived);
+        }
+        let derived = self.app.core.tick(Instant::now());
+        self.absorb(derived);
+    }
+
+    fn absorb(&mut self, events: Vec<CoreEvent>) {
+        // Chooser commands never request file operations. Still discharge every
+        // unexpected reservation, and never hand OpenFile to a desktop handler.
+        for event in events {
+            match event {
+                CoreEvent::ConfirmRequested { token, .. } => self.app.core.confirm(token, dopus_core::ConfirmAnswer::No),
+                CoreEvent::PromptRequested { token, .. } => self.app.core.prompt_text(token, None),
+                CoreEvent::OpenFile(_) => self.finish(End::Failed(label("chooser-operation-refused"))),
+                _ => {}
+            }
+        }
+    }
+
+    pub fn finish(&mut self, end: End) {
+        if self.ready && !self.ending {
+            self.ending = true;
+            self.end = Some(end);
+        }
+    }
+
+    pub fn take_end(&mut self) -> Option<End> { self.end.take() }
+
+    fn navigate(&mut self, target: PathBuf) {
+        if target.is_dir() {
+            self.app.go(target);
+            self.message = None;
+        } else {
+            self.message = Some(label("chooser-folder-missing"));
+        }
+    }
+
+    fn selected(&mut self, target: PathBuf, ctrl: bool, shift: bool) {
+        self.app.click_row(PaneId::Left, target.clone(), ctrl && self.request.multiple, shift && self.request.multiple);
+        if self.request.mode == Mode::Save && !target.is_dir() {
+            let raw = target.file_name().unwrap_or_default().as_bytes().to_vec();
+            self.name = dopus_core::sanitise_display_text(&String::from_utf8_lossy(&raw));
+            self.original_name = (self.name.clone(), raw);
+        }
+    }
+
+    fn apply(&mut self, events: Vec<UiEvent>, registry: &Registry<Self>) {
+        for event in events {
+            match event {
+                UiEvent::Click { path, ctrl, shift, .. } => self.selected(path, ctrl, shift),
+                UiEvent::OpenFile { path, .. } => { self.selected(path, false, false); self.command("chooser.accept"); }
+                UiEvent::Go(target) => self.navigate(target),
+                UiEvent::Command(id, origin) => { let _ = registry.execute(id, self, origin); }
+                UiEvent::Drop { .. } | UiEvent::CommandIn(..) => {}
+                other => crate::view::apply(&mut self.app, &crate::actions::registry(), vec![other]),
+            }
+        }
+    }
+
+    fn command(&mut self, id: &str) {
+        match id {
+            "chooser.cancel" => self.finish(End::Cancel),
+            "chooser.replace" => {
+                if let Some(accept) = self.replace.take() { self.finish(End::Accept(accept)); }
+            }
+            "chooser.keep" => self.replace = None,
+            "chooser.accept" => self.accept(),
+            "file.open" => {
+                let selected = self.app.core.pane(PaneId::Left).selected.clone();
+                if let Some(target) = selected.filter(|p| p.is_dir()) { self.navigate(target); }
+                else { self.accept(); }
+            }
+            _ => self.app.action(id),
+        }
+    }
+
+    pub fn accept(&mut self) {
+        if !self.ready || self.ending || self.replace.is_some() { return; }
+        if self.request.mode == Mode::Save && self.name.contains('/') {
+            let target = PathBuf::from(&self.name);
+            let target = if target.is_absolute() { target } else { self.app.core.pane(PaneId::Left).path.join(target) };
+            if target.is_dir() {
+                self.navigate(target);
+                self.name.clear();
+                self.original_name = Default::default();
+            } else { self.message = Some(label("chooser-folder-missing")); }
+            return;
+        }
+        let folder = self.app.core.pane(PaneId::Left).path.clone();
+        let paths = match self.request.mode {
+            Mode::Open => {
+                let selected = self.app.core.selected_paths(PaneId::Left);
+                let selected = if selected.is_empty() && self.request.directory { vec![folder.clone()] } else { selected };
+                if selected.is_empty() || selected.iter().any(|p| if self.request.directory { !p.is_dir() } else { !p.is_file() }) {
+                    self.message = Some(label("chooser-select-entry")); return;
+                }
+                if !self.request.multiple && selected.len() != 1 { self.message = Some(label("chooser-select-entry")); return; }
+                selected
+            }
+            Mode::Save => {
+                let raw: &[u8] = if self.name == self.original_name.0 { &self.original_name.1 } else { self.name.as_bytes() };
+                let name = self.request.save_name(raw);
+                if dopus_core::chooser::validate_name(&name).is_err() {
+                    self.message = Some(label("chooser-invalid-name")); return;
+                }
+                vec![folder.join(std::ffi::OsString::from_vec(name))]
+            }
+            Mode::SaveFiles => self.request.files.iter().map(|name| folder.join(std::ffi::OsString::from_vec(name.clone()))).collect(),
+        };
+        if !folder.is_dir() || paths.iter().any(|p| dopus_core::chooser::file_uri(p.as_os_str().as_bytes()).is_err()) {
+            self.message = Some(label("chooser-folder-missing")); return;
+        }
+        let accept = Acceptance {
+            paths: paths.iter().map(|p| p.as_os_str().as_bytes().to_vec()).collect(),
+            folder: Some(folder.as_os_str().as_bytes().to_vec()),
+            current_filter: self.request.current_filter.clone(), choices: self.choices.clone(),
+        };
+        if self.request.mode != Mode::Open && paths.iter().any(|p| p.symlink_metadata().is_ok()) {
+            self.replace = Some(accept);
+        } else { self.finish(End::Accept(accept)); }
+    }
+
+    /// The same view is used by native secondary viewports and snapshot tests.
+    pub fn show(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        self.pump();
+        let registry = registry();
+        if ctx.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            let _ = registry.execute("chooser.cancel", self, Origin::Menu);
+        }
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            let _ = registry.execute("chooser.cancel", self, Origin::Shortcut);
+        }
+        if self.ready && !self.ending && self.replace.is_none() && !ctx.egui_wants_keyboard_input() {
+            for id in registry.shortcuts(&ctx, self) { let _ = registry.execute(id, self, Origin::Shortcut); }
+        }
+        let mut events = Vec::new();
+        let mut clicked = None;
+        toolkit::chrome::client_side(&ctx);
+        for (id, origin) in toolkit::titlebar::show_bar(ui, &self.request.title, Some(toolkit::Icon::Folder), &registry, self, &crate::strings(), &[]) {
+            events.push(UiEvent::Command(id, origin));
+        }
+        egui::TopBottomPanel::top("files-identity").show_inside(ui, |ui| {
+            if !is_portald(&self.caller) { ui.label(label_with("chooser-caller", &[("caller", &self.caller)])); }
+            if let Some(claim) = &self.request.on_behalf_of {
+                ui.weak(label_with("chooser-claim", &[("app", claim), ("caller", &self.caller)]));
+            }
+        });
+        egui::TopBottomPanel::bottom("files-controls").show_inside(ui, |ui| {
+            ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
+                if self.request.mode == Mode::Save {
+                    ui.horizontal(|ui| {
+                        ui.label(label("chooser-name"));
+                        ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(f32::INFINITY)).accessible_name(label("chooser-name"));
+                    });
+                }
+                if self.request.mode == Mode::SaveFiles {
+                    ui.label(label_with("chooser-file-names", &[("names", &self.request.files.iter().map(|n| dopus_core::sanitise_display_text(&String::from_utf8_lossy(n))).collect::<Vec<_>>().join(", "))]));
+                }
+                if self.request.filter_menu {
+                    let mut current = self.request.current_filter.clone();
+                    egui::ComboBox::from_id_salt("files-filter").selected_text(current.as_ref().map(|f| f.name.as_str()).unwrap_or_default()).show_ui(ui, |ui| {
+                        for filter in &self.request.filters { ui.selectable_value(&mut current, Some(filter.clone()), &filter.name); }
+                    }).response.accessible_name(label("chooser-filter"));
+                    if current != self.request.current_filter {
+                        self.request.current_filter = current.clone();
+                        self.app.core.set_chooser_filter(current, self.request.directory);
+                    }
+                }
+                for choice in &self.request.choices {
+                    let value = self.choices.get_mut(&choice.id).expect("default choice");
+                    if choice.options.is_empty() {
+                        let mut checked = value == "true";
+                        if ui.checkbox(&mut checked, &choice.label).changed() { *value = checked.to_string(); }
+                    } else {
+                        ui.horizontal(|ui| {
+                            ui.label(&choice.label);
+                            egui::ComboBox::from_id_salt(("files-choice", &choice.id)).selected_text(choice.options.iter().find(|o| &o.id == value).map(|o| o.label.as_str()).unwrap_or_default()).show_ui(ui, |ui| {
+                                for option in &choice.options { ui.selectable_value(value, option.id.clone(), &option.label); }
+                            }).response.accessible_name(&choice.label);
+                        });
+                    }
+                }
+                if let Some(message) = &self.message { ui.label(message); }
+                ui.horizontal(|ui| {
+                    if ui.button(&self.request.accept_label).clicked() { clicked = Some("chooser.accept"); }
+                    if ui.button(label("cancel")).clicked() { clicked = Some("chooser.cancel"); }
+                });
+            });
+        });
+        egui::SidePanel::left("files-places").default_width(self.app.core.sidebar(dopus_core::config::Sidebar::Places).width).show_inside(ui, |ui| {
+            ui.heading(label("places"));
+            ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| crate::view::places_panel(ui, &self.app, &mut events));
+        });
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| crate::view::chooser_pane(ui, &self.app, &crate::actions::registry(), &mut events));
+        });
+        if let Some(accept) = &self.replace {
+            let names = accept.paths.iter().filter(|p| path(p).symlink_metadata().is_ok()).map(|p| dopus_core::sanitise_display_path(&path(p))).collect::<Vec<_>>().join("\n");
+            let shown = toolkit::dialog::Dialog::new(egui::Id::new("files-replace"), label("chooser-replace-title"))
+                .buttons(vec![
+                    toolkit::dialog::Choice::new(label("chooser-replace"), toolkit::dialog::Role::Default),
+                    toolkit::dialog::Choice::new(label("cancel"), toolkit::dialog::Role::Cancel),
+                ]).show(&ctx, |ui| { ui.label(label("chooser-replace-body")); ui.label(&names); });
+            if let Some(answer) = shown.chosen { clicked = Some(if answer == 0 { "chooser.replace" } else { "chooser.keep" }); }
+        }
+        self.apply(events, &registry);
+        if let Some(id) = clicked { let _ = registry.execute(id, self, Origin::Menu); }
+        if let Some(deadline) = self.app.core.next_deadline() { ctx.request_repaint_after(deadline.saturating_duration_since(Instant::now())); }
+    }
+}
+
+fn is_portald(caller: &str) -> bool { caller.split([':', '/']).any(|part| part == "portald") }
+
+fn registry() -> Registry<Window> {
+    let mut registry = Registry::new();
+    macro_rules! add {
+        ($id:literal, $label:literal) => { registry.add(Action {
+            id: $id, label: $label, menu: None, submenu: None, group: 0, icon: None,
+            shortcut: crate::keymap::defaults_for($id).first().copied(),
+            enabled: |w: &Window| w.ready && !w.ending && (w.replace.is_none() || matches!($id, "chooser.cancel" | "chooser.replace" | "chooser.keep")),
+            run: |w: &mut Window| w.command($id),
+        }); };
+    }
+    add!("chooser.accept", "chooser-open-accept");
+    add!("chooser.cancel", "cancel");
+    add!("chooser.replace", "chooser-replace");
+    add!("chooser.keep", "cancel");
+    add!("file.open", "file-open");
+    add!("location.focus", "go-location");
+    add!("nav.back", "go-back");
+    add!("nav.forward", "go-forward");
+    add!("nav.parent", "go-parent");
+    add!("nav.home", "go-home");
+    add!("view.refresh", "view-refresh");
+    add!("view.toggle-hidden", "view-hidden");
+    add!("selection.next", "select-next");
+    add!("selection.previous", "select-previous");
+    add!("selection.first", "select-first");
+    add!("selection.last", "select-last");
+    for id in ["nav.parent"] { registry.add_shortcuts(id, crate::keymap::defaults_for(id).into_iter().skip(1)); }
+    registry
+}

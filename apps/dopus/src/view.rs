@@ -451,7 +451,7 @@ impl Side {
     }
 }
 
-fn places_panel(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
+pub(crate) fn places_panel(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
     let active = &app.core.pane(app.core.active()).path;
     let font = TextStyle::Body.resolve(ui.style());
     ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
@@ -609,6 +609,16 @@ fn pane_view(
     pane: PaneId,
     events: &mut Vec<UiEvent>,
 ) {
+    pane_body(ui, app, commands, strings, pane, false, events);
+}
+
+/// The file manager's pane, with destructive menus and drag/drop removed.
+pub(crate) fn chooser_pane(ui: &mut Ui, app: &App, commands: &Registry<App>, events: &mut Vec<UiEvent>) {
+    pane_body(ui, app, commands, &crate::strings(), PaneId::Left, true, events);
+}
+
+#[expect(clippy::too_many_arguments, reason = "shared pane inputs")]
+fn pane_body(ui: &mut Ui, app: &App, commands: &Registry<App>, strings: &Strings, pane: PaneId, chooser: bool, events: &mut Vec<UiEvent>) {
     let active = app.core.active() == pane;
     let model = app.core.pane(pane);
     let accent = ui.visuals().selection.bg_fill;
@@ -654,6 +664,7 @@ fn pane_view(
                         strings,
                         pane,
                         &rows[index],
+                        chooser,
                         (row_h, widths, show_size, show_modified),
                         events,
                     );
@@ -663,8 +674,9 @@ fn pane_view(
     if background.clicked() {
         events.push(UiEvent::Activate(pane));
     }
-    drop_target(&background, pane, model.path.clone(), events);
-    background.context_menu(|ui| {
+    if !chooser {
+      drop_target(&background, pane, model.path.clone(), events);
+      background.context_menu(|ui| {
         for id in [
             "file.new-folder",
             "view.refresh",
@@ -673,7 +685,8 @@ fn pane_view(
         ] {
             context_item(ui, app, commands, strings, id, pane, events);
         }
-    });
+      });
+    }
     ui.horizontal(|ui| {
         ui.add_space(6.0);
         ui.small(model.footer_summary());
@@ -858,6 +871,7 @@ fn row(
     strings: &Strings,
     pane: PaneId,
     visible: &VisibleRow,
+    chooser: bool,
     (row_h, widths, show_size, show_modified): (f32, ColumnWidths, bool, bool),
     events: &mut Vec<UiEvent>,
 ) {
@@ -1001,7 +1015,9 @@ fn row(
     let modifiers = ui.input(|i| i.modifiers);
     if response.double_clicked() {
         let path = entry.path.clone();
-        events.push(if entry.is_dir {
+        events.push(if entry.is_dir && chooser {
+            UiEvent::Go(path)
+        } else if entry.is_dir {
             UiEvent::Toggle { pane, path }
         } else {
             UiEvent::OpenFile { pane, path }
@@ -1021,7 +1037,7 @@ fn row(
         });
     }
     // Dragging carries the selection when this row is in it, else the row.
-    if response.drag_started() {
+    if !chooser && response.drag_started() {
         let paths = if selected {
             app.core.selected_paths(pane)
         } else {
@@ -1034,9 +1050,10 @@ fn row(
         };
         response.dnd_set_drag_payload(Dragged { pane, paths, name });
     }
-    if entry.is_dir {
+    if !chooser && entry.is_dir {
         drop_target(&response, pane, entry.path.clone(), events);
     }
+    if chooser { return; }
     response.context_menu(|ui| {
         for id in [
             "file.open",

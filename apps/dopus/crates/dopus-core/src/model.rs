@@ -302,6 +302,10 @@ impl ConfirmBook {
 /// thread; filesystem work happens on detached worker threads that reply
 /// through the channel returned by [`DopusCore::new`].
 pub struct DopusCore {
+    chooser: bool,
+    chooser_filter: Option<crate::chooser::Filter>,
+    chooser_directories: bool,
+    chooser_mime: Option<mimedb::Database>,
     sidebars: [crate::config::SidebarConfig; 2],
     properties: [crate::properties::Slot; 2],
     /// Each pane's preview of its selection.
@@ -342,6 +346,15 @@ impl DopusCore {
         config: DOpusConfig,
         config_file: Option<ConfigFile>,
     ) -> (Self, mpsc::Receiver<CoreEvent>) {
+        Self::new_inner(config, config_file, false)
+    }
+
+    /// One read-only pane, without config writes, previews or file operations.
+    pub fn new_chooser(config: DOpusConfig) -> (Self, mpsc::Receiver<CoreEvent>) {
+        Self::new_inner(config, None, true)
+    }
+
+    fn new_inner(config: DOpusConfig, config_file: Option<ConfigFile>, chooser: bool) -> (Self, mpsc::Receiver<CoreEvent>) {
         let (tx, rx) = mpsc::channel();
         let workers = WorkerHandle::new(tx);
         workers.thumbs.set_remote(config.remote_previews);
@@ -349,6 +362,10 @@ impl DopusCore {
         let left_start = configured_directory(&config.left.path, &home);
         let right_start = configured_directory(&config.right.path, &home);
         let mut core = Self {
+            chooser,
+            chooser_filter: None,
+            chooser_directories: false,
+            chooser_mime: chooser.then(mimedb::Database::load),
             sidebars: [config.places.normalised(), config.properties.normalised()],
             properties: Default::default(),
             thumbnails: Default::default(),
@@ -392,7 +409,7 @@ impl DopusCore {
         core.panes[PaneId::Left.index()].previews = config.left.previews;
         core.panes[PaneId::Right.index()].previews = config.right.previews;
         core.start_listing(PaneId::Left);
-        core.start_listing(PaneId::Right);
+        if !chooser { core.start_listing(PaneId::Right); }
         (core, rx)
     }
 
@@ -428,7 +445,30 @@ impl DopusCore {
         let pane = &self.panes[pane.index()];
         let mut visible = Vec::new();
         flatten_entries(&pane.root, 0, &pane.expanded, &pane.children, &mut visible);
+        if self.chooser {
+            visible.retain(|row| {
+                let entry = &row.entry;
+                if entry.is_dir { return true; }
+                if self.chooser_directories { return false; }
+                self.chooser_filter.as_ref().is_none_or(|filter| {
+                    let name = entry.path.file_name().unwrap_or_default().to_string_lossy();
+                    let mime = self.chooser_mime.as_ref().map(|db| db.guess(Some(&name), None).mime).unwrap_or_default();
+                    filter.matches(&name, false, &mime)
+                })
+            });
+        }
         visible
+    }
+
+    /// Filtering is shared by drawing, range selection and keyboard movement.
+    pub fn set_chooser_filter(&mut self, filter: Option<crate::chooser::Filter>, directories: bool) {
+        self.chooser_filter = filter;
+        self.chooser_directories = directories;
+        let visible: HashSet<_> = self.visible_rows(PaneId::Left).into_iter().map(|r| r.entry.path).collect();
+        let pane = &mut self.panes[0];
+        pane.selected_paths.retain(|p| visible.contains(p));
+        if pane.selected.as_ref().is_some_and(|p| !visible.contains(p)) { pane.selected = None; }
+        pane.listing_revision += 1;
     }
 
     pub fn info(&self) -> &str {
@@ -1616,8 +1656,10 @@ impl DopusCore {
     /// (browser.rs `persist_config`, 3564-3622). Returns the derived
     /// view-facing events queued so far.
     pub fn tick(&mut self, now: Instant) -> Vec<CoreEvent> {
-        self.dispatch_properties(now);
-        self.dispatch_previews();
+        if !self.chooser {
+            self.dispatch_properties(now);
+            self.dispatch_previews();
+        }
         self.dispatch_counts();
         let snapshot = self.config_snapshot();
         if self.last_observed.as_ref() != Some(&snapshot) {

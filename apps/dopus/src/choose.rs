@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Chooser-only Bus host. Stage 2a deliberately has no production presenter.
-//! The service still registers as `files` and answers well-formed choose
-//! requests with UNAVAILABLE. It never registers the twin-pane commands.
+//! Chooser-only Bus host and secondary native viewports. No twin-pane commands.
+
+mod presenter;
+pub mod window;
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -26,7 +27,7 @@ impl Presenter for NoPresenter {
     fn close(&mut self, _: &str) {}
 }
 
-fn defaults() -> Defaults {
+pub fn defaults() -> Defaults {
     Defaults {
         open_title: crate::label("chooser-open-title"),
         save_title: crate::label("chooser-save-title"),
@@ -65,6 +66,9 @@ pub fn manifest() -> Vec<::bus::CommandDescriptor> {
         };
         entries.push(::bus::CommandDescriptor::new(name, args, name, *read_only));
     }
+    for entry in toolkit::drive::describe(SERVICE) {
+        entries.push(::bus::CommandDescriptor::new(entry["name"].as_str().unwrap(), &["viewport?"], entry["description"].as_str().unwrap_or_default(), entry["read_only"].as_bool().unwrap_or(false)));
+    }
     entries
 }
 
@@ -72,7 +76,7 @@ fn describe() -> Value {
     json!({"contract":"ctk-app-control.v0", "app":SERVICE, "view":SERVICE,
         "title":crate::label("chooser-title"), "engine":"egui", "version":env!("CARGO_PKG_VERSION"),
         "description":"System file chooser provider", "controls":[],
-        "commands":COMMANDS.iter().map(|(name, _)| *name).collect::<Vec<_>>()})
+        "commands":manifest().into_iter().filter(|e| e.name.starts_with("files.")).map(|e| e.name).collect::<Vec<_>>()})
 }
 
 /// A prepared answer and, for choose only, the request whose input can be
@@ -187,6 +191,9 @@ pub fn dispatch(
 /// No window, no desktop or file-manager workers. Fatal Bus loss exits so the
 /// session unit restarts with a new incarnation and no surviving requests.
 pub fn run(url: &str) -> Result<(), String> {
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() || std::env::var_os("DISPLAY").is_some_and(|s| !s.is_empty()) {
+        return presenter::run(url);
+    }
     let (_tx, events) = tokio::sync::mpsc::unbounded_channel();
     run_with_presenter(url, NoPresenter, events)
 }
@@ -195,9 +202,13 @@ pub fn run(url: &str) -> Result<(), String> {
 /// loop mutates the engine, replies to callers or publishes chosen outcomes.
 pub fn run_with_presenter(
     url: &str,
-    mut presenter: impl Presenter,
-    mut events: tokio::sync::mpsc::UnboundedReceiver<Presentation>,
+    presenter: impl Presenter,
+    events: tokio::sync::mpsc::UnboundedReceiver<Presentation>,
 ) -> Result<(), String> {
+    run_host(url, presenter, events, None)
+}
+
+fn run_host(url: &str, mut presenter: impl Presenter, mut events: tokio::sync::mpsc::UnboundedReceiver<Presentation>, mut driver: Option<presenter::DriveHost>) -> Result<(), String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -214,12 +225,27 @@ pub fn run_with_presenter(
         let start = Instant::now();
         let epoch = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
         let mut events_open = true;
+        let mut drive_id = 0u64;
+        let mut pending = BTreeMap::new();
         loop {
             tokio::select! {
                 cmd = incoming.recv() => {
                     let Some(cmd) = cmd else { return Err("files Bus closed".into()); };
                     if cmd.topic().is_some() || cmd.command.is_empty() { continue; }
                     citizen::debug::received(SERVICE, &cmd.command);
+                    if let Some(command) = cmd.command.strip_prefix("files.").filter(|c| toolkit::drive::COMMANDS.contains(c)) {
+                        if let Some(driver) = &driver {
+                            drive_id += 1;
+                            let request = presenter::DriveRequest { id: drive_id, command: command.into(), args: serde_json::from_str(&cmd.body).unwrap_or(Value::Null) };
+                            if driver.requests.send(request).is_ok() {
+                                pending.insert(drive_id, cmd);
+                                driver.ctx.request_repaint_of(egui::ViewportId::ROOT);
+                                continue;
+                            }
+                        }
+                        let _ = client.respond(&cmd, 10, &json!({"error_code":"UNAVAILABLE","message":crate::label("chooser-unavailable")}).to_string()).await;
+                        continue;
+                    }
                     let now = epoch.saturating_add(start.elapsed().as_millis() as u64);
                     let answer = dispatch(&mut engine, &mut presenter, &cmd.command, &cmd.body, &citizen::caller_key(&cmd), now);
                     citizen::debug::answered(SERVICE, &cmd.command, answer.rc);
@@ -227,6 +253,11 @@ pub fn run_with_presenter(
                     let sent = async { matches!(tokio::time::timeout(Duration::from_secs(2), client.respond(&cmd, rc, &body)).await, Ok(Ok(()))) };
                     if let Some(outcome) = deliver(&mut engine, &mut presenter, answer, sent).await {
                         publish(&client, outcome).await;
+                    }
+                }
+                answer = async { match &mut driver { Some(driver) => driver.answers.recv().await, None => std::future::pending().await } } => {
+                    if let Some(answer) = answer && let Some(cmd) = pending.remove(&answer.id) {
+                        let _ = client.respond(&cmd, answer.rc, &answer.body.to_string()).await;
                     }
                 }
                 event = events.recv(), if events_open => {
@@ -297,7 +328,6 @@ mod tests {
             "dopus.quit",
             "dopus.open",
             "dopus.macros.list",
-            "files.ui.tree",
         ] {
             let answer = dispatch(&mut engine, &mut presenter, command, "{}", "test", 1);
             assert_eq!(answer.rc, 10);
@@ -305,10 +335,10 @@ mod tests {
         }
         let help = dispatch(&mut engine, &mut presenter, "HELP", "", "test", 1);
         assert_eq!(help.rc, 0);
-        assert_eq!(help.body.as_array().unwrap().len(), 6);
+        assert_eq!(help.body.as_array().unwrap().len(), 22);
         let described = dispatch(&mut engine, &mut presenter, "app.describe", "", "test", 1);
         assert_eq!(described.body["app"], "files");
-        assert_eq!(described.body["commands"].as_array().unwrap().len(), 4);
+        assert_eq!(described.body["commands"].as_array().unwrap().len(), 20);
     }
 
     #[test]

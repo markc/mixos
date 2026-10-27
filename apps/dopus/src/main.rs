@@ -22,7 +22,7 @@ Usage: dopus [LEFT [RIGHT]]\n\
   --print-config    print the resolved configuration and exit\n\
   --version         print version and build hash, and nothing else\n\
 Bus: serves `dopus.*` (schema dopus.v1) and the window's drive commands;\n\
-     --choose-service serves only files.choose[.result|.cancel|.list] and discovery.";
+     --choose-service serves files.choose[.result|.cancel|.list], files.ui.* and files.window*.";
 
 struct Args {
     headless: bool,

@@ -401,11 +401,11 @@ try
   check(re_match($listing.incarnation, "^[0-9a-f]{16}$") and length($listing.requests) == 0,
     "chooser initial list: " .. json_encode($listing))
   $chooser_desc = ok('app.describe', {})
-  check($chooser_desc.app == "files" and deep_eq($chooser_desc.commands,
+  check($chooser_desc.app == "files" and length($chooser_desc.commands) == 20 and deep_eq(slice($chooser_desc.commands, 0, 4),
     ["files.choose", "files.choose.result", "files.choose.cancel", "files.choose.list"]),
     "chooser command set: " .. json_encode($chooser_desc))
   $chooser_help = ok('HELP', {})
-  check(length($chooser_help) == 6, "chooser HELP must list four commands and two discovery commands")
+  check(length($chooser_help) == 22, "chooser HELP must list chooser, drive and discovery commands")
   refused('dopus.ping', {}, "UNKNOWN_COMMAND")
   refused('dopus.quit', {}, "UNKNOWN_COMMAND")
   refused('files.choose mode="bad"', {}, "ARGUMENT")
