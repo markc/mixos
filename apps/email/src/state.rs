@@ -134,8 +134,6 @@ pub struct MailState {
     /// How the open email's text body is shown, and its cached parse.
     pub reader: crate::reader::Reader,
     pub busy: bool,
-    /// The open email's attachments popup is showing.
-    pub attachments_open: bool,
     /// The open email's attachment saves and opens, by part id.
     pub transfers: BTreeMap<String, Transfer>,
     /// Addresses this account has seen: Sent pages' recipients and other
@@ -1450,6 +1448,8 @@ pub struct ThemeChoice {
 /// tree's keyboard cursor.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiState {
+    pub attachments_expanded: bool,
+    pub attachments_inline: bool,
     pub macros_open: bool,
     pub places: f32,
     pub reader: f32,
@@ -1465,6 +1465,8 @@ impl Default for UiState {
     fn default() -> Self {
         Self {
             macros_open: false,
+            attachments_expanded: false,
+            attachments_inline: true,
             places: 0.18,
             reader: 0.42,
             dialog: None,
@@ -1661,6 +1663,7 @@ const WRITE_ATTEMPTS: u32 = 3;
 
 /// Everything the window shows.
 pub struct State {
+    pub previews: crate::previews::Cache,
     /// Origin of the command/input being applied now. Each accepted send
     /// copies it onto the compose and work item before the scope ends.
     input_origin: Option<SendOrigin>,
@@ -1769,6 +1772,7 @@ impl State {
     ) -> Self {
         cache.reset_legacy_composer_family();
         let mut state = Self {
+            previews: crate::previews::Cache::default(),
             input_origin: None,
             accounts: Vec::new(),
             selected,
@@ -2889,6 +2893,10 @@ impl State {
     pub fn apply(&mut self, event: crate::shell::Event) {
         use crate::shell::{Done, Event};
         match event {
+            Event::Preview(ticket, result) => {
+                self.refresh_previews();
+                self.previews.complete(ticket, result);
+            }
             Event::ComposeAttachments(inspection, result) => {
                 self.compose_attachments_inspected(inspection, result);
             }
@@ -3001,10 +3009,9 @@ impl State {
                     Done::Opened(_, _, result) => match *result {
                         Ok(email) => {
                             view.mail.reader.open(&email);
-                            // Another email: its own attachments, popup shut.
+                            // Another email: its own attachment transfers.
                             if view.mail.open.as_ref().is_none_or(|o| o.id != email.id) {
                                 view.mail.transfers.clear();
-                                view.mail.attachments_open = false;
                             }
                             view.mail.open = Some(email);
                         }
@@ -4390,24 +4397,46 @@ impl State {
         compose.revision += 1;
     }
 
-    /// `mail.attachments`: show or hide the open email's attachments.
+    /// `mail.attachments`: toggle the remembered attachment bar expansion.
     pub fn toggle_attachments(&mut self) {
-        let Some(id) = self.selected.clone() else {
-            return;
-        };
-        if let Some(view) = self.account_mut(&id) {
-            view.mail.attachments_open = !view.mail.attachments_open;
-        }
+        self.ui.attachments_expanded = !self.ui.attachments_expanded;
+        self.config_dirty = true;
     }
 
-    /// Show (`true`) or hide the attachments popup.
-    pub fn set_attachments_open(&mut self, open: bool) {
-        let Some(id) = self.selected.clone() else {
-            return;
-        };
-        if let Some(view) = self.account_mut(&id) {
-            view.mail.attachments_open = open;
-        }
+    pub fn toggle_attachments_inline(&mut self) {
+        self.ui.attachments_inline = !self.ui.attachments_inline;
+        self.config_dirty = true;
+        self.refresh_previews();
+    }
+
+    fn preview_owner(&self) -> Option<crate::previews::Owner> {
+        let view = self.current()?;
+        let email = view.mail.open.as_ref()?;
+        (self.ui.attachments_inline && self.mode == Mode::Mail).then(|| {
+            (
+                view.id().to_owned(),
+                view.generation,
+                email.id.clone(),
+                view.tickets.open,
+            )
+        })
+    }
+
+    fn refresh_previews(&mut self) {
+        let owner = self.preview_owner();
+        let parts = self
+            .current()
+            .and_then(|v| v.mail.open.as_ref())
+            .and_then(|e| e.attachments.clone())
+            .unwrap_or_default();
+        self.previews.sync(owner, &parts);
+        self.work.extend(self.previews.schedule(&parts));
+    }
+
+    /// Reconcile the current email and upload completed images on the UI thread.
+    pub fn prepare_previews(&mut self, ctx: &egui::Context) {
+        self.refresh_previews();
+        self.previews.upload(ctx);
     }
 
     /// Save the open email's attachment `part` to the downloads directory,
@@ -4845,9 +4874,23 @@ impl State {
                     "emails": shown(&view.mail.emails),
                     "total": view.mail.total,
                     "open": view.mail.open.as_ref().map(|e| &e.id),
-                    "reader": view.mail.open.as_ref().map(|e| view.mail.reader.info(e)),
+                    "reader": view.mail.open.as_ref().map(|e| {
+                        let mut reader = view.mail.reader.info(e);
+                        reader["attachments_expanded"] = json!(self.ui.attachments_expanded);
+                        reader["attachments_inline"] = json!(self.ui.attachments_inline);
+                        let current = self.preview_owner().is_some_and(|owner| {
+                            owner.0 == view.id() && self.previews.is_for(&owner)
+                        });
+                        reader["attachments"] = json!(e.attachments.iter().flatten().map(|a| {
+                            let preview = a.part_id.as_deref().filter(|_| current)
+                                .and_then(|id| self.previews.get(id))
+                                .map(crate::previews::Preview::info)
+                                .unwrap_or_else(|| json!({"state": "none"}));
+                            json!({"part": a.part_id, "preview": preview})
+                        }).collect::<Vec<_>>());
+                        reader
+                    }),
                     "attachments": view.mail.open.as_ref().map(|e| attachments_view(e, Some(&view.mail.transfers))),
-                    "attachments_open": view.mail.attachments_open,
                     "busy": view.mail.busy,
                     // The list's selection: the shown page's selected ids,
                     // how many in all, and whether that is every email.
@@ -5867,7 +5910,6 @@ impl State {
                 self.reconnect(&account);
             }
             UiEvent::OpenPrefs => self.open_prefs(),
-            UiEvent::AttachmentsOpen(open) => self.set_attachments_open(open),
             UiEvent::SaveAttachment(part) => self.save_attachment(&part, false),
             UiEvent::OpenAttachment(part) => self.save_attachment(&part, true),
             UiEvent::SplitPlaces(split) => {

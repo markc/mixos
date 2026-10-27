@@ -86,7 +86,7 @@ Files, in `~/.local/state/mixos/apps/email/config/`:
 
 | File | Holds |
 |---|---|
-| `config.conf.mix` | schema 2: split sizes, mode, selected account, collapsed tree nodes, the last accounts seen |
+| `config.conf.mix` | schema 2: split sizes, mode, selected account, collapsed tree nodes, attachment bar expansion and inline display choices, the last accounts seen |
 | `secrets.conf.mix` | the passwords, by account id (0600, written only by email) |
 | `ca-<id>.pem` | a migrated account's CA bundle |
 
@@ -124,8 +124,9 @@ A malformed file loads defaults and is never overwritten.
   it. Rendered mail shows headings, lists and task boxes, code blocks
   that scroll sideways, tables, quotes and links (http, https and mailto
   open in the desktop's browser or mail handler; the address shows on
-  hover). Images are never fetched, because remote images in mail track
-  their reader: the alt text is a link to the image. Raw HTML is shown as
+  hover). Remote images are never fetched, because they track their reader:
+  the alt text is a link to the image. Attached image previews are described
+  below. Raw HTML is shown as
   text. View › Message › **Render Markdown** (a tick) flips one email
   between the rendering and its text, either way. The choice lasts while
   that email is open.
@@ -134,7 +135,8 @@ A malformed file loads defaults and is never overwritten.
   (its ▾ chooses with or without the quoted original), **Reply All**,
   **Forward** and, apart, **Delete**. The subject comes first, as the
   pane's heading, then From, To and the date. A right-click anywhere in
-  the reader opens the **Message** menu.
+  the text opens the **Message** menu; attachment tiles and images have
+  their own **Open**/**Save** menu.
 - **Compose** (To, Cc, Bcc, Subject, body, and From when there are
   several accounts), reply, reply all and forward. If the account's login
   (server or address) changes while a draft is open, Send waits: the
@@ -210,10 +212,15 @@ A malformed file loads defaults and is never overwritten.
   Labels follow the email (**Star** or **Remove Star**, **Mark as Read** or
   **Mark as Unread**). Marking an open email unread leaves it open and
   unread: only opening an email marks it read.
-- **Attachments.** An email with attachments shows a paperclip and its
-  count at the end of the reader's toolbar (and Message › Attachments…).
-  Its popup lists each one with its type, name and size, and **Save**
-  and **Open**; **Save all** saves every one that can be fetched. Saving
+- **Attachments.** An email with attachments always has a bar pinned below
+  its scrolling body: a chevron, paperclip, count, total size and **Save All**.
+  Its small menu also offers **Open All** for files Open allows (disabled
+  when none qualify). The chevron or Message › **Attachments** expands a
+  wrapping set of tiles with type icons, names and sizes. Hover shows the
+  whole name; a click opens a file, or saves a Save-only file. Right-click
+  offers **Open** and **Save**. Each tile reports saving, opening, success
+  with its path, or a failure. The expansion is remembered across emails
+  and restarts. **Save All** saves every file that can be fetched. Saving
   writes into your downloads directory (`$XDG_DOWNLOAD_DIR`, the
   `user-dirs.dirs` entry, else `~/Downloads`) and never replaces a file:
   a taken name becomes `name (1).ext`. Names from mail are cleaned (no
@@ -225,6 +232,20 @@ A malformed file loads defaults and is never overwritten.
   are Save only. A part the server could not decode is shown greyed. The
   download runs in the background; nothing is written until the whole
   file has arrived.
+
+  View › **Show Attachments Inline** is on by default and remembered across
+  restarts. In both rendered Markdown and source views, attached PNG, JPEG,
+  GIF (first frame only) and WebP images appear after the text, below a
+  filename divider. Images fit the reader width without stretching beyond
+  their physical pixel size; click opens, right-click offers Open/Save.
+  Loading and failed previews show a note; the file remains in the bar.
+  Undecodable parts, SVG, other types and encoded files above 16 MiB have no
+  preview. Downloads use the existing capped JMAP path, with at most two
+  background download/decode jobs, image limits of 8192 × 8192 and 256 MiB
+  decoder allocation, and textures kept only for the open email. Switching
+  emails or turning the choice off frees the textures and drops stale results.
+  Previews come only from attachment parts, never URLs. Received HTML
+  continues to be shown as text.
 - **Printing** (Message › Print…, Ctrl+P) goes through the browser's
   print dialog, which also offers **Save to PDF**: MixOS has no print
   service. The email becomes one self-contained page in a private
@@ -313,7 +334,7 @@ never waits on them.
 
 | Command | Class | Does |
 |---|---|---|
-| `email.ping`, `email.info`, `email.actions` | query | probe; the whole window state (no secret); the command registry |
+| `email.ping`, `email.info`, `email.actions` | query | probe; the whole window state (no secret), including reader attachment choices and preview states; the command registry |
 | `email.accounts` | query | the accounts with `has_password` and `state`, never a password |
 | `email.mailboxes {account?}` | query | mailboxes with roles, parents and counts |
 | `email.list {account?, mailbox?, offset?, limit?, query?}` | query | one page, newest first, with `total` |
@@ -322,7 +343,7 @@ never waits on them.
 | `email.calendars`, `email.events {calendar?, from?, to?}`, `email.event.get {id}` | query | calendars and events |
 | `email.books`, `email.contacts {book?, filter?}`, `email.contact.get {id}` | query | address books and contacts |
 | `email.show`, `email.quit` | system, intent | raise, close |
-| `email.execute {id}` | intent | run any registry command (published with origin `bus`) |
+| `email.execute {id}` | intent | run any registry command (published with origin `bus`), including `mail.attachments` and `view.attachments_inline` |
 | `email.mode {name}`, `email.refresh {account?}` | intent | switch surface; fetch again (a failed account reconnects) |
 | `email.account.set {id?, name, url, email, password?, ca_path?, enabled?, signature?}` | intent | create or update in settingsd; answers `{id}` once settingsd accepts |
 | `email.account.remove {id}`, `email.account.default {id}` | intent | through settingsd, fenced |
@@ -361,10 +382,19 @@ exactly, preserving symlink paths, and updates the saved draft. UI fields remain
 toolkit commands.
 
 `email.info` reports how the open email is shown under each account's
-`mail.reader`: `{"format": "markdown" | "plain", "auto": true | false}`,
+`mail.reader`: `{"format": "markdown" | "plain", "auto": true | false,
+"attachments_expanded": false, "attachments_inline": true, "attachments": []}`,
 where `auto` is false once the person (or `email.execute
 {"id":"view.reader.markdown"}`) has flipped it. The command is disabled
 when the open email has no text body.
+
+The reader's `attachments` list contains `{part, preview: {state}}`, where
+`state` is `none`, `loading`, `shown` or `failed`; failures also carry `reason`.
+Non-previewable parts and disabled inline display report `none`. The choices
+are available through `email.execute {"id":"mail.attachments"}` and
+`email.execute {"id":"view.attachments_inline"}` and their checked state
+appears in `email.actions`. The existing `mail.attachments` metadata and
+transfer states remain available beside `mail.reader`.
 
 From Mix:
 

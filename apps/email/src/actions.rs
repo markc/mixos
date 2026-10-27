@@ -381,17 +381,20 @@ pub fn registry() -> Registry<State> {
         enabled: reading,
         run: State::print_open,
     })
-    .add(Action {
-        id: "mail.attachments",
-        submenu: None,
-        group: 5,
-        label: "attachments",
-        menu: Some("message"),
-        shortcut: None,
-        icon: Some(Icon::Paperclip),
-        enabled: attached,
-        run: State::toggle_attachments,
-    })
+    .add_toggle(
+        Action {
+            id: "mail.attachments",
+            submenu: None,
+            group: 5,
+            label: "attachments",
+            menu: Some("message"),
+            shortcut: None,
+            icon: Some(Icon::Paperclip),
+            enabled: attached,
+            run: State::toggle_attachments,
+        },
+        |state| state.ui.attachments_expanded,
+    )
     .add(Action {
         id: "mail.save_attachments",
         submenu: None,
@@ -496,6 +499,20 @@ pub fn registry() -> Registry<State> {
             run: State::toggle_reader,
         },
         markdown_shown,
+    )
+    .add_toggle(
+        Action {
+            id: "view.attachments_inline",
+            submenu: None,
+            group: 2,
+            label: "attachments-inline",
+            menu: Some("view"),
+            shortcut: None,
+            icon: None,
+            enabled: undialogued,
+            run: State::toggle_attachments_inline,
+        },
+        |state| state.ui.attachments_inline,
     )
     .add(Action {
         id: "help.shortcuts",

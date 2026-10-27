@@ -8,7 +8,7 @@
 //! and look at them before committing.
 use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use email::secrets::Secrets;
 use email::shell::{Done, Event};
 use email::state::{ComposeField, Mode as Surface, SessionInfo, State, Tag, UiState};
@@ -189,6 +189,7 @@ fn harness(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>
         .with_size(egui::vec2(620.0, 980.0))
         .build_ui_state(
             move |ui, (state, seen): &mut (State, Vec<UiEvent>)| {
+                state.prepare_previews(ui.ctx());
                 let mut events = Vec::new();
                 egui::CentralPanel::default()
                     .frame(toolkit::bars::dock_frame(ui.ctx()))
@@ -277,7 +278,8 @@ fn a_markdown_written_body_renders_as_markdown() {
     assert!(h.query_by_label_contains("## What changed").is_none());
     assert_eq!(
         reader_info(&h.state().0),
-        serde_json::json!({ "format": "markdown", "auto": true })
+        serde_json::json!({ "format": "markdown", "auto": true,
+            "attachments_expanded": false, "attachments_inline": true, "attachments": [] })
     );
     assert_eq!(
         actions::registry().checked("view.reader.markdown", &h.state().0),
@@ -300,7 +302,8 @@ fn the_toggle_shows_the_source_and_back() {
     h.run();
     assert_eq!(
         reader_info(&h.state().0),
-        serde_json::json!({ "format": "plain", "auto": false })
+        serde_json::json!({ "format": "plain", "auto": false,
+            "attachments_expanded": false, "attachments_inline": true, "attachments": [] })
     );
     assert!(h.query_by_label(MARKDOWN).is_some(), "the source, verbatim");
     assert_eq!(
@@ -313,7 +316,8 @@ fn the_toggle_shows_the_source_and_back() {
     h.run();
     assert_eq!(
         reader_info(&h.state().0),
-        serde_json::json!({ "format": "markdown", "auto": true })
+        serde_json::json!({ "format": "markdown", "auto": true,
+            "attachments_expanded": false, "attachments_inline": true, "attachments": [] })
     );
 }
 
@@ -336,7 +340,8 @@ fn a_plain_body_stays_plain() {
     assert!(h.query_by_label(PLAIN).is_some(), "one label, verbatim");
     assert_eq!(
         reader_info(&h.state().0),
-        serde_json::json!({ "format": "plain", "auto": true })
+        serde_json::json!({ "format": "plain", "auto": true,
+            "attachments_expanded": false, "attachments_inline": true, "attachments": [] })
     );
 }
 
@@ -769,11 +774,11 @@ fn with_attachments(mut state: State) -> State {
 fn attachments_save_open_and_refuse_as_they_should() {
     let mut state = with_attachments(opened("text/plain", PLAIN));
     let registry = actions::registry();
-    // The command toggles the popup.
+    // The command toggles the remembered bar expansion.
     registry
         .execute("mail.attachments", &mut state, Origin::Bus)
         .unwrap();
-    assert!(state.accounts[0].mail.attachments_open);
+    assert!(state.ui.attachments_expanded);
     state.take_work();
     state.save_attachment("3", false);
     let work = state.take_work();
@@ -812,7 +817,7 @@ fn attachments_save_open_and_refuse_as_they_should() {
 #[test]
 fn reader_attachments_studio_dark() {
     let mut state = with_attachments(opened("text/plain", PLAIN));
-    state.accounts[0].mail.attachments_open = true;
+    state.ui.attachments_expanded = true;
     state.accounts[0].mail.transfers.insert(
         "2".into(),
         email::state::Transfer::Saved("/home/user/Downloads/plan.pdf".into()),
@@ -820,6 +825,346 @@ fn reader_attachments_studio_dark() {
     let mut h = harness(state, &theme(Scheme::Studio, Mode::Dark));
     h.run();
     h.snapshot("reader_attachments_studio_dark");
+}
+
+#[test]
+fn attachment_choices_default_toggle_and_persist() {
+    let mut state = with_attachments(opened("text/plain", PLAIN));
+    let registry = actions::registry();
+    assert_eq!(
+        registry.checked("view.attachments_inline", &state),
+        Some(true)
+    );
+    assert_eq!(registry.checked("mail.attachments", &state), Some(false));
+    for id in ["mail.attachments", "view.attachments_inline"] {
+        registry.execute(id, &mut state, Origin::Bus).unwrap();
+    }
+    assert_eq!(
+        registry.checked("view.attachments_inline", &state),
+        Some(false)
+    );
+    assert_eq!(registry.checked("mail.attachments", &state), Some(true));
+    assert_eq!(reader_info(&state)["attachments_expanded"], true);
+    assert_eq!(reader_info(&state)["attachments_inline"], false);
+    let config = email::config::EmailConfig::from(&state);
+    let dir = tempfile::tempdir().unwrap();
+    let (_, file) = email::config::ConfigFile::load(dir.path());
+    assert!(file.save(&config).unwrap());
+    let (restored, _, _) = email::shell::start(Some(dir.path()));
+    assert!(restored.ui.attachments_expanded);
+    assert!(!restored.ui.attachments_inline);
+    state.accounts[0].mail.open.as_mut().unwrap().id = "another-email".into();
+    assert!(state.ui.attachments_expanded);
+    registry
+        .execute("mail.attachments", &mut state, Origin::Bus)
+        .unwrap();
+    registry
+        .execute("view.attachments_inline", &mut state, Origin::Bus)
+        .unwrap();
+    assert!(!state.ui.attachments_expanded);
+    assert!(state.ui.attachments_inline);
+}
+
+#[test]
+fn reader_attachments_collapsed_studio_dark() {
+    let mut h = harness(
+        with_attachments(opened("text/plain", PLAIN)),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+    assert!(h.query_by_label("3 attachments").is_some());
+    assert!(h.query_by_label("winmail.dat").is_none());
+    assert!(h.get_by_label(&label("save-all")).rect().top() > 850.0);
+    h.get_by_label(&label("attachments")).click();
+    h.run();
+    assert!(
+        h.state()
+            .1
+            .iter()
+            .any(|e| matches!(e, UiEvent::Command("mail.attachments", Origin::Ui)))
+    );
+    h.snapshot("reader_attachments_collapsed_studio_dark");
+}
+
+#[test]
+fn expanded_tiles_open_safe_files_and_save_scripts() {
+    let mut state = with_attachments(opened("text/plain", PLAIN));
+    state.ui.attachments_expanded = true;
+    let mut h = harness(state, &theme(Scheme::Studio, Mode::Dark));
+    assert!(h.query_by_label("winmail.dat").is_some());
+    assert!(h.query_by_label(&label("attachment-undecodable")).is_some());
+    h.get_by_label("Quarterly build cluster capacity plan (final, revised).pdf")
+        .click();
+    h.run();
+    assert!(
+        h.state()
+            .1
+            .iter()
+            .any(|e| matches!(e, UiEvent::OpenAttachment(id) if id == "2"))
+    );
+    h.get_by_label("install.sh").click();
+    h.run();
+    assert!(
+        h.state()
+            .1
+            .iter()
+            .any(|e| matches!(e, UiEvent::SaveAttachment(id) if id == "3"))
+    );
+}
+
+#[test]
+fn open_all_excludes_scripts_and_undecodable_parts() {
+    let mut h = harness(
+        with_attachments(opened("text/plain", PLAIN)),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+    h.get_by_label(&label("attachment-actions")).click();
+    h.run();
+    h.get_by_label(&label("open-all")).click();
+    h.run();
+    let parts_opened: Vec<_> = h
+        .state()
+        .1
+        .iter()
+        .filter_map(|e| match e {
+            UiEvent::OpenAttachment(part) => Some(part.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(parts_opened, ["2"]);
+    let mut state = with_attachments(opened("text/plain", PLAIN));
+    state.accounts[0]
+        .mail
+        .open
+        .as_mut()
+        .unwrap()
+        .attachments
+        .as_mut()
+        .unwrap()
+        .remove(0);
+    let mut h = harness(state, &theme(Scheme::Studio, Mode::Dark));
+    h.get_by_label(&label("attachment-actions")).click();
+    h.run();
+    assert!(
+        h.get_by_label(&label("open-all"))
+            .accesskit_node()
+            .is_disabled()
+    );
+}
+
+#[test]
+fn attachment_bar_stays_pinned_while_the_body_scrolls() {
+    let text = (0..120).map(|i| format!("Line {i}\n")).collect::<String>();
+    let mut h = harness(
+        with_attachments(opened("text/plain", &text)),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+    let before = h.get_by_label(&label("save-all")).rect();
+    let body_before = h.get_by_label(&text).rect();
+    email::view::mail::focus_reader(&h.ctx);
+    h.key_press(egui::Key::PageDown);
+    h.run();
+    assert!(h.get_by_label(&text).rect().top() < body_before.top());
+    assert_eq!(h.get_by_label(&label("save-all")).rect(), before);
+}
+
+fn with_image(mut state: State) -> State {
+    state.accounts[0].mail.open.as_mut().unwrap().attachments = Some(
+        serde_json::from_value(serde_json::json!([
+            { "partId": "2", "blobId": "B2", "size": 100, "name": "preview.png", "type": "image/png" }
+        ])).unwrap(),
+    );
+    state
+}
+
+/// A PNG built here rather than an external asset, delivered through the
+/// real completion event; the harness uploads it on its next UI frame.
+fn finish_preview(h: &mut Harness<'static, (State, Vec<UiEvent>)>) {
+    use image::ImageEncoder;
+    let ticket = h
+        .state_mut()
+        .0
+        .take_work()
+        .into_iter()
+        .find_map(|w| match w {
+            Work::Preview { ticket, .. } => Some(ticket),
+            _ => None,
+        })
+        .expect("preview queued");
+    let mut png = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut png)
+        .write_image(
+            &[40, 140, 200, 255].repeat(64 * 32),
+            64,
+            32,
+            image::ExtendedColorType::Rgba8,
+        )
+        .unwrap();
+    let image = email::previews::decode(&png, image::ImageFormat::Png).unwrap();
+    h.state_mut().0.apply(Event::Preview(ticket, Ok(image)));
+    h.run();
+}
+
+#[test]
+fn reader_inline_image_studio_dark() {
+    let mut h = harness(
+        with_image(opened(
+            "text/markdown",
+            "## A message\n\nHere is **the image**.",
+        )),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+    let loading = email::label_with("preview-loading", &[("name", "preview.png")]);
+    assert!(h.query_by_label(&loading).is_some());
+    assert!(h.query_by_label("1 attachment").is_some());
+    assert_eq!(
+        reader_info(&h.state().0)["attachments"][0]["preview"]["state"],
+        "loading"
+    );
+    finish_preview(&mut h);
+    let image = email::label_with("preview-image", &[("name", "preview.png")]);
+    let rect = h.get_by_label(&image).rect();
+    assert!(rect.width() * h.ctx.pixels_per_point() <= 64.01);
+    assert!((rect.width() / rect.height() - 2.0).abs() < 0.01);
+    assert!(h.query_by_label(&loading).is_none());
+    assert_eq!(
+        reader_info(&h.state().0)["attachments"][0]["preview"]["state"],
+        "shown"
+    );
+    h.get_by_label(&image).click();
+    h.run();
+    assert!(
+        h.state()
+            .1
+            .iter()
+            .any(|e| matches!(e, UiEvent::OpenAttachment(id) if id == "2"))
+    );
+    h.snapshot("reader_inline_image_studio_dark");
+    // The same cached image follows the source view inside the body scroller.
+    actions::registry()
+        .execute("view.reader.markdown", &mut h.state_mut().0, Origin::Bus)
+        .unwrap();
+    h.run();
+    assert!(h.query_by_label(&image).is_some());
+    assert_eq!(reader_info(&h.state().0)["format"], "plain");
+}
+
+#[test]
+fn reader_inline_off_studio_dark() {
+    let mut h = harness(
+        with_image(opened("text/plain", PLAIN)),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+    finish_preview(&mut h);
+    actions::registry()
+        .execute("view.attachments_inline", &mut h.state_mut().0, Origin::Bus)
+        .unwrap();
+    h.run();
+    let image = email::label_with("preview-image", &[("name", "preview.png")]);
+    assert!(h.query_by_label(&image).is_none());
+    assert!(h.query_by_label("preview.png").is_none());
+    assert!(h.query_by_label("1 attachment").is_some());
+    assert!(h.state().0.previews.get("2").is_none(), "texture freed");
+    assert_eq!(
+        reader_info(&h.state().0)["attachments"][0]["preview"]["state"],
+        "none"
+    );
+    h.snapshot("reader_inline_off_studio_dark");
+}
+
+#[test]
+fn inline_image_context_menu_saves_and_failed_previews_keep_the_bar() {
+    let mut h = harness(
+        with_image(opened("text/plain", PLAIN)),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+    finish_preview(&mut h);
+    let image = email::label_with("preview-image", &[("name", "preview.png")]);
+    let at = h.get_by_label(&image).rect().center();
+    h.hover_at(at);
+    h.run();
+    for pressed in [true, false] {
+        h.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    h.run();
+    assert!(h.query_by_label(&label("open")).is_some());
+    assert!(h.query_by_label(&label("reply-all")).is_none());
+    h.get_by_label(&label("save")).click();
+    h.run();
+    assert!(
+        h.state()
+            .1
+            .iter()
+            .any(|e| matches!(e, UiEvent::SaveAttachment(id) if id == "2"))
+    );
+
+    let mut h = harness(
+        with_image(opened("text/plain", PLAIN)),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+    let ticket = h
+        .state_mut()
+        .0
+        .take_work()
+        .into_iter()
+        .find_map(|w| match w {
+            Work::Preview { ticket, .. } => Some(ticket),
+            _ => None,
+        })
+        .unwrap();
+    h.state_mut()
+        .0
+        .apply(Event::Preview(ticket, Err("invalid image".into())));
+    h.run();
+    let failure = email::label_with(
+        "preview-failed",
+        &[("name", "preview.png"), ("reason", "invalid image")],
+    );
+    assert!(h.query_by_label(&failure).is_some());
+    assert!(h.query_by_label("1 attachment").is_some());
+    assert_eq!(
+        reader_info(&h.state().0)["attachments"][0]["preview"],
+        serde_json::json!({"state":"failed", "reason":"invalid image"})
+    );
+}
+
+#[test]
+fn turning_inline_off_drops_an_in_flight_result() {
+    let mut h = harness(
+        with_image(opened("text/plain", PLAIN)),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+    actions::registry()
+        .execute("view.attachments_inline", &mut h.state_mut().0, Origin::Bus)
+        .unwrap();
+    finish_preview(&mut h);
+    assert!(h.state().0.previews.get("2").is_none());
+    assert!(h.query_by_label("1 attachment").is_some());
+    assert_eq!(
+        reader_info(&h.state().0)["attachments"][0]["preview"]["state"],
+        "none"
+    );
+}
+
+#[test]
+fn closed_email_preview_results_never_reach_the_new_reader() {
+    let mut state = with_image(opened("text/plain", PLAIN));
+    state.prepare_previews(&egui::Context::default());
+    let ticket = state
+        .take_work()
+        .into_iter()
+        .find_map(|w| match w {
+            Work::Preview { ticket, .. } => Some(ticket),
+            _ => None,
+        })
+        .unwrap();
+    state.accounts[0].mail.open = None;
+    state.apply(Event::Preview(ticket, Err("old failure".into())));
+    assert!(state.previews.get("2").is_none());
 }
 
 /// A contact card for the completion tests.

@@ -100,6 +100,13 @@ impl std::fmt::Debug for Login {
 /// One unit of background work.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Work {
+    /// One slot covering both the capped blob download and blocking decode.
+    Preview {
+        account: String,
+        ticket: u64,
+        blob: String,
+        kind: image::ImageFormat,
+    },
     InspectComposeAttachments(ComposeInspection),
     /// Connect `account`: session discovery and the token exchange. Only the
     /// answer of its latest `generation` is applied.
@@ -306,6 +313,7 @@ impl Work {
             | Work::FetchBooks { account }
             | Work::FetchContacts { account, .. }
             | Work::Attachment { account, .. }
+            | Work::Preview { account, .. }
             | Work::Suggest { account, .. } => Some(account),
             Work::Settings { .. }
             | Work::InspectComposeAttachments(_)

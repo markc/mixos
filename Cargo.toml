@@ -156,7 +156,7 @@ crossbeam-channel = "=0.5.16"
 drm-ffi = "=0.9.1"
 gbm = "=0.18.0"
 glow = "=0.17.0"
-image = { version = "=0.25.10", default-features = false, features = ["png"] }
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 pkg-config = "=0.3.34"
 pollster = "=1.0.1"
 xcursor = "=0.3.11"

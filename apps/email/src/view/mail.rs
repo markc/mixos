@@ -323,18 +323,64 @@ pub fn reader(
     // The row is only there when it has something to say; an empty row would
     // still take its height above the subject.
     if toolbar_shown(view) {
-        toolbar(ui, view, events);
+        toolbar(ui, view);
         toolkit::bars::hairline(ui);
     }
     // Only the message body takes the reader's own style (its padding, font
     // and light mode, from the profile); the header keeps the window's look.
+    let mut menu_area = area;
+    let mut attachment_context = false;
     if let Some(email) = &view.mail.open {
-        message(ui, view, email, focused, &state.settings.reader);
+        if email
+            .attachments
+            .as_ref()
+            .is_some_and(|parts| !parts.is_empty())
+        {
+            // Measure with the reader's full height, then pin an exact panel.
+            // A bottom panel's previous height otherwise constrains expansion
+            // (and can leave a newly expanded tile row clipped).
+            let tile_limit = ui.available_height() * 0.4;
+            let mut measure = ui.new_child(
+                egui::UiBuilder::new()
+                    .id_salt("attachment-measure")
+                    .max_rect(ui.available_rect_before_wrap())
+                    .layout(egui::Layout::top_down(egui::Align::Min))
+                    .invisible()
+                    .sizing_pass(),
+            );
+            attachment_bar(
+                &mut measure,
+                state,
+                view,
+                email,
+                tile_limit,
+                &mut Vec::new(),
+            );
+            let height = measure.min_rect().height();
+            let bar = egui::Panel::bottom("reader-attachments")
+                .frame(egui::Frame::new())
+                .exact_size(height)
+                .show(ui, |ui| {
+                    attachment_bar(ui, state, view, email, tile_limit, events)
+                });
+            menu_area.max.y = bar.response.rect.top();
+        }
+        attachment_context = message(
+            ui,
+            state,
+            view,
+            email,
+            focused,
+            &state.settings.reader,
+            events,
+        );
     } else {
         ui.weak(crate::label("select-email"));
     }
     let menu = ui.scope_id().with("reader-menu");
-    if let Some(id) = commands.context_menu_over(ui, area, menu, "message", state, strings) {
+    if !attachment_context
+        && let Some(id) = commands.context_menu_over(ui, menu_area, menu, "message", state, strings)
+    {
         events.push(UiEvent::Command(id, Origin::Menu));
     }
 }
@@ -393,49 +439,15 @@ pub fn actions(
     });
 }
 
-/// The row under the header: the target line when several messages are
-/// selected, and the attachments when the message has any.
-/// Whether the toolbar row has anything in it: the target line for several
-/// selected messages, or the open email's attachments.
+/// Only a multi-message target needs a toolbar row below the actions.
 fn toolbar_shown(view: &AccountView) -> bool {
-    let several = view.mail.selection_count() > 1 && view.mail.target_line().is_some();
-    let attached = view
-        .mail
-        .open
-        .as_ref()
-        .and_then(|e| e.attachments.as_ref())
-        .is_some_and(|list| !list.is_empty());
-    several || attached
+    view.mail.selection_count() > 1 && view.mail.target_line().is_some()
 }
 
-fn toolbar(ui: &mut Ui, view: &AccountView, events: &mut Vec<UiEvent>) {
-    ui.horizontal(|ui| {
-        // What Delete, Flag, Mark and Move apply to, when it is several
-        // messages from the list: the open email alone needs no note.
-        if view.mail.selection_count() > 1
-            && let Some(line) = view.mail.target_line()
-        {
-            ui.label(RichText::new(line).weak());
-        }
-        // The paperclip and its count, only when there are attachments.
-        let attached = view
-            .mail
-            .open
-            .as_ref()
-            .and_then(|e| e.attachments.as_ref())
-            .filter(|list| !list.is_empty());
-        if let (Some(list), Some(email)) = (attached, view.mail.open.as_ref()) {
-            toolkit::bars::divider(ui, DIVIDER);
-            let count = list.len().to_string();
-            let clip = ui
-                .add(Link::new(Icon::Paperclip, count.as_str()))
-                .on_hover_text(crate::label_with("attachment-count", &[("count", &count)]));
-            if clip.clicked() {
-                events.push(UiEvent::Command("mail.attachments", Origin::Ui));
-            }
-            attachments_popup(ui, &clip, view, email, events);
-        }
-    });
+fn toolbar(ui: &mut Ui, view: &AccountView) {
+    if let Some(line) = view.mail.target_line() {
+        ui.label(RichText::new(line).weak());
+    }
 }
 
 /// The type icon for an attachment of type `mime`.
@@ -458,130 +470,311 @@ fn type_icon(mime: Option<&str>) -> Icon {
     }
 }
 
-/// The attachments popup under the paperclip: each attachment's type,
-/// name (elided, whole on hover) and size, with Save and Open; Save All
-/// at the foot. A part that could not be decoded is greyed with a note;
-/// a program or script offers Save only.
-fn attachments_popup(
-    ui: &Ui,
-    clip: &egui::Response,
+/// The pinned attachment bar shares the existing transfer actions and rules.
+fn attachment_bar(
+    ui: &mut Ui,
+    state: &State,
     view: &AccountView,
     email: &Email,
+    tile_limit: f32,
     events: &mut Vec<UiEvent>,
 ) {
-    let open = view.mail.attachments_open;
-    let shown = egui::Popup::from_response(clip)
-        .id(clip.id.with("attachments"))
-        .open(open)
-        .close_behavior(egui::PopupCloseBehavior::IgnoreClicks)
-        .show(|ui| {
-            let body = ui.text_style_height(&egui::TextStyle::Body);
-            let name_width = body * 16.0;
-            ui.set_min_width(body * 26.0);
-            ui.label(RichText::new(crate::label("attachments-title")).strong());
-            let weak = ui.visuals().weak_text_color();
-            for (index, a) in email.attachments.iter().flatten().enumerate() {
-                let name = crate::attachments::file_name(
-                    a.name.as_deref(),
-                    index + 1,
-                    a.content_type.as_deref(),
+    toolkit::bars::hairline(ui);
+    let parts = email.attachments.as_deref().unwrap_or_default();
+    let expanded = state.ui.attachments_expanded;
+    let mut toggle = false;
+    egui::Sides::new().show(
+        ui,
+        |ui| {
+            ui.horizontal(|ui| {
+                let icon = if expanded {
+                    Icon::ChevronDown
+                } else {
+                    Icon::ChevronRight
+                };
+                if ui
+                    .add(IconButton::new(icon).tooltip(crate::label("attachments")))
+                    .clicked()
+                {
+                    toggle = true;
+                }
+                ui.add(icons::image_of(
+                    ui.ctx(),
+                    Icon::Paperclip,
+                    ui.text_style_height(&egui::TextStyle::Body),
+                    ui.visuals().text_color(),
+                ));
+                ui.label(crate::label_with(
+                    "attachment-count",
+                    &[("count", &parts.len().to_string())],
+                ));
+                let total = parts
+                    .iter()
+                    .fold(0_u64, |sum, part| sum.saturating_add(part.size));
+                ui.weak(crate::attachments::human_size(total));
+            });
+        },
+        |ui| {
+            ui.horizontal(|ui| {
+                let any = parts.iter().any(jmap::Attachment::downloadable);
+                if ui
+                    .add_enabled(any, egui::Button::new(crate::label("save-all")))
+                    .clicked()
+                {
+                    events.push(UiEvent::Command("mail.save_attachments", Origin::Ui));
+                }
+                let more = ui.add(
+                    IconButton::new(Icon::ChevronDown).tooltip(crate::label("attachment-actions")),
                 );
-                let part = a.part_id.clone().unwrap_or_default();
-                let usable = a.downloadable();
-                ui.horizontal(|ui| {
-                    let ink = if usable {
-                        ui.visuals().text_color()
-                    } else {
-                        weak
-                    };
-                    ui.add(icons::image_of(
-                        ui.ctx(),
-                        type_icon(a.content_type.as_deref()),
-                        14.0,
-                        ink,
-                    ));
-                    // Fixed name and size columns, so the actions line up.
-                    let height = ui.spacing().interact_size.y;
-                    ui.allocate_ui(egui::vec2(name_width, height), |ui| {
-                        ui.set_min_width(name_width);
-                        let label = RichText::new(&name).color(ink);
-                        ui.add(egui::Label::new(label).truncate())
-                            .on_hover_text(a.name.as_deref().unwrap_or(&name));
-                    });
-                    let size = RichText::new(crate::attachments::human_size(a.size)).weak();
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(body * 4.0, height),
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            ui.set_min_width(body * 4.0);
-                            ui.label(size);
-                        },
-                    );
-                    if !usable {
-                        ui.label(
-                            RichText::new(crate::label("attachment-undecodable"))
-                                .weak()
-                                .small(),
-                        );
-                        return;
-                    }
+                egui::Popup::menu(&more).show(|ui| {
                     if ui
-                        .add(Link::new(Icon::Download, crate::label("save")))
+                        .add_enabled(any, egui::Button::new(crate::label("save-all")))
                         .clicked()
                     {
-                        events.push(UiEvent::SaveAttachment(part.clone()));
+                        events.push(UiEvent::Command("mail.save_attachments", Origin::Menu));
+                        ui.close();
                     }
-                    let save_only =
-                        crate::attachments::refuses_open(&name, a.content_type.as_deref());
-                    let opened = ui.add_enabled(
-                        !save_only,
-                        Link::new(Icon::ExternalLink, crate::label("open")),
-                    );
-                    let opened = if save_only {
-                        opened.on_disabled_hover_text(crate::label("attachment-save-only"))
-                    } else {
-                        opened
-                    };
-                    if opened.clicked() {
-                        events.push(UiEvent::OpenAttachment(part.clone()));
+                    let allowed: Vec<_> = parts
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, part)| {
+                            let name = attachment_name(part, *i);
+                            part.downloadable()
+                                && !crate::attachments::refuses_open(
+                                    &name,
+                                    part.content_type.as_deref(),
+                                )
+                        })
+                        .collect();
+                    if ui
+                        .add_enabled(
+                            !allowed.is_empty(),
+                            egui::Button::new(crate::label("open-all")),
+                        )
+                        .clicked()
+                    {
+                        for (_, part) in allowed {
+                            if let Some(id) = &part.part_id {
+                                events.push(UiEvent::OpenAttachment(id.clone()));
+                            }
+                        }
+                        ui.close();
                     }
                 });
-                if let Some(transfer) = view.mail.transfers.get(&part) {
-                    let note = match transfer {
-                        Transfer::Saving => crate::label("attachment-saving"),
-                        Transfer::Opening => crate::label("attachment-opening"),
-                        Transfer::Saved(path) => {
-                            crate::label_with("attachment-saved", &[("path", path)])
-                        }
-                        Transfer::Opened(path) => {
-                            crate::label_with("attachment-opened", &[("path", path)])
-                        }
-                        Transfer::Failed(error) => {
-                            crate::label_with("attachment-failed", &[("error", error)])
-                        }
-                    };
-                    ui.label(RichText::new(note).weak().small());
-                }
-            }
-            ui.separator();
-            let any = email.attachments.iter().flatten().any(|a| a.downloadable());
-            if ui
-                .add_enabled(any, Link::new(Icon::Download, crate::label("save-all")))
-                .clicked()
-            {
-                events.push(UiEvent::Command("mail.save_attachments", Origin::Ui));
-            }
-        });
-    // A click outside the popup and the paperclip closes it.
-    if open
-        && let Some(shown) = shown
-        && ui.input(|i| i.pointer.any_click())
-        && let Some(at) = ui.input(|i| i.pointer.interact_pos())
-        && !shown.response.rect.contains(at)
-        && !clip.rect.contains(at)
-    {
-        events.push(UiEvent::AttachmentsOpen(false));
+            });
+        },
+    );
+    if toggle {
+        events.push(UiEvent::Command("mail.attachments", Origin::Ui));
     }
+    if expanded {
+        ScrollArea::vertical()
+            .id_salt("attachment-tiles")
+            .max_height(tile_limit)
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for (index, part) in parts.iter().enumerate() {
+                        attachment_tile(ui, view, part, index, events);
+                    }
+                });
+            });
+    }
+}
+
+fn attachment_name(part: &jmap::Attachment, index: usize) -> String {
+    crate::attachments::file_name(
+        part.name.as_deref(),
+        index + 1,
+        part.content_type.as_deref(),
+    )
+}
+
+/// Both tiles and images use the same context actions. Save-only files
+/// offer Save on a primary click; Open remains visibly disabled in the menu.
+fn attachment_menu(
+    response: &egui::Response,
+    part: &jmap::Attachment,
+    name: &str,
+    events: &mut Vec<UiEvent>,
+) {
+    let id = part.part_id.clone().unwrap_or_default();
+    let usable = part.downloadable();
+    let save_only = crate::attachments::refuses_open(name, part.content_type.as_deref());
+    if usable && response.clicked() {
+        events.push(if save_only {
+            UiEvent::SaveAttachment(id.clone())
+        } else {
+            UiEvent::OpenAttachment(id.clone())
+        });
+    }
+    response.context_menu(|ui| {
+        let open = ui.add_enabled(
+            usable && !save_only,
+            egui::Button::new(crate::label("open")),
+        );
+        let open = if save_only {
+            open.on_disabled_hover_text(crate::label("attachment-save-only"))
+        } else {
+            open
+        };
+        if open.clicked() {
+            events.push(UiEvent::OpenAttachment(id.clone()));
+            ui.close();
+        }
+        if ui
+            .add_enabled(usable, egui::Button::new(crate::label("save")))
+            .clicked()
+        {
+            events.push(UiEvent::SaveAttachment(id.clone()));
+            ui.close();
+        }
+    });
+}
+
+fn attachment_tile(
+    ui: &mut Ui,
+    view: &AccountView,
+    part: &jmap::Attachment,
+    index: usize,
+    events: &mut Vec<UiEvent>,
+) {
+    let name = attachment_name(part, index);
+    let body = ui.text_style_height(&egui::TextStyle::Body);
+    let frame = egui::Frame::group(ui.style());
+    let width = (body * 16.0).min(ui.max_rect().width());
+    // Wrap before the frame, whose scope otherwise consumes the remainder.
+    let remaining = ui.available_size_before_wrap().x;
+    if remaining < width && remaining < ui.max_rect().width() {
+        ui.end_row();
+    }
+    let shown = ui
+        .scope_builder(
+            egui::UiBuilder::new()
+                .id_salt(("attachment", index))
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+            |ui| {
+                frame
+                    .show(ui, |ui| {
+                        ui.set_width((width - frame.total_margin().sum().x).max(body));
+                        ui.horizontal(|ui| {
+                            let ink = if part.downloadable() {
+                                ui.visuals().text_color()
+                            } else {
+                                ui.visuals().weak_text_color()
+                            };
+                            ui.add(icons::image_of(
+                                ui.ctx(),
+                                type_icon(part.content_type.as_deref()),
+                                body,
+                                ink,
+                            ));
+                            ui.add(egui::Label::new(RichText::new(&name).color(ink)).truncate());
+                        });
+                        ui.weak(crate::attachments::human_size(part.size));
+                        if !part.downloadable() {
+                            ui.label(
+                                RichText::new(crate::label("attachment-undecodable"))
+                                    .weak()
+                                    .small(),
+                            );
+                        }
+                        if let Some(transfer) = part
+                            .part_id
+                            .as_ref()
+                            .and_then(|id| view.mail.transfers.get(id))
+                        {
+                            let note = match transfer {
+                                Transfer::Saving => crate::label("attachment-saving"),
+                                Transfer::Opening => crate::label("attachment-opening"),
+                                Transfer::Saved(path) => {
+                                    crate::label_with("attachment-saved", &[("path", path)])
+                                }
+                                Transfer::Opened(path) => {
+                                    crate::label_with("attachment-opened", &[("path", path)])
+                                }
+                                Transfer::Failed(error) => {
+                                    crate::label_with("attachment-failed", &[("error", error)])
+                                }
+                            };
+                            ui.add(egui::Label::new(RichText::new(note).weak().small()).wrap());
+                        }
+                    })
+                    .response
+            },
+        )
+        .inner;
+    let response = ui
+        .interact(shown.rect, shown.id.with("open"), Sense::click())
+        .on_hover_text(part.name.as_deref().unwrap_or(&name));
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::Role::Button,
+            ui.is_enabled() && part.downloadable(),
+            crate::label_with(
+                "attachment-tile",
+                &[
+                    ("name", &name),
+                    ("size", &crate::attachments::human_size(part.size)),
+                ],
+            ),
+        )
+    });
+    attachment_menu(&response, part, &name, events);
+}
+
+/// Remote URLs are never image sources. Only attachment blobs enter this cache.
+fn inline_images(ui: &mut Ui, state: &State, email: &Email, events: &mut Vec<UiEvent>) -> bool {
+    if !state.ui.attachments_inline {
+        return false;
+    }
+    let mut context = false;
+    for (index, part) in email.attachments.iter().flatten().enumerate() {
+        if crate::previews::format(part).is_none() {
+            continue;
+        }
+        let name = attachment_name(part, index);
+        ui.horizontal(|ui| {
+            let height = ui.text_style_height(&egui::TextStyle::Body);
+            let (short, _) = ui.allocate_exact_size(egui::vec2(height, height), Sense::hover());
+            let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
+            ui.painter()
+                .hline(short.x_range(), short.center().y, stroke);
+            ui.add(egui::Label::new(&name).truncate())
+                .on_hover_text(&name);
+            let (line, _) =
+                ui.allocate_exact_size(egui::vec2(ui.available_width(), height), Sense::hover());
+            ui.painter().hline(line.x_range(), line.center().y, stroke);
+        });
+        match part
+            .part_id
+            .as_deref()
+            .and_then(|id| state.previews.get(id))
+        {
+            Some(crate::previews::Preview::Shown(texture)) => {
+                let pixels = texture.size_vec2();
+                let natural = pixels / ui.ctx().pixels_per_point();
+                let size = natural * (ui.available_width() / natural.x).min(1.0);
+                let response = ui.add(
+                    egui::Image::new(texture)
+                        .fit_to_exact_size(size)
+                        .sense(Sense::click())
+                        .alt_text(crate::label_with("preview-image", &[("name", &name)])),
+                );
+                context |= response.secondary_clicked();
+                attachment_menu(&response, part, &name, events);
+            }
+            Some(crate::previews::Preview::Failed(reason)) => {
+                ui.weak(crate::label_with(
+                    "preview-failed",
+                    &[("name", &name), ("reason", reason)],
+                ));
+            }
+            _ => {
+                ui.weak(crate::label_with("preview-loading", &[("name", &name)]));
+            }
+        }
+    }
+    context
 }
 
 /// The reader's focus target. Tab reaches it; while it has the keyboard, Up
@@ -641,11 +834,13 @@ fn scroll_with_keys(ui: &mut Ui, focused: bool) -> Option<f32> {
 /// then the body.
 fn message(
     ui: &mut Ui,
+    state: &State,
     view: &AccountView,
     email: &Email,
     focused: bool,
     content: &settings::content::Content,
-) {
+    events: &mut Vec<UiEvent>,
+) -> bool {
     let reader = &view.mail.reader;
     // The cache is the open email's once it has loaded; until then (or for
     // an email put in place without opening), detect afresh.
@@ -696,6 +891,7 @@ fn message(
         },
     );
     toolkit::bars::hairline(ui);
+    let mut attachment_context = false;
     toolkit::content::surface(ui, content, |ui| {
         // The keys and the area share this ui, so they share the scroll state.
         let offset = scroll_with_keys(ui, focused);
@@ -733,6 +929,8 @@ fn message(
                     }
                 },
             }
+            attachment_context = inline_images(ui, state, email, events);
         });
     });
+    attachment_context
 }

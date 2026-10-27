@@ -2206,6 +2206,28 @@ mod tests {
     }
 
     #[test]
+    fn execute_toggles_received_attachment_choices_and_info_reports_them() {
+        let mut state = connected_many(&["a"]);
+        state.accounts[0].mail.open = Some(serde_json::from_value(json!({
+            "id": "E1", "attachments": [
+                {"partId": "2", "blobId": "B2", "name": "preview.png", "type": "image/png", "size": 100}
+            ]
+        })).unwrap());
+        for id in ["mail.attachments", "view.attachments_inline"] {
+            run(&mut state, "email.execute", json!({"id": id}));
+            let reply = state.take_replies().pop().unwrap();
+            assert_eq!(reply.rc, 0, "{}", reply.body);
+        }
+        let reader = state.info()["accounts"][0]["mail"]["reader"].clone();
+        assert_eq!(reader["attachments_expanded"], true);
+        assert_eq!(reader["attachments_inline"], false);
+        assert_eq!(
+            reader["attachments"][0]["preview"],
+            json!({"state": "none"})
+        );
+    }
+
+    #[test]
     fn execute_send_uses_the_attachment_gate_and_captures_its_caller() {
         use crate::state::SendOrigin;
         let dir = tempfile::tempdir().unwrap();

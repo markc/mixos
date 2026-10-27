@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Pin received attachments below the reader body, with a remembered expanded
+  tile view, Save All/Open All, per-file Open/Save and transfer status.
+  Message › Attachments now toggles the bar's expansion.
+- Show attached PNG, JPEG, GIF (first frame) and WebP images after the text
+  by default. View › Show Attachments Inline is remembered across restarts.
+  Previews use capped downloads, two background decode slots, explicit image
+  limits and textures kept only for the open email; remote URLs stay unfetched.
+- Report attachment bar choices and each preview's state/reason in
+  `email.info` under `mail.reader`; both choices work through `email.execute`.
 - Add an Attachments menu inside compose, with Attach files… (Ctrl+Shift+A),
   Remove all attachments and a one-click paperclip button. The shared chooser
   runs above compose and remembers the last attachment directory this session.

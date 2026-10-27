@@ -307,7 +307,7 @@ accounts cache, with no secret.</li>
 the account works as before.</p>
 <p>Files, in <code>~/.local/state/mixos/apps/email/config/</code>:</p>
 <table><thead><tr><th>File</th><th>Holds</th></tr></thead><tbody>
-<tr><td><code>config.conf.mix</code></td><td>schema 2: split sizes, mode, selected account, collapsed tree nodes, the last accounts seen</td></tr>
+<tr><td><code>config.conf.mix</code></td><td>schema 2: split sizes, mode, selected account, collapsed tree nodes, attachment bar expansion and inline display choices, the last accounts seen</td></tr>
 <tr><td><code>secrets.conf.mix</code></td><td>the passwords, by account id (0600, written only by email)</td></tr>
 <tr><td><code>ca-&lt;id&gt;.pem</code></td><td>a migrated account's CA bundle</td></tr>
 </tbody></table>
@@ -350,8 +350,9 @@ signatures, forwarded headers, bare URLs and ASCII art never trigger
 it. Rendered mail shows headings, lists and task boxes, code blocks
 that scroll sideways, tables, quotes and links (http, https and mailto
 open in the desktop's browser or mail handler; the address shows on
-hover). Images are never fetched, because remote images in mail track
-their reader: the alt text is a link to the image. Raw HTML is shown as
+hover). Remote images are never fetched, because they track their reader:
+the alt text is a link to the image. Attached image previews are described
+below. Raw HTML is shown as
 text. View › Message › <strong>Render Markdown</strong> (a tick) flips one email
 between the rendering and its text, either way. The choice lasts while
 that email is open.</p>
@@ -359,7 +360,8 @@ that email is open.</p>
 (its ▾ chooses with or without the quoted original), <strong>Reply All</strong>,
 <strong>Forward</strong> and, apart, <strong>Delete</strong>. The subject comes first, as the
 pane's heading, then From, To and the date. A right-click anywhere in
-the reader opens the <strong>Message</strong> menu.</p>
+the text opens the <strong>Message</strong> menu; attachment tiles and images have
+their own <strong>Open</strong>/<strong>Save</strong> menu.</p>
 </li>
 <li>
 <p><strong>Compose</strong> (To, Cc, Bcc, Subject, body, and From when there are
@@ -441,10 +443,15 @@ Labels follow the email (<strong>Star</strong> or <strong>Remove Star</strong>, 
 unread: only opening an email marks it read.</p>
 </li>
 <li>
-<p><strong>Attachments.</strong> An email with attachments shows a paperclip and its
-count at the end of the reader's toolbar (and Message › Attachments…).
-Its popup lists each one with its type, name and size, and <strong>Save</strong>
-and <strong>Open</strong>; <strong>Save all</strong> saves every one that can be fetched. Saving
+<p><strong>Attachments.</strong> An email with attachments always has a bar pinned below
+its scrolling body: a chevron, paperclip, count, total size and <strong>Save All</strong>.
+Its small menu also offers <strong>Open All</strong> for files Open allows (disabled
+when none qualify). The chevron or Message › <strong>Attachments</strong> expands a
+wrapping set of tiles with type icons, names and sizes. Hover shows the
+whole name; a click opens a file, or saves a Save-only file. Right-click
+offers <strong>Open</strong> and <strong>Save</strong>. Each tile reports saving, opening, success
+with its path, or a failure. The expansion is remembered across emails
+and restarts. <strong>Save All</strong> saves every file that can be fetched. Saving
 writes into your downloads directory (<code>$XDG_DOWNLOAD_DIR</code>, the
 <code>user-dirs.dirs</code> entry, else <code>~/Downloads</code>) and never replaces a file:
 a taken name becomes <code>name (1).ext</code>. Names from mail are cleaned (no
@@ -456,6 +463,19 @@ scripts (executables, shell scripts, <code>.desktop</code> files and the like)
 are Save only. A part the server could not decode is shown greyed. The
 download runs in the background; nothing is written until the whole
 file has arrived.</p>
+<p>View › <strong>Show Attachments Inline</strong> is on by default and remembered across
+restarts. In both rendered Markdown and source views, attached PNG, JPEG,
+GIF (first frame only) and WebP images appear after the text, below a
+filename divider. Images fit the reader width without stretching beyond
+their physical pixel size; click opens, right-click offers Open/Save.
+Loading and failed previews show a note; the file remains in the bar.
+Undecodable parts, SVG, other types and encoded files above 16 MiB have no
+preview. Downloads use the existing capped JMAP path, with at most two
+background download/decode jobs, image limits of 8192 × 8192 and 256 MiB
+decoder allocation, and textures kept only for the open email. Switching
+emails or turning the choice off frees the textures and drops stale results.
+Previews come only from attachment parts, never URLs. Received HTML
+continues to be shown as text.</p>
 </li>
 <li>
 <p><strong>Printing</strong> (Message › Print…, Ctrl+P) goes through the browser's
@@ -545,7 +565,7 @@ request ran; a write that may have run answers <code>OUTCOME_UNKNOWN</code>),
 <p>Queries that need the server answer when the server does. The window
 never waits on them.</p>
 <table><thead><tr><th>Command</th><th>Class</th><th>Does</th></tr></thead><tbody>
-<tr><td><code>email.ping</code>, <code>email.info</code>, <code>email.actions</code></td><td>query</td><td>probe; the whole window state (no secret); the command registry</td></tr>
+<tr><td><code>email.ping</code>, <code>email.info</code>, <code>email.actions</code></td><td>query</td><td>probe; the whole window state (no secret), including reader attachment choices and preview states; the command registry</td></tr>
 <tr><td><code>email.accounts</code></td><td>query</td><td>the accounts with <code>has_password</code> and <code>state</code>, never a password</td></tr>
 <tr><td><code>email.mailboxes {account?}</code></td><td>query</td><td>mailboxes with roles, parents and counts</td></tr>
 <tr><td><code>email.list {account?, mailbox?, offset?, limit?, query?}</code></td><td>query</td><td>one page, newest first, with <code>total</code></td></tr>
@@ -554,7 +574,7 @@ never waits on them.</p>
 <tr><td><code>email.calendars</code>, <code>email.events {calendar?, from?, to?}</code>, <code>email.event.get {id}</code></td><td>query</td><td>calendars and events</td></tr>
 <tr><td><code>email.books</code>, <code>email.contacts {book?, filter?}</code>, <code>email.contact.get {id}</code></td><td>query</td><td>address books and contacts</td></tr>
 <tr><td><code>email.show</code>, <code>email.quit</code></td><td>system, intent</td><td>raise, close</td></tr>
-<tr><td><code>email.execute {id}</code></td><td>intent</td><td>run any registry command (published with origin <code>bus</code>)</td></tr>
+<tr><td><code>email.execute {id}</code></td><td>intent</td><td>run any registry command (published with origin <code>bus</code>), including <code>mail.attachments</code> and <code>view.attachments_inline</code></td></tr>
 <tr><td><code>email.mode {name}</code>, <code>email.refresh {account?}</code></td><td>intent</td><td>switch surface; fetch again (a failed account reconnects)</td></tr>
 <tr><td><code>email.account.set {id?, name, url, email, password?, ca_path?, enabled?, signature?}</code></td><td>intent</td><td>create or update in settingsd; answers <code>{id}</code> once settingsd accepts</td></tr>
 <tr><td><code>email.account.remove {id}</code>, <code>email.account.default {id}</code></td><td>intent</td><td>through settingsd, fenced</td></tr>
@@ -591,9 +611,16 @@ starts; failed sends clear that origin. Removal matches the supplied path
 exactly, preserving symlink paths, and updates the saved draft. UI fields remain drivable through the
 toolkit commands.</p>
 <p><code>email.info</code> reports how the open email is shown under each account's
-<code>mail.reader</code>: <code>{"format": "markdown" | "plain", "auto": true | false}</code>,
+<code>mail.reader</code>: <code>{"format": "markdown" | "plain", "auto": true | false, "attachments_expanded": false, "attachments_inline": true, "attachments": []}</code>,
 where <code>auto</code> is false once the person (or <code>email.execute {"id":"view.reader.markdown"}</code>) has flipped it. The command is disabled
 when the open email has no text body.</p>
+<p>The reader's <code>attachments</code> list contains <code>{part, preview: {state}}</code>, where
+<code>state</code> is <code>none</code>, <code>loading</code>, <code>shown</code> or <code>failed</code>; failures also carry <code>reason</code>.
+Non-previewable parts and disabled inline display report <code>none</code>. The choices
+are available through <code>email.execute {"id":"mail.attachments"}</code> and
+<code>email.execute {"id":"view.attachments_inline"}</code> and their checked state
+appears in <code>email.actions</code>. The existing <code>mail.attachments</code> metadata and
+transfer states remain available beside <code>mail.reader</code>.</p>
 <p>From Mix:</p>
 <pre><code>send email email.accounts
 send email email.list body='{"account":"acct-3f9a1c2b4d5e","mailbox":"m-inbox","limit":20}'

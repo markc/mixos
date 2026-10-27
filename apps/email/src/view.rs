@@ -104,8 +104,6 @@ pub enum UiEvent {
     CloseDialog,
     /// The title bar's light/dark toggle: the mode to switch to.
     SetMode(design::Mode),
-    /// Show or hide the open email's attachments popup.
-    AttachmentsOpen(bool),
     /// Save the open email's attachment (its part id) to the downloads.
     SaveAttachment(String),
     /// Open the open email's attachment with the desktop's application.

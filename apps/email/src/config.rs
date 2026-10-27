@@ -77,6 +77,8 @@ pub struct UiConfig {
     pub places: f32,
     /// The reader panel's fraction of what remains after the tree.
     pub reader: f32,
+    pub attachments_expanded: bool,
+    pub attachments_inline: bool,
     pub mode: Mode,
     /// The account last selected.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -91,6 +93,8 @@ impl Default for UiConfig {
         Self {
             places: 0.18,
             reader: 0.42,
+            attachments_expanded: false,
+            attachments_inline: true,
             mode: Mode::Mail,
             account: None,
             expanded: BTreeMap::new(),
@@ -330,6 +334,8 @@ impl From<&State> for EmailConfig {
             ui: UiConfig {
                 places: state.ui.places,
                 reader: state.ui.reader,
+                attachments_expanded: state.ui.attachments_expanded,
+                attachments_inline: state.ui.attachments_inline,
                 mode: state.mode,
                 account: state.selected.clone(),
                 expanded: state.ui.expanded.clone(),
@@ -371,6 +377,8 @@ mod tests {
         let mut config = EmailConfig::default();
         config.ui.expanded.insert("acct-1".into(), false);
         config.ui.account = Some("acct-1".into());
+        config.ui.attachments_expanded = true;
+        config.ui.attachments_inline = false;
         config.cache.accounts.push(entry());
         assert!(file.save(&config).unwrap());
         let (loaded, again) = ConfigFile::load(dir.path());
@@ -394,6 +402,8 @@ mod tests {
         assert!(file.allow_save);
         assert_eq!(loaded.config.ui.places, 0.25);
         assert_eq!(loaded.config.ui.reader, UiConfig::default().reader);
+        assert!(!loaded.config.ui.attachments_expanded);
+        assert!(loaded.config.ui.attachments_inline);
         assert!(loaded.config.cache.accounts.is_empty());
     }
 

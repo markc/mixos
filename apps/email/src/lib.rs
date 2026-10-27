@@ -26,6 +26,7 @@ pub mod attachments;
 pub mod commands;
 pub mod config;
 pub mod drafts;
+pub mod previews;
 pub mod print;
 pub mod quote;
 pub mod reader;

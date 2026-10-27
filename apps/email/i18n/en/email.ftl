@@ -173,8 +173,16 @@ printed = The print page is open in the browser: { $path }
 print-no-browser = No browser to print with: open { $path } yourself
 no-runtime-dir = No private runtime directory (XDG_RUNTIME_DIR) for the print page
 no-open-email = No email is open
-attachments = Attachments…
-attachments-title = Attachments
+attachments = Attachments
+attachments-inline = Show Attachments Inline
+attachment-actions = Attachment actions
+attachment-tile = { $name } ({ $size })
+open-all = Open All
+preview-loading = Loading { $name }…
+preview-image = Preview of { $name }
+preview-failed = Couldn't show { $name }: { $reason }
+preview-too-large = Image exceeds the 16 MiB preview limit
+preview-texture-limit = Image exceeds the display's texture limit
 save-attachments = Save All Attachments
 save-all = Save all
 open = Open
@@ -190,7 +198,10 @@ dir-not-absolute = The directory must be an absolute path
 not-a-directory = Not an existing directory: { $path }
 name-taken = Every name for this file is taken
 no-home = No home directory (HOME) to save into
-attachment-count = { $count } attachments
+attachment-count = { $count ->
+    [one] 1 attachment
+   *[other] { $count } attachments
+    }
 suggestions = Suggested addresses
 move = Move To…
 move-title = Move To

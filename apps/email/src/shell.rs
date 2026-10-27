@@ -86,6 +86,8 @@ pub struct AttachmentDone {
 /// What finished off the UI thread. Completions carry their result; the
 /// shell resolves the Look pair itself (theme-follow, below).
 pub enum Event {
+    /// A received image downloaded and decoded on the effects runtime.
+    Preview(u64, Result<egui::ColorImage, String>),
     ComposeAttachments(
         crate::work::ComposeInspection,
         crate::work::InspectedAttachments,
@@ -602,6 +604,8 @@ pub fn start(
     let ui = UiState {
         places: loaded.config.ui.places,
         reader: loaded.config.ui.reader,
+        attachments_expanded: loaded.config.ui.attachments_expanded,
+        attachments_inline: loaded.config.ui.attachments_inline,
         expanded: loaded.config.ui.expanded.clone(),
         ..UiState::default()
     };
@@ -754,6 +758,7 @@ impl Shell {
     /// client for this thread first, so the fetches a connect schedules
     /// find it there.
     fn settle(&mut self) {
+        self.state.prepare_previews(&self.ctx);
         let parked = std::mem::take(&mut *self.adopted.lock().unwrap());
         for (account, generation, client) in parked {
             if self.latest.get(&account) == Some(&generation) {
@@ -1212,6 +1217,27 @@ impl Shell {
                     });
                 }
             }
+            Work::Preview {
+                account,
+                ticket,
+                blob,
+                kind,
+            } => match self.client(&account) {
+                Some((_, client)) => self.spawn(async move {
+                    let result = match client.download_blob(&blob).await {
+                        Ok(bytes) => tokio::task::spawn_blocking(move || {
+                            crate::previews::decode(&bytes, kind)
+                        })
+                        .await
+                        .unwrap_or_else(|error| Err(error.to_string())),
+                        Err(error) => Err(error.to_string()),
+                    };
+                    Event::Preview(ticket, result)
+                }),
+                None => self
+                    .state
+                    .apply(Event::Preview(ticket, Err(label("not-connected")))),
+            },
             Work::Attachment {
                 account,
                 email,
