@@ -111,6 +111,9 @@ struct Pending {
 /// without handlers so completed watches cannot keep the pump alive forever.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Families {
+    /// Read only by the `tokio-sleep` pump's `any()`; process records drain
+    /// whatever this says.
+    #[cfg_attr(not(feature = "tokio-sleep"), allow(dead_code))]
     pub processes: bool,
     pub filesystem: bool,
     pub children: bool,
