@@ -66,9 +66,9 @@ impl fmt::Display for Refusal {
                 f,
                 "mail document is {bytes} bytes; maximum is {MAX_DOCUMENT_BYTES} bytes (8 MiB)"
             ),
-            Self::CarriageReturn => {
-                f.write_str("mail document contains CR (including CRLF); use LF and an opening '---\\n' fence")
-            }
+            Self::CarriageReturn => f.write_str(
+                "mail document contains CR (including CRLF); use LF and an opening '---\\n' fence",
+            ),
             Self::Framing(reason) => write!(f, "invalid mail document framing: {reason}"),
             Self::HeaderNotAllowed(name) => {
                 write!(f, "header not allowed in a mail document: {name}")
@@ -106,7 +106,10 @@ fn address(header: &str, value: &str) -> Result<(), Refusal> {
         return Err(invalid(header, "address must be non-empty and contain @"));
     }
     if value.trim() != value || value.contains(',') {
-        return Err(invalid(header, "address must be trimmed and contain no comma"));
+        return Err(invalid(
+            header,
+            "address must be trimmed and contain no comma",
+        ));
     }
     Ok(())
 }
@@ -289,7 +292,10 @@ fn validate_fields(document: &MailDocument) -> Result<(), Refusal> {
     for value in &document.references {
         single_line("mail-references", value)?;
         if value.is_empty() || value.contains(char::is_whitespace) {
-            return Err(invalid("mail-references", "reference must be a non-empty token without whitespace"));
+            return Err(invalid(
+                "mail-references",
+                "reference must be a non-empty token without whitespace",
+            ));
         }
     }
     for path in &document.attachments {
@@ -298,7 +304,10 @@ fn validate_fields(document: &MailDocument) -> Result<(), Refusal> {
             .ok_or_else(|| invalid("mail-attachments", "path is not UTF-8"))?;
         single_line("mail-attachments", value)?;
         if !path.is_absolute() {
-            return Err(invalid("mail-attachments", "attachment path must be absolute"));
+            return Err(invalid(
+                "mail-attachments",
+                "attachment path must be absolute",
+            ));
         }
     }
     if document.body.contains('\r') {
@@ -365,7 +374,9 @@ pub fn write(document: &MailDocument) -> Result<String, Refusal> {
     };
     output.push_str(&document.body);
     if output.len() > MAX_DOCUMENT_BYTES {
-        return Err(Refusal::TooLarge { bytes: output.len() });
+        return Err(Refusal::TooLarge {
+            bytes: output.len(),
+        });
     }
     Ok(output)
 }

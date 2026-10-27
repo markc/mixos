@@ -224,10 +224,19 @@ fn address_lists_trim_entries_and_only_lightly_validate() {
     );
     assert_eq!(parse(&write(&document).unwrap()).unwrap(), document);
     for value in ["no-address", ",a@b", "a@b,", "a@b,  ,c@d"] {
-        assert_eq!(parse(&framed(&format!("mail-to: {value}"))), Err(invalid("mail-to", "address must be non-empty and contain @")));
+        assert_eq!(
+            parse(&framed(&format!("mail-to: {value}"))),
+            Err(invalid(
+                "mail-to",
+                "address must be non-empty and contain @"
+            ))
+        );
     }
     for name in ["mail-from", "mail-reply-to"] {
-        assert_eq!(parse(&framed(&format!("{name}: no-address"))), Err(invalid(name, "address must be non-empty and contain @")));
+        assert_eq!(
+            parse(&framed(&format!("{name}: no-address"))),
+            Err(invalid(name, "address must be non-empty and contain @"))
+        );
     }
     assert!(parse(&framed("mail-to: @")).is_ok());
 }
@@ -248,7 +257,10 @@ fn refuses_malformed_and_duplicate_headers_before_wire_can_discard_them() {
         ("mail-subject: first\nmail-subject: second", "mail-subject"),
         ("mail-to: bad\nmail-to: good@example.org", "mail-to"),
     ] {
-        assert_eq!(parse(&framed(headers)), Err(Refusal::DuplicateHeader(name.into())));
+        assert_eq!(
+            parse(&framed(headers)),
+            Err(Refusal::DuplicateHeader(name.into()))
+        );
     }
     for line in [
         " mail-subject: x",
@@ -259,7 +271,10 @@ fn refuses_malformed_and_duplicate_headers_before_wire_can_discard_them() {
         "   ",
         "\t",
     ] {
-        assert_eq!(parse(&framed(&format!("mail-to: a@b\n{line}"))), Err(Refusal::MalformedHeader(line.into())));
+        assert_eq!(
+            parse(&framed(&format!("mail-to: a@b\n{line}"))),
+            Err(Refusal::MalformedHeader(line.into()))
+        );
     }
     for text in ["no opening", "---\nmail-subject: x\n"] {
         assert!(matches!(parse(text), Err(Refusal::Framing(_))));
@@ -355,7 +370,10 @@ fn header_controls_are_refused_raw_decoded_and_by_writer() {
             let value = format!("/x{control}y@example.org");
             let expected = invalid(name, "control character in a value");
             assert_refused(&with_header(name, &value), expected.clone());
-            assert_eq!(parse(&framed(&format!("{name}: {value}"))), Err(expected.clone()));
+            assert_eq!(
+                parse(&framed(&format!("{name}: {value}"))),
+                Err(expected.clone())
+            );
             let encoded = if *name == "mail-attachments" {
                 serde_json::to_string(&[value]).unwrap()
             } else {
@@ -368,7 +386,13 @@ fn header_controls_are_refused_raw_decoded_and_by_writer() {
 
 #[test]
 fn writer_and_validator_refuse_noncanonical_fields() {
-    for name in ["mail-to", "mail-cc", "mail-bcc", "mail-from", "mail-reply-to"] {
+    for name in [
+        "mail-to",
+        "mail-cc",
+        "mail-bcc",
+        "mail-from",
+        "mail-reply-to",
+    ] {
         for value in ["", "no-address"] {
             let expected = if value.is_empty() && matches!(name, "mail-from" | "mail-reply-to") {
                 Refusal::EmptyValue(name.into())
@@ -378,19 +402,46 @@ fn writer_and_validator_refuse_noncanonical_fields() {
             assert_refused(&with_header(name, value), expected);
         }
         for value in [" a@b", "a@b ", "a@b,c@d"] {
-            assert_refused(&with_header(name, value), invalid(name, "address must be trimmed and contain no comma"));
+            assert_refused(
+                &with_header(name, value),
+                invalid(name, "address must be trimmed and contain no comma"),
+            );
         }
     }
-    assert_refused(&with_header("mail-in-reply-to", ""), Refusal::EmptyValue("mail-in-reply-to".into()));
+    assert_refused(
+        &with_header("mail-in-reply-to", ""),
+        Refusal::EmptyValue("mail-in-reply-to".into()),
+    );
     for value in ["", "two tokens", "trailing ", "\u{2003}"] {
-        assert_refused(&with_header("mail-references", value), invalid("mail-references", "reference must be a non-empty token without whitespace"));
+        assert_refused(
+            &with_header("mail-references", value),
+            invalid(
+                "mail-references",
+                "reference must be a non-empty token without whitespace",
+            ),
+        );
     }
-    assert_refused(&with_header("mail-attachments", "relative"), invalid("mail-attachments", "attachment path must be absolute"));
+    assert_refused(
+        &with_header("mail-attachments", "relative"),
+        invalid("mail-attachments", "attachment path must be absolute"),
+    );
     for body in ["body\rtext", "body\r\n", "body\r"] {
-        assert_refused(&MailDocument { body: body.into(), ..Default::default() }, Refusal::CarriageReturn);
+        assert_refused(
+            &MailDocument {
+                body: body.into(),
+                ..Default::default()
+            },
+            Refusal::CarriageReturn,
+        );
     }
     for body in ["body ", "body\n", "body\u{2003}"] {
-        assert_refused(&MailDocument { body: body.into(), ..Default::default() }, invalid("body", "trailing whitespace is not canonical"));
+        assert_refused(
+            &MailDocument {
+                body: body.into(),
+                ..Default::default()
+            },
+            invalid("body", "trailing whitespace is not canonical"),
+        );
     }
 }
 
@@ -415,17 +466,31 @@ fn writer_and_validator_bound_the_complete_encoded_utf8_size() {
     assert_eq!(validate(&document), Ok(()));
     assert_eq!(write(&document).unwrap().len(), MAX_DOCUMENT_BYTES);
     document.body.push('é');
-    assert_refused(&document, Refusal::TooLarge { bytes: MAX_DOCUMENT_BYTES + 2 });
+    assert_refused(
+        &document,
+        Refusal::TooLarge {
+            bytes: MAX_DOCUMENT_BYTES + 2,
+        },
+    );
 
     // Quoting/escaping expands a document whose field bytes alone fit the cap.
-    let document = MailDocument { subject: format!("\"{}", "\\".repeat(MAX_DOCUMENT_BYTES / 2)), ..Default::default() };
+    let document = MailDocument {
+        subject: format!("\"{}", "\\".repeat(MAX_DOCUMENT_BYTES / 2)),
+        ..Default::default()
+    };
     let refusal = validate(&document).unwrap_err();
     assert!(matches!(refusal, Refusal::TooLarge { bytes } if bytes > MAX_DOCUMENT_BYTES));
     assert_eq!(write(&document), Err(refusal));
 }
 
 fn arbitrary_document() -> impl Strategy<Value = MailDocument> {
-    let text = || prop_oneof![any::<String>(), Just("a@example.org".into()), Just("".into())];
+    let text = || {
+        prop_oneof![
+            any::<String>(),
+            Just("a@example.org".into()),
+            Just("".into())
+        ]
+    };
     (
         prop::collection::vec(text(), 0..4),
         prop::collection::vec(text(), 0..4),
@@ -437,10 +502,23 @@ fn arbitrary_document() -> impl Strategy<Value = MailDocument> {
         prop::collection::vec(text(), 0..4),
         prop::collection::vec(prop_oneof![any::<String>(), Just("/file".into())], 0..4),
         text(),
-    ).prop_map(|(to, cc, bcc, from, reply_to, subject, in_reply_to, references, paths, body)| MailDocument {
-        to, cc, bcc, from, reply_to, subject, in_reply_to, references,
-        attachments: paths.into_iter().map(PathBuf::from).collect(), body,
-    })
+    )
+        .prop_map(
+            |(to, cc, bcc, from, reply_to, subject, in_reply_to, references, paths, body)| {
+                MailDocument {
+                    to,
+                    cc,
+                    bcc,
+                    from,
+                    reply_to,
+                    subject,
+                    in_reply_to,
+                    references,
+                    attachments: paths.into_iter().map(PathBuf::from).collect(),
+                    body,
+                }
+            },
+        )
 }
 
 proptest! {
