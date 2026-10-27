@@ -359,7 +359,8 @@ fn title_line(
     let rows = header_rows((width - inset).max(0.0), title.size().x, &widths, gap);
     let total_height =
         rows.len() as f32 * height + (rows.len() - 1) as f32 * ui.spacing().item_spacing.y;
-    let (mut rect, _) = ui.allocate_exact_size(egui::vec2(width, total_height), egui::Sense::hover());
+    let (mut rect, _) =
+        ui.allocate_exact_size(egui::vec2(width, total_height), egui::Sense::hover());
     rect.max.x -= inset;
     let painter = ui.painter_at(rect);
     let title_rect = egui::Rect::from_min_size(rect.min, title.size()).intersect(rect);
@@ -580,22 +581,42 @@ mod tests {
         for width in [260.0, 360.0, 720.0] {
             let mut h = Harness::builder()
                 .with_size(egui::vec2(width + 20.0, 220.0))
-                .build_ui_state(move |ui, frame| {
-                    *frame = *render(ui, "time-axis", egui::vec2(width, 130.0), Chart {
-                        series: &[Series { name: "Segments", legend_label: None, hue: Hue::Accent, values: &[10.0; 60] }],
-                        samples: 60,
-                        interval_s: 1.0,
-                        scale: Scale::Count(10.0),
-                        format: |v| format!("{v} /s"),
-                    }).transform.frame();
-                }, egui::Rect::NOTHING);
+                .build_ui_state(
+                    move |ui, frame| {
+                        *frame = *render(
+                            ui,
+                            "time-axis",
+                            egui::vec2(width, 130.0),
+                            Chart {
+                                series: &[Series {
+                                    name: "Segments",
+                                    legend_label: None,
+                                    hue: Hue::Accent,
+                                    values: &[10.0; 60],
+                                }],
+                                samples: 60,
+                                interval_s: 1.0,
+                                scale: Scale::Count(10.0),
+                                format: |v| format!("{v} /s"),
+                            },
+                        )
+                        .transform
+                        .frame();
+                    },
+                    egui::Rect::NOTHING,
+                );
             h.run();
             let mut labels = Vec::new();
             for shape in &h.output().shapes {
                 text_shapes(&shape.shape, &mut labels);
             }
             for age in ["10", "20", "30", "40", "50"] {
-                assert!(labels.iter().any(|(text, rect)| text == age && rect.top() >= h.state().bottom()), "missing {age} s tick at width {width}: {labels:?}");
+                assert!(
+                    labels
+                        .iter()
+                        .any(|(text, rect)| text == age && rect.top() >= h.state().bottom()),
+                    "missing {age} s tick at width {width}: {labels:?}"
+                );
             }
         }
     }
@@ -796,7 +817,9 @@ mod tests {
                         );
                         assert!(label.bottom() < h.state().top());
                         assert!(
-                            label.right() <= h.state().right() - h.ctx.style().spacing.item_spacing.x + 0.5,
+                            label.right()
+                                <= h.state().right() - h.ctx.global_style().spacing.item_spacing.x
+                                    + 0.5,
                             "legend needs a gap from the column edge"
                         );
                     }

@@ -1125,28 +1125,37 @@ mod tests {
             engine.connections = Some(model::Connections {
                 total: 20,
                 count: 20,
-                rows: (0..20).map(|i| model::Connection {
-                    remote: "192.0.2.1".into(),
-                    remote_port: 443,
-                    state: "established".into(),
-                    retransmits: Some(1000 + i),
-                    user: format!("user-{i}"),
-                    ..model::Connection::default()
-                }).collect(),
+                rows: (0..20)
+                    .map(|i| model::Connection {
+                        remote: "192.0.2.1".into(),
+                        remote_port: 443,
+                        state: "established".into(),
+                        retransmits: Some(1000 + i),
+                        user: format!("user-{i}"),
+                        ..model::Connection::default()
+                    })
+                    .collect(),
             });
             let mut h = Harness::builder()
                 .with_context_setup(move |ctx| toolkit::install(ctx, &theme))
                 .with_size(egui::vec2(780.0, 1000.0))
                 .with_max_steps(120)
-                .build_ui_state(move |ui, offset| {
-                    let page = ScrollArea::vertical().show(ui, |ui| tcp(ui, &engine, &Snapshot::default()));
-                    *offset = page.state.clamped_offset().y;
-                }, 0.0);
+                .build_ui_state(
+                    move |ui, offset| {
+                        let page = ScrollArea::vertical()
+                            .show(ui, |ui| tcp(ui, &engine, &Snapshot::default()));
+                        *offset = page.state.clamped_offset().y;
+                    },
+                    0.0,
+                );
             h.run();
             for i in 0..20 {
                 let number = h.get_by_label(&format!("{}", 1000 + i)).rect();
                 let user = h.get_by_label(&format!("user-{i}")).rect();
-                assert!(user.left() - number.right() >= h.ctx.style().spacing.item_spacing.x, "Retx and User need a visible gap");
+                assert!(
+                    user.left() - number.right() >= h.ctx.global_style().spacing.item_spacing.x,
+                    "Retx and User need a visible gap"
+                );
             }
             // A shorter viewport must scroll the containing page even when
             // the wheel is over a table row, and expose the twentieth row.
@@ -1157,12 +1166,19 @@ mod tests {
                 source: egui::MouseWheelSource::Unknown,
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, -500.0),
+                phase: egui::TouchPhase::Move,
                 modifiers: egui::Modifiers::NONE,
             });
             h.run();
-            assert!(*h.state() > 100.0, "the page must own scrolling over the table");
+            assert!(
+                *h.state() > 100.0,
+                "the page must own scrolling over the table"
+            );
             let last = h.get_by_label("user-19").rect();
-            assert!(last.bottom() <= 520.0, "the twentieth row must be reachable");
+            assert!(
+                last.bottom() <= 520.0,
+                "the twentieth row must be reachable"
+            );
         }
     }
 }

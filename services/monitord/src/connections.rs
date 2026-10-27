@@ -303,10 +303,16 @@ pub fn dump() -> io::Result<Vec<Raw>> {
 
 fn validate_datagram(len: usize, capacity: usize, sender: u32) -> io::Result<()> {
     if sender != 0 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "inet_diag sender is not the kernel"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "inet_diag sender is not the kernel",
+        ));
     }
     if len == 0 || len > capacity {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "truncated inet_diag datagram"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "truncated inet_diag datagram",
+        ));
     }
     Ok(())
 }
@@ -497,7 +503,15 @@ impl Sampler {
         let users = self.users.get();
         let previous = self.state.lock().unwrap().scan.take();
         let rows = previous.map(|(then, before)| {
-            (at, Arc::new(table(&before, &raw, at.duration_since(then).as_secs_f64(), &users)))
+            (
+                at,
+                Arc::new(table(
+                    &before,
+                    &raw,
+                    at.duration_since(then).as_secs_f64(),
+                    &users,
+                )),
+            )
         });
         let mut s = self.state.lock().unwrap();
         if !s.expire(Instant::now()) {
@@ -516,9 +530,7 @@ impl Sampler {
             return;
         };
         let active = self.state.lock().unwrap().expire(Instant::now());
-        if active
-            && let Err(e) = self.sample()
-        {
+        if active && let Err(e) = self.sample() {
             let mut s = self.state.lock().unwrap();
             s.error = Some(e.to_string());
             s.scan = None;
@@ -593,9 +605,15 @@ mod tests {
     #[test]
     fn truncated_datagrams_and_foreign_senders_have_distinct_errors() {
         for len in [0, 65_537] {
-            assert_eq!(validate_datagram(len, 65_536, 0).unwrap_err().to_string(), "truncated inet_diag datagram");
+            assert_eq!(
+                validate_datagram(len, 65_536, 0).unwrap_err().to_string(),
+                "truncated inet_diag datagram"
+            );
         }
-        assert_eq!(validate_datagram(72, 65_536, 42).unwrap_err().to_string(), "inet_diag sender is not the kernel");
+        assert_eq!(
+            validate_datagram(72, 65_536, 42).unwrap_err().to_string(),
+            "inet_diag sender is not the kernel"
+        );
         assert!(validate_datagram(72, 65_536, 0).is_ok());
     }
 
@@ -610,7 +628,10 @@ mod tests {
             request: tokio::sync::Mutex::new(()),
             source: Box::new(move || {
                 notify.notify_one();
-                wait.lock().unwrap().recv_timeout(Duration::from_secs(5)).unwrap();
+                wait.lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
                 Ok(vec![raw(1, 100)])
             }),
             users: UsersCache::new(Root::new("/nonexistent")),
@@ -621,18 +642,34 @@ mod tests {
         for _ in 0..2 {
             started.notified().await;
             let me = sampler.clone();
-            let status = tokio::time::timeout(Duration::from_millis(250), tokio::spawn(async move { me.status() })).await;
+            let status = tokio::time::timeout(
+                Duration::from_millis(250),
+                tokio::spawn(async move { me.status() }),
+            )
+            .await;
             release.send(()).unwrap();
-            assert_eq!(status.expect("status blocked on a cold dump").unwrap()["active"], true);
+            assert_eq!(
+                status.expect("status blocked on a cold dump").unwrap()["active"],
+                true
+            );
         }
         cold.await.unwrap().unwrap();
         let me = sampler.clone();
         let tick = tokio::task::spawn_blocking(move || me.tick());
         started.notified().await;
         let me = sampler.clone();
-        let status = tokio::time::timeout(Duration::from_millis(250), tokio::spawn(async move { me.status() })).await;
+        let status = tokio::time::timeout(
+            Duration::from_millis(250),
+            tokio::spawn(async move { me.status() }),
+        )
+        .await;
         release.send(()).unwrap();
-        assert_eq!(status.expect("status blocked on a background dump").unwrap()["active"], true);
+        assert_eq!(
+            status
+                .expect("status blocked on a background dump")
+                .unwrap()["active"],
+            true
+        );
         tick.await.unwrap();
     }
 

@@ -442,7 +442,8 @@ mod tests {
         let tcp: Tcp = serde_json::from_value(json!({
             "sockstat": {"inuse": 48, "tw": 16},
             "sockstat6": {"inuse": 87}
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(tcp.sockstat.inuse, Some(48));
         assert_eq!(tcp.sockstat6.inuse, Some(87));
         assert_eq!(tcp.sockstat.tw, Some(16));
