@@ -234,7 +234,14 @@ impl FileChooser {
                             Dialog::reset(ctx, self.id);
                             return Some(Outcome::Picked(paths));
                         }
-                        Ok(Answer::Save(path, true)) => self.replace = Some(path),
+                        Ok(Answer::Save(path, true)) => {
+                            self.replace = Some(path);
+                            // The filename field belongs to the covered chooser.
+                            // Let the replacement question own Enter and Escape.
+                            ctx.memory_mut(|memory| {
+                                if let Some(id) = memory.focused() { memory.surrender_focus(id); }
+                            });
+                        }
                         Ok(Answer::Save(path, false)) => {
                             Dialog::reset(ctx, self.id);
                             return Some(Outcome::Save {
@@ -329,7 +336,9 @@ impl FileChooser {
         let list_keys = ui.is_enabled() && list_focused && !egui::Popup::is_any_open(&ctx);
         // Consume before TextEdit: Enter otherwise gives up focus and can
         // also activate the dialog's default button.
-        let submit = ui.is_enabled() && path_focused && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
+        let submit = ui.is_enabled()
+            && path_focused
+            && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
         ui.add(
             field::text_edit(
                 &mut self.path,
@@ -882,7 +891,9 @@ mod tests {
         h.run();
         assert!(h.state().0.replace.is_none());
         assert!(h.state().1.is_none());
-        h.state_mut().0.replace = Some(path.clone());
+        let (tx, rx) = mpsc::channel();
+        h.state_mut().0.pending = Some(rx);
+        tx.send(Ok(Answer::Save(path.clone(), true))).unwrap();
         h.run();
         assert!(h.query_by_label("Replace").is_some());
         h.key_press(Key::Enter);

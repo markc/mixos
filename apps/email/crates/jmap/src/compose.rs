@@ -1385,8 +1385,14 @@ mod tests {
             reply_to: Some("bob@example.invalid\r\nBcc: eve@example.invalid".into()),
             ..composed()
         };
-        let without_references = Composed { references: Vec::new(), ..draft.clone() };
-        assert_ne!(compose_fingerprint(&draft), compose_fingerprint(&without_references));
+        let without_references = Composed {
+            references: Vec::new(),
+            ..draft.clone()
+        };
+        assert_ne!(
+            compose_fingerprint(&draft),
+            compose_fingerprint(&without_references)
+        );
         let mime = String::from_utf8(build_mime(&draft).unwrap()).unwrap();
         assert!(mime.contains("References: <first@example.invalid> <second@example.invalid>\r\n"));
         assert!(mime.contains("Reply-To: bob@example.invalid  Bcc: eve@example.invalid\r\n"));

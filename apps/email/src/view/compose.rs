@@ -182,7 +182,8 @@ pub fn dialog(
     }
     if state.documents.replace.is_some() {
         let id = egui::Id::unique("compose-document-replace");
-        ui.ctx().move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
+        ui.ctx()
+            .move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
         let shown = dialog::Dialog::new(id, crate::label("document-replace-title"))
             .buttons(vec![
                 Choice::new(crate::label("document-replace"), dialog::Role::Default),

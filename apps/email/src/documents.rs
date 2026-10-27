@@ -215,7 +215,7 @@ impl State {
     }
 
     fn choose_document(&mut self, save: bool) {
-        if self.compose.as_ref().is_none_or(|c| c.busy)
+        if self.compose.as_ref().is_none_or(|c| c.busy || !c.attachment_inspections.is_empty())
             || self.documents.modal()
             || self.documents.opening()
         {
@@ -282,7 +282,7 @@ impl State {
     }
 
     pub fn write_document(&mut self, path: PathBuf, replace: bool) {
-        let Some(compose) = self.compose.as_ref().filter(|c| !c.busy) else {
+        let Some(compose) = self.compose.as_ref().filter(|c| !c.busy && c.attachment_inspections.is_empty()) else {
             return;
         };
         let addresses = |text: &str| {
@@ -828,7 +828,7 @@ mod tests {
         assert_eq!(compose.draft.references, doc.references);
         assert_eq!(compose.draft.reply_to, doc.reply_to);
         assert_eq!(compose.body.contents(), doc.body);
-        assert_eq!(compose.draft.attachments, [attachment.clone()]);
+        assert_eq!(compose.draft.attachments.as_slice(), std::slice::from_ref(&attachment));
         std::fs::write(&attachment, "changed at send time").unwrap();
         doc.subject = "Changed document".into();
         std::fs::write(&path, maildoc::write(&doc).unwrap()).unwrap();
@@ -914,14 +914,41 @@ mod tests {
         state.drop_files(vec![path.clone()]);
         finish(&mut state);
         assert_eq!(
-            state.compose.as_ref().unwrap().draft.attachments,
-            [path.clone()]
+            state.compose.as_ref().unwrap().draft.attachments.as_slice(),
+            std::slice::from_ref(&path)
         );
         let mut idle = connected_many(&["a"]);
         idle.drop_files(vec![path]);
         finish(&mut idle);
         assert!(idle.compose.is_none());
         assert!(idle.status.contains("framing"));
+    }
+
+    #[test]
+    fn export_waits_for_the_document_attachment_paths_to_be_installed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("input.md");
+        let output = dir.path().join("output.md");
+        let attachment = dir.path().join("note.txt");
+        std::fs::write(&attachment, "note").unwrap();
+        let doc = MailDocument { attachments: vec![attachment], ..Default::default() };
+        std::fs::write(&path, maildoc::write(&doc).unwrap()).unwrap();
+        let mut state = connected_many(&["a"]);
+        command(&mut state, "email.compose", json!({"document": path}));
+        for work in state.take_work() {
+            if let Work::MailDocument(work) = work {
+                let (ticket, answer) = work.perform();
+                state.document_done(ticket, answer);
+            }
+        }
+        state.write_document(output.clone(), false);
+        let work = state.take_work();
+        assert!(!work.iter().any(|w| matches!(w, Work::MailDocument(DocumentWork::Save { .. }))));
+        for item in work { state.queue_work(item); }
+        state.finish_compose_inspections();
+        state.write_document(output.clone(), false);
+        finish(&mut state);
+        assert_eq!(read(&output).unwrap().attachments, doc.attachments);
     }
 
     #[test]

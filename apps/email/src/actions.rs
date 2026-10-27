@@ -129,6 +129,10 @@ fn compose_attached(state: &State) -> bool {
             .is_some_and(|c| !c.draft.attachments.is_empty())
 }
 
+fn compose_document_ready(state: &State) -> bool {
+    compose_attachable(state) && state.compose.as_ref().is_some_and(|c| c.attachment_inspections.is_empty())
+}
+
 /// The registry: every command, its menu, its shortcut and its guard.
 pub fn registry() -> Registry<State> {
     let mut r = Registry::new();
@@ -142,7 +146,7 @@ pub fn registry() -> Registry<State> {
         group: 0,
         shortcut: key(Modifiers::COMMAND, Key::O),
         icon: Some(Icon::FolderOpen),
-        enabled: compose_attachable,
+        enabled: compose_document_ready,
         run: State::open_document,
     })
     .add(Action {
@@ -153,7 +157,7 @@ pub fn registry() -> Registry<State> {
         group: 0,
         shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::S),
         icon: Some(Icon::Save),
-        enabled: compose_attachable,
+        enabled: compose_document_ready,
         run: State::save_document_as,
     });
     r.add(Action {
