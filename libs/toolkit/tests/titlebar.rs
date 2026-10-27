@@ -419,7 +419,7 @@ fn title_band_layouts_and_hosted_actions() {
         if hosted {
             assert_eq!(form["bar"]["items"][0]["command"], "file.quit");
             assert!(form["bar"]["revision"].as_u64().unwrap() > 0);
-            assert!(h.get_all_by_label("Quit").next().is_none());
+            assert!(h.query_all_by_label("Quit").next().is_none());
         } else {
             assert_eq!(form["effective"], "row");
         }

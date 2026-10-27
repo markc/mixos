@@ -181,7 +181,10 @@ mod tests {
             command_family("comp.window.tile_key"),
             Some(CommandFamily::Window)
         );
-        assert_eq!(command_family("comp.tiles.get"), Some(CommandFamily::Direct));
+        assert_eq!(
+            command_family("comp.tiles.get"),
+            Some(CommandFamily::Direct)
+        );
         assert_eq!(
             command_family("comp.session.get"),
             Some(CommandFamily::Direct)

@@ -165,10 +165,10 @@ mod tests {
             toggled: false,
         };
         let now = Instant::now();
-        publish_at(&ctx, &[item.clone()], now);
+        publish_at(&ctx, std::slice::from_ref(&item), now);
         assert!(take_changed(&ctx).is_none());
         crate::drive::set_service(&ctx, Some("demo"));
-        publish_at(&ctx, &[item.clone()], now);
+        publish_at(&ctx, std::slice::from_ref(&item), now);
         let first = form(&ctx);
         let revision = first["bar"]["revision"].as_u64().unwrap();
         assert!(revision > 1);
@@ -178,10 +178,18 @@ mod tests {
             enabled: false,
             ..item
         };
-        publish_at(&ctx, &[changed.clone()], now + Duration::from_millis(10));
+        publish_at(
+            &ctx,
+            std::slice::from_ref(&changed),
+            now + Duration::from_millis(10),
+        );
         assert_eq!(form(&ctx), first);
         assert!(take_changed(&ctx).is_none());
-        publish_at(&ctx, &[changed.clone()], now + Duration::from_millis(100));
+        publish_at(
+            &ctx,
+            std::slice::from_ref(&changed),
+            now + Duration::from_millis(100),
+        );
         assert_eq!(take_changed(&ctx).unwrap().1["revision"], revision + 1);
         assert_eq!(form(&ctx)["bar"]["items"][0]["enabled"], false);
         publish_at(&ctx, &[changed], now + Duration::from_millis(200));

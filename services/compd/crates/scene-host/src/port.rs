@@ -657,9 +657,7 @@ async fn titlebar_read(
                 body
             }
             result => {
-                diagnostics.record(format!(
-                    "titlebar form service={service} failed={result:?}"
-                ));
+                diagnostics.record(format!("titlebar form service={service} failed={result:?}"));
                 Value::Null
             }
         }
@@ -1760,7 +1758,9 @@ mod tests {
                             .map(|client| (client.state(), client.connection_generation()));
                         panic!(
                             "titlebar phase={phase} revision={revision}: {outcome:?}; reads={} lifecycle={lifecycle:?} targets={:?} last={last:?} broker={broker_registry:?}\n{}",
-                            reads.load(Ordering::SeqCst), port.titlebars, port.registry.history()
+                            reads.load(Ordering::SeqCst),
+                            port.titlebars,
+                            port.registry.history()
                         );
                     }
                 }
@@ -1815,7 +1815,11 @@ mod tests {
             .connect()
             .await
             .unwrap();
-        assert_ne!(changed(&other, 8).await, 0, "the broker reserves the publisher");
+        assert_ne!(
+            changed(&other, 8).await,
+            0,
+            "the broker reserves the publisher"
+        );
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert_eq!(
             reads.load(Ordering::SeqCst),
