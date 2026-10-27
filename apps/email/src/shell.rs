@@ -940,7 +940,20 @@ impl Shell {
                     .read_document(a, path.clone(), None, false, false)
             });
         if let Err((_, message)) = result {
-            self.state.status = message;
+            if let Some(window) = origin
+                .as_ref()
+                .and_then(|name| self.composers.windows.get(name))
+            {
+                let mut window = window.lock().unwrap();
+                if let Some(compose) = &mut window.view.compose {
+                    compose.error = Some(message);
+                } else {
+                    window.view.status = message;
+                }
+                self.ctx.request_repaint_of(window.viewport);
+            } else {
+                self.state.status = message;
+            }
         } else if let Some(ticket) = self.state.documents.opening_ticket() {
             self.composers.drops.insert(ticket, (origin, path));
         }

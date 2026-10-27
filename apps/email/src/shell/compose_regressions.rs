@@ -377,9 +377,17 @@ fn review_compose_only_synchronous_document_failure_is_visible() {
 fn review_synchronous_document_drop_failure_reaches_its_composer() {
     let (mut shell, _broker) = compose_fixture(true);
     add_composer(&mut shell, "one");
-    queued(&mut shell, "compose-1", vec![UiEvent::ComposeDrop(vec!["relative.md".into()])]);
+    queued(
+        &mut shell,
+        "compose-1",
+        vec![UiEvent::ComposeDrop(vec!["relative.md".into()])],
+    );
     shell.composer_input();
-    assert_eq!(shell.composers.windows["compose-1"].lock().unwrap().view.compose.as_ref().unwrap().error.as_deref(), Some(label("document-absolute-path").as_str()));
+    let window = shell.composers.windows["compose-1"].lock().unwrap();
+    assert_eq!(
+        window.view.compose.as_ref().unwrap().error.as_deref(),
+        Some(label("document-absolute-path").as_str())
+    );
     shell.bus.quit();
 }
 
