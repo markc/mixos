@@ -58,6 +58,9 @@ pub fn path(bytes: &[u8]) -> PathBuf {
 }
 
 impl Window {
+    pub fn title(&self) -> String {
+        dopus_core::sanitise_display_text(&self.request.title)
+    }
     pub fn state(&self) -> State {
         let pane = self.app.core.pane(PaneId::Left);
         State {
@@ -412,7 +415,7 @@ impl Window {
         toolkit::chrome::client_side(&ctx);
         for (id, origin) in toolkit::titlebar::show_bar(
             ui,
-            &dopus_core::sanitise_display_text(&self.request.title),
+            &self.title(),
             Some(toolkit::Icon::Folder),
             &registry,
             self,

@@ -208,7 +208,7 @@ impl eframe::App for Shell {
                 }
                 (
                     window.id.clone(),
-                    dopus_core::sanitise_display_text(&window.request.title),
+                    window.title(),
                 )
             };
             // Request windows intentionally have no saved geometry: the contract
@@ -321,6 +321,22 @@ mod tests {
         assert!(target(&windows, json!({})).is_err());
         assert!(target(&windows, json!({"viewport":"bogus"})).is_err());
         assert!(target(&windows, json!([])).is_err());
+        assert!(target(&windows, json!({"viewport":null})).is_err());
+        assert!(target(&windows, json!({"viewport":7})).is_err());
+    }
+
+    #[test]
+    fn default_viewport_stays_bound_when_another_chooser_opens_before_ui_dispatch() {
+        let ctx = egui::Context::default();
+        drive::install(&ctx, "files");
+        let windows = Windows::default();
+        let mut presenter = NativePresenter {ctx, windows:windows.clone()};
+        let mut engine = dopus_core::chooser::Engine::new(1, super::super::defaults(), b"/tmp".to_vec()).unwrap();
+        let first = engine.choose("{}", "local:a", 1, &mut presenter).unwrap()["request"].clone();
+        let at_arrival = target(&windows, json!({})).unwrap();
+        engine.choose("{}", "local:b", 2, &mut presenter).unwrap();
+        assert!(target(&windows, json!({})).is_err());
+        assert_eq!(target(&windows, at_arrival).unwrap()["viewport"], first);
     }
 
     #[test]

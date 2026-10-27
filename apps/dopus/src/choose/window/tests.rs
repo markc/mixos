@@ -55,7 +55,7 @@ fn escape_keeps_replace_then_closes_popup_then_cancels_from_name() {
     h.run();
     assert!(!egui::Popup::is_any_open(&h.ctx));
     assert!(!h.state().ending);
-    h.get_by_role(egui::accesskit::Role::TextInput).click();
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "File name").click();
     h.run();
     h.key_press(egui::Key::Escape);
     h.run();
@@ -90,17 +90,12 @@ fn caller_labels_are_sanitised_only_for_display_and_never_change_wire_values() {
         "filters":[{"name":"Filter\nInjected", "patterns":["*"],"mime_types":[]}],
         "choices":[{"id":"choice", "label":"Choice\nInjected", "options":[{"id":"raw\nvalue","label":"Value\nInjected"}]}]});
     let mut h = harness(window(body));
-    for text in [
-        "Title�Injected",
-        "Save�Injected",
-        "Filter�Injected",
-        "Choice�Injected",
-        "Value�Injected",
-        "For x�Requested by local:portald, says local:agent",
-    ] {
-        h.get_by_label(text);
-    }
-    h.get_by_label("Filter�Injected");
+    assert_eq!(h.state().title(), "Title�Injected");
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Save�Injected");
+    h.get_by_value("Filter�Injected");
+    h.get_by_value("Value�Injected");
+    assert!(h.get_all_by_label("Choice�Injected").count() > 0);
+    h.get_by_label("For x�Requested by local:portald, says local:agent");
     assert_eq!(
         h.state().request.on_behalf_of.as_deref(),
         Some("x\nRequested by local:portald")

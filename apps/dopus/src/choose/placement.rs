@@ -177,22 +177,6 @@ async fn call(
         .flatten()
 }
 
-#[cfg(test)]
-fn focused(snapshot: &Value) -> Option<Value> {
-    let outputs = snapshot["outputs"].as_object()?;
-    let focused = snapshot["focus"]["window"]["id"]
-        .as_u64()
-        .and_then(|id| snapshot["windows"][format!("s{id}")]["output"].as_str());
-    let pointer = snapshot["input"]["seats"]
-        .as_object()
-        .and_then(|seats| seats.values().find_map(|s| s["pointer"]["output"].as_str()));
-    let (key, output) = focused
-        .and_then(|key| outputs.get_key_value(key))
-        .or_else(|| pointer.and_then(|name| outputs.iter().find(|(_, o)| o["name"] == name)))
-        .or_else(|| outputs.iter().find(|(_, o)| o["default"] == true))?;
-    centred(key, output)
-}
-
 fn centred(key: &str, output: &Value) -> Option<Value> {
     let width = output["width"].as_f64()?;
     let height = output["height"].as_f64()?;
@@ -223,7 +207,7 @@ mod tests {
             paths,
             ["focus.window.id", "windows.s7.output", "outputs.o_right"]
         );
-        assert_eq!(result.unwrap()["output"], "o_right");
+        assert_eq!(result.unwrap(), json!({"output":"o_right","x":550.0,"y":240.0,"width":820,"height":600}));
     }
 
     #[test]
@@ -267,12 +251,13 @@ mod tests {
         assert_eq!(engine.list()["requests"], json!([]));
     }
     #[test]
-    fn centre_is_output_local_and_uses_the_focused_window() {
-        let snapshot = json!({"focus":{"window":{"id":7}}, "windows":{"s7":{"output":"o_right"}},
-            "outputs":{"o_left":{"name":"left","default":true,"width":1280,"height":720},"o_right":{"name":"right","width":1920,"height":1080,"x":1280}}});
-        assert_eq!(
-            focused(&snapshot).unwrap(),
-            json!({"output":"o_right","x":550.0,"y":240.0,"width":820,"height":600})
-        );
+    fn capture_uses_pointer_output_before_default_without_a_focused_window() {
+        let result = futures::executor::block_on(capture_with(|path| std::future::ready(match path.as_str() {
+            "focus.window.id" => Some(Value::Null),
+            "input.seats" => Some(json!({"seat0":{"pointer":{"output":"right"}}})),
+            "outputs" => Some(json!({"o_left":{"name":"left","default":true,"width":1280,"height":720}, "o_right":{"name":"right","width":1920,"height":1080}})),
+            other => panic!("unexpected property path {other}"),
+        })));
+        assert_eq!(result.unwrap()["output"], "o_right");
     }
 }
