@@ -379,7 +379,15 @@ impl Window {
                         )
                         .show_ui(ui, |ui| {
                             for filter in &self.request.filters {
-                                if toolkit::selectable(ui, current.as_ref() == Some(filter), &filter.name).clicked() { current = Some(filter.clone()); }
+                                if toolkit::selectable(
+                                    ui,
+                                    current.as_ref() == Some(filter),
+                                    &filter.name,
+                                )
+                                .clicked()
+                                {
+                                    current = Some(filter.clone());
+                                }
                             }
                         })
                         .response
@@ -412,7 +420,15 @@ impl Window {
                                 )
                                 .show_ui(ui, |ui| {
                                     for option in &choice.options {
-                                        if toolkit::selectable(ui, *value == option.id, &option.label).clicked() { *value = option.id.clone(); }
+                                        if toolkit::selectable(
+                                            ui,
+                                            *value == option.id,
+                                            &option.label,
+                                        )
+                                        .clicked()
+                                        {
+                                            *value = option.id.clone();
+                                        }
                                     }
                                 })
                                 .response
@@ -433,9 +449,24 @@ impl Window {
                 });
             });
         });
-        let places_width = self.app.core.places().iter().map(|(name, _)| {
-            ui.painter().layout_no_wrap((*name).into(), egui::TextStyle::Body.resolve(ui.style()), ui.visuals().text_color()).size().x
-        }).fold(0.0_f32, f32::max) + ui.spacing().interact_size.x + 2.0 * ui.spacing().item_spacing.x;
+        let places_width = self
+            .app
+            .core
+            .places()
+            .iter()
+            .map(|(name, _)| {
+                ui.painter()
+                    .layout_no_wrap(
+                        (*name).into(),
+                        egui::TextStyle::Body.resolve(ui.style()),
+                        ui.visuals().text_color(),
+                    )
+                    .size()
+                    .x
+            })
+            .fold(0.0_f32, f32::max)
+            + 2.0 * ui.spacing().interact_size.x
+            + 2.0 * ui.spacing().item_spacing.x;
         egui::Panel::left("files-places")
             .default_size(places_width)
             .show(ui, |ui| {
@@ -484,6 +515,10 @@ impl Window {
         if let Some(id) = clicked {
             let _ = registry.execute(id, self, Origin::Menu);
         }
+        // Tick after this frame's mutations (law 1). Raw worker replies are
+        // still fed through on_event only by the root event loop (law 2).
+        let derived = self.app.core.tick(Instant::now());
+        self.absorb(derived);
         let (runs, _) = registry.take_executed();
         self.executed.extend(runs.iter().map(|run| {
             let mut body = toolkit::executed::Executed::body(run);
@@ -538,7 +573,12 @@ fn registry() -> Registry<Window> {
     add!("selection.previous", "select-previous");
     add!("selection.first", "select-first");
     add!("selection.last", "select-last");
-    registry.add_shortcuts("nav.parent", crate::keymap::defaults_for("nav.parent").into_iter().skip(1));
+    registry.add_shortcuts(
+        "nav.parent",
+        crate::keymap::defaults_for("nav.parent")
+            .into_iter()
+            .skip(1),
+    );
     registry
 }
 

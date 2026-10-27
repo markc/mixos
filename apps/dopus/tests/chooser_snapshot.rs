@@ -57,7 +57,11 @@ fn snapshot(kind: &str, mode: Mode) {
     body["current_folder"] = json!(folder);
     body["on_behalf_of"] = json!("fakeapp");
     let request = Request::parse(&body.to_string(), &defaults()).unwrap();
-    let caller = if kind == "open" { "local:agent" } else { "local:portald" };
+    let caller = if kind == "open" {
+        "local:agent"
+    } else {
+        "local:portald"
+    };
     let mut window = Window::for_request("0123456789abcdef-1", caller, request);
     window.ready = true;
     for _ in 0..50 {
