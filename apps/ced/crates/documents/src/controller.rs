@@ -3686,7 +3686,10 @@ mod tests {
 
     #[test]
     fn execute_runs_without_params_and_refuses_an_unknown_tab() {
-        for body in [json!({"id": "file.new"}), json!({"id": "file.new", "params": null})] {
+        for body in [
+            json!({"id": "file.new"}),
+            json!({"id": "file.new", "params": null}),
+        ] {
             let mut c = ctl();
             let fx = c.on_bus_command(cmd("ced.execute", body.clone()));
             assert_eq!(response(&fx).0, 0, "{body}");
