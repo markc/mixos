@@ -225,7 +225,9 @@ impl eframe::App for Shell {
                 .show_viewport_deferred(viewport(&id), builder, move |ui, _| {
                     if let Some(window) = weak.upgrade() {
                         let mut window = window.lock().unwrap();
-                        window.mapped = ui.ctx().input(|i| i.viewport().inner_rect.is_some());
+                        // The native backend invokes this after configuring the
+                        // viewport. Wayland need not supply an inner_rect.
+                        window.mapped = true;
                         window.show(ui);
                         if !window.executed.is_empty() {
                             let _ = reports
@@ -424,7 +426,7 @@ mod tests {
             );
             // Inject the bound's expiry without spending five seconds in a unit test.
             mapping.deadlines.insert(id.clone(), before);
-            assert_eq!(mapping.expired().await, [id.clone()]);
+            assert_eq!(mapping.expired().await.as_slice(), std::slice::from_ref(&id));
             let outcome =
                 super::super::fail_unmapped(&mut engine, &mut presenter, &id, 5002).unwrap();
             assert_eq!(outcome.response, 2);
