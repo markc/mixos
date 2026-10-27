@@ -16,9 +16,14 @@ fn home() -> &'static Path {
         std::fs::create_dir_all(home.join("Documents")).unwrap();
         let app_home = home.parent().unwrap().join("dopus-state");
         std::fs::create_dir_all(app_home.join("config")).unwrap();
-        std::fs::write(app_home.join("config/config.conf.mix"), format!(
-            "schema_version: 2\nbookmarks: [{{name: \"My archive\", path: \"{}\"}}]\n", home.join("Documents").display()
-        )).unwrap();
+        std::fs::write(
+            app_home.join("config/config.conf.mix"),
+            format!(
+                "schema_version: 2\nbookmarks: [{{name: \"My archive\", path: \"{}\"}}]\n",
+                home.join("Documents").display()
+            ),
+        )
+        .unwrap();
         for (name, contents) in [
             ("notes.txt", "Notes"),
             ("report.pdf", "Report"),

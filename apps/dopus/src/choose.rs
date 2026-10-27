@@ -124,7 +124,12 @@ async fn deliver(
     answer.outcome
 }
 
-fn end_presentation(engine: &mut Engine, presenter: &mut impl Presenter, event: Presentation, now: u64) -> Option<Outcome> {
+fn end_presentation(
+    engine: &mut Engine,
+    presenter: &mut impl Presenter,
+    event: Presentation,
+    now: u64,
+) -> Option<Outcome> {
     match engine.end(&event.request, event.end, now, presenter) {
         Ok(outcome) => outcome,
         Err(error) => {
@@ -142,24 +147,52 @@ struct Mapping {
 
 impl Mapping {
     fn opened(&mut self, id: &str) {
-        self.deadlines.insert(id.into(), tokio::time::Instant::now() + Duration::from_secs(5));
+        self.deadlines.insert(
+            id.into(),
+            tokio::time::Instant::now() + Duration::from_secs(5),
+        );
     }
 
     async fn expired(&mut self) -> Vec<String> {
-        let Some(deadline) = self.deadlines.values().min().copied() else { return std::future::pending().await; };
+        let Some(deadline) = self.deadlines.values().min().copied() else {
+            return std::future::pending().await;
+        };
         tokio::time::sleep_until(deadline).await;
         let now = tokio::time::Instant::now();
-        let ids: Vec<_> = self.deadlines.iter().filter(|(_, at)| **at <= now).map(|(id, _)| id.clone()).collect();
-        for id in &ids { self.deadlines.remove(id); }
+        let ids: Vec<_> = self
+            .deadlines
+            .iter()
+            .filter(|(_, at)| **at <= now)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in &ids {
+            self.deadlines.remove(id);
+        }
         ids
     }
 }
 
-fn fail_unmapped(engine: &mut Engine, presenter: &mut impl Presenter, id: &str, now: u64) -> Option<Outcome> {
-    if presenter.mapped(id) { return None; }
-    end_presentation(engine, presenter, Presentation {
-        request: id.into(), end: End::Failed(format!("UNAVAILABLE: {}", crate::label("chooser-unavailable"))),
-    }, now)
+fn fail_unmapped(
+    engine: &mut Engine,
+    presenter: &mut impl Presenter,
+    id: &str,
+    now: u64,
+) -> Option<Outcome> {
+    if presenter.mapped(id) {
+        return None;
+    }
+    end_presentation(
+        engine,
+        presenter,
+        Presentation {
+            request: id.into(),
+            end: End::Failed(format!(
+                "UNAVAILABLE: {}",
+                crate::label("chooser-unavailable")
+            )),
+        },
+        now,
+    )
 }
 
 fn publication_headers() -> BTreeMap<String, String> {
@@ -489,8 +522,14 @@ mod tests {
             true
         };
         assert!(
-            futures::executor::block_on(deliver(&mut engine, &mut presenter, &mut placement, answer, reply))
-                .is_none()
+            futures::executor::block_on(deliver(
+                &mut engine,
+                &mut presenter,
+                &mut placement,
+                answer,
+                reply
+            ))
+            .is_none()
         );
         // A second request's failed (or timed-out) reply cannot lose the first.
         let answer = dispatch(
@@ -503,9 +542,13 @@ mod tests {
         );
         let lost = answer.body["request"].as_str().unwrap().to_owned();
         assert!(
-            futures::executor::block_on(deliver(&mut engine, &mut presenter, &mut placement, answer, async {
-                false
-            }))
+            futures::executor::block_on(deliver(
+                &mut engine,
+                &mut presenter,
+                &mut placement,
+                answer,
+                async { false }
+            ))
             .is_none()
         );
         assert_eq!(rx.len(), 1);
@@ -562,9 +605,13 @@ mod tests {
             4,
         );
         assert!(
-            futures::executor::block_on(deliver(&mut engine, &mut presenter, &mut placement, answer, async {
-                false
-            }))
+            futures::executor::block_on(deliver(
+                &mut engine,
+                &mut presenter,
+                &mut placement,
+                answer,
+                async { false }
+            ))
             .is_none()
         );
         assert!(rx.try_recv().is_err());

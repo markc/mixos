@@ -428,14 +428,22 @@ impl Window {
             if let Some(claim) = &self.request.on_behalf_of {
                 ui.weak(label_with(
                     "chooser-claim",
-                    &[("app", &dopus_core::sanitise_display_text(claim)), ("caller", &self.caller)],
+                    &[
+                        ("app", &dopus_core::sanitise_display_text(claim)),
+                        ("caller", &self.caller),
+                    ],
                 ));
             }
         });
         egui::Panel::bottom("files-buttons").show(ui, |ui| {
             ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
                 ui.horizontal(|ui| {
-                    if ui.add(toolkit::button::PushButton::primary(dopus_core::sanitise_display_text(&self.request.accept_label))).clicked() {
+                    if ui
+                        .add(toolkit::button::PushButton::primary(
+                            dopus_core::sanitise_display_text(&self.request.accept_label),
+                        ))
+                        .clicked()
+                    {
                         clicked = Some("chooser.accept");
                     }
                     if ui.button(label("cancel")).clicked() {
@@ -468,25 +476,36 @@ impl Window {
                                 if self.request.mode == Mode::Save {
                                     ui.horizontal(|ui| {
                                         ui.label(label("chooser-name"));
-                                        let field = ui.add(
-                                            egui::TextEdit::singleline(&mut self.name)
-                                                .desired_width(f32::INFINITY),
-                                        )
-                                        .accessible_name(label("chooser-name"));
+                                        let field = ui
+                                            .add(
+                                                egui::TextEdit::singleline(&mut self.name)
+                                                    .desired_width(f32::INFINITY),
+                                            )
+                                            .accessible_name(label("chooser-name"));
                                         if self.focus_name && self.ready && !self.ending {
                                             field.request_focus();
-                                            if let Some(mut state) = egui::TextEdit::load_state(&ctx, field.id) {
-                                                let end = self.name.rfind('.').filter(|i| *i > 0)
+                                            if let Some(mut state) =
+                                                egui::TextEdit::load_state(&ctx, field.id)
+                                            {
+                                                let end = self
+                                                    .name
+                                                    .rfind('.')
+                                                    .filter(|i| *i > 0)
                                                     .map(|i| self.name[..i].chars().count())
                                                     .unwrap_or_else(|| self.name.chars().count());
-                                                state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
-                                                    egui::text::CCursor::new(0), egui::text::CCursor::new(end),
-                                                )));
+                                                state.cursor.set_char_range(Some(
+                                                    egui::text::CCursorRange::two(
+                                                        egui::text::CCursor::new(0),
+                                                        egui::text::CCursor::new(end),
+                                                    ),
+                                                ));
                                                 state.store(&ctx, field.id);
                                             }
                                             self.focus_name = false;
                                         }
-                                        if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                                        if field.lost_focus()
+                                            && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                        {
                                             clicked = Some("chooser.accept");
                                         }
                                     });
@@ -546,12 +565,20 @@ impl Window {
                                         self.choices.get_mut(&choice.id).expect("default choice");
                                     if choice.options.is_empty() {
                                         let mut checked = value == "true";
-                                        if ui.checkbox(&mut checked, dopus_core::sanitise_display_text(&choice.label)).changed() {
+                                        if ui
+                                            .checkbox(
+                                                &mut checked,
+                                                dopus_core::sanitise_display_text(&choice.label),
+                                            )
+                                            .changed()
+                                        {
                                             *value = checked.to_string();
                                         }
                                     } else {
                                         ui.horizontal(|ui| {
-                                            ui.label(dopus_core::sanitise_display_text(&choice.label));
+                                            ui.label(dopus_core::sanitise_display_text(
+                                                &choice.label,
+                                            ));
                                             egui::ComboBox::from_id_salt((
                                                 "files-choice",
                                                 &choice.id,
@@ -561,7 +588,9 @@ impl Window {
                                                     .options
                                                     .iter()
                                                     .find(|o| &o.id == value)
-                                                    .map(|o| dopus_core::sanitise_display_text(&o.label))
+                                                    .map(|o| {
+                                                        dopus_core::sanitise_display_text(&o.label)
+                                                    })
                                                     .unwrap_or_default(),
                                             )
                                             .show_ui(ui, |ui| {
@@ -569,7 +598,9 @@ impl Window {
                                                     if toolkit::selectable(
                                                         ui,
                                                         *value == option.id,
-                                                        dopus_core::sanitise_display_text(&option.label),
+                                                        dopus_core::sanitise_display_text(
+                                                            &option.label,
+                                                        ),
                                                     )
                                                     .clicked()
                                                     {
@@ -578,7 +609,9 @@ impl Window {
                                                 }
                                             })
                                             .response
-                                            .accessible_name(dopus_core::sanitise_display_text(&choice.label));
+                                            .accessible_name(dopus_core::sanitise_display_text(
+                                                &choice.label,
+                                            ));
                                         });
                                     }
                                 }
@@ -640,7 +673,10 @@ impl Window {
                 toolkit::dialog::Choice::new(label("cancel"), toolkit::dialog::Role::Cancel),
             ])
             .show(&ctx, |ui| {
-                ui.label(replace_text("chooser-replace-body", collision_count(accept)));
+                ui.label(replace_text(
+                    "chooser-replace-body",
+                    collision_count(accept),
+                ));
                 let max_names = ctx.content_rect().height()
                     * toolkit::chrome::Chrome::of(&ctx)
                         .style
@@ -686,7 +722,11 @@ fn is_portald(caller: &str) -> bool {
 }
 
 fn collision_count(accept: &Acceptance) -> usize {
-    accept.paths.iter().filter(|p| path(p).symlink_metadata().is_ok()).count()
+    accept
+        .paths
+        .iter()
+        .filter(|p| path(p).symlink_metadata().is_ok())
+        .count()
 }
 
 fn replace_text(id: &str, count: usize) -> String {

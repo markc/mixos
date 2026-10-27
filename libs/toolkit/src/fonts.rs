@@ -91,6 +91,9 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
         .entry(FontFamily::Proportional)
         .or_default()
         .insert(0, body);
+    // The display sanitiser uses U+FFFD. Inter and the default UI fallbacks
+    // lack it; the already bundled monospace face supplies that glyph.
+    fonts.families.entry(FontFamily::Proportional).or_default().push(mono.clone());
     fonts
         .families
         .entry(FontFamily::Monospace)

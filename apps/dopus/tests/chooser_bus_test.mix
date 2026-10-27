@@ -118,12 +118,15 @@ end
 try
   $broker = $n.private_bus({dir:$tmp .. "/broker", name:"chooser-test", noded:$noded})
   mkdir($tmp .. "/home/Documents", {parents:true})
+  mkdir($tmp .. "/dopus/config", {parents:true})
+  $saved_places = 'schema_version: 2' .. "\n" .. 'bookmarks: [{name: "My archive", path: "' .. $tmp .. '/home/Documents"}]' .. "\n"
+  write_file($tmp .. "/dopus/config/config.conf.mix", $saved_places)
   write_file($tmp .. "/home/notes.txt", "original")
   write_file($tmp .. "/settings.json", read_file($root .. "/tests/desktop/smoke-settings.json"))
   $session = $n.start({bin:$comp, tag:"chooser", run:$run, config:$tmp .. "/settings.json", software:true})
   check($n.wait_ready($session, 40), "nested compd did not start: " .. $session.log)
   $client = $n.client_env($session, {HOME:$tmp .. "/home", XDG_CONFIG_HOME:$tmp .. "/config", XDG_STATE_HOME:$tmp .. "/state",
-    MIXOS_COMP_SERVICE:$session.service, WINIT_UNIX_BACKEND:"wayland", WGPU_BACKEND:"gl", LIBGL_ALWAYS_SOFTWARE:"1",
+    MIXOS_APP_HOME:$tmp .. "/dopus", MIXOS_COMP_SERVICE:$session.service, WINIT_UNIX_BACKEND:"wayland", WGPU_BACKEND:"gl", LIBGL_ALWAYS_SOFTWARE:"1",
     MESA_VK_WSI_PRESENT_MODE:"mailbox", MIXOS_NODED_URL:$broker.url})
   $provider = spawn([$dopus, "--choose-service", "--noded-url", $broker.url],
     {env:$client, stdout:{file:$tmp .. "/files.log"}, stderr:"stdout", detach:true})
@@ -151,6 +154,9 @@ try
   ready($id)
   native_count($session.service,1)
   centred($session.service,$id)
+  drive($id, "ui.click", {label:"My archive"})
+  check(drive($id,"window.state",{}).chooser.folder == "file://" .. $tmp .. "/home/Documents","saved place was not used")
+  check(read_file($tmp .. "/dopus/config/config.conf.mix") == $saved_places,"chooser wrote the file manager config")
   drive($id, "ui.click", {label:"Path"})
   drive($id, "ui.key", {key:"A", modifiers:["ctrl"]})
   drive($id, "ui.type", {text:$tmp .. "/home/Documents"})
@@ -213,7 +219,7 @@ try
   native_count($session.service,0)
   -- Placement must not hold up validation, cancellation or window driving.
   -- A real Bus peer deliberately takes longer than the capture timeout.
-  kill($provider,15)
+  check(kill($provider,15),"could not stop owned provider")
   for $i = 1 to 80
     if not process_alive($provider) then break end
     sleep(0.1)

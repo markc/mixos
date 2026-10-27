@@ -60,7 +60,11 @@ impl Presenter for NativePresenter {
     }
 
     fn mapped(&self, id: &str) -> bool {
-        self.windows.lock().unwrap().get(id).is_some_and(|window| window.lock().unwrap().mapped)
+        self.windows
+            .lock()
+            .unwrap()
+            .get(id)
+            .is_some_and(|window| window.lock().unwrap().mapped)
     }
 
     fn open(&mut self, open: &OpenRequest) -> Result<(), Unavailable> {
@@ -138,7 +142,10 @@ fn target(windows: &Windows, mut args: Value) -> Result<Value, &'static str> {
             _ => return Err("viewport is required unless exactly one chooser is open"),
         }
     }
-    if !object["viewport"].as_str().is_some_and(|id| windows.lock().unwrap().contains_key(id)) {
+    if !object["viewport"]
+        .as_str()
+        .is_some_and(|id| windows.lock().unwrap().contains_key(id))
+    {
         return Err("viewport is not an open chooser");
     }
     Ok(args)
@@ -151,8 +158,13 @@ impl eframe::App for Shell {
         }
         while let Ok(request) = self.requests.try_recv() {
             // Already bound at Bus arrival. Revalidate only that it is still open.
-            let answer = match request.args.get("viewport").filter(|v| v.is_string())
-                .ok_or("viewport is required").and_then(|_| target(&self.windows, request.args.clone())) {
+            let answer = match request
+                .args
+                .get("viewport")
+                .filter(|v| v.is_string())
+                .ok_or("viewport is required")
+                .and_then(|_| target(&self.windows, request.args.clone()))
+            {
                 Ok(args) => {
                     if request.command == "window.state"
                         && let Some(id) = args["viewport"].as_str()
@@ -191,8 +203,13 @@ impl eframe::App for Shell {
         for window in windows {
             let (id, title) = {
                 let window = window.lock().unwrap();
-                if !window.map_allowed { continue; }
-                (window.id.clone(), dopus_core::sanitise_display_text(&window.request.title))
+                if !window.map_allowed {
+                    continue;
+                }
+                (
+                    window.id.clone(),
+                    dopus_core::sanitise_display_text(&window.request.title),
+                )
             };
             // Request windows intentionally have no saved geometry: the contract
             // starts every one centred on its parent's output or the focused one.
@@ -312,40 +329,88 @@ mod tests {
         let ctx = egui::Context::default();
         drive::install(&ctx, "files");
         let windows = Windows::default();
-        let mut presenter = NativePresenter {ctx, windows: windows.clone()};
+        let mut presenter = NativePresenter {
+            ctx,
+            windows: windows.clone(),
+        };
         let mut engine = Engine::new(1, super::super::defaults(), b"/tmp".to_vec()).unwrap();
-        let id = engine.choose("{}", "local:a", 1, &mut presenter).unwrap()["request"].as_str().unwrap().to_owned();
+        let id = engine.choose("{}", "local:a", 1, &mut presenter).unwrap()["request"]
+            .as_str()
+            .unwrap()
+            .to_owned();
         engine.reply_sent(&id, &mut presenter);
-        let end = End::Accept(Acceptance {paths: vec![], folder:None, current_filter:None, choices:BTreeMap::new()});
+        let end = End::Accept(Acceptance {
+            paths: vec![],
+            folder: None,
+            current_filter: None,
+            choices: BTreeMap::new(),
+        });
         windows.lock().unwrap()[&id].lock().unwrap().finish(end);
-        let end = windows.lock().unwrap()[&id].lock().unwrap().take_end().unwrap();
-        assert!(super::super::end_presentation(&mut engine, &mut presenter, Presentation {request:id.clone(), end}, 2).is_none());
+        let end = windows.lock().unwrap()[&id]
+            .lock()
+            .unwrap()
+            .take_end()
+            .unwrap();
+        assert!(
+            super::super::end_presentation(
+                &mut engine,
+                &mut presenter,
+                Presentation {
+                    request: id.clone(),
+                    end
+                },
+                2
+            )
+            .is_none()
+        );
         let state = windows.lock().unwrap()[&id].lock().unwrap().state();
         assert!(!state.ending);
         assert!(state.message.is_some());
         assert!(state.ready);
-        assert!(engine.end(&id, End::Cancel, 3, &mut presenter).unwrap().is_some());
+        assert!(
+            engine
+                .end(&id, End::Cancel, 3, &mut presenter)
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[test]
     fn never_mapped_presenter_fails_within_five_seconds_and_cleans_up() {
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
         runtime.block_on(async {
             let ctx = egui::Context::default();
             drive::install(&ctx, "files");
             let windows = Windows::default();
-            let mut presenter = NativePresenter {ctx, windows:windows.clone()};
-            let mut engine = dopus_core::chooser::Engine::new(1, super::super::defaults(), b"/tmp".to_vec()).unwrap();
-            let id = engine.choose("{}", "local:a", 1, &mut presenter).unwrap()["request"].as_str().unwrap().to_owned();
+            let mut presenter = NativePresenter {
+                ctx,
+                windows: windows.clone(),
+            };
+            let mut engine =
+                dopus_core::chooser::Engine::new(1, super::super::defaults(), b"/tmp".to_vec())
+                    .unwrap();
+            let id = engine.choose("{}", "local:a", 1, &mut presenter).unwrap()["request"]
+                .as_str()
+                .unwrap()
+                .to_owned();
             engine.reply_sent(&id, &mut presenter);
             let mut mapping = super::super::Mapping::default();
             let before = tokio::time::Instant::now();
             mapping.opened(&id);
-            assert!(mapping.deadlines[&id] <= before + std::time::Duration::from_secs(5) + std::time::Duration::from_millis(10));
+            assert!(
+                mapping.deadlines[&id]
+                    <= before
+                        + std::time::Duration::from_secs(5)
+                        + std::time::Duration::from_millis(10)
+            );
             // Inject the bound's expiry without spending five seconds in a unit test.
             mapping.deadlines.insert(id.clone(), before);
             assert_eq!(mapping.expired().await, [id.clone()]);
-            let outcome = super::super::fail_unmapped(&mut engine, &mut presenter, &id, 5002).unwrap();
+            let outcome =
+                super::super::fail_unmapped(&mut engine, &mut presenter, &id, 5002).unwrap();
             assert_eq!(outcome.response, 2);
             assert_eq!(outcome.reason, "failed");
             assert!(outcome.message.unwrap().starts_with("UNAVAILABLE:"));

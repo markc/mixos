@@ -709,7 +709,11 @@ fn pane_body(
     }
     ui.horizontal(|ui| {
         ui.add_space(6.0);
-        ui.small(if chooser { app.core.visible_summary(pane) } else { model.footer_summary() });
+        ui.small(if chooser {
+            app.core.visible_summary(pane)
+        } else {
+            model.footer_summary()
+        });
     });
 }
 

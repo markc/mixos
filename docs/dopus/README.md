@@ -27,7 +27,8 @@ it keeps.
 - **Sorting.** Click a column header to sort by it, ascending first; click
   it again to reverse.
 - **Places** lists Home, the filesystem root and your Desktop, Documents,
-  Downloads, Music, Pictures and Videos folders, where they exist. Its
+  Downloads, Music, Pictures and Videos folders, where they exist, followed
+  by your saved `bookmarks` (ordered `{name, path}` entries in the config). Its
   toggle sits left of the left pane's path field.
 - **Properties** shows the selected item: kind, size, dates, permissions,
   owner and path, under a preview of a file when one can be made. Its
@@ -165,7 +166,8 @@ the twin-pane window or the `dopus.*` commands. It serves `files.choose`,
 toolkit drive commands as `files.ui.*` and `files.window*`, and discovery,
 under the [file chooser contract](../docs/spec/files/README.md).
 Every accepted request has a secondary native window with the file manager's
-Places, path bar and single pane. Save confirms existing names before returning
+Places (including saved bookmarks, read without writing the config), path bar
+and single pane. Save confirms existing names before returning
 URIs; the chooser never writes the chosen files. Escape, Cancel and window close
 cancel the request. The last accepted folder is remembered per claimed app,
 otherwise per caller, within the provider incarnation.

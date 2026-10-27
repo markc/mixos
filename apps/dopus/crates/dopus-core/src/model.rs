@@ -343,7 +343,8 @@ impl DopusCore {
     /// One immutable MIME catalogue for every chooser, prepared before Bus input.
     pub fn chooser_mime() -> Arc<mimedb::Database> {
         static MIME: std::sync::OnceLock<Arc<mimedb::Database>> = std::sync::OnceLock::new();
-        MIME.get_or_init(|| Arc::new(mimedb::Database::load())).clone()
+        MIME.get_or_init(|| Arc::new(mimedb::Database::load()))
+            .clone()
     }
 
     pub fn visible_summary(&self, pane: PaneId) -> String {
@@ -351,7 +352,11 @@ impl DopusCore {
         if model.listing || model.listing_failed {
             return model.footer_summary();
         }
-        let entries: Vec<_> = self.visible_rows(pane).into_iter().map(|r| r.entry.clone()).collect();
+        let entries: Vec<_> = self
+            .visible_rows(pane)
+            .into_iter()
+            .map(|r| r.entry.clone())
+            .collect();
         pane_summary(&entries)
     }
 
@@ -453,8 +458,14 @@ impl DopusCore {
             #[cfg(test)]
             self.places_stat_passes
                 .set(self.places_stat_passes.get() + 1);
-            places(&self.places_home).into_iter().map(|(name, path)| (name.into(), path))
-                .chain(self.bookmarks.iter().map(|b| (sanitise_display_text(&b.name), b.path.clone())))
+            places(&self.places_home)
+                .into_iter()
+                .map(|(name, path)| (name.into(), path))
+                .chain(
+                    self.bookmarks
+                        .iter()
+                        .map(|b| (sanitise_display_text(&b.name), b.path.clone())),
+                )
                 .collect()
         })
     }
@@ -2372,7 +2383,10 @@ mod tests {
     fn chooser_windows_share_one_mime_database() {
         let (a, _) = super::DopusCore::new_chooser(Default::default());
         let (b, _) = super::DopusCore::new_chooser(Default::default());
-        assert!(std::sync::Arc::ptr_eq(a.chooser_mime.as_ref().unwrap(), b.chooser_mime.as_ref().unwrap()));
+        assert!(std::sync::Arc::ptr_eq(
+            a.chooser_mime.as_ref().unwrap(),
+            b.chooser_mime.as_ref().unwrap()
+        ));
     }
     use super::*;
 
