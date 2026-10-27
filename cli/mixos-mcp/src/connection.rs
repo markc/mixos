@@ -27,6 +27,30 @@ impl std::ops::Deref for Client {
     }
 }
 
+/// The bridge serves no application commands, but like every service it
+/// answers the protocol ones: `HELP` and `app.describe` list only `HELP`.
+fn bridge_reply(command: &str) -> (u8, String) {
+    match command {
+        "HELP" | "app.describe" => {
+            let help = bus::CommandDescriptor::new(
+                "HELP",
+                &[],
+                "List the commands this MCP bridge serves",
+                true,
+            );
+            (0, serde_json::json!([help]).to_string())
+        }
+        _ => (
+            10,
+            serde_json::json!({
+                "error_code": "UNKNOWN_COMMAND",
+                "message": "MCP bridge has no application command port",
+            })
+            .to_string(),
+        ),
+    }
+}
+
 impl Drop for Client {
     fn drop(&mut self) {
         if let Self::Unix { drain, .. } = self
@@ -183,13 +207,10 @@ impl BrokerConnection {
                 let receiver = Arc::clone(connection);
                 let task = tokio::spawn(async move {
                     while let Some(delivery) = receiver.recv_shared().await {
+                        let (rc, body) = bridge_reply(&delivery.command().command);
                         let _ = tokio::time::timeout(
                             std::time::Duration::from_secs(1),
-                            receiver.client().respond(
-                                delivery.command(),
-                                10,
-                                "MCP bridge has no application command port",
-                            ),
+                            receiver.client().respond(delivery.command(), rc, &body),
                         )
                         .await;
                     }
@@ -204,13 +225,10 @@ impl BrokerConnection {
                             let Some(owner) = weak.upgrade() else {
                                 break;
                             };
+                            let (rc, body) = bridge_reply(&command.command);
                             let _ = tokio::time::timeout(
                                 std::time::Duration::from_secs(1),
-                                owner.respond(
-                                    &command,
-                                    10,
-                                    "MCP bridge has no application command port",
-                                ),
+                                owner.respond(&command, rc, &body),
                             )
                             .await;
                         }
@@ -226,6 +244,22 @@ impl BrokerConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bridge_answers_protocol_commands_and_refuses_the_rest() {
+        for command in ["HELP", "app.describe"] {
+            let (rc, body) = bridge_reply(command);
+            assert_eq!(rc, 0);
+            let list: Vec<bus::CommandDescriptor> = serde_json::from_str(&body).unwrap();
+            assert_eq!(list.len(), 1);
+            assert_eq!(list[0].name, "HELP");
+            assert!(list[0].read_only);
+        }
+        let (rc, body) = bridge_reply("mcp.anything");
+        assert_eq!(rc, 10);
+        let refusal: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(refusal["error_code"], "UNKNOWN_COMMAND");
+    }
 
     #[tokio::test]
     async fn missing_candidates_with_opt_in_connect_over_tcp() {
