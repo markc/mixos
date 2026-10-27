@@ -15,6 +15,7 @@
 //! all. It never silently takes a different name.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -137,6 +138,42 @@ pub struct Port {
 }
 
 type RegistryMailbox = Arc<Mutex<Option<(u64, BTreeSet<String>)>>>;
+
+/// Coalesce invalidations without cancelling a read that is making progress.
+/// A burst during one read owes one follow-up read, regardless of its size.
+struct RegistryRead<F> {
+    pending: Option<Pin<Box<F>>>,
+    dirty: bool,
+}
+
+impl<F: std::future::Future> RegistryRead<F> {
+    fn new() -> Self {
+        Self {
+            pending: None,
+            dirty: false,
+        }
+    }
+
+    fn request(&mut self, start: impl FnOnce() -> F) {
+        if self.pending.is_some() {
+            self.dirty = true;
+        } else {
+            self.pending = Some(Box::pin(start()));
+        }
+    }
+
+    /// Release the completed future and return whether it owes another read.
+    fn complete(&mut self) -> bool {
+        self.pending = None;
+        std::mem::take(&mut self.dirty)
+    }
+
+    /// Only a connection change or terminal shutdown cancels live work.
+    fn cancel(&mut self) {
+        self.pending = None;
+        self.dirty = false;
+    }
+}
 
 fn take_registry(registry: &RegistryMailbox, live: Option<u64>) -> Option<Inbound> {
     // A temporary lack of live evidence must not consume the only baseline.
@@ -648,7 +685,7 @@ async fn serve(
     let mut flights = tokio::task::JoinSet::new();
     let mut replies = tokio::task::JoinSet::new();
     let mut sends = tokio::task::JoinSet::new();
-    let mut registry = None;
+    let mut registry = RegistryRead::new();
     let mut registry_retries = 0;
     let mut registry_subscription = (initial_state == ConnState::Connected)
         .then(|| Box::pin(registry_subscribe(Arc::clone(client))));
@@ -670,7 +707,7 @@ async fn serve(
                 if changed.is_err() { lifecycle_open = false; }
                 let state = *lifecycle.borrow_and_update();
                 notify(lane.publish(SettingsEvent::Wake));
-                registry = None;
+                registry.cancel();
                 registry_subscription = (lifecycle_open && state == ConnState::Connected)
                     .then(|| Box::pin(registry_subscribe(Arc::clone(client))));
                 if !lifecycle_open || matches!(state, ConnState::Fatal | ConnState::ShuttingDown) {
@@ -683,21 +720,25 @@ async fn serve(
                 if subscribed {
                     // Subscribe before read so a departure in the gap cannot
                     // leave a successful but obsolete full-set baseline.
-                    registry = Some(Box::pin(registry_read(Arc::clone(client), Duration::ZERO)));
+                    registry.request(|| registry_read(Arc::clone(client), Duration::ZERO));
                     registry_retries = 0;
                 }
             }
-            result = async { registry.as_mut().expect("guarded registry read").await }, if registry.is_some() => {
-                registry = None;
+            result = async { registry.pending.as_mut().expect("guarded registry read").await }, if registry.pending.is_some() => {
+                let dirty = registry.complete();
                 if let Some((generation, services)) = result {
                     if settings::native::live_generation(client) == Some(generation) {
                         *registry_mailbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((generation, services));
                         (delivery.waker)();
+                        registry_retries = 0;
+                        if dirty {
+                            registry.request(|| registry_read(Arc::clone(client), Duration::ZERO));
+                        }
                     }
                 } else if settings::native::live_generation(client).is_some() {
                     let delay = RETRY_INITIAL * (1 << registry_retries.min(3));
                     registry_retries = (registry_retries + 1).min(3);
-                    registry = Some(Box::pin(registry_read(Arc::clone(client), delay)));
+                    registry.request(|| registry_read(Arc::clone(client), delay));
                 } else {
                     tracing::debug!("scene host: registry recovery awaits a live connection");
                 }
@@ -705,20 +746,14 @@ async fn serve(
             command = incoming.recv(), if incoming_open && replies.len() < INBOUND_CAPACITY => {
                 match command {
                     Some(BoundedIncomingEvent::Command(command)) => {
-                        if command.topic() == Some(REGISTRY_TOPIC)
-                            && command.header("gap") == Some("true")
-                        {
-                            registry = Some(Box::pin(registry_read(Arc::clone(client), Duration::ZERO)));
-                            registry_retries = 0;
-                        } else if let Some(wake) = lane.delivery(&command) {
+                        if let Some(wake) = lane.delivery(&command) {
                             notify(wake);
                         } else if let Route::Live(_) = route(service, &command) {
                             if settings::native::live_generation(client) == Some(command.generation) {
                                 // A buffered diff can predate a just-completed
                                 // baseline read. Treat it as an invalidation,
                                 // never overwrite a newer snapshot with its set.
-                                registry = Some(Box::pin(registry_read(Arc::clone(client), Duration::ZERO)));
-                                registry_retries = 0;
+                                registry.request(|| registry_read(Arc::clone(client), Duration::ZERO));
                             }
                         } else {
                             if let Some((command, rc, body)) = admit(service, delivery, command) {
@@ -729,13 +764,12 @@ async fn serve(
                     }
                     Some(BoundedIncomingEvent::Overflow { .. }) => {
                         notify(lane.publish(SettingsEvent::Lost));
-                        registry = Some(Box::pin(registry_read(Arc::clone(client), Duration::ZERO)));
-                        registry_retries = 0;
+                        registry.request(|| registry_read(Arc::clone(client), Duration::ZERO));
                         tracing::warn!("scene host: incoming queue overflow; recovering settings and registry");
                     }
                     None => {
                         incoming_open = false;
-                        registry = None;
+                        registry.cancel();
                         registry_subscription = None;
                         notify(lane.publish(SettingsEvent::Wake));
                         let _ = delivery.send(Inbound::Refused("Bus incoming lane closed; retaining settings resources".into()));
@@ -977,6 +1011,81 @@ mod tests {
     use super::*;
 
     #[test]
+    fn registry_burst_keeps_inflight_read_and_converges_with_one_followup() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+
+        async fn read(
+            starts: Arc<AtomicUsize>,
+            revision: Arc<AtomicUsize>,
+            release: tokio::sync::oneshot::Receiver<()>,
+        ) -> usize {
+            starts.fetch_add(1, Ordering::SeqCst);
+            let snapshot = revision.load(Ordering::SeqCst);
+            release.await.unwrap();
+            snapshot
+        }
+
+        let starts = Arc::new(AtomicUsize::new(0));
+        let revision = Arc::new(AtomicUsize::new(0));
+        let mut registry = RegistryRead::new();
+        let mut context = Context::from_waker(Waker::noop());
+        let (finish, release) = tokio::sync::oneshot::channel();
+        registry.request(|| read(starts.clone(), revision.clone(), release));
+        assert!(
+            registry
+                .pending
+                .as_mut()
+                .unwrap()
+                .as_mut()
+                .poll(&mut context)
+                .is_pending()
+        );
+        for next in 1..=100 {
+            revision.store(next, Ordering::SeqCst);
+            registry.request(|| panic!("churn must not replace an in-flight read"));
+        }
+        assert_eq!(starts.load(Ordering::SeqCst), 1);
+        assert!(!finish.is_closed(), "the original read was cancelled");
+        finish.send(()).unwrap();
+        assert_eq!(
+            registry
+                .pending
+                .as_mut()
+                .unwrap()
+                .as_mut()
+                .poll(&mut context),
+            Poll::Ready(0)
+        );
+        assert!(registry.complete(), "the burst owes one follow-up read");
+
+        let (finish, release) = tokio::sync::oneshot::channel();
+        registry.request(|| read(starts.clone(), revision.clone(), release));
+        assert!(
+            registry
+                .pending
+                .as_mut()
+                .unwrap()
+                .as_mut()
+                .poll(&mut context)
+                .is_pending()
+        );
+        finish.send(()).unwrap();
+        assert_eq!(
+            registry
+                .pending
+                .as_mut()
+                .unwrap()
+                .as_mut()
+                .poll(&mut context),
+            Poll::Ready(100)
+        );
+        assert!(!registry.complete(), "a settled burst must not keep reading");
+        assert!(registry.pending.is_none());
+        assert_eq!(starts.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
     fn registry_baseline_waits_for_live_evidence_and_fences_old_connections() {
         let registry = RegistryMailbox::default();
         *registry.lock().unwrap() = Some((5, BTreeSet::from(["prefs".into()])));
@@ -1025,7 +1134,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires isolated settings_test.mix broker"]
+    #[ignore = "requires private noded at MIXOS_NODED_URL with shell/prefs names free; use settings_test.mix"]
     async fn settings_menu_registry_covers_both_startup_orders_and_host_restart() {
         let url = std::env::var("MIXOS_NODED_URL").unwrap();
         let cache = tempfile::tempdir().unwrap();

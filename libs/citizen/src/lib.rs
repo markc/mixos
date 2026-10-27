@@ -591,14 +591,14 @@ async fn worker(
     outbox::spawn_publisher(client.clone(), outbox);
     // A watch subscription starts with the current value already seen. The
     // first successful registration happened before subscribe_state(), so
-    // changed() alone would only tell the shell about reconnects. Queue the
-    // current state before releasing start(); the receiver retains it until
-    // the shell has installed its drive plugin and starts pumping.
-    let initial = match *connection.borrow_and_update() {
-        ConnState::Connected => Delivery::Connected,
-        _ => Delivery::Disconnected,
-    };
-    let _ = send.send(initial).await;
+    // changed() alone would only tell the shell about reconnects. Queue an
+    // initial Connected before releasing start(); the receiver retains it
+    // until the shell has installed its drive plugin and starts pumping.
+    // Leave other states to changed(), including a connection still coming up.
+    let connected = *connection.borrow_and_update() == ConnState::Connected;
+    if connected {
+        let _ = send.send(Delivery::Connected).await;
+    }
     let _ = ready.send(Ok(()));
     let mut pending: HashMap<u64, IncomingCommand> = HashMap::new();
     let mut next_id = 0;
@@ -650,7 +650,7 @@ async fn worker(
                         let mut events = events.lock().unwrap();
                         events.push(json!({"topic":topic,"from":command.from,"body":command.body}));
                     }
-                    if topic == "noded.props.changed" && command.headers.get("gap").is_none_or(|value|value != "true")
+                    if topic == "noded.props.changed"
                         && serde_json::from_str::<Value>(&command.body).ok().is_some_and(|body|body["path"] != "services.registered") {
                         continue;
                     }
