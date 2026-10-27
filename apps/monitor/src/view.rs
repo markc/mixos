@@ -341,7 +341,11 @@ impl Kind {
 fn section_text(s: &Snapshot, key: &str) -> Option<(String, String, Kind)> {
     if key == "tcp" {
         let value = |v: Option<f64>| v.map(tcp_rate).unwrap_or_else(|| "—".into());
-        return Some((label("tcp"), format!("↓ {}  ↑ {}", value(s.tcp.in_segs), value(s.tcp.out_segs)), Kind::Tcp));
+        return Some((
+            label("tcp"),
+            format!("↓ {}  ↑ {}", value(s.tcp.in_segs), value(s.tcp.out_segs)),
+            Kind::Tcp,
+        ));
     }
     if key == "cpu" {
         let speed = average_mhz(s)
@@ -442,13 +446,22 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                         .horizontal(|ui| {
                             let (values, max) = section_series(engine, &key);
                             let format = |index, value, age| {
-                                let name = if key == "tcp" { label(if index == 0 {"receive"} else {"send"}) } else {String::new()};
+                                let name = if key == "tcp" {
+                                    label(if index == 0 { "receive" } else { "send" })
+                                } else {
+                                    String::new()
+                                };
                                 chart::readout(&name, value, age as f64, kind.format())
                             };
                             let second = engine.rings.get("tcp.out_segs");
                             let series: Vec<_> = if key == "tcp" {
-                                vec![(values.as_slice(), kind.hue()), (second.as_slice(), Hue::Series(2))]
-                            } else { vec![(values.as_slice(), kind.hue())] };
+                                vec![
+                                    (values.as_slice(), kind.hue()),
+                                    (second.as_slice(), Hue::Series(2)),
+                                ]
+                            } else {
+                                vec![(values.as_slice(), kind.hue())]
+                            };
                             graph::lines(
                                 ui,
                                 Vec2::new(64.0, 36.0),
@@ -845,26 +858,52 @@ fn net(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
     figures(ui, "net-figures", &pairs, 3);
 }
 
-fn count(value: f64) -> String { format!("{value:.0}") }
+fn count(value: f64) -> String {
+    format!("{value:.0}")
+}
 
 fn tcp_rate(value: f64) -> String {
     label_with("tcp-rate", &[("value", &format!("{value:.1}"))])
 }
 
-fn tcp_chart(ui: &mut Ui, engine: &Engine, s: &Snapshot, title: &str,
-    fields: &[(&str, &str, Hue)], gauge: bool, annotation: Option<&dyn Fn(usize) -> Option<String>>) {
+fn tcp_chart(
+    ui: &mut Ui,
+    engine: &Engine,
+    s: &Snapshot,
+    title: &str,
+    fields: &[(&str, &str, Hue)],
+    gauge: bool,
+    annotation: Option<&dyn Fn(usize) -> Option<String>>,
+) {
     ui.small(label(title));
-    let values: Vec<_> = fields.iter().map(|(key, _, _)| engine.rings.get(key)).collect();
+    let values: Vec<_> = fields
+        .iter()
+        .map(|(key, _, _)| engine.rings.get(key))
+        .collect();
     let labels: Vec<_> = fields.iter().map(|(_, key, _)| label(key)).collect();
-    let series: Vec<_> = fields.iter().zip(&values).zip(&labels).map(|(((_, _, hue), values), name)| Series {
-        name, hue: *hue, values,
-    }).collect();
+    let series: Vec<_> = fields
+        .iter()
+        .zip(&values)
+        .zip(&labels)
+        .map(|(((_, _, hue), values), name)| Series {
+            name,
+            hue: *hue,
+            values,
+        })
+        .collect();
     let peak = values.iter().map(|v| scale(v, 1.0)).fold(1.0, f64::max);
-    let chart = Chart { series: &series, samples: vitals::history::WINDOW,
-        interval_s: s.interval_s, scale: Scale::Count(peak), format: if gauge {count} else {tcp_rate} };
+    let chart = Chart {
+        series: &series,
+        samples: vitals::history::WINDOW,
+        interval_s: s.interval_s,
+        scale: Scale::Count(peak),
+        format: if gauge { count } else { tcp_rate },
+    };
     let size = Vec2::new(ui.available_width(), 130.0);
     match annotation {
-        Some(annotation) => chart::show_annotated(ui, (title, &engine.ui.node), size, chart, annotation),
+        Some(annotation) => {
+            chart::show_annotated(ui, (title, &engine.ui.node), size, chart, annotation)
+        }
         None => chart::show(ui, (title, &engine.ui.node), size, chart),
     }
 }
@@ -876,34 +915,73 @@ fn tcp(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
     let ratio = |steps: usize| {
         let r = *retrans.get(retrans.len().checked_sub(steps + 1)?)?;
         let o = *out.get(out.len().checked_sub(steps + 1)?)?;
-        let value = model::retransmit_percent(r, o).map(percent).unwrap_or_else(|| "—".into());
+        let value = model::retransmit_percent(r, o)
+            .map(percent)
+            .unwrap_or_else(|| "—".into());
         Some(format!("{}: {value}", label("tcp-retransmit-percent")))
     };
     ui.columns(2, |col| {
-        tcp_chart(&mut col[0], engine, s, "tcp-segments", &[
-            ("tcp.in_segs", "receive", Hue::Series(1)),
-            ("tcp.out_segs", "send", Hue::Series(2)),
-        ], false, None);
-        tcp_chart(&mut col[1], engine, s, "tcp-retransmits", &[
-            ("tcp.retrans_segs", "tcp-retransmits", Hue::Warning),
-        ], false, Some(&ratio));
+        tcp_chart(
+            &mut col[0],
+            engine,
+            s,
+            "tcp-segments",
+            &[
+                ("tcp.in_segs", "receive", Hue::Series(1)),
+                ("tcp.out_segs", "send", Hue::Series(2)),
+            ],
+            false,
+            None,
+        );
+        tcp_chart(
+            &mut col[1],
+            engine,
+            s,
+            "tcp-retransmits",
+            &[("tcp.retrans_segs", "tcp-retransmits", Hue::Warning)],
+            false,
+            Some(&ratio),
+        );
     });
     ui.columns(2, |col| {
-        tcp_chart(&mut col[0], engine, s, "tcp-established", &[
-            ("tcp.established", "tcp-established", Hue::Series(3)),
-        ], true, None);
-        tcp_chart(&mut col[1], engine, s, "tcp-opens-resets", &[
-            ("tcp.active_opens", "tcp-active-opens", Hue::Series(1)),
-            ("tcp.passive_opens", "tcp-passive-opens", Hue::Series(2)),
-            ("tcp.out_rsts", "tcp-out-rsts", Hue::Series(3)),
-            ("tcp.estab_resets", "tcp-estab-resets", Hue::Series(4)),
-        ], false, None);
+        tcp_chart(
+            &mut col[0],
+            engine,
+            s,
+            "tcp-established",
+            &[("tcp.established", "tcp-established", Hue::Series(3))],
+            true,
+            None,
+        );
+        tcp_chart(
+            &mut col[1],
+            engine,
+            s,
+            "tcp-opens-resets",
+            &[
+                ("tcp.active_opens", "tcp-active-opens", Hue::Series(1)),
+                ("tcp.passive_opens", "tcp-passive-opens", Hue::Series(2)),
+                ("tcp.out_rsts", "tcp-out-rsts", Hue::Series(3)),
+                ("tcp.estab_resets", "tcp-estab-resets", Hue::Series(4)),
+            ],
+            false,
+            None,
+        );
     });
     let socks = &s.tcp.sockstat;
     ui.horizontal_wrapped(|ui| {
-        for (key, value) in [("tcp-inuse", socks.inuse), ("tcp-orphans", socks.orphan),
-            ("tcp-timewait", socks.tw), ("tcp-allocated", socks.alloc), ("tcp-memory-pages", socks.mem)] {
-            ui.small(format!("{}: {}", label(key), value.map(|v| v.to_string()).unwrap_or_else(|| "—".into())));
+        for (key, value) in [
+            ("tcp-inuse", socks.inuse),
+            ("tcp-orphans", socks.orphan),
+            ("tcp-timewait", socks.tw),
+            ("tcp-allocated", socks.alloc),
+            ("tcp-memory-pages", socks.mem),
+        ] {
+            ui.small(format!(
+                "{}: {}",
+                label(key),
+                value.map(|v| v.to_string()).unwrap_or_else(|| "—".into())
+            ));
         }
     });
     ui.add_space(6.0);
@@ -911,36 +989,86 @@ fn tcp(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
     if let Some(error) = &engine.connections_error {
         ui.colored_label(ui.visuals().error_fg_color, error);
     } else if let Some(connections) = &engine.connections {
-        if connections.rows.is_empty() { ui.weak(label("tcp-no-connections")); return; }
+        if connections.rows.is_empty() {
+            ui.weak(label("tcp-no-connections"));
+            return;
+        }
         // Widths share the pane and clip long peers/users, with the full
         // endpoint available on hover. No horizontal growth at narrow widths.
         let row_height = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
-        TableBuilder::new(ui).id_salt("tcp-connections").striped(true)
+        let width = (ui.available_width() - ui.spacing().item_spacing.x * 7.0).max(1.0);
+        TableBuilder::new(ui)
+            .id_salt("tcp-connections")
+            .striped(true)
             .cell_layout(Layout::left_to_right(Align::Center))
             .max_scroll_height(180.0)
             .column(Width::remainder().at_least(80.0).clip(true))
-            .column(Width::relative(0.09).clip(true))
-            .column(Width::relative(0.13).clip(true))
-            .column(Width::relative(0.12).clip(true))
-            .column(Width::relative(0.12).clip(true))
-            .column(Width::relative(0.09).clip(true))
-            .column(Width::relative(0.09).clip(true))
-            .column(Width::relative(0.10).clip(true))
+            .column(Width::exact(width * 0.09).clip(true))
+            .column(Width::exact(width * 0.13).clip(true))
+            .column(Width::exact(width * 0.12).clip(true))
+            .column(Width::exact(width * 0.12).clip(true))
+            .column(Width::exact(width * 0.09).clip(true))
+            .column(Width::exact(width * 0.09).clip(true))
+            .column(Width::exact(width * 0.10).clip(true))
             .header(row_height, |mut header| {
-                for key in ["tcp-remote", "tcp-local-port", "state", "tcp-rx", "tcp-tx", "tcp-rtt", "tcp-retransmits", "column-user"] {
-                    header.col(|ui| { ui.strong(label(key)).on_hover_text(label(key)); });
+                for key in [
+                    "tcp-remote",
+                    "tcp-local-port",
+                    "state",
+                    "tcp-rx",
+                    "tcp-tx",
+                    "tcp-rtt",
+                    "tcp-retransmits",
+                    "column-user",
+                ] {
+                    header.col(|ui| {
+                        ui.strong(label(key)).on_hover_text(label(key));
+                    });
                 }
-            }).body(|body| {
+            })
+            .body(|body| {
                 body.rows(row_height, connections.rows.len().min(20), |mut row| {
                     let c = &connections.rows[row.index()];
-                    row.col(|ui| { ui.label(c.peer()).on_hover_text(format!("{}:{} → {}", c.local, c.local_port, c.peer())); });
-                    row.col(|ui| { ui.label(c.local_port.to_string()); });
-                    row.col(|ui| { ui.label(label(&format!("tcp-state-{}", c.state))); });
+                    row.col(|ui| {
+                        ui.label(c.peer()).on_hover_text(format!(
+                            "{}:{} → {}",
+                            c.local,
+                            c.local_port,
+                            c.peer()
+                        ));
+                    });
+                    row.col(|ui| {
+                        ui.label(c.local_port.to_string());
+                    });
+                    row.col(|ui| {
+                        ui.label(label(&format!("tcp-state-{}", c.state)));
+                    });
                     row.col(|ui| right(ui, c.rx_bps.map(rate).unwrap_or_else(|| "—".into())));
                     row.col(|ui| right(ui, c.tx_bps.map(rate).unwrap_or_else(|| "—".into())));
-                    row.col(|ui| right(ui, c.rtt_us.map(|v| label_with("tcp-rtt-ms", &[("value", &format!("{:.1}", f64::from(v)/1000.0))])).unwrap_or_else(|| "—".into())));
-                    row.col(|ui| right(ui, c.retransmits.map(|v| v.to_string()).unwrap_or_else(|| "—".into())));
-                    row.col(|ui| { ui.label(&c.user).on_hover_text(&c.user); });
+                    row.col(|ui| {
+                        right(
+                            ui,
+                            c.rtt_us
+                                .map(|v| {
+                                    label_with(
+                                        "tcp-rtt-ms",
+                                        &[("value", &format!("{:.1}", f64::from(v) / 1000.0))],
+                                    )
+                                })
+                                .unwrap_or_else(|| "—".into()),
+                        )
+                    });
+                    row.col(|ui| {
+                        right(
+                            ui,
+                            c.retransmits
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| "—".into()),
+                        )
+                    });
+                    row.col(|ui| {
+                        ui.label(&c.user).on_hover_text(&c.user);
+                    });
                 });
             });
     } else {

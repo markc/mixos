@@ -152,12 +152,19 @@ pub struct Sockstat {
 
 impl Tcp {
     pub fn series(&self) -> [(&'static str, Option<f64>); 11] {
-        [("tcp.in_segs", self.in_segs), ("tcp.out_segs", self.out_segs),
-         ("tcp.retrans_segs", self.retrans_segs), ("tcp.in_errs", self.in_errs),
-         ("tcp.active_opens", self.active_opens), ("tcp.passive_opens", self.passive_opens),
-         ("tcp.out_rsts", self.out_rsts), ("tcp.estab_resets", self.estab_resets),
-         ("tcp.listen_overflows", self.listen_overflows), ("tcp.listen_drops", self.listen_drops),
-         ("tcp.established", self.established.map(|v| v as f64))]
+        [
+            ("tcp.in_segs", self.in_segs),
+            ("tcp.out_segs", self.out_segs),
+            ("tcp.retrans_segs", self.retrans_segs),
+            ("tcp.in_errs", self.in_errs),
+            ("tcp.active_opens", self.active_opens),
+            ("tcp.passive_opens", self.passive_opens),
+            ("tcp.out_rsts", self.out_rsts),
+            ("tcp.estab_resets", self.estab_resets),
+            ("tcp.listen_overflows", self.listen_overflows),
+            ("tcp.listen_drops", self.listen_drops),
+            ("tcp.established", self.established.map(|v| v as f64)),
+        ]
     }
 }
 
@@ -187,8 +194,11 @@ pub struct Connection {
 
 impl Connection {
     pub fn peer(&self) -> String {
-        if self.remote.contains(':') { format!("[{}]:{}", self.remote, self.remote_port) }
-        else { format!("{}:{}", self.remote, self.remote_port) }
+        if self.remote.contains(':') {
+            format!("[{}]:{}", self.remote, self.remote_port)
+        } else {
+            format!("{}:{}", self.remote, self.remote_port)
+        }
     }
 }
 

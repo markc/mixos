@@ -47,7 +47,9 @@ fn readout_rows(series: &[(&[f64], Hue)], steps: usize, readout: Readout<'_>) ->
             let n = values.len().min(readout.samples);
             if steps < n {
                 let value = values[values.len() - 1 - steps];
-                if !value.is_finite() { return None; }
+                if !value.is_finite() {
+                    return None;
+                }
                 Some((readout.format)(
                     i,
                     value,

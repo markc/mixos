@@ -300,7 +300,11 @@ pub fn series(s: &Snapshot) -> Vec<(String, f64, bool)> {
     for ((name, _), value) in tcp::FIELDS.iter().zip(s.tcp.rates()) {
         put(format!("tcp.{name}"), value, true);
     }
-    put("tcp.established".into(), s.tcp.established.map(|v| v as f64), true);
+    put(
+        "tcp.established".into(),
+        s.tcp.established.map(|v| v as f64),
+        true,
+    );
     out
 }
 
@@ -330,7 +334,7 @@ pub fn summary(s: &Snapshot) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::history::{Store, Live, Retention, Tier};
+    use crate::history::{Live, Retention, Store, Tier};
 
     #[test]
     fn tcp_exactly_eleven_durable_series_roll_up_with_extrema_and_no_sockstat() {
@@ -338,32 +342,49 @@ mod tests {
         let root = Root::new(dir.path());
         let mut fixed = Fixed::read(&root);
         let mut before = read(&root);
-        for (_, key) in tcp::FIELDS { before.tcp.counters.insert(key.into(), 100); }
+        for (_, key) in tcp::FIELDS {
+            before.tcp.counters.insert(key.into(), 100);
+        }
         let mut after = before.clone();
         after.at += std::time::Duration::from_secs(2);
-        for (_, key) in tcp::FIELDS { after.tcp.counters.insert(key.into(), 120); }
+        for (_, key) in tcp::FIELDS {
+            after.tcp.counters.insert(key.into(), 120);
+        }
         after.tcp.counters.insert("CurrEstab".into(), 7);
         after.tcp.sockstat = tcp::sockstat("TCP: inuse 9 orphan 1 tw 2 alloc 10 mem 20");
         let s = snapshot(&root, &mut fixed, &before, &after);
         assert_eq!(s.tcp.rates(), [Some(10.0); 10]);
-        let values: Vec<_> = series(&s).into_iter().filter(|(n,_,_)| n.starts_with("tcp.")).collect();
+        let values: Vec<_> = series(&s)
+            .into_iter()
+            .filter(|(n, _, _)| n.starts_with("tcp."))
+            .collect();
         assert_eq!(values.len(), 11);
-        assert!(values.iter().all(|(_,_,durable)| *durable));
-        assert!(values.iter().all(|(n,_,_)| !n.contains("sockstat")));
+        assert!(values.iter().all(|(_, _, durable)| *durable));
+        assert!(values.iter().all(|(n, _, _)| !n.contains("sockstat")));
         let mut live = Live::default();
         let mut store = Store::open(&dir.path().join("history.db"), Retention::default()).unwrap();
         for (t, multiplier) in [(7200.0, 1.0), (7201.0, 3.0), (10800.0, 1.0)] {
-            let values: Vec<_> = values.iter().map(|(n,v,d)| (n.clone(),v*multiplier,*d)).collect();
+            let values: Vec<_> = values
+                .iter()
+                .map(|(n, v, d)| (n.clone(), v * multiplier, *d))
+                .collect();
             live.push(t, &values);
             store.add(t, &values).unwrap();
         }
         for (name, value, _) in &values {
             for tier in [Tier::Minute, Tier::Hour] {
-                let points = store.query(tier, name, 7200, 10799, tier.seconds()).unwrap();
-                assert_eq!(points, vec![[7200.0, value*2.0, *value, value*3.0]]);
+                let points = store
+                    .query(tier, name, 7200, 10799, tier.seconds())
+                    .unwrap();
+                assert_eq!(points, vec![[7200.0, value * 2.0, *value, value * 3.0]]);
             }
             assert_eq!(live.query(name, 10800.0, 10800.0, 1)[0][1], *value);
         }
-        assert_eq!(snapshot(&root, &mut fixed, &read(&root), &after).tcp.in_segs, None);
+        assert_eq!(
+            snapshot(&root, &mut fixed, &read(&root), &after)
+                .tcp
+                .in_segs,
+            None
+        );
     }
 }

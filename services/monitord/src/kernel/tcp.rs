@@ -24,16 +24,28 @@ pub const FIELDS: [(&str, &str); 10] = [
 pub fn parse(text: &str, section: &str) -> HashMap<String, u64> {
     let mut lines = text.lines();
     while let Some(header) = lines.next() {
-        let Some((name, keys)) = header.split_once(':') else { continue };
-        if name != section { continue; }
-        let Some((name, values)) = lines.next().and_then(|l| l.split_once(':')) else { break };
-        if name != section { break; }
+        let Some((name, keys)) = header.split_once(':') else {
+            continue;
+        };
+        if name != section {
+            continue;
+        }
+        let Some((name, values)) = lines.next().and_then(|l| l.split_once(':')) else {
+            break;
+        };
+        if name != section {
+            break;
+        }
         let keys: Vec<_> = keys.split_whitespace().collect();
         let values: Vec<_> = values.split_whitespace().collect();
-        if keys.len() != values.len() { break; }
-        return keys.into_iter().zip(values).filter_map(|(k, v)| {
-            Some((k.to_owned(), v.parse().ok()?))
-        }).collect();
+        if keys.len() != values.len() {
+            break;
+        }
+        return keys
+            .into_iter()
+            .zip(values)
+            .filter_map(|(k, v)| Some((k.to_owned(), v.parse().ok()?)))
+            .collect();
     }
     HashMap::new()
 }
@@ -49,13 +61,21 @@ pub struct Sockstat {
 }
 
 pub fn sockstat(text: &str) -> Sockstat {
-    let fields: Vec<_> = text.lines().find_map(|l| l.strip_prefix("TCP:"))
-        .unwrap_or_default().split_whitespace().collect();
-    let fields: HashMap<_, _> = fields.chunks_exact(2)
-        .filter_map(|p| Some((p[0], p[1].parse::<u64>().ok()?))).collect();
+    let fields: Vec<_> = text
+        .lines()
+        .find_map(|l| l.strip_prefix("TCP:"))
+        .unwrap_or_default()
+        .split_whitespace()
+        .collect();
+    let fields: HashMap<_, _> = fields
+        .chunks_exact(2)
+        .filter_map(|p| Some((p[0], p[1].parse::<u64>().ok()?)))
+        .collect();
     Sockstat {
-        inuse: fields.get("inuse").copied(), orphan: fields.get("orphan").copied(),
-        tw: fields.get("tw").copied(), alloc: fields.get("alloc").copied(),
+        inuse: fields.get("inuse").copied(),
+        orphan: fields.get("orphan").copied(),
+        tw: fields.get("tw").copied(),
+        alloc: fields.get("alloc").copied(),
         mem: fields.get("mem").copied(),
     }
 }
@@ -68,8 +88,14 @@ pub struct Reading {
 
 pub fn read(root: &Root) -> Reading {
     let mut counters = parse(&root.read("proc/net/snmp").unwrap_or_default(), "Tcp");
-    counters.extend(parse(&root.read("proc/net/netstat").unwrap_or_default(), "TcpExt"));
-    Reading { counters, sockstat: sockstat(&root.read("proc/net/sockstat").unwrap_or_default()) }
+    counters.extend(parse(
+        &root.read("proc/net/netstat").unwrap_or_default(),
+        "TcpExt",
+    ));
+    Reading {
+        counters,
+        sockstat: sockstat(&root.read("proc/net/sockstat").unwrap_or_default()),
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -90,20 +116,36 @@ pub struct Tcp {
 
 impl Tcp {
     pub fn rates(&self) -> [Option<f64>; 10] {
-        [self.in_segs, self.out_segs, self.retrans_segs, self.in_errs,
-         self.active_opens, self.passive_opens, self.out_rsts, self.estab_resets,
-         self.listen_overflows, self.listen_drops]
+        [
+            self.in_segs,
+            self.out_segs,
+            self.retrans_segs,
+            self.in_errs,
+            self.active_opens,
+            self.passive_opens,
+            self.out_rsts,
+            self.estab_resets,
+            self.listen_overflows,
+            self.listen_drops,
+        ]
     }
 }
 
 pub fn snapshot(before: &Reading, after: &Reading, dt: f64) -> Tcp {
     let r = |key| rate(*before.counters.get(key)?, *after.counters.get(key)?, dt);
     Tcp {
-        in_segs: r("InSegs"), out_segs: r("OutSegs"), retrans_segs: r("RetransSegs"),
-        in_errs: r("InErrs"), active_opens: r("ActiveOpens"), passive_opens: r("PassiveOpens"),
-        out_rsts: r("OutRsts"), estab_resets: r("EstabResets"),
-        listen_overflows: r("ListenOverflows"), listen_drops: r("ListenDrops"),
-        established: after.counters.get("CurrEstab").copied(), sockstat: after.sockstat.clone(),
+        in_segs: r("InSegs"),
+        out_segs: r("OutSegs"),
+        retrans_segs: r("RetransSegs"),
+        in_errs: r("InErrs"),
+        active_opens: r("ActiveOpens"),
+        passive_opens: r("PassiveOpens"),
+        out_rsts: r("OutRsts"),
+        estab_resets: r("EstabResets"),
+        listen_overflows: r("ListenOverflows"),
+        listen_drops: r("ListenDrops"),
+        established: after.counters.get("CurrEstab").copied(),
+        sockstat: after.sockstat.clone(),
     }
 }
 
@@ -120,9 +162,14 @@ mod tests {
         assert_eq!(counters["InSegs"], 1000);
         assert_eq!(counters["ListenOverflows"], 2);
         assert!(!counters.contains_key("MaxConn"));
-        let before = Reading { counters, ..Reading::default() };
+        let before = Reading {
+            counters,
+            ..Reading::default()
+        };
         let mut after = before.clone();
-        for (_, k) in FIELDS { *after.counters.get_mut(k).unwrap() += 10; }
+        for (_, k) in FIELDS {
+            *after.counters.get_mut(k).unwrap() += 10;
+        }
         let tcp = snapshot(&before, &after, 2.0);
         assert_eq!(tcp.rates(), [Some(5.0); 10]);
         assert_eq!(tcp.established, Some(7));
@@ -134,8 +181,13 @@ mod tests {
 
     #[test]
     fn sockstat_fixture_is_tcp_only_and_unavailable_stays_null() {
-        let s = sockstat("sockets: used 22\nTCP: inuse 7 orphan 1 tw 4 alloc 9 mem 12\nUDP: inuse 5 mem 3\n");
-        assert_eq!((s.inuse, s.orphan, s.tw, s.alloc, s.mem), (Some(7), Some(1), Some(4), Some(9), Some(12)));
+        let s = sockstat(
+            "sockets: used 22\nTCP: inuse 7 orphan 1 tw 4 alloc 9 mem 12\nUDP: inuse 5 mem 3\n",
+        );
+        assert_eq!(
+            (s.inuse, s.orphan, s.tw, s.alloc, s.mem),
+            (Some(7), Some(1), Some(4), Some(9), Some(12))
+        );
         assert_eq!(sockstat("TCP: inuse 3 future 9\n").mem, None);
         assert_eq!(sockstat(""), Sockstat::default());
     }

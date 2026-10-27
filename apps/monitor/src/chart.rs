@@ -57,10 +57,12 @@ impl YTicks {
         }
         let peak = match scale {
             Scale::Rate(peak) | Scale::Count(peak) => peak,
-            _ => return Self {
-                step: 25.0,
-                intervals: 4,
-            },
+            _ => {
+                return Self {
+                    step: 25.0,
+                    intervals: 4,
+                };
+            }
         };
         let peak = if peak.is_finite() { peak.max(1.0) } else { 1.0 };
         // Round in the same B/KiB/MiB/... units as the formatter, so the
@@ -199,7 +201,9 @@ fn readout_at(chart: &Chart<'_>, x: f64, interval_s: f64, hidden: &ItemIdSet) ->
             let n = series.values.len().min(chart.samples);
             if steps < n && !hidden.contains(&ItemId::new(series.name)) {
                 let value = series.values[series.values.len() - 1 - steps];
-                if !value.is_finite() { return None; }
+                if !value.is_finite() {
+                    return None;
+                }
                 Some(readout(
                     series.name,
                     value,
@@ -214,8 +218,13 @@ fn readout_at(chart: &Chart<'_>, x: f64, interval_s: f64, hidden: &ItemIdSet) ->
     (!rows.is_empty()).then(|| rows.join("\n"))
 }
 
-fn annotated_readout(chart: &Chart<'_>, x: f64, interval_s: f64, hidden: &ItemIdSet,
-    annotation: Option<&dyn Fn(usize) -> Option<String>>) -> Option<String> {
+fn annotated_readout(
+    chart: &Chart<'_>,
+    x: f64,
+    interval_s: f64,
+    hidden: &ItemIdSet,
+    annotation: Option<&dyn Fn(usize) -> Option<String>>,
+) -> Option<String> {
     let mut text = readout_at(chart, x, interval_s, hidden)?;
     if let Some(extra) = annotation.and_then(|f| f((-x / interval_s).round() as usize)) {
         text.push('\n');
@@ -250,8 +259,13 @@ pub fn show(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) 
 
 /// A caller-owned derived readout at the same sample as the plotted data.
 /// Keeps ratios and resource semantics out of the chart renderer.
-pub fn show_annotated(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2,
-    chart: Chart<'_>, annotation: &dyn Fn(usize) -> Option<String>) {
+pub fn show_annotated(
+    ui: &mut Ui,
+    id: impl egui::AsIdSalt,
+    size: Vec2,
+    chart: Chart<'_>,
+    annotation: &dyn Fn(usize) -> Option<String>,
+) {
     let _ = render_custom(ui, id, size, chart, Some(annotation));
 }
 
@@ -261,8 +275,13 @@ fn render(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) ->
     render_custom(ui, id, size, chart, None)
 }
 
-fn render_custom(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>,
-    annotation: Option<&dyn Fn(usize) -> Option<String>>) -> PlotResponse<()> {
+fn render_custom(
+    ui: &mut Ui,
+    id: impl egui::AsIdSalt,
+    size: Vec2,
+    chart: Chart<'_>,
+    annotation: Option<&dyn Fn(usize) -> Option<String>>,
+) -> PlotResponse<()> {
     let interval_s = if chart.interval_s.is_finite() && chart.interval_s > 0.0 {
         chart.interval_s
     } else {
@@ -327,13 +346,7 @@ fn render_custom(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<
                 | HoverPosition::Elsewhere { position } => position,
             };
             let x = pointer_time.get().unwrap_or(position.x);
-            annotated_readout(
-                &chart,
-                x,
-                interval_s,
-                &hidden,
-                annotation,
-            )
+            annotated_readout(&chart, x, interval_s, &hidden, annotation)
         });
     if chart.series.len() > 1 {
         plot = plot.legend(Legend::default());
@@ -403,16 +416,36 @@ mod tests {
         let ticks = YTicks::for_scale(Scale::Count(1500.0));
         assert_eq!(ticks.step, 500.0);
         assert_eq!(ticks.max(), 1500.0);
-        let chart = Chart { series: &[Series { name: "Retransmits", hue: Hue::Warning, values: &[2.0, 10.0] }],
-            samples:60, interval_s:2.0, scale:Scale::Count(10.0), format: vitals::format::percent };
+        let chart = Chart {
+            series: &[Series {
+                name: "Retransmits",
+                hue: Hue::Warning,
+                values: &[2.0, 10.0],
+            }],
+            samples: 60,
+            interval_s: 2.0,
+            scale: Scale::Count(10.0),
+            format: vitals::format::percent,
+        };
         let ratio = |steps| {
             let r = [10.0, 2.0][steps];
             let out = [100.0, 200.0][steps];
-            Some(format!("{}%", vitals::model::retransmit_percent(r, out).unwrap()))
+            Some(format!(
+                "{}%",
+                vitals::model::retransmit_percent(r, out).unwrap()
+            ))
         };
         let hidden = ItemIdSet::default();
-        assert!(annotated_readout(&chart, 0.0, 2.0, &hidden, Some(&ratio)).unwrap().ends_with("10%"));
-        assert!(annotated_readout(&chart, -2.0, 2.0, &hidden, Some(&ratio)).unwrap().ends_with("1%"));
+        assert!(
+            annotated_readout(&chart, 0.0, 2.0, &hidden, Some(&ratio))
+                .unwrap()
+                .ends_with("10%")
+        );
+        assert!(
+            annotated_readout(&chart, -2.0, 2.0, &hidden, Some(&ratio))
+                .unwrap()
+                .ends_with("1%")
+        );
         assert!(annotated_readout(&chart, 0.1, 2.0, &hidden, Some(&ratio)).is_none());
     }
 

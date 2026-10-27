@@ -251,32 +251,60 @@ fn performance_net_light() {
 
 #[test]
 fn performance_tcp_dark() {
-    render(dark(), "performance_tcp_dark", engine(4,10,Tab::Performance), Some("tcp"), None);
+    render(
+        dark(),
+        "performance_tcp_dark",
+        engine(4, 10, Tab::Performance),
+        Some("tcp"),
+        None,
+    );
 }
 
 #[test]
 fn performance_tcp_light() {
-    render(light(), "performance_tcp_light", engine(4,10,Tab::Performance), Some("tcp"), None);
+    render(
+        light(),
+        "performance_tcp_light",
+        engine(4, 10, Tab::Performance),
+        Some("tcp"),
+        None,
+    );
 }
 
 #[test]
 fn tcp_page_exposes_charts_and_connections_in_both_themes() {
     use egui_kittest::kittest::Queryable;
-    for theme in [dark(),light()] {
-        let mut engine = engine(4,10,Tab::Performance);
+    for theme in [dark(), light()] {
+        let mut engine = engine(4, 10, Tab::Performance);
         engine.set_section("tcp").unwrap();
         let registry = actions::registry();
         let strings = strings();
-        let mut h = Harness::builder().with_context_setup(move |ctx| toolkit::install(ctx,&theme))
-            .with_size(egui::vec2(1040.0,680.0)).build_ui_state(move |ui, layout| {
-                view(ui,&engine,&registry,&strings);
-                *layout = monitor::view::performance_layout(ui.ctx());
-            }, None::<monitor::view::PerformanceLayout>);
+        let mut h = Harness::builder()
+            .with_context_setup(move |ctx| toolkit::install(ctx, &theme))
+            .with_size(egui::vec2(1040.0, 680.0))
+            .build_ui_state(
+                move |ui, layout| {
+                    view(ui, &engine, &registry, &strings);
+                    *layout = monitor::view::performance_layout(ui.ctx());
+                },
+                None::<monitor::view::PerformanceLayout>,
+            );
         h.run();
         let layout = h.state().as_ref().unwrap();
-        assert!(layout.content_size.x <= layout.pane_size.x + 0.5, "TCP should scroll vertically, never horizontally: {layout:?}");
-        for text in ["Segments in / out", "Established", "Opens and resets per second", "Top 20 connections by throughput"] {
-            assert!(!h.query_all_by_label(text).collect::<Vec<_>>().is_empty(), "{text} missing");
+        assert!(
+            layout.content_size.x <= layout.pane_size.x + 0.5,
+            "TCP should scroll vertically, never horizontally: {layout:?}"
+        );
+        for text in [
+            "Segments in / out",
+            "Established",
+            "Opens and resets per second",
+            "Top 20 connections by throughput",
+        ] {
+            assert!(
+                !h.query_all_by_label(text).collect::<Vec<_>>().is_empty(),
+                "{text} missing"
+            );
         }
     }
 }
@@ -329,9 +357,12 @@ fn the_default_theme_is_studio_dark() {
 /// ten frames each, timed. Printed, not asserted.
 #[test]
 fn a_large_table_and_core_grid() {
+    let mut tcp = engine(4, 10, Tab::Performance);
+    tcp.set_section("tcp").unwrap();
     for (name, engine) in [
         ("2000-process table", engine(4, 2000, Tab::Processes)),
         ("64-core grid", engine(64, 10, Tab::Performance)),
+        ("TCP charts and 20 connections", tcp),
     ] {
         let registry = actions::registry();
         let strings = strings();
