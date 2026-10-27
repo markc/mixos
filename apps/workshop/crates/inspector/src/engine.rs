@@ -2489,7 +2489,7 @@ mod tests {
         assert_eq!(
             body,
             json!({"scheme":"forest","style":null,"mode":null,"decorations":null,"caption_side":null,
-                "effective":{"scheme":"forest","style":"own","mode":"light","decorations":"csd","decorations_reason":"rule4","caption_side":"right"}})
+                "effective":{"scheme":"forest","style":"own","mode":"light","decorations":"csd","decorations_reason":"rule4","caption_side":"auto"}})
         );
         let (_, body) = ask(&mut e, "workshop.theme", json!({"mode":"dark"}));
         assert_eq!(body["scheme"], "forest", "an absent key leaves its axis");
