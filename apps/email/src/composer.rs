@@ -911,22 +911,31 @@ mod tests {
             let (mut state, mut windows, theme, ctx) = fixture(standalone);
             let palette = editor::Palette::from_theme(&theme);
             state.offer_drafts(vec![crate::drafts::SavedDraft {
-                id: "initial".into(), account: "a".into(), ..Default::default()
+                id: "initial".into(),
+                account: "a".into(),
+                ..Default::default()
             }]);
             windows.insert(&mut state, palette.clone());
-            if standalone { windows.fill_root(&mut state); }
+            if standalone {
+                windows.fill_root(&mut state);
+            }
             let window = windows.windows["compose-1"].clone();
             {
                 let mut window = window.lock().unwrap();
                 window.swap(&mut state);
                 state.offer_drafts(vec![crate::drafts::SavedDraft {
-                    id: "synchronous".into(), account: "a".into(), ..Default::default()
+                    id: "synchronous".into(),
+                    account: "a".into(),
+                    ..Default::default()
                 }]);
                 window.swap(&mut state);
             }
             windows.refresh(&ctx, &state, &palette);
             assert_eq!(state.restore.len(), if standalone { 0 } else { 2 });
-            assert_eq!(window.lock().unwrap().view.restore.len(), if standalone { 2 } else { 0 });
+            assert_eq!(
+                window.lock().unwrap().view.restore.len(),
+                if standalone { 2 } else { 0 }
+            );
         }
     }
 
