@@ -906,9 +906,10 @@ fn accepted(request: &Request, accept: Acceptance) -> Result<Accepted> {
     }
     for path in &accept.paths {
         valid_path(path)?;
-        if path
-            .split(|b| *b == b'/')
-            .any(|part| part == b"." || part == b"..")
+        if request.directory
+            && path
+                .split(|b| *b == b'/')
+                .any(|part| part == b"." || part == b"..")
         {
             return Err(Refusal::argument("chosen path contains . or .. component"));
         }
