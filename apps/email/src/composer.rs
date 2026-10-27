@@ -128,11 +128,10 @@ impl Windows {
     }
 
     pub fn refresh(&mut self, ctx: &egui::Context, state: &State, palette: &editor::Palette) {
-        let children = self.windows.len() > usize::from(self.root.is_some());
         self.windows.retain(|name, window| {
             let mut window = window.lock().unwrap();
             window.had_compose |= window.view.compose.is_some();
-            let owner_held = window.viewport == ViewportId::ROOT && children;
+            let owner_held = window.viewport == ViewportId::ROOT;
             if !owner_held && (window.closed || (window.had_compose && window.view.compose.is_none() && !window.view.documents.opening())) {
                 toolkit::saved::secondary::finish(ctx, APP, name);
                 toolkit::drive::unregister_viewport(ctx, ViewportId::ROOT, name, window.viewport);
@@ -155,6 +154,13 @@ impl Windows {
             state.status = crate::label("compose-owner-wait");
             true
         } else { false }
+    }
+
+    pub fn owner_finished(&self) -> bool {
+        self.root.as_ref().and_then(|name| self.windows.get(name)).is_some_and(|w| {
+            let w = w.lock().unwrap();
+            w.closed || (w.had_compose && w.view.compose.is_none() && !w.view.documents.opening())
+        })
     }
 
     pub fn show(&self, ui: &mut egui::Ui) {
@@ -237,7 +243,7 @@ pub fn view(ui: &mut egui::Ui, state: &State, registry: &Registry<State>, palett
     egui::CentralPanel::default().show(ui, |ui| {
         if state.status == crate::label("compose-owner-wait") { ui.label(&state.status); }
         if let Some(compose) = &state.compose {
-            crate::view::compose::form(ui,compose,state,palette,&mut events);
+            ui.push_id(ctx.viewport_id(),|ui| crate::view::compose::form(ui,compose,state,palette,&mut events));
         } else {
             ui.label(if state.status.is_empty() { crate::label("no-accounts-body") } else { state.status.clone() });
             if ui.add(toolkit::button::PushButton::secondary(crate::label("open-settings"))).clicked() {
@@ -354,7 +360,8 @@ mod tests {
         windows.refresh(&ctx,&state,&editor::Palette::from_theme(&theme));
         assert_eq!(windows.windows.len(),1);
         windows.refresh(&ctx,&state,&editor::Palette::from_theme(&theme));
-        assert!(windows.windows.is_empty());
+        assert_eq!(windows.windows.len(),1,"the root record survives until process shutdown");
+        assert!(windows.owner_finished());
         assert_eq!(windows.root.as_deref(),Some("compose-1"));
     }
 

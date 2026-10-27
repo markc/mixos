@@ -862,6 +862,10 @@ impl Shell {
     fn advance_close(&mut self) {
         if self.state.exiting { self.state.exiting = false; self.composers.quitting = true; }
         let children = self.composers.windows.len() > usize::from(self.composers.root.is_some());
+        if self.composers.compose_only && !children && self.composers.owner_finished() {
+            self.state.exiting = true;
+            return;
+        }
         if self.composers.quitting {
             // Children first; the fixed root owner is always the final window.
             let next = self.composers.windows.values().find(|w| w.lock().unwrap().viewport != egui::ViewportId::ROOT)
@@ -1510,7 +1514,7 @@ impl Shell {
                 body,
             }) = event
             {
-                if self.exiting {
+                if self.exiting || self.state.exiting {
                     self.refuse_closing(id);
                 } else {
                     self.held.push_back((id, command_name, body));
@@ -1618,7 +1622,7 @@ impl Shell {
             let joins = command_name
                 .strip_prefix("email.")
                 .is_some_and(drive::queues);
-            if self.exiting || (drive::pending(&self.ctx) && !joins) {
+            if self.exiting || self.state.exiting || (drive::pending(&self.ctx) && !joins) {
                 return;
             }
             let (id, command_name, body) = self.held.pop_front().expect("a held command");

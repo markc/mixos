@@ -661,7 +661,7 @@ pub fn shortcuts(
         ["compose.new", "compose.close", "file.quit", "compose.open", "compose.save_as", "compose.attach"]
             .into_iter()
             .filter(|id| {
-                compose_attachable(state)
+                registry.get(id).is_some_and(|action| (action.enabled)(state))
                     && registry
                         .shortcuts_of(id)
                         .iter()
