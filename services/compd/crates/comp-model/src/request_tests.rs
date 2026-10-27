@@ -8,31 +8,68 @@ use super::*;
 
 #[test]
 fn placement_commands_have_strict_arguments_and_distinct_classes() {
-    use crate::catalogue::{command_family, read_only, CommandFamily};
+    use crate::catalogue::{CommandFamily, command_family, read_only};
     for placement in ["floating", "maximized", "tiled"] {
         let mut body = json!({"id":7,"generation":3,"placement":placement});
-        if placement == "tiled" { body["slot"] = json!("top_left"); }
-        assert!(matches!(classify("comp.window.place_as", &body, false), Ok(Request::Window(WindowOp::PlaceAs { .. }))));
+        if placement == "tiled" {
+            body["slot"] = json!("top_left");
+        }
+        assert!(matches!(
+            classify("comp.window.place_as", &body, false),
+            Ok(Request::Window(WindowOp::PlaceAs { .. }))
+        ));
     }
     for slot in [Value::Null, json!("bogus"), json!(1)] {
-        let err = classify("comp.window.place_as", &json!({"id":7,"generation":3,"placement":"tiled","slot":slot}), false).unwrap_err();
-        assert_eq!(serde_json::from_str::<Value>(&err.1).unwrap()["error"], "invalid_argument");
+        let err = classify(
+            "comp.window.place_as",
+            &json!({"id":7,"generation":3,"placement":"tiled","slot":slot}),
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(
+            serde_json::from_str::<Value>(&err.1).unwrap()["error"],
+            "invalid_argument"
+        );
     }
-    for body in [json!({"id":7,"generation":3,"placement":"tiled"}), json!({"id":7,"generation":3,"placement":"floating","slot":"left"})] {
+    for body in [
+        json!({"id":7,"generation":3,"placement":"tiled"}),
+        json!({"id":7,"generation":3,"placement":"floating","slot":"left"}),
+    ] {
         assert!(classify("comp.window.place_as", &body, false).is_err());
     }
     for direction in ["left", "right", "up", "down"] {
-        assert!(matches!(classify("comp.window.tile_key", &json!({"id":7,"generation":3,"direction":direction}), false), Ok(Request::Window(WindowOp::TileKey { .. }))));
+        assert!(matches!(
+            classify(
+                "comp.window.tile_key",
+                &json!({"id":7,"generation":3,"direction":direction}),
+                false
+            ),
+            Ok(Request::Window(WindowOp::TileKey { .. }))
+        ));
     }
     for (command, body) in [
-        ("comp.window.place_as", json!({"id":7,"placement":"floating"})),
-        ("comp.window.tile_key", json!({"id":7,"generation":3,"direction":"north"})),
+        (
+            "comp.window.place_as",
+            json!({"id":7,"placement":"floating"}),
+        ),
+        (
+            "comp.window.tile_key",
+            json!({"id":7,"generation":3,"direction":"north"}),
+        ),
         ("comp.window.tile_key", json!({"id":7,"direction":"left"})),
         ("comp.tiles.get", json!({"workspace":0})),
         ("comp.tiles.get", json!({"workspace":1,"typo":true})),
-    ] { assert!(classify(command, &body, false).is_err(), "{command} {body}"); }
-    assert!(matches!(classify("comp.tiles.get", &json!({}), false), Ok(Request::Window(WindowOp::TilesGet { .. }))));
-    assert_eq!(command_family("comp.tiles.get"), Some(CommandFamily::Direct));
+    ] {
+        assert!(classify(command, &body, false).is_err(), "{command} {body}");
+    }
+    assert!(matches!(
+        classify("comp.tiles.get", &json!({}), false),
+        Ok(Request::Window(WindowOp::TilesGet { .. }))
+    ));
+    assert_eq!(
+        command_family("comp.tiles.get"),
+        Some(CommandFamily::Direct)
+    );
     assert!(read_only("comp.tiles.get"));
     assert!(!read_only("comp.window.place_as"));
     assert!(!read_only("comp.window.tile_key"));

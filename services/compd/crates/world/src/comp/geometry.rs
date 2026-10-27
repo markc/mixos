@@ -38,7 +38,9 @@ pub fn place_as(
         return ControlReply::refused("invalid_state", json!({"id": id, "state": "fullscreen"}));
     }
     let selected = match output {
-        Some(requested) => match space.outputs().find(|o| o.name() == requested || comp_model::snapshot::output_key(&o.name()) == requested) {
+        Some(requested) => match space.outputs().find(|o| {
+            o.name() == requested || comp_model::snapshot::output_key(&o.name()) == requested
+        }) {
             Some(output) => Some(output.name()),
             None => return ControlReply::refused("unknown_output", json!({"output": requested})),
         },
@@ -48,7 +50,8 @@ pub fn place_as(
     let next = match placement {
         PlacementKind::Floating => Placement::Floating,
         PlacementKind::Maximized | PlacementKind::Tiled { .. } => {
-            let Some((output, area)) = target_on(comp, space, sid, window, selected.as_deref()) else {
+            let Some((output, area)) = target_on(comp, space, sid, window, selected.as_deref())
+            else {
                 return ControlReply::refused("unknown_output", json!({"output": selected}));
             };
             let (min, max) = size_hints(window);
@@ -56,7 +59,12 @@ pub fn place_as(
             match placement {
                 PlacementKind::Maximized => {
                     let content = decor::window::content_area(window, area);
-                    if fixed || (max.0 > 0 && max.0 < content.size.w) || (max.1 > 0 && max.1 < content.size.h) {
+                    if fixed
+                        || min.0 > content.size.w
+                        || min.1 > content.size.h
+                        || (max.0 > 0 && max.0 < content.size.w)
+                        || (max.1 > 0 && max.1 < content.size.h)
+                    {
                         return ControlReply::refused("not_maximizable", json!({"id": id}));
                     }
                     Placement::Maximized { output }
@@ -66,7 +74,10 @@ pub fn place_as(
                         return ControlReply::refused("not_resizable", json!({"id": id}));
                     }
                     let Some(slot) = super::TileSlot::from_name(slot) else {
-                        return ControlReply::refused("invalid_argument", json!({"argument": "slot"}));
+                        return ControlReply::refused(
+                            "invalid_argument",
+                            json!({"argument": "slot"}),
+                        );
                     };
                     Placement::Tiled { slot, output }
                 }
@@ -81,7 +92,12 @@ pub fn place_as(
     placement_reply(comp, sid, generation, before != comp.placement(sid))
 }
 
-fn placement_reply(comp: &CompState, id: SurfaceId, generation: u64, changed: bool) -> comp_model::reply::ControlReply {
+fn placement_reply(
+    comp: &CompState,
+    id: SurfaceId,
+    generation: u64,
+    changed: bool,
+) -> comp_model::reply::ControlReply {
     let placement = comp.placement(id);
     comp_model::reply::ControlReply::Body(serde_json::json!({
         "id": id.0, "generation": generation, "changed": changed,
@@ -107,48 +123,109 @@ pub fn tile_key(
         Err(error) => return ControlReply::WindowTarget { id, error },
     };
     if fullscreen_owns(window) {
-        return ControlReply::refused("invalid_state", serde_json::json!({"id": id, "state": "fullscreen"}));
+        return ControlReply::refused(
+            "invalid_state",
+            serde_json::json!({"id": id, "state": "fullscreen"}),
+        );
     }
     let current = comp.placement(sid);
     let (slot, output) = match tile_transition(&current, direction) {
         TileTransition::Slot(slot) => (slot, None),
         TileTransition::Cross { direction, slot } => {
-            let areas: Vec<_> = space.outputs().filter_map(|o| Some((o.name(), space.output_geometry(o)?))).collect();
-            let area = areas.iter().find(|(name, _)| Some(name.as_str()) == current.output()).map(|(_, area)| *area);
-            let adjacent = area.and_then(|area| adjacent_output(area, direction, areas.iter().map(|(name, area)| (name.as_str(), *area))));
+            let areas: Vec<_> = space
+                .outputs()
+                .filter_map(|o| Some((o.name(), space.output_geometry(o)?)))
+                .collect();
+            let area = areas
+                .iter()
+                .find(|(name, _)| Some(name.as_str()) == current.output())
+                .map(|(_, area)| *area);
+            let adjacent = area.and_then(|area| {
+                adjacent_output(
+                    area,
+                    direction,
+                    areas.iter().map(|(name, area)| (name.as_str(), *area)),
+                )
+            });
             let Some(output) = adjacent else {
                 return placement_reply(comp, sid, generation, false);
             };
             (slot, Some(output.to_owned()))
         }
     };
-    place_as(comp, space, window, id, generation, comp_model::request::PlacementKind::Tiled { slot: slot.name() }, output.as_deref())
+    place_as(
+        comp,
+        space,
+        window,
+        id,
+        generation,
+        comp_model::request::PlacementKind::Tiled { slot: slot.name() },
+        output.as_deref(),
+    )
 }
 
 /// Tile membership is queried from placement, independent of focus or buffers.
-pub fn tiles_get(comp: &CompState, space: &Space<Window>, output: Option<&str>, workspace: Option<u32>) -> comp_model::reply::ControlReply {
+pub fn tiles_get(
+    comp: &CompState,
+    space: &Space<Window>,
+    output: Option<&str>,
+    workspace: Option<u32>,
+) -> comp_model::reply::ControlReply {
     use comp_model::reply::ControlReply;
     use policy::workspaces::{DefaultOutput, WorkspaceState};
     use serde_json::json;
-    let selected = space.outputs().find(|o| output.is_none_or(|name| o.name() == name || comp_model::snapshot::output_key(&o.name()) == name));
-    let default = selected.map(|o| DefaultOutput { key: comp_model::snapshot::output_key(&o.name()), name: o.name() });
+    let selected = space.outputs().find(|o| {
+        output.is_none_or(|name| {
+            o.name() == name || comp_model::snapshot::output_key(&o.name()) == name
+        })
+    });
+    let default = selected.map(|o| DefaultOutput {
+        key: comp_model::snapshot::output_key(&o.name()),
+        name: o.name(),
+    });
     let Some(key) = WorkspaceState::resolve_output(default.as_ref(), output) else {
         return ControlReply::refused("unknown_output", json!({"output": output}));
     };
     let output = default.expect("resolved output").name;
     let workspace = workspace.unwrap_or_else(|| comp.workspaces.current_for(Some(&key)));
     if !(1..=comp.workspaces.count).contains(&workspace) {
-        return ControlReply::refused("invalid_argument", json!({"argument": "workspace", "count": comp.workspaces.count}));
+        return ControlReply::refused(
+            "invalid_argument",
+            json!({"argument": "workspace", "count": comp.workspaces.count}),
+        );
     }
     let split = comp.tile_split_for(&output, workspace);
-    let slots: serde_json::Map<_, _> = super::TileSlot::ALL.into_iter().map(|slot| {
-        let mut windows: Vec<_> = comp.registry.surface_rows().filter(|record| record.mapped() && record.workspace() == Some(workspace))
-            .filter(|record| comp.placement(record.id()) == (Placement::Tiled { slot, output: output.clone() }))
-            .map(|record| (record.id().0, record.generation())).collect();
-        windows.sort_unstable();
-        (slot.name().to_owned(), json!(windows.into_iter().map(|(id, generation)| json!({"id": id, "generation": generation})).collect::<Vec<_>>()))
-    }).collect();
-    ControlReply::Body(json!({"output": key, "workspace": workspace, "split": {"x": split.x, "y": split.y}, "slots": slots}))
+    let slots: serde_json::Map<_, _> = super::TileSlot::ALL
+        .into_iter()
+        .map(|slot| {
+            let mut windows: Vec<_> = comp
+                .registry
+                .surface_rows()
+                .filter(|record| record.mapped() && record.workspace() == Some(workspace))
+                .filter(|record| {
+                    comp.placement(record.id())
+                        == (Placement::Tiled {
+                            slot,
+                            output: output.clone(),
+                        })
+                })
+                .map(|record| (record.id().0, record.generation()))
+                .collect();
+            windows.sort_unstable();
+            (
+                slot.name().to_owned(),
+                json!(
+                    windows
+                        .into_iter()
+                        .map(|(id, generation)| json!({"id": id, "generation": generation}))
+                        .collect::<Vec<_>>()
+                ),
+            )
+        })
+        .collect();
+    ControlReply::Body(
+        json!({"output": key, "workspace": workspace, "split": {"x": split.x, "y": split.y}, "slots": slots}),
+    )
 }
 
 /// Work-area observation and actual window placement/configure changes are
@@ -170,8 +247,15 @@ pub enum RestoreChange {
 
 /// Restore precedence is shared with fixtures: fullscreen exits alone; a
 /// subsequent restore returns constrained placement to saved floating geometry.
-pub fn restore_placement(comp: &mut CompState, space: &mut Space<Window>, id: SurfaceId, window: &Window) -> RestoreChange {
-    if fullscreen_owns(window) { return RestoreChange::Fullscreen; }
+pub fn restore_placement(
+    comp: &mut CompState,
+    space: &mut Space<Window>,
+    id: SurfaceId,
+    window: &Window,
+) -> RestoreChange {
+    if fullscreen_owns(window) {
+        return RestoreChange::Fullscreen;
+    }
     if comp.placement(id).constrained() {
         finish_interactive(comp, id);
         RestoreChange::Placement(set_placement(comp, space, id, window, Placement::Floating))

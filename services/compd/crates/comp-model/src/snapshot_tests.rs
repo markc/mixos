@@ -517,7 +517,11 @@ fn descriptor_table_and_serialised_fixture_have_exact_parity() {
     // Both nullable shapes belong to the schema: the absent record is a
     // leaf, while a saved record exposes its geometry fields.
     snapshot.windows.values_mut().next().unwrap().float_geometry = Some(FloatGeometrySnapshot {
-        x: 1, y: 2, w: 640, h: 480, output: "o_dp_1".into(),
+        x: 1,
+        y: 2,
+        w: 640,
+        h: 480,
+        output: "o_dp_1".into(),
     });
     leaves.extend(flattened_paths(&serde_json::to_value(snapshot).unwrap()));
     for leaf in &leaves {
@@ -740,14 +744,27 @@ fn placement_and_saved_float_are_readable_and_diffed() {
     let key = new.windows.keys().next().unwrap().clone();
     let row = new.windows.get_mut(&key).unwrap();
     row.placement = "top_left";
-    row.float_geometry = Some(FloatGeometrySnapshot { x: 12, y: 23, w: 640, h: 480, output: "o_nested".into() });
-    for (leaf, expected) in [("placement", json!("top_left")), ("maximized", json!(false)),
-        ("float_geometry.x", json!(12)), ("float_geometry.output", json!("o_nested"))] {
+    row.float_geometry = Some(FloatGeometrySnapshot {
+        x: 12,
+        y: 23,
+        w: 640,
+        h: 480,
+        output: "o_nested".into(),
+    });
+    for (leaf, expected) in [
+        ("placement", json!("top_left")),
+        ("maximized", json!(false)),
+        ("float_geometry.x", json!(12)),
+        ("float_geometry.output", json!("o_nested")),
+    ] {
         let path = format!("windows.{key}.{leaf}");
         let (rc, body) = dispatch_read(&new, "comp.props.get", &json!({"path":path}));
         assert_eq!(rc, 0);
         assert_eq!(serde_json::from_str::<Value>(&body).unwrap(), expected);
-        assert_eq!(dispatch_read(&new, "comp.props.describe", &json!({"path":path})).0, 0);
+        assert_eq!(
+            dispatch_read(&new, "comp.props.describe", &json!({"path":path})).0,
+            0
+        );
     }
     let mut changes = crate::observation::PendingPropChanges::new();
     crate::diff::collect_snapshot_diff(&old, &new, "comp.window", &mut changes);

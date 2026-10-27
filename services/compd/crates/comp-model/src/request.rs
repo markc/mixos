@@ -89,7 +89,7 @@ pub enum WindowOp {
     Restore {
         target: Option<(u64, u64)>,
         /// Activate it too (raise, focus, switch to its workspace): the
-        /// default. `false` only unminimises, leaving the focus alone.
+        /// default. `false` restores without moving focus.
         activate: bool,
     },
     /// Keyboard focus; `raise` also raises and retargets the pointer (the
@@ -693,9 +693,14 @@ pub fn parse_window_command(
     let empty = serde_json::Map::new();
     match command_name {
         "comp.window.place_as" => {
-            let object = args_object(args, &empty, &["id", "generation", "placement", "slot", "output"])?;
+            let object = args_object(
+                args,
+                &empty,
+                &["id", "generation", "placement", "slot", "output"],
+            )?;
             let (id, generation) = required_target(object)?;
-            let invalid = |field| ControlReply::refused("invalid_argument", json!({"argument": field}));
+            let invalid =
+                |field| ControlReply::refused("invalid_argument", json!({"argument": field}));
             let placement = match object.get("placement").and_then(Value::as_str) {
                 Some("floating") => PlacementKind::Floating,
                 Some("maximized") => PlacementKind::Maximized,
@@ -718,7 +723,12 @@ pub fn parse_window_command(
             if !matches!(placement, PlacementKind::Tiled { .. }) && object.contains_key("slot") {
                 return Err(invalid("slot"));
             }
-            Ok(WindowCommand::Op(WindowOp::PlaceAs { id, generation, placement, output: output_arg(object)? }))
+            Ok(WindowCommand::Op(WindowOp::PlaceAs {
+                id,
+                generation,
+                placement,
+                output: output_arg(object)?,
+            }))
         }
         "comp.window.tile_key" => {
             let object = args_object(args, &empty, &["id", "generation", "direction"])?;
@@ -728,18 +738,37 @@ pub fn parse_window_command(
                 Some("right") => TileDirection::Right,
                 Some("up") => TileDirection::Up,
                 Some("down") => TileDirection::Down,
-                _ => return Err(ControlReply::refused("invalid_argument", json!({"argument": "direction"}))),
+                _ => {
+                    return Err(ControlReply::refused(
+                        "invalid_argument",
+                        json!({"argument": "direction"}),
+                    ));
+                }
             };
-            Ok(WindowCommand::Op(WindowOp::TileKey { id, generation, direction }))
+            Ok(WindowCommand::Op(WindowOp::TileKey {
+                id,
+                generation,
+                direction,
+            }))
         }
         "comp.tiles.get" => {
             let object = args_object(args, &empty, &["output", "workspace"])?;
             let workspace = match object.get("workspace") {
                 None | Some(Value::Null) => None,
-                Some(value) => Some(value.as_u64().and_then(|n| u32::try_from(n).ok()).filter(|n| *n > 0)
-                    .ok_or_else(|| invalid_argument("workspace", "unsigned integer", "1..=count"))?),
+                Some(value) => Some(
+                    value
+                        .as_u64()
+                        .and_then(|n| u32::try_from(n).ok())
+                        .filter(|n| *n > 0)
+                        .ok_or_else(|| {
+                            invalid_argument("workspace", "unsigned integer", "1..=count")
+                        })?,
+                ),
             };
-            Ok(WindowCommand::Op(WindowOp::TilesGet { output: output_arg(object)?, workspace }))
+            Ok(WindowCommand::Op(WindowOp::TilesGet {
+                output: output_arg(object)?,
+                workspace,
+            }))
         }
         "comp.window.maximize"
         | "comp.window.unmaximize"
@@ -1918,7 +1947,9 @@ pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request,
             generation,
         });
     }
-    if let Some(command_name) = window_command(command).or_else(|| (command == "comp.tiles.get").then_some("comp.tiles.get")) {
+    if let Some(command_name) = window_command(command)
+        .or_else(|| (command == "comp.tiles.get").then_some("comp.tiles.get"))
+    {
         let parsed = if malformed {
             Err(invalid_argument("args", "JSON object", "{id, generation}"))
         } else {

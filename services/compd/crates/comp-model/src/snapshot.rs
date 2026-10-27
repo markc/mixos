@@ -1004,7 +1004,11 @@ impl SurfaceSnapshot {
 /// The `windows.*` row of a mapped xdg toplevel's `surfaces.*` row.
 pub fn project_window_row(surface: &SurfaceSnapshot) -> WindowSnapshot {
     WindowSnapshot {
-        placement: if surface.maximized { "maximized" } else { "floating" },
+        placement: if surface.maximized {
+            "maximized"
+        } else {
+            "floating"
+        },
         float_geometry: None,
         occlusion: surface.occlusion.clone(),
         id: surface.id,
@@ -1659,12 +1663,36 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
     ),
     descriptor!(&[L("windows"), S, L("placement")], String, "Requested floating, maximized or tile slot placement",
         enum = &["floating", "maximized", "left", "right", "top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right"]),
-    descriptor!(&[L("windows"), S, L("float_geometry")], Object, "Saved floating content geometry, or null before the first constrained placement"),
-    descriptor!(&[L("windows"), S, L("float_geometry"), L("x")], Number, "Saved global logical x"),
-    descriptor!(&[L("windows"), S, L("float_geometry"), L("y")], Number, "Saved global logical y"),
-    descriptor!(&[L("windows"), S, L("float_geometry"), L("w")], Number, "Saved content width"),
-    descriptor!(&[L("windows"), S, L("float_geometry"), L("h")], Number, "Saved content height"),
-    descriptor!(&[L("windows"), S, L("float_geometry"), L("output")], String, "Output key on which floating geometry was saved"),
+    descriptor!(
+        &[L("windows"), S, L("float_geometry")],
+        Object,
+        "Saved floating content geometry, or null before the first constrained placement"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("float_geometry"), L("x")],
+        Number,
+        "Saved global logical x"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("float_geometry"), L("y")],
+        Number,
+        "Saved global logical y"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("float_geometry"), L("w")],
+        Number,
+        "Saved content width"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("float_geometry"), L("h")],
+        Number,
+        "Saved content height"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("float_geometry"), L("output")],
+        String,
+        "Output key on which floating geometry was saved"
+    ),
     descriptor!(
         &[L("windows"), S, L("maximized")],
         Bool,

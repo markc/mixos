@@ -481,12 +481,23 @@ impl Harness {
         if !took {
             let mods = keyboard.modifier_state();
             let modifiers = policy::bindings::Modifiers {
-                ctrl: mods.ctrl, alt: mods.alt, shift: mods.shift, logo: mods.logo,
-                iso_level3_shift: mods.iso_level3_shift, iso_level5_shift: mods.iso_level5_shift,
-                caps_lock: mods.caps_lock, num_lock: mods.num_lock,
+                ctrl: mods.ctrl,
+                alt: mods.alt,
+                shift: mods.shift,
+                logo: mods.logo,
+                iso_level3_shift: mods.iso_level3_shift,
+                iso_level5_shift: mods.iso_level5_shift,
+                caps_lock: mods.caps_lock,
+                num_lock: mods.num_lock,
             };
-            match self.wire.inner.comp.bindings.table_key(keycode, pressed, Some(sym), &modifiers, locked) {
-                policy::bindings::KeyDisposition::Forward => {},
+            match self.wire.inner.comp.bindings.table_key(
+                keycode,
+                pressed,
+                Some(sym),
+                &modifiers,
+                locked,
+            ) {
+                policy::bindings::KeyDisposition::Forward => {}
                 policy::bindings::KeyDisposition::SwallowRelease => took = true,
                 policy::bindings::KeyDisposition::Act(action) => {
                     self.wire.inner.comp.bindings.queue_action(action);

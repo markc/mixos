@@ -9729,6 +9729,7 @@ dependencies = [
  "policy-host",
  "protocols",
  "screencopy",
+ "serde_json",
  "smithay",
  "surfaces",
  "uuid",
@@ -12105,6 +12106,7 @@ name = "world"
 version = "0.1.2"
 dependencies = [
  "bitflags 2.13.1",
+ "comp-model",
  "config",
  "decor",
  "dispatcher",
@@ -12117,6 +12119,7 @@ dependencies = [
  "policy",
  "protocols",
  "render-gles",
+ "serde_json",
  "slots",
  "smithay",
  "surfaces",

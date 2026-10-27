@@ -202,9 +202,13 @@ pub enum BindingAction {
     /// Move the focused window to workspace `n` and follow it (Super+Shift+n).
     WorkspaceMove(u8),
     /// Previous/next workspace, wrapping (Super+[ / Super+]).
-    WorkspaceStep { prev: bool },
+    WorkspaceStep {
+        prev: bool,
+    },
     /// Cycle mapped managed windows in stable creation order.
-    CycleWindow { reverse: bool },
+    CycleWindow {
+        reverse: bool,
+    },
     /// Stop a nested compositor.
     ExitNestedCompositor,
     /// Turn normal interception off or back on. Always reserved.
@@ -516,13 +520,55 @@ fn screenshot_bindings() -> [Binding; 3] {
 fn placement_bindings() -> [Binding; 7] {
     use comp_model::request::TileDirection;
     [
-        binding("tile-left", keysym::LEFT, "Left", ModifierSet::logo(), BindingAction::TileFocused(TileDirection::Left)),
-        binding("tile-right", keysym::RIGHT, "Right", ModifierSet::logo(), BindingAction::TileFocused(TileDirection::Right)),
-        binding("tile-up", keysym::UP, "Up", ModifierSet::logo(), BindingAction::TileFocused(TileDirection::Up)),
-        binding("tile-down", keysym::DOWN, "Down", ModifierSet::logo(), BindingAction::TileFocused(TileDirection::Down)),
-        binding("toggle-maximize-focused", keysym::PAGE_UP, "Page_Up", ModifierSet::logo(), BindingAction::ToggleMaximizeFocused),
-        binding("minimize-focused", keysym::PAGE_DOWN, "Page_Down", ModifierSet::logo(), BindingAction::MinimizeFocused),
-        binding("restore-focused", keysym::BACKSPACE, "BackSpace", ModifierSet::logo(), BindingAction::RestoreFocused),
+        binding(
+            "tile-left",
+            keysym::LEFT,
+            "Left",
+            ModifierSet::logo(),
+            BindingAction::TileFocused(TileDirection::Left),
+        ),
+        binding(
+            "tile-right",
+            keysym::RIGHT,
+            "Right",
+            ModifierSet::logo(),
+            BindingAction::TileFocused(TileDirection::Right),
+        ),
+        binding(
+            "tile-up",
+            keysym::UP,
+            "Up",
+            ModifierSet::logo(),
+            BindingAction::TileFocused(TileDirection::Up),
+        ),
+        binding(
+            "tile-down",
+            keysym::DOWN,
+            "Down",
+            ModifierSet::logo(),
+            BindingAction::TileFocused(TileDirection::Down),
+        ),
+        binding(
+            "toggle-maximize-focused",
+            keysym::PAGE_UP,
+            "Page_Up",
+            ModifierSet::logo(),
+            BindingAction::ToggleMaximizeFocused,
+        ),
+        binding(
+            "minimize-focused",
+            keysym::PAGE_DOWN,
+            "Page_Down",
+            ModifierSet::logo(),
+            BindingAction::MinimizeFocused,
+        ),
+        binding(
+            "restore-focused",
+            keysym::BACKSPACE,
+            "BackSpace",
+            ModifierSet::logo(),
+            BindingAction::RestoreFocused,
+        ),
     ]
 }
 
