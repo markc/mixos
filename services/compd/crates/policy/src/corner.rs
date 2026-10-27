@@ -16,7 +16,9 @@ use std::time::Duration;
 use comp_model::observation::ObservationRecord;
 use comp_model::request::{BTN_LEFT, BTN_RIGHT};
 
-pub use comp_model::observation::{CORNER_CLICK_SLOP_PX, Corner, CornerConfig};
+pub use comp_model::observation::{
+    CORNER_CLICK_SLOP_PX, CORNER_DEFAULT_DEADZONE_PX, Corner, CornerConfig,
+};
 
 const MOTION_EPSILON_PX: f64 = 0.001;
 const MIN_STATIONARY_CONFIRM_MS: u64 = 1;

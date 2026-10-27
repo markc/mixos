@@ -246,11 +246,14 @@ pub struct CornerConfig {
 /// small hotspot does not make corner clicks fragile.
 pub const CORNER_CLICK_SLOP_PX: f64 = 10.0;
 
+/// The default hotspot side in logical units (`input.corners.deadzone_px`).
+pub const CORNER_DEFAULT_DEADZONE_PX: f64 = 4.0;
+
 impl Default for CornerConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            deadzone_px: 4.0,
+            deadzone_px: CORNER_DEFAULT_DEADZONE_PX,
             dwell_ms: 200,
             velocity_max_px_s: 1_500.0,
             affordance: true,

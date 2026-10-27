@@ -816,10 +816,10 @@ impl Panels {
             .menu_serial
             .checked_add(1)
             .expect("menu serial exhausted");
-        let inset = self
-            .pointer
-            .as_ref()
-            .map_or(12.0, |p| p.detector.config().deadzone_px() + 2.0);
+        let inset = self.pointer.as_ref().map_or(
+            world::comp::corners::CORNER_DEFAULT_DEADZONE_PX as f32 + 2.0,
+            |p| p.detector.config().deadzone_px() + 2.0,
+        );
         let mut menu = crate::menu::Menu::new(
             self.menu_serial,
             output,

@@ -25,7 +25,7 @@
 
 use std::time::Instant;
 
-pub use policy::corner::CORNER_CLICK_SLOP_PX;
+pub use policy::corner::{CORNER_CLICK_SLOP_PX, CORNER_DEFAULT_DEADZONE_PX};
 use policy::corner::{
     Corner, CornerConfig, CornerDetector, CornerEvent, CornerEvents, CornerPresses, CornerTopic,
     PressFacts,
