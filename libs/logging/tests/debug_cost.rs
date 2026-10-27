@@ -109,7 +109,11 @@ fn default_resources_and_reload_hints() {
     ] {
         set(level);
         if level == "debug" && std::path::Path::new("/run/systemd/journal/socket").exists() {
-            assert_eq!(sockets(), before_sockets + 1, "first admitted event opens exactly one journal socket");
+            assert_eq!(
+                sockets(),
+                before_sockets + 1,
+                "first admitted event opens exactly one journal socket"
+            );
         }
         assert_eq!(
             LevelFilter::current(),
