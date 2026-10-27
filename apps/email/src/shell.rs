@@ -2318,11 +2318,10 @@ mod tests {
             .unwrap();
         let mut state = crate::state::tests::connected_many(&["a"]);
         state.take_work();
+        let mut composers = crate::composer::Windows::default();
+        composers.compose_only = standalone;
         let shell = Shell {
-            composers: crate::composer::Windows {
-                compose_only: standalone,
-                ..Default::default()
-            },
+            composers,
             launch_compose: false,
             launch_document: None,
             state,
