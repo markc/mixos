@@ -69,6 +69,7 @@ const WORKSPACE_TARGETS: &[&str] = &[
     "graphics",
     "headless",
     "hostd",
+    "icons",
     "indexd",
     "inputd",
     "inputd_core",
