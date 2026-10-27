@@ -1562,7 +1562,11 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         "1-based workspace of a mapped managed toplevel (X11 included), else null; write windows.s<id>.workspace to move"
     ),
     descriptor!(&[L("surfaces"), S, L("decoration")], String, "Committed decoration mode or null", enum = &["server", "client", "unbound"]),
-    descriptor!(&[L("surfaces"), S, L("menu_button")], Bool, "Whether chrome can draw and route this surface's SSD menu button"),
+    descriptor!(
+        &[L("surfaces"), S, L("menu_button")],
+        Bool,
+        "Whether chrome can draw and route this surface's SSD menu button"
+    ),
     descriptor!(
         &[L("surfaces"), S, L("layer")],
         Object,
@@ -1788,7 +1792,11 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         "Whether the session requests an SSD menu button; each window also needs a registered app service"
     ),
     descriptor!(&[L("decoration"), L("menu_side")], String, "The SSD menu button side", enum = design::MenuSide::NAMES),
-    descriptor!(&[L("decoration"), L("menu_services")], List, "Live menu service names known to chrome"),
+    descriptor!(
+        &[L("decoration"), L("menu_services")],
+        List,
+        "Live menu service names known to chrome"
+    ),
     descriptor!(
         &[L("bindings"), L("enabled")],
         Bool,

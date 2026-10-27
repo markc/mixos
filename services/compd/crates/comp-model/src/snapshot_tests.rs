@@ -354,13 +354,12 @@ fn menu_diagnostics_are_selectable_read_only_properties() {
         ("surfaces.s2.menu_button", serde_json::json!(true)),
         ("surfaces.s1.menu_button", serde_json::json!(false)),
     ] {
-        let path = props::PropPath::new(path).unwrap();
+        let path = PropPath::new(path).unwrap();
         assert_eq!(
             snapshot.select(&path.segments().collect::<Vec<_>>()),
             Some(expected)
         );
-        let descriptor: Value =
-            serde_json::from_str(&describe(&snapshot, &path).unwrap()).unwrap();
+        let descriptor: Value = serde_json::from_str(&describe(&snapshot, &path).unwrap()).unwrap();
         assert_eq!(descriptor["mutable"], false);
     }
 }
