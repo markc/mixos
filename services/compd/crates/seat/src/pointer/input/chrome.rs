@@ -132,7 +132,6 @@ fn apply(lp: &mut Loop, window: &Window, intent: Intent) {
             if !decor::window::open_menu(window) {
                 model::warn!("window menu Bus call was not queued");
             }
-            return;
         }
     }
 }

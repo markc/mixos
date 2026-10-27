@@ -533,6 +533,8 @@ struct State {
     compact: bool,
     vertical: bool,
     popup_anchor: Option<Rect>,
+    /// A popup opened for the right side hangs left from its anchor.
+    popup_right: bool,
     alt_down: bool,
     alt_used: bool,
     alt_blocked: bool,
@@ -1036,6 +1038,7 @@ pub fn popup(ctx: &Context, side: Option<design::MenuSide>, x: Option<f32>) -> R
         pos2(x, bounds.top()),
         pos2(x, bounds.top()),
     ));
+    st.popup_right = side == design::MenuSide::Right;
     st.vertical = true;
     st.nav.vertical_root = true;
     st.nav.open(0);
@@ -1678,10 +1681,11 @@ fn render_picked(
             let layout = Layout::new(ui, &chrome, entries, min_width);
             let outer = layout.size + margin.sum();
             if level == 0 {
-                if vertical
-                    && chrome.menu_side == design::MenuSide::Right
-                    && st.popup_anchor.is_none()
-                {
+                let right = match st.popup_anchor {
+                    Some(_) => st.popup_right,
+                    None => chrome.menu_side == design::MenuSide::Right,
+                };
+                if vertical && right {
                     origin.x = anchor.right() - outer.x;
                 }
                 origin.x = origin

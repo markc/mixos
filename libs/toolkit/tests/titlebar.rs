@@ -204,6 +204,7 @@ fn the_icon_bar_skips_unknown_and_duplicate_standard_actions() {
 #[test]
 fn compact_menu_titlebars() {
     use design::{CaptionSide, MenuSide, MenuStyle, RequestedDecorations};
+    let mut results = egui_kittest::SnapshotResults::new();
     for decorations in [RequestedDecorations::Client, RequestedDecorations::Server] {
         for style in MenuStyle::ALL {
             for side in MenuSide::ALL {
@@ -254,6 +255,7 @@ fn compact_menu_titlebars() {
                         side.name()
                     ));
                 }
+                results.extend(h.take_snapshot_results());
             }
         }
     }

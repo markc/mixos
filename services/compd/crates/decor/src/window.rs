@@ -105,18 +105,28 @@ pub fn open_menu(window: &Window) -> bool {
             |layout| crate::layout::vec2(layout.content.w, layout.content.h),
         );
     let layout = crate::layout::ChromeLayout::compute_with_menu(&theme.deco, size, Some(side));
-    let Some(x) = menu_x(&layout, geometry.w as f32) else {
+    let Some(x) = menu_x(&layout, geometry.w as f32, side) else {
         return false;
     };
     let emit = MENU_EMIT.with_borrow(Clone::clone);
     emit.is_some_and(|emit| emit(&service, side, x))
 }
 
-fn menu_x(layout: &crate::layout::ChromeLayout, content_width: f32) -> Option<f32> {
+/// The popup anchor in client content units: the button's left edge, or its
+/// right edge on the right, where the menu right-aligns to hang from it.
+fn menu_x(
+    layout: &crate::layout::ChromeLayout,
+    content_width: f32,
+    side: design::MenuSide,
+) -> Option<f32> {
     let button = layout.menu_button?;
+    let edge = match side {
+        design::MenuSide::Left => button.x,
+        design::MenuSide::Right => button.x + button.w,
+    };
     // Layout is in logical slot pixels; the client may be scaled into that slot.
     (layout.content.w > 0.0 && content_width > 0.0).then(|| {
-        ((button.x - layout.content.x) * content_width / layout.content.w).clamp(0.0, content_width)
+        ((edge - layout.content.x) * content_width / layout.content.w).clamp(0.0, content_width)
     })
 }
 
@@ -412,14 +422,20 @@ mod tests {
                 let layout =
                     ChromeLayout::compute_with_menu(&theme, vec2(640.0, 480.0), Some(side));
                 let button = layout.menu_button.unwrap();
-                let x = button.x - layout.content.x;
+                let edge = match side {
+                    design::MenuSide::Left => button.x,
+                    design::MenuSide::Right => button.x + button.w,
+                };
+                let x = edge - layout.content.x;
                 for ratio in [0.5, 1.0, 2.0] {
-                    assert!((menu_x(&layout, 640.0 * ratio).unwrap() - x * ratio).abs() < 0.001);
+                    assert!(
+                        (menu_x(&layout, 640.0 * ratio, side).unwrap() - x * ratio).abs() < 0.001
+                    );
                 }
-                assert!(menu_x(&layout, 0.0).is_none());
+                assert!(menu_x(&layout, 0.0, side).is_none());
             }
             let layout = ChromeLayout::compute(&theme, vec2(640.0, 480.0));
-            assert!(menu_x(&layout, 640.0).is_none());
+            assert!(menu_x(&layout, 640.0, design::MenuSide::Left).is_none());
         }
     }
 }

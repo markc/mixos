@@ -154,7 +154,7 @@ pub fn describe(app: &str) -> Vec<Value> {
         (
             "ui.menu.form",
             Value::Null,
-            "The selected menu style and side, and the effective form after resolving decorations and live Bus registration",
+            "The selected menu style and side, and the effective form after resolving decorations and the app's own drive registration",
             true,
         ),
         (

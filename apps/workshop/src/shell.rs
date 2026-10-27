@@ -529,10 +529,10 @@ impl Shell {
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             match &event {
-                Event::Delivery(citizen::Delivery::Connected) => {
+                Event::Delivery(Delivery::Connected) => {
                     drive::set_service(&self.ctx, Some(self.bus.service()))
                 }
-                Event::Delivery(citizen::Delivery::Disconnected) => {
+                Event::Delivery(Delivery::Disconnected) => {
                     drive::set_service(&self.ctx, None)
                 }
                 _ => {}
