@@ -65,7 +65,19 @@ impl Ring {
         }
         if self.bytes + bytes <= MAX_BYTES {
             self.bytes += bytes;
+            let capacity = self.entries.capacity();
             self.entries.push_back((entry, bytes));
+            // Charge storage only when the deque actually grows. Capacity
+            // survives eviction, so keep its charge until the ring is freed.
+            self.bytes +=
+                (self.entries.capacity() - capacity) * std::mem::size_of::<(Entry, usize)>();
+            while self.bytes > MAX_BYTES {
+                if let Some((_, old)) = self.entries.pop_front() {
+                    self.bytes -= old;
+                } else {
+                    break;
+                }
+            }
         }
     }
 }
@@ -305,6 +317,18 @@ mod tests {
         assert!(ring.bytes <= MAX_BYTES);
         assert!(ring.entries.len() < MAX_EVENTS);
         assert_eq!(ring.entries.back().unwrap().0.seq, 3_000);
+    }
+    #[test]
+    fn growing_deque_storage_is_charged_against_the_byte_bound() {
+        let mut ring = Ring::new();
+        for seq in 1..=3_000 {
+            ring.push(entry(seq, "x".repeat(650)));
+            let storage = std::mem::size_of::<Ring>()
+                + ring.entries.capacity() * std::mem::size_of::<(Entry, usize)>();
+            let retained: usize = ring.entries.iter().map(|(_, bytes)| bytes).sum();
+            assert_eq!(ring.bytes, storage + retained);
+            assert!(ring.bytes <= MAX_BYTES);
+        }
     }
     #[test]
     fn event_text_is_bounded_on_utf8_boundaries() {
