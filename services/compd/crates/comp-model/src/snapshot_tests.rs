@@ -156,6 +156,8 @@ fn fixture() -> CompSnapshot {
     windows.insert(
         "s2".into(),
         WindowSnapshot {
+            placement: "floating",
+            float_geometry: None,
             occlusion: Default::default(),
             id: toplevel.id,
             foreign_id: toplevel.foreign_id.clone(),

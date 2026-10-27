@@ -45,12 +45,14 @@ pub fn read_only(command: &str) -> bool {
                 | "comp.pointer.watch"
                 | "comp.window.wait"
                 | "comp.window.stats"
+                | "comp.tiles.get"
         )
 }
 
 /// The 17 commands the dispatcher answers directly (not a window or input
 /// family member).
 pub const DIRECT_COMMANDS: &[&str] = &[
+    "comp.tiles.get",
     "comp.capture.frame",
     "comp.ping",
     "comp.props.watch",
@@ -73,6 +75,8 @@ pub const DIRECT_COMMANDS: &[&str] = &[
 /// The 18 window-family commands (`{id, generation}`-addressed, plus the
 /// workspace switch, count and rename).
 pub const WINDOW_COMMANDS: &[&str] = &[
+    "comp.window.place_as",
+    "comp.window.tile_key",
     "comp.window.maximize",
     "comp.window.unmaximize",
     "comp.window.fullscreen",
@@ -139,24 +143,24 @@ mod tests {
 
     #[test]
     fn the_surface_is_40_commands_and_13_topics() {
-        assert_eq!(DIRECT_COMMANDS.len(), 17);
-        assert_eq!(WINDOW_COMMANDS.len(), 18);
+        assert_eq!(DIRECT_COMMANDS.len(), 18);
+        assert_eq!(WINDOW_COMMANDS.len(), 20);
         assert_eq!(INPUT_COMMANDS.len(), 5);
         let commands = all_commands().collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(commands.len(), 40, "no command is in two families");
+        assert_eq!(commands.len(), 43, "no command is in two families");
         assert!(commands.iter().all(|command| command.starts_with("comp.")));
         assert!(
             READ_COMMANDS
                 .iter()
                 .all(|command| DIRECT_COMMANDS.contains(command))
         );
-        assert_eq!(TOPIC_SUFFIXES.len(), 13);
+        assert_eq!(TOPIC_SUFFIXES.len(), 14);
         assert_eq!(
             TOPIC_SUFFIXES
                 .iter()
                 .collect::<std::collections::BTreeSet<_>>()
                 .len(),
-            13
+            14
         );
         assert_eq!(
             command_family("comp.window.focus"),

@@ -184,6 +184,7 @@ pub fn window(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
 /// The window a command names, if any.
 fn named_window(op: &WindowOp) -> Option<u64> {
     match op {
+        WindowOp::PlaceAs { id, .. } | WindowOp::TileKey { id, .. } => Some(*id),
         WindowOp::State { id, .. }
         | WindowOp::Minimize { id, .. }
         | WindowOp::Focus { id, .. }
@@ -205,6 +206,31 @@ fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
         return Some(locked);
     }
     match op {
+        WindowOp::TilesGet { output, workspace } => Some(world::comp::geometry::tiles_get(
+            &lp.inner.comp, &lp.inner.host_space().state, output.as_deref(), *workspace,
+        )),
+        WindowOp::PlaceAs { id, generation, .. } | WindowOp::TileKey { id, generation, .. } => {
+            let (sid, window) = match motion_window(lp, *id, *generation) {
+                Ok(target) => target,
+                Err(reply) => return Some(reply),
+            };
+            let owner = lp.inner.world_of_window(&window)?;
+            let (comp, space) = lp.inner.comp_space_of_mut(owner);
+            let reply = match op {
+                WindowOp::PlaceAs { placement, output, .. } => world::comp::geometry::place_as(
+                    comp, space, &window, sid.0, *generation, *placement, output.as_deref(),
+                ),
+                WindowOp::TileKey { direction, .. } => world::comp::geometry::tile_key(
+                    comp, space, &window, sid.0, *generation, *direction,
+                ),
+                _ => unreachable!(),
+            };
+            if reply.wire_json().get("changed") == Some(&Value::Bool(true)) {
+                lp.state.schedule_redraw(RedrawReason::WindowState);
+                crate::input::retarget_pointer(lp);
+            }
+            Some(reply)
+        }
         WindowOp::SwitchWorkspace {
             output,
             index,
@@ -585,10 +611,31 @@ fn focus_keyboard(lp: &mut Loop, id: SurfaceId) {
 /// `comp.window.restore` of one window: activated (the default), or only
 /// unminimised (`activate: false`).
 fn restore(lp: &mut Loop, id: u64, generation: u64, activate: bool) -> ControlReply {
+    let (sid, _) = match motion_window(lp, id, generation) {
+        Ok(target) => target,
+        Err(reply) => return reply,
+    };
+    let mut changed = false;
+    if requested(lp, sid, WindowState::Fullscreen) {
+        if let Err(reply) = window_state(lp, id, generation, WindowState::Fullscreen, false, None) {
+            return reply;
+        }
+        changed = true;
+    } else if lp.inner.comp.placement(sid).constrained() {
+        maximize(lp, sid, false);
+        changed = true;
+    }
     match policy::window::restore(&mut lp.inner.comp.registry, id, generation, activate) {
         Ok((reply, effects)) => {
             execute(lp, effects);
-            reply
+            if activate {
+                execute(lp, vec![Effect::Restore(sid)]);
+            }
+            let mut body = reply.wire_json();
+            if changed { body["changed"] = Value::Bool(true); }
+            body["placement"] = Value::String(lp.inner.comp.placement(sid).name().into());
+            body["maximized"] = Value::Bool(lp.inner.comp.placement(sid).maximized());
+            ControlReply::Body(body)
         }
         Err(reply) => reply,
     }
@@ -1668,6 +1715,24 @@ pub fn apply_bindings(lp: &mut Loop) {
     }
     for action in lp.inner.comp.bindings.take_pending() {
         match action {
+            BindingAction::TileFocused(direction) => {
+                if let Some((id, generation)) = focused_window(lp) {
+                    let _ = window(lp, &WindowOp::TileKey { id, generation, direction });
+                }
+            }
+            BindingAction::ToggleMaximizeFocused | BindingAction::MinimizeFocused | BindingAction::RestoreFocused => {
+                if let Some((id, generation)) = focused_window(lp) {
+                    let op = match action {
+                        BindingAction::ToggleMaximizeFocused => WindowOp::State {
+                            id, generation, state: WindowState::Maximized,
+                            enabled: !lp.inner.comp.placement(SurfaceId(id)).maximized(), output: None,
+                        },
+                        BindingAction::MinimizeFocused => WindowOp::Minimize { id, generation },
+                        _ => WindowOp::Restore { target: Some((id, generation)), activate: true },
+                    };
+                    let _ = window(lp, &op);
+                }
+            }
             BindingAction::RequestCloseFocused => {
                 if let Some((id, generation)) = focused_window(lp) {
                     let _ = window(lp, &WindowOp::Close { id, generation });

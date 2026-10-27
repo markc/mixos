@@ -19,6 +19,8 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+comp-model.workspace = true
+serde_json.workspace = true
 decor = { workspace = true }
 dispatcher = { workspace = true }
 drivers = { workspace = true }

@@ -60,6 +60,21 @@ pub enum StatsTarget {
 /// window is named; only `restore` may name none (most recently minimised).
 #[derive(Clone, Debug, PartialEq)]
 pub enum WindowOp {
+    PlaceAs {
+        id: u64,
+        generation: u64,
+        placement: PlacementKind,
+        output: Option<String>,
+    },
+    TileKey {
+        id: u64,
+        generation: u64,
+        direction: TileDirection,
+    },
+    TilesGet {
+        output: Option<String>,
+        workspace: Option<u32>,
+    },
     State {
         id: u64,
         generation: u64,
@@ -166,6 +181,22 @@ pub struct PlaceSpec {
 pub enum WindowState {
     Maximized,
     Fullscreen,
+}
+
+/// Placement requests keep their own wire names; the world owns the geometry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlacementKind {
+    Floating,
+    Maximized,
+    Tiled { slot: &'static str },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TileDirection {
+    Left,
+    Right,
+    Up,
+    Down,
 }
 
 /// What `comp.window.wait` waits for.
@@ -661,6 +692,55 @@ pub fn parse_window_command(
 ) -> Result<WindowCommand, ControlReply> {
     let empty = serde_json::Map::new();
     match command_name {
+        "comp.window.place_as" => {
+            let object = args_object(args, &empty, &["id", "generation", "placement", "slot", "output"])?;
+            let (id, generation) = required_target(object)?;
+            let invalid = |field| ControlReply::refused("invalid_argument", json!({"argument": field}));
+            let placement = match object.get("placement").and_then(Value::as_str) {
+                Some("floating") => PlacementKind::Floating,
+                Some("maximized") => PlacementKind::Maximized,
+                Some("tiled") => {
+                    let slot = match object.get("slot").and_then(Value::as_str) {
+                        Some("left") => "left",
+                        Some("right") => "right",
+                        Some("top") => "top",
+                        Some("bottom") => "bottom",
+                        Some("top_left") => "top_left",
+                        Some("top_right") => "top_right",
+                        Some("bottom_left") => "bottom_left",
+                        Some("bottom_right") => "bottom_right",
+                        _ => return Err(invalid("slot")),
+                    };
+                    PlacementKind::Tiled { slot }
+                }
+                _ => return Err(invalid("placement")),
+            };
+            if !matches!(placement, PlacementKind::Tiled { .. }) && object.contains_key("slot") {
+                return Err(invalid("slot"));
+            }
+            Ok(WindowCommand::Op(WindowOp::PlaceAs { id, generation, placement, output: output_arg(object)? }))
+        }
+        "comp.window.tile_key" => {
+            let object = args_object(args, &empty, &["id", "generation", "direction"])?;
+            let (id, generation) = required_target(object)?;
+            let direction = match object.get("direction").and_then(Value::as_str) {
+                Some("left") => TileDirection::Left,
+                Some("right") => TileDirection::Right,
+                Some("up") => TileDirection::Up,
+                Some("down") => TileDirection::Down,
+                _ => return Err(ControlReply::refused("invalid_argument", json!({"argument": "direction"}))),
+            };
+            Ok(WindowCommand::Op(WindowOp::TileKey { id, generation, direction }))
+        }
+        "comp.tiles.get" => {
+            let object = args_object(args, &empty, &["output", "workspace"])?;
+            let workspace = match object.get("workspace") {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(value.as_u64().and_then(|n| u32::try_from(n).ok()).filter(|n| *n > 0)
+                    .ok_or_else(|| invalid_argument("workspace", "unsigned integer", "1..=count"))?),
+            };
+            Ok(WindowCommand::Op(WindowOp::TilesGet { output: output_arg(object)?, workspace }))
+        }
         "comp.window.maximize"
         | "comp.window.unmaximize"
         | "comp.window.fullscreen"
@@ -1838,7 +1918,7 @@ pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request,
             generation,
         });
     }
-    if let Some(command_name) = window_command(command) {
+    if let Some(command_name) = window_command(command).or_else(|| (command == "comp.tiles.get").then_some("comp.tiles.get")) {
         let parsed = if malformed {
             Err(invalid_argument("args", "JSON object", "{id, generation}"))
         } else {

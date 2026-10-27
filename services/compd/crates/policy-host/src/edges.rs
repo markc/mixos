@@ -144,6 +144,7 @@ impl Edges {
         identity: impl FnOnce() -> Identity,
     ) -> Vec<ObservationRecord> {
         let mut records = Vec::new();
+        records.extend(lp.inner.comp.take_placement_events());
         // Outputs change without registry traffic (a resize, a scale): looked
         // at every pass, a few rows.
         let (rows, _, _) = crate::project::project_outputs(lp);

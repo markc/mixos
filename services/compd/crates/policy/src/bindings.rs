@@ -20,6 +20,13 @@ use comp_model::snapshot::{BindingRowSnapshot, BindingsSnapshot};
 
 /// The xkb keysyms the default tables use (`<xkbcommon-keysyms.h>`).
 pub mod keysym {
+    pub const LEFT: u32 = 0xff51;
+    pub const UP: u32 = 0xff52;
+    pub const RIGHT: u32 = 0xff53;
+    pub const DOWN: u32 = 0xff54;
+    pub const PAGE_UP: u32 = 0xff55;
+    pub const PAGE_DOWN: u32 = 0xff56;
+    pub const BACKSPACE: u32 = 0xff08;
     pub const TAB: u32 = 0xff09;
     pub const ESCAPE: u32 = 0xff1b;
     pub const BRACKETLEFT: u32 = 0x005b;
@@ -182,6 +189,10 @@ impl ModifierPattern {
 /// the wire's `bindings.table[].action`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BindingAction {
+    TileFocused(comp_model::request::TileDirection),
+    ToggleMaximizeFocused,
+    MinimizeFocused,
+    RestoreFocused,
     /// `xdg_toplevel.close` (or the X11 close) to the focused window.
     RequestCloseFocused,
     /// Restore the most recently minimised live toplevel.
@@ -276,6 +287,13 @@ impl ScreenshotLaunch {
 impl BindingAction {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::TileFocused(comp_model::request::TileDirection::Left) => "TileFocusedLeft",
+            Self::TileFocused(comp_model::request::TileDirection::Right) => "TileFocusedRight",
+            Self::TileFocused(comp_model::request::TileDirection::Up) => "TileFocusedUp",
+            Self::TileFocused(comp_model::request::TileDirection::Down) => "TileFocusedDown",
+            Self::ToggleMaximizeFocused => "ToggleMaximizeFocused",
+            Self::MinimizeFocused => "MinimizeFocused",
+            Self::RestoreFocused => "RestoreFocused",
             Self::RequestCloseFocused => "RequestCloseFocused",
             Self::RestoreMostRecentlyMinimized => "RestoreMostRecentlyMinimized",
             Self::WorkspaceJump(_) => "WorkspaceJump",
@@ -495,6 +513,19 @@ fn screenshot_bindings() -> [Binding; 3] {
     ]
 }
 
+fn placement_bindings() -> [Binding; 7] {
+    use comp_model::request::TileDirection;
+    [
+        binding("tile-left", keysym::LEFT, "Left", ModifierSet::logo(), BindingAction::TileFocused(TileDirection::Left)),
+        binding("tile-right", keysym::RIGHT, "Right", ModifierSet::logo(), BindingAction::TileFocused(TileDirection::Right)),
+        binding("tile-up", keysym::UP, "Up", ModifierSet::logo(), BindingAction::TileFocused(TileDirection::Up)),
+        binding("tile-down", keysym::DOWN, "Down", ModifierSet::logo(), BindingAction::TileFocused(TileDirection::Down)),
+        binding("toggle-maximize-focused", keysym::PAGE_UP, "Page_Up", ModifierSet::logo(), BindingAction::ToggleMaximizeFocused),
+        binding("minimize-focused", keysym::PAGE_DOWN, "Page_Down", ModifierSet::logo(), BindingAction::MinimizeFocused),
+        binding("restore-focused", keysym::BACKSPACE, "BackSpace", ModifierSet::logo(), BindingAction::RestoreFocused),
+    ]
+}
+
 /// The compiled table.
 #[derive(Clone, Debug)]
 pub struct BindingTable {
@@ -537,6 +568,7 @@ impl BindingTable {
         bindings.extend(workspace_bindings());
         bindings.extend([workspace_step(false), workspace_step(true)]);
         bindings.extend(screenshot_bindings());
+        bindings.extend(placement_bindings());
         Self { bindings }
     }
 
@@ -563,6 +595,7 @@ impl BindingTable {
         bindings.extend(workspace_bindings());
         bindings.extend([workspace_step(false), workspace_step(true)]);
         bindings.extend(screenshot_bindings());
+        bindings.extend(placement_bindings());
         Self { bindings }
     }
 

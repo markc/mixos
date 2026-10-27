@@ -119,6 +119,9 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
         .filter(|(_, surface)| !locked && surface.role == "toplevel" && surface.mapped)
         .map(|(key, surface)| {
             let mut row = project_window_row(surface);
+            let id = surfaces::SurfaceId(row.id);
+            row.placement = lp.inner.comp.placement(id).name();
+            row.float_geometry = lp.inner.comp.float_snapshot(id);
             if window_presentation {
                 row.presentation = Some(stats.window(row.id, row.generation).map_or_else(
                     || ledger::presentation_stats::PresentationStats::new(stats.epoch_us).leaves(),

@@ -16,6 +16,141 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 use surfaces::SurfaceId;
 
+/// Bus and keyboard placement share this renderer-free operation. The caller
+/// resolves the owning world before passing its Space and window.
+pub fn place_as(
+    comp: &mut CompState,
+    space: &mut Space<Window>,
+    window: &Window,
+    id: u64,
+    generation: u64,
+    placement: comp_model::request::PlacementKind,
+    output: Option<&str>,
+) -> comp_model::reply::ControlReply {
+    use comp_model::reply::ControlReply;
+    use comp_model::request::PlacementKind;
+    use serde_json::json;
+    let sid = match comp.registry.resolve_window_target(id, Some(generation)) {
+        Ok(record) => record.id(),
+        Err(error) => return ControlReply::WindowTarget { id, error },
+    };
+    if fullscreen_owns(window) {
+        return ControlReply::refused("invalid_state", json!({"id": id, "state": "fullscreen"}));
+    }
+    let selected = match output {
+        Some(requested) => match space.outputs().find(|o| o.name() == requested || comp_model::snapshot::output_key(&o.name()) == requested) {
+            Some(output) => Some(output.name()),
+            None => return ControlReply::refused("unknown_output", json!({"output": requested})),
+        },
+        None => None,
+    };
+    let before = comp.placement(sid);
+    let next = match placement {
+        PlacementKind::Floating => Placement::Floating,
+        PlacementKind::Maximized | PlacementKind::Tiled { .. } => {
+            let Some((output, area)) = target_on(comp, space, sid, window, selected.as_deref()) else {
+                return ControlReply::refused("unknown_output", json!({"output": selected}));
+            };
+            let (min, max) = size_hints(window);
+            let fixed = (max.0 > 0 && min.0 >= max.0) || (max.1 > 0 && min.1 >= max.1);
+            match placement {
+                PlacementKind::Maximized => {
+                    let content = decor::window::content_area(window, area);
+                    if fixed || (max.0 > 0 && max.0 < content.size.w) || (max.1 > 0 && max.1 < content.size.h) {
+                        return ControlReply::refused("not_maximizable", json!({"id": id}));
+                    }
+                    Placement::Maximized { output }
+                }
+                PlacementKind::Tiled { slot } => {
+                    if fixed {
+                        return ControlReply::refused("not_resizable", json!({"id": id}));
+                    }
+                    let Some(slot) = super::TileSlot::from_name(slot) else {
+                        return ControlReply::refused("invalid_argument", json!({"argument": "slot"}));
+                    };
+                    Placement::Tiled { slot, output }
+                }
+                PlacementKind::Floating => unreachable!(),
+            }
+        }
+    };
+    // Cancel an armed drag before applying explicit policy, so releasing its
+    // button cannot overwrite this command later in the same dispatch.
+    finish_interactive(comp, sid);
+    set_placement(comp, space, sid, window, next);
+    placement_reply(comp, sid, generation, before != comp.placement(sid))
+}
+
+fn placement_reply(comp: &CompState, id: SurfaceId, generation: u64, changed: bool) -> comp_model::reply::ControlReply {
+    let placement = comp.placement(id);
+    comp_model::reply::ControlReply::Body(serde_json::json!({
+        "id": id.0, "generation": generation, "changed": changed,
+        "placement": placement.name(), "maximized": placement.maximized(),
+        "output": placement.output().map(comp_model::snapshot::output_key),
+        "float_geometry": comp.float_snapshot(id),
+    }))
+}
+
+/// The only quick-tile operation, reached by both Super+arrow and tile_key.
+pub fn tile_key(
+    comp: &mut CompState,
+    space: &mut Space<Window>,
+    window: &Window,
+    id: u64,
+    generation: u64,
+    direction: comp_model::request::TileDirection,
+) -> comp_model::reply::ControlReply {
+    use super::placement::{TileTransition, adjacent_output, tile_transition};
+    use comp_model::reply::ControlReply;
+    let sid = match comp.registry.resolve_window_target(id, Some(generation)) {
+        Ok(record) => record.id(),
+        Err(error) => return ControlReply::WindowTarget { id, error },
+    };
+    if fullscreen_owns(window) {
+        return ControlReply::refused("invalid_state", serde_json::json!({"id": id, "state": "fullscreen"}));
+    }
+    let current = comp.placement(sid);
+    let (slot, output) = match tile_transition(&current, direction) {
+        TileTransition::Slot(slot) => (slot, None),
+        TileTransition::Cross { direction, slot } => {
+            let areas: Vec<_> = space.outputs().filter_map(|o| Some((o.name(), space.output_geometry(o)?))).collect();
+            let area = areas.iter().find(|(name, _)| Some(name.as_str()) == current.output()).map(|(_, area)| *area);
+            let adjacent = area.and_then(|area| adjacent_output(area, direction, areas.iter().map(|(name, area)| (name.as_str(), *area))));
+            let Some(output) = adjacent else {
+                return placement_reply(comp, sid, generation, false);
+            };
+            (slot, Some(output.to_owned()))
+        }
+    };
+    place_as(comp, space, window, id, generation, comp_model::request::PlacementKind::Tiled { slot: slot.name() }, output.as_deref())
+}
+
+/// Tile membership is queried from placement, independent of focus or buffers.
+pub fn tiles_get(comp: &CompState, space: &Space<Window>, output: Option<&str>, workspace: Option<u32>) -> comp_model::reply::ControlReply {
+    use comp_model::reply::ControlReply;
+    use policy::workspaces::{DefaultOutput, WorkspaceState};
+    use serde_json::json;
+    let selected = space.outputs().find(|o| output.is_none_or(|name| o.name() == name || comp_model::snapshot::output_key(&o.name()) == name));
+    let default = selected.map(|o| DefaultOutput { key: comp_model::snapshot::output_key(&o.name()), name: o.name() });
+    let Some(key) = WorkspaceState::resolve_output(default.as_ref(), output) else {
+        return ControlReply::refused("unknown_output", json!({"output": output}));
+    };
+    let output = default.expect("resolved output").name;
+    let workspace = workspace.unwrap_or_else(|| comp.workspaces.current_for(Some(&key)));
+    if !(1..=comp.workspaces.count).contains(&workspace) {
+        return ControlReply::refused("invalid_argument", json!({"argument": "workspace", "count": comp.workspaces.count}));
+    }
+    let split = comp.tile_split_for(&output, workspace);
+    let slots: serde_json::Map<_, _> = super::TileSlot::ALL.into_iter().map(|slot| {
+        let mut windows: Vec<_> = comp.registry.surface_rows().filter(|record| record.mapped() && record.workspace() == Some(workspace))
+            .filter(|record| comp.placement(record.id()) == (Placement::Tiled { slot, output: output.clone() }))
+            .map(|record| (record.id().0, record.generation())).collect();
+        windows.sort_unstable();
+        (slot.name().to_owned(), json!(windows.into_iter().map(|(id, generation)| json!({"id": id, "generation": generation})).collect::<Vec<_>>()))
+    }).collect();
+    ControlReply::Body(json!({"output": key, "workspace": workspace, "split": {"x": split.x, "y": split.y}, "slots": slots}))
+}
+
 /// Work-area observation and actual window placement/configure changes are
 /// separate: changing an empty output's usable area need not move a window.
 /// `windows` reports a geometry application; an explicit request may still send
@@ -135,7 +270,7 @@ pub fn set_maximized_on(
     set_placement(comp, space, id, window, placement)
 }
 
-/// Internal placement transition; tile commands are deliberately not exposed yet.
+/// Shared placement transition for drag, keyboard and Bus commands.
 pub fn set_placement(
     comp: &mut CompState,
     space: &mut Space<Window>,

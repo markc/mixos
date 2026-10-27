@@ -182,6 +182,7 @@ pub struct CompState {
     placements: HashMap<SurfaceId, (Placement, smithay::desktop::Window)>,
     float_geometries: HashMap<SurfaceId, FloatGeometry>,
     tile_splits: BTreeMap<(String, u32), TileSplit>,
+    placement_events: std::cell::RefCell<Vec<comp_model::observation::ObservationRecord>>,
     /// Client window-state requests (xdg / X11), for the host's policy.
     requests: Vec<(SurfaceId, WindowRequest)>,
     /// `_NET_CURRENT_DESKTOP` root requests, 0-based.
@@ -794,6 +795,15 @@ impl CompState {
         decor::window::set_constrained(window, placement.constrained());
         protocols::window::shell::set_tiled(window, matches!(placement, Placement::Tiled { .. }));
         if self.placement(id) != placement {
+            let output = placement.output().map(str::to_owned)
+                .or_else(|| self.float_geometry(id).map(|saved| saved.output))
+                .or_else(|| self.placement(id).output().map(str::to_owned));
+            if let Some(record) = self.registry.get(id) {
+                self.placement_events.borrow_mut().push(comp_model::observation::ObservationRecord::PlacementChanged {
+                    id: id.0, generation: record.generation(), placement: placement.name(),
+                    output: output.map(|name| comp_model::snapshot::output_key(&name)), event_seq: 0,
+                });
+            }
             if placement == Placement::Floating {
                 self.placements.remove(&id);
             } else {
@@ -807,6 +817,17 @@ impl CompState {
 
     pub fn float_geometry(&self, id: SurfaceId) -> Option<FloatGeometry> {
         self.float_geometries.get(&id).cloned()
+    }
+
+    pub fn take_placement_events(&self) -> Vec<comp_model::observation::ObservationRecord> {
+        std::mem::take(&mut *self.placement_events.borrow_mut())
+    }
+
+    pub fn float_snapshot(&self, id: SurfaceId) -> Option<comp_model::snapshot::FloatGeometrySnapshot> {
+        self.float_geometry(id).map(|saved| comp_model::snapshot::FloatGeometrySnapshot {
+            x: saved.location.x, y: saved.location.y, w: saved.size.w, h: saved.size.h,
+            output: comp_model::snapshot::output_key(&saved.output),
+        })
     }
 
     /// Only a transition out of Floating may replace the saved geometry.

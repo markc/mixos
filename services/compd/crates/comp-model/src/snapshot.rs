@@ -267,6 +267,8 @@ pub struct LayerSnapshot {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct WindowSnapshot {
+    pub placement: &'static str,
+    pub float_geometry: Option<FloatGeometrySnapshot>,
     #[serde(flatten)]
     pub occlusion: OcclusionProps,
     pub id: u64,
@@ -295,6 +297,15 @@ pub struct WindowSnapshot {
     /// Volatile; filled only in read snapshots (never in diffed rows).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub presentation: Option<PresentationLeaves>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct FloatGeometrySnapshot {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    pub output: String,
 }
 
 /// `outputs.o_<slug>.presentation.*` (volatile).
@@ -765,6 +776,7 @@ macro_rules! window_snapshot {
                 match path {
                     [] => serialise_selected(self),
                     $([stringify!($field)] => serialise_selected(&self.$field),)+
+                    ["float_geometry", tail @ ..] => select_serialised(&self.float_geometry, tail),
                     ["presentation", tail @ ..] => {
                         select_serialised(self.presentation.as_ref()?, tail)
                     }
@@ -776,6 +788,7 @@ macro_rules! window_snapshot {
                 match path {
                     [] => Some(SnapshotNodeKind::Object),
                     $([stringify!($field)] => Some(SnapshotNodeKind::Leaf),)+
+                    ["float_geometry", tail @ ..] => serialised_node_kind(&self.float_geometry, tail),
                     ["presentation", tail @ ..] => {
                         serialised_node_kind(self.presentation.as_ref()?, tail)
                     }
@@ -787,6 +800,7 @@ macro_rules! window_snapshot {
 }
 
 window_snapshot!(
+    placement,
     id,
     foreign_id,
     title,
@@ -990,6 +1004,8 @@ impl SurfaceSnapshot {
 /// The `windows.*` row of a mapped xdg toplevel's `surfaces.*` row.
 pub fn project_window_row(surface: &SurfaceSnapshot) -> WindowSnapshot {
     WindowSnapshot {
+        placement: if surface.maximized { "maximized" } else { "floating" },
+        float_geometry: None,
         occlusion: surface.occlusion.clone(),
         id: surface.id,
         foreign_id: surface.foreign_id.clone(),
@@ -1641,10 +1657,18 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         Bool,
         "Whether this toplevel owns keyboard focus"
     ),
+    descriptor!(&[L("windows"), S, L("placement")], String, "Requested floating, maximized or tile slot placement",
+        enum = &["floating", "maximized", "left", "right", "top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right"]),
+    descriptor!(&[L("windows"), S, L("float_geometry")], Object, "Saved floating content geometry, or null before the first constrained placement"),
+    descriptor!(&[L("windows"), S, L("float_geometry"), L("x")], Number, "Saved global logical x"),
+    descriptor!(&[L("windows"), S, L("float_geometry"), L("y")], Number, "Saved global logical y"),
+    descriptor!(&[L("windows"), S, L("float_geometry"), L("w")], Number, "Saved content width"),
+    descriptor!(&[L("windows"), S, L("float_geometry"), L("h")], Number, "Saved content height"),
+    descriptor!(&[L("windows"), S, L("float_geometry"), L("output")], String, "Output key on which floating geometry was saved"),
     descriptor!(
         &[L("windows"), S, L("maximized")],
         Bool,
-        "Committed maximized state; writes request a configure",
+        "Requested maximized placement; writes request a configure",
         mutable
     ),
     descriptor!(

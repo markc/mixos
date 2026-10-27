@@ -577,6 +577,8 @@ fn diff_window_row(
         (Some(old), Some(new)) => (old, new),
     };
     for (leaf, old, new) in [
+        ("placement", prop_str(old.placement), prop_str(new.placement)),
+        ("float_geometry", PropValue::FloatGeometry(old.float_geometry.clone()), PropValue::FloatGeometry(new.float_geometry.clone())),
         ("id", PropValue::U64(old.id), PropValue::U64(new.id)),
         (
             "foreign_id",
