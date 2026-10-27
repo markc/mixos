@@ -12,6 +12,27 @@ use toolkit::{Action, Registry, action::Origin};
 
 use crate::{app::App, label, label_with, view::UiEvent};
 
+/// The chooser's serialisable UI state, returned alongside toolkit window state.
+#[derive(serde::Serialize)]
+pub struct State {
+    pub request: String,
+    pub mode: Mode,
+    pub caller: String,
+    pub on_behalf_of: Option<String>,
+    pub folder: Option<String>,
+    pub selected: Vec<String>,
+    pub name: String,
+    pub current_filter: Option<dopus_core::chooser::Filter>,
+    pub choices: BTreeMap<String, String>,
+    pub sort: dopus_core::SortColumn,
+    pub ascending: bool,
+    pub show_hidden: bool,
+    pub replacing: bool,
+    pub message: Option<String>,
+    pub ready: bool,
+    pub ending: bool,
+}
+
 pub struct Window {
     pub id: String,
     pub caller: String,
@@ -34,6 +55,19 @@ pub fn path(bytes: &[u8]) -> PathBuf {
 }
 
 impl Window {
+    pub fn state(&self) -> State {
+        let pane = self.app.core.pane(PaneId::Left);
+        State {
+            request: self.id.clone(), mode: self.request.mode, caller: self.caller.clone(),
+            on_behalf_of: self.request.on_behalf_of.clone(),
+            folder: dopus_core::chooser::file_uri(pane.path.as_os_str().as_bytes()).ok(),
+            selected: self.app.core.selected_paths(PaneId::Left).iter().filter_map(|p| dopus_core::chooser::file_uri(p.as_os_str().as_bytes()).ok()).collect(),
+            name: self.name.clone(), current_filter: self.request.current_filter.clone(), choices: self.choices.clone(),
+            sort: pane.sort, ascending: pane.ascending, show_hidden: pane.show_hidden,
+            replacing: self.replace.is_some(), message: self.message.clone(), ready: self.ready, ending: self.ending,
+        }
+    }
+
     pub fn new(open: &OpenRequest) -> Self {
         Self::for_request(&open.id, &open.caller, open.request.clone())
     }

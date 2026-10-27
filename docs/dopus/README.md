@@ -171,7 +171,9 @@ cancel the request. The last accepted folder is remembered per claimed app,
 otherwise per caller, within the provider incarnation.
 
 Drive uses the request id as `viewport`. It is required when several choosers
-are open. Without a display, choose returns `UNAVAILABLE`. compd currently
+are open. `files.window.state` includes the serialised `chooser` state:
+folder and selection URIs, typed name, filter, choices, sorting and lifecycle.
+Without a display, choose returns `UNAVAILABLE`. compd currently
 exposes no portal parent-identifier resolver: windows centre on the focused
 output and are raised when mapped. A parent-relative stacking relationship
 cannot currently be established through that interface.

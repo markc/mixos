@@ -85,6 +85,16 @@ struct Shell {
     events: tokio::sync::mpsc::UnboundedSender<Presentation>,
     requests: mpsc::Receiver<DriveRequest>,
     answers: tokio::sync::mpsc::UnboundedSender<Report>,
+    states: BTreeMap<u64, super::window::State>,
+}
+
+impl Shell {
+    fn answer(&mut self, mut answer: drive::Answer) {
+        if let Some(state) = self.states.remove(&answer.id) && answer.rc == 0 {
+            answer.body["chooser"] = json!(state);
+        }
+        let _ = self.answers.send(Report::Drive(answer));
+    }
 }
 
 /// A missing viewport is only unambiguous with exactly one open chooser.
@@ -107,11 +117,17 @@ fn target(windows: &Windows, mut args: Value) -> Result<Value, &'static str> {
 impl eframe::App for Shell {
     fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         for answer in drive::logic(ctx) {
-            let _ = self.answers.send(Report::Drive(answer));
+            self.answer(answer);
         }
         while let Ok(request) = self.requests.try_recv() {
             let answer = match target(&self.windows, request.args) {
-                Ok(args) => drive::request(ctx, request.id, &request.command, &args),
+                Ok(args) => {
+                    if request.command == "window.state" && let Some(id) = args["viewport"].as_str()
+                        && let Some(window) = self.windows.lock().unwrap().get(id) {
+                        self.states.insert(request.id, window.lock().unwrap().state());
+                    }
+                    drive::request(ctx, request.id, &request.command, &args)
+                }
                 Err(message) => Some(drive::Answer {
                     id: request.id,
                     rc: 10,
@@ -119,7 +135,7 @@ impl eframe::App for Shell {
                 }),
             };
             if let Some(answer) = answer {
-                let _ = self.answers.send(Report::Drive(answer));
+                self.answer(answer);
             }
         }
         let windows: Vec<_> = self.windows.lock().unwrap().values().cloned().collect();
@@ -175,7 +191,7 @@ impl eframe::App for Shell {
 
     fn on_exit(&mut self) {
         for answer in drive::finish(&self.ctx) {
-            let _ = self.answers.send(Report::Drive(answer));
+            self.answer(answer);
         }
     }
 }
@@ -232,6 +248,7 @@ pub(super) fn run(url: &str) -> Result<(), String> {
                 events,
                 requests: receive_requests,
                 answers,
+                states: BTreeMap::new(),
             }))
         }),
     )

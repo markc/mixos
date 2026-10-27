@@ -154,6 +154,8 @@ try
   drive($id, "ui.key", {key:"A", modifiers:["ctrl"]})
   drive($id, "ui.type", {text:$tmp .. "/home/Documents"})
   drive($id, "ui.key", {key:"Enter"})
+  $state = drive($id,"window.state",{}).chooser
+  check($state.request == $id and $state.folder == "file://" .. $tmp .. "/home/Documents", "serialised chooser state: " .. json_encode($state))
   drive($id, "ui.click", {label:"File name"})
   drive($id, "ui.key", {key:"A", modifiers:["ctrl"]})
   drive($id, "ui.type", {text:"new.txt"})
