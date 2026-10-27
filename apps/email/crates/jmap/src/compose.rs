@@ -1378,16 +1378,25 @@ mod tests {
     #[test]
     fn references_are_ordered_sanitised_and_part_of_the_retry_fingerprint() {
         let draft = Composed {
-            references: vec!["first@example.invalid".into(), "<second@example.invalid>".into()],
+            references: vec![
+                "first@example.invalid".into(),
+                "<second@example.invalid>".into(),
+            ],
             reply_to: Some("bob@example.invalid\r\nBcc: eve@example.invalid".into()),
             ..composed()
         };
-        assert_ne!(compose_fingerprint(&draft), compose_fingerprint(&composed()));
+        assert_ne!(
+            compose_fingerprint(&draft),
+            compose_fingerprint(&composed())
+        );
         let mime = String::from_utf8(build_mime(&draft).unwrap()).unwrap();
         assert!(mime.contains("References: <first@example.invalid> <second@example.invalid>\r\n"));
         assert!(mime.contains("Reply-To: bob@example.invalid  Bcc: eve@example.invalid\r\n"));
         assert!(!mime.contains("\nBcc:"));
-        let injected = Composed { references: vec!["one\r\nBcc: eve@example.invalid".into()], ..draft };
+        let injected = Composed {
+            references: vec!["one\r\nBcc: eve@example.invalid".into()],
+            ..draft
+        };
         let mime = String::from_utf8(build_mime(&injected).unwrap()).unwrap();
         assert!(!mime.contains("\nBcc:"));
         assert!(mime.contains("References: <one  Bcc: eve@example.invalid>\r\n"));

@@ -201,7 +201,9 @@ impl State {
             },
         );
         self.queue_work(Work::MailDocument(DocumentWork::Read { ticket, path }));
-        if let Some(id) = reply { self.await_document(id); }
+        if let Some(id) = reply {
+            self.await_document(id);
+        }
         Ok(())
     }
 
@@ -450,7 +452,10 @@ impl State {
             return;
         };
         let result = (|| {
-            if self.account(&request.account).is_none_or(|v| v.generation() != request.generation) {
+            if self
+                .account(&request.account)
+                .is_none_or(|v| v.generation() != request.generation)
+            {
                 return Err((code::STALE, crate::label("not-connected")));
             }
             if !request.send && self.compose.as_ref().is_some_and(|c| c.busy) {
@@ -716,34 +721,70 @@ mod tests {
     #[test]
     fn owned_alias_selects_its_identity_and_missing_from_uses_the_default() {
         let mut state = connected_many(&["a"]);
-        let account = state.accounts.iter_mut().find(|v| v.entry.id == "a").unwrap();
-        account.entry.identities = ["default", "sales"].into_iter().map(|id| settings::email::Identity {
-            id: id.into(), name: id.into(), address: format!("{id}@example.invalid"),
-            signature: String::new(), reply_to: None,
-        }).collect();
-        let doc = MailDocument { from: Some("Sales <SALES@example.invalid>".into()),
-            reply_to: Some("default@example.invalid".into()), ..Default::default() };
+        let account = state
+            .accounts
+            .iter_mut()
+            .find(|v| v.entry.id == "a")
+            .unwrap();
+        account.entry.identities = ["default", "sales"]
+            .into_iter()
+            .map(|id| settings::email::Identity {
+                id: id.into(),
+                name: id.into(),
+                address: format!("{id}@example.invalid"),
+                signature: String::new(),
+                reply_to: None,
+            })
+            .collect();
+        let doc = MailDocument {
+            from: Some("Sales <SALES@example.invalid>".into()),
+            reply_to: Some("default@example.invalid".into()),
+            ..Default::default()
+        };
         let (draft, id) = composed(&state, "a", &doc).unwrap();
         assert_eq!(id, "sales");
         assert_eq!(draft.from, "sales@example.invalid");
         let (_, id) = composed(&state, "a", &MailDocument::default()).unwrap();
         assert_eq!(id, "default");
-        command(&mut state, "email.send", json!({"to": "bob@example.invalid", "subject": "Inline",
-            "from": "sales@example.invalid", "reply_to": "default@example.invalid", "references": ["<first>", "<second>"]}));
-        let draft = state.take_work().into_iter().find_map(|w| match w {
-            Work::Write { write: crate::commands::Write::Send { draft }, .. } => Some(draft), _ => None,
-        }).unwrap();
+        command(
+            &mut state,
+            "email.send",
+            json!({"to": "bob@example.invalid", "subject": "Inline",
+            "from": "sales@example.invalid", "reply_to": "default@example.invalid", "references": ["<first>", "<second>"]}),
+        );
+        let draft = state
+            .take_work()
+            .into_iter()
+            .find_map(|w| match w {
+                Work::Write {
+                    write: crate::commands::Write::Send { draft },
+                    ..
+                } => Some(draft),
+                _ => None,
+            })
+            .unwrap();
         let mime = String::from_utf8(jmap::build_mime(&draft).unwrap()).unwrap();
         assert!(mime.contains("Reply-To: default@example.invalid\r\n"));
         assert!(mime.contains("References: <first> <second>\r\n"));
-        command(&mut state, "email.send", json!({"to": "bob@example.invalid", "subject": "Refuse", "reply_to": "foreign@example.invalid"}));
-        assert_eq!(state.take_replies()[0].body["error_code"], code::IDENTITY_MISMATCH);
+        command(
+            &mut state,
+            "email.send",
+            json!({"to": "bob@example.invalid", "subject": "Refuse", "reply_to": "foreign@example.invalid"}),
+        );
+        assert_eq!(
+            state.take_replies()[0].body["error_code"],
+            code::IDENTITY_MISMATCH
+        );
     }
 
     #[test]
     fn closing_cancels_a_pending_document_request_and_discards_late_reads() {
         let mut state = connected_many(&["a"]);
-        command(&mut state, "email.compose", json!({"document": "/tmp/mail.md"}));
+        command(
+            &mut state,
+            "email.compose",
+            json!({"document": "/tmp/mail.md"}),
+        );
         let ticket = *state.documents.pending.keys().next().unwrap();
         state.close_out();
         assert_eq!(state.take_replies()[0].body["error_code"], code::CANCELLED);

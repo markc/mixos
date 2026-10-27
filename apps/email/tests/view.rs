@@ -1300,7 +1300,10 @@ fn compose_attachment_chips_show_status_and_remove_through_the_window() {
 #[test]
 fn compose_file_menu_has_open_and_save_as_before_attachments() {
     let mut h = harness_with(typing(), &theme(Scheme::Studio, Mode::Dark));
-    h.query_all_by_label(&label("compose-file-menu")).last().unwrap().click();
+    h.query_all_by_label(&label("compose-file-menu"))
+        .last()
+        .unwrap()
+        .click();
     h.run();
     assert!(h.query_by_label(&label("document-open")).is_some());
     assert!(h.query_by_label(&label("document-save-as")).is_some());
