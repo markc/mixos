@@ -41,6 +41,16 @@ fn refuses_routing_and_reserved_headers_by_name() {
 }
 
 #[test]
+fn an_empty_header_name_is_malformed() {
+    for line in [": x", ":", " : x"] {
+        assert_eq!(
+            parse(&framed(line)),
+            Err(Refusal::MalformedHeader(line.into()))
+        );
+    }
+}
+
+#[test]
 fn refuses_unknown_mail_header() {
     assert_eq!(
         parse(&framed("mail-foo: x")),

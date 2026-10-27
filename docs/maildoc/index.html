@@ -270,8 +270,9 @@ The **build** is ready.
 <tr><td><code>mail-attachments</code></td><td><code>Vec&lt;PathBuf&gt;</code></td><td>JSON array of absolute UTF-8 paths; never opened</td></tr>
 </tbody></table>
 <p>Address validation here checks only that each entry is non-empty and contains
-<code>@</code>, is trimmed and contains no comma. Commas always separate list entries, including commas inside display names;
-full RFC address parsing belongs to Email.</p>
+<code>@</code>, is trimmed and contains no comma. When parsing, commas always separate
+list entries, including commas inside display names; <code>write</code> refuses an entry
+that contains a comma. Full RFC address parsing belongs to Email.</p>
 <p>An ordinary value starting with <code>"</code> must be a JSON string and is decoded.
 Other ordinary values are taken as written after the wire parser trims them;
 even an unquoted <code>[PATCH]</code> is accepted. The wire parser's advisory JSON errors
@@ -284,11 +285,18 @@ all routing or broker names. Malformed and duplicate header lines are refused
 before the lenient parser can skip or overwrite them. Empty values, including
 <code>""</code> and bare <code>mail-subject:</code>, are refused; omit the header instead. Empty
 lists are accepted and disappear when written. Both fences are required.
-Any CR anywhere in the document, including bare CR and CRLF, has a separate
-<code>Refusal::CarriageReturn</code> error with guidance to use LF.</p>
+When parsing, any CR anywhere in the text, including bare CR and CRLF, gives
+<code>Refusal::CarriageReturn</code> with guidance to use LF. <code>write</code> and <code>validate</code>
+give <code>Refusal::CarriageReturn</code> for a CR in the body, and
+<code>InvalidValue</code> ("CR or LF in a value") for a CR in a header value.
+A line whose header name is empty (<code>: x</code>) is <code>MalformedHeader</code>.</p>
 <p>Input larger than <code>MAX_DOCUMENT_BYTES</code> (8 MiB, the broker relay frame cap) is
 refused with <code>Refusal::TooLarge</code>. The bound counts UTF-8 bytes for the complete
-document, including framing; exactly 8 MiB is accepted. It applies locally too.</p>
+document, including framing; exactly 8 MiB is accepted. It applies locally too.
+<code>parse</code> also checks the canonical re-encoding, which can be a few bytes
+longer than the input (an unquoted <code>[PATCH]</code> subject is written as
+<code>"[PATCH]"</code>, and <code>a@b,c@d</code> as <code>a@b, c@d</code>). An input just under the cap can
+therefore be refused with <code>TooLarge</code> reporting that canonical size.</p>
 <h2 id="writing-and-round-trips">Writing and round trips</h2>
 <p>The writer sorts headers through <code>bus::wire::BusMessage</code>, omits empty or absent
 values, and uses LF framing. It JSON-quotes ordinary values beginning with

@@ -47,8 +47,9 @@ Only these nine names are accepted:
 | `mail-attachments` | `Vec<PathBuf>` | JSON array of absolute UTF-8 paths; never opened |
 
 Address validation here checks only that each entry is non-empty and contains
-`@`, is trimmed and contains no comma. Commas always separate list entries, including commas inside display names;
-full RFC address parsing belongs to Email.
+`@`, is trimmed and contains no comma. When parsing, commas always separate
+list entries, including commas inside display names; `write` refuses an entry
+that contains a comma. Full RFC address parsing belongs to Email.
 
 An ordinary value starting with `"` must be a JSON string and is decoded.
 Other ordinary values are taken as written after the wire parser trims them;
@@ -63,12 +64,19 @@ all routing or broker names. Malformed and duplicate header lines are refused
 before the lenient parser can skip or overwrite them. Empty values, including
 `""` and bare `mail-subject:`, are refused; omit the header instead. Empty
 lists are accepted and disappear when written. Both fences are required.
-Any CR anywhere in the document, including bare CR and CRLF, has a separate
-`Refusal::CarriageReturn` error with guidance to use LF.
+When parsing, any CR anywhere in the text, including bare CR and CRLF, gives
+`Refusal::CarriageReturn` with guidance to use LF. `write` and `validate`
+give `Refusal::CarriageReturn` for a CR in the body, and
+`InvalidValue` ("CR or LF in a value") for a CR in a header value.
+A line whose header name is empty (`: x`) is `MalformedHeader`.
 
 Input larger than `MAX_DOCUMENT_BYTES` (8 MiB, the broker relay frame cap) is
 refused with `Refusal::TooLarge`. The bound counts UTF-8 bytes for the complete
 document, including framing; exactly 8 MiB is accepted. It applies locally too.
+`parse` also checks the canonical re-encoding, which can be a few bytes
+longer than the input (an unquoted `[PATCH]` subject is written as
+`"[PATCH]"`, and `a@b,c@d` as `a@b, c@d`). An input just under the cap can
+therefore be refused with `TooLarge` reporting that canonical size.
 
 ## Writing and round trips
 

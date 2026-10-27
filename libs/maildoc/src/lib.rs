@@ -158,6 +158,9 @@ pub fn parse(text: &str) -> Result<MailDocument, Refusal> {
             .split_once(':')
             .ok_or_else(|| Refusal::MalformedHeader(line.to_owned()))?;
         let name = name.trim();
+        if name.is_empty() {
+            return Err(Refusal::MalformedHeader(line.to_owned()));
+        }
         if !HEADERS.contains(&name) {
             return Err(Refusal::HeaderNotAllowed(name.to_owned()));
         }
