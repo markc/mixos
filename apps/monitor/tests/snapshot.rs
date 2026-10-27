@@ -39,7 +39,8 @@ fn snapshot(cores: usize, busy: f64) -> Value {
                  "rx_bps": 310_000.0, "tx_bps": 42_000.0, "rx_bytes": 9_876_543_210u64, "tx_bytes": 1_234_567_890u64}],
         "tcp": {"in_segs":1800.0, "out_segs":1200.0, "retrans_segs":12.0,
             "established":42, "active_opens":4.0, "passive_opens":8.0, "out_rsts":2.0, "estab_resets":1.0,
-            "sockstat":{"inuse":48,"orphan":1,"tw":16,"alloc":52,"mem":280}},
+            "sockstat":{"inuse":48,"orphan":1,"tw":16,"alloc":52,"mem":280},
+            "sockstat6":{"inuse":87}},
     })
 }
 
@@ -301,6 +302,8 @@ fn tcp_page_exposes_charts_and_connections_in_both_themes() {
             "Established",
             "Opens / resets",
             "Top 20 connections by throughput",
+            "In use (v4): 48",
+            "In use (v6): 87",
         ] {
             assert!(
                 !h.query_all_by_label(text).collect::<Vec<_>>().is_empty(),

@@ -353,10 +353,14 @@ fn title_line(
         .iter()
         .map(|(g, _)| swatch + gap + g.size().x)
         .collect();
-    let rows = header_rows(width, title.size().x, &widths, gap);
+    // Keep a full theme gap at the column edge, even when the next column
+    // starts with a title on this same baseline.
+    let inset = ui.spacing().item_spacing.x;
+    let rows = header_rows((width - inset).max(0.0), title.size().x, &widths, gap);
     let total_height =
         rows.len() as f32 * height + (rows.len() - 1) as f32 * ui.spacing().item_spacing.y;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, total_height), egui::Sense::hover());
+    let (mut rect, _) = ui.allocate_exact_size(egui::vec2(width, total_height), egui::Sense::hover());
+    rect.max.x -= inset;
     let painter = ui.painter_at(rect);
     let title_rect = egui::Rect::from_min_size(rect.min, title.size()).intersect(rect);
     ui.interact(title_rect, plot_id.with("title"), egui::Sense::hover())
@@ -451,6 +455,11 @@ fn render_custom(
         .formatter(|mark, _| tick_label(chart.format, mark.value))
         .tick_label_color(ui.visuals().text_color())
         .label_spacing(0.0..=text_height);
+    // The default 60 px fade threshold hides 10 s marks in half-width
+    // minute charts; its next base-10 step (100 s) lies outside the window.
+    let x_axis = AxisHints::new_x()
+        .formatter(|mark, _| time_tick(mark.value))
+        .label_spacing(30.0..=50.0);
     let plot = Plot::new(plot_id)
         .id(plot_id)
         .width(size.x)
@@ -473,7 +482,7 @@ fn render_custom(
         })
         .show_grid([false, true])
         .show_y(false)
-        .x_axis_formatter(|mark, _| time_tick(mark.value))
+        .custom_x_axes(vec![x_axis])
         .custom_y_axes(vec![y_axis])
         .y_grid_spacer(move |_| ticks.marks())
         .label_formatter(|hover| {
@@ -550,6 +559,46 @@ fn render_custom(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn narrow_and_full_width_charts_paint_seconds_ago_ticks() {
+        use egui_kittest::Harness;
+        fn text_shapes(shape: &egui::Shape, labels: &mut Vec<(String, egui::Rect)>) {
+            match shape {
+                egui::Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        text_shapes(shape, labels);
+                    }
+                }
+                egui::Shape::Text(text) => labels.push((
+                    text.galley.text().to_owned(),
+                    egui::Rect::from_min_size(text.pos, text.galley.size()),
+                )),
+                _ => {}
+            }
+        }
+        for width in [260.0, 360.0, 720.0] {
+            let mut h = Harness::builder()
+                .with_size(egui::vec2(width + 20.0, 220.0))
+                .build_ui_state(move |ui, frame| {
+                    *frame = *render(ui, "time-axis", egui::vec2(width, 130.0), Chart {
+                        series: &[Series { name: "Segments", legend_label: None, hue: Hue::Accent, values: &[10.0; 60] }],
+                        samples: 60,
+                        interval_s: 1.0,
+                        scale: Scale::Count(10.0),
+                        format: |v| format!("{v} /s"),
+                    }).transform.frame();
+                }, egui::Rect::NOTHING);
+            h.run();
+            let mut labels = Vec::new();
+            for shape in &h.output().shapes {
+                text_shapes(&shape.shape, &mut labels);
+            }
+            for age in ["10", "20", "30", "40", "50"] {
+                assert!(labels.iter().any(|(text, rect)| text == age && rect.top() >= h.state().bottom()), "missing {age} s tick at width {width}: {labels:?}");
+            }
+        }
+    }
 
     #[test]
     fn compact_legends_stay_above_the_plot_and_toggle_lines_and_readouts() {
@@ -746,6 +795,10 @@ mod tests {
                             "legend belongs on the title line"
                         );
                         assert!(label.bottom() < h.state().top());
+                        assert!(
+                            label.right() <= h.state().right() - h.ctx.style().spacing.item_spacing.x + 0.5,
+                            "legend needs a gap from the column edge"
+                        );
                     }
                 }
             }

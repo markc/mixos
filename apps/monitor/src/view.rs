@@ -1003,7 +1003,8 @@ fn tcp(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
     let socks = &s.tcp.sockstat;
     ui.horizontal_wrapped(|ui| {
         for (key, value) in [
-            ("tcp-inuse", socks.inuse),
+            ("tcp-inuse-v4", socks.inuse),
+            ("tcp-inuse-v6", s.tcp.sockstat6.inuse),
             ("tcp-orphans", socks.orphan),
             ("tcp-timewait", socks.tw),
             ("tcp-allocated", socks.alloc),
@@ -1033,7 +1034,7 @@ fn tcp(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
             .id_salt("tcp-connections")
             .striped(true)
             .cell_layout(Layout::left_to_right(Align::Center))
-            .max_scroll_height(180.0)
+            .vscroll(false)
             .column(Width::remainder().at_least(80.0).clip(true))
             .column(Width::exact(width * 0.09).clip(true))
             .column(Width::exact(width * 0.13).clip(true))
@@ -1099,11 +1100,69 @@ fn tcp(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
                         )
                     });
                     row.col(|ui| {
+                        ui.add_space(ui.spacing().item_spacing.x);
                         ui.label(&c.user).on_hover_text(&c.user);
                     });
                 });
             });
     } else {
         ui.weak(label("no-readings"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui_kittest::{Harness, kittest::Queryable};
+
+    #[test]
+    fn tcp_table_separates_numbers_from_users_and_scrolls_with_the_page() {
+        for theme in [
+            toolkit::Theme::embedded(),
+            toolkit::Theme::for_context(design::DesignContext::revision_one()),
+        ] {
+            let mut engine = Engine::new(label);
+            engine.connections = Some(model::Connections {
+                total: 20,
+                count: 20,
+                rows: (0..20).map(|i| model::Connection {
+                    remote: "192.0.2.1".into(),
+                    remote_port: 443,
+                    state: "established".into(),
+                    retransmits: Some(1000 + i),
+                    user: format!("user-{i}"),
+                    ..model::Connection::default()
+                }).collect(),
+            });
+            let mut h = Harness::builder()
+                .with_context_setup(move |ctx| toolkit::install(ctx, &theme))
+                .with_size(egui::vec2(780.0, 1000.0))
+                .with_max_steps(120)
+                .build_ui_state(move |ui, offset| {
+                    let page = ScrollArea::vertical().show(ui, |ui| tcp(ui, &engine, &Snapshot::default()));
+                    *offset = page.state.clamped_offset().y;
+                }, 0.0);
+            h.run();
+            for i in 0..20 {
+                let number = h.get_by_label(&format!("{}", 1000 + i)).rect();
+                let user = h.get_by_label(&format!("user-{i}")).rect();
+                assert!(user.left() - number.right() >= h.ctx.style().spacing.item_spacing.x, "Retx and User need a visible gap");
+            }
+            // A shorter viewport must scroll the containing page even when
+            // the wheel is over a table row, and expose the twentieth row.
+            h.set_size(egui::vec2(780.0, 520.0));
+            h.run();
+            h.hover_at(h.get_by_label("user-0").rect().center());
+            h.event(egui::Event::MouseWheel {
+                source: egui::MouseWheelSource::Unknown,
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -500.0),
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.run();
+            assert!(*h.state() > 100.0, "the page must own scrolling over the table");
+            let last = h.get_by_label("user-19").rect();
+            assert!(last.bottom() <= 520.0, "the twentieth row must be reachable");
+        }
     }
 }

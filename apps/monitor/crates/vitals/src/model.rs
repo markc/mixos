@@ -138,6 +138,7 @@ pub struct Tcp {
     pub listen_drops: Option<f64>,
     pub established: Option<u64>,
     pub sockstat: Sockstat,
+    pub sockstat6: Sockstat,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -435,6 +436,21 @@ pub fn describe() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tcp_reads_ipv6_sockstat_and_defaults_older_replies() {
+        let tcp: Tcp = serde_json::from_value(json!({
+            "sockstat": {"inuse": 48, "tw": 16},
+            "sockstat6": {"inuse": 87}
+        })).unwrap();
+        assert_eq!(tcp.sockstat.inuse, Some(48));
+        assert_eq!(tcp.sockstat6.inuse, Some(87));
+        assert_eq!(tcp.sockstat.tw, Some(16));
+        assert_eq!(tcp.sockstat6.tw, None);
+        let old: Tcp = serde_json::from_value(json!({"sockstat": {"inuse": 48}})).unwrap();
+        assert_eq!(old.sockstat.inuse, Some(48));
+        assert_eq!(old.sockstat6, Sockstat::default());
+    }
 
     #[test]
     fn throughput_replies_rank_traffic_before_unknown_and_listener_backfill() {

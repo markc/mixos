@@ -79,7 +79,11 @@ fn wait_ready(fd: &OwnedFd, events: i16, left: Duration) -> io::Result<()> {
     Ok(())
 }
 
-/// nlmsghdr + inet_diag_req_v2; all states, no address/port filter.
+/// Full sockets only: TIME_WAIT and request sockets have no tcp_info and
+/// must not consume the diagnostic cap. TIME_WAIT totals come from sockstat.
+const DIAG_STATES: u32 = !(1 << 6 | 1 << 12);
+
+/// nlmsghdr + inet_diag_req_v2; full socket states, no address/port filter.
 fn request(family: u8, seq: u32) -> Vec<u8> {
     let mut b = vec![0; HEADER + 56];
     let len = b.len() as u32;
@@ -90,7 +94,7 @@ fn request(family: u8, seq: u32) -> Vec<u8> {
     b[16] = family;
     b[17] = libc::IPPROTO_TCP as u8;
     b[18] = 1 << (INET_DIAG_INFO - 1);
-    b[20..24].copy_from_slice(&u32::MAX.to_ne_bytes());
+    b[20..24].copy_from_slice(&DIAG_STATES.to_ne_bytes());
     b[64..72].fill(0xff); // INET_DIAG_NOCOOKIE
     b
 }
@@ -288,15 +292,23 @@ pub fn dump() -> io::Result<Vec<Raw>> {
                 },
                 |left| wait_ready(&fd, libc::POLLIN, left),
             )?;
-            if n == 0 || n as usize > buffer.len() || sender.nl_pid != 0 {
-                return Err(invalid());
-            }
+            validate_datagram(n as usize, buffer.len(), sender.nl_pid)?;
             if decode(&buffer[..n as usize], seq, &mut rows)? {
                 break;
             }
         }
     }
     Ok(rows)
+}
+
+fn validate_datagram(len: usize, capacity: usize, sender: u32) -> io::Result<()> {
+    if sender != 0 {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "inet_diag sender is not the kernel"));
+    }
+    if len == 0 || len > capacity {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "truncated inet_diag datagram"));
+    }
+    Ok(())
 }
 
 pub const STATES: [&str; 13] = [
@@ -323,7 +335,7 @@ pub struct Connection {
     pub local_port: u16,
     pub remote_port: u16,
     pub ifindex: u32,
-    pub state: String,
+    pub state: &'static str,
     pub rx_bps: Option<f64>,
     pub tx_bps: Option<f64>,
     pub rtt_us: Option<u32>,
@@ -349,10 +361,7 @@ fn table(before: &[Raw], after: &[Raw], dt: f64, users: &Users) -> Vec<Connectio
                 local_port: r.local_port,
                 remote_port: r.remote_port,
                 ifindex: r.ifindex,
-                state: STATES
-                    .get(r.state as usize)
-                    .unwrap_or(&"unknown")
-                    .to_string(),
+                state: STATES.get(r.state as usize).copied().unwrap_or("unknown"),
                 rx_bps: p.and_then(|p| kernel::rate(p.bytes_received?, r.bytes_received?, dt)),
                 tx_bps: p.and_then(|p| kernel::rate(p.bytes_acked?, r.bytes_acked?, dt)),
                 rtt_us: r.rtt_us,
@@ -477,23 +486,24 @@ impl Sampler {
         })
     }
 
-    fn sample(&self, s: &mut State) -> io::Result<()> {
+    fn sample(&self) -> io::Result<()> {
+        // Netlink and user-cache I/O must never hold the state lock: status
+        // and the cached get path are called from the Bus runtime's workers.
         let raw = (self.source)()?;
         if raw.len() > MAX_SOCKETS {
             return Err(io::Error::other("TCP socket limit exceeded"));
         }
         let at = Instant::now();
-        if let Some((then, before)) = &s.scan {
-            s.rows = Some((
-                at,
-                Arc::new(table(
-                    before,
-                    &raw,
-                    at.duration_since(*then).as_secs_f64(),
-                    &self.users.get(),
-                )),
-            ));
+        let users = self.users.get();
+        let previous = self.state.lock().unwrap().scan.take();
+        let rows = previous.map(|(then, before)| {
+            (at, Arc::new(table(&before, &raw, at.duration_since(then).as_secs_f64(), &users)))
+        });
+        let mut s = self.state.lock().unwrap();
+        if !s.expire(Instant::now()) {
+            return Ok(());
         }
+        s.rows = rows;
         s.scan = Some((at, raw));
         s.error = None;
         Ok(())
@@ -505,10 +515,11 @@ impl Sampler {
         let Ok(_request) = self.request.try_lock() else {
             return;
         };
-        let mut s = self.state.lock().unwrap();
-        if s.expire(Instant::now())
-            && let Err(e) = self.sample(&mut s)
+        let active = self.state.lock().unwrap().expire(Instant::now());
+        if active
+            && let Err(e) = self.sample()
         {
+            let mut s = self.state.lock().unwrap();
             s.error = Some(e.to_string());
             s.scan = None;
             s.rows = None;
@@ -531,10 +542,10 @@ impl Sampler {
             s.rows = None;
         }
         let me = self.clone();
-        tokio::task::spawn_blocking(move || me.sample(&mut me.state.lock().unwrap())).await??;
+        tokio::task::spawn_blocking(move || me.sample()).await??;
         tokio::time::sleep(self.interval).await;
         let me = self.clone();
-        tokio::task::spawn_blocking(move || me.sample(&mut me.state.lock().unwrap())).await??;
+        tokio::task::spawn_blocking(move || me.sample()).await??;
         self.state
             .lock()
             .unwrap()
@@ -566,6 +577,64 @@ pub async fn run(sampler: Arc<Sampler>) {
 mod tests {
     use super::*;
     use crate::kernel::Root;
+
+    #[test]
+    fn requests_exclude_timewait_and_request_sockets_from_the_cap() {
+        for family in [libc::AF_INET, libc::AF_INET6] {
+            let request = request(family as u8, 7);
+            let mask = u32_at(&request, 20).unwrap();
+            for state in 1..=12 {
+                assert_eq!(mask & (1 << state) != 0, ![6, 12].contains(&state));
+            }
+            assert_eq!(request[18], 1 << (INET_DIAG_INFO - 1));
+        }
+    }
+
+    #[test]
+    fn truncated_datagrams_and_foreign_senders_have_distinct_errors() {
+        for len in [0, 65_537] {
+            assert_eq!(validate_datagram(len, 65_536, 0).unwrap_err().to_string(), "truncated inet_diag datagram");
+        }
+        assert_eq!(validate_datagram(72, 65_536, 42).unwrap_err().to_string(), "inet_diag sender is not the kernel");
+        assert!(validate_datagram(72, 65_536, 0).is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn status_answers_during_both_cold_dumps_and_a_background_dump() {
+        let started = Arc::new(tokio::sync::Notify::new());
+        let notify = started.clone();
+        let (release, wait) = std::sync::mpsc::channel();
+        let wait = Mutex::new(wait);
+        let sampler = Arc::new(Sampler {
+            state: Mutex::new(State::default()),
+            request: tokio::sync::Mutex::new(()),
+            source: Box::new(move || {
+                notify.notify_one();
+                wait.lock().unwrap().recv_timeout(Duration::from_secs(5)).unwrap();
+                Ok(vec![raw(1, 100)])
+            }),
+            users: UsersCache::new(Root::new("/nonexistent")),
+            interval: Duration::from_millis(1),
+        });
+        let me = sampler.clone();
+        let cold = tokio::spawn(async move { me.get().await });
+        for _ in 0..2 {
+            started.notified().await;
+            let me = sampler.clone();
+            let status = tokio::time::timeout(Duration::from_millis(250), tokio::spawn(async move { me.status() })).await;
+            release.send(()).unwrap();
+            assert_eq!(status.expect("status blocked on a cold dump").unwrap()["active"], true);
+        }
+        cold.await.unwrap().unwrap();
+        let me = sampler.clone();
+        let tick = tokio::task::spawn_blocking(move || me.tick());
+        started.notified().await;
+        let me = sampler.clone();
+        let status = tokio::time::timeout(Duration::from_millis(250), tokio::spawn(async move { me.status() })).await;
+        release.send(()).unwrap();
+        assert_eq!(status.expect("status blocked on a background dump").unwrap()["active"], true);
+        tick.await.unwrap();
+    }
 
     #[test]
     fn nonblocking_io_retries_backpressure_and_interrupts_with_one_deadline() {
@@ -737,7 +806,7 @@ mod tests {
         unknown.rx_bps = None;
         unknown.tx_bps = None;
         let mut listener = unknown.clone();
-        listener.state = "listen".into();
+        listener.state = "listen";
         listener.cookie = [2, 0];
         rows = vec![listener.clone(), unknown, zero];
         for i in 3..23 {
@@ -790,8 +859,7 @@ mod tests {
                 "listen"
             } else {
                 "established"
-            }
-            .into();
+            };
             row.rx_bps = (!id.is_multiple_of(11)).then_some(f64::from(id));
             row.tx_bps = row.rx_bps.map(|_| f64::from(4096 - id));
             row.rtt_us = row.rx_bps.map(|_| id % 101);

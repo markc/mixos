@@ -33043,9 +33043,12 @@ without a previous sample. The next interval resumes normally.
 ```
 
 Shows the host's peers, like `ss`. An unprivileged `NETLINK_SOCK_DIAG`
-`inet_diag` dump covers IPv4 and IPv6 sockets in all states and requests
+`inet_diag` dump covers IPv4 and IPv6 full sockets and requests
 `INET_DIAG_INFO` (`tcp_info`). No new crate or capability is needed: the
 reader uses the existing `libc` dependency and Linux UAPI byte layouts.
+TIME_WAIT and NEW_SYN_RECV are excluded from the request: neither carries
+`tcp_info`, so neither consumes the 65,536-socket cap. TIME_WAIT totals
+remain available in `tcp.sockstat.tw`.
 
 - `limit` defaults to 20 and is clamped to 1–1000.
 - `sort`: `throughput` (rx + tx, default), `rx`, `tx`, `rtt` or
@@ -33057,6 +33060,8 @@ reader uses the existing `libc` dependency and Linux UAPI byte layouts.
 - `state`: optional kernel state name: `established`, `syn-sent`,
   `syn-recv`, `fin-wait-1`, `fin-wait-2`, `time-wait`, `close`,
   `close-wait`, `last-ack`, `listen`, `closing` or `new-syn-recv`.
+  `time-wait` and `new-syn-recv` remain accepted filters for compatibility
+  but return no rows, because those states are excluded from the dump.
 - `port`: optional port number matching either endpoint.
 
 The reply has `ts`, `total` (matching sockets), `count` and `rows`.

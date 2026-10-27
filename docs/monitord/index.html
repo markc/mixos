@@ -313,9 +313,12 @@ without a previous sample. The next interval resumes normally.</p>
 <pre><code class="language-text">{"limit":20,"sort":"throughput","state":"established","port":443}
 </code></pre>
 <p>Shows the host's peers, like <code>ss</code>. An unprivileged <code>NETLINK_SOCK_DIAG</code>
-<code>inet_diag</code> dump covers IPv4 and IPv6 sockets in all states and requests
+<code>inet_diag</code> dump covers IPv4 and IPv6 full sockets and requests
 <code>INET_DIAG_INFO</code> (<code>tcp_info</code>). No new crate or capability is needed: the
-reader uses the existing <code>libc</code> dependency and Linux UAPI byte layouts.</p>
+reader uses the existing <code>libc</code> dependency and Linux UAPI byte layouts.
+TIME_WAIT and NEW_SYN_RECV are excluded from the request: neither carries
+<code>tcp_info</code>, so neither consumes the 65,536-socket cap. TIME_WAIT totals
+remain available in <code>tcp.sockstat.tw</code>.</p>
 <ul>
 <li><code>limit</code> defaults to 20 and is clamped to 1–1000.</li>
 <li><code>sort</code>: <code>throughput</code> (rx + tx, default), <code>rx</code>, <code>tx</code>, <code>rtt</code> or
@@ -326,7 +329,9 @@ non-listening sockets; a full top 20 with traffic contains no listeners.
 An explicit <code>state: "listen"</code> query still returns listeners.</li>
 <li><code>state</code>: optional kernel state name: <code>established</code>, <code>syn-sent</code>,
 <code>syn-recv</code>, <code>fin-wait-1</code>, <code>fin-wait-2</code>, <code>time-wait</code>, <code>close</code>,
-<code>close-wait</code>, <code>last-ack</code>, <code>listen</code>, <code>closing</code> or <code>new-syn-recv</code>.</li>
+<code>close-wait</code>, <code>last-ack</code>, <code>listen</code>, <code>closing</code> or <code>new-syn-recv</code>.
+<code>time-wait</code> and <code>new-syn-recv</code> remain accepted filters for compatibility
+but return no rows, because those states are excluded from the dump.</li>
 <li><code>port</code>: optional port number matching either endpoint.</li>
 </ul>
 <p>The reply has <code>ts</code>, <code>total</code> (matching sockets), <code>count</code> and <code>rows</code>.
