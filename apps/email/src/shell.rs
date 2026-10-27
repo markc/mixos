@@ -697,7 +697,7 @@ impl Shell {
             &theme
         });
         let mut shell = Self {
-            composers: crate::composer::Windows::default(),
+            composers: crate::composer::Windows::new(false),
             launch_compose: false,
             launch_document: None,
             state,
@@ -2318,10 +2318,8 @@ mod tests {
             .unwrap();
         let mut state = crate::state::tests::connected_many(&["a"]);
         state.take_work();
-        let mut composers = crate::composer::Windows::default();
-        composers.compose_only = standalone;
         let shell = Shell {
-            composers,
+            composers: crate::composer::Windows::new(standalone),
             launch_compose: false,
             launch_document: None,
             state,

@@ -79,6 +79,13 @@ pub(crate) struct Windows {
 }
 
 impl Windows {
+    pub fn new(compose_only: bool) -> Self {
+        Self {
+            compose_only,
+            ..Default::default()
+        }
+    }
+
     pub fn selected(&self, args: &serde_json::Value) -> Option<Arc<Mutex<Window>>> {
         if let Some(name) = args.get("window") {
             return name.as_str().and_then(|n| self.windows.get(n)).cloned();
