@@ -40,7 +40,6 @@ enum Mode {
 struct Entry {
     path: PathBuf,
     name: String,
-    focus_name: bool,
     directory: bool,
     size: u64,
     modified: Option<SystemTime>,
@@ -120,6 +119,7 @@ pub struct FileChooser {
     confirm: String,
     mode: Mode,
     name: String,
+    focus_name: bool,
     replace: Option<PathBuf>,
     directory: PathBuf,
     path: String,
@@ -681,14 +681,21 @@ pub fn documents() -> PathBuf {
 fn documents_dir(env: Option<&str>, user_dirs: Option<&str>, home: &Path) -> PathBuf {
     user_directory(env, user_dirs, "XDG_DOCUMENTS_DIR", home).unwrap_or_else(|| {
         let documents = home.join("Documents");
-        if documents.is_dir() { documents } else { home.to_owned() }
+        if documents.is_dir() {
+            documents
+        } else {
+            home.to_owned()
+        }
     })
 }
 
 /// Resolve an XDG user directory from the environment or user-dirs.dirs.
 /// Filesystem access and the caller's default belong on its worker.
 pub fn user_directory(
-    env: Option<&str>, user_dirs: Option<&str>, key: &str, home: &Path,
+    env: Option<&str>,
+    user_dirs: Option<&str>,
+    key: &str,
+    home: &Path,
 ) -> Option<PathBuf> {
     let expand = |value: &str| {
         let value = value.trim().trim_matches('"');
@@ -707,7 +714,8 @@ pub fn user_directory(
     if let Some(text) = user_dirs {
         for line in text.lines() {
             if let Some(value) = line.trim().strip_prefix(&format!("{key}="))
-                && let Some(path) = expand(value) {
+                && let Some(path) = expand(value)
+            {
                 return Some(path);
             }
         }
@@ -854,11 +862,16 @@ mod tests {
     #[test]
     fn empty_name_and_folder_separators_have_distinct_messages() {
         for name in ["", " "] {
-            assert_eq!(save_path(Path::new("/tmp"), name).unwrap_err(), "Enter a file name.");
+            assert_eq!(
+                save_path(Path::new("/tmp"), name).unwrap_err(),
+                "Enter a file name."
+            );
         }
         for name in ["sub/mail.md", "mail\0.md", ".", ".."] {
-            assert_eq!(save_path(Path::new("/tmp"), name).unwrap_err(),
-                "Enter a file name without a folder separator.");
+            assert_eq!(
+                save_path(Path::new("/tmp"), name).unwrap_err(),
+                "Enter a file name without a folder separator."
+            );
         }
     }
 
@@ -871,10 +884,22 @@ mod tests {
         assert_eq!(documents_dir(None, None, home), home.join("Documents"));
         let config = "XDG_DOCUMENTS_DIR=\"$HOME/Papers\"\n";
         assert_eq!(documents_dir(None, Some(config), home), home.join("Papers"));
-        assert_eq!(documents_dir(Some("\"$HOME/Letters\""), Some(config), home), home.join("Letters"));
-        assert_eq!(documents_dir(Some("/tmp/letters"), Some(config), home), Path::new("/tmp/letters"));
-        assert_eq!(documents_dir(Some("relative"), None, home), home.join("Documents"));
-        assert_eq!(documents_dir(None, Some("XDG_DOCUMENTS_DIR=\"$HOME\""), home), home);
+        assert_eq!(
+            documents_dir(Some("\"$HOME/Letters\""), Some(config), home),
+            home.join("Letters")
+        );
+        assert_eq!(
+            documents_dir(Some("/tmp/letters"), Some(config), home),
+            Path::new("/tmp/letters")
+        );
+        assert_eq!(
+            documents_dir(Some("relative"), None, home),
+            home.join("Documents")
+        );
+        assert_eq!(
+            documents_dir(None, Some("XDG_DOCUMENTS_DIR=\"$HOME\""), home),
+            home
+        );
     }
 
     #[test]
@@ -885,9 +910,14 @@ mod tests {
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, state: &mut (FileChooser, Option<Outcome>)| {
-                    if state.1.is_none() { state.1 = state.0.show(ui.ctx()); }
+                    if state.1.is_none() {
+                        state.1 = state.0.show(ui.ctx());
+                    }
                 },
-                (FileChooser::save(dir.path(), "Save document", "Write"), None),
+                (
+                    FileChooser::save(dir.path(), "Save document", "Write"),
+                    None,
+                ),
             );
         crate::install(&h.ctx, &crate::Theme::embedded());
         h.run_steps(5);
@@ -897,7 +927,9 @@ mod tests {
         assert_eq!(h.state().0.name, "typed.md");
         // Let the real directory worker finish before submitting.
         for _ in 0..100 {
-            if h.state().0.pending.is_none() { break; }
+            if h.state().0.pending.is_none() {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(10));
             h.run();
         }
@@ -905,11 +937,19 @@ mod tests {
         h.key_press(Key::Enter);
         h.run();
         for _ in 0..100 {
-            if h.state().1.is_some() { break; }
+            if h.state().1.is_some() {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(10));
             h.run();
         }
-        assert_eq!(h.state().1, Some(Outcome::Save { path: dir.path().join("typed.md"), replace: false }));
+        assert_eq!(
+            h.state().1,
+            Some(Outcome::Save {
+                path: dir.path().join("typed.md"),
+                replace: false
+            })
+        );
     }
 
     fn entry(name: &str, directory: bool) -> Entry {

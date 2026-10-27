@@ -61,7 +61,10 @@ fn save_file(
     write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true).mode(0o600)
+    options
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
         .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
     if !replace {
         let mut file = options.open(path)?;
@@ -74,7 +77,9 @@ fn save_file(
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
     let (temporary, mut file) = loop {
         let temporary = path.with_file_name(format!(
-            ".email-save-{}-{}", std::process::id(), NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+            ".email-save-{}-{}",
+            std::process::id(),
+            NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
         ));
         match options.open(&temporary) {
             Ok(file) => break (temporary, file),
@@ -177,10 +182,17 @@ impl State {
 
     pub(crate) fn cancel_document_open(&mut self) {
         self.reset_document_modals();
-        let tickets: Vec<_> = self.documents.pending.iter()
-            .filter_map(|(&ticket, request)| (!request.send).then_some(ticket)).collect();
+        let tickets: Vec<_> = self
+            .documents
+            .pending
+            .iter()
+            .filter_map(|(&ticket, request)| (!request.send).then_some(ticket))
+            .collect();
         for ticket in tickets {
-            self.finish_document_error(ticket, (code::CANCELLED, crate::label("closing-cancelled")));
+            self.finish_document_error(
+                ticket,
+                (code::CANCELLED, crate::label("closing-cancelled")),
+            );
         }
     }
 
@@ -404,7 +416,8 @@ impl State {
                         Err(error) => self.document_error(error),
                         Ok(()) => {
                             if fence == self.document_fence()
-                                && let Some(compose) = &mut self.compose {
+                                && let Some(compose) = &mut self.compose
+                            {
                                 compose.error = None;
                             }
                         }
@@ -811,20 +824,35 @@ mod tests {
     fn composer_sends_with_an_identitys_unowned_reply_to() {
         let mut state = connected_many(&["a"]);
         state.accounts[0].entry.identities = vec![settings::email::Identity {
-            id: "ann".into(), name: "Ann".into(), address: "ann@a.example.invalid".into(),
-            signature: String::new(), reply_to: Some("help@example.invalid".into()),
+            id: "ann".into(),
+            name: "Ann".into(),
+            address: "ann@a.example.invalid".into(),
+            signature: String::new(),
+            reply_to: Some("help@example.invalid".into()),
         }];
-        assert!(state.open_compose(Some("a"), jmap::Composed {
-            to: jmap::parse_addresses("bob@example.invalid").unwrap(),
-            subject: "Composer Reply-To".into(), ..Default::default()
-        }));
+        assert!(state.open_compose(
+            Some("a"),
+            jmap::Composed {
+                to: jmap::parse_addresses("bob@example.invalid").unwrap(),
+                subject: "Composer Reply-To".into(),
+                ..Default::default()
+            }
+        ));
         state.send_compose();
-        let draft = state.take_work().into_iter().find_map(|w| match w {
-            Work::Send { draft, .. } => Some(draft), _ => None,
-        }).expect("composer must send");
+        let draft = state
+            .take_work()
+            .into_iter()
+            .find_map(|w| match w {
+                Work::Send { draft, .. } => Some(draft),
+                _ => None,
+            })
+            .expect("composer must send");
         assert_eq!(draft.reply_to.as_deref(), Some("help@example.invalid"));
-        assert!(String::from_utf8(jmap::build_mime(&draft).unwrap()).unwrap()
-            .contains("Reply-To: help@example.invalid\r\n"));
+        assert!(
+            String::from_utf8(jmap::build_mime(&draft).unwrap())
+                .unwrap()
+                .contains("Reply-To: help@example.invalid\r\n")
+        );
     }
 
     #[test]
@@ -917,7 +945,8 @@ mod tests {
             },
         );
         state.apply_ui(crate::view::UiEvent::ComposeField(
-            crate::state::ComposeField::Subject, "Keep edited".into(),
+            crate::state::ComposeField::Subject,
+            "Keep edited".into(),
         ));
         let old_id = state.compose.as_ref().unwrap().draft_id.clone();
         state
@@ -944,7 +973,10 @@ mod tests {
         state.confirm_document_replace(true);
         assert_eq!(state.compose.as_ref().unwrap().draft.subject, "Loaded");
         assert_eq!(state.compose.as_ref().unwrap().body.contents(), "Body");
-        assert!(state.restore.is_empty(), "Replace must not offer the discarded message");
+        assert!(
+            state.restore.is_empty(),
+            "Replace must not offer the discarded message"
+        );
         assert!(state.take_draft_ops().iter().any(|op| matches!(op,
             crate::drafts::DraftOp::Remove(id) if id == &old_id)));
     }
@@ -956,11 +988,17 @@ mod tests {
         assert!(state.open_compose(Some("a"), jmap::Composed::default()));
         assert!(!state.compose.as_ref().unwrap().body.contents().is_empty());
         assert!(!state.compose.as_ref().unwrap().keepable());
-        state.read_document("a".into(), "/tmp/mail.md".into(), None, false, false).unwrap();
+        state
+            .read_document("a".into(), "/tmp/mail.md".into(), None, false, false)
+            .unwrap();
         let ticket = *state.documents.pending.keys().next().unwrap();
-        state.document_done(ticket, Answer::Read(Ok(MailDocument {
-            subject: "Opened".into(), ..Default::default()
-        })));
+        state.document_done(
+            ticket,
+            Answer::Read(Ok(MailDocument {
+                subject: "Opened".into(),
+                ..Default::default()
+            })),
+        );
         assert!(state.documents.replace.is_none());
         assert_eq!(state.compose.as_ref().unwrap().draft.subject, "Opened");
     }
@@ -977,23 +1015,40 @@ mod tests {
             }
             if modal == "replace" {
                 state.apply_ui(crate::view::UiEvent::ComposeField(
-                    crate::state::ComposeField::Subject, "Edited".into(),
+                    crate::state::ComposeField::Subject,
+                    "Edited".into(),
                 ));
-                state.read_document("a".into(), "/tmp/mail.md".into(), None, false, false).unwrap();
+                state
+                    .read_document("a".into(), "/tmp/mail.md".into(), None, false, false)
+                    .unwrap();
                 let ticket = *state.documents.pending.keys().next().unwrap();
                 state.document_done(ticket, Answer::Read(Ok(MailDocument::default())));
                 assert!(state.documents.replace.is_some());
             }
             assert!(state.documents.modal());
-            state.read_document("b".into(), "/tmp/send.md".into(), Some(72), true, false).unwrap();
-            let send_ticket = *state.documents.pending.iter().find(|(_, r)| r.send).unwrap().0;
+            state
+                .read_document("b".into(), "/tmp/send.md".into(), Some(72), true, false)
+                .unwrap();
+            let send_ticket = *state
+                .documents
+                .pending
+                .iter()
+                .find(|(_, r)| r.send)
+                .unwrap()
+                .0;
             state.set_settings(crate::state::tests::settings(&["b"]));
             assert!(state.compose.is_none());
             assert!(!state.documents.modal(), "{modal}");
             assert!(!state.documents.opening(), "{modal}");
-            assert!(state.documents.pending.contains_key(&send_ticket), "send survives");
+            assert!(
+                state.documents.pending.contains_key(&send_ticket),
+                "send survives"
+            );
             state.document_done(folder_ticket, Answer::Folder("/tmp".into()));
-            assert!(!state.documents.modal(), "late folder must not reopen a chooser");
+            assert!(
+                !state.documents.modal(),
+                "late folder must not reopen a chooser"
+            );
             command(&mut state, "email.compose", json!({"account": "b"}));
             assert_eq!(state.take_replies()[0].rc, 0, "compose must not stay BUSY");
         }
@@ -1006,19 +1061,33 @@ mod tests {
             state.open_compose(Some("a"), jmap::Composed::default());
             state.write_document("/tmp/mail.md".into(), false);
             let ticket = *state.documents.saving.keys().next().unwrap();
-            if close { state.take_compose(); } else {
+            if close {
+                state.take_compose();
+            } else {
                 state.apply_ui(crate::view::UiEvent::ComposeField(
-                    crate::state::ComposeField::Subject, "Edited".into(),
+                    crate::state::ComposeField::Subject,
+                    "Edited".into(),
                 ));
             }
-            state.document_done(ticket, Answer::Saved(Err((code::DOCUMENT_IO, "disk full".into()))));
-            if close { assert_eq!(state.status, "disk full"); } else {
-                assert_eq!(state.compose.as_ref().unwrap().error.as_deref(), Some("disk full"));
+            state.document_done(
+                ticket,
+                Answer::Saved(Err((code::DOCUMENT_IO, "disk full".into()))),
+            );
+            if close {
+                assert_eq!(state.status, "disk full");
+            } else {
+                assert_eq!(
+                    state.compose.as_ref().unwrap().error.as_deref(),
+                    Some("disk full")
+                );
                 state.write_document("/tmp/mail.md".into(), false);
                 let ticket = *state.documents.saving.keys().next().unwrap();
                 state.compose.as_mut().unwrap().revision += 1;
                 state.document_done(ticket, Answer::Saved(Ok(())));
-                assert_eq!(state.compose.as_ref().unwrap().error.as_deref(), Some("disk full"));
+                assert_eq!(
+                    state.compose.as_ref().unwrap().error.as_deref(),
+                    Some("disk full")
+                );
             }
         }
     }

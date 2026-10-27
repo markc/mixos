@@ -3898,7 +3898,9 @@ impl State {
                 self.store_draft(false);
                 self.confirm = Some(Confirm::CloseCompose);
             }
-            Some(_) => { self.take_compose(); },
+            Some(_) => {
+                self.take_compose();
+            }
             None => {}
         }
     }
@@ -6272,11 +6274,8 @@ impl State {
             return;
         }
         if let Some(compose) = &self.compose
-            && let Err((_, message)) = crate::documents::identity(
-                self,
-                &compose.account,
-                Some(&compose.draft.from),
-            )
+            && let Err((_, message)) =
+                crate::documents::identity(self, &compose.account, Some(&compose.draft.from))
         {
             if let Some(compose) = &mut self.compose {
                 compose.error = Some(message);
