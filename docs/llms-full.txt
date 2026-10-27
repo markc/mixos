@@ -7030,7 +7030,7 @@ that runs as `mixos`.
 # File chooser contract: `files.choose`
 
 Status: draft, version 0.1.0, for review before any code. Nothing here is
-served yet.
+served yet. Revised after review by Sol, Fable and GLM.
 
 MixOS has one system file chooser. A person picks files or a save location
 in it; it never opens, reads or writes the files. It is reached two ways:
@@ -7058,6 +7058,15 @@ the caller's choices, and Accept and Cancel. Several requests open several
 windows. Requests keep no state from one to the next, apart from the
 Places, bookmarks and recent folders that the file manager also uses.
 
+The unit restarts on failure, as `portald@.service` does, so a crash costs
+the open requests but not the next dialog. The chooser process serves
+`files.*` and the drive commands only, never `dopus.*`; DOpus's registry test
+must check each mode's command set separately.
+
+Each start of the provider is an **incarnation**, named by a random 64-bit
+value in lower-case hex. Requests belong to the incarnation that accepted
+them and are lost with it.
+
 ## Commands
 
 Owner `dopus`. They enter `docs/docs/spec/bus/commands.conf.mix` (status
@@ -7077,39 +7086,64 @@ Opens a chooser and answers straight away; the person's answer comes later
 | `accept_label` | string, 1 to 64 bytes | by mode | The Accept button's label. Mnemonic underscores are removed. |
 | `multiple` | bool | false | `open` only: more than one entry may be chosen. |
 | `directory` | bool | false | `open` only: choose folders, not files. |
-| `filters` | list of filter, at most 64 | none | See [Filters](#filters). |
-| `current_filter` | filter | first filter | The filter selected at first. It need not be in `filters`. |
+| `filters` | list of filter, at most 64 | none | `open` and `save` only. See [Filters](#filters). |
+| `current_filter` | filter | first of `filters` | `open` and `save` only: the filter in effect at first. See [Filters](#filters). |
 | `choices` | list of choice, at most 16 | none | See [Choices](#choices). |
 | `current_folder` | location | last folder used, else home | The folder shown first. |
-| `current_name` | string, 1 to 255 bytes, no `/` | none | `save` only: the suggested file name. |
+| `current_name` | name | none | `save` only: the suggested file name. |
 | `current_file` | location | none | `save` only: an existing file to save over; its folder and name are shown. Takes precedence over `current_folder` and `current_name`. |
-| `files` | list of string, 1 to 1,000 | none | `save_files` only, and required: the names of the files about to be saved into the chosen folder. |
-| `parent_window` | string | `""` | The window the chooser belongs to. See [Placement](#placement). |
-| `token` | 1 to 64 of `A-Z a-z 0-9 _` | generated | Names the request; see below. |
+| `files` | list of name, 1 to 1,000, unique | none | `save_files` only, and required: the names of the files about to be saved into the chosen folder. |
+| `parent_window` | string, at most 256 bytes | `""` | The window the chooser belongs to. See [Placement](#placement). |
+| `correlation` | string, 1 to 256 bytes | none | Opaque to the provider; echoed in the reply, the outcome and `files.choose.list`. |
+| `on_behalf_of` | string, 1 to 128 bytes | none | The app a forwarding service asks for. portald sends `<unique bus name> <process name>`, for example `:1.42 fakeapp`. Shown to the person and used for limits and the remembered folder; it is not an authority. |
 
-A **location** is either an absolute path written as a UTF-8 string, or a
-`file://` URI (RFC 8089) whose percent-encoding carries the exact bytes of a
-path that is not UTF-8. Nothing else is accepted.
+A **location** is an absolute path written as a UTF-8 string, or a `file://`
+URI (RFC 8089, no host or `localhost`) whose percent-encoding carries the
+exact bytes of a path. At most 4,096 bytes, no NUL byte. Nothing else is
+accepted.
+
+A **name** is one path component: a UTF-8 string, or `{"bytes": "<percent-encoded>"}`
+for a name that is not UTF-8. Decoded, it is 1 to 255 bytes, with no `/` and
+no NUL, and is neither `.` nor `..`.
 
 Unknown fields are ignored. A known field of the wrong type or out of range,
-a field used in the wrong mode, or `save_files` without `files` is refused
-with `ARGUMENT`.
+a field used in the wrong mode, `save_files` without `files`, duplicate names
+in `files`, or a body over 256 KiB is refused with `ARGUMENT`.
 
 Reply, rc 0:
 
 ```json
-{"request": "c42_open_1", "topic": "files.chosen"}
+{"request": "9f2c41d07ab3e655-17", "topic": "files.chosen", "correlation": "/org/freedesktop/portal/desktop/request/1_42/rfd1"}
 ```
 
-`request` is `<caller>_<token>`, where `<caller>` is the broker's connection
-number for the caller. A `token` the caller has already used for a request
-that is still open is refused with `ARGUMENT`; a caller who wants to know the
-request name before calling (to subscribe first, for example) sends its own
-`token`.
+`request` is `<incarnation>-<sequence>`, made by the provider. It is never
+reused: the sequence only grows within an incarnation, and a new incarnation
+has a new prefix. `correlation` is present when the caller gave one.
 
-`BUSY` is returned when 8 choosers are already open on the desk, or 2 for this
-caller's connection. `UNAVAILABLE` is returned when the chooser window cannot
-be opened (no display, for example). Neither opens a window.
+Refusals open no window and keep nothing:
+
+- `BUSY` when 8 choosers are already open on the desk; when 2 are open for
+  this caller; or when this caller has made more than 10 requests in the last
+  10 seconds. The **caller** for both limits is the pair (broker connection,
+  `on_behalf_of`) when `on_behalf_of` is given, else the broker connection
+  alone, so the apps behind portald are limited one by one;
+- `UNAVAILABLE` when the chooser window cannot be opened (no display, for
+  example).
+
+**Shape.** A person can take longer than the Bus client waits for a reply
+(60 s), and a topic is published only by the service that owns it, so the
+answer cannot be a held reply or a topic the caller names. The shape is the
+one `shell.execute`, `shell.execute.result` and `shell.execute.cancel` already
+use: an immediate reply, an owner-published event and a pullable result.
+
+**Ordering.** A caller subscribes to `files.chosen` before it calls
+`files.choose`, or reads `files.choose.result` instead; a caller on another
+node uses the result query. The provider sends the reply before the window
+accepts any input, but the reply and the topic are separate deliveries, so a
+caller keeps for a short while any outcome naming a request it has not yet
+been told about. Once the reply is in, outcomes are matched by `request`
+alone; `correlation` only links a parked outcome to a reply, and is applied
+only when the outcome's `request` equals the reply's.
 
 ### `files.choose.result` (query)
 
@@ -7117,22 +7151,27 @@ Body `{request}`. Answers with the request's state:
 
 - `{state: "open"}`: the person has not answered;
 - `{state: "done", outcome: {...}}`: the outcome, exactly as published;
-- `ARGUMENT` when the request is unknown, or its outcome has expired.
+- `ARGUMENT` with `{"reason": "unknown"}` for a request this incarnation never
+  made (another incarnation's included), or `{"reason": "expired"}` for one
+  whose outcome is no longer kept.
 
-An outcome is kept for 10 minutes after it is decided, then removed. Reading
-it does not remove it. This command is for a caller that missed the
-publication; a caller that is subscribed has no need of it.
+Outcomes are kept for 10 minutes after they are decided, at most 64 of them;
+when a 65th is decided, the oldest is dropped first. Reading an outcome does
+not remove it. This command is for a caller that missed the publication.
 
 ### `files.choose.cancel` (intent)
 
-Body `{request}`. Closes an open chooser. The outcome is response 1 with
-`reason: "caller"`. A request that is already done is left as it is and
-answers rc 0. An unknown request is `ARGUMENT`.
+Body `{request}`. Closes an open chooser; its outcome is response 1 with
+`reason: "caller"`. Idempotent: a request already done, expired, or made by an
+earlier incarnation answers rc 0 and changes nothing. A malformed `request` is
+`ARGUMENT`.
 
 ### `files.choose.list` (query)
 
-Body none. Answers `{requests: [{request, mode, title, caller, opened_ms}]}`
-for every open chooser, oldest first.
+Body none. Answers
+`{incarnation, requests: [{request, mode, title, caller, on_behalf_of, correlation, opened_ms}]}`
+for every open chooser, oldest first. `caller` is `citizen::caller_key` of
+the connection that asked.
 
 ## Outcome
 
@@ -7141,12 +7180,13 @@ and kept for `files.choose.result`:
 
 ```json
 {
-  "request": "c42_open_1",
+  "request": "9f2c41d07ab3e655-17",
+  "correlation": "/org/freedesktop/portal/desktop/request/1_42/rfd1",
   "response": 0,
+  "reason": "chosen",
   "uris": ["file:///home/user/Pictures/beach.png"],
   "current_filter": {"name": "Images", "patterns": ["*.png", "*.jpg"], "mime_types": []},
-  "choices": {"encoding": "utf8", "reencode": "true"},
-  "reason": "chosen"
+  "choices": {"encoding": "utf8", "reencode": "true"}
 }
 ```
 
@@ -7157,17 +7197,20 @@ and kept for `files.choose.result`:
 | 1 | `caller` | `files.choose.cancel`, or the caller's broker connection closed. |
 | 2 | `failed` | The chooser failed after it opened. `message` says why. |
 
-Response codes are the portal's, so portald passes them on unchanged.
+Each request has exactly one outcome; the first end wins and later ones are
+dropped. Response codes are the portal's, so portald passes them on
+unchanged.
 
 - `uris` are `file://` URIs, percent-encoded from the exact bytes of each path.
   On `open`, there is one unless `multiple` is set, never none. On `save`,
   there is exactly one. On `save_files`, there is one per name in `files`, in
-  the same order. Each one is inside the chosen folder, with the person's
-  answer to any name that already exists there.
-- `current_filter` is the filter selected when the person accepted; it is
-  absent when there were no filters.
-- `choices` maps each choice's `id` to the option chosen; a choice with no
-  options has `"true"` or `"false"`.
+  the same order, each exactly `<chosen folder>/<name>`; the provider checks
+  this before it accepts.
+- `current_filter` is the filter in effect when the person accepted. It is
+  present whenever a filter was in effect, from `filters` or from
+  `current_filter` alone.
+- `choices` maps every choice's `id` to its value: an option id, or `"true"`
+  or `"false"` for a check box.
 - `uris`, `current_filter` and `choices` are present only when `response` is 0.
 
 The topic is published by `files` alone. Every subscriber sees every outcome;
@@ -7177,25 +7220,31 @@ and an outcome carries paths, never file contents.
 ## Filters
 
 A filter is `{name, patterns, mime_types}`: a label of 1 to 128 bytes, and
-together 1 to 64 entries in two lists of strings:
+together 1 to 512 entries in two lists of strings of 1 to 256 bytes (an "All
+images" filter can list hundreds):
 
 - `patterns`: shell globs (`*`, `?`, `[...]`), matched against the file name,
   case sensitive;
 - `mime_types`: MIME types or `type/*`, matched by the type the shared MIME
   database gives the file.
 
-Folders are always shown, so the person can move between them. When `save`
-is used with a filter whose only pattern is `*.ext`, a typed name without an
-extension gets that one.
+`current_filter` alone, with no `filters`, is the one filter in effect and the
+filter menu is hidden. With `filters`, a `current_filter` equal to one of them
+(same name and lists) selects it; one that is not equal to any is added at the
+top of the menu and selected. Folders are always shown, so the person can
+move between them. When `save` is used with a filter whose only pattern is
+`*.ext`, a typed name without an extension gets that one.
 
 ## Choices
 
 A choice is `{id, label, options, default}`:
 
-- `id` and `label` are strings of 1 to 64 and 1 to 128 bytes;
-- `options` is a list of up to 32 `{id, label}`. When it is empty the choice
-  is a check box, and `default` is `"true"` or `"false"`;
-- `default` is one of the option ids; it is the first option when absent.
+- `id` and `label` are strings of 1 to 64 and 1 to 128 bytes; ids are unique;
+- `options` is a list of up to 32 `{id, label}` with unique ids. When it is
+  empty the choice is a check box;
+- `default` is optional. For a list it is one of the option ids, and the
+  first option when absent. For a check box it is `"true"` or `"false"`, and
+  `"false"` when absent.
 
 They are shown under the file list, in order.
 
@@ -7204,19 +7253,48 @@ They are shown under the file list, in order.
 - **No timeout.** A chooser waits for the person as long as it takes.
 - **Save.** When the chosen file exists, the person confirms replacing it
   before Accept succeeds. `save_files` does the same once for all the names
-  that exist. The chooser never creates, truncates or replaces anything; the
-  caller does that with the URIs it receives.
-- **Who is asking.** When the caller is not `portald`, the window says which
-  caller asked (`citizen::caller_key`), so a person can tell an agent's
-  request from an app's.
+  that exist; unlike some portal backends it never renames to avoid a
+  collision, so each URI is exactly `<folder>/<name>`. The chooser never
+  creates, truncates or replaces anything; the caller does that with the URIs
+  it receives.
+- **Typed names.** A typed save name containing `/` moves to that folder when
+  it exists, as a path bar would; otherwise Accept is refused in the window
+  with a message.
+- **Remembered folder.** The last folder accepted is kept per
+  `on_behalf_of`, else per caller, and is where the next chooser for it opens
+  when no `current_folder` or `current_file` is given.
+- **Who is asking.** When the caller is not `portald`, or when
+  `on_behalf_of` is given, the window says who asked
+  (`citizen::caller_key`, and `on_behalf_of`), so a person can tell an
+  agent's request from an app's.
 - **Drive.** Each chooser window answers the toolkit drive commands
-  (`docs/docs/drive.md`), so it can be tested and answered over the Bus.
-  The drive command names for several windows in one process are not yet
-  settled (open question 2), so none are registered yet.
+  (`docs/docs/drive.md`) as `files.ui.*` and `files.window*`, with the
+  request id as the `viewport`. With more than one chooser open, a drive
+  command without `viewport` is `ARGUMENT`. They are registered with the code.
 - **Caller leaves.** When the caller's broker connection closes, its open
-  choosers close with response 1, `reason: "caller"`.
-- **Provider stops.** If `files` stops, every open request is lost. A caller
-  that sees the service unregister treats its open requests as response 2.
+  choosers close with response 1, `reason: "caller"`. This needs a notice
+  from noded that a connection closed, which does not exist yet (see
+  [Losing a party](#losing-a-party)).
+- **Provider stops.** If `files` stops, every open request is lost with its
+  incarnation; a new incarnation knows nothing of them.
+
+## Losing a party
+
+Two notices are needed, and noded publishes neither today. Step 2 adds both
+to noded as owner-published topics: a service registered or unregistered, and
+a connection closed. Until they land, v1 does this, and the stopgaps are
+removed when they do:
+
+- **Provider lost (portald's view).** While at least one Request is not
+  ended, portald reads `files.choose.list` every 5 seconds. An error or a
+  changed `incarnation` means `files` was lost. This is a bounded, temporary
+  exception to the no-polling rule: it runs only while a person has a dialog
+  open.
+- **portald lost (the provider's view).** At start, portald reads
+  `files.choose.list` and cancels every request whose `caller` was an earlier
+  portald connection.
+- **Other callers lost.** Their choosers stay open until the person answers;
+  the outcome is published and kept as usual.
 
 ## Placement
 
@@ -7235,77 +7313,112 @@ portald serves the interface at version 4 on the object it already serves
 same arguments, and `SaveFiles` with the same arguments all return a Request
 object straight away, at
 `/org/freedesktop/portal/desktop/request/<sender>/<handle_token>`, built as
-for ScreenCast. Then portald calls `files.choose` with the mapped body and
-`token` set to the handle token.
+for ScreenCast. Then portald calls `files.choose` with the mapped body,
+`correlation` set to the Request's object path (unique while it exists), and
+`on_behalf_of` set to the caller's unique bus name and process name.
 
 | Portal | `files.choose` |
 |---|---|
 | method `OpenFile` / `SaveFile` / `SaveFiles` | `mode` `open` / `save` / `save_files` |
 | `parent_window` argument | `parent_window` |
 | `title` argument | `title` (the mode's default when empty) |
-| `handle_token` (`s`) | `token` |
+| `handle_token` (`s`) | not sent: it names the Request path only |
 | `accept_label` (`s`) | `accept_label` |
 | `modal` (`b`) | ignored: not modal in this version |
 | `multiple` (`b`) | `multiple` |
 | `directory` (`b`) | `directory` |
-| `filters` (`a(sa(us))`) | `filters`: kind 0 to `patterns`, kind 1 to `mime_types` |
-| `current_filter` (`(sa(us))`) | `current_filter`, mapped the same way |
-| `choices` (`a(ssa(ss)s)`) | `choices`: `(id, label, [(id, label)], default)` |
+| `filters` (`a(sa(us))`) | `filters`: kind 0 to `patterns`, kind 1 to `mime_types`; not sent for `SaveFiles` |
+| `current_filter` (`(sa(us))`) | `current_filter`, mapped the same way; not sent for `SaveFiles` |
+| `choices` (`a(ssa(ss)s)`) | `choices`: `(id, label, [(id, label)], default)`; an empty default is left out |
 | `current_name` (`s`) | `current_name` |
-| `current_folder` (`ay`, NUL-terminated) | `current_folder` as a percent-encoded `file://` URI |
-| `current_file` (`ay`, NUL-terminated) | `current_file` as a percent-encoded `file://` URI |
-| `files` (`aay`, `SaveFiles`) | `files`; a name that is not UTF-8 makes the call fail with `InvalidArgument` |
+| `current_folder` (`ay`) | `current_folder` as a percent-encoded `file://` URI |
+| `current_file` (`ay`) | `current_file` as a percent-encoded `file://` URI |
+| `files` (`aay`, `SaveFiles`) | `files`, each a name; `{"bytes": ...}` when not UTF-8 |
 
-Other options are ignored. A known option with the wrong type is refused at
-the call with `org.freedesktop.portal.Error.InvalidArgument`, and no Request
-is created.
+Byte strings (`ay`) carry exactly one trailing NUL, which is removed; a byte
+string without it, or with a NUL anywhere else, is refused. Other options are
+ignored.
+
+**Lenient at the D-Bus edge.** rfd and others show any portal error as a
+cancel, so a refusal is a dialog that silently never appears. portald
+therefore refuses only a known option with the wrong D-Bus type, a NUL
+violation, or `SaveFiles` with no usable `files`, with
+`org.freedesktop.portal.Error.InvalidArgument` at the call and no Request.
+Everything else is made to fit: an empty string becomes the field's default;
+a label over its limit is cut at a character boundary; a list over its limit
+keeps its first entries; an invalid entry (a pattern over 256 bytes, a choice
+with a duplicate id) is dropped. portald logs each adjustment.
 
 The outcome becomes `Response(u response, a{sv} results)`, addressed to the
 Request's owner alone:
 
 | Outcome | `Response` |
 |---|---|
-| 0 | 0, with `uris` (`as`), `choices` (`a(ss)`) when the call had choices, `current_filter` (`(sa(us))`) when it had filters |
+| 0 | 0, with `uris` (`as`), `choices` (`a(ss)`) when the call had choices, `current_filter` (`(sa(us))`) when a filter was in effect |
 | 1 | 1, `{}` |
 | 2, or `files.choose` refused (`BUSY`, `UNAVAILABLE`, any error), or `files` not registered, or lost | 2, `{}` |
 
-The Request lifecycle:
+### Request lifecycle
 
-- `Request.Close()` from the owner calls `files.choose.cancel`, removes the
-  Request and sends no `Response`. `Close` from anyone else is refused with
+Each portal Request is in one of four states. Every transition happens under
+one lock, and a Request leaves the table only when it is ended.
+
+| State | Entered when | Close (owner) or owner leaves | Outcome for it arrives | `files.choose` answers | Bus or `files` lost |
+|---|---|---|---|---|---|
+| **sending** | the method returns the Request path, before `files.choose` is sent | to **closing** | parked by `correlation` until the reply | ok: to **open**, then apply a parked outcome whose `request` matches; refused: `Response` 2, ended; no reply in time: `Response` 2, to **closing** | `Response` 2, ended |
+| **open** | `files.choose` answered with a request id | send `files.choose.cancel`; ended, no `Response` | matched by `request`: `Response` as mapped, ended | — | `Response` 2, ended |
+| **closing** | Close came while sending, or the reply timed out | — | dropped | ok: send `files.choose.cancel`, ended; refused: ended | ended |
+| **ended** | a `Response` was sent, or Close was handled | — | dropped | dropped | — |
+
+- portald subscribes to `files.chosen` before it serves FileChooser.
+- A Request in **closing** that never gets a reply is also swept: portald
+  looks for its `correlation` in `files.choose.list`, cancels any match, and
+  ends it.
+- `Close` from anyone but the owner is refused with
   `org.freedesktop.portal.Error.NotAllowed`.
-- When the owner leaves the session bus, portald cancels its requests.
-- When portald loses the Bus or `files` unregisters, every open Request ends
-  with `Response` 2. A Request is never left without an end: an app waiting on
-  it must be able to tell failure from cancel.
-- Only one end wins. A `Response` is sent at most once, and never after
+- A lost connection is final. When portald loses the Bus, or `files` is lost
+  (see [Losing a party](#losing-a-party)), every Request not yet ended gets
+  `Response` 2 and ends. After reconnecting, portald does not try to recover
+  them; it cancels their choosers as described there.
+- A Request is never left without an end, so an app waiting on it can tell
+  failure from cancel. A `Response` is sent at most once, and never after
   `Close`.
-- portald subscribes to `files.chosen` before its first `files.choose`, and
-  reads `files.choose.result` for each open request after it reconnects to the
-  Bus.
 
 ## Acceptance
 
 1. Over the Bus alone, under a nested compd: open, save (with replace
    confirmation) and save_files, each accepted, cancelled by the person,
    cancelled by the caller, and with the caller's connection dropped. Filters
-   and choices round-trip. A path that is not UTF-8 round-trips as a URI.
+   (including a standalone `current_filter`) and choices (including an
+   absent default) round-trip. A path and a `save_files` name that are not
+   UTF-8 round-trip. Names `..`, `a/b`, an empty name and duplicates are
+   refused. Request ids are not reused across a provider restart. The limits
+   and the outcome eviction refuse and evict as written.
 2. Over D-Bus, with a persistent zbus caller fixture (a one-shot `gdbus call`
-   disconnects before the `Response`): each method, `Request.Close` (no
-   `Response`), the owner disconnecting, `files` absent (`Response` 2) and
+   disconnects before the `Response`): each method; two apps using the same
+   `handle_token` at once; three apps with dialogs open at once (none `BUSY`);
+   `Request.Close` while sending and while open (no `Response`, no chooser
+   left open), then the same `handle_token` reused at once (the new Request
+   gets only its own outcome); the owner disconnecting; a `files.choose`
+   reply that times out (`Response` 2, and the late window is cancelled);
+   `files` absent, and killed mid-request (`Response` 2 within 10 s); an
+   empty `accept_label` and a 300-pattern filter (accepted, adjusted); and
    `Close` from another sender (refused).
 3. A craft app built with rfd 0.17, on VT3: File > Open and File > Save As show
    the chooser; the file is opened and saved; Cancel leaves the app as it was.
 
-## Open questions
+## Settled questions
 
-1. FileChooser version: check the version and options against the current
-   upstream interface XML before portald serves it.
-2. Drive command names when one process has several chooser windows: a
-   `window` argument on `files.ui.*`, or one Bus service per window.
-3. Whether MixOS's own apps (Email's Attach files) move from the in-process
-   `toolkit::file_chooser` to `files.choose`, keeping the toolkit chooser
-   only for when the Bus or `files` is absent.
+1. **FileChooser version 4.** Checked against upstream: every mapped option
+   exists at version 4 (`directory` since 3); `SaveFiles` takes no `filters`
+   or `current_filter`.
+2. **Drive with several windows:** the request id is the drive `viewport`
+   (see Behaviour).
+3. **MixOS's own apps** (Email's Attach files) move to `files.choose` as a
+   task of their own once acceptance 3 passes. `toolkit::file_chooser` stays
+   only for when `files.choose` is `UNAVAILABLE` or `files` is absent.
+4. **Connection-closed notice:** v1 does not wait for it (see
+   [Losing a party](#losing-a-party)); noded gains the two topics in step 2.
 
 ---
 

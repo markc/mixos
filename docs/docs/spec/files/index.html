@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Status: draft, version 0.1.0, for review before any code. Nothing here is served yet.">
+    <meta name="description" content="Status: draft, version 0.1.0, for review before any code. Nothing here is served yet. Revised after review by Sol, Fable and GLM.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -218,10 +218,12 @@
                         <a href="#filters">Filters</a>
                         <a href="#choices">Choices</a>
                         <a href="#behaviour">Behaviour</a>
+                        <a href="#losing-a-party">Losing a party</a>
                         <a href="#placement">Placement</a>
                         <a href="#d-bus-orgfreedesktopportalfilechooser">D-Bus: org.freedesktop.portal.FileChooser</a>
+                        <a href="#request-lifecycle" class="toc-h3">Request lifecycle</a>
                         <a href="#acceptance">Acceptance</a>
-                        <a href="#open-questions">Open questions</a>
+                        <a href="#settled-questions">Settled questions</a>
                     </nav>
                 </div>
             </div>
@@ -248,7 +250,7 @@
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="file-chooser-contract-fileschoose">File chooser contract: <code>files.choose</code></h1>
 <p>Status: draft, version 0.1.0, for review before any code. Nothing here is
-served yet.</p>
+served yet. Revised after review by Sol, Fable and GLM.</p>
 <p>MixOS has one system file chooser. A person picks files or a save location
 in it; it never opens, reads or writes the files. It is reached two ways:</p>
 <ul>
@@ -271,6 +273,13 @@ pane with Places, a path bar, a file-name field when saving, a filter menu,
 the caller's choices, and Accept and Cancel. Several requests open several
 windows. Requests keep no state from one to the next, apart from the
 Places, bookmarks and recent folders that the file manager also uses.</p>
+<p>The unit restarts on failure, as <code>portald@.service</code> does, so a crash costs
+the open requests but not the next dialog. The chooser process serves
+<code>files.*</code> and the drive commands only, never <code>dopus.*</code>; DOpus's registry test
+must check each mode's command set separately.</p>
+<p>Each start of the provider is an <strong>incarnation</strong>, named by a random 64-bit
+value in lower-case hex. Requests belong to the incarnation that accepted
+them and are lost with it.</p>
 <h2 id="commands">Commands</h2>
 <p>Owner <code>dopus</code>. They enter <code>docs/docs/spec/bus/commands.conf.mix</code> (status
 draft; classes as given below) with the code that serves them, because
@@ -285,60 +294,89 @@ serves.</p>
 <tr><td><code>accept_label</code></td><td>string, 1 to 64 bytes</td><td>by mode</td><td>The Accept button's label. Mnemonic underscores are removed.</td></tr>
 <tr><td><code>multiple</code></td><td>bool</td><td>false</td><td><code>open</code> only: more than one entry may be chosen.</td></tr>
 <tr><td><code>directory</code></td><td>bool</td><td>false</td><td><code>open</code> only: choose folders, not files.</td></tr>
-<tr><td><code>filters</code></td><td>list of filter, at most 64</td><td>none</td><td>See <a href="#filters">Filters</a>.</td></tr>
-<tr><td><code>current_filter</code></td><td>filter</td><td>first filter</td><td>The filter selected at first. It need not be in <code>filters</code>.</td></tr>
+<tr><td><code>filters</code></td><td>list of filter, at most 64</td><td>none</td><td><code>open</code> and <code>save</code> only. See <a href="#filters">Filters</a>.</td></tr>
+<tr><td><code>current_filter</code></td><td>filter</td><td>first of <code>filters</code></td><td><code>open</code> and <code>save</code> only: the filter in effect at first. See <a href="#filters">Filters</a>.</td></tr>
 <tr><td><code>choices</code></td><td>list of choice, at most 16</td><td>none</td><td>See <a href="#choices">Choices</a>.</td></tr>
 <tr><td><code>current_folder</code></td><td>location</td><td>last folder used, else home</td><td>The folder shown first.</td></tr>
-<tr><td><code>current_name</code></td><td>string, 1 to 255 bytes, no <code>/</code></td><td>none</td><td><code>save</code> only: the suggested file name.</td></tr>
+<tr><td><code>current_name</code></td><td>name</td><td>none</td><td><code>save</code> only: the suggested file name.</td></tr>
 <tr><td><code>current_file</code></td><td>location</td><td>none</td><td><code>save</code> only: an existing file to save over; its folder and name are shown. Takes precedence over <code>current_folder</code> and <code>current_name</code>.</td></tr>
-<tr><td><code>files</code></td><td>list of string, 1 to 1,000</td><td>none</td><td><code>save_files</code> only, and required: the names of the files about to be saved into the chosen folder.</td></tr>
-<tr><td><code>parent_window</code></td><td>string</td><td><code>""</code></td><td>The window the chooser belongs to. See <a href="#placement">Placement</a>.</td></tr>
-<tr><td><code>token</code></td><td>1 to 64 of <code>A-Z a-z 0-9 _</code></td><td>generated</td><td>Names the request; see below.</td></tr>
+<tr><td><code>files</code></td><td>list of name, 1 to 1,000, unique</td><td>none</td><td><code>save_files</code> only, and required: the names of the files about to be saved into the chosen folder.</td></tr>
+<tr><td><code>parent_window</code></td><td>string, at most 256 bytes</td><td><code>""</code></td><td>The window the chooser belongs to. See <a href="#placement">Placement</a>.</td></tr>
+<tr><td><code>correlation</code></td><td>string, 1 to 256 bytes</td><td>none</td><td>Opaque to the provider; echoed in the reply, the outcome and <code>files.choose.list</code>.</td></tr>
+<tr><td><code>on_behalf_of</code></td><td>string, 1 to 128 bytes</td><td>none</td><td>The app a forwarding service asks for. portald sends <code>&lt;unique bus name&gt; &lt;process name&gt;</code>, for example <code>:1.42 fakeapp</code>. Shown to the person and used for limits and the remembered folder; it is not an authority.</td></tr>
 </tbody></table>
-<p>A <strong>location</strong> is either an absolute path written as a UTF-8 string, or a
-<code>file://</code> URI (RFC 8089) whose percent-encoding carries the exact bytes of a
-path that is not UTF-8. Nothing else is accepted.</p>
+<p>A <strong>location</strong> is an absolute path written as a UTF-8 string, or a <code>file://</code>
+URI (RFC 8089, no host or <code>localhost</code>) whose percent-encoding carries the
+exact bytes of a path. At most 4,096 bytes, no NUL byte. Nothing else is
+accepted.</p>
+<p>A <strong>name</strong> is one path component: a UTF-8 string, or <code>{"bytes": "&lt;percent-encoded&gt;"}</code>
+for a name that is not UTF-8. Decoded, it is 1 to 255 bytes, with no <code>/</code> and
+no NUL, and is neither <code>.</code> nor <code>..</code>.</p>
 <p>Unknown fields are ignored. A known field of the wrong type or out of range,
-a field used in the wrong mode, or <code>save_files</code> without <code>files</code> is refused
-with <code>ARGUMENT</code>.</p>
+a field used in the wrong mode, <code>save_files</code> without <code>files</code>, duplicate names
+in <code>files</code>, or a body over 256 KiB is refused with <code>ARGUMENT</code>.</p>
 <p>Reply, rc 0:</p>
-<pre><code class="language-json">{"request": "c42_open_1", "topic": "files.chosen"}
+<pre><code class="language-json">{"request": "9f2c41d07ab3e655-17", "topic": "files.chosen", "correlation": "/org/freedesktop/portal/desktop/request/1_42/rfd1"}
 </code></pre>
-<p><code>request</code> is <code>&lt;caller&gt;_&lt;token&gt;</code>, where <code>&lt;caller&gt;</code> is the broker's connection
-number for the caller. A <code>token</code> the caller has already used for a request
-that is still open is refused with <code>ARGUMENT</code>; a caller who wants to know the
-request name before calling (to subscribe first, for example) sends its own
-<code>token</code>.</p>
-<p><code>BUSY</code> is returned when 8 choosers are already open on the desk, or 2 for this
-caller's connection. <code>UNAVAILABLE</code> is returned when the chooser window cannot
-be opened (no display, for example). Neither opens a window.</p>
+<p><code>request</code> is <code>&lt;incarnation&gt;-&lt;sequence&gt;</code>, made by the provider. It is never
+reused: the sequence only grows within an incarnation, and a new incarnation
+has a new prefix. <code>correlation</code> is present when the caller gave one.</p>
+<p>Refusals open no window and keep nothing:</p>
+<ul>
+<li><code>BUSY</code> when 8 choosers are already open on the desk; when 2 are open for
+this caller; or when this caller has made more than 10 requests in the last
+10 seconds. The <strong>caller</strong> for both limits is the pair (broker connection,
+<code>on_behalf_of</code>) when <code>on_behalf_of</code> is given, else the broker connection
+alone, so the apps behind portald are limited one by one;</li>
+<li><code>UNAVAILABLE</code> when the chooser window cannot be opened (no display, for
+example).</li>
+</ul>
+<p><strong>Shape.</strong> A person can take longer than the Bus client waits for a reply
+(60 s), and a topic is published only by the service that owns it, so the
+answer cannot be a held reply or a topic the caller names. The shape is the
+one <code>shell.execute</code>, <code>shell.execute.result</code> and <code>shell.execute.cancel</code> already
+use: an immediate reply, an owner-published event and a pullable result.</p>
+<p><strong>Ordering.</strong> A caller subscribes to <code>files.chosen</code> before it calls
+<code>files.choose</code>, or reads <code>files.choose.result</code> instead; a caller on another
+node uses the result query. The provider sends the reply before the window
+accepts any input, but the reply and the topic are separate deliveries, so a
+caller keeps for a short while any outcome naming a request it has not yet
+been told about. Once the reply is in, outcomes are matched by <code>request</code>
+alone; <code>correlation</code> only links a parked outcome to a reply, and is applied
+only when the outcome's <code>request</code> equals the reply's.</p>
 <h3 id="fileschooseresult-query"><code>files.choose.result</code> (query)</h3>
 <p>Body <code>{request}</code>. Answers with the request's state:</p>
 <ul>
 <li><code>{state: "open"}</code>: the person has not answered;</li>
 <li><code>{state: "done", outcome: {...}}</code>: the outcome, exactly as published;</li>
-<li><code>ARGUMENT</code> when the request is unknown, or its outcome has expired.</li>
+<li><code>ARGUMENT</code> with <code>{"reason": "unknown"}</code> for a request this incarnation never
+made (another incarnation's included), or <code>{"reason": "expired"}</code> for one
+whose outcome is no longer kept.</li>
 </ul>
-<p>An outcome is kept for 10 minutes after it is decided, then removed. Reading
-it does not remove it. This command is for a caller that missed the
-publication; a caller that is subscribed has no need of it.</p>
+<p>Outcomes are kept for 10 minutes after they are decided, at most 64 of them;
+when a 65th is decided, the oldest is dropped first. Reading an outcome does
+not remove it. This command is for a caller that missed the publication.</p>
 <h3 id="fileschoosecancel-intent"><code>files.choose.cancel</code> (intent)</h3>
-<p>Body <code>{request}</code>. Closes an open chooser. The outcome is response 1 with
-<code>reason: "caller"</code>. A request that is already done is left as it is and
-answers rc 0. An unknown request is <code>ARGUMENT</code>.</p>
+<p>Body <code>{request}</code>. Closes an open chooser; its outcome is response 1 with
+<code>reason: "caller"</code>. Idempotent: a request already done, expired, or made by an
+earlier incarnation answers rc 0 and changes nothing. A malformed <code>request</code> is
+<code>ARGUMENT</code>.</p>
 <h3 id="fileschooselist-query"><code>files.choose.list</code> (query)</h3>
-<p>Body none. Answers <code>{requests: [{request, mode, title, caller, opened_ms}]}</code>
-for every open chooser, oldest first.</p>
+<p>Body none. Answers
+<code>{incarnation, requests: [{request, mode, title, caller, on_behalf_of, correlation, opened_ms}]}</code>
+for every open chooser, oldest first. <code>caller</code> is <code>citizen::caller_key</code> of
+the connection that asked.</p>
 <h2 id="outcome">Outcome</h2>
 <p>When a request ends, one outcome is published once on topic <code>files.chosen</code>
 and kept for <code>files.choose.result</code>:</p>
 <pre><code class="language-json">{
-  "request": "c42_open_1",
+  "request": "9f2c41d07ab3e655-17",
+  "correlation": "/org/freedesktop/portal/desktop/request/1_42/rfd1",
   "response": 0,
+  "reason": "chosen",
   "uris": ["file:///home/user/Pictures/beach.png"],
   "current_filter": {"name": "Images", "patterns": ["*.png", "*.jpg"], "mime_types": []},
-  "choices": {"encoding": "utf8", "reencode": "true"},
-  "reason": "chosen"
+  "choices": {"encoding": "utf8", "reencode": "true"}
 }
 </code></pre>
 <table><thead><tr><th><code>response</code></th><th><code>reason</code></th><th>When</th></tr></thead><tbody>
@@ -347,17 +385,20 @@ and kept for <code>files.choose.result</code>:</p>
 <tr><td>1</td><td><code>caller</code></td><td><code>files.choose.cancel</code>, or the caller's broker connection closed.</td></tr>
 <tr><td>2</td><td><code>failed</code></td><td>The chooser failed after it opened. <code>message</code> says why.</td></tr>
 </tbody></table>
-<p>Response codes are the portal's, so portald passes them on unchanged.</p>
+<p>Each request has exactly one outcome; the first end wins and later ones are
+dropped. Response codes are the portal's, so portald passes them on
+unchanged.</p>
 <ul>
 <li><code>uris</code> are <code>file://</code> URIs, percent-encoded from the exact bytes of each path.
 On <code>open</code>, there is one unless <code>multiple</code> is set, never none. On <code>save</code>,
 there is exactly one. On <code>save_files</code>, there is one per name in <code>files</code>, in
-the same order. Each one is inside the chosen folder, with the person's
-answer to any name that already exists there.</li>
-<li><code>current_filter</code> is the filter selected when the person accepted; it is
-absent when there were no filters.</li>
-<li><code>choices</code> maps each choice's <code>id</code> to the option chosen; a choice with no
-options has <code>"true"</code> or <code>"false"</code>.</li>
+the same order, each exactly <code>&lt;chosen folder&gt;/&lt;name&gt;</code>; the provider checks
+this before it accepts.</li>
+<li><code>current_filter</code> is the filter in effect when the person accepted. It is
+present whenever a filter was in effect, from <code>filters</code> or from
+<code>current_filter</code> alone.</li>
+<li><code>choices</code> maps every choice's <code>id</code> to its value: an option id, or <code>"true"</code>
+or <code>"false"</code> for a check box.</li>
 <li><code>uris</code>, <code>current_filter</code> and <code>choices</code> are present only when <code>response</code> is 0.</li>
 </ul>
 <p>The topic is published by <code>files</code> alone. Every subscriber sees every outcome;
@@ -365,23 +406,29 @@ the Bus is open (<code>docs/docs/decisions/2026-10-26-open-bus-for-agents.md</co
 and an outcome carries paths, never file contents.</p>
 <h2 id="filters">Filters</h2>
 <p>A filter is <code>{name, patterns, mime_types}</code>: a label of 1 to 128 bytes, and
-together 1 to 64 entries in two lists of strings:</p>
+together 1 to 512 entries in two lists of strings of 1 to 256 bytes (an "All
+images" filter can list hundreds):</p>
 <ul>
 <li><code>patterns</code>: shell globs (<code>*</code>, <code>?</code>, <code>[...]</code>), matched against the file name,
 case sensitive;</li>
 <li><code>mime_types</code>: MIME types or <code>type/*</code>, matched by the type the shared MIME
 database gives the file.</li>
 </ul>
-<p>Folders are always shown, so the person can move between them. When <code>save</code>
-is used with a filter whose only pattern is <code>*.ext</code>, a typed name without an
-extension gets that one.</p>
+<p><code>current_filter</code> alone, with no <code>filters</code>, is the one filter in effect and the
+filter menu is hidden. With <code>filters</code>, a <code>current_filter</code> equal to one of them
+(same name and lists) selects it; one that is not equal to any is added at the
+top of the menu and selected. Folders are always shown, so the person can
+move between them. When <code>save</code> is used with a filter whose only pattern is
+<code>*.ext</code>, a typed name without an extension gets that one.</p>
 <h2 id="choices">Choices</h2>
 <p>A choice is <code>{id, label, options, default}</code>:</p>
 <ul>
-<li><code>id</code> and <code>label</code> are strings of 1 to 64 and 1 to 128 bytes;</li>
-<li><code>options</code> is a list of up to 32 <code>{id, label}</code>. When it is empty the choice
-is a check box, and <code>default</code> is <code>"true"</code> or <code>"false"</code>;</li>
-<li><code>default</code> is one of the option ids; it is the first option when absent.</li>
+<li><code>id</code> and <code>label</code> are strings of 1 to 64 and 1 to 128 bytes; ids are unique;</li>
+<li><code>options</code> is a list of up to 32 <code>{id, label}</code> with unique ids. When it is
+empty the choice is a check box;</li>
+<li><code>default</code> is optional. For a list it is one of the option ids, and the
+first option when absent. For a check box it is <code>"true"</code> or <code>"false"</code>, and
+<code>"false"</code> when absent.</li>
 </ul>
 <p>They are shown under the file list, in order.</p>
 <h2 id="behaviour">Behaviour</h2>
@@ -389,19 +436,47 @@ is a check box, and <code>default</code> is <code>"true"</code> or <code>"false"
 <li><strong>No timeout.</strong> A chooser waits for the person as long as it takes.</li>
 <li><strong>Save.</strong> When the chosen file exists, the person confirms replacing it
 before Accept succeeds. <code>save_files</code> does the same once for all the names
-that exist. The chooser never creates, truncates or replaces anything; the
-caller does that with the URIs it receives.</li>
-<li><strong>Who is asking.</strong> When the caller is not <code>portald</code>, the window says which
-caller asked (<code>citizen::caller_key</code>), so a person can tell an agent's
-request from an app's.</li>
+that exist; unlike some portal backends it never renames to avoid a
+collision, so each URI is exactly <code>&lt;folder&gt;/&lt;name&gt;</code>. The chooser never
+creates, truncates or replaces anything; the caller does that with the URIs
+it receives.</li>
+<li><strong>Typed names.</strong> A typed save name containing <code>/</code> moves to that folder when
+it exists, as a path bar would; otherwise Accept is refused in the window
+with a message.</li>
+<li><strong>Remembered folder.</strong> The last folder accepted is kept per
+<code>on_behalf_of</code>, else per caller, and is where the next chooser for it opens
+when no <code>current_folder</code> or <code>current_file</code> is given.</li>
+<li><strong>Who is asking.</strong> When the caller is not <code>portald</code>, or when
+<code>on_behalf_of</code> is given, the window says who asked
+(<code>citizen::caller_key</code>, and <code>on_behalf_of</code>), so a person can tell an
+agent's request from an app's.</li>
 <li><strong>Drive.</strong> Each chooser window answers the toolkit drive commands
-(<code>docs/docs/drive.md</code>), so it can be tested and answered over the Bus.
-The drive command names for several windows in one process are not yet
-settled (open question 2), so none are registered yet.</li>
+(<code>docs/docs/drive.md</code>) as <code>files.ui.*</code> and <code>files.window*</code>, with the
+request id as the <code>viewport</code>. With more than one chooser open, a drive
+command without <code>viewport</code> is <code>ARGUMENT</code>. They are registered with the code.</li>
 <li><strong>Caller leaves.</strong> When the caller's broker connection closes, its open
-choosers close with response 1, <code>reason: "caller"</code>.</li>
-<li><strong>Provider stops.</strong> If <code>files</code> stops, every open request is lost. A caller
-that sees the service unregister treats its open requests as response 2.</li>
+choosers close with response 1, <code>reason: "caller"</code>. This needs a notice
+from noded that a connection closed, which does not exist yet (see
+<a href="#losing-a-party">Losing a party</a>).</li>
+<li><strong>Provider stops.</strong> If <code>files</code> stops, every open request is lost with its
+incarnation; a new incarnation knows nothing of them.</li>
+</ul>
+<h2 id="losing-a-party">Losing a party</h2>
+<p>Two notices are needed, and noded publishes neither today. Step 2 adds both
+to noded as owner-published topics: a service registered or unregistered, and
+a connection closed. Until they land, v1 does this, and the stopgaps are
+removed when they do:</p>
+<ul>
+<li><strong>Provider lost (portald's view).</strong> While at least one Request is not
+ended, portald reads <code>files.choose.list</code> every 5 seconds. An error or a
+changed <code>incarnation</code> means <code>files</code> was lost. This is a bounded, temporary
+exception to the no-polling rule: it runs only while a person has a dialog
+open.</li>
+<li><strong>portald lost (the provider's view).</strong> At start, portald reads
+<code>files.choose.list</code> and cancels every request whose <code>caller</code> was an earlier
+portald connection.</li>
+<li><strong>Other callers lost.</strong> Their choosers stay open until the person answers;
+the outcome is published and kept as usual.</li>
 </ul>
 <h2 id="placement">Placement</h2>
 <p><code>parent_window</code> is the portal's window identifier: <code>""</code>, <code>wayland:&lt;handle&gt;</code>
@@ -417,72 +492,104 @@ xdg-dialog-v1 support in compd, a later step.</p>
 same arguments, and <code>SaveFiles</code> with the same arguments all return a Request
 object straight away, at
 <code>/org/freedesktop/portal/desktop/request/&lt;sender&gt;/&lt;handle_token&gt;</code>, built as
-for ScreenCast. Then portald calls <code>files.choose</code> with the mapped body and
-<code>token</code> set to the handle token.</p>
+for ScreenCast. Then portald calls <code>files.choose</code> with the mapped body,
+<code>correlation</code> set to the Request's object path (unique while it exists), and
+<code>on_behalf_of</code> set to the caller's unique bus name and process name.</p>
 <table><thead><tr><th>Portal</th><th><code>files.choose</code></th></tr></thead><tbody>
 <tr><td>method <code>OpenFile</code> / <code>SaveFile</code> / <code>SaveFiles</code></td><td><code>mode</code> <code>open</code> / <code>save</code> / <code>save_files</code></td></tr>
 <tr><td><code>parent_window</code> argument</td><td><code>parent_window</code></td></tr>
 <tr><td><code>title</code> argument</td><td><code>title</code> (the mode's default when empty)</td></tr>
-<tr><td><code>handle_token</code> (<code>s</code>)</td><td><code>token</code></td></tr>
+<tr><td><code>handle_token</code> (<code>s</code>)</td><td>not sent: it names the Request path only</td></tr>
 <tr><td><code>accept_label</code> (<code>s</code>)</td><td><code>accept_label</code></td></tr>
 <tr><td><code>modal</code> (<code>b</code>)</td><td>ignored: not modal in this version</td></tr>
 <tr><td><code>multiple</code> (<code>b</code>)</td><td><code>multiple</code></td></tr>
 <tr><td><code>directory</code> (<code>b</code>)</td><td><code>directory</code></td></tr>
-<tr><td><code>filters</code> (<code>a(sa(us))</code>)</td><td><code>filters</code>: kind 0 to <code>patterns</code>, kind 1 to <code>mime_types</code></td></tr>
-<tr><td><code>current_filter</code> (<code>(sa(us))</code>)</td><td><code>current_filter</code>, mapped the same way</td></tr>
-<tr><td><code>choices</code> (<code>a(ssa(ss)s)</code>)</td><td><code>choices</code>: <code>(id, label, [(id, label)], default)</code></td></tr>
+<tr><td><code>filters</code> (<code>a(sa(us))</code>)</td><td><code>filters</code>: kind 0 to <code>patterns</code>, kind 1 to <code>mime_types</code>; not sent for <code>SaveFiles</code></td></tr>
+<tr><td><code>current_filter</code> (<code>(sa(us))</code>)</td><td><code>current_filter</code>, mapped the same way; not sent for <code>SaveFiles</code></td></tr>
+<tr><td><code>choices</code> (<code>a(ssa(ss)s)</code>)</td><td><code>choices</code>: <code>(id, label, [(id, label)], default)</code>; an empty default is left out</td></tr>
 <tr><td><code>current_name</code> (<code>s</code>)</td><td><code>current_name</code></td></tr>
-<tr><td><code>current_folder</code> (<code>ay</code>, NUL-terminated)</td><td><code>current_folder</code> as a percent-encoded <code>file://</code> URI</td></tr>
-<tr><td><code>current_file</code> (<code>ay</code>, NUL-terminated)</td><td><code>current_file</code> as a percent-encoded <code>file://</code> URI</td></tr>
-<tr><td><code>files</code> (<code>aay</code>, <code>SaveFiles</code>)</td><td><code>files</code>; a name that is not UTF-8 makes the call fail with <code>InvalidArgument</code></td></tr>
+<tr><td><code>current_folder</code> (<code>ay</code>)</td><td><code>current_folder</code> as a percent-encoded <code>file://</code> URI</td></tr>
+<tr><td><code>current_file</code> (<code>ay</code>)</td><td><code>current_file</code> as a percent-encoded <code>file://</code> URI</td></tr>
+<tr><td><code>files</code> (<code>aay</code>, <code>SaveFiles</code>)</td><td><code>files</code>, each a name; <code>{"bytes": ...}</code> when not UTF-8</td></tr>
 </tbody></table>
-<p>Other options are ignored. A known option with the wrong type is refused at
-the call with <code>org.freedesktop.portal.Error.InvalidArgument</code>, and no Request
-is created.</p>
+<p>Byte strings (<code>ay</code>) carry exactly one trailing NUL, which is removed; a byte
+string without it, or with a NUL anywhere else, is refused. Other options are
+ignored.</p>
+<p><strong>Lenient at the D-Bus edge.</strong> rfd and others show any portal error as a
+cancel, so a refusal is a dialog that silently never appears. portald
+therefore refuses only a known option with the wrong D-Bus type, a NUL
+violation, or <code>SaveFiles</code> with no usable <code>files</code>, with
+<code>org.freedesktop.portal.Error.InvalidArgument</code> at the call and no Request.
+Everything else is made to fit: an empty string becomes the field's default;
+a label over its limit is cut at a character boundary; a list over its limit
+keeps its first entries; an invalid entry (a pattern over 256 bytes, a choice
+with a duplicate id) is dropped. portald logs each adjustment.</p>
 <p>The outcome becomes <code>Response(u response, a{sv} results)</code>, addressed to the
 Request's owner alone:</p>
 <table><thead><tr><th>Outcome</th><th><code>Response</code></th></tr></thead><tbody>
-<tr><td>0</td><td>0, with <code>uris</code> (<code>as</code>), <code>choices</code> (<code>a(ss)</code>) when the call had choices, <code>current_filter</code> (<code>(sa(us))</code>) when it had filters</td></tr>
+<tr><td>0</td><td>0, with <code>uris</code> (<code>as</code>), <code>choices</code> (<code>a(ss)</code>) when the call had choices, <code>current_filter</code> (<code>(sa(us))</code>) when a filter was in effect</td></tr>
 <tr><td>1</td><td>1, <code>{}</code></td></tr>
 <tr><td>2, or <code>files.choose</code> refused (<code>BUSY</code>, <code>UNAVAILABLE</code>, any error), or <code>files</code> not registered, or lost</td><td>2, <code>{}</code></td></tr>
 </tbody></table>
-<p>The Request lifecycle:</p>
+<h3 id="request-lifecycle">Request lifecycle</h3>
+<p>Each portal Request is in one of four states. Every transition happens under
+one lock, and a Request leaves the table only when it is ended.</p>
+<table><thead><tr><th>State</th><th>Entered when</th><th>Close (owner) or owner leaves</th><th>Outcome for it arrives</th><th><code>files.choose</code> answers</th><th>Bus or <code>files</code> lost</th></tr></thead><tbody>
+<tr><td><strong>sending</strong></td><td>the method returns the Request path, before <code>files.choose</code> is sent</td><td>to <strong>closing</strong></td><td>parked by <code>correlation</code> until the reply</td><td>ok: to <strong>open</strong>, then apply a parked outcome whose <code>request</code> matches; refused: <code>Response</code> 2, ended; no reply in time: <code>Response</code> 2, to <strong>closing</strong></td><td><code>Response</code> 2, ended</td></tr>
+<tr><td><strong>open</strong></td><td><code>files.choose</code> answered with a request id</td><td>send <code>files.choose.cancel</code>; ended, no <code>Response</code></td><td>matched by <code>request</code>: <code>Response</code> as mapped, ended</td><td>—</td><td><code>Response</code> 2, ended</td></tr>
+<tr><td><strong>closing</strong></td><td>Close came while sending, or the reply timed out</td><td>—</td><td>dropped</td><td>ok: send <code>files.choose.cancel</code>, ended; refused: ended</td><td>ended</td></tr>
+<tr><td><strong>ended</strong></td><td>a <code>Response</code> was sent, or Close was handled</td><td>—</td><td>dropped</td><td>dropped</td><td>—</td></tr>
+</tbody></table>
 <ul>
-<li><code>Request.Close()</code> from the owner calls <code>files.choose.cancel</code>, removes the
-Request and sends no <code>Response</code>. <code>Close</code> from anyone else is refused with
+<li>portald subscribes to <code>files.chosen</code> before it serves FileChooser.</li>
+<li>A Request in <strong>closing</strong> that never gets a reply is also swept: portald
+looks for its <code>correlation</code> in <code>files.choose.list</code>, cancels any match, and
+ends it.</li>
+<li><code>Close</code> from anyone but the owner is refused with
 <code>org.freedesktop.portal.Error.NotAllowed</code>.</li>
-<li>When the owner leaves the session bus, portald cancels its requests.</li>
-<li>When portald loses the Bus or <code>files</code> unregisters, every open Request ends
-with <code>Response</code> 2. A Request is never left without an end: an app waiting on
-it must be able to tell failure from cancel.</li>
-<li>Only one end wins. A <code>Response</code> is sent at most once, and never after
+<li>A lost connection is final. When portald loses the Bus, or <code>files</code> is lost
+(see <a href="#losing-a-party">Losing a party</a>), every Request not yet ended gets
+<code>Response</code> 2 and ends. After reconnecting, portald does not try to recover
+them; it cancels their choosers as described there.</li>
+<li>A Request is never left without an end, so an app waiting on it can tell
+failure from cancel. A <code>Response</code> is sent at most once, and never after
 <code>Close</code>.</li>
-<li>portald subscribes to <code>files.chosen</code> before its first <code>files.choose</code>, and
-reads <code>files.choose.result</code> for each open request after it reconnects to the
-Bus.</li>
 </ul>
 <h2 id="acceptance">Acceptance</h2>
 <ol>
 <li>Over the Bus alone, under a nested compd: open, save (with replace
 confirmation) and save_files, each accepted, cancelled by the person,
 cancelled by the caller, and with the caller's connection dropped. Filters
-and choices round-trip. A path that is not UTF-8 round-trips as a URI.</li>
+(including a standalone <code>current_filter</code>) and choices (including an
+absent default) round-trip. A path and a <code>save_files</code> name that are not
+UTF-8 round-trip. Names <code>..</code>, <code>a/b</code>, an empty name and duplicates are
+refused. Request ids are not reused across a provider restart. The limits
+and the outcome eviction refuse and evict as written.</li>
 <li>Over D-Bus, with a persistent zbus caller fixture (a one-shot <code>gdbus call</code>
-disconnects before the <code>Response</code>): each method, <code>Request.Close</code> (no
-<code>Response</code>), the owner disconnecting, <code>files</code> absent (<code>Response</code> 2) and
+disconnects before the <code>Response</code>): each method; two apps using the same
+<code>handle_token</code> at once; three apps with dialogs open at once (none <code>BUSY</code>);
+<code>Request.Close</code> while sending and while open (no <code>Response</code>, no chooser
+left open), then the same <code>handle_token</code> reused at once (the new Request
+gets only its own outcome); the owner disconnecting; a <code>files.choose</code>
+reply that times out (<code>Response</code> 2, and the late window is cancelled);
+<code>files</code> absent, and killed mid-request (<code>Response</code> 2 within 10 s); an
+empty <code>accept_label</code> and a 300-pattern filter (accepted, adjusted); and
 <code>Close</code> from another sender (refused).</li>
 <li>A craft app built with rfd 0.17, on VT3: File &gt; Open and File &gt; Save As show
 the chooser; the file is opened and saved; Cancel leaves the app as it was.</li>
 </ol>
-<h2 id="open-questions">Open questions</h2>
+<h2 id="settled-questions">Settled questions</h2>
 <ol>
-<li>FileChooser version: check the version and options against the current
-upstream interface XML before portald serves it.</li>
-<li>Drive command names when one process has several chooser windows: a
-<code>window</code> argument on <code>files.ui.*</code>, or one Bus service per window.</li>
-<li>Whether MixOS's own apps (Email's Attach files) move from the in-process
-<code>toolkit::file_chooser</code> to <code>files.choose</code>, keeping the toolkit chooser
-only for when the Bus or <code>files</code> is absent.</li>
+<li><strong>FileChooser version 4.</strong> Checked against upstream: every mapped option
+exists at version 4 (<code>directory</code> since 3); <code>SaveFiles</code> takes no <code>filters</code>
+or <code>current_filter</code>.</li>
+<li><strong>Drive with several windows:</strong> the request id is the drive <code>viewport</code>
+(see Behaviour).</li>
+<li><strong>MixOS's own apps</strong> (Email's Attach files) move to <code>files.choose</code> as a
+task of their own once acceptance 3 passes. <code>toolkit::file_chooser</code> stays
+only for when <code>files.choose</code> is <code>UNAVAILABLE</code> or <code>files</code> is absent.</li>
+<li><strong>Connection-closed notice:</strong> v1 does not wait for it (see
+<a href="#losing-a-party">Losing a party</a>); noded gains the two topics in step 2.</li>
 </ol>
         </article>
         <p class="doc-source"><a href="/docs/spec/files/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
