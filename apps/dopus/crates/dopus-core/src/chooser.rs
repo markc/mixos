@@ -247,7 +247,10 @@ pub fn location(value: &Value) -> Result<Vec<u8>> {
     let s = value
         .as_str()
         .ok_or_else(|| Refusal::argument("location: expected string"))?;
-    let bytes = if s.get(..7).is_some_and(|prefix| prefix.eq_ignore_ascii_case("file://")) {
+    let bytes = if s
+        .get(..7)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("file://"))
+    {
         let rest = &s[7..];
         let path = if rest.starts_with('/') {
             rest

@@ -152,7 +152,9 @@ fn every_top_level_type_range_and_wrong_mode_refuses() {
             };
             if !allowed {
                 let mut request = json!({"mode":mode});
-                if mode == "save_files" { request["files"] = json!(["a"]); }
+                if mode == "save_files" {
+                    request["files"] = json!(["a"]);
+                }
                 request[field] = Value::Null;
                 argument(request);
             }
@@ -316,7 +318,10 @@ fn locations_names_and_exact_byte_uri_round_trip() {
         location(&json!("file://localhost/tmp/%FF")).unwrap(),
         b"/tmp/\xff"
     );
-    assert_eq!(location(&json!("FILE://LOCALHOST/tmp/%FF")).unwrap(), b"/tmp/\xff");
+    assert_eq!(
+        location(&json!("FILE://LOCALHOST/tmp/%FF")).unwrap(),
+        b"/tmp/\xff"
+    );
     assert_eq!(location(&json!("/tmp/a#?%")).unwrap(), b"/tmp/a#?%");
     let n = name(&json!({"bytes":"%FF%20%25"})).unwrap();
     assert_eq!(n, b"\xff %");
@@ -822,25 +827,54 @@ fn reply_precedes_input_and_first_outcome_failed_reply_closes() {
 #[test]
 fn inclusive_filter_choice_and_option_limits_and_explicit_answers() {
     let filters = vec![filter(); 64];
-    let options: Vec<_> = (0..32).map(|i| json!({"id":format!("option-{i}"),"label":"x".repeat(128)})).collect();
+    let options: Vec<_> = (0..32)
+        .map(|i| json!({"id":format!("option-{i}"),"label":"x".repeat(128)}))
+        .collect();
     let choices: Vec<_> = (0..16).map(|i| json!({"id":format!("choice-{i}"),"label":"x".repeat(128),"options":options,"default":"option-31"})).collect();
     let request = parse(json!({"filters":filters,"choices":choices})).unwrap();
     assert_eq!(request.filters.len(), 64);
     assert_eq!(request.choices.len(), 16);
     assert_eq!(request.choices[0].options.len(), 32);
-    assert!(request.choice_defaults().values().all(|value| value == "option-31"));
+    assert!(
+        request
+            .choice_defaults()
+            .values()
+            .all(|value| value == "option-31")
+    );
 
     let text_filter = json!({"name":"Text","patterns":["*.txt"],"mime_types":[]});
     let mut e = engine();
     let mut p = TestPresenter::default();
-    let id = open(&mut e, &mut p, json!({"filters":[filter(),text_filter],"choices":[checkbox(),choice()]}), "caller", 1);
-    let mut answer = Acceptance { paths:vec![b"/chosen/text.txt".to_vec()],folder:None,
-        current_filter:Some(parse_filter(&json!({"name":"Unlisted","patterns":["*"],"mime_types":[]})).unwrap()),
-        choices:BTreeMap::from([("compress".into(),"true".into()),("encoding".into(),"utf8".into())]) };
-    assert_eq!(e.end(&id, End::Accept(answer.clone()), 2, &mut p).unwrap_err().error_code, "ARGUMENT");
+    let id = open(
+        &mut e,
+        &mut p,
+        json!({"filters":[filter(),text_filter],"choices":[checkbox(),choice()]}),
+        "caller",
+        1,
+    );
+    let mut answer = Acceptance {
+        paths: vec![b"/chosen/text.txt".to_vec()],
+        folder: None,
+        current_filter: Some(
+            parse_filter(&json!({"name":"Unlisted","patterns":["*"],"mime_types":[]})).unwrap(),
+        ),
+        choices: BTreeMap::from([
+            ("compress".into(), "true".into()),
+            ("encoding".into(), "utf8".into()),
+        ]),
+    };
+    assert_eq!(
+        e.end(&id, End::Accept(answer.clone()), 2, &mut p)
+            .unwrap_err()
+            .error_code,
+        "ARGUMENT"
+    );
     answer.current_filter = Some(parse_filter(&text_filter).unwrap());
     let outcome = e.end(&id, End::Accept(answer), 3, &mut p).unwrap().unwrap();
-    assert_eq!(outcome.current_filter, Some(parse_filter(&text_filter).unwrap()));
+    assert_eq!(
+        outcome.current_filter,
+        Some(parse_filter(&text_filter).unwrap())
+    );
     assert_eq!(outcome.choices.unwrap()["compress"], "true");
 }
 
@@ -852,13 +886,24 @@ fn eviction_uses_decision_order_and_open_requests_never_expire() {
     let mut oldest_done = String::new();
     for i in 1..=64 {
         let id = open(&mut e, &mut p, json!({}), &format!("caller-{i}"), i);
-        if i == 1 { oldest_done = id.clone(); }
+        if i == 1 {
+            oldest_done = id.clone();
+        }
         e.end(&id, End::Cancel, i, &mut p).unwrap();
     }
-    assert_eq!(e.result(&body(&long_open), 65).unwrap(), json!({"state":"open"}));
+    assert_eq!(
+        e.result(&body(&long_open), 65).unwrap(),
+        json!({"state":"open"})
+    );
     e.end(&long_open, End::Cancel, 66, &mut p).unwrap();
-    assert_eq!(e.result(&body(&oldest_done), 67).unwrap_err().reason, Some("expired"));
+    assert_eq!(
+        e.result(&body(&oldest_done), 67).unwrap_err().reason,
+        Some("expired")
+    );
     assert_eq!(e.result(&body(&long_open), 67).unwrap()["state"], "done");
     let waiting = open(&mut e, &mut p, json!({}), "patient", 1000);
-    assert_eq!(e.result(&body(&waiting), 1_000_000).unwrap(), json!({"state":"open"}));
+    assert_eq!(
+        e.result(&body(&waiting), 1_000_000).unwrap(),
+        json!({"state":"open"})
+    );
 }
