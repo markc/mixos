@@ -1730,7 +1730,7 @@ pub struct State {
     pub attachment_chooser: Option<toolkit::file_chooser::FileChooser>,
     pub documents: crate::documents::DocumentState,
     pub attachment_notice: Option<String>,
-    last_attachment_directory: Option<std::path::PathBuf>,
+    pub(crate) last_attachment_directory: Option<std::path::PathBuf>,
     /// The identities dialog, while open.
     pub identity_editor: Option<IdentityEditor>,
     /// The pane that has the keyboard: Tab moves it, and the arrow keys act on it.

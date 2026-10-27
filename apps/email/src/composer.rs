@@ -42,6 +42,7 @@ pub(crate) fn swap(a: &mut State, b: &mut State) {
     std::mem::swap(&mut a.documents, &mut b.documents);
     std::mem::swap(&mut a.compose_clipboard, &mut b.compose_clipboard);
     std::mem::swap(&mut a.status, &mut b.status);
+    std::mem::swap(&mut a.last_attachment_directory, &mut b.last_attachment_directory);
 }
 
 fn context(state: &State) -> State {
@@ -401,6 +402,28 @@ mod tests {
             assert_eq!(answer.rc,0);
             assert!(answer.body.to_string().contains(if command == "ui.tree" {"Subject"} else {"Save As"}));
         }
+    }
+
+    #[test]
+    fn a_child_quit_question_has_keep_discard_and_cancel_and_owns_escape() {
+        let (mut state,mut windows,theme,ctx) = fixture(false);
+        for _ in 0..2 { state.compose(); windows.adopt(&mut state,editor::Palette::from_theme(&theme)); }
+        let first = windows.windows["compose-1"].clone();
+        first.lock().unwrap().view.confirm = Some(crate::state::Confirm::Quit);
+        frame(&ctx,&windows);
+        assert!(toolkit::drive::request(&ctx,1,"ui.tree",&serde_json::json!({"viewport":"compose-1"})).is_none());
+        frame(&ctx,&windows);
+        let answer = toolkit::drive::logic(&ctx).pop().unwrap();
+        let tree = answer.body.to_string();
+        for label in ["Keep Draft","Discard","Cancel"] { assert!(tree.contains(label),"{tree}"); }
+        for w in windows.windows.values() { w.lock().unwrap().pending.clear(); }
+        let viewport = first.lock().unwrap().viewport;
+        let mut input = egui::RawInput {viewport_id:viewport,..Default::default()};
+        input.viewports.insert(viewport,Default::default());
+        input.events.push(egui::Event::Key {key:egui::Key::Escape,physical_key:None,pressed:true,repeat:false,modifiers:egui::Modifiers::NONE});
+        ctx.run_ui(input,|ui| first.lock().unwrap().show(ui)).drop_without_applying_deltas();
+        assert!(first.lock().unwrap().pending.iter().any(|i| i.events.contains(&UiEvent::ConfirmDraft(crate::state::DraftChoice::Back))));
+        assert!(windows.windows["compose-2"].lock().unwrap().pending.is_empty());
     }
 
     #[test]

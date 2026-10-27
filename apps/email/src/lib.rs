@@ -193,3 +193,20 @@ fn compose_request(args: &Args) -> serde_json::Value {
         |path| serde_json::json!({"document":path}),
     )
 }
+
+#[cfg(test)]
+mod compose_args_tests {
+    use super::*;
+
+    #[test]
+    fn compose_accepts_a_document_and_following_options() {
+        let args = parse(["--compose","message.md","--service","email-test"].map(str::to_owned).into_iter()).unwrap();
+        assert!(args.compose);
+        assert_eq!(args.service,"email-test");
+        assert_eq!(args.document,Some(std::env::current_dir().unwrap().join("message.md")));
+        let args = parse(["--compose","--service","email-test"].map(str::to_owned).into_iter()).unwrap();
+        assert!(args.compose && args.document.is_none());
+        assert!(!parse(std::iter::empty()).unwrap().compose);
+        assert!(parse(["--compose","--unknown"].map(str::to_owned).into_iter()).is_err());
+    }
+}

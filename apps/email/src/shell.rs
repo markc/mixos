@@ -2238,6 +2238,23 @@ mod tests {
     }
 
     #[test]
+    fn root_close_on_a_logic_only_wake_keeps_child_composers_alive() {
+        let (mut shell,_broker) = compose_fixture(true);
+        add_composer(&mut shell,"owner"); add_composer(&mut shell,"child");
+        let ctx = shell.ctx.clone();
+        let mut input = egui::RawInput::default();
+        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().events.push(egui::ViewportEvent::Close);
+        let output = ctx.run_ui(input,|_| shell.logic(&ctx));
+        assert!(output.viewport_output[&egui::ViewportId::ROOT].commands.contains(&egui::ViewportCommand::CancelClose));
+        assert!(!shell.exiting && !shell.state.exiting);
+        assert!(shell.composers.owner_closing);
+        assert_eq!(shell.composers.root.as_deref(),Some("compose-1"));
+        assert_eq!(shell.composers.windows.len(),2);
+        output.drop_without_applying_deltas();
+        shell.bus.quit();
+    }
+
+    #[test]
     fn bus_attachment_commands_use_the_named_window_and_focus_default() {
         let (mut shell,_broker) = compose_fixture(false);
         add_composer(&mut shell,"one"); add_composer(&mut shell,"two");

@@ -3,9 +3,8 @@
 //! The composer form and its draft/document confirmation questions.
 //! Send uses the shared engine; failures keep the draft and its error visible.
 //!
-//! What is typed is kept as a local draft. Cancel, Escape or closing the
-//! window over a draft with something in it asks first, keeping the draft
-//! by default; a draft kept from an earlier run is offered at start.
+//! Typed content is kept as a local draft. Closing a window asks first;
+//! Keep Draft is the default. Kept drafts are offered at mailbox startup.
 
 use egui::Ui;
 use toolkit::dialog::{self, Choice};
