@@ -3615,8 +3615,14 @@ mod tests {
         let legacy = concat!("ced.", "action");
         let mut c = ctl();
         let (rc, v) = response(&c.on_bus_command(cmd(legacy, json!({"id": "file.new"}))));
-        assert_eq!((rc, v["error_code"].as_str()), (10, Some("UNKNOWN_COMMAND")));
-        assert!(c.tabs.is_empty(), "the removed command cannot run an action");
+        assert_eq!(
+            (rc, v["error_code"].as_str()),
+            (10, Some("UNKNOWN_COMMAND"))
+        );
+        assert!(
+            c.tabs.is_empty(),
+            "the removed command cannot run an action"
+        );
 
         let (_, v) = response(&c.on_bus_command(cmd("app.describe", json!({}))));
         let names = v["commands"].as_array().unwrap();
@@ -3667,7 +3673,11 @@ mod tests {
             let tab = c.active().unwrap();
             let other = c.new_tab(None);
             c.active = Some(other);
-            let selector = if by_buffer { json!({"buffer": B}) } else { json!({"tab": tab}) };
+            let selector = if by_buffer {
+                json!({"buffer": B})
+            } else {
+                json!({"tab": tab})
+            };
             let mut params = selector;
             params["args"] = args.clone();
             let fx = c.on_bus_command(cmd(
@@ -3685,11 +3695,14 @@ mod tests {
             "ced.execute",
             json!({"id": "search.find", "params": {"tab": tab, "args": args}}),
         ));
-        assert!(fx.iter().any(|effect| matches!(
-            effect,
-            Effect::UiAction { tab: Some(t), action: ActionId::SearchFind, args: Some(a), .. }
-                if *t == tab && *a == args
-        )), "the window receives the selected tab and the original args");
+        assert!(
+            fx.iter().any(|effect| matches!(
+                effect,
+                Effect::UiAction { tab: Some(t), action: ActionId::SearchFind, args: Some(a), .. }
+                    if *t == tab && *a == args
+            )),
+            "the window receives the selected tab and the original args"
+        );
     }
 
     #[test]
@@ -3808,7 +3821,8 @@ mod tests {
 
         // A window-only action over the Bus: headless refuses; with a window
         // the reply waits for ui_done, or times out.
-        let (rc, v) = response(&c.on_bus_command(cmd("ced.execute", json!({"id": "view.zoom_in"}))));
+        let (rc, v) =
+            response(&c.on_bus_command(cmd("ced.execute", json!({"id": "view.zoom_in"}))));
         assert_eq!((rc, v["error_code"].as_str()), (10, Some("UNAVAILABLE")));
         let mut gui = Controller::new(Config::default(), 2, false);
         let fx = gui.on_bus_command(cmd("ced.execute", json!({"id": "search.find"})));
