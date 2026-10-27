@@ -229,6 +229,7 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
                 && decor::window::installed()
                     .is_some_and(|theme| theme.menu_style == decor::layout::MenuStyle::Titlebar),
             menu_side: decor::window::installed().map_or("left", |theme| theme.menu_side.name()),
+            menu_services: decor::window::live_menu_services(),
         },
         // The binding filter and tables. Before the first Bus pass
         // builds the state, the profile's default table, enabled.
@@ -395,6 +396,7 @@ struct Placement {
     window: Option<(f32, f32, f32, f32)>,
     visible: bool,
     decoration: Option<&'static str>,
+    menu_button: bool,
     fullscreen: bool,
     maximized: bool,
     foreign_id: Option<String>,
@@ -551,6 +553,7 @@ impl Placements {
                 )),
                 visible: ident::is_drawn(window),
                 decoration,
+                menu_button: decor::window::menu_side(window).is_some(),
                 fullscreen: ident::states(window).fullscreen,
                 maximized: SurfaceHandle::of_window(window)
                     .and_then(|handle| lp.inner.comp.registry.id_for_handle(&handle))
@@ -683,6 +686,7 @@ fn project_surface(
         minimized: record.minimized(),
         workspace: record.workspace_leaf(),
         decoration: row_decoration(record.role(), placement.decoration),
+        menu_button: !redact && placement.menu_button,
         layer: placement.layer,
         foreign_id: window_row.then_some(placement.foreign_id).flatten(),
         generation: record.generation(),
@@ -809,6 +813,7 @@ fn project_scene_surface(lp: &Loop, row: &world::comp::scenes::SceneRow) -> Surf
         minimized: false,
         workspace: None,
         decoration: None,
+        menu_button: false,
         layer: Some(LayerSnapshot {
             stratum: input.stratum,
             interactivity: input.interactivity,

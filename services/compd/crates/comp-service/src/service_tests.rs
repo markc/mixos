@@ -60,6 +60,7 @@ fn snapshot(context: &PortContext) -> CompSnapshot {
             style: "mac",
             menu_button: false,
             menu_side: "left",
+            menu_services: vec![],
         },
         bindings: BindingsSnapshot {
             enabled: true,

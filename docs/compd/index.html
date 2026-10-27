@@ -275,9 +275,16 @@ decoration slot to the committed client width, without applying output scale
 again.
 <code>comp.window.menu {id, generation}</code> uses the same path, with the usual window
 generation and session-lock checks. <code>comp.props</code> reports <code>decoration.menu_button</code>
-(the session's SSD menu request) and <code>decoration.menu_side</code>; per-window truth
-lists a <code>menu</code> button only where it is actually present. Settings and service
-registration changes repaint existing chrome live.</p>
+(the session's SSD menu request), <code>decoration.menu_side</code> and
+<code>decoration.menu_services</code> (the live names known to chrome).
+<code>surfaces.s&lt;ID&gt;.menu_button</code> reports the actual window eligibility, using the
+same lookup as hit testing and <code>comp.window.menu</code>; per-window truth lists a
+<code>menu</code> button only where it is actually present. Settings and service
+registration changes repaint existing chrome live.
+The scene host subscribes before reading a full broker registry at startup and
+after reconnect. Registry publications identify the broker through either
+<code>from: noded</code> or its <code>broker_service: noded</code> stamp; scene ownership does not
+limit the set of app services.</p>
 <p>Quoin prepares cached or embedded settings while its existing Bus
 supervisor registers. Its persistent cache is service-owned under the
 configured variable data directory at <code>compd/cache/settings</code>; all

@@ -2098,9 +2098,16 @@ decoration slot to the committed client width, without applying output scale
 again.
 `comp.window.menu {id, generation}` uses the same path, with the usual window
 generation and session-lock checks. `comp.props` reports `decoration.menu_button`
-(the session's SSD menu request) and `decoration.menu_side`; per-window truth
-lists a `menu` button only where it is actually present. Settings and service
+(the session's SSD menu request), `decoration.menu_side` and
+`decoration.menu_services` (the live names known to chrome).
+`surfaces.s<ID>.menu_button` reports the actual window eligibility, using the
+same lookup as hit testing and `comp.window.menu`; per-window truth lists a
+`menu` button only where it is actually present. Settings and service
 registration changes repaint existing chrome live.
+The scene host subscribes before reading a full broker registry at startup and
+after reconnect. Registry publications identify the broker through either
+`from: noded` or its `broker_service: noded` stamp; scene ownership does not
+limit the set of app services.
 
 Quoin prepares cached or embedded settings while its existing Bus
 supervisor registers. Its persistent cache is service-owned under the
@@ -35656,10 +35663,14 @@ opens the menus on release.
 every form. `ui.menu.popup {side?: "left"|"right", x?: number}` opens the
 vertical menu at the content's top edge regardless of the selected form; x
 is a content-point coordinate and takes precedence over side.
-`ui.menu.form` returns `{style, side, effective}`; effective resolves `titlebar`
+`ui.menu.form` returns `{style, side, effective, hosted, service}`. `hosted`
+reports whether the live registration matches the app's command prefix;
+`service` names that match, or is null. Effective resolves `titlebar`
 to `button` under client-side decorations or without a live Drive registration
 under the command prefix. Apps pass their actual registered service name and
 clear it on disconnect; an aliased or offline window keeps its own menu button.
+The initial citizen connection is queued for the shell, just like a reconnect.
+Drive retains registration supplied before installation or across reinstallation.
 
 The app forwards each request, with the prefix removed, to
 `drive::request` from app logic, including logic-only wakes. It sends back whatever `request`, or

@@ -208,6 +208,8 @@ pub struct SurfaceSnapshot {
     /// every other role and before the first map.
     pub workspace: Option<u32>,
     pub decoration: Option<&'static str>,
+    /// Actual SSD menu eligibility, using chrome's live service lookup.
+    pub menu_button: bool,
     pub layer: Option<LayerSnapshot>,
     pub foreign_id: Option<String>,
     pub generation: u64,
@@ -362,6 +364,7 @@ pub struct DecorationSnapshot {
     pub style: &'static str,
     pub menu_button: bool,
     pub menu_side: &'static str,
+    pub menu_services: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -834,7 +837,14 @@ impl FocusSnapshot {
         }
     }
 }
-flat_snapshot!(DecorationSnapshot, enabled, style, menu_button, menu_side);
+flat_snapshot!(
+    DecorationSnapshot,
+    enabled,
+    style,
+    menu_button,
+    menu_side,
+    menu_services
+);
 flat_snapshot!(BindingsSnapshot, enabled, profile, table, user);
 flat_snapshot!(
     PortSnapshot,
@@ -948,6 +958,7 @@ impl SurfaceSnapshot {
             ["minimized"] => serialise_selected(&self.minimized),
             ["workspace"] => serialise_selected(&self.workspace),
             ["decoration"] => serialise_selected(&self.decoration),
+            ["menu_button"] => serialise_selected(&self.menu_button),
             ["layer"] => serialise_selected(&self.layer),
             ["layer", tail @ ..] => self.layer.as_ref()?.select(tail),
             ["foreign_id"] => serialise_selected(&self.foreign_id),
@@ -963,7 +974,7 @@ impl SurfaceSnapshot {
                 "id" | "role" | "mapped" | "visible" | "x" | "y" | "width" | "height" | "band"
                 | "sequence" | "tree_index" | "parent" | "output" | "title" | "app_id" | "focused"
                 | "activated" | "maximized" | "fullscreen" | "minimized" | "workspace"
-                | "decoration" | "foreign_id" | "generation",
+                | "decoration" | "menu_button" | "foreign_id" | "generation",
             ] => Some(SnapshotNodeKind::Leaf),
             ["layer"] => Some(if self.layer.is_some() {
                 SnapshotNodeKind::Object
@@ -1551,6 +1562,7 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         "1-based workspace of a mapped managed toplevel (X11 included), else null; write windows.s<id>.workspace to move"
     ),
     descriptor!(&[L("surfaces"), S, L("decoration")], String, "Committed decoration mode or null", enum = &["server", "client", "unbound"]),
+    descriptor!(&[L("surfaces"), S, L("menu_button")], Bool, "Whether chrome can draw and route this surface's SSD menu button"),
     descriptor!(
         &[L("surfaces"), S, L("layer")],
         Object,
@@ -1776,6 +1788,7 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         "Whether the session requests an SSD menu button; each window also needs a registered app service"
     ),
     descriptor!(&[L("decoration"), L("menu_side")], String, "The SSD menu button side", enum = design::MenuSide::NAMES),
+    descriptor!(&[L("decoration"), L("menu_services")], List, "Live menu service names known to chrome"),
     descriptor!(
         &[L("bindings"), L("enabled")],
         Bool,

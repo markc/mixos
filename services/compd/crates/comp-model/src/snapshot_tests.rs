@@ -63,6 +63,7 @@ fn fixture() -> CompSnapshot {
         minimized: false,
         workspace: None,
         decoration: None,
+        menu_button: false,
         layer: Some(LayerSnapshot {
             stratum: "top",
             interactivity: "exclusive",
@@ -97,6 +98,7 @@ fn fixture() -> CompSnapshot {
         minimized: false,
         workspace: Some(1),
         decoration: Some("server"),
+        menu_button: false,
         layer: None,
         foreign_id: Some("foreign-2".into()),
         generation: 4,
@@ -252,6 +254,7 @@ fn fixture() -> CompSnapshot {
             style: "mac",
             menu_button: false,
             menu_side: "left",
+            menu_services: vec![],
         },
         bindings: BindingsSnapshot {
             enabled: true,
@@ -338,6 +341,27 @@ fn fixture() -> CompSnapshot {
             broker: "connected",
         },
         full_tree: FullTreeCache::default(),
+    }
+}
+
+#[test]
+fn menu_diagnostics_are_selectable_read_only_properties() {
+    let mut snapshot = fixture();
+    snapshot.decoration.menu_services = vec!["prefs".into()];
+    snapshot.surfaces.get_mut("s2").unwrap().menu_button = true;
+    for (path, expected) in [
+        ("decoration.menu_services", serde_json::json!(["prefs"])),
+        ("surfaces.s2.menu_button", serde_json::json!(true)),
+        ("surfaces.s1.menu_button", serde_json::json!(false)),
+    ] {
+        let path = props::PropPath::new(path).unwrap();
+        assert_eq!(
+            snapshot.select(&path.segments().collect::<Vec<_>>()),
+            Some(expected)
+        );
+        let descriptor: Value =
+            serde_json::from_str(&describe(&snapshot, &path).unwrap()).unwrap();
+        assert_eq!(descriptor["mutable"], false);
     }
 }
 

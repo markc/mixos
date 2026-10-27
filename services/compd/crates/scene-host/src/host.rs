@@ -994,6 +994,10 @@ impl SceneHost {
                     serviced.answered += 1;
                 }
                 Inbound::Live(live) => {
+                    tracing::debug!(
+                        services = ?live,
+                        "scene host: applying live registry to window menus"
+                    );
                     serviced.changed |= decor::window::menu_services(live.clone());
                     let notices = self.host.services_live(live);
                     self.host.panels.sync(&self.host.store);

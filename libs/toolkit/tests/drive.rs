@@ -421,7 +421,7 @@ fn menu_paths_and_popups_work_in_every_form() {
                 let form = ok(&mut h, "ui.menu.form", json!({}));
                 assert_eq!(
                     form,
-                    json!({"style":style.name(), "side":side.name(), "effective":style.effective(theme.decorations()).name()})
+                    json!({"style":style.name(), "side":side.name(), "effective":style.effective(theme.decorations()).name(), "hosted":true, "service":"demo"})
                 );
                 let list = ok(&mut h, "ui.menu.list", json!({}));
                 if let Some(baseline) = &baseline {
@@ -529,6 +529,16 @@ fn titlebar_menus_follow_the_drives_actual_registration() {
             ok(&mut h, "ui.menu.form", json!({}))["effective"],
             effective
         );
+        let form = ok(&mut h, "ui.menu.form", json!({}));
+        assert_eq!(form["hosted"], service == Some("demo"));
+        assert_eq!(
+            form["service"],
+            if service == Some("demo") {
+                json!("demo")
+            } else {
+                Value::Null
+            }
+        );
         assert_eq!(h.query_by_label("Menus").is_some(), effective == "button");
         ok(
             &mut h,
@@ -542,6 +552,31 @@ fn titlebar_menus_follow_the_drives_actual_registration() {
             Some("file.clear-recent")
         );
     }
+}
+
+#[test]
+fn first_registration_survives_drive_install_and_theme_reinstallation() {
+    let ctx = egui::Context::default();
+    drive::set_service(&ctx, Some("demo"));
+    drive::install(&ctx, "demo");
+    let theme = fixture::theme(Scheme::Pro, Mode::Light)
+        .framed(
+            design::RequestedDecorations::Server,
+            design::CaptionSide::Right,
+        )
+        .with_menus(design::MenuStyle::Titlebar, design::MenuSide::Left);
+    for _ in 0..2 {
+        toolkit::install(&ctx, &theme);
+        drive::install(&ctx, "demo");
+        let form = menu::form(&ctx);
+        assert_eq!(form["effective"], "titlebar");
+        assert_eq!(form["hosted"], true);
+        assert_eq!(form["service"], "demo");
+    }
+    drive::set_service(&ctx, None);
+    assert_eq!(menu::form(&ctx)["effective"], "button");
+    assert_eq!(menu::form(&ctx)["hosted"], false);
+    assert_eq!(menu::form(&ctx)["service"], Value::Null);
 }
 
 #[test]

@@ -1002,17 +1002,20 @@ pub fn compact_model(menus: &[Menu]) -> Vec<Menu> {
 
 pub fn form(ctx: &Context) -> serde_json::Value {
     let chrome = Chrome::of(ctx);
+    let service = crate::drive::menu_service(ctx);
     serde_json::json!({
         "style": chrome.menu_style.name(),
         "side": chrome.menu_side.name(),
         "effective": effective(ctx).name(),
+        "hosted": service.is_some(),
+        "service": service,
     })
 }
 
 pub(crate) fn effective(ctx: &Context) -> design::MenuStyle {
     let chrome = Chrome::of(ctx);
     let style = chrome.menu_style.effective(chrome.decorations);
-    if style == design::MenuStyle::Titlebar && !crate::drive::menu_service(ctx) {
+    if style == design::MenuStyle::Titlebar && crate::drive::menu_service(ctx).is_none() {
         design::MenuStyle::Button
     } else {
         style

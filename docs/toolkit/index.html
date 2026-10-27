@@ -539,10 +539,14 @@ opens the menus on release.
 every form. <code>ui.menu.popup {side?: "left"|"right", x?: number}</code> opens the
 vertical menu at the content's top edge regardless of the selected form; x
 is a content-point coordinate and takes precedence over side.
-<code>ui.menu.form</code> returns <code>{style, side, effective}</code>; effective resolves <code>titlebar</code>
+<code>ui.menu.form</code> returns <code>{style, side, effective, hosted, service}</code>. <code>hosted</code>
+reports whether the live registration matches the app's command prefix;
+<code>service</code> names that match, or is null. Effective resolves <code>titlebar</code>
 to <code>button</code> under client-side decorations or without a live Drive registration
 under the command prefix. Apps pass their actual registered service name and
-clear it on disconnect; an aliased or offline window keeps its own menu button.</p>
+clear it on disconnect; an aliased or offline window keeps its own menu button.
+The initial citizen connection is queued for the shell, just like a reconnect.
+Drive retains registration supplied before installation or across reinstallation.</p>
 <p>The app forwards each request, with the prefix removed, to
 <code>drive::request</code> from app logic, including logic-only wakes. It sends back whatever <code>request</code>, or
 <code>drive::logic</code> (called once per logic wake), returns. It holds later commands

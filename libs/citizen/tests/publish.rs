@@ -9,6 +9,67 @@ use std::time::Duration;
 const TOPIC: &str = "pubtest.action.executed";
 
 #[test]
+fn first_registration_is_queued_until_the_shell_starts_listening() {
+    use futures::StreamExt;
+    let broker = test_broker::Broker::start();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let (handle, mut deliveries) = citizen::start("prefs", "prefs", &broker.url).unwrap();
+    // Shell construction (including drive::install) happens only after
+    // start returns. Do not attach a listener before then or bounce noded.
+    runtime.block_on(async {
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(2), deliveries.next())
+                .await
+                .unwrap(),
+            Some(citizen::Delivery::Connected)
+        ));
+        handle.quit();
+        while let Some(delivery) = deliveries.next().await {
+            if matches!(delivery, citizen::Delivery::Disconnected) {
+                break;
+            }
+        }
+    });
+    handle.wait_done().unwrap();
+}
+
+#[test]
+fn first_registration_and_broker_reconnect_both_deliver_connected() {
+    use futures::StreamExt;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let mut broker = test_broker::Broker::with_tcp_port(port);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let (handle, mut deliveries) = citizen::start("prefs", "prefs", &broker.url).unwrap();
+    for reconnect in [false, true] {
+        if reconnect {
+            broker.bounce();
+        }
+        runtime.block_on(async {
+            tokio::time::timeout(Duration::from_secs(15), async {
+                while let Some(delivery) = deliveries.next().await {
+                    if matches!(delivery, citizen::Delivery::Connected) {
+                        return;
+                    }
+                }
+                panic!("citizen stopped before connecting");
+            })
+            .await
+            .unwrap();
+        });
+    }
+    handle.quit();
+    handle.wait_done().unwrap();
+}
+
+#[test]
 fn pending_caller_receives_busy_when_citizen_closes() {
     use futures::StreamExt;
     let broker = test_broker::Broker::start();

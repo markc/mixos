@@ -52,6 +52,11 @@ pub fn menu_services(services: BTreeSet<String>) -> bool {
     repaint
 }
 
+/// The same live registry used by hit testing and `comp.window.menu`.
+pub fn live_menu_services() -> Vec<String> {
+    MENU_SERVICES.with_borrow(|live| live.iter().cloned().collect())
+}
+
 fn menu_service_name(service: &str) -> bool {
     !service.is_empty() && !service.contains('.')
 }

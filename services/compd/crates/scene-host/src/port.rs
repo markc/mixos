@@ -88,7 +88,7 @@ pub enum Inbound {
     /// terminally. Scene RPCs are unavailable; settings resources remain active.
     Refused(String),
     Request(Request),
-    /// The broker's full set of registered services, from a registry diff.
+    /// The broker's full set of registered services, from a snapshot or diff.
     Live(BTreeSet<String>),
 }
 
@@ -137,6 +137,17 @@ pub struct Port {
 }
 
 type RegistryMailbox = Arc<Mutex<Option<(u64, BTreeSet<String>)>>>;
+
+fn take_registry(registry: &RegistryMailbox, live: Option<u64>) -> Option<Inbound> {
+    // A temporary lack of live evidence must not consume the only baseline.
+    // Once a new connection is live, its snapshot supersedes any old one.
+    let generation = live?;
+    let (captured, services) = registry
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()?;
+    (captured == generation).then_some(Inbound::Live(services))
+}
 
 /// The names to try, in order: `shell`, then the override when it differs.
 pub fn candidate_names(service_override: Option<&str>) -> Vec<String> {
@@ -255,14 +266,10 @@ impl Port {
 
     /// The next message from the worker, without blocking.
     pub fn try_recv(&self) -> Option<Inbound> {
-        self.inbound.try_recv().ok().or_else(|| {
-            let (generation, services) = self
-                .registry
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .take()?;
-            (self.settings_generation() == Some(generation)).then_some(Inbound::Live(services))
-        })
+        self.inbound
+            .try_recv()
+            .ok()
+            .or_else(|| take_registry(&self.registry, self.settings_generation()))
     }
 
     pub fn reply(&self, request: &Request, rc: u8, body: String) {
@@ -394,7 +401,11 @@ pub enum Route {
 
 /// Route one incoming frame for the host registered as `service`.
 pub fn route(service: &str, command: &IncomingCommand) -> Route {
-    if command.from == "noded" && command.topic() == Some(REGISTRY_TOPIC) {
+    // Production topic publications may omit `from`: the publisher identity
+    // is stamped by noded as broker_service (as on the main comp Bus port).
+    if (command.from == "noded" || command.header("broker_service") == Some("noded"))
+        && command.topic() == Some(REGISTRY_TOPIC)
+    {
         if !from_local_broker(command) {
             return Route::Forged;
         }
@@ -683,26 +694,31 @@ async fn serve(
                         *registry_mailbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((generation, services));
                         (delivery.waker)();
                     }
-                } else if settings::native::live_generation(client).is_some() && registry_retries < 3 {
-                    let delay = RETRY_INITIAL * (1 << registry_retries);
-                    registry_retries += 1;
+                } else if settings::native::live_generation(client).is_some() {
+                    let delay = RETRY_INITIAL * (1 << registry_retries.min(3));
+                    registry_retries = (registry_retries + 1).min(3);
                     registry = Some(Box::pin(registry_read(Arc::clone(client), delay)));
                 } else {
-                    tracing::warn!("scene host: registry recovery paused until next lifecycle or loss event");
+                    tracing::debug!("scene host: registry recovery awaits a live connection");
                 }
             }
             command = incoming.recv(), if incoming_open && replies.len() < INBOUND_CAPACITY => {
                 match command {
                     Some(BoundedIncomingEvent::Command(command)) => {
-                        if let Some(wake) = lane.delivery(&command) {
+                        if command.topic() == Some(REGISTRY_TOPIC)
+                            && command.header("gap") == Some("true")
+                        {
+                            registry = Some(Box::pin(registry_read(Arc::clone(client), Duration::ZERO)));
+                            registry_retries = 0;
+                        } else if let Some(wake) = lane.delivery(&command) {
                             notify(wake);
-                        } else if let Route::Live(services) = route(service, &command) {
+                        } else if let Route::Live(_) = route(service, &command) {
                             if settings::native::live_generation(client) == Some(command.generation) {
-                                // Each registry notice is a full set. It supersedes
-                                // an older read and cannot be dropped by scene RPCs.
-                                registry = None;
-                                *registry_mailbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((command.generation, services));
-                                (delivery.waker)();
+                                // A buffered diff can predate a just-completed
+                                // baseline read. Treat it as an invalidation,
+                                // never overwrite a newer snapshot with its set.
+                                registry = Some(Box::pin(registry_read(Arc::clone(client), Duration::ZERO)));
+                                registry_retries = 0;
                             }
                         } else {
                             if let Some((command, rc, body)) = admit(service, delivery, command) {
@@ -809,11 +825,20 @@ async fn registry_read(
         .iter()
         .map(|name| name.as_str().map(str::to_owned))
         .collect::<Option<BTreeSet<_>>>()?;
+    if settings::native::live_generation(&client) != Some(generation) {
+        return None;
+    }
+    tracing::debug!(
+        generation,
+        count = services.len(),
+        "scene host: registry snapshot read"
+    );
     Some((generation, services))
 }
 
 async fn registry_subscribe(client: Arc<SupervisedClient>) -> bool {
-    for attempt in 0..3 {
+    let mut attempt = 0;
+    loop {
         if settings::native::live_generation(&client).is_none() {
             return false;
         }
@@ -823,14 +848,10 @@ async fn registry_subscribe(client: Arc<SupervisedClient>) -> bool {
         ) {
             return true;
         }
-        if attempt < 2 {
-            tokio::time::sleep(RETRY_INITIAL * (1 << attempt)).await;
-        }
+        tracing::warn!("scene host: registry subscription failed; retrying");
+        tokio::time::sleep(RETRY_INITIAL * (1 << attempt.min(3))).await;
+        attempt = (attempt + 1).min(3);
     }
-    tracing::warn!(
-        "scene host: registry subscription failed; retry waits for next lifecycle event"
-    );
-    false
 }
 
 /// Answer a request the engine never sees.
@@ -954,6 +975,97 @@ async fn send(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registry_baseline_waits_for_live_evidence_and_fences_old_connections() {
+        let registry = RegistryMailbox::default();
+        *registry.lock().unwrap() = Some((5, BTreeSet::from(["prefs".into()])));
+        assert!(take_registry(&registry, None).is_none());
+        assert!(
+            matches!(take_registry(&registry, Some(5)), Some(Inbound::Live(names)) if names.contains("prefs"))
+        );
+        assert!(take_registry(&registry, Some(5)).is_none());
+        *registry.lock().unwrap() = Some((5, BTreeSet::from(["old-app".into()])));
+        assert!(take_registry(&registry, Some(6)).is_none());
+        *registry.lock().unwrap() = Some((6, BTreeSet::from(["prefs".into()])));
+        assert!(
+            matches!(take_registry(&registry, Some(6)), Some(Inbound::Live(names)) if names.contains("prefs"))
+        );
+    }
+
+    fn menu_registry_port(url: &str, cache: &std::path::Path) -> (Port, Receiver<()>) {
+        let (notify, wake) = mpsc::channel();
+        let port = Port::start_at(
+            HostConfig {
+                noded_url: url.into(),
+                service_override: None,
+            },
+            Arc::new(move || {
+                let _ = notify.send(());
+            }),
+            cache.to_path_buf(),
+        )
+        .unwrap();
+        (port, wake)
+    }
+
+    fn wait_menu_registry(port: &Port, wake: &Receiver<()>, has_app: bool) -> BTreeSet<String> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        loop {
+            while let Some(message) = port.try_recv() {
+                match message {
+                    Inbound::Live(names) if names.contains("prefs") == has_app => return names,
+                    Inbound::Refused(reason) => panic!("scene host refused: {reason}"),
+                    _ => {}
+                }
+            }
+            wake.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                .expect("menu registry did not converge");
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated settings_test.mix broker"]
+    async fn settings_menu_registry_covers_both_startup_orders_and_host_restart() {
+        let url = std::env::var("MIXOS_NODED_URL").unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        for app_first in [false, true] {
+            let mut app = if app_first {
+                Some(
+                    SupervisedClient::connect_options("prefs", &url)
+                        .connect()
+                        .await
+                        .unwrap(),
+                )
+            } else {
+                None
+            };
+            let (mut port, wake) = menu_registry_port(&url, cache.path());
+            // No scenes have been loaded: the baseline is the whole broker
+            // registry, including an app already running before compd starts.
+            let names = wait_menu_registry(&port, &wake, app_first);
+            assert!(names.contains("shell"));
+            if !app_first {
+                app = Some(
+                    SupervisedClient::connect_options("prefs", &url)
+                        .connect()
+                        .await
+                        .unwrap(),
+                );
+                // Production noded publishes without `from`, using
+                // broker_service. The pre-fix route misses this arrival.
+                wait_menu_registry(&port, &wake, true);
+            }
+            port.finish();
+            let (mut restarted, wake) = menu_registry_port(&url, cache.path());
+            // The app did not reconnect. A subscribe-only host cannot pass:
+            // the registry topic is not retained; it needs an initial read.
+            wait_menu_registry(&restarted, &wake, true);
+            app.unwrap().close().await;
+            wait_menu_registry(&restarted, &wake, false);
+            restarted.finish();
+        }
+    }
 
     #[test]
     fn help_is_a_descriptor_list_of_answered_commands() {
@@ -1621,6 +1733,23 @@ mod tests {
             route("shell", &live),
             Route::Live(BTreeSet::from(["comp".to_string(), "scenes".to_string()]))
         );
+        let mut stamped = incoming(
+            "",
+            "props.changed",
+            None,
+            &[("topic", REGISTRY_TOPIC), ("broker_service", "noded")],
+            registry,
+        );
+        assert_eq!(route("shell", &stamped), route("shell", &live));
+        stamped
+            .headers
+            .insert("broker_origin".into(), "mesh".into());
+        assert_eq!(route("shell", &stamped), Route::Forged);
+        stamped.headers.remove("broker_origin");
+        stamped
+            .headers
+            .insert("broker_service".into(), "other".into());
+        assert_eq!(route("shell", &stamped), Route::Ignore);
         let forged = incoming(
             "noded",
             "",

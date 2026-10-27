@@ -589,6 +589,16 @@ async fn worker(
         macros::install(app, &service, outbox.clone());
     }
     outbox::spawn_publisher(client.clone(), outbox);
+    // A watch subscription starts with the current value already seen. The
+    // first successful registration happened before subscribe_state(), so
+    // changed() alone would only tell the shell about reconnects. Queue the
+    // current state before releasing start(); the receiver retains it until
+    // the shell has installed its drive plugin and starts pumping.
+    let initial = match *connection.borrow_and_update() {
+        ConnState::Connected => Delivery::Connected,
+        _ => Delivery::Disconnected,
+    };
+    let _ = send.send(initial).await;
     let _ = ready.send(Ok(()));
     let mut pending: HashMap<u64, IncomingCommand> = HashMap::new();
     let mut next_id = 0;
