@@ -71,8 +71,11 @@ fn save_file(
         return write(&mut file).and_then(|()| file.sync_all());
     }
     // Refuse links and special files just as the non-replacement path does.
-    if !std::fs::symlink_metadata(path)?.is_file() {
-        return Err(std::io::Error::other(crate::label("document-not-file")));
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_file() => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Ok(_) => return Err(std::io::Error::other(crate::label("document-not-file"))),
+        Err(error) => return Err(error),
     }
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
     let (temporary, mut file) = loop {
@@ -1093,6 +1096,29 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn approved_replacement_saves_when_the_target_vanished_before_the_worker() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mail.md");
+        std::fs::write(&path, "old document").unwrap();
+        let mut state = connected_many(&["a"]);
+        state.open_compose(
+            Some("a"),
+            jmap::Composed {
+                subject: "Replacement".into(),
+                ..Default::default()
+            },
+        );
+        state.write_document(path.clone(), true);
+        std::fs::remove_file(&path).unwrap();
+        finish(&mut state);
+        assert!(state.compose.as_ref().unwrap().error.is_none());
+        assert_eq!(read(&path).unwrap().subject, "Replacement");
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[test]

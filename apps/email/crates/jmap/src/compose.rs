@@ -239,15 +239,17 @@ fn render_mime(composed: &Composed, message_id: &str, parts: &[String]) -> Vec<u
     } else {
         composed.references.iter().collect::<Vec<_>>()
     };
-    header(
-        &mut mime,
-        "References",
-        &references
-            .into_iter()
-            .map(|id| one_wrap(&clean(id)))
-            .collect::<Vec<_>>()
-            .join(" "),
-    );
+    if !references.is_empty() {
+        header(
+            &mut mime,
+            "References",
+            &references
+                .into_iter()
+                .map(|id| one_wrap(&clean(id)))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+    }
     mime.push_str("MIME-Version: 1.0\r\n");
     if !parts.is_empty() {
         let text = text_part(&composed.body);
@@ -1373,6 +1375,42 @@ mod tests {
         assert!(!mime.contains("\nBcc: eve"));
         // Each stripped control character leaves one space.
         assert!(mime.contains("Subject: Hi  Bcc: eve@example.invalid\r\n"));
+    }
+
+    #[test]
+    fn unthreaded_mime_omits_reply_and_references_headers() {
+        let draft = Composed {
+            in_reply_to: None,
+            references: Vec::new(),
+            ..composed()
+        };
+        let mime = String::from_utf8(build_mime(&draft).unwrap()).unwrap();
+        let headers = mime.split_once("\r\n\r\n").unwrap().0;
+        assert!(!headers.lines().any(|line| line.starts_with("References:")));
+        assert!(!headers.lines().any(|line| line.starts_with("In-Reply-To:")));
+    }
+
+    #[test]
+    fn threaded_mime_uses_ancestors_or_falls_back_to_in_reply_to() {
+        for (references, expected) in [
+            (Vec::new(), "<m1@example.invalid>"),
+            (
+                vec!["root@example.invalid".into(), "<m1@example.invalid>".into()],
+                "<root@example.invalid> <m1@example.invalid>",
+            ),
+        ] {
+            let draft = Composed {
+                references,
+                ..composed()
+            };
+            let mime = String::from_utf8(build_mime(&draft).unwrap()).unwrap();
+            let headers = mime.split_once("\r\n\r\n").unwrap().0;
+            assert_eq!(
+                headers.lines().filter(|line| line.starts_with("References:")).collect::<Vec<_>>(),
+                [format!("References: {expected}")]
+            );
+            assert!(headers.lines().any(|line| line == "In-Reply-To: <m1@example.invalid>"));
+        }
     }
 
     #[test]

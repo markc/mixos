@@ -658,7 +658,11 @@ fn save_path(directory: &Path, name: &str) -> Result<PathBuf, String> {
 }
 
 fn check_save(path: PathBuf) -> Result<Answer, String> {
-    match std::fs::metadata(&path) {
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(own_with(
+            "file-chooser-name-link",
+            &[("name", &path.file_name().unwrap_or_default().to_string_lossy())],
+        )),
         Ok(meta) if meta.is_file() => Ok(Answer::Save(path, true)),
         Ok(_) => Err(own("file-chooser-name-invalid")),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Answer::Save(path, false)),
@@ -960,6 +964,23 @@ mod tests {
             size: 0,
             modified: None,
         }
+    }
+
+    #[test]
+    fn save_refuses_file_directory_and_dangling_links_before_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("mail.md");
+        std::fs::write(&file, "keep").unwrap();
+        for target in [file.clone(), dir.path().to_owned(), dir.path().join("missing")] {
+            let link = dir.path().join("link.md");
+            std::os::unix::fs::symlink(target, &link).unwrap();
+            assert_eq!(
+                check_save(link.clone()).err().as_deref(),
+                Some("link.md is a link; choose another name")
+            );
+            std::fs::remove_file(link).unwrap();
+        }
+        assert_eq!(std::fs::read_to_string(file).unwrap(), "keep");
     }
 
     #[test]

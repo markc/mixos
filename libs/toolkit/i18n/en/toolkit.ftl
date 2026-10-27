@@ -108,6 +108,7 @@ file-chooser-cancel = Cancel
 file-chooser-name = File name
 file-chooser-name-required = Enter a file name.
 file-chooser-name-invalid = Enter a file name without a folder separator.
+file-chooser-name-link = { $name } is a link; choose another name
 file-chooser-replace-title = Replace file?
 file-chooser-replace = Replace
 file-chooser-replace-body = Replace { $path }?

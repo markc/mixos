@@ -6273,15 +6273,19 @@ impl State {
             }
             return;
         }
-        if let Some(compose) = &self.compose
-            && let Err((_, message)) =
-                crate::documents::identity(self, &compose.account, Some(&compose.draft.from))
-        {
-            if let Some(compose) = &mut self.compose {
-                compose.error = Some(message);
+        let sender = match crate::documents::identity(
+            self,
+            &compose.account,
+            (!compose.draft.from.is_empty()).then_some(compose.draft.from.as_str()),
+        ) {
+            Ok(sender) => sender,
+            Err((_, message)) => {
+                if let Some(compose) = &mut self.compose {
+                    compose.error = Some(message);
+                }
+                return;
             }
-            return;
-        }
+        };
         let account = compose.account.clone();
         // State-wide, so a removed and restored account never reuses one.
         let ticket = self.ticket();
@@ -6291,6 +6295,15 @@ impl State {
         let Some(compose) = &mut self.compose else {
             return;
         };
+        // Drafts kept before identities may have no From. Resolve the default
+        // before queuing the send and saving its retry snapshot.
+        if compose.draft.from.is_empty() {
+            let (name, reply_to) = from_fields(!view.entry.identities.is_empty(), &sender);
+            compose.draft.from = sender.address;
+            compose.draft.from_name = name;
+            compose.draft.reply_to = compose.draft.reply_to.clone().or(reply_to);
+            compose.identity = sender.id;
+        }
         match parse_recipients(compose) {
             Err(error) => {
                 compose.error = Some(crate::label_with("bad-recipient", &[("error", &error)]));
@@ -7186,6 +7199,49 @@ pub(crate) mod tests {
         EmailAddress {
             name: None,
             email: email.into(),
+        }
+    }
+
+    #[test]
+    fn restored_empty_from_sends_and_keeps_the_default_identity() {
+        for reply_to in [None, Some("typed@example.invalid".to_owned())] {
+            let mut state = connected();
+            state.accounts[0].entry.identities = vec![settings::email::Identity {
+                id: "default".into(),
+                name: "Default Sender".into(),
+                address: "default@example.invalid".into(),
+                signature: String::new(),
+                reply_to: Some("help@example.invalid".into()),
+            }];
+            state.offer_drafts(vec![SavedDraft {
+                schema_version: crate::drafts::CURRENT_SCHEMA,
+                id: "abcd".into(),
+                account: "a".into(),
+                to: "bob@example.invalid".into(),
+                subject: "Restored".into(),
+                reply_to: reply_to.clone(),
+                ..Default::default()
+            }]);
+            state.apply_ui(UiEvent::RestoreDraft(DraftChoice::Keep));
+            assert!(state.compose.as_ref().unwrap().draft.from.is_empty());
+            state.finish_compose_inspections();
+            state.take_work();
+            state.apply_ui(UiEvent::SendCompose);
+            let draft = state.take_work().into_iter().find_map(|work| match work {
+                Work::Send { draft, .. } => Some(draft),
+                _ => None,
+            }).expect("restored draft must send with the default identity");
+            assert_eq!(draft.from, "default@example.invalid");
+            assert_eq!(draft.from_name, "Default Sender");
+            assert_eq!(draft.reply_to, reply_to.or(Some("help@example.invalid".into())));
+            let compose = state.compose.as_ref().unwrap();
+            assert!(compose.busy);
+            assert!(compose.error.is_none());
+            assert_eq!(compose.identity, "default");
+            let saved = compose.saved_draft();
+            assert_eq!(saved.from, draft.from);
+            assert_eq!(saved.from_name, draft.from_name);
+            assert_eq!(saved.reply_to, draft.reply_to);
         }
     }
 
