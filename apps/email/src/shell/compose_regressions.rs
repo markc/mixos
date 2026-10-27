@@ -15,6 +15,122 @@ fn queued(shell: &mut Shell, name: &str, events: Vec<UiEvent>) {
         });
 }
 
+#[test]
+fn failed_document_launch_opens_a_blank_composer_with_the_read_error() {
+    for relative in [false, true] {
+        let (mut shell, _broker) = compose_fixture(true);
+        let dir = tempfile::tempdir().unwrap();
+        let missing = if relative { PathBuf::from("missing.md") } else { dir.path().join("missing.md") };
+        shell.compose_launch(true, Some(missing));
+        for _ in 0..1000 {
+            shell.runtime.block_on(async { tokio::time::sleep(std::time::Duration::from_millis(5)).await });
+            shell.pump();
+            if shell.composers.windows["compose-1"].lock().unwrap().view.compose.is_some() { break; }
+        }
+        shell.sync_composers();
+        let owner = shell.composers.windows["compose-1"].lock().unwrap();
+        let compose = owner.view.compose.as_ref().expect("blank composer after launch failure");
+        assert!(compose.draft.subject.is_empty());
+        assert!(compose.error.as_ref().is_some_and(|e| !e.is_empty()));
+        assert!(owner.view.restore.is_empty());
+        assert!(!owner.closed && !shell.state.exiting);
+        shell.bus.quit();
+    }
+}
+
+#[test]
+fn two_compose_deliveries_in_one_pump_open_two_windows() {
+    let (mut shell, _broker) = compose_fixture(false);
+    for id in [41, 42] {
+        shell.tx.send(Event::Delivery(citizen::Delivery::Command {
+            id,
+            command: "email.compose".into(),
+            body: json!({"subject": format!("message {id}")}).to_string(),
+        })).unwrap();
+    }
+    shell.pump();
+    assert!(shell.held.is_empty());
+    assert_eq!(shell.composers.windows.len(), 2);
+    for (id, name) in [(41, "compose-1"), (42, "compose-2")] {
+        let window = shell.composers.windows[name].lock().unwrap();
+        assert_eq!(window.view.compose.as_ref().unwrap().draft.subject, format!("message {id}"));
+    }
+    assert!(!shell.bus.responses().iter().any(|(_, rc, _)| *rc != 0));
+    shell.bus.quit();
+}
+
+#[test]
+fn compose_new_ignores_even_an_unknown_or_malformed_window_target() {
+    let (mut shell, _broker) = compose_fixture(false);
+    add_composer(&mut shell, "original");
+    for (id, target) in [(41, json!("compose-1")), (42, json!("missing")), (43, json!(7))] {
+        shell.command(id, "email.execute", &json!({"id":"compose.new", "window":target}).to_string());
+        let (_, rc, body) = shell.bus.responses().into_iter().find(|(reply, _, _)| *reply == id).unwrap();
+        assert_eq!(rc, 0, "{body}");
+        assert_eq!(body["window"], format!("compose-{}", id - 39));
+    }
+    assert_eq!(shell.composers.windows.len(), 4);
+    assert_eq!(shell.composers.windows["compose-1"].lock().unwrap().view.compose.as_ref().unwrap().draft.subject, "original");
+    shell.bus.quit();
+}
+
+#[test]
+fn drop_while_another_read_is_pending_registers_only_the_returned_ticket() {
+    for send in [false, true] {
+        let (mut shell, _broker) = compose_fixture(false);
+        let pending = shell.state.read_document("a".into(), "/home/user/pending.md".into(), Some(40), send, false).unwrap();
+        // Do not settle or adopt the first read: both requests hit this engine.
+        let dropped = shell.open_dropped_document(None, Some("a".into()), "/home/user/dropped.md".into());
+        assert!(!shell.composers.drops.contains_key(&pending));
+        if send {
+            let dropped = dropped.unwrap();
+            assert_ne!(dropped, pending);
+            assert_eq!(shell.composers.drops[&dropped].1, vec![PathBuf::from("/home/user/dropped.md")]);
+            assert!(shell.state.documents.owns(pending));
+            let target = shell.composers.target(&Event::MailDocument(dropped, crate::documents::Answer::Read(Err((code::DOCUMENT_IO, "test".into()))))).unwrap();
+            assert!(target.lock().unwrap().view.documents.owns(dropped));
+        } else {
+            assert!(dropped.is_none());
+            assert!(shell.composers.drops.is_empty());
+        }
+        shell.bus.quit();
+    }
+}
+
+#[test]
+fn compose_only_restore_offers_merge_and_deduplicate_before_input() {
+    let (mut shell, _broker) = compose_fixture(true);
+    let saved = |id: &str| crate::drafts::SavedDraft { id: id.into(), account: "a".into(), subject: id.into(), ..Default::default() };
+    shell.state.offer_drafts(vec![saved("first")]);
+    shell.compose_launch(true, None);
+    shell.state.offer_drafts(vec![saved("second"), saved("first")]);
+    for _ in 0..3 { shell.sync_composers(); }
+    let owner = shell.composers.windows["compose-1"].clone();
+    assert_eq!(owner.lock().unwrap().view.restore.iter().map(|d| d.id.clone()).collect::<Vec<_>>(), ["first", "second"]);
+    assert!(shell.state.restore.is_empty());
+    queued(&mut shell, "compose-1", vec![UiEvent::RestoreDraft(crate::state::DraftChoice::Discard)]);
+    shell.composer_input();
+    assert_eq!(owner.lock().unwrap().view.restore[0].id, "second");
+    queued(&mut shell, "compose-1", vec![UiEvent::RestoreDraft(crate::state::DraftChoice::Keep)]);
+    shell.composer_input();
+    shell.sync_composers();
+    let owner = owner.lock().unwrap();
+    assert!(owner.view.restore.is_empty());
+    assert_eq!(owner.view.compose.as_ref().unwrap().draft.subject, "second");
+    shell.bus.quit();
+}
+
+#[test]
+fn document_launch_suppresses_late_restore_offers_too() {
+    let (mut shell, _broker) = compose_fixture(true);
+    shell.compose_launch(true, Some("/home/user/missing.md".into()));
+    shell.state.offer_drafts(vec![crate::drafts::SavedDraft { id: "late".into(), account: "a".into(), ..Default::default() }]);
+    shell.sync_composers();
+    assert!(shell.state.restore.is_empty());
+    assert!(shell.composers.windows["compose-1"].lock().unwrap().view.restore.is_empty());
+    shell.bus.quit();
+}
+
 fn logic_frame(shell: &mut Shell) {
     let ctx = shell.ctx.clone();
     let _ = ctx.run_logic(&egui::RawInput::default(), |_| shell.logic(&ctx));

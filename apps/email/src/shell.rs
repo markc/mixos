@@ -755,6 +755,7 @@ impl Shell {
         self.composers.compose_only = compose;
         self.launch_compose = compose;
         self.launch_document = document;
+        self.composers.suppress_restore = self.launch_document.is_some();
         if compose {
             self.composers.insert(&mut self.state, self.palette.clone());
             self.start_composer();
@@ -773,7 +774,10 @@ impl Shell {
             // A document launch does not offer kept drafts during this run.
             self.state.restore.clear();
             if let Err((_, error)) = self.state.read_document(account, path, None, false, false) {
-                self.state.status = error;
+                self.state.compose();
+                if let Some(compose) = &mut self.state.compose {
+                    compose.error = Some(error);
+                }
             }
         } else if self.state.restore.is_empty() {
             self.state.compose();
@@ -784,6 +788,12 @@ impl Shell {
     }
 
     fn sync_composers(&mut self) {
+        if self.composers.suppress_restore {
+            self.state.restore.clear();
+            if let Some(root) = self.composers.root.as_ref().and_then(|n| self.composers.windows.get(n)) {
+                root.lock().unwrap().view.restore.clear();
+            }
+        }
         let palette = self.editor_palette();
         let added = self.composers.adopt(&mut self.state, palette.clone());
         for window in self.composers.windows.values() {
@@ -1779,7 +1789,17 @@ impl Shell {
                         | Event::MailDocument(_, crate::documents::Answer::Saved(_))
                 );
                 window.swap(&mut self.state);
+                let failed_launch = window.viewport == egui::ViewportId::ROOT
+                    && self.composers.suppress_restore
+                    && matches!(&event, Event::MailDocument(_, crate::documents::Answer::Read(Err(_))));
                 self.state.apply(event);
+                if failed_launch && self.state.compose.is_none() && !self.state.documents.opening() && !window.closed {
+                    let error = std::mem::take(&mut self.state.status);
+                    self.state.compose();
+                    if let Some(compose) = &mut self.state.compose {
+                        compose.error = Some(error);
+                    }
+                }
                 let notice =
                     (outcome && self.state.compose.is_none()).then(|| self.state.status.clone());
                 self.settle_for(Some(&window.name));
@@ -1903,12 +1923,13 @@ impl Shell {
         let action = args.as_ref().and_then(|a| a["id"].as_str());
         let composer_action =
             action.is_some_and(|id| id.starts_with("compose.") || id == "mail.send");
-        let routed = command_name.starts_with("email.compose.")
+        let opening = command_name == "email.execute" && action == Some("compose.new");
+        let routed = !opening && (command_name.starts_with("email.compose.")
             || command_name == "email.info"
             || (command_name == "email.execute"
                 && args
                     .as_ref()
-                    .is_some_and(|a| composer_action || a.get("window").is_some()));
+                    .is_some_and(|a| composer_action || a.get("window").is_some())));
         if routed
             && args
                 .as_ref()
@@ -1975,7 +1996,7 @@ impl Shell {
             self.bus.reply(id, 0, info);
             return;
         }
-        // Validate every explicit target, but only composer actions borrow it.
+        // Only composer actions borrow a target.
         // New always creates a sibling, even when a window was named.
         let target = target.filter(|_| {
             command_name != "email.execute" || (composer_action && action != Some("compose.new"))
@@ -2897,7 +2918,9 @@ mod tests {
             )
             .unwrap();
         shell.composers.windows["compose-1"].lock().unwrap().closed = true;
-        shell.sync_composers();
+        // Keep the closed origin registered: attach_drop must reject it before
+        // refresh has a chance to retire it.
+        assert!(shell.composers.windows.contains_key("compose-1"));
         shell
             .tx
             .send(Event::MailDocument(
@@ -2908,6 +2931,7 @@ mod tests {
         shell.pump();
         assert_eq!(shell.state.status, label("compose-not-open"));
         assert_ne!(shell.state.status, "compose-not-open");
+        assert!(!shell.composers.windows.contains_key("compose-1"));
         shell.bus.quit();
     }
 
@@ -2981,6 +3005,7 @@ mod tests {
             child.lock().unwrap().view.confirm,
             Some(crate::state::Confirm::Quit)
         );
+        assert!(shell.composers.quitting && shell.composers.owner_closing);
         composer_choice(&mut shell, "compose-2", crate::state::DraftChoice::Back);
         shell.advance_close();
         assert!(

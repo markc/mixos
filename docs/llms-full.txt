@@ -2191,11 +2191,14 @@ The session's `appearance.menu_style: "titlebar"` adds a menu caption aligned
 left, centre or right, according to `appearance.menu_side`.
 It appears only on SSD windows whose `dev.mixos.NAME` app has a registered
 `NAME` Bus service. A dotted suffix names an owned viewport:
-`dev.mixos.email.compose-2` resolves to service `email`, viewport `compose-2`.
+Email composers (`dev.mixos.email.compose-2`, including the compose-only
+root) are excluded: they request client decorations and draw their own one
+complete title row, menus and Send control. They never inherit the mailbox's
+service-wide menu or action bar, even during decoration negotiation.
 Clicking queues `NAME.ui.menu.popup {side, x, viewport?}` through the scene
 host's existing port; failures are logged without blocking the compositor.
 Titlebar actions carry the same suffix as `window` on `NAME.execute` so the
-action reaches the owning composer. Unsuffixed app IDs keep their root target.
+action reaches the owning viewport. Unsuffixed app IDs keep their root target.
 The x coordinate is relative to client content, converted from the logical
 decoration slot to the committed client width, without applying output scale
 again.
@@ -9347,8 +9350,11 @@ Without a file, compose-only startup offers kept drafts before starting a
 blank message. Later, or Discard on the final offered draft, starts the blank
 message immediately. A file launch suppresses kept-draft offers for that run;
 the drafts stay saved for a later launch.
-Document read failures leave no empty child behind; compose-only root errors
-remain visible in that window.
+Document read failures leave no empty child behind. A failed compose-only
+document launch opens a blank composer with the read error shown in it.
+Startup loads kept drafts in `Shell::new` before `compose_launch`; later
+offers merge by draft id into the root offer queue. Document launches also
+suppress late offers for the rest of that run.
 
 Drop a mail document to open another composer. Ordinary files dropped on the
 mailbox open a new composer with the files attached, extending the stage 2
@@ -9373,6 +9379,10 @@ Windows are named `compose-1`, `compose-2`, and so on for the life of the
 process, with app IDs `dev.mixos.email.compose-<n>`. Each has a saved frame
 under its own name, including a compose-only root. Names are never reused
 within a process. Mailbox and compose frames keep separate placement keys.
+Composers always request client decorations, including when the session uses
+server decorations. Their single local title row owns the composer menus,
+caption controls and Send. Compd supplies no composer menu or action bar;
+the mailbox keeps its session decoration preference.
 
 `email.info {window:"compose-2"}` returns that composer's state and the
 `compose_windows` list. `email.compose.attachment.add/remove` and compose
@@ -9385,6 +9395,9 @@ An unknown name returns `NOT_FOUND`; a non-string `window` returns
 `email.compose`, `email.reply` and `email.forward` always create a new composer
 and refuse any `window` argument with `INVALID_ARGUMENT`. Successful replies
 from other commands do not acquire an opened-window field.
+`email.execute {id:"compose.new"}` ignores `window`, including an unknown
+name, and always opens a sibling. Multiple compose commands in one delivery
+batch each open their own window.
 `email.quit` accepts an empty body or `{}` and reports the same `quitting`,
 `confirming` and `windows` fields for both. Cancel clears the current quit
 permission, so a later Quit asks about remaining drafts again.
@@ -38208,9 +38221,11 @@ written in Mix on `tcp_listen`.
 
 ## Unreleased — 2026-10-27
 
-- Resolve dotted app IDs to their first Bus service segment. Route titlebar
+- Exclude Email composer app IDs from hosted menus and action bars. Composers
+  request client decorations and keep their own single complete title row.
+- Resolve other dotted app IDs to their first Bus service segment. Route titlebar
   menu requests with the suffix as `viewport`, and actions with it as `window`,
-  so separate composers receive their own menu input under server decorations.
+  so owned viewports receive their own input under server decorations.
 
 - Use the shared design title band layout for all four groups and centre
   MixOS titles by default. Host registered apps' revisioned Action Bars through
@@ -38352,6 +38367,13 @@ the predecessor repository at revision
 > Mirrored from [`apps/email/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/email/CHANGELOG.md), where releases update it. The component's page is [email](README.md). This page describes the current `main` branch of MixOS.
 
 ## Unreleased
+
+- Give every composer one complete client title row under either session
+  decoration preference; compd never supplies the mailbox menu or action bar.
+- Open a blank composer with its error after a failed document launch. Merge
+  kept-draft offers by id and suppress late offers during document launches.
+- Ignore `window` for `compose.new`. Cover same-pump compose deliveries,
+  drops during an existing read, closed origins before refresh and Quit Back.
 
 - Keep compose-only restore offers in the owning window across refreshes.
   Later and the final Discard start the requested blank message; file launches
@@ -39626,6 +39648,9 @@ their bytes.
 # Changelog
 
 ## Unreleased — 2026-10-28
+
+- Allow a viewport to require its own complete client frame independently of
+  the session decoration preference and later theme changes.
 
 - Scope menu models, navigation and search state to each viewport. Every
   drive command honours its named `viewport`, including menu list/open and

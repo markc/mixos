@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Give every composer one complete client title row under either session
+  decoration preference; compd never supplies the mailbox menu or action bar.
+- Open a blank composer with its error after a failed document launch. Merge
+  kept-draft offers by id and suppress late offers during document launches.
+- Ignore `window` for `compose.new`. Cover same-pump compose deliveries,
+  drops during an existing read, closed origins before refresh and Quit Back.
+
 - Keep compose-only restore offers in the owning window across refreshes.
   Later and the final Discard start the requested blank message; file launches
   suppress kept-draft offers for that run without deleting saved drafts.

@@ -241,9 +241,13 @@
 <h2 id="unreleased--2026-10-27">Unreleased — 2026-10-27</h2>
 <ul>
 <li>
-<p>Resolve dotted app IDs to their first Bus service segment. Route titlebar
+<p>Exclude Email composer app IDs from hosted menus and action bars. Composers
+request client decorations and keep their own single complete title row.</p>
+</li>
+<li>
+<p>Resolve other dotted app IDs to their first Bus service segment. Route titlebar
 menu requests with the suffix as <code>viewport</code>, and actions with it as <code>window</code>,
-so separate composers receive their own menu input under server decorations.</p>
+so owned viewports receive their own input under server decorations.</p>
 </li>
 <li>
 <p>Use the shared design title band layout for all four groups and centre

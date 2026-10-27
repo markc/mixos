@@ -29,6 +29,7 @@ pub(crate) struct Window {
     order: u64,
     pub had_compose: bool,
     pub closed: bool,
+    restore_borrowed: bool,
     keymap: toolkit::keymap::Overrides,
     palette: editor::Palette,
 }
@@ -76,6 +77,7 @@ pub(crate) struct Windows {
     pub root: Option<String>,
     pub owner_closing: bool,
     pub quitting: bool,
+    pub suppress_restore: bool,
     pub keymap: toolkit::keymap::Overrides,
     // First path is the document (also attached if reading it fails).
     pub drops: BTreeMap<u64, (Option<String>, Vec<std::path::PathBuf>)>,
@@ -108,8 +110,9 @@ impl Windows {
             return;
         };
         let mut root = root.lock().unwrap();
-        root.swap(state);
-        root.had_compose = root.view.compose.is_some();
+        swap(state, &mut root.view);
+        root.view.offer_drafts(std::mem::take(&mut state.restore));
+        root.had_compose = root.view.compose.is_some() || root.view.documents.opening();
     }
 
     pub fn adopt(&mut self, state: &mut State, palette: editor::Palette) -> bool {
@@ -150,6 +153,7 @@ impl Windows {
                 palette,
                 had_compose,
                 closed: false,
+                restore_borrowed: false,
                 keymap: self.keymap.clone(),
             })),
         );
@@ -249,9 +253,7 @@ impl Windows {
                 &crate::label("compose-title"),
             )
             .with_title(format!("{} — {}", crate::label("compose-title"), name))
-            .with_decorations(
-                toolkit::chrome::Chrome::of(&ctx).decorations == design::Decorations::Server,
-            )
+            .with_decorations(false)
             .with_inner_size([900.0, 700.0])
             .with_min_inner_size([640.0, 480.0]);
             let builder = toolkit::saved::secondary::builder(&ctx, APP, &name, builder);
@@ -271,7 +273,14 @@ impl Window {
         // Only the compose-only root owns startup offers. Ordinary children
         // leave kept-draft bookkeeping with the mailbox engine.
         if self.viewport == ViewportId::ROOT {
-            std::mem::swap(&mut state.restore, &mut self.view.restore);
+            if self.restore_borrowed {
+                self.view.offer_drafts(std::mem::take(&mut state.restore));
+            } else {
+                let incoming = std::mem::take(&mut state.restore);
+                state.restore = std::mem::take(&mut self.view.restore);
+                state.offer_drafts(incoming);
+            }
+            self.restore_borrowed = !self.restore_borrowed;
         }
     }
 
@@ -380,6 +389,7 @@ pub fn view(
     palette: &editor::Palette,
 ) -> Vec<UiEvent> {
     let ctx = ui.ctx().clone();
+    toolkit::chrome::client_side(&ctx);
     let mut events: Vec<_> = toolkit::titlebar::show_bar(
         ui,
         &crate::label("compose-title"),
@@ -1010,6 +1020,54 @@ mod tests {
         toolkit::install(&h.ctx, &theme);
         h.run();
         h.snapshot("compose_window");
+    }
+
+    #[test]
+    fn composers_own_one_complete_frame_under_both_decoration_preferences() {
+        for decorations in [design::Decorations::Client, design::Decorations::Server] {
+            for standalone in [false, true] {
+                let (mut state, mut windows, theme, ctx) = fixture(standalone);
+                let theme = theme.framed(decorations, design::CaptionSide::Auto);
+                toolkit::install(&ctx, &theme);
+                toolkit::drive::set_service(&ctx, Some(APP));
+                state.compose();
+                windows.adopt(&mut state, editor::Palette::from_theme(&theme));
+                let viewport = windows.windows["compose-1"].lock().unwrap().viewport;
+                let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 700.0))), ..Default::default() };
+                let output = ctx.run_ui(input.clone(), |ui| windows.show(ui));
+                if !standalone {
+                    assert_eq!(output.viewport_output[&viewport].builder.decorations, Some(false));
+                    assert_eq!(toolkit::chrome::Chrome::of(&ctx).decorations, decorations, "mailbox policy survives child paint");
+                }
+                output.drop_without_applying_deltas();
+                let mut input = input;
+                input.viewport_id = viewport;
+                input.viewports.insert(viewport, Default::default());
+                let output = ctx.run_ui(input, |ui| {
+                    windows.windows["compose-1"].lock().unwrap().show(ui);
+                    assert_eq!(toolkit::chrome::Chrome::of(ui.ctx()).decorations, design::Decorations::Client);
+                    assert!(!toolkit::titlebar::hosting::hosted(ui.ctx()));
+                });
+                assert!(!output.viewport_output[&viewport].commands.iter().any(|c| matches!(c, egui::ViewportCommand::Decorations(true))));
+                output.drop_without_applying_deltas();
+                let answer = toolkit::drive::request(&ctx, 1, "ui.menu.list", &serde_json::json!({"viewport":"compose-1"})).unwrap();
+                assert_eq!(answer.rc, 0);
+                assert!(answer.body.to_string().contains("Save As"));
+                assert!(!answer.body.to_string().contains("mail.compose"));
+            }
+        }
+    }
+
+    #[test]
+    fn compose_window_with_server_preference_snapshot() {
+        let (mut state, _, theme, _) = fixture(true);
+        let theme = theme.framed(design::Decorations::Server, design::CaptionSide::Auto);
+        state.compose();
+        let palette = editor::Palette::from_theme(&theme);
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(900.0, 700.0)).build_ui(move |ui| { view(ui, &state, &registry(), &palette); });
+        toolkit::install(&h.ctx, &theme);
+        h.run();
+        h.snapshot("compose_window_server_preference");
     }
 
     #[test]

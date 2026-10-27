@@ -495,7 +495,7 @@ impl Chrome {
     /// The chrome installed on `ctx` ([`install`]), else one read back from
     /// the context's current style in the hue schemes' style.
     pub fn of(ctx: &Context) -> Self {
-        ctx.data(|d| d.get_temp(key())).unwrap_or_else(|| {
+        let mut chrome: Self = ctx.data(|d| d.get_temp(key())).unwrap_or_else(|| {
             static PLAIN: std::sync::OnceLock<ResolvedStyle> = std::sync::OnceLock::new();
             let tokens = *PLAIN
                 .get_or_init(|| Theme::for_context(design::DesignContext::revision_one()).style());
@@ -510,13 +510,23 @@ impl Chrome {
                 menu_side: design::MenuSide::default(),
                 band: Default::default(),
             }
-        })
+        });
+        if ctx.data(|d| d.get_temp::<bool>(crate::window_id(ctx.viewport_id(), "toolkit.chrome.client-side"))).unwrap_or(false) {
+            chrome.decorations = Decorations::Client;
+        }
+        chrome
     }
 
     /// The menu-bar and menu text: egui's Button style.
     pub fn menu_font(style: &Style) -> FontId {
         TextStyle::Button.resolve(style)
     }
+}
+
+/// Keep this viewport's complete local frame, even when the session uses
+/// server decorations. Other viewports and later theme changes keep their policy.
+pub fn client_side(ctx: &Context) {
+    ctx.data_mut(|d| d.insert_temp(crate::window_id(ctx.viewport_id(), "toolkit.chrome.client-side"), true));
 }
 
 /// Make `chrome` the one [`Chrome::of`] returns on `ctx`.

@@ -11,6 +11,9 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
 
 ## Unreleased — 2026-10-28
 
+- Allow a viewport to require its own complete client frame independently of
+  the session decoration preference and later theme changes.
+
 - Scope menu models, navigation and search state to each viewport. Every
   drive command honours its named `viewport`, including menu list/open and
   root aliases. Saved-window capture workers use distinct per-window identities.

@@ -10,9 +10,11 @@ generated: by docs/_build/gen-site.mix from services/compd/CHANGELOG.md; do not 
 
 ## Unreleased — 2026-10-27
 
-- Resolve dotted app IDs to their first Bus service segment. Route titlebar
+- Exclude Email composer app IDs from hosted menus and action bars. Composers
+  request client decorations and keep their own single complete title row.
+- Resolve other dotted app IDs to their first Bus service segment. Route titlebar
   menu requests with the suffix as `viewport`, and actions with it as `window`,
-  so separate composers receive their own menu input under server decorations.
+  so owned viewports receive their own input under server decorations.
 
 - Use the shared design title band layout for all four groups and centre
   MixOS titles by default. Host registered apps' revisioned Action Bars through

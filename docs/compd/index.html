@@ -321,11 +321,14 @@ tiling with a real Super modifier or <code>comp.window.tile_key</code>.</p>
 left, centre or right, according to <code>appearance.menu_side</code>.
 It appears only on SSD windows whose <code>dev.mixos.NAME</code> app has a registered
 <code>NAME</code> Bus service. A dotted suffix names an owned viewport:
-<code>dev.mixos.email.compose-2</code> resolves to service <code>email</code>, viewport <code>compose-2</code>.
+Email composers (<code>dev.mixos.email.compose-2</code>, including the compose-only
+root) are excluded: they request client decorations and draw their own one
+complete title row, menus and Send control. They never inherit the mailbox's
+service-wide menu or action bar, even during decoration negotiation.
 Clicking queues <code>NAME.ui.menu.popup {side, x, viewport?}</code> through the scene
 host's existing port; failures are logged without blocking the compositor.
 Titlebar actions carry the same suffix as <code>window</code> on <code>NAME.execute</code> so the
-action reaches the owning composer. Unsuffixed app IDs keep their root target.
+action reaches the owning viewport. Unsuffixed app IDs keep their root target.
 The x coordinate is relative to client content, converted from the logical
 decoration slot to the committed client width, without applying output scale
 again.

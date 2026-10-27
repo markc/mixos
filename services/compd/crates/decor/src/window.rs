@@ -140,6 +140,11 @@ fn menu_service_name(service: &str) -> bool {
 
 pub fn menu_service<'a>(app_id: &'a str, services: &BTreeSet<String>) -> Option<&'a str> {
     let service = app_id.strip_prefix("dev.mixos.")?.split('.').next()?;
+    // Composers own their complete client frame. Never lend them the mailbox's
+    // service-wide menu or action bar, even during decoration negotiation.
+    if service == "email" && menu_viewport(app_id).is_some_and(|v| v.starts_with("compose-")) {
+        return None;
+    }
     (menu_service_name(service) && services.contains(service)).then_some(service)
 }
 
@@ -511,13 +516,13 @@ mod tests {
     }
 
     #[test]
-    fn composers_share_the_service_but_address_their_own_menu() {
+    fn composers_never_borrow_the_mailbox_menu_or_action_service() {
         let live = BTreeSet::from(["email".into()]);
         for (app, viewport) in [
             ("dev.mixos.email", None),
             ("dev.mixos.email.compose-2", Some("compose-2")),
         ] {
-            assert_eq!(menu_service(app, &live), Some("email"));
+            assert_eq!(menu_service(app, &live), if viewport.is_none() { Some("email") } else { None });
             assert_eq!(menu_viewport(app), viewport);
         }
         assert_eq!(menu_service("dev.mixos.missing.compose-2", &live), None);

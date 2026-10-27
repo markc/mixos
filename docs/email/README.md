@@ -47,8 +47,11 @@ Without a file, compose-only startup offers kept drafts before starting a
 blank message. Later, or Discard on the final offered draft, starts the blank
 message immediately. A file launch suppresses kept-draft offers for that run;
 the drafts stay saved for a later launch.
-Document read failures leave no empty child behind; compose-only root errors
-remain visible in that window.
+Document read failures leave no empty child behind. A failed compose-only
+document launch opens a blank composer with the read error shown in it.
+Startup loads kept drafts in `Shell::new` before `compose_launch`; later
+offers merge by draft id into the root offer queue. Document launches also
+suppress late offers for the rest of that run.
 
 Drop a mail document to open another composer. Ordinary files dropped on the
 mailbox open a new composer with the files attached, extending the stage 2
@@ -73,6 +76,10 @@ Windows are named `compose-1`, `compose-2`, and so on for the life of the
 process, with app IDs `dev.mixos.email.compose-<n>`. Each has a saved frame
 under its own name, including a compose-only root. Names are never reused
 within a process. Mailbox and compose frames keep separate placement keys.
+Composers always request client decorations, including when the session uses
+server decorations. Their single local title row owns the composer menus,
+caption controls and Send. Compd supplies no composer menu or action bar;
+the mailbox keeps its session decoration preference.
 
 `email.info {window:"compose-2"}` returns that composer's state and the
 `compose_windows` list. `email.compose.attachment.add/remove` and compose
@@ -85,6 +92,9 @@ An unknown name returns `NOT_FOUND`; a non-string `window` returns
 `email.compose`, `email.reply` and `email.forward` always create a new composer
 and refuse any `window` argument with `INVALID_ARGUMENT`. Successful replies
 from other commands do not acquire an opened-window field.
+`email.execute {id:"compose.new"}` ignores `window`, including an unknown
+name, and always opens a sibling. Multiple compose commands in one delivery
+batch each open their own window.
 `email.quit` accepts an empty body or `{}` and reports the same `quitting`,
 `confirming` and `windows` fields for both. Cancel clears the current quit
 permission, so a later Quit asks about remaining drafts again.
