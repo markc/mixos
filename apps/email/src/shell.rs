@@ -1758,13 +1758,16 @@ impl Shell {
             }
             let mut errors = Vec::new();
             for file in dropped {
-                match file.path {
-                    Some(path) => {
-                        if let Err((_, message)) = self.state.add_compose_attachments(&[path]) {
-                            errors.push(message);
-                        }
+                // egui gives every drop a path; only a native drop's is absolute.
+                let path = file.path();
+                if path.is_absolute() {
+                    if let Err((_, message)) =
+                        self.state.add_compose_attachments(&[path.to_path_buf()])
+                    {
+                        errors.push(message);
                     }
-                    None => errors.push(label("compose-drop-no-path")),
+                } else {
+                    errors.push(label("compose-drop-no-path"));
                 }
             }
             if !errors.is_empty() {
