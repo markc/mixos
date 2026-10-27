@@ -1122,6 +1122,9 @@ fn inline_image_context_menu_saves_and_failed_previews_keep_the_bar() {
     let at = h.get_by_label(&image).rect().center();
     h.hover_at(at);
     h.run();
+    // The toolbar always has Reply All; the reader's context menu would add
+    // a second one.
+    let reply_alls = h.query_all_by_label(&label("reply-all")).count();
     for pressed in [true, false] {
         h.event(egui::Event::PointerButton {
             pos: at,
@@ -1132,7 +1135,11 @@ fn inline_image_context_menu_saves_and_failed_previews_keep_the_bar() {
     }
     h.run();
     assert!(h.query_by_label(&label("open")).is_some());
-    assert!(h.query_by_label(&label("reply-all")).is_none());
+    assert_eq!(
+        h.query_all_by_label(&label("reply-all")).count(),
+        reply_alls,
+        "the reader's context menu opened over the image's"
+    );
     h.get_by_label(&label("save")).click();
     h.run();
     assert!(
