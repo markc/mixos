@@ -1666,51 +1666,80 @@ mod connection_events_tests {
     #[tokio::test]
     async fn shutdown_refused_handler_reply_reaches_caller_through_drain() {
         use ::bus::native_client::{NodedClient, SupervisedClient};
-        use mix::{evaluator::{Evaluator, SharedBuf}, lexer::Lexer, parser::Parser};
+        use mix::{
+            evaluator::{Evaluator, SharedBuf},
+            lexer::Lexer,
+            parser::Parser,
+        };
         use std::{rc::Rc, sync::Arc, time::Duration};
 
-        tokio::task::LocalSet::new().run_until(async {
-            let broker = test_broker::Broker::start();
-            let supervised = Arc::new(SupervisedClient::connect_supervised(
-                "fixture-reply-shutdown", &broker.url,
-            ).await.unwrap());
-            let handler = Rc::new(MixServeHandler::new(supervised.clone()));
-            // Other supervised failures keep the existing RuntimeError mapping.
-            let error = handler.reply_at(0, "", "refresh", None, 0, "ok").await.unwrap_err();
-            assert!(matches!(error, mix::error::MixError::RuntimeError { .. }));
-            let stderr = SharedBuf::new();
-            let mut eval = Evaluator::with_output(Box::new(SharedBuf::new()), Box::new(stderr.clone()));
-            eval.set_bus_handler(handler.clone());
-            let source = "on refresh async\n reply(0, \"ok\")\nend\n";
-            let statements = Parser::new(Lexer::new(source).tokenize().unwrap(), source).parse_program().unwrap();
-            eval.execute(&statements).await.unwrap();
-            let caller = NodedClient::connect_anonymous(&broker.url).await.unwrap();
-            let headers = BTreeMap::new();
-            let request = caller.call_with_headers_raw_within(
-                "fixture-reply-shutdown", "refresh", &headers, "", Duration::from_secs(3),
-            );
-            let serve = async {
-                let event = loop {
-                    let event = tokio::time::timeout(Duration::from_secs(2), handler.next_incoming())
-                        .await.unwrap().unwrap();
-                    if event.command == "refresh" { break event; }
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let broker = test_broker::Broker::start();
+                let supervised = Arc::new(
+                    SupervisedClient::connect_supervised("fixture-reply-shutdown", &broker.url)
+                        .await
+                        .unwrap(),
+                );
+                let handler = Rc::new(MixServeHandler::new(supervised.clone()));
+                // Other supervised failures keep the existing RuntimeError mapping.
+                let error = handler
+                    .reply_at(0, "", "refresh", None, 0, "ok")
+                    .await
+                    .unwrap_err();
+                assert!(matches!(error, mix::error::MixError::RuntimeError { .. }));
+                let stderr = SharedBuf::new();
+                let mut eval =
+                    Evaluator::with_output(Box::new(SharedBuf::new()), Box::new(stderr.clone()));
+                eval.set_bus_handler(handler.clone());
+                let source = "on refresh async\n reply(0, \"ok\")\nend\n";
+                let statements = Parser::new(Lexer::new(source).tokenize().unwrap(), source)
+                    .parse_program()
+                    .unwrap();
+                eval.execute(&statements).await.unwrap();
+                let caller = NodedClient::connect_anonymous(&broker.url).await.unwrap();
+                let headers = BTreeMap::new();
+                let request = caller.call_with_headers_raw_within(
+                    "fixture-reply-shutdown",
+                    "refresh",
+                    &headers,
+                    "",
+                    Duration::from_secs(3),
+                );
+                let serve = async {
+                    let event = loop {
+                        let event =
+                            tokio::time::timeout(Duration::from_secs(2), handler.next_incoming())
+                                .await
+                                .unwrap()
+                                .unwrap();
+                        if event.command == "refresh" {
+                            break event;
+                        }
+                    };
+                    // Accept the chain without polling its body, then fence replies.
+                    eval.dispatch_event(event).await.unwrap();
+                    supervised.deregister_for_drain().await.unwrap();
+                    let outcome = eval
+                        .drain_class_c_for_shutdown(Duration::from_secs(1), true)
+                        .await;
+                    assert_eq!(outcome.synth_sent, 1, "{outcome:?}");
+                    assert_eq!(outcome.synth_failed, 0);
+                    assert_eq!(outcome.aborted, 0);
+                    assert!(
+                        stderr.to_string_lossy().is_empty(),
+                        "{}",
+                        stderr.to_string_lossy()
+                    );
                 };
-                // Accept the chain without polling its body, then fence replies.
-                eval.dispatch_event(event).await.unwrap();
-                supervised.deregister_for_drain().await.unwrap();
-                let outcome = eval.drain_class_c_for_shutdown(Duration::from_secs(1), true).await;
-                assert_eq!(outcome.synth_sent, 1, "{outcome:?}");
-                assert_eq!(outcome.synth_failed, 0);
-                assert_eq!(outcome.aborted, 0);
-                assert!(stderr.to_string_lossy().is_empty(), "{}", stderr.to_string_lossy());
-            };
-            let (response, ()) = tokio::join!(request, serve);
-            let (rc, body, _) = response.unwrap();
-            assert_eq!(rc, 16);
-            assert!(body.contains("HANDLER_CANCELLED"), "{body}");
-            supervised.close().await;
-            caller.close().await;
-        }).await;
+                let (response, ()) = tokio::join!(request, serve);
+                let (rc, body, _) = response.unwrap();
+                assert_eq!(rc, 16);
+                assert!(body.contains("HANDLER_CANCELLED"), "{body}");
+                supervised.close().await;
+                caller.close().await;
+            })
+            .await;
     }
 }
 

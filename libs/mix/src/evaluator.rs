@@ -1083,7 +1083,9 @@ pub(crate) enum ReplyState {
 pub const REPLY_SHUTTING_DOWN_CODE: &str = "BUS_REPLY_SHUTTING_DOWN";
 
 fn is_reply_shutting_down(error: &MixError) -> bool {
-    error.info().is_some_and(|info| info.code == REPLY_SHUTTING_DOWN_CODE)
+    error
+        .info()
+        .is_some_and(|info| info.code == REPLY_SHUTTING_DOWN_CODE)
 }
 
 impl InvocationReplyHandle {
@@ -1390,9 +1392,12 @@ impl InvocationRegistration {
     /// pin its `Cell`/`RefCell` allocations for the life of the
     /// process).
     pub(crate) fn complete(self) {
-        let retain_for_drain = self.registry.handles.borrow().get(&self.id).is_some_and(|h| {
-            h.shutdown_refused.get() && h.is_unanswered_request()
-        });
+        let retain_for_drain = self
+            .registry
+            .handles
+            .borrow()
+            .get(&self.id)
+            .is_some_and(|h| h.shutdown_refused.get() && h.is_unanswered_request());
         if !retain_for_drain {
             self.registry.remove(self.id);
         }

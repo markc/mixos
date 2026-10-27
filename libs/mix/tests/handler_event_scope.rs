@@ -17,11 +17,11 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
+use mix::error::{MixError, MixResult};
 use mix::evaluator::{
     BusFuture, BusHandler, Evaluator, IncomingEvent, REPLY_SHUTTING_DOWN_CODE, ReservedOutcome,
     ServeRuntime, SharedBuf,
 };
-use mix::error::{MixError, MixResult};
 use mix::lexer::Lexer;
 use mix::parser::Parser;
 use mix::value::Value;
@@ -364,7 +364,10 @@ impl BusHandler for RefusedReply {
             Err(if self.shutdown {
                 MixError::structured(REPLY_SHUTTING_DOWN_CODE, msg)
             } else {
-                MixError::RuntimeError { msg: msg.into(), span: None }
+                MixError::RuntimeError {
+                    msg: msg.into(),
+                    span: None,
+                }
             })
         })
     }
@@ -396,30 +399,45 @@ async fn shutdown_refusal_stays_drain_visible_without_a_handler_fault() {
         // No explicit reply: the normal NO_REPLY synthesis hits the same gate.
         "on refresh async\n $x = 1\nend\n",
     ] {
-        tokio::task::LocalSet::new().run_until(async {
-            let records = ErrorRecords::default();
-            let _guard = tracing::subscriber::set_default(records.clone());
-            let mut s = setup(source).await;
-            let runtime = Rc::new(RecordingRuntime { faults: RefCell::new(Vec::new()) });
-            let bus = Rc::new(RefusedReply { shutdown: true, terminal: RefCell::new(Vec::new()) });
-            s.eval.set_serve_runtime(runtime.clone());
-            s.eval.set_bus_handler(bus.clone());
-            s.eval.dispatch_event(mk_event("refresh", "", &[
-                ("type", "request"), ("from", "caller"), ("id", "request-1"),
-            ])).await.unwrap();
-            let outcome = s.eval.drain_class_c_for_shutdown(std::time::Duration::from_secs(1), true).await;
-            assert_eq!(outcome.synth_sent, 1, "{source}: {outcome:?}");
-            assert_eq!(outcome.synth_failed, 0);
-            assert_eq!(outcome.aborted, 0);
-            let terminal = bus.terminal.borrow();
-            assert_eq!(terminal.len(), 1);
-            assert_eq!(terminal[0].0, 16);
-            assert!(terminal[0].1.contains("HANDLER_CANCELLED"));
-            assert_eq!(records.0.load(std::sync::atomic::Ordering::Relaxed), 0);
-            assert!(runtime.faults.borrow().is_empty());
-            assert!(s.stderr.to_string_lossy().is_empty());
-            assert_eq!(s.eval.handler_count(), 1);
-        }).await;
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let records = ErrorRecords::default();
+                let _guard = tracing::subscriber::set_default(records.clone());
+                let mut s = setup(source).await;
+                let runtime = Rc::new(RecordingRuntime {
+                    faults: RefCell::new(Vec::new()),
+                });
+                let bus = Rc::new(RefusedReply {
+                    shutdown: true,
+                    terminal: RefCell::new(Vec::new()),
+                });
+                s.eval.set_serve_runtime(runtime.clone());
+                s.eval.set_bus_handler(bus.clone());
+                s.eval
+                    .dispatch_event(mk_event(
+                        "refresh",
+                        "",
+                        &[("type", "request"), ("from", "caller"), ("id", "request-1")],
+                    ))
+                    .await
+                    .unwrap();
+                let outcome = s
+                    .eval
+                    .drain_class_c_for_shutdown(std::time::Duration::from_secs(1), true)
+                    .await;
+                assert_eq!(outcome.synth_sent, 1, "{source}: {outcome:?}");
+                assert_eq!(outcome.synth_failed, 0);
+                assert_eq!(outcome.aborted, 0);
+                let terminal = bus.terminal.borrow();
+                assert_eq!(terminal.len(), 1);
+                assert_eq!(terminal[0].0, 16);
+                assert!(terminal[0].1.contains("HANDLER_CANCELLED"));
+                assert_eq!(records.0.load(std::sync::atomic::Ordering::Relaxed), 0);
+                assert!(runtime.faults.borrow().is_empty());
+                assert!(s.stderr.to_string_lossy().is_empty());
+                assert_eq!(s.eval.handler_count(), 1);
+            })
+            .await;
     }
 }
 
@@ -428,15 +446,33 @@ async fn other_reply_failure_remains_an_observable_handler_fault() {
     let records = ErrorRecords::default();
     let _guard = tracing::subscriber::set_default(records.clone());
     let mut s = setup("on refresh\n reply(0, \"ok\")\nend\n").await;
-    let runtime = Rc::new(RecordingRuntime { faults: RefCell::new(Vec::new()) });
+    let runtime = Rc::new(RecordingRuntime {
+        faults: RefCell::new(Vec::new()),
+    });
     s.eval.set_serve_runtime(runtime.clone());
-    s.eval.set_bus_handler(Rc::new(RefusedReply { shutdown: false, terminal: RefCell::new(Vec::new()) }));
-    s.eval.dispatch_event(mk_event("refresh", "", &[
-        ("type", "request"), ("from", "caller"), ("id", "request-1"),
-    ])).await.unwrap();
+    s.eval.set_bus_handler(Rc::new(RefusedReply {
+        shutdown: false,
+        terminal: RefCell::new(Vec::new()),
+    }));
+    s.eval
+        .dispatch_event(mk_event(
+            "refresh",
+            "",
+            &[("type", "request"), ("from", "caller"), ("id", "request-1")],
+        ))
+        .await
+        .unwrap();
     assert_eq!(runtime.faults.borrow().len(), 1);
-    assert!(s.stderr.to_string_lossy().contains("handler fault: refresh[0]"));
-    assert!(s.stderr.to_string_lossy().contains("handler remains registered"));
+    assert!(
+        s.stderr
+            .to_string_lossy()
+            .contains("handler fault: refresh[0]")
+    );
+    assert!(
+        s.stderr
+            .to_string_lossy()
+            .contains("handler remains registered")
+    );
     // Handler error and the failed HANDLER_FAULT synthesis both stay errors.
     assert_eq!(records.0.load(std::sync::atomic::Ordering::Relaxed), 2);
     assert_eq!(s.eval.handler_count(), 1);
