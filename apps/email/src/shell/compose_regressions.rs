@@ -35,7 +35,11 @@ fn bus_answer(shell: &mut Shell, broker: &test_broker::Broker, command: &str, ar
     let command = command.to_owned();
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        tx.send(citizen::anonymous(&url, "email-regression-test", &command, args)).unwrap();
+        let (caller, _deliveries) = citizen::start("tester", "compose-caller", &url).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let answer = runtime.block_on(caller.call("email-regression-test", &command, args));
+        caller.quit();
+        tx.send(answer).unwrap();
     });
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     loop {

@@ -958,7 +958,7 @@ mod tests {
         let palette = editor::Palette::from_theme(&theme);
         let mut h = egui_kittest::Harness::builder()
             .with_size(egui::vec2(900.0, 700.0))
-            .build_ui_with_state(move |ui, state| {
+            .build_ui_state(move |ui, state| {
                 for event in view(ui, state, &registry(), &palette) { state.apply_ui(event); }
             }, state);
         toolkit::install(&h.ctx, &theme);
