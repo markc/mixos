@@ -224,10 +224,10 @@ fn address_lists_trim_entries_and_only_lightly_validate() {
     );
     assert_eq!(parse(&write(&document).unwrap()).unwrap(), document);
     for value in ["no-address", ",a@b", "a@b,", "a@b,  ,c@d"] {
-        assert!(parse(&framed(&format!("mail-to: {value}"))).is_err());
+        assert_eq!(parse(&framed(&format!("mail-to: {value}"))), Err(invalid("mail-to", "address must be non-empty and contain @")));
     }
     for name in ["mail-from", "mail-reply-to"] {
-        assert!(parse(&framed(&format!("{name}: no-address"))).is_err());
+        assert_eq!(parse(&framed(&format!("{name}: no-address"))), Err(invalid(name, "address must be non-empty and contain @")));
     }
     assert!(parse(&framed("mail-to: @")).is_ok());
 }
