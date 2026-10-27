@@ -1051,6 +1051,7 @@ mod tests {
                 "late folder must not reopen a chooser"
             );
             command(&mut state, "email.compose", json!({"account": "b"}));
+            state.finish_compose_inspections();
             assert_eq!(state.take_replies()[0].rc, 0, "compose must not stay BUSY");
         }
     }
