@@ -299,7 +299,7 @@ fn tcp_page_exposes_charts_and_connections_in_both_themes() {
         for text in [
             "Segments in / out",
             "Established",
-            "Opens and resets per second",
+            "Opens / resets",
             "Top 20 connections by throughput",
         ] {
             assert!(

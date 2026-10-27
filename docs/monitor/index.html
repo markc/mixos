@@ -281,9 +281,12 @@ Peer addresses and users are open on the Bus, like <code>ss</code>; see
 <p>Monitor reads once a second. Pause (Ctrl+P) holds the readings still;
 Refresh (Ctrl+R) reads once.</p>
 <p>The main Performance graphs use interactive <code>egui_plot</code> charts: seconds ago
-on x (zero at the right), resource units on y, and compact legends in wrapping
-rows above multi-series charts, including disk read/write, network receive/send
-and TCP. Legends reserve space outside the plot and never cover data. Click
+on x (zero at the right), resource units on y, and compact legends aligned to
+the right of each chart's title, including disk read/write, network receive/send
+and TCP. A title header wraps only when its measured labels cannot fit. Legend
+layout never reduces the plot height or its labelled y ticks; swatches have
+their own space before each label. TCP opens/resets uses compact legend names
+with the full names in tooltips. Click
 a series name to hide or restore it. Hover shows sampled values and their age for visible
 series. Scroll or pinch to zoom time; while zoomed, drag to pan. At the full
 window, dragging scrolls the page. Double-click resets the range. Time stays

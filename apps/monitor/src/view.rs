@@ -582,6 +582,7 @@ fn cpu(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
         graph_size(ui, 0.3),
         Chart {
             series: &[Series {
+                legend_label: None,
                 name: &label("utilisation"),
                 hue: Kind::Cpu.hue(),
                 values: &engine.rings.get("cpu.busy"),
@@ -666,6 +667,7 @@ fn memory(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
         graph_size(ui, 0.4),
         Chart {
             series: &[Series {
+                legend_label: None,
                 name: &label("in-use"),
                 hue: Kind::Memory.hue(),
                 values: &engine.rings.get("mem.used"),
@@ -716,6 +718,7 @@ fn disk(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
         graph_size(ui, 0.3),
         Chart {
             series: &[Series {
+                legend_label: None,
                 name: &label("active-time"),
                 hue: Kind::Disk.hue(),
                 values: &busy,
@@ -730,24 +733,27 @@ fn disk(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
     let read = engine.rings.get(&format!("disk.{name}.read"));
     let write = engine.rings.get(&format!("disk.{name}.write"));
     let top = scale(&read, 1024.0 * 1024.0).max(scale(&write, 1024.0 * 1024.0));
-    ui.small(format!(
+    let title = format!(
         "{} / {} · {} · 60 s",
         label("read"),
         label("write"),
         rate(top)
-    ));
-    chart::show(
+    );
+    chart::show_titled(
         ui,
         ("disk-rates", &engine.ui.node, name),
+        &title,
         graph_size(ui, 0.25),
         Chart {
             series: &[
                 Series {
+                legend_label: None,
                     name: &label("read"),
                     hue: Kind::Disk.hue(),
                     values: &read,
                 },
                 Series {
+                legend_label: None,
                     name: &label("write"),
                     hue: Hue::AccentPlus,
                     values: &write,
@@ -812,24 +818,27 @@ fn net(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
     let rx = engine.rings.get(&format!("net.{name}.rx"));
     let tx = engine.rings.get(&format!("net.{name}.tx"));
     let top = scale(&rx, 1024.0).max(scale(&tx, 1024.0));
-    ui.small(format!(
+    let title = format!(
         "{} / {} · {} · 60 s",
         label("receive"),
         label("send"),
         rate(top)
-    ));
-    chart::show(
+    );
+    chart::show_titled(
         ui,
         ("net-rates", &engine.ui.node, name),
+        &title,
         graph_size(ui, 0.45),
         Chart {
             series: &[
                 Series {
+                legend_label: None,
                     name: &label("receive"),
                     hue: Kind::Net.hue(),
                     values: &rx,
                 },
                 Series {
+                legend_label: None,
                     name: &label("send"),
                     hue: Hue::AccentPlus,
                     values: &tx,
@@ -875,17 +884,25 @@ fn tcp_chart(
     gauge: bool,
     annotation: Option<&dyn Fn(usize) -> Option<String>>,
 ) {
-    ui.small(label(title));
     let values: Vec<_> = fields
         .iter()
         .map(|(key, _, _)| engine.rings.get(key))
         .collect();
     let labels: Vec<_> = fields.iter().map(|(_, key, _)| label(key)).collect();
+    let legend_labels: Vec<_> = fields.iter().map(|(_,key,_)| label(match *key {
+        "tcp-active-opens" => "tcp-active-short",
+        "tcp-passive-opens" => "tcp-passive-short",
+        "tcp-out-rsts" => "tcp-rsts-short",
+        "tcp-estab-resets" => "tcp-resets-short",
+        key => key,
+    })).collect();
     let series: Vec<_> = fields
         .iter()
         .zip(&values)
         .zip(&labels)
-        .map(|(((_, _, hue), values), name)| Series {
+        .zip(&legend_labels)
+        .map(|((((_, _, hue), values), name), legend_label)| Series {
+            legend_label: Some(legend_label),
             name,
             hue: *hue,
             values,
@@ -900,11 +917,12 @@ fn tcp_chart(
         format: if gauge { count } else { tcp_rate },
     };
     let size = Vec2::new(ui.available_width(), 130.0);
+    let heading = label(if title == "tcp-opens-resets" { "tcp-opens-resets-short" } else {title});
     match annotation {
         Some(annotation) => {
-            chart::show_annotated(ui, (title, &engine.ui.node), size, chart, annotation)
+            chart::show_annotated(ui, (title, &engine.ui.node), &heading, size, chart, annotation)
         }
-        None => chart::show(ui, (title, &engine.ui.node), size, chart),
+        None => chart::show_titled(ui, (title, &engine.ui.node), &heading, size, chart),
     }
 }
 

@@ -11,6 +11,8 @@ use toolkit::graph::{self, Hue};
 
 pub struct Series<'a> {
     pub name: &'a str,
+    /// A compact legend label; the full name remains in hover and tooltips.
+    pub legend_label: Option<&'a str>,
     pub hue: Hue,
     pub values: &'a [f64],
 }
@@ -256,63 +258,90 @@ pub fn show(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) 
     let _ = render(ui, id, size, chart);
 }
 
+pub fn show_titled(ui: &mut Ui, id: impl egui::AsIdSalt, title: &str, size: Vec2, chart: Chart<'_>) {
+    let _ = render_custom(ui, id, size, chart, Some(title), None);
+}
+
 /// A caller-owned derived readout at the same sample as the plotted data.
 /// Keeps ratios and resource semantics out of the chart renderer.
 pub fn show_annotated(
     ui: &mut Ui,
     id: impl egui::AsIdSalt,
+    title: &str,
     size: Vec2,
     chart: Chart<'_>,
     annotation: &dyn Fn(usize) -> Option<String>,
 ) {
-    let _ = render_custom(ui, id, size, chart, Some(annotation));
+    let _ = render_custom(ui, id, size, chart, Some(title), Some(annotation));
 }
 
 // Return the actual response to renderer tests; do not reconstruct egui_plot's
 // private memory key from its id salt. Plotting types stay inside this module.
 fn render(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) -> PlotResponse<()> {
-    render_custom(ui, id, size, chart, None)
+    render_custom(ui, id, size, chart, None, None)
 }
 
-/// A wrapping row outside the plot. Series names remain clickable, and the
-/// same hidden set controls both the lines and the sampled hover readout.
-fn legend(ui: &mut Ui, series: &[Series<'_>], hidden: &mut ItemIdSet) -> egui::Response {
-    ui.horizontal_wrapped(|ui| {
-        for series in series {
-            let id = ItemId::new(series.name);
-            let visible = !hidden.contains(&id);
-            let colour = if visible {
-                graph::tint(ui, series.hue)
-            } else {
-                ui.visuals().weak_text_color()
-            };
-            let response = ui.add(
-                egui::Button::new(
-                    egui::RichText::new(format!("   {}", series.name))
-                        .small()
-                        .color(colour),
-                )
-                .frame(false)
-                .selected(visible),
-            );
-            let radius = ui.text_style_height(&egui::TextStyle::Small) * 0.2;
-            let centre = egui::pos2(
-                response.rect.left() + ui.spacing().button_padding.x + radius,
-                response.rect.center().y,
-            );
-            ui.painter().circle_filled(centre, radius, colour);
-            response
-                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, series.name));
-            if response.clicked() {
-                if visible {
-                    hidden.insert(id);
-                } else {
-                    hidden.remove(&id);
-                }
-            }
+/// Fit entries alongside the title first, then wrap only overflowing entries.
+/// Each row is right-aligned; no legend row is taken from the plot's height.
+fn header_rows(width: f32, title: f32, entries: &[f32], gap: f32) -> Vec<Vec<usize>> {
+    let mut rows = vec![Vec::new()];
+    let mut remaining = (width - title - gap).max(0.0);
+    for (i, entry) in entries.iter().enumerate() {
+        let spacing = if rows.last().unwrap().is_empty() { 0.0 } else { gap };
+        if *entry + spacing > remaining && (!rows.last().unwrap().is_empty() || rows.len() == 1) {
+            rows.push(Vec::new());
+            remaining = width;
         }
-    })
-    .response
+        let spacing = if rows.last().unwrap().is_empty() { 0.0 } else { gap };
+        rows.last_mut().unwrap().push(i);
+        remaining -= entry + spacing;
+    }
+    rows
+}
+
+/// One measured title header. Swatch and text have separate rectangles,
+/// rather than relying on whitespace surviving a widget's text layout.
+fn title_line(ui: &mut Ui, plot_id: egui::Id, title: &str, width: f32,
+    series: &[Series<'_>], hidden: &mut ItemIdSet) {
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let height = ui.text_style_height(&egui::TextStyle::Small);
+    let swatch = height * 0.4;
+    let gap = ui.spacing().item_spacing.x * 0.5;
+    let title = ui.painter().layout_no_wrap(title.to_owned(), font.clone(), ui.visuals().text_color());
+    let entries: Vec<_> = series.iter().filter(|_| series.len() > 1).map(|s| {
+        let colour = if hidden.contains(&ItemId::new(s.name)) { ui.visuals().weak_text_color() } else { graph::tint(ui, s.hue) };
+        (ui.painter().layout_no_wrap(s.legend_label.unwrap_or(s.name).to_owned(), font.clone(), colour), colour)
+    }).collect();
+    let widths: Vec<_> = entries.iter().map(|(g,_)| swatch + gap + g.size().x).collect();
+    let rows = header_rows(width, title.size().x, &widths, gap);
+    let total_height = rows.len() as f32 * height + (rows.len()-1) as f32 * ui.spacing().item_spacing.y;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, total_height), egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    painter.galley(rect.min, title, ui.visuals().text_color());
+    for (row_index, row) in rows.iter().enumerate() {
+        let row_width = row.iter().map(|&i| widths[i]).sum::<f32>() + row.len().saturating_sub(1) as f32 * gap;
+        let mut x = rect.right() - row_width;
+        let y = rect.top() + row_index as f32 * (height + ui.spacing().item_spacing.y);
+        for &i in row {
+            let entry = egui::Rect::from_min_size(egui::pos2(x,y), egui::vec2(widths[i],height));
+            let visible = !hidden.contains(&ItemId::new(series[i].name));
+            let response = ui.interact(entry.intersect(rect), plot_id.with(series[i].name), egui::Sense::click());
+            if response.hovered() || response.has_focus() {
+                painter.rect_filled(entry, 0.0, ui.visuals().widgets.hovered.bg_fill);
+            }
+            let centre = egui::pos2(x + swatch*0.5, entry.center().y);
+            painter.circle_filled(centre, swatch*0.5, entries[i].1);
+            painter.galley(egui::pos2(x+swatch+gap,y), entries[i].0.clone(), entries[i].1);
+            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, visible, series[i].name));
+            let clicked = response.clicked();
+            response.on_hover_text(series[i].name);
+            if clicked {
+                let id = ItemId::new(series[i].name);
+                if visible { hidden.insert(id); } else { hidden.remove(&id); }
+            }
+            x += widths[i] + gap;
+        }
+    }
 }
 
 fn render_custom(
@@ -320,6 +349,7 @@ fn render_custom(
     id: impl egui::AsIdSalt,
     size: Vec2,
     chart: Chart<'_>,
+    title: Option<&str>,
     annotation: Option<&dyn Fn(usize) -> Option<String>>,
 ) -> PlotResponse<()> {
     let interval_s = if chart.interval_s.is_finite() && chart.interval_s > 0.0 {
@@ -337,15 +367,9 @@ fn render_custom(
     let mut hidden = PlotMemory::load(ui.ctx(), plot_id)
         .map(|memory| memory.hidden_items)
         .unwrap_or_default();
-    let legend_height = if chart.series.len() > 1 {
-        let top = ui.next_widget_position().y;
-        ui.push_id(plot_id.with("legend"), |ui| {
-            legend(ui, chart.series, &mut hidden)
-        });
-        ui.next_widget_position().y - top
-    } else {
-        0.0
-    };
+    if let Some(title) = title {
+        title_line(ui, plot_id, title, size.x, chart.series, &mut hidden);
+    }
     let padding = text_height * 0.5 + ui.spacing().item_spacing.y;
     ui.add_space(padding);
     if let Some(mut memory) = PlotMemory::load(ui.ctx(), plot_id) {
@@ -371,7 +395,7 @@ fn render_custom(
     let plot = Plot::new(plot_id)
         .id(plot_id)
         .width(size.x)
-        .height((size.y - padding - legend_height).max(text_height * 2.0))
+        .height((size.y - padding).max(text_height * 2.0))
         .default_x_bounds(-window, 0.0)
         .default_y_bounds(0.0, ticks.max())
         // egui_plot applies its own navigation after the build callback. Own
@@ -477,21 +501,25 @@ mod tests {
                 |ui, state: &mut (egui::Rect, ItemIdSet, String)| {
                     let series = [
                         Series {
+                legend_label: None,
                             name: "Active opens",
                             hue: Hue::Series(1),
                             values: &[1.0, 2.0],
                         },
                         Series {
+                legend_label: None,
                             name: "Passive opens",
                             hue: Hue::Series(2),
                             values: &[3.0, 4.0],
                         },
                         Series {
+                legend_label: None,
                             name: "Sent resets",
                             hue: Hue::Series(3),
                             values: &[5.0, 6.0],
                         },
                         Series {
+                legend_label: None,
                             name: "Established resets",
                             hue: Hue::Series(4),
                             values: &[7.0, 8.0],
@@ -505,7 +533,7 @@ mod tests {
                         scale: Scale::Count(10.0),
                         format: vitals::format::percent,
                     };
-                    let output = render(ui, "legend-test", egui::vec2(360.0, 150.0), chart);
+                    let output = render_custom(ui, "legend-test", egui::vec2(360.0, 150.0), chart, Some("Rates"), None);
                     state.0 = *output.transform.frame();
                     state.1 = PlotMemory::load(ui.ctx(), id).unwrap().hidden_items;
                     state.2 = readout_at(
@@ -548,12 +576,69 @@ mod tests {
     }
 
     #[test]
+    fn title_legends_keep_labelled_y_ticks_plot_height_and_clear_space_for_swatches() {
+        use egui::{Rect, Shape};
+        use egui_kittest::{Harness, kittest::Queryable};
+        fn shapes(shape: &Shape, text: &mut Vec<(String,Rect)>, circles: &mut Vec<Rect>) {
+            match shape {
+                Shape::Vec(list) => for shape in list { shapes(shape,text,circles); },
+                Shape::Text(t) => text.push((t.galley.text().to_owned(),Rect::from_min_size(t.pos,t.galley.size()))),
+                Shape::Circle(c) => circles.push(Rect::from_center_size(c.center,Vec2::splat(c.radius*2.0))),
+                _ => {},
+            }
+        }
+        for theme in [toolkit::Theme::embedded(), toolkit::Theme::for_context(design::DesignContext::revision_one())] {
+            let mut plain_height: Option<f32> = None;
+            for with_legend in [false,true] {
+                let theme = theme.clone();
+                let mut h = Harness::builder()
+                    .with_context_setup(move |ctx| toolkit::install(ctx,&theme))
+                    .with_size(egui::vec2(400.0,280.0))
+                    .build_ui_state(move |ui, frame| {
+                        let series: Vec<_> = [
+                            ("Active opens","Active"), ("Passive opens","Passive"),
+                            ("Sent resets","Sent"), ("Established resets","Estab."),
+                        ].into_iter().take(if with_legend {4} else {1}).enumerate().map(|(i,(name,short))| Series {
+                            name, legend_label:Some(short), hue:Hue::Series(i+1), values:&[10.0,20.0],
+                        }).collect();
+                        let output = render_custom(ui,"height-test",egui::vec2(360.0,130.0),Chart {
+                            series:&series,samples:60,interval_s:1.0,scale:Scale::Percent,format:vitals::format::percent,
+                        },Some("Rates"),None);
+                        *frame = *output.transform.frame();
+                    },Rect::NOTHING);
+                h.run();
+                let mut text = Vec::new();
+                let mut circles = Vec::new();
+                for shape in &h.output().shapes { shapes(&shape.shape,&mut text,&mut circles); }
+                for label in ["0 %","25 %","50 %","75 %","100 %"] {
+                    assert!(text.iter().any(|(s,_)| s == label), "missing {label} with legend={with_legend}");
+                }
+                if let Some(height) = plain_height {
+                    assert!((h.state().height()-height).abs() < 0.5, "a title legend must not shrink the plot");
+                } else { plain_height = Some(h.state().height()); }
+                if with_legend {
+                    let title = text.iter().find(|(s,_)| s == "Rates").unwrap().1;
+                    for (name,short) in [("Active opens","Active"),("Passive opens","Passive"),("Sent resets","Sent"),("Established resets","Estab.")] {
+                        let hit = h.get_by_label(name).rect();
+                        let label = text.iter().find(|(s,_)| s == short).unwrap().1;
+                        let swatch = circles.iter().find(|r| hit.contains(r.center())).unwrap();
+                        assert!(swatch.right() < label.left(), "swatch overlaps {name}");
+                        assert!((label.top()-title.top()).abs() < 0.5, "legend belongs on the title line");
+                        assert!(label.bottom() < h.state().top());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn tcp_counts_use_decimal_ticks_and_derived_hover_uses_the_same_sample() {
         let ticks = YTicks::for_scale(Scale::Count(1500.0));
         assert_eq!(ticks.step, 500.0);
         assert_eq!(ticks.max(), 1500.0);
         let chart = Chart {
             series: &[Series {
+                legend_label: None,
                 name: "Retransmits",
                 hue: Hue::Warning,
                 values: &[2.0, 10.0],
@@ -641,11 +726,13 @@ mod tests {
         let chart = Chart {
             series: &[
                 Series {
+                legend_label: None,
                     name: "Receive",
                     hue: Hue::Accent,
                     values: &[1.0, 2.0],
                 },
                 Series {
+                legend_label: None,
                     name: "Send",
                     hue: Hue::AccentPlus,
                     values: &[3.0, 4.0],
@@ -778,6 +865,7 @@ mod tests {
                         egui::vec2(600.0, 120.0),
                         Chart {
                             series: &[Series {
+                legend_label: None,
                                 name: "sample",
                                 hue: Hue::Accent,
                                 values: &[0.0; 60],
@@ -851,6 +939,7 @@ mod tests {
                         vec2(600.0, 260.0),
                         Chart {
                             series: &[Series {
+                legend_label: None,
                                 name: "CPU",
                                 hue: Hue::Accent,
                                 values: &[20.0; 60],
@@ -964,6 +1053,7 @@ mod tests {
                                 vec2(580.0, 120.0),
                                 Chart {
                                     series: &[Series {
+                legend_label: None,
                                         name: "CPU",
                                         hue: Hue::Accent,
                                         values: &[20.0; 60],
