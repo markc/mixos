@@ -268,8 +268,13 @@ fn tcp_page_exposes_charts_and_connections_in_both_themes() {
         let registry = actions::registry();
         let strings = strings();
         let mut h = Harness::builder().with_context_setup(move |ctx| toolkit::install(ctx,&theme))
-            .with_size(egui::vec2(1040.0,680.0)).build_ui(move |ui| { view(ui,&engine,&registry,&strings); });
+            .with_size(egui::vec2(1040.0,680.0)).build_ui_state(move |ui, layout| {
+                view(ui,&engine,&registry,&strings);
+                *layout = monitor::view::performance_layout(ui.ctx());
+            }, None::<monitor::view::PerformanceLayout>);
         h.run();
+        let layout = h.state().as_ref().unwrap();
+        assert!(layout.content_size.x <= layout.pane_size.x + 0.5, "TCP should scroll vertically, never horizontally: {layout:?}");
         for text in ["Segments in / out", "Established", "Opens and resets per second", "Top 20 connections by throughput"] {
             assert!(!h.query_all_by_label(text).collect::<Vec<_>>().is_empty(), "{text} missing");
         }

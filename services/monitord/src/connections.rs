@@ -81,7 +81,7 @@ fn diag(b: &[u8]) -> io::Result<Raw> {
         if len < 4 || at + len > b.len() { return Err(invalid()); }
         if kind == INET_DIAG_INFO {
             let info = &b[at+4..at+len];
-            r.rtt_us = u32_at(info, 68);
+            r.rtt_us = u32_at(info, 68).filter(|v| *v > 0);
             r.retransmits = u32_at(info, 100); // tcpi_total_retrans, not retry backoff
             r.bytes_acked = u64_at(info, 120);
             r.bytes_received = u64_at(info, 128);
@@ -128,10 +128,6 @@ fn decode(b: &[u8], seq: u32, rows: &mut Vec<Raw>) -> io::Result<bool> {
 /// One bounded IPv4 + IPv6 dump. Connected netlink accepts only the kernel;
 /// recvfrom checks the sender too. OwnedFd closes on every exit path.
 pub fn dump() -> io::Result<Vec<Raw>> {
-    dump_with(|_| {})
-}
-
-fn dump_with(mut observe: impl FnMut(&[u8])) -> io::Result<Vec<Raw>> {
     // SAFETY: socket has constant domain/type/protocol and returns a new fd.
     let fd = unsafe { libc::socket(libc::AF_NETLINK, libc::SOCK_RAW | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK, libc::NETLINK_SOCK_DIAG) };
     if fd < 0 { return Err(io::Error::last_os_error()); }
@@ -176,7 +172,6 @@ fn dump_with(mut observe: impl FnMut(&[u8])) -> io::Result<Vec<Raw>> {
                 return Err(e);
             }
             if n == 0 || n as usize > buffer.len() || sender.nl_pid != 0 { return Err(invalid()); }
-            observe(&buffer[..n as usize]);
             if decode(&buffer[..n as usize], seq, &mut rows)? { break; }
         }
     }
@@ -353,6 +348,77 @@ pub async fn run(sampler: Arc<Sampler>) {
 mod tests {
     use super::*;
 
+    fn hex(text: &str) -> Vec<u8> {
+        let text = text.lines().filter(|l| !l.starts_with('#')).collect::<String>();
+        (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i+2],16).unwrap()).collect()
+    }
+
+    #[test]
+    fn requests_encode_uapi_all_states_and_tcp_info_without_privileged_extensions() {
+        // nlmsghdr + req_v2, also accepted by the kernel in the live test.
+        // Native words are little endian in these x86-64 fixtures.
+        if cfg!(target_endian = "little") {
+            let expected = hex(&("4800000014000103010000000000000002060200ffffffff".to_owned()
+                + &"00".repeat(40) + &"ff".repeat(8)));
+            assert_eq!(request(libc::AF_INET as u8,1), expected);
+            let mut ipv6 = expected;
+            ipv6[16] = libc::AF_INET6 as u8;
+            assert_eq!(request(libc::AF_INET6 as u8,1), ipv6);
+        }
+    }
+
+    #[test]
+    #[cfg(target_endian = "little")]
+    fn captured_wire_fixtures_decode_addresses_uid_tcp_info_and_multipart_done() {
+        for (fixture, local, remote) in [
+            (include_str!("../tests/fixtures/inet_diag_v4.hex"), "192.0.2.1", "198.51.100.2"),
+            (include_str!("../tests/fixtures/inet_diag_v6.hex"), "2001:db8::1", "2001:db8::2"),
+        ] {
+            let mut wire = hex(fixture);
+            let mut rows = Vec::new();
+            assert!(!decode(&wire,1,&mut rows).unwrap());
+            assert_eq!(rows.len(),1);
+            let row = &rows[0];
+            assert_eq!(row.local.to_string(),local);
+            assert_eq!(row.remote.to_string(),remote);
+            assert_eq!((row.local_port,row.remote_port,row.uid,row.cookie), (443,45000,1000,[1,0]));
+            assert_eq!(row.bytes_received,Some(128));
+            assert_eq!(row.bytes_acked,Some(0));
+            assert_eq!(row.retransmits,Some(0));
+            assert!(row.rtt_us.unwrap() > 0);
+            wire.extend(hex("1400000003000200010000000000000000000000"));
+            let mut rows = Vec::new();
+            assert!(decode(&wire,1,&mut rows).unwrap());
+            assert_eq!(rows.len(),1);
+        }
+    }
+
+    #[test]
+    #[cfg(target_endian = "little")]
+    fn short_tcp_info_omits_new_fields_unknown_attributes_skip_bad_lengths_refuse() {
+        let wire = hex(include_str!("../tests/fixtures/inet_diag_v4.hex"));
+        let mut b = wire[HEADER..].to_vec();
+        let mut at = DIAG;
+        while u16_at(&b,at+2) != Some(INET_DIAG_INFO) {
+            at += aligned(usize::from(u16_at(&b,at).unwrap()));
+        }
+        b[at..at+2].copy_from_slice(&108u16.to_ne_bytes());
+        b.truncate(at+108); // old 104-byte tcp_info
+        let row = diag(&b).unwrap();
+        assert!(row.rtt_us.is_some() && row.retransmits.is_some());
+        assert!(row.bytes_acked.is_none() && row.bytes_received.is_none());
+        let old = b.clone();
+        b.extend([5,0,0xe7,3,42,0,0,0]); // future attribute, including padding
+        assert_eq!(diag(&b).unwrap(),row);
+        b[at..at+2].copy_from_slice(&3u16.to_ne_bytes());
+        assert!(diag(&b).is_err());
+        let mut b = old;
+        b[at..at+2].copy_from_slice(&u16::MAX.to_ne_bytes());
+        assert!(diag(&b).is_err());
+        let mut full = vec![raw(1,0);MAX_SOCKETS];
+        assert!(decode(&wire,1,&mut full).is_err());
+    }
+
     fn raw(cookie: u32, bytes: u64) -> Raw {
         Raw { cookie: [cookie, 0], local: "192.0.2.1".parse().unwrap(),
             remote: "198.51.100.2".parse().unwrap(), local_port: 443, remote_port: 45000,
@@ -436,7 +502,6 @@ mod tests {
     }
 
     /// Exercises the worker's own sockets, without a broker or privilege.
-    /// Only neutralised wire bytes are printed, for the captured fixture.
     #[test]
     fn live_unprivileged_ipv4_and_ipv6_dumps() {
         use std::{io::{Read, Write}, net::{TcpListener, TcpStream}};
@@ -447,40 +512,7 @@ mod tests {
             let (mut server, _) = listener.accept().unwrap();
             client.write_all(&[42; 128]).unwrap();
             server.read_exact(&mut [0; 128]).unwrap();
-            let rows = dump_with(|data| {
-                if !cfg!(target_endian = "little") { return; }
-                let mut at = 0;
-                while at + HEADER <= data.len() {
-                    let len = u32_at(data, at).unwrap() as usize;
-                    if len < HEADER || at+len > data.len() { break; }
-                    let msg = &data[at+HEADER..at+len];
-                    if u16_at(data, at+4) == Some(SOCK_DIAG_BY_FAMILY)
-                        && let Ok(r) = diag(msg)
-                        && r.local_port == address.port() && r.state == 1
-                    {
-                        let mut fixture = data[at..at+len].to_vec();
-                        fixture[8..12].copy_from_slice(&1u32.to_le_bytes());
-                        fixture[12..16].fill(0);
-                        let b = &mut fixture[HEADER..];
-                        b[4..6].copy_from_slice(&443u16.to_be_bytes());
-                        b[6..8].copy_from_slice(&45000u16.to_be_bytes());
-                        b[8..40].fill(0);
-                        if address.is_ipv4() {
-                            b[8..12].copy_from_slice(&[192,0,2,1]);
-                            b[24..28].copy_from_slice(&[198,51,100,2]);
-                        } else {
-                            b[8..24].copy_from_slice(&"2001:db8::1".parse::<Ipv6Addr>().unwrap().octets());
-                            b[24..40].copy_from_slice(&"2001:db8::2".parse::<Ipv6Addr>().unwrap().octets());
-                        }
-                        b[40..52].fill(0);
-                        b[44..48].copy_from_slice(&1u32.to_le_bytes());
-                        b[64..68].copy_from_slice(&1000u32.to_le_bytes());
-                        b[68..72].fill(0);
-                        eprintln!("neutral inet_diag {}: {}", if address.is_ipv4() {"v4"} else {"v6"}, fixture.iter().map(|b| format!("{b:02x}")).collect::<String>());
-                    }
-                    at += aligned(len);
-                }
-            }).unwrap();
+            let rows = dump().unwrap();
             let socket = rows.iter().find(|r| r.local_port == address.port() && r.state == 1).unwrap();
             assert!(socket.bytes_received.unwrap() >= 128);
             assert!(socket.rtt_us.is_some());

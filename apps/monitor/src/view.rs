@@ -441,8 +441,9 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                     let response = ui
                         .horizontal(|ui| {
                             let (values, max) = section_series(engine, &key);
-                            let format = |_, value, age| {
-                                chart::readout("", value, age as f64, kind.format())
+                            let format = |index, value, age| {
+                                let name = if key == "tcp" { label(if index == 0 {"receive"} else {"send"}) } else {String::new()};
+                                chart::readout(&name, value, age as f64, kind.format())
                             };
                             let second = engine.rings.get("tcp.out_segs");
                             let series: Vec<_> = if key == "tcp" {

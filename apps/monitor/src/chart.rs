@@ -214,6 +214,16 @@ fn readout_at(chart: &Chart<'_>, x: f64, interval_s: f64, hidden: &ItemIdSet) ->
     (!rows.is_empty()).then(|| rows.join("\n"))
 }
 
+fn annotated_readout(chart: &Chart<'_>, x: f64, interval_s: f64, hidden: &ItemIdSet,
+    annotation: Option<&dyn Fn(usize) -> Option<String>>) -> Option<String> {
+    let mut text = readout_at(chart, x, interval_s, hidden)?;
+    if let Some(extra) = annotation.and_then(|f| f((-x / interval_s).round() as usize)) {
+        text.push('\n');
+        text.push_str(&extra);
+    }
+    Some(text)
+}
+
 pub fn readout(name: &str, value: f64, age_s: f64, format: fn(f64) -> String) -> String {
     let value = format(value);
     let age = crate::label_with("graph-age", &[("age", &format!("{:.0}", age_s.max(0.0)))]);
@@ -317,17 +327,13 @@ fn render_custom(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<
                 | HoverPosition::Elsewhere { position } => position,
             };
             let x = pointer_time.get().unwrap_or(position.x);
-            let mut text = readout_at(
+            annotated_readout(
                 &chart,
                 x,
                 interval_s,
                 &hidden,
-            )?;
-            if let Some(extra) = annotation.and_then(|f| f((-x / interval_s).round() as usize)) {
-                text.push('\n');
-                text.push_str(&extra);
-            }
-            Some(text)
+                annotation,
+            )
         });
     if chart.series.len() > 1 {
         plot = plot.legend(Legend::default());
@@ -391,6 +397,24 @@ fn render_custom(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tcp_counts_use_decimal_ticks_and_derived_hover_uses_the_same_sample() {
+        let ticks = YTicks::for_scale(Scale::Count(1500.0));
+        assert_eq!(ticks.step, 500.0);
+        assert_eq!(ticks.max(), 1500.0);
+        let chart = Chart { series: &[Series { name: "Retransmits", hue: Hue::Warning, values: &[2.0, 10.0] }],
+            samples:60, interval_s:2.0, scale:Scale::Count(10.0), format: vitals::format::percent };
+        let ratio = |steps| {
+            let r = [10.0, 2.0][steps];
+            let out = [100.0, 200.0][steps];
+            Some(format!("{}%", vitals::model::retransmit_percent(r, out).unwrap()))
+        };
+        let hidden = ItemIdSet::default();
+        assert!(annotated_readout(&chart, 0.0, 2.0, &hidden, Some(&ratio)).unwrap().ends_with("10%"));
+        assert!(annotated_readout(&chart, -2.0, 2.0, &hidden, Some(&ratio)).unwrap().ends_with("1%"));
+        assert!(annotated_readout(&chart, 0.1, 2.0, &hidden, Some(&ratio)).is_none());
+    }
 
     #[test]
     fn time_ranges_are_bounded_and_wheel_zoom_preserves_the_pointer_time() {
