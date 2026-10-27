@@ -134,6 +134,9 @@ const WORKSPACE_TARGETS: &[&str] = &[
     "workshop",
     "x11_wm",
 ];
+// EnvFilter matches target prefixes. These resolved dependencies share an
+// own-crate prefix, so give their longer names explicit dependency levels.
+const PREFIX_DEPENDENCIES: &[&str] = &["strict_num", "system_deps", "termcolor"];
 const CLAMPED_TARGETS: &[&str] = &[
     "wgpu_core",
     "wgpu_hal",
@@ -187,6 +190,9 @@ pub fn filter_for(level: Level) -> String {
             let mut filter = String::from("info");
             for target in WORKSPACE_TARGETS {
                 filter.push_str(&format!(",{target}={}", level.name()));
+            }
+            for target in PREFIX_DEPENDENCIES {
+                filter.push_str(&format!(",{target}=info"));
             }
             for target in CLAMPED_TARGETS {
                 filter.push_str(&format!(",{target}=warn"));
@@ -422,6 +428,16 @@ mod tests {
         for kind in ["apps", "libs", "services", "cli"] {
             check(&root.join(kind));
         }
+        for line in include_str!("../../../Cargo.lock").lines() {
+            if let Some(name) = line.strip_prefix("name = \"").and_then(|name| name.strip_suffix('"')) {
+                let target = name.replace('-', "_");
+                if !WORKSPACE_TARGETS.contains(&target.as_str())
+                    && WORKSPACE_TARGETS.iter().any(|own| target.starts_with(own))
+                {
+                    assert!(PREFIX_DEPENDENCIES.contains(&target.as_str()), "dependency prefix needs an explicit cap: {target}");
+                }
+            }
+        }
     }
 
     #[test]
@@ -492,6 +508,9 @@ mod tests {
                     level == Level::Trace
                 );
                 assert!(!tracing::enabled!(target: "external", tracing::Level::DEBUG));
+                assert!(!tracing::enabled!(target: "strict_num", tracing::Level::DEBUG));
+                assert!(!tracing::enabled!(target: "system_deps", tracing::Level::DEBUG));
+                assert!(!tracing::enabled!(target: "termcolor", tracing::Level::DEBUG));
                 assert!(!tracing::enabled!(target: "wgpu_core", tracing::Level::INFO));
                 assert_eq!(
                     tracing::enabled!(target: "tokio", tracing::Level::WARN),
