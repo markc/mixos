@@ -133,6 +133,9 @@ pub struct PaneModel {
     pub selected: Option<PathBuf>,
     /// Selected rows. Use `DopusCore::selected_paths` for visible ordering.
     pub selected_paths: HashSet<PathBuf>,
+    /// Cached on selection/listing changes, so action guards never walk rows.
+    selected_non_files: usize,
+    selected_is_dir: bool,
     selection_anchor: Option<PathBuf>,
     pub history: NavigationHistory,
     pub show_hidden: bool,
@@ -174,6 +177,8 @@ impl PaneModel {
             pending_children: HashSet::new(),
             selected: None,
             selected_paths: HashSet::new(),
+            selected_non_files: 0,
+            selected_is_dir: false,
             selection_anchor: None,
             history: NavigationHistory::default(),
             show_hidden,
@@ -189,6 +194,22 @@ impl PaneModel {
     /// `action_selection_available` (browser.rs:251-253).
     fn action_selection_available(&self) -> bool {
         !self.listing && !self.selected_paths.is_empty()
+    }
+
+    fn refresh_selection_metadata(&mut self) {
+        let files = self
+            .root
+            .iter()
+            .chain(self.children.values().flatten())
+            .filter(|entry| entry.is_file && self.selected_paths.contains(&entry.path))
+            .count();
+        // Paths missing from the listing are not known regular files either.
+        self.selected_non_files = self.selected_paths.len() - files;
+        self.selected_is_dir = self
+            .selected
+            .as_deref()
+            .and_then(|path| find_entry(self, path))
+            .is_some_and(|entry| entry.is_dir);
     }
 
     /// `action_rows_available` (browser.rs:255-257).
@@ -426,11 +447,7 @@ impl DopusCore {
             has_selection: pane.action_selection_available(),
             selection_count: pane.selected_paths.len(),
             selection_all_files: self.selection_all_files(self.active),
-            selection_is_dir: pane
-                .selected
-                .as_deref()
-                .and_then(|selected| find_entry(pane, selected))
-                .is_some_and(|entry| entry.is_dir),
+            selection_is_dir: pane.selected_is_dir,
             rows_available: pane.action_rows_available(),
             operation_running: self.operation == OpState::Running,
             show_hidden: pane.show_hidden,
@@ -811,6 +828,7 @@ impl DopusCore {
         model.selected_paths = path.iter().cloned().collect();
         model.selection_anchor = path.clone();
         model.selected = path;
+        model.refresh_selection_metadata();
         self.active = pane;
         self.emit(CoreEvent::SelectionChanged { pane });
         self.emit(CoreEvent::InfoChanged);
@@ -866,6 +884,7 @@ impl DopusCore {
                 model.selected = Some(path);
             }
         }
+        model.refresh_selection_metadata();
         self.active = pane;
         self.emit(CoreEvent::SelectionChanged { pane });
         self.emit(CoreEvent::InfoChanged);
@@ -878,6 +897,7 @@ impl DopusCore {
             return false;
         }
         model.selected = Some(path);
+        model.refresh_selection_metadata();
         self.active = pane;
         self.emit(CoreEvent::SelectionChanged { pane });
         self.emit(CoreEvent::InfoChanged);
@@ -903,11 +923,7 @@ impl DopusCore {
     /// Use the worker's metadata; availability never stats a mount on the UI thread.
     pub fn selection_all_files(&self, pane: PaneId) -> bool {
         let model = self.pane(pane);
-        model.action_selection_available()
-            && model
-                .selected_paths
-                .iter()
-                .all(|path| find_entry(model, path).is_some_and(|entry| entry.is_file))
+        model.action_selection_available() && model.selected_non_files == 0
     }
 
     /// Top-level selected paths for recursive operations and drag payloads.
@@ -978,6 +994,7 @@ impl DopusCore {
                 model.selection_anchor = model.selected.clone();
             }
             if count != model.selected_paths.len() {
+                model.refresh_selection_metadata();
                 self.emit(CoreEvent::SelectionChanged { pane });
                 self.emit(CoreEvent::InfoChanged);
             }
@@ -1418,6 +1435,7 @@ impl DopusCore {
                         sort_all_entries(pane);
                         pane.count_sort_dirty = false;
                     }
+                    pane.refresh_selection_metadata();
                     let status = pane_summary(&pane.root);
                     pane.status = status.clone();
                     Listing::Ok { jobs, status }
@@ -1431,6 +1449,7 @@ impl DopusCore {
                         pane.selected_paths.clear();
                         pane.selection_anchor = None;
                         pane.root.clear();
+                        pane.refresh_selection_metadata();
                         selection_cleared = true;
                     }
                     let status = sanitise_display_text(&error);
@@ -1680,6 +1699,7 @@ impl DopusCore {
             pane.listing_failed = false;
             pane.root.clear();
             pane.children.clear();
+            pane.refresh_selection_metadata();
             pane.expanded.clear();
             pane.pending_children.clear();
             pane.pending_counts = 0;
@@ -1846,9 +1866,16 @@ pub fn read_directory(directory: &Path, show_hidden: bool) -> Result<Vec<FileEnt
         // retains the real OsString bytes for every filesystem operation.
         let name = sanitise_display_text(&lossy_name);
         let path = entry.path();
-        let metadata = std::fs::metadata(&path).ok();
+        let metadata = entry.metadata().ok();
         let is_dir = metadata.as_ref().is_some_and(std::fs::Metadata::is_dir);
-        let is_file = metadata.as_ref().is_some_and(std::fs::Metadata::is_file);
+        let is_file = if metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.file_type().is_symlink())
+        {
+            std::fs::metadata(&path).is_ok_and(|metadata| metadata.is_file())
+        } else {
+            metadata.as_ref().is_some_and(std::fs::Metadata::is_file)
+        };
         let size = metadata
             .as_ref()
             .filter(|_| !is_dir)
@@ -2554,6 +2581,115 @@ mod tests {
     }
 
     #[test]
+    fn large_selection_tracks_files_folders_unknown_paths_and_clearing() {
+        let (_dir, mut core, _rx) = core_fixture();
+        let pane = PaneId::Left;
+        let paths: Vec<_> = (0..5_000)
+            .map(|at| PathBuf::from(format!("file-{at:04}")))
+            .collect();
+        selection_fixture(&mut core, &paths);
+        core.select_edge(pane, false);
+        core.select_edge_modified(pane, true, false, true);
+        assert_eq!(core.availability().selection_count, 5_000);
+        assert!(core.selection_all_files(pane));
+        assert!(!core.availability().selection_is_dir);
+
+        let folder = PathBuf::from("folder");
+        core.panes[0].root.push(entry("folder", true));
+        core.select_modified(pane, folder.clone(), true, false);
+        assert_eq!(core.availability().selection_count, 5_001);
+        assert!(!core.selection_all_files(pane));
+        assert!(core.availability().selection_is_dir);
+        core.focus_selected_path(pane, paths[0].clone());
+        assert!(!core.availability().selection_is_dir);
+        assert!(!core.selection_all_files(pane));
+        core.select_modified(pane, folder, true, false);
+        assert!(core.selection_all_files(pane));
+
+        // Unknown selections must fail closed until a listing supplies metadata.
+        core.select_path(pane, Some(PathBuf::from("missing")));
+        assert!(!core.selection_all_files(pane));
+        core.select_path(pane, None);
+        assert_eq!(core.pane(pane).selected_non_files, 0);
+        assert!(!core.selection_all_files(pane));
+        core.select_path(pane, Some(paths[0].clone()));
+        core.refresh_in(pane);
+        assert_eq!(core.availability().selection_count, 0);
+        assert!(!core.selection_all_files(pane));
+        assert!(!core.availability().selection_is_dir);
+    }
+
+    #[test]
+    fn listing_changes_refresh_selected_metadata_and_errors_clear_it() {
+        let (_dir, mut core, _rx) = core_fixture();
+        let pane = PaneId::Left;
+        let path = core.pane(pane).path.clone();
+        let generation = core.pane(pane).generation;
+        core.select_path(pane, Some(PathBuf::from("selected")));
+        assert!(!core.selection_all_files(pane));
+        core.receive_listing(
+            pane,
+            generation,
+            path.clone(),
+            true,
+            Ok(vec![entry("selected", false)]),
+        );
+        assert!(core.selection_all_files(pane));
+        core.receive_listing(
+            pane,
+            generation,
+            path.clone(),
+            true,
+            Ok(vec![entry("selected", true)]),
+        );
+        assert!(!core.selection_all_files(pane));
+        assert!(core.availability().selection_is_dir);
+        core.receive_listing(pane, generation, path, true, Err("unreadable".into()));
+        assert_eq!(core.pane(pane).selected_non_files, 0);
+        assert!(!core.availability().has_selection);
+        assert!(!core.availability().selection_is_dir);
+    }
+
+    #[test]
+    fn symlinks_keep_lstat_rows_but_file_targets_can_be_mailed() {
+        let (dir, mut core, _rx) = core_fixture();
+        let directory = dir.path().join("left");
+        let file = directory.join("file");
+        let folder = directory.join("folder");
+        let file_link = directory.join("file-link");
+        let folder_link = directory.join("folder-link");
+        std::fs::write(&file, b"contents").unwrap();
+        std::fs::create_dir(&folder).unwrap();
+        std::os::unix::fs::symlink(&file, &file_link).unwrap();
+        std::os::unix::fs::symlink(&folder, &folder_link).unwrap();
+        let entries = read_directory(&directory, false).unwrap();
+        let link = entries
+            .iter()
+            .find(|entry| entry.path == folder_link)
+            .unwrap();
+        let metadata = std::fs::symlink_metadata(&folder_link).unwrap();
+        assert!(!link.is_dir && !link.is_file);
+        assert_eq!(link.size, Some(metadata.len()));
+        assert_eq!(link.modified, metadata.modified().ok());
+        let link = entries.iter().find(|entry| entry.path == file_link).unwrap();
+        assert!(!link.is_dir && link.is_file);
+        assert_eq!(
+            link.size,
+            Some(std::fs::symlink_metadata(&file_link).unwrap().len())
+        );
+
+        let pane = PaneId::Left;
+        core.panes[0].root = entries;
+        core.panes[0].listing = false;
+        core.select_path(pane, Some(file_link));
+        assert!(core.selection_all_files(pane));
+        core.select_path(pane, Some(folder_link.clone()));
+        assert!(!core.selection_all_files(pane));
+        core.toggle_expand(pane, &folder_link);
+        assert!(!core.pane(pane).expanded.contains(&folder_link));
+    }
+
+    #[test]
     fn ctrl_toggles_and_shift_ranges_retain_the_anchor_in_visible_order() {
         let (_dir, mut core, _rx) = core_fixture();
         let pane = PaneId::Left;
@@ -2624,12 +2760,14 @@ mod tests {
         selection_fixture(&mut core, &[folder.clone(), last.clone()]);
         let model = &mut core.panes[pane.index()];
         model.root[0].is_dir = true;
+        model.root[0].is_file = false;
         model.expanded.insert(folder.clone());
         model
             .children
             .insert(folder.clone(), vec![entry("folder/child", false)]);
         core.select_modified(pane, folder.clone(), false, false);
         core.select_modified(pane, last.clone(), false, true);
+        assert!(!core.selection_all_files(pane));
         assert_eq!(
             core.selected_paths(pane),
             vec![folder.clone(), child.clone(), last.clone()]
@@ -2639,7 +2777,10 @@ mod tests {
             vec![folder.clone(), last.clone()]
         );
         core.select_modified(pane, child.clone(), false, false);
+        assert!(core.selection_all_files(pane));
         core.toggle_expand(pane, &folder);
+        assert!(!core.selection_all_files(pane));
+        assert_eq!(core.pane(pane).selected_non_files, 0);
         assert!(core.selected_paths(pane).is_empty());
         assert!(core.pane(pane).selected.is_none());
         assert!(core.pane(pane).selection_anchor.is_none());

@@ -1238,7 +1238,7 @@ impl Shell {
             )
             .await
             .map(|_| ())
-            .map_err(|error| error.to_string());
+            .map_err(prefs_open_error);
             Event::PrefsOpened(result)
         });
     }
@@ -1855,9 +1855,49 @@ impl eframe::App for Shell {
     }
 }
 
+fn prefs_open_error(error: citizen::AppCallError) -> String {
+    eprintln!("email: opening Prefs failed: {error}");
+    crate::label(match error {
+        citizen::AppCallError::LaunchFailed(_) => "no-launcher",
+        citizen::AppCallError::DidNotAppear
+        | citizen::AppCallError::Transport(_)
+        | citizen::AppCallError::Refused { .. } => "prefs-silent",
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opening_prefs_errors_use_the_catalogue() {
+        use citizen::AppCallError;
+
+        for (error, key) in [
+            (
+                AppCallError::LaunchFailed("launcher detail".into()),
+                "no-launcher",
+            ),
+            (AppCallError::DidNotAppear, "prefs-silent"),
+            (
+                AppCallError::Transport(citizen::CallError::from("transport detail")),
+                "prefs-silent",
+            ),
+            (
+                AppCallError::Refused {
+                    code: "REFUSED".into(),
+                    message: "refusal detail".into(),
+                    reply: citizen::Reply::default(),
+                },
+                "prefs-silent",
+            ),
+        ] {
+            let text = prefs_open_error(error);
+            assert_eq!(text, crate::label(key));
+            assert_ne!(text, key, "the Fluent key must still exist");
+            assert!(!text.contains("detail"));
+        }
+    }
 
     #[derive(Clone)]
     struct AuditWriter(Arc<Mutex<Vec<u8>>>);

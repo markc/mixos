@@ -276,7 +276,6 @@ email-launching = Starting Email…
 email-waiting = Waiting for Email to start…
 email-did-not-start = Email did not start in time. Start it, then try again.
 email-no-launcher = Email is not running, and the apps service that starts it is not either.
-email-launch-failed = Email could not be started: { $message }
 email-unsupported = This version of Email cannot do that yet. Update Email, then try again.
 email-action-failed = { $account }: { $message }
 email-action-lost = { $account }: no answer from Email ({ $message }). Trying again is safe.

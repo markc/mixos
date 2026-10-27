@@ -60,6 +60,48 @@ fn pointer(h: &Harness<'_, Fixture>, pos: Pos2, pressed: Option<bool>) {
 }
 
 #[test]
+fn a_menu_covered_by_an_external_modal_stays_closed_after_dismissal() {
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(800.0, 600.0))
+        .build_ui_state(
+            |ui, modal_open: &mut bool| {
+                ui.horizontal(|ui| {
+                    let _ = menu::bar(
+                        ui,
+                        &[Menu {
+                            title: "File".into(),
+                            entries: vec![Entry::Row(Row::command("test", "Test", None, true))],
+                        }],
+                    );
+                });
+                if *modal_open {
+                    toolkit::dialog::Dialog::new(egui::Id::unique("external-modal"), "Compose")
+                        .show(ui.ctx(), |ui| {
+                            ui.label("Message body");
+                        });
+                }
+            },
+            false,
+        );
+    toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+    h.run_steps(5);
+    h.get_by_label("File").click();
+    h.run();
+    assert!(menu::is_open(&h.ctx));
+    *h.state_mut() = true;
+    h.run_steps(5);
+    assert!(!menu::is_open(&h.ctx));
+    assert!(menu::current(&h.ctx).is_none());
+    *h.state_mut() = false;
+    h.run_steps(5);
+    assert!(!menu::is_open(&h.ctx));
+    assert!(menu::current(&h.ctx).is_none());
+    h.get_by_label("File").click();
+    h.run();
+    assert!(menu::is_open(&h.ctx), "the bar can still open a fresh menu");
+}
+
+#[test]
 fn a_press_opens_the_menu_before_the_release() {
     let mut h = window();
     let at = h.get_by_label("File").rect().center();

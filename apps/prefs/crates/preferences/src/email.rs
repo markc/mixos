@@ -1506,6 +1506,29 @@ impl Engine {
     }
 
     /// A call to Email (or to apps) finished.
+    /// A launch-aware call finished. Keep launch failures typed until the
+    /// engine chooses the translated message for the person.
+    pub fn app_mailed(&mut self, ticket: u64, result: Result<Reply, citizen::AppCallError>) {
+        let key = match result {
+            Ok(reply) => return self.mailed(ticket, Ok(reply)),
+            Err(citizen::AppCallError::Transport(error)) => return self.mailed(ticket, Err(error)),
+            Err(citizen::AppCallError::Refused { reply, .. }) => {
+                return self.mailed(ticket, Ok(reply));
+            }
+            Err(citizen::AppCallError::DidNotAppear) => "email-did-not-start",
+            Err(citizen::AppCallError::LaunchFailed(_)) => "email-no-launcher",
+        };
+        if let Some(task) = self.email.task.clone()
+            && task.ticket == ticket
+        {
+            let text = self.label(key, &[]);
+            self.end_action(task, Err(("NOT_RUNNING", text)), Value::Null);
+        }
+        if self.quitting && !self.busy() {
+            self.close_now();
+        }
+    }
+
     pub fn mailed(&mut self, ticket: u64, result: Result<Reply, CallError>) {
         if self.email.accounts_job == Some(ticket) {
             self.email.accounts_job = None;
@@ -1587,10 +1610,6 @@ impl Engine {
             Answer::Refused(value) if unknown_command(&value) => {
                 let text = self.label("email-unsupported", &[]);
                 self.end_action(task, Err(("UNSUPPORTED", text)), Value::Null);
-            }
-            Answer::Refused(value) if value["error_code"] == "NOT_RUNNING" => {
-                let text = self.label("email-launch-failed", &[("message", &refusal(&value))]);
-                self.end_action(task, Err(("NOT_RUNNING", text)), Value::Null);
             }
             Answer::Refused(value) => {
                 let message = refusal(&value);
@@ -2467,14 +2486,26 @@ mod tests {
                 .any(|effect| matches!(effect, Effect::Mail { launch: true, .. }))
         );
         assert!(!format!("{effects:?}").contains("example-password"));
-        e.mailed(
+        e.app_mailed(calls[0].0, Err(citizen::AppCallError::DidNotAppear));
+        assert!(e.email.task.is_none() && e.failed);
+        assert_eq!(e.status, "email-did-not-start");
+        assert_eq!(e.email.password.expose(), "example-password");
+        assert!(mail_calls(&e.take_effects()).is_empty());
+    }
+
+    #[test]
+    fn launch_failure_uses_the_no_launcher_message() {
+        let mut e = read();
+        e.select_email_account("a");
+        e.edit_email_password(Secret::new("example-password"));
+        e.set_email_password();
+        let calls = mail_calls(&e.take_effects());
+        e.app_mailed(
             calls[0].0,
-            reply(
-                10,
-                json!({"error_code":"NOT_RUNNING","message":"app did not appear"}),
-            ),
+            Err(citizen::AppCallError::LaunchFailed("launcher detail".into())),
         );
         assert!(e.email.task.is_none() && e.failed);
+        assert_eq!(e.status, "email-no-launcher");
         assert_eq!(e.email.password.expose(), "example-password");
         assert!(mail_calls(&e.take_effects()).is_empty());
     }
@@ -2494,7 +2525,11 @@ mod tests {
                 .iter()
                 .any(|effect| matches!(effect, Effect::Mail { launch: true, .. }))
         );
-        e.mailed(calls[0].0, reply(0, json!({"id":"a","has_password":false})));
+        e.app_mailed(
+            calls[0].0,
+            reply(0, json!({"id":"a","has_password":false}))
+                .map_err(citizen::AppCallError::Transport),
+        );
         assert!(!e.failed);
         assert!(e.email.task.is_none());
     }

@@ -111,6 +111,7 @@ pub struct FileChooser {
     browsing: Option<PathBuf>,
     hidden: bool,
     entries: Vec<Entry>,
+    row_ids: std::collections::HashSet<Id>,
     selection: Selection,
     capped: bool,
     error: Option<String>,
@@ -138,6 +139,7 @@ impl FileChooser {
             directory,
             hidden: false,
             entries: Vec::new(),
+            row_ids: std::collections::HashSet::new(),
             selection: Selection::default(),
             capped: false,
             error: None,
@@ -165,6 +167,7 @@ impl FileChooser {
                             self.directory = listing.directory;
                             self.path = self.directory.display().to_string();
                             self.entries = listing.entries;
+                            self.row_ids.clear();
                             self.capped = listing.capped;
                             self.selection = Selection::default();
                         }
@@ -210,6 +213,12 @@ impl FileChooser {
         let ctx = ui.ctx().clone();
         let path_id = self.id.with("path");
         let path_focused = ctx.memory(|m| m.has_focus(path_id));
+        // Buttons and fields own their keys. Only an unfocused chooser or
+        // one of the list rows delegates navigation and activation to us.
+        let list_focused = ctx
+            .memory(|m| m.focused())
+            .is_none_or(|id| self.row_ids.contains(&id));
+        let list_keys = list_focused && !egui::Popup::is_any_open(&ctx);
         // Consume before TextEdit: Enter otherwise gives up focus and can
         // also activate the dialog's default button.
         let submit = path_focused && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
@@ -258,7 +267,7 @@ impl FileChooser {
             ui.colored_label(ui.visuals().error_fg_color, error);
         }
         if self.pending.is_some() {
-            if !path_focused && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Backspace)) {
+            if list_keys && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Backspace)) {
                 self.up(&ctx);
             }
             ui.weak(own("file-chooser-loading"));
@@ -266,7 +275,7 @@ impl FileChooser {
         }
         let mut activate = false;
         let mut go_up = false;
-        if !path_focused && !egui::Popup::is_any_open(&ctx) {
+        if list_keys {
             ui.input_mut(|i| {
                 if i.consume_key(Modifiers::COMMAND, Key::A) {
                     self.selection.all(&self.entries);
@@ -295,6 +304,7 @@ impl FileChooser {
         }
         let mut clicked = None;
         let mut double = None;
+        self.row_ids.clear();
         egui::ScrollArea::vertical()
             .id_salt(self.id.with("list"))
             .auto_shrink([false, false])
@@ -349,6 +359,7 @@ impl FileChooser {
                                         .on_hover_text(entry.path.display().to_string())
                                 })
                                 .inner;
+                            self.row_ids.insert(response.id);
                             if self.scroll_to_cursor && self.selection.cursor == Some(at) {
                                 response.scroll_to_me(Some(egui::Align::Center));
                             }
@@ -409,6 +420,7 @@ impl FileChooser {
         self.path = path.display().to_string();
         self.browsing = Some(path.clone());
         self.entries.clear();
+        self.row_ids.clear();
         self.selection = Selection::default();
         self.capped = false;
         self.request(ctx, Request::Open(path));
@@ -684,6 +696,36 @@ mod tests {
             modified_date(UNIX_EPOCH + std::time::Duration::from_secs(951_782_400)).as_deref(),
             Some("2000-02-29")
         );
+    }
+
+    #[test]
+    fn enter_on_a_focused_cancel_button_cancels_instead_of_picking() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable;
+
+        let mut chooser = FileChooser::new("/tmp", "Choose files", "Attach");
+        chooser.started = true;
+        chooser.entries = vec![entry("report.txt", false)];
+        chooser.selection.all(&chooser.entries);
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(900.0, 700.0))
+            .build_ui_state(
+                |ui, state: &mut (FileChooser, Option<Outcome>)| {
+                    if state.1.is_none() {
+                        state.1 = state.0.show(ui.ctx());
+                    }
+                },
+                (chooser, None),
+            );
+        crate::install(&h.ctx, &crate::Theme::embedded());
+        h.run_steps(5);
+        h.get_by_label("Cancel").focus();
+        h.run();
+        assert!(h.get_by_label("Cancel").is_focused());
+        h.key_press(Key::Enter);
+        h.run();
+        assert_eq!(h.state().1, Some(Outcome::Cancelled));
+        assert!(h.state().0.pending.is_none(), "no pick was started");
     }
 
     #[test]

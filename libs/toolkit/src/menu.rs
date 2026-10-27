@@ -1105,6 +1105,21 @@ pub fn bar_picked(
     // It looks exactly like an idle bar (same colour, rounding and
     // accessibility labels), so covering it changes no pixel.
     if !ui.is_enabled() || !ctx.memory(|m| m.allows_interaction(ui.layer_id())) {
+        ctx.data_mut(|d| {
+            if let Some(st) = d.get_temp::<State>(state_id())
+                && st.layer == Some(ui.layer_id())
+                && st.nav.open.is_some()
+            {
+                d.insert_temp(
+                    state_id(),
+                    State {
+                        layer: st.layer,
+                        menus: st.menus,
+                        ..Default::default()
+                    },
+                );
+            }
+        });
         let ppp = ctx.pixels_per_point();
         for menu in menus {
             let galley = ui.painter().layout_no_wrap(
@@ -1955,6 +1970,32 @@ fn configure_scroll(ui: &mut Ui, chrome: &Chrome) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_covered_bar_closes_only_its_own_state_and_keeps_the_layer() {
+        for own_layer in [true, false] {
+            let ctx = Context::default();
+            crate::install(&ctx, &crate::Theme::embedded());
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let layer = if own_layer {
+                    ui.layer_id()
+                } else {
+                    egui::LayerId::new(egui::Order::Foreground, Id::unique("dialog-menu"))
+                };
+                let mut st = State {
+                    layer: Some(layer),
+                    ..Default::default()
+                };
+                st.nav.open(0);
+                ctx.data_mut(|d| d.insert_temp(state_id(), st));
+                ui.disable();
+                let _ = bar(ui, &[]);
+                let st = ctx.data(|d| d.get_temp::<State>(state_id())).unwrap();
+                assert_eq!(st.layer, Some(layer));
+                assert_eq!(st.nav.open, if own_layer { None } else { Some(0) });
+            });
+        }
+    }
 
     #[test]
     fn a_short_window_keeps_the_menu_below_its_icon_and_only_scrolls_vertically() {
