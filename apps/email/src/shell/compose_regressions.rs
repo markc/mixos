@@ -9,7 +9,7 @@ fn queued(shell: &mut Shell, name: &str, events: Vec<UiEvent>) {
 
 fn logic_frame(shell: &mut Shell) {
     let ctx = shell.ctx.clone();
-    ctx.run_logic(&egui::RawInput::default(), |_| shell.logic(&ctx));
+    let _ = ctx.run_logic(&egui::RawInput::default(), |_| shell.logic(&ctx));
 }
 
 fn bus_fixture() -> (Shell, test_broker::Broker) {
@@ -144,7 +144,7 @@ fn review_bus_new_and_document_open_return_the_new_window() {
         // The document path is supplied below from a real temporary file.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("message.md");
-        std::fs::write(&path, "mail-subject: document\n\nBody\n").unwrap();
+        std::fs::write(&path, "---\nmail-subject: document\n---\nBody\n").unwrap();
         let args = if command == "email.compose" { json!({"document":path}) } else { args };
         let (rc, body) = bus_answer(&mut shell, &broker, command, args);
         assert_eq!(rc, 0, "{body}");
