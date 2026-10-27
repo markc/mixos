@@ -167,10 +167,11 @@ fn real_super_key_injection_tiles_then_restores_and_toggles_maximize() {
         let host = &mut h.wire.inner;
         match actions[0] {
             BindingAction::TileFocused(direction) => { geometry::tile_key(&mut host.comp, &mut host.space.state, &window, id.0, generation, direction); }
-            BindingAction::RestoreFocused => { geometry::set_maximized(&mut host.comp, &mut host.space.state, id, &window, false); }
+            BindingAction::RestoreFocused => { geometry::restore_placement(&mut host.comp, &mut host.space.state, id, &window); }
             BindingAction::ToggleMaximizeFocused => {
                 let enabled = !host.comp.placement(id).maximized();
-                geometry::set_maximized(&mut host.comp, &mut host.space.state, id, &window, enabled);
+                geometry::place_as(&mut host.comp, &mut host.space.state, &window, id.0, generation,
+                    if enabled { comp_model::request::PlacementKind::Maximized } else { comp_model::request::PlacementKind::Floating }, None);
             }
             _ => panic!("unexpected binding"),
         }
@@ -180,4 +181,30 @@ fn real_super_key_injection_tiles_then_restores_and_toggles_maximize() {
             assert_eq!(slot::decided_size(&window), Some((640,480).into()));
         }
     }
+}
+
+#[test]
+fn restore_exits_fullscreen_before_untiling_and_unmaximize_keeps_the_float() {
+    use dispatcher::wire::trait_::wire_trait::WireTrait;
+    let (mut h, id, generation, window, _, _) = fixture();
+    command(&mut h, &window, "comp.window.place_as", json!({"id":id.0,"generation":generation,"placement":"tiled","slot":"bottom_right"}));
+    let saved = h.comp().float_geometry(id);
+    h.wire.inner.fullscreen_request(window.clone(), true);
+    h.service_lifecycle();
+    let host = &mut h.wire.inner;
+    assert_eq!(geometry::restore_placement(&mut host.comp, &mut host.space.state, id, &window), geometry::RestoreChange::Fullscreen);
+    assert_eq!(host.comp.placement(id).name(), "bottom_right");
+    host.fullscreen_request(window.clone(), false);
+    h.service_lifecycle();
+    h.roundtrip();
+    let host = &mut h.wire.inner;
+    assert!(matches!(geometry::restore_placement(&mut host.comp, &mut host.space.state, id, &window), geometry::RestoreChange::Placement(_)));
+    assert_eq!(host.comp.placement(id), Placement::Floating);
+    assert_eq!(host.comp.float_geometry(id), saved);
+    assert_eq!(host.space.state.element_location(&window), Some((123,87).into()));
+    geometry::set_maximized(&mut host.comp, &mut host.space.state, id, &window, true);
+    geometry::set_maximized(&mut host.comp, &mut host.space.state, id, &window, false);
+    assert!(matches!(geometry::restore_placement(&mut host.comp, &mut host.space.state, id, &window), geometry::RestoreChange::Placement(geometry::GeometryChange { windows:false, .. })));
+    assert_eq!(host.comp.float_geometry(id), saved);
+    assert_eq!(slot::decided_size(&window), Some((640,480).into()));
 }

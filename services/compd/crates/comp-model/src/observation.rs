@@ -27,6 +27,7 @@ pub const PROPS_TOPIC_SUFFIX: &str = "props.changed";
 pub const SURFACE_MAPPED_TOPIC_SUFFIX: &str = "surface.mapped";
 pub const SURFACE_UNMAPPED_TOPIC_SUFFIX: &str = "surface.unmapped";
 pub const FOCUS_TOPIC_SUFFIX: &str = "focus.changed";
+pub const PLACEMENT_TOPIC_SUFFIX: &str = "window.placement.changed";
 pub const OUTPUT_TOPIC_SUFFIX: &str = "output.changed";
 pub const CORNER_ENTERED_TOPIC_SUFFIX: &str = "corner.entered";
 pub const CORNER_LEFT_TOPIC_SUFFIX: &str = "corner.left";
@@ -52,7 +53,6 @@ pub const WORKSPACE_COUNT_MAX: u32 = 16;
 /// Every topic suffix, in `AffectedTopics` bit order. The service publishes
 /// each as `<service>.<suffix>` ([`topic_name`]).
 pub const TOPIC_SUFFIXES: [&str; 14] = [
-    "window.placement.changed",
     PROPS_TOPIC_SUFFIX,
     SURFACE_MAPPED_TOPIC_SUFFIX,
     SURFACE_UNMAPPED_TOPIC_SUFFIX,
@@ -66,6 +66,7 @@ pub const TOPIC_SUFFIXES: [&str; 14] = [
     PANEL_COMMAND_TOPIC_SUFFIX,
     WORKSPACE_TOPIC_SUFFIX,
     SESSION_TOPIC_SUFFIX,
+    PLACEMENT_TOPIC_SUFFIX,
 ];
 
 pub fn topic_name(service: &str, suffix: &str) -> String {
@@ -530,7 +531,7 @@ impl ObservationRecord {
 
     pub fn topic_suffix(&self) -> &'static str {
         match self {
-            Self::PlacementChanged { .. } => "window.placement.changed",
+            Self::PlacementChanged { .. } => PLACEMENT_TOPIC_SUFFIX,
             Self::SessionChanged { .. } => SESSION_TOPIC_SUFFIX,
             Self::PanelCommand { .. } => PANEL_COMMAND_TOPIC_SUFFIX,
             Self::PointerChanged { .. } => POINTER_TOPIC_SUFFIX,

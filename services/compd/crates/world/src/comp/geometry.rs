@@ -161,6 +161,25 @@ pub struct GeometryChange {
     pub windows: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RestoreChange {
+    /// The owning lifecycle executor must leave fullscreen; placement survives.
+    Fullscreen,
+    Placement(GeometryChange),
+}
+
+/// Restore precedence is shared with fixtures: fullscreen exits alone; a
+/// subsequent restore returns constrained placement to saved floating geometry.
+pub fn restore_placement(comp: &mut CompState, space: &mut Space<Window>, id: SurfaceId, window: &Window) -> RestoreChange {
+    if fullscreen_owns(window) { return RestoreChange::Fullscreen; }
+    if comp.placement(id).constrained() {
+        finish_interactive(comp, id);
+        RestoreChange::Placement(set_placement(comp, space, id, window, Placement::Floating))
+    } else {
+        RestoreChange::Placement(GeometryChange::default())
+    }
+}
+
 /// Layer-shell exclusive zones, followed by compositor-owned docked panels.
 pub fn usable_area(
     output: &Output,

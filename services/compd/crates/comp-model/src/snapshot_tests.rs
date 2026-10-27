@@ -511,8 +511,15 @@ fn capability_leaf_reflects_holder_plane() {
 
 #[test]
 fn descriptor_table_and_serialised_fixture_have_exact_parity() {
-    let tree = serde_json::to_value(fixture()).expect("fixture serialises");
-    let leaves = flattened_paths(&tree);
+    let mut snapshot = fixture();
+    let tree = serde_json::to_value(&snapshot).expect("fixture serialises");
+    let mut leaves = flattened_paths(&tree);
+    // Both nullable shapes belong to the schema: the absent record is a
+    // leaf, while a saved record exposes its geometry fields.
+    snapshot.windows.values_mut().next().unwrap().float_geometry = Some(FloatGeometrySnapshot {
+        x: 1, y: 2, w: 640, h: 480, output: "o_dp_1".into(),
+    });
+    leaves.extend(flattened_paths(&serde_json::to_value(snapshot).unwrap()));
     for leaf in &leaves {
         let matches = DESCRIPTORS
             .iter()

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The `comp.*` catalogue: 40 commands in three families and 13 topics.
+//! The `comp.*` catalogue: 43 commands in three families and 14 topics.
 
 pub use crate::observation::{
     CORNER_CLICKED_TOPIC_SUFFIX, CORNER_CLICKED_V2_TOPIC_SUFFIX, CORNER_ENTERED_TOPIC_SUFFIX,
     CORNER_LEFT_TOPIC_SUFFIX, FOCUS_TOPIC_SUFFIX, OUTPUT_TOPIC_SUFFIX, PANEL_COMMAND_TOPIC_SUFFIX,
-    POINTER_TOPIC_SUFFIX, PROPS_TOPIC_SUFFIX, SESSION_TOPIC_SUFFIX, SURFACE_MAPPED_TOPIC_SUFFIX,
+    POINTER_TOPIC_SUFFIX, PROPS_TOPIC_SUFFIX, PLACEMENT_TOPIC_SUFFIX, SESSION_TOPIC_SUFFIX, SURFACE_MAPPED_TOPIC_SUFFIX,
     SURFACE_UNMAPPED_TOPIC_SUFFIX, TOPIC_SUFFIXES, topic_name,
 };
 
@@ -49,7 +49,7 @@ pub fn read_only(command: &str) -> bool {
         )
 }
 
-/// The 17 commands the dispatcher answers directly (not a window or input
+/// The 18 commands the dispatcher answers directly (not a window or input
 /// family member).
 pub const DIRECT_COMMANDS: &[&str] = &[
     "comp.tiles.get",
@@ -72,7 +72,7 @@ pub const DIRECT_COMMANDS: &[&str] = &[
     "comp.workspaces.list",
 ];
 
-/// The 18 window-family commands (`{id, generation}`-addressed, plus the
+/// The 20 window-family commands (`{id, generation}`-addressed, plus the
 /// workspace switch, count and rename).
 pub const WINDOW_COMMANDS: &[&str] = &[
     "comp.window.place_as",
@@ -142,7 +142,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_surface_is_40_commands_and_13_topics() {
+    fn the_surface_is_43_commands_and_14_topics() {
         assert_eq!(DIRECT_COMMANDS.len(), 18);
         assert_eq!(WINDOW_COMMANDS.len(), 20);
         assert_eq!(INPUT_COMMANDS.len(), 5);

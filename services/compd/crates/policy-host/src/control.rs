@@ -611,20 +611,29 @@ fn focus_keyboard(lp: &mut Loop, id: SurfaceId) {
 /// `comp.window.restore` of one window: activated (the default), or only
 /// unminimised (`activate: false`).
 fn restore(lp: &mut Loop, id: u64, generation: u64, activate: bool) -> ControlReply {
-    let (sid, _) = match motion_window(lp, id, generation) {
+    let (sid, window) = match motion_window(lp, id, generation) {
         Ok(target) => target,
         Err(reply) => return reply,
     };
-    let mut changed = false;
-    if requested(lp, sid, WindowState::Fullscreen) {
-        if let Err(reply) = window_state(lp, id, generation, WindowState::Fullscreen, false, None) {
-            return reply;
+    let Some(owner) = lp.inner.world_of_window(&window) else {
+        return ControlReply::refused("unknown_window", serde_json::json!({"id":id}));
+    };
+    let (comp, space) = lp.inner.comp_space_of_mut(owner);
+    let changed = match crate::geometry::restore_placement(comp, space, sid, &window) {
+        crate::geometry::RestoreChange::Fullscreen => {
+            if let Err(reply) = window_state(lp, id, generation, WindowState::Fullscreen, false, None) {
+                return reply;
+            }
+            true
         }
-        changed = true;
-    } else if lp.inner.comp.placement(sid).constrained() {
-        maximize(lp, sid, false);
-        changed = true;
-    }
+        crate::geometry::RestoreChange::Placement(change) => {
+            if change.windows {
+                lp.state.schedule_redraw(RedrawReason::WindowState);
+                crate::input::retarget_pointer(lp);
+            }
+            change.windows
+        }
+    };
     match policy::window::restore(&mut lp.inner.comp.registry, id, generation, activate) {
         Ok((reply, effects)) => {
             let activates = effects.iter().any(|effect| matches!(effect, Effect::Restore(_)));
@@ -1724,9 +1733,10 @@ pub fn apply_bindings(lp: &mut Loop) {
             BindingAction::ToggleMaximizeFocused | BindingAction::MinimizeFocused | BindingAction::RestoreFocused => {
                 if let Some((id, generation)) = focused_window(lp) {
                     let op = match action {
-                        BindingAction::ToggleMaximizeFocused => WindowOp::State {
-                            id, generation, state: WindowState::Maximized,
-                            enabled: !lp.inner.comp.placement(SurfaceId(id)).maximized(), output: None,
+                        BindingAction::ToggleMaximizeFocused => WindowOp::PlaceAs {
+                            id, generation, placement: if lp.inner.comp.placement(SurfaceId(id)).maximized() {
+                                comp_model::request::PlacementKind::Floating
+                            } else { comp_model::request::PlacementKind::Maximized }, output: None,
                         },
                         BindingAction::MinimizeFocused => WindowOp::Minimize { id, generation },
                         _ => WindowOp::Restore { target: Some((id, generation)), activate: true },
