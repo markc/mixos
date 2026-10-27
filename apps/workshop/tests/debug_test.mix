@@ -11,7 +11,8 @@ fn expect($ok, $message)
 end
 fn call_debug($suffix, $body)
   $command = "workshop-debug-test.debug" .. $suffix
-  send workshop-debug-test $command body=$body timeout=3
+  $wire = json_encode($body)
+  send workshop-debug-test $command body=$wire timeout=3
   expect($rc == 0, $command .. ": " .. to_string($result))
   $value = $result
   if type($value) == "string" then $value = json_parse($value) end
