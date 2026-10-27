@@ -973,7 +973,7 @@ mod tests {
 
     #[test]
     fn composer_view_offers_and_restores_a_kept_draft() {
-        use egui_kittest::kittest::{NodeT, Queryable};
+        use egui_kittest::kittest::Queryable;
         let (mut state, _, theme, _) = fixture(true);
         state.offer_drafts(vec![crate::drafts::SavedDraft {
             id: "kept".into(),
@@ -996,7 +996,11 @@ mod tests {
         h.run();
         h.run_steps(6);
         let restore = h.get_by_label(&crate::label("restore-draft")).rect();
-        assert!(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 700.0)).contains_rect(restore), "restore button outside viewport: {restore:?}");
+        assert!(
+            egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 700.0))
+                .contains_rect(restore),
+            "restore button outside viewport: {restore:?}"
+        );
         h.snapshot("compose_restore_draft");
         h.get_by_label(&crate::label("restore-draft")).click();
         h.run();

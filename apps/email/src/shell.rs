@@ -1826,13 +1826,14 @@ impl Shell {
             .ok()
             .filter(Value::is_object);
         let action = args.as_ref().and_then(|a| a["id"].as_str());
-        let composer_action = action.is_some_and(|id| id.starts_with("compose.") || id == "mail.send");
+        let composer_action =
+            action.is_some_and(|id| id.starts_with("compose.") || id == "mail.send");
         let routed = command_name.starts_with("email.compose.")
             || command_name == "email.info"
             || (command_name == "email.execute"
-                && args.as_ref().is_some_and(|a| {
-                    composer_action || a.get("window").is_some()
-                }));
+                && args
+                    .as_ref()
+                    .is_some_and(|a| composer_action || a.get("window").is_some()));
         if routed
             && args
                 .as_ref()
