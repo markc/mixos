@@ -313,9 +313,18 @@ mod tests {
 
     #[test]
     fn capture_workers_have_distinct_stable_window_identities() {
-        assert_eq!(capture_service("email", "compose-1", 7), capture_service("email", "compose-1", 7));
-        assert_ne!(capture_service("email", "compose-1", 7), capture_service("email", "compose-2", 7));
-        assert_ne!(capture_service("email", "compose-1", 7), capture_service("email", "compose-1", 8));
+        assert_eq!(
+            capture_service("email", "compose-1", 7),
+            capture_service("email", "compose-1", 7)
+        );
+        assert_ne!(
+            capture_service("email", "compose-1", 7),
+            capture_service("email", "compose-2", 7)
+        );
+        assert_ne!(
+            capture_service("email", "compose-1", 7),
+            capture_service("email", "compose-1", 8)
+        );
     }
 
     #[test]

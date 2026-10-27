@@ -2722,6 +2722,7 @@ dependencies = [
  "serde_json",
  "settings",
  "tempfile",
+ "test-broker",
  "tokio",
  "toolkit",
  "tracing",

@@ -139,30 +139,69 @@ fn compose_document_ready(state: &State) -> bool {
 
 /// The registry: every command, its menu, its shortcut and its guard.
 pub fn registry() -> Registry<State> {
-    let mut r = Registry::new();
+    let mut r: Registry<State> = Registry::new();
     r.add(Action {
-        id: "compose.new", label: "compose-new", menu: None, submenu: None,
-        group: 0, shortcut: None, icon: Some(Icon::SquarePen),
-        enabled: |s| s.compose_account().is_some(), run: |s| s.compose_new_requested = true,
+        id: "compose.new",
+        label: "compose-new",
+        menu: None,
+        submenu: None,
+        group: 0,
+        shortcut: None,
+        icon: Some(Icon::SquarePen),
+        enabled: |s| s.compose_account().is_some(),
+        run: |s| s.compose_new_requested = true,
     });
     r.add(Action {
-        id: "compose.close", label: "compose-close", menu: None, submenu: None,
-        group: 2, shortcut: key(Modifiers::COMMAND, Key::W), icon: None,
-        enabled: toolkit::action::always, run: |s| s.apply_ui(crate::view::UiEvent::CloseCompose),
+        id: "compose.close",
+        label: "compose-close",
+        menu: None,
+        submenu: None,
+        group: 2,
+        shortcut: key(Modifiers::COMMAND, Key::W),
+        icon: None,
+        enabled: toolkit::action::always,
+        run: |s| s.apply_ui(crate::view::UiEvent::CloseCompose),
     });
-    for (id,label,redo) in [("compose.undo","compose-undo",false),("compose.redo","compose-redo",true)] {
-        r.add(Action { id,label,menu:None,submenu:None,group:0,shortcut:None,icon:None,
-            enabled: compose_attachable, run: if redo { |s| s.apply_ui(crate::view::UiEvent::ComposeEdit(editor::Event::Redo)) }
-                else { |s| s.apply_ui(crate::view::UiEvent::ComposeEdit(editor::Event::Undo)) },
+    for (id, label, redo) in [
+        ("compose.undo", "compose-undo", false),
+        ("compose.redo", "compose-redo", true),
+    ] {
+        r.add(Action {
+            id,
+            label,
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: None,
+            icon: None,
+            enabled: compose_attachable,
+            run: if redo {
+                |s| s.apply_ui(crate::view::UiEvent::ComposeEdit(editor::Event::Redo))
+            } else {
+                |s| s.apply_ui(crate::view::UiEvent::ComposeEdit(editor::Event::Undo))
+            },
         });
     }
-    for (id,label,kind) in [("compose.cut","compose-cut",editor::Clipboard::Cut),
-        ("compose.copy","compose-copy",editor::Clipboard::Copy),("compose.paste","compose-paste",editor::Clipboard::Paste)] {
-        r.add(Action { id,label,menu:None,submenu:None,group:1,shortcut:None,icon:None,
-            enabled: compose_attachable, run: match kind {
+    for (id, label, kind) in [
+        ("compose.cut", "compose-cut", editor::Clipboard::Cut),
+        ("compose.copy", "compose-copy", editor::Clipboard::Copy),
+        ("compose.paste", "compose-paste", editor::Clipboard::Paste),
+    ] {
+        r.add(Action {
+            id,
+            label,
+            menu: None,
+            submenu: None,
+            group: 1,
+            shortcut: None,
+            icon: None,
+            enabled: compose_attachable,
+            run: match kind {
                 editor::Clipboard::Cut => |s| s.compose_clipboard = Some(editor::Clipboard::Cut),
                 editor::Clipboard::Copy => |s| s.compose_clipboard = Some(editor::Clipboard::Copy),
-                editor::Clipboard::Paste => |s| s.compose_clipboard = Some(editor::Clipboard::Paste),
+                editor::Clipboard::Paste => {
+                    |s| s.compose_clipboard = Some(editor::Clipboard::Paste)
+                }
             },
         });
     }
@@ -655,19 +694,32 @@ pub fn shortcuts(
     state: &State,
     registry: &Registry<State>,
 ) -> Vec<&'static str> {
-    if state.attachment_chooser.is_some() || state.documents.modal() || state.confirm.is_some() || state.identity_editor.is_some() {
+    if state.attachment_chooser.is_some()
+        || state.documents.modal()
+        || state.confirm.is_some()
+        || state.identity_editor.is_some()
+    {
         Vec::new()
     } else if state.compose.is_some() && crate::view::compose::body_focused(ctx) {
-        ["compose.new", "compose.close", "file.quit", "compose.open", "compose.save_as", "compose.attach"]
-            .into_iter()
-            .filter(|id| {
-                registry.get(id).is_some_and(|action| (action.enabled)(state))
-                    && registry
-                        .shortcuts_of(id)
-                        .iter()
-                        .any(|shortcut| ctx.input_mut(|input| input.consume_shortcut(shortcut)))
-            })
-            .collect()
+        [
+            "compose.new",
+            "compose.close",
+            "file.quit",
+            "compose.open",
+            "compose.save_as",
+            "compose.attach",
+        ]
+        .into_iter()
+        .filter(|id| {
+            registry
+                .get(id)
+                .is_some_and(|action| (action.enabled)(state))
+                && registry
+                    .shortcuts_of(id)
+                    .iter()
+                    .any(|shortcut| ctx.input_mut(|input| input.consume_shortcut(shortcut)))
+        })
+        .collect()
     } else {
         registry.shortcuts(ctx, state)
     }

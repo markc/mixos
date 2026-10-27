@@ -33,6 +33,7 @@ use toolkit::datatable;
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
+    ComposeAttachmentsPicked(Vec<std::path::PathBuf>),
     DocumentChosen(toolkit::file_chooser::Outcome),
     ComposeDrop(Vec<std::path::PathBuf>),
     DocumentReplace(bool),

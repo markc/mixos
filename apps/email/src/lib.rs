@@ -104,7 +104,9 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
                 settings.document = Some(if path.is_absolute() {
                     path
                 } else {
-                    std::env::current_dir().map_err(|e| e.to_string())?.join(path)
+                    std::env::current_dir()
+                        .map_err(|e| e.to_string())?
+                        .join(path)
                 });
             }
             continue;
@@ -148,7 +150,8 @@ pub fn run(args: &Args) -> Result<(), String> {
     };
     if args.compose {
         let store = toolkit::saved::Store::<serde_json::Value>::load(
-            ::config::AppDirs::resolve(APP).map(|d| d.state()), 0,
+            ::config::AppDirs::resolve(APP).map(|d| d.state()),
+            0,
         );
         if let Some(frame) = store.windows.get("compose-1") {
             viewport = frame.viewport(viewport);
@@ -183,8 +186,17 @@ pub fn forward(args: &Args) -> Result<(), String> {
     if !args.compose {
         return citizen::forward(&args.url, &args.service, APP);
     }
-    let reply = citizen::request(&args.url, &args.service, "email.compose", compose_request(args))?;
-    if reply.rc == 0 { Ok(()) } else { Err(reply.body) }
+    let reply = citizen::request(
+        &args.url,
+        &args.service,
+        "email.compose",
+        compose_request(args),
+    )?;
+    if reply.rc == 0 {
+        Ok(())
+    } else {
+        Err(reply.body)
+    }
 }
 
 fn compose_request(args: &Args) -> serde_json::Value {
@@ -200,13 +212,26 @@ mod compose_args_tests {
 
     #[test]
     fn compose_accepts_a_document_and_following_options() {
-        let args = parse(["--compose","message.md","--service","email-test"].map(str::to_owned).into_iter()).unwrap();
+        let args = parse(
+            ["--compose", "message.md", "--service", "email-test"]
+                .map(str::to_owned)
+                .into_iter(),
+        )
+        .unwrap();
         assert!(args.compose);
-        assert_eq!(args.service,"email-test");
-        assert_eq!(args.document,Some(std::env::current_dir().unwrap().join("message.md")));
-        let args = parse(["--compose","--service","email-test"].map(str::to_owned).into_iter()).unwrap();
+        assert_eq!(args.service, "email-test");
+        assert_eq!(
+            args.document,
+            Some(std::env::current_dir().unwrap().join("message.md"))
+        );
+        let args = parse(
+            ["--compose", "--service", "email-test"]
+                .map(str::to_owned)
+                .into_iter(),
+        )
+        .unwrap();
         assert!(args.compose && args.document.is_none());
         assert!(!parse(std::iter::empty()).unwrap().compose);
-        assert!(parse(["--compose","--unknown"].map(str::to_owned).into_iter()).is_err());
+        assert!(parse(["--compose", "--unknown"].map(str::to_owned).into_iter()).is_err());
     }
 }

@@ -211,12 +211,16 @@ fn harness_with(state: State, theme: &Theme) -> Harness<'static, Window> {
                     });
                 let events = if window.state.compose.is_some() {
                     email::composer::view(ui, &window.state, &email::composer::registry(), &palette)
-                } else { view(ui, &window.state, &registry, &strings, &palette) };
+                } else {
+                    view(ui, &window.state, &registry, &strings, &palette)
+                };
                 for event in events {
                     window.seen.push(event.clone());
                     if let UiEvent::Command(id, origin) = event {
                         let _ = email::composer::registry().execute(id, &mut window.state, origin);
-                    } else { window.state.apply_ui(event); }
+                    } else {
+                        window.state.apply_ui(event);
+                    }
                 }
             },
             Window {
@@ -1304,10 +1308,7 @@ fn compose_attachment_chips_show_status_and_remove_through_the_window() {
 #[test]
 fn compose_file_menu_has_open_and_save_as_before_attachments() {
     let mut h = harness_with(typing(), &theme(Scheme::Studio, Mode::Dark));
-    h.query_all_by_label(&label("file"))
-        .last()
-        .unwrap()
-        .click();
+    h.query_all_by_label(&label("file")).last().unwrap().click();
     h.run();
     assert!(h.query_by_label(&label("document-open")).is_some());
     assert!(h.query_by_label(&label("document-save-as")).is_some());

@@ -241,10 +241,16 @@ fn window(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>)
                 } else {
                     &window_theme
                 });
-                let fired = if state.compose.is_none() { actions::shortcuts(ui.ctx(), state, &registry) } else { Vec::new() };
+                let fired = if state.compose.is_none() {
+                    actions::shortcuts(ui.ctx(), state, &registry)
+                } else {
+                    Vec::new()
+                };
                 let mut events = if state.compose.is_some() {
                     email::composer::view(ui, state, &email::composer::registry(), &palette)
-                } else { view(ui, state, &registry, &strings, &palette) };
+                } else {
+                    view(ui, state, &registry, &strings, &palette)
+                };
                 events.extend(
                     fired
                         .into_iter()
@@ -606,7 +612,12 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
     for command in registry.iter().filter(|c| {
         !matches!(
             c.id,
-            "compose.open" | "compose.save_as" | "compose.attach" | "compose.close" | "file.quit" | "mail.compose"
+            "compose.open"
+                | "compose.save_as"
+                | "compose.attach"
+                | "compose.close"
+                | "file.quit"
+                | "mail.compose"
         )
     }) {
         for chord in registry.shortcuts_of(command.id) {
@@ -1615,8 +1626,9 @@ fn compose_suggestions_studio_dark() {
         ),
     ));
     let mut h = window(state, &theme(Scheme::Studio, Mode::Dark));
-    h.ctx
-        .memory_mut(|m| m.request_focus(egui::Id::unique((egui::ViewportId::ROOT, "compose-recipients")).with("to")));
+    h.ctx.memory_mut(|m| {
+        m.request_focus(egui::Id::unique((egui::ViewportId::ROOT, "compose-recipients")).with("to"))
+    });
     h.run();
     h.snapshot("compose_suggestions_studio_dark");
 }

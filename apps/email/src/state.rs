@@ -2164,7 +2164,9 @@ impl State {
     /// Reconcile a parked composer's sender against the same account authority
     /// as the mailbox. Called before copying fresh rendering context.
     pub(crate) fn recheck_composer(&mut self, previous: Option<&AccountEntry>) {
-        let Some(compose) = self.compose.as_ref() else { return; };
+        let Some(compose) = self.compose.as_ref() else {
+            return;
+        };
         let Some(account) = self.account(&compose.account) else {
             self.set_aside_compose();
             return;
@@ -2173,13 +2175,23 @@ impl State {
             self.set_aside_compose();
             return;
         }
-        let changed = previous.is_some_and(|old| old.url != account.entry.url
-            || old.email != account.entry.email || old.ca_path != account.entry.ca_path
-            || old.identities != account.entry.identities);
+        let changed = previous.is_some_and(|old| {
+            old.url != account.entry.url
+                || old.email != account.entry.email
+                || old.ca_path != account.entry.ca_path
+                || old.identities != account.entry.identities
+        });
         if changed {
-            let stale = StaleFrom { account: account.entry.id.clone(), generation: account.generation,
-                address: self.senders(&account.entry.id).into_iter().find(|i| i.id == compose.identity)
-                    .map(|i| i.address).unwrap_or_else(|| account.entry.email.clone()) };
+            let stale = StaleFrom {
+                account: account.entry.id.clone(),
+                generation: account.generation,
+                address: self
+                    .senders(&account.entry.id)
+                    .into_iter()
+                    .find(|i| i.id == compose.identity)
+                    .map(|i| i.address)
+                    .unwrap_or_else(|| account.entry.email.clone()),
+            };
             self.compose.as_mut().unwrap().stale = Some(stale);
         }
     }
@@ -2192,10 +2204,19 @@ impl State {
         self.settings = state.settings.clone();
         self.ui = state.ui.clone();
         self.session_mode = state.session_mode;
-        self.accounts.retain(|a| state.account(&a.entry.id).is_some());
+        self.accounts
+            .retain(|a| state.account(&a.entry.id).is_some());
         for real in &state.accounts {
-            let index = if let Some(i) = self.accounts.iter().position(|a| a.entry.id == real.entry.id) { i }
-                else { self.accounts.push(AccountView::new(real.entry.clone())); self.accounts.len()-1 };
+            let index = if let Some(i) = self
+                .accounts
+                .iter()
+                .position(|a| a.entry.id == real.entry.id)
+            {
+                i
+            } else {
+                self.accounts.push(AccountView::new(real.entry.clone()));
+                self.accounts.len() - 1
+            };
             let view = &mut self.accounts[index];
             view.entry = real.entry.clone();
             view.generation = real.generation;
@@ -5769,6 +5790,11 @@ impl State {
         );
         match event {
             UiEvent::DocumentChosen(outcome) => self.document_chosen(outcome),
+            UiEvent::ComposeAttachmentsPicked(paths) => {
+                if let Err((_, message)) = self.add_compose_attachments(&paths) {
+                    self.attachment_notice = Some(message);
+                }
+            }
             UiEvent::ComposeDrop(paths) => self.drop_files(paths),
             UiEvent::ComposeAttachmentRemove(path) => {
                 self.remove_compose_attachment(&path);

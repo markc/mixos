@@ -189,7 +189,8 @@ pub struct DocumentState {
 
 impl DocumentState {
     pub(crate) fn owns(&self, ticket: u64) -> bool {
-        self.pending.contains_key(&ticket) || self.saving.contains_key(&ticket)
+        self.pending.contains_key(&ticket)
+            || self.saving.contains_key(&ticket)
             || self.folder.as_ref().is_some_and(|f| f.0 == ticket)
     }
     pub fn opening(&self) -> bool {
@@ -339,24 +340,24 @@ impl State {
     }
 
     pub fn document_chosen(&mut self, outcome: toolkit::file_chooser::Outcome) {
-            match outcome {
-                toolkit::file_chooser::Outcome::Picked(paths) => {
-                    if let Some(path) = paths.into_iter().next() {
-                        let account = self
-                            .compose
-                            .as_ref()
-                            .map(|c| c.account.clone())
-                            .unwrap_or_default();
-                        if let Err(error) = self.read_document(account, path, None, false, false) {
-                            self.document_error(error);
-                        }
+        match outcome {
+            toolkit::file_chooser::Outcome::Picked(paths) => {
+                if let Some(path) = paths.into_iter().next() {
+                    let account = self
+                        .compose
+                        .as_ref()
+                        .map(|c| c.account.clone())
+                        .unwrap_or_default();
+                    if let Err(error) = self.read_document(account, path, None, false, false) {
+                        self.document_error(error);
                     }
                 }
-                toolkit::file_chooser::Outcome::Save { path, replace } => {
-                    self.write_document(path, replace)
-                }
-                toolkit::file_chooser::Outcome::Cancelled => {}
             }
+            toolkit::file_chooser::Outcome::Save { path, replace } => {
+                self.write_document(path, replace)
+            }
+            toolkit::file_chooser::Outcome::Cancelled => {}
+        }
     }
 
     pub fn write_document(&mut self, path: PathBuf, replace: bool) {

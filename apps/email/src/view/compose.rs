@@ -41,7 +41,14 @@ pub fn confirm(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
     let choices = vec![
         Choice::new(crate::label(keep), dialog::Role::Default),
         Choice::new(crate::label(discard), dialog::Role::Other),
-        Choice::new(crate::label(if asked == Confirm::Quit { "cancel" } else { "keep-editing" }), dialog::Role::Cancel),
+        Choice::new(
+            crate::label(if asked == Confirm::Quit {
+                "cancel"
+            } else {
+                "keep-editing"
+            }),
+            dialog::Role::Cancel,
+        ),
     ];
     let shown = dialog::Dialog::new(id, crate::label(title))
         .buttons(choices)
@@ -126,8 +133,7 @@ pub fn restore(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
 
 /// The compose window, when a draft is open.
 pub fn body_focused(ctx: &egui::Context) -> bool {
-    body_id(ctx)
-        .is_some_and(|id| ctx.memory(|m| m.has_focus(id)))
+    body_id(ctx).is_some_and(|id| ctx.memory(|m| m.has_focus(id)))
 }
 
 pub fn body_id(ctx: &egui::Context) -> Option<egui::Id> {
@@ -168,7 +174,8 @@ fn recipients(
     width: f32,
     events: &mut Vec<UiEvent>,
 ) {
-    let id = egui::Id::unique((ui.ctx().viewport_id(), "compose-recipients")).with(row_label(field));
+    let id =
+        egui::Id::unique((ui.ctx().viewport_id(), "compose-recipients")).with(row_label(field));
     let suggest = compose
         .suggest
         .as_ref()
@@ -576,8 +583,10 @@ pub fn form(
             let width = ui.available_width();
             let response = ui
                 .add(
-                    field::text_edit(&mut buffer, "", width)
-                        .id(egui::Id::unique((ui.ctx().viewport_id(), "compose-subject"))),
+                    field::text_edit(&mut buffer, "", width).id(egui::Id::unique((
+                        ui.ctx().viewport_id(),
+                        "compose-subject",
+                    ))),
                 )
                 .labelled_by(label);
             if response.changed() {

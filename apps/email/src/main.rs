@@ -26,9 +26,7 @@ fn main() {
     } else {
         match email::run(&args) {
             // Another launch won the race to register: hand it ours.
-            Err(_) if citizen::probe(&args.url, &args.service, email::APP) => {
-                email::forward(&args)
-            }
+            Err(_) if citizen::probe(&args.url, &args.service, email::APP) => email::forward(&args),
             result => result,
         }
     };
