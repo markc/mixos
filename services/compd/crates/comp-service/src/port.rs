@@ -1439,6 +1439,8 @@ fn dispatch_incoming(
             );
         }
         Request::Ping => {
+            logging::debug::received(service, &command.command);
+            logging::debug::answered(service, &command.command, 0);
             queue_reply(
                 reply_sender,
                 reply_timeouts,

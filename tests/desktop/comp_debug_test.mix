@@ -27,6 +27,13 @@ try
   end
   $set = $n.call($session.service, "comp.debug.set", {on: true})
   expect($set.rc == 0 and $set.result.on, "on shorthand")
+  $recent = $n.call($session.service, "comp.debug.recent", {})
+  expect($recent.rc == 0, "recent query")
+  $cursor = $recent.result.seq
+  expect($n.call($session.service, "comp.ping", {}).rc == 0, "drive compositor command")
+  $recent = $n.call($session.service, "comp.debug.recent", {since: $cursor})
+  $seams = filter($recent.result.events, fn($entry) = $entry.message == "Bus command answered" and $entry.fields.command == "comp.ping")
+  expect($recent.rc == 0 and len($seams) == 1 and $seams[0].fields.rc == 0 and $seams[0].fields.service == $session.service, "comp recent seam fields: " .. json_encode($recent))
   $journal = ""
   for $attempt = 1 to 40
     $journal = run_argv_must(["journalctl", "--no-pager", "-t", "compd", "_PID=" .. to_string($session.comp_pid), "-o", "json"])
@@ -36,6 +43,8 @@ try
   expect(contains($journal, "debug mode changed"), "no debug event under journalctl -t compd")
   $set = $n.call($session.service, "comp.debug.set", {on: false})
   expect($set.rc == 0 and not $set.result.on and $set.result.filter == "warn", "baseline shorthand")
+  $recent = $n.call($session.service, "comp.debug.recent", {})
+  expect($recent.rc == 0 and len($recent.result.events) == 0, "comp ring freed at warn")
   for $body in [{}, {level: "invalid"}, {on: true, level: "debug"}, {level: "info", extra: 1}]
     $bad = $n.call($session.service, "comp.debug.set", $body)
     expect($bad.rc == 10, "invalid set accepted: " .. json_encode($body))

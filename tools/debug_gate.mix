@@ -20,6 +20,8 @@ stage("clippy", ["cargo", "clippy", "--workspace", "--all-targets", "--locked", 
   "-D", "clippy::all", "-A", "clippy::module_inception", "-A", "clippy::too_many_arguments",
   "-A", "clippy::type_complexity", "-A", "clippy::large_enum_variant", "-A", "clippy::mutable_key_type"])
 stage("workspace", ["cargo", "test", "--workspace", "--locked", "--no-fail-fast"])
+stage("disabled-debug-benchmark", ["cargo", "test", "-p", "logging", "--release", "--locked", "--test", "debug_cost", "--", "--ignored", "--nocapture"])
+stage("tiny-release", ["cargo", "test", "-p", "logging", "--release", "--locked", "--features", "release-max-level-warn", "--test", "release_cap"])
 stage("site", [$bin .. "/mix", "docs/_build/gen-site.mix", "--check"])
 stage("registry", [$bin .. "/mix", "tools/command_registry.mix"])
 print("PASS debug gate")

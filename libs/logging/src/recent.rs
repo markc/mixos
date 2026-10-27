@@ -19,7 +19,9 @@ static SEQ: AtomicU64 = AtomicU64::new(0);
 static RING: Mutex<Option<Box<Ring>>> = Mutex::new(None);
 
 #[cfg(test)]
-pub(crate) fn allocated() -> bool { RING.lock().unwrap().is_some() }
+pub(crate) fn allocated() -> bool {
+    RING.lock().unwrap().is_some()
+}
 
 #[derive(Clone, Serialize)]
 struct Entry {
@@ -38,15 +40,25 @@ struct Ring {
 
 impl Ring {
     fn new() -> Self {
-        Self { entries: VecDeque::new(), bytes: 0 }
+        Self {
+            entries: VecDeque::new(),
+            bytes: 0,
+        }
     }
 
     fn push(&mut self, entry: Entry) {
         // Conservative resident-size charge includes map nodes, JSON values,
         // deque slots and allocator overhead, rather than just wire bytes.
-        let bytes = std::mem::size_of::<Entry>() * 2 + 256
-            + entry.ts.len() + entry.target.len() + entry.message.len()
-            + entry.fields.iter().map(|(k, v)| k.len() + v.as_str().map_or(32, str::len) + 256).sum::<usize>();
+        let bytes = std::mem::size_of::<Entry>() * 2
+            + 256
+            + entry.ts.len()
+            + entry.target.len()
+            + entry.message.len()
+            + entry
+                .fields
+                .iter()
+                .map(|(k, v)| k.len() + v.as_str().map_or(32, str::len) + 256)
+                .sum::<usize>();
         while self.entries.len() >= MAX_EVENTS || self.bytes + bytes > MAX_BYTES {
             match self.entries.pop_front() {
                 Some((_, old)) => self.bytes -= old,
@@ -61,7 +73,9 @@ impl Ring {
 }
 
 pub(crate) fn configure(filter: &tracing_subscriber::EnvFilter) {
-    let enabled = filter.max_level_hint().unwrap_or(tracing::level_filters::LevelFilter::TRACE)
+    let enabled = filter
+        .max_level_hint()
+        .unwrap_or(tracing::level_filters::LevelFilter::TRACE)
         >= tracing::level_filters::LevelFilter::INFO;
     let mut ring = RING.lock().unwrap_or_else(|e| e.into_inner());
     if enabled {
@@ -88,25 +102,45 @@ pub(crate) fn query(request: RecentRequest) -> Result<Value, String> {
     }
     let ring = RING.lock().map_err(|e| e.to_string())?;
     let seq = SEQ.load(Ordering::Relaxed);
-    let events = ring.as_ref().map(|ring| {
-        let matching = || ring.entries.iter().map(|(entry, _)| entry)
-            .filter(|entry| request.since.is_none_or(|since| entry.seq > since)
-                && request.level.is_none_or(|level| entry.level <= level));
-        // Without a cursor return the most recent page; with a cursor walk
-        // forward, so a capped page cannot skip entries on the next pull.
-        let skip = if request.since.is_none() { matching().count().saturating_sub(limit) } else { 0 };
-        matching().skip(skip).take(limit).cloned().collect::<Vec<_>>()
-    }).unwrap_or_default();
-    let next = events.last().map_or(request.since.unwrap_or(seq), |entry| entry.seq);
+    let events = ring
+        .as_ref()
+        .map(|ring| {
+            let matching = || {
+                ring.entries.iter().map(|(entry, _)| entry).filter(|entry| {
+                    request.since.is_none_or(|since| entry.seq > since)
+                        && request.level.is_none_or(|level| entry.level <= level)
+                })
+            };
+            // Without a cursor return the most recent page; with a cursor walk
+            // forward, so a capped page cannot skip entries on the next pull.
+            let skip = if request.since.is_none() {
+                matching().count().saturating_sub(limit)
+            } else {
+                0
+            };
+            matching()
+                .skip(skip)
+                .take(limit)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let next = events
+        .last()
+        .map_or(request.since.unwrap_or(seq), |entry| entry.seq);
     Ok(json!({"events": events, "seq": seq, "next": next}))
 }
 
 pub(crate) struct RecentLayer;
 impl<S: tracing::Subscriber> Layer<S> for RecentLayer {
     fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
-        if !ENABLED.load(Ordering::Acquire) { return; }
+        if !ENABLED.load(Ordering::Acquire) {
+            return;
+        }
         let mut ring = RING.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(ring) = ring.as_mut() else { return; };
+        let Some(ring) = ring.as_mut() else {
+            return;
+        };
         let mut visitor = Fields::default();
         event.record(&mut visitor);
         let metadata = event.metadata();
@@ -129,7 +163,9 @@ impl<S: tracing::Subscriber> Layer<S> for RecentLayer {
 
 fn bounded(text: &str) -> String {
     let mut end = text.len().min(MAX_TEXT);
-    while !text.is_char_boundary(end) { end -= 1; }
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
     text[..end].to_owned()
 }
 
@@ -138,14 +174,19 @@ struct Text(String);
 impl Write for Text {
     fn write_str(&mut self, text: &str) -> std::fmt::Result {
         let mut end = text.len().min(MAX_TEXT.saturating_sub(self.0.len()));
-        while !text.is_char_boundary(end) { end -= 1; }
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
         self.0.push_str(&text[..end]);
         Ok(())
     }
 }
 
 #[derive(Default)]
-struct Fields { message: String, values: Map<String, Value> }
+struct Fields {
+    message: String,
+    values: Map<String, Value>,
+}
 impl Fields {
     fn insert(&mut self, field: &Field, value: Value) {
         if field.name() == "message" {
@@ -161,26 +202,47 @@ impl Visit for Fields {
         let _ = write!(text, "{value:?}");
         self.insert(field, Value::String(text.0));
     }
-    fn record_str(&mut self, field: &Field, value: &str) { self.insert(field, Value::String(bounded(value))); }
-    fn record_i64(&mut self, field: &Field, value: i64) { self.insert(field, value.into()); }
-    fn record_u64(&mut self, field: &Field, value: u64) { self.insert(field, value.into()); }
-    fn record_bool(&mut self, field: &Field, value: bool) { self.insert(field, value.into()); }
-    fn record_f64(&mut self, field: &Field, value: f64) { self.insert(field, json!(value)); }
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.insert(field, Value::String(bounded(value)));
+    }
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        self.insert(field, value.into());
+    }
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.insert(field, value.into());
+    }
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        self.insert(field, value.into());
+    }
+    fn record_f64(&mut self, field: &Field, value: f64) {
+        self.insert(field, json!(value));
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     fn entry(seq: u64, message: String) -> Entry {
-        Entry { seq, ts: String::new(), level: Level::Debug, target: "logging".into(), message, fields: Map::new() }
+        Entry {
+            seq,
+            ts: String::new(),
+            level: Level::Debug,
+            target: "logging".into(),
+            message,
+            fields: Map::new(),
+        }
     }
     #[test]
     fn count_and_byte_bounds_evict_oldest() {
         let mut ring = Ring::new();
-        for seq in 1..=2_100 { ring.push(entry(seq, String::new())); }
+        for seq in 1..=2_100 {
+            ring.push(entry(seq, String::new()));
+        }
         assert_eq!(ring.entries.len(), MAX_EVENTS);
         assert_eq!(ring.entries.front().unwrap().0.seq, 101);
-        for seq in 2_101..=3_000 { ring.push(entry(seq, "x".repeat(MAX_TEXT))); }
+        for seq in 2_101..=3_000 {
+            ring.push(entry(seq, "x".repeat(MAX_TEXT)));
+        }
         assert!(ring.bytes <= MAX_BYTES);
         assert!(ring.entries.len() < MAX_EVENTS);
         assert_eq!(ring.entries.back().unwrap().0.seq, 3_000);

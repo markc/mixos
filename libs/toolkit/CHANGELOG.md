@@ -21,6 +21,8 @@
 - Add single-file and save modes to the file chooser. Save has a file-name
   field, caller-supplied confirm label and replacement question; path probes
   stay on workers. Expose the chosen folder and XDG Documents resolution.
+- Serve the citizen `.debug.recent` query with a bounded, optional event ring;
+  retain viewport lifecycle diagnostics without copying the app name.
 - Expose the shared debug logging helper and record native window and
   viewport lifecycle transitions, without logging idle UI passes.
 

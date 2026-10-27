@@ -8,6 +8,9 @@
   hover and toggle states, disabled colours and the existing tooltip cards.
   `comp.window.action` dispatches enabled registry commands; `comp.props`
   reports hosting and per-surface item counts.
+- Add pull-only `comp.debug.recent` with structured fields, bounded retention
+  only at info or above, lazy journald and zero-cost default checks.
+
 - Add `--debug[=LEVEL]`, `comp.debug` and `comp.debug.set` for live tracing
   levels from off through trace, with a warn baseline and per-binary journal
   identity. Record mapping, placement, grabs and initial placement configures

@@ -49,6 +49,11 @@ async fn debug_bypasses_ui_capacity_and_serves_instance_and_discovery_names() {
         .await
         .unwrap();
     assert_eq!(enabled["level"], "trace");
+    let recent = caller.call("fixture-instance", "fixture-instance.debug.recent", json!({"limit": 1})).await.unwrap();
+    assert_eq!(recent["events"].as_array().unwrap().len(), 1);
+    assert!(recent["seq"].as_u64().unwrap() > 0);
+    let canonical = caller.call("fixture-instance", "fixture.debug.recent", json!({"level":"off"})).await.unwrap();
+    assert_eq!(canonical["events"], json!([]));
     let restored = caller
         .call("fixture-instance", "fixture.debug.set", json!({"on":false}))
         .await

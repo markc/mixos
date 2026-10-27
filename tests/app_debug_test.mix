@@ -41,6 +41,19 @@ try
     send $service $command timeout=3
     expect($rc == 0, $app .. " canonical discovery name did not answer")
     $command = $service .. ".debug.set"
+    send $service $command body='{"level":"debug"}' timeout=3
+    expect($rc == 0, $app .. " enable recent events")
+    $command = $app .. ".debug"
+    send $service $command timeout=3
+    expect($rc == 0, $app .. " drive query")
+    $command = $service .. ".debug.recent"
+    send $service $command body='{"limit":1000}' timeout=3
+    expect($rc == 0, $app .. " recent query")
+    $recent = $result
+    if type($recent) == "string" then $recent = json_parse($recent) end
+    $seams = filter($recent.events, fn($entry) = $entry.message == "Bus command received" and $entry.fields.command == $app .. ".debug")
+    expect(len($seams) >= 1, $app .. " missing structured seam: " .. json_encode($recent))
+    $command = $service .. ".debug.set"
     for $body in ['{"level":"trace"}', '{"on":false}']
       send $service $command body=$body timeout=3
       expect($rc == 0, $app .. " debug.set: " .. to_string($result))

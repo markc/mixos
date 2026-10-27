@@ -305,6 +305,46 @@ priority 6 and TRACE to 7; <code>-o json</code> exposes those priorities and eve
 <p>compd's separate developer logger still uses its existing <code>log_level</code>
 configuration and stderr drain. The live tracing control does not change
 that logger.</p>
+<p>Pull recent events with <code>&lt;app&gt;.debug.recent</code> or <code>comp.debug.recent</code>. This is
+a read-only citizen query, available under instance names in the same way
+as <code>.debug</code>. There is no log topic: log traffic never streams over the Bus.</p>
+<pre><code class="language-mix">$body = json_encode({limit: 200, level: "debug"})
+send workshop workshop.debug.recent body=$body
+</code></pre>
+<p>The reply is <code>{events, seq, next}</code>. Entries contain
+<code>{seq, ts, level, target, message, fields}</code>; <code>ts</code> is UTC RFC 3339 and <code>fields</code>
+preserves numbers and booleans. <code>seq</code> is the newest captured sequence,
+including events outside the selected page. <code>next</code> is the last returned
+sequence: pass it as <code>since</code> to continue without skipping a capped page.
+With no <code>since</code>, the query returns the newest matching page, oldest first.
+With <code>since</code>, it returns the earliest matching entries after that cursor.
+<code>level</code> selects that severity and more severe events (<code>warn</code> includes errors;
+<code>off</code> selects none). <code>limit</code> defaults to 200 and must be 1–1,000.</p>
+<p>The ring exists only while the filter permits <code>info</code> or more verbose events
+(including Email's info baseline). Returning to <code>warn</code>, <code>error</code> or <code>off</code>
+frees it. Its sequence survives that reset. The ring drops oldest entries
+at 2,000 events or a conservative 1 MB resident-size budget; expired cursors
+resume at the oldest retained event. Individual text fields truncate at
+4,096 UTF-8 bytes and entries retain at most 32 fields. Use journald for the
+durable record. A query only reads the ring; it never enables capture.</p>
+<p>At a plain <code>warn</code> baseline or <code>off</code>, logging starts no threads, timers or
+tasks and allocates no ring. Journald opens its socket on the first admitted
+event; spans alone do not open it. If that first connection fails, the sink
+falls back to stderr for non-terminal runs. Disabled debug and trace sites
+return at tracing's atomic maximum-level check, without building their fields.
+Every reload rebuilds tracing's callsite interest and maximum-level hint in
+both directions. Event sites use typed fields or lazy Display/Debug, and
+frame streams stay at trace.</p>
+<p>Tiny release builds can opt into <code>--features logging/release-max-level-warn</code>
+when building a consuming package. This default-off Cargo feature enables
+tracing's <code>release_max_level_warn</code> across the dependency graph: release
+builds compile out info, debug and trace. It removes the live switch to
+those levels, including the verbose event sites in dependencies; Bus set
+requests still change the runtime filter but cannot restore compiled-out
+events. Ordinary builds keep live switching. <code>tools/debug_gate.mix</code> runs
+the CBC release microbenchmark and verifies the compile-time cap; its
+allocator and resource tests check disabled-event allocations, helper thread
+counts, lazy sockets and max-level hints.</p>
         </article>
         <p class="doc-source"><a href="/docs/dev/debugging.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

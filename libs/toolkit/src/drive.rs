@@ -500,8 +500,7 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                 let app = drive.app.clone();
                 let options = drive.options.clone();
                 let child = drive.children.entry(target).or_insert_with(|| {
-                    logging::debug!(app, viewport = ?input.viewport_id, "viewport attached");
-                Box::new(Drive {
+                                    Box::new(Drive {
                         app,
                         options,
                         ..Drive::default()
@@ -2440,8 +2439,7 @@ mod tests {
         ctx.with_plugin(|drive: &mut Drive| {
             drive.children.insert(
                 child,
-                logging::debug!(app, viewport = ?input.viewport_id, "viewport attached");
-                Box::new(Drive {
+                                Box::new(Drive {
                     running: Some(Running {
                         id: 7,
                         steps: VecDeque::from([Step::Await {

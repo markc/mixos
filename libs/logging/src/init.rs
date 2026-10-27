@@ -230,7 +230,8 @@ pub(crate) fn init_inner(
     } else {
         opts.log_stderr.unwrap_or(TriState::Auto) != TriState::Always
     };
-    let journald_layer = journald_on.then(|| crate::journal::LazyJournal::new(&defaults.identity, journal_fallback));
+    let journald_layer =
+        journald_on.then(|| crate::journal::LazyJournal::new(&defaults.identity, journal_fallback));
     let journald_active = journald_layer.is_some();
 
     // stderr sink resolution. `Auto` is on only when journald did NOT

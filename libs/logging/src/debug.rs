@@ -359,9 +359,12 @@ pub fn request(service: &str, command: &str, body: &str) -> Option<(u8, Value)> 
 
 fn answer_recent(body: &str) -> (u8, Value) {
     let result = (|| {
-        if body.len() > 8192 { return Err("request exceeds 8192 bytes".into()); }
-        let request = serde_json::from_str::<RecentRequest>(if body.trim().is_empty() { "{}" } else { body })
-            .map_err(|e| e.to_string())?;
+        if body.len() > 8192 {
+            return Err("request exceeds 8192 bytes".into());
+        }
+        let request =
+            serde_json::from_str::<RecentRequest>(if body.trim().is_empty() { "{}" } else { body })
+                .map_err(|e| e.to_string())?;
         crate::recent::query(request)
     })();
     match result {
@@ -580,7 +583,10 @@ mod tests {
         for level in ["off", "error", "warn", "info", "debug", "trace"] {
             assert_eq!(answer(false, &json!({"level":level}).to_string()).0, 0);
             assert_eq!(answer(true, "{}").1["level"], level);
-            assert_eq!(crate::recent::allocated(), matches!(level, "info" | "debug" | "trace"));
+            assert_eq!(
+                crate::recent::allocated(),
+                matches!(level, "info" | "debug" | "trace")
+            );
             assert_eq!(
                 answer(true, "{}").1["on"],
                 matches!(level, "debug" | "trace")

@@ -35,6 +35,13 @@ try
   expect($initial.level == "warn" and $initial.baseline == "warn", "baseline: " .. json_encode($initial))
   $enabled = call_debug(".set", {on: true})
   expect($enabled.on and $enabled.level == "debug", "enable: " .. json_encode($enabled))
+  $cursor = call_debug(".recent", {}).seq
+  send workshop-debug-test workshop.describe timeout=3
+  expect($rc == 0, "drive Workshop discovery")
+  $recent = call_debug(".recent", {since: $cursor, limit: 1000})
+  $seams = filter($recent.events, fn($entry) = $entry.message == "Bus command answered" and $entry.fields.command == "workshop.describe")
+  expect(len($seams) == 1 and $seams[0].fields.rc == 0 and $seams[0].fields.service == "workshop-debug-test", "recent seam fields: " .. json_encode($recent))
+  expect($recent.seq > $cursor, "recent sequence did not advance")
   $journal = ""
   for $attempt = 1 to 50
     $journal = run_argv_must(["journalctl", "--no-pager", "-t", "workshop", "_PID=" .. to_string($child), "-o", "json"])
@@ -46,6 +53,7 @@ try
   expect(contains($journal, '"PRIORITY":"6"'), "journal event has the wrong DEBUG mapping")
   $disabled = call_debug(".set", {on: false})
   expect(not $disabled.on and $disabled.filter == $initial.baseline, "baseline was not restored")
+  expect(len(call_debug(".recent", {}).events) == 0, "ring was not freed at warn")
   for $level in ["off", "error", "warn", "info", "debug", "trace"]
     $state = call_debug(".set", {level: $level})
     expect($state.level == $level, "set level " .. $level)

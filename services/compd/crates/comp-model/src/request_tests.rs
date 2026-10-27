@@ -1291,10 +1291,8 @@ fn input_commands_parse_every_documented_form() {
         })
     );
     assert_eq!(
-        parse_input_op("comp.input.key", &json!({"seat": "human", "text": "ok
-"})),
-        Ok(InputOp::Text("ok
-".into()))
+        parse_input_op("comp.input.key", &json!({"seat": "human", "text": "ok\n"})),
+        Ok(InputOp::Text("ok\n".into()))
     );
     assert_eq!(
         parse_input_op("comp.input.release_all", &json!({})),
@@ -1864,3 +1862,4 @@ fn debug_commands_are_live_direct_requests_under_literal_names() {
     assert!(!crate::catalogue::read_only("comp.debug.set"));
     assert!(classify("comp-nested.debug", &json!({}), false).is_err());
 }
+

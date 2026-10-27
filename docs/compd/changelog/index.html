@@ -240,17 +240,25 @@
 </blockquote>
 <h2 id="unreleased--2026-10-27">Unreleased — 2026-10-27</h2>
 <ul>
-<li>Use the shared design title band layout for all four groups and centre
+<li>
+<p>Use the shared design title band layout for all four groups and centre
 MixOS titles by default. Host registered apps' revisioned Action Bars through
 the existing scene-host registry and Bus client, with shared Lucide rasters,
 hover and toggle states, disabled colours and the existing tooltip cards.
 <code>comp.window.action</code> dispatches enabled registry commands; <code>comp.props</code>
-reports hosting and per-surface item counts.</li>
-<li>Add <code>--debug[=LEVEL]</code>, <code>comp.debug</code> and <code>comp.debug.set</code> for live tracing
+reports hosting and per-surface item counts.</p>
+</li>
+<li>
+<p>Add pull-only <code>comp.debug.recent</code> with structured fields, bounded retention
+only at info or above, lazy journald and zero-cost default checks.</p>
+</li>
+<li>
+<p>Add <code>--debug[=LEVEL]</code>, <code>comp.debug</code> and <code>comp.debug.set</code> for live tracing
 levels from off through trace, with a warn baseline and per-binary journal
 identity. Record mapping, placement, grabs and initial placement configures
 at debug; keep configure streams and motion detail at trace. The separate
-developer logger is unchanged.</li>
+developer logger is unchanged.</p>
+</li>
 </ul>
 <h2 id="020">0.2.0</h2>
 <ul>

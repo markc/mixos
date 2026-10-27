@@ -32,10 +32,10 @@ mod defaults;
 mod handle;
 mod init;
 mod journal;
-mod recent;
 mod opts;
 #[cfg(feature = "prometheus")]
 mod prometheus_attach;
+mod recent;
 pub mod stats;
 
 pub use defaults::{LogDefaults, RotationMode};
