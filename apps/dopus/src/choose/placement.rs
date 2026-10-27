@@ -237,17 +237,21 @@ mod tests {
         );
         let id = answer.enable.clone().unwrap();
         let mut placement = Placement::new();
+        let mut mapping = super::super::Mapping::default();
+        mapping.opened(&id);
         placement.pending.insert(id.clone(), json!({"output":"o1"}));
         placement.capturing.insert(id);
         futures::executor::block_on(super::super::deliver(
             &mut engine,
             &mut presenter,
             &mut placement,
+            &mut mapping,
             answer,
             async { false },
         ));
         assert!(placement.pending.is_empty());
         assert!(placement.capturing.is_empty());
+        assert!(mapping.deadlines.is_empty());
         assert_eq!(engine.list()["requests"], json!([]));
     }
     #[test]

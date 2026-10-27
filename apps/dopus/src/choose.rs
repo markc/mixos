@@ -105,6 +105,7 @@ async fn deliver(
     engine: &mut Engine,
     presenter: &mut impl Presenter,
     placement: &mut placement::Placement,
+    mapping: &mut Mapping,
     answer: Answer,
     reply: impl std::future::Future<Output = bool>,
 ) -> Option<Outcome> {
@@ -114,6 +115,7 @@ async fn deliver(
             engine.reply_sent(&id, presenter);
         } else {
             placement.closed(&id);
+            mapping.deadlines.remove(&id);
             engine.reply_failed(&id, presenter);
             tracing::warn!(
                 request = id,
@@ -354,11 +356,9 @@ fn run_host(
                     citizen::debug::answered(SERVICE, &cmd.command, answer.rc);
                     let (rc, body) = (answer.rc, answer.body.to_string());
                     let sent = async { matches!(tokio::time::timeout(Duration::from_secs(2), client.respond(&cmd, rc, &body)).await, Ok(Ok(()))) };
-                    let enabled = answer.enable.clone();
-                    if let Some(outcome) = deliver(&mut engine, &mut presenter, &mut placement, answer, sent).await {
+                    if let Some(outcome) = deliver(&mut engine, &mut presenter, &mut placement, &mut mapping, answer, sent).await {
                         publish(&client, outcome).await;
                     }
-                    if let Some(id) = enabled && !engine.list()["requests"].as_array().is_some_and(|requests| requests.iter().any(|r| r["request"] == id)) { mapping.deadlines.remove(&id); }
                 }
                 id = placement.completed(&client) => {
                     if let Some(id) = id && let Some(driver) = &driver { driver.allow_map(&id); }
@@ -501,6 +501,7 @@ mod tests {
         }
         let log = Arc::new(Mutex::new(Vec::new()));
         let mut placement = placement::Placement::new();
+        let mut mapping = Mapping::default();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let mut presenter = Immediate {
             log: log.clone(),
@@ -526,6 +527,7 @@ mod tests {
                 &mut engine,
                 &mut presenter,
                 &mut placement,
+                &mut mapping,
                 answer,
                 reply
             ))
@@ -546,6 +548,7 @@ mod tests {
                 &mut engine,
                 &mut presenter,
                 &mut placement,
+                &mut mapping,
                 answer,
                 async { false }
             ))
@@ -609,6 +612,7 @@ mod tests {
                 &mut engine,
                 &mut presenter,
                 &mut placement,
+                &mut mapping,
                 answer,
                 async { false }
             ))
