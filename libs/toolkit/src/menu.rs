@@ -1976,7 +1976,7 @@ mod tests {
         for own_layer in [true, false] {
             let ctx = Context::default();
             crate::install(&ctx, &crate::Theme::embedded());
-            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
                 let layer = if own_layer {
                     ui.layer_id()
                 } else {
@@ -1994,6 +1994,7 @@ mod tests {
                 assert_eq!(st.layer, Some(layer));
                 assert_eq!(st.nav.open, if own_layer { None } else { Some(0) });
             });
+            out.textures_delta.clear();
         }
     }
 

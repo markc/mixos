@@ -603,30 +603,6 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
             );
         }
     }
-    // Ctrl+Shift+A from the body opens the chooser, which takes the focus.
-    h.state_mut().1.clear();
-    h.key_press_modifiers(
-        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
-        egui::Key::A,
-    );
-    h.run();
-    let commands: Vec<_> = h
-        .state()
-        .1
-        .iter()
-        .filter(|e| matches!(e, UiEvent::Command(..)))
-        .cloned()
-        .collect();
-    assert_eq!(
-        commands,
-        [UiEvent::Command(
-            "compose.attach",
-            toolkit::action::Origin::Shortcut
-        )]
-    );
-    h.state_mut().1.clear();
-    h.get_by_label("Body").click();
-    h.run();
     // A letter key produces a key event and a text event on the platform.
     for key in [egui::Key::S, egui::Key::M, egui::Key::J] {
         h.key_press(key);
@@ -649,6 +625,26 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
             .1
             .iter()
             .any(|e| matches!(e, UiEvent::Command(..)))
+    );
+    // Ctrl+Shift+A from the body opens the chooser, which takes the focus.
+    h.key_press_modifiers(
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+        egui::Key::A,
+    );
+    h.run();
+    let commands: Vec<_> = h
+        .state()
+        .1
+        .iter()
+        .filter(|e| matches!(e, UiEvent::Command(..)))
+        .cloned()
+        .collect();
+    assert_eq!(
+        commands,
+        [UiEvent::Command(
+            "compose.attach",
+            toolkit::action::Origin::Shortcut
+        )]
     );
 }
 
