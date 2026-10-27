@@ -207,7 +207,10 @@ mod tests {
             paths,
             ["focus.window.id", "windows.s7.output", "outputs.o_right"]
         );
-        assert_eq!(result.unwrap(), json!({"output":"o_right","x":550.0,"y":240.0,"width":820,"height":600}));
+        assert_eq!(
+            result.unwrap(),
+            json!({"output":"o_right","x":550.0,"y":240.0,"width":820,"height":600})
+        );
     }
 
     #[test]
@@ -256,12 +259,16 @@ mod tests {
     }
     #[test]
     fn capture_uses_pointer_output_before_default_without_a_focused_window() {
-        let result = futures::executor::block_on(capture_with(|path| std::future::ready(match path.as_str() {
-            "focus.window.id" => Some(Value::Null),
-            "input.seats" => Some(json!({"seat0":{"pointer":{"output":"right"}}})),
-            "outputs" => Some(json!({"o_left":{"name":"left","default":true,"width":1280,"height":720}, "o_right":{"name":"right","width":1920,"height":1080}})),
-            other => panic!("unexpected property path {other}"),
-        })));
+        let result = futures::executor::block_on(capture_with(|path| {
+            std::future::ready(match path.as_str() {
+                "focus.window.id" => Some(Value::Null),
+                "input.seats" => Some(json!({"seat0":{"pointer":{"output":"right"}}})),
+                "outputs" => Some(
+                    json!({"o_left":{"name":"left","default":true,"width":1280,"height":720}, "o_right":{"name":"right","width":1920,"height":1080}}),
+                ),
+                other => panic!("unexpected property path {other}"),
+            })
+        }));
         assert_eq!(result.unwrap()["output"], "o_right");
     }
 }

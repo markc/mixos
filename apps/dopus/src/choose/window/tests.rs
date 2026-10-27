@@ -55,7 +55,8 @@ fn escape_keeps_replace_then_closes_popup_then_cancels_from_name() {
     h.run();
     assert!(!egui::Popup::is_any_open(&h.ctx));
     assert!(!h.state().ending);
-    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "File name").click();
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "File name")
+        .click();
     h.run();
     h.key_press(egui::Key::Escape);
     h.run();

@@ -25,11 +25,26 @@ pub(super) struct DriveHost {
 }
 
 impl DriveHost {
-    pub fn request(&self, id: u64, command: &str, args: Value) -> Result<(), dopus_core::chooser::Refusal> {
+    pub fn request(
+        &self,
+        id: u64,
+        command: &str,
+        args: Value,
+    ) -> Result<(), dopus_core::chooser::Refusal> {
         let args = target(&self.windows, args)
             .map_err(|message| dopus_core::chooser::Refusal::new("ARGUMENT", message))?;
-        self.requests.send(DriveRequest {id, command:command.into(), args})
-            .map_err(|_| dopus_core::chooser::Refusal::new("UNAVAILABLE", crate::label("chooser-unavailable")))?;
+        self.requests
+            .send(DriveRequest {
+                id,
+                command: command.into(),
+                args,
+            })
+            .map_err(|_| {
+                dopus_core::chooser::Refusal::new(
+                    "UNAVAILABLE",
+                    crate::label("chooser-unavailable"),
+                )
+            })?;
         self.ctx.request_repaint_of(egui::ViewportId::ROOT);
         Ok(())
     }
@@ -211,10 +226,7 @@ impl eframe::App for Shell {
                 if !window.map_allowed {
                     continue;
                 }
-                (
-                    window.id.clone(),
-                    window.title(),
-                )
+                (window.id.clone(), window.title())
             };
             // Request windows intentionally have no saved geometry: the contract
             // starts every one centred on its parent's output or the focused one.
@@ -337,12 +349,22 @@ mod tests {
         let ctx = egui::Context::default();
         drive::install(&ctx, "files");
         let windows = Windows::default();
-        let mut presenter = NativePresenter {ctx, windows:windows.clone()};
-        let mut engine = dopus_core::chooser::Engine::new(1, super::super::defaults(), b"/tmp".to_vec()).unwrap();
+        let mut presenter = NativePresenter {
+            ctx,
+            windows: windows.clone(),
+        };
+        let mut engine =
+            dopus_core::chooser::Engine::new(1, super::super::defaults(), b"/tmp".to_vec())
+                .unwrap();
         let first = engine.choose("{}", "local:a", 1, &mut presenter).unwrap()["request"].clone();
         let (requests, receive) = mpsc::channel();
         let (_, answers) = tokio::sync::mpsc::unbounded_channel();
-        let driver = DriveHost {ctx:presenter.ctx.clone(), windows:windows.clone(), requests, answers};
+        let driver = DriveHost {
+            ctx: presenter.ctx.clone(),
+            windows: windows.clone(),
+            requests,
+            answers,
+        };
         driver.request(7, "ui.tree", json!({})).unwrap();
         engine.choose("{}", "local:b", 2, &mut presenter).unwrap();
         assert!(target(&windows, json!({})).is_err());
@@ -435,7 +457,10 @@ mod tests {
             );
             // Inject the bound's expiry without spending five seconds in a unit test.
             mapping.deadlines.insert(id.clone(), before);
-            assert_eq!(mapping.expired().await.as_slice(), std::slice::from_ref(&id));
+            assert_eq!(
+                mapping.expired().await.as_slice(),
+                std::slice::from_ref(&id)
+            );
             let outcome =
                 super::super::fail_unmapped(&mut engine, &mut presenter, &id, 5002).unwrap();
             assert_eq!(outcome.response, 2);
