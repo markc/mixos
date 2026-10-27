@@ -25,6 +25,7 @@ pub(crate) struct Window {
     pub pending: Vec<Input>,
     pub draft_due: Option<std::time::Instant>,
     pub focused: Option<std::time::Instant>,
+    created: std::time::Instant,
     order: u64,
     pub had_compose: bool,
     pub closed: bool,
@@ -76,6 +77,7 @@ pub(crate) struct Windows {
     pub owner_closing: bool,
     pub quitting: bool,
     pub keymap: toolkit::keymap::Overrides,
+    pub drops: BTreeMap<u64, (Option<String>, std::path::PathBuf)>,
     next: u64,
 }
 
@@ -95,7 +97,7 @@ impl Windows {
             .values()
             .max_by_key(|w| {
                 let w = w.lock().unwrap();
-                (w.focused, w.order)
+                (w.focused.unwrap_or(w.created).max(w.created), w.order)
             })
             .cloned()
     }
@@ -117,6 +119,10 @@ impl Windows {
         true
     }
 
+    pub fn next_name(&self) -> String {
+        format!("compose-{}", self.next + 1)
+    }
+
     pub fn insert(&mut self, state: &mut State, palette: editor::Palette) {
         self.next += 1;
         let name = format!("compose-{}", self.next);
@@ -128,7 +134,7 @@ impl Windows {
         };
         let mut view = context(state);
         swap(state, &mut view);
-        let had_compose = view.compose.is_some();
+        let had_compose = view.compose.is_some() || view.documents.opening();
         self.windows.insert(
             name.clone(),
             Arc::new(Mutex::new(Window {
@@ -138,6 +144,7 @@ impl Windows {
                 pending: Vec::new(),
                 draft_due: None,
                 focused: None,
+                created: std::time::Instant::now(),
                 order: self.next,
                 palette,
                 had_compose,
@@ -188,18 +195,16 @@ impl Windows {
             let mut window = window.lock().unwrap();
             window.had_compose |= window.view.compose.is_some();
             let owner_held = window.viewport == ViewportId::ROOT;
-            if !owner_held
-                && (window.closed
-                    || (window.had_compose
-                        && window.view.compose.is_none()
-                        && !window.view.documents.opening()))
-            {
+            if !owner_held && window.finished() {
                 toolkit::saved::secondary::finish(ctx, APP, name);
                 toolkit::drive::unregister_viewport(ctx, ViewportId::ROOT, name, window.viewport);
                 // No native surface ever changes identity or adopts another draft.
                 return false;
             }
             window.view.refresh_compose_view(state);
+            if self.compose_only && owner_held {
+                window.view.restore = state.restore.clone();
+            }
             window.palette = palette.clone();
             window.keymap = self.keymap.clone();
             true
@@ -226,8 +231,7 @@ impl Windows {
             .and_then(|name| self.windows.get(name))
             .is_some_and(|w| {
                 let w = w.lock().unwrap();
-                w.closed
-                    || (w.had_compose && w.view.compose.is_none() && !w.view.documents.opening())
+                w.finished()
             })
     }
 
@@ -243,7 +247,7 @@ impl Windows {
                 continue;
             }
             let builder =
-                toolkit::titlebar::viewport(crate::APP_ID, &crate::label("compose-title"))
+                toolkit::titlebar::viewport(&format!("{}.{name}", crate::APP_ID), &crate::label("compose-title"))
                     .with_title(format!("{} — {}", crate::label("compose-title"), name))
                     .with_decorations(
                         toolkit::chrome::Chrome::of(&ctx).decorations
@@ -263,9 +267,14 @@ impl Windows {
 }
 
 impl Window {
+    fn finished(&self) -> bool {
+        !self.view.documents.saving()
+            && (self.closed || (self.had_compose && self.view.compose.is_none() && !self.view.documents.opening()))
+    }
+
     fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        if self.had_compose && self.view.compose.is_none() && !self.view.documents.opening() {
+        if self.had_compose && self.view.compose.is_none() && !self.view.documents.opening() && self.view.status.is_empty() {
             self.view.status = crate::label("compose-owner-wait");
         }
         if self.viewport == ViewportId::ROOT {
@@ -404,6 +413,7 @@ pub fn view(
         }
     });
     crate::view::compose::confirm(ui, state, &mut events);
+    crate::view::compose::restore(ui, state, &mut events);
     crate::view::compose::document_replace(ui, state, &mut events);
     crate::view::identities::dialog(ui, state, &mut events);
     toolkit::titlebar::edges(ui);
