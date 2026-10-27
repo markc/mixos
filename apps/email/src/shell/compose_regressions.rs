@@ -592,7 +592,11 @@ fn review_compose_only_synchronous_document_failure_is_visible() {
             .lock()
             .unwrap()
             .view
-            .compose.as_ref().unwrap().error.as_deref(),
+            .compose
+            .as_ref()
+            .unwrap()
+            .error
+            .as_deref(),
         Some(label("document-absolute-path").as_str())
     );
     shell.bus.quit();

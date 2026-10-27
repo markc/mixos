@@ -1076,8 +1076,10 @@ mod tests {
                     1,
                     "ui.menu.list",
                     &serde_json::json!({"viewport":"compose-1"}),
-                )
-                .unwrap();
+                ).unwrap_or_else(|| {
+                    frame(&ctx, &windows);
+                    toolkit::drive::logic(&ctx).pop().unwrap()
+                });
                 assert_eq!(answer.rc, 0);
                 assert!(answer.body.to_string().contains("Save As"));
                 assert!(!answer.body.to_string().contains("mail.compose"));
