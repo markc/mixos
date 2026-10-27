@@ -144,6 +144,11 @@ A malformed file loads defaults and is never overwritten.
   uses maild's extension of a top-level `blobId` on `Email/set`. A strict
   RFC 8621 server builds an Email from uploaded MIME with `Email/import`,
   so it refuses the send; `Email/import` is future work.
+  **Email sends plain text only, by design.** The Markdown body goes out as
+  `text/plain`, and no HTML part is ever generated. This is a security
+  choice: HTML markup, CSS and script are attack surfaces in transit and at
+  the reader. Do not add HTML creation
+  ([decision](../docs/decisions/2026-10-27-email-sends-no-html.md)).
   `email.compose` and `email.send` accept `attachments: ["/home/user/report.pdf"]`.
   Paths must be absolute, readable regular files; symlinks are followed.
   Compose and local drafts keep the paths, never the file contents. Restoring

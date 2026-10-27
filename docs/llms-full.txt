@@ -6370,6 +6370,46 @@ the agents.
 
 ---
 
+<!-- page: https://mixos.dev/docs/decisions/2026-10-27-email-sends-no-html/ (source: https://mixos.dev/docs/decisions/2026-10-27-email-sends-no-html.md) -->
+
+# Decision — Email never creates HTML
+
+Status: accepted 2026-10-27.
+
+## The decision
+
+- **Email sends `text/plain` only.** The body is written in Markdown and
+  goes out as that Markdown text, `text/plain; charset=utf-8`. Files are
+  attached as their own parts under `multipart/mixed`.
+- **No HTML part is ever generated.** Email does not render Markdown to
+  HTML, and does not add a `multipart/alternative` HTML version, a
+  stylesheet, inline images by `cid:`, tracking pixels or scripts.
+- **A recipient without a Markdown-aware reader sees plain text.** That
+  is intended. Markdown is readable as written.
+- **This is a security choice, not a gap.** Do not add "HTML convenience",
+  an HTML toggle, a rich-text composer, or a Markdown-to-HTML step to the
+  send path. A change of this decision needs a new decision.
+
+## Why
+
+- HTML mail carries markup, CSS and sometimes script. Each is an attack
+  surface for the reader at the other end, and a body that can be altered
+  while it is relayed over SMTP between servers.
+- Plain text has none of that. What the sender wrote is what is delivered,
+  and any reader can show it safely.
+- Markdown keeps the structure people want (headings, lists, links, code)
+  without needing HTML to show it.
+
+## What stays
+
+- **Reading HTML mail.** Email still receives HTML mail from other
+  clients. It shows the plain-text part first and prints any HTML as text.
+  Nothing from a received email runs or loads.
+- **Attachments.** A user may attach an `.html` file like any other file.
+  It travels as an attachment, not as the message body.
+
+---
+
 <!-- page: https://mixos.dev/docs/dev/2026-10-21-source-and-build-map/ (source: https://mixos.dev/docs/dev/2026-10-21-source-and-build-map.md) -->
 
 ## Read first
@@ -8499,6 +8539,11 @@ A malformed file loads defaults and is never overwritten.
   uses maild's extension of a top-level `blobId` on `Email/set`. A strict
   RFC 8621 server builds an Email from uploaded MIME with `Email/import`,
   so it refuses the send; `Email/import` is future work.
+  **Email sends plain text only, by design.** The Markdown body goes out as
+  `text/plain`, and no HTML part is ever generated. This is a security
+  choice: HTML markup, CSS and script are attack surfaces in transit and at
+  the reader. Do not add HTML creation
+  ([decision](../docs/decisions/2026-10-27-email-sends-no-html.md)).
   `email.compose` and `email.send` accept `attachments: ["/home/user/report.pdf"]`.
   Paths must be absolute, readable regular files; symlinks are followed.
   Compose and local drafts keep the paths, never the file contents. Restoring

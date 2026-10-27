@@ -371,6 +371,11 @@ Drafts, submit it, then file it in Sent. <strong>Sending requires maild</strong>
 uses maild's extension of a top-level <code>blobId</code> on <code>Email/set</code>. A strict
 RFC 8621 server builds an Email from uploaded MIME with <code>Email/import</code>,
 so it refuses the send; <code>Email/import</code> is future work.
+<strong>Email sends plain text only, by design.</strong> The Markdown body goes out as
+<code>text/plain</code>, and no HTML part is ever generated. This is a security
+choice: HTML markup, CSS and script are attack surfaces in transit and at
+the reader. Do not add HTML creation
+(<a href="/docs/decisions/2026-10-27-email-sends-no-html/">decision</a>).
 <code>email.compose</code> and <code>email.send</code> accept <code>attachments: ["/home/user/report.pdf"]</code>.
 Paths must be absolute, readable regular files; symlinks are followed.
 Compose and local drafts keep the paths, never the file contents. Restoring

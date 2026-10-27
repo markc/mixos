@@ -12,6 +12,10 @@
 //! first asks the server for a submission of that Email
 //! (`EmailSubmission/query`) and never submits it again if one exists.
 //!
+//! The body is always `text/plain`: no HTML part is ever generated, by
+//! design, for security (docs/docs/decisions/2026-10-27-email-sends-no-html.md).
+//! Do not add a Markdown-to-HTML step or a `multipart/alternative` body.
+//!
 //! The Dioxus faults fixed here: Bcc is carried through; `In-Reply-To` is
 //! wrapped exactly once (a JMAP `messageId` arrives already bracketed); and
 //! every header input is stripped of CR/LF before it reaches the wire
