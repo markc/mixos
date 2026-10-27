@@ -5,7 +5,11 @@ fn malformed_environment_uses_a_valid_baseline_and_keeps_live_control() {
     const CHILD: &str = "MIXOS_DEBUG_INVALID_ENV_TEST";
     if std::env::var_os(CHILD).is_none() {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "malformed_environment_uses_a_valid_baseline_and_keeps_live_control", "--nocapture"])
+            .args([
+                "--exact",
+                "malformed_environment_uses_a_valid_baseline_and_keeps_live_control",
+                "--nocapture",
+            ])
             .env(CHILD, "1")
             .env("RUST_LOG", "[invalid")
             .output()
@@ -19,10 +23,12 @@ fn malformed_environment_uses_a_valid_baseline_and_keeps_live_control() {
     let (rc, initial) = logging::debug::request("fixture", "fixture.debug", "{}").unwrap();
     assert_eq!(rc, 0);
     assert_eq!(initial["baseline"], "warn");
-    let (rc, enabled) = logging::debug::request("fixture", "fixture.debug.set", r#"{"level":"debug"}"#).unwrap();
+    let (rc, enabled) =
+        logging::debug::request("fixture", "fixture.debug.set", r#"{"level":"debug"}"#).unwrap();
     assert_eq!(rc, 0);
     assert_eq!(enabled["level"], "debug");
-    let (rc, restored) = logging::debug::request("fixture", "fixture.debug.set", r#"{"on":false}"#).unwrap();
+    let (rc, restored) =
+        logging::debug::request("fixture", "fixture.debug.set", r#"{"on":false}"#).unwrap();
     assert_eq!(rc, 0);
     assert_eq!(restored["filter"], "warn");
 }

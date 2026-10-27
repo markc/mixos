@@ -429,12 +429,18 @@ mod tests {
             check(&root.join(kind));
         }
         for line in include_str!("../../../Cargo.lock").lines() {
-            if let Some(name) = line.strip_prefix("name = \"").and_then(|name| name.strip_suffix('"')) {
+            if let Some(name) = line
+                .strip_prefix("name = \"")
+                .and_then(|name| name.strip_suffix('"'))
+            {
                 let target = name.replace('-', "_");
                 if !WORKSPACE_TARGETS.contains(&target.as_str())
                     && WORKSPACE_TARGETS.iter().any(|own| target.starts_with(*own))
                 {
-                    assert!(PREFIX_DEPENDENCIES.contains(&target.as_str()), "dependency prefix needs an explicit cap: {target}");
+                    assert!(
+                        PREFIX_DEPENDENCIES.contains(&target.as_str()),
+                        "dependency prefix needs an explicit cap: {target}"
+                    );
                 }
             }
         }
