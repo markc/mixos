@@ -109,6 +109,10 @@ fn review_fetched_reply_and_forward_answer_with_their_new_windows() {
                         && matches!(command.as_str(), "email.reply" | "email.forward")
                     {
                         handled = true;
+                        // This fixture intercepts before Shell::command so it
+                        // can hold the query effect. Preserve the request's
+                        // opening provenance as that shell entry point does.
+                        shell.compose_replies.insert(*id);
                         crate::commands::command(
                             &mut shell.state,
                             &shell.commands,

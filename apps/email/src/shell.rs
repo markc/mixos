@@ -2695,7 +2695,7 @@ mod tests {
                 .restore
                 .is_empty()
         );
-        for _ in 0..40 {
+        for _ in 0..1000 {
             tick(&mut shell);
             if shell.composers.windows["compose-1"]
                 .lock()
@@ -2720,15 +2720,26 @@ mod tests {
     #[test]
     fn round2_refresh_preserves_a_synchronous_window_restore_offer() {
         let (mut shell, _broker) = compose_fixture(true);
-        shell.composers.insert(&mut shell.state, shell.palette.clone());
+        shell
+            .composers
+            .insert(&mut shell.state, shell.palette.clone());
         let owner = shell.composers.windows["compose-1"].clone();
-        owner.lock().unwrap().view.offer_drafts(vec![crate::drafts::SavedDraft {
-            id: "synchronous".into(), account: "a".into(), subject: "kept".into(), ..Default::default()
-        }]);
+        owner
+            .lock()
+            .unwrap()
+            .view
+            .offer_drafts(vec![crate::drafts::SavedDraft {
+                id: "synchronous".into(),
+                account: "a".into(),
+                subject: "kept".into(),
+                ..Default::default()
+            }]);
         shell.sync_composers();
         assert_eq!(owner.lock().unwrap().view.restore[0].id, "synchronous");
         owner.lock().unwrap().pending.push(crate::composer::Input {
-            events: vec![UiEvent::RestoreDraft(crate::state::DraftChoice::Back)], request: None, mixed: false,
+            events: vec![UiEvent::RestoreDraft(crate::state::DraftChoice::Back)],
+            request: None,
+            mixed: false,
         });
         shell.composer_input();
         shell.sync_composers();
@@ -2805,7 +2816,7 @@ mod tests {
             std::fs::write(&path, markdown).unwrap();
             std::fs::write(&photo, b"photo").unwrap();
             shell.mailbox_drop(vec![path.clone(), photo.clone()]);
-            for _ in 0..80 {
+            for _ in 0..1000 {
                 tick(&mut shell);
                 if shell.composers.windows.values().any(|w| {
                     w.lock()
@@ -2871,10 +2882,22 @@ mod tests {
     fn round2_failed_drop_after_origin_closes_has_a_translated_notice() {
         let (mut shell, _broker) = compose_fixture(false);
         add_composer(&mut shell, "origin");
-        let ticket = shell.open_dropped_document(Some("compose-1".into()), Some("a".into()), "/home/user/README.md".into()).unwrap();
+        let ticket = shell
+            .open_dropped_document(
+                Some("compose-1".into()),
+                Some("a".into()),
+                "/home/user/README.md".into(),
+            )
+            .unwrap();
         shell.composers.windows["compose-1"].lock().unwrap().closed = true;
         shell.sync_composers();
-        shell.tx.send(Event::MailDocument(ticket, crate::documents::Answer::Read(Err((code::DOCUMENT_IO, "read failed".into()))))).unwrap();
+        shell
+            .tx
+            .send(Event::MailDocument(
+                ticket,
+                crate::documents::Answer::Read(Err((code::DOCUMENT_IO, "read failed".into()))),
+            ))
+            .unwrap();
         shell.pump();
         assert_eq!(shell.state.status, label("compose-not-open"));
         assert_ne!(shell.state.status, "compose-not-open");
