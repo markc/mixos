@@ -773,10 +773,13 @@ impl Shell {
         if let Some(path) = self.launch_document.take() {
             // A document launch does not offer kept drafts during this run.
             self.state.restore.clear();
-            if let Err((_, error)) = self.state.read_document(account, path, None, false, false) {
-                self.state.compose();
-                if let Some(compose) = &mut self.state.compose {
-                    compose.error = Some(error);
+            match self.state.read_document(account, path, None, false, false) {
+                Ok(ticket) => self.composers.launch_read = Some(ticket),
+                Err((_, error)) => {
+                    self.state.compose();
+                    if let Some(compose) = &mut self.state.compose {
+                        compose.error = Some(error);
+                    }
                 }
             }
         } else if self.state.restore.is_empty() {
@@ -1794,17 +1797,24 @@ impl Shell {
                         | Event::MailDocument(_, crate::documents::Answer::Saved(_))
                 );
                 window.swap(&mut self.state);
+                // Only the launch read's own answer, once, and never mid-quit.
                 let failed_launch = window.viewport == egui::ViewportId::ROOT
-                    && self.composers.suppress_restore
                     && matches!(
                         &event,
-                        Event::MailDocument(_, crate::documents::Answer::Read(_))
+                        Event::MailDocument(ticket, crate::documents::Answer::Read(_))
+                            if self.composers.launch_read == Some(*ticket)
                     );
+                if failed_launch {
+                    self.composers.launch_read = None;
+                }
                 self.state.apply(event);
                 if failed_launch
                     && self.state.compose.is_none()
                     && !self.state.documents.opening()
                     && !window.closed
+                    && !self.state.exiting
+                    && !self.exiting
+                    && !self.composers.quitting
                 {
                     let error = std::mem::take(&mut self.state.status);
                     self.state.compose();

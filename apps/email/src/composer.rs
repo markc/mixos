@@ -78,6 +78,8 @@ pub(crate) struct Windows {
     pub owner_closing: bool,
     pub quitting: bool,
     pub suppress_restore: bool,
+    // The `email --compose FILE` read; only its failure opens a blank composer.
+    pub launch_read: Option<u64>,
     pub keymap: toolkit::keymap::Overrides,
     // First path is the document (also attached if reading it fails).
     pub drops: BTreeMap<u64, (Option<String>, Vec<std::path::PathBuf>)>,
