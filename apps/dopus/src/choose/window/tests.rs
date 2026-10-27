@@ -191,7 +191,12 @@ fn maximum_file_names_and_choices_keep_acceptance_buttons_reachable() {
                 window,
             );
         harness.run();
-        let tree = toolkit::drive::request(&harness.ctx,99,"ui.tree",&json!({"label":if replace { "Replace" } else { "Save" }}));
+        let tree = toolkit::drive::request(
+            &harness.ctx,
+            99,
+            "ui.tree",
+            &json!({"label":if replace { "Replace" } else { "Save" }}),
+        );
         assert!(
             toolkit::drive::request(
                 &harness.ctx,
@@ -207,8 +212,12 @@ fn maximum_file_names_and_choices_keep_acceptance_buttons_reachable() {
                 break;
             }
         }
-        assert!(matches!(harness.state_mut().take_end(),Some(End::Accept(_))),
-            "replace={replace}, message={:?}, pending={}, tree={tree:?}", harness.state().message, toolkit::drive::pending(&harness.ctx));
+        assert!(
+            matches!(harness.state_mut().take_end(), Some(End::Accept(_))),
+            "replace={replace}, message={:?}, pending={}, tree={tree:?}",
+            harness.state().message,
+            toolkit::drive::pending(&harness.ctx)
+        );
     }
 }
 

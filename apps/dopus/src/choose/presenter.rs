@@ -90,7 +90,9 @@ struct Shell {
 
 impl Shell {
     fn answer(&mut self, mut answer: drive::Answer) {
-        if let Some(state) = self.states.remove(&answer.id) && answer.rc == 0 {
+        if let Some(state) = self.states.remove(&answer.id)
+            && answer.rc == 0
+        {
             answer.body["chooser"] = json!(state);
         }
         let _ = self.answers.send(Report::Drive(answer));
@@ -122,9 +124,12 @@ impl eframe::App for Shell {
         while let Ok(request) = self.requests.try_recv() {
             let answer = match target(&self.windows, request.args) {
                 Ok(args) => {
-                    if request.command == "window.state" && let Some(id) = args["viewport"].as_str()
-                        && let Some(window) = self.windows.lock().unwrap().get(id) {
-                        self.states.insert(request.id, window.lock().unwrap().state());
+                    if request.command == "window.state"
+                        && let Some(id) = args["viewport"].as_str()
+                        && let Some(window) = self.windows.lock().unwrap().get(id)
+                    {
+                        self.states
+                            .insert(request.id, window.lock().unwrap().state());
                     }
                     drive::request(ctx, request.id, &request.command, &args)
                 }
