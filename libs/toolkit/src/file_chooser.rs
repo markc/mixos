@@ -277,6 +277,10 @@ impl FileChooser {
             }
         }
         let layer = egui::LayerId::new(egui::Order::Foreground, self.id);
+        #[cfg(test)]
+        if self.replace.is_some() && ctx.input(|i| i.key_pressed(Key::Enter)) {
+            eprintln!("replace ENTER before chooser: focus={:?}, top={:?}", ctx.memory(|m| m.focused()), ctx.memory(|m| m.top_modal_layer()));
+        }
         ctx.move_to_top(layer);
         let choices = vec![
             Choice::new(&self.confirm, Role::Default).enabled(self.can_confirm()),
@@ -298,6 +302,8 @@ impl FileChooser {
             self.pick(ctx);
         }
         if let Some(path) = self.replace.clone() {
+            #[cfg(test)]
+            if ctx.input(|i| i.key_pressed(Key::Enter)) { eprintln!("replace ENTER after chooser"); }
             let id = self.id.with("replace");
             ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
             let shown = Dialog::new(id, own("file-chooser-replace-title"))
@@ -306,6 +312,8 @@ impl FileChooser {
                     Choice::new(own("file-chooser-cancel"), Role::Cancel),
                 ])
                 .show(ctx, |ui| {
+                    #[cfg(test)]
+                    if ctx.input(|i| i.key_pressed(Key::Enter)) { eprintln!("replace ENTER body: enabled={}, focus={:?}, top={:?}", ui.is_enabled(), ctx.memory(|m| m.focused()), ctx.memory(|m| m.top_modal_layer())); }
                     ui.label(own_with(
                         "file-chooser-replace-body",
                         &[("path", &path.display().to_string())],
@@ -900,6 +908,7 @@ mod tests {
         assert!(h.query_by_label("Replace").is_some());
         h.get_by_label("Replace").focus();
         h.run();
+        assert!(h.get_by_label("Replace").is_focused(), "replacement button must own focus");
         h.key_press(Key::Enter);
         h.run();
         assert_eq!(
