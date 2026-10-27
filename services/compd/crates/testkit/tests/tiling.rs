@@ -11,6 +11,7 @@ use surfaces::SurfaceId;
 use testkit::Harness;
 use world::camera::transform::translate::slot;
 use world::comp::Placement;
+use world::window::interface::record::window::LoopWindow;
 
 fn fixture() -> (
     Harness,
