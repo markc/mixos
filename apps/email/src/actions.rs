@@ -776,7 +776,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn attachments_are_dialog_only_and_guards_follow_the_compose() {
+    fn composer_attachment_actions_stay_out_of_mailbox_menus() {
         let mut state = crate::state::tests::connected_many(&["a"]);
         let registry = registry();
         let attach = registry.get("compose.attach").unwrap();

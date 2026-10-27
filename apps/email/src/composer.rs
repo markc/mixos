@@ -485,7 +485,11 @@ mod tests {
     }
 
     fn frame(ctx: &egui::Context, windows: &Windows) {
-        let mut input = egui::RawInput::default();
+        let mut input = egui::RawInput {
+            time: Some(ctx.input(|i| i.time) + 0.1),
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 700.0))),
+            ..Default::default()
+        };
         for window in windows.windows.values() {
             input
                 .viewports
@@ -830,7 +834,7 @@ mod tests {
         }
         let first = windows.windows["compose-1"].clone();
         first.lock().unwrap().view.confirm = Some(crate::state::Confirm::Quit);
-        frame(&ctx, &windows);
+        for _ in 0..4 { frame(&ctx, &windows); }
         assert!(
             toolkit::drive::request(
                 &ctx,

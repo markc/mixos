@@ -9745,7 +9745,7 @@ and `relative`. `name` is the plain basename; `label` is the text shown by the
 chip, including a directory qualifier when basenames collide.
 It also reports `attachment_size` (the sum of known raw file
 sizes), `attachment_error`, `attachments_over_limit` and `sendable`, matching
-the dialog, and `send_origin: {caller_key, drive_request_id, mixed_input}` after a send
+the composer, and `send_origin: {caller_key, drive_request_id, mixed_input}` after a send
 starts; failed sends clear that origin. Removal matches the supplied path
 exactly, preserving symlink paths, and updates the saved draft. UI fields remain drivable through the
 toolkit commands.

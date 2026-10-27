@@ -2835,8 +2835,7 @@ mod tests {
                 ..jmap::Composed::default()
             },
         );
-        let registry = actions::registry();
-        let strings = crate::strings();
+        let registry = crate::composer::registry();
         let theme = Theme::for_context(design::DesignContext::default());
         let palette = editor::Palette::from_theme(&theme);
         let mut h = Harness::builder()
@@ -2846,7 +2845,7 @@ mod tests {
                     for answer in drive::logic(ui.ctx()) {
                         data.1.remove(&answer.id);
                     }
-                    let events = view(ui, &data.0, &registry, &strings, &palette);
+                    let events = crate::composer::view(ui, &data.0, &registry, &palette);
                     let origin = driven_origin(ui.ctx(), &data.1);
                     apply_ui_events(&mut data.0, &registry, events, origin);
                 },
