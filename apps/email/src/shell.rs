@@ -1798,7 +1798,7 @@ impl Shell {
                     && self.composers.suppress_restore
                     && matches!(
                         &event,
-                        Event::MailDocument(_, crate::documents::Answer::Read(Err(_)))
+                        Event::MailDocument(_, crate::documents::Answer::Read(_))
                     );
                 self.state.apply(event);
                 if failed_launch

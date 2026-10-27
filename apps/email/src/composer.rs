@@ -1027,7 +1027,12 @@ mod tests {
         for decorations in [design::Decorations::Client, design::Decorations::Server] {
             for standalone in [false, true] {
                 let (mut state, mut windows, theme, ctx) = fixture(standalone);
-                let theme = theme.framed(decorations, design::CaptionSide::Auto);
+                let theme = theme
+                    .framed(decorations, design::CaptionSide::Auto)
+                    .with_menus(design::MenuStyle::Titlebar, design::MenuSide::Left)
+                    .with_band(design::title_band::Settings::from_names(
+                        "auto", "right", "titlebar", "mac",
+                    ));
                 toolkit::install(&ctx, &theme);
                 toolkit::drive::set_service(&ctx, Some(APP));
                 state.compose();
@@ -1076,7 +1081,8 @@ mod tests {
                     1,
                     "ui.menu.list",
                     &serde_json::json!({"viewport":"compose-1"}),
-                ).unwrap_or_else(|| {
+                )
+                .unwrap_or_else(|| {
                     frame(&ctx, &windows);
                     toolkit::drive::logic(&ctx).pop().unwrap()
                 });

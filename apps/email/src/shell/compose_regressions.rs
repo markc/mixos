@@ -17,14 +17,21 @@ fn queued(shell: &mut Shell, name: &str, events: Vec<UiEvent>) {
 
 #[test]
 fn failed_document_launch_opens_a_blank_composer_with_the_read_error() {
-    for relative in [false, true] {
+    for scenario in 0..3 {
         let (mut shell, _broker) = compose_fixture(true);
         let dir = tempfile::tempdir().unwrap();
-        let missing = if relative {
+        let missing = if scenario == 1 {
             PathBuf::from("missing.md")
         } else {
             dir.path().join("missing.md")
         };
+        if scenario == 2 {
+            std::fs::write(
+                &missing,
+                "---\nmail-from: unknown@example.invalid\n---\nbody\n",
+            )
+            .unwrap();
+        }
         shell.compose_launch(true, Some(missing));
         for _ in 0..1000 {
             shell
