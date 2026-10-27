@@ -1394,7 +1394,8 @@ mod tests {
                     // Distinguish a missed invalidation from a citizen whose
                     // socket/name is still alive at the broker.
                     let broker_registry = if let Some(client) = port.client.get() {
-                        registry_read(Arc::clone(client), Duration::ZERO, port.registry.clone()).await
+                        registry_read(Arc::clone(client), Duration::ZERO, port.registry.clone())
+                            .await
                     } else {
                         None
                     };
@@ -2205,7 +2206,10 @@ mod tests {
         );
         count.headers.insert("broker_origin".into(), "local".into());
         count.headers.remove("path");
-        assert_eq!(route("shell", &count), Route::Ignore("invalid_payload_json"));
+        assert_eq!(
+            route("shell", &count),
+            Route::Ignore("invalid_payload_json")
+        );
         count.body = "{}".into();
         assert_eq!(
             route("shell", &count),
