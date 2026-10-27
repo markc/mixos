@@ -72,9 +72,16 @@ fn a_launch_read_failing_during_quit_opens_no_composer() {
     let dir = tempfile::tempdir().unwrap();
     // A document the read accepts but compose refuses: the answer is async.
     let refused = dir.path().join("refused.md");
-    std::fs::write(&refused, "---\nmail-from: unknown@example.invalid\n---\nbody\n").unwrap();
+    std::fs::write(
+        &refused,
+        "---\nmail-from: unknown@example.invalid\n---\nbody\n",
+    )
+    .unwrap();
     shell.compose_launch(true, Some(refused));
-    assert!(shell.composers.launch_read.is_some(), "launch read is pending");
+    assert!(
+        shell.composers.launch_read.is_some(),
+        "launch read is pending"
+    );
     shell.composers.quitting = true;
     for _ in 0..1000 {
         shell
@@ -86,13 +93,19 @@ fn a_launch_read_failing_during_quit_opens_no_composer() {
         }
     }
     shell.sync_composers();
-    assert!(shell.composers.launch_read.is_none(), "launch read answered");
+    assert!(
+        shell.composers.launch_read.is_none(),
+        "launch read answered"
+    );
     let opened = shell
         .composers
         .windows
         .values()
         .any(|w| w.lock().unwrap().view.compose.is_some());
-    assert!(!opened && shell.state.compose.is_none(), "no composer opened mid-quit");
+    assert!(
+        !opened && shell.state.compose.is_none(),
+        "no composer opened mid-quit"
+    );
     shell.bus.quit();
 }
 
