@@ -786,7 +786,12 @@ mod tests {
         for row in &mut rows {
             let id = row.cookie[0];
             row.local_port = if id.is_multiple_of(3) { 80 } else { 443 };
-            row.state = if id.is_multiple_of(7) { "listen" } else { "established" }.into();
+            row.state = if id.is_multiple_of(7) {
+                "listen"
+            } else {
+                "established"
+            }
+            .into();
             row.rx_bps = (!id.is_multiple_of(11)).then_some(f64::from(id));
             row.tx_bps = row.rx_bps.map(|_| f64::from(4096 - id));
             row.rtt_us = row.rx_bps.map(|_| id % 101);
