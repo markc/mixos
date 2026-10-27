@@ -341,12 +341,7 @@ struct RefusedReply {
 }
 
 impl BusHandler for RefusedReply {
-    fn emit<'a>(
-        &'a self,
-        _: &'a str,
-        _: &'a str,
-        _: &'a Value,
-    ) -> BusFuture<'a, MixResult<()>> {
+    fn emit<'a>(&'a self, _: &'a str, _: &'a str, _: &'a Value) -> BusFuture<'a, MixResult<()>> {
         Box::pin(async { unreachable!("test only replies") })
     }
 

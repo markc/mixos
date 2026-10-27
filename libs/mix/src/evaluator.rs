@@ -1362,10 +1362,9 @@ impl InvocationReplyRegistry {
 /// Normal completion in `run_handlers_for` calls
 /// [`Self::complete`] explicitly, which consumes the guard and
 /// removes the entry unless a shutdown-refused reply still needs the drain.
-/// A long-lived citizen therefore does not leak
-/// per-dispatch entries on the happy path; the registry only grows
-/// when an in-flight task is being cancelled, and C.7f's drain
-/// reclaims everything still registered at shutdown.
+/// A long-lived citizen therefore does not leak per-dispatch entries on
+/// the happy path; cancellation and shutdown-refused replies leave handles
+/// for C.7f's drain to answer at shutdown.
 ///
 /// Synthesis on cancellation is NOT a Drop concern — `Drop` cannot
 /// `.await` — it is owned by the C.7f shutdown drain (single async
@@ -1381,8 +1380,7 @@ impl InvocationRegistration {
     /// boundary has had its chance to synthesize a reply for an
     /// unanswered request. A shutdown-refused unanswered request stays
     /// registered for the drain's gate-bypassing terminal reply.
-    /// Consumes the guard to make accidental
-    /// double-completion a compile error.
+    /// Consumes the guard to make accidental double-completion a compile error.
     ///
     /// Does NOT `mem::forget(self)` — the `Drop` impl is a no-op, so
     /// the normal field drop is harmless and must run so the guard's
