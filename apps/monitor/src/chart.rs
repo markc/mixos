@@ -4,8 +4,7 @@
 //! used by painted sparklines; plotting types never enter that data path.
 use egui::{Ui, Vec2};
 use egui_plot::{
-    AxisHints, GridMark, HoverPosition, ItemId, ItemIdSet, Line, Plot, PlotMemory,
-    PlotResponse,
+    AxisHints, GridMark, HoverPosition, ItemId, ItemIdSet, Line, Plot, PlotMemory, PlotResponse,
 };
 use std::{cell::Cell, collections::HashMap};
 use toolkit::graph::{self, Hue};
@@ -282,16 +281,38 @@ fn legend(ui: &mut Ui, series: &[Series<'_>], hidden: &mut ItemIdSet) -> egui::R
         for series in series {
             let id = ItemId::new(series.name);
             let visible = !hidden.contains(&id);
-            let colour = if visible { graph::tint(ui, series.hue) } else { ui.visuals().weak_text_color() };
-            let response = ui.add(egui::Button::new(
-                egui::RichText::new(format!("● {}", series.name)).small().color(colour)
-            ).frame(false).selected(visible));
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, series.name));
+            let colour = if visible {
+                graph::tint(ui, series.hue)
+            } else {
+                ui.visuals().weak_text_color()
+            };
+            let response = ui.add(
+                egui::Button::new(
+                    egui::RichText::new(format!("   {}", series.name))
+                        .small()
+                        .color(colour),
+                )
+                .frame(false)
+                .selected(visible),
+            );
+            let radius = ui.text_style_height(&egui::TextStyle::Small) * 0.2;
+            let centre = egui::pos2(
+                response.rect.left() + ui.spacing().button_padding.x + radius,
+                response.rect.center().y,
+            );
+            ui.painter().circle_filled(centre, radius, colour);
+            response
+                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, series.name));
             if response.clicked() {
-                if visible { hidden.insert(id); } else { hidden.remove(&id); }
+                if visible {
+                    hidden.insert(id);
+                } else {
+                    hidden.remove(&id);
+                }
             }
         }
-    }).response
+    })
+    .response
 }
 
 fn render_custom(
@@ -318,9 +339,13 @@ fn render_custom(
         .unwrap_or_default();
     let legend_height = if chart.series.len() > 1 {
         let top = ui.next_widget_position().y;
-        ui.push_id(plot_id.with("legend"), |ui| legend(ui, chart.series, &mut hidden));
+        ui.push_id(plot_id.with("legend"), |ui| {
+            legend(ui, chart.series, &mut hidden)
+        });
         ui.next_widget_position().y - top
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let padding = text_height * 0.5 + ui.spacing().item_spacing.y;
     ui.add_space(padding);
     if let Some(mut memory) = PlotMemory::load(ui.ctx(), plot_id) {
@@ -414,7 +439,9 @@ fn render_custom(
         plot_ui.set_plot_bounds_x(range.left..=range.right);
         plot_ui.set_plot_bounds_y(0.0..=ticks.max());
         for (series, colour) in chart.series.iter().zip(colours) {
-            if hidden.contains(&ItemId::new(series.name)) { continue; }
+            if hidden.contains(&ItemId::new(series.name)) {
+                continue;
+            }
             plot_ui.line(
                 Line::new(
                     series.name,
@@ -444,24 +471,70 @@ mod tests {
     #[test]
     fn compact_legends_stay_above_the_plot_and_toggle_lines_and_readouts() {
         use egui_kittest::{Harness, kittest::Queryable};
-        let mut h = Harness::builder().with_size(egui::vec2(380.0,220.0)).build_ui_state(
-            |ui, state: &mut (egui::Rect, ItemIdSet, String)| {
-                let series = [
-                    Series { name:"Active opens", hue:Hue::Series(1), values:&[1.0,2.0] },
-                    Series { name:"Passive opens", hue:Hue::Series(2), values:&[3.0,4.0] },
-                    Series { name:"Sent resets", hue:Hue::Series(3), values:&[5.0,6.0] },
-                    Series { name:"Established resets", hue:Hue::Series(4), values:&[7.0,8.0] },
-                ];
-                let id = ui.make_persistent_id("legend-test");
-                let chart = Chart {series:&series,samples:60,interval_s:1.0,scale:Scale::Count(10.0),format:vitals::format::percent};
-                let output = render(ui,"legend-test",egui::vec2(360.0,150.0),chart);
-                state.0 = *output.transform.frame();
-                state.1 = PlotMemory::load(ui.ctx(),id).unwrap().hidden_items;
-                state.2 = readout_at(&Chart {series:&series,samples:60,interval_s:1.0,scale:Scale::Count(10.0),format:vitals::format::percent},0.0,1.0,&state.1).unwrap();
-            }, (egui::Rect::NOTHING,ItemIdSet::default(),String::new()));
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(380.0, 220.0))
+            .build_ui_state(
+                |ui, state: &mut (egui::Rect, ItemIdSet, String)| {
+                    let series = [
+                        Series {
+                            name: "Active opens",
+                            hue: Hue::Series(1),
+                            values: &[1.0, 2.0],
+                        },
+                        Series {
+                            name: "Passive opens",
+                            hue: Hue::Series(2),
+                            values: &[3.0, 4.0],
+                        },
+                        Series {
+                            name: "Sent resets",
+                            hue: Hue::Series(3),
+                            values: &[5.0, 6.0],
+                        },
+                        Series {
+                            name: "Established resets",
+                            hue: Hue::Series(4),
+                            values: &[7.0, 8.0],
+                        },
+                    ];
+                    let id = ui.make_persistent_id("legend-test");
+                    let chart = Chart {
+                        series: &series,
+                        samples: 60,
+                        interval_s: 1.0,
+                        scale: Scale::Count(10.0),
+                        format: vitals::format::percent,
+                    };
+                    let output = render(ui, "legend-test", egui::vec2(360.0, 150.0), chart);
+                    state.0 = *output.transform.frame();
+                    state.1 = PlotMemory::load(ui.ctx(), id).unwrap().hidden_items;
+                    state.2 = readout_at(
+                        &Chart {
+                            series: &series,
+                            samples: 60,
+                            interval_s: 1.0,
+                            scale: Scale::Count(10.0),
+                            format: vitals::format::percent,
+                        },
+                        0.0,
+                        1.0,
+                        &state.1,
+                    )
+                    .unwrap();
+                },
+                (egui::Rect::NOTHING, ItemIdSet::default(), String::new()),
+            );
         h.run();
-        for name in ["Active opens","Passive opens","Sent resets","Established resets"] {
-            assert!(h.get_by_label(name).rect().bottom() <= h.state().0.top(), "{name} overlaps the data");
+        for name in [
+            "Active opens",
+            "Passive opens",
+            "Sent resets",
+            "Established resets",
+        ] {
+            assert!(
+                h.get_by_label(name).rect().bottom() <= h.state().0.top(),
+                "{name} overlaps the data"
+            );
         }
         h.get_by_label("Active opens").click();
         h.run();

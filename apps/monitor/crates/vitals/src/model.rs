@@ -215,11 +215,12 @@ impl Connections {
     /// nodes: known rates (even zero), unknown rates, then listener backfill.
     pub fn rank_throughput(&mut self) {
         let throughput = |c: &Connection| match (c.rx_bps, c.tx_bps) {
-            (None,None) => -1.0,
-            (rx,tx) => rx.unwrap_or(0.0) + tx.unwrap_or(0.0),
+            (None, None) => -1.0,
+            (rx, tx) => rx.unwrap_or(0.0) + tx.unwrap_or(0.0),
         };
-        self.rows.sort_by(|a,b| {
-            (a.state == "listen").cmp(&(b.state == "listen"))
+        self.rows.sort_by(|a, b| {
+            (a.state == "listen")
+                .cmp(&(b.state == "listen"))
                 .then_with(|| throughput(b).total_cmp(&throughput(a)))
                 .then(a.cookie.cmp(&b.cookie))
         });
@@ -438,22 +439,38 @@ mod tests {
     #[test]
     fn throughput_replies_rank_traffic_before_unknown_and_listener_backfill() {
         let mut table = Connections::default();
-        table.rows.push(Connection {state:"listen".into(), ..Connection::default()});
+        table.rows.push(Connection {
+            state: "listen".into(),
+            ..Connection::default()
+        });
         table.rows.push(Connection::default());
-        table.rows.push(Connection {cookie:[1,0],rx_bps:Some(0.0), ..Connection::default()});
+        table.rows.push(Connection {
+            cookie: [1, 0],
+            rx_bps: Some(0.0),
+            ..Connection::default()
+        });
         for i in 2..22 {
-            table.rows.push(Connection {cookie:[i,0],rx_bps:Some(f64::from(i)*1024.0), ..Connection::default()});
+            table.rows.push(Connection {
+                cookie: [i, 0],
+                rx_bps: Some(f64::from(i) * 1024.0),
+                ..Connection::default()
+            });
         }
         let mut backfill = table.clone();
         backfill.rows.truncate(4);
         backfill.rank_throughput();
-        assert_eq!(backfill.rows[0].rx_bps,Some(2048.0));
-        assert_eq!(backfill.rows[1].rx_bps,Some(0.0));
-        assert_eq!(backfill.rows[2].rx_bps,None);
-        assert_eq!(backfill.rows[3].state,"listen");
+        assert_eq!(backfill.rows[0].rx_bps, Some(2048.0));
+        assert_eq!(backfill.rows[1].rx_bps, Some(0.0));
+        assert_eq!(backfill.rows[2].rx_bps, None);
+        assert_eq!(backfill.rows[3].state, "listen");
         table.rank_throughput();
-        assert_eq!(table.count,20);
-        assert!(table.rows.iter().all(|r| r.state != "listen" && r.rx_bps.unwrap() > 0.0));
+        assert_eq!(table.count, 20);
+        assert!(
+            table
+                .rows
+                .iter()
+                .all(|r| r.state != "listen" && r.rx_bps.unwrap() > 0.0)
+        );
     }
 
     #[test]
