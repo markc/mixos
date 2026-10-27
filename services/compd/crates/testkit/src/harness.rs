@@ -457,7 +457,9 @@ impl Harness {
                 (
                     handle.modified_sym().is_modifier_key(),
                     handle.modified_sym().raw(),
-                    handle.raw_latin_sym_or_raw_current_sym().map(|sym| sym.raw()),
+                    handle
+                        .raw_latin_sym_or_raw_current_sym()
+                        .map(|sym| sym.raw()),
                 )
             });
         if world::comp::tiling::key(
