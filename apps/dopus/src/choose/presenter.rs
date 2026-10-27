@@ -25,8 +25,13 @@ pub(super) struct DriveHost {
 }
 
 impl DriveHost {
-    pub fn target(&self, args: Value) -> Result<Value, &'static str> {
-        target(&self.windows, args)
+    pub fn request(&self, id: u64, command: &str, args: Value) -> Result<(), dopus_core::chooser::Refusal> {
+        let args = target(&self.windows, args)
+            .map_err(|message| dopus_core::chooser::Refusal::new("ARGUMENT", message))?;
+        self.requests.send(DriveRequest {id, command:command.into(), args})
+            .map_err(|_| dopus_core::chooser::Refusal::new("UNAVAILABLE", crate::label("chooser-unavailable")))?;
+        self.ctx.request_repaint_of(egui::ViewportId::ROOT);
+        Ok(())
     }
 
     pub fn allow_map(&self, id: &str) {
@@ -335,10 +340,14 @@ mod tests {
         let mut presenter = NativePresenter {ctx, windows:windows.clone()};
         let mut engine = dopus_core::chooser::Engine::new(1, super::super::defaults(), b"/tmp".to_vec()).unwrap();
         let first = engine.choose("{}", "local:a", 1, &mut presenter).unwrap()["request"].clone();
-        let at_arrival = target(&windows, json!({})).unwrap();
+        let (requests, receive) = mpsc::channel();
+        let (_, answers) = tokio::sync::mpsc::unbounded_channel();
+        let driver = DriveHost {ctx:presenter.ctx.clone(), windows:windows.clone(), requests, answers};
+        driver.request(7, "ui.tree", json!({})).unwrap();
         engine.choose("{}", "local:b", 2, &mut presenter).unwrap();
         assert!(target(&windows, json!({})).is_err());
-        assert_eq!(target(&windows, at_arrival).unwrap()["viewport"], first);
+        let at_ui = receive.try_recv().unwrap();
+        assert_eq!(target(&windows, at_ui.args).unwrap()["viewport"], first);
     }
 
     #[test]

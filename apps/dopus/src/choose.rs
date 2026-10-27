@@ -326,24 +326,15 @@ fn run_host(
                     if cmd.topic().is_some() || cmd.command.is_empty() { continue; }
                     citizen::debug::received(SERVICE, &cmd.command);
                     if let Some(command) = cmd.command.strip_prefix("files.").filter(|c| toolkit::drive::COMMANDS.contains(c)) {
-                        if let Some(driver) = &driver {
-                            drive_id += 1;
-                            let args = driver.target(serde_json::from_str(&cmd.body).unwrap_or(Value::Null));
-                            let args = match args {
-                                Ok(args) => args,
-                                Err(message) => {
-                                    let _ = client.respond(&cmd, 10, &json!({"error_code":"ARGUMENT", "message":message}).to_string()).await;
-                                    continue;
-                                }
-                            };
-                            let request = presenter::DriveRequest { id: drive_id, command: command.into(), args };
-                            if driver.requests.send(request).is_ok() {
-                                pending.insert(drive_id, cmd);
-                                driver.ctx.request_repaint_of(egui::ViewportId::ROOT);
-                                continue;
-                            }
+                        drive_id += 1;
+                        let result = match &driver {
+                            Some(driver) => driver.request(drive_id, command, serde_json::from_str(&cmd.body).unwrap_or(Value::Null)),
+                            None => Err(Refusal::new("ARGUMENT", "viewport is not an open chooser")),
+                        };
+                        match result {
+                            Ok(()) => { pending.insert(drive_id, cmd); },
+                            Err(error) => { let _ = client.respond(&cmd, 10, &json!(error).to_string()).await; },
                         }
-                        let _ = client.respond(&cmd, 10, &json!({"error_code":"UNAVAILABLE","message":crate::label("chooser-unavailable")}).to_string()).await;
                         continue;
                     }
                     let now = epoch.saturating_add(start.elapsed().as_millis() as u64);
