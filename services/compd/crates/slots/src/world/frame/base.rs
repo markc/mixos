@@ -25,6 +25,7 @@ pub const CANVAS: Layer = Layer(400);
 // (UI_SCREEN) — again mirroring the hit-test priority (UI Screen > Overlay > Top).
 pub const LAYER_TOP: Layer = Layer(450);
 pub const LAYER_OVERLAY: Layer = Layer(480);
+pub const TILE_PREVIEW: Layer = Layer(490);
 pub const UI_SCREEN: Layer = Layer(500);
 /// Live window thumbnails, over the screen UI card that frames them.
 pub const THUMBNAIL: Layer = Layer(510);

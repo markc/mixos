@@ -36,6 +36,7 @@ pub mod presentation;
 pub mod region;
 pub mod scenes;
 pub mod session_lock;
+pub mod tiling;
 pub mod usable;
 pub mod visibility;
 pub mod x11_place;
@@ -142,6 +143,7 @@ pub struct Interactive {
     /// A new delta the host has not applied yet.
     pub updated: bool,
     pub ended: bool,
+    pub cancelled: bool,
     /// The last size a resize configured.
     pub last_size: Option<Size<i32, Logical>>,
 }
@@ -186,6 +188,9 @@ pub struct CompState {
     desktop_requests: Vec<u32>,
     /// The interactive move/resize in progress, if any.
     pub interactive: Option<Interactive>,
+    pub drag: Option<tiling::Drag>,
+    /// Escape's release remains consumed after the move has ended.
+    pub drag_escape: Option<u32>,
     /// Hot corners: the detector, the owned presses and the topics they
     /// earned.
     pub corners: corners::Corners,
@@ -407,6 +412,7 @@ impl CompState {
                 };
                 match op {
                     InteractiveOp::Begin { edges, pointer } => {
+                        self.drag = (edges == 0).then(|| tiling::Drag::new(self.placement(id), self.float_geometry(id)));
                         self.interactive = Some(Interactive {
                             id,
                             edges,
@@ -416,6 +422,7 @@ impl CompState {
                             anchor: None,
                             updated: false,
                             ended: false,
+                            cancelled: false,
                             last_size: None,
                         });
                     }
@@ -427,6 +434,12 @@ impl CompState {
                     }
                     InteractiveOp::End => {
                         if let Some(grab) = self.interactive.as_mut().filter(|grab| grab.id == id) {
+                            grab.ended = true;
+                        }
+                    }
+                    InteractiveOp::Cancel => {
+                        if let Some(grab) = self.interactive.as_mut().filter(|grab| grab.id == id) {
+                            grab.cancelled = true;
                             grab.ended = true;
                         }
                     }
@@ -455,6 +468,7 @@ impl CompState {
         self.presentation.forget(id);
         if self.interactive.is_some_and(|grab| grab.id == id) {
             self.interactive = None;
+            self.drag = None;
         }
         self.minimize_lifo.retain(|entry| *entry != id);
         self.clear_placement(id);
@@ -765,6 +779,7 @@ impl CompState {
     fn clear_placement(&mut self, id: SurfaceId) {
         if let Some((_, window)) = self.placements.remove(&id) {
             decor::window::set_constrained(&window, false);
+            protocols::window::shell::set_tiled(&window, false);
         }
     }
 
@@ -775,6 +790,7 @@ impl CompState {
         placement: Placement,
     ) {
         decor::window::set_constrained(window, placement.constrained());
+        protocols::window::shell::set_tiled(window, matches!(placement, Placement::Tiled { .. }));
         if self.placement(id) != placement {
             if placement == Placement::Floating {
                 self.placements.remove(&id);

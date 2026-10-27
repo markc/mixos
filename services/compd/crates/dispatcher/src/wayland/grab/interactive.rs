@@ -40,6 +40,19 @@ impl InteractiveGrab {
     }
 }
 
+/// Cancel only our own interactive grab. Unsetting reports End first; Cancel
+/// follows it in the same ordered drain, so the host never commits a zone.
+pub fn cancel(dispatch: &mut Dispatch, time: u32) -> bool {
+    let Some(pointer) = dispatch.seat.seat.get_pointer() else { return false };
+    let handle = pointer.with_grab(|_, grab| {
+        grab.downcast_ref::<InteractiveGrab>().map(|grab| grab.handle.clone())
+    }).flatten();
+    let Some(handle) = handle else { return false };
+    pointer.unset_grab_without_focus_restore(dispatch, SERIAL_COUNTER.next_serial(), time);
+    dispatch.push_surface_event(SurfaceEvent::Interactive { handle, op: InteractiveOp::Cancel });
+    true
+}
+
 /// The root of a surface tree (a subsurface's toplevel).
 fn root_of(surface: &WlSurface) -> WlSurface {
     let mut root = surface.clone();

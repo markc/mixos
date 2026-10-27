@@ -143,9 +143,20 @@ pub fn set_placement(
     window: &Window,
     placement: Placement,
 ) -> GeometryChange {
+    transition(comp, space, id, window, placement, true)
+}
+
+fn transition(
+    comp: &mut CompState,
+    space: &mut Space<Window>,
+    id: SurfaceId,
+    window: &Window,
+    placement: Placement,
+    save_float: bool,
+) -> GeometryChange {
     let previous = comp.placement(id);
     let restoring_float = previous.constrained() && placement == Placement::Floating;
-    if placement.constrained() && previous == Placement::Floating {
+    if save_float && placement.constrained() && previous == Placement::Floating {
         let Some((output, area)) = target(comp, space, id, window) else {
             return GeometryChange::default();
         };
@@ -393,6 +404,78 @@ pub fn clamp_size(size: (i32, i32), (min, max): ((i32, i32), (i32, i32))) -> (i3
 /// Apply the host's coalesced delta. The dispatcher's pointer start stays immutable.
 /// Restore and movement share one map operation, before a frame can be drawn.
 pub fn apply_interactive(
+    comp: &mut CompState,
+    space: &mut Space<Window>,
+    window: &Window,
+    grab: &mut Interactive,
+) -> bool {
+    let pointer = grab.pointer_start + Point::from(grab.delta);
+    apply_interactive_at(comp, space, window, grab, pointer, false)
+}
+
+/// Host input uses the physical cursor converted to output-layout logical
+/// coordinates. Dispatcher deltas remain in the window's world for movement.
+pub fn apply_interactive_at(
+    comp: &mut CompState,
+    space: &mut Space<Window>,
+    window: &Window,
+    grab: &mut Interactive,
+    pointer: Point<f64, Logical>,
+    shift: bool,
+) -> bool {
+    if grab.edges != 0 {
+        return move_window(comp, space, window, grab);
+    }
+    if fullscreen_owns(window) {
+        grab.ended = true;
+        return comp.drag.take().is_some();
+    }
+    let mut drag = comp.drag.take().unwrap_or_else(|| super::tiling::Drag::new(comp.placement(grab.id), comp.float_geometry(grab.id)));
+    let start = *drag.start.get_or_insert_with(|| Rectangle::new(
+        space.element_location(window).unwrap_or_default(),
+        slot::size_of(window).unwrap_or(window.geometry().size),
+    ));
+    if drag.start_output.is_none() {
+        drag.start_output = target(comp, space, grab.id, window).map(|(name, _)| name);
+    }
+    if grab.cancelled {
+        comp.set_placement(grab.id, window, drag.placement.clone());
+        apply(space, window, start, drag.placement.maximized());
+        restore_saved(comp, grab.id, drag.float_geometry);
+        return true;
+    }
+    // A coalesced Begin/Update/End still evaluates the final travel. An End
+    // alone commits the last armed zone, without re-sampling modifiers.
+    let sample = grab.updated || !grab.ended;
+    let changed = move_window(comp, space, window, grab);
+    let before = drag.armed.clone();
+    if sample {
+        drag.armed = super::tiling::armed(comp, space, window, grab.id, pointer, shift);
+    }
+    let preview_changed = drag.armed != before;
+    if grab.ended {
+        if let Some(armed) = drag.armed {
+            let saved = if drag.placement == Placement::Floating {
+                drag.start_output.map(|output| FloatGeometry { location: start.loc, size: start.size, output })
+            } else { drag.float_geometry };
+            transition(comp, space, grab.id, window, armed.placement, false);
+            restore_saved(comp, grab.id, saved);
+            return true;
+        }
+        return changed || before.is_some();
+    }
+    comp.drag = Some(drag);
+    changed || preview_changed
+}
+
+fn restore_saved(comp: &mut CompState, id: SurfaceId, saved: Option<FloatGeometry>) {
+    match saved {
+        Some(saved) => { comp.float_geometries.insert(id, saved); }
+        None => { comp.float_geometries.remove(&id); }
+    }
+}
+
+fn move_window(
     comp: &mut CompState,
     space: &mut Space<Window>,
     window: &Window,

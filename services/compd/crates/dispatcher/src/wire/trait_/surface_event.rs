@@ -142,6 +142,8 @@ pub enum InteractiveOp {
     Update { dx: f64, dy: f64 },
     /// The grab ended (button released, or the grab was replaced).
     End,
+    /// Escape cancelled the move; restore the host's immutable start snapshot.
+    Cancel,
 }
 
 /// A window state a client asked for.

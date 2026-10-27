@@ -839,14 +839,27 @@ pub fn apply_interactive(lp: &mut Loop) {
         return;
     };
     let Some(window) = window_of(lp, grab.id) else {
+        lp.inner.comp.drag = None;
         return;
     };
     let Some(owner) = lp.inner.world_of_window(&window) else {
+        lp.inner.comp.drag = None;
         return;
     };
+    let shift = lp.state.seat.seat.get_keyboard().is_some_and(|keyboard| keyboard.modifier_state().shift);
+    // Pointer motion is physical output-local, despite its historical Logical
+    // marker. The dispatcher's pointer location is world/camera coordinates.
+    let cursor = lp.inner.pointer().motion;
+    let pointer = lp.inner.space_state().state.outputs()
+        .find(|output| lp.inner.cursor_output.as_ref() == Some(&world::state::output_key(output)))
+        .and_then(|output| {
+            let area = lp.inner.space_state().state.output_geometry(output)?;
+            Some(area.loc.to_f64() + cursor / output.current_scale().fractional_scale())
+        })
+        .unwrap_or(grab.pointer_start + smithay::utils::Point::from(grab.delta));
     let changed = {
         let (comp, space) = lp.inner.comp_space_of_mut(owner);
-        crate::geometry::apply_interactive(comp, space, &window, &mut grab)
+        crate::geometry::apply_interactive_at(comp, space, &window, &mut grab, pointer, shift)
     };
     if changed {
         lp.state.schedule_redraw(RedrawReason::WindowState);

@@ -542,6 +542,10 @@ fn premultiplied([r, g, b, a]: [f32; 4]) -> [f32; 4] {
     [r * a, g * a, b * a, a]
 }
 
+pub(super) fn focus_ring() -> [f32; 4] {
+    Look::current().outline
+}
+
 /// One frame's region overlay, in physical screen pixels.
 pub struct Overlay<R: Renderer> {
     /// The hint, centred near the top; drawn over the solids.
@@ -678,7 +682,7 @@ where
 }
 
 /// This scene pass draws the run's output (named `output`).
-fn drawn_on(lp: &Loop, output: &str) -> bool {
+pub(super) fn drawn_on(lp: &Loop, output: &str) -> bool {
     let selected = lp
         .inner
         .space_state()

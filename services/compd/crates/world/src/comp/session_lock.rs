@@ -110,6 +110,7 @@ fn enter(lp: &mut Loop) {
     // A region selection ends `locked`; an interactive grab is dropped.
     super::region::finish(lp, super::region::Outcome::Locked);
     lp.inner.comp.interactive = None;
+    lp.inner.comp.drag = None;
     let seat = lp.state.seat.seat.clone();
     if let Some(keyboard) = seat.get_keyboard() {
         lp.inner.comp.lock.prior_focus = keyboard.current_focus();

@@ -838,6 +838,7 @@ where
             // The region-select overlay, only while a selection runs on this
             // output (and the clean frame its reply waits for): its own band
             // over the screen UI, the hint in front of the dim and outline.
+            plan.extend(layer::TILE_PREVIEW, world::comp::tiling::overlay(state).into_iter().map(DrawNode::Solid));
             let region = world::comp::region::overlay(state, renderer, size);
             plan.extend(REGION_SELECT, region.hint.into_iter().map(DrawNode::Memory));
             plan.extend(

@@ -517,6 +517,20 @@ pub fn set_maximized(window: &Window, maximized: bool) {
     });
 }
 
+/// Every edge of our half/quarter tiles meets the usable boundary or tiling
+/// grid. Advertise all four, and clear all four on leaving Tiled. Smithay
+/// filters these states for clients older than xdg-shell v2.
+pub fn set_tiled(window: &Window, tiled: bool) {
+    if let Some(toplevel) = window.toplevel() {
+        toplevel.with_pending_state(|state| {
+            for edge in [xdg_toplevel::State::TiledLeft, xdg_toplevel::State::TiledRight,
+                xdg_toplevel::State::TiledTop, xdg_toplevel::State::TiledBottom] {
+                if tiled { state.states.set(edge); } else { state.states.unset(edge); }
+            }
+        });
+    }
+}
+
 /// Write the protocol's fullscreen flag. xdg stages it for the configure that
 /// follows; X11 has no configure to ride on — `_NET_WM_STATE_FULLSCREEN` is a
 /// property, set immediately and separately from the geometry.
