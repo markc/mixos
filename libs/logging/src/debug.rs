@@ -150,7 +150,7 @@ const CLAMPED_TARGETS: &[&str] = &[
     "rustls",
 ];
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum Level {
     Off,
@@ -230,7 +230,12 @@ impl Control {
                 ));
             }
         };
-        self.reload.reload_filter(parse_filter(&filter)?)?;
+        let parsed = parse_filter(&filter)?;
+        crate::recent::configure(&parsed);
+        if let Err(error) = self.reload.reload_filter(parsed) {
+            crate::recent::configure(&parse_filter(&self.filter)?);
+            return Err(error);
+        }
         self.filter = filter;
         tracing::debug!(filter = %self.filter, "debug mode changed");
         Ok(self.state())
@@ -298,6 +303,8 @@ pub fn init(
         baseline = off_filter.to_owned();
     }
     let filter = level.map(filter_for).unwrap_or_else(|| baseline.clone());
+    let parsed = parse_filter(&filter)?;
+    crate::recent::configure(&parsed);
     let guard = crate::init::init_inner(
         &LogOpts {
             log_stderr: Some(stderr_mode(std::io::stderr().is_terminal(), true)),
@@ -305,7 +312,7 @@ pub fn init(
         },
         &StatsOpts::default(),
         LogDefaults::gui(identity).with_journald(true),
-        Some(parse_filter(&filter)?),
+        Some(parsed),
     )?;
     CONTROL
         .set(Mutex::new(Control {
@@ -328,20 +335,39 @@ pub struct SetRequest {
     pub on: Option<bool>,
 }
 
+pub use crate::recent::RecentRequest;
+
 pub fn describe(service: &str) -> Vec<Value> {
     vec![
         json!({"name":format!("{service}.debug"),"read_only":true,"description":"Read live debug state","params":{}}),
+        json!({"name":format!("{service}.debug.recent"),"read_only":true,"description":"Pull recent events; seq is newest, next is the paging cursor","args":{"since":"optional sequence cursor","level":"optional maximum verbosity","limit":"optional 1..1000 (default 200)"},"params":{"since":{"type":"integer"},"level":{"type":"string","enum":["off","error","warn","info","debug","trace"]},"limit":{"type":"integer","minimum":1,"maximum":1000}}}),
         json!({"name":format!("{service}.debug.set"),"read_only":false,"description":"Set level or on shorthand; exactly one required","args":{"level":"optional off|error|warn|info|debug|trace","on":"optional boolean; true=debug, false=baseline (exactly one of level/on)"},"params":{"level":{"type":"string","enum":["off","error","warn","info","debug","trace"]},"on":{"type":"boolean"}}}),
     ]
 }
 
 /// Intercept this service's debug family; other commands remain with the owner.
 pub fn request(service: &str, command: &str, body: &str) -> Option<(u8, Value)> {
+    if command.strip_suffix(".debug.recent") == Some(service) {
+        return Some(answer_recent(body));
+    }
     let query = command.strip_suffix(".debug") == Some(service);
     if !query && command.strip_suffix(".debug.set") != Some(service) {
         return None;
     }
     Some(answer(query, body))
+}
+
+fn answer_recent(body: &str) -> (u8, Value) {
+    let result = (|| {
+        if body.len() > 8192 { return Err("request exceeds 8192 bytes".into()); }
+        let request = serde_json::from_str::<RecentRequest>(if body.trim().is_empty() { "{}" } else { body })
+            .map_err(|e| e.to_string())?;
+        crate::recent::query(request)
+    })();
+    match result {
+        Ok(value) => (0, value),
+        Err(error) => (10, json!({"error_code":"INVALID_ARGUMENT","message":error})),
+    }
 }
 
 /// Preserve the app's discovery names while also serving an instance's name.
@@ -550,9 +576,11 @@ mod tests {
             filter_for(Level::Debug)
         );
         assert_eq!(answer(true, "{}").1["on"], true);
+        assert!(crate::recent::allocated());
         for level in ["off", "error", "warn", "info", "debug", "trace"] {
             assert_eq!(answer(false, &json!({"level":level}).to_string()).0, 0);
             assert_eq!(answer(true, "{}").1["level"], level);
+            assert_eq!(crate::recent::allocated(), matches!(level, "info" | "debug" | "trace"));
             assert_eq!(
                 answer(true, "{}").1["on"],
                 matches!(level, "debug" | "trace")

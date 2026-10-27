@@ -31,6 +31,8 @@ pub use tracing::{debug, trace};
 mod defaults;
 mod handle;
 mod init;
+mod journal;
+mod recent;
 mod opts;
 #[cfg(feature = "prometheus")]
 mod prometheus_attach;

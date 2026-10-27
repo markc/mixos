@@ -500,7 +500,8 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                 let app = drive.app.clone();
                 let options = drive.options.clone();
                 let child = drive.children.entry(target).or_insert_with(|| {
-                    Box::new(Drive {
+                    logging::debug!(app, viewport = ?input.viewport_id, "viewport attached");
+                Box::new(Drive {
                         app,
                         options,
                         ..Drive::default()
@@ -669,24 +670,18 @@ struct Running {
     pass_events: Vec<String>,
 }
 
-struct ViewportLifetime {
-    app: String,
-    viewport: egui::ViewportId,
-}
+struct ViewportLifetime(egui::ViewportId);
 
 impl ViewportLifetime {
     fn new(app: &str, viewport: egui::ViewportId) -> Self {
         logging::debug!(app, ?viewport, "viewport attached");
-        Self {
-            app: app.to_owned(),
-            viewport,
-        }
+        Self(viewport)
     }
 }
 
 impl Drop for ViewportLifetime {
     fn drop(&mut self) {
-        logging::debug!(app = %self.app, viewport = ?self.viewport, "viewport released");
+        logging::debug!(viewport = ?self.0, "viewport released");
     }
 }
 
@@ -2445,6 +2440,7 @@ mod tests {
         ctx.with_plugin(|drive: &mut Drive| {
             drive.children.insert(
                 child,
+                logging::debug!(app, viewport = ?input.viewport_id, "viewport attached");
                 Box::new(Drive {
                     running: Some(Running {
                         id: 7,

@@ -87,6 +87,8 @@ pub fn manifest() -> Vec<bus::CommandDescriptor> {
             name,
             if name == "comp.debug.set" {
                 &["level?", "on?"]
+            } else if name == "comp.debug.recent" {
+                &["since?", "level?", "limit?"]
             } else {
                 &[]
             },

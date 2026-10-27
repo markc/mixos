@@ -1937,7 +1937,7 @@ pub enum Request {
 /// `comp.*` whatever the service is registered as, so
 /// `comp-nested.panel.hold` is `unknown_command`.
 pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request, (u8, Arc<str>)> {
-    if matches!(command, "comp.debug" | "comp.debug.set") {
+    if matches!(command, "comp.debug" | "comp.debug.set" | "comp.debug.recent") {
         return Ok(Request::Debug);
     }
     if command == "comp.capture.frame" {

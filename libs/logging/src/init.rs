@@ -225,7 +225,12 @@ pub(crate) fn init_inner(
     // emit on stderr. Under systemd the journald layer captures
     // everything natively; a stderr layer there would double every
     // entry (systemd also captures the unit's stderr into the journal).
-    let journald_layer = build_journald_layer(journald_on, &defaults.identity);
+    let journal_fallback = if live_debug {
+        !std::io::stderr().is_terminal()
+    } else {
+        opts.log_stderr.unwrap_or(TriState::Auto) != TriState::Always
+    };
+    let journald_layer = journald_on.then(|| crate::journal::LazyJournal::new(&defaults.identity, journal_fallback));
     let journald_active = journald_layer.is_some();
 
     // stderr sink resolution. `Auto` is on only when journald did NOT
@@ -287,6 +292,7 @@ pub(crate) fn init_inner(
         .with(file_layer)
         .with(journald_layer)
         .with(stats_event_layer)
+        .with(live_debug.then_some(crate::recent::RecentLayer))
         .try_init()
     {
         if stats_installed {
@@ -538,32 +544,6 @@ where
             let _ = std::io::Write::write_all(
                 &mut std::io::stderr(),
                 format!("logging: file sink disabled: {e}\n").as_bytes(),
-            );
-            None
-        }
-    }
-}
-
-fn build_journald_layer<S>(
-    on: bool,
-    identity: &str,
-) -> Option<Box<dyn tracing_subscriber::Layer<S> + Send + Sync + 'static>>
-where
-    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
-{
-    if !on {
-        return None;
-    }
-    match tracing_journald::layer() {
-        Ok(layer) => Some(Box::new(layer.with_syslog_identifier(identity.to_string()))),
-        Err(e) => {
-            // Soft-fail per plan §5.5: a journald init error disables
-            // the layer but never aborts startup. We can't log it
-            // through tracing (no subscriber yet), so straight to
-            // stderr.
-            let _ = std::io::Write::write_all(
-                &mut std::io::stderr(),
-                format!("logging: journald sink disabled: {e}\n").as_bytes(),
             );
             None
         }
