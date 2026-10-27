@@ -760,7 +760,7 @@ impl Shell {
     }
 
     fn start_composer(&mut self) {
-        if !self.launch_compose {
+        if !self.launch_compose || self.exiting || self.state.exiting {
             return;
         }
         let Some(account) = self.state.compose_account() else {
@@ -774,13 +774,14 @@ impl Shell {
         } else {
             self.state.compose();
         }
+        self.composers.fill_root(&mut self.state);
         self.sync_composers();
         self.settle();
     }
 
     fn sync_composers(&mut self) {
         let palette = self.editor_palette();
-        self.composers.adopt(&mut self.state, palette.clone());
+        let added = self.composers.adopt(&mut self.state, palette.clone());
         for window in self.composers.windows.values() {
             let mut window = window.lock().unwrap();
             let previous = window
@@ -793,7 +794,14 @@ impl Shell {
             self.state.recheck_composer(previous.as_ref());
             crate::composer::swap(&mut self.state, &mut window.view);
         }
-        self.composers.refresh(&self.ctx, &self.state, &palette);
+        let removed = self.composers.refresh(&self.ctx, &self.state, &palette);
+        if added || removed {
+            // Native viewport creation/destruction is emitted by a UI pass.
+            // Request one offscreen pass when the mailbox is parked; raising
+            // or making the root visible is unnecessary on Wayland.
+            self.ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::RequestPaintWhileHidden);
+            self.ctx.request_repaint_of(egui::ViewportId::ROOT);
+        }
         self.apply_drafts();
         for reply in self.state.take_replies() {
             self.bus.reply(reply.id, reply.rc, reply.body);
@@ -2480,6 +2488,22 @@ mod tests {
         assert_eq!(shell.composers.root.as_deref(), Some("compose-1"));
         assert_eq!(shell.composers.windows.len(), 2);
         output.drop_without_applying_deltas();
+        shell.bus.quit();
+    }
+
+    #[test]
+    fn a_logic_only_membership_change_requests_one_native_viewport_pass() {
+        let (mut shell, _broker) = compose_fixture(false);
+        let ctx = shell.ctx.clone();
+        let input = egui::RawInput::default();
+        let output = ctx.run_logic(&input, |_| add_composer(&mut shell, "child"));
+        assert!(output.viewport_commands[&egui::ViewportId::ROOT].contains(&egui::ViewportCommand::RequestPaintWhileHidden));
+        let output = ctx.run_logic(&input, |_| shell.sync_composers());
+        assert!(output.viewport_commands.values().all(|commands| !commands.contains(&egui::ViewportCommand::RequestPaintWhileHidden)));
+        let window = shell.composers.windows["compose-1"].clone();
+        window.lock().unwrap().closed = true;
+        let output = ctx.run_logic(&input, |_| shell.sync_composers());
+        assert!(output.viewport_commands[&egui::ViewportId::ROOT].contains(&egui::ViewportCommand::RequestPaintWhileHidden));
         shell.bus.quit();
     }
 

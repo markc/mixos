@@ -40,7 +40,7 @@ pub(crate) fn swap(a: &mut State, b: &mut State) {
     std::mem::swap(&mut a.attachment_chooser, &mut b.attachment_chooser);
     std::mem::swap(&mut a.attachment_notice, &mut b.attachment_notice);
     std::mem::swap(&mut a.identity_editor, &mut b.identity_editor);
-    std::mem::swap(&mut a.documents, &mut b.documents);
+    a.documents.swap_composer(&mut b.documents);
     std::mem::swap(&mut a.compose_clipboard, &mut b.compose_clipboard);
     std::mem::swap(&mut a.status, &mut b.status);
     std::mem::swap(
@@ -100,19 +100,19 @@ impl Windows {
             .cloned()
     }
 
-    pub fn adopt(&mut self, state: &mut State, palette: editor::Palette) {
+    pub fn fill_root(&mut self, state: &mut State) {
+        let Some(root) = self.root.as_ref().and_then(|name| self.windows.get(name)) else { return; };
+        let mut root = root.lock().unwrap();
+        swap(state, &mut root.view);
+        root.had_compose = root.view.compose.is_some();
+    }
+
+    pub fn adopt(&mut self, state: &mut State, palette: editor::Palette) -> bool {
         if state.exiting || (state.compose.is_none() && !state.documents.opening()) {
-            return;
-        }
-        if let Some(root) = self.root.as_ref().and_then(|n| self.windows.get(n)) {
-            let mut root = root.lock().unwrap();
-            if !root.had_compose && root.view.compose.is_none() && !root.view.documents.opening() {
-                swap(state, &mut root.view);
-                root.had_compose = root.view.compose.is_some();
-                return;
-            }
+            return false;
         }
         self.insert(state, palette);
+        true
     }
 
     pub fn insert(&mut self, state: &mut State, palette: editor::Palette) {
@@ -175,7 +175,8 @@ impl Windows {
             .cloned()
     }
 
-    pub fn refresh(&mut self, ctx: &egui::Context, state: &State, palette: &editor::Palette) {
+    pub fn refresh(&mut self, ctx: &egui::Context, state: &State, palette: &editor::Palette) -> bool {
+        let before = self.windows.len();
         self.windows.retain(|name, window| {
             let mut window = window.lock().unwrap();
             window.had_compose |= window.view.compose.is_some();
@@ -196,6 +197,7 @@ impl Windows {
             window.keymap = self.keymap.clone();
             true
         });
+        before != self.windows.len()
     }
 
     /// Root Close is deferred while children exist. The owner remains visible
@@ -611,6 +613,52 @@ mod tests {
             "second"
         );
         assert!(second.lock().unwrap().view.documents.opening());
+    }
+
+    #[test]
+    fn direct_document_sends_keep_their_engine_owner_when_a_composer_closes() {
+        let (mut state, mut windows, theme, ctx) = fixture(false);
+        state.read_document("a".into(), "/home/user/send.md".into(), Some(77), true, false).unwrap();
+        let ticket = state.take_work().into_iter().find_map(|work| match work {
+            crate::work::Work::MailDocument(crate::documents::DocumentWork::Read { ticket, .. }) => Some(ticket),
+            _ => None,
+        }).unwrap();
+        state.compose();
+        windows.adopt(&mut state, editor::Palette::from_theme(&theme));
+        assert!(state.documents.owns(ticket));
+        let window = windows.windows["compose-1"].clone();
+        {
+            let mut window = window.lock().unwrap();
+            assert!(!window.view.documents.owns(ticket));
+            swap(&mut state, &mut window.view);
+            state.apply_ui(UiEvent::CloseCompose);
+            state.apply_ui(UiEvent::ConfirmDraft(crate::state::DraftChoice::Discard));
+            swap(&mut state, &mut window.view);
+        }
+        windows.refresh(&ctx, &state, &editor::Palette::from_theme(&theme));
+        assert!(windows.windows.is_empty());
+        assert!(state.documents.owns(ticket));
+        state.document_done(ticket, crate::documents::Answer::Read(Err((crate::state::code::DOCUMENT_IO, "test".into()))));
+        assert!(state.take_replies().iter().any(|r| r.id == 77 && r.rc == 10));
+    }
+
+    #[test]
+    fn a_forwarded_request_never_reuses_a_blank_root_owner() {
+        for initial_succeeded in [false, true] {
+            let (mut state, mut windows, theme, _) = fixture(true);
+            let palette = editor::Palette::from_theme(&theme);
+            windows.insert(&mut state, palette.clone());
+            if initial_succeeded {
+                state.compose();
+                windows.fill_root(&mut state);
+            }
+            state.compose();
+            assert!(windows.adopt(&mut state, palette));
+            assert_eq!(windows.windows.len(), 2);
+            assert_eq!(windows.root.as_deref(), Some("compose-1"));
+            assert_eq!(windows.windows["compose-1"].lock().unwrap().view.compose.is_some(), initial_succeeded);
+            assert_ne!(windows.windows["compose-2"].lock().unwrap().viewport, ViewportId::ROOT);
+        }
     }
 
     #[test]

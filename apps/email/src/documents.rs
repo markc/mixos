@@ -188,6 +188,23 @@ pub struct DocumentState {
 }
 
 impl DocumentState {
+    /// Direct `email.send {document}` reads belong to the process engine.
+    /// Moving a composer's document state must never park those requests in
+    /// a window whose Close could drop their reply ownership.
+    pub(crate) fn swap_composer(&mut self, other: &mut Self) {
+        let mine = self.take_sends();
+        let theirs = other.take_sends();
+        std::mem::swap(self, other);
+        self.pending.extend(mine);
+        other.pending.extend(theirs);
+    }
+
+    fn take_sends(&mut self) -> Vec<(u64, Request)> {
+        let tickets: Vec<_> = self.pending.iter()
+            .filter_map(|(&ticket, request)| request.send.then_some(ticket)).collect();
+        tickets.into_iter().filter_map(|ticket| self.pending.remove(&ticket).map(|r| (ticket, r))).collect()
+    }
+
     pub(crate) fn owns(&self, ticket: u64) -> bool {
         self.pending.contains_key(&ticket)
             || self.saving.contains_key(&ticket)

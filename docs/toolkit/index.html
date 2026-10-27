@@ -604,6 +604,11 @@ window removes only its own editor. Child requests have a ten-second
 deadline by default (the configured <code>Options::capture_timeout</code>); <code>logic</code>
 returns <code>TIMEOUT</code> if the child stops rendering before completing a request,
 so later Bus commands can proceed.</p>
+<p>Native child creation and retirement require a parent UI pass. When a Bus
+command changes the child set while the root is parked, request one pass with
+<code>ViewportCommand::RequestPaintWhileHidden</code> and wake the root. This uses the
+native offscreen path without raising the root. Do it on membership changes,
+not on every logic wake.</p>
 <p>The file chooser belongs to its caller's viewport. Keep the chooser and its
 outcome with that window's document state, and apply the outcome through the
 owning engine. A deferred viewport callback must queue picked/save outcomes

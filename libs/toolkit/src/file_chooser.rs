@@ -887,7 +887,9 @@ mod tests {
             let mut input = egui::RawInput { viewport_id: child, ..Default::default() };
             input.viewports.insert(child, Default::default());
             ctx.run_ui(input, |ui| {
-                chooser.request(ui.ctx(), Request::Open(dir.path().to_owned()));
+                if chooser.pending.is_none() {
+                    chooser.request(ui.ctx(), Request::Open(dir.path().to_owned()));
+                }
             }).drop_without_applying_deltas();
             if chooser.pending.is_some() { break; }
             std::thread::sleep(std::time::Duration::from_millis(10));

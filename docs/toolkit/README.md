@@ -394,6 +394,12 @@ deadline by default (the configured `Options::capture_timeout`); `logic`
 returns `TIMEOUT` if the child stops rendering before completing a request,
 so later Bus commands can proceed.
 
+Native child creation and retirement require a parent UI pass. When a Bus
+command changes the child set while the root is parked, request one pass with
+`ViewportCommand::RequestPaintWhileHidden` and wake the root. This uses the
+native offscreen path without raising the root. Do it on membership changes,
+not on every logic wake.
+
 The file chooser belongs to its caller's viewport. Keep the chooser and its
 outcome with that window's document state, and apply the outcome through the
 owning engine. A deferred viewport callback must queue picked/save outcomes

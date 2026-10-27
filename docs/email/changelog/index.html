@@ -255,6 +255,11 @@ never promote or rename a child into its surface. Close waits for children;
 Quit asks per draft and supports cancellation.</p>
 </li>
 <li>
+<p>Create and retire composers through a one-off native paint request when
+the mailbox is parked. Direct document sends retain their engine-owned
+reply state independently of composer lifetimes.</p>
+</li>
+<li>
 <p>Open and save inert mail documents from compose's File menu (Ctrl+O,
 Ctrl+Shift+S), with replace questions and background file I/O. Remember the
 Open/Save folder for the session, initially XDG Documents or Home.</p>

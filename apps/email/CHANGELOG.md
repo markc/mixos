@@ -11,6 +11,9 @@
 - Retain the first native window as process owner while children remain;
   never promote or rename a child into its surface. Close waits for children;
   Quit asks per draft and supports cancellation.
+- Create and retire composers through a one-off native paint request when
+  the mailbox is parked. Direct document sends retain their engine-owned
+  reply state independently of composer lifetimes.
 
 - Open and save inert mail documents from compose's File menu (Ctrl+O,
   Ctrl+Shift+S), with replace questions and background file I/O. Remember the
