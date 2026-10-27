@@ -640,7 +640,10 @@ fn tiled_title_bands_keep_square_corners_and_action_hit_targets() {
             (rect.center().y - extents.top) as f64,
         );
         let hit = decor::window::hit(&window, point, size).unwrap();
-        assert_eq!(hit.part, ChromePart::Button(CaptionButton::Action(7, index)));
+        assert_eq!(
+            hit.part,
+            ChromePart::Button(CaptionButton::Action(7, index))
+        );
         assert_eq!(decor::seat::press(&window, hit, point, 100), None);
         assert_eq!(
             decor::seat::release(Some((&window, hit))).unwrap().1,
