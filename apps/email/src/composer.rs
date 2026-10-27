@@ -244,7 +244,157 @@ pub fn registry() -> Registry<State> {
         ("compose.undo","edit"),("compose.redo","edit"),("compose.cut","edit"),("compose.copy","edit"),("compose.paste","edit"),
         ("compose.attach","compose-attachments-menu"),("compose.attachments.clear","compose-attachments-menu"),("view.mode","view"),("file.quit","file")] {
         let a = original.get(id).unwrap();
-        registry.add(Action { id:a.id,label:a.label,menu:Some(menu),submenu:None,group:a.group,shortcut:a.shortcut,icon:a.icon,enabled:a.enabled,run:a.run });
+        registry.add(Action { id:a.id,label:a.label,menu:Some(menu),submenu:None,group:a.group,
+            shortcut: if id == "compose.new" { Some(egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::N)) } else { a.shortcut },
+            icon:a.icon,enabled:a.enabled,run: if id == "file.quit" { |s| s.exiting = true } else { a.run } });
     }
     registry
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(standalone: bool) -> (State, Windows, toolkit::Theme, egui::Context) {
+        let state = crate::state::tests::connected_many(&["a"]);
+        let theme = toolkit::Theme::embedded();
+        let ctx = egui::Context::default();
+        ctx.set_embed_viewports(false);
+        toolkit::install(&ctx, &theme);
+        toolkit::drive::install(&ctx, APP);
+        toolkit::saved::Store::<serde_json::Value>::load(None, 0).install_windows(&ctx, APP);
+        (state, Windows { compose_only: standalone, ..Default::default() }, theme, ctx)
+    }
+
+    fn frame(ctx: &egui::Context, windows: &Windows) {
+        let mut input = egui::RawInput::default();
+        for window in windows.windows.values() {
+            input.viewports.insert(window.lock().unwrap().viewport, Default::default());
+        }
+        let output = ctx.run_ui(input.clone(), |ui| windows.show(ui));
+        for (viewport, output) in &output.viewport_output {
+            if *viewport == ViewportId::ROOT { continue; }
+            input.viewport_id = *viewport;
+            let callback = output.viewport_ui_cb.as_ref().unwrap();
+            ctx.run_ui(input.clone(), |ui| callback(ui)).drop_without_applying_deltas();
+        }
+        output.drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn two_composers_keep_documents_attachments_and_completions_independent() {
+        let (mut state, mut windows, theme, ctx) = fixture(false);
+        for subject in ["first", "second"] {
+            state.compose();
+            state.apply_ui(UiEvent::ComposeField(crate::state::ComposeField::Subject, subject.into()));
+            windows.adopt(&mut state, editor::Palette::from_theme(&theme));
+        }
+        let first = windows.windows["compose-1"].clone();
+        let second = windows.windows["compose-2"].clone();
+        assert_ne!(first.lock().unwrap().view.compose.as_ref().unwrap().draft_id,
+            second.lock().unwrap().view.compose.as_ref().unwrap().draft_id);
+        {
+            let mut w = second.lock().unwrap();
+            swap(&mut state, &mut w.view);
+            state.read_document("a".into(), "/home/user/message.md".into(), None, false, false).unwrap();
+            let ticket = state.take_work().into_iter().find_map(|w| match w {
+                crate::work::Work::MailDocument(crate::documents::DocumentWork::Read {ticket,..}) => Some(ticket), _ => None,
+            }).unwrap();
+            state.compose.as_mut().unwrap().sending = Some(123);
+            swap(&mut state, &mut w.view);
+            drop(w);
+            assert!(Arc::ptr_eq(&windows.target(&Event::MailDocument(ticket, crate::documents::Answer::Read(
+                Err((crate::state::code::DOCUMENT_PATH, "test".into()))))).unwrap(), &second));
+        }
+        assert!(Arc::ptr_eq(&windows.target(&Event::Account(crate::state::Tag {account:"a".into(),generation:1},
+            Done::Sent(123, Default::default(), Err(jmap::Error::Protocol("test".into()))))).unwrap(), &second));
+        {
+            let mut w = first.lock().unwrap();
+            swap(&mut state, &mut w.view);
+            state.apply_ui(UiEvent::CloseCompose);
+            assert!(state.confirm.is_some());
+            state.apply_ui(UiEvent::ConfirmDraft(crate::state::DraftChoice::Keep));
+            swap(&mut state, &mut w.view);
+        }
+        windows.refresh(&ctx, &state, &editor::Palette::from_theme(&theme));
+        assert_eq!(windows.windows.len(), 1);
+        assert_eq!(second.lock().unwrap().view.compose.as_ref().unwrap().draft.subject,"second");
+        assert!(second.lock().unwrap().view.documents.opening());
+    }
+
+    #[test]
+    fn fixed_root_owner_is_never_promoted_or_renamed() {
+        let (mut state, mut windows, theme, ctx) = fixture(true);
+        for _ in 0..2 { state.compose(); windows.adopt(&mut state, editor::Palette::from_theme(&theme)); }
+        assert!(windows.hold_owner(ViewportId::ROOT, &mut state));
+        assert!(windows.owner_closing);
+        assert_eq!(windows.root.as_deref(), Some("compose-1"));
+        assert_eq!(windows.windows["compose-2"].lock().unwrap().viewport, ViewportId::from_hash_of((APP,"compose-2")));
+        windows.windows["compose-1"].lock().unwrap().view.compose = None; // successful send
+        windows.refresh(&ctx,&state,&editor::Palette::from_theme(&theme));
+        assert_eq!(windows.windows.len(),2,"the empty owner still hosts its own native surface");
+        windows.windows["compose-2"].lock().unwrap().closed = true;
+        windows.refresh(&ctx,&state,&editor::Palette::from_theme(&theme));
+        assert_eq!(windows.windows.len(),1);
+        windows.refresh(&ctx,&state,&editor::Palette::from_theme(&theme));
+        assert!(windows.windows.is_empty());
+        assert_eq!(windows.root.as_deref(),Some("compose-1"));
+    }
+
+    #[test]
+    fn child_tree_menus_and_close_are_scoped_to_the_target_viewport() {
+        let (mut state, mut windows, theme, ctx) = fixture(false);
+        for _ in 0..2 { state.compose(); windows.adopt(&mut state, editor::Palette::from_theme(&theme)); }
+        frame(&ctx,&windows);
+        for (id,command,args) in [
+            (1,"ui.tree",serde_json::json!({"viewport":"compose-1"})),
+            (2,"ui.menu.list",serde_json::json!({"viewport":"compose-2"})),
+            (3,"ui.menu.open",serde_json::json!({"viewport":"compose-1","menu":"Attachments"})),
+            (4,"ui.menu",serde_json::json!({"viewport":"compose-2"})),
+        ] {
+            assert!(toolkit::drive::request(&ctx,id,command,&args).is_none());
+            frame(&ctx,&windows);
+            let answers = toolkit::drive::logic(&ctx);
+            assert_eq!(answers.len(),1);
+            assert_eq!(answers[0].rc,0,"{:?}",answers[0].body);
+            match id {
+                1 => assert!(answers[0].body.to_string().contains("Subject")),
+                2 => assert_eq!(answers[0].body["menus"].as_array().unwrap().iter().map(|m| m["title"].as_str().unwrap()).collect::<Vec<_>>(), ["File","Edit","Attachments","View"]),
+                3 => assert!(answers[0].body.to_string().contains("Attachments")),
+                4 => assert!(answers[0].body["menu"].is_null(),"a sibling menu stays closed"),
+                _ => unreachable!(),
+            }
+        }
+        for w in windows.windows.values() { w.lock().unwrap().pending.clear(); }
+        let first = windows.windows["compose-1"].clone();
+        let viewport = first.lock().unwrap().viewport;
+        let mut input = egui::RawInput {viewport_id:viewport,..Default::default()};
+        input.viewports.entry(viewport).or_default().events.push(egui::ViewportEvent::Close);
+        ctx.run_ui(input,|ui| first.lock().unwrap().show(ui)).drop_without_applying_deltas();
+        assert!(first.lock().unwrap().pending.iter().any(|i| i.events.contains(&UiEvent::CloseCompose)));
+        assert!(windows.windows["compose-2"].lock().unwrap().pending.is_empty());
+    }
+
+    #[test]
+    fn root_composer_has_named_drive_menus_and_tree() {
+        let (mut state,mut windows,theme,ctx) = fixture(true);
+        state.compose(); windows.adopt(&mut state,editor::Palette::from_theme(&theme));
+        frame(&ctx,&windows);
+        for command in ["ui.tree","ui.menu.list"] {
+            let answer = toolkit::drive::request(&ctx,1,command,&serde_json::json!({"viewport":"compose-1"})).unwrap();
+            assert_eq!(answer.rc,0);
+            assert!(answer.body.to_string().contains(if command == "ui.tree" {"Subject"} else {"Save As"}));
+        }
+    }
+
+    #[test]
+    fn compose_window_snapshot() {
+        let (mut state,_,theme,_) = fixture(true);
+        state.compose();
+        let palette = editor::Palette::from_theme(&theme);
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(900.0,700.0))
+            .build_ui(move |ui| { view(ui,&state,&registry(),&palette); });
+        toolkit::install(&h.ctx,&theme);
+        h.run(); h.snapshot("compose_window");
+    }
 }

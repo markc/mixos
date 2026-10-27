@@ -209,10 +209,14 @@ fn harness_with(state: State, theme: &Theme) -> Harness<'static, Window> {
                     } else {
                         &window_theme
                     });
-                let events = view(ui, &window.state, &registry, &strings, &palette);
+                let events = if window.state.compose.is_some() {
+                    email::composer::view(ui, &window.state, &email::composer::registry(), &palette)
+                } else { view(ui, &window.state, &registry, &strings, &palette) };
                 for event in events {
                     window.seen.push(event.clone());
-                    window.state.apply_ui(event);
+                    if let UiEvent::Command(id, origin) = event {
+                        let _ = email::composer::registry().execute(id, &mut window.state, origin);
+                    } else { window.state.apply_ui(event); }
                 }
             },
             Window {
@@ -1300,7 +1304,7 @@ fn compose_attachment_chips_show_status_and_remove_through_the_window() {
 #[test]
 fn compose_file_menu_has_open_and_save_as_before_attachments() {
     let mut h = harness_with(typing(), &theme(Scheme::Studio, Mode::Dark));
-    h.query_all_by_label(&label("compose-file-menu"))
+    h.query_all_by_label(&label("file"))
         .last()
         .unwrap()
         .click();
@@ -1469,9 +1473,9 @@ fn oversize_warning_belongs_to_the_total_rather_than_each_file() {
 }
 
 #[test]
-fn escape_on_a_typed_compose_asks_and_keeps_the_draft() {
+fn close_on_a_typed_compose_asks_and_keeps_the_draft() {
     let mut h = harness(typing());
-    h.key_press(egui::Key::Escape);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::W);
     h.run();
     let state = &h.state().state;
     assert_eq!(state.confirm, Some(Confirm::CloseCompose));
@@ -1481,8 +1485,8 @@ fn escape_on_a_typed_compose_asks_and_keeps_the_draft() {
     h.run();
     assert!(h.state().state.confirm.is_none());
     assert!(h.state().state.compose.is_some());
-    // Cancel asks; Keep Draft, the default, closes and keeps it.
-    h.get_by_label(&label("cancel")).click();
+    // Close asks; Keep Draft, the default, closes and keeps it.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::W);
     h.run();
     assert_eq!(h.state().state.confirm, Some(Confirm::CloseCompose));
     h.get_by_label(&label("keep-draft")).click();

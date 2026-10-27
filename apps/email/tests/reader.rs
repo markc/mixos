@@ -241,8 +241,10 @@ fn window(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>)
                 } else {
                     &window_theme
                 });
-                let fired = actions::shortcuts(ui.ctx(), state, &registry);
-                let mut events = view(ui, state, &registry, &strings, &palette);
+                let fired = if state.compose.is_none() { actions::shortcuts(ui.ctx(), state, &registry) } else { Vec::new() };
+                let mut events = if state.compose.is_some() {
+                    email::composer::view(ui, state, &email::composer::registry(), &palette)
+                } else { view(ui, state, &registry, &strings, &palette) };
                 events.extend(
                     fired
                         .into_iter()
@@ -603,8 +605,8 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
     // meant to work while the body has the keyboard, as in Thunderbird.
     for command in registry.iter().filter(|c| {
         !matches!(
-            c.menu,
-            Some("compose-file-menu" | "compose-attachments-menu")
+            c.id,
+            "compose.open" | "compose.save_as" | "compose.attach"
         )
     }) {
         for chord in registry.shortcuts_of(command.id) {
@@ -1614,7 +1616,7 @@ fn compose_suggestions_studio_dark() {
     ));
     let mut h = window(state, &theme(Scheme::Studio, Mode::Dark));
     h.ctx
-        .memory_mut(|m| m.request_focus(egui::Id::unique("compose-recipients").with("to")));
+        .memory_mut(|m| m.request_focus(egui::Id::unique((egui::ViewportId::ROOT, "compose-recipients")).with("to")));
     h.run();
     h.snapshot("compose_suggestions_studio_dark");
 }
@@ -1919,16 +1921,15 @@ fn quoted_reply_compose_studio_dark() {
     let mut h = window(state, &theme(Scheme::Studio, Mode::Dark));
     h.run();
     let send = h.get_by_label(&label("send")).rect();
-    let cancel = h.get_by_label(&label("cancel")).rect();
     let toggle = h.get_by_label(&label("reply-below-quote")).rect();
     let screen = h.ctx.content_rect();
-    for rect in [send, cancel, toggle] {
+    for rect in [send, toggle] {
         assert!(
             screen.contains_rect(rect),
             "composer footer stays on screen: {rect:?}"
         );
     }
-    assert!(toggle.bottom() < send.top());
+    assert!(send.bottom() < toggle.top());
     h.snapshot("quoted_reply_compose_studio_dark");
 }
 

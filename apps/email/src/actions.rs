@@ -142,7 +142,7 @@ pub fn registry() -> Registry<State> {
     let mut r = Registry::new();
     r.add(Action {
         id: "compose.new", label: "compose-new", menu: None, submenu: None,
-        group: 0, shortcut: key(Modifiers::COMMAND, Key::N), icon: Some(Icon::SquarePen),
+        group: 0, shortcut: None, icon: Some(Icon::SquarePen),
         enabled: |s| s.compose_account().is_some(), run: |s| s.compose_new_requested = true,
     });
     r.add(Action {

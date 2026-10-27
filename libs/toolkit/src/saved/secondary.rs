@@ -312,6 +312,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn capture_workers_have_distinct_stable_window_identities() {
+        assert_eq!(capture_service("email", "compose-1", 7), capture_service("email", "compose-1", 7));
+        assert_ne!(capture_service("email", "compose-1", 7), capture_service("email", "compose-2", 7));
+        assert_ne!(capture_service("email", "compose-1", 7), capture_service("email", "compose-1", 8));
+    }
+
+    #[test]
     fn close_request_keeps_the_worker_until_the_editor_accepts_closing() {
         let ctx = egui::Context::default();
         ctx.set_embed_viewports(false);

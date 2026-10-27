@@ -40,7 +40,7 @@ pub fn confirm(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
             "discard-draft-quit",
         ),
     };
-    let id = egui::Id::unique(key);
+    let id = egui::Id::unique((ui.ctx().viewport_id(), key));
     let choices = vec![
         Choice::new(crate::label(keep), dialog::Role::Default),
         Choice::new(crate::label(discard), dialog::Role::Other),
@@ -134,13 +134,14 @@ pub fn body_focused(ctx: &egui::Context) -> bool {
 }
 
 pub fn body_id(ctx: &egui::Context) -> Option<egui::Id> {
-    ctx.data(|d| d.get_temp::<egui::Id>(egui::Id::unique((ctx.viewport_id(), "email.compose.body.focus"))))
+    let key = egui::Id::unique((ctx.viewport_id(), "email.compose.body.focus"));
+    ctx.data(|d| d.get_temp::<egui::Id>(key))
 }
 
 /// Ask before replacing this composer with an opened document.
 pub fn document_replace(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
     if state.documents.replace.is_some() {
-        let id = egui::Id::unique("compose-document-replace");
+        let id = egui::Id::unique((ui.ctx().viewport_id(), "compose-document-replace"));
         ui.ctx()
             .move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
         let shown = dialog::Dialog::new(id, crate::label("document-replace-title"))
@@ -170,7 +171,7 @@ fn recipients(
     width: f32,
     events: &mut Vec<UiEvent>,
 ) {
-    let id = egui::Id::unique("compose-recipients").with(row_label(field));
+    let id = egui::Id::unique((ui.ctx().viewport_id(), "compose-recipients")).with(row_label(field));
     let suggest = compose
         .suggest
         .as_ref()
@@ -407,6 +408,7 @@ pub fn form(
     palette: &editor::Palette,
     events: &mut Vec<UiEvent>,
 ) {
+    let viewport = ui.ctx().viewport_id();
     // Capture the Resize body's content width before any row can expand its
     // bounds. The attachment column uses the same budget as Subject.
     let form_width = ui.available_width();
@@ -645,7 +647,7 @@ pub fn form(
                 );
                 ui.ctx().data_mut(|d| {
                     d.insert_temp(
-                        egui::Id::unique((ui.ctx().viewport_id(), "email.compose.body.focus")),
+                        egui::Id::unique((viewport, "email.compose.body.focus")),
                         output.response.id,
                     )
                 });
