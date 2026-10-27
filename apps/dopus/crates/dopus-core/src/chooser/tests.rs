@@ -792,16 +792,37 @@ fn list_order_defaults_remembered_folder_and_refusals_keep_nothing() {
     );
     let before = e.list();
     p.unavailable = true;
-    for _ in 0..20 {
+    for expected in ["UNAVAILABLE"; 10].into_iter().chain(["BUSY"; 10]) {
         assert_eq!(
             e.choose("{}", "no-window", 104, &mut p)
                 .unwrap_err()
                 .error_code,
-            "UNAVAILABLE"
+            expected
         );
     }
     assert_eq!(e.list(), before);
-    assert!(!e.recent.keys().any(|key| key.0 == "no-window"));
+    let recent = e.recent.get(&Caller("no-window".into(), None)).unwrap();
+    assert_eq!(recent.len(), 10);
+}
+
+#[test]
+fn rate_counts_window_limit_refusals_before_a_slot_is_freed() {
+    let mut e = engine();
+    let mut p = TestPresenter::default();
+    let first = open(&mut e, &mut p, json!({}), "busy", 0);
+    open(&mut e, &mut p, json!({}), "busy", 0);
+    for _ in 0..8 {
+        assert_eq!(
+            e.choose("{}", "busy", 0, &mut p).unwrap_err().error_code,
+            "BUSY"
+        );
+    }
+    e.cancel(&body(&first), 1, &mut p).unwrap();
+    assert_eq!(
+        e.choose("{}", "busy", 1, &mut p).unwrap_err().error_code,
+        "BUSY"
+    );
+    open(&mut e, &mut p, json!({}), "busy", 10_000);
 }
 
 #[test]

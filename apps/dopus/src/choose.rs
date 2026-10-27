@@ -247,13 +247,13 @@ mod tests {
     fn no_presenter_refuses_and_keeps_nothing_and_no_dopus_commands_leak() {
         let mut engine = Engine::new(42, defaults(), b"/home/user".to_vec()).unwrap();
         let mut presenter = NoPresenter;
-        for _ in 0..20 {
+        for i in 0..20 {
             let answer = dispatch(
                 &mut engine,
                 &mut presenter,
                 "files.choose",
                 "{}",
-                "local:test",
+                &format!("local:test-{i}"),
                 1,
             );
             assert_eq!(answer.rc, 10);

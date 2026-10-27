@@ -629,6 +629,13 @@ impl Engine {
         let mut request = Request::parse(body, &self.defaults)?;
         self.sweep(now);
         let key = Caller(caller.to_owned(), request.on_behalf_of.clone());
+        let recent = self.recent.entry(key.clone()).or_default();
+        if recent.len() >= 10 {
+            return Err(Refusal::new("BUSY", "chooser rate limit reached"));
+        }
+        // Count valid attempts, including window-limit and availability
+        // refusals. These counters retain no request, window or outcome.
+        recent.push_back(now);
         if self.open.len() >= 8
             || self
                 .open
@@ -636,7 +643,6 @@ impl Engine {
                 .filter(|o| Caller(o.caller.clone(), o.request.on_behalf_of.clone()) == key)
                 .count()
                 >= 2
-            || self.recent.get(&key).is_some_and(|times| times.len() >= 10)
         {
             return Err(Refusal::new("BUSY", "chooser limit reached"));
         }
@@ -664,7 +670,6 @@ impl Engine {
             .open(&opened)
             .map_err(|e| Refusal::new("UNAVAILABLE", e.0))?;
         self.sequence = sequence;
-        self.recent.entry(key).or_default().push_back(now);
         let mut reply = json!({"request":id, "topic":"files.chosen"});
         if let Some(correlation) = &opened.request.correlation {
             reply["correlation"] = json!(correlation);
