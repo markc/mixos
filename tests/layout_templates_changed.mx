@@ -2,6 +2,14 @@
 # Intentional default-layout changes since relocation baseline f91c2a1f.
 # Hashes cover the rendered bytes, checked by tests/layout_templates_test.mix.
 {
+  "services/dnsd/units/dnsd.service": {
+    "reason": "read config from the etc root (@{etc}), not @{prefix}/etc",
+    "sha256": "c152b5d329d5a62e21bdb65112863a0a55dc99a92dbe2444621d8c1585c5be11"
+  },
+  "services/maild/units/maild.service": {
+    "reason": "make the default data dir @{var}/jmap a state directory under ProtectSystem=strict",
+    "sha256": "3b39b7af52c4f99c28789fbeb1153f3f79681f96ee4a0f335b6fd1e3e1b4fa89"
+  },
   "services/hostd/units/hostd.service": {
     "reason": "open host-local controls: remove standing grants and group access; retain sandbox and receipts",
     "sha256": "817f6b5d9ee59fa165ae4a2c4190cdf6e0519ac5411431c7191d9cf23822b43d"
