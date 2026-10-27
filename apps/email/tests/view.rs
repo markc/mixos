@@ -1282,7 +1282,9 @@ fn compose_attachment_chips_show_status_and_remove_through_the_window() {
     );
     h.get_by_label(&remove("note.txt")).click();
     h.run();
-    assert!(h.query_by_label(&label("compose-attachments")).is_none());
+    // The row stays for its Attach button; only the chip goes.
+    assert!(h.query_by_label(&remove("note.txt")).is_none());
+    assert!(h.query_by_label(&label("compose-attachments")).is_some());
     assert!(
         h.state()
             .state

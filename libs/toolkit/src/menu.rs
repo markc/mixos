@@ -1102,23 +1102,24 @@ pub fn bar_picked(
     let model = menus.to_vec();
     // A covered bar still draws, but cannot replace the menu/drive state
     // belonging to the dialog above it.
+    // It looks exactly like an idle bar (same colour, rounding and
+    // accessibility labels), so covering it changes no pixel.
     if !ui.is_enabled() || !ctx.memory(|m| m.allows_interaction(ui.layer_id())) {
+        let ppp = ctx.pixels_per_point();
         for menu in menus {
             let galley = ui.painter().layout_no_wrap(
                 menu.title.clone(),
                 Chrome::menu_font(ui.style()),
-                chrome.palette.text,
+                Color32::PLACEHOLDER,
             );
             let size = vec2(
                 galley.size().x + 2.0 * chrome.metrics.menu_title_padding.x,
                 chrome.metrics.menu_title_height,
             );
-            let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-            ui.painter().galley(
-                rect.center() - galley.size() / 2.0,
-                galley,
-                chrome.palette.text,
-            );
+            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+            response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &menu.title));
+            let at = (rect.center() - galley.size() / 2.0).round_to_pixels(ppp);
+            ui.painter().galley(at, galley, chrome.palette.text_dim);
         }
         return None;
     }

@@ -582,7 +582,9 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
 
     let registry = actions::registry();
     h.state_mut().1.clear();
-    for command in registry.iter() {
+    // The compose dialog's own commands (Attach files…, Ctrl+Shift+A) are
+    // meant to work while the body has the keyboard, as in Thunderbird.
+    for command in registry.iter().filter(|c| c.menu != Some("attachments")) {
         for chord in registry.shortcuts_of(command.id) {
             assert!(
                 !matches!(chord.logical_key, egui::Key::Z | egui::Key::Y),
@@ -601,6 +603,19 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
             );
         }
     }
+    h.key_press_modifiers(
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+        egui::Key::A,
+    );
+    h.run();
+    assert_eq!(
+        h.state().1,
+        [UiEvent::Command(
+            "compose.attach",
+            toolkit::action::Origin::Shortcut
+        )]
+    );
+    h.state_mut().1.clear();
     // A letter key produces a key event and a text event on the platform.
     for key in [egui::Key::S, egui::Key::M, egui::Key::J] {
         h.key_press(key);
