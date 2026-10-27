@@ -49,9 +49,8 @@ fn snapshot(kind: &str, mode: Mode) {
     let request = Request::parse(&body.to_string(), &defaults()).unwrap();
     let mut window = Window::for_request("0123456789abcdef-1", "local:portald", request);
     window.ready = true;
-    for _ in 0..100 {
+    for _ in 0..50 {
         window.pump();
-        if !window.app.core.pane(dopus_core::PaneId::Left).listing { break; }
         std::thread::sleep(Duration::from_millis(10));
     }
     if kind == "multiple" {

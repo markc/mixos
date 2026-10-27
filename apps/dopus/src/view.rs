@@ -648,7 +648,7 @@ fn pane_body(ui: &mut Ui, app: &App, commands: &Registry<App>, strings: &Strings
     // lands in its folder, and its context menu offers the pane's commands.
     let background = ui.interact(
         Rect::from_min_size(ui.cursor().min, vec2(width, list_h)),
-        Id::unique(("pane-background", pane.index())),
+        Id::unique((ui.ctx().viewport_id(), "pane-background", pane.index())),
         Sense::click(),
     );
     ui.allocate_ui(vec2(width, list_h), |ui| {
@@ -704,7 +704,7 @@ fn location_bar(ui: &mut Ui, app: &App, pane: PaneId, active: bool, events: &mut
         |ui| {
             ui.add_space(4.0);
             let width = (ui.available_width() - 4.0).max(40.0);
-            let id = Id::unique(("location", pane.index()));
+            let id = Id::unique((ui.ctx().viewport_id(), "location", pane.index()));
             match &app.editing {
                 Some((editing, text)) if *editing == pane => {
                     let mut text = text.clone();
@@ -806,7 +806,7 @@ fn header(
         let response = ui
             .interact(
                 cell,
-                Id::unique(("header", pane.index(), key)),
+                Id::unique((ui.ctx().viewport_id(), "header", pane.index(), key)),
                 Sense::click(),
             )
             .on_hover_text(label_with("sort-by", &[("column", &label(key))]));

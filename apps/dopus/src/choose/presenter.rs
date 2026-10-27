@@ -182,4 +182,32 @@ mod tests {
         assert_eq!(target(&windows, json!({"viewport":"explicit"})).unwrap()["viewport"], "explicit");
         assert!(target(&windows, json!([])).is_err());
     }
+
+    #[test]
+    fn every_engine_end_removes_only_its_own_native_viewport() {
+        use dopus_core::chooser::{Acceptance, End, Engine};
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = egui::Context::default();
+        drive::install(&ctx, "files");
+        let windows = Windows::default();
+        let mut presenter = NativePresenter { ctx, windows: windows.clone() };
+        let mut engine = Engine::new(1, super::super::defaults(), b"/tmp".to_vec()).unwrap();
+        for end in [End::Cancel, End::Caller, End::Failed("surface failure".into()), End::Accept(Acceptance {
+            paths: vec![dir.path().as_os_str().as_encoded_bytes().to_vec()], folder: None, current_filter: None, choices: BTreeMap::new(),
+        })] {
+            let body = json!({"directory":true,"current_folder":dir.path()}).to_string();
+            let id = engine.choose(&body, "local:a", 1, &mut presenter).unwrap()["request"].as_str().unwrap().to_owned();
+            let other = engine.choose(&body, "local:b", 1, &mut presenter).unwrap()["request"].as_str().unwrap().to_owned();
+            assert!(!windows.lock().unwrap()[&id].lock().unwrap().ready);
+            engine.reply_sent(&id, &mut presenter);
+            engine.reply_sent(&other, &mut presenter);
+            assert!(target(&windows, json!({})).is_err());
+            assert!(engine.end(&id, end, 2, &mut presenter).unwrap().is_some());
+            assert!(engine.end(&id, End::Cancel, 3, &mut presenter).unwrap().is_none());
+            assert!(!windows.lock().unwrap().contains_key(&id));
+            assert_eq!(target(&windows, json!({})).unwrap()["viewport"], other);
+            engine.cancel(&json!({"request":other}).to_string(), 3, &mut presenter).unwrap();
+            assert!(windows.lock().unwrap().is_empty());
+        }
+    }
 }

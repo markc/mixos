@@ -200,8 +200,11 @@ impl Window {
 
     /// The same view is used by native secondary viewports and snapshot tests.
     pub fn show(&mut self, ui: &mut egui::Ui) {
+        ui.push_id(ui.ctx().viewport_id(), |ui| self.show_inner(ui));
+    }
+
+    fn show_inner(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        self.pump();
         let registry = registry();
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -276,7 +279,7 @@ impl Window {
         });
         if let Some(accept) = &self.replace {
             let names = accept.paths.iter().filter(|p| path(p).symlink_metadata().is_ok()).map(|p| dopus_core::sanitise_display_path(&path(p))).collect::<Vec<_>>().join("\n");
-            let shown = toolkit::dialog::Dialog::new(egui::Id::unique("files-replace"), label("chooser-replace-title"))
+            let shown = toolkit::dialog::Dialog::new(egui::Id::unique((ctx.viewport_id(), "files-replace")), label("chooser-replace-title"))
                 .buttons(vec![
                     toolkit::dialog::Choice::new(label("chooser-replace"), toolkit::dialog::Role::Default),
                     toolkit::dialog::Choice::new(label("cancel"), toolkit::dialog::Role::Cancel),
