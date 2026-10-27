@@ -566,6 +566,11 @@ impl Shell {
                 i.events.splice(0..0, held);
             });
         }
+        if let Some(bus) = &self.bus {
+            drive::publish_titlebar(ctx, |topic, bodies, lost| {
+                bus.handle.publish(topic, bodies, lost);
+            });
+        }
         for answer in drive::logic(ctx) {
             self.respond(answer.id, answer.rc, answer.body.to_string());
         }

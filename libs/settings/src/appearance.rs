@@ -99,7 +99,7 @@ impl AppearanceProjection {
             return Err(Diagnostic::new(
                 "invalid_appearance",
                 "caption_side",
-                "Use right or left",
+                "Use auto, left, center or right",
             ));
         }
         if self.schema == LEGACY_APPEARANCE_SCHEMA && self.caption_side != "right" {
@@ -128,8 +128,12 @@ impl AppearanceProjection {
     }
 }
 
-fn projection_caption_side() -> String { "right".into() }
-fn is_projection_caption_side(value: &str) -> bool { value == "right" }
+fn projection_caption_side() -> String {
+    "right".into()
+}
+fn is_projection_caption_side(value: &str) -> bool {
+    value == "right"
+}
 
 #[cfg(test)]
 mod tests {

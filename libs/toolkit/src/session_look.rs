@@ -64,12 +64,18 @@ pub fn theme_or(appearance: &Appearance, session: &Theme) -> Theme {
             .with_menus(
                 design::MenuStyle::resolve(&appearance.menu_style),
                 design::MenuSide::resolve(&appearance.menu_side),
-            ).with_band(band(appearance))
+            )
+            .with_band(band(appearance))
     })
 }
 
 pub fn band(appearance: &Appearance) -> design::title_band::Settings {
-    design::title_band::Settings::from_names(&appearance.title_align, &appearance.actions_align, &appearance.actions_place, &appearance.window_style)
+    design::title_band::Settings::from_names(
+        &appearance.title_align,
+        &appearance.actions_align,
+        &appearance.actions_place,
+        &appearance.window_style,
+    )
 }
 
 #[cfg(test)]

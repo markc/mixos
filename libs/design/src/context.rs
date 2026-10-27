@@ -257,17 +257,29 @@ impl CaptionSide {
         Self::ALL.into_iter().find(|side| side.name() == name)
     }
 
-    pub fn resolve(name: &str) -> Self { Self::from_name(name).unwrap_or_default() }
-    pub fn valid_name(name: &str) -> bool { valid_appearance_name(name) }
+    pub fn resolve(name: &str) -> Self {
+        Self::from_name(name).unwrap_or_default()
+    }
+
+    pub fn valid_name(name: &str) -> bool {
+        valid_appearance_name(name)
+    }
     pub fn label_id(self) -> &'static str {
         match self {
-            Self::Auto => "look-align-auto", Self::Left => "look-menu-side-left",
-            Self::Center => "look-menu-side-center", Self::Right => "look-menu-side-right",
+            Self::Auto => "look-align-auto",
+            Self::Left => "look-menu-side-left",
+            Self::Center => "look-menu-side-center",
+            Self::Right => "look-menu-side-right",
         }
     }
     pub fn alignment(self, own: crate::title_band::Alignment) -> crate::title_band::Alignment {
         use crate::title_band::Alignment;
-        match self { Self::Auto => own, Self::Left => Alignment::Left, Self::Center => Alignment::Center, Self::Right => Alignment::Right }
+        match self {
+            Self::Auto => own,
+            Self::Left => Alignment::Left,
+            Self::Center => Alignment::Center,
+            Self::Right => Alignment::Right,
+        }
     }
 }
 
@@ -277,15 +289,15 @@ macro_rules! window_styles {
     ($registry:ident) => {
         $registry! {
             #[default]
-            Mac => ("mac", "look-window-style-mac", mac_preset),
-            Win11 => ("win11", "look-window-style-win11", win11_preset),
-            Mixos => ("mixos", "look-window-style-mixos", mixos),
+            Mac => ("mac", "look-window-style-mac", mac_preset, Center),
+            Win11 => ("win11", "look-window-style-win11", win11_preset, Left),
+            Mixos => ("mixos", "look-window-style-mixos", mixos, Center),
         }
     };
 }
 
 macro_rules! window_style_registry {
-    ($($(#[$meta:meta])* $variant:ident => ($name:literal, $label:literal, $preset:ident),)*) => {
+    ($($(#[$meta:meta])* $variant:ident => ($name:literal, $label:literal, $preset:ident, $title:ident),)*) => {
         /// Server-side window furniture, independent of widget style.
         #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum WindowStyle { $($(#[$meta])* $variant,)* }
@@ -300,6 +312,10 @@ macro_rules! window_style_registry {
 
             pub const fn label_id(self) -> &'static str {
                 match self { $(Self::$variant => $label,)* }
+            }
+
+            pub const fn title_alignment(self) -> crate::title_band::Alignment {
+                match self { $(Self::$variant => crate::title_band::Alignment::$title,)* }
             }
         }
     };
@@ -393,20 +409,31 @@ menu_axis!(ActionsPlace,
 impl MenuSide {
     pub fn alignment(self) -> crate::title_band::Alignment {
         use crate::title_band::Alignment;
-        match self { Self::Left => Alignment::Left, Self::Center => Alignment::Center, Self::Right => Alignment::Right }
+        match self {
+            Self::Left => Alignment::Left,
+            Self::Center => Alignment::Center,
+            Self::Right => Alignment::Right,
+        }
     }
 }
 impl ActionsAlign {
     pub fn alignment(self) -> crate::title_band::Alignment {
-        MenuSide::from_name(self.name()).unwrap().alignment()
+        use crate::title_band::Alignment;
+        match self {
+            Self::Left => Alignment::Left,
+            Self::Center => Alignment::Center,
+            Self::Right => Alignment::Right,
+        }
     }
 }
 impl TitleAlign {
-    pub fn alignment(self, style: WindowStyle) -> crate::title_band::Alignment {
+    pub fn alignment(self, own: crate::title_band::Alignment) -> crate::title_band::Alignment {
         use crate::title_band::Alignment;
         match self {
-            Self::Auto => if style == WindowStyle::Win11 { Alignment::Left } else { Alignment::Center },
-            Self::Left => Alignment::Left, Self::Center => Alignment::Center, Self::Right => Alignment::Right,
+            Self::Auto => own,
+            Self::Left => Alignment::Left,
+            Self::Center => Alignment::Center,
+            Self::Right => Alignment::Right,
         }
     }
 }

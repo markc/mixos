@@ -121,7 +121,7 @@ checked separately by the layering gate.
 | [editor](https://github.com/markc/mixos/blob/main/libs/editor/Cargo.toml) | editor | lib | desktop | none | 0.1.2 |
 | [expr](https://github.com/markc/mixos/blob/main/libs/expr/Cargo.toml) | expr | lib | core | none | 0.1.2 |
 | [files](https://github.com/markc/mixos/blob/main/libs/files/Cargo.toml) | files | lib | core | none | 0.1.2 |
-| [icons](https://github.com/markc/mixos/blob/main/libs/icons/Cargo.toml) | icons | lib | bus | none | 0.1.2 |
+| [icons](https://github.com/markc/mixos/blob/main/libs/icons/Cargo.toml) | icons | lib | core | none | 0.1.2 |
 | [logging](https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml) | logging | lib | core | none | 0.1.2 |
 | [macros](https://github.com/markc/mixos/blob/main/libs/macros/Cargo.toml) | macros | lib | core | none | 0.1.2 |
 | [maildoc](https://github.com/markc/mixos/blob/main/libs/maildoc/Cargo.toml) | maildoc | lib | core | none | 0.1.2 |

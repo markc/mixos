@@ -92,11 +92,20 @@ pub struct CompactEffective {
         skip_serializing_if = "crate::model::is_default_menu_side"
     )]
     pub menu_side: String,
-    #[serde(default = "crate::model::default_actions_place", skip_serializing_if = "crate::model::is_default_actions_place")]
+    #[serde(
+        default = "crate::model::default_actions_place",
+        skip_serializing_if = "crate::model::is_default_actions_place"
+    )]
     pub actions_place: String,
-    #[serde(default = "crate::model::default_actions_align", skip_serializing_if = "crate::model::is_default_actions_align")]
+    #[serde(
+        default = "crate::model::default_actions_align",
+        skip_serializing_if = "crate::model::is_default_actions_align"
+    )]
     pub actions_align: String,
-    #[serde(default = "crate::model::default_title_align", skip_serializing_if = "crate::model::is_default_title_align")]
+    #[serde(
+        default = "crate::model::default_title_align",
+        skip_serializing_if = "crate::model::is_default_title_align"
+    )]
     pub title_align: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_stroke: Option<f64>,
@@ -184,9 +193,9 @@ impl CompactSnapshot {
                     contrast: e.contrast,
                     decorations: e.decorations,
                     caption_side: e.caption_side,
-                actions_place: e.actions_place,
-                actions_align: e.actions_align,
-                title_align: e.title_align,
+                    actions_place: e.actions_place,
+                    actions_align: e.actions_align,
+                    title_align: e.title_align,
                     window_style: e.window_style,
                     menu_style: e.menu_style,
                     menu_side: e.menu_side,
@@ -363,7 +372,14 @@ mod tests {
             serde_json::to_value(&old).unwrap(),
             serde_json::to_value(encode(&old).unwrap()).unwrap(),
         ] {
-            for key in ["menu_style", "menu_side", "title_align", "actions_align", "actions_place", "caption_side"] {
+            for key in [
+                "menu_style",
+                "menu_side",
+                "title_align",
+                "actions_align",
+                "actions_place",
+                "caption_side",
+            ] {
                 assert!(value["desktop"]["appearance"].get(key).is_none());
                 assert!(value["effective"]["desktop"].get(key).is_none());
             }
@@ -403,16 +419,34 @@ mod tests {
             ("caption_side", design::CaptionSide::NAMES),
         ] {
             for name in names.iter().copied().chain(["future-choice"]) {
-                let desktop = crate::patch(&Desktop::default(), &std::collections::BTreeMap::from([
-                    (format!("appearance.{axis}"), json!(name)),
-                ]), &[]).unwrap();
+                let desktop = crate::patch(
+                    &Desktop::default(),
+                    &std::collections::BTreeMap::from([(
+                        format!("appearance.{axis}"),
+                        json!(name),
+                    )]),
+                    &[],
+                )
+                .unwrap();
                 let full = snapshot(desktop);
                 assert_eq!(decode(serde_json::to_value(&full).unwrap()).unwrap(), full);
-                assert_eq!(decode(serde_json::to_value(encode(&full).unwrap()).unwrap()).unwrap(), full);
-                assert_eq!(serde_json::to_value(&full.desktop.appearance).unwrap().get(axis)
-                    .and_then(serde_json::Value::as_str).unwrap_or(match axis {
-                        "actions_align" => "right", "actions_place" => "row", _ => "auto",
-                    }), name);
+                assert_eq!(
+                    decode(serde_json::to_value(encode(&full).unwrap()).unwrap()).unwrap(),
+                    full,
+                );
+                let saved = serde_json::to_value(&full.desktop.appearance).unwrap();
+                let default = match axis {
+                    "actions_align" => "right",
+                    "actions_place" => "row",
+                    _ => "auto",
+                };
+                assert_eq!(
+                    saved
+                        .get(axis)
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or(default),
+                    name,
+                );
             }
         }
     }

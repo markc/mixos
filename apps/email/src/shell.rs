@@ -1704,6 +1704,9 @@ impl Shell {
     pub fn logic(&mut self, ctx: &egui::Context) {
         // Drive answers first: a `window close` answer goes out before the
         // close it asked for is handled.
+        drive::publish_titlebar(ctx, |topic, bodies, lost| {
+            self.bus.publish(topic, bodies, lost);
+        });
         for answer in drive::logic(ctx) {
             self.drive_callers.remove(&answer.id);
             self.bus.reply(answer.id, answer.rc, answer.body);

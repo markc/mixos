@@ -374,7 +374,10 @@ impl Theme {
         self
     }
 
-    pub fn with_band(mut self, band: design::title_band::Settings) -> Self { self.band = band; self }
+    pub fn with_band(mut self, band: design::title_band::Settings) -> Self {
+        self.band = band;
+        self
+    }
     pub fn band(&self) -> design::title_band::Settings { self.band }
 
     pub fn menu_style(&self) -> design::MenuStyle {

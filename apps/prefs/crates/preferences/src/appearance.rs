@@ -234,9 +234,21 @@ impl Look {
             self.menu_style != base.menu_style,
             json!(self.menu_style),
         );
-        put("title_align", self.title_align != base.title_align, json!(self.title_align));
-        put("actions_align", self.actions_align != base.actions_align, json!(self.actions_align));
-        put("actions_place", self.actions_place != base.actions_place, json!(self.actions_place));
+        put(
+            "title_align",
+            self.title_align != base.title_align,
+            json!(self.title_align),
+        );
+        put(
+            "actions_align",
+            self.actions_align != base.actions_align,
+            json!(self.actions_align),
+        );
+        put(
+            "actions_place",
+            self.actions_place != base.actions_place,
+            json!(self.actions_place),
+        );
         put(
             "menu_side",
             self.menu_side != base.menu_side,
@@ -318,10 +330,26 @@ impl Look {
             look.window_style = name.into();
         }
         for (key, slot, valid) in [
-            ("actions_place", &mut look.actions_place, design::ActionsPlace::valid_name as fn(&str) -> bool),
-            ("actions_align", &mut look.actions_align, design::ActionsAlign::valid_name as fn(&str) -> bool),
-            ("title_align", &mut look.title_align, design::TitleAlign::valid_name as fn(&str) -> bool),
-            ("caption_side", &mut look.captions, CaptionSide::valid_name as fn(&str) -> bool),
+            (
+                "actions_place",
+                &mut look.actions_place,
+                design::ActionsPlace::valid_name as fn(&str) -> bool,
+            ),
+            (
+                "actions_align",
+                &mut look.actions_align,
+                design::ActionsAlign::valid_name as fn(&str) -> bool,
+            ),
+            (
+                "title_align",
+                &mut look.title_align,
+                design::TitleAlign::valid_name as fn(&str) -> bool,
+            ),
+            (
+                "caption_side",
+                &mut look.captions,
+                CaptionSide::valid_name as fn(&str) -> bool,
+            ),
             (
                 "menu_style",
                 &mut look.menu_style,

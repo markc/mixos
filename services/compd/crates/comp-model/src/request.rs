@@ -834,10 +834,27 @@ pub fn parse_window_command(
         "comp.window.action" => {
             let object = args_object(args, &empty, &["id", "generation", "command"])?;
             let (id, generation) = required_target(object)?;
-            let command = object.get("command").and_then(Value::as_str)
-                .filter(|id| !id.is_empty() && id.len() <= 128 && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'-' | b'_')))
-                .ok_or_else(|| invalid_argument("command", "registry command id", "required, up to 128 bytes"))?.to_owned();
-            Ok(WindowCommand::Op(WindowOp::Action { id, generation, command }))
+            let command = object
+                .get("command")
+                .and_then(Value::as_str)
+                .filter(|id| {
+                    !id.is_empty()
+                        && id.len() <= 128
+                        && id.bytes().all(|b| {
+                            b.is_ascii_lowercase()
+                                || b.is_ascii_digit()
+                                || matches!(b, b'.' | b'-' | b'_')
+                        })
+                })
+                .ok_or_else(|| {
+                    invalid_argument("command", "registry command id", "required, up to 128 bytes")
+                })?
+                .to_owned();
+            Ok(WindowCommand::Op(WindowOp::Action {
+                id,
+                generation,
+                command,
+            }))
         }
         "comp.window.close" => {
             const ALLOWED: &[&str] = &["id", "generation", "force", "timeout_ms"];

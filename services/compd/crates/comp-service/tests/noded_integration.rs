@@ -72,7 +72,7 @@ impl CompEngine for Engine {
                 style: "mac",
                 menu_button: false,
                 menu_side: "left",
-            actions: false,
+                actions: false,
                 menu_services: vec![],
             },
             bindings: BindingsSnapshot {

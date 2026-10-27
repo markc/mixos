@@ -76,10 +76,60 @@ fn the_menus_come_from_the_registry() {
 }
 
 #[test]
+fn default_menu_and_caption_positions_keep_the_inner_margin() {
+    let h = harness();
+    let metrics = toolkit::chrome::Chrome::of(&h.ctx).metrics;
+    assert_eq!(
+        h.get_by_label("File").rect().left(),
+        metrics.title_bar_margin + metrics.mark + metrics.mark_gap,
+    );
+    assert_eq!(h.get_by_label("Close").rect().right(), 640.0);
+}
+
+fn small_drag(h: &mut Harness<'_>, from: egui::Pos2) -> bool {
+    h.input_mut().events.push(egui::Event::PointerMoved(from));
+    h.step();
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    let mut moved = commands(h).contains(&ViewportCommand::StartDrag);
+    let to = from + egui::vec2(7.0, 0.0);
+    h.input_mut().events.push(egui::Event::PointerMoved(to));
+    h.step();
+    moved |= commands(h).contains(&ViewportCommand::StartDrag);
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    moved || commands(h).contains(&ViewportCommand::StartDrag)
+}
+
+#[test]
+fn dragging_click_only_chrome_never_moves_the_window() {
+    for label in ["File", "Minimize"] {
+        let mut h = harness();
+        let from = h.get_by_label(label).rect().center();
+        assert!(
+            !small_drag(&mut h, from),
+            "drag from {label} moved the window"
+        );
+    }
+    let mut h = harness();
+    assert!(small_drag(&mut h, egui::pos2(200.0, 10.0)));
+}
+
+#[test]
 fn double_clicking_the_free_bar_maximizes() {
     let mut h = harness();
     // The middle of the bar, clear of the menus and the caption buttons.
-    let at = egui::pos2(320.0, 10.0);
+    let at = egui::pos2(200.0, 10.0);
     for _ in 0..2 {
         h.input_mut().events.push(egui::Event::PointerMoved(at));
         h.input_mut().events.push(egui::Event::PointerButton {
@@ -286,33 +336,81 @@ fn titlebar_without_a_drive_keeps_an_app_menu_button() {
 fn title_band_layouts_and_hosted_actions() {
     let mut results = egui_kittest::SnapshotResults::new();
     for (name, decorations, service, title, menu, actions, captions) in [
-        ("csd_center", design::Decorations::Client, true, "center", "left", "right", "auto"),
-        ("csd_right", design::Decorations::Client, true, "right", "center", "left", "center"),
-        ("ssd_hosted", design::Decorations::Server, true, "center", "center", "left", "left"),
-        ("ssd_fallback", design::Decorations::Server, false, "left", "right", "center", "right"),
+        (
+            "csd_center",
+            design::Decorations::Client,
+            true,
+            "center",
+            "left",
+            "right",
+            "auto",
+        ),
+        (
+            "csd_right",
+            design::Decorations::Client,
+            true,
+            "right",
+            "center",
+            "left",
+            "center",
+        ),
+        (
+            "ssd_hosted",
+            design::Decorations::Server,
+            true,
+            "center",
+            "center",
+            "left",
+            "left",
+        ),
+        (
+            "ssd_fallback",
+            design::Decorations::Server,
+            false,
+            "left",
+            "right",
+            "center",
+            "right",
+        ),
     ] {
         let registry = registry();
         let strings = Strings::new(FTL);
-        let mut h = Harness::builder().with_size(egui::vec2(640.0,200.0)).wgpu().build_ui(move |ui| {
-            titlebar::show_bar(ui,"Demo",Some(Icon::Server),&registry,&(),&strings,
-                &[titlebar::Action::new("file.quit",Icon::X)]);
-            egui::CentralPanel::default().show(ui, |_| {});
-        });
-        toolkit::drive::install(&h.ctx,"demo");
-        toolkit::drive::set_service(&h.ctx,service.then_some("demo"));
-        toolkit::install(&h.ctx,&Theme::embedded().framed(decorations,design::CaptionSide::resolve(captions))
-            .with_menus(design::MenuStyle::Titlebar,design::MenuSide::resolve(menu))
-            .with_band(design::title_band::Settings::from_names(title,actions,"titlebar","mixos")));
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(640.0, 200.0))
+            .wgpu()
+            .build_ui(move |ui| {
+                titlebar::show_bar(
+                    ui,
+                    "Demo",
+                    Some(Icon::Server),
+                    &registry,
+                    &(),
+                    &strings,
+                    &[titlebar::Action::new("file.quit", Icon::X)],
+                );
+                egui::CentralPanel::default().show(ui, |_| {});
+            });
+        toolkit::drive::install(&h.ctx, "demo");
+        toolkit::drive::set_service(&h.ctx, service.then_some("demo"));
+        toolkit::install(
+            &h.ctx,
+            &Theme::embedded()
+                .framed(decorations, design::CaptionSide::resolve(captions))
+                .with_menus(design::MenuStyle::Titlebar, design::MenuSide::resolve(menu))
+                .with_band(design::title_band::Settings::from_names(
+                    title, actions, "titlebar", "mixos",
+                )),
+        );
         h.run();
         let hosted = decorations == design::Decorations::Server && service;
         let form = titlebar::hosting::form(&h.ctx);
-        assert_eq!(form["hosted"],hosted);
+        assert_eq!(form["hosted"], hosted);
         if hosted {
-            assert_eq!(form["bar"]["items"][0]["command"],"file.quit");
+            assert_eq!(form["bar"]["items"][0]["command"], "file.quit");
             assert!(form["bar"]["revision"].as_u64().unwrap() > 0);
             assert!(h.get_all_by_label("Quit").next().is_none());
         } else {
-            assert_eq!(form["effective"],"row");
+            assert_eq!(form["effective"], "row");
         }
         h.snapshot(format!("title_band_{name}"));
         results.extend(h.take_snapshot_results());

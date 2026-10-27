@@ -405,7 +405,7 @@ fn win11_preset(_: Scheme, mode: Mode) -> DecoTheme {
 }
 
 macro_rules! preset_registry {
-    ($($(#[$meta:meta])* $variant:ident => ($name:literal, $label:literal, $preset:ident),)*) => {
+    ($($(#[$meta:meta])* $variant:ident => ($name:literal, $label:literal, $preset:ident, $title:ident),)*) => {
         fn preset(style: ChromeStyle, scheme: Scheme, mode: Mode) -> DecoTheme {
             match style { $(ChromeStyle::$variant => $preset(scheme, mode),)* }
         }
@@ -417,6 +417,19 @@ design::window_styles!(preset_registry);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preset_title_alignment_matches_the_client_registry() {
+        for style in ChromeStyle::ALL {
+            let theme = resolve(style, Scheme::Ocean, Mode::Light);
+            let own = match theme.metrics.title_align {
+                TitleAlign::Center => design::title_band::Alignment::Center,
+                TitleAlign::Leading => design::title_band::Alignment::Left,
+            };
+            assert_eq!(own, style.title_alignment());
+            assert_eq!(design::TitleAlign::Auto.alignment(own), own);
+        }
+    }
     use crate::layout::deco::{ButtonState, Focus};
 
     #[test]

@@ -281,9 +281,21 @@ pub fn resolve_with_embedded_and_accents(
             ));
         }
         for (path, name, valid) in [
-            ("appearance.actions_place", &desktop.appearance.actions_place, design::ActionsPlace::valid_name as fn(&str) -> bool),
-            ("appearance.actions_align", &desktop.appearance.actions_align, design::ActionsAlign::valid_name as fn(&str) -> bool),
-            ("appearance.title_align", &desktop.appearance.title_align, design::TitleAlign::valid_name as fn(&str) -> bool),
+            (
+                "appearance.actions_place",
+                &desktop.appearance.actions_place,
+                design::ActionsPlace::valid_name as fn(&str) -> bool,
+            ),
+            (
+                "appearance.actions_align",
+                &desktop.appearance.actions_align,
+                design::ActionsAlign::valid_name as fn(&str) -> bool,
+            ),
+            (
+                "appearance.title_align",
+                &desktop.appearance.title_align,
+                design::TitleAlign::valid_name as fn(&str) -> bool,
+            ),
             (
                 "appearance.menu_style",
                 &desktop.appearance.menu_style,
@@ -537,9 +549,18 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
             desktop.appearance.menu_style =
                 typed(path, value.unwrap_or(json!(defaults.appearance.menu_style)))?
         }
-        "appearance.title_align" => { desktop.appearance.title_align = typed(path, value.unwrap_or(json!(defaults.appearance.title_align)))?; }
-        "appearance.actions_place" => { desktop.appearance.actions_place = typed(path, value.unwrap_or(json!(defaults.appearance.actions_place)))?; }
-        "appearance.actions_align" => { desktop.appearance.actions_align = typed(path, value.unwrap_or(json!(defaults.appearance.actions_align)))?; }
+        "appearance.title_align" => {
+            desktop.appearance.title_align =
+                typed(path, value.unwrap_or(json!(defaults.appearance.title_align)))?;
+        }
+        "appearance.actions_place" => {
+            desktop.appearance.actions_place =
+                typed(path, value.unwrap_or(json!(defaults.appearance.actions_place)))?;
+        }
+        "appearance.actions_align" => {
+            desktop.appearance.actions_align =
+                typed(path, value.unwrap_or(json!(defaults.appearance.actions_align)))?;
+        }
         "appearance.menu_side" => {
             desktop.appearance.menu_side =
                 typed(path, value.unwrap_or(json!(defaults.appearance.menu_side)))?

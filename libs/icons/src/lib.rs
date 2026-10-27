@@ -12,11 +12,15 @@ pub struct BarItem {
 }
 
 pub const TAIL: &[&[&str]] = &[
-    &["help.macros"], &["app.runner", "view.search"],
-    &["help.shortcuts", "help.keys"], &["view.mode"],
+    &["help.macros"],
+    &["app.runner", "view.search"],
+    &["help.shortcuts", "help.keys"],
+    &["view.mode"],
 ];
 
-pub fn standard(command: &str) -> bool { TAIL.iter().any(|ids| ids.contains(&command)) }
+pub fn standard(command: &str) -> bool {
+    TAIL.iter().any(|ids| ids.contains(&command))
+}
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -27,12 +31,23 @@ pub struct Bar {
 
 impl Bar {
     pub fn valid(&self) -> bool {
-        self.items.len() <= 128 && self.items.iter().enumerate().all(|(i, item)| {
-            !item.command.is_empty() && item.command.len() <= 128
-                && item.command.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-' || b == b'_')
-                && Icon::from_name(&item.icon).is_some() && item.tooltip.len() <= 2048
-                && self.items[..i].iter().all(|other| other.command != item.command)
-        })
+        self.items.len() <= 128
+            && self.items.iter().enumerate().all(|(i, item)| {
+                !item.command.is_empty()
+                    && item.command.len() <= 128
+                    && item.command.bytes().all(|b| {
+                        b.is_ascii_lowercase()
+                            || b.is_ascii_digit()
+                            || b == b'.'
+                            || b == b'-'
+                            || b == b'_'
+                    })
+                    && Icon::from_name(&item.icon).is_some()
+                    && item.tooltip.len() <= 2048
+                    && self.items[..i]
+                        .iter()
+                        .all(|other| other.command != item.command)
+            })
     }
 }
 
@@ -41,9 +56,20 @@ mod tests {
     use super::*;
     #[test]
     fn names_round_trip_and_bars_reject_unknown_or_duplicate_items() {
-        for icon in Icon::ALL { assert_eq!(Icon::from_name(icon.name()),Some(*icon)); }
-        let item = BarItem { command:"file.save".into(),icon:"save".into(),tooltip:"Save".into(),enabled:true,toggled:false };
-        let mut bar = Bar { revision:1,items:vec![item.clone()] };
+        for icon in Icon::ALL {
+            assert_eq!(Icon::from_name(icon.name()), Some(*icon));
+        }
+        let item = BarItem {
+            command: "file.save".into(),
+            icon: "save".into(),
+            tooltip: "Save".into(),
+            enabled: true,
+            toggled: false,
+        };
+        let mut bar = Bar {
+            revision: 1,
+            items: vec![item.clone()],
+        };
         assert!(bar.valid());
         bar.items.push(item);
         assert!(!bar.valid());
@@ -69,7 +95,9 @@ macro_rules! icons {
                 match self { $(Icon::$variant => $file),+ }
             }
 
-            pub fn from_name(name: &str) -> Option<Self> { Self::ALL.iter().copied().find(|icon| icon.name() == name) }
+            pub fn from_name(name: &str) -> Option<Self> {
+                Self::ALL.iter().copied().find(|icon| icon.name() == name)
+            }
 
             pub fn svg(self) -> &'static str {
                 match self {

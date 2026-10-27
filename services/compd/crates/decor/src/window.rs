@@ -35,49 +35,63 @@ pub fn action_emitter(emit: impl Fn(&str, &str) -> bool + 'static) {
 }
 
 pub fn update_actions(service: &str, bar: icons::Bar) -> bool {
-    if !bar.valid() || !MENU_SERVICES.with_borrow(|live| live.contains(service)) { return false; }
+    if !bar.valid() || !MENU_SERVICES.with_borrow(|live| live.contains(service)) {
+        return false;
+    }
     let changed = ACTIONS.with_borrow_mut(|bars| {
-        if bars.get(service) == Some(&bar) { return false; }
+        if bars.get(service) == Some(&bar) {
+            return false;
+        }
         bars.insert(service.into(), bar);
         true
     });
-    if changed { GENERATION.set(GENERATION.get().wrapping_add(1)); }
+    if changed {
+        GENERATION.set(GENERATION.get().wrapping_add(1));
+    }
     changed
 }
 
-
 pub fn action_service(window: &Window) -> Option<String> {
-    if installed()?.band.place != design::ActionsPlace::Titlebar || !decorated(window) { return None; }
+    if installed()?.band.place != design::ActionsPlace::Titlebar || !decorated(window) {
+        return None;
+    }
     let app = app_id(window)?;
     MENU_SERVICES.with_borrow(|live| menu_service(&app, live).map(str::to_owned))
 }
 
 pub fn actions(window: &Window) -> icons::Bar {
-    action_service(window).and_then(|service| ACTIONS.with_borrow(|bars| bars.get(&service).cloned())).unwrap_or_default()
+    action_service(window)
+        .and_then(|service| ACTIONS.with_borrow(|bars| bars.get(&service).cloned()))
+        .unwrap_or_default()
 }
 
-
 pub fn execute_action(window: &Window, command: &str) -> bool {
-    let Some(service) = action_service(window) else { return false; };
+    let Some(service) = action_service(window) else {
+        return false;
+    };
     let bar = actions(window);
-    if !bar.items.iter().any(|item| item.command == command && item.enabled) { return false; }
-    ACTION_EMIT.with_borrow(|emit| emit.as_ref().is_some_and(|emit| emit(&service,command)))
+    if !bar
+        .items
+        .iter()
+        .any(|item| item.command == command && item.enabled)
+    {
+        return false;
+    }
+    ACTION_EMIT.with_borrow(|emit| emit.as_ref().is_some_and(|emit| emit(&service, command)))
 }
 
 pub fn click_action(window: &Window, revision: u64, index: usize) -> bool {
     let bar = actions(window);
-    if bar.revision != revision { return false; }
-    bar.items.get(index).is_some_and(|item| execute_action(window, &item.command))
+    if bar.revision != revision {
+        return false;
+    }
+    bar.items
+        .get(index)
+        .is_some_and(|item| execute_action(window, &item.command))
 }
 
-pub fn layout(window: &Window, size: Vec2) -> Option<crate::layout::ChromeLayout> {
-    let theme = installed()?;
-    let state = crate::state::ChromeState {
-        title: crate::render::title_of(window), content_size: (size.x as i32,size.y as i32),
-        menu_side: menu_side(window), band: theme.band, captions: theme.captions,
-        actions: actions(window), ..Default::default()
-    };
-    Some(state.layout(&theme.deco))
+pub fn layout(window: &Window, size: Vec2) -> Option<Rc<crate::layout::ChromeLayout>> {
+    crate::render::layout_for(window, size)
 }
 
 /// The scene host owns the Bus connection; chrome only queues through it.
@@ -97,9 +111,14 @@ pub fn menu_services(services: BTreeSet<String>) -> bool {
         *live = services;
         true
     });
-    let repaint =
-        changed && installed().is_some_and(|theme| theme.menu_style == design::MenuStyle::Titlebar || theme.band.place == design::ActionsPlace::Titlebar);
-    MENU_SERVICES.with_borrow(|live| ACTIONS.with_borrow_mut(|bars| bars.retain(|service,_| live.contains(service))));
+    let repaint = changed
+        && installed().is_some_and(|theme| {
+            theme.menu_style == design::MenuStyle::Titlebar
+                || theme.band.place == design::ActionsPlace::Titlebar
+        });
+    MENU_SERVICES.with_borrow(|live| {
+        ACTIONS.with_borrow_mut(|bars| bars.retain(|service, _| live.contains(service)))
+    });
     if repaint {
         GENERATION.set(GENERATION.get().wrapping_add(1));
     }
@@ -163,7 +182,9 @@ pub fn open_menu(window: &Window) -> bool {
             crate::layout::vec2(geometry.w as f32, geometry.h as f32),
             |layout| crate::layout::vec2(layout.content.w, layout.content.h),
         );
-    let Some(layout) = layout(window, size) else { return false; };
+    let Some(layout) = layout(window, size) else {
+        return false;
+    };
     let Some(x) = menu_x(&layout, geometry.w as f32, side) else {
         return false;
     };
@@ -276,7 +297,10 @@ pub fn hit(
 ) -> Option<ChromeHit> {
     let extents = extents(window)?;
     let theme = installed()?;
-    let layout = layout(window, crate::layout::vec2(slot_size.w.max(0) as f32, slot_size.h.max(0) as f32))?;
+    let layout = layout(
+        window,
+        crate::layout::vec2(slot_size.w.max(0) as f32, slot_size.h.max(0) as f32),
+    )?;
     let p = frame_point(extents, content_relative);
     match layout.hit_test(p) {
         ChromePart::Content | ChromePart::Outside => None,
@@ -305,7 +329,10 @@ pub fn parts(
 ) -> Option<SpaceParts> {
     let extents = extents(window)?;
     let theme = installed()?;
-    let layout = layout(window, crate::layout::vec2(slot_size.w.max(0) as f32, slot_size.h.max(0) as f32))?;
+    let layout = layout(
+        window,
+        crate::layout::vec2(slot_size.w.max(0) as f32, slot_size.h.max(0) as f32),
+    )?;
     let (ox, oy) = (
         slot_origin.x as f64 - extents.left as f64,
         slot_origin.y as f64 - extents.top as f64,

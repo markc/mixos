@@ -635,6 +635,9 @@ impl Shell {
             });
         }
         self.perform();
+        drive::publish_titlebar(ctx, |topic, bodies, lost| {
+            self.transport.publish(topic, bodies, lost);
+        });
         for answer in drive::logic(ctx) {
             self.respond(answer);
         }

@@ -53,8 +53,21 @@ impl ChromeState {
 
     pub fn layout(&self, theme: &DecoTheme) -> ChromeLayout {
         let m = &theme.metrics;
-        let width = crate::text::title_width(&self.title, &m.title_font_family, m.title_size_px, m.title_font_weight.resolved().0);
-        ChromeLayout::compute_band(theme, content_vec(self.content_size), self.menu_side, self.band, self.captions, &self.actions, width)
+        let width = crate::text::title_width(
+            &self.title,
+            &m.title_font_family,
+            m.title_size_px,
+            m.title_font_weight.resolved().0,
+        );
+        ChromeLayout::compute_band(
+            theme,
+            content_vec(self.content_size),
+            self.menu_side,
+            self.band,
+            self.captions,
+            &self.actions,
+            width,
+        )
     }
 }
 
@@ -70,6 +83,7 @@ pub struct Chrome {
     state: ChromeState,
     theme_generation: u64,
     commit: u64,
+    layout_revision: u64,
 }
 
 impl Chrome {
@@ -82,11 +96,24 @@ impl Chrome {
         self.commit
     }
 
+    pub fn layout_revision(&self) -> u64 {
+        self.layout_revision
+    }
+
     /// Apply `state` for theme generation `theme_generation`; returns whether
     /// anything changed (and the commit moved).
     pub fn update(&mut self, state: ChromeState, theme_generation: u64) -> bool {
         if state == self.state && theme_generation == self.theme_generation {
             return false;
+        }
+        if state.content_size != self.state.content_size
+            || state.title != self.state.title
+            || state.menu_side != self.state.menu_side
+            || state.band != self.state.band
+            || state.captions != self.state.captions
+            || state.actions != self.state.actions
+        {
+            self.layout_revision = self.layout_revision.wrapping_add(1);
         }
         self.state = state;
         self.theme_generation = theme_generation;

@@ -83,11 +83,20 @@ pub struct Appearance {
     pub menu_style: String,
     #[serde(skip_serializing_if = "is_default_menu_side")]
     pub menu_side: String,
-    #[serde(default = "default_actions_place", skip_serializing_if = "is_default_actions_place")]
+    #[serde(
+        default = "default_actions_place",
+        skip_serializing_if = "is_default_actions_place"
+    )]
     pub actions_place: String,
-    #[serde(default = "default_actions_align", skip_serializing_if = "is_default_actions_align")]
+    #[serde(
+        default = "default_actions_align",
+        skip_serializing_if = "is_default_actions_align"
+    )]
     pub actions_align: String,
-    #[serde(default = "default_title_align", skip_serializing_if = "is_default_title_align")]
+    #[serde(
+        default = "default_title_align",
+        skip_serializing_if = "is_default_title_align"
+    )]
     pub title_align: String,
     /// The session icon stroke on Lucide's 24-unit grid, in quarter steps
     /// from [`ICON_STROKE_MIN`] to [`ICON_STROKE_MAX`]. None is the design's
@@ -419,11 +428,20 @@ pub struct Effective {
         skip_serializing_if = "is_default_menu_side"
     )]
     pub menu_side: String,
-    #[serde(default = "default_actions_place", skip_serializing_if = "is_default_actions_place")]
+    #[serde(
+        default = "default_actions_place",
+        skip_serializing_if = "is_default_actions_place"
+    )]
     pub actions_place: String,
-    #[serde(default = "default_actions_align", skip_serializing_if = "is_default_actions_align")]
+    #[serde(
+        default = "default_actions_align",
+        skip_serializing_if = "is_default_actions_align"
+    )]
     pub actions_align: String,
-    #[serde(default = "default_title_align", skip_serializing_if = "is_default_title_align")]
+    #[serde(
+        default = "default_title_align",
+        skip_serializing_if = "is_default_title_align"
+    )]
     pub title_align: String,
     // The session type and stroke choices, omitted when unset (see above).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -532,11 +550,23 @@ mod tests {
     }
 }
 
-pub(crate) fn default_title_align() -> String { design::TitleAlign::default().name().into() }
-pub(crate) fn is_default_title_align(value: &str) -> bool { value == design::TitleAlign::default().name() }
+pub(crate) fn default_title_align() -> String {
+    design::TitleAlign::default().name().into()
+}
+pub(crate) fn is_default_title_align(value: &str) -> bool {
+    value == design::TitleAlign::default().name()
+}
 
-pub(crate) fn default_actions_align() -> String { design::ActionsAlign::default().name().into() }
-pub(crate) fn is_default_actions_align(value: &str) -> bool { value == design::ActionsAlign::default().name() }
+pub(crate) fn default_actions_align() -> String {
+    design::ActionsAlign::default().name().into()
+}
+pub(crate) fn is_default_actions_align(value: &str) -> bool {
+    value == design::ActionsAlign::default().name()
+}
 
-pub(crate) fn default_actions_place() -> String { design::ActionsPlace::default().name().into() }
-pub(crate) fn is_default_actions_place(value: &str) -> bool { value == design::ActionsPlace::default().name() }
+pub(crate) fn default_actions_place() -> String {
+    design::ActionsPlace::default().name().into()
+}
+pub(crate) fn is_default_actions_place(value: &str) -> bool {
+    value == design::ActionsPlace::default().name()
+}

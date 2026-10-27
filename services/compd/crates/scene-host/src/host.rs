@@ -705,8 +705,14 @@ struct InputGeometry {
 }
 
 fn action_services(lp: &world::state::Loop) -> Vec<String> {
-    lp.inner.all_world_spaces().iter().flat_map(|space| space.state.elements())
-        .filter_map(decor::window::action_service).collect::<BTreeSet<_>>().into_iter().collect()
+    lp.inner
+        .all_world_spaces()
+        .iter()
+        .flat_map(|space| space.state.elements())
+        .filter_map(decor::window::action_service)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 impl SceneHost {
@@ -962,11 +968,19 @@ impl SceneHost {
             match message {
                 Inbound::Registered(name) => self.service = Some(name),
                 Inbound::Repaint => serviced.changed = true,
-                Inbound::Titlebar { generation, service, form } => {
+                Inbound::Titlebar {
+                    generation,
+                    service,
+                    form,
+                } => {
                     if self.port.settings_generation() == Some(generation) && !form.is_null() {
-                        let bar = if form["hosted"] == true && form["service"].as_str() == Some(service.as_str()) {
+                        let bar = if form["hosted"] == true
+                            && form["service"].as_str() == Some(service.as_str())
+                        {
                             serde_json::from_value(form["bar"].clone()).unwrap_or_default()
-                        } else { Default::default() };
+                        } else {
+                            Default::default()
+                        };
                         serviced.changed |= decor::window::update_actions(&service, bar);
                     }
                 }
@@ -1172,11 +1186,20 @@ impl SceneHost {
                 .is_some_and(|surface| surface.output() == current)
         });
         if here {
-            let action = self.action_tooltip.update(state, &self.port, prepared.as_deref(), self.appearance_generation,
-                self.tooltip.is_some() || self.host.panels.menu().is_some() || self.host.store.dialog_seat().is_some());
+            let action = self.action_tooltip.update(
+                state,
+                &self.port,
+                prepared.as_deref(),
+                self.appearance_generation,
+                self.tooltip.is_some()
+                    || self.host.panels.menu().is_some()
+                    || self.host.store.dialog_seat().is_some(),
+            );
             let mut placed = self.placed.clone();
-            if let Some(((key,_),rect)) = &action { placed.insert(key.clone(),*rect); }
-            let action = action.map(|(tip,_)|tip);
+            if let Some(((key, _), rect)) = &action {
+                placed.insert(key.clone(), *rect);
+            }
+            let action = action.map(|(tip, _)| tip);
             let tip = self.tooltip.as_ref().or(action.as_ref());
             self.host.tooltip = crate::tooltip::reconcile(
                 tip,

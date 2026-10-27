@@ -26,8 +26,14 @@ thread_local! {
 
 pub fn title_width(title: &str, family: &DecoFontFamily, size: f32, weight: u16) -> f32 {
     WIDTHS.with_borrow_mut(|cache| {
-        if let Some(entry) = cache.iter().find(|e| e.0 == title && &e.1 == family && e.2 == size.to_bits() && e.3 == weight) { return entry.4; }
-        let Ok(mut fonts) = font_system().lock() else { return 0.0; };
+        if let Some(entry) = cache.iter().find(|e| {
+            e.0 == title && &e.1 == family && e.2 == size.to_bits() && e.3 == weight
+        }) {
+            return entry.4;
+        }
+        let Ok(mut fonts) = font_system().lock() else {
+            return 0.0;
+        };
         let mut buffer = Buffer::new(&mut fonts, Metrics::new(size, size * 1.3));
         let face = match family {
             DecoFontFamily::Named(name) => Family::Name(name),
@@ -37,11 +43,22 @@ pub fn title_width(title: &str, family: &DecoFontFamily, size: f32, weight: u16)
         {
             let mut buffer = buffer.borrow_with(&mut fonts);
             buffer.set_wrap(Wrap::None);
-            buffer.set_text(title, &Attrs::new().family(face).weight(Weight(weight)), Shaping::Advanced, None);
+            buffer.set_text(
+                title,
+                &Attrs::new().family(face).weight(Weight(weight)),
+                Shaping::Advanced,
+                None,
+            );
             buffer.shape_until_scroll(false);
         }
-        let width = buffer.layout_runs().map(|run| run.line_w).fold(0.0, f32::max).ceil();
-        if cache.len() >= 128 { cache.remove(0); }
+        let width = buffer
+            .layout_runs()
+            .map(|run| run.line_w)
+            .fold(0.0, f32::max)
+            .ceil();
+        if cache.len() >= 128 {
+            cache.remove(0);
+        }
         cache.push((title.into(), family.clone(), size.to_bits(), weight, width));
         width
     })

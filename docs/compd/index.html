@@ -341,8 +341,9 @@ limit the set of app services.</p>
 <code>title_align</code> and <code>caption_side</code> offer style default, left, centre and right;
 <code>actions_align</code> offers left, centre and right. MixOS titles centre by default.
 With <code>actions_place: "titlebar"</code>, the scene-host port reads registered,
-decorated apps' revisioned <code>&lt;app&gt;.ui.titlebar.form</code> properties at most four
-times per second. It draws the shared Lucide icons, enabled and toggled states,
+decorated apps' revisioned <code>&lt;app&gt;.ui.titlebar.form</code> properties once on hosting
+start, then on trusted <code>&lt;app&gt;.ui.titlebar.changed</code> notifications. A 30-second
+resync recovers lost notifications. It draws the shared Lucide icons, enabled and toggled states,
 and the existing tooltip cards. A click or
 <code>comp.window.action {id, generation, command}</code> queues <code>&lt;app&gt;.execute {id}</code>
 through that same port. Disabled and stale pointer actions refuse.

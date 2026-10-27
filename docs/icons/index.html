@@ -243,7 +243,8 @@ tooltip, enabled and toggled. <code>Bar::valid</code> bounds incoming bars and r
 unknown icons, invalid command names and duplicate commands. <code>standard</code>
 identifies the retained macros, search, keyboard and theme tail.</p>
 <p>The compositor reads registered apps' <code>ui.titlebar.form</code> through its existing
-scene-host port. It rasterises the shared SVGs with resvg and caches the
+scene-host port, after registration and on trusted titlebar change notifications.
+It rasterises the shared SVGs with resvg and caches the
 result by icon, physical size, tint and stroke. See the
 <a href="/docs/decisions/2026-10-27-title-band/">title band decision</a>.</p>
 <p>SVGs retain the upstream ISC and Feather-derived MIT notices in

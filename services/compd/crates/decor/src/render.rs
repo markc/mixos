@@ -10,6 +10,7 @@
 //! tracker sees nothing new. That is the whole idle story: no timer, no tick.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::layout::{CaptionButton, ChromeLayout, DecoExtents};
 use smithay::backend::allocator::Fourcc;
@@ -167,6 +168,7 @@ pub fn release_captured(window: &Window) {
 #[derive(Default)]
 struct WindowChrome {
     chrome: Chrome,
+    layout: Option<(LayoutKey, Rc<ChromeLayout>)>,
     titlebar: Option<(RasterKey, MemoryRenderBuffer, Size<i32, Buffer>)>,
     shadow: Option<(ShadowKey, MemoryRenderBuffer, u32)>,
     commit: CommitCounter,
@@ -178,6 +180,35 @@ struct WindowChrome {
     last_clip: Option<crate::clip::Clip>,
     /// The border's two bottom corners (an arc each), when the frame is rounded.
     corners: Option<(CornerKey, MemoryRenderBuffer, i32)>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+struct LayoutKey {
+    revision: u64,
+    size: (i32, i32),
+    theme: u64,
+}
+
+impl WindowChrome {
+    fn layout_key(&self, size: (i32, i32), generation: u64) -> LayoutKey {
+        LayoutKey {
+            revision: self.chrome.layout_revision(),
+            size,
+            theme: generation,
+        }
+    }
+
+    fn layout(&mut self, theme: &crate::layout::DecoTheme, generation: u64) -> Rc<ChromeLayout> {
+        let key = self.layout_key(self.chrome.state().content_size, generation);
+        if let Some((cached, layout)) = &self.layout
+            && *cached == key
+        {
+            return Rc::clone(layout);
+        }
+        let layout = Rc::new(self.chrome.state().layout(theme));
+        self.layout = Some((key, Rc::clone(&layout)));
+        layout
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -263,6 +294,11 @@ pub fn set_pointer(
         .user_data()
         .get_or_insert(|| RefCell::new(WindowChrome::default()));
     let mut wc = cell.borrow_mut();
+    let state = wc.chrome.state();
+    if state.hovered == hovered && state.cluster_hovered == cluster_hovered && state.pressed == pressed
+    {
+        return false;
+    }
     let mut next = wc.chrome.state().clone();
     next.hovered = hovered;
     next.cluster_hovered = cluster_hovered;
@@ -272,7 +308,7 @@ pub fn set_pointer(
 
 /// The chrome's layout for `window` at its current state, in its frame space
 /// (logical px, the frame's top-left at 0,0), for hit-testing.
-pub fn layout_of(window: &Window) -> Option<ChromeLayout> {
+pub fn layout_of(window: &Window) -> Option<Rc<ChromeLayout>> {
     if !crate::window::decorated(window) {
         return None;
     }
@@ -281,18 +317,55 @@ pub fn layout_of(window: &Window) -> Option<ChromeLayout> {
         .get_or_insert(|| RefCell::new(WindowChrome::default()));
     let wc = cell.borrow();
     let size = wc.chrome.state().content_size;
-    let size = if size.0 > 1 && size.1 > 1 { crate::state::content_vec(size) } else {
+    let size = if size.0 > 1 && size.1 > 1 {
+        crate::state::content_vec(size)
+    } else {
         let size = window.geometry().size;
-        crate::layout::vec2(size.w.max(1) as f32,size.h.max(1) as f32)
+        crate::layout::vec2(size.w.max(1) as f32, size.h.max(1) as f32)
     };
-    crate::window::layout(window,size)
+    drop(wc);
+    layout_for(window, size)
+}
+
+pub fn layout_for(window: &Window, size: crate::layout::Vec2) -> Option<Rc<ChromeLayout>> {
+    let theme = crate::window::installed()?;
+    let cell = window
+        .user_data()
+        .get_or_insert(|| RefCell::new(WindowChrome::default()));
+    let mut wc = cell.borrow_mut();
+    let size = (size.x as i32, size.y as i32);
+    let generation = crate::window::generation();
+    let key = wc.layout_key(size, generation);
+    if let Some((cached, layout)) = &wc.layout
+        && *cached == key
+    {
+        return Some(Rc::clone(layout));
+    }
+    refresh(&mut wc.chrome, window, Size::from(size));
+    Some(wc.layout(&theme.deco, generation))
+}
+
+pub fn action_tip(
+    window: &Window,
+    revision: u64,
+    index: usize,
+) -> Option<(crate::layout::Rect, String)> {
+    let layout = layout_of(window)?;
+    let cell = window.user_data().get::<RefCell<WindowChrome>>()?;
+    let wc = cell.borrow();
+    let actions = &wc.chrome.state().actions;
+    if actions.revision != revision {
+        return None;
+    }
+    let item = actions.items.get(index)?;
+    let rect = layout.action_buttons.iter().find(|(i, _)| *i == index)?.1;
+    Some((rect, item.tooltip.clone()))
 }
 
 fn ensure_ids<const N: usize>(slot: &mut Option<[Id; N]>) -> [Id; N] {
     slot.get_or_insert_with(|| std::array::from_fn(|_| Id::new()))
         .clone()
 }
-
 fn piece<R>(
     renderer: &mut R,
     id: Id,
@@ -375,7 +448,7 @@ where
     };
     let mut wc = cell.borrow_mut();
     let state = refresh(&mut wc.chrome, window, content_size);
-    let layout = state.layout(deco);
+    let layout = wc.layout(deco, crate::window::generation());
     let s = scale as f32;
     let extents = DecoExtents::of(deco);
 
@@ -622,4 +695,43 @@ where
         }
     }
     out
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    #[test]
+    fn layout_cache_survives_hover_and_invalidates_for_geometry() {
+        let theme = crate::layout::presets::mac(crate::layout::Mode::Light);
+        let mut chrome = WindowChrome::default();
+        let state = ChromeState {
+            title: "Demo".into(),
+            content_size: (640, 480),
+            ..Default::default()
+        };
+        chrome.chrome.update(state.clone(), 1);
+        let first = chrome.layout(&theme, 1);
+        assert!(Rc::ptr_eq(&first, &chrome.layout(&theme, 1)));
+        let mut hovered = state.clone();
+        hovered.hovered = Some(CaptionButton::Close);
+        chrome.chrome.update(hovered, 1);
+        assert!(Rc::ptr_eq(&first, &chrome.layout(&theme, 1)));
+        let mut resized = state;
+        resized.content_size.0 = 800;
+        chrome.chrome.update(resized, 1);
+        let second = chrome.layout(&theme, 1);
+        assert!(!Rc::ptr_eq(&first, &second));
+        let mut renamed = chrome.chrome.state().clone();
+        renamed.title = "Renamed".into();
+        chrome.chrome.update(renamed, 1);
+        let third = chrome.layout(&theme, 1);
+        assert!(!Rc::ptr_eq(&second, &third));
+        let mut actions = chrome.chrome.state().clone();
+        actions.actions.revision = 1;
+        chrome.chrome.update(actions, 1);
+        let fourth = chrome.layout(&theme, 1);
+        assert!(!Rc::ptr_eq(&third, &fourth));
+        assert!(!Rc::ptr_eq(&fourth, &chrome.layout(&theme, 2)));
+    }
 }

@@ -138,7 +138,9 @@ impl ChromeTheme {
             menu_side: design::MenuSide::default(),
             band: Default::default(),
             captions: Default::default(),
-            action_style: dictionary.style.unwrap_or_else(|| toolkit::theme::Theme::embedded().style()),
+            action_style: dictionary
+                .style
+                .unwrap_or_else(|| toolkit::theme::Theme::embedded().style()),
             action_stroke: toolkit::icons::DEFAULT_STROKE,
             tokens: TokenSource::Prepared,
             palette: Palette::from_dictionary(dictionary),
@@ -171,7 +173,10 @@ impl ChromeTheme {
             menu_side: design::MenuSide::default(),
             band: Default::default(),
             captions: Default::default(),
-            action_style: design.dictionary().style.unwrap_or_else(|| toolkit::theme::Theme::embedded().style()),
+            action_style: design
+                .dictionary()
+                .style
+                .unwrap_or_else(|| toolkit::theme::Theme::embedded().style()),
             action_stroke: toolkit::icons::DEFAULT_STROKE,
             tokens,
             palette,

@@ -2347,24 +2347,40 @@ mod numeric_tests {
             }
         }
         for value in design::TitleAlign::ALL {
-            h.get_all_by_label(&label(value.label_id())).nth(if value == design::TitleAlign::Auto { 0 } else { 1 }).unwrap().click();
+            h.get_all_by_label(&label(value.label_id()))
+                .nth(if value == design::TitleAlign::Auto {
+                    0
+                } else {
+                    1
+                })
+                .unwrap()
+                .click();
             h.run();
-            assert_eq!(h.state().title_align,value.name());
+            assert_eq!(h.state().title_align, value.name());
         }
         for value in design::ActionsPlace::ALL {
-            h.get_all_by_label(&label(value.label_id())).last().unwrap().click();
+            h.get_all_by_label(&label(value.label_id()))
+                .last()
+                .unwrap()
+                .click();
             h.run();
-            assert_eq!(h.state().actions_place,value.name());
+            assert_eq!(h.state().actions_place, value.name());
         }
         for value in design::ActionsAlign::ALL {
-            h.get_all_by_label(&label(value.label_id())).nth(2).unwrap().click();
+            h.get_all_by_label(&label(value.label_id()))
+                .nth(2)
+                .unwrap()
+                .click();
             h.run();
-            assert_eq!(h.state().actions_align,value.name());
+            assert_eq!(h.state().actions_align, value.name());
         }
         for value in design::CaptionSide::ALL {
-            h.get_all_by_label(&label(value.label_id())).last().unwrap().click();
+            h.get_all_by_label(&label(value.label_id()))
+                .last()
+                .unwrap()
+                .click();
             h.run();
-            assert_eq!(h.state().captions,value.name());
+            assert_eq!(h.state().captions, value.name());
         }
     }
 

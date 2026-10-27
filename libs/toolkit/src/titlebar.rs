@@ -34,6 +34,33 @@ fn maximized(ui: &Ui) -> bool {
     ui.input(|i| i.viewport().maximized.unwrap_or(false))
 }
 
+fn free_gaps(bar: Rect, occupied: &[Rect]) -> Vec<Rect> {
+    let mut occupied: Vec<_> = occupied
+        .iter()
+        .map(|rect| rect.intersect(bar))
+        .filter(|rect| rect.width() > 0.0)
+        .collect();
+    occupied.sort_by(|a, b| a.left().total_cmp(&b.left()));
+    let mut left = bar.left();
+    let mut gaps = Vec::new();
+    for rect in occupied {
+        if left < rect.left() {
+            gaps.push(Rect::from_min_max(
+                pos2(left, bar.top()),
+                pos2(rect.left(), bar.bottom()),
+            ));
+        }
+        left = left.max(rect.right());
+    }
+    if left < bar.right() {
+        gaps.push(Rect::from_min_max(
+            pos2(left, bar.top()),
+            bar.right_bottom(),
+        ));
+    }
+    gaps
+}
+
 /// The title bar's height: 32 pt in Pro, 38 in Studio and Classic, one
 /// control plus an item gap above and below in the hue schemes.
 pub fn height(ui: &Ui) -> f32 {
@@ -155,7 +182,8 @@ pub fn show<S>(
     show_with(ui, title, icon, registry, state, strings, &mut [])
 }
 
-/// [`show`] with a group of `controls` in the selected actions alignment. The ids of commands run from the controls join the menus'.
+/// [`show`] with controls in the selected actions alignment. Commands run
+/// from the controls join the menus'.
 pub fn show_with<S>(
     ui: &mut Ui,
     title: &str,
@@ -172,73 +200,223 @@ pub fn show_with<S>(
     let server = chrome.decorations == Decorations::Server;
     request_decorations(ui.ctx(), server);
     let mut fired = Vec::new();
+    let height = if server
+        && controls.is_empty()
+        && crate::menu::effective(ui.ctx()) == design::MenuStyle::Titlebar
+    {
+        0.0
+    } else {
+        m.title_bar_height
+    };
     let panel = egui::Panel::top("toolkit-titlebar")
-        .exact_size(if server && controls.is_empty() && crate::menu::effective(ui.ctx()) == design::MenuStyle::Titlebar { 0.0 } else { m.title_bar_height })
+        .exact_size(height)
         .frame(Frame::new().fill(p.chrome));
     panel.show(ui, |ui| {
-        let bar = ui.max_rect();
         use design::title_band::{Alignment, Group};
-        let drag = (!server).then(|| ui.interact(bar, ui.scope_id().with("titlebar-drag"), Sense::click_and_drag()));
+
+        let bar = ui.max_rect();
         let form = crate::menu::effective(ui.ctx());
-        let mark = if !server && icon.is_some() { m.mark + m.mark_gap } else { 0.0 };
-        let menu_width = match form {
-            design::MenuStyle::Bar => registry.model(ui.ctx(), state, strings).iter().map(|menu| {
-                ui.painter().layout_no_wrap(menu.title.clone(), Chrome::menu_font(ui.style()), p.text).size().x
-                    + 2.0 * m.menu_title_padding.x
-            }).sum(),
+        let mark = if !server {
+            m.mark + m.mark_gap
+        } else {
+            0.0
+        };
+        let menu_width: f32 = match form {
+            design::MenuStyle::Bar => registry
+                .model(ui.ctx(), state, strings)
+                .iter()
+                .map(|menu| {
+                    ui.painter()
+                        .layout_no_wrap(menu.title.clone(), Chrome::menu_font(ui.style()), p.text)
+                        .size()
+                        .x
+                        + 2.0 * m.menu_title_padding.x
+                })
+                .sum(),
             design::MenuStyle::Button => chrome.style.icon_button as f32,
             design::MenuStyle::Titlebar => 0.0,
         };
-        let control_width = |control: &Control<'_>| match control {
-            Control::Combo { .. } => chrome.style.title_combo_max_width as f32,
-            Control::Icon { .. } => chrome.style.icon_button as f32,
-            Control::Link { command, .. } => registry.get(command)
-                .map_or(0.0, |c| Link::width(ui, &crate::action::label_text(strings, c.label))),
-        } + chrome.style.title_control_spacing as f32;
-        let actions_width: f32 = controls.iter().map(control_width).sum::<f32>()
-            + if controls.iter().any(|control| matches!(control,Control::Link { .. })) { chrome.style.title_link_room as f32 } else { 0.0 };
-        let actions_min: f32 = controls.iter().filter(|c| match c {
-            Control::Icon { command, .. } => ::icons::standard(command),
-            _ => false,
-        }).map(control_width).sum();
-        let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(m.title_size));
-        let title_width = if server || title.is_empty() { 0.0 } else {
-            ui.painter().layout_no_wrap(title.into(), font, p.text_dim).size().x + 2.0 * m.title_gap
+        let control_width = |control: &Control<'_>| {
+            let width = match control {
+                Control::Combo { .. } => chrome.style.title_combo_max_width as f32,
+                Control::Icon { .. } => chrome.style.icon_button as f32,
+                Control::Link { command, .. } => registry.get(command).map_or(0.0, |c| {
+                    Link::width(ui, &crate::action::label_text(strings, c.label))
+                }),
+            };
+            width + chrome.style.title_control_spacing as f32
         };
-        let captions = if server { 0.0 } else { 3.0 * m.caption_width };
-        let menu_width = menu_width + mark;
-        let groups = design::title_band::layout(bar.width(), &[
-            Group { preferred: captions, minimum: captions, align: chrome.captions.alignment(Alignment::Right), shrink: None, order: 3 },
-            Group { preferred: menu_width, minimum: menu_width, align: chrome.menu_side.alignment(), shrink: None, order: 0 },
-            Group { preferred: actions_width, minimum: actions_min, align: chrome.band.actions.alignment(), shrink: Some(1), order: 2 },
-            Group { preferred: title_width, minimum: 0.0, align: chrome.band.title.alignment(chrome.band.style), shrink: Some(0), order: 1 },
-        ]);
-        let group = |i: usize| Rect::from_min_size(pos2(bar.left() + groups[i].x, bar.top()), vec2(groups[i].width, bar.height()));
-        let menu = group(1);
+        let mut actions_width: f32 = controls.iter().map(control_width).sum();
+        if controls
+            .iter()
+            .any(|control| matches!(control, Control::Link { .. }))
+        {
+            actions_width += chrome.style.title_link_room as f32;
+        }
+        let actions_min: f32 = controls
+            .iter()
+            .filter(|c| matches!(c, Control::Icon { command, .. } if ::icons::standard(command)))
+            .map(control_width)
+            .sum();
+        let title_align = chrome
+            .band
+            .title
+            .alignment(chrome.band.style.title_alignment());
+        let legacy_center = chrome.band.title == design::TitleAlign::Auto
+            && title_align == Alignment::Center;
+        let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(m.title_size));
+        let title_width = if server || title.is_empty() {
+            0.0
+        } else {
+            ui.painter()
+                .layout_no_wrap(title.into(), font, p.text_dim)
+                .size()
+                .x
+                + 2.0 * m.title_gap
+                + if legacy_center {
+                    m.title_bar_margin
+                } else {
+                    0.0
+                }
+        };
+        let captions = if server {
+            0.0
+        } else {
+            3.0 * m.caption_width
+        };
+        let caption_align = chrome.captions.alignment(Alignment::Right);
+        let menu_align = chrome.menu_side.alignment();
+        let actions_align = chrome.band.actions.alignment();
+        let menu_pad = if menu_width + mark > 0.0 && menu_align != Alignment::Center {
+            m.title_bar_margin
+        } else {
+            0.0
+        };
+        let actions_pad = if controls.is_empty() || actions_align == Alignment::Center {
+            0.0
+        } else if !server && actions_align == caption_align {
+            m.caption_gap
+        } else {
+            m.title_bar_margin
+        };
+        let groups = design::title_band::layout(
+            bar.width(),
+            &[
+                Group {
+                    preferred: captions,
+                    minimum: captions,
+                    align: caption_align,
+                    shrink: None,
+                    order: 3,
+                },
+                Group {
+                    preferred: menu_width + mark + menu_pad,
+                    minimum: menu_width + mark + menu_pad,
+                    align: menu_align,
+                    shrink: None,
+                    order: 0,
+                },
+                Group {
+                    preferred: actions_width + actions_pad,
+                    minimum: actions_min + actions_pad,
+                    align: actions_align,
+                    shrink: Some(1),
+                    order: 2,
+                },
+                Group {
+                    preferred: title_width,
+                    minimum: 0.0,
+                    align: title_align,
+                    shrink: Some(0),
+                    order: 1,
+                },
+            ],
+        );
+        let group = |i: usize| {
+            Rect::from_min_size(
+                pos2(bar.left() + groups[i].x, bar.top()),
+                vec2(groups[i].width, bar.height()),
+            )
+        };
+        let drag: Vec<_> = if server {
+            Vec::new()
+        } else {
+            free_gaps(bar, &[group(0), group(1), group(2), group(3)])
+                .into_iter()
+                .enumerate()
+                .map(|(index, gap)| {
+                    ui.interact(
+                        gap,
+                        ui.scope_id().with(("titlebar-drag", index)),
+                        Sense::click_and_drag(),
+                    )
+                })
+                .collect()
+        };
+        let mut menu = group(1);
+        if menu_align == Alignment::Left {
+            menu.min.x += menu_pad;
+        } else if menu_align == Alignment::Right {
+            menu.max.x -= menu_pad;
+        }
+        let anchor = if form == design::MenuStyle::Button {
+            let rect = Rect::from_min_size(menu.min, vec2(menu_width, menu.height()));
+            menu.min.x += menu_width;
+            menu_button_at(ui, rect)
+        } else {
+            None
+        };
         if mark > 0.0 && let Some(icon) = icon {
-            let rect = Rect::from_center_size(pos2(menu.left() + m.mark / 2.0, bar.center().y), vec2(m.mark,m.mark));
+            let at = pos2(menu.left(), bar.center().y - m.mark / 2.0);
+            let rect = Rect::from_min_size(at, vec2(m.mark, m.mark))
+                .round_to_pixels(ui.pixels_per_point());
             icons::image_of(ui.ctx(), icon, m.mark, p.icon).paint_at(ui, rect);
         }
-        let room = Rect::from_min_max(pos2(menu.left() + mark, bar.top()), menu.right_bottom());
-        let anchor = if form == design::MenuStyle::Button { menu_button_at(ui, room) } else { None };
-        menus(ui, room, registry, state, strings, anchor, &mut fired);
-        let actions = group(2);
-        let inset = chrome.style.title_control_spacing as f32 / 2.0;
-        right_group(ui, controls, registry, state, strings, actions.left() - inset, actions.right() - inset, &mut fired);
+        menu.min.x += mark;
+        menus(ui, menu, registry, state, strings, anchor, &mut fired);
+        let mut actions = group(2);
+        if actions_align == Alignment::Left {
+            actions.min.x += actions_pad;
+        } else if actions_align == Alignment::Right {
+            actions.max.x -= actions_pad;
+        }
+        right_group(
+            ui,
+            controls,
+            registry,
+            state,
+            strings,
+            actions.left(),
+            actions.right(),
+            &mut fired,
+        );
         if !server {
             let order = if chrome.captions == CaptionSide::Left {
                 [Caption::Close, Caption::Minimize, Caption::Maximize]
-            } else { [Caption::Minimize, Caption::Maximize, Caption::Close] };
+            } else {
+                [Caption::Minimize, Caption::Maximize, Caption::Close]
+            };
             for (i, caption) in order.into_iter().enumerate() {
-                let rect = Rect::from_min_size(pos2(group(0).left() + i as f32 * m.caption_width, bar.top()), vec2(m.caption_width,bar.height()));
+                let rect = Rect::from_min_size(
+                    pos2(group(0).left() + i as f32 * m.caption_width, bar.top()),
+                    vec2(m.caption_width, bar.height()),
+                );
                 caption_button(ui, rect, caption, &chrome);
             }
             let slot = group(3);
-            window_title(ui, &chrome, title, slot, slot.left() + m.title_gap, slot.right() - m.title_gap);
+            window_title(
+                ui,
+                &chrome,
+                title,
+                slot,
+                slot.left() + m.title_gap,
+                slot.right() - m.title_gap,
+            );
         }
-        if let Some(drag) = drag {
+        for drag in drag {
             if drag.double_clicked() {
-                ui.ctx().send_viewport_cmd(ViewportCommand::Maximized(!maximized(ui)));
+                ui.ctx()
+                    .send_viewport_cmd(ViewportCommand::Maximized(!maximized(ui)));
             } else if drag.drag_started_by(egui::PointerButton::Primary) {
                 ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
             }
@@ -572,7 +750,12 @@ fn window_title(ui: &Ui, chrome: &Chrome, title: &str, bar: Rect, left: f32, rig
         painter.layout_no_wrap(title.to_owned(), font.clone(), chrome.palette.text_dim);
     let width = galley.size().x;
     let x = if width <= room {
-        let centre = bar.center().x;
+        let margin = if chrome.band.title == design::TitleAlign::Auto {
+            chrome.metrics.title_bar_margin
+        } else {
+            0.0
+        };
+        let centre = (bar.left() + margin + bar.right()) / 2.0;
         (centre - width / 2.0).clamp(left, right - width)
     } else if room > crate::chrome::Chrome::of(ui.ctx()).style.title_min_room as f32 {
         let mut job = LayoutJob::simple_singleline(title.to_owned(), font, chrome.palette.text_dim);

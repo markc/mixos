@@ -245,6 +245,7 @@ pub fn set_service(ctx: &Context, service: Option<&str>) {
         changed
     });
     if changed {
+        crate::titlebar::hosting::registered(ctx);
         ctx.request_repaint();
     }
 }
@@ -253,6 +254,13 @@ pub fn set_service(ctx: &Context, service: Option<&str>) {
 struct MenuService {
     app: String,
     service: Option<String>,
+}
+
+/// Flush title bar invalidations through the app's own Bus publisher.
+pub fn publish_titlebar(ctx: &Context, publish: impl FnOnce(&str, Vec<Value>, u64)) {
+    if let Some((topic, body)) = crate::titlebar::hosting::take_changed(ctx) {
+        publish(&topic, vec![body], 0);
+    }
 }
 
 fn service_key() -> egui::Id {

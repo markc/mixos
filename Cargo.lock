@@ -8669,6 +8669,7 @@ dependencies = [
  "protocols",
  "slots",
  "smithay",
+ "tracing",
  "ui",
  "uuid",
  "world",

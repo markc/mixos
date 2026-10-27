@@ -638,11 +638,19 @@ fn window_command_unknown_fields_are_refused_by_name() {
 #[test]
 fn step_eight_window_commands_parse_and_refuse_by_field() {
     assert_eq!(
-        parse_window_command("comp.window.action", &json!({"id":7,"generation":3,"command":"file.save"})),
-        Ok(WindowCommand::Op(WindowOp::Action { id:7,generation:3,command:"file.save".into() }))
+        parse_window_command(
+            "comp.window.action",
+            &json!({"id":7,"generation":3,"command":"file.save"})
+        ),
+        Ok(WindowCommand::Op(WindowOp::Action {
+            id: 7,
+            generation: 3,
+            command: "file.save".into()
+        }))
     );
     for args in [
-        json!({"id":7,"generation":3}), json!({"id":7,"command":"file.save"}),
+        json!({"id":7,"generation":3}),
+        json!({"id":7,"command":"file.save"}),
         json!({"id":7,"generation":3,"command":""}),
         json!({"id":7,"generation":3,"command":"file.save","enabled":true}),
     ] {

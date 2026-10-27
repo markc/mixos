@@ -19,6 +19,7 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+tracing.workspace = true
 decor = { workspace = true }
 dispatcher = { workspace = true }
 drivers = { workspace = true }

@@ -652,6 +652,9 @@ impl Shell {
 
     /// One frame's logic; it runs even while the window is hidden.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        drive::publish_titlebar(ctx, |topic, bodies, lost| {
+            self.bus.publish(topic, bodies, lost);
+        });
         for answer in drive::logic(ctx) {
             self.bus.reply(answer.id, answer.rc, answer.body);
         }

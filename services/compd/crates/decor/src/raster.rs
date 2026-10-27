@@ -9,9 +9,7 @@
 //! This is the frame shader's maths run once per state change instead of once
 //! per frame: chrome repaints only when what it shows changes.
 
-use crate::layout::{
-    ButtonShape, CaptionButton, ChromeLayout, DecoTheme, GlyphPolicy, Rect, Srgba,
-};
+use crate::layout::{ButtonShape, CaptionButton, ChromeLayout, DecoTheme, GlyphPolicy, Rect, Srgba};
 
 use crate::state::ChromeState;
 use crate::text::TextMask;
@@ -21,25 +19,51 @@ thread_local! {
     static ICONS: std::cell::RefCell<std::collections::HashMap<IconKey, std::rc::Rc<Image>>> = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
-pub fn icon_image(icon: icons::Icon, size: u32, colour: Srgba, stroke: f32) -> Option<std::rc::Rc<Image>> {
-    let q = |v: f32| (v.clamp(0.0,1.0) * 255.0).round() as u8;
-    let rgba = [q(colour.r),q(colour.g),q(colour.b),q(colour.a)];
-    let key = (icon,size,rgba,stroke.to_bits());
+pub fn icon_image(
+    icon: icons::Icon,
+    size: u32,
+    colour: Srgba,
+    stroke: f32,
+) -> Option<std::rc::Rc<Image>> {
+    let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let rgba = [q(colour.r), q(colour.g), q(colour.b), q(colour.a)];
+    let key = (icon, size, rgba, stroke.to_bits());
     ICONS.with_borrow_mut(|cache| {
-        if let Some(image) = cache.get(&key) { return Some(image.clone()); }
-        let [r,g,b,a] = rgba;
-        let svg = icon.svg().replace("currentColor", &format!("#{r:02x}{g:02x}{b:02x}{a:02x}"))
+        if let Some(image) = cache.get(&key) {
+            return Some(image.clone());
+        }
+        let [r, g, b, a] = rgba;
+        let svg = icon
+            .svg()
+            .replace("currentColor", &format!("#{r:02x}{g:02x}{b:02x}{a:02x}"))
             .replace("stroke-width=\"2\"", &format!("stroke-width=\"{stroke}\""));
-        let tree = resvg::usvg::Tree::from_str(&svg,&resvg::usvg::Options::default()).ok()?;
-        let mut pixmap = resvg::tiny_skia::Pixmap::new(size,size)?;
-        let transform = resvg::tiny_skia::Transform::from_scale(size as f32 / tree.size().width(), size as f32 / tree.size().height());
-        resvg::render(&tree,transform,&mut pixmap.as_mut());
+        let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default()).ok()?;
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size)?;
+        let transform = resvg::tiny_skia::Transform::from_scale(
+            size as f32 / tree.size().width(),
+            size as f32 / tree.size().height(),
+        );
+        resvg::render(&tree, transform, &mut pixmap.as_mut());
         let image = std::rc::Rc::new(Image {
-            width:size, height:size, pixels:pixmap.data().chunks_exact(4)
-                .map(|p| [p[0] as f32/255.0,p[1] as f32/255.0,p[2] as f32/255.0,p[3] as f32/255.0]).collect(),
+            width: size,
+            height: size,
+            pixels: pixmap
+                .data()
+                .chunks_exact(4)
+                .map(|p| {
+                    [
+                        p[0] as f32 / 255.0,
+                        p[1] as f32 / 255.0,
+                        p[2] as f32 / 255.0,
+                        p[3] as f32 / 255.0,
+                    ]
+                })
+                .collect(),
         });
-        if cache.len() >= 256 { cache.clear(); }
-        cache.insert(key,image.clone());
+        if cache.len() >= 256 {
+            cache.clear();
+        }
+        cache.insert(key, image.clone());
         Some(image)
     })
 }
@@ -274,29 +298,59 @@ pub fn titlebar(
     }
 
     for &(index, rect) in &layout.action_buttons {
-        let Some(item) = state.actions.items.get(index) else { continue; };
-        let Some(icon) = icons::Icon::from_name(&item.icon) else { continue; };
-        let button = CaptionButton::Action(state.actions.revision,index);
+        let Some(item) = state.actions.items.get(index) else {
+            continue;
+        };
+        let Some(icon) = icons::Icon::from_name(&item.icon) else {
+            continue;
+        };
+        let button = CaptionButton::Action(state.actions.revision, index);
         let colours = theme.buttons.colors(button);
         let bstate = state.button_state(button);
         if item.enabled && (item.toggled || bstate != crate::layout::ButtonState::Idle) {
-            let fill = if item.toggled { colours.fill_pressed } else { colours.fill(bstate,focus) };
-            for y in (rect.y * scale).max(0.0) as u32..((rect.y + rect.h)*scale).min(h as f32) as u32 {
-                for x in (rect.x * scale).max(0.0) as u32..((rect.x + rect.w)*scale).min(w as f32) as u32 {
-                    img.over(x,y,premul(fill,1.0));
+            let fill = if item.toggled {
+                colours.fill_pressed
+            } else {
+                colours.fill(bstate, focus)
+            };
+            for y in (rect.y * scale).max(0.0) as u32..((rect.y + rect.h) * scale).min(h as f32) as u32 {
+                for x in
+                    (rect.x * scale).max(0.0) as u32..((rect.x + rect.w) * scale).min(w as f32) as u32
+                {
+                    img.over(x, y, premul(fill, 1.0));
                 }
             }
         }
-        let size = state.action_style.map_or(rect.h * 0.5, |style| style.icon_width as f32).min(rect.h).min(rect.w);
-        let tint = if item.enabled { theme.title_text(focus) } else { theme.colors.title_text_unfocused };
-        let stroke = if state.action_stroke > 0.0 { state.action_stroke } else { toolkit::icons::DEFAULT_STROKE };
-        let Some(icon) = icon_image(icon,(size * scale).round().max(1.0) as u32,tint,stroke) else { continue; };
-        let (ox,oy) = (((rect.x + rect.w/2.0)*scale - icon.width as f32/2.0).round() as i32,
-            ((rect.y + rect.h/2.0)*scale - icon.height as f32/2.0).round() as i32);
-        for y in 0..icon.height { for x in 0..icon.width {
-            let (dx,dy) = (ox+x as i32,oy+y as i32);
-            if dx >= 0 && dy >= 0 && dx < w as i32 && dy < h as i32 { img.over(dx as u32,dy as u32,icon.at(x,y)); }
-        }}
+        let size = state
+            .action_style
+            .map_or(rect.h * 0.5, |style| style.icon_width as f32)
+            .min(rect.h)
+            .min(rect.w);
+        let tint = if item.enabled {
+            theme.title_text(focus)
+        } else {
+            theme.colors.title_text_unfocused
+        };
+        let stroke = if state.action_stroke > 0.0 {
+            state.action_stroke
+        } else {
+            toolkit::icons::DEFAULT_STROKE
+        };
+        let Some(icon) = icon_image(icon, (size * scale).round().max(1.0) as u32, tint, stroke) else {
+            continue;
+        };
+        let (ox, oy) = (
+            ((rect.x + rect.w / 2.0) * scale - icon.width as f32 / 2.0).round() as i32,
+            ((rect.y + rect.h / 2.0) * scale - icon.height as f32 / 2.0).round() as i32,
+        );
+        for y in 0..icon.height {
+            for x in 0..icon.width {
+                let (dx, dy) = (ox + x as i32, oy + y as i32);
+                if dx >= 0 && dy >= 0 && dx < w as i32 && dy < h as i32 {
+                    img.over(dx as u32, dy as u32, icon.at(x, y));
+                }
+            }
+        }
     }
     if let Some(mask) = title {
         let (ox, oy) = title_origin(theme, layout, mask, scale);
@@ -393,13 +447,16 @@ mod tests {
     #[test]
     fn lucide_rasters_are_tinted_premultiplied_and_cached() {
         let colour = Srgba::new(0.8,0.2,0.1,0.5);
-        let a = icon_image(icons::Icon::Sun,20,colour,1.5).unwrap();
-        let b = icon_image(icons::Icon::Sun,20,colour,1.5).unwrap();
-        assert!(std::rc::Rc::ptr_eq(&a,&b));
-        let pixel = a.pixels.iter().find(|p|p[3] > 0.1).unwrap();
+        let a = icon_image(icons::Icon::Sun, 20, colour, 1.5).unwrap();
+        let b = icon_image(icons::Icon::Sun, 20, colour, 1.5).unwrap();
+        assert!(std::rc::Rc::ptr_eq(&a, &b));
+        let pixel = a.pixels.iter().find(|p| p[3] > 0.1).unwrap();
         assert!(pixel[0] > pixel[1] && pixel[1] >= pixel[2]);
-        assert!(a.pixels.iter().all(|p|p[..3].iter().all(|c|*c <= p[3])));
-        assert!(!std::rc::Rc::ptr_eq(&a,&icon_image(icons::Icon::Sun,20,Srgba::new(0.1,0.2,0.8,1.0),1.5).unwrap()));
+        assert!(a.pixels.iter().all(|p| p[..3].iter().all(|c| *c <= p[3])));
+        assert!(!std::rc::Rc::ptr_eq(
+            &a,
+            &icon_image(icons::Icon::Sun, 20, Srgba::new(0.1, 0.2, 0.8, 1.0), 1.5).unwrap()
+        ));
     }
     use crate::layout::{ChromeStyle, Mode, Scheme, presets, vec2};
 

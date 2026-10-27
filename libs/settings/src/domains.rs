@@ -169,20 +169,27 @@ fn compare(old: &Effective, new: &Effective) -> ChangePlan {
     let style = old.style != new.style;
     let window_style = design::WindowStyle::resolve(&old.window_style)
         != design::WindowStyle::resolve(&new.window_style);
-    let band_title_align = design::TitleAlign::resolve(&old.title_align) != design::TitleAlign::resolve(&new.title_align);
-    let band_actions_align = design::ActionsAlign::resolve(&old.actions_align) != design::ActionsAlign::resolve(&new.actions_align);
-    let band_actions_place = design::ActionsPlace::resolve(&old.actions_place) != design::ActionsPlace::resolve(&new.actions_place);
+    let band_title_align = design::TitleAlign::resolve(&old.title_align)
+        != design::TitleAlign::resolve(&new.title_align);
+    let band_actions_align = design::ActionsAlign::resolve(&old.actions_align)
+        != design::ActionsAlign::resolve(&new.actions_align);
+    let band_actions_place = design::ActionsPlace::resolve(&old.actions_place)
+        != design::ActionsPlace::resolve(&new.actions_place);
     let menus = design::MenuStyle::resolve(&old.menu_style)
         != design::MenuStyle::resolve(&new.menu_style)
         || design::MenuSide::resolve(&old.menu_side) != design::MenuSide::resolve(&new.menu_side);
     let framing = old.decorations != new.decorations
-        || design::CaptionSide::resolve(&old.caption_side) != design::CaptionSide::resolve(&new.caption_side)
+        || design::CaptionSide::resolve(&old.caption_side)
+            != design::CaptionSide::resolve(&new.caption_side)
         || window_style
         || band_title_align
         || band_actions_place
         || band_actions_align
         || menus;
-    let paint = band_actions_place || band_actions_align || band_title_align || window_style
+    let paint = band_actions_place
+        || band_actions_align
+        || band_title_align
+        || window_style
         || menus
         || style
         || old.icon_stroke != new.icon_stroke

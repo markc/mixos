@@ -256,7 +256,10 @@
 placement now defaults to <code>auto</code>: right in CSD and the style's own side in SSD.
 Unknown names are retained, and defaults remain omitted from full and compact
 data, so old seals still verify. Explicit right remains right. The appearance
-portal keeps its independent effective right default for older readers.</p>
+portal keeps its independent effective right omission rule. This preserves
+stored seals, not full reader compatibility: an omitted <code>Effective.caption_side</code>
+now reads as <code>auto</code>, and older appearance projection readers cannot parse
+<code>center</code>. Update those readers before selecting centre captions.</p>
 <p><code>appearance.menu_style</code> and <code>appearance.menu_side</code> select the session's menu
 form and button position. Their design registries supply names and Prefs labels.
 Unknown plain names survive round-trips and render as the defaults, <code>bar</code> and
@@ -270,9 +273,10 @@ bytes, preserving existing seals. Store and wire schemas are unchanged.</p>
 <p>Appearance projection schema 2 carries the effective desktop <code>caption_side</code>
 for portald's GTK settings export and session cache. Schema 1 remains readable
 with a default of <code>right</code>. <code>settings.appearance.get</code> keeps its original schema 1
-wire view, so older strict readers still work. Portald enriches that view from
+wire view, omitting caption placement. Portald enriches that view from
 the caption placement already in the same atomic snapshot, with no extra read.
-Store format unchanged.</p>
+Store format unchanged. The current projection also accepts centre; older
+projection readers only accept left and right.</p>
 <p><code>Summary.ui</code> carries the session's text scale, density and reduced motion on
 the summary's revision. Store format unchanged; <code>settings.get</code> is 0.7.0.</p>
 <p>Additive, store format unchanged: the mail options <code>email.mail.quote_on_reply</code>

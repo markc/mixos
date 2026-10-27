@@ -600,6 +600,47 @@ fn from_local_broker(command: &IncomingCommand) -> bool {
         .all(|(_, origin)| origin.eq_ignore_ascii_case("local"))
 }
 
+fn titlebar_change<'a>(command: &'a IncomingCommand, services: &[String]) -> Option<&'a str> {
+    let service = command.topic()?.strip_suffix(".ui.titlebar.changed")?;
+    (services.iter().any(|name| name == service)
+        && command.header("broker_service") == Some(service)
+        && command.header("broker_origin") == Some("local")
+        && from_local_broker(command))
+    .then_some(service)
+}
+
+async fn titlebar_read(
+    client: Arc<SupervisedClient>,
+    service: String,
+    epoch: u64,
+    subscribe: bool,
+) -> (u64, u64, String, Value, bool) {
+    let generation = client.connection_generation();
+    let subscribed = !subscribe
+        || matches!(
+            tokio::time::timeout(
+                SEND_TIMEOUT,
+                client.subscribe_topic(&format!("{service}.ui.titlebar.changed")),
+            )
+            .await,
+            Ok(Ok(()))
+        );
+    let form = if subscribed {
+        match tokio::time::timeout(
+            EVENT_TIMEOUT,
+            client.call(&service, &format!("{service}.ui.titlebar.form"), json!({})),
+        )
+        .await
+        {
+            Ok(Ok(body)) => body,
+            _ => Value::Null,
+        }
+    } else {
+        Value::Null
+    };
+    (epoch, generation, service, form, subscribed)
+}
+
 enum Connected {
     Client(Arc<SupervisedClient>, String),
     Refused(String),
@@ -824,8 +865,14 @@ async fn serve(
     let mut titlebars = Vec::<String>::new();
     let mut bars = tokio::task::JoinSet::new();
     let mut pending_titlebars = BTreeSet::new();
+    let mut dirty_titlebars = BTreeSet::new();
+    let mut subscribed_titlebars = BTreeSet::new();
     let mut titlebar_epoch = 0_u64;
-    let mut titlebar_tick = tokio::time::interval(Duration::from_millis(250));
+    // Recover lost invalidations and failed initial reads at a slow resync rate.
+    let mut titlebar_tick = tokio::time::interval_at(
+        tokio::time::Instant::now() + Duration::from_secs(30),
+        Duration::from_secs(30),
+    );
     titlebar_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut registry = RegistryRead::new();
     let mut registry_retries = 0;
@@ -857,6 +904,9 @@ async fn serve(
                 registry.cancel();
                 bars.abort_all();
                 pending_titlebars.clear();
+                subscribed_titlebars.clear();
+                dirty_titlebars = titlebars.iter().cloned().collect();
+                titlebar_tick.reset();
                 titlebar_epoch = titlebar_epoch.wrapping_add(1);
                 registry_subscription = (lifecycle_open && state == ConnState::Connected)
                     .then(|| Box::pin(registry_subscribe(Arc::clone(client), registry_mailbox.clone())));
@@ -904,7 +954,11 @@ async fn serve(
             command = incoming.recv(), if incoming_open && replies.len() < INBOUND_CAPACITY => {
                 match command {
                     Some(BoundedIncomingEvent::Command(command)) => {
-                        if let Some(wake) = lane.delivery(&command) {
+                        if let Some(service) = titlebar_change(&command, &titlebars) {
+                            if settings::native::live_generation(client) == Some(command.generation) {
+                                dirty_titlebars.insert(service.to_owned());
+                            }
+                        } else if let Some(wake) = lane.delivery(&command) {
                             notify(wake);
                         } else {
                             let routed = route(service, &command);
@@ -939,6 +993,7 @@ async fn serve(
                         }
                     }
                     Some(BoundedIncomingEvent::Overflow { dropped }) => {
+                        dirty_titlebars.extend(titlebars.iter().cloned());
                         registry_mailbox.record(format!("incoming overflow dropped={dropped}"));
                         notify(lane.publish(SettingsEvent::Lost));
                         registry.request(|| registry_read(Arc::clone(client), REGISTRY_FOLLOW_UP, registry_mailbox.clone()));
@@ -956,7 +1011,22 @@ async fn serve(
             }
             Some(message) = outbound.recv(), if sends.is_empty() => {
                 match message {
-                    Outbound::Titlebars(services) => { titlebars = services; bars.abort_all(); pending_titlebars.clear(); titlebar_epoch = titlebar_epoch.wrapping_add(1); }
+                    Outbound::Titlebars(services) => {
+                        if titlebars.is_empty() {
+                            titlebar_tick.reset();
+                        }
+                        dirty_titlebars.extend(pending_titlebars.iter().cloned());
+                        dirty_titlebars.extend(
+                            services.iter().filter(|name| !titlebars.contains(name)).cloned()
+                        );
+                        dirty_titlebars.retain(|name| services.contains(name));
+                        bars.abort_all();
+                        pending_titlebars.clear();
+                        titlebar_epoch = titlebar_epoch.wrapping_add(1);
+                        // Keep dormant subscriptions; an old unsubscribe must
+                        // not race a returning window's new subscription.
+                        titlebars = services;
+                    }
                     Outbound::WakeAfter(delay) => {
                         let delivery = delivery.clone();
                         flights.spawn(async move { tokio::time::sleep(delay).await; delivery.send(Inbound::Repaint); });
@@ -968,22 +1038,23 @@ async fn serve(
                 }
             }
             _ = titlebar_tick.tick(), if !titlebars.is_empty() && settings::native::live_generation(client).is_some() => {
-                for service in titlebars.iter().filter(|service| !pending_titlebars.contains(*service)).cloned().collect::<Vec<_>>() {
+                dirty_titlebars.extend(titlebars.iter().cloned());
+            }
+            _ = std::future::ready(()), if dirty_titlebars.iter().any(|service| !pending_titlebars.contains(service)) && settings::native::live_generation(client).is_some() => {
+                for service in dirty_titlebars.iter().filter(|service| !pending_titlebars.contains(*service)).cloned().collect::<Vec<_>>() {
+                    dirty_titlebars.remove(&service);
                     pending_titlebars.insert(service.clone());
-                    let epoch = titlebar_epoch;
-                    let client = Arc::clone(client);
-                    bars.spawn(async move {
-                        let generation = client.connection_generation();
-                        let result = tokio::time::timeout(EVENT_TIMEOUT, client.call(&service, &format!("{service}.ui.titlebar.form"), json!({}))).await;
-                        let form = match result { Ok(Ok(body)) => body, _ => Value::Null };
-                        (epoch,generation,service,form)
-                    });
+                    let subscribe = !subscribed_titlebars.contains(&service);
+                    bars.spawn(titlebar_read(Arc::clone(client), service, titlebar_epoch, subscribe));
                 }
             }
             Some(result) = bars.join_next(), if !bars.is_empty() => {
-                if let Ok((epoch,generation,service,form)) = result && epoch == titlebar_epoch {
+                if let Ok((epoch, generation, service, form, subscribed)) = result && epoch == titlebar_epoch {
                     pending_titlebars.remove(&service);
                     if titlebars.contains(&service) && settings::native::live_generation(client) == Some(generation) {
+                        if subscribed {
+                            subscribed_titlebars.insert(service.clone());
+                        }
                         let _ = delivery.send(Inbound::Titlebar { generation, service, form });
                     }
                 }
@@ -1025,6 +1096,7 @@ async fn serve(
         tracing::warn!("scene host ordered outbound drain timed out");
     }
     flights.abort_all();
+    bars.abort_all();
     replies.abort_all();
     sends.abort_all();
     deadline
@@ -1277,7 +1349,7 @@ async fn send(
     };
     if let Err(error) = result {
         match message {
-            Outbound::Titlebars(_) | Outbound::WakeAfter(_) => {},
+            Outbound::Titlebars(_) | Outbound::WakeAfter(_) => {}
             Outbound::Reply { to, command, .. } => {
                 tracing::warn!(%error, to = %to, command = %command, "scene host reply not delivered")
             }
@@ -1289,6 +1361,30 @@ async fn send(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn titlebar_changes_require_the_registered_local_publisher() {
+        let topic = "prefs.ui.titlebar.changed";
+        let mut command = incoming(
+            "",
+            topic,
+            None,
+            &[
+                ("topic", topic),
+                ("broker_service", "prefs"),
+                ("broker_origin", "local"),
+            ],
+            "{}",
+        );
+        let services = vec!["prefs".into()];
+        assert_eq!(titlebar_change(&command, &services), Some("prefs"));
+        assert_eq!(titlebar_change(&command, &[]), None);
+        command.headers.insert("broker_service".into(), "other".into());
+        assert_eq!(titlebar_change(&command, &services), None);
+        command.headers.insert("broker_service".into(), "prefs".into());
+        command.headers.insert("broker_origin".into(), "remote".into());
+        assert_eq!(titlebar_change(&command, &services), None);
+    }
 
     #[test]
     fn services_count_only_burst_keeps_inflight_read_and_converges_with_one_followup() {
@@ -1563,46 +1659,112 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires private broker; use settings_test.mix"]
     async fn settings_titlebar_property_and_registry_execution_use_the_scene_port() {
+        async fn changed(client: &SupervisedClient, revision: u64) -> u8 {
+            let topic = "prefs.ui.titlebar.changed";
+            let headers = BTreeMap::from([("name".into(), topic.into())]);
+            let wire = format!("---\ncommand: {topic}\n---\n{}", json!({"revision": revision}));
+            let (rc, _, _) = client
+                .call_with_headers_raw("noded", "topic.publish", &headers, &wire)
+                .await
+                .unwrap();
+            rc
+        }
+
+        async fn wait_bar(
+            port: &Port,
+            wake: &mut tokio_mpsc::UnboundedReceiver<()>,
+            revision: u64,
+        ) {
+            tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    while let Some(message) = port.try_recv() {
+                        if let Inbound::Titlebar { service, form, .. } = message {
+                            assert_eq!(service, "prefs");
+                            if form["bar"]["revision"] == revision {
+                                assert_eq!(form["bar"]["items"][0]["command"], "file.save");
+                                return;
+                            }
+                        }
+                    }
+                    wake.recv().await.unwrap();
+                }
+            })
+            .await
+            .unwrap();
+        }
+
         let url = std::env::var("MIXOS_NODED_URL").unwrap();
-        let app = Arc::new(SupervisedClient::connect_options("prefs",&url).connect().await.unwrap());
+        let app = Arc::new(
+            SupervisedClient::connect_options("prefs", &url)
+                .connect()
+                .await
+                .unwrap(),
+        );
         let mut requests = app.incoming().unwrap();
-        let (executed,mut runs) = tokio_mpsc::unbounded_channel();
+        let (executed, mut runs) = tokio_mpsc::unbounded_channel();
+        let revision = Arc::new(std::sync::atomic::AtomicU64::new(7));
+        let reads = Arc::new(AtomicUsize::new(0));
         let peer = Arc::clone(&app);
+        let peer_revision = Arc::clone(&revision);
+        let peer_reads = Arc::clone(&reads);
         let responder = tokio::spawn(async move {
             while let Some(request) = requests.recv().await {
                 let body = if request.command == "prefs.ui.titlebar.form" {
-                    json!({"hosted":true,"service":"prefs","bar":{"revision":7,"items":[
-                        {"command":"file.save","icon":"save","tooltip":"Save","enabled":true,"toggled":false}
-                    ]}})
+                    peer_reads.fetch_add(1, Ordering::SeqCst);
+                    json!({"hosted":true,"service":"prefs","bar":{
+                        "revision":peer_revision.load(Ordering::SeqCst),"items":[
+                            {"command":"file.save","icon":"save","tooltip":"Save","enabled":true,"toggled":false}
+                        ]
+                    }})
                 } else {
-                    if request.command == "prefs.execute" { let _ = executed.send(request.body.clone()); }
+                    if request.command == "prefs.execute" {
+                        let _ = executed.send(request.body.clone());
+                    }
                     json!({"ok":true})
                 };
-                peer.respond(&request,0,&body.to_string()).await.unwrap();
+                peer.respond(&request, 0, &body.to_string()).await.unwrap();
             }
         });
         let cache = tempfile::tempdir().unwrap();
-        let (mut port,mut wake) = menu_registry_port(&url,cache.path());
-        wait_menu_registry(&port,&mut wake,true,"action-app-first").await;
+        let (mut port, mut wake) = menu_registry_port(&url, cache.path());
+        wait_menu_registry(&port, &mut wake, true, "action-app-first").await;
         port.titlebar_services(vec!["prefs".into()]);
-        tokio::time::timeout(Duration::from_secs(10),async {
-            loop {
-                while let Some(message) = port.try_recv() {
-                    if let Inbound::Titlebar { service,form,.. } = message {
-                        assert_eq!(service,"prefs");
-                        assert_eq!(form["bar"]["revision"],7);
-                        assert_eq!(form["bar"]["items"][0]["command"],"file.save");
-                        return;
-                    }
-                }
-                wake.recv().await.unwrap();
-            }
-        }).await.unwrap();
-        assert!(port.emit("prefs","prefs.execute",json!({"id":"file.save"})));
-        let body = tokio::time::timeout(Duration::from_secs(5),runs.recv()).await.unwrap().unwrap();
-        assert_eq!(serde_json::from_str::<Value>(&body).unwrap(),json!({"id":"file.save"}));
+        wait_bar(&port, &mut wake, 7).await;
+        tokio::time::sleep(Duration::from_millis(750)).await;
+        assert_eq!(
+            reads.load(Ordering::SeqCst),
+            1,
+            "unchanged bars are not polled",
+        );
+
+        let other = SupervisedClient::connect_options("other", &url)
+            .connect()
+            .await
+            .unwrap();
+        let _ = changed(&other, 8).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(
+            reads.load(Ordering::SeqCst),
+            1,
+            "another publisher cannot invalidate prefs",
+        );
+        revision.store(8, Ordering::SeqCst);
+        assert_eq!(changed(&app, 8).await, 0);
+        wait_bar(&port, &mut wake, 8).await;
+        assert_eq!(reads.load(Ordering::SeqCst), 2);
+
+        assert!(port.emit("prefs", "prefs.execute", json!({"id":"file.save"})));
+        let body = tokio::time::timeout(Duration::from_secs(5), runs.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&body).unwrap(),
+            json!({"id":"file.save"}),
+        );
         port.finish();
         responder.abort();
+        other.close().await;
         app.close().await;
     }
 

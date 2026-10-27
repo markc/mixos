@@ -127,7 +127,7 @@ fn apply(lp: &mut Loop, window: &Window, intent: Intent) {
         }),
         Intent::Action { revision, index } => {
             if !decor::window::click_action(window, revision, index) {
-                model::warn!("window action Bus call was not queued");
+                tracing::debug!("window action is disabled, stale or unavailable");
             }
         }
         Intent::Menu => {

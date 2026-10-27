@@ -122,8 +122,9 @@ The menu, title, Action Bar and controls use the same title band layout as CSD.
 `title_align` and `caption_side` offer style default, left, centre and right;
 `actions_align` offers left, centre and right. MixOS titles centre by default.
 With `actions_place: "titlebar"`, the scene-host port reads registered,
-decorated apps' revisioned `<app>.ui.titlebar.form` properties at most four
-times per second. It draws the shared Lucide icons, enabled and toggled states,
+decorated apps' revisioned `<app>.ui.titlebar.form` properties once on hosting
+start, then on trusted `<app>.ui.titlebar.changed` notifications. A 30-second
+resync recovers lost notifications. It draws the shared Lucide icons, enabled and toggled states,
 and the existing tooltip cards. A click or
 `comp.window.action {id, generation, command}` queues `<app>.execute {id}`
 through that same port. Disabled and stale pointer actions refuse.

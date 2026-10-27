@@ -77,10 +77,18 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
         }
         None => Theme::for_context(context),
     };
-    Ok(theme.framed(decorations, captions).with_menus(
-        design::MenuStyle::resolve(&effective.menu_style),
-        design::MenuSide::resolve(&effective.menu_side),
-    ).with_band(design::title_band::Settings::from_names(&effective.title_align, &effective.actions_align, &effective.actions_place, &effective.window_style)))
+    Ok(theme
+        .framed(decorations, captions)
+        .with_menus(
+            design::MenuStyle::resolve(&effective.menu_style),
+            design::MenuSide::resolve(&effective.menu_side),
+        )
+        .with_band(design::title_band::Settings::from_names(
+            &effective.title_align,
+            &effective.actions_align,
+            &effective.actions_place,
+            &effective.window_style,
+        )))
 }
 
 /// Build the whole look from an accepted snapshot (on the worker).

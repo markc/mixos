@@ -233,7 +233,9 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
                     .is_some_and(|theme| theme.menu_style == decor::layout::MenuStyle::Titlebar),
             menu_side: decor::window::installed().map_or("left", |theme| theme.menu_side.name()),
             menu_services: decor::window::live_menu_services(),
-            actions: decor::window::ssd_enabled() && decor::window::installed().is_some_and(|theme| theme.band.place == design::ActionsPlace::Titlebar),
+            actions: decor::window::ssd_enabled()
+                && decor::window::installed()
+                    .is_some_and(|theme| theme.band.place == design::ActionsPlace::Titlebar),
         },
         // The binding filter and tables. Before the first Bus pass
         // builds the state, the profile's default table, enabled.
@@ -559,7 +561,8 @@ impl Placements {
                 visible: ident::is_drawn(window),
                 decoration,
                 menu_button: decor::window::menu_side(window).is_some(),
-                action_count: decor::render::layout_of(window).map_or(0,|layout| layout.action_buttons.len()),
+                action_count: decor::render::layout_of(window)
+                    .map_or(0, |layout| layout.action_buttons.len()),
                 fullscreen: ident::states(window).fullscreen,
                 maximized: SurfaceHandle::of_window(window)
                     .and_then(|handle| lp.inner.comp.registry.id_for_handle(&handle))

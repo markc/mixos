@@ -12,7 +12,7 @@ publish = false
 [package.metadata.mixos]
 component = "icons"
 kind = "lib"
-layer = "bus"
+layer = "core"
 contract = "none"
 
 [lints.clippy]

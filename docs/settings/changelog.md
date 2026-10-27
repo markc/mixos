@@ -15,7 +15,10 @@ Title band names add `appearance.title_align`, `appearance.actions_align` and
 placement now defaults to `auto`: right in CSD and the style's own side in SSD.
 Unknown names are retained, and defaults remain omitted from full and compact
 data, so old seals still verify. Explicit right remains right. The appearance
-portal keeps its independent effective right default for older readers.
+portal keeps its independent effective right omission rule. This preserves
+stored seals, not full reader compatibility: an omitted `Effective.caption_side`
+now reads as `auto`, and older appearance projection readers cannot parse
+`center`. Update those readers before selecting centre captions.
 
 `appearance.menu_style` and `appearance.menu_side` select the session's menu
 form and button position. Their design registries supply names and Prefs labels.
@@ -32,9 +35,10 @@ bytes, preserving existing seals. Store and wire schemas are unchanged.
 Appearance projection schema 2 carries the effective desktop `caption_side`
 for portald's GTK settings export and session cache. Schema 1 remains readable
 with a default of `right`. `settings.appearance.get` keeps its original schema 1
-wire view, so older strict readers still work. Portald enriches that view from
+wire view, omitting caption placement. Portald enriches that view from
 the caption placement already in the same atomic snapshot, with no extra read.
-Store format unchanged.
+Store format unchanged. The current projection also accepts centre; older
+projection readers only accept left and right.
 
 `Summary.ui` carries the session's text scale, density and reduced motion on
 the summary's revision. Store format unchanged; `settings.get` is 0.7.0.

@@ -579,10 +579,18 @@ impl Shell {
             _ => self.theme.clone(),
         };
         let base = match &look {
-            Some(look) => base.framed(look.decorations, design::CaptionSide::resolve(&look.captions)).with_menus(
-                design::MenuStyle::resolve(&look.menu_style),
-                design::MenuSide::resolve(&look.menu_side),
-            ).with_band(design::title_band::Settings::from_names(&look.title_align, &look.actions_align, &look.actions_place, &look.window_style)),
+            Some(look) => base
+                .framed(look.decorations, design::CaptionSide::resolve(&look.captions))
+                .with_menus(
+                    design::MenuStyle::resolve(&look.menu_style),
+                    design::MenuSide::resolve(&look.menu_side),
+                )
+                .with_band(design::title_band::Settings::from_names(
+                    &look.title_align,
+                    &look.actions_align,
+                    &look.actions_place,
+                    &look.window_style,
+                )),
             None => base,
         };
         // Desktop values only; per-app text overrides are not in Summary.
@@ -616,6 +624,9 @@ impl Shell {
 
     /// One frame's logic; it runs even while the window is hidden.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        drive::publish_titlebar(ctx, |topic, bodies, lost| {
+            self.bus.publish(topic, bodies, lost);
+        });
         for answer in drive::logic(ctx) {
             self.bus.reply(answer.id, answer.rc, answer.body);
         }
