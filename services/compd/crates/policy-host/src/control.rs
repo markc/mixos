@@ -707,42 +707,6 @@ fn untiled_by_unmaximize(
     state == WindowState::Maximized && !enabled && constrained_before && !constrained_after
 }
 
-#[cfg(test)]
-mod unmaximize_tests {
-    use super::{WindowState, untiled_by_unmaximize};
-
-    #[test]
-    fn unmaximize_of_a_tile_reports_a_change() {
-        assert!(untiled_by_unmaximize(
-            WindowState::Maximized,
-            false,
-            true,
-            false
-        ));
-        // Already floating: nothing changed.
-        assert!(!untiled_by_unmaximize(
-            WindowState::Maximized,
-            false,
-            false,
-            false
-        ));
-        // Maximise (enable) keeps the maximised-flag comparison.
-        assert!(!untiled_by_unmaximize(
-            WindowState::Maximized,
-            true,
-            true,
-            true
-        ));
-        // Fullscreen is untouched by this rule.
-        assert!(!untiled_by_unmaximize(
-            WindowState::Fullscreen,
-            false,
-            true,
-            false
-        ));
-    }
-}
-
 /// The requested (not yet committed) state: compd's maximise record, the
 /// engine's fullscreen record.
 fn requested(lp: &Loop, id: SurfaceId, state: WindowState) -> bool {
@@ -2046,4 +2010,40 @@ fn settle(lp: &mut Loop, prefer: Option<SurfaceId>) {
 /// Whether a window would be drawn now (through the draw's own predicate).
 pub fn drawn(lp: &Loop, window: &Window) -> bool {
     window.visible(lp) && protocols::window::ident::is_drawn(window)
+}
+
+#[cfg(test)]
+mod unmaximize_tests {
+    use super::{WindowState, untiled_by_unmaximize};
+
+    #[test]
+    fn unmaximize_of_a_tile_reports_a_change() {
+        assert!(untiled_by_unmaximize(
+            WindowState::Maximized,
+            false,
+            true,
+            false
+        ));
+        // Already floating: nothing changed.
+        assert!(!untiled_by_unmaximize(
+            WindowState::Maximized,
+            false,
+            false,
+            false
+        ));
+        // Maximise (enable) keeps the maximised-flag comparison.
+        assert!(!untiled_by_unmaximize(
+            WindowState::Maximized,
+            true,
+            true,
+            true
+        ));
+        // Fullscreen is untouched by this rule.
+        assert!(!untiled_by_unmaximize(
+            WindowState::Fullscreen,
+            false,
+            true,
+            false
+        ));
+    }
 }
