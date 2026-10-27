@@ -1901,3 +1901,30 @@ fn quoted_reply_compose_studio_dark() {
     assert!(toggle.bottom() < send.top());
     h.snapshot("quoted_reply_compose_studio_dark");
 }
+
+#[test]
+fn the_reader_menu_opens_over_the_text_when_the_attachment_bar_shows() {
+    let mut h = harness(with_attachments(opened("text/plain", PLAIN)), &theme(Scheme::Studio, Mode::Dark));
+    right_click_the_text_opens_the_reader_menu(&mut h);
+}
+
+#[test]
+fn the_reader_menu_opens_over_the_text_with_inline_images_off() {
+    let mut h = harness(with_image(opened("text/plain", PLAIN)), &theme(Scheme::Studio, Mode::Dark));
+    finish_preview(&mut h);
+    actions::registry().execute("view.attachments_inline", &mut h.state_mut().0, Origin::Bus).unwrap();
+    h.run();
+    right_click_the_text_opens_the_reader_menu(&mut h);
+}
+
+fn right_click_the_text_opens_the_reader_menu(h: &mut Harness<'static, (State, Vec<UiEvent>)>) {
+    let before = h.query_all_by_label(&label("reply-all")).count();
+    let at = h.get_by_label(PLAIN).rect().center();
+    h.hover_at(at);
+    h.run();
+    for pressed in [true, false] {
+        h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE });
+    }
+    h.run();
+    assert_eq!(h.query_all_by_label(&label("reply-all")).count(), before + 1, "reader menu did not open");
+}
