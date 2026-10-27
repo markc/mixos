@@ -101,7 +101,9 @@ impl Windows {
     }
 
     pub fn fill_root(&mut self, state: &mut State) {
-        let Some(root) = self.root.as_ref().and_then(|name| self.windows.get(name)) else { return; };
+        let Some(root) = self.root.as_ref().and_then(|name| self.windows.get(name)) else {
+            return;
+        };
         let mut root = root.lock().unwrap();
         swap(state, &mut root.view);
         root.had_compose = root.view.compose.is_some();
@@ -175,7 +177,12 @@ impl Windows {
             .cloned()
     }
 
-    pub fn refresh(&mut self, ctx: &egui::Context, state: &State, palette: &editor::Palette) -> bool {
+    pub fn refresh(
+        &mut self,
+        ctx: &egui::Context,
+        state: &State,
+        palette: &editor::Palette,
+    ) -> bool {
         let before = self.windows.len();
         self.windows.retain(|name, window| {
             let mut window = window.lock().unwrap();
@@ -487,7 +494,10 @@ mod tests {
     fn frame(ctx: &egui::Context, windows: &Windows) {
         let mut input = egui::RawInput {
             time: Some(ctx.input(|i| i.time) + 0.1),
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 700.0))),
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(900.0, 700.0),
+            )),
             ..Default::default()
         };
         for window in windows.windows.values() {
@@ -622,11 +632,26 @@ mod tests {
     #[test]
     fn direct_document_sends_keep_their_engine_owner_when_a_composer_closes() {
         let (mut state, mut windows, theme, ctx) = fixture(false);
-        state.read_document("a".into(), "/home/user/send.md".into(), Some(77), true, false).unwrap();
-        let ticket = state.take_work().into_iter().find_map(|work| match work {
-            crate::work::Work::MailDocument(crate::documents::DocumentWork::Read { ticket, .. }) => Some(ticket),
-            _ => None,
-        }).unwrap();
+        state
+            .read_document(
+                "a".into(),
+                "/home/user/send.md".into(),
+                Some(77),
+                true,
+                false,
+            )
+            .unwrap();
+        let ticket = state
+            .take_work()
+            .into_iter()
+            .find_map(|work| match work {
+                crate::work::Work::MailDocument(crate::documents::DocumentWork::Read {
+                    ticket,
+                    ..
+                }) => Some(ticket),
+                _ => None,
+            })
+            .unwrap();
         state.compose();
         windows.adopt(&mut state, editor::Palette::from_theme(&theme));
         assert!(state.documents.owns(ticket));
@@ -642,8 +667,16 @@ mod tests {
         windows.refresh(&ctx, &state, &editor::Palette::from_theme(&theme));
         assert!(windows.windows.is_empty());
         assert!(state.documents.owns(ticket));
-        state.document_done(ticket, crate::documents::Answer::Read(Err((crate::state::code::DOCUMENT_IO, "test".into()))));
-        assert!(state.take_replies().iter().any(|r| r.id == 77 && r.rc == 10));
+        state.document_done(
+            ticket,
+            crate::documents::Answer::Read(Err((crate::state::code::DOCUMENT_IO, "test".into()))),
+        );
+        assert!(
+            state
+                .take_replies()
+                .iter()
+                .any(|r| r.id == 77 && r.rc == 10)
+        );
     }
 
     #[test]
@@ -660,8 +693,19 @@ mod tests {
             assert!(windows.adopt(&mut state, palette));
             assert_eq!(windows.windows.len(), 2);
             assert_eq!(windows.root.as_deref(), Some("compose-1"));
-            assert_eq!(windows.windows["compose-1"].lock().unwrap().view.compose.is_some(), initial_succeeded);
-            assert_ne!(windows.windows["compose-2"].lock().unwrap().viewport, ViewportId::ROOT);
+            assert_eq!(
+                windows.windows["compose-1"]
+                    .lock()
+                    .unwrap()
+                    .view
+                    .compose
+                    .is_some(),
+                initial_succeeded
+            );
+            assert_ne!(
+                windows.windows["compose-2"].lock().unwrap().viewport,
+                ViewportId::ROOT
+            );
         }
     }
 
@@ -716,10 +760,16 @@ mod tests {
         second.lock().unwrap().focused = Some(focused + std::time::Duration::from_millis(1));
         assert!(Arc::ptr_eq(&windows.selected(&args).unwrap(), &second));
         assert!(Arc::ptr_eq(
-            &windows.selected(&serde_json::json!({"window":"compose-1"})).unwrap(),
+            &windows
+                .selected(&serde_json::json!({"window":"compose-1"}))
+                .unwrap(),
             &first
         ));
-        assert!(windows.selected(&serde_json::json!({"window":"missing"})).is_none());
+        assert!(
+            windows
+                .selected(&serde_json::json!({"window":"missing"}))
+                .is_none()
+        );
     }
 
     #[test]
@@ -834,7 +884,9 @@ mod tests {
         }
         let first = windows.windows["compose-1"].clone();
         first.lock().unwrap().view.confirm = Some(crate::state::Confirm::Quit);
-        for _ in 0..4 { frame(&ctx, &windows); }
+        for _ in 0..4 {
+            frame(&ctx, &windows);
+        }
         assert!(
             toolkit::drive::request(
                 &ctx,

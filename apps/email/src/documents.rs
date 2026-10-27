@@ -200,9 +200,15 @@ impl DocumentState {
     }
 
     fn take_sends(&mut self) -> Vec<(u64, Request)> {
-        let tickets: Vec<_> = self.pending.iter()
-            .filter_map(|(&ticket, request)| request.send.then_some(ticket)).collect();
-        tickets.into_iter().filter_map(|ticket| self.pending.remove(&ticket).map(|r| (ticket, r))).collect()
+        let tickets: Vec<_> = self
+            .pending
+            .iter()
+            .filter_map(|(&ticket, request)| request.send.then_some(ticket))
+            .collect();
+        tickets
+            .into_iter()
+            .filter_map(|ticket| self.pending.remove(&ticket).map(|r| (ticket, r)))
+            .collect()
     }
 
     pub(crate) fn owns(&self, ticket: u64) -> bool {

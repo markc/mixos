@@ -874,8 +874,10 @@ mod tests {
         ctx.set_embed_viewports(false);
         let child = egui::ViewportId::from_hash_of("chooser-child");
         ctx.run_ui(egui::RawInput::default(), |ui| {
-            ui.ctx().show_viewport_deferred(child, Default::default(), |_, _| {});
-        }).drop_without_applying_deltas();
+            ui.ctx()
+                .show_viewport_deferred(child, Default::default(), |_, _| {});
+        })
+        .drop_without_applying_deltas();
         let (tx, rx) = mpsc::channel();
         ctx.set_repaint_observer(move |info| {
             if std::thread::current().name() == Some("file-chooser") {
@@ -884,18 +886,27 @@ mod tests {
         });
         let mut chooser = FileChooser::new(dir.path(), "Attach", "Attach");
         for _ in 0..50 {
-            let mut input = egui::RawInput { viewport_id: child, ..Default::default() };
+            let mut input = egui::RawInput {
+                viewport_id: child,
+                ..Default::default()
+            };
             input.viewports.insert(child, Default::default());
             ctx.run_ui(input, |ui| {
                 if chooser.pending.is_none() {
                     chooser.request(ui.ctx(), Request::Open(dir.path().to_owned()));
                 }
-            }).drop_without_applying_deltas();
-            if chooser.pending.is_some() { break; }
+            })
+            .drop_without_applying_deltas();
+            if chooser.pending.is_some() {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         assert!(chooser.pending.is_some(), "the fixture needs a worker slot");
-        assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), child);
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(),
+            child
+        );
     }
 
     #[test]

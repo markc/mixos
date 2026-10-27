@@ -799,7 +799,10 @@ impl Shell {
             // Native viewport creation/destruction is emitted by a UI pass.
             // Request one offscreen pass when the mailbox is parked; raising
             // or making the root visible is unnecessary on Wayland.
-            self.ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::RequestPaintWhileHidden);
+            self.ctx.send_viewport_cmd_to(
+                egui::ViewportId::ROOT,
+                egui::ViewportCommand::RequestPaintWhileHidden,
+            );
             self.ctx.request_repaint_of(egui::ViewportId::ROOT);
         }
         self.apply_drafts();
@@ -2497,13 +2500,19 @@ mod tests {
         let ctx = shell.ctx.clone();
         let input = egui::RawInput::default();
         let output = ctx.run_logic(&input, |_| add_composer(&mut shell, "child"));
-        assert!(output.viewport_commands[&egui::ViewportId::ROOT].contains(&egui::ViewportCommand::RequestPaintWhileHidden));
+        assert!(
+            output.viewport_commands[&egui::ViewportId::ROOT]
+                .contains(&egui::ViewportCommand::RequestPaintWhileHidden)
+        );
         let output = ctx.run_logic(&input, |_| shell.sync_composers());
         assert!(output.viewport_commands.values().all(|commands| !commands.contains(&egui::ViewportCommand::RequestPaintWhileHidden)));
         let window = shell.composers.windows["compose-1"].clone();
         window.lock().unwrap().closed = true;
         let output = ctx.run_logic(&input, |_| shell.sync_composers());
-        assert!(output.viewport_commands[&egui::ViewportId::ROOT].contains(&egui::ViewportCommand::RequestPaintWhileHidden));
+        assert!(
+            output.viewport_commands[&egui::ViewportId::ROOT]
+                .contains(&egui::ViewportCommand::RequestPaintWhileHidden)
+        );
         shell.bus.quit();
     }
 
