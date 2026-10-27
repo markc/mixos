@@ -661,7 +661,10 @@ fn check_save(path: PathBuf) -> Result<Answer, String> {
     match std::fs::symlink_metadata(&path) {
         Ok(meta) if meta.file_type().is_symlink() => Err(own_with(
             "file-chooser-name-link",
-            &[("name", &path.file_name().unwrap_or_default().to_string_lossy())],
+            &[(
+                "name",
+                &path.file_name().unwrap_or_default().to_string_lossy(),
+            )],
         )),
         Ok(meta) if meta.is_file() => Ok(Answer::Save(path, true)),
         Ok(_) => Err(own("file-chooser-name-invalid")),
@@ -971,7 +974,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("mail.md");
         std::fs::write(&file, "keep").unwrap();
-        for target in [file.clone(), dir.path().to_owned(), dir.path().join("missing")] {
+        for target in [
+            file.clone(),
+            dir.path().to_owned(),
+            dir.path().join("missing"),
+        ] {
             let link = dir.path().join("link.md");
             std::os::unix::fs::symlink(target, &link).unwrap();
             assert_eq!(

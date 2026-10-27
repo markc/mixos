@@ -1406,10 +1406,17 @@ mod tests {
             let mime = String::from_utf8(build_mime(&draft).unwrap()).unwrap();
             let headers = mime.split_once("\r\n\r\n").unwrap().0;
             assert_eq!(
-                headers.lines().filter(|line| line.starts_with("References:")).collect::<Vec<_>>(),
+                headers
+                    .lines()
+                    .filter(|line| line.starts_with("References:"))
+                    .collect::<Vec<_>>(),
                 [format!("References: {expected}")]
             );
-            assert!(headers.lines().any(|line| line == "In-Reply-To: <m1@example.invalid>"));
+            assert!(
+                headers
+                    .lines()
+                    .any(|line| line == "In-Reply-To: <m1@example.invalid>")
+            );
         }
     }
 

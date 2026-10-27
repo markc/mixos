@@ -7227,13 +7227,20 @@ pub(crate) mod tests {
             state.finish_compose_inspections();
             state.take_work();
             state.apply_ui(UiEvent::SendCompose);
-            let draft = state.take_work().into_iter().find_map(|work| match work {
-                Work::Send { draft, .. } => Some(draft),
-                _ => None,
-            }).expect("restored draft must send with the default identity");
+            let draft = state
+                .take_work()
+                .into_iter()
+                .find_map(|work| match work {
+                    Work::Send { draft, .. } => Some(draft),
+                    _ => None,
+                })
+                .expect("restored draft must send with the default identity");
             assert_eq!(draft.from, "default@example.invalid");
             assert_eq!(draft.from_name, "Default Sender");
-            assert_eq!(draft.reply_to, reply_to.or(Some("help@example.invalid".into())));
+            assert_eq!(
+                draft.reply_to,
+                reply_to.or(Some("help@example.invalid".into()))
+            );
             let compose = state.compose.as_ref().unwrap();
             assert!(compose.busy);
             assert!(compose.error.is_none());

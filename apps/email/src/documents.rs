@@ -1117,7 +1117,10 @@ mod tests {
         finish(&mut state);
         assert!(state.compose.as_ref().unwrap().error.is_none());
         assert_eq!(read(&path).unwrap().subject, "Replacement");
-        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
