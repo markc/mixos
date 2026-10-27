@@ -228,6 +228,39 @@ fn performance_net_light() {
     );
 }
 
+#[test]
+fn performance_pages_fit_the_snapshot_pane_including_the_cpu_figures() {
+    for theme in [dark(), light()] {
+        for section in ["cpu", "memory", "disk:nvme0n1", "net:eth0"] {
+            let mut engine = engine(16, 10, Tab::Performance);
+            engine.set_section(section).unwrap();
+            let registry = actions::registry();
+            let strings = strings();
+            let initial_theme = theme.clone();
+            let mut h = Harness::builder()
+                .with_context_setup(move |ctx| toolkit::install(ctx, &initial_theme))
+                .with_size(egui::vec2(1040.0, 680.0))
+                .build_ui_state(
+                    move |ui, layout| {
+                        let _ = view(ui, &engine, &registry, &strings);
+                        *layout = monitor::view::performance_layout(ui.ctx());
+                    },
+                    None::<monitor::view::PerformanceLayout>,
+                );
+            h.run();
+            let layout = h.state().as_ref().expect("Performance was rendered");
+            assert!(
+                layout.content_size.y <= layout.pane_size.y + 0.5,
+                "{section} overflows vertically: {layout:?}"
+            );
+            assert!(
+                layout.content_size.x <= layout.pane_size.x + 0.5,
+                "{section} overflows horizontally: {layout:?}"
+            );
+        }
+    }
+}
+
 /// Monitor's default look is the session's: Studio Dark when no theme is
 /// chosen, the look the dark snapshots pin.
 #[test]

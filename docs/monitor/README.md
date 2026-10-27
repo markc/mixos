@@ -32,9 +32,14 @@ Refresh (Ctrl+R) reads once.
 
 The main Performance graphs use interactive `egui_plot` charts: seconds ago
 on x (zero at the right), resource units on y, and legends for disk read/write
-and network receive/send. Hover shows sampled values and their age. Drag to
-pan time, scroll or pinch to zoom time, and double-click to reset the range.
-The y scale follows the resource. Side-list sparklines and the per-CPU grid
+and network receive/send. Hover shows sampled values and their age for visible
+series. Scroll or pinch to zoom time; while zoomed, drag to pan. At the full
+window, dragging scrolls the page. Double-click resets the range. Time stays
+within the collected window, with a minimum span of four sample intervals.
+Changing node resets all chart zoom; switching resources on the same node
+retains each resource's range. Percentage ticks cover 0–100; memory ticks
+divide its real capacity; rate ticks round up to a nice peak. Whole tick
+values omit decimal zeroes. Side-list sparklines and the per-CPU grid
 stay painted with `toolkit::graph`, including nearest-sample hover readouts;
 memory and filesystem meters keep the same painter. Chart colours and text
 follow the theme. The renderer lives in `src/chart.rs`, behind plain series

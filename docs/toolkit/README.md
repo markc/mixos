@@ -102,13 +102,16 @@ let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke,
 series, `lines` for a shaded first series and dashed additional series,
 and `meter` for a horizontal share. `Hue::{Accent, AccentPlus, AccentMinus,
 Warning}` and `tint` derive legible colours from the current theme.
+`Hue::Series(index)` supplies further colours around the accent's hue wheel
+without changing those four fixed roles.
 There are no application types or sampling dependencies in this module.
 
-Values run oldest first. Pass a `Readout` with the window's sample capacity,
+Values run oldest first. Pass `Some(Readout)` with the window's sample capacity,
 sample interval in seconds and a formatter taking series index, value and
 age in seconds. Partial histories keep their spacing at the right edge.
-Hover draws a thin cursor at the nearest sample and shows the caller's
-unit and localised age text. Formatting only runs for a visible hover tooltip.
+Pass `None` to draw without hover or a formatter; spacing then uses the longest
+supplied slice. Hover draws a thin cursor at the nearest sample and shows the
+caller's unit and localised age text. Formatting only runs for a visible hover tooltip.
 Monitor uses it for the side list and per-CPU grid; Workshop uses it for
 per-link message histories. Small graphs stay painted; large interactive
 charts use `egui_plot`, currently behind Monitor's replaceable chart module.

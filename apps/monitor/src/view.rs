@@ -51,6 +51,7 @@ pub fn view(
     commands: &Registry<Engine>,
     strings: &Strings,
 ) -> Vec<UiEvent> {
+    chart::set_node(ui.ctx(), engine.ui.node.as_deref());
     let mut events = Vec::new();
     let title = format!("{} — {}", label("title"), engine.host());
     // The icon bar: refresh, then the standard tail.
@@ -436,11 +437,11 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                                 &values,
                                 max,
                                 kind.hue(),
-                                Readout {
+                                Some(Readout {
                                     samples: vitals::history::WINDOW,
                                     interval_s: s.interval_s,
                                     format: &format,
-                                },
+                                }),
                             );
                             ui.vertical(|ui| {
                                 // Both drawn every frame; either click chooses.
@@ -471,7 +472,7 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| {
-            ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+            let output = ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
                 let key = engine.ui.section.as_str();
                 if key == "cpu" {
                     cpu(ui, engine, s);
@@ -483,7 +484,27 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                     net(ui, engine, s, name);
                 }
             });
+            ui.ctx().data_mut(|data| {
+                data.insert_temp(
+                    egui::Id::unique("monitor-performance-layout"),
+                    PerformanceLayout {
+                        content_size: output.content_size,
+                        pane_size: output.inner_rect.size(),
+                    },
+                )
+            });
         });
+}
+
+/// Geometry of the last rendered Performance pane, for layout regression checks.
+#[derive(Clone, Copy, Debug)]
+pub struct PerformanceLayout {
+    pub content_size: Vec2,
+    pub pane_size: Vec2,
+}
+
+pub fn performance_layout(ctx: &egui::Context) -> Option<PerformanceLayout> {
+    ctx.data_mut(|data| data.get_temp(egui::Id::unique("monitor-performance-layout")))
 }
 
 fn heading(ui: &mut Ui, title: &str, detail: Option<&str>) {
@@ -567,11 +588,11 @@ fn cpu(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
                     &values,
                     100.0,
                     Kind::Cpu.hue(),
-                    Readout {
+                    Some(Readout {
                         samples: vitals::history::WINDOW,
                         interval_s: s.interval_s,
                         format: &format,
-                    },
+                    }),
                 );
                 if (i + 1) % columns == 0 {
                     ui.end_row();
@@ -619,7 +640,7 @@ fn memory(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
             }],
             samples: vitals::history::WINDOW,
             interval_s: s.interval_s,
-            scale: Scale::Bytes(m.total as f64),
+            scale: Scale::Capacity(m.total as f64),
             format: bytes,
         },
     );
@@ -678,7 +699,7 @@ fn disk(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
     let write = engine.rings.get(&format!("disk.{name}.write"));
     let top = scale(&read, 1024.0 * 1024.0).max(scale(&write, 1024.0 * 1024.0));
     ui.small(format!(
-        "{} / {} · {}",
+        "{} / {} · {} · 60 s",
         label("read"),
         label("write"),
         rate(top)
@@ -696,13 +717,13 @@ fn disk(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
                 },
                 Series {
                     name: &label("write"),
-                    hue: Kind::Memory.hue(),
+                    hue: Hue::AccentPlus,
                     values: &write,
                 },
             ],
             samples: vitals::history::WINDOW,
             interval_s: s.interval_s,
-            scale: Scale::Bytes(top),
+            scale: Scale::Rate(top),
             format: rate,
         },
     );
@@ -760,7 +781,7 @@ fn net(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
     let tx = engine.rings.get(&format!("net.{name}.tx"));
     let top = scale(&rx, 1024.0).max(scale(&tx, 1024.0));
     ui.small(format!(
-        "{} / {} · {}",
+        "{} / {} · {} · 60 s",
         label("receive"),
         label("send"),
         rate(top)
@@ -778,13 +799,13 @@ fn net(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
                 },
                 Series {
                     name: &label("send"),
-                    hue: Kind::Memory.hue(),
+                    hue: Hue::AccentPlus,
                     values: &tx,
                 },
             ],
             samples: vitals::history::WINDOW,
             interval_s: s.interval_s,
-            scale: Scale::Bytes(top),
+            scale: Scale::Rate(top),
             format: rate,
         },
     );

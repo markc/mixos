@@ -30,11 +30,11 @@ fn graph(ui: &mut Ui, state: &mut State) {
         vec2(400.0, 120.0),
         &[(&a, Hue::Accent), (&b, Hue::Warning)],
         100.0,
-        Readout {
+        Some(Readout {
             samples: 60,
             interval_s: 1.0,
             format: &format,
-        },
+        }),
     )
     .rect;
 }

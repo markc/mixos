@@ -13,7 +13,7 @@ pub const RECENT_MS: u64 = 15_000;
 const PENDING_MS: u64 = 60_000;
 const WINDOW_S: u64 = 300;
 /// Samples in a link's five-minute per-second history.
-pub const HISTORY_S: usize = 300;
+pub const HISTORY_S: usize = WINDOW_S as usize;
 const TEXT_MAX: usize = 256;
 pub const UNKNOWN: &str = "?";
 const OTHER: &str = "(other)";
@@ -210,6 +210,8 @@ pub struct ViewPing {
 #[derive(Clone, Debug, Default)]
 pub struct MeshView {
     pub links: BTreeMap<String, ViewLink>,
+    /// Zero histories for known peers without traffic; never synthetic links.
+    pub quiet_histories: BTreeMap<String, LinkHistory>,
     pub total: LinkCounts,
     /// Same window order as LinkCounts.
     pub local_counts: [u64; 3],
@@ -691,9 +693,12 @@ impl Mesh {
                 },
             );
         }
-        // Keep quiet peers' zero histories in the same typed cache too.
+        // Keep quiet peers' zero histories separate from observed links.
         for node in self.nodes.iter().filter(|node| !node.local) {
-            view.links.entry(node.name.clone()).or_default();
+            if !view.links.contains_key(&node.name) {
+                view.quiet_histories
+                    .insert(node.name.clone(), LinkHistory::default());
+            }
         }
         view.pings = self
             .pings
@@ -1768,10 +1773,14 @@ mod tests {
         assert_eq!(early, LinkHistory::default());
         let mut quiet = state();
         nodes(&mut quiet);
-        assert_eq!(
-            quiet.view_at(base()).links["beta"].history,
-            LinkHistory::default()
+        let view = quiet.view_at(base());
+        assert!(
+            view.links.is_empty(),
+            "quiet topology must not create traffic links"
         );
+        assert_eq!(view.quiet_histories["beta"], LinkHistory::default());
+        assert_eq!(view.quiet_histories["gamma"], LinkHistory::default());
+        assert!(!mesh.view_at(now).quiet_histories.contains_key("beta"));
     }
     #[test]
     fn topology_uses_active_authority_addresses_and_caps_nodes_pings_and_labels() {

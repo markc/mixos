@@ -32734,9 +32734,14 @@ Refresh (Ctrl+R) reads once.
 
 The main Performance graphs use interactive `egui_plot` charts: seconds ago
 on x (zero at the right), resource units on y, and legends for disk read/write
-and network receive/send. Hover shows sampled values and their age. Drag to
-pan time, scroll or pinch to zoom time, and double-click to reset the range.
-The y scale follows the resource. Side-list sparklines and the per-CPU grid
+and network receive/send. Hover shows sampled values and their age for visible
+series. Scroll or pinch to zoom time; while zoomed, drag to pan. At the full
+window, dragging scrolls the page. Double-click resets the range. Time stays
+within the collected window, with a minimum span of four sample intervals.
+Changing node resets all chart zoom; switching resources on the same node
+retains each resource's range. Percentage ticks cover 0–100; memory ticks
+divide its real capacity; rate ticks round up to a nice peak. Whole tick
+values omit decimal zeroes. Side-list sparklines and the per-CPU grid
 stay painted with `toolkit::graph`, including nearest-sample hover readouts;
 memory and filesystem meters keep the same painter. Chart colours and text
 follow the theme. The renderer lives in `src/chart.rs`, behind plain series
@@ -35400,13 +35405,16 @@ let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke,
 series, `lines` for a shaded first series and dashed additional series,
 and `meter` for a horizontal share. `Hue::{Accent, AccentPlus, AccentMinus,
 Warning}` and `tint` derive legible colours from the current theme.
+`Hue::Series(index)` supplies further colours around the accent's hue wheel
+without changing those four fixed roles.
 There are no application types or sampling dependencies in this module.
 
-Values run oldest first. Pass a `Readout` with the window's sample capacity,
+Values run oldest first. Pass `Some(Readout)` with the window's sample capacity,
 sample interval in seconds and a formatter taking series index, value and
 age in seconds. Partial histories keep their spacing at the right edge.
-Hover draws a thin cursor at the nearest sample and shows the caller's
-unit and localised age text. Formatting only runs for a visible hover tooltip.
+Pass `None` to draw without hover or a formatter; spacing then uses the longest
+supplied slice. Hover draws a thin cursor at the nearest sample and shows the
+caller's unit and localised age text. Formatting only runs for a visible hover tooltip.
 Monitor uses it for the side list and per-CPU grid; Workshop uses it for
 per-link message histories. Small graphs stay painted; large interactive
 charts use `egui_plot`, currently behind Monitor's replaceable chart module.

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Small histories drawn with the newest sample at the right edge.
-//! Painted directly: a 64-core grid
-//! is 64 small graphs a frame, which a plotting widget per graph would make
-//! heavy.
+//! Painted directly so grids of small histories stay cheap.
 //!
 //! Colours come from the theme's visuals, never constants (AGENTS.md §4).
 use egui::{Color32, Mesh, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2, pos2};
@@ -15,6 +13,8 @@ pub enum Hue {
     AccentPlus,
     Warning,
     AccentMinus,
+    /// Further theme-relative colours for arbitrary multi-series histories.
+    Series(usize),
 }
 
 /// Timeline and caller-owned readout wording. Values are oldest first, with
@@ -58,7 +58,7 @@ fn readout_rows(series: &[(&[f64], Hue)], steps: usize, readout: Readout<'_>) ->
         .collect()
 }
 
-/// The resource's line colour, from the installed theme.
+/// A line colour derived from the installed theme.
 pub fn tint(ui: &Ui, kind: Hue) -> Color32 {
     let palette = crate::chrome::Chrome::of(ui.ctx()).palette;
     let hue = match kind {
@@ -68,6 +68,7 @@ pub fn tint(ui: &Ui, kind: Hue) -> Color32 {
         Hue::AccentPlus => turned(palette.accent, 1.0 / 3.0),
         Hue::Warning => palette.warning,
         Hue::AccentMinus => turned(palette.accent, -1.0 / 3.0),
+        Hue::Series(index) => turned(palette.accent, index as f32 * 0.618_034),
     };
     legible(hue, ui.visuals().dark_mode)
 }
@@ -167,29 +168,39 @@ pub fn line(
     values: &[f64],
     max: f64,
     hue: Hue,
-    readout: Readout<'_>,
+    readout: Option<Readout<'_>>,
 ) -> Response {
     lines(ui, size, &[(values, hue)], max, readout)
 }
 
-/// Several series on one grid, the first shaded, the rest lines only (a
-/// disk's reads and writes, an interface's receive and send).
+/// Several series on one grid, the first shaded and the rest dashed lines.
+/// Without a readout, sample spacing comes from the longest supplied slice.
 pub fn lines(
     ui: &mut Ui,
     size: Vec2,
     series: &[(&[f64], Hue)],
     max: f64,
-    readout: Readout<'_>,
+    readout: Option<Readout<'_>>,
 ) -> Response {
     let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
     if !ui.is_rect_visible(rect) {
         return response;
     }
     frame(ui, rect, size.y > 40.0);
+    let samples = readout.map_or_else(
+        || {
+            series
+                .iter()
+                .map(|(values, _)| values.len())
+                .max()
+                .unwrap_or(0)
+        },
+        |readout| readout.samples,
+    );
     let painter = ui.painter_at(rect.shrink(1.0));
     for (i, (values, kind)) in series.iter().enumerate() {
         let colour = tint(ui, *kind);
-        let line = points(rect.shrink(1.0), values, max, readout.samples);
+        let line = points(rect.shrink(1.0), values, max, samples);
         if line.len() < 2 {
             continue;
         }
@@ -205,7 +216,9 @@ pub fn lines(
             ));
         }
     }
-    if let Some(pointer) = response.hover_pos() {
+    if let Some(readout) = readout
+        && let Some(pointer) = response.hover_pos()
+    {
         let plot = rect.shrink(1.0);
         let n = series
             .iter()
@@ -316,6 +329,12 @@ mod tests {
                 ] {
                     assert_eq!(tint(ui, hue), legible(base, dark));
                 }
+                let mut colours: Vec<_> = (0..8)
+                    .map(|i| tint(ui, Hue::Series(i)).to_array())
+                    .collect();
+                colours.sort_unstable();
+                colours.dedup();
+                assert_eq!(colours.len(), 8, "indexed hues extend the fixed palette");
                 let source = egui::ecolor::Hsva::from(p.accent);
                 let turned = egui::ecolor::Hsva::from(turned(p.accent, 1.0 / 3.0));
                 assert!((turned.h - (source.h + 1.0 / 3.0).rem_euclid(1.0)).abs() < 0.01);
@@ -328,5 +347,22 @@ mod tests {
             });
             output.textures_delta.clear();
         }
+    }
+
+    #[test]
+    fn a_painted_history_needs_no_readout_or_formatter() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            let response = line(
+                ui,
+                Vec2::new(120.0, 40.0),
+                &[1.0, 2.0, 3.0],
+                3.0,
+                Hue::Accent,
+                None,
+            );
+            assert_eq!(response.rect.size(), Vec2::new(120.0, 40.0));
+        });
+        output.textures_delta.clear();
     }
 }

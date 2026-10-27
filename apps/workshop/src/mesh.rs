@@ -831,11 +831,12 @@ fn node_panel(ui: &mut Ui, snapshot: &MeshView, node: &inspector::mesh::Node) {
             }
         });
     if !node.local
-        && let Some(link) = link
+        && let Some(history) = link
+            .map(|link| &link.history)
+            .or_else(|| snapshot.quiet_histories.get(&node.name))
     {
         use toolkit::graph::{self, Hue, Readout};
         ui.small(label("mesh-message-history"));
-        let history = &link.history;
         let format = |series, value, age: u64| {
             label_with(
                 "mesh-history-readout",
@@ -858,11 +859,11 @@ fn node_panel(ui: &mut Ui, snapshot: &MeshView, node: &inspector::mesh::Node) {
                 (history.input.as_slice(), Hue::Warning),
             ],
             history.max,
-            Readout {
+            Some(Readout {
                 samples: inspector::mesh::HISTORY_S,
                 interval_s: 1.0,
                 format: &format,
-            },
+            }),
         );
     }
     let stats = if node.local {
