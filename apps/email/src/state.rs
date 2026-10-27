@@ -7198,8 +7198,14 @@ pub(crate) mod tests {
         let saved = state.compose.as_ref().unwrap().saved_draft();
         state.compose = None;
         assert!(state.open_saved(saved));
-        assert_eq!(state.compose.as_ref().unwrap().draft_id, inspection.draft_id);
-        assert_eq!(state.compose.as_ref().unwrap().revision, inspection.revision);
+        assert_eq!(
+            state.compose.as_ref().unwrap().draft_id,
+            inspection.draft_id
+        );
+        assert_eq!(
+            state.compose.as_ref().unwrap().revision,
+            inspection.revision
+        );
         let result = inspection.inspect();
         state.apply(Event::ComposeAttachments(inspection, result));
         assert!(state.compose.as_ref().unwrap().draft.attachments.is_empty());

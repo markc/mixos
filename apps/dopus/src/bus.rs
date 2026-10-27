@@ -46,9 +46,10 @@ impl From<citizen::AppCallError> for MailFailure {
     fn from(error: citizen::AppCallError) -> Self {
         let (code, message) = match error {
             citizen::AppCallError::Refused { code, message, .. } => (code, message),
-            citizen::AppCallError::Transport(error) if error.outcome_unknown => {
-                ("OUTCOME_UNKNOWN".into(), crate::label("mail-outcome-unknown"))
-            }
+            citizen::AppCallError::Transport(error) if error.outcome_unknown => (
+                "OUTCOME_UNKNOWN".into(),
+                crate::label("mail-outcome-unknown"),
+            ),
             citizen::AppCallError::Transport(_) => {
                 ("NOT_SENT".into(), crate::label("mail-not-sent"))
             }

@@ -86,7 +86,10 @@ pub struct AttachmentDone {
 /// What finished off the UI thread. Completions carry their result; the
 /// shell resolves the Look pair itself (theme-follow, below).
 pub enum Event {
-    ComposeAttachments(crate::work::ComposeInspection, crate::work::InspectedAttachments),
+    ComposeAttachments(
+        crate::work::ComposeInspection,
+        crate::work::InspectedAttachments,
+    ),
     /// A Bus delivery.
     Delivery(citizen::Delivery),
     /// An account's connect finished. The client stays in the shell; the
@@ -1947,7 +1950,10 @@ mod tests {
             let pending = pending_attachments(&mut state, opening, &paths);
             assert!(!state.compose_sendable());
             state.apply_ui(UiEvent::SendCompose);
-            assert!(state.take_work().is_empty(), "Send must wait for inspection");
+            assert!(
+                state.take_work().is_empty(),
+                "Send must wait for inspection"
+            );
             let event = inspect(pending);
             assert!(
                 state.take_replies().is_empty(),
@@ -1962,7 +1968,10 @@ mod tests {
                 assert_eq!(replies[0].body["composing"], "a");
             }
         }
-        assert_eq!(state.compose.as_ref().unwrap().draft.attachments, [one, two]);
+        assert_eq!(
+            state.compose.as_ref().unwrap().draft.attachments,
+            [one, two]
+        );
     }
 
     #[test]
@@ -1994,7 +2003,11 @@ mod tests {
                 assert_eq!(replies[0].id, 42);
                 assert_eq!(
                     replies[0].body["error_code"],
-                    if change == "close" { code::NOT_FOUND } else { code::STALE }
+                    if change == "close" {
+                        code::NOT_FOUND
+                    } else {
+                        code::STALE
+                    }
                 );
                 if let Some(compose) = &state.compose {
                     assert!(compose.draft.attachments.is_empty());

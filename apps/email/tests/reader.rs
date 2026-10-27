@@ -584,7 +584,10 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
     h.state_mut().1.clear();
     // The compose dialog's own commands (Attach files…, Ctrl+Shift+A) are
     // meant to work while the body has the keyboard, as in Thunderbird.
-    for command in registry.iter().filter(|c| c.menu != Some("compose-attachments-menu")) {
+    for command in registry
+        .iter()
+        .filter(|c| c.menu != Some("compose-attachments-menu"))
+    {
         for chord in registry.shortcuts_of(command.id) {
             assert!(
                 !matches!(chord.logical_key, egui::Key::Z | egui::Key::Y),

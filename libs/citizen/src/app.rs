@@ -323,7 +323,10 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             error,
-            AppCallError::Transport(CallError { outcome_unknown: true, .. })
+            AppCallError::Transport(CallError {
+                outcome_unknown: true,
+                ..
+            })
         ));
         assert_eq!(client.0.load(std::sync::atomic::Ordering::SeqCst), 3);
     }

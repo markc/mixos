@@ -2502,7 +2502,9 @@ mod tests {
         let calls = mail_calls(&e.take_effects());
         e.app_mailed(
             calls[0].0,
-            Err(citizen::AppCallError::LaunchFailed("launcher detail".into())),
+            Err(citizen::AppCallError::LaunchFailed(
+                "launcher detail".into(),
+            )),
         );
         assert!(e.email.task.is_none() && e.failed);
         assert_eq!(e.status, "email-no-launcher");

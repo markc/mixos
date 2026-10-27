@@ -2671,7 +2671,10 @@ mod tests {
         assert!(!link.is_dir && !link.is_file);
         assert_eq!(link.size, Some(metadata.len()));
         assert_eq!(link.modified, metadata.modified().ok());
-        let link = entries.iter().find(|entry| entry.path == file_link).unwrap();
+        let link = entries
+            .iter()
+            .find(|entry| entry.path == file_link)
+            .unwrap();
         assert!(!link.is_dir && link.is_file);
         assert_eq!(
             link.size,
