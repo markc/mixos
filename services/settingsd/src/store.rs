@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 ///   first with `settings.reset` or a null value.
 /// - 4: Workshop replaces the retired app context; drop its old authored
 ///   section and re-derive the effective map through the sealed upgrade path.
+///
 /// Window style is omitted at mac in both authored and effective values,
 /// preserving existing digests without a format change.
 pub const FORMAT: u32 = 4;
