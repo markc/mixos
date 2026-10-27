@@ -1679,6 +1679,8 @@ const WRITE_ATTEMPTS: u32 = 3;
 
 /// Everything the window shows.
 pub struct State {
+    pub compose_clipboard: Option<editor::Clipboard>,
+    pub compose_new_requested: bool,
     pub previews: crate::previews::Cache,
     /// Origin of the command/input being applied now. Each accepted send
     /// copies it onto the compose and work item before the scope ends.
@@ -1789,6 +1791,8 @@ impl State {
     ) -> Self {
         cache.reset_legacy_composer_family();
         let mut state = Self {
+            compose_clipboard: None,
+            compose_new_requested: false,
             previews: crate::previews::Cache::default(),
             input_origin: None,
             accounts: Vec::new(),
@@ -2154,6 +2158,29 @@ impl State {
             .is_some_and(|f| form_account(f) == view.entry.id)
         {
             self.form_note = Some(crate::label("form-account-changed"));
+        }
+    }
+
+    /// Reconcile a parked composer's sender against the same account authority
+    /// as the mailbox. Called before copying fresh rendering context.
+    pub(crate) fn recheck_composer(&mut self, previous: Option<&AccountEntry>) {
+        let Some(compose) = self.compose.as_ref() else { return; };
+        let Some(account) = self.account(&compose.account) else {
+            self.set_aside_compose();
+            return;
+        };
+        if !account.entry.enabled {
+            self.set_aside_compose();
+            return;
+        }
+        let changed = previous.is_some_and(|old| old.url != account.entry.url
+            || old.email != account.entry.email || old.ca_path != account.entry.ca_path
+            || old.identities != account.entry.identities);
+        if changed {
+            let stale = StaleFrom { account: account.entry.id.clone(), generation: account.generation,
+                address: self.senders(&account.entry.id).into_iter().find(|i| i.id == compose.identity)
+                    .map(|i| i.address).unwrap_or_else(|| account.entry.email.clone()) };
+            self.compose.as_mut().unwrap().stale = Some(stale);
         }
     }
 
@@ -5721,6 +5748,8 @@ impl State {
                 | UiEvent::SuggestAccept(..)
         );
         match event {
+            UiEvent::DocumentChosen(outcome) => self.document_chosen(outcome),
+            UiEvent::ComposeDrop(paths) => self.drop_files(paths),
             UiEvent::ComposeAttachmentRemove(path) => {
                 self.remove_compose_attachment(&path);
             }

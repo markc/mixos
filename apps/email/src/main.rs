@@ -3,7 +3,7 @@
 //! The entry point: parse, hand an already-running window the activation,
 //! or run the window (lib.rs).
 const HELP: &str = "email — the MixOS JMAP mail, calendar and contacts client
-Usage: email [--noded-url URL] [--service NAME]";
+Usage: email [--compose [FILE.md]] [--noded-url URL] [--service NAME]";
 
 fn main() {
     let mut cli_args: Vec<String> = std::env::args().collect();
@@ -22,12 +22,12 @@ fn main() {
     };
     let result = if citizen::probe(&args.url, &args.service, email::APP) {
         // One window per session: a second launch raises the first.
-        citizen::forward(&args.url, &args.service, email::APP)
+        email::forward(&args)
     } else {
         match email::run(&args) {
             // Another launch won the race to register: hand it ours.
             Err(_) if citizen::probe(&args.url, &args.service, email::APP) => {
-                citizen::forward(&args.url, &args.service, email::APP)
+                email::forward(&args)
             }
             result => result,
         }

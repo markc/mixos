@@ -541,8 +541,8 @@ struct State {
     search_active: bool,
 }
 
-fn state_id() -> Id {
-    Id::unique("toolkit.menu")
+fn state_id(ctx: &Context) -> Id {
+    crate::window_id(ctx.viewport_id(), "toolkit.menu")
 }
 
 /// Whether a menu is open (and so has the keyboard) on `ctx`.
@@ -551,7 +551,7 @@ pub fn is_open(ctx: &Context) -> bool {
     ctx.data(|d| d.get_temp::<bool>(crate::window_id(viewport, "toolkit.anchored-open")))
         .unwrap_or(false)
         || ctx
-            .data(|d| d.get_temp::<State>(state_id()))
+            .data(|d| d.get_temp::<State>(state_id(&ctx)))
             .is_some_and(|s| s.nav.open.is_some())
 }
 
@@ -945,7 +945,7 @@ pub fn anchored(
 
 /// The open menu and its highlight, as of the last frame.
 pub fn current(ctx: &Context) -> Option<Current> {
-    ctx.data(|d| d.get_temp::<State>(state_id()))
+    ctx.data(|d| d.get_temp::<State>(state_id(&ctx)))
         .and_then(|s| s.current)
 }
 
@@ -979,7 +979,7 @@ fn current_in_form(nav: &Nav, menus: &[Menu], vertical: bool) -> Option<Current>
 /// The menus drawn last frame: every title, row, shortcut, tick and
 /// submenu, as the drive's `ui.menu.list` reports them.
 pub fn model(ctx: &Context) -> Vec<Menu> {
-    ctx.data(|d| d.get_temp::<State>(state_id()))
+    ctx.data(|d| d.get_temp::<State>(state_id(&ctx)))
         .map(|s| s.menus)
         .unwrap_or_default()
 }
@@ -1024,7 +1024,7 @@ pub(crate) fn effective(ctx: &Context) -> design::MenuStyle {
 
 /// Open at the top of the content, independent of the selected menu form.
 pub fn popup(ctx: &Context, side: Option<design::MenuSide>, x: Option<f32>) -> Result<(), String> {
-    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    let mut st: State = ctx.data(|d| d.get_temp(state_id(&ctx))).unwrap_or_default();
     if st.menus.is_empty() {
         return Err("this window has no menus".into());
     }
@@ -1048,13 +1048,13 @@ pub fn popup(ctx: &Context, side: Option<design::MenuSide>, x: Option<f32>) -> R
     st.nav.open(0);
     st.query.clear();
     st.current = current_in_form(&st.nav, &compact_model(&st.menus), true);
-    ctx.data_mut(|d| d.insert_temp(state_id(), st));
+    ctx.data_mut(|d| d.insert_temp(state_id(&ctx), st));
     ctx.request_repaint();
     Ok(())
 }
 
 pub(crate) fn toggle(ctx: &Context) {
-    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    let mut st: State = ctx.data(|d| d.get_temp(state_id(&ctx))).unwrap_or_default();
     st.popup_anchor = None;
     st.vertical = true;
     st.nav.vertical_root = true;
@@ -1065,7 +1065,7 @@ pub(crate) fn toggle(ctx: &Context) {
         take_keyboard(ctx);
     }
     st.title_press = true;
-    ctx.data_mut(|d| d.insert_temp(state_id(), st));
+    ctx.data_mut(|d| d.insert_temp(state_id(&ctx), st));
     ctx.request_repaint();
 }
 
@@ -1099,7 +1099,7 @@ fn find_label(entries: &[Entry], label: &str) -> Option<usize> {
 /// An empty path, a title or label no menu has, a disabled row, or a row
 /// before the last that opens no submenu.
 pub fn open_path(ctx: &Context, path: &[String]) -> Result<Current, String> {
-    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    let mut st: State = ctx.data(|d| d.get_temp(state_id(&ctx))).unwrap_or_default();
     let vertical = st.compact || st.popup_anchor.is_some();
     let menus = if vertical {
         compact_model(&st.menus)
@@ -1142,20 +1142,20 @@ pub fn open_path(ctx: &Context, path: &[String]) -> Result<Current, String> {
     let current = current_in_form(&st.nav, &menus, vertical).expect("a menu is open");
     st.current = Some(current.clone());
     take_keyboard(ctx);
-    ctx.data_mut(|d| d.insert_temp(state_id(), st));
+    ctx.data_mut(|d| d.insert_temp(state_id(&ctx), st));
     ctx.request_repaint();
     Ok(current)
 }
 
 /// Close every open menu. Answers whether one was open.
 pub fn close(ctx: &Context) -> bool {
-    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    let mut st: State = ctx.data(|d| d.get_temp(state_id(&ctx))).unwrap_or_default();
     let was = st.nav.open.is_some();
     st.nav.close();
     st.current = None;
     st.popup_anchor = None;
     st.vertical = st.compact;
-    ctx.data_mut(|d| d.insert_temp(state_id(), st));
+    ctx.data_mut(|d| d.insert_temp(state_id(&ctx), st));
     ctx.request_repaint();
     was
 }
@@ -1237,7 +1237,7 @@ fn defer_after_typing(ui: &mut Ui) -> Vec<egui::Event> {
 
 /// The id of the search field (§3.5), for focus and tests.
 pub fn search_field_id() -> Id {
-    state_id().with("search")
+    crate::window_id(egui::ViewportId::ROOT, "toolkit.menu").with("search")
 }
 
 /// [`bar`] with a search field at the top of one menu (§3.5). While the
@@ -1281,11 +1281,11 @@ fn render_picked(
     let lost_focus = ui.input(|i| i.events.contains(&egui::Event::WindowFocused(false)));
     if lost_focus {
         ctx.data_mut(|d| {
-            let mut st: State = d.get_temp(state_id()).unwrap_or_default();
+            let mut st: State = d.get_temp(state_id(&ctx)).unwrap_or_default();
             st.alt_down = false;
             st.alt_used = false;
             st.alt_blocked = true;
-            d.insert_temp(state_id(), st);
+            d.insert_temp(state_id(&ctx), st);
         });
     }
     // A covered bar still draws, but cannot replace the menu/drive state
@@ -1294,12 +1294,12 @@ fn render_picked(
     // accessibility labels), so covering it changes no pixel.
     if !ui.is_enabled() || !ctx.memory(|m| m.allows_interaction(ui.layer_id())) {
         ctx.data_mut(|d| {
-            if let Some(st) = d.get_temp::<State>(state_id())
+            if let Some(st) = d.get_temp::<State>(state_id(&ctx))
                 && st.layer == Some(ui.layer_id())
                 && st.nav.open.is_some()
             {
                 d.insert_temp(
-                    state_id(),
+                    state_id(&ctx),
                     State {
                         layer: st.layer,
                         menus: st.menus,
@@ -1327,7 +1327,7 @@ fn render_picked(
         }
         return None;
     }
-    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    let mut st: State = ctx.data(|d| d.get_temp(state_id(&ctx))).unwrap_or_default();
     if st.layer.is_some_and(|layer| layer != ui.layer_id()) {
         st = State {
             alt_blocked: st.alt_blocked,
@@ -1373,7 +1373,7 @@ fn render_picked(
                 st.title_press = true;
                 st.current = current_of(&st.nav, menus);
                 st.menus = model;
-                ctx.data_mut(|d| d.insert_temp(state_id(), st));
+                ctx.data_mut(|d| d.insert_temp(state_id(&ctx), st));
                 ctx.request_repaint();
                 return None;
             }
@@ -1442,7 +1442,7 @@ fn render_picked(
     // them is in the query; but only into the menu and field they were
     // typed in. If the menu closed or the field lost the keyboard since,
     // they are dropped, never replayed into the application.
-    let field_focused = ctx.memory(|m| m.has_focus(search_field_id()));
+    let field_focused = ctx.memory(|m| m.has_focus(state_id(&ctx).with("search")));
     let deferred = std::mem::take(&mut st.deferred);
     if !deferred.is_empty()
         && st.nav.open == st.deferred_menu
@@ -1488,7 +1488,7 @@ fn render_picked(
     };
     st.nav.validate(menus);
     let mut fired = None;
-    let typing = searching(&st).is_some() && ctx.memory(|m| m.has_focus(search_field_id()));
+    let typing = searching(&st).is_some() && ctx.memory(|m| m.has_focus(state_id(&ctx).with("search")));
     if typing {
         st.nav.depth = search_level;
     }
@@ -1649,7 +1649,7 @@ fn render_picked(
     {
         st.focus_search = false;
         if searching(&st).is_some() {
-            ctx.memory_mut(|m| m.request_focus(search_field_id()));
+            ctx.memory_mut(|m| m.request_focus(state_id(&ctx).with("search")));
             st.nav.depth = search_level;
         }
     }
@@ -1882,7 +1882,7 @@ fn render_picked(
     if st.nav != before || st.focus_search {
         ctx.request_repaint();
     }
-    ctx.data_mut(|d| d.insert_temp(state_id(), st));
+    ctx.data_mut(|d| d.insert_temp(state_id(&ctx), st));
     fired
 }
 
@@ -2016,7 +2016,7 @@ fn show_level(
         keyed,
         deeper,
     } = view;
-    let id = state_id().with(ctx.viewport_id()).with(level);
+    let id = state_id(ui.ctx()).with(level);
     let area = Area::new(id)
         .kind(UiKind::Menu)
         .order(Order::Foreground)
@@ -2122,7 +2122,7 @@ fn search_header(
     ui.scope(|ui| {
         egui::containers::menu::menu_style(ui.style_mut());
         let field = TextEdit::singleline(query)
-            .id(search_field_id())
+            .id(state_id(ui.ctx()).with("search"))
             .hint_text(search.hint.as_str())
             .desired_width(width.max(chrome.style.menu_search_width as f32));
         if ui.add(field).changed() {
@@ -2338,10 +2338,10 @@ mod tests {
                     ..Default::default()
                 };
                 st.nav.open(0);
-                ctx.data_mut(|d| d.insert_temp(state_id(), st));
+                ctx.data_mut(|d| d.insert_temp(state_id(&ctx), st));
                 ui.disable();
                 let _ = bar(ui, &[]);
-                let st = ctx.data(|d| d.get_temp::<State>(state_id())).unwrap();
+                let st = ctx.data(|d| d.get_temp::<State>(state_id(&ctx))).unwrap();
                 assert_eq!(st.layer, Some(layer));
                 assert_eq!(st.nav.open, if own_layer { None } else { Some(0) });
             });

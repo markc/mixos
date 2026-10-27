@@ -188,6 +188,10 @@ pub struct DocumentState {
 }
 
 impl DocumentState {
+    pub(crate) fn owns(&self, ticket: u64) -> bool {
+        self.pending.contains_key(&ticket) || self.saving.contains_key(&ticket)
+            || self.folder.as_ref().is_some_and(|f| f.0 == ticket)
+    }
     pub fn opening(&self) -> bool {
         self.pending.values().any(|r| !r.send)
     }
@@ -329,6 +333,12 @@ impl State {
                 .as_ref()
                 .map(|c| c.directory().to_owned());
             self.documents.chooser = None;
+            self.document_chosen(outcome);
+            ctx.request_repaint();
+        }
+    }
+
+    pub fn document_chosen(&mut self, outcome: toolkit::file_chooser::Outcome) {
             match outcome {
                 toolkit::file_chooser::Outcome::Picked(paths) => {
                     if let Some(path) = paths.into_iter().next() {
@@ -347,8 +357,6 @@ impl State {
                 }
                 toolkit::file_chooser::Outcome::Cancelled => {}
             }
-            ctx.request_repaint();
-        }
     }
 
     pub fn write_document(&mut self, path: PathBuf, replace: bool) {

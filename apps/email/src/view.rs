@@ -33,6 +33,8 @@ use toolkit::datatable;
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
+    DocumentChosen(toolkit::file_chooser::Outcome),
+    ComposeDrop(Vec<std::path::PathBuf>),
     DocumentReplace(bool),
     Command(&'static str, Origin),
     CloseMacros,
@@ -127,7 +129,7 @@ pub fn view(
     state: &State,
     commands: &Registry<State>,
     strings: &Strings,
-    palette: &editor::Palette,
+    _palette: &editor::Palette,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
     // The icon bar: a new mail, then the standard tail.
@@ -166,8 +168,6 @@ pub fn view(
     } else {
         window(ui, state, commands, strings, &mut events);
     }
-    compose::dialog(ui, state, commands, strings, palette, &mut events);
-    compose::confirm(ui, state, &mut events);
     identities::dialog(ui, state, &mut events);
     compose::restore(ui, state, &mut events);
     form::dialog(ui, state, &mut events);

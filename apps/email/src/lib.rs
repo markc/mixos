@@ -24,6 +24,7 @@
 pub mod actions;
 pub mod attachments;
 pub mod commands;
+pub mod composer;
 pub mod config;
 pub mod documents;
 pub mod drafts;
@@ -72,6 +73,8 @@ pub const APP_ID: &str = "dev.mixos.email";
 /// What a launch was asked to do.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Args {
+    pub compose: bool,
+    pub document: Option<std::path::PathBuf>,
     /// The Bus service name to register as.
     pub service: String,
     /// The noded URL to reach the broker through.
@@ -81,6 +84,8 @@ pub struct Args {
 impl Default for Args {
     fn default() -> Self {
         Self {
+            compose: false,
+            document: None,
             service: APP.into(),
             url: ::bus::client_helpers::resolve_noded_url(),
         }
@@ -90,8 +95,20 @@ impl Default for Args {
 /// Parse the command line, house style: manual, with a HELP string.
 pub fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut settings = Args::default();
-    let mut args = args;
+    let mut args = args.peekable();
     while let Some(arg) = args.next() {
+        if arg == "--compose" {
+            settings.compose = true;
+            if args.peek().is_some_and(|v| !v.starts_with('-')) {
+                let path = std::path::PathBuf::from(args.next().unwrap());
+                settings.document = Some(if path.is_absolute() {
+                    path
+                } else {
+                    std::env::current_dir().map_err(|e| e.to_string())?.join(path)
+                });
+            }
+            continue;
+        }
         let value = args
             .next()
             .filter(|v| !v.is_empty())
@@ -120,11 +137,28 @@ pub fn run(args: &Args) -> Result<(), String> {
     let topics = [::settings::summary_topic(::settings::follow::PROFILE)];
     let (handle, deliveries) = citizen::start_with_macros(APP, &args.service, &args.url, &topics)?;
     let theme = toolkit::Theme::load();
+    let mut viewport = if args.compose {
+        toolkit::titlebar::viewport("dev.mixos.email.compose-1", &label("compose-title"))
+            .with_inner_size([900.0, 700.0])
+            .with_min_inner_size([640.0, 480.0])
+    } else {
+        toolkit::titlebar::viewport(APP_ID, &label("title"))
+            .with_inner_size([1200.0, 780.0])
+            .with_min_inner_size([820.0, 520.0])
+    };
+    if args.compose {
+        let store = toolkit::saved::Store::<serde_json::Value>::load(
+            config::AppDirs::resolve(APP).map(|d| d.state()), 0,
+        );
+        if let Some(frame) = store.windows.get("compose-1") {
+            viewport = frame.viewport(viewport);
+        }
+    }
+    let compose = args.compose;
+    let document = args.document.clone();
     let options = eframe::NativeOptions {
         // Client-side decorations: the toolkit title bar is the window frame.
-        viewport: toolkit::titlebar::viewport(APP_ID, &label("title"))
-            .with_inner_size([1200.0, 780.0])
-            .with_min_inner_size([820.0, 520.0]),
+        viewport,
         ..eframe::NativeOptions::default()
     };
     let shell_bus = handle.clone();
@@ -134,11 +168,28 @@ pub fn run(args: &Args) -> Result<(), String> {
         Box::new(move |cc| {
             toolkit::decorations::initialise(cc);
             toolkit::install(&cc.egui_ctx, &theme);
-            let shell = shell::Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries)?;
+            let mut shell = shell::Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries)?;
+            shell.compose_launch(compose, document);
             Ok(Box::new(shell))
         }),
     )
     .map_err(|e| e.to_string());
     handle.quit();
     result.and(handle.wait_done())
+}
+
+/// Forward both initial probes and registration races through the same path.
+pub fn forward(args: &Args) -> Result<(), String> {
+    if !args.compose {
+        return citizen::forward(&args.url, &args.service, APP);
+    }
+    let reply = citizen::request(&args.url, &args.service, "email.compose", compose_request(args))?;
+    if reply.rc == 0 { Ok(()) } else { Err(reply.body) }
+}
+
+fn compose_request(args: &Args) -> serde_json::Value {
+    args.document.as_ref().map_or_else(
+        || serde_json::json!({}),
+        |path| serde_json::json!({"document":path}),
+    )
 }

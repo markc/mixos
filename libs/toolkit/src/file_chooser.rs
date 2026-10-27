@@ -21,7 +21,7 @@ const WORKER_LIMIT: usize = 8;
 static WORKERS: AtomicUsize = AtomicUsize::new(0);
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
     Picked(Vec<PathBuf>),
     Save { path: PathBuf, replace: bool },

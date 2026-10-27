@@ -158,6 +158,13 @@ fn persist(windows: &Windows, name: &str) {
 
 type CaptureSender = tokio::sync::mpsc::Sender<Option<std::sync::mpsc::Sender<()>>>;
 
+fn capture_service(app: &str, name: &str, pid: u32) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    name.hash(&mut hash);
+    format!("{app}-saved-{pid}-{:016x}", hash.finish())
+}
+
 #[cfg(not(test))]
 fn worker(
     app: &str,
@@ -172,7 +179,7 @@ fn worker(
     std::thread::Builder::new().name("saved-viewport".into()).spawn(move || {
         let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() else { return; };
         runtime.block_on(async {
-            let service = format!("{app}-saved-{}", std::process::id());
+            let service = capture_service(&app, &name, std::process::id());
             let url = ::bus::client_helpers::resolve_noded_url();
             let options = ::bus::native_client::SupervisedClient::connect_options(&service, &url).fatal_on_registration_rejection(true);
             let Ok(Ok(client)) = tokio::time::timeout(Duration::from_millis(700), options.connect()).await else { return; };

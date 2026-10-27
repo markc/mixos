@@ -129,57 +129,16 @@ pub fn restore(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
 
 /// The compose dialog, when a draft is open.
 pub fn body_focused(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp::<egui::Id>(egui::Id::unique("email.compose.body.focus")))
+    body_id(ctx)
         .is_some_and(|id| ctx.memory(|m| m.has_focus(id)))
 }
 
-/// The compose dialog, when a draft is open.
-pub fn dialog(
-    ui: &mut Ui,
-    state: &State,
-    commands: &toolkit::Registry<State>,
-    strings: &toolkit::Strings,
-    palette: &editor::Palette,
-    events: &mut Vec<UiEvent>,
-) {
-    let Some(compose) = &state.compose else {
-        return;
-    };
-    let id = egui::Id::unique("compose");
-    let mut send = Choice::new(crate::label("send"), dialog::Role::Default);
-    send.enabled = state.compose_sendable();
-    let choices = vec![
-        send,
-        Choice::new(crate::label("cancel"), dialog::Role::Cancel),
-    ];
-    let send_index = 0; // choices[0] is Send; the cancel closes below.
-    // The body can be resized; egui keeps the size for this id while the
-    // app runs, so the window opens at the size it was last left at.
-    let shown = dialog::Dialog::new(id, crate::label("compose-title"))
-        .enabled(state.attachment_chooser.is_none() && !state.documents.modal())
-        .buttons(choices)
-        .resizable(egui::vec2(720.0, 560.0), egui::vec2(480.0, 320.0))
-        .show(ui.ctx(), |ui| {
-            events.extend(
-                commands
-                    .menu_bar_for(
-                        ui,
-                        state,
-                        strings,
-                        &["compose-file-menu", "compose-attachments-menu"],
-                    )
-                    .into_iter()
-                    .map(|(id, origin)| UiEvent::Command(id, origin)),
-            );
-            form(ui, compose, state, palette, events);
-        });
-    if shown.chosen == Some(send_index) {
-        events.push(UiEvent::SendCompose);
-        dialog::Dialog::reset(ui.ctx(), id);
-    } else if shown.chosen.is_some() || shown.dismissed {
-        dialog::Dialog::reset(ui.ctx(), id);
-        events.push(UiEvent::CloseCompose);
-    }
+pub fn body_id(ctx: &egui::Context) -> Option<egui::Id> {
+    ctx.data(|d| d.get_temp::<egui::Id>(egui::Id::unique((ctx.viewport_id(), "email.compose.body.focus"))))
+}
+
+/// Ask before replacing this composer with an opened document.
+pub fn document_replace(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
     if state.documents.replace.is_some() {
         let id = egui::Id::unique("compose-document-replace");
         ui.ctx()
@@ -441,7 +400,7 @@ fn attachment_chip(
 /// The rows, labels outside on the left: From (the identity, with
 /// Identities… at the right), To (with the Cc, Bcc and Reply-To buttons at
 /// the right), the optional rows the person opened, and Subject.
-fn form(
+pub fn form(
     ui: &mut Ui,
     compose: &ComposeState,
     state: &State,
@@ -619,7 +578,7 @@ fn form(
             let response = ui
                 .add(
                     field::text_edit(&mut buffer, "", width)
-                        .id(egui::Id::unique("compose-subject")),
+                        .id(egui::Id::unique((ui.ctx().viewport_id(), "compose-subject"))),
                 )
                 .labelled_by(label);
             if response.changed() {
@@ -686,7 +645,7 @@ fn form(
                 );
                 ui.ctx().data_mut(|d| {
                     d.insert_temp(
-                        egui::Id::unique("email.compose.body.focus"),
+                        egui::Id::unique((ui.ctx().viewport_id(), "email.compose.body.focus")),
                         output.response.id,
                     )
                 });

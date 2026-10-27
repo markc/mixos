@@ -130,6 +130,9 @@ async fn inspect_compose_attachments(inspection: crate::work::ComposeInspection)
 }
 
 pub struct Shell {
+    composers: crate::composer::Windows,
+    launch_compose: bool,
+    launch_document: Option<PathBuf>,
     state: State,
     commands: Registry<State>,
     strings: Strings,
@@ -694,6 +697,9 @@ impl Shell {
             &theme
         });
         let mut shell = Self {
+            composers: crate::composer::Windows::default(),
+            launch_compose: false,
+            launch_document: None,
             state,
             palette,
             composer_light,
@@ -741,6 +747,115 @@ impl Shell {
 
     pub fn state_mut(&mut self) -> &mut State {
         &mut self.state
+    }
+
+    pub fn compose_launch(&mut self, compose: bool, document: Option<PathBuf>) {
+        self.composers.compose_only = compose;
+        self.launch_compose = compose;
+        self.launch_document = document;
+        if compose {
+            self.composers.insert(&mut self.state, self.palette.clone());
+            self.start_composer();
+        }
+    }
+
+    fn start_composer(&mut self) {
+        if !self.launch_compose { return; }
+        let Some(account) = self.state.compose_account() else { return; };
+        self.launch_compose = false;
+        if let Some(path) = self.launch_document.take() {
+            if let Err((_, error)) = self.state.read_document(account, path, None, false, false) {
+                self.state.status = error;
+            }
+        } else { self.state.compose(); }
+        self.sync_composers();
+        self.settle();
+    }
+
+    fn sync_composers(&mut self) {
+        let palette = self.editor_palette();
+        self.composers.adopt(&mut self.state, palette.clone());
+        for window in self.composers.windows.values() {
+            let mut window = window.lock().unwrap();
+            let previous = window.view.compose.as_ref().and_then(|c| window.view.account(&c.account)).map(|a| a.entry.clone());
+            crate::composer::swap(&mut self.state, &mut window.view);
+            self.state.recheck_composer(previous.as_ref());
+            crate::composer::swap(&mut self.state, &mut window.view);
+        }
+        self.composers.refresh(&self.ctx, &self.state, &palette);
+    }
+
+    fn composer_input(&mut self) {
+        let windows: Vec<_> = self.composers.windows.values().cloned().collect();
+        let registry = crate::composer::registry();
+        for window in windows {
+            let mut window = window.lock().unwrap();
+            crate::composer::swap(&mut self.state, &mut window.view);
+            std::mem::swap(&mut self.draft_due, &mut window.draft_due);
+            for mut input in std::mem::take(&mut window.pending) {
+                let close = input.events.iter().any(|e| matches!(e, UiEvent::CloseCompose | UiEvent::Command("compose.close", _)));
+                if close && self.composers.hold_owner(window.viewport, &mut self.state) {
+                    input.events.retain(|e| !matches!(e, UiEvent::CloseCompose | UiEvent::Command("compose.close", _)));
+                }
+                if input.events.iter().any(|e| matches!(e, UiEvent::ConfirmDraft(crate::state::DraftChoice::Back))) {
+                    self.composers.quitting = false;
+                    self.composers.owner_closing = false;
+                }
+                let quit = input.events.iter().any(|e| matches!(e, UiEvent::Command("file.quit", _)));
+                let origin = input.request.and_then(|id| self.drive_callers.get(&id)).cloned().map(|mut o| { o.mixed_input = input.mixed; o });
+                apply_ui_events(&mut self.state, &registry, input.events, origin);
+                if quit { self.composers.quitting = true; }
+                // Per-window Quit confirmations never terminate siblings.
+                self.state.exiting = false;
+                if close && self.state.compose.is_none() && !self.state.documents.opening() { window.closed = true; }
+                self.ctx.request_repaint_of(window.viewport);
+            }
+            self.draft_timer();
+            self.settle();
+            std::mem::swap(&mut self.draft_due, &mut window.draft_due);
+            crate::composer::swap(&mut self.state, &mut window.view);
+        }
+        let (runs, lost) = registry.take_executed();
+        if !runs.is_empty() || lost != 0 {
+            self.bus.publish(&toolkit::executed::topic(self.bus.service()), runs.iter().map(toolkit::executed::Executed::body).collect(), lost);
+        }
+        if std::mem::take(&mut self.state.compose_new_requested) {
+            self.state.compose();
+        }
+        self.sync_composers();
+        self.advance_close();
+    }
+
+    fn advance_close(&mut self) {
+        if self.state.exiting { self.state.exiting = false; self.composers.quitting = true; }
+        let children = self.composers.windows.len() > usize::from(self.composers.root.is_some());
+        if self.composers.quitting {
+            // Children first; the fixed root owner is always the final window.
+            let next = self.composers.windows.values().find(|w| w.lock().unwrap().viewport != egui::ViewportId::ROOT)
+                .or_else(|| self.composers.windows.values().next()).cloned();
+            if let Some(window) = next {
+                let mut window = window.lock().unwrap();
+                if window.view.confirm.is_none() {
+                    crate::composer::swap(&mut self.state, &mut window.view);
+                    self.state.apply_ui(UiEvent::CloseCompose);
+                    if self.state.confirm.is_some() { self.state.confirm = Some(crate::state::Confirm::Quit); }
+                    else { window.closed = true; }
+                    self.settle();
+                    crate::composer::swap(&mut self.state, &mut window.view);
+                    self.ctx.send_viewport_cmd_to(window.viewport, egui::ViewportCommand::Focus);
+                    self.ctx.request_repaint_of(window.viewport);
+                }
+            } else { self.state.exiting = true; }
+        } else if self.composers.owner_closing && !children {
+            if let Some(window) = self.composers.root.as_ref().and_then(|n| self.composers.windows.get(n)) {
+                let mut window = window.lock().unwrap();
+                if window.view.confirm.is_none() {
+                    window.pending.push(crate::composer::Input { events: vec![UiEvent::CloseCompose], request: None, mixed: false });
+                    self.ctx.request_repaint();
+                }
+            } else { self.state.exiting = true; }
+        }
+        if self.composers.compose_only && self.composers.windows.is_empty() { self.state.exiting = true; }
     }
 
     /// Spawn `work` and send its result back as an event.
@@ -1380,8 +1495,18 @@ impl Shell {
                 self.shown(id, result);
                 continue;
             }
-            self.state.apply(event);
-            self.settle();
+            if let Some(window) = self.composers.target(&event) {
+                let mut window = window.lock().unwrap();
+                crate::composer::swap(&mut self.state, &mut window.view);
+                self.state.apply(event);
+                self.settle();
+                crate::composer::swap(&mut self.state, &mut window.view);
+                self.ctx.request_repaint_of(window.viewport);
+            } else {
+                self.state.apply(event);
+                self.settle();
+            }
+            self.sync_composers();
         }
         self.release();
     }
@@ -1471,6 +1596,27 @@ impl Shell {
     /// One Bus command: the commands layer answers or queues it; the drive
     /// commands and the window's activation are the shell's.
     fn command(&mut self, id: u64, command_name: &str, body: &str) {
+        let args = serde_json::from_str::<Value>(body).ok().filter(Value::is_object);
+        let routed = command_name.starts_with("email.compose.") || command_name == "email.info"
+            || (command_name == "email.action" && args.as_ref().is_some_and(|a| a["id"].as_str().is_some_and(|id| id.starts_with("compose.") || id == "mail.send")));
+        let target = if routed { args.as_ref().and_then(|a| self.composers.selected(a)) } else { None };
+        if routed && args.as_ref().is_some_and(|a| a.get("window").is_some()) && target.is_none() {
+            self.state.refuse(id, code::NOT_FOUND, &label("compose-not-open"));
+            self.settle();
+            return;
+        }
+        if command_name == "email.info" && args.is_some() {
+            let mut info = if let Some(window) = &target { window.lock().unwrap().view.info() } else { self.state.info() };
+            info["window"] = target.as_ref().map(|w| json!(w.lock().unwrap().name)).unwrap_or(Value::Null);
+            info["compose_windows"] = Value::Array(self.composers.windows.values().map(|w| {
+                let w = w.lock().unwrap();
+                json!({"window":w.name,"root":w.viewport == egui::ViewportId::ROOT,"compose":w.view.info()["compose"]})
+            }).collect());
+            self.bus.reply(id,0,info);
+            return;
+        }
+        let mut target = target.as_ref().map(|w| w.lock().unwrap());
+        if let Some(window) = &mut target { crate::composer::swap(&mut self.state, &mut window.view); }
         let origin = SendOrigin {
             caller_key: self.bus.caller_key(id),
             drive_request_id: None,
@@ -1479,6 +1625,12 @@ impl Shell {
         let forward = self.state.with_send_origin(Some(origin), |state| {
             crate::commands::command(state, &self.commands, &self.strings, id, command_name, body)
         });
+        self.settle();
+        if let Some(window) = &mut target {
+            crate::composer::swap(&mut self.state, &mut window.view);
+            self.ctx.request_repaint_of(window.viewport);
+        }
+        drop(target);
         match forward {
             Some(Forward::Drive {
                 id,
@@ -1499,11 +1651,14 @@ impl Shell {
             Some(Forward::Show { id }) => {
                 self.shows.insert(id);
                 let (bus, comp) = (self.bus.clone(), self.comp.clone());
-                self.spawn(async move { Event::Shown(id, citizen::show(bus, comp, APP_ID).await) });
+                let app_id = self.composers.root.as_ref().map(|name| format!("{APP_ID}.{name}")).unwrap_or_else(|| APP_ID.into());
+                self.ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
+                self.spawn(async move { Event::Shown(id, citizen::show(bus, comp, &app_id).await) });
             }
             None => {}
         }
         self.settle();
+        self.sync_composers();
     }
 
     /// Persist the config when the state says it changed, and rewrite it as
@@ -1711,6 +1866,7 @@ impl Shell {
 
     /// One frame's logic; it runs even while the window is hidden.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        self.composer_input();
         // Drive answers first: a `window close` answer goes out before the
         // close it asked for is handled.
         drive::publish_titlebar(ctx, |topic, bodies, lost| {
@@ -1721,16 +1877,22 @@ impl Shell {
             self.bus.reply(answer.id, answer.rc, answer.body);
         }
         self.pump();
+        self.start_composer();
+        self.sync_composers();
+        self.advance_close();
         self.follow_theme();
         self.draft_timer();
         // Closing waits for the drive layer's accepted work. A close is
         // asked for by the window (the close button) or a command
         // (file.quit, which sets the state's exiting flag). A draft open
         // with something typed is saved and the person asked first.
-        let asked = ctx.input(|i| i.viewport().close_requested());
+        let asked = !self.composers.compose_only && ctx.input(|i| i.viewport().close_requested());
         let mut closing = self.state.exiting;
         if asked && !closing && !self.exiting {
-            if self.state.request_quit() {
+            if self.composers.hold_owner(egui::ViewportId::ROOT, &mut self.state) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                ctx.request_repaint();
+            } else if self.state.request_quit() {
                 closing = true;
             } else {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -1743,6 +1905,14 @@ impl Shell {
             self.exiting = true;
             // Whatever is typed is on disk before anything else closes.
             self.state.save_draft();
+            for window in self.composers.windows.values() {
+                let mut window = window.lock().unwrap();
+                crate::composer::swap(&mut self.state, &mut window.view);
+                self.state.save_draft();
+                self.state.cancel_document_open();
+                crate::composer::swap(&mut self.state, &mut window.view);
+            }
+            toolkit::saved::secondary::close(ctx, APP);
             self.apply_drafts();
             for answer in drive::finish(&self.ctx) {
                 self.drive_callers.remove(&answer.id);
@@ -1780,6 +1950,11 @@ impl Shell {
 
     /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        if self.exiting { return; }
+        if self.composers.compose_only {
+            self.composers.show(ui);
+            return;
+        }
         let fired = crate::actions::shortcuts(ui.ctx(), &self.state, &self.commands);
         let mut events = view(
             ui,
@@ -1839,6 +2014,8 @@ impl Shell {
             }
         }
         self.settle();
+        self.sync_composers();
+        self.composers.show(ui);
         // A theme change is installed by the next frame's logic, before any
         // drawing: never midway through the frame that saw the click. So is
         // a close the person just confirmed.
