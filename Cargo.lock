@@ -5796,7 +5796,6 @@ dependencies = [
  "logging",
  "mix",
  "paths",
- "reqwest",
  "rmcp",
  "schemars",
  "serde",

@@ -287,9 +287,7 @@ reconnecting.</p>
 <li><code>log_tail</code>, <code>log_search</code></li>
 <li><code>app_describe</code>, <code>app_actions</code>, <code>app_execute</code></li>
 <li><code>desktop_windows</code>, <code>desktop_window_wait</code></li>
-<li><code>context_search</code>, <code>index_workspace</code>, <code>knowledge_digest</code>, <code>knowledge_brief</code></li>
-<li><code>skills_retrieve</code>, <code>skills_store</code>, <code>skills_refine</code>, <code>skills_graduate</code>,
-<code>skills_list</code>, <code>skills_delete</code></li>
+<li><code>context_search</code>, <code>index_workspace</code>, <code>knowledge_digest</code></li>
 <li><code>docs_feedback</code>, <code>journal_feedback</code>, <code>memory_feedback</code>, <code>journal_supersede</code></li>
 <li><code>mix_execute</code>, <code>mcp_status</code></li>
 </ul>
@@ -313,13 +311,25 @@ without aliases. Use <code>app_actions</code> and <code>app_execute</code> for r
 and <code>app_describe</code> to discover an application's state commands. These retired
 tool names must not be reused.</p>
 <h3 id="knowledge-tools">Knowledge tools</h3>
-<p>Knowledge tools retain their ranking, indexing, feedback and skill-learning
-behaviour. By default they send <code>indexd.&lt;action&gt;</code> requests to <code>indexd</code> on
-the selected Bus. An absent backend returns an explicit tool error.
-Skill refinement also needs a configured LLM backend. Settings are MixOS strict-data files:
-<code>knowledge.conf.mix</code>, <code>domains.conf.mix</code>, <code>skills.conf.mix</code> and <code>llm.conf.mix</code>.
-LLM Bus providers use the same broker. <code>api_key_cmd</code> is Mix source, executed
-by <code>&lt;prefix&gt;/bin/mix -c</code>.</p>
+<p><code>context_search</code> returns documents, journals, specs, plans, notes, memory,
+source comments, observations and scripts, grouped by source. It applies
+source trust weights and journal age limits. <code>index_workspace</code> indexes workspace
+content. <code>knowledge_digest {}</code> returns global index statistics under
+<code>statistics</code> and bounded staleness samples under <code>stale</code>, including legacy rows.
+These tools send <code>indexd.&lt;action&gt;</code> requests to the configured indexd transport.
+An absent backend returns an explicit tool error. Settings are MixOS strict-data
+files: <code>knowledge.conf.mix</code> and <code>domains.conf.mix</code>.</p>
+<p>The knowledge skills loop was retired on 2026-10-27. The six <code>skills_*</code> tools,
+<code>knowledge_brief</code>, skill refinement and graduation to <code>CLAUDE.md</code> are removed
+without aliases. <code>context_search</code> neither queries skills nor returns a <code>skills</code>
+group. Existing stored skills remain untouched; these retired tool names must
+not be reused. The server no longer instructs clients to capture, refine or
+rate knowledge after tasks.</p>
+<p>The optional <code>docs_feedback</code>, <code>journal_feedback</code> and <code>memory_feedback</code> tools
+remain because indexd consumes their scores when ranking search results and
+selecting low-value staleness candidates. <code>journal_supersede</code> hides an obsolete
+chunk while retaining it for audit. To purge old CMM observations, use the
+existing <a href="/indexd/#purging-retired-cmm-observations">indexd filtered delete</a>.</p>
 <h3 id="host-indexd-from-a-desk">Host indexd from a desk</h3>
 <p>When a desk cannot reach the host's Bus, select SSH in
 <code>$MIXOS_ETC/knowledge.conf.mix</code> (normally <code>~/.config/mixos/knowledge.conf.mix</code>):</p>
@@ -364,8 +374,8 @@ Mix execution runs in an isolated worker with bounded output.</p>
 default; <code>RUST_LOG=mixos_mcp=trace</code> explicitly enables full arguments.
 <code>--version --json</code> reports build provenance without starting MCP or the Bus.</p>
 <p>Package tests cover parameter translation, target guards, output schemas,
-redaction and provider decoding. The stdio integration test uses the real
-fixture broker, including verified Unix ingress and lazy reconnection.
+redaction and retirement of the skills protocol. The stdio integration test
+uses the real fixture broker, including verified Unix ingress and lazy reconnection.
 An in-process fake application checks command listing, execute request bodies
 with and without parameters, and unchanged application error messages.
 It also checks configured knowledge targets, paginated re-indexing and

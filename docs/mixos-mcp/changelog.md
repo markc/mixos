@@ -10,6 +10,11 @@ generated: by docs/_build/gen-site.mix from cli/mixos-mcp/CHANGELOG.md; do not e
 
 ## Unreleased
 
+- Retire the knowledge skills protocol, six skills tools and `knowledge_brief`,
+  including LLM refinement and writes to `CLAUDE.md`. Context search no longer
+  queries skills; the digest reports index statistics and staleness samples.
+  Optional feedback remains consumed by indexd search ranking. Stored data is
+  unchanged; the indexd manual documents filtered CMM observation deletion.
 - Replace the unserved application action/control tools with `app_actions`
   and `app_execute`, using the application's registry Bus commands. Forward optional
   command parameters unchanged and preserve application error messages.

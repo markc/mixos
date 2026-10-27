@@ -237,7 +237,6 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
             "index_workspace",
             "journal_feedback",
             "journal_supersede",
-            "knowledge_brief",
             "knowledge_digest",
             "log_search",
             "log_tail",
@@ -245,12 +244,6 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
             "memory_feedback",
             "mix_execute",
             "noded_ping",
-            "skills_delete",
-            "skills_graduate",
-            "skills_list",
-            "skills_refine",
-            "skills_retrieve",
-            "skills_store",
             "term_list",
             "term_pane",
             "term_snapshot",
@@ -349,7 +342,7 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
     );
     assert!(native["stdout"].as_str().unwrap().contains("Email"));
     let absent = service
-        .call_tool(call("skills_list", json!({})))
+        .call_tool(call("context_search", json!({"query":"fixture"})))
         .await
         .unwrap();
     assert!(absent.is_error.unwrap_or(false));
@@ -387,18 +380,14 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
             let (rc, body) = match command.command.as_str() {
                 "indexd.stats" => (0, json!({"total_vectors":2107})),
                 "indexd.list" => {
-                    if request["source"] == "skill" {
-                        (0, json!({"items":[], "total":0}))
-                    } else {
-                        let offset = request["offset"].as_u64().unwrap() as usize;
-                        let limit = request["limit"].as_u64().unwrap() as usize;
-                        index_offsets.lock().unwrap().push(offset);
-                        let rows = index_rows.lock().unwrap();
-                        (
-                            0,
-                            json!({"items":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(), "total":rows.len()}),
-                        )
-                    }
+                    let offset = request["offset"].as_u64().unwrap() as usize;
+                    let limit = request["limit"].as_u64().unwrap() as usize;
+                    index_offsets.lock().unwrap().push(offset);
+                    let rows = index_rows.lock().unwrap();
+                    (
+                        0,
+                        json!({"items":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(), "total":rows.len()}),
+                    )
                 }
                 "indexd.delete" => {
                     assert!(request.get("ids").is_none());
@@ -439,7 +428,14 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
                 "indexd.feedback" if request["id"] == -2 => {
                     (0, json!({"error":"fixture body error"}))
                 }
-                "indexd.search" => (0, json!({"results":[]})),
+                "indexd.search" => {
+                    assert_ne!(
+                        request["source"], "skill",
+                        "retired skills must not be searched"
+                    );
+                    (0, json!({"results":[]}))
+                }
+                "indexd.stale" => (0, json!({"total_chunks":2107})),
                 "indexd.feedback" => (0, json!({"updated":1})),
                 _ => panic!("unexpected index request: {}", command.command),
             };
@@ -449,13 +445,14 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
                 .unwrap();
         }
     });
-    let skills = result(
+    let digest = result(
         service
-            .call_tool(call("skills_list", json!({})))
+            .call_tool(call("knowledge_digest", json!({})))
             .await
             .unwrap(),
     );
-    assert!(skills.get("result").is_some());
+    assert_eq!(digest["result"]["statistics"]["total_vectors"], 2107);
+    assert!(digest["result"].get("skills").is_none());
     let search = result(
         service
             .call_tool(call(
@@ -465,7 +462,10 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
             .await
             .unwrap(),
     );
-    assert!(search["result"]["skills"].as_array().unwrap().is_empty());
+    assert!(search["result"].get("skills").is_none());
+    for group in ["docs", "journals", "specs", "plans"] {
+        assert!(search["result"][group].is_array(), "missing {group}");
+    }
     let feedback = result(
         service
             .call_tool(call("docs_feedback", json!({"id":1, "useful":true})))

@@ -38,6 +38,33 @@ check(ok("indexd.stale", {}).total_chunks == 2, "stale")
 check(len(ok("indexd.embed", {texts:["alpha"]}).embeddings[0]) == 768, "embed")
 check(ok("indexd.index_file", {path:"/srv/project/empty.md",content:""}).sections == 0, "index_file")
 check(ok("indexd.delete", {ids:[$old,$new]}).deleted == 2, "delete")
+$observed = []
+for $row in [
+  {text:"alpha",domain:"mixos",observer:"cmm_cargo_clippy"},
+  {text:"beta",domain:"other",observer:"cmm_cargo_clippy"},
+  {text:"changed",domain:"mixos",observer:"other_observer"}
+]
+  $metadata = json_encode({observer:$row.observer,domain:$row.domain,tool:"cargo clippy",observed_at:"2026-05-01"})
+  $stored = ok("indexd.store", {texts:[$row.text],source:"observation",metadata:[$metadata]})
+  push($observed, $stored.ids[0])
+end
+$purge = {filter:[
+  {field:"observer",op:"eq",value:"cmm_cargo_clippy"},
+  {field:"domain",op:"eq",value:"mixos"}
+]}
+check(ok("indexd.delete", $purge).deleted == 1, "observer/domain purge")
+check(ok("indexd.delete", $purge).deleted == 0, "purge is repeatable")
+$remaining = ok("indexd.list", {source:"observation",limit:10}).items
+check(len($remaining) == 2, "purge preserves other observers and domains")
+for $row in $remaining
+  check($row.id != $observed[0], "purged chunk absent from durable list")
+end
+$matches = ok("indexd.search", {query:"query",source:"observation",limit:10}).results
+check(len($matches) == 2, "purge updates in-memory search")
+for $row in $matches
+  check($row.id != $observed[0], "purged chunk absent from search")
+end
+check(ok("indexd.delete", {ids:$observed}).deleted == 2, "observation fixture cleanup")
 $bad = call("indexd.store", {texts:["x"],metadata:[{}]})
 check($bad.rc == 10 and type($bad.body.error) == "string", "error rc and JSON body")
 $mismatch = call("indexd.stats", {action:"search"})

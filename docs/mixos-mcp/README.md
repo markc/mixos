@@ -63,9 +63,7 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 - `log_tail`, `log_search`
 - `app_describe`, `app_actions`, `app_execute`
 - `desktop_windows`, `desktop_window_wait`
-- `context_search`, `index_workspace`, `knowledge_digest`, `knowledge_brief`
-- `skills_retrieve`, `skills_store`, `skills_refine`, `skills_graduate`,
-  `skills_list`, `skills_delete`
+- `context_search`, `index_workspace`, `knowledge_digest`
 - `docs_feedback`, `journal_feedback`, `memory_feedback`, `journal_supersede`
 - `mix_execute`, `mcp_status`
 
@@ -94,13 +92,27 @@ tool names must not be reused.
 
 ### Knowledge tools
 
-Knowledge tools retain their ranking, indexing, feedback and skill-learning
-behaviour. By default they send `indexd.<action>` requests to `indexd` on
-the selected Bus. An absent backend returns an explicit tool error.
-Skill refinement also needs a configured LLM backend. Settings are MixOS strict-data files:
-`knowledge.conf.mix`, `domains.conf.mix`, `skills.conf.mix` and `llm.conf.mix`.
-LLM Bus providers use the same broker. `api_key_cmd` is Mix source, executed
-by `<prefix>/bin/mix -c`.
+`context_search` returns documents, journals, specs, plans, notes, memory,
+source comments, observations and scripts, grouped by source. It applies
+source trust weights and journal age limits. `index_workspace` indexes workspace
+content. `knowledge_digest {}` returns global index statistics under
+`statistics` and bounded staleness samples under `stale`, including legacy rows.
+These tools send `indexd.<action>` requests to the configured indexd transport.
+An absent backend returns an explicit tool error. Settings are MixOS strict-data
+files: `knowledge.conf.mix` and `domains.conf.mix`.
+
+The knowledge skills loop was retired on 2026-10-27. The six `skills_*` tools,
+`knowledge_brief`, skill refinement and graduation to `CLAUDE.md` are removed
+without aliases. `context_search` neither queries skills nor returns a `skills`
+group. Existing stored skills remain untouched; these retired tool names must
+not be reused. The server no longer instructs clients to capture, refine or
+rate knowledge after tasks.
+
+The optional `docs_feedback`, `journal_feedback` and `memory_feedback` tools
+remain because indexd consumes their scores when ranking search results and
+selecting low-value staleness candidates. `journal_supersede` hides an obsolete
+chunk while retaining it for audit. To purge old CMM observations, use the
+existing [indexd filtered delete](../indexd/README.md#purging-retired-cmm-observations).
 
 ### Host indexd from a desk
 
@@ -157,8 +169,8 @@ default; `RUST_LOG=mixos_mcp=trace` explicitly enables full arguments.
 `--version --json` reports build provenance without starting MCP or the Bus.
 
 Package tests cover parameter translation, target guards, output schemas,
-redaction and provider decoding. The stdio integration test uses the real
-fixture broker, including verified Unix ingress and lazy reconnection.
+redaction and retirement of the skills protocol. The stdio integration test
+uses the real fixture broker, including verified Unix ingress and lazy reconnection.
 An in-process fake application checks command listing, execute request bodies
 with and without parameters, and unchanged application error messages.
 It also checks configured knowledge targets, paginated re-indexing and

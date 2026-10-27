@@ -18,7 +18,7 @@ over an in-memory copy, re-ranked by feedback and staleness.
 
 It runs on one workstation host as a system service, registered on that
 host's own node. Agents usually reach it through `mixos-mcp`
-(`context_search`, `index_workspace`, the `skills_*` tools). A desk on the
+(`context_search`, `index_workspace`). A desk on the
 same machine reaches it over the Bus, or over ssh through `indexd bridge`,
 which reads newline-delimited JSON on stdin and makes each request as a local
 Bus call.
@@ -62,6 +62,48 @@ Each predicate also requires the matching JSON type (integers and reals share
 the numeric type); null, arrays and objects are refused. Search retains all
 operators listed above.
 Deletion updates the durable vectors and in-memory index in one operation.
+
+### Purging retired CMM observations
+
+Observations are ordinary rows in SQLite's `chunks` table, with
+`source = "observation"`, text in `content` and a JSON string in `metadata`.
+Their embeddings live in `vec_chunks` and the in-memory search index. The
+source policy requires metadata fields `observer`, `tool`, `observed_at` and
+`domain`. The retired CMM clippy producer used observer `cmm_cargo_clippy`.
+There is no remaining observation writer in this repository; the source type
+remains readable for the legacy corpus. `context_search` continues to return
+these rows in its `observations` group until an operator purges them.
+
+The existing `indexd.delete` command supports exact metadata predicates for
+observer and domain. For the `mixos` domain, the exact Bus call is:
+
+```mix
+send indexd indexd.delete body='{"filter":[{"field":"observer","op":"eq","value":"cmm_cargo_clippy"},{"field":"domain","op":"eq","value":"mixos"}]}'
+print($reply)
+```
+
+The same call through mixos-mcp is:
+
+```json
+{"to":"indexd","command":"indexd.delete","args":"{\"filter\":[{\"field\":\"observer\",\"op\":\"eq\",\"value\":\"cmm_cargo_clippy\"},{\"field\":\"domain\",\"op\":\"eq\",\"value\":\"mixos\"}]}"}
+```
+
+Pass that object to `bus_call` (`mcp__mixos__bus_call` in Claude Code), with
+`to` set to the indexd Bus address reachable from the caller. `bus_call` uses
+the Bus connection; it does not use the knowledge tools' configured SSH bridge.
+The reply contains `deleted`. Other observers and domains survive, and repeating
+the deletion returns zero once matching rows are gone. These are operator calls;
+the retirement change does not execute them or change stored data.
+
+`filter.field` always names a metadata field: `source` is a separate column,
+so a filter on `source` does **not** select the row's source type. To restrict
+deletion to observations as well, first enumerate `indexd.list` with
+`{"source":"observation","limit":1000,"offset":0}`, advancing `offset` until
+all pages are collected. Then pass the selected IDs together with the observer
+and domain predicates to `indexd.delete`. IDs and predicates are intersected;
+collect pages before deleting so offset shifts cannot skip rows. No new command
+or database access is needed. The existing delete updates `chunks`, `vec_chunks`
+and the in-memory index together.
 
 ## CLI and bridge
 

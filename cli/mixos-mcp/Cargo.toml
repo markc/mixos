@@ -22,7 +22,6 @@ mod_module_files = "deny"
 paths = { path = "../../libs/paths" }
 anyhow.workspace = true
 directories.workspace = true
-reqwest.workspace = true
 glob.workspace = true
 rmcp = { version = "=3.1.2", features = ["server", "transport-io", "macros", "schemars"] }
 bus = { workspace = true, features = ["native"] }

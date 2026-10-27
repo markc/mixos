@@ -239,6 +239,11 @@
 </blockquote>
 <h2 id="unreleased">Unreleased</h2>
 <ul>
+<li>Retire the knowledge skills protocol, six skills tools and <code>knowledge_brief</code>,
+including LLM refinement and writes to <code>CLAUDE.md</code>. Context search no longer
+queries skills; the digest reports index statistics and staleness samples.
+Optional feedback remains consumed by indexd search ranking. Stored data is
+unchanged; the indexd manual documents filtered CMM observation deletion.</li>
 <li>Replace the unserved application action/control tools with <code>app_actions</code>
 and <code>app_execute</code>, using the application's registry Bus commands. Forward optional
 command parameters unchanged and preserve application error messages.</li>

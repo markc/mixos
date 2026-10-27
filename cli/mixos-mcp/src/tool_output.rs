@@ -80,10 +80,9 @@ pub(crate) fn decorate(mut tool: Tool) -> Tool {
                 | "noded_ping"
                 | "log_tail"
                 | "log_search"
-                | "skills_list"
                 | "mcp_status"
         );
-        // Retrieval/search can update scoring or consult external LLM services;
+        // Retrieval/search can update scoring;
         // unknown tools stay conservative rather than claiming idempotence.
         tool.annotations = Some(
             ToolAnnotations::new()
@@ -115,18 +114,11 @@ pub(crate) fn normalize(tool: &str, response: CallToolResponse) -> CallToolRespo
             | "noded_ping"
             | "context_search"
             | "index_workspace"
-            | "skills_retrieve"
-            | "skills_store"
-            | "skills_refine"
-            | "skills_list"
-            | "skills_delete"
-            | "skills_graduate"
             | "docs_feedback"
             | "journal_feedback"
             | "memory_feedback"
             | "journal_supersede"
             | "knowledge_digest"
-            | "knowledge_brief"
     );
     if legacy_status
         && texts.len() == 1

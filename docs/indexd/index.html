@@ -209,6 +209,7 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#asking-it">Asking it</a>
+                        <a href="#purging-retired-cmm-observations" class="toc-h3">Purging retired CMM observations</a>
                         <a href="#cli-and-bridge">CLI and bridge</a>
                         <a href="#operating-the-system-service">Operating the system service</a>
                         <a href="#tests">Tests</a>
@@ -251,7 +252,7 @@ downloaded at run time. Vectors live in SQLite (<code>sqlite-vec</code>), and se
 over an in-memory copy, re-ranked by feedback and staleness.</p>
 <p>It runs on one workstation host as a system service, registered on that
 host's own node. Agents usually reach it through <code>mixos-mcp</code>
-(<code>context_search</code>, <code>index_workspace</code>, the <code>skills_*</code> tools). A desk on the
+(<code>context_search</code>, <code>index_workspace</code>). A desk on the
 same machine reaches it over the Bus, or over ssh through <code>indexd bridge</code>,
 which reads newline-delimited JSON on stdin and makes each request as a local
 Bus call.</p>
@@ -287,6 +288,38 @@ Each predicate also requires the matching JSON type (integers and reals share
 the numeric type); null, arrays and objects are refused. Search retains all
 operators listed above.
 Deletion updates the durable vectors and in-memory index in one operation.</p>
+<h3 id="purging-retired-cmm-observations">Purging retired CMM observations</h3>
+<p>Observations are ordinary rows in SQLite's <code>chunks</code> table, with
+<code>source = "observation"</code>, text in <code>content</code> and a JSON string in <code>metadata</code>.
+Their embeddings live in <code>vec_chunks</code> and the in-memory search index. The
+source policy requires metadata fields <code>observer</code>, <code>tool</code>, <code>observed_at</code> and
+<code>domain</code>. The retired CMM clippy producer used observer <code>cmm_cargo_clippy</code>.
+There is no remaining observation writer in this repository; the source type
+remains readable for the legacy corpus. <code>context_search</code> continues to return
+these rows in its <code>observations</code> group until an operator purges them.</p>
+<p>The existing <code>indexd.delete</code> command supports exact metadata predicates for
+observer and domain. For the <code>mixos</code> domain, the exact Bus call is:</p>
+<pre><code class="language-mix">send indexd indexd.delete body='{"filter":[{"field":"observer","op":"eq","value":"cmm_cargo_clippy"},{"field":"domain","op":"eq","value":"mixos"}]}'
+print($reply)
+</code></pre>
+<p>The same call through mixos-mcp is:</p>
+<pre><code class="language-json">{"to":"indexd","command":"indexd.delete","args":"{\"filter\":[{\"field\":\"observer\",\"op\":\"eq\",\"value\":\"cmm_cargo_clippy\"},{\"field\":\"domain\",\"op\":\"eq\",\"value\":\"mixos\"}]}"}
+</code></pre>
+<p>Pass that object to <code>bus_call</code> (<code>mcp__mixos__bus_call</code> in Claude Code), with
+<code>to</code> set to the indexd Bus address reachable from the caller. <code>bus_call</code> uses
+the Bus connection; it does not use the knowledge tools' configured SSH bridge.
+The reply contains <code>deleted</code>. Other observers and domains survive, and repeating
+the deletion returns zero once matching rows are gone. These are operator calls;
+the retirement change does not execute them or change stored data.</p>
+<p><code>filter.field</code> always names a metadata field: <code>source</code> is a separate column,
+so a filter on <code>source</code> does <strong>not</strong> select the row's source type. To restrict
+deletion to observations as well, first enumerate <code>indexd.list</code> with
+<code>{"source":"observation","limit":1000,"offset":0}</code>, advancing <code>offset</code> until
+all pages are collected. Then pass the selected IDs together with the observer
+and domain predicates to <code>indexd.delete</code>. IDs and predicates are intersected;
+collect pages before deleting so offset shifts cannot skip rows. No new command
+or database access is needed. The existing delete updates <code>chunks</code>, <code>vec_chunks</code>
+and the in-memory index together.</p>
 <h2 id="cli-and-bridge">CLI and bridge</h2>
 <p><code>indexd -c &lt;config&gt;/indexd/config.conf.mix call indexd.stats</code> opens the
 configured engine in-process and prints one JSON reply, with exit status 0
