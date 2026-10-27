@@ -871,7 +871,7 @@ pub fn manifest(meta: &ServerMeta) -> Vec<bus::CommandDescriptor> {
     entries.extend(citizen::debug::describe("dopus").into_iter().map(|value| {
         ::bus::CommandDescriptor::new(
             value["name"].as_str().unwrap(),
-            &["level?", "on?"],
+            if value["read_only"] == true { &[] } else { &["level?", "on?"] },
             value["description"].as_str().unwrap(),
             value["read_only"].as_bool().unwrap(),
         )
@@ -1210,6 +1210,9 @@ mod tests {
                     "{}",
                     entry.name
                 );
+            } else if entry.name.starts_with("dopus.debug") {
+                assert!(citizen::debug::request("dopus", &entry.name, "{}").is_some());
+                assert_eq!(entry.read_only, entry.name.ends_with(".debug"));
             } else {
                 assert_ne!(
                     refusal(&serve(&mut core, true, &entry.name, "{}")).as_deref(),

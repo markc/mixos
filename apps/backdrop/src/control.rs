@@ -88,7 +88,7 @@ fn manifest() -> Vec<bus::CommandDescriptor> {
     .chain(citizen::debug::describe(APP).into_iter().map(|v| {
         bus::CommandDescriptor::new(
             v["name"].as_str().unwrap(),
-            &["level?", "on?"],
+            if v["read_only"] == true { &[] } else { &["level?", "on?"] },
             v["description"].as_str().unwrap(),
             v["read_only"].as_bool().unwrap(),
         )
