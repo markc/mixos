@@ -1863,11 +1863,7 @@ impl Shell {
                 .values()
                 .filter_map(|w| {
                     let w = w.lock().unwrap();
-                    if w.view
-                        .compose
-                        .as_ref()
-                        .is_some_and(|c| c.keepable())
-                    {
+                    if w.view.compose.as_ref().is_some_and(|c| c.keepable()) {
                         Some(w.name.clone())
                     } else {
                         None

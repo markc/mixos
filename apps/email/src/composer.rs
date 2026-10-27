@@ -994,6 +994,7 @@ mod tests {
             );
         toolkit::install(&h.ctx, &theme);
         h.run();
+        h.run_steps(6);
         h.snapshot("compose_restore_draft");
         h.get_by_label(&crate::label("restore-draft")).click();
         h.run();

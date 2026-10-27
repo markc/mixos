@@ -332,11 +332,7 @@ fn review_bus_new_and_document_open_return_the_new_window() {
     std::fs::write(&path, "---\nmail-subject: document\n---\nBody\n").unwrap();
     for (command, args, name) in [
         ("email.execute", json!({"id":"compose.new"}), "compose-1"),
-        (
-            "email.compose",
-            json!({"document":path}),
-            "compose-2",
-        ),
+        ("email.compose", json!({"document":path}), "compose-2"),
     ] {
         let (rc, body) = bus_answer(&mut shell, &broker, command, args);
         assert_eq!(rc, 0, "{body}");
