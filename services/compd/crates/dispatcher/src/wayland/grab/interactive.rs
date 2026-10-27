@@ -14,6 +14,7 @@ use smithay::input::pointer::{
     GestureSwipeEndEvent, GestureSwipeUpdateEvent, GrabStartData, MotionEvent, PointerGrab,
     PointerInnerHandle, RelativeMotionEvent,
 };
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER, Serial};
 use smithay::wayland::compositor::get_parent;
@@ -77,7 +78,10 @@ pub fn start(
     }
     dispatch.push_surface_event(SurfaceEvent::Interactive {
         handle: handle.clone(),
-        op: InteractiveOp::Begin { edges },
+        op: InteractiveOp::Begin {
+            edges,
+            pointer: start_data.location,
+        },
     });
     let grab = InteractiveGrab {
         start_data,
@@ -96,7 +100,23 @@ pub fn start(
 /// chrome's own hit test already named the window. Any implicit grab will do
 /// (a button is down: the chrome press just went to the seat). Returns
 /// whether it started.
-pub fn start_chrome(dispatch: &mut Dispatch, handle: SurfaceHandle, edges: u32) -> bool {
+pub fn start_chrome(
+    dispatch: &mut Dispatch,
+    window: &smithay::desktop::Window,
+    edges: u32,
+) -> bool {
+    if protocols::window::ident::states(window).fullscreen
+        || window.toplevel().is_some_and(|toplevel| {
+            toplevel.with_committed_state(|state| {
+                state.is_some_and(|state| state.states.contains(State::Fullscreen))
+            })
+        })
+    {
+        return false;
+    }
+    let Some(handle) = SurfaceHandle::of_window(window) else {
+        return false;
+    };
     let Some(pointer) = dispatch.seat.seat.get_pointer() else {
         return false;
     };
@@ -105,7 +125,10 @@ pub fn start_chrome(dispatch: &mut Dispatch, handle: SurfaceHandle, edges: u32) 
     };
     dispatch.push_surface_event(SurfaceEvent::Interactive {
         handle: handle.clone(),
-        op: InteractiveOp::Begin { edges },
+        op: InteractiveOp::Begin {
+            edges,
+            pointer: start_data.location,
+        },
     });
     let grab = InteractiveGrab {
         start_data,

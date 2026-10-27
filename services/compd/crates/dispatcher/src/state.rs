@@ -274,12 +274,13 @@ impl Dispatch {
     pub fn arm_drain(&mut self) {
         self.protocol_pending = true;
     }
-    /// The gate on an xdg interactive move/resize: not the agent seat, not a
-    /// maximised or fullscreen window.
+    /// Primary-seat moves may restore maximised windows. Fullscreen moves and
+    /// maximised resizes remain refused; the host also enforces placement state.
     pub fn interactive_allowed(
         &self,
         surface: &smithay::wayland::shell::xdg::ToplevelSurface,
         seat: &smithay::reexports::wayland_server::protocol::wl_seat::WlSeat,
+        edges: u32,
     ) -> bool {
         use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
         let requester = smithay::input::Seat::<Dispatch>::from_resource(seat);
@@ -290,15 +291,19 @@ impl Dispatch {
         if requester.as_ref() != Some(&self.seat.seat) {
             return false;
         }
+        if surface.with_pending_state(|state| state.states.contains(State::Fullscreen)) {
+            return false;
+        }
         !surface.with_committed_state(|state| {
             state.is_some_and(|state| {
-                state.states.contains(State::Maximized) || state.states.contains(State::Fullscreen)
+                (edges != 0 && state.states.contains(State::Maximized))
+                    || state.states.contains(State::Fullscreen)
             })
         })
     }
     /// An X11 `_NET_WM_MOVERESIZE`: start the interactive grab (`edges` 0 = move).
     pub fn x11_interactive(&mut self, window: &smithay::xwayland::X11Surface, edges: u32) {
-        if window.is_maximized() || window.is_fullscreen() {
+        if (edges != 0 && window.is_maximized()) || window.is_fullscreen() {
             return;
         }
         let Some(surface) = window.wl_surface() else {
@@ -1898,11 +1903,10 @@ mod handler_impls {
             });
             self.schedule_redraw(RedrawReason::WindowState);
         }
-        // The interactive move/resize: refused for the agent seat and for a
-        // maximised or fullscreen window, and only on the primary seat's
+        // Interactive move: refused for the agent seat or fullscreen, and only on the primary seat's
         // implicit grab that `serial` names, over this window.
         fn move_request(&mut self, surface: ToplevelSurface, seat: WlSeat, serial: Serial) {
-            if !self.interactive_allowed(&surface, &seat) {
+            if !self.interactive_allowed(&surface, &seat, 0) {
                 return;
             }
             let handle =
@@ -1925,7 +1929,7 @@ mod handler_impls {
             edges: ResizeEdge,
         ) {
             let edges = u32::from(edges);
-            if edges == 0 || !self.interactive_allowed(&surface, &seat) {
+            if edges == 0 || !self.interactive_allowed(&surface, &seat, edges) {
                 return;
             }
             let handle =

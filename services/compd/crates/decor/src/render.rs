@@ -232,13 +232,10 @@ fn refresh(
         // The X11 counterparts: `_NET_WM_STATE_FOCUSED` / `_MAXIMIZED_*` as the
         // WM last set them.
         next.focused = x11.is_activated();
-        next.maximized = x11.is_maximized();
     } else {
         next.focused = toplevel_has(window, xdg_toplevel::State::Activated);
-        next.maximized = toplevel_has(window, xdg_toplevel::State::Maximized)
-            || toplevel_has(window, xdg_toplevel::State::TiledLeft)
-                && toplevel_has(window, xdg_toplevel::State::TiledRight);
     }
+    next.maximized = crate::window::constrained(window);
     next.title = title_of(window);
     next.menu_side = crate::window::menu_side(window);
     next.content_size = (content_size.w, content_size.h);

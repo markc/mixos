@@ -8,6 +8,7 @@ use policy_host::geometry::{self, GeometryChange};
 use protocols::window::shell;
 use smithay::desktop::Window;
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
+use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode;
 use smithay::utils::{Size, Transform};
 use surfaces::SurfaceId;
 use testkit::{Harness, client::protocol_id};
@@ -133,7 +134,7 @@ fn delayed_ack_and_older_buffer_never_regress_the_decided_slot() {
     h.client.attach(&surface, 1920, 1080);
     h.roundtrip();
     assert_eq!(window.geometry().size, Size::from((1920, 1080)));
-    let restore = h.comp().maximize_restore(id).unwrap();
+    let restore = h.comp().float_geometry(id).unwrap();
     h.client.state.hold_xdg_configures = true;
 
     let before = count(&h, &top);
@@ -200,7 +201,7 @@ fn delayed_ack_and_older_buffer_never_regress_the_decided_slot() {
     xdg.ack_configure(serial(&h, &xdg));
     h.client.attach(&surface, 1920, 1080);
     h.roundtrip();
-    assert_eq!(h.comp().maximize_restore(id), Some(restore.clone()));
+    assert_eq!(h.comp().float_geometry(id), Some(restore.clone()));
     assert!(maximize(&mut h, id, &window, false).windows);
     h.roundtrip();
     configured(&h, &top, (640, 480), false);
@@ -209,7 +210,7 @@ fn delayed_ack_and_older_buffer_never_regress_the_decided_slot() {
         Some(restore.location)
     );
     assert_eq!(slot::decided_size(&window), Some(restore.size));
-    assert!(h.comp().maximize_restore(id).is_none());
+    assert_eq!(h.comp().placement(id), world::comp::Placement::Floating);
 }
 
 fn output(name: &str, size: (i32, i32)) -> Output {
@@ -249,7 +250,7 @@ fn explicit_maximise_output_retargets_without_losing_normal_geometry() {
         .map_element(window.clone(), (32, 24), false);
     maximize(&mut h, id, &window, true);
     h.roundtrip();
-    let restore = h.comp().maximize_restore(id).unwrap();
+    let restore = h.comp().float_geometry(id).unwrap();
     let host = &mut h.wire.inner;
     assert!(
         geometry::set_maximized_on(
@@ -268,12 +269,13 @@ fn explicit_maximise_output_retargets_without_losing_normal_geometry() {
         h.wire.inner.space.state.element_location(&window),
         Some((1920, 0).into())
     );
-    let retargeted = h.comp().maximize_restore(id).unwrap();
+    let retargeted = h.comp().float_geometry(id).unwrap();
     assert_eq!(
         (retargeted.location, retargeted.size),
         (restore.location, restore.size)
     );
-    assert_eq!(retargeted.output, "secondary");
+    assert_eq!(retargeted, restore);
+    assert_eq!(h.comp().placement(id).output(), Some("secondary"));
     let before = count(&h, &top);
     let host = &mut h.wire.inner;
     assert_eq!(
@@ -289,7 +291,7 @@ fn explicit_maximise_output_retargets_without_losing_normal_geometry() {
     );
     h.roundtrip();
     assert_eq!(count(&h, &top), before);
-    assert_eq!(h.comp().maximize_restore(id), Some(retargeted));
+    assert_eq!(h.comp().float_geometry(id), Some(retargeted));
     maximize(&mut h, id, &window, false);
     h.roundtrip();
     configured(&h, &top, (640, 480), false);
@@ -316,7 +318,7 @@ fn only_the_owning_output_reconfigures_and_restore_survives_output_loss() {
     maximize(&mut h, id, &window, true);
     h.roundtrip();
     configured(&h, &top, (1280, 800), true);
-    let restore = h.comp().maximize_restore(id).unwrap();
+    let restore = h.comp().float_geometry(id).unwrap();
     assert_eq!(restore.output, "secondary");
     let before = count(&h, &top);
     bottom(&mut h, 80); // unrelated primary output
@@ -343,7 +345,7 @@ fn only_the_owning_output_reconfigures_and_restore_survives_output_loss() {
     assert!(refresh(&mut h, id, &window).windows);
     h.roundtrip();
     configured(&h, &top, (1920, 1000), true);
-    let fallback = h.comp().maximize_restore(id).unwrap();
+    let fallback = h.comp().float_geometry(id).unwrap();
     assert_eq!(
         (fallback.location, fallback.size),
         (restore.location, restore.size)
@@ -360,12 +362,12 @@ fn only_the_owning_output_reconfigures_and_restore_survives_output_loss() {
     );
     h.roundtrip();
     assert_eq!(count(&h, &top), before);
-    assert_eq!(h.comp().maximize_restore(id), Some(fallback));
+    assert_eq!(h.comp().float_geometry(id), Some(fallback));
     h.wire.inner.space.state.map_output(&secondary, (1920, 0));
     assert!(refresh(&mut h, id, &window).windows);
     h.roundtrip();
     configured(&h, &top, (1280, 720), true);
-    let recovered = h.comp().maximize_restore(id).unwrap();
+    let recovered = h.comp().float_geometry(id).unwrap();
     assert_eq!(recovered, restore);
     maximize(&mut h, id, &window, false);
     h.roundtrip();
@@ -386,7 +388,7 @@ fn fullscreen_holds_geometry_until_exit_commit_then_uses_latest_work_area() {
     h.roundtrip();
     h.client.attach(&surface, 1920, 1080);
     h.roundtrip();
-    let restore = h.comp().maximize_restore(id).unwrap();
+    let restore = h.comp().float_geometry(id).unwrap();
     window.set_fullscreen(Some(WindowFullscreen {
         restore_loc: (0, 0).into(),
         restore_size: (1920, 1080).into(),
@@ -439,7 +441,7 @@ fn fullscreen_holds_geometry_until_exit_commit_then_uses_latest_work_area() {
     assert_eq!(refresh(&mut h, id, &window), GeometryChange::default());
     h.roundtrip();
     assert_eq!(count(&h, &top), before);
-    assert_eq!(h.comp().maximize_restore(id), Some(restore));
+    assert_eq!(h.comp().float_geometry(id), Some(restore));
 }
 
 #[test]
@@ -457,7 +459,7 @@ fn unmaximise_restores_the_decided_size_when_client_geometry_lags() {
     maximize(&mut h, id, &window, true);
     h.roundtrip();
     assert_eq!(
-        h.comp().maximize_restore(id).unwrap().size,
+        h.comp().float_geometry(id).unwrap().size,
         Size::from((800, 600))
     );
     bottom(&mut h, 80);
@@ -489,7 +491,7 @@ fn unmaximise_without_a_restore_record_clears_intent_without_moving_the_slot() {
     shell::send(&window);
     h.roundtrip();
     configured(&h, &top, (800, 600), true);
-    assert!(h.comp().maximize_restore(id).is_none());
+    assert!(h.comp().float_geometry(id).is_none());
 
     assert_eq!(
         maximize(&mut h, id, &window, false),
@@ -502,7 +504,7 @@ fn unmaximise_without_a_restore_record_clears_intent_without_moving_the_slot() {
         h.wire.inner.space.state.element_location(&window),
         Some((16, 24).into())
     );
-    assert!(h.comp().maximize_restore(id).is_none());
+    assert!(h.comp().float_geometry(id).is_none());
     let before = count(&h, &top);
     maximize(&mut h, id, &window, false);
     h.roundtrip();
@@ -543,7 +545,7 @@ fn refreshing_another_world_never_admits_its_window_into_this_space() {
     refresh(&mut h, id, &window);
     maximize(&mut h, id, &window, true);
     h.roundtrip();
-    let restore = h.comp().maximize_restore(id).unwrap();
+    let restore = h.comp().float_geometry(id).unwrap();
     h.wire.inner.space.state.unmap_elem(&window);
     let mut other = smithay::desktop::Space::default();
     other.map_element(window.clone(), (10, 20), false);
@@ -560,7 +562,7 @@ fn refreshing_another_world_never_admits_its_window_into_this_space() {
     assert!(h.wire.inner.space.state.element_location(&window).is_none());
     assert_eq!(other.element_location(&window), Some((10, 20).into()));
     assert_eq!(count(&h, &top), before);
-    assert_eq!(h.comp().maximize_restore(id), Some(restore));
+    assert_eq!(h.comp().float_geometry(id), Some(restore));
     // Once its world is hosted again, the unchanged usable map still reflows.
     other.unmap_elem(&window);
     h.wire
@@ -571,4 +573,267 @@ fn refreshing_another_world_never_admits_its_window_into_this_space() {
     assert!(refresh(&mut h, id, &window).windows);
     h.roundtrip();
     configured(&h, &top, (1920, 1000), true);
+}
+
+fn tile(
+    h: &mut Harness,
+    id: SurfaceId,
+    window: &Window,
+    slot: world::comp::TileSlot,
+) -> GeometryChange {
+    let host = &mut h.wire.inner;
+    geometry::set_placement(
+        &mut host.comp,
+        &mut host.space.state,
+        id,
+        window,
+        world::comp::Placement::Tiled {
+            slot,
+            output: host.output.name(),
+        },
+    )
+}
+
+#[test]
+fn tiled_maximised_and_unmaximised_restore_the_pre_tile_floating_geometry() {
+    use world::comp::{Placement, TileSlot};
+    let mut h = Harness::new();
+    let (surface, _, top) = h.mapped_toplevel(640, 480);
+    let (id, window) = window(&h, &surface);
+    h.wire
+        .inner
+        .space
+        .state
+        .map_element(window.clone(), (32, 24), false);
+    assert!(tile(&mut h, id, &window, TileSlot::Left).windows);
+    let saved = h.comp().float_geometry(id).unwrap();
+    assert_eq!(
+        (saved.location, saved.size),
+        ((32, 24).into(), (640, 480).into())
+    );
+    assert!(decor::window::constrained(&window));
+    assert!(!h.comp().placement(id).maximized());
+    h.roundtrip();
+    configured(&h, &top, (960, 1080), false);
+    tile(&mut h, id, &window, TileSlot::BottomRight);
+    assert_eq!(h.comp().float_geometry(id), Some(saved.clone()));
+    maximize(&mut h, id, &window, true);
+    assert!(h.comp().placement(id).maximized());
+    assert_eq!(h.comp().float_geometry(id), Some(saved.clone()));
+    // Maximised -> tiled must keep the same pre-tile geometry too.
+    tile(&mut h, id, &window, TileSlot::Top);
+    assert_eq!(h.comp().float_geometry(id), Some(saved.clone()));
+    maximize(&mut h, id, &window, true);
+    maximize(&mut h, id, &window, false);
+    h.roundtrip();
+    assert_eq!(h.comp().placement(id), Placement::Floating);
+    assert!(!decor::window::constrained(&window));
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&window),
+        Some(saved.location)
+    );
+    assert_eq!(slot::decided_size(&window), Some(saved.size));
+    configured(&h, &top, (640, 480), false);
+    // Kept saved geometry is never itself evidence of maximised state.
+    assert_eq!(h.comp().float_geometry(id), Some(saved));
+    h.wire
+        .inner
+        .space
+        .state
+        .map_element(window.clone(), (80, 90), false);
+    slot::set_expected_size(&window, (800, 600).into());
+    tile(&mut h, id, &window, TileSlot::Right);
+    let saved = h.comp().float_geometry(id).unwrap();
+    assert_eq!(
+        (saved.location, saved.size),
+        ((80, 90).into(), (800, 600).into())
+    );
+}
+
+#[test]
+fn tiled_window_refits_after_a_usable_area_change_without_configure_churn() {
+    use world::comp::TileSlot;
+    let mut h = Harness::new();
+    let (surface, _, top) = h.mapped_toplevel(640, 480);
+    let (id, window) = window(&h, &surface);
+    tile(&mut h, id, &window, TileSlot::BottomRight);
+    let saved = h.comp().float_geometry(id);
+    h.roundtrip();
+    bottom(&mut h, 81);
+    assert!(refresh(&mut h, id, &window).windows);
+    h.roundtrip();
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&window),
+        Some((960, 500).into())
+    );
+    assert_eq!(slot::decided_size(&window), Some((960, 499).into()));
+    configured(&h, &top, (960, 499), false);
+    assert_eq!(h.comp().float_geometry(id), saved);
+    let before = count(&h, &top);
+    assert_eq!(refresh(&mut h, id, &window), GeometryChange::default());
+    h.roundtrip();
+    assert_eq!(count(&h, &top), before);
+}
+
+#[test]
+fn tile_centres_min_and_max_size_clients_and_records_the_clamped_size() {
+    use world::comp::TileSlot;
+    for (min, max, expected_size, expected_origin) in [
+        ((1200, 1200), (0, 0), (1200, 1200), (-120, -60)),
+        ((0, 0), (600, 400), (600, 400), (180, 340)),
+    ] {
+        let mut h = Harness::new();
+        let (surface, _, top) = h.mapped_toplevel(640, 480);
+        let (id, window) = window(&h, &surface);
+        top.set_min_size(min.0, min.1);
+        top.set_max_size(max.0, max.1);
+        h.client.commit(&surface);
+        h.roundtrip();
+        tile(&mut h, id, &window, TileSlot::Left);
+        h.roundtrip();
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some(expected_origin.into())
+        );
+        assert_eq!(slot::decided_size(&window), Some(expected_size.into()));
+        configured(&h, &top, expected_size, false);
+        refresh(&mut h, id, &window); // first work-area observation
+        let before = count(&h, &top);
+        for _ in 0..3 {
+            assert!(!refresh(&mut h, id, &window).windows);
+            h.roundtrip();
+        }
+        assert_eq!(
+            count(&h, &top),
+            before,
+            "hint-clamped tile cannot re-fit forever"
+        );
+    }
+}
+
+#[test]
+fn fullscreen_roundtrip_keeps_tiled_and_maximised_placement_and_recomputes_its_area() {
+    use world::comp::{Placement, TileSlot};
+    use world::window::interface::draw::fullscreen::fullscreen_set_in_space;
+    for tiled in [false, true] {
+        let mut h = Harness::new();
+        let (surface, _, top) = h.mapped_toplevel(640, 480);
+        let (id, window) = window(&h, &surface);
+        if tiled {
+            tile(&mut h, id, &window, TileSlot::BottomRight);
+        } else {
+            maximize(&mut h, id, &window, true);
+        }
+        h.roundtrip();
+        let placement = h.comp().placement(id);
+        let saved = h.comp().float_geometry(id);
+        {
+            let host = &mut h.wire.inner;
+            assert!(fullscreen_set_in_space(
+                &host.comp,
+                &mut host.space.state,
+                &window,
+                true,
+                Some(((0, 0).into(), (1920, 1080).into())),
+                false
+            ));
+        }
+        h.roundtrip();
+        assert_eq!(h.comp().placement(id), placement);
+        assert_eq!(h.comp().float_geometry(id), saved);
+        bottom(&mut h, 80);
+        assert!(!refresh(&mut h, id, &window).windows);
+        // Change it again without a refresh: exit must calculate, not use comp.usable.
+        bottom(&mut h, 160);
+        h.client.state.hold_xdg_configures = true;
+        {
+            let host = &mut h.wire.inner;
+            assert!(fullscreen_set_in_space(
+                &host.comp,
+                &mut host.space.state,
+                &window,
+                false,
+                None,
+                false
+            ));
+        }
+        let (origin, size) = if tiled {
+            ((960, 460), (960, 460))
+        } else {
+            ((0, 0), (1920, 920))
+        };
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some(origin.into())
+        );
+        assert_eq!(slot::decided_size(&window), Some(size.into()));
+        assert_eq!(h.comp().placement(id), placement);
+        assert_eq!(h.comp().float_geometry(id), saved);
+        assert!(matches!(
+            placement,
+            Placement::Maximized { .. } | Placement::Tiled { .. }
+        ));
+        h.roundtrip();
+        configured(&h, &top, size, !tiled);
+    }
+}
+
+#[test]
+fn fullscreen_exit_reinstates_the_chrome_inset_before_the_exit_ack() {
+    use world::window::interface::draw::fullscreen::fullscreen_set_in_space;
+    let mut h = Harness::new();
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (id, window) = window(&h, &surface);
+    decor::window::install(decor::ChromeTheme::from_source(
+        decor::ChromeStyle::Win11,
+        None,
+    ));
+    window.toplevel().unwrap().with_pending_state(|state| {
+        state.decoration_mode = Some(DecorationMode::ServerSide);
+    });
+    window.toplevel().unwrap().send_configure();
+    h.roundtrip();
+    h.client.commit(&surface);
+    h.roundtrip();
+    let extents = decor::window::extents(&window).unwrap();
+    maximize(&mut h, id, &window, true);
+    {
+        let host = &mut h.wire.inner;
+        fullscreen_set_in_space(
+            &host.comp,
+            &mut host.space.state,
+            &window,
+            true,
+            None,
+            false,
+        );
+    }
+    h.roundtrip();
+    h.client.commit(&surface);
+    h.roundtrip();
+    assert!(
+        decor::window::extents(&window).is_none(),
+        "committed fullscreen hides chrome"
+    );
+    bottom(&mut h, 80);
+    {
+        let host = &mut h.wire.inner;
+        fullscreen_set_in_space(
+            &host.comp,
+            &mut host.space.state,
+            &window,
+            false,
+            None,
+            false,
+        );
+    }
+    let expected = decor::window::inset(
+        smithay::utils::Rectangle::new((0, 0).into(), (1920, 1000).into()),
+        extents,
+    );
+    assert_eq!(slot::decided_size(&window), Some(expected.size));
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&window),
+        Some(expected.loc)
+    );
 }

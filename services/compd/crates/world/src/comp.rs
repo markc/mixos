@@ -25,11 +25,13 @@ pub mod bindings;
 pub mod causes;
 pub mod corners;
 pub mod fullscreen;
+pub mod geometry;
 pub mod injection;
 pub(crate) mod input_geometry;
 pub mod latch;
 pub mod occlusion;
 pub mod panels;
+pub mod placement;
 pub mod presentation;
 pub mod region;
 pub mod scenes;
@@ -44,6 +46,7 @@ use std::sync::Arc;
 use dispatcher::wire::trait_::surface_event::{
     InteractiveOp, SurfaceEvent, SurfaceHandle, WindowRequest,
 };
+pub use placement::{Placement, TileSlot, TileSplit};
 use policy::workspaces::{DefaultOutput, WorkspaceState};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size};
@@ -113,13 +116,12 @@ pub fn initial_map_is_live(
             }))
 }
 
-/// Where a maximised window goes back to (its pre-maximise location and window
-/// geometry size, in the host Space).
+/// The last floating geometry, saved only when leaving Floating.
 #[derive(Clone, Debug, PartialEq)]
-pub struct MaximizeRestore {
+pub struct FloatGeometry {
     pub location: Point<i32, Logical>,
     pub size: Size<i32, Logical>,
-    /// Output owning the requested maximised slot, independent of old buffers.
+    /// Output the floating geometry was saved on; never the placement target.
     pub output: String,
 }
 
@@ -133,6 +135,10 @@ pub struct Interactive {
     pub edges: u32,
     pub delta: (f64, f64),
     pub start: Option<(Point<i32, Logical>, Size<i32, Logical>)>,
+    /// Immutable dispatcher pointer position at grab start, in Space coordinates.
+    pub pointer_start: Point<f64, Logical>,
+    /// Fraction of the starting frame under the pointer (host-owned).
+    pub anchor: Option<(f64, f64)>,
     /// A new delta the host has not applied yet.
     pub updated: bool,
     pub ended: bool,
@@ -170,9 +176,10 @@ pub struct CompState {
     /// Minimised windows, oldest first: `comp.window.restore {}` pops the
     /// current workspace's most recent, else the global one (rule 8).
     minimize_lifo: Vec<SurfaceId>,
-    /// Windows maximised by request, with
-    /// where they go back to.
-    maximized: HashMap<SurfaceId, MaximizeRestore>,
+    /// Non-floating placements. Absence is Floating, independent of saved geometry.
+    placements: HashMap<SurfaceId, (Placement, smithay::desktop::Window)>,
+    float_geometries: HashMap<SurfaceId, FloatGeometry>,
+    tile_splits: BTreeMap<(String, u32), TileSplit>,
     /// Client window-state requests (xdg / X11), for the host's policy.
     requests: Vec<(SurfaceId, WindowRequest)>,
     /// `_NET_CURRENT_DESKTOP` root requests, 0-based.
@@ -253,7 +260,8 @@ impl CompState {
                         self.presentation.forget(id);
                         // A new role starts unminimised and unmaximised.
                         self.minimize_lifo.retain(|entry| *entry != id);
-                        self.maximized.remove(&id);
+                        self.clear_placement(id);
+                        self.float_geometries.remove(&id);
                         if self.focused == Some(id) {
                             self.focused = None;
                         }
@@ -398,12 +406,14 @@ impl CompState {
                     return;
                 };
                 match op {
-                    InteractiveOp::Begin { edges } => {
+                    InteractiveOp::Begin { edges, pointer } => {
                         self.interactive = Some(Interactive {
                             id,
                             edges,
                             delta: (0.0, 0.0),
                             start: None,
+                            pointer_start: pointer,
+                            anchor: None,
                             updated: false,
                             ended: false,
                             last_size: None,
@@ -447,7 +457,8 @@ impl CompState {
             self.interactive = None;
         }
         self.minimize_lifo.retain(|entry| *entry != id);
-        self.maximized.remove(&id);
+        self.clear_placement(id);
+        self.float_geometries.remove(&id);
         if self.focused == Some(id) {
             self.focused = None;
         }
@@ -650,11 +661,9 @@ impl CompState {
             .copied()
     }
 
-    /// The restore geometry of a window maximised by request (`None`: not
-    /// maximised).
-    /// The windows maximised by request (they follow the usable area).
-    pub fn maximized_ids(&self) -> Vec<SurfaceId> {
-        let mut ids: Vec<SurfaceId> = self.maximized.keys().copied().collect();
+    /// Windows whose placement follows an output's usable area.
+    pub fn placed_ids(&self) -> Vec<SurfaceId> {
+        let mut ids: Vec<SurfaceId> = self.placements.keys().copied().collect();
         ids.sort_unstable_by_key(|id| id.0);
         ids
     }
@@ -746,20 +755,61 @@ impl CompState {
         self.usable.get(name).copied()
     }
 
-    pub fn maximize_restore(&self, id: SurfaceId) -> Option<MaximizeRestore> {
-        self.maximized.get(&id).cloned()
+    pub fn placement(&self, id: SurfaceId) -> Placement {
+        self.placements
+            .get(&id)
+            .map(|(placement, _)| placement.clone())
+            .unwrap_or_default()
     }
 
-    /// Record (or clear) a window's requested-maximised state.
-    pub fn set_maximize_restore(&mut self, id: SurfaceId, restore: Option<MaximizeRestore>) {
-        let changed = match restore {
-            Some(restore) => self.maximized.insert(id, restore).is_none(),
-            None => self.maximized.remove(&id).is_some(),
-        };
-        if changed {
+    fn clear_placement(&mut self, id: SurfaceId) {
+        if let Some((_, window)) = self.placements.remove(&id) {
+            decor::window::set_constrained(&window, false);
+        }
+    }
+
+    pub fn set_placement(
+        &mut self,
+        id: SurfaceId,
+        window: &smithay::desktop::Window,
+        placement: Placement,
+    ) {
+        decor::window::set_constrained(window, placement.constrained());
+        if self.placement(id) != placement {
+            if placement == Placement::Floating {
+                self.placements.remove(&id);
+            } else {
+                self.placements.insert(id, (placement, window.clone()));
+            }
             self.revision = self.revision.wrapping_add(1);
             self.touched();
+            self.causes.note_window(id.0, "comp.window");
         }
+    }
+
+    pub fn float_geometry(&self, id: SurfaceId) -> Option<FloatGeometry> {
+        self.float_geometries.get(&id).cloned()
+    }
+
+    /// Only a transition out of Floating may replace the saved geometry.
+    pub fn save_float_geometry(&mut self, id: SurfaceId, geometry: FloatGeometry) {
+        if self.placement(id) == Placement::Floating {
+            self.float_geometries.insert(id, geometry);
+        }
+    }
+
+    pub fn tile_split(&mut self, output: &str, workspace: u32) -> TileSplit {
+        *self
+            .tile_splits
+            .entry((output.to_owned(), workspace))
+            .or_default()
+    }
+
+    pub fn tile_split_for(&self, output: &str, workspace: u32) -> TileSplit {
+        self.tile_splits
+            .get(&(output.to_owned(), workspace))
+            .copied()
+            .unwrap_or_default()
     }
 
     /// Whether a layer surface named its output.

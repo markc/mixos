@@ -74,7 +74,9 @@ pub fn merged(mut body: Value, extra: Value) -> Value {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WindowFacts {
     pub requested_maximized: bool,
+    pub requested_tiled: bool,
     pub requested_fullscreen: bool,
+    /// Protocol observation for configure convergence, never placement authority.
     pub committed_maximized: bool,
     pub committed_fullscreen: bool,
     /// A window-state configure awaits its ack.
@@ -176,7 +178,7 @@ pub fn state_reply<H>(
     ControlReply::Body(merged(
         window_reply(record, changed).wire_json(),
         json!({
-            "maximized": facts.committed_maximized,
+            "maximized": facts.requested_maximized,
             "fullscreen": facts.committed_fullscreen,
             "configure_pending": facts.configure_pending,
         }),
@@ -568,8 +570,8 @@ pub fn wait_outcome<H: Clone + Eq + Hash>(
             }
             WaitUntil::Size { width, height } => facts.geometry_size == (width, height),
             WaitUntil::Focused => record.focused(),
-            WaitUntil::Maximized => !facts.configure_pending && facts.committed_maximized,
-            WaitUntil::Unmaximized => !facts.configure_pending && !facts.committed_maximized,
+            WaitUntil::Maximized => !facts.configure_pending && facts.requested_maximized,
+            WaitUntil::Unmaximized => !facts.configure_pending && !facts.requested_maximized,
             WaitUntil::Fullscreen => !facts.configure_pending && facts.committed_fullscreen,
             WaitUntil::Unfullscreen => !facts.configure_pending && !facts.committed_fullscreen,
             WaitUntil::Unmapped | WaitUntil::Gone => false,
@@ -670,9 +672,9 @@ pub fn place<H: Clone + Eq + Hash>(
 ) -> Result<Placement, ControlReply> {
     let record = resolve(registry, spec.id, spec.generation)?;
     let sid = record.id();
-    let maximized = facts.committed_maximized || facts.requested_maximized;
+    let maximized = facts.requested_maximized;
     let fullscreen = facts.committed_fullscreen || facts.requested_fullscreen;
-    if maximized || fullscreen {
+    if maximized || facts.requested_tiled || fullscreen {
         return Err(ControlReply::refused(
             "invalid_state",
             json!({"id": spec.id, "maximized": maximized, "fullscreen": fullscreen}),

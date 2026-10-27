@@ -111,7 +111,9 @@ pub fn truth(lp: &Loop) -> Value {
                 id.0,
                 (
                     crate::control::drawn(lp, window),
-                    crate::control::committed_maximized(window),
+                    SurfaceHandle::of_window(window)
+                        .and_then(|handle| lp.inner.comp.registry.id_for_handle(&handle))
+                        .is_some_and(|id| lp.inner.comp.placement(id).maximized()),
                     [
                         location.x as f32,
                         location.y as f32,

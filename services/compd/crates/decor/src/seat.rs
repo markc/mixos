@@ -11,7 +11,6 @@ use std::cell::RefCell;
 use crate::layout::{ChromePart, ResizeEdge};
 use smithay::desktop::Window;
 use smithay::input::pointer::CursorIcon;
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 
 use crate::input::{Clicks, Intent};
 use crate::window::ChromeHit;
@@ -55,14 +54,7 @@ fn resize_cursor(edge: ResizeEdge) -> CursorIcon {
 }
 
 pub(crate) fn maximized(window: &Window) -> bool {
-    if let Some(x11) = window.x11_surface() {
-        return x11.is_maximized();
-    }
-    window.toplevel().is_some_and(|toplevel| {
-        toplevel.with_committed_state(|s| {
-            s.is_some_and(|s| s.states.contains(xdg_toplevel::State::Maximized))
-        })
-    })
+    crate::window::constrained(window)
 }
 
 /// The pointer moved; `target` is the chrome under it, if any. Moves the

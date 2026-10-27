@@ -100,21 +100,18 @@ fn apply(lp: &mut Loop, window: &Window, intent: Intent) {
     };
     match intent {
         Intent::Move => {
-            dispatcher::wayland::grab::interactive::start_chrome(&mut lp.state, handle, 0);
+            dispatcher::wayland::grab::interactive::start_chrome(&mut lp.state, window, 0);
         }
         Intent::Resize { edges } => {
-            dispatcher::wayland::grab::interactive::start_chrome(&mut lp.state, handle, edges);
+            dispatcher::wayland::grab::interactive::start_chrome(&mut lp.state, window, edges);
         }
         Intent::ToggleMaximize => {
-            let maximized = window.toplevel().is_some_and(|toplevel| {
-                toplevel.with_committed_state(|state| {
-                    state.is_some_and(|state| {
-                        state.states.contains(
-                            smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State::Maximized,
-                        )
-                    })
-                })
-            });
+            let maximized = lp
+                .inner
+                .comp
+                .registry
+                .id_for_handle(&handle)
+                .is_some_and(|id| lp.inner.comp.placement(id).maximized());
             lp.state.push_surface_event(SurfaceEvent::Request {
                 handle,
                 request: WindowRequest::Maximize(!maximized),

@@ -134,7 +134,10 @@ pub enum SurfaceEvent {
 pub enum InteractiveOp {
     /// A grab began: a move (`edges` 0) or a resize on `edges` (the
     /// `xdg_toplevel.resize_edge` bits: top 1, bottom 2, left 4, right 8).
-    Begin { edges: u32 },
+    Begin {
+        edges: u32,
+        pointer: smithay::utils::Point<f64, smithay::utils::Logical>,
+    },
     /// The pointer is this far from where the grab began.
     Update { dx: f64, dy: f64 },
     /// The grab ended (button released, or the grab was replaced).

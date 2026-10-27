@@ -182,6 +182,7 @@ impl TestHost {
                             &mut self.other_space
                         };
                         world::window::interface::draw::fullscreen::fullscreen_set_in_space(
+                            &self.comp,
                             &mut space.state,
                             &window,
                             fullscreen,

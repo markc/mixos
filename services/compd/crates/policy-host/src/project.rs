@@ -552,7 +552,9 @@ impl Placements {
                 visible: ident::is_drawn(window),
                 decoration,
                 fullscreen: ident::states(window).fullscreen,
-                maximized: crate::control::committed_maximized(window),
+                maximized: SurfaceHandle::of_window(window)
+                    .and_then(|handle| lp.inner.comp.registry.id_for_handle(&handle))
+                    .is_some_and(|id| lp.inner.comp.placement(id).maximized()),
                 foreign_id,
                 layer: None,
                 band: None,

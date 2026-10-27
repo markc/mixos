@@ -643,6 +643,7 @@ fn state_commands_refuse_fixed_size_and_unknown_outputs_before_any_configure() {
     );
     let committed = WindowFacts {
         committed_maximized: true,
+        requested_maximized: true,
         configure_pending: true,
         ..facts()
     };
@@ -654,6 +655,27 @@ fn state_commands_refuse_fixed_size_and_unknown_outputs_before_any_configure() {
         ),
         (json!(true), json!(true))
     );
+}
+
+#[test]
+fn state_reply_reports_placement_while_the_old_client_state_is_committed() {
+    let (registry, (id, _), _) = two_windows();
+    for (requested, committed) in [(true, false), (false, true)] {
+        let facts = WindowFacts {
+            requested_maximized: requested,
+            committed_maximized: committed,
+            configure_pending: true,
+            ..facts()
+        };
+        let reply = body(state_reply(
+            registry.get(SurfaceId(id)).unwrap(),
+            true,
+            &facts,
+        ))
+        .1;
+        assert_eq!(reply["maximized"], json!(requested));
+        assert_eq!(reply["configure_pending"], json!(true));
+    }
 }
 
 #[test]
@@ -817,10 +839,25 @@ fn place_moves_output_locally_keeps_the_real_size_and_refuses_off_output() {
             json!({"error": "off_output", "id": id, "x": 100_000.0, "y": 100.0, "width": 640, "height": 480})
         )
     );
-    // Maximised or fullscreen (requested or committed) is refused.
+    // Placement owns maximise/tile state; a stale committed maximise cannot
+    // veto placement after drag-away. Fullscreen still fences its exit ACK.
+    assert!(
+        place_with(
+            &spec(id, generation),
+            &WindowFacts {
+                committed_maximized: true,
+                ..facts()
+            },
+        )
+        .is_ok()
+    );
     for facts in [
         WindowFacts {
             requested_maximized: true,
+            ..facts()
+        },
+        WindowFacts {
+            requested_tiled: true,
             ..facts()
         },
         WindowFacts {
@@ -1164,6 +1201,7 @@ fn presented_and_state_waits_read_the_engine_facts() {
         move |_: SurfaceId| WindowFacts {
             presented_since_map: presented,
             committed_maximized: maximized,
+            requested_maximized: maximized,
             configure_pending: pending,
             ..facts()
         }

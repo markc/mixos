@@ -281,11 +281,51 @@ pub fn parts(
     })
 }
 
+/// Projection of the owning placement model, independent of configure ACKs.
+#[derive(Default)]
+struct Constrained(std::sync::atomic::AtomicBool);
+
+pub fn set_constrained(window: &Window, constrained: bool) {
+    window
+        .user_data()
+        .insert_if_missing_threadsafe(Constrained::default);
+    window
+        .user_data()
+        .get::<Constrained>()
+        .unwrap()
+        .0
+        .store(constrained, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn constrained(window: &Window) -> bool {
+    window
+        .user_data()
+        .get::<Constrained>()
+        .is_some_and(|value| value.0.load(std::sync::atomic::Ordering::Relaxed))
+}
+
 /// The content rectangle that leaves room for `window`'s chrome inside
 /// `outer` (an output's usable area, for a maximised window). `outer` itself
 /// when the window has no chrome.
 pub fn content_area(window: &Window, outer: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
-    match extents(window) {
+    // A placement is also computed while fullscreen exits. Its old committed
+    // fullscreen flag must not suppress the chrome inset of the normal frame.
+    let decorated = if let Some(x11) = window.x11_surface() {
+        policy::x11::decoration_mode(
+            x11.is_override_redirect(),
+            ssd_enabled(),
+            false,
+            x11.is_decorated(),
+        ) == policy::x11::DecorationMode::ServerSide
+    } else {
+        window
+            .toplevel()
+            .is_some_and(dispatcher::wayland::xdg::decoration::mode::server_side)
+    };
+    match installed()
+        .filter(|_| decorated)
+        .map(|theme| DecoExtents::of(&theme.deco))
+    {
         Some(extents) => inset(outer, extents),
         None => outer,
     }

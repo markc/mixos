@@ -40,13 +40,8 @@ pub fn fullscreen_set(_loop: &mut Loop, window: Window, fullscreen: bool) {
     let target = fullscreen
         .then(|| crate::comp::fullscreen::target(_loop, &window))
         .flatten();
-    if !fullscreen_set_in_space(
-        &mut _loop.inner.space_of_mut(owner_world).state,
-        &window,
-        fullscreen,
-        target,
-        activate,
-    ) {
+    let (comp, space) = _loop.inner.comp_space_of_mut(owner_world);
+    if !fullscreen_set_in_space(comp, space, &window, fullscreen, target, activate) {
         return;
     }
     if fullscreen && let Some(uuid) = window.uuid() {
@@ -59,6 +54,7 @@ pub fn fullscreen_set(_loop: &mut Loop, window: Window, fullscreen: bool) {
 /// Shared with testkit so off-world regressions assert the real restore path.
 /// A parked owner's geometry request must not take activation from the current world.
 pub fn fullscreen_set_in_space(
+    comp: &crate::comp::CompState,
     space: &mut smithay::desktop::Space<Window>,
     window: &Window,
     fullscreen: bool,
@@ -106,13 +102,22 @@ pub fn fullscreen_set_in_space(
 
         // Where to land: fullscreen covered the output, so the window goes back
         // to the rectangle it had before it.
-        let (loc, size) = (restore.restore_loc, restore.restore_size);
+        let id = dispatcher::wire::trait_::surface_event::SurfaceHandle::of_window(window)
+            .and_then(|handle| comp.registry.id_for_handle(&handle));
+        let placement =
+            id.and_then(|id| crate::comp::geometry::placement_area(comp, space, id, window));
+        let (loc, size) = placement.map_or((restore.restore_loc, restore.restore_size), |area| {
+            (area.loc, area.size)
+        });
 
         space.map_element(window.clone(), loc, false);
 
         slot::set_expected_size(window, size);
 
         shell::set_fullscreen(window, false);
+        if let Some(id) = id {
+            shell::set_maximized(window, comp.placement(id).maximized());
+        }
         shell::stage(window, size, false);
         shell::send(window);
     }

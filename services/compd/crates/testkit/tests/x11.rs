@@ -42,6 +42,108 @@ fn window(xid: u32) -> X11Surface {
     )
 }
 
+#[test]
+fn x11_moveresize_restores_maximised_placement_and_fullscreen_stays_refused() {
+    use dispatcher::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle};
+    use dispatcher::wire::trait_::wire_trait::WireTrait;
+    use policy_host::geometry;
+    use smithay::desktop::Window;
+    use smithay::input::pointer::{ButtonEvent, MotionEvent};
+    use smithay::utils::SERIAL_COUNTER;
+    use surfaces::SurfaceRole;
+    use world::camera::transform::translate::slot;
+    use world::comp::Placement;
+
+    let mut h = testkit::Harness::new();
+    // A real Wayland pointer focus and an offline X11 association exercise the
+    // production _NET_WM_MOVERESIZE entry point without an X server or renderer.
+    let (surface, _, _) = h.mapped_toplevel(100, 100);
+    let backing = h.wire.inner.space.state.elements().next().unwrap().clone();
+    let wl = backing.toplevel().unwrap().wl_surface().clone();
+    h.wire.inner.space.state.unmap_elem(&backing);
+    let x11 = window(0x700001);
+    x11.set_wl_surface_offline(Some(wl));
+    let candidate = Window::new_x11_window(x11.clone());
+    let handle = SurfaceHandle::x11(&x11);
+    h.wire.inner.surface_event(SurfaceEvent::RoleTaken {
+        handle: handle.clone(),
+        role: SurfaceRole::X11 {
+            override_redirect: false,
+        },
+        parent: None,
+    });
+    h.wire.inner.initialize_surface_data(candidate.clone());
+    h.wire
+        .inner
+        .space
+        .state
+        .map_element(candidate.clone(), (32, 24), false);
+    h.wire
+        .inner
+        .surface_event(SurfaceEvent::Placed(handle.clone()));
+    let id = h.comp().registry.id_for_handle(&handle).unwrap();
+    slot::set_expected_size(&candidate, (1200, 800).into());
+    {
+        let host = &mut h.wire.inner;
+        geometry::set_maximized(&mut host.comp, &mut host.space.state, id, &candidate, true);
+    }
+    assert!(x11.is_maximized());
+    h.press(&surface, 0x110);
+    h.wire.state.x11_interactive(&x11, 10);
+    h.roundtrip();
+    assert!(
+        h.comp().interactive.is_none(),
+        "maximised X11 resize stays refused"
+    );
+    h.wire.state.x11_interactive(&x11, 0);
+    h.roundtrip();
+    assert!(h.comp().interactive.is_some(), "maximised X11 move starts");
+    let pointer = h.wire.state.seat.seat.get_pointer().unwrap();
+    pointer.motion(
+        &mut h.wire.state,
+        None,
+        &MotionEvent {
+            location: (21.0, 31.0).into(),
+            serial: SERIAL_COUNTER.next_serial(),
+            time: 0,
+        },
+    );
+    h.roundtrip();
+    {
+        let host = &mut h.wire.inner;
+        let mut grab = host.comp.interactive.take().unwrap();
+        assert!(geometry::apply_interactive(
+            &mut host.comp,
+            &mut host.space.state,
+            &candidate,
+            &mut grab
+        ));
+    }
+    assert_eq!(h.comp().placement(id), Placement::Floating);
+    assert_eq!(slot::decided_size(&candidate), Some((1200, 800).into()));
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&candidate),
+        Some((20, 30).into())
+    );
+    assert!(!x11.is_maximized());
+    pointer.button(
+        &mut h.wire.state,
+        &ButtonEvent {
+            serial: SERIAL_COUNTER.next_serial(),
+            time: 0,
+            button: 0x110,
+            state: smithay::backend::input::ButtonState::Released,
+        },
+    );
+    h.roundtrip();
+    h.wire.inner.comp.interactive = None;
+    let _ = x11.set_fullscreen(true); // offline property I/O fails; mirror is authoritative
+    h.press(&surface, 0x110);
+    h.wire.state.x11_interactive(&x11, 0);
+    h.roundtrip();
+    assert!(h.comp().interactive.is_none());
+}
+
 /// Unmap and Map in one off-world protocol drain must clean the old stack
 /// synchronously. Lifecycle service must never remove the readmitted entry.
 #[test]
@@ -240,7 +342,11 @@ fn maximised_geometry_uses_the_offline_mirror_without_repeated_reflow() {
     );
     assert!(!surface.is_maximized());
     assert_eq!(slot::decided_size(&window), Some((800, 600).into()));
-    assert!(host.comp.maximize_restore(id).is_none());
+    assert_eq!(host.comp.placement(id), world::comp::Placement::Floating);
+    assert_eq!(
+        host.comp.float_geometry(id).unwrap().size,
+        (800, 600).into()
+    );
     assert_eq!(
         geometry::refresh_usable(&mut host.comp, &mut host.space.state, &candidates),
         GeometryChange::default()

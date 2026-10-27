@@ -32,6 +32,7 @@ use serde_json::Value;
 use smithay::desktop::Window;
 use smithay::utils::SERIAL_COUNTER;
 
+use crate::geometry::{clamp_size, size_hints};
 use comp_model::observation::{
     HOST_PASSTHROUGH_PATH, PropValue, WORKSPACE_COUNT_RANGE, WORKSPACE_INDEX_RANGE,
     WORKSPACE_OUTPUT_RANGE, WorkspacesSetTarget, apply_corner_value, invalid_value,
@@ -53,9 +54,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::backend::protocol::ProtocolError;
 use smithay::utils::{Logical, Point, Rectangle, Size};
-use smithay::wayland::compositor::with_states;
 use smithay::wayland::seat::WaylandFocus;
-use smithay::wayland::shell::xdg::SurfaceCachedState;
 use surfaces::{SurfaceId, WindowTargetError};
 use world::camera::transform::translate::slot;
 use world::comp::usable::Reserved;
@@ -90,13 +89,13 @@ pub fn reserved_for(lp: &Loop, output: &smithay::output::Output) -> Reserved {
 
 /// Refresh CompState's usable areas. When one moved (a
 /// panel mapped, unmapped or resized its zone, an output changed), the
-/// windows maximised by request take the new area.
+/// maximised and tiled windows take their new area.
 pub fn refresh_usable(lp: &mut Loop) -> crate::geometry::GeometryChange {
     refresh_output_generations(lp);
     let windows: Vec<_> = lp
         .inner
         .comp
-        .maximized_ids()
+        .placed_ids()
         .into_iter()
         .filter_map(|id| Some((id, window_of(lp, id)?)))
         .collect();
@@ -650,7 +649,7 @@ fn window_state(
 /// engine's fullscreen record.
 fn requested(lp: &Loop, id: SurfaceId, state: WindowState) -> bool {
     match state {
-        WindowState::Maximized => lp.inner.comp.maximize_restore(id).is_some(),
+        WindowState::Maximized => lp.inner.comp.placement(id).maximized(),
         WindowState::Fullscreen => window_of(lp, id)
             .is_some_and(|window| protocols::window::ident::states(&window).fullscreen),
     }
@@ -669,31 +668,6 @@ pub fn committed_maximized(window: &Window) -> bool {
 }
 
 /// An xdg toplevel's min/max size hints (0 = unset); X11 has none here.
-fn size_hints(window: &Window) -> ((i32, i32), (i32, i32)) {
-    window
-        .toplevel()
-        .map(|toplevel| {
-            with_states(toplevel.wl_surface(), |states| {
-                let mut cached = states.cached_state.get::<SurfaceCachedState>();
-                let current = cached.current();
-                (
-                    (current.min_size.w, current.min_size.h),
-                    (current.max_size.w, current.max_size.h),
-                )
-            })
-        })
-        .unwrap_or_default()
-}
-
-/// A size clamped to the client's hints and to at least 1x1.
-fn clamp_size(size: (i32, i32), (min, max): ((i32, i32), (i32, i32))) -> (i32, i32) {
-    let axis = |value: i32, min: i32, max: i32| {
-        let value = value.max(min.max(1));
-        if max > 0 { value.min(max) } else { value }
-    };
-    (axis(size.0, min.0, max.0), axis(size.1, min.1, max.1))
-}
-
 /// `comp.window.place`: policy decides the
 /// target (output-relative x/y, clamped size, `off_output` / `invalid_state`
 /// refusals); the effects move and/or configure; the reply says where the
@@ -870,77 +844,11 @@ pub fn apply_interactive(lp: &mut Loop) {
     let Some(owner) = lp.inner.world_of_window(&window) else {
         return;
     };
-    let (origin, size) = match grab.start {
-        Some(start) => start,
-        None => {
-            let origin = lp
-                .inner
-                .space_of_mut(owner)
-                .state
-                .element_location(&window)
-                .unwrap_or_default();
-            let start = (origin, window.geometry().size);
-            grab.start = Some(start);
-            start
-        }
+    let changed = {
+        let (comp, space) = lp.inner.comp_space_of_mut(owner);
+        crate::geometry::apply_interactive(comp, space, &window, &mut grab)
     };
-    if grab.updated {
-        grab.updated = false;
-        let (dx, dy) = (grab.delta.0.round() as i32, grab.delta.1.round() as i32);
-        if grab.edges == 0 {
-            lp.inner.space_of_mut(owner).state.map_element(
-                window.clone(),
-                Point::from((origin.x + dx, origin.y + dy)),
-                false,
-            );
-        } else {
-            let (top, bottom, left, right) = (
-                grab.edges & 1 != 0,
-                grab.edges & 2 != 0,
-                grab.edges & 4 != 0,
-                grab.edges & 8 != 0,
-            );
-            let wanted = (
-                size.w
-                    + if right {
-                        dx
-                    } else if left {
-                        -dx
-                    } else {
-                        0
-                    },
-                size.h
-                    + if bottom {
-                        dy
-                    } else if top {
-                        -dy
-                    } else {
-                        0
-                    },
-            );
-            let (width, height) = clamp_size(wanted, size_hints(&window));
-            let location = Point::from((
-                if left {
-                    origin.x + size.w - width
-                } else {
-                    origin.x
-                },
-                if top {
-                    origin.y + size.h - height
-                } else {
-                    origin.y
-                },
-            ));
-            let new_size = Size::from((width, height));
-            shell::stage(&window, new_size, true);
-            shell::send(&window);
-            slot::set_expected_size(&window, new_size);
-            lp.inner
-                .space_of_mut(owner)
-                .state
-                .map_element(window.clone(), location, false);
-            grab.last_size = Some(new_size);
-        }
+    if changed {
         lp.state.schedule_redraw(RedrawReason::WindowState);
     }
     if grab.ended {
@@ -958,7 +866,7 @@ pub fn window_facts(lp: &Loop, id: SurfaceId) -> WindowFacts {
     let Some(window) = window_of(lp, id) else {
         return WindowFacts::default();
     };
-    let requested_maximized = lp.inner.comp.maximize_restore(id).is_some();
+    let requested_maximized = lp.inner.comp.placement(id).maximized();
     let committed_maximized = committed_maximized(&window);
     let (min_size, max_size) = size_hints(&window);
     let origin =
@@ -969,6 +877,10 @@ pub fn window_facts(lp: &Loop, id: SurfaceId) -> WindowFacts {
     let geometry = window.geometry();
     WindowFacts {
         requested_maximized,
+        requested_tiled: matches!(
+            lp.inner.comp.placement(id),
+            world::comp::Placement::Tiled { .. }
+        ),
         requested_fullscreen: fullscreen,
         committed_maximized,
         committed_fullscreen: fullscreen,

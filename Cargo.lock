@@ -9706,6 +9706,7 @@ name = "testkit"
 version = "0.1.2"
 dependencies = [
  "comp-model",
+ "decor",
  "dispatcher",
  "image",
  "libc",

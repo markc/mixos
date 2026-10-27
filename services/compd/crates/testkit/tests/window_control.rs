@@ -12,7 +12,7 @@ use policy::workspaces::DefaultOutput;
 use smithay::utils::{Point, Size};
 use surfaces::SurfaceId;
 use testkit::Harness;
-use world::comp::MaximizeRestore;
+use world::comp::FloatGeometry;
 
 fn harness() -> Harness {
     let mut h = Harness::new();
@@ -513,33 +513,63 @@ fn the_minimise_lifo_restores_the_most_recent_first() {
     assert_eq!(comp.lifo_restore_candidate(), Some(a));
 }
 
-/// A maximised window's restore record goes with the window.
+/// Placement and saved floating geometry go with the window.
 #[test]
-fn a_destroyed_window_takes_its_maximise_record_with_it() {
+fn a_destroyed_window_takes_its_placement_and_float_geometry_with_it() {
     let mut h = harness();
     let (surface, xdg, toplevel) = h.mapped_toplevel(64, 48);
     let id = id_of(&h, &surface);
-    let restore = MaximizeRestore {
+    let restore = FloatGeometry {
         location: Point::from((10, 20)),
         size: Size::from((64, 48)),
         output: "test".into(),
     };
-    h.wire
-        .inner
-        .comp
-        .set_maximize_restore(id, Some(restore.clone()));
-    assert_eq!(h.comp().maximize_restore(id), Some(restore));
+    h.wire.inner.comp.save_float_geometry(id, restore.clone());
+    let window = h.wire.inner.space.state.elements().next().unwrap().clone();
+    h.wire.inner.comp.set_placement(
+        id,
+        &window,
+        world::comp::Placement::Maximized {
+            output: "test".into(),
+        },
+    );
+    assert_eq!(h.comp().float_geometry(id), Some(restore));
+    assert!(h.comp().placed_ids().contains(&id));
     toplevel.destroy();
     xdg.destroy();
     surface.destroy();
     h.roundtrip();
-    assert_eq!(h.comp().maximize_restore(id), None);
+    assert_eq!(h.comp().float_geometry(id), None);
+    assert!(!h.comp().placed_ids().contains(&id));
+    assert_eq!(h.comp().placement(id), world::comp::Placement::Floating);
+}
+
+/// A fresh role cannot inherit placement or its chrome projection.
+#[test]
+fn taking_a_new_role_clears_placement_float_geometry_and_chrome_projection() {
+    use dispatcher::wire::trait_::surface_event::SurfaceEvent;
+    let mut h = harness();
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let id = id_of(&h, &surface);
+    let handle = h.handle_of(&surface);
+    let window = h.wire.inner.space.state.elements().next().unwrap().clone();
+    let host = &mut h.wire.inner;
+    policy_host::geometry::set_maximized(&mut host.comp, &mut host.space.state, id, &window, true);
+    assert!(decor::window::constrained(&window));
+    host.comp.apply(SurfaceEvent::RoleTaken {
+        handle,
+        role: surfaces::SurfaceRole::Toplevel,
+        parent: None,
+    });
+    assert_eq!(host.comp.placement(id), world::comp::Placement::Floating);
+    assert!(host.comp.float_geometry(id).is_none());
+    assert!(!decor::window::constrained(&window));
 }
 
 /// The interactive grab's events fold into one record: Begin opens it, each
 /// Update keeps only the latest delta (until the host applies it), End marks it
-/// ended, and destroying the window drops it. (Driving a real grab needs a
-/// client `wl_pointer` button serial, which the testkit client does not bind.)
+/// ended, and destroying the window drops it. Real protocol grabs are exercised
+/// in interactive.rs; this fixture pins event folding independently.
 #[test]
 fn interactive_grab_events_fold_into_one_record() {
     use dispatcher::wire::trait_::surface_event::{InteractiveOp, SurfaceEvent};
@@ -550,7 +580,10 @@ fn interactive_grab_events_fold_into_one_record() {
     let comp = &mut h.wire.inner.comp;
     comp.apply(SurfaceEvent::Interactive {
         handle: handle.clone(),
-        op: InteractiveOp::Begin { edges: 10 },
+        op: InteractiveOp::Begin {
+            edges: 10,
+            pointer: (1.0, 1.0).into(),
+        },
     });
     for (dx, dy) in [(5.0, 1.0), (12.0, -3.0)] {
         comp.apply(SurfaceEvent::Interactive {
