@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! ced's commands: one per action of the action table, so the menu bar, the
-//! shortcuts, the toolkit's Bus drive and `ced.action` all reach the same
+//! shortcuts, the toolkit's Bus drive and `ced.execute` all reach the same
 //! controller path. Ids are the action ids; labels come from the catalogue;
 //! shortcuts are the default chords for the action (its first as the
 //! accelerator, the rest as further chords); the person's bindings are

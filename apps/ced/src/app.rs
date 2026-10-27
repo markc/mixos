@@ -6,7 +6,7 @@
 //! happens here, so it is tested without a display.
 //!
 //! - Every action goes through [`App::action`] (menus, shortcuts, the tab
-//!   strip) or the Bus (`ced.action`), and reaches the controller the same
+//!   strip) or the Bus (`ced.execute`), and reaches the controller the same
 //!   way.
 //! - The controller's window-only actions (dialogs, the find bar, view
 //!   options, zoom, panels, help) are carried out here. Each is answered
@@ -1178,8 +1178,8 @@ mod tests {
         let (rc, _) = bus(
             &mut a,
             &mut service,
-            "ced.action",
-            json!({"id":"file.close","tab":one,"args":{"force":true}}),
+            "ced.execute",
+            json!({"id":"file.close","params":{"tab":one,"args":{"force":true}}}),
         );
         assert_eq!(rc, 0);
         assert!(!a.preview_modes.contains_key(&one));
@@ -1206,8 +1206,8 @@ mod tests {
         let (rc, _) = bus(
             &mut a,
             &mut service,
-            "ced.action",
-            json!({"id":"file.save_as","args":{"path":"/work/one.txt"}}),
+            "ced.execute",
+            json!({"id":"file.save_as","params":{"args":{"path":"/work/one.txt"}}}),
         );
         assert_eq!(rc, 0);
         assert_eq!(
@@ -1233,8 +1233,8 @@ mod tests {
         let (rc, _) = bus(
             &mut a,
             &mut service,
-            "ced.action",
-            json!({"id":"file.save_as","args":{"path":"/work/one.md"}}),
+            "ced.execute",
+            json!({"id":"file.save_as","params":{"args":{"path":"/work/one.md"}}}),
         );
         assert_eq!(rc, 0);
         assert_eq!(a.preview_mode(one), PreviewMode::Split);
@@ -1250,7 +1250,7 @@ mod tests {
         let (rc, _) = bus(
             &mut a,
             &mut service,
-            "ced.action",
+            "ced.execute",
             json!({"id":"view.markdown.split"}),
         );
         assert_eq!(rc, 0);
@@ -1271,14 +1271,14 @@ mod tests {
         bus(
             &mut a,
             &mut service,
-            "ced.action",
-            json!({"id":"file.save_as","args":{"path":"/work/one.txt"}}),
+            "ced.execute",
+            json!({"id":"file.save_as","params":{"args":{"path":"/work/one.txt"}}}),
         );
         let (rc, refusal) = bus(
             &mut a,
             &mut service,
-            "ced.action",
-            json!({"id":"view.markdown.split","tab":one}),
+            "ced.execute",
+            json!({"id":"view.markdown.split","params":{"tab":one}}),
         );
         assert_eq!(rc, 10);
         assert_eq!(refusal["error_code"], "CONFLICT");

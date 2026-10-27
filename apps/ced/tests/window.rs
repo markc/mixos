@@ -957,7 +957,7 @@ fn executed_commands_are_published_with_their_origin() {
     // Refused by the window: there is no document to save.
     service.deliver(Delivery::Command(BusCommand {
         id: 9,
-        command: "ced.action".into(),
+        command: "ced.execute".into(),
         body: json!({ "id": "file.save_as" }).to_string(),
         caller_key: "local:test".into(),
     }));
@@ -979,7 +979,7 @@ fn executed_commands_are_published_with_their_origin() {
     let bus = |id: u64, action: &str| {
         Delivery::Command(BusCommand {
             id,
-            command: "ced.action".into(),
+            command: "ced.execute".into(),
             body: json!({ "id": action }).to_string(),
             caller_key: "local:test".into(),
         })

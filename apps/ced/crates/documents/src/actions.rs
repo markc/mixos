@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Every menu / keymap / `ced.action` action. The string id is the `ced.action` /
+//! Every menu / keymap / `ced.execute` action. The string id is the `ced.execute` /
 //! `ced.actions` wire name and never changes once shipped.
 //!
 //! The shared macros panel is registered by the GUI as `help.macros`.
@@ -64,7 +64,7 @@ macro_rules! actions {
                 v
             }
 
-            /// Stable wire id (`ced.action {id}`).
+            /// Stable wire id (`ced.execute {id}`).
             pub fn id(self) -> String {
                 match self {
                     $( ActionId::$variant => $id.to_string(), )*

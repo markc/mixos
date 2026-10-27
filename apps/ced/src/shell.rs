@@ -10,7 +10,7 @@
 //! - Deliveries are applied in arrival order, each with its effects
 //!   performed before the next. A Bus command waits while drive input the
 //!   toolkit accepted before it is still unanswered (as in every MixOS app),
-//!   so a `ced.action` never overtakes a `ced.ui.click` sent first.
+//!   so a `ced.execute` never overtakes a `ced.ui.click` sent first.
 //! - Input keeps its order: the registry takes a frame's shortcuts before
 //!   the editor sees the frame, so a shortcut that follows editor input
 //!   waits for the next frame (`split_input`). Shortcuts are off while

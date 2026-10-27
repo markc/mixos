@@ -308,7 +308,7 @@
     {name:"ced.state", owner:"ced", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"ced.type", owner:"ced", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"ced.select", owner:"ced", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"ced.action", owner:"ced", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"ced.execute", owner:"ced", version:"0.1.0", status:"accepted", class:"intent", schema:"action::ExecuteRequest"},
     {name:"ced.actions", owner:"ced", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"ced.wait", owner:"ced", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"ced.layout", owner:"ced", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},

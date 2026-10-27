@@ -92,7 +92,7 @@ pub enum Effect {
     Send { req: u64, out: Outgoing },
     /// Answer a `ced.*` Bus command.
     Respond { id: u64, rc: u8, body: String },
-    /// `ced.action` ran action `id` directly (the window runs the rest):
+    /// `ced.execute` ran action `id` directly (the window runs the rest):
     /// the host records it for `<app>.action.executed`.
     Executed { id: String },
     /// Arm a one-shot timer (`Incoming::Timer{id}` after `ms`).
@@ -115,7 +115,7 @@ pub enum Effect {
     /// A window-only action (dialogs, find bar, zoom, panels, help, and the
     /// args-taking actions called without their args): the window performs it
     /// and then calls [`Controller::ui_done`] with `token` and the outcome.
-    /// A Bus `ced.action` that caused it is answered only from `ui_done` (or
+    /// A Bus `ced.execute` that caused it is answered only from `ui_done` (or
     /// with a `TIMEOUT` refusal after 10 s) — never before the window acted.
     /// Never emitted headless (those refuse UNAVAILABLE).
     UiAction {
@@ -148,14 +148,14 @@ const SESSION_DEBOUNCE_MS: u64 = 1_000;
 const DEADLINE_MS: u64 = 5_000;
 const DEADLINE_LONG_MS: u64 = 30_000;
 const OPEN_WARN_AFTER: u32 = 3;
-/// A Bus `ced.action` waits this long for its server op's outcome (a save's
+/// A Bus `ced.execute` waits this long for its server op's outcome (a save's
 /// own deadline, its `edit.list` check and one resend fit inside).
 const OP_WAIT_MS: u64 = 90_000;
 /// Shown when `edit` is absent.
 pub const EDIT_UNAVAILABLE: &str =
     "The edit service is not running; this document will open when it starts.";
 
-/// A Bus `ced.action` waiting on its server op's outcome.
+/// A Bus `ced.execute` waiting on its server op's outcome.
 struct OpWait {
     /// The Bus command to answer, and the action id it named.
     id: u64,
@@ -258,11 +258,11 @@ enum TimerFor {
     Rematch(TabId),
     /// Change markers clear 2 s after the tab gains focus.
     ClearMarkers(TabId),
-    /// A Bus `ced.action` waiting on the window's `ui_done`.
+    /// A Bus `ced.execute` waiting on the window's `ui_done`.
     UiDeadline(u64),
     /// An `rc 0` reply whose effect has not arrived (the mirror's echo wait).
     Echo(TabId, String),
-    /// A Bus `ced.action` waiting on its server op's outcome (by op id).
+    /// A Bus `ced.execute` waiting on its server op's outcome (by op id).
     OpWait(String),
 }
 
@@ -336,7 +336,7 @@ pub struct Controller {
     /// `UiAction` tokens: the next one, and the Bus commands awaiting `ui_done`.
     next_ui_token: u64,
     ui_pending: HashMap<u64, (u64, String)>,
-    /// Bus `ced.action`s answered from their server op's outcome, by op id,
+    /// Bus `ced.execute`s answered from their server op's outcome, by op id,
     /// and the one being dispatched right now.
     op_waits: HashMap<String, OpWait>,
     op_cmd: Option<(u64, String)>,
@@ -1885,7 +1885,7 @@ impl Controller {
                 });
                 let intent = intent.unwrap_or_else(|| Intent::ui(tab));
                 // Only the human who pressed Save is asked; a Bus caller gets
-                // the refusal as its `ced.action` reply.
+                // the refusal as its `ced.execute` reply.
                 if matches!(intent.by, Invoker::Ui) {
                     fx.push(Effect::Prompt(Prompt::DiskModified { tab, intent }));
                 } else {
@@ -2113,7 +2113,7 @@ impl Controller {
         if matches!(m.phase(), Phase::Detached { .. }) {
             return Err("the buffer is detached".into());
         }
-        // A Bus `ced.action` being dispatched is answered from this op's
+        // A Bus `ced.execute` being dispatched is answered from this op's
         // outcome, not now.
         let (step, op_id) = m.server_op(op, intent, &mut self.ids);
         if let Some((id, action)) = self.op_cmd.take() {
@@ -2125,7 +2125,7 @@ impl Controller {
         Ok(())
     }
 
-    /// Answer the Bus `ced.action` waiting on server op `op_id`, if any.
+    /// Answer the Bus `ced.execute` waiting on server op `op_id`, if any.
     fn answer_op(&mut self, op_id: &str, outcome: Outcome, fx: &mut Vec<Effect>) {
         let Some(OpWait { id, action, .. }) = self.op_waits.remove(op_id) else {
             return;
@@ -2495,7 +2495,10 @@ impl Controller {
         let body: Value = serde_json::from_str(&cmd.body).unwrap_or_else(|_| json!({}));
         macro_rules! parse {
             ($t:ty) => {
-                match serde_json::from_value::<$t>(body.clone()) {
+                parse!($t, body.clone())
+            };
+            ($t:ty, $value:expr) => {
+                match serde_json::from_value::<$t>($value) {
                     Ok(v) => v,
                     Err(e) => {
                         return fx.push(Effect::Respond {
@@ -2664,38 +2667,39 @@ impl Controller {
                     Err(e) => refuse(fx, code::INVALID_ARGUMENT, e, Some("bad_position")),
                 }
             }
-            "ced.action" => {
-                let r = parse!(commands::ActionReq);
+            "ced.execute" => {
+                let r = parse!(action::ExecuteRequest);
                 let Some(action) = ActionId::from_id(&r.id) else {
                     return refuse(
                         fx,
-                        code::NOT_FOUND,
+                        code::UNKNOWN_ACTION,
                         format!("unknown action {}", r.id),
                         Some("unknown_action"),
                     );
                 };
-                let tab = match (r.sel.tab, &r.sel.buffer) {
+                let params = parse!(commands::ExecuteParams, r.params.unwrap_or_else(|| json!({})));
+                let tab = match (params.sel.tab, &params.sel.buffer) {
                     (None, None) => self.active,
-                    _ => match self.resolve_tab(&r.sel) {
+                    _ => match self.resolve_tab(&params.sel) {
                         Ok(t) => Some(t),
                         Err(e) => return refuse(fx, code::NOT_FOUND, e, None),
                     },
                 };
                 let intent = Intent::bus(tab.unwrap_or(0), &cmd.caller_key);
-                if !self.headless && ui::window_only(action, r.args.as_ref()) {
+                if !self.headless && ui::window_only(action, params.args.as_ref()) {
                     // Full mesh access: the window performs it, and the
                     // reply waits for the window's `ui_done`.
                     return self.ui_dispatch(
                         tab,
                         action,
-                        r.args.clone(),
+                        params.args.clone(),
                         intent,
                         Some((id, r.id.clone())),
                         fx,
                     );
                 }
                 let arg = |k: &str| {
-                    r.args
+                    params.args
                         .as_ref()
                         .and_then(|a| a.get(k))
                         .and_then(Value::as_bool)
@@ -2726,7 +2730,7 @@ impl Controller {
                         | ActionId::EditUndoOther
                 );
                 self.op_cmd = on_outcome.then(|| (id, r.id.clone()));
-                let result = self.action_args(tab, action, r.args.as_ref(), intent, fx);
+                let result = self.action_args(tab, action, params.args.as_ref(), intent, fx);
                 if result.is_ok() {
                     fx.push(Effect::Executed { id: action.id() });
                 }
@@ -3607,6 +3611,88 @@ mod tests {
     }
 
     #[test]
+    fn execute_replaces_the_legacy_command_in_discovery_and_dispatch() {
+        let legacy = concat!("ced.", "action");
+        let mut c = ctl();
+        let (rc, v) = response(&c.on_bus_command(cmd(legacy, json!({"id": "file.new"}))));
+        assert_eq!((rc, v["error_code"].as_str()), (10, Some("UNKNOWN_COMMAND")));
+        assert!(c.tabs.is_empty(), "the removed command cannot run an action");
+
+        let (_, v) = response(&c.on_bus_command(cmd("app.describe", json!({}))));
+        let names = v["commands"].as_array().unwrap();
+        assert!(names.contains(&json!("ced.execute")));
+        assert!(!names.contains(&json!(legacy)));
+    }
+
+    #[test]
+    fn execute_refuses_unknown_actions_and_invalid_payloads() {
+        for headless in [true, false] {
+            let mut c = Controller::new(Config::default(), 1, headless);
+            let fx = c.on_bus_command(cmd(
+                "ced.execute",
+                json!({"id": "no.such.action", "params": {"tab": 999}}),
+            ));
+            let (rc, v) = response(&fx);
+            assert_eq!((rc, v["error_code"].as_str()), (10, Some("UNKNOWN_ACTION")));
+            assert_eq!(fx.len(), 1, "an unknown action only produces a refusal");
+
+            for body in [
+                json!({}),
+                json!({"id": 42}),
+                json!({"id": "file.new", "tab": 1}),
+                json!({"id": "file.new", "buffer": "b1"}),
+                json!({"id": "file.new", "args": {}}),
+                json!({"id": "file.new", "params": []}),
+                json!({"id": "file.new", "params": {"tab": "bad"}}),
+                json!({"id": "file.new", "params": {"buffer": 42}}),
+            ] {
+                let fx = c.on_bus_command(cmd("ced.execute", body.clone()));
+                let (rc, v) = response(&fx);
+                assert_eq!(
+                    (rc, v["error_code"].as_str()),
+                    (10, Some("INVALID_ARGUMENT")),
+                    "{body}"
+                );
+                assert_eq!(fx.len(), 1, "invalid arguments cannot execute: {body}");
+            }
+        }
+    }
+
+    #[test]
+    fn execute_params_preserve_selectors_and_ui_arguments() {
+        let args = json!({"path": "/work/renamed.md"});
+        for by_buffer in [false, true] {
+            let mut c = ctl();
+            live(&mut c);
+            let tab = c.active().unwrap();
+            let other = c.new_tab(None);
+            c.active = Some(other);
+            let selector = if by_buffer { json!({"buffer": B}) } else { json!({"tab": tab}) };
+            let mut params = selector;
+            params["args"] = args.clone();
+            let fx = c.on_bus_command(cmd(
+                "ced.execute",
+                json!({"id": "file.save_as", "params": params}),
+            ));
+            let (_, save) = sent(&fx, "edit.save");
+            assert_eq!(save["buffer"], B);
+            assert_eq!(save["path"], args["path"]);
+        }
+        let mut c = Controller::new(Config::default(), 1, false);
+        live(&mut c);
+        let tab = c.active().unwrap();
+        let fx = c.on_bus_command(cmd(
+            "ced.execute",
+            json!({"id": "search.find", "params": {"tab": tab, "args": args}}),
+        ));
+        assert!(fx.iter().any(|effect| matches!(
+            effect,
+            Effect::UiAction { tab: Some(t), action: ActionId::SearchFind, args: Some(a), .. }
+                if *t == tab && *a == args
+        )), "the window receives the selected tab and the original args");
+    }
+
+    #[test]
     fn start_subscribes_and_asks_edit_its_epoch() {
         let mut c = ctl();
         let fx = c.start();
@@ -3722,10 +3808,10 @@ mod tests {
 
         // A window-only action over the Bus: headless refuses; with a window
         // the reply waits for ui_done, or times out.
-        let (rc, v) = response(&c.on_bus_command(cmd("ced.action", json!({"id": "view.zoom_in"}))));
+        let (rc, v) = response(&c.on_bus_command(cmd("ced.execute", json!({"id": "view.zoom_in"}))));
         assert_eq!((rc, v["error_code"].as_str()), (10, Some("UNAVAILABLE")));
         let mut gui = Controller::new(Config::default(), 2, false);
-        let fx = gui.on_bus_command(cmd("ced.action", json!({"id": "search.find"})));
+        let fx = gui.on_bus_command(cmd("ced.execute", json!({"id": "search.find"})));
         let token = fx
             .iter()
             .find_map(|e| match e {
@@ -3751,7 +3837,7 @@ mod tests {
             gui.ui_done(token, Ok(Value::Null)).is_empty(),
             "a token answers once"
         );
-        let fx = gui.on_bus_command(cmd("ced.action", json!({"id": "help.about"})));
+        let fx = gui.on_bus_command(cmd("ced.execute", json!({"id": "help.about"})));
         let timer = fx
             .iter()
             .find_map(|e| match e {
@@ -3846,7 +3932,7 @@ mod tests {
         // Not `ok:true` at enqueue.
         let mut c = ctl();
         live(&mut c);
-        let fx = c.on_bus_command(cmd("ced.action", json!({"id": "edit.undo"})));
+        let fx = c.on_bus_command(cmd("ced.execute", json!({"id": "edit.undo"})));
         assert!(
             !fx.iter().any(|e| matches!(e, Effect::Respond { .. })),
             "no answer before the service's"
@@ -3858,7 +3944,7 @@ mod tests {
             (10, Some("NOT_FOUND"), Some("nothing_to_undo"))
         );
 
-        let fx = c.on_bus_command(cmd("ced.action", json!({"id": "file.save"})));
+        let fx = c.on_bus_command(cmd("ced.execute", json!({"id": "file.save"})));
         assert!(!fx.iter().any(|e| matches!(e, Effect::Respond { .. })));
         let (req, _) = sent(&fx, "edit.save");
         // A Bus caller's disk_modified goes to the caller, never a prompt.
@@ -3875,7 +3961,7 @@ mod tests {
         let (rc, v) = response(&fx);
         assert_eq!((rc, v["reason"].as_str()), (10, Some("disk_modified")));
 
-        let fx = c.on_bus_command(cmd("ced.action", json!({"id": "file.save"})));
+        let fx = c.on_bus_command(cmd("ced.execute", json!({"id": "file.save"})));
         let (req, _) = sent(&fx, "edit.save");
         let saved = json!({"buffer": B, "epoch": "0000e1e1", "path": "/nonexistent/ced-r/x.txt", "rev": 0, "saved_rev": 0,
                            "file_bytes": 12, "disk": "clean", "durable": true, "warning": null});
@@ -3893,15 +3979,15 @@ mod tests {
         live(&mut c);
         let save = BusCommand {
             id: 41,
-            ..cmd("ced.action", json!({"id": "file.save"}))
+            ..cmd("ced.execute", json!({"id": "file.save"}))
         };
         let fx = c.on_bus_command(save);
         sent(&fx, "edit.save");
         let fx = c.on_bus_command(BusCommand {
             id: 42,
             ..cmd(
-                "ced.action",
-                json!({"id": "file.close", "args": {"force": true}}),
+                "ced.execute",
+                json!({"id": "file.close", "params": {"args": {"force": true}}}),
             )
         });
         let (req, _) = sent(&fx, "edit.close");
@@ -3964,8 +4050,8 @@ mod tests {
         let mut c = ctl();
         live(&mut c);
         let fx = c.on_bus_command(cmd(
-            "ced.action",
-            json!({"id": "search.find_next", "args": {"pattern": "world"}}),
+            "ced.execute",
+            json!({"id": "search.find_next", "params": {"args": {"pattern": "world"}}}),
         ));
         // The find job's request (`from`), not highlight-all's.
         let find_req = |fx: &[Effect]| {
@@ -4115,14 +4201,14 @@ mod tests {
             let tab = c.active.unwrap();
             let t = Instant::now();
             let _ = c.on_bus_command(cmd(
-                "ced.action",
-                json!({"id": "search.goto_line", "args": {"line": n}}),
+                "ced.execute",
+                json!({"id": "search.goto_line", "params": {"args": {"line": n}}}),
             ));
             println!("PERF {name}: goto last line {} us", us(t));
             let t = Instant::now();
             let _ = c.on_bus_command(cmd(
-                "ced.action",
-                json!({"id": "search.goto_line", "args": {"line": 10}}),
+                "ced.execute",
+                json!({"id": "search.goto_line", "params": {"args": {"line": 10}}}),
             ));
             let goto10 = us(t);
             let t = Instant::now();

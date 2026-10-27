@@ -54,7 +54,10 @@ fn check(name: &str, v: &Value) {
         ("ced.state", "request") => parses::<StateReq>(name, v),
         ("ced.type", "request") => parses::<TypeReq>(name, v),
         ("ced.select", "request") => parses::<SelectReq>(name, v),
-        ("ced.action", "request") => parses::<ActionReq>(name, v),
+        ("ced.execute", "request") => {
+            parses::<action::ExecuteRequest>(name, v);
+            parses::<ExecuteParams>(name, &v["params"]);
+        }
         ("ced.wait", "request") => parses::<WaitReq>(name, v),
         ("ced.diagnostics", "request") => parses::<DiagnosticsReq>(name, v),
         ("ced.problems", "request") => parses::<TabSel>(name, v),
@@ -67,7 +70,7 @@ fn check(name: &str, v: &Value) {
         ("ced.state", "reply") => round_trips::<StateReply>(name, v),
         ("ced.type", "reply") => round_trips::<TypeReply>(name, v),
         ("ced.select", "reply") => round_trips::<SelectReply>(name, v),
-        ("ced.action", "reply") => round_trips::<ActionReply>(name, v),
+        ("ced.execute", "reply") => round_trips::<ActionReply>(name, v),
         ("ced.actions", "reply") => round_trips::<ActionsReply>(name, v),
         ("ced.wait", "reply") => round_trips::<WaitReply>(name, v),
         ("ced.layout", "reply") => round_trips::<LayoutReply>(name, v),

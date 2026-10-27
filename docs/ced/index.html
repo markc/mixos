@@ -258,7 +258,7 @@ second <code>ced</code> hands its paths to the first and exits.</p>
 <ul>
 <li><strong>Menus, shortcuts and Bus actions are one registry.</strong> Every action has
 the same id in the menu bar, as a shortcut (Notepad++ conventions: see
-Help › Keyboard Shortcuts) and in <code>ced.action {id}</code>.</li>
+Help › Keyboard Shortcuts) and in <code>ced.execute {id}</code>.</li>
 <li><strong>Tabs</strong> show unsaved changes, and ◆ when another origin edited the
 document since you last looked at it.</li>
 <li><strong>The notice strip</strong> keeps edits that could not be applied
@@ -275,12 +275,18 @@ text, not a local copy.</li>
 </ul>
 <h2 id="bus">Bus</h2>
 <p><code>ced.*</code> (schema <code>ced.v1</code>): <code>ping</code>, <code>info</code>, <code>open</code>, <code>new</code>, <code>tabs</code>, <code>focus</code>,
-<code>state</code>, <code>type</code>, <code>select</code>, <code>action</code>, <code>actions</code>, <code>wait</code>, <code>layout</code>, <code>stats</code>,
+<code>state</code>, <code>type</code>, <code>select</code>, <code>execute</code>, <code>actions</code>, <code>wait</code>, <code>layout</code>, <code>stats</code>,
 <code>diagnostics</code>, <code>problems</code>, plus <code>app.describe</code> and <code>app.quit</code>; and the
 toolkit drive commands (<code>ced.ui.*</code>, <code>ced.window</code>, <code>ced.window.state</code>; see
 <a href="/docs/drive/">driving an app</a>). A Bus caller's edits carry its own
 origin (<code>agent:ced.&lt;caller&gt;</code>), so they show as an agent's, and its undo is
 its own.</p>
+<p><code>ced.actions</code> lists the editor's actions. Run one with
+<code>ced.execute {id, params?}</code>; <code>params</code> holds optional <code>tab</code> (or <code>buffer</code>) and
+<code>args</code>, for example
+<code>{id: "file.save_as", params: {tab: 1, args: {path: "/work/notes.md"}}}</code>.
+Without a selector, the action uses the active tab. An unknown action returns
+rc 10 <code>UNKNOWN_ACTION</code>. Each run is published on <code>ced.action.executed</code>.</p>
 <h2 id="source">Source</h2>
 <ul>
 <li><code>crates/documents</code>: the engine, with no UI toolkit. Open documents (one

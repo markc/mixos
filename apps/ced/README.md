@@ -13,12 +13,16 @@ The preview shares the editor palette's field fill and gutter inset. In
 Split, the source's first row reserves an opening heading's extra ascent
 so their baselines line up.
 
-`ced.action` accepts `view.markdown.source`, `view.markdown.split` and
+`ced.execute` accepts `view.markdown.source`, `view.markdown.split` and
 `view.markdown.preview`. They are disabled for other languages and when no
 tab is open. `ced.tabs` rows and `ced.state` include `preview` (`source`,
 `split` or `preview`). Save As to another language shows Source; the tab's
 Markdown choice stays dormant. Closing the tab drops its choice and parse
 cache. These choices are never saved in the session file.
+
+Run actions with `{id, params?}`. Optional `tab` (or `buffer`) and `args`
+belong inside `params`; without a selector, the active tab is used. Unknown
+action ids return rc 10 `UNKNOWN_ACTION`.
 
 Preview caches use the tab id and mirror revision. A repaint reads no buffer
 text; a language change clears the cache. Save As detects the interim language

@@ -48,7 +48,7 @@ pub fn run(service: &str, url: &str, config: Config, paths: &[String]) -> Result
     }
     let mut quitting = false;
     let mut stopping = false;
-    // ced.action runs, for <service>.action.executed.
+    // ced.execute runs, for <service>.action.executed.
     let mut journal = toolkit::executed::Journal::default();
     let topic = toolkit::executed::topic(service);
     futures::executor::block_on(async {

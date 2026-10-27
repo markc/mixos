@@ -183,7 +183,7 @@ pub(super) fn expand_replacement(template: &str, m: &wire::MatchW) -> Option<Str
 }
 
 impl Controller {
-    /// The same path `ced.action {id, args}` takes, so the window and the Bus
+    /// The same path `ced.execute {id, params: {args}}` takes, so the window and the Bus
     /// behave identically. Args by action:
     /// - `file.open {paths:[S]}` (refused without paths);
     /// - `file.save {force?}`; `file.save_as {path, force?}`;
@@ -972,7 +972,7 @@ impl Controller {
     }
 }
 
-/// How long a Bus `ced.action` waits for the window's `ui_done`.
+/// How long a Bus `ced.execute` waits for the window's `ui_done`.
 const UI_DEADLINE_MS: u64 = 10_000;
 
 /// A highlight-all query (the find bar's pattern and options).
@@ -1059,7 +1059,7 @@ impl Controller {
     }
 
     /// The window finished a [`Effect::UiAction`]: `Ok(result)` (`null` for
-    /// none) or a refusal. Answers the Bus `ced.action` that caused it, once;
+    /// none) or a refusal. Answers the Bus `ced.execute` that caused it, once;
     /// a token nobody is waiting on (window-invoked, or already timed out) is
     /// a no-op.
     pub fn ui_done(&mut self, token: u64, result: Result<Value, commands::Refusal>) -> Vec<Effect> {
@@ -1088,7 +1088,7 @@ impl Controller {
     }
 
     /// The window finished a [`Effect::UiAction`] by gathering arguments (a
-    /// path, a line): run `action` with them. A Bus `ced.action` waiting on
+    /// path, a line): run `action` with them. A Bus `ced.execute` waiting on
     /// `token` is answered from that action's own outcome, so a Save As
     /// answers when the save completes or fails, not when the dialog closes.
     /// Without a waiting caller a failure is a notice, as for window input.

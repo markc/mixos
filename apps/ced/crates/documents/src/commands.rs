@@ -34,7 +34,7 @@ pub const COMMANDS: &[(&str, bool)] = &[
     ("ced.state", true),
     ("ced.type", false),
     ("ced.select", false),
-    ("ced.action", false),
+    ("ced.execute", false),
     ("ced.actions", true),
     ("ced.wait", true),
     ("ced.layout", true),
@@ -84,6 +84,7 @@ pub mod code {
     pub const UNAVAILABLE: &str = "UNAVAILABLE";
     pub const INTERNAL: &str = "INTERNAL";
     pub const UNKNOWN_COMMAND: &str = "UNKNOWN_COMMAND";
+    pub const UNKNOWN_ACTION: &str = "UNKNOWN_ACTION";
     /// A command in the manifest that is not implemented yet.
     pub const UNIMPLEMENTED: &str = "UNIMPLEMENTED";
 }
@@ -294,9 +295,10 @@ pub struct SelectReply {
 
 // ── actions ─────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ActionReq {
-    pub id: String,
+/// Ced's `params` in [`action::ExecuteRequest`]. Selectors and action arguments
+/// keep the same meaning as the editor's other tab-aware commands.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExecuteParams {
     #[serde(default)]
     pub args: Option<serde_json::Value>,
     #[serde(flatten)]

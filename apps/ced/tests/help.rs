@@ -29,6 +29,8 @@ fn help_lists_each_hosted_command_once_with_registry_query_flags() {
         for suffix in citizen::macros::SUFFIXES {
             assert!(names.contains(&format!("ced.macros.{suffix}")));
         }
+        assert!(names.contains("ced.execute"));
+        assert!(!names.contains(concat!("ced.", "action")));
         for suffix in toolkit::drive::COMMANDS {
             assert_eq!(names.contains(&format!("ced.{suffix}")), window);
         }
