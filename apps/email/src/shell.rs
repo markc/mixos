@@ -1721,8 +1721,13 @@ impl Shell {
                 }
                 self.ctx.request_repaint_of(window.viewport);
             } else {
+                let outcome = matches!(&event, Event::Account(_, Done::Sent(..)));
                 self.state.apply(event);
+                let notice = outcome.then(|| self.state.status.clone());
                 self.settle();
+                if let Some(notice) = notice {
+                    self.state.status = notice;
+                }
             }
             self.sync_composers();
             if let Some((origin, path)) = fallback {
@@ -1858,11 +1863,15 @@ impl Shell {
                 .values()
                 .filter_map(|w| {
                     let w = w.lock().unwrap();
-                    w.view
+                    if w.view
                         .compose
                         .as_ref()
                         .is_some_and(|c| c.keepable())
-                        .then(|| w.name.clone())
+                    {
+                        Some(w.name.clone())
+                    } else {
+                        None
+                    }
                 })
                 .collect();
             self.composers.quitting = true;

@@ -327,23 +327,17 @@ fn review_bus_new_creates_and_requests_native_paint_in_the_command_frame() {
 #[test]
 fn review_bus_new_and_document_open_return_the_new_window() {
     let (mut shell, broker) = bus_fixture();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("message.md");
+    std::fs::write(&path, "---\nmail-subject: document\n---\nBody\n").unwrap();
     for (command, args, name) in [
         ("email.execute", json!({"id":"compose.new"}), "compose-1"),
         (
             "email.compose",
-            json!({"document": std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/review-message.md")}),
+            json!({"document":path}),
             "compose-2",
         ),
     ] {
-        // The document path is supplied below from a real temporary file.
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("message.md");
-        std::fs::write(&path, "---\nmail-subject: document\n---\nBody\n").unwrap();
-        let args = if command == "email.compose" {
-            json!({"document":path})
-        } else {
-            args
-        };
         let (rc, body) = bus_answer(&mut shell, &broker, command, args);
         assert_eq!(rc, 0, "{body}");
         assert_eq!(body["window"], name);
