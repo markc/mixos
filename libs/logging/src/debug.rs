@@ -334,7 +334,11 @@ pub fn request(service: &str, command: &str, body: &str) -> Option<(u8, Value)> 
 /// Preserve the app's discovery names while also serving an instance's name.
 pub fn request_for(service: &str, app: &str, command: &str, body: &str) -> Option<(u8, Value)> {
     request(service, command, body).or_else(|| {
-        if service == app { None } else { request(app, command, body) }
+        if service == app {
+            None
+        } else {
+            request(app, command, body)
+        }
     })
 }
 
@@ -380,13 +384,19 @@ mod tests {
             if let Ok(manifest) = std::fs::read_to_string(path.join("Cargo.toml")) {
                 let mut section = "";
                 for line in manifest.lines().map(str::trim) {
-                    if line.starts_with('[') { section = line; }
+                    if line.starts_with('[') {
+                        section = line;
+                    }
                     if matches!(section, "[package]" | "[lib]")
                         && let Some((key, value)) = line.split_once('=')
                         && key.trim() == "name"
                     {
                         let name = value.trim().trim_matches('"').replace('-', "_");
-                        assert!(WORKSPACE_TARGETS.contains(&name.as_str()), "missing own target {name} in {}", path.display());
+                        assert!(
+                            WORKSPACE_TARGETS.contains(&name.as_str()),
+                            "missing own target {name} in {}",
+                            path.display()
+                        );
                     }
                 }
             }
@@ -397,7 +407,9 @@ mod tests {
             }
         }
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        for kind in ["apps", "libs", "services", "cli"] { check(&root.join(kind)); }
+        for kind in ["apps", "libs", "services", "cli"] {
+            check(&root.join(kind));
+        }
     }
 
     #[test]
@@ -405,7 +417,13 @@ mod tests {
         let subscriber = tracing_subscriber::registry().with(parse_filter("warn").unwrap());
         tracing::subscriber::with_default(subscriber, || {
             let evaluated = std::cell::Cell::new(false);
-            tracing::debug!(value = { evaluated.set(true); 1 }, "disabled seam");
+            tracing::debug!(
+                value = {
+                    evaluated.set(true);
+                    1
+                },
+                "disabled seam"
+            );
             assert!(!evaluated.get());
         });
     }

@@ -17,7 +17,7 @@ fn main() {
         Ok(args) => args,
         Err(error) => {
             toolkit::debug::failure("email", &error);
-        eprintln!("email: {error}");
+            eprintln!("email: {error}");
             std::process::exit(2);
         }
     };
@@ -45,7 +45,7 @@ fn init_logging(args: &mut Vec<String>) -> Option<logging::LogHandle> {
         Ok(handle) => Some(handle),
         Err(error) => {
             toolkit::debug::failure("email", &error);
-        eprintln!("email: {error}");
+            eprintln!("email: {error}");
             // Logging must never prevent the GUI from starting. Continue
             // without a subscriber if the environment filter is malformed.
             None

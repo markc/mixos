@@ -691,14 +691,14 @@ async fn worker(
                     continue;
                 }
                 debug::received(&service, &command.command);
-                if pending.len() >= 32 {
-                    debug::answered(&service, &command.command, 10);
-                    let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,10,"{\"error_code\":\"BUSY\",\"message\":\"too many pending commands\"}")).await;
-                    continue;
-                }
                 if let Some((rc, body)) = debug::request_for(&service, &app, &command.command, &command.body) {
                     debug::answered(&service, &command.command, rc);
                     let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,rc,&body.to_string())).await;
+                    continue;
+                }
+                if pending.len() >= 32 {
+                    debug::answered(&service, &command.command, 10);
+                    let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,10,"{\"error_code\":\"BUSY\",\"message\":\"too many pending commands\"}")).await;
                     continue;
                 }
                 next_id += 1;

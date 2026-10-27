@@ -677,7 +677,10 @@ struct ViewportLifetime {
 impl ViewportLifetime {
     fn new(app: &str, viewport: egui::ViewportId) -> Self {
         logging::debug!(app, ?viewport, "viewport attached");
-        Self { app: app.to_owned(), viewport }
+        Self {
+            app: app.to_owned(),
+            viewport,
+        }
     }
 }
 
@@ -726,7 +729,9 @@ impl egui::Plugin for Drive {
     }
 
     fn setup(&mut self, ctx: &Context) {
-        self.lifecycle = Some(ViewportLifetime::new(&self.app, ctx.viewport_id()));
+        if self.lifecycle.is_none() {
+            self.lifecycle = Some(ViewportLifetime::new(&self.app, ctx.viewport_id()));
+        }
         self.input_quiet_since = Some(Instant::now());
         ctx.enable_accesskit();
     }

@@ -197,7 +197,7 @@ pub(crate) fn main() {
         Ok(args) => args,
         Err(e) => {
             toolkit::debug::failure("ced", &e);
-        eprintln!("ced: {e}");
+            eprintln!("ced: {e}");
             std::process::exit(2);
         }
     };

@@ -216,7 +216,7 @@ fn main() {
     let _logging =
         toolkit::debug::init("screenshot", "warn", &mut cli_args).unwrap_or_else(|error| {
             toolkit::debug::failure("screenshot", &error);
-        eprintln!("screenshot: {error}");
+            eprintln!("screenshot: {error}");
             std::process::exit(2);
         });
     buildinfo::exit_on_version!(leading);
@@ -228,7 +228,7 @@ fn main() {
         Ok(args) => args,
         Err(error) => {
             toolkit::debug::failure("screenshot", &error);
-        eprintln!("screenshot: {error}");
+            eprintln!("screenshot: {error}");
             std::process::exit(2);
         }
     };

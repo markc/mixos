@@ -1,0 +1,25 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run through the build-cluster wrapper at a pushed commit, from the repo root.
+-- Keeps the Rust checks and real native logging paths on the same source.
+fn stage($name, $command)
+  print("START " .. $name .. " " .. join($command, " "))
+  $r = run_argv($command, {timeout: 7200, stdout: "inherit", stderr: "stdout"})
+  if $r.exit_code != 0 then
+    print("FAIL " .. $name .. ": " .. to_string($r.exit_code) .. " " .. to_string($r.error))
+    exit($r.exit_code ?? 1)
+  end
+  print("PASS " .. $name)
+end
+stage("fmt", ["cargo", "fmt", "--check"])
+stage("clippy", ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--",
+  "-D", "clippy::all", "-A", "clippy::module_inception", "-A", "clippy::too_many_arguments",
+  "-A", "clippy::type_complexity", "-A", "clippy::large_enum_variant", "-A", "clippy::mutable_key_type"])
+stage("workspace", ["cargo", "test", "--workspace", "--locked", "--no-fail-fast"])
+stage("native-build", ["cargo", "build", "--workspace", "--features", "compd/backend-all", "--locked"])
+$bin = realpath("target/debug")
+for $test in ["apps/workshop/tests/debug_test.mix", "tests/app_debug_test.mix", "tests/desktop/comp_debug_test.mix"]
+  stage($test, [$bin .. "/mix", $test, $bin])
+end
+stage("site", [$bin .. "/mix", "docs/_build/gen-site.mix", "--check"])
+stage("registry", [$bin .. "/mix", "tools/command_registry.mix"])
+print("PASS debug gate")

@@ -165,7 +165,7 @@ fn main() {
         Ok(args) => args,
         Err(e) => {
             toolkit::debug::failure("dopus", &e);
-        eprintln!("dopus: {e}");
+            eprintln!("dopus: {e}");
             std::process::exit(2);
         }
     };
