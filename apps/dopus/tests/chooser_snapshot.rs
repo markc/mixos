@@ -57,7 +57,8 @@ fn snapshot(kind: &str, mode: Mode) {
     body["current_folder"] = json!(folder);
     body["on_behalf_of"] = json!("fakeapp");
     let request = Request::parse(&body.to_string(), &defaults()).unwrap();
-    let mut window = Window::for_request("0123456789abcdef-1", "local:portald", request);
+    let caller = if kind == "open" { "local:agent" } else { "local:portald" };
+    let mut window = Window::for_request("0123456789abcdef-1", caller, request);
     window.ready = true;
     for _ in 0..50 {
         window.pump();
@@ -94,18 +95,24 @@ fn snapshot(kind: &str, mode: Mode) {
     ));
 }
 
-#[test]
-fn all_chooser_windows_dark_and_light() {
-    for mode in [Mode::Dark, Mode::Light] {
-        for kind in [
-            "open",
-            "multiple",
-            "directory",
-            "save",
-            "save_files",
-            "replace",
-        ] {
-            snapshot(kind, mode);
-        }
-    }
+macro_rules! snapshots {
+    ($( $name:ident, $kind:literal, $mode:ident; )*) => { $(
+        #[test]
+        fn $name() { snapshot($kind, Mode::$mode); }
+    )* };
+}
+
+snapshots! {
+    open_dark, "open", Dark;
+    open_light, "open", Light;
+    multiple_dark, "multiple", Dark;
+    multiple_light, "multiple", Light;
+    directory_dark, "directory", Dark;
+    directory_light, "directory", Light;
+    save_dark, "save", Dark;
+    save_light, "save", Light;
+    save_files_dark, "save_files", Dark;
+    save_files_light, "save_files", Light;
+    replace_dark, "replace", Dark;
+    replace_light, "replace", Light;
 }

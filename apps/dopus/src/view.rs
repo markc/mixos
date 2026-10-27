@@ -630,7 +630,6 @@ pub(crate) fn chooser_pane(
     );
 }
 
-#[expect(clippy::too_many_arguments, reason = "shared pane inputs")]
 fn pane_body(
     ui: &mut Ui,
     app: &App,

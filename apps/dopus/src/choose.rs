@@ -2,8 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Chooser-only Bus host and secondary native viewports. No twin-pane commands.
 
-mod presenter;
 mod placement;
+mod presenter;
 pub mod window;
 
 use std::collections::BTreeMap;
@@ -68,7 +68,12 @@ pub fn manifest() -> Vec<::bus::CommandDescriptor> {
         entries.push(::bus::CommandDescriptor::new(name, args, name, *read_only));
     }
     for entry in toolkit::drive::describe(SERVICE) {
-        entries.push(::bus::CommandDescriptor::new(entry["name"].as_str().unwrap(), &["viewport?"], entry["description"].as_str().unwrap_or_default(), entry["read_only"].as_bool().unwrap_or(false)));
+        entries.push(::bus::CommandDescriptor::new(
+            entry["name"].as_str().unwrap(),
+            &["viewport?"],
+            entry["description"].as_str().unwrap_or_default(),
+            entry["read_only"].as_bool().unwrap_or(false),
+        ));
     }
     entries
 }
@@ -192,7 +197,9 @@ pub fn dispatch(
 /// No window, no desktop or file-manager workers. Fatal Bus loss exits so the
 /// session unit restarts with a new incarnation and no surviving requests.
 pub fn run(url: &str) -> Result<(), String> {
-    if std::env::var_os("WAYLAND_DISPLAY").is_some() || std::env::var_os("DISPLAY").is_some_and(|s| !s.is_empty()) {
+    if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var_os("DISPLAY").is_some_and(|s| !s.is_empty())
+    {
         return presenter::run(url);
     }
     let (_tx, events) = tokio::sync::mpsc::unbounded_channel();
@@ -209,7 +216,12 @@ pub fn run_with_presenter(
     run_host(url, presenter, events, None)
 }
 
-fn run_host(url: &str, mut presenter: impl Presenter, mut events: tokio::sync::mpsc::UnboundedReceiver<Presentation>, mut driver: Option<presenter::DriveHost>) -> Result<(), String> {
+fn run_host(
+    url: &str,
+    mut presenter: impl Presenter,
+    mut events: tokio::sync::mpsc::UnboundedReceiver<Presentation>,
+    mut driver: Option<presenter::DriveHost>,
+) -> Result<(), String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
