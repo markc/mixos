@@ -709,6 +709,7 @@ fn start($opts)
   -- Persistence must stay private even when the caller supplies an env map.
   $cenv["MIXOS_VAR"] = $run .. "/var"
   $argv = [$bin, "--nested", "--socket", $socket, "--bus-service", $service, "--config-file=" .. $opts["config"]]
+  $argv = concat($argv, $opts.args ?? [])
   if $opts.scale != nil then push($argv, "--scale=" .. to_string($opts.scale)) end
   $cp = spawn($argv, {env: $cenv, stdout: {file: $log}, stderr: "stdout", detach: true})
   $pids = [$cp, $hp]

@@ -1,0 +1,47 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Native compd debug controls against the owned nested harness and journal.
+-- Run from the root: mix tests/desktop/comp_debug_test.mix BIN_DIR
+$n = require("nested_host_lib.mix")
+$pb = require("../lib/private_bus.mix")
+$bin = args()[0]
+$run = $n.new_run("/var/tmp/comp-debug")
+$broker = nil
+$session = nil
+fn expect($ok, $message)
+  if not $ok then raise("DEBUG_TEST", $message) end
+end
+try
+  $broker = $pb.start({dir: $run.path .. "/broker", name: "comp-debug", noded: $bin .. "/noded"})
+  $session = $n.start({bin: $bin .. "/compd", tag: "debug", run: $run,
+    config: realpath("tests/desktop/smoke-settings.json"), software: true,
+    args: ["--debug=error"], env: {RUST_LOG: "warn", HOME: $run.path}})
+  expect($n.wait_ready($session, 40), "nested compd did not start: " .. $session.log)
+  $initial = $n.call($session.service, "comp.debug", {})
+  expect($initial.rc == 0 and $initial.result.level == "error" and $initial.result.baseline == "warn", "nested flag/baseline: " .. json_encode($initial))
+  for $level in ["off", "error", "warn", "info", "debug", "trace"]
+    $set = $n.call($session.service, "comp.debug.set", {level: $level})
+    expect($set.rc == 0 and $set.result.level == $level, "set: " .. json_encode($set))
+    $get = $n.call($session.service, "comp.debug", {})
+    expect($get.rc == 0 and $get.result.level == $level, "query: " .. json_encode($get))
+  end
+  $set = $n.call($session.service, "comp.debug.set", {on: true})
+  expect($set.rc == 0 and $set.result.on, "on shorthand")
+  $journal = ""
+  for $attempt = 1 to 40
+    $journal = run_argv_must(["journalctl", "--no-pager", "-t", "compd", "_PID=" .. to_string($session.comp_pid), "-o", "json"])
+    if contains($journal, "debug mode changed") then break end
+    sleep(0.1)
+  end
+  expect(contains($journal, "debug mode changed"), "no debug event under journalctl -t compd")
+  $set = $n.call($session.service, "comp.debug.set", {on: false})
+  expect($set.rc == 0 and not $set.result.on and $set.result.filter == "warn", "baseline shorthand")
+  for $body in [{}, {level: "invalid"}, {on: true, level: "debug"}, {level: "info", extra: 1}]
+    $bad = $n.call($session.service, "comp.debug.set", $body)
+    expect($bad.rc == 10, "invalid set accepted: " .. json_encode($body))
+  end
+  print("PASS nested compd debug: startup flag, six levels, query, shorthand, validation and journal")
+finally
+  if $session != nil then $n.stop($session) end
+  if $broker != nil then $pb.stop($broker) end
+  print("comp debug evidence: " .. $run.path)
+end

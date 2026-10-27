@@ -40,6 +40,7 @@ pub fn read_only(command: &str) -> bool {
         || matches!(
             command,
             "comp.capture.frame"
+                | "comp.debug"
                 | "comp.ping"
                 | "comp.props.watch"
                 | "comp.pointer.watch"
@@ -49,10 +50,12 @@ pub fn read_only(command: &str) -> bool {
         )
 }
 
-/// The 18 commands the dispatcher answers directly (not a window or input
+/// The 20 commands the dispatcher answers directly (not a window or input
 /// family member).
 pub const DIRECT_COMMANDS: &[&str] = &[
     "comp.tiles.get",
+    "comp.debug",
+    "comp.debug.set",
     "comp.capture.frame",
     "comp.ping",
     "comp.props.watch",
@@ -143,12 +146,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_surface_is_44_commands_and_14_topics() {
-        assert_eq!(DIRECT_COMMANDS.len(), 18);
+    fn the_surface_is_46_commands_and_14_topics() {
+        assert_eq!(DIRECT_COMMANDS.len(), 20);
         assert_eq!(WINDOW_COMMANDS.len(), 21);
         assert_eq!(INPUT_COMMANDS.len(), 5);
         let commands = all_commands().collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(commands.len(), 44, "no command is in two families");
+        assert_eq!(commands.len(), 46, "no command is in two families");
         assert!(commands.iter().all(|command| command.starts_with("comp.")));
         assert!(
             READ_COMMANDS

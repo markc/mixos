@@ -15,6 +15,7 @@ layer = "desktop"
 contract = "none"
 
 [dependencies]
+logging.workspace = true
 comp-model.workspace = true
 surfaces.workspace = true
 bus = { workspace = true, features = ["client"] }

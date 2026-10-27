@@ -1898,6 +1898,8 @@ pub const PING_BODY: &str = "{\"pong\":true}";
 /// (permits, ingress, ordering fences) is the transport's.
 #[derive(Clone, Debug)]
 pub enum Request {
+    /// Live logging query or set, answered by the transport from the raw body.
+    Debug,
     /// Answered at once with [`PING_BODY`], even with a malformed body.
     Ping,
     /// `comp.props.watch`.
@@ -1935,6 +1937,9 @@ pub enum Request {
 /// `comp.*` whatever the service is registered as, so
 /// `comp-nested.panel.hold` is `unknown_command`.
 pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request, (u8, Arc<str>)> {
+    if matches!(command, "comp.debug" | "comp.debug.set") {
+        return Ok(Request::Debug);
+    }
     if command == "comp.capture.frame" {
         if malformed {
             return Err(

@@ -85,7 +85,7 @@ pub fn manifest() -> Vec<bus::CommandDescriptor> {
     .chain(catalogue::all_commands().map(|name| {
         CommandDescriptor::new(
             name,
-            &[],
+            if name == "comp.debug.set" { &["level?", "on?"] } else { &[] },
             &format!("Compositor {}", name.trim_start_matches("comp.")),
             catalogue::read_only(name),
         )
@@ -1423,6 +1423,12 @@ fn dispatch_incoming(
     };
     let busy = |command| PendingReply::new(command, error("busy"));
     match request {
+        Request::Debug => {
+            let (rc, body) = logging::debug::request("comp", &command.command, &command.body)
+                .expect("classified debug command");
+            queue_reply(reply_sender, reply_timeouts,
+                PendingReply::new(command, (rc, Arc::from(body.to_string()))));
+        }
         Request::Ping => {
             queue_reply(
                 reply_sender,
@@ -1495,7 +1501,7 @@ fn dispatch_incoming(
                     op.sender.clone_from(&command.from);
                     ingress.request_panel(op)
                 }
-                Request::Ping | Request::Long(_) | Request::Read { .. } => {
+                Request::Debug | Request::Ping | Request::Long(_) | Request::Read { .. } => {
                     unreachable!("routed above")
                 }
             };

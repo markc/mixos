@@ -61,8 +61,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     slots::sdnotify::status(&format!("starting ({} backend)", backend.label()));
 
     // FIRST: parse the single COMPOSITOR_ENVIRONMENT JSON into the process-global
-    // config. This must run before anything else — including logging, which reads
-    // `log_level` from it — and panics immediately if the var is unset or any
+    // config. This runs before the developer logger, which reads `log_level`
+    // from it, and panics immediately if the var is unset or any
     // required field is missing/malformed. It is the ONLY place env config is read.
     model::environment::config::base::init();
 
@@ -79,9 +79,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     shutdown::block_signals();
 
     let environment = world::environment::type_::base::get();
-    slots::library::debug::client::init_logging();
+    let mut log_args: Vec<String> = std::env::args().collect();
+    let _logging = logging::debug::init("compd", "warn", &mut log_args)?;
 
-    // Start the developer logging process (fan-in buffer + drain/print + gRPC stream).
+    // Start the separate developer logging process (fan-in buffer + stderr drain).
     // Levels come from COMPOSITOR_LOG_LEVEL.
     model::log::process::main::spawn();
     info!(

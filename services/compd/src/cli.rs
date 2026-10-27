@@ -67,7 +67,8 @@ pub struct Cli {
 
 const USAGE: &str = "usage: compd [--nested | --kms | kms-live | --headless] [--socket NAME] \
 [--device PATH] [--connector NAME] [--size WxH] [--render-node PATH] [--scale S] [--kms-confirm] [--config-file PATH] \
-[--bus-service NAME] [--scene-service NAME] [--version] [--help]";
+[--bus-service NAME] [--scene-service NAME] [--debug[=LEVEL]] [--version] [--help]\n\
+Levels: off|error|warn|info|debug|trace (default warn; --debug means debug)";
 
 fn refuse(msg: &str) -> ! {
     eprintln!("compd: {msg}");
@@ -84,7 +85,9 @@ pub fn parse(version: &str) -> Cli {
 
 pub fn parse_from(args: impl Iterator<Item = String>, version: &str) -> Cli {
     let mut cli = Cli::default();
-    let mut args = args.peekable();
+    let mut raw: Vec<String> = std::iter::once("compd".to_owned()).chain(args).collect();
+    let _ = logging::debug::strip_args(&mut raw).unwrap_or_else(|error| refuse(&error.to_string()));
+    let mut args = raw.into_iter().skip(1).peekable();
     let set_backend = |cli: &mut Cli, b: Backend| {
         if cli.backend.is_some_and(|prev| prev != b) {
             refuse("--nested, --kms/kms-live and --headless are mutually exclusive");
@@ -444,6 +447,7 @@ mod tests {
     fn comp_kms_live_launch_parses() {
         let c = p(&[
             "kms-live",
+            "--debug=trace",
             "--device",
             "/dev/dri/card1",
             "--connector",

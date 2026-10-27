@@ -19,6 +19,7 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+logging.workspace = true
 # The redraw schedule names a reason per request and feeds the frame ledger.
 ledger = { workspace = true }
 model = { workspace = true }

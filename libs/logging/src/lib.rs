@@ -26,6 +26,8 @@
 //!   (or `RUST_LOG`) can raise it without restarting the binary.
 
 pub mod debug;
+/// Seam diagnostics for consumers that already use the logging core.
+pub use tracing::{debug, trace};
 mod defaults;
 mod handle;
 mod init;

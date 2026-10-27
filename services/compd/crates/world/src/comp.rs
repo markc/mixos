@@ -416,6 +416,7 @@ impl CompState {
                         self.drag = (edges == 0).then(|| {
                             tiling::Drag::new(self.placement(id), self.float_geometry(id))
                         });
+                        logging::debug!(id = id.0, edges, "interactive grab started");
                         self.interactive = Some(Interactive {
                             id,
                             edges,
@@ -430,6 +431,7 @@ impl CompState {
                         });
                     }
                     InteractiveOp::Update { dx, dy } => {
+                        logging::trace!(id = id.0, dx, dy, "interactive grab moved");
                         if let Some(grab) = self.interactive.as_mut().filter(|grab| grab.id == id) {
                             grab.delta = (dx, dy);
                             grab.updated = true;
@@ -437,6 +439,9 @@ impl CompState {
                     }
                     InteractiveOp::End => {
                         if let Some(grab) = self.interactive.as_mut().filter(|grab| grab.id == id) {
+                            if !grab.ended {
+                                logging::debug!(id = id.0, "interactive grab ended");
+                            }
                             grab.ended = true;
                         }
                     }
@@ -502,6 +507,9 @@ impl CompState {
     fn set_mapped(&mut self, id: SurfaceId, mapped: bool) -> bool {
         let was_mapped = self.registry.get(id).is_some_and(|record| record.mapped());
         let changed = self.registry.set_mapped(id, mapped).unwrap_or(false);
+        if changed {
+            logging::debug!(id = id.0, mapped, "window mapping changed");
+        }
         if mapped && !was_mapped {
             self.presentation.mapped(id);
         }
@@ -811,6 +819,7 @@ impl CompState {
                     },
                 );
             }
+            logging::debug!(id = id.0, from = ?self.placement(id), to = ?placement, "window placement changed");
             if placement == Placement::Floating {
                 self.placements.remove(&id);
             } else {

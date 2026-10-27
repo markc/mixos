@@ -376,15 +376,18 @@ pub fn unstage_resizing(window: &Window) {
 /// have, and [`flush_pending`] issues it once per frame from the Space instead.
 pub fn send(window: &Window) {
     if let Some(toplevel) = window.toplevel() {
-        toplevel.send_configure();
+        let serial = toplevel.send_configure();
+        logging::debug!(?serial, "window configure sent");
     }
 }
 
 /// Emit a configure only if something changed (activation, suspend, decoration
 /// mode). X11 writes those as properties, so this is an xdg-only concern.
 pub fn send_pending(window: &Window) {
-    if let Some(toplevel) = window.toplevel() {
-        toplevel.send_pending_configure();
+    if let Some(toplevel) = window.toplevel()
+        && let Some(serial) = toplevel.send_pending_configure()
+    {
+        logging::debug!(?serial, "pending window configure sent");
     }
 }
 
