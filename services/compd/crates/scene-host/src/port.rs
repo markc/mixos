@@ -1146,7 +1146,7 @@ mod tests {
                 json!({
                     "binding": current.binding, "expected_incarnation": current.incarnation,
                     "expected_revision":"1", "operation_id":"quoin-live-fixture",
-                    "changes":{"appearance.mode":"dark","ui.text_scale":1.5,
+                    "changes":{"appearance.mode":"light","ui.text_scale":1.5,
                         "shell.panels.bottom":{"edge":"bottom","mode":"dock","thickness":80},
                         "shell.panels.right":{"edge":"right","mode":"overlay","thickness":160}}
                 }),
