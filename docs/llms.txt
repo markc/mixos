@@ -101,6 +101,8 @@ One line per component with a page: kind, then install profiles. The
   - [macros — changelog](https://mixos.dev/macros/changelog.md): Release notes of the macros component, mirrored from libs/macros/CHANGELOG.md.
 - [maild](https://mixos.dev/maild/README.md): service; profiles: server. JMAP, SMTP, IMAP and DAV mail service
   - [maild — changelog](https://mixos.dev/maild/changelog.md): Release notes of the maild component, mirrored from services/maild/CHANGELOG.md.
+- [maildoc](https://mixos.dev/maildoc/README.md): lib; profiles: none (library). Inert Markdown mail documents using ABP framing, with a strict mail-header allowlist and no transport or file access.
+  - [maildoc — changelog](https://mixos.dev/maildoc/changelog.md): Release notes of the maildoc component, mirrored from libs/maildoc/CHANGELOG.md.
 - [mds](https://mixos.dev/mds/README.md): lib; profiles: none (library). Per-container-set SQLite metadata and a content-addressable blob store, the storage library that maild links and blobd will use. A library, not a daemon.
 - [mesh-sign](https://mixos.dev/mesh-sign/README.md): cli; profiles: unclassified. Signs and verifies the mesh inventory, the trust root of a MixOS mesh.
   - [mesh-sign — changelog](https://mixos.dev/mesh-sign/changelog.md): Release notes of the mesh-sign component, mirrored from cli/mesh-sign/CHANGELOG.md.

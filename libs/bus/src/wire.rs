@@ -1031,6 +1031,17 @@ pub const KNOWN_HEADERS: &[&str] = &[
     // Display protocol — permissions (federated)
     "source_peer",
     "permissions",
+    // Mail documents: this only silences validate() warnings. The maildoc
+    // parser enforces its own allowlist; these names grant no routing safety.
+    "mail-to",
+    "mail-cc",
+    "mail-bcc",
+    "mail-from",
+    "mail-reply-to",
+    "mail-subject",
+    "mail-in-reply-to",
+    "mail-references",
+    "mail-attachments",
 ];
 
 /// Valid message types.

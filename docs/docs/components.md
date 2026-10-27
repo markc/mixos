@@ -43,6 +43,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
 | [macros](../macros/README.md) · [changelog](../macros/changelog.md) | lib | none (library) | [`libs/macros`](https://github.com/markc/mixos/tree/main/libs/macros) | Shared Mix macro discovery, user storage and background execution for every MixOS app. |
 | [maild](../maild/README.md) · [changelog](../maild/changelog.md) | service | server | [`services/maild`](https://github.com/markc/mixos/tree/main/services/maild) | JMAP, SMTP, IMAP and DAV mail service |
+| [maildoc](../maildoc/README.md) · [changelog](../maildoc/changelog.md) | lib | none (library) | [`libs/maildoc`](https://github.com/markc/mixos/tree/main/libs/maildoc) | Inert Markdown mail documents using ABP framing, with a strict mail-header allowlist and no transport or file access. |
 | [mds](../mds/README.md) | lib | none (library) | [`libs/mds`](https://github.com/markc/mixos/tree/main/libs/mds) | Per-container-set SQLite metadata and a content-addressable blob store, the storage library that maild links and blobd will use. A library, not a daemon. |
 | [mesh-sign](../mesh-sign/README.md) · [changelog](../mesh-sign/changelog.md) | cli | unclassified | [`cli/mesh-sign`](https://github.com/markc/mixos/tree/main/cli/mesh-sign) | Signs and verifies the mesh inventory, the trust root of a MixOS mesh. |
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
@@ -121,6 +122,7 @@ checked separately by the layering gate.
 | [files](https://github.com/markc/mixos/blob/main/libs/files/Cargo.toml) | files | lib | core | none | 0.1.2 |
 | [logging](https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml) | logging | lib | core | none | 0.1.2 |
 | [macros](https://github.com/markc/mixos/blob/main/libs/macros/Cargo.toml) | macros | lib | core | none | 0.1.2 |
+| [maildoc](https://github.com/markc/mixos/blob/main/libs/maildoc/Cargo.toml) | maildoc | lib | core | none | 0.1.2 |
 | [mds](https://github.com/markc/mixos/blob/main/libs/mds/Cargo.toml) | mds | lib | core | none | 0.1.2 |
 | [mimedb](https://github.com/markc/mixos/blob/main/libs/mimedb/Cargo.toml) | mimedb | lib | mix | none | 0.1.2 |
 | [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.117.0 |

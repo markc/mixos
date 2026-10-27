@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[package]
+name = "maildoc"
+description = "Inert mail documents in ABP framing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "maildoc"
+kind = "lib"
+layer = "core"
+contract = "none"
+
+[dependencies]
+bus = { workspace = true, default-features = false }
+serde_json.workspace = true
+
+[dev-dependencies]
+proptest = "1"
+
+[lints.clippy]
+mod_module_files = "deny"

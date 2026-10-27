@@ -89,6 +89,7 @@
   <url><loc>https://mixos.dev/logging/</loc></url>
   <url><loc>https://mixos.dev/macros/</loc></url>
   <url><loc>https://mixos.dev/maild/</loc></url>
+  <url><loc>https://mixos.dev/maildoc/</loc></url>
   <url><loc>https://mixos.dev/mds/</loc></url>
   <url><loc>https://mixos.dev/mesh-sign/</loc></url>
   <url><loc>https://mixos.dev/mimedb/</loc></url>
@@ -174,6 +175,7 @@
   <url><loc>https://mixos.dev/inputd/changelog/</loc></url>
   <url><loc>https://mixos.dev/macros/changelog/</loc></url>
   <url><loc>https://mixos.dev/maild/changelog/</loc></url>
+  <url><loc>https://mixos.dev/maildoc/changelog/</loc></url>
   <url><loc>https://mixos.dev/mesh-sign/changelog/</loc></url>
   <url><loc>https://mixos.dev/mix/changelog/</loc></url>
   <url><loc>https://mixos.dev/mix-shell/changelog/</loc></url>
