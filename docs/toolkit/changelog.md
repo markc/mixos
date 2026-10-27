@@ -29,6 +29,10 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
 - Add single-file and save modes to the file chooser. Save has a file-name
   field, caller-supplied confirm label and replacement question; path probes
   stay on workers. Expose the chosen folder and XDG Documents resolution.
+- Serve the citizen `.debug.recent` query with a bounded, optional event ring;
+  retain viewport lifecycle diagnostics without copying the app name.
+- Expose the shared debug logging helper and record native window and
+  viewport lifecycle transitions, without logging idle UI passes.
 
 - Add a reusable multi-file chooser with asynchronous directory/path probes,
   bounded listings and outstanding workers, keyboard navigation, hidden files,
