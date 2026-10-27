@@ -104,6 +104,18 @@ impl Bindings {
         self.state.as_ref()
     }
 
+    /// Match the native table after the user-key layer. The renderer-free
+    /// fixture injects real xkb modifier state through this same matcher.
+    pub fn table_key(&mut self, keycode: u32, pressed: bool, keysym: Option<u32>, modifiers: &Modifiers, locked: bool) -> KeyDisposition {
+        let Some(state) = self.state.as_mut() else { return KeyDisposition::Forward; };
+        if locked { state.dispatch_session_locked(keycode, pressed, keysym, modifiers) }
+        else { state.dispatch(keycode, pressed, keysym, modifiers) }
+    }
+
+    pub fn queue_action(&mut self, action: BindingAction) {
+        self.pending.push(action);
+    }
+
     /// The queued window/workspace actions, oldest first.
     pub fn take_pending(&mut self) -> Vec<BindingAction> {
         std::mem::take(&mut self.pending)
@@ -376,14 +388,7 @@ pub fn key(
         took: false,
         modifier,
     });
-    let Some(state) = bindings.state.as_mut() else {
-        return unheld;
-    };
-    let disposition = if locked {
-        state.dispatch_session_locked(keycode, pressed, keysym, &modifiers)
-    } else {
-        state.dispatch(keycode, pressed, keysym, &modifiers)
-    };
+    let disposition = bindings.table_key(keycode, pressed, keysym, &modifiers, locked);
     let action = match disposition {
         KeyDisposition::Forward => return unheld,
         KeyDisposition::SwallowRelease => {
@@ -403,7 +408,7 @@ pub fn key(
     bindings.last = Some(action.name());
     match action {
         BindingAction::ToggleInterception => {
-            let enabled = state.toggle_interception();
+            let enabled = bindings.state.as_mut().expect("matched table").toggle_interception();
             info!("compositor key interception toggled: enabled={enabled}");
             // `bindings.enabled` moved.
             lp.inner.comp.settings_changed("bindings", "binding.toggle");

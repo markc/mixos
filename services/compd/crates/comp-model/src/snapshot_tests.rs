@@ -727,6 +727,28 @@ fn list_uses_segment_ancestry_and_every_leaf_round_trips() {
 }
 
 #[test]
+fn placement_and_saved_float_are_readable_and_diffed() {
+    let old = fixture();
+    let mut new = old.clone();
+    let key = new.windows.keys().next().unwrap().clone();
+    let row = new.windows.get_mut(&key).unwrap();
+    row.placement = "top_left";
+    row.float_geometry = Some(FloatGeometrySnapshot { x: 12, y: 23, w: 640, h: 480, output: "o_nested".into() });
+    for (leaf, expected) in [("placement", json!("top_left")), ("maximized", json!(false)),
+        ("float_geometry.x", json!(12)), ("float_geometry.output", json!("o_nested"))] {
+        let path = format!("windows.{key}.{leaf}");
+        let (rc, body) = dispatch_read(&new, "comp.props.get", &json!({"path":path}));
+        assert_eq!(rc, 0);
+        assert_eq!(serde_json::from_str::<Value>(&body).unwrap(), expected);
+        assert_eq!(dispatch_read(&new, "comp.props.describe", &json!({"path":path})).0, 0);
+    }
+    let mut changes = crate::observation::PendingPropChanges::new();
+    crate::diff::collect_snapshot_diff(&old, &new, "comp.window", &mut changes);
+    assert!(changes.contains_key(&format!("windows.{key}.placement")));
+    assert!(changes.contains_key(&format!("windows.{key}.float_geometry")));
+}
+
+#[test]
 fn typed_leaf_selection_size_is_independent_of_surface_count() {
     let mut snapshot = fixture();
     let selected = snapshot

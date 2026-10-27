@@ -10,6 +10,14 @@ generated: by docs/_build/gen-site.mix from services/compd/CHANGELOG.md; do not 
 
 ## 0.2.0
 
+- Add `comp.window.place_as`, `comp.window.tile_key` and `comp.tiles.get`.
+  Super+arrow uses the same tiling transition as agents, including mirrored
+  slots across adjacent outputs. Super+PageUp toggles maximise,
+  Super+PageDown minimises, and Super+Backspace restores and focuses.
+  Window props expose placement and saved floating geometry; placement
+  changes publish one sequenced `comp.window.placement.changed` event.
+  Restore leaves fullscreen first, otherwise restores floating geometry.
+
 - `comp.window.wait` accepts `match.pid` alongside the app ID and title
   filters, so a mapping wait cannot resolve to another instance of an app.
 

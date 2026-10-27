@@ -433,8 +433,9 @@ impl Harness {
     /// (`input_intercept`), then the user-key layer
     /// (`world::comp::bindings::user_key`, the same call `bindings::key`
     /// makes), then, if the layer did not take it, the focused client
-    /// (`input_forward`). compd's own binding table and shortcuts need the
-    /// whole loop and are not run. Returns whether the layer took the edge.
+    /// (`input_forward`). With a binding profile enabled, the native table
+    /// also runs and queues its actions, as compd's control pass does.
+    /// Returns whether either layer took the edge.
     pub fn key(&mut self, keycode: u32, pressed: bool, locked: bool) -> bool {
         use smithay::backend::input::KeyState;
         use smithay::utils::SERIAL_COUNTER;
@@ -476,7 +477,24 @@ impl Harness {
             locked,
             modifier,
         );
-        if !edge.took {
+        let mut took = edge.took;
+        if !took {
+            let mods = keyboard.modifier_state();
+            let modifiers = policy::bindings::Modifiers {
+                ctrl: mods.ctrl, alt: mods.alt, shift: mods.shift, logo: mods.logo,
+                iso_level3_shift: mods.iso_level3_shift, iso_level5_shift: mods.iso_level5_shift,
+                caps_lock: mods.caps_lock, num_lock: mods.num_lock,
+            };
+            match self.wire.inner.comp.bindings.table_key(keycode, pressed, Some(sym), &modifiers, locked) {
+                policy::bindings::KeyDisposition::Forward => {},
+                policy::bindings::KeyDisposition::SwallowRelease => took = true,
+                policy::bindings::KeyDisposition::Act(action) => {
+                    self.wire.inner.comp.bindings.queue_action(action);
+                    took = true;
+                }
+            }
+        }
+        if !took {
             keyboard.input_forward(
                 &mut self.wire.state,
                 code,
@@ -487,7 +505,7 @@ impl Harness {
             );
         }
         self.roundtrip();
-        edge.took
+        took
     }
 
     /// The registry record behind `handle`, if it has one.

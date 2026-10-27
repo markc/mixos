@@ -23,6 +23,8 @@ mod_module_files = "deny"
 # Dev-only: nothing in compd depends on this crate. It exists to be used from
 # its own tests/ (and later from other crates' dev-dependencies).
 [dependencies]
+comp-model.workspace = true
+policy.workspace = true
 image = { workspace = true }
 dispatcher = { workspace = true }
 model = { workspace = true }
@@ -42,9 +44,7 @@ wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
 serde_json.workspace = true
 decor = { workspace = true }
 # The Bus path's request parser, for the user-key tests' comp commands.
-comp-model = { workspace = true }
 policy-host = { workspace = true }
 # The workspace model the window tests drive.
-policy = { workspace = true }
 # The offline X11 suite: smithay's offline setters.
 smithay = { workspace = true, features = ["offline_test"] }

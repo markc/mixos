@@ -4,6 +4,29 @@
 
 use super::*;
 
+#[test]
+fn placement_chords_are_super_only_and_keep_release_ownership() {
+    use comp_model::request::TileDirection;
+    for profile in [BindingProfile::Nested, BindingProfile::KmsLive, BindingProfile::Headless] {
+        for (sym, action) in [
+            (keysym::LEFT, BindingAction::TileFocused(TileDirection::Left)),
+            (keysym::RIGHT, BindingAction::TileFocused(TileDirection::Right)),
+            (keysym::UP, BindingAction::TileFocused(TileDirection::Up)),
+            (keysym::DOWN, BindingAction::TileFocused(TileDirection::Down)),
+            (keysym::PAGE_UP, BindingAction::ToggleMaximizeFocused),
+            (keysym::PAGE_DOWN, BindingAction::MinimizeFocused),
+            (keysym::BACKSPACE, BindingAction::RestoreFocused),
+        ] {
+            let mut state = BindingState::for_profile(profile, true);
+            assert_eq!(state.dispatch(1, true, Some(sym), &Modifiers::default()), KeyDisposition::Forward);
+            assert_eq!(state.dispatch(1, true, Some(sym), &Modifiers { logo: true, ..Modifiers::default() }), KeyDisposition::Act(action));
+            assert_eq!(state.dispatch(1, false, Some(sym), &Modifiers::default()), KeyDisposition::SwallowRelease);
+            assert_eq!(state.dispatch_session_locked(1, true, Some(sym), &Modifiers { logo: true, ..Modifiers::default() }), KeyDisposition::Forward);
+            assert_eq!(state.dispatch(1, true, Some(sym), &Modifiers { ctrl: true, ..Modifiers::default() }), KeyDisposition::Forward);
+        }
+    }
+}
+
 fn mods(logo: bool, shift: bool, ctrl: bool) -> Modifiers {
     Modifiers {
         logo,

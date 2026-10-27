@@ -49,6 +49,45 @@ intermediate unmaximise, focus, raise or workspace switch. The normal restore
 geometry is retained. An unknown output is refused before effects are applied.
 This lets toolkit restore a saved maximised frame on its original display.
 
+`comp.window.place_as {id, generation, placement, slot?, output?}` selects
+`floating`, `maximized` or `tiled`. Tiled placement requires `slot`: `left`,
+`right`, `top`, `bottom`, `top_left`, `top_right`, `bottom_left` or
+`bottom_right`. Output accepts its native name or public key. Fullscreen
+refuses placement with `invalid_state`; size hints can refuse tiling with
+`not_resizable` or maximise with `not_maximizable`. Bad or missing slots
+return `invalid_argument`.
+
+`comp.window.tile_key {id, generation, direction}` takes `left`, `right`,
+`up` or `down`, through the same operation as Super+arrow. Floating and
+maximised windows become the requested half; perpendicular arrows refine a
+half into a quarter. Repeating an outward arrow crosses to the adjacent
+output and mirrors the slot on that axis. Without an adjacent output it
+does nothing. Up from floating selects the top half. Arrows never untile.
+
+Super+PageUp toggles maximise; Super+PageDown minimises. Super+Backspace
+restores the focused window: leave fullscreen first, otherwise return tiled
+or maximised placement to its saved floating geometry, then raise and focus.
+`comp.window.restore` uses the same precedence; `activate:false` preserves
+focus. `comp.window.unmaximize` also restores tiled placement to floating.
+Minimise alone preserves placement and floating geometry.
+
+`windows.s<ID>.placement` reports `floating`, `maximized` or the slot name;
+`maximized` agrees with it. `float_geometry` is null before the first
+constrained placement, then `{x,y,w,h,output}` in global logical content
+coordinates, with a public output key. Transitions between constrained
+placements preserve that record. `comp.window.placement.changed` publishes
+`{id,generation,placement,output,event_seq}` once per actual placement or
+target-output change, through the compositor event sequence.
+
+`comp.tiles.get {output?,workspace?}` returns `{output,workspace,split,slots}`:
+`split` has `x` and `y` fractions (currently 0.5); each of the eight `slots`
+holds an array of `{id,generation}` windows. Defaults are the first output
+and its current workspace. Unknown outputs and out-of-range workspaces are
+refused. This is a query; placement and keyboard commands are intents.
+
+Nested sessions reserve Right Ctrl+arrow for user bindings. Test keyboard
+tiling with a real Super modifier or `comp.window.tile_key`.
+
 ## Settings at startup
 
 The session's `appearance.menu_style: "titlebar"` adds a menu caption beside

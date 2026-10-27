@@ -225,7 +225,7 @@ fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
                 ),
                 _ => unreachable!(),
             };
-            if reply.wire_json().get("changed") == Some(&Value::Bool(true)) {
+            if matches!(&reply, ControlReply::Body(body) if body.get("changed") == Some(&Value::Bool(true))) {
                 lp.state.schedule_redraw(RedrawReason::WindowState);
                 crate::input::retarget_pointer(lp);
             }
@@ -627,8 +627,9 @@ fn restore(lp: &mut Loop, id: u64, generation: u64, activate: bool) -> ControlRe
     }
     match policy::window::restore(&mut lp.inner.comp.registry, id, generation, activate) {
         Ok((reply, effects)) => {
+            let activates = effects.iter().any(|effect| matches!(effect, Effect::Restore(_)));
             execute(lp, effects);
-            if activate {
+            if activate && !activates {
                 execute(lp, vec![Effect::Restore(sid)]);
             }
             let mut body = reply.wire_json();

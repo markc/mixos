@@ -975,6 +975,31 @@ async fn mesh_window_commands_cross_ingress_in_order() {
 }
 
 #[tokio::test]
+async fn placement_intents_and_tiles_query_route_through_control_order() {
+    let (ingress, source, _) = test_ingress();
+    let mut responders = JoinSet::new();
+    let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
+    let (reply_sender, _replies) = tokio_mpsc::channel(4);
+    let reply_timeouts = Arc::new(AtomicU64::new(0));
+    let mut previous = None;
+    for (index, (name, args)) in [
+        ("comp.window.place_as", json!({"id":7,"generation":3,"placement":"tiled","slot":"left"})),
+        ("comp.window.tile_key", json!({"id":7,"generation":3,"direction":"up"})),
+        ("comp.tiles.get", json!({"output":"o_test","workspace":2})),
+    ].into_iter().enumerate() {
+        let mut incoming = command(name, index);
+        incoming.body = args.to_string();
+        incoming.args = args;
+        handle_incoming(&ingress, &mut responders, &permits, &reply_sender, &reply_timeouts, "comp-nested", incoming);
+        let PortCommand::Window(request) = source.try_recv().expect("placement command admitted") else { panic!("control order required"); };
+        assert!(previous.is_none_or(|order| request.order > order));
+        previous = Some(request.order);
+        assert!(matches!(request.op, WindowOp::PlaceAs { .. } | WindowOp::TileKey { .. } | WindowOp::TilesGet { .. }));
+    }
+    responders.abort_all();
+}
+
+#[tokio::test]
 async fn input_commands_cross_ingress_in_order_and_long_commands_release_their_slot() {
     let (ingress, source, depth) = test_ingress();
     let mut responders = JoinSet::new();

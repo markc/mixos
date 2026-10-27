@@ -277,6 +277,39 @@ explicit output retargets an already maximised window directly, without an
 intermediate unmaximise, focus, raise or workspace switch. The normal restore
 geometry is retained. An unknown output is refused before effects are applied.
 This lets toolkit restore a saved maximised frame on its original display.</p>
+<p><code>comp.window.place_as {id, generation, placement, slot?, output?}</code> selects
+<code>floating</code>, <code>maximized</code> or <code>tiled</code>. Tiled placement requires <code>slot</code>: <code>left</code>,
+<code>right</code>, <code>top</code>, <code>bottom</code>, <code>top_left</code>, <code>top_right</code>, <code>bottom_left</code> or
+<code>bottom_right</code>. Output accepts its native name or public key. Fullscreen
+refuses placement with <code>invalid_state</code>; size hints can refuse tiling with
+<code>not_resizable</code> or maximise with <code>not_maximizable</code>. Bad or missing slots
+return <code>invalid_argument</code>.</p>
+<p><code>comp.window.tile_key {id, generation, direction}</code> takes <code>left</code>, <code>right</code>,
+<code>up</code> or <code>down</code>, through the same operation as Super+arrow. Floating and
+maximised windows become the requested half; perpendicular arrows refine a
+half into a quarter. Repeating an outward arrow crosses to the adjacent
+output and mirrors the slot on that axis. Without an adjacent output it
+does nothing. Up from floating selects the top half. Arrows never untile.</p>
+<p>Super+PageUp toggles maximise; Super+PageDown minimises. Super+Backspace
+restores the focused window: leave fullscreen first, otherwise return tiled
+or maximised placement to its saved floating geometry, then raise and focus.
+<code>comp.window.restore</code> uses the same precedence; <code>activate:false</code> preserves
+focus. <code>comp.window.unmaximize</code> also restores tiled placement to floating.
+Minimise alone preserves placement and floating geometry.</p>
+<p><code>windows.s&lt;ID&gt;.placement</code> reports <code>floating</code>, <code>maximized</code> or the slot name;
+<code>maximized</code> agrees with it. <code>float_geometry</code> is null before the first
+constrained placement, then <code>{x,y,w,h,output}</code> in global logical content
+coordinates, with a public output key. Transitions between constrained
+placements preserve that record. <code>comp.window.placement.changed</code> publishes
+<code>{id,generation,placement,output,event_seq}</code> once per actual placement or
+target-output change, through the compositor event sequence.</p>
+<p><code>comp.tiles.get {output?,workspace?}</code> returns <code>{output,workspace,split,slots}</code>:
+<code>split</code> has <code>x</code> and <code>y</code> fractions (currently 0.5); each of the eight <code>slots</code>
+holds an array of <code>{id,generation}</code> windows. Defaults are the first output
+and its current workspace. Unknown outputs and out-of-range workspaces are
+refused. This is a query; placement and keyboard commands are intents.</p>
+<p>Nested sessions reserve Right Ctrl+arrow for user bindings. Test keyboard
+tiling with a real Super modifier or <code>comp.window.tile_key</code>.</p>
 <h2 id="settings-at-startup">Settings at startup</h2>
 <p>The session's <code>appearance.menu_style: "titlebar"</code> adds a menu caption beside
 the caption cluster or at the opposite edge, according to <code>appearance.menu_side</code>.
