@@ -7,6 +7,8 @@ use std::io::IsTerminal;
 use std::sync::{Mutex, OnceLock};
 use tracing_subscriber::EnvFilter;
 
+pub const HELP: &str = "--debug[=LEVEL]: off|error|warn|info|debug|trace; --debug means debug. Default: the app baseline (usually warn). RUST_LOG overrides the baseline.";
+
 /// Own targets use Rust crate names (hyphens become underscores).
 const WORKSPACE_TARGETS: &[&str] = &[
     "action",

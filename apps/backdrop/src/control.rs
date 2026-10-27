@@ -85,6 +85,7 @@ fn manifest() -> Vec<bus::CommandDescriptor> {
     .map(|(name, args, description, read_only)| {
         bus::CommandDescriptor::new(name, args, description, read_only)
     })
+    .chain(citizen::debug::describe(APP).into_iter().map(|v| bus::CommandDescriptor::new(v["name"].as_str().unwrap(), &["level?", "on?"], v["description"].as_str().unwrap(), v["read_only"].as_bool().unwrap())))
     .collect()
 }
 /// Messages the controller's inbox holds before a sender waits.
@@ -1037,6 +1038,11 @@ mod tests {
         let entries: Vec<bus::CommandDescriptor> = serde_json::from_value(body).unwrap();
         assert_eq!(entries[0].name, "HELP");
         for entry in entries {
+            if entry.name.starts_with("backdrop.debug") {
+                assert!(citizen::debug::request(APP, &entry.name, "{}").is_some());
+                assert_eq!(entry.read_only, entry.name.ends_with(".debug"));
+                continue; // The shared citizen lane serves these before the controller.
+            }
             c.command(2, &entry.name, "{}");
             let (_, _, body) = c.replies.borrow_mut().pop().expect("command answered");
             assert_ne!(body["error_code"], "UNKNOWN_COMMAND", "{}", entry.name);
@@ -1140,6 +1146,7 @@ mod tests {
             .iter()
             .map(|(name, class)| ((*name).to_owned(), (*class).to_owned()))
             .collect();
+        answered.extend(citizen::debug::describe(APP).into_iter().map(|v| (v["name"].as_str().unwrap().to_owned(), if v["read_only"] == true { "query" } else { "intent" }.to_owned())));
         answered.sort();
         assert_eq!(registered, answered);
     }

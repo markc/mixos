@@ -46,14 +46,19 @@ TERM_NOTIFY=0: no desktop notification when a pane's shell exits\n\
 Bus: serves `term` / `term.*`, the term.ui.* drive commands, term.actions and term.execute";
 
 fn main() {
+    let mut cli_args: Vec<String> = std::env::args().collect();
+    let _logging = toolkit::debug::init("term", "warn", &mut cli_args).unwrap_or_else(|error| {
+        eprintln!("term: {error}");
+        std::process::exit(2);
+    });
     // First, before the inherited-fd quarantine, the TERM probe and the
     // window: `--version` reports the version and the build hash and does
     // nothing else, whether or not a term is running or a display exists.
     buildinfo::exit_on_version!(leading);
     session_fd::quarantine_inherited();
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = cli_args.into_iter().skip(1).collect();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        println!("{HELP}");
+        println!("{HELP}\n{}", toolkit::debug::HELP);
         return;
     }
     if let Some(unknown) = args

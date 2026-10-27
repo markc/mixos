@@ -106,6 +106,7 @@ pub fn describe() -> Value {
     if let Some(command_names) = surface["commands"].as_array_mut() {
         command_names.extend(drive::describe(APP));
         command_names.extend(citizen::macros::describe(APP));
+        command_names.extend(toolkit::debug::describe(APP));
     }
     surface
 }
@@ -705,9 +706,10 @@ mod tests {
                 .iter()
                 .map(|v| v["name"].as_str().unwrap().to_owned()),
         );
+        expected.extend(toolkit::debug::describe(APP).iter().map(|v| v["name"].as_str().unwrap().to_owned()));
         assert_eq!(names, expected);
         for name in &names {
-            if name.starts_with(&format!("{APP}.macros.")) {
+            if name.starts_with(&format!("{APP}.macros.")) || name.starts_with(&format!("{APP}.debug")) {
                 continue;
             }
             let mut e = engine();

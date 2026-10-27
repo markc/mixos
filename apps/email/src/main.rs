@@ -6,19 +6,20 @@ const HELP: &str = "email — the MixOS JMAP mail, calendar and contacts client
 Usage: email [--noded-url URL] [--service NAME]";
 
 fn main() {
+    let mut cli_args: Vec<String> = std::env::args().collect();
+    let _logging = init_logging(&mut cli_args);
     buildinfo::exit_on_version!(leading);
-    if matches!(std::env::args().nth(1).as_deref(), Some("--help" | "-h")) {
-        println!("{HELP}");
+    if matches!(cli_args.get(1).map(String::as_str), Some("--help" | "-h")) {
+        println!("{HELP}\n{}", toolkit::debug::HELP);
         return;
     }
-    let args = match email::parse(std::env::args().skip(1)) {
+    let args = match email::parse(cli_args.into_iter().skip(1)) {
         Ok(args) => args,
         Err(error) => {
             eprintln!("email: {error}");
             std::process::exit(2);
         }
     };
-    let _logging = init_logging();
     let result = if citizen::probe(&args.url, &args.service, email::APP) {
         // One window per session: a second launch raises the first.
         citizen::forward(&args.url, &args.service, email::APP)
@@ -37,15 +38,8 @@ fn main() {
     }
 }
 
-fn init_logging() -> Option<logging::LogHandle> {
-    match logging::init(
-        &logging::LogOpts::default(),
-        &logging::StatsOpts::default(),
-        logging::LogDefaults {
-            default_filter: Some("warn,email=info".into()),
-            ..logging::LogDefaults::gui(email::APP)
-        },
-    ) {
+fn init_logging(args: &mut Vec<String>) -> Option<logging::LogHandle> {
+    match toolkit::debug::init(email::APP, "warn,email=info", args) {
         Ok(handle) => Some(handle),
         Err(error) => {
             eprintln!("email: {error}");
@@ -61,7 +55,7 @@ mod tests {
     #[test]
     fn invalid_log_filter_child() {
         if std::env::var_os("EMAIL_TEST_INVALID_LOG").is_some() {
-            assert!(super::init_logging().is_none());
+            assert!(super::init_logging(&mut vec!["email".into()]).is_none());
             println!("startup continues");
         }
     }

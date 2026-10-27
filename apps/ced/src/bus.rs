@@ -52,6 +52,9 @@ pub fn help(window: bool) -> Vec<::bus::CommandDescriptor> {
             read_only: value["read_only"].as_bool().unwrap_or(false),
         }
     }));
+    entries.extend(citizen::debug::describe("ced").into_iter().map(|value| {
+        ::bus::CommandDescriptor::new(value["name"].as_str().unwrap(), &["level?", "on?"], value["description"].as_str().unwrap(), value["read_only"].as_bool().unwrap())
+    }));
     entries
 }
 
@@ -360,6 +363,10 @@ async fn run(
                     continue;
                 }
                 if cmd.command.is_empty() {
+                    continue;
+                }
+                if let Some((rc, body)) = citizen::debug::request(&service, &cmd.command, &cmd.body) {
+                    let _ = tokio::time::timeout(Duration::from_secs(2), client.respond(&cmd, rc, &body.to_string())).await;
                     continue;
                 }
                 if citizen::macros::dispatch("ced", &cmd, client.clone(), &mut macro_jobs) { continue; }

@@ -84,14 +84,20 @@ fn run(settings: &Settings) -> Result<(), String> {
 }
 
 fn main() {
+    let mut cli_args: Vec<String> = std::env::args().collect();
+    let _logging = toolkit::debug::init("prefs", "warn", &mut cli_args).unwrap_or_else(|error| {
+        eprintln!("prefs: {error}");
+        std::process::exit(2);
+    });
     buildinfo::exit_on_version!(leading);
-    if matches!(std::env::args().nth(1).as_deref(), Some("--help" | "-h")) {
+    if matches!(cli_args.get(1).map(String::as_str), Some("--help" | "-h")) {
+        println!("{}", toolkit::debug::HELP);
         println!(
             "prefs — MixOS preferences\nUsage: prefs [--noded-url URL] [--service NAME] [--comp NAME]"
         );
         return;
     }
-    let result = parse(std::env::args().skip(1)).and_then(|settings| {
+    let result = parse(cli_args.into_iter().skip(1)).and_then(|settings| {
         // One window per session: a second launch raises the first.
         if citizen::probe(&settings.url, &settings.service, APP) {
             match citizen::forward(&settings.url, &settings.service, APP) {

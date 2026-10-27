@@ -94,6 +94,7 @@ pub fn describe(service: &str) -> Value {
     command_names.push(json!({"name":"term.execute","args":{"id":"string","tab":"optional tab id: the tab tab.select or tab.close acts on (default the active one)","pane":"optional pane id: the pane pane.focus focuses"},"description":"Run one window command by id, as its menu item or shortcut would (tab.new, pane.split_right, view.zoom_in, edit.paste, app.quit, …; term.actions lists them)","read_only":false}));
     command_names.extend(drive::describe(APP));
     command_names.extend(citizen::macros::describe(APP));
+    command_names.extend(toolkit::debug::describe(APP));
     for entry in &mut command_names {
         if let Some(suffix) = entry["name"].as_str().unwrap().strip_prefix("term.") {
             entry["name"] = json!(format!("{service}.{suffix}"));

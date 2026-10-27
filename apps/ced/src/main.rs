@@ -180,14 +180,19 @@ fn window(args: &Args, config: Config, paths: Vec<String>) -> Result<(), String>
 }
 
 pub(crate) fn main() {
+    let mut cli_args: Vec<String> = std::env::args().collect();
+    let _logging = toolkit::debug::init("ced", "warn", &mut cli_args).unwrap_or_else(|error| {
+        eprintln!("ced: {error}");
+        std::process::exit(2);
+    });
     // First, before any config read or Bus connect: `--version` reports the
     // version and the build hash and does nothing else.
     buildinfo::exit_on_version!();
-    if std::env::args().any(|a| a == "--help" || a == "-h") {
-        println!("{HELP}");
+    if cli_args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{HELP}\n{}", toolkit::debug::HELP);
         return;
     }
-    let args = match parse(std::env::args().skip(1)) {
+    let args = match parse(cli_args.into_iter().skip(1)) {
         Ok(args) => args,
         Err(e) => {
             eprintln!("ced: {e}");

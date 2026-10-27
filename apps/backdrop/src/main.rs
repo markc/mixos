@@ -69,7 +69,7 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
             }
             "--service" => out.service = Some(value(&mut args, &arg)?),
             "--help" | "-h" => {
-                println!("{HELP}");
+                println!("{HELP}\n{}", toolkit::debug::HELP);
                 std::process::exit(0);
             }
             other => return Err(format!("unknown option {other} (see --help)")),
@@ -190,8 +190,13 @@ fn revalidate(config: &Config) -> Result<Config, String> {
 }
 
 fn main() {
+    let mut cli_args: Vec<String> = std::env::args().collect();
+    let _logging = toolkit::debug::init("backdrop", "warn", &mut cli_args).unwrap_or_else(|error| {
+        eprintln!("backdrop: {error}");
+        std::process::exit(2);
+    });
     buildinfo::exit_on_version!();
-    let args = match parse(std::env::args().skip(1)) {
+    let args = match parse(cli_args.into_iter().skip(1)) {
         Ok(args) => args,
         Err(error) => {
             eprintln!("backdrop: {error}");

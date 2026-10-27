@@ -1,0 +1,56 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- All app entry points accept levels without requiring a display. Native
+-- headless instances also prove the shared and custom Bus transport paths.
+-- Run from the root: mix tests/app_debug_test.mix BIN_DIR
+$pb = require("lib/private_bus.mix")
+$bin = args()[0]
+fn expect($ok, $message)
+  if not $ok then raise("DEBUG_TEST", $message) end
+end
+for $app in ["backdrop", "ced", "dopus", "email", "monitor", "prefs", "screenshot", "term", "workshop"]
+  $help = run_argv([$bin .. "/" .. $app, "--debug=trace", "--help"], {env: {RUST_LOG: "warn"}})
+  expect($help.exit_code == 0 and contains($help.stdout, "--debug") and contains($help.stdout, "trace"), $app .. " --debug=trace --help: " .. $help.stderr)
+  $bad = run_argv([$bin .. "/" .. $app, "--debug=invalid"], {env: {RUST_LOG: "warn"}})
+  expect($bad.exit_code != 0, $app .. " accepted an invalid level")
+end
+$dir = trim(run_argv_must(["mktemp", "-d", "/var/tmp/app-debug.XXXXXX"]))
+$broker = nil
+$children = []
+try
+  $broker = $pb.start({dir: $dir, name: "app-debug", noded: $bin .. "/noded"})
+  for $app in ["ced", "dopus", "screenshot", "workshop"]
+    $service = $app .. "-debug-test"
+    $child = spawn([$bin .. "/" .. $app, "--debug=error", "--headless", "--service", $service],
+      {detach: true, env: merge($pb.client_env($broker), {HOME: $dir .. "/home", RUST_LOG: "warn", MIXOS_APP_HOME: $dir .. "/" .. $app}),
+        stdout: {file: $dir .. "/" .. $app .. ".log"}, stderr: "stdout"})
+    push($children, $child)
+    $command = $service .. ".debug"
+    $ready = false
+    for $attempt = 1 to 100
+      send $service $command timeout=1
+      if $rc == 0 then $ready = true; break end
+      expect(process_alive($child), $app .. " exited: " .. read_file($dir .. "/" .. $app .. ".log"))
+      sleep(0.1)
+    end
+    expect($ready, $app .. " did not register")
+    $initial = $result
+    if type($initial) == "string" then $initial = json_parse($initial) end
+    expect($initial.level == "error" and $initial.baseline == "warn", $app .. " startup level")
+    $command = $service .. ".debug.set"
+    for $body in ['{"level":"trace"}', '{"on":false}']
+      send $service $command body=$body timeout=3
+      expect($rc == 0, $app .. " debug.set: " .. to_string($result))
+    end
+    $state = $result
+    if type($state) == "string" then $state = json_parse($state) end
+    expect($state.level == "warn" and not $state.on, $app .. " baseline restoration")
+    print("PASS " .. $app .. " live debug under " .. $service)
+  end
+  print("PASS all app debug entry points")
+finally
+  for $child in $children
+    if process_alive($child) then kill($child) end
+  end
+  if $broker != nil then $pb.stop($broker) end
+  print("app debug evidence: " .. $dir)
+end

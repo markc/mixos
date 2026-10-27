@@ -868,6 +868,9 @@ pub fn manifest(meta: &ServerMeta) -> Vec<bus::CommandDescriptor> {
             read_only: value["read_only"].as_bool().unwrap_or(false),
         }
     }));
+    entries.extend(citizen::debug::describe("dopus").into_iter().map(|value| {
+        ::bus::CommandDescriptor::new(value["name"].as_str().unwrap(), &["level?", "on?"], value["description"].as_str().unwrap(), value["read_only"].as_bool().unwrap())
+    }));
     entries
 }
 
@@ -909,6 +912,7 @@ pub fn serve_command(
                     .iter()
                     .map(|(command_name, _)| (*command_name).to_owned())
                     .chain(meta.extra_commands.iter().cloned())
+                    .chain(citizen::debug::describe("dopus").into_iter().map(|v| v["name"].as_str().unwrap().to_owned()))
                     .collect(),
             },
         )],

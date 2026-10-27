@@ -404,6 +404,10 @@ async fn run(
                 if cmd.command.is_empty() {
                     continue;
                 }
+                if let Some((rc, body)) = citizen::debug::request(&service, &cmd.command, &cmd.body) {
+                    let _ = tokio::time::timeout(Duration::from_secs(2), client.respond(&cmd, rc, &body.to_string())).await;
+                    continue;
+                }
                 if citizen::macros::dispatch("dopus", &cmd, client.clone(), &mut macro_jobs) { continue; }
                 next_command += 1;
                 let delivery = Delivery::Command(Command {

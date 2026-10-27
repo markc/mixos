@@ -71,6 +71,9 @@ pub fn manifest(service: &str) -> Vec<::bus::CommandDescriptor> {
             read_only: value["read_only"].as_bool().unwrap_or(false),
         }
     }));
+    entries.extend(citizen::debug::describe(service).into_iter().map(|value| {
+        ::bus::CommandDescriptor::new(value["name"].as_str().unwrap(), &["level?", "on?"], value["description"].as_str().unwrap(), value["read_only"].as_bool().unwrap())
+    }));
     entries
 }
 
@@ -662,6 +665,10 @@ async fn serve_with(
                         break;
                     },
                 };
+                if command.topic().is_none() && let Some((rc, body)) = citizen::debug::request(service, &command.command, &command.body) {
+                    peer.reply(&command, rc, &body.to_string()).await;
+                    continue;
+                }
                 let command = match window {
                     Some(window) => match to_window(service, window, command, &mut window_replies) {
                         Some(command) => command,
@@ -1456,6 +1463,11 @@ mod tests {
             let entries = manifest(service);
             assert_eq!(entries[0].name, "HELP");
             for entry in entries {
+                if entry.name == format!("{service}.debug") || entry.name == format!("{service}.debug.set") {
+                    assert!(citizen::debug::request(service, &entry.name, "{}").is_some());
+                    assert_eq!(entry.read_only, entry.name.ends_with(".debug"));
+                    continue; // Served before terminal argument parsing and tab locking.
+                }
                 let canonical = canonical_command(service, &entry.name).unwrap();
                 assert_ne!(
                     parse_args(&canonical, "{}").err().as_deref(),

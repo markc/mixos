@@ -388,6 +388,7 @@ pub fn describe() -> Value {
         .collect();
     command_names.extend(drive::describe(APP));
     command_names.extend(citizen::macros::describe(APP));
+    command_names.extend(toolkit::debug::describe(APP));
     json!({"schema": SCHEMA, "app_id": APP_ID, "version": env!("CARGO_PKG_VERSION"), "commands": command_names})
 }
 
@@ -1943,7 +1944,7 @@ mod tests {
             .collect();
         assert_eq!(
             names.len(),
-            COMMANDS.len() + drive::COMMANDS.len() + citizen::macros::describe(APP).len()
+            COMMANDS.len() + drive::COMMANDS.len() + citizen::macros::describe(APP).len() + toolkit::debug::describe(APP).len()
         );
     }
 
