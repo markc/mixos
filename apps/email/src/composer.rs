@@ -947,4 +947,24 @@ mod tests {
         h.run();
         h.snapshot("compose_window");
     }
+
+    #[test]
+    fn composer_view_offers_and_restores_a_kept_draft() {
+        use egui_kittest::kittest::Queryable;
+        let (mut state, _, theme, _) = fixture(true);
+        state.offer_drafts(vec![crate::drafts::SavedDraft {
+            id: "kept".into(), account: "a".into(), subject: "kept subject".into(), ..Default::default()
+        }]);
+        let palette = editor::Palette::from_theme(&theme);
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(900.0, 700.0))
+            .build_ui_with_state(move |ui, state| {
+                for event in view(ui, state, &registry(), &palette) { state.apply_ui(event); }
+            }, state);
+        toolkit::install(&h.ctx, &theme);
+        h.run();
+        h.get_by_label(&crate::label("restore-draft")).click();
+        h.run();
+        assert_eq!(h.state().compose.as_ref().unwrap().draft.subject, "kept subject");
+    }
 }

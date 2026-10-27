@@ -2313,6 +2313,8 @@ fn prefs_open_error(error: citizen::AppCallError) -> String {
 mod tests {
     use super::*;
 
+    include!("shell/compose_regressions.rs");
+
     fn compose_fixture(standalone: bool) -> (Shell, test_broker::Broker) {
         let broker = test_broker::Broker::start();
         let (bus, _deliveries) = citizen::start(APP, "email-windows-test", &broker.url).unwrap();
