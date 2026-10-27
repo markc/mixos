@@ -363,106 +363,115 @@ impl Window {
         egui::Panel::bottom("files-controls").show(ui, |ui| {
             ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
                 let max_form = ctx.content_rect().height()
-                    * toolkit::chrome::Chrome::of(&ctx).style.dialog_resize_max_share as f32 / 2.0;
-                egui::ScrollArea::vertical().id_salt("files-options").max_height(max_form).show(ui, |ui| {
-                if self.request.mode == Mode::Save {
-                    ui.horizontal(|ui| {
-                        ui.label(label("chooser-name"));
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.name).desired_width(f32::INFINITY),
-                        )
-                        .accessible_name(label("chooser-name"));
-                    });
-                }
-                if self.request.mode == Mode::SaveFiles {
-                    ui.label(label_with(
-                        "chooser-file-names",
-                        &[(
-                            "names",
-                            &self
-                                .request
-                                .files
-                                .iter()
-                                .map(|n| {
-                                    dopus_core::sanitise_display_text(&String::from_utf8_lossy(n))
-                                })
-                                .collect::<Vec<_>>()
-                                .join(", "),
-                        )],
-                    ));
-                }
-                if self.request.filter_menu {
-                    let mut current = self.request.current_filter.clone();
-                    egui::ComboBox::from_id_salt("files-filter")
-                        .selected_text(
-                            current
-                                .as_ref()
-                                .map(|f| f.name.as_str())
-                                .unwrap_or_default(),
-                        )
-                        .show_ui(ui, |ui| {
-                            for filter in &self.request.filters {
-                                if toolkit::selectable(
-                                    ui,
-                                    current.as_ref() == Some(filter),
-                                    &filter.name,
+                    * toolkit::chrome::Chrome::of(&ctx)
+                        .style
+                        .dialog_resize_max_share as f32
+                    / 2.0;
+                egui::ScrollArea::vertical()
+                    .id_salt("files-options")
+                    .max_height(max_form)
+                    .show(ui, |ui| {
+                        if self.request.mode == Mode::Save {
+                            ui.horizontal(|ui| {
+                                ui.label(label("chooser-name"));
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut self.name)
+                                        .desired_width(f32::INFINITY),
                                 )
-                                .clicked()
-                                {
-                                    current = Some(filter.clone());
-                                }
-                            }
-                        })
-                        .response
-                        .accessible_name(label("chooser-filter"));
-                    if current != self.request.current_filter {
-                        self.request.current_filter = current.clone();
-                        self.app
-                            .core
-                            .set_chooser_filter(current, self.request.directory);
-                    }
-                }
-                for choice in &self.request.choices {
-                    let value = self.choices.get_mut(&choice.id).expect("default choice");
-                    if choice.options.is_empty() {
-                        let mut checked = value == "true";
-                        if ui.checkbox(&mut checked, &choice.label).changed() {
-                            *value = checked.to_string();
+                                .accessible_name(label("chooser-name"));
+                            });
                         }
-                    } else {
-                        ui.horizontal(|ui| {
-                            ui.label(&choice.label);
-                            egui::ComboBox::from_id_salt(("files-choice", &choice.id))
-                                .selected_text(
-                                    choice
-                                        .options
+                        if self.request.mode == Mode::SaveFiles {
+                            ui.label(label_with(
+                                "chooser-file-names",
+                                &[(
+                                    "names",
+                                    &self
+                                        .request
+                                        .files
                                         .iter()
-                                        .find(|o| &o.id == value)
-                                        .map(|o| o.label.as_str())
+                                        .map(|n| {
+                                            dopus_core::sanitise_display_text(
+                                                &String::from_utf8_lossy(n),
+                                            )
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join(", "),
+                                )],
+                            ));
+                        }
+                        if self.request.filter_menu {
+                            let mut current = self.request.current_filter.clone();
+                            egui::ComboBox::from_id_salt("files-filter")
+                                .selected_text(
+                                    current
+                                        .as_ref()
+                                        .map(|f| f.name.as_str())
                                         .unwrap_or_default(),
                                 )
                                 .show_ui(ui, |ui| {
-                                    for option in &choice.options {
+                                    for filter in &self.request.filters {
                                         if toolkit::selectable(
                                             ui,
-                                            *value == option.id,
-                                            &option.label,
+                                            current.as_ref() == Some(filter),
+                                            &filter.name,
                                         )
                                         .clicked()
                                         {
-                                            *value = option.id.clone();
+                                            current = Some(filter.clone());
                                         }
                                     }
                                 })
                                 .response
-                                .accessible_name(&choice.label);
-                        });
-                    }
-                }
-                if let Some(message) = &self.message {
-                    ui.label(message);
-                }
-                });
+                                .accessible_name(label("chooser-filter"));
+                            if current != self.request.current_filter {
+                                self.request.current_filter = current.clone();
+                                self.app
+                                    .core
+                                    .set_chooser_filter(current, self.request.directory);
+                            }
+                        }
+                        for choice in &self.request.choices {
+                            let value = self.choices.get_mut(&choice.id).expect("default choice");
+                            if choice.options.is_empty() {
+                                let mut checked = value == "true";
+                                if ui.checkbox(&mut checked, &choice.label).changed() {
+                                    *value = checked.to_string();
+                                }
+                            } else {
+                                ui.horizontal(|ui| {
+                                    ui.label(&choice.label);
+                                    egui::ComboBox::from_id_salt(("files-choice", &choice.id))
+                                        .selected_text(
+                                            choice
+                                                .options
+                                                .iter()
+                                                .find(|o| &o.id == value)
+                                                .map(|o| o.label.as_str())
+                                                .unwrap_or_default(),
+                                        )
+                                        .show_ui(ui, |ui| {
+                                            for option in &choice.options {
+                                                if toolkit::selectable(
+                                                    ui,
+                                                    *value == option.id,
+                                                    &option.label,
+                                                )
+                                                .clicked()
+                                                {
+                                                    *value = option.id.clone();
+                                                }
+                                            }
+                                        })
+                                        .response
+                                        .accessible_name(&choice.label);
+                                });
+                            }
+                        }
+                        if let Some(message) = &self.message {
+                            ui.label(message);
+                        }
+                    });
                 ui.horizontal(|ui| {
                     if ui.button(&self.request.accept_label).clicked() {
                         clicked = Some("chooser.accept");
@@ -526,8 +535,16 @@ impl Window {
             .show(&ctx, |ui| {
                 ui.label(label("chooser-replace-body"));
                 let max_names = ctx.content_rect().height()
-                    * toolkit::chrome::Chrome::of(&ctx).style.dialog_resize_max_share as f32 / 2.0;
-                egui::ScrollArea::vertical().id_salt("files-collisions").max_height(max_names).show(ui, |ui| { ui.label(&names); });
+                    * toolkit::chrome::Chrome::of(&ctx)
+                        .style
+                        .dialog_resize_max_share as f32
+                    / 2.0;
+                egui::ScrollArea::vertical()
+                    .id_salt("files-collisions")
+                    .max_height(max_names)
+                    .show(ui, |ui| {
+                        ui.label(&names);
+                    });
             });
             if let Some(answer) = shown.chosen {
                 clicked = Some(if answer == 0 {
