@@ -86,6 +86,7 @@ fn run(settings: &Settings) -> Result<(), String> {
 fn main() {
     let mut cli_args: Vec<String> = std::env::args().collect();
     let _logging = toolkit::debug::init("prefs", "warn", &mut cli_args).unwrap_or_else(|error| {
+        toolkit::debug::failure("prefs", &error);
         eprintln!("prefs: {error}");
         std::process::exit(2);
     });
@@ -116,6 +117,7 @@ fn main() {
         }
     });
     if let Err(error) = result {
+        toolkit::debug::failure("prefs", &error);
         eprintln!("prefs: {error}");
         std::process::exit(1);
     }

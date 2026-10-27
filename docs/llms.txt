@@ -268,6 +268,7 @@ One line per component with a page: kind, then install profiles. The
 ### Contributor guides
 
 - [Source and build map](https://mixos.dev/docs/dev/2026-10-21-source-and-build-map.md): The current Mix interpreter, shell, executable, application and documentation source paths, how builds relate to installed versions, and where staged decisions need implementation checks.
+- [Live application logging](https://mixos.dev/docs/dev/debugging.md): Every MixOS app and compd accepts --debug[=LEVEL]. --debug means --debug=debug; the levels are off, error, warn, info, debug and trace. The default baseline is…
 - [Releasing MixOS](https://mixos.dev/docs/dev/releasing.md): Exact-source CBC gates, x86_64 glibc packaging, GitHub drafts, and verified gold installation.
 
 ## Optional

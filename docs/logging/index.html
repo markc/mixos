@@ -263,6 +263,9 @@ accept exact-value, key-presence and hash filters without capabilities.
 Filter validation and the 1 MiB response limit remain. Label sensitivity
 continues to control redaction in on-disk JSONL and Prometheus output.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/libs/logging"><code>libs/logging</code></a>.</p>
+<p>Apps and compd use the core-only live level controller through
+<code>toolkit::debug</code> (or <code>logging::debug</code> for compd). See
+<a href="/docs/dev/debugging/">live application logging</a>.</p>
         </article>
         <p class="doc-source"><a href="/logging/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

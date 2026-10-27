@@ -4,6 +4,7 @@
 $n = require("nested_host_lib.mix")
 $pb = require("../lib/private_bus.mix")
 $bin = args()[0]
+export MIXOS_TEST_MIX=$bin .. "/mix"
 $run = $n.new_run("/var/tmp/comp-debug")
 $broker = nil
 $session = nil

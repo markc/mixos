@@ -8,7 +8,7 @@ generated: by docs/_build/gen-site.mix from services/compd/CHANGELOG.md; do not 
 
 > Mirrored from [`services/compd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/compd/CHANGELOG.md), where releases update it. The component's page is [compd](README.md). This page describes the current `main` branch of MixOS.
 
-## Unreleased
+## Unreleased — 2026-10-27
 
 - Use the shared design title band layout for all four groups and centre
   MixOS titles by default. Host registered apps' revisioned Action Bars through
@@ -16,6 +16,10 @@ generated: by docs/_build/gen-site.mix from services/compd/CHANGELOG.md; do not 
   hover and toggle states, disabled colours and the existing tooltip cards.
   `comp.window.action` dispatches enabled registry commands; `comp.props`
   reports hosting and per-surface item counts.
+- Add `--debug[=LEVEL]`, `comp.debug` and `comp.debug.set` for live tracing
+  levels from off through trace, with a warn baseline and per-binary journal
+  identity. Record mapping, placement, grabs and configures at debug; keep
+  motion detail at trace. The separate developer logger is unchanged.
 
 ## 0.2.0
 

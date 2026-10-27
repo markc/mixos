@@ -374,7 +374,9 @@ async fn run(
                 if cmd.command.is_empty() {
                     continue;
                 }
-                if let Some((rc, body)) = citizen::debug::request(&service, &cmd.command, &cmd.body) {
+                citizen::debug::received(&service, &cmd.command);
+                if let Some((rc, body)) = citizen::debug::request_for(&service, "ced", &cmd.command, &cmd.body) {
+                    citizen::debug::answered(&service, &cmd.command, rc);
                     let _ = tokio::time::timeout(Duration::from_secs(2), client.respond(&cmd, rc, &body.to_string())).await;
                     continue;
                 }
@@ -474,6 +476,7 @@ async fn run(
                     }
                     Effect::Respond { id, rc, body } => {
                         if let Some(cmd) = commands.remove(&id) {
+                            citizen::debug::answered(&service, &cmd.command, rc);
                             let c = client.clone();
                             replies.spawn(async move {
                                 tokio::time::timeout(Duration::from_secs(2), c.respond(&cmd, rc, &body))

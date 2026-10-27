@@ -215,7 +215,8 @@ fn main() {
     let mut cli_args: Vec<String> = std::env::args().collect();
     let _logging =
         toolkit::debug::init("screenshot", "warn", &mut cli_args).unwrap_or_else(|error| {
-            eprintln!("screenshot: {error}");
+            toolkit::debug::failure("screenshot", &error);
+        eprintln!("screenshot: {error}");
             std::process::exit(2);
         });
     buildinfo::exit_on_version!(leading);
@@ -226,7 +227,8 @@ fn main() {
     let args = match parse(cli_args.into_iter().skip(1)) {
         Ok(args) => args,
         Err(error) => {
-            eprintln!("screenshot: {error}");
+            toolkit::debug::failure("screenshot", &error);
+        eprintln!("screenshot: {error}");
             std::process::exit(2);
         }
     };
@@ -249,6 +251,7 @@ fn main() {
         }
     };
     if let Err(error) = result {
+        toolkit::debug::failure("screenshot", &error);
         eprintln!("screenshot: {error}");
         std::process::exit(1);
     }

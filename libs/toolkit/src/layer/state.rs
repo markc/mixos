@@ -97,6 +97,7 @@ struct Surface {
 
 impl Drop for Surface {
     fn drop(&mut self) {
+        logging::debug!(id = self.id, output = ?self.output_name, "layer viewport released");
         // Protocol objects send their destructors only when asked; the layer
         // surface (dropped after this) destroys itself.
         if let Some(viewport) = self.viewport.take() {
@@ -266,6 +267,7 @@ impl<P: LayerProgram + 'static> State<P> {
             .as_ref()
             .and_then(|o| self.outputs.info(o))
             .and_then(|i| i.name);
+        logging::debug!(id, namespace = %self.options.namespace, output = ?output_name, "layer viewport created");
         self.surfaces.push(Surface {
             target,
             id,

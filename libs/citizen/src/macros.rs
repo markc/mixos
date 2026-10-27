@@ -95,6 +95,7 @@ pub fn dispatch(
                 .unwrap_or_else(|e| Err(Refusal::new("INTERNAL", e))),
         };
         let (rc, body) = answer_body(answer);
+        crate::debug::answered(command.command.split('.').next().unwrap_or("app"), &command.command, rc);
         let _ = tokio::time::timeout(
             Duration::from_secs(2),
             client.respond(&command, rc, &body.to_string()),

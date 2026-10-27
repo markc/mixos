@@ -558,7 +558,13 @@ pub fn register_viewport(
     name: &str,
     viewport: egui::ViewportId,
 ) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(("drive-viewport", owner, name)), viewport));
+    ctx.data_mut(|d| {
+        let key = egui::Id::unique(("drive-viewport", owner, name));
+        if d.get_temp::<egui::ViewportId>(key) != Some(viewport) {
+            logging::debug!(?owner, name, ?viewport, "owned viewport registered");
+            d.insert_temp(key, viewport);
+        }
+    });
 }
 
 pub fn unregister_viewport(
@@ -576,6 +582,7 @@ pub fn unregister_viewport(
         }
     });
     if let Some(target) = target {
+        logging::debug!(?owner, name, ?target, "owned viewport unregistered");
         ctx.with_plugin(|drive: &mut Drive| {
             if let Some(mut child) = drive.children.remove(&target) {
                 child.settle(ctx, "the viewport closed");
@@ -662,9 +669,28 @@ struct Running {
     pass_events: Vec<String>,
 }
 
+struct ViewportLifetime {
+    app: String,
+    viewport: egui::ViewportId,
+}
+
+impl ViewportLifetime {
+    fn new(app: &str, viewport: egui::ViewportId) -> Self {
+        logging::debug!(app, ?viewport, "viewport attached");
+        Self { app: app.to_owned(), viewport }
+    }
+}
+
+impl Drop for ViewportLifetime {
+    fn drop(&mut self) {
+        logging::debug!(app = %self.app, viewport = ?self.viewport, "viewport released");
+    }
+}
+
 /// The plugin: the last widget tree, queued input and finished answers.
 #[derive(Default)]
 pub struct Drive {
+    lifecycle: Option<ViewportLifetime>,
     /// Only the input injected in this pass, cleared before every step.
     input_request_id: Option<u64>,
     /// Events already present before the drive step appended its own input.
@@ -700,6 +726,7 @@ impl egui::Plugin for Drive {
     }
 
     fn setup(&mut self, ctx: &Context) {
+        self.lifecycle = Some(ViewportLifetime::new(&self.app, ctx.viewport_id()));
         self.input_quiet_since = Some(Instant::now());
         ctx.enable_accesskit();
     }
@@ -720,6 +747,7 @@ impl egui::Plugin for Drive {
             let options = self.options.clone();
             let child = self.children.entry(input.viewport_id).or_insert_with(|| {
                 Box::new(Drive {
+                    lifecycle: Some(ViewportLifetime::new(&app, input.viewport_id)),
                     app,
                     options,
                     ..Drive::default()

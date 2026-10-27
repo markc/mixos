@@ -654,6 +654,7 @@ async fn serve_with(
             _ = notifications.join_next(), if !notifications.is_empty() => {},
             done = window_replies.join_next(), if !window_replies.is_empty() => {
                 if let Some(Ok((command, rc, body))) = done {
+                    citizen::debug::answered(service, &command.command, rc);
                     peer.reply(&command, rc, &body).await;
                 }
             },
@@ -674,7 +675,11 @@ async fn serve_with(
                         break;
                     },
                 };
+                if command.topic().is_none() {
+                    citizen::debug::received(service, &command.command);
+                }
                 if command.topic().is_none() && let Some((rc, body)) = citizen::debug::request(service, &command.command, &command.body) {
+                    citizen::debug::answered(service, &command.command, rc);
                     peer.reply(&command, rc, &body.to_string()).await;
                     continue;
                 }
@@ -713,6 +718,7 @@ async fn serve_with(
                     std::process::abort();
                 };
                 let (rc, body) = match result { Ok(body) => (0, body), Err(error) => (10, error) };
+                citizen::debug::answered(service, &command.command, rc);
                 peer.reply(&command, rc, &body).await;
             }
         }

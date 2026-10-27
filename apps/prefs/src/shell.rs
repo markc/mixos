@@ -614,6 +614,7 @@ impl Shell {
             }
         };
         toolkit::install(&self.ctx, &theme);
+        toolkit::debug!(app = APP, "settings preview applied");
         self.engine.session = (base.scheme(), base.mode());
         self.engine.session_decorations = base.requested_decorations();
         self.installed = (choice, look, custom_source);

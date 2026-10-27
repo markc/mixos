@@ -193,14 +193,16 @@ fn main() {
     let mut cli_args: Vec<String> = std::env::args().collect();
     let _logging =
         toolkit::debug::init("backdrop", "warn", &mut cli_args).unwrap_or_else(|error| {
-            eprintln!("backdrop: {error}");
+            toolkit::debug::failure("backdrop", &error);
+        eprintln!("backdrop: {error}");
             std::process::exit(2);
         });
     buildinfo::exit_on_version!();
     let args = match parse(cli_args.into_iter().skip(1)) {
         Ok(args) => args,
         Err(error) => {
-            eprintln!("backdrop: {error}");
+            toolkit::debug::failure("backdrop", &error);
+        eprintln!("backdrop: {error}");
             std::process::exit(2);
         }
     };
@@ -208,7 +210,8 @@ fn main() {
         if let Err(error) =
             toolkit::layer::run(LayerOptions::background(control::APP), probe::Probe::new())
         {
-            eprintln!("backdrop: {error}");
+            toolkit::debug::failure("backdrop", &error);
+        eprintln!("backdrop: {error}");
             std::process::exit(1);
         }
         return;
@@ -216,7 +219,8 @@ fn main() {
     let (config, store) = match startup(&args) {
         Ok(started) => started,
         Err(error) => {
-            eprintln!("backdrop: {error}");
+            toolkit::debug::failure("backdrop", &error);
+        eprintln!("backdrop: {error}");
             std::process::exit(1);
         }
     };
@@ -241,11 +245,13 @@ fn main() {
         wakers: wakers.clone(),
     };
     if let Err(error) = control::start(setup) {
+        toolkit::debug::failure("backdrop", &error);
         eprintln!("backdrop: {error}");
         std::process::exit(1);
     }
     let program = program::Backdrop::new(toolkit::Theme::load(), shared, wakers);
     if let Err(error) = toolkit::layer::run(LayerOptions::background(control::APP), program) {
+        toolkit::debug::failure("backdrop", &error);
         eprintln!("backdrop: {error}");
         std::process::exit(1);
     }

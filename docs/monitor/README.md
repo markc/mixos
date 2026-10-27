@@ -143,3 +143,6 @@ instance). Commands keep the app’s canonical prefix, such as `monitor.macros.r
 | `monitor.macros.output` | `{}` | Retained output and dropped flag |
 | `monitor.macros.stop` | `{}` | Whether termination was requested |
 | `monitor.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
+
+Logging: `--debug[=LEVEL]` and live Bus controls are described in
+[live application logging](../docs/dev/debugging.md).

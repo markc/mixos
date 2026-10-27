@@ -48,6 +48,7 @@ Bus: serves `term` / `term.*`, the term.ui.* drive commands, term.actions and te
 fn main() {
     let mut cli_args: Vec<String> = std::env::args().collect();
     let _logging = toolkit::debug::init("term", "warn", &mut cli_args).unwrap_or_else(|error| {
+        toolkit::debug::failure("term", &error);
         eprintln!("term: {error}");
         std::process::exit(2);
     });
@@ -90,6 +91,7 @@ fn main() {
         run(settings)
     };
     if let Err(error) = result {
+        toolkit::debug::failure("term", &error);
         eprintln!("term: {error}");
         std::process::exit(1);
     }

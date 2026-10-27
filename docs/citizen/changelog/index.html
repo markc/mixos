@@ -240,11 +240,20 @@
 <h1 id="changelog">Changelog</h1>
 <h2 id="unreleased--2026-10-27">Unreleased — 2026-10-27</h2>
 <ul>
-<li>Add <code>call_app</code> for Handle and SupervisedClient: call an app, launch it once
+<li>
+<p>Serve live debug queries and six logging levels in the Bus lane, including
+instance names and canonical discovery names. Record command receipt and
+result at debug without adding application actions.</p>
+</li>
+<li>
+<p>Add <code>call_app</code> for Handle and SupervisedClient: call an app, launch it once
 only when its service is absent, then retry within a registration wait limit.
 Typed errors distinguish transport uncertainty, launch failure, timeout and
-app refusal. Refusals retain their original reply, code and message.</li>
-<li>Add a scripted sink for testing effect workers without a broker.</li>
+app refusal. Refusals retain their original reply, code and message.</p>
+</li>
+<li>
+<p>Add a scripted sink for testing effect workers without a broker.</p>
+</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/citizen/changelog.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

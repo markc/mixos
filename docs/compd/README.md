@@ -425,3 +425,6 @@ cargo test --workspace
 mix tests/desktop/nested_smoke.mix --help
 mix tests/desktop/parity_suite.mix --help
 ```
+
+Logging: `--debug[=LEVEL]` and live Bus controls are described in
+[live application logging](../docs/dev/debugging.md).

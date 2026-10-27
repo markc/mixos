@@ -36,6 +36,10 @@ try
     $initial = $result
     if type($initial) == "string" then $initial = json_parse($initial) end
     expect($initial.level == "error" and $initial.baseline == "warn", $app .. " startup level")
+    -- Existing app.describe replies retain the app's canonical command names.
+    $command = $app .. ".debug"
+    send $service $command timeout=3
+    expect($rc == 0, $app .. " canonical discovery name did not answer")
     $command = $service .. ".debug.set"
     for $body in ['{"level":"trace"}', '{"on":false}']
       send $service $command body=$body timeout=3

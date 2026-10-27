@@ -19,6 +19,7 @@ const BUDGET: Duration = Duration::from_millis(200);
 /// Install once after winit has chosen the backend. Merely having a
 /// WAYLAND_DISPLAY in the environment is not evidence for that choice.
 pub fn initialise(display: &impl HasDisplayHandle) {
+    logging::debug!("native window initialising");
     let wayland = display
         .display_handle()
         .is_ok_and(|handle| matches!(handle.as_raw(), RawDisplayHandle::Wayland(_)));

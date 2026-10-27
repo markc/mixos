@@ -9,6 +9,21 @@ use tracing_subscriber::EnvFilter;
 
 pub const HELP: &str = "--debug[=LEVEL]: off|error|warn|info|debug|trace; --debug means debug. Default: the app baseline (usually warn). RUST_LOG overrides the baseline.";
 
+#[inline]
+pub fn received(service: &str, command: &str) {
+    tracing::debug!(service, command, "Bus command received");
+}
+
+#[inline]
+pub fn answered(service: &str, command: &str, rc: u8) {
+    tracing::debug!(service, command, rc, "Bus command answered");
+}
+
+#[inline]
+pub fn failure(app: &str, error: &impl std::fmt::Display) {
+    tracing::error!(app, %error, "application error");
+}
+
 /// Own targets use Rust crate names (hyphens become underscores).
 const WORKSPACE_TARGETS: &[&str] = &[
     "action",
@@ -21,6 +36,7 @@ const WORKSPACE_TARGETS: &[&str] = &[
     "ced",
     "citizen",
     "compd",
+    "compd_wlcs",
     "comp_model",
     "comp_service",
     "config",
@@ -315,6 +331,13 @@ pub fn request(service: &str, command: &str, body: &str) -> Option<(u8, Value)> 
     Some(answer(query, body))
 }
 
+/// Preserve the app's discovery names while also serving an instance's name.
+pub fn request_for(service: &str, app: &str, command: &str, body: &str) -> Option<(u8, Value)> {
+    request(service, command, body).or_else(|| {
+        if service == app { None } else { request(app, command, body) }
+    })
+}
+
 fn answer(query: bool, body: &str) -> (u8, Value) {
     let result = (|| -> Result<Value, String> {
         if body.len() > 8192 {
@@ -350,6 +373,42 @@ fn answer(query: bool, body: &str) -> (u8, Value) {
 mod tests {
     use super::*;
     use tracing_subscriber::prelude::*;
+
+    #[test]
+    fn workspace_targets_cover_packages_and_library_names() {
+        fn check(path: &std::path::Path) {
+            if let Ok(manifest) = std::fs::read_to_string(path.join("Cargo.toml")) {
+                let mut section = "";
+                for line in manifest.lines().map(str::trim) {
+                    if line.starts_with('[') { section = line; }
+                    if matches!(section, "[package]" | "[lib]")
+                        && let Some((key, value)) = line.split_once('=')
+                        && key.trim() == "name"
+                    {
+                        let name = value.trim().trim_matches('"').replace('-', "_");
+                        assert!(WORKSPACE_TARGETS.contains(&name.as_str()), "missing own target {name} in {}", path.display());
+                    }
+                }
+            }
+            for entry in std::fs::read_dir(path).unwrap().flatten() {
+                if entry.file_type().unwrap().is_dir() && entry.file_name() != "target" {
+                    check(&entry.path());
+                }
+            }
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for kind in ["apps", "libs", "services", "cli"] { check(&root.join(kind)); }
+    }
+
+    #[test]
+    fn disabled_events_do_not_evaluate_fields() {
+        let subscriber = tracing_subscriber::registry().with(parse_filter("warn").unwrap());
+        tracing::subscriber::with_default(subscriber, || {
+            let evaluated = std::cell::Cell::new(false);
+            tracing::debug!(value = { evaluated.set(true); 1 }, "disabled seam");
+            assert!(!evaluated.get());
+        });
+    }
 
     #[test]
     fn flags_stop_at_separator() {

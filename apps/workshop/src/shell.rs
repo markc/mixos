@@ -1064,6 +1064,7 @@ impl Shell {
                 keymaps,
                 ..
             }) => {
+                toolkit::debug!(app = "workshop", "settings applied");
                 self.common_ui = ui;
                 self.set_look((!custom_source).then_some(*appearance));
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());

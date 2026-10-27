@@ -151,6 +151,7 @@ fn window(args: &Args, dirs: Option<AppDirs>, paths: Vec<String>) -> Result<(), 
 fn main() {
     let mut cli_args: Vec<String> = std::env::args().collect();
     let _logging = toolkit::debug::init("dopus", "warn", &mut cli_args).unwrap_or_else(|error| {
+        toolkit::debug::failure("dopus", &error);
         eprintln!("dopus: {error}");
         std::process::exit(2);
     });
@@ -163,7 +164,8 @@ fn main() {
     let args = match parse(cli_args.into_iter().skip(1)) {
         Ok(args) => args,
         Err(e) => {
-            eprintln!("dopus: {e}");
+            toolkit::debug::failure("dopus", &e);
+        eprintln!("dopus: {e}");
             std::process::exit(2);
         }
     };
@@ -187,6 +189,7 @@ fn main() {
         window(&args, dirs, paths)
     };
     if let Err(error) = result {
+        toolkit::debug::failure("dopus", &error);
         eprintln!("dopus: {error}");
         std::process::exit(1);
     }

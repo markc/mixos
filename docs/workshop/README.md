@@ -442,3 +442,6 @@ global writes, moves between apps, `workshop.execute` for `macro.*` and
 `bus.call`, and `workshop.call` with an explicit or selected target.
 Built-in files remain read-only; path containment, argument validation,
 request limits and the runner’s single-flight limit still apply.
+
+Logging: `--debug[=LEVEL]` and live Bus controls are described in
+[live application logging](../docs/dev/debugging.md).

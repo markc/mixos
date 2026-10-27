@@ -410,6 +410,7 @@ impl Shell {
                 terminal,
                 ..
             }) => {
+                toolkit::debug!(app = "term", "settings applied");
                 self.common_ui = ui;
                 self.app.set_text_scale(self.common_ui.text_scale as f32);
                 // The terminal's settings apply whatever the look's source.

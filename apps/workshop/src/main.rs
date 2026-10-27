@@ -144,6 +144,7 @@ fn run(settings: &Settings) -> Result<(), String> {
 fn main() {
     let mut args: Vec<String> = std::env::args().collect();
     let _logging = toolkit::debug::init("workshop", "warn", &mut args).unwrap_or_else(|e| {
+        toolkit::debug::failure("workshop", &e);
         eprintln!("workshop: {e}");
         std::process::exit(1);
     });
@@ -178,6 +179,7 @@ fn main() {
         }
     });
     if let Err(error) = result {
+        toolkit::debug::failure("workshop", &error);
         eprintln!("workshop: {error}");
         std::process::exit(1);
     }

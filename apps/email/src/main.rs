@@ -16,7 +16,8 @@ fn main() {
     let args = match email::parse(cli_args.into_iter().skip(1)) {
         Ok(args) => args,
         Err(error) => {
-            eprintln!("email: {error}");
+            toolkit::debug::failure("email", &error);
+        eprintln!("email: {error}");
             std::process::exit(2);
         }
     };
@@ -33,6 +34,7 @@ fn main() {
         }
     };
     if let Err(error) = result {
+        toolkit::debug::failure("email", &error);
         eprintln!("email: {error}");
         std::process::exit(1);
     }
@@ -42,7 +44,8 @@ fn init_logging(args: &mut Vec<String>) -> Option<logging::LogHandle> {
     match toolkit::debug::init(email::APP, "warn,email=info", args) {
         Ok(handle) => Some(handle),
         Err(error) => {
-            eprintln!("email: {error}");
+            toolkit::debug::failure("email", &error);
+        eprintln!("email: {error}");
             // Logging must never prevent the GUI from starting. Continue
             // without a subscriber if the environment filter is malformed.
             None

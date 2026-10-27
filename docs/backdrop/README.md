@@ -266,3 +266,6 @@ gate runs on a build worker. `cargo build -p backdrop` enables toolkit's
   document, colour, fit, decoder limits (including an oversized header and a
   FIFO), revisions, candidate and active images, the texture budget and the
   command registry.
+
+Logging: `--debug[=LEVEL]` and live Bus controls are described in
+[live application logging](../docs/dev/debugging.md).

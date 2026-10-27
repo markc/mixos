@@ -182,6 +182,7 @@ fn window(args: &Args, config: Config, paths: Vec<String>) -> Result<(), String>
 pub(crate) fn main() {
     let mut cli_args: Vec<String> = std::env::args().collect();
     let _logging = toolkit::debug::init("ced", "warn", &mut cli_args).unwrap_or_else(|error| {
+        toolkit::debug::failure("ced", &error);
         eprintln!("ced: {error}");
         std::process::exit(2);
     });
@@ -195,7 +196,8 @@ pub(crate) fn main() {
     let args = match parse(cli_args.into_iter().skip(1)) {
         Ok(args) => args,
         Err(e) => {
-            eprintln!("ced: {e}");
+            toolkit::debug::failure("ced", &e);
+        eprintln!("ced: {e}");
             std::process::exit(2);
         }
     };
@@ -227,6 +229,7 @@ pub(crate) fn main() {
         window(&args, config, paths)
     };
     if let Err(error) = result {
+        toolkit::debug::failure("ced", &error);
         eprintln!("ced: {error}");
         std::process::exit(1);
     }

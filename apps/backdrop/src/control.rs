@@ -825,6 +825,7 @@ impl Controller {
             }
         };
         if applied.is_ok() {
+            toolkit::debug!(app = APP, revision, "wallpaper settings applied");
             let now = self.started.elapsed();
             let mut schedules = self.pending_schedules.take().unwrap_or_default();
             for (key, schedule) in &mut schedules {

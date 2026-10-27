@@ -624,6 +624,7 @@ impl Shell {
                 keymaps,
                 ..
             }) => {
+                toolkit::debug!(app = "screenshot", "settings applied");
                 self.common_ui = ui;
                 self.look = (!custom_source).then_some(*appearance);
                 self.set_base();

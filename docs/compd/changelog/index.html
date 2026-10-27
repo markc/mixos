@@ -208,7 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <a href="#unreleased">Unreleased</a>
+                        <a href="#unreleased--2026-10-27">Unreleased — 2026-10-27</a>
                         <a href="#020">0.2.0</a>
                     </nav>
                 </div>
@@ -238,7 +238,7 @@
 <blockquote>
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/services/compd/CHANGELOG.md"><code>services/compd/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/compd/">compd</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
-<h2 id="unreleased">Unreleased</h2>
+<h2 id="unreleased--2026-10-27">Unreleased — 2026-10-27</h2>
 <ul>
 <li>Use the shared design title band layout for all four groups and centre
 MixOS titles by default. Host registered apps' revisioned Action Bars through
@@ -246,6 +246,10 @@ the existing scene-host registry and Bus client, with shared Lucide rasters,
 hover and toggle states, disabled colours and the existing tooltip cards.
 <code>comp.window.action</code> dispatches enabled registry commands; <code>comp.props</code>
 reports hosting and per-surface item counts.</li>
+<li>Add <code>--debug[=LEVEL]</code>, <code>comp.debug</code> and <code>comp.debug.set</code> for live tracing
+levels from off through trace, with a warn baseline and per-binary journal
+identity. Record mapping, placement, grabs and configures at debug; keep
+motion detail at trace. The separate developer logger is unchanged.</li>
 </ul>
 <h2 id="020">0.2.0</h2>
 <ul>

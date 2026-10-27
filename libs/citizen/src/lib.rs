@@ -459,6 +459,7 @@ fn start_inner(
     let service = service.to_owned();
     let url = url.to_owned();
     let closing = closing(app);
+    let app_name = app.to_owned();
     std::thread::Builder::new()
         .name(format!("{app}-bus"))
         .spawn(move || {
@@ -469,6 +470,7 @@ fn start_inner(
             match runtime {
                 Ok(runtime) => {
                     runtime.block_on(worker(
+                        app_name,
                         service,
                         url,
                         topics,
@@ -542,6 +544,7 @@ fn closing(app: &str) -> String {
 
 #[allow(clippy::too_many_arguments)]
 async fn worker(
+    app: String,
     service: String,
     url: String,
     mut topics: Vec<String>,
@@ -612,6 +615,7 @@ async fn worker(
                 match control {
                     Some(Control::Reply(id,rc,value)) => {
                         if let Some(command) = pending.remove(&id) {
+                            debug::answered(&service, &command.command, rc);
                             let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,rc,&value.to_string())).await;
                         }
                     }
@@ -686,11 +690,14 @@ async fn worker(
                     let _ = send.send(Delivery::Command {id:0,command:command.command.clone(),body}).await;
                     continue;
                 }
+                debug::received(&service, &command.command);
                 if pending.len() >= 32 {
+                    debug::answered(&service, &command.command, 10);
                     let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,10,"{\"error_code\":\"BUSY\",\"message\":\"too many pending commands\"}")).await;
                     continue;
                 }
-                if let Some((rc, body)) = debug::request(&service, &command.command, &command.body) {
+                if let Some((rc, body)) = debug::request_for(&service, &app, &command.command, &command.body) {
+                    debug::answered(&service, &command.command, rc);
                     let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,rc,&body.to_string())).await;
                     continue;
                 }

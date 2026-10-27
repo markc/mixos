@@ -41,3 +41,7 @@ Filter validation and the 1 MiB response limit remain. Label sensitivity
 continues to control redaction in on-disk JSONL and Prometheus output.
 
 The source is [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging).
+
+Apps and compd use the core-only live level controller through
+`toolkit::debug` (or `logging::debug` for compd). See
+[live application logging](../docs/dev/debugging.md).
