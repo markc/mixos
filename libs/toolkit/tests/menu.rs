@@ -669,13 +669,17 @@ fn popup_anchors_and_bare_alt_work_with_collapsed_menus() {
         for (requested, x) in [
             (design::MenuSide::Left, None),
             (design::MenuSide::Right, None),
-            (side, Some(123.0)),
+            (side, Some(450.0)),
         ] {
             menu::popup(&h.ctx, Some(requested), x).unwrap();
             h.run();
             let rect = h.get_by_label("File").rect();
             if let Some(x) = x {
-                assert!(rect.left() >= x && rect.left() < x + 50.0);
+                if requested == design::MenuSide::Right {
+                    assert!(rect.right() <= x && rect.right() > x - 50.0);
+                } else {
+                    assert!(rect.left() >= x && rect.left() < x + 50.0);
+                }
             } else if requested == design::MenuSide::Left {
                 assert!(rect.left() < 50.0);
             } else {

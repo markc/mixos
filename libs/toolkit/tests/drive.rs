@@ -463,8 +463,14 @@ fn menu_paths_and_popups_work_in_every_form() {
                 assert_eq!(h.state().fixture.ran.len(), 2);
                 ok(&mut h, "ui.menu.popup", json!({}));
                 assert_eq!(ok(&mut h, "ui.menu.close", json!({}))["closed"], true);
-                for args in [json!({"side":"bad"}), json!({"side":2}), json!({"x":"bad"})] {
+                for args in [
+                    Value::Null,
+                    json!({"side":"bad"}),
+                    json!({"side":2}),
+                    json!({"x":"bad"}),
+                ] {
                     refused(&mut h, "ui.menu.popup", args);
+                    assert!(!menu::is_open(&h.ctx));
                 }
             }
         }

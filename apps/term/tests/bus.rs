@@ -192,9 +192,9 @@ fn the_window_answers_its_commands_over_a_real_broker() {
     let entries: Vec<bus::CommandDescriptor> = serde_json::from_str(&body).unwrap();
     for entry in entries {
         assert!(!entry.name.starts_with("term."), "{}", entry.name);
-        // Deliberately invalid arguments keep terminal mutations from running;
-        // argument refusals still prove the advertised name reached a handler.
-        let (_, body) = call(&entry.name, json!({"_help_conformance":true}));
+        // A non-object body is invalid even when all command fields are optional.
+        // Argument refusals still prove the advertised name reached a handler.
+        let (_, body) = call(&entry.name, Value::Null);
         assert!(!body.contains("UNKNOWN_COMMAND"), "{}: {body}", entry.name);
         assert!(
             !body.contains("unknown command; use HELP"),
@@ -235,6 +235,13 @@ fn the_window_answers_its_commands_over_a_real_broker() {
     assert!(body.contains("tab.new"), "{body}");
     let (rc, body) = call("term-12345.window.state", json!({}));
     assert_eq!(rc, 0, "{body}");
+    let (rc, body) = call("term-12345.ui.menu", json!({}));
+    assert_eq!(rc, 0, "{body}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["menu"],
+        Value::Null,
+        "HELP conformance must leave menus closed"
+    );
     let before = tabs.lock().unwrap().active_id();
     let (rc, body) = call(
         "term-12345.ui.key",

@@ -1627,6 +1627,15 @@ fn render_picked(
         titles.push((anchor, galley, false));
         on_title = st.title_press;
     }
+    // Bar titles and keys open the search menu before its field is drawn.
+    if !vertical
+        && let Some(s) = search
+        && st.nav.open == Some(s.menu)
+        && before.open_menu() != Some(s.menu)
+    {
+        st.query.clear();
+        st.focus_search = true;
+    }
     // Focus waits for the pointer to settle: egui hands focus back from a
     // field on the frame of any press or click that lands elsewhere, which
     // the press on the title would be.
@@ -1853,7 +1862,8 @@ fn render_picked(
     }
 
     let search_active = searching(&st).is_some();
-    if search_active && !st.search_active {
+    // Vertical hover can open the search level while its parent is drawn.
+    if vertical && search_active && !st.search_active {
         st.query.clear();
         st.focus_search = true;
     }

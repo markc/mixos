@@ -35,8 +35,14 @@ fn class_of(name: &str) -> Option<&'static str> {
 #[test]
 fn every_served_command_is_registered_and_nothing_else() {
     let served: BTreeSet<String> = all_commands().map(str::to_owned).collect();
-    assert_eq!(served.len(), 39);
+    assert_eq!(
+        served.len(),
+        all_commands().count(),
+        "no duplicate commands"
+    );
     assert_eq!(registered(), served);
+    assert!(served.contains("comp.window.menu"));
+    assert_eq!(class_of("comp.window.menu"), Some("intent"));
     assert!(
         served
             .iter()
