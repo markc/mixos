@@ -14,7 +14,8 @@ fn call(suffix: &str, body: Value) -> Value {
 
 #[test]
 fn recent_fields_paging_filter_limits_and_release() {
-    let _guard = logging::debug::init("fixture", "warn,fixture=info", &mut vec!["fixture".into()]).unwrap();
+    let _guard =
+        logging::debug::init("fixture", "warn,fixture=info", &mut vec!["fixture".into()]).unwrap();
     let initial = call(".recent", json!({}));
     assert_eq!(initial["recording"], false);
     assert_eq!(initial["events"], json!([]));

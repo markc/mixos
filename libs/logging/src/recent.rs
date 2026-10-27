@@ -76,14 +76,13 @@ pub(crate) fn configure(
 ) {
     let verbosity = |filter: &tracing_subscriber::EnvFilter| {
         filter
-        .max_level_hint()
-        .unwrap_or(tracing::level_filters::LevelFilter::TRACE)
+            .max_level_hint()
+            .unwrap_or(tracing::level_filters::LevelFilter::TRACE)
     };
     // Baselines may already include info, debug or trace directives. Retain
     // diagnostics only while the live verbosity exceeds that recorded level.
     let level = verbosity(filter);
-    let enabled = level > tracing::level_filters::LevelFilter::WARN
-        && level > verbosity(baseline);
+    let enabled = level > tracing::level_filters::LevelFilter::WARN && level > verbosity(baseline);
     let mut ring = RING.lock().unwrap_or_else(|e| e.into_inner());
     if enabled {
         ring.get_or_insert_with(|| Box::new(Ring::new()));
@@ -236,7 +235,10 @@ mod tests {
         let Ok(flag) = std::env::var(CHILD) else {
             for flag in ["baseline", "--debug", "--debug=info", "--debug=warn"] {
                 let output = std::process::Command::new(std::env::current_exe().unwrap())
-                    .args(["--exact", "recent::tests::info_baseline_allocates_only_while_raised"])
+                    .args([
+                        "--exact",
+                        "recent::tests::info_baseline_allocates_only_while_raised",
+                    ])
                     .env(CHILD, flag)
                     .env_remove("RUST_LOG")
                     .output()
@@ -257,10 +259,20 @@ mod tests {
             tracing::info!(target: "fixture", "baseline startup");
             assert_eq!(query(RecentRequest::default()).unwrap(), initial);
         }
-        assert_eq!(crate::debug::request("fixture", "fixture.debug.set", r#"{"level":"debug"}"#).unwrap().0, 0);
+        assert_eq!(
+            crate::debug::request("fixture", "fixture.debug.set", r#"{"level":"debug"}"#)
+                .unwrap()
+                .0,
+            0
+        );
         assert!(allocated());
         let seq = query(RecentRequest::default()).unwrap()["seq"].clone();
-        assert_eq!(crate::debug::request("fixture", "fixture.debug.set", r#"{"on":false}"#).unwrap().0, 0);
+        assert_eq!(
+            crate::debug::request("fixture", "fixture.debug.set", r#"{"on":false}"#)
+                .unwrap()
+                .0,
+            0
+        );
         assert!(!allocated());
         let stopped = query(RecentRequest::default()).unwrap();
         assert_eq!(stopped["recording"], false);

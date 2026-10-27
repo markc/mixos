@@ -343,7 +343,13 @@ pub fn spawn(
     }
 }
 
-async fn respond(service: &str, client: &SupervisedClient, cmd: &IncomingCommand, rc: u8, body: &str) {
+async fn respond(
+    service: &str,
+    client: &SupervisedClient,
+    cmd: &IncomingCommand,
+    rc: u8,
+    body: &str,
+) {
     citizen::debug::answered(service, &cmd.command, rc);
     if let Err(error) = tokio::time::timeout(REPLY_TIMEOUT, client.respond(cmd, rc, body))
         .await
