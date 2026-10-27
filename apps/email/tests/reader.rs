@@ -1395,7 +1395,10 @@ fn hovering_an_inline_image_keeps_the_reader_context_menu_open() {
     }
     h.run();
     h.run();
-    assert!(h.query_by_label_contains(&label("mark-unread")).is_some(), "reader menu did not open");
+    assert!(
+        h.query_by_label_contains(&label("mark-unread")).is_some(),
+        "reader menu did not open"
+    );
     h.hover_at(image_at);
     h.run();
     assert!(
@@ -1900,15 +1903,23 @@ fn quoted_reply_compose_studio_dark() {
 
 #[test]
 fn the_reader_menu_opens_over_the_text_when_the_attachment_bar_shows() {
-    let mut h = harness(with_attachments(opened("text/plain", PLAIN)), &theme(Scheme::Studio, Mode::Dark));
+    let mut h = harness(
+        with_attachments(opened("text/plain", PLAIN)),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
     right_click_the_text_opens_the_reader_menu(&mut h);
 }
 
 #[test]
 fn the_reader_menu_opens_over_the_text_with_inline_images_off() {
-    let mut h = harness(with_image(opened("text/plain", PLAIN)), &theme(Scheme::Studio, Mode::Dark));
+    let mut h = harness(
+        with_image(opened("text/plain", PLAIN)),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
     finish_preview(&mut h);
-    actions::registry().execute("view.attachments_inline", &mut h.state_mut().0, Origin::Bus).unwrap();
+    actions::registry()
+        .execute("view.attachments_inline", &mut h.state_mut().0, Origin::Bus)
+        .unwrap();
     h.run();
     right_click_the_text_opens_the_reader_menu(&mut h);
 }
@@ -1919,8 +1930,16 @@ fn right_click_the_text_opens_the_reader_menu(h: &mut Harness<'static, (State, V
     h.hover_at(at);
     h.run();
     for pressed in [true, false] {
-        h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE });
+        h.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
     }
     h.run();
-    assert!(h.query_by_label_contains(&label("mark-unread")).is_some(), "reader menu did not open");
+    assert!(
+        h.query_by_label_contains(&label("mark-unread")).is_some(),
+        "reader menu did not open"
+    );
 }
