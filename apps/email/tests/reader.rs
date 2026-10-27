@@ -606,7 +606,7 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
     for command in registry.iter().filter(|c| {
         !matches!(
             c.id,
-            "compose.open" | "compose.save_as" | "compose.attach"
+            "compose.open" | "compose.save_as" | "compose.attach" | "compose.close" | "file.quit"
         )
     }) {
         for chord in registry.shortcuts_of(command.id) {

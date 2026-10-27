@@ -2024,7 +2024,7 @@ fn show_level(
         keyed,
         deeper,
     } = view;
-    let id = state_id(ui.ctx()).with(level);
+    let id = state_id(ctx).with(level);
     let area = Area::new(id)
         .kind(UiKind::Menu)
         .order(Order::Foreground)

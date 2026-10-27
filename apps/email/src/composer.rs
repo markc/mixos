@@ -214,7 +214,7 @@ impl Window {
         }
         let dropped = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect::<Vec<_>>());
         if !dropped.is_empty() { events.push(UiEvent::ComposeDrop(dropped)); }
-        if ctx.input(|i| i.viewport().close_requested()) {
+        if self.viewport != ViewportId::ROOT && ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             events.push(UiEvent::CloseCompose);
         }

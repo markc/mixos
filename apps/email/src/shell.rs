@@ -1902,6 +1902,16 @@ impl Shell {
 
     /// One frame's logic; it runs even while the window is hidden.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        // Root closes can arrive on a logic-only wake. Cancel before eframe
+        // decides process lifetime, even if Wayland grants no paint callback.
+        if self.composers.compose_only && !self.exiting && ctx.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            if let Some(window) = self.composers.root.as_ref().and_then(|n| self.composers.windows.get(n)) {
+                window.lock().unwrap().pending.push(crate::composer::Input {
+                    events: vec![UiEvent::CloseCompose], request: None, mixed: false,
+                });
+            }
+        }
         self.composer_input();
         // Drive answers first: a `window close` answer goes out before the
         // close it asked for is handled.
