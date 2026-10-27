@@ -488,7 +488,7 @@ async fn a_real_fault_after_a_caught_shutdown_refusal_is_still_a_fault() {
                 .await;
             assert_eq!(runtime.faults.borrow().len(), 1, "the raise is a fault");
             assert!(records.0.load(std::sync::atomic::Ordering::Relaxed) >= 1);
-            assert!(s.stderr.to_string_lossy().contains("OTHER"));
+            assert!(s.stderr.to_string_lossy().contains("real bug"));
             assert_eq!(outcome.synth_sent, 1, "{outcome:?}");
             let terminal = bus.terminal.borrow();
             assert_eq!(terminal.len(), 1, "exactly one terminal reply");
