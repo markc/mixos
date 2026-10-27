@@ -137,16 +137,12 @@ fn bus_restore_only_unminimises_constrained_and_fullscreen_windows() {
             for activate in [false, true] {
                 let (mut h, id, generation, window, _, _) = fixture();
                 let target = json!({"id":id.0,"generation":generation});
-                let mut placement_args = json!({"id":id.0,"generation":generation,"placement":placement});
+                let mut placement_args =
+                    json!({"id":id.0,"generation":generation,"placement":placement});
                 if placement == "tiled" {
                     placement_args["slot"] = json!("left");
                 }
-                command(
-                    &mut h,
-                    &window,
-                    "comp.window.place_as",
-                    placement_args,
-                );
+                command(&mut h, &window, "comp.window.place_as", placement_args);
                 if fullscreen {
                     h.wire.inner.fullscreen_request(window.clone(), true);
                     h.service_lifecycle();
@@ -192,9 +188,21 @@ fn super_shift_m_keeps_lifo_order_and_constrained_placement() {
         json!({"id":a.0,"generation":generation,"placement":"maximized"}),
     );
     let (second_surface, _, _) = h.mapped_toplevel(320, 240);
-    let b = h.comp().registry.id_for_handle(&h.handle_of(&second_surface)).unwrap();
+    let b = h
+        .comp()
+        .registry
+        .id_for_handle(&h.handle_of(&second_surface))
+        .unwrap();
     let generation_b = h.comp().registry.get(b).unwrap().generation();
-    let second = h.wire.inner.space.state.elements().find(|w| **w != first).unwrap().clone();
+    let second = h
+        .wire
+        .inner
+        .space
+        .state
+        .elements()
+        .find(|w| **w != first)
+        .unwrap()
+        .clone();
     command(
         &mut h,
         &second,
@@ -203,7 +211,12 @@ fn super_shift_m_keeps_lifo_order_and_constrained_placement() {
     );
     let before = [h.comp().placement(a), h.comp().placement(b)];
     for (id, generation, window) in [(a, generation, &first), (b, generation_b, &second)] {
-        command(&mut h, window, "comp.window.minimize", json!({"id":id.0,"generation":generation}));
+        command(
+            &mut h,
+            window,
+            "comp.window.minimize",
+            json!({"id":id.0,"generation":generation}),
+        );
     }
     h.wire.inner.comp.bindings.ensure("headless");
     h.focus_keyboard(&surface);
@@ -214,7 +227,10 @@ fn super_shift_m_keeps_lifo_order_and_constrained_placement() {
         assert!(h.key(50 + 8, false, false));
         h.key(42 + 8, false, false);
         h.key(125 + 8, false, false);
-        assert_eq!(h.wire.inner.comp.bindings.take_pending(), [BindingAction::RestoreMostRecentlyMinimized]);
+        assert_eq!(
+            h.wire.inner.comp.bindings.take_pending(),
+            [BindingAction::RestoreMostRecentlyMinimized]
+        );
         let reply = command(&mut h, window, "comp.window.restore", json!({}));
         assert_eq!(reply["id"], expected.0);
         assert!(!h.comp().hidden_id(expected));
@@ -471,7 +487,8 @@ fn real_super_key_injection_tiles_then_restores_and_toggles_maximize() {
                 );
             }
             BindingAction::RestoreFocused => {
-                if let Some(op) = geometry::restore_focused_op(&host.comp, id, generation, &window) {
+                if let Some(op) = geometry::restore_focused_op(&host.comp, id, generation, &window)
+                {
                     operation(&mut h, &window, op);
                 }
             }
@@ -520,7 +537,11 @@ fn restore_exits_fullscreen_before_untiling_and_unmaximize_keeps_the_float() {
     h.service_lifecycle();
     assert!(matches!(
         geometry::restore_focused_op(h.comp(), id, generation, &window),
-        Some(WindowOp::State { state: comp_model::request::WindowState::Fullscreen, enabled: false, .. })
+        Some(WindowOp::State {
+            state: comp_model::request::WindowState::Fullscreen,
+            enabled: false,
+            ..
+        })
     ));
     restore_focused(&mut h, id, generation, &window);
     assert!(!window.is_fullscreen());

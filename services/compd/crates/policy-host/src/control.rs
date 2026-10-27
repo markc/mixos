@@ -1724,8 +1724,7 @@ pub fn apply_bindings(lp: &mut Loop) {
                     );
                 }
             }
-            BindingAction::ToggleMaximizeFocused
-            | BindingAction::MinimizeFocused => {
+            BindingAction::ToggleMaximizeFocused | BindingAction::MinimizeFocused => {
                 if let Some((id, generation)) = focused_window(lp) {
                     let op = match action {
                         BindingAction::ToggleMaximizeFocused => WindowOp::PlaceAs {
@@ -1757,7 +1756,14 @@ pub fn apply_bindings(lp: &mut Loop) {
                     ) {
                         let _ = window(lp, &op);
                     }
-                    let _ = window(lp, &WindowOp::Focus { id, generation, raise: true });
+                    let _ = window(
+                        lp,
+                        &WindowOp::Focus {
+                            id,
+                            generation,
+                            raise: true,
+                        },
+                    );
                 }
             }
             BindingAction::RequestCloseFocused => {
