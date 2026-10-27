@@ -1060,33 +1060,86 @@ fn remembered_folders_cap_at_128_and_evict_least_recent_reads_or_acceptances() {
             "portald",
             0,
         );
-        e.end(&id, accepted_path(format!("/folder-{i}/file").as_bytes()), 0, &mut p)
-            .unwrap();
+        e.end(
+            &id,
+            accepted_path(format!("/folder-{i}/file").as_bytes()),
+            0,
+            &mut p,
+        )
+        .unwrap();
         assert_eq!(e.remembered.len(), i + 1);
     }
     // Reusing a folder refreshes it even if the chooser is then cancelled.
-    let id = open(&mut e, &mut p, json!({"on_behalf_of":"app-0"}), "new-portald", 0);
-    assert_eq!(p.opened.last().unwrap().request.current_folder.as_deref(), Some(b"/folder-0".as_slice()));
+    let id = open(
+        &mut e,
+        &mut p,
+        json!({"on_behalf_of":"app-0"}),
+        "new-portald",
+        0,
+    );
+    assert_eq!(
+        p.opened.last().unwrap().request.current_folder.as_deref(),
+        Some(b"/folder-0".as_slice())
+    );
     e.end(&id, End::Cancel, 0, &mut p).unwrap();
     // An acceptance updates an existing entry without increasing the count.
-    let id = open(&mut e, &mut p, json!({"on_behalf_of":"app-1","current_folder":"/override"}), "portald", 0);
-    e.end(&id, accepted_path(b"/updated/file"), 0, &mut p).unwrap();
+    let id = open(
+        &mut e,
+        &mut p,
+        json!({"on_behalf_of":"app-1","current_folder":"/override"}),
+        "portald",
+        0,
+    );
+    e.end(&id, accepted_path(b"/updated/file"), 0, &mut p)
+        .unwrap();
     assert_eq!(e.remembered.len(), 128);
     // A failed presentation does not refresh the least recently used entry.
     p.unavailable = true;
-    assert_eq!(e.choose(r#"{"on_behalf_of":"app-2"}"#, "portald", 0, &mut p).unwrap_err().error_code, "UNAVAILABLE");
+    assert_eq!(
+        e.choose(r#"{"on_behalf_of":"app-2"}"#, "portald", 0, &mut p)
+            .unwrap_err()
+            .error_code,
+        "UNAVAILABLE"
+    );
     p.unavailable = false;
     for i in 128..130 {
-        let id = open(&mut e, &mut p, json!({"on_behalf_of":format!("app-{i}")}), "portald", 0);
+        let id = open(
+            &mut e,
+            &mut p,
+            json!({"on_behalf_of":format!("app-{i}")}),
+            "portald",
+            0,
+        );
         e.end(&id, accepted_path(b"/new/file"), 0, &mut p).unwrap();
         assert_eq!(e.remembered.len(), 128);
-        assert!(!e.remembered.iter().any(|(key, _)| key == &(true, format!("app-{}", i - 126))));
+        assert!(
+            !e.remembered
+                .iter()
+                .any(|(key, _)| key == &(true, format!("app-{}", i - 126)))
+        );
     }
-    let expected: Vec<_> = (4..128).chain([0, 1, 128, 129]).map(|i| (true, format!("app-{i}"))).collect();
-    assert_eq!(e.remembered.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>(), expected);
-    for (app, folder) in [("app-0", "/folder-0"), ("app-1", "/updated"), ("app-2", "/home/user"), ("app-3", "/home/user")] {
+    let expected: Vec<_> = (4..128)
+        .chain([0, 1, 128, 129])
+        .map(|i| (true, format!("app-{i}")))
+        .collect();
+    assert_eq!(
+        e.remembered
+            .iter()
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    for (app, folder) in [
+        ("app-0", "/folder-0"),
+        ("app-1", "/updated"),
+        ("app-2", "/home/user"),
+        ("app-3", "/home/user"),
+    ] {
         let id = open(&mut e, &mut p, json!({"on_behalf_of":app}), "portald", 0);
-        assert_eq!(p.opened.last().unwrap().request.current_folder.as_deref(), Some(folder.as_bytes()));
+        assert_eq!(
+            p.opened.last().unwrap().request.current_folder.as_deref(),
+            Some(folder.as_bytes())
+        );
         e.end(&id, End::Cancel, 0, &mut p).unwrap();
     }
     assert_eq!(e.remembered.len(), 128);
@@ -1119,7 +1172,10 @@ fn reply_precedes_input_and_first_outcome_failed_reply_closes() {
     let reply = e
         .choose(r#"{"correlation":"corr"}"#, "caller", 1, &mut p)
         .unwrap();
-    assert_eq!(reply, json!({"request":"9f2c41d07ab3e655-1","topic":"files.chosen","correlation":"corr"}));
+    assert_eq!(
+        reply,
+        json!({"request":"9f2c41d07ab3e655-1","topic":"files.chosen","correlation":"corr"})
+    );
     let id = reply["request"].as_str().unwrap();
     assert!(p.ready.is_empty());
     assert_eq!(
@@ -1134,7 +1190,10 @@ fn reply_precedes_input_and_first_outcome_failed_reply_closes() {
     assert!(e.end(id, End::Cancel, 3, &mut p).unwrap().is_some());
     assert!(e.end(id, End::Cancel, 4, &mut p).unwrap().is_none());
     let reply = e.choose("{}", "caller", 5, &mut p).unwrap();
-    assert_eq!(reply, json!({"request":"9f2c41d07ab3e655-2","topic":"files.chosen"}));
+    assert_eq!(
+        reply,
+        json!({"request":"9f2c41d07ab3e655-2","topic":"files.chosen"})
+    );
     let id = reply["request"].as_str().unwrap();
     e.reply_failed(id, &mut p);
     assert!(e.open.is_empty());
