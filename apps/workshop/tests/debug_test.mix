@@ -42,7 +42,8 @@ try
     sleep(0.1)
   end
   expect(contains($journal, "debug mode changed"), "no debug event under journalctl -t workshop for the child PID")
-  expect(contains($journal, '"PRIORITY":"7"'), "journal event is not debug priority")
+  -- tracing-journald maps DEBUG to Informational (6), TRACE to Debug (7).
+  expect(contains($journal, '"PRIORITY":"6"'), "journal event has the wrong DEBUG mapping")
   $disabled = call_debug(".set", {on: false})
   expect(not $disabled.on and $disabled.filter == $initial.baseline, "baseline was not restored")
   for $level in ["off", "error", "warn", "info", "debug", "trace"]
