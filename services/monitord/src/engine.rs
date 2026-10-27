@@ -4,7 +4,7 @@
 //! and the process sampler, and the one tick that moves them all forward.
 use crate::history::{self, Live, Retention, Store};
 use crate::kernel::{Root, Units};
-use crate::process::{self, Process, Raw, Users};
+use crate::process::{self, Process, Raw, Users, UsersCache};
 use crate::sampler::{self, Fixed, Reading, Snapshot};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
@@ -15,8 +15,6 @@ use std::time::{Duration, Instant};
 pub const PROCESS_LEASE: Duration = Duration::from_secs(30);
 /// A cold process call samples twice this far apart.
 pub const COLD_GAP: Duration = Duration::from_millis(300);
-/// `/etc/passwd` is read again after this.
-const USERS_TTL: Duration = Duration::from_secs(60);
 
 pub struct Config {
     pub root: Root,
@@ -48,7 +46,7 @@ pub struct Engine {
     store: Option<Mutex<Store>>,
     store_error: Mutex<Option<String>>,
     procs: Mutex<Procs>,
-    users: Mutex<(Users, Instant)>,
+    users: Arc<UsersCache>,
     pub connections: Arc<crate::connections::Sampler>,
 }
 
@@ -65,6 +63,7 @@ impl Engine {
             },
         };
         let root = config.root;
+        let users = UsersCache::new(root.clone());
         Arc::new(Self {
             units: Units::system(),
             interval: config.interval,
@@ -78,8 +77,8 @@ impl Engine {
             store,
             store_error: Mutex::new(store_error),
             procs: Mutex::new(Procs::default()),
-            users: Mutex::new((Users::read(&root), Instant::now())),
-            connections: crate::connections::Sampler::new(root.clone(), config.interval),
+            connections: crate::connections::Sampler::new(users.clone(), config.interval),
+            users,
             root,
         })
     }
@@ -161,12 +160,8 @@ impl Engine {
             .is_some_and(|until| Instant::now() < until)
     }
 
-    pub fn users(&self) -> Users {
-        let mut users = self.users.lock().unwrap();
-        if users.1.elapsed() > USERS_TTL {
-            *users = (Users::read(&self.root), Instant::now());
-        }
-        users.0.clone()
+    pub fn users(&self) -> Arc<Users> {
+        self.users.get()
     }
 
     /// Online CPUs and the boot time, from the latest snapshot or, before

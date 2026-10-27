@@ -299,8 +299,12 @@ with I/O in flight). Loop and RAM devices are left out.</li>
 <code>listen_drops</code>, all events per second over <code>interval_s</code>; <code>established</code>
 is the current established/close-wait gauge (<code>CurrEstab</code>). <code>sockstat</code>
 holds TCP <code>inuse</code>, <code>orphan</code>, <code>tw</code>, <code>alloc</code> counts and <code>mem</code> (kernel buffer
-pages). These come from <code>/proc/net/snmp</code> (<code>Tcp</code>), <code>/proc/net/netstat</code>
-(<code>TcpExt</code>) and <code>/proc/net/sockstat</code>, with no connection scan.</li>
+pages), exactly as <code>/proc/net/sockstat</code> reports them. Its <code>inuse</code> is
+IPv4 only; the other fields are kernel-wide TCP counters. <code>sockstat6</code>
+reports <code>/proc/net/sockstat6</code>'s <code>TCP6</code> fields separately (normally only
+IPv6 <code>inuse</code>; absent fields are null). Add the two <code>inuse</code> values for the
+IPv4 + IPv6 total. These and <code>/proc/net/snmp</code> (<code>Tcp</code>) and
+<code>/proc/net/netstat</code> (<code>TcpExt</code>) are read without a connection scan.</li>
 </ul>
 <p>A value monitord can't know is <code>null</code>, never zero.
 Counter resets or wrap give a null rate for that interval, as do counters
@@ -330,18 +334,21 @@ Each row has <code>cookie</code> (the two <code>idiag_cookie</code> words), <cod
 (IP addresses), <code>local_port</code>, <code>remote_port</code>, <code>ifindex</code>, <code>state</code>, <code>rx_bps</code>,
 <code>tx_bps</code>, <code>rtt_us</code>, <code>retransmits</code> (lifetime <code>tcpi_total_retrans</code>), <code>uid</code>
 and <code>user</code>. The uid is <code>idiag_uid</code>; the name comes from readable
-<code>/etc/passwd</code>, otherwise its numeric uid. There is no process attribution.
+<code>/etc/passwd</code>, otherwise its numeric uid. Connections and processes share
+one users cache, refreshed after 60 s. There is no process attribution.
 IPv6 addresses stay unbracketed in JSON; the UI brackets peer endpoints.</p>
 <p>Each request holds a separate sampler on for 30 s. A cold request takes two
-dumps one configured sample interval apart (1 s by default). Rates are
+dumps one configured sample interval apart (1 s by default); background
+ticks skip that pair so its baseline cannot be replaced. Rates are
 <code>bytes_received</code> and <code>bytes_acked</code> deltas divided by elapsed monotonic time,
 matched by cookie. New sockets, resets and unavailable tcp_info fields have
 null rates. Closed sockets disappear. No summed host TCP byte rate is
 reported because it would miss bytes from closing sockets.</p>
 <p>Nothing per connection is stored in history. The sampler drops idle state
 after its hold expires, caps each dump at 65,536 sockets, each datagram at
-64 KiB and the complete dump at 2 s. Oversized or interrupted dumps fail
-explicitly rather than showing a misleading partial top list.</p>
+64 KiB and the complete dump at 2 s, including retries for send or receive
+backpressure. Oversized or interrupted dumps fail explicitly rather than
+showing a misleading partial top list.</p>
 <p><strong>Privacy:</strong> peer addresses, ports and users are open to Bus readers,
 including readers on the mesh, just as process command lines are. Watching
 a remote node shows that host's peers. No payloads are read or retained.

@@ -5,8 +5,8 @@
 //! are native endian except addresses/ports. tcp_info grows by appending:
 //! read each optional field only when its bytes are present.
 use crate::{
-    kernel::{self, Root},
-    process::Users,
+    kernel,
+    process::{Users, UsersCache},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -41,6 +41,42 @@ fn aligned(n: usize) -> usize {
 }
 fn invalid() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, "malformed inet_diag dump")
+}
+
+/// Both directions share the dump deadline, including backpressure and EINTR.
+fn retry_io<T>(
+    deadline: Instant,
+    mut operation: impl FnMut() -> io::Result<T>,
+    mut wait: impl FnMut(Duration) -> io::Result<()>,
+) -> io::Result<T> {
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "inet_diag timeout"));
+        }
+        match operation() {
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => match wait(left) {
+                Ok(()) => continue,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e),
+            },
+            result => return result,
+        }
+    }
+}
+
+fn wait_ready(fd: &OwnedFd, events: i16, left: Duration) -> io::Result<()> {
+    let mut poll = libc::pollfd {
+        fd: fd.as_raw_fd(),
+        events,
+        revents: 0,
+    };
+    // SAFETY: poll points at one valid pollfd.
+    if unsafe { libc::poll(&mut poll, 1, left.as_millis().max(1) as i32) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 /// nlmsghdr + inet_diag_req_v2; all states, no address/port filter.
@@ -209,57 +245,46 @@ pub fn dump() -> io::Result<Vec<Raw>> {
     let deadline = Instant::now() + DUMP_TIMEOUT;
     for (seq, family) in [(1, libc::AF_INET), (2, libc::AF_INET6)] {
         let req = request(family as u8, seq);
-        // SAFETY: req is a valid readable byte slice; connected peer is kernel.
-        if unsafe { libc::send(fd.as_raw_fd(), req.as_ptr().cast(), req.len(), 0) }
-            != req.len() as isize
-        {
-            return Err(io::Error::last_os_error());
-        }
+        retry_io(
+            deadline,
+            || {
+                // SAFETY: req is readable; the connected peer is the kernel.
+                let n = unsafe { libc::send(fd.as_raw_fd(), req.as_ptr().cast(), req.len(), 0) };
+                if n < 0 {
+                    Err(io::Error::last_os_error())
+                } else if n as usize != req.len() {
+                    Err(io::Error::new(io::ErrorKind::WriteZero, "short inet_diag request"))
+                } else {
+                    Ok(())
+                }
+            },
+            |left| wait_ready(&fd, libc::POLLOUT, left),
+        )?;
         loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            if left.is_zero() {
-                return Err(io::Error::new(io::ErrorKind::TimedOut, "inet_diag timeout"));
-            }
-            let mut poll = libc::pollfd {
-                fd: fd.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            };
-            // SAFETY: poll points at one valid pollfd.
-            let ready = unsafe { libc::poll(&mut poll, 1, left.as_millis().max(1) as i32) };
-            if ready < 0 {
-                let e = io::Error::last_os_error();
-                if e.kind() == io::ErrorKind::Interrupted {
-                    continue;
-                }
-                return Err(e);
-            }
-            if ready == 0 {
-                continue;
-            }
-            let mut sender = kernel;
-            let mut addrlen = std::mem::size_of_val(&sender) as libc::socklen_t;
-            // SAFETY: buffer and sender are writable for the given lengths.
-            let n = unsafe {
-                libc::recvfrom(
-                    fd.as_raw_fd(),
-                    buffer.as_mut_ptr().cast(),
-                    buffer.len(),
-                    libc::MSG_TRUNC,
-                    (&mut sender as *mut libc::sockaddr_nl).cast(),
-                    &mut addrlen,
-                )
-            };
-            if n < 0 {
-                let e = io::Error::last_os_error();
-                if matches!(
-                    e.kind(),
-                    io::ErrorKind::Interrupted | io::ErrorKind::WouldBlock
-                ) {
-                    continue;
-                }
-                return Err(e);
-            }
+            let (n, sender) = retry_io(
+                deadline,
+                || {
+                    let mut sender = kernel;
+                    let mut addrlen = std::mem::size_of_val(&sender) as libc::socklen_t;
+                    // SAFETY: buffer and sender are writable for the given lengths.
+                    let n = unsafe {
+                        libc::recvfrom(
+                            fd.as_raw_fd(),
+                            buffer.as_mut_ptr().cast(),
+                            buffer.len(),
+                            libc::MSG_TRUNC,
+                            (&mut sender as *mut libc::sockaddr_nl).cast(),
+                            &mut addrlen,
+                        )
+                    };
+                    if n < 0 {
+                        Err(io::Error::last_os_error())
+                    } else {
+                        Ok((n, sender))
+                    }
+                },
+                |left| wait_ready(&fd, libc::POLLIN, left),
+            )?;
             if n == 0 || n as usize > buffer.len() || sender.nl_pid != 0 {
                 return Err(invalid());
             }
@@ -365,6 +390,12 @@ impl Query {
 }
 
 pub fn select(table: &[Connection], query: &Query) -> (Vec<Connection>, usize) {
+    let (rows, total) = select_rows(table, query);
+    (rows.into_iter().cloned().collect(), total)
+}
+
+/// Partition borrowed rows first; only the returned top-N is sorted and cloned.
+fn select_rows<'a>(table: &'a [Connection], query: &Query) -> (Vec<&'a Connection>, usize) {
     let mut rows: Vec<_> = table
         .iter()
         .filter(|r| {
@@ -373,7 +404,6 @@ pub fn select(table: &[Connection], query: &Query) -> (Vec<Connection>, usize) {
                     .port
                     .is_none_or(|p| p == r.local_port || p == r.remote_port)
         })
-        .cloned()
         .collect();
     let score = |r: &Connection| match query.sort.as_deref().unwrap_or("throughput") {
         "rx" => r.rx_bps.unwrap_or(-1.0),
@@ -386,16 +416,21 @@ pub fn select(table: &[Connection], query: &Query) -> (Vec<Connection>, usize) {
         },
     };
     let throughput = query.sort.as_deref().unwrap_or("throughput") == "throughput";
-    rows.sort_by(|a, b| {
+    let compare = |a: &&Connection, b: &&Connection| {
         // Listeners only fill spare places after every non-listening
         // socket. Unknown rates sort behind measured rates, including zero.
         (throughput && a.state == "listen")
             .cmp(&(throughput && b.state == "listen"))
             .then_with(|| score(b).total_cmp(&score(a)))
             .then(a.cookie.cmp(&b.cookie))
-    });
+    };
     let total = rows.len();
-    rows.truncate(query.limit.unwrap_or(20).clamp(1, 1000));
+    let limit = query.limit.unwrap_or(20).clamp(1, 1000);
+    if total > limit {
+        rows.select_nth_unstable_by(limit, compare);
+        rows.truncate(limit);
+    }
+    rows.sort_unstable_by(compare);
     (rows, total)
 }
 
@@ -424,17 +459,17 @@ pub struct Sampler {
     /// Coalesce simultaneous cold requests; no blocking guard across await.
     request: tokio::sync::Mutex<()>,
     source: Box<Source>,
-    root: Root,
+    users: Arc<UsersCache>,
     interval: Duration,
 }
 
 impl Sampler {
-    pub fn new(root: Root, interval: Duration) -> Arc<Self> {
+    pub fn new(users: Arc<UsersCache>, interval: Duration) -> Arc<Self> {
         Arc::new(Self {
             state: Mutex::new(State::default()),
             request: tokio::sync::Mutex::new(()),
             source: Box::new(dump),
-            root,
+            users,
             interval,
         })
     }
@@ -452,7 +487,7 @@ impl Sampler {
                     before,
                     &raw,
                     at.duration_since(*then).as_secs_f64(),
-                    &Users::read(&self.root),
+                    &self.users.get(),
                 )),
             ));
         }
@@ -462,6 +497,11 @@ impl Sampler {
     }
 
     pub fn tick(&self) {
+        // A cold get owns its pair across the sleep. Skipping also keeps a
+        // tick from replacing its finished table before get returns it.
+        let Ok(_request) = self.request.try_lock() else {
+            return;
+        };
         let mut s = self.state.lock().unwrap();
         if s.expire(Instant::now())
             && let Err(e) = self.sample(&mut s)
@@ -522,6 +562,59 @@ pub async fn run(sampler: Arc<Sampler>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::Root;
+
+    #[test]
+    fn nonblocking_io_retries_backpressure_and_interrupts_with_one_deadline() {
+        let deadline = Instant::now() + DUMP_TIMEOUT;
+        let mut attempts = 0;
+        let mut waits = 0;
+        let result = retry_io(
+            deadline,
+            || {
+                attempts += 1;
+                match attempts {
+                    1 | 2 => Err(io::Error::from_raw_os_error(libc::EAGAIN)),
+                    3 => Err(io::Error::from_raw_os_error(libc::EINTR)),
+                    _ => Ok(72),
+                }
+            },
+            |left| {
+                assert!(left > Duration::ZERO && left <= DUMP_TIMEOUT);
+                waits += 1;
+                if waits == 1 {
+                    Err(io::Error::from_raw_os_error(libc::EINTR))
+                } else {
+                    Ok(())
+                }
+            },
+        );
+        assert_eq!(result.unwrap(), 72);
+        assert_eq!((attempts, waits), (4, 2));
+
+        let mut attempts = 0;
+        let error = retry_io::<()>(
+            Instant::now() + Duration::from_millis(10),
+            || {
+                attempts += 1;
+                Err(io::Error::from_raw_os_error(libc::EAGAIN))
+            },
+            |left| {
+                std::thread::sleep(left);
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(attempts <= 1, "deadline must not restart after waiting");
+        let error = retry_io::<()>(
+            deadline,
+            || Err(io::Error::from_raw_os_error(libc::EPERM)),
+            |_| panic!("permanent errors must not wait"),
+        )
+        .unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(libc::EPERM));
+    }
 
     fn hex(text: &str) -> Vec<u8> {
         let text = text
@@ -683,6 +776,56 @@ mod tests {
     }
 
     #[test]
+    fn borrowed_top_n_matches_full_ranking_for_large_filtered_tables() {
+        use std::cmp::Reverse;
+        let raw: Vec<_> = (0..4096).map(|i| raw((i * 37) % 4096, 0)).collect();
+        let mut rows = table(&raw, &raw, 1.0, &Users::default());
+        for row in &mut rows {
+            let id = row.cookie[0];
+            row.local_port = if id % 3 == 0 { 80 } else { 443 };
+            row.state = if id % 7 == 0 { "listen" } else { "established" }.into();
+            row.rx_bps = (id % 11 != 0).then_some(f64::from(id));
+            row.tx_bps = row.rx_bps.map(|_| f64::from(4096 - id));
+            row.rtt_us = row.rx_bps.map(|_| id % 101);
+            row.retransmits = row.rx_bps.map(|_| id % 17);
+        }
+        for sort in ["throughput", "rx", "tx", "rtt", "retransmits"] {
+            for limit in [0, 1, 20, 1000, usize::MAX] {
+                let query = Query {
+                    sort: Some(sort.into()),
+                    limit: Some(limit),
+                    port: Some(80),
+                    ..Query::default()
+                };
+                let mut expected: Vec<_> = rows.iter().filter(|r| r.local_port == 80).collect();
+                expected.sort_by_key(|r| {
+                    let id = r.cookie[0];
+                    let score = (id % 11 != 0).then_some(match sort {
+                        "rx" => id,
+                        "tx" => 4096 - id,
+                        "rtt" => id % 101,
+                        "retransmits" => id % 17,
+                        _ => 4096,
+                    });
+                    (sort == "throughput" && id % 7 == 0, Reverse(score), r.cookie)
+                });
+                let (selected, total) = select_rows(&rows, &query);
+                assert_eq!(total, expected.len());
+                expected.truncate(limit.clamp(1, 1000));
+                assert_eq!(selected.len(), expected.len());
+                for (actual, expected) in selected.iter().zip(&expected) {
+                    assert!(std::ptr::eq(*actual, *expected), "selection must borrow source rows");
+                }
+                let (owned, _) = select(&rows, &query);
+                assert_eq!(
+                    owned.iter().map(|r| r.cookie).collect::<Vec<_>>(),
+                    expected.iter().map(|r| r.cookie).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn cookies_rates_resets_new_sockets_sort_filter_and_limits() {
         let users = Users::parse("alice:x:1000:1000::/home/user:/bin/mix\n");
         let before = [raw(1, 100), raw(2, 500)];
@@ -777,7 +920,7 @@ mod tests {
             state: Mutex::new(State::default()),
             request: tokio::sync::Mutex::new(()),
             source: Box::new(move || Ok(vec![raw(1, count.fetch_add(100, Ordering::SeqCst))])),
-            root: Root::new("/nonexistent"),
+            users: UsersCache::new(Root::new("/nonexistent")),
             interval: Duration::from_millis(20),
         });
         sampler.tick();
@@ -808,6 +951,57 @@ mod tests {
             500,
             "expired call needs another pair"
         );
+    }
+
+    #[tokio::test]
+    async fn tick_during_cold_call_cannot_replace_its_baseline() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        let scans = Arc::new(AtomicU64::new(0));
+        let first = Arc::new(tokio::sync::Notify::new());
+        let count = scans.clone();
+        let sampled = first.clone();
+        let sampler = Arc::new(Sampler {
+            state: Mutex::new(State::default()),
+            request: tokio::sync::Mutex::new(()),
+            source: Box::new(move || {
+                let bytes = count.fetch_add(100, Ordering::SeqCst);
+                sampled.notify_one();
+                Ok(vec![raw(1, bytes)])
+            }),
+            users: UsersCache::new(Root::new("/nonexistent")),
+            interval: Duration::from_millis(40),
+        });
+        let (rows, ()) = tokio::join!(sampler.get(), async {
+            first.notified().await;
+            sampler.tick();
+            assert_eq!(scans.load(Ordering::SeqCst), 100, "tick must skip the cold pair");
+        });
+        assert_eq!(scans.load(Ordering::SeqCst), 200);
+        let rate = rows.unwrap()[0].rx_bps.unwrap();
+        assert!(rate > 0.0 && rate <= 100.0 / sampler.interval.as_secs_f64());
+        sampler.tick();
+        assert_eq!(scans.load(Ordering::SeqCst), 300, "ticks resume after get");
+    }
+
+    #[tokio::test]
+    async fn connection_samples_reuse_the_shared_users_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("etc")).unwrap();
+        let passwd = dir.path().join("etc/passwd");
+        std::fs::write(&passwd, "alice:x:1000:1000::/:/bin/mix\n").unwrap();
+        let users = UsersCache::new(Root::new(dir.path()));
+        std::fs::write(&passwd, "bob:x:1000:1000::/:/bin/mix\n").unwrap();
+        let sampler = Arc::new(Sampler {
+            state: Mutex::new(State::default()),
+            request: tokio::sync::Mutex::new(()),
+            source: Box::new(|| Ok(vec![raw(1, 100)])),
+            users: users.clone(),
+            interval: Duration::from_millis(1),
+        });
+        assert_eq!(sampler.get().await.unwrap()[0].user, "alice");
+        sampler.tick();
+        assert_eq!(sampler.get().await.unwrap()[0].user, "alice");
+        assert_eq!(users.get().name(1000), "alice");
     }
 
     #[test]

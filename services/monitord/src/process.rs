@@ -9,6 +9,8 @@ use crate::kernel::{Root, Units, field, field_u64};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 use std::os::unix::fs::MetadataExt;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// The kernel marks its own threads with this flag in `stat`.
 const PF_KTHREAD: u64 = 0x0020_0000;
@@ -225,6 +227,31 @@ impl Users {
         name.parse()
             .ok()
             .or_else(|| self.0.iter().find(|(_, n)| *n == name).map(|(uid, _)| *uid))
+    }
+}
+
+/// One passwd cache shared by process and connection sampling.
+pub struct UsersCache {
+    root: Root,
+    cached: Mutex<(Arc<Users>, Instant)>,
+}
+
+impl UsersCache {
+    const TTL: Duration = Duration::from_secs(60);
+
+    pub fn new(root: Root) -> Arc<Self> {
+        Arc::new(Self {
+            cached: Mutex::new((Arc::new(Users::read(&root)), Instant::now())),
+            root,
+        })
+    }
+
+    pub fn get(&self) -> Arc<Users> {
+        let mut cached = self.cached.lock().unwrap();
+        if cached.1.elapsed() > Self::TTL {
+            *cached = (Arc::new(Users::read(&self.root)), Instant::now());
+        }
+        cached.0.clone()
     }
 }
 
@@ -669,5 +696,23 @@ mod tests {
         assert_eq!(users.uid("alice"), Some(1000));
         assert_eq!(users.uid("1000"), Some(1000));
         assert_eq!(users.name(4242), "4242");
+    }
+
+    #[test]
+    fn users_cache_reuses_the_table_until_the_sixty_second_refresh() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("etc")).unwrap();
+        let passwd = dir.path().join("etc/passwd");
+        std::fs::write(&passwd, "alice:x:1000:1000::/:/bin/mix\n").unwrap();
+        let cache = UsersCache::new(Root::new(dir.path()));
+        let first = cache.get();
+        std::fs::write(&passwd, "bob:x:1000:1000::/:/bin/mix\n").unwrap();
+        assert!(Arc::ptr_eq(&first, &cache.get()));
+        assert_eq!(cache.get().name(1000), "alice");
+        cache.cached.lock().unwrap().1 = Instant::now() - UsersCache::TTL - Duration::from_secs(1);
+        let refreshed = cache.get();
+        assert_eq!(refreshed.name(1000), "bob");
+        assert!(!Arc::ptr_eq(&first, &refreshed));
+        assert!(Arc::ptr_eq(&refreshed, &cache.get()));
     }
 }

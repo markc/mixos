@@ -33025,8 +33025,12 @@ Sizes are bytes; rates are per second.
   `listen_drops`, all events per second over `interval_s`; `established`
   is the current established/close-wait gauge (`CurrEstab`). `sockstat`
   holds TCP `inuse`, `orphan`, `tw`, `alloc` counts and `mem` (kernel buffer
-  pages). These come from `/proc/net/snmp` (`Tcp`), `/proc/net/netstat`
-  (`TcpExt`) and `/proc/net/sockstat`, with no connection scan.
+  pages), exactly as `/proc/net/sockstat` reports them. Its `inuse` is
+  IPv4 only; the other fields are kernel-wide TCP counters. `sockstat6`
+  reports `/proc/net/sockstat6`'s `TCP6` fields separately (normally only
+  IPv6 `inuse`; absent fields are null). Add the two `inuse` values for the
+  IPv4 + IPv6 total. These and `/proc/net/snmp` (`Tcp`) and
+  `/proc/net/netstat` (`TcpExt`) are read without a connection scan.
 
 A value monitord can't know is `null`, never zero.
 Counter resets or wrap give a null rate for that interval, as do counters
@@ -33060,11 +33064,13 @@ Each row has `cookie` (the two `idiag_cookie` words), `local`, `remote`
 (IP addresses), `local_port`, `remote_port`, `ifindex`, `state`, `rx_bps`,
 `tx_bps`, `rtt_us`, `retransmits` (lifetime `tcpi_total_retrans`), `uid`
 and `user`. The uid is `idiag_uid`; the name comes from readable
-`/etc/passwd`, otherwise its numeric uid. There is no process attribution.
+`/etc/passwd`, otherwise its numeric uid. Connections and processes share
+one users cache, refreshed after 60 s. There is no process attribution.
 IPv6 addresses stay unbracketed in JSON; the UI brackets peer endpoints.
 
 Each request holds a separate sampler on for 30 s. A cold request takes two
-dumps one configured sample interval apart (1 s by default). Rates are
+dumps one configured sample interval apart (1 s by default); background
+ticks skip that pair so its baseline cannot be replaced. Rates are
 `bytes_received` and `bytes_acked` deltas divided by elapsed monotonic time,
 matched by cookie. New sockets, resets and unavailable tcp_info fields have
 null rates. Closed sockets disappear. No summed host TCP byte rate is
@@ -33072,8 +33078,9 @@ reported because it would miss bytes from closing sockets.
 
 Nothing per connection is stored in history. The sampler drops idle state
 after its hold expires, caps each dump at 65,536 sockets, each datagram at
-64 KiB and the complete dump at 2 s. Oversized or interrupted dumps fail
-explicitly rather than showing a misleading partial top list.
+64 KiB and the complete dump at 2 s, including retries for send or receive
+backpressure. Oversized or interrupted dumps fail explicitly rather than
+showing a misleading partial top list.
 
 **Privacy:** peer addresses, ports and users are open to Bus readers,
 including readers on the mesh, just as process command lines are. Watching

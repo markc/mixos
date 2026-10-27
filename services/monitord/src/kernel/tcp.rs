@@ -61,9 +61,13 @@ pub struct Sockstat {
 }
 
 pub fn sockstat(text: &str) -> Sockstat {
+    sockstat_section(text, "TCP:")
+}
+
+fn sockstat_section(text: &str, section: &str) -> Sockstat {
     let fields: Vec<_> = text
         .lines()
-        .find_map(|l| l.strip_prefix("TCP:"))
+        .find_map(|l| l.strip_prefix(section))
         .unwrap_or_default()
         .split_whitespace()
         .collect();
@@ -84,6 +88,7 @@ pub fn sockstat(text: &str) -> Sockstat {
 pub struct Reading {
     pub counters: HashMap<String, u64>,
     pub sockstat: Sockstat,
+    pub sockstat6: Sockstat,
 }
 
 pub fn read(root: &Root) -> Reading {
@@ -95,6 +100,10 @@ pub fn read(root: &Root) -> Reading {
     Reading {
         counters,
         sockstat: sockstat(&root.read("proc/net/sockstat").unwrap_or_default()),
+        sockstat6: sockstat_section(
+            &root.read("proc/net/sockstat6").unwrap_or_default(),
+            "TCP6:",
+        ),
     }
 }
 
@@ -112,6 +121,8 @@ pub struct Tcp {
     pub listen_drops: Option<f64>,
     pub established: Option<u64>,
     pub sockstat: Sockstat,
+    /// IPv6 counters, reported separately to preserve sockstat's kernel semantics.
+    pub sockstat6: Sockstat,
 }
 
 impl Tcp {
@@ -146,6 +157,7 @@ pub fn snapshot(before: &Reading, after: &Reading, dt: f64) -> Tcp {
         listen_drops: r("ListenDrops"),
         established: after.counters.get("CurrEstab").copied(),
         sockstat: after.sockstat.clone(),
+        sockstat6: after.sockstat6.clone(),
     }
 }
 
@@ -190,5 +202,26 @@ mod tests {
         );
         assert_eq!(sockstat("TCP: inuse 3 future 9\n").mem, None);
         assert_eq!(sockstat(""), Sockstat::default());
+    }
+
+    #[test]
+    fn ipv6_sockstat_fixture_is_read_separately_and_missing_fields_stay_null() {
+        let dir = tempfile::tempdir().unwrap();
+        let net = dir.path().join("proc/net");
+        std::fs::create_dir_all(&net).unwrap();
+        std::fs::write(net.join("sockstat"), "TCP: inuse 0 orphan 1 tw 4 alloc 90 mem 12\n").unwrap();
+        let fixture = "TCP6: inuse 87\nUDP6: inuse 5\nRAW6: inuse 2\nFRAG6: inuse 0 memory 0\n";
+        std::fs::write(net.join("sockstat6"), fixture).unwrap();
+        let root = Root::new(dir.path());
+        let reading = read(&root);
+        let tcp = snapshot(&Reading::default(), &reading, 1.0);
+        assert_eq!(tcp.sockstat.inuse, Some(0));
+        assert_eq!(tcp.sockstat.alloc, Some(90));
+        assert_eq!(tcp.sockstat6.inuse, Some(87));
+        assert_eq!((tcp.sockstat6.orphan, tcp.sockstat6.tw, tcp.sockstat6.alloc, tcp.sockstat6.mem), (None, None, None, None));
+        let extended = sockstat_section("TCP6: mem 4 alloc 8 tw 3 orphan 2 inuse 7\n", "TCP6:");
+        assert_eq!((extended.inuse, extended.orphan, extended.tw, extended.alloc, extended.mem), (Some(7), Some(2), Some(3), Some(8), Some(4)));
+        std::fs::remove_file(net.join("sockstat6")).unwrap();
+        assert_eq!(read(&root).sockstat6, Sockstat::default());
     }
 }
