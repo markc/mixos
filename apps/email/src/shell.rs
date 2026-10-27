@@ -783,6 +783,8 @@ impl Shell {
             crate::composer::swap(&mut self.state, &mut window.view);
         }
         self.composers.refresh(&self.ctx, &self.state, &palette);
+        self.apply_drafts();
+        for reply in self.state.take_replies() { self.bus.reply(reply.id,reply.rc,reply.body); }
     }
 
     fn composer_input(&mut self) {

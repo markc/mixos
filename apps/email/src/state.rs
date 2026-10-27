@@ -3948,7 +3948,7 @@ impl State {
             Some(_) => {
                 self.take_compose();
             }
-            None => {}
+            None => self.cancel_document_open(),
         }
     }
 
