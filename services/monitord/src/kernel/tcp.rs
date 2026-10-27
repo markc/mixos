@@ -209,7 +209,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let net = dir.path().join("proc/net");
         std::fs::create_dir_all(&net).unwrap();
-        std::fs::write(net.join("sockstat"), "TCP: inuse 0 orphan 1 tw 4 alloc 90 mem 12\n").unwrap();
+        std::fs::write(
+            net.join("sockstat"),
+            "TCP: inuse 0 orphan 1 tw 4 alloc 90 mem 12\n",
+        )
+        .unwrap();
         let fixture = "TCP6: inuse 87\nUDP6: inuse 5\nRAW6: inuse 2\nFRAG6: inuse 0 memory 0\n";
         std::fs::write(net.join("sockstat6"), fixture).unwrap();
         let root = Root::new(dir.path());
@@ -218,9 +222,26 @@ mod tests {
         assert_eq!(tcp.sockstat.inuse, Some(0));
         assert_eq!(tcp.sockstat.alloc, Some(90));
         assert_eq!(tcp.sockstat6.inuse, Some(87));
-        assert_eq!((tcp.sockstat6.orphan, tcp.sockstat6.tw, tcp.sockstat6.alloc, tcp.sockstat6.mem), (None, None, None, None));
+        assert_eq!(
+            (
+                tcp.sockstat6.orphan,
+                tcp.sockstat6.tw,
+                tcp.sockstat6.alloc,
+                tcp.sockstat6.mem
+            ),
+            (None, None, None, None)
+        );
         let extended = sockstat_section("TCP6: mem 4 alloc 8 tw 3 orphan 2 inuse 7\n", "TCP6:");
-        assert_eq!((extended.inuse, extended.orphan, extended.tw, extended.alloc, extended.mem), (Some(7), Some(2), Some(3), Some(8), Some(4)));
+        assert_eq!(
+            (
+                extended.inuse,
+                extended.orphan,
+                extended.tw,
+                extended.alloc,
+                extended.mem
+            ),
+            (Some(7), Some(2), Some(3), Some(8), Some(4))
+        );
         std::fs::remove_file(net.join("sockstat6")).unwrap();
         assert_eq!(read(&root).sockstat6, Sockstat::default());
     }

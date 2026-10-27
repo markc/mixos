@@ -253,7 +253,10 @@ pub fn dump() -> io::Result<Vec<Raw>> {
                 if n < 0 {
                     Err(io::Error::last_os_error())
                 } else if n as usize != req.len() {
-                    Err(io::Error::new(io::ErrorKind::WriteZero, "short inet_diag request"))
+                    Err(io::Error::new(
+                        io::ErrorKind::WriteZero,
+                        "short inet_diag request",
+                    ))
                 } else {
                     Ok(())
                 }
@@ -807,14 +810,21 @@ mod tests {
                         "retransmits" => id % 17,
                         _ => 4096,
                     });
-                    (sort == "throughput" && id % 7 == 0, Reverse(score), r.cookie)
+                    (
+                        sort == "throughput" && id % 7 == 0,
+                        Reverse(score),
+                        r.cookie,
+                    )
                 });
                 let (selected, total) = select_rows(&rows, &query);
                 assert_eq!(total, expected.len());
                 expected.truncate(limit.clamp(1, 1000));
                 assert_eq!(selected.len(), expected.len());
                 for (actual, expected) in selected.iter().zip(&expected) {
-                    assert!(std::ptr::eq(*actual, *expected), "selection must borrow source rows");
+                    assert!(
+                        std::ptr::eq(*actual, *expected),
+                        "selection must borrow source rows"
+                    );
                 }
                 let (owned, _) = select(&rows, &query);
                 assert_eq!(
@@ -974,7 +984,11 @@ mod tests {
         let (rows, ()) = tokio::join!(sampler.get(), async {
             first.notified().await;
             sampler.tick();
-            assert_eq!(scans.load(Ordering::SeqCst), 100, "tick must skip the cold pair");
+            assert_eq!(
+                scans.load(Ordering::SeqCst),
+                100,
+                "tick must skip the cold pair"
+            );
         });
         assert_eq!(scans.load(Ordering::SeqCst), 200);
         let rate = rows.unwrap()[0].rx_bps.unwrap();
