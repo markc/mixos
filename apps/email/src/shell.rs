@@ -1825,14 +1825,13 @@ impl Shell {
         let args = serde_json::from_str::<Value>(body)
             .ok()
             .filter(Value::is_object);
+        let action = args.as_ref().and_then(|a| a["id"].as_str());
+        let composer_action = action.is_some_and(|id| id.starts_with("compose.") || id == "mail.send");
         let routed = command_name.starts_with("email.compose.")
             || command_name == "email.info"
             || (command_name == "email.execute"
                 && args.as_ref().is_some_and(|a| {
-                    a["id"]
-                        .as_str()
-                        .is_some_and(|id| id.starts_with("compose.") || id == "mail.send")
-                        || a.get("window").is_some()
+                    composer_action || a.get("window").is_some()
                 }));
         if routed
             && args
@@ -1896,10 +1895,10 @@ impl Shell {
             self.bus.reply(id, 0, info);
             return;
         }
+        // Validate every explicit target, but only composer actions borrow it.
         // New always creates a sibling, even when a window was named.
         let target = target.filter(|_| {
-            !(command_name == "email.execute"
-                && args.as_ref().is_some_and(|a| a["id"] == "compose.new"))
+            command_name != "email.execute" || (composer_action && action != Some("compose.new"))
         });
         let mut target = target.as_ref().map(|w| w.lock().unwrap());
         if let Some(window) = &mut target {
