@@ -277,11 +277,9 @@ impl FileChooser {
             }
         }
         let layer = egui::LayerId::new(egui::Order::Foreground, self.id);
-        #[cfg(test)]
-        if self.replace.is_some() && ctx.input(|i| i.key_pressed(Key::Enter)) {
-            eprintln!("replace ENTER before chooser: focus={:?}, top={:?}", ctx.memory(|m| m.focused()), ctx.memory(|m| m.top_modal_layer()));
-        }
-        ctx.move_to_top(layer);
+        // Raising both areas gives them equal priority and can leave a
+        // reopened replacement question behind the chooser.
+        if self.replace.is_none() { ctx.move_to_top(layer); }
         let choices = vec![
             Choice::new(&self.confirm, Role::Default).enabled(self.can_confirm()),
             Choice::new(own("file-chooser-cancel"), Role::Cancel),
@@ -302,8 +300,6 @@ impl FileChooser {
             self.pick(ctx);
         }
         if let Some(path) = self.replace.clone() {
-            #[cfg(test)]
-            if ctx.input(|i| i.key_pressed(Key::Enter)) { eprintln!("replace ENTER after chooser"); }
             let id = self.id.with("replace");
             ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
             let shown = Dialog::new(id, own("file-chooser-replace-title"))
@@ -312,8 +308,6 @@ impl FileChooser {
                     Choice::new(own("file-chooser-cancel"), Role::Cancel),
                 ])
                 .show(ctx, |ui| {
-                    #[cfg(test)]
-                    if ctx.input(|i| i.key_pressed(Key::Enter)) { eprintln!("replace ENTER body: enabled={}, focus={:?}, top={:?}", ui.is_enabled(), ctx.memory(|m| m.focused()), ctx.memory(|m| m.top_modal_layer())); }
                     ui.label(own_with(
                         "file-chooser-replace-body",
                         &[("path", &path.display().to_string())],
