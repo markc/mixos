@@ -14,6 +14,11 @@ fn home() -> &'static Path {
     HOME.get_or_init(|| {
         let home = std::env::temp_dir().join("dopus-chooser-snapshots/home");
         std::fs::create_dir_all(home.join("Documents")).unwrap();
+        let app_home = home.parent().unwrap().join("dopus-state");
+        std::fs::create_dir_all(app_home.join("config")).unwrap();
+        std::fs::write(app_home.join("config/config.conf.mix"), format!(
+            "schema_version: 2\nbookmarks: [{{name: \"My archive\", path: \"{}\"}}]\n", home.join("Documents").display()
+        )).unwrap();
         for (name, contents) in [
             ("notes.txt", "Notes"),
             ("report.pdf", "Report"),
@@ -32,6 +37,7 @@ fn home() -> &'static Path {
         unsafe {
             std::env::set_var("HOME", &home);
             std::env::set_var("TZ", "UTC");
+            std::env::set_var("MIXOS_APP_HOME", &app_home);
         }
         home
     })
@@ -52,6 +58,7 @@ fn snapshot(kind: &str, mode: Mode) {
         ]}),
         "save_files" => json!({"mode":"save_files","files":["one.txt","two.txt"]}),
         "replace" => json!({"mode":"save_files","files":["notes.txt","report.pdf"]}),
+        "replace_one" => json!({"mode":"save","current_name":"notes.txt"}),
         _ => unreachable!(),
     };
     body["current_folder"] = json!(folder);
@@ -78,7 +85,7 @@ fn snapshot(kind: &str, mode: Mode) {
             );
         }
     }
-    if kind == "replace" {
+    if kind == "replace" || kind == "replace_one" {
         window.accept();
         assert!(window.replace.is_some());
     }
@@ -119,4 +126,6 @@ snapshots! {
     save_files_light, "save_files", Light;
     replace_dark, "replace", Dark;
     replace_light, "replace", Light;
+    replace_one_dark, "replace_one", Dark;
+    replace_one_light, "replace_one", Light;
 }

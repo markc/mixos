@@ -104,6 +104,7 @@ pub struct Presentation {
 async fn deliver(
     engine: &mut Engine,
     presenter: &mut impl Presenter,
+    placement: &mut placement::Placement,
     answer: Answer,
     reply: impl std::future::Future<Output = bool>,
 ) -> Option<Outcome> {
@@ -112,6 +113,7 @@ async fn deliver(
         if sent {
             engine.reply_sent(&id, presenter);
         } else {
+            placement.closed(&id);
             engine.reply_failed(&id, presenter);
             tracing::warn!(
                 request = id,
@@ -120,6 +122,44 @@ async fn deliver(
         }
     }
     answer.outcome
+}
+
+fn end_presentation(engine: &mut Engine, presenter: &mut impl Presenter, event: Presentation, now: u64) -> Option<Outcome> {
+    match engine.end(&event.request, event.end, now, presenter) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            presenter.refused(&event.request, &error);
+            tracing::warn!("files presenter report refused: {}", error.message);
+            None
+        }
+    }
+}
+
+#[derive(Default)]
+struct Mapping {
+    deadlines: BTreeMap<String, tokio::time::Instant>,
+}
+
+impl Mapping {
+    fn opened(&mut self, id: &str) {
+        self.deadlines.insert(id.into(), tokio::time::Instant::now() + Duration::from_secs(5));
+    }
+
+    async fn expired(&mut self) -> Vec<String> {
+        let Some(deadline) = self.deadlines.values().min().copied() else { return std::future::pending().await; };
+        tokio::time::sleep_until(deadline).await;
+        let now = tokio::time::Instant::now();
+        let ids: Vec<_> = self.deadlines.iter().filter(|(_, at)| **at <= now).map(|(id, _)| id.clone()).collect();
+        for id in &ids { self.deadlines.remove(id); }
+        ids
+    }
+}
+
+fn fail_unmapped(engine: &mut Engine, presenter: &mut impl Presenter, id: &str, now: u64) -> Option<Outcome> {
+    if presenter.mapped(id) { return None; }
+    end_presentation(engine, presenter, Presentation {
+        request: id.into(), end: End::Failed(format!("UNAVAILABLE: {}", crate::label("chooser-unavailable"))),
+    }, now)
 }
 
 fn publication_headers() -> BTreeMap<String, String> {
@@ -227,9 +267,9 @@ fn run_host(
         .build()
         .map_err(|e| e.to_string())?;
     runtime.block_on(async {
-        let client = tokio::time::timeout(Duration::from_secs(5),
+        let client = std::sync::Arc::new(tokio::time::timeout(Duration::from_secs(5),
             SupervisedClient::connect_options(SERVICE, url).fatal_on_registration_rejection(true).connect())
-            .await.map_err(|_| "files connect timed out".to_owned())?.map_err(|e| e.to_string())?;
+            .await.map_err(|_| "files connect timed out".to_owned())?.map_err(|e| e.to_string())?);
         let mut incoming = client.incoming().ok_or("files: no incoming channel")?;
         let mut state = client.subscribe_state();
         use std::os::unix::ffi::OsStrExt;
@@ -239,6 +279,7 @@ fn run_host(
         let epoch = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
         let mut events_open = true;
         let mut placement = placement::Placement::new();
+        let mut mapping = Mapping::default();
         if driver.is_some() { let _ = client.subscribe_topic(&placement.topic()).await; }
         let mut drive_id = 0u64;
         let mut pending = BTreeMap::new();
@@ -246,13 +287,21 @@ fn run_host(
             tokio::select! {
                 cmd = incoming.recv() => {
                     let Some(cmd) = cmd else { return Err("files Bus closed".into()); };
-                    if cmd.topic() == Some(placement.topic().as_str()) { placement.changed(&client).await; continue; }
+                    if cmd.topic() == Some(placement.topic().as_str()) { placement.changed(client.clone()); continue; }
                     if cmd.topic().is_some() || cmd.command.is_empty() { continue; }
                     citizen::debug::received(SERVICE, &cmd.command);
                     if let Some(command) = cmd.command.strip_prefix("files.").filter(|c| toolkit::drive::COMMANDS.contains(c)) {
                         if let Some(driver) = &driver {
                             drive_id += 1;
-                            let request = presenter::DriveRequest { id: drive_id, command: command.into(), args: serde_json::from_str(&cmd.body).unwrap_or(Value::Null) };
+                            let args = driver.target(serde_json::from_str(&cmd.body).unwrap_or(Value::Null));
+                            let args = match args {
+                                Ok(args) => args,
+                                Err(message) => {
+                                    let _ = client.respond(&cmd, 10, &json!({"error_code":"ARGUMENT", "message":message}).to_string()).await;
+                                    continue;
+                                }
+                            };
+                            let request = presenter::DriveRequest { id: drive_id, command: command.into(), args };
                             if driver.requests.send(request).is_ok() {
                                 pending.insert(drive_id, cmd);
                                 driver.ctx.request_repaint_of(egui::ViewportId::ROOT);
@@ -263,15 +312,31 @@ fn run_host(
                         continue;
                     }
                     let now = epoch.saturating_add(start.elapsed().as_millis() as u64);
-                    let position = if cmd.command == "files.choose" && driver.is_some() { placement.capture(&client).await } else { None };
                     let answer = dispatch(&mut engine, &mut presenter, &cmd.command, &cmd.body, &citizen::caller_key(&cmd), now);
-                    if let Some(id) = &answer.enable { placement.opened(id.clone(), position); }
-                    if let Some(outcome) = &answer.outcome { placement.closed(&outcome.request); }
+                    if let Some(id) = &answer.enable {
+                        mapping.opened(id);
+                        if driver.is_some() { placement.opened(id.clone(), client.clone()); }
+                    }
+                    if let Some(outcome) = &answer.outcome { placement.closed(&outcome.request); mapping.deadlines.remove(&outcome.request); }
                     citizen::debug::answered(SERVICE, &cmd.command, answer.rc);
                     let (rc, body) = (answer.rc, answer.body.to_string());
                     let sent = async { matches!(tokio::time::timeout(Duration::from_secs(2), client.respond(&cmd, rc, &body)).await, Ok(Ok(()))) };
-                    if let Some(outcome) = deliver(&mut engine, &mut presenter, answer, sent).await {
+                    let enabled = answer.enable.clone();
+                    if let Some(outcome) = deliver(&mut engine, &mut presenter, &mut placement, answer, sent).await {
                         publish(&client, outcome).await;
+                    }
+                    if let Some(id) = enabled && !engine.list()["requests"].as_array().is_some_and(|requests| requests.iter().any(|r| r["request"] == id)) { mapping.deadlines.remove(&id); }
+                }
+                id = placement.completed(&client) => {
+                    if let Some(id) = id && let Some(driver) = &driver { driver.allow_map(&id); }
+                }
+                ids = mapping.expired() => {
+                    let now = epoch.saturating_add(start.elapsed().as_millis() as u64);
+                    for id in ids {
+                        if let Some(outcome) = fail_unmapped(&mut engine, &mut presenter, &id, now) {
+                            placement.closed(&id);
+                            publish(&client, outcome).await;
+                        }
                     }
                 }
                 answer = async { match &mut driver { Some(driver) => driver.answers.recv().await, None => std::future::pending().await } } => {
@@ -292,12 +357,11 @@ fn run_host(
                 }
                 event = events.recv(), if events_open => {
                     if let Some(event) = event {
-                        placement.closed(&event.request);
                         let now = epoch.saturating_add(start.elapsed().as_millis() as u64);
-                        match engine.end(&event.request, event.end, now, &mut presenter) {
-                            Ok(Some(outcome)) => publish(&client, outcome).await,
-                            Ok(None) => {},
-                            Err(error) => tracing::warn!("files presenter report refused: {}", error.message),
+                        if let Some(outcome) = end_presentation(&mut engine, &mut presenter, event, now) {
+                            placement.closed(&outcome.request);
+                            mapping.deadlines.remove(&outcome.request);
+                            publish(&client, outcome).await;
                         }
                     } else { events_open = false; }
                 }
@@ -403,6 +467,7 @@ mod tests {
             }
         }
         let log = Arc::new(Mutex::new(Vec::new()));
+        let mut placement = placement::Placement::new();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let mut presenter = Immediate {
             log: log.clone(),
@@ -424,7 +489,7 @@ mod tests {
             true
         };
         assert!(
-            futures::executor::block_on(deliver(&mut engine, &mut presenter, answer, reply))
+            futures::executor::block_on(deliver(&mut engine, &mut presenter, &mut placement, answer, reply))
                 .is_none()
         );
         // A second request's failed (or timed-out) reply cannot lose the first.
@@ -438,7 +503,7 @@ mod tests {
         );
         let lost = answer.body["request"].as_str().unwrap().to_owned();
         assert!(
-            futures::executor::block_on(deliver(&mut engine, &mut presenter, answer, async {
+            futures::executor::block_on(deliver(&mut engine, &mut presenter, &mut placement, answer, async {
                 false
             }))
             .is_none()
@@ -497,7 +562,7 @@ mod tests {
             4,
         );
         assert!(
-            futures::executor::block_on(deliver(&mut engine, &mut presenter, answer, async {
+            futures::executor::block_on(deliver(&mut engine, &mut presenter, &mut placement, answer, async {
                 false
             }))
             .is_none()

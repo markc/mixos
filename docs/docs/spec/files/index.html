@@ -444,9 +444,11 @@ that exist; unlike some portal backends it never renames to avoid a
 collision, so each URI is exactly <code>&lt;folder&gt;/&lt;name&gt;</code>. The chooser never
 creates, truncates or replaces anything; the caller does that with the URIs
 it receives.</li>
-<li><strong>Typed names.</strong> A typed save name containing <code>/</code> moves to that folder when
-it exists, as a path bar would; otherwise Accept is refused in the window
-with a message.</li>
+<li><strong>Typed names.</strong> A typed save name containing <code>/</code> is split at the last <code>/</code>.
+The folder part, relative to the shown folder or absolute, is navigated to
+when it exists; the tail stays in the name field as the name. An empty tail
+(<code>Documents/</code>) just navigates. A missing folder part refuses Accept in the
+window with a message.</li>
 <li><strong>Remembered folder.</strong> The last folder accepted is kept per
 <code>on_behalf_of</code>, else per caller, and is where the next chooser for it opens
 when no <code>current_folder</code> or <code>current_file</code> is given. At most 128 callers are

@@ -587,6 +587,12 @@ pub trait Presenter {
     fn open(&mut self, request: &OpenRequest) -> std::result::Result<(), Unavailable>;
     fn input_ready(&mut self, request: &str);
     fn close(&mut self, request: &str);
+    fn refused(&mut self, request: &str, _refusal: &Refusal) {
+        self.input_ready(request);
+    }
+    fn mapped(&self, _request: &str) -> bool {
+        true
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -21,6 +21,20 @@ pub(super) struct DriveHost {
     pub ctx: egui::Context,
     pub requests: mpsc::Sender<DriveRequest>,
     pub answers: tokio::sync::mpsc::UnboundedReceiver<Report>,
+    windows: Windows,
+}
+
+impl DriveHost {
+    pub fn target(&self, args: Value) -> Result<Value, &'static str> {
+        target(&self.windows, args)
+    }
+
+    pub fn allow_map(&self, id: &str) {
+        if let Some(window) = self.windows.lock().unwrap().get(id) {
+            window.lock().unwrap().map_allowed = true;
+            self.ctx.request_repaint_of(egui::ViewportId::ROOT);
+        }
+    }
 }
 
 pub(super) enum Report {
@@ -38,6 +52,17 @@ fn viewport(id: &str) -> egui::ViewportId {
 }
 
 impl Presenter for NativePresenter {
+    fn refused(&mut self, id: &str, refusal: &dopus_core::chooser::Refusal) {
+        if let Some(window) = self.windows.lock().unwrap().get(id) {
+            window.lock().unwrap().refused(&refusal.message);
+            self.ctx.request_repaint_of(viewport(id));
+        }
+    }
+
+    fn mapped(&self, id: &str) -> bool {
+        self.windows.lock().unwrap().get(id).is_some_and(|window| window.lock().unwrap().mapped)
+    }
+
     fn open(&mut self, open: &OpenRequest) -> Result<(), Unavailable> {
         let mut window = Window::new(open);
         window
@@ -113,6 +138,9 @@ fn target(windows: &Windows, mut args: Value) -> Result<Value, &'static str> {
             _ => return Err("viewport is required unless exactly one chooser is open"),
         }
     }
+    if !object["viewport"].as_str().is_some_and(|id| windows.lock().unwrap().contains_key(id)) {
+        return Err("viewport is not an open chooser");
+    }
     Ok(args)
 }
 
@@ -122,7 +150,9 @@ impl eframe::App for Shell {
             self.answer(answer);
         }
         while let Ok(request) = self.requests.try_recv() {
-            let answer = match target(&self.windows, request.args) {
+            // Already bound at Bus arrival. Revalidate only that it is still open.
+            let answer = match request.args.get("viewport").filter(|v| v.is_string())
+                .ok_or("viewport is required").and_then(|_| target(&self.windows, request.args.clone())) {
                 Ok(args) => {
                     if request.command == "window.state"
                         && let Some(id) = args["viewport"].as_str()
@@ -161,7 +191,8 @@ impl eframe::App for Shell {
         for window in windows {
             let (id, title) = {
                 let window = window.lock().unwrap();
-                (window.id.clone(), window.request.title.clone())
+                if !window.map_allowed { continue; }
+                (window.id.clone(), dopus_core::sanitise_display_text(&window.request.title))
             };
             // Request windows intentionally have no saved geometry: the contract
             // starts every one centred on its parent's output or the focused one.
@@ -177,6 +208,7 @@ impl eframe::App for Shell {
                 .show_viewport_deferred(viewport(&id), builder, move |ui, _| {
                     if let Some(window) = weak.upgrade() {
                         let mut window = window.lock().unwrap();
+                        window.mapped = ui.ctx().input(|i| i.viewport().inner_rect.is_some());
                         window.show(ui);
                         if !window.executed.is_empty() {
                             let _ = reports
@@ -202,6 +234,7 @@ impl eframe::App for Shell {
 }
 
 pub(super) fn run(url: &str) -> Result<(), String> {
+    let _ = dopus_core::DopusCore::chooser_mime();
     let url = url.to_owned();
     let theme = toolkit::Theme::load();
     let result = Arc::new(Mutex::new(None));
@@ -233,6 +266,7 @@ pub(super) fn run(url: &str) -> Result<(), String> {
                 ctx: cc.egui_ctx.clone(),
                 requests,
                 answers: receive_answers,
+                windows: windows.clone(),
             };
             let ctx = cc.egui_ctx.clone();
             std::thread::Builder::new()
@@ -268,11 +302,57 @@ mod tests {
     fn viewport_selection_never_falls_through_to_the_hidden_owner() {
         let windows = Windows::default();
         assert!(target(&windows, json!({})).is_err());
-        assert_eq!(
-            target(&windows, json!({"viewport":"explicit"})).unwrap()["viewport"],
-            "explicit"
-        );
+        assert!(target(&windows, json!({"viewport":"bogus"})).is_err());
         assert!(target(&windows, json!([])).is_err());
+    }
+
+    #[test]
+    fn refused_acceptance_reopens_input_and_can_still_cancel() {
+        use dopus_core::chooser::{Acceptance, End, Engine};
+        let ctx = egui::Context::default();
+        drive::install(&ctx, "files");
+        let windows = Windows::default();
+        let mut presenter = NativePresenter {ctx, windows: windows.clone()};
+        let mut engine = Engine::new(1, super::super::defaults(), b"/tmp".to_vec()).unwrap();
+        let id = engine.choose("{}", "local:a", 1, &mut presenter).unwrap()["request"].as_str().unwrap().to_owned();
+        engine.reply_sent(&id, &mut presenter);
+        let end = End::Accept(Acceptance {paths: vec![], folder:None, current_filter:None, choices:BTreeMap::new()});
+        windows.lock().unwrap()[&id].lock().unwrap().finish(end);
+        let end = windows.lock().unwrap()[&id].lock().unwrap().take_end().unwrap();
+        assert!(super::super::end_presentation(&mut engine, &mut presenter, Presentation {request:id.clone(), end}, 2).is_none());
+        let state = windows.lock().unwrap()[&id].lock().unwrap().state();
+        assert!(!state.ending);
+        assert!(state.message.is_some());
+        assert!(state.ready);
+        assert!(engine.end(&id, End::Cancel, 3, &mut presenter).unwrap().is_some());
+    }
+
+    #[test]
+    fn never_mapped_presenter_fails_within_five_seconds_and_cleans_up() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        runtime.block_on(async {
+            let ctx = egui::Context::default();
+            drive::install(&ctx, "files");
+            let windows = Windows::default();
+            let mut presenter = NativePresenter {ctx, windows:windows.clone()};
+            let mut engine = dopus_core::chooser::Engine::new(1, super::super::defaults(), b"/tmp".to_vec()).unwrap();
+            let id = engine.choose("{}", "local:a", 1, &mut presenter).unwrap()["request"].as_str().unwrap().to_owned();
+            engine.reply_sent(&id, &mut presenter);
+            let mut mapping = super::super::Mapping::default();
+            let before = tokio::time::Instant::now();
+            mapping.opened(&id);
+            assert!(mapping.deadlines[&id] <= before + std::time::Duration::from_secs(5) + std::time::Duration::from_millis(10));
+            // Inject the bound's expiry without spending five seconds in a unit test.
+            mapping.deadlines.insert(id.clone(), before);
+            assert_eq!(mapping.expired().await, [id.clone()]);
+            let outcome = super::super::fail_unmapped(&mut engine, &mut presenter, &id, 5002).unwrap();
+            assert_eq!(outcome.response, 2);
+            assert_eq!(outcome.reason, "failed");
+            assert!(outcome.message.unwrap().starts_with("UNAVAILABLE:"));
+            assert!(windows.lock().unwrap().is_empty());
+            assert!(target(&windows, json!({"viewport":id})).is_err());
+            assert!(mapping.deadlines.is_empty());
+        });
     }
 
     #[test]
@@ -319,6 +399,7 @@ mod tests {
                     .is_none()
             );
             assert!(!windows.lock().unwrap().contains_key(&id));
+            assert!(target(&windows, json!({"viewport":id})).is_err());
             assert_eq!(target(&windows, json!({})).unwrap()["viewport"], other);
             engine
                 .cancel(&json!({"request":other}).to_string(), 3, &mut presenter)

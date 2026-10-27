@@ -48,6 +48,9 @@ pub struct Window {
     pub executed: Vec<serde_json::Value>,
     events: mpsc::Receiver<CoreEvent>,
     end: Option<End>,
+    focus_name: bool,
+    pub map_allowed: bool,
+    pub mapped: bool,
 }
 
 pub fn path(bytes: &[u8]) -> PathBuf {
@@ -88,7 +91,13 @@ impl Window {
     }
 
     pub fn for_request(id: &str, caller: &str, request: Request) -> Self {
-        let mut config = DOpusConfig::default();
+        let config = crate::dirs::AppDirs::resolve("dopus")
+            .map(|dirs| dopus_core::ConfigFile::load(&dirs.config_dir()).0)
+            .unwrap_or_default();
+        Self::with_config(id, caller, request, config)
+    }
+
+    fn with_config(id: &str, caller: &str, request: Request, mut config: DOpusConfig) -> Self {
         config.left.path = request
             .current_folder
             .as_deref()
@@ -117,6 +126,9 @@ impl Window {
             executed: Vec::new(),
             events,
             end: None,
+            focus_name: true,
+            map_allowed: false,
+            mapped: false,
         }
     }
 
@@ -175,6 +187,12 @@ impl Window {
 
     pub fn take_end(&mut self) -> Option<End> {
         self.end.take()
+    }
+
+    pub fn refused(&mut self, message: &str) {
+        self.ending = false;
+        self.end = None;
+        self.message = Some(dopus_core::sanitise_display_text(message));
     }
 
     fn navigate(&mut self, target: PathBuf) {
@@ -249,7 +267,9 @@ impl Window {
             return;
         }
         if self.request.mode == Mode::Save && self.name.contains('/') {
-            let target = PathBuf::from(&self.name);
+            let (folder, tail) = self.name.rsplit_once('/').expect("slash present");
+            let tail = tail.to_owned();
+            let target = PathBuf::from(if folder.is_empty() { "/" } else { folder });
             let target = if target.is_absolute() {
                 target
             } else {
@@ -257,8 +277,8 @@ impl Window {
             };
             if target.is_dir() {
                 self.navigate(target);
-                self.name.clear();
-                self.original_name = Default::default();
+                self.name = tail;
+                self.original_name = (self.name.clone(), self.name.as_bytes().to_vec());
             } else {
                 self.message = Some(label("chooser-folder-missing"));
             }
@@ -375,7 +395,10 @@ impl Window {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             let _ = registry.execute("chooser.cancel", self, Origin::Menu);
         }
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+        if self.replace.is_none()
+            && !egui::Popup::is_any_open(&ctx)
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
             let _ = registry.execute("chooser.cancel", self, Origin::Shortcut);
         }
         if self.ready && !self.ending && self.replace.is_none() && !ctx.egui_wants_keyboard_input()
@@ -389,7 +412,7 @@ impl Window {
         toolkit::chrome::client_side(&ctx);
         for (id, origin) in toolkit::titlebar::show_bar(
             ui,
-            &self.request.title,
+            &dopus_core::sanitise_display_text(&self.request.title),
             Some(toolkit::Icon::Folder),
             &registry,
             self,
@@ -405,14 +428,14 @@ impl Window {
             if let Some(claim) = &self.request.on_behalf_of {
                 ui.weak(label_with(
                     "chooser-claim",
-                    &[("app", claim), ("caller", &self.caller)],
+                    &[("app", &dopus_core::sanitise_display_text(claim)), ("caller", &self.caller)],
                 ));
             }
         });
         egui::Panel::bottom("files-buttons").show(ui, |ui| {
             ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
                 ui.horizontal(|ui| {
-                    if ui.button(&self.request.accept_label).clicked() {
+                    if ui.add(toolkit::PushButton::primary(dopus_core::sanitise_display_text(&self.request.accept_label))).clicked() {
                         clicked = Some("chooser.accept");
                     }
                     if ui.button(label("cancel")).clicked() {
@@ -445,11 +468,27 @@ impl Window {
                                 if self.request.mode == Mode::Save {
                                     ui.horizontal(|ui| {
                                         ui.label(label("chooser-name"));
-                                        ui.add(
+                                        let field = ui.add(
                                             egui::TextEdit::singleline(&mut self.name)
                                                 .desired_width(f32::INFINITY),
                                         )
                                         .accessible_name(label("chooser-name"));
+                                        if self.focus_name {
+                                            field.request_focus();
+                                            if let Some(mut state) = egui::TextEdit::load_state(&ctx, field.id) {
+                                                let end = self.name.rfind('.').filter(|i| *i > 0)
+                                                    .map(|i| self.name[..i].chars().count())
+                                                    .unwrap_or_else(|| self.name.chars().count());
+                                                state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                                                    egui::text::CCursor::new(0), egui::text::CCursor::new(end),
+                                                )));
+                                                state.store(&ctx, field.id);
+                                            }
+                                            self.focus_name = false;
+                                        }
+                                        if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                                            clicked = Some("chooser.accept");
+                                        }
                                     });
                                 }
                                 if self.request.mode == Mode::SaveFiles {
@@ -477,7 +516,7 @@ impl Window {
                                         .selected_text(
                                             current
                                                 .as_ref()
-                                                .map(|f| f.name.as_str())
+                                                .map(|f| dopus_core::sanitise_display_text(&f.name))
                                                 .unwrap_or_default(),
                                         )
                                         .show_ui(ui, |ui| {
@@ -485,7 +524,7 @@ impl Window {
                                                 if toolkit::selectable(
                                                     ui,
                                                     current.as_ref() == Some(filter),
-                                                    &filter.name,
+                                                    dopus_core::sanitise_display_text(&filter.name),
                                                 )
                                                 .clicked()
                                                 {
@@ -507,12 +546,12 @@ impl Window {
                                         self.choices.get_mut(&choice.id).expect("default choice");
                                     if choice.options.is_empty() {
                                         let mut checked = value == "true";
-                                        if ui.checkbox(&mut checked, &choice.label).changed() {
+                                        if ui.checkbox(&mut checked, dopus_core::sanitise_display_text(&choice.label)).changed() {
                                             *value = checked.to_string();
                                         }
                                     } else {
                                         ui.horizontal(|ui| {
-                                            ui.label(&choice.label);
+                                            ui.label(dopus_core::sanitise_display_text(&choice.label));
                                             egui::ComboBox::from_id_salt((
                                                 "files-choice",
                                                 &choice.id,
@@ -522,7 +561,7 @@ impl Window {
                                                     .options
                                                     .iter()
                                                     .find(|o| &o.id == value)
-                                                    .map(|o| o.label.as_str())
+                                                    .map(|o| dopus_core::sanitise_display_text(&o.label))
                                                     .unwrap_or_default(),
                                             )
                                             .show_ui(ui, |ui| {
@@ -530,7 +569,7 @@ impl Window {
                                                     if toolkit::selectable(
                                                         ui,
                                                         *value == option.id,
-                                                        &option.label,
+                                                        dopus_core::sanitise_display_text(&option.label),
                                                     )
                                                     .clicked()
                                                     {
@@ -539,7 +578,7 @@ impl Window {
                                                 }
                                             })
                                             .response
-                                            .accessible_name(&choice.label);
+                                            .accessible_name(dopus_core::sanitise_display_text(&choice.label));
                                         });
                                     }
                                 }
@@ -558,7 +597,7 @@ impl Window {
             .map(|(name, _)| {
                 ui.painter()
                     .layout_no_wrap(
-                        (*name).into(),
+                        name.clone(),
                         egui::TextStyle::Body.resolve(ui.style()),
                         ui.visuals().text_color(),
                     )
@@ -591,7 +630,7 @@ impl Window {
                 .join("\n");
             let shown = toolkit::dialog::Dialog::new(
                 egui::Id::unique((ctx.viewport_id(), "files-replace")),
-                label("chooser-replace-title"),
+                replace_text("chooser-replace-title", collision_count(accept)),
             )
             .buttons(vec![
                 toolkit::dialog::Choice::new(
@@ -601,7 +640,7 @@ impl Window {
                 toolkit::dialog::Choice::new(label("cancel"), toolkit::dialog::Role::Cancel),
             ])
             .show(&ctx, |ui| {
-                ui.label(label("chooser-replace-body"));
+                ui.label(replace_text("chooser-replace-body", collision_count(accept)));
                 let max_names = ctx.content_rect().height()
                     * toolkit::chrome::Chrome::of(&ctx)
                         .style
@@ -643,7 +682,15 @@ impl Window {
 }
 
 fn is_portald(caller: &str) -> bool {
-    caller.split([':', '/']).any(|part| part == "portald")
+    caller == "local:portald"
+}
+
+fn collision_count(accept: &Acceptance) -> usize {
+    accept.paths.iter().filter(|p| path(p).symlink_metadata().is_ok()).count()
+}
+
+fn replace_text(id: &str, count: usize) -> String {
+    label_with(id, &[("count", &count.to_string())])
 }
 
 fn registry() -> Registry<Window> {

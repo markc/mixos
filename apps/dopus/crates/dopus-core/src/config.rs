@@ -100,6 +100,8 @@ impl Default for PaneConfig {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct DOpusConfig {
+    /// User Places, in display order. Older configurations default to none.
+    pub bookmarks: Vec<Bookmark>,
     pub places: SidebarConfig,
     #[serde(deserialize_with = "deserialize_properties")]
     pub properties: SidebarConfig,
@@ -137,6 +139,7 @@ impl Default for DOpusConfig {
     fn default() -> Self {
         let left = PaneConfig::default();
         Self {
+            bookmarks: Vec::new(),
             schema_version: CURRENT_SCHEMA,
             places: SidebarConfig::default(),
             properties: Sidebar::Properties.default_config(),
@@ -147,6 +150,12 @@ impl Default for DOpusConfig {
             remote_previews: false,
         }
     }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct Bookmark {
+    pub name: String,
+    pub path: PathBuf,
 }
 
 fn default_split_ratio() -> f32 {

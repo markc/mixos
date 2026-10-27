@@ -305,13 +305,14 @@ pub struct DopusCore {
     chooser: bool,
     chooser_filter: Option<crate::chooser::Filter>,
     chooser_directories: bool,
-    chooser_mime: Option<mimedb::Database>,
+    chooser_mime: Option<Arc<mimedb::Database>>,
     sidebars: [crate::config::SidebarConfig; 2],
     properties: [crate::properties::Slot; 2],
     /// Each pane's preview of its selection.
     thumbnails: [crate::thumbs::Slot; 2],
     places_home: PathBuf,
-    places_cache: std::cell::OnceCell<Vec<(&'static str, PathBuf)>>,
+    bookmarks: Vec<crate::config::Bookmark>,
+    places_cache: std::cell::OnceCell<Vec<(String, PathBuf)>>,
     #[cfg(test)]
     places_stat_passes: std::cell::Cell<usize>,
     panes: [PaneModel; 2],
@@ -339,6 +340,21 @@ pub struct DopusCore {
 }
 
 impl DopusCore {
+    /// One immutable MIME catalogue for every chooser, prepared before Bus input.
+    pub fn chooser_mime() -> Arc<mimedb::Database> {
+        static MIME: std::sync::OnceLock<Arc<mimedb::Database>> = std::sync::OnceLock::new();
+        MIME.get_or_init(|| Arc::new(mimedb::Database::load())).clone()
+    }
+
+    pub fn visible_summary(&self, pane: PaneId) -> String {
+        let model = self.pane(pane);
+        if model.listing || model.listing_failed {
+            return model.footer_summary();
+        }
+        let entries: Vec<_> = self.visible_rows(pane).into_iter().map(|r| r.entry.clone()).collect();
+        pane_summary(&entries)
+    }
+
     /// Build the core from a startup config and optionally a persistence
     /// target. Both panes start listing immediately; their `ListingStarted`
     /// events are waiting in the queue for the first [`DopusCore::tick`].
@@ -369,11 +385,12 @@ impl DopusCore {
             chooser,
             chooser_filter: None,
             chooser_directories: false,
-            chooser_mime: chooser.then(mimedb::Database::load),
+            chooser_mime: chooser.then(Self::chooser_mime),
             sidebars: [config.places.normalised(), config.properties.normalised()],
             properties: Default::default(),
             thumbnails: Default::default(),
             places_home: home,
+            bookmarks: config.bookmarks,
             places_cache: std::cell::OnceCell::new(),
             #[cfg(test)]
             places_stat_passes: std::cell::Cell::new(0),
@@ -431,12 +448,14 @@ impl DopusCore {
 
     /// Cached Places projection. Repeated views do no filesystem stats.
     /// Every relist and explicit Places refresh invalidates the snapshot.
-    pub fn places(&self) -> &[(&'static str, PathBuf)] {
+    pub fn places(&self) -> &[(String, PathBuf)] {
         self.places_cache.get_or_init(|| {
             #[cfg(test)]
             self.places_stat_passes
                 .set(self.places_stat_passes.get() + 1);
-            places(&self.places_home)
+            places(&self.places_home).into_iter().map(|(name, path)| (name.into(), path))
+                .chain(self.bookmarks.iter().map(|b| (sanitise_display_text(&b.name), b.path.clone())))
+                .collect()
         })
     }
 
@@ -533,6 +552,7 @@ impl DopusCore {
             previews: pane.previews,
         };
         DOpusConfig {
+            bookmarks: self.bookmarks.clone(),
             schema_version: CURRENT_SCHEMA,
             places: self.sidebars[0],
             properties: self.sidebars[1],
@@ -2348,6 +2368,12 @@ pub struct AvailabilitySnapshot {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn chooser_windows_share_one_mime_database() {
+        let (a, _) = super::DopusCore::new_chooser(Default::default());
+        let (b, _) = super::DopusCore::new_chooser(Default::default());
+        assert!(std::sync::Arc::ptr_eq(a.chooser_mime.as_ref().unwrap(), b.chooser_mime.as_ref().unwrap()));
+    }
     use super::*;
 
     fn now_instant() -> Instant {

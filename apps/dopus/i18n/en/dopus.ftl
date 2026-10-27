@@ -103,7 +103,13 @@ chooser-folder-missing = That folder does not exist or the path is too long.
 chooser-select-entry = Select a valid file or folder before accepting.
 chooser-invalid-name = Enter a valid file name.
 chooser-invalid-selection = The selection is invalid. Choose another file or folder.
-chooser-replace-title = Replace existing files?
-chooser-replace-body = These files already exist. Allow the caller to replace them?
+chooser-replace-title = { $count ->
+    [one] Replace existing file?
+   *[other] Replace existing files?
+    }
+chooser-replace-body = { $count ->
+    [one] This file already exists. Allow the caller to replace it?
+   *[other] These files already exist. Allow the caller to replace them?
+    }
 chooser-replace = Replace
 chooser-operation-refused = File operations are unavailable in the chooser.

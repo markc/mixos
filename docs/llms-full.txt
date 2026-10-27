@@ -7460,9 +7460,11 @@ They are shown under the file list, in order.
   collision, so each URI is exactly `<folder>/<name>`. The chooser never
   creates, truncates or replaces anything; the caller does that with the URIs
   it receives.
-- **Typed names.** A typed save name containing `/` moves to that folder when
-  it exists, as a path bar would; otherwise Accept is refused in the window
-  with a message.
+- **Typed names.** A typed save name containing `/` is split at the last `/`.
+  The folder part, relative to the shown folder or absolute, is navigated to
+  when it exists; the tail stays in the name field as the name. An empty tail
+  (`Documents/`) just navigates. A missing folder part refuses Accept in the
+  window with a message.
 - **Remembered folder.** The last folder accepted is kept per
   `on_behalf_of`, else per caller, and is where the next chooser for it opens
   when no `current_folder` or `current_file` is given. At most 128 callers are

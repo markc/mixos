@@ -1,6 +1,140 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
 use serde_json::json;
+use egui_kittest::kittest::Queryable;
+
+fn harness(window: Window) -> egui_kittest::Harness<'static, Window> {
+    let mut h = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(820.0, 600.0))
+        .with_context_setup(|ctx| {
+            toolkit::install(ctx, &toolkit::Theme::embedded());
+            toolkit::drive::install(ctx, "files");
+        })
+        .build_ui_state(|ui, w: &mut Window| w.show(ui), window);
+    h.run();
+    h
+}
+
+#[test]
+fn save_initial_focus_selects_stem_and_enter_accepts_the_name_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = harness(window(json!({"mode":"save","current_folder":dir.path(),"current_name":"draft.txt"})));
+    h.event(egui::Event::Text("report".into()));
+    h.run();
+    assert_eq!(h.state().name, "report.txt");
+    h.key_press(egui::Key::Enter);
+    h.run();
+    let Some(End::Accept(accept)) = h.state_mut().take_end() else { panic!("name Enter did not accept"); };
+    assert_eq!(path(&accept.paths[0]), dir.path().join("report.txt"));
+    assert!(!dir.path().join("report.txt").exists());
+}
+
+#[test]
+fn escape_keeps_replace_then_closes_popup_then_cancels_from_name() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("draft.txt"), "original").unwrap();
+    let mut w = window(json!({"mode":"save","current_folder":dir.path(),"current_name":"draft.txt",
+        "filters":[{"name":"Text","patterns":["*.txt"],"mime_types":[]},{"name":"All","patterns":["*"],"mime_types":[]}]}));
+    w.accept();
+    let mut h = harness(w);
+    assert!(h.state().replace.is_some());
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.state().replace.is_none());
+    assert!(!h.state().ending);
+    h.get_by_label("File type").click();
+    h.run();
+    assert!(egui::Popup::is_any_open(&h.ctx));
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(!egui::Popup::is_any_open(&h.ctx));
+    assert!(!h.state().ending);
+    h.get_by_label("File name").click();
+    h.run();
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(matches!(h.state_mut().take_end(), Some(End::Cancel)));
+    assert_eq!(std::fs::read_to_string(dir.path().join("draft.txt")).unwrap(), "original");
+}
+
+#[test]
+fn only_the_exact_local_portal_key_hides_the_caller_line() {
+    assert!(is_portald("local:portald"));
+    for caller in ["mesh:portald@peer", "local:portald/other", "local:other:portald", "portald"] {
+        assert!(!is_portald(caller), "{caller}");
+        let mut w = window(json!({}));
+        w.caller = caller.into();
+        let h = harness(w);
+        h.get_by_label(&format!("Requested by {caller}"));
+    }
+}
+
+#[test]
+fn caller_labels_are_sanitised_only_for_display_and_never_change_wire_values() {
+    let body = json!({"mode":"save","on_behalf_of":"x\nRequested by local:portald",
+        "title":"Title\nInjected", "accept_label":"Save\nInjected",
+        "filters":[{"name":"Filter\nInjected", "patterns":["*"],"mime_types":[]}],
+        "choices":[{"id":"choice", "label":"Choice\nInjected", "options":[{"id":"raw\nvalue","label":"Value\nInjected"}]}]});
+    let mut h = harness(window(body));
+    for text in ["Title�Injected", "Save�Injected", "Filter�Injected", "Choice�Injected", "Value�Injected",
+        "For x�Requested by local:portald, says local:agent"] {
+        h.get_by_label(text);
+    }
+    h.get_by_label("Filter�Injected");
+    assert_eq!(h.state().request.on_behalf_of.as_deref(), Some("x\nRequested by local:portald"));
+    assert_eq!(h.state().choices["choice"], "raw\nvalue");
+    h.state_mut().name = "new.txt".into();
+    h.state_mut().accept();
+    let Some(End::Accept(a)) = h.state_mut().take_end() else { panic!("expected acceptance"); };
+    assert_eq!(a.choices["choice"], "raw\nvalue");
+}
+
+#[test]
+fn chooser_uses_saved_bookmarks_without_writing_configuration() {
+    let dir = tempfile::tempdir().unwrap();
+    let saved = dir.path().join("config.conf.mix");
+    let raw = format!("schema_version: 2\nbookmarks: [{{name: \"My archive\", path: \"{}\"}}]\n", dir.path().display());
+    std::fs::write(&saved, &raw).unwrap();
+    let (config, _) = dopus_core::ConfigFile::load(dir.path());
+    let request = Request::parse("{}", &crate::choose::defaults()).unwrap();
+    let mut w = Window::with_config("0000000000000001-1", "local:agent", request, config.clone());
+    w.ready = true;
+    let mut h = harness(w);
+    h.get_by_label("My archive").click();
+    h.run();
+    assert_eq!(h.state().app.core.pane(PaneId::Left).path, dir.path());
+    let (manager, _) = DopusCore::new(config, None);
+    assert_eq!(manager.places(), h.state().app.core.places());
+    h.state_mut().command("chooser.cancel");
+    h.state_mut().pump();
+    assert_eq!(std::fs::read_to_string(&saved).unwrap(), raw);
+}
+
+#[test]
+fn replacement_messages_select_one_or_many_collisions() {
+    assert_eq!(replace_text("chooser-replace-title", 1), "Replace existing file?");
+    assert_eq!(replace_text("chooser-replace-body", 1), "This file already exists. Allow the caller to replace it?");
+    assert_eq!(replace_text("chooser-replace-title", 2), "Replace existing files?");
+    assert_eq!(replace_text("chooser-replace-body", 2), "These files already exist. Allow the caller to replace them?");
+}
+
+#[test]
+fn slash_names_navigate_the_folder_and_retain_the_tail() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("sub/nested")).unwrap();
+    for name in ["sub/nested/report.txt".to_owned(), dir.path().join("sub/nested/report.txt").display().to_string()] {
+        let mut w = window(json!({"mode":"save","current_folder":dir.path()}));
+        w.name = name;
+        w.accept();
+        assert!(!w.ending);
+        assert_eq!(w.name, "report.txt");
+        assert_eq!(w.app.core.pane(PaneId::Left).path, dir.path().join("sub/nested"));
+        w.accept();
+        let Some(End::Accept(a)) = w.take_end() else { panic!("expected acceptance"); };
+        assert_eq!(path(&a.paths[0]), dir.path().join("sub/nested/report.txt"));
+    }
+    assert!(!dir.path().join("sub/nested/report.txt").exists());
+}
 
 fn window(body: serde_json::Value) -> Window {
     let request = Request::parse(&body.to_string(), &crate::choose::defaults()).unwrap();
@@ -240,6 +374,7 @@ fn filtered_rows_and_keyboard_selection_share_the_same_projection() {
     }
     let rows = window.app.core.visible_rows(PaneId::Left);
     assert_eq!(rows.len(), 3);
+    assert_eq!(window.app.core.visible_summary(PaneId::Left), "1 folder, 2 files (2 B)");
     assert!(
         rows.iter()
             .all(|r| r.entry.is_dir || r.entry.name.ends_with(".txt"))
