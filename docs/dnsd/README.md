@@ -41,12 +41,12 @@ retries with bounded exponential backoff. Mutation commands are rejected.
 
 `services/dnsd/units/dnsd.service` runs `<prefix>/bin/dnsd` as `dnsd`,
 with UID and GID 506, `CAP_NET_BIND_SERVICE` and the original hardening.
-Its config root is `MIXOS_ETC=<prefix>/etc`, with `dnsd/zones.mix` and
+Its config root is `MIXOS_ETC=<config>`, with `dnsd/zones.mix` and
 `dnsd/service.env` (`LISTEN=192.0.2.10:53`). Its state root is
 `MIXOS_VAR=<state>`, with `dnsd/state`. The unit sets those roots
 explicitly; changing the roots also requires overriding its argument and
 environment-file paths. Node identity comes from
-`<prefix>/etc/node.conf.mix`. The sysusers and tmpfiles fragments are
+`<config>/node.conf.mix`. The sysusers and tmpfiles fragments are
 owned by the component. Installing these files does not activate DNS.
 
 ```text

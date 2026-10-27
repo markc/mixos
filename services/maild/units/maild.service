@@ -2,6 +2,9 @@
 # Plain per-host maild: one mail service per host, beside the plain
 # noded.service. Hosts that run per-session brokers use maild@.service.
 # Data paths (database, blobs, mds, spam) come from the maild config.
+# Unset ones default under @{var}/jmap, and DKIM, TLS and rule state
+# under @{var}/maild. ProtectSystem=strict leaves only the state
+# directories writable, so both are listed.
 [Unit]
 Description=MixOS mail service
 Documentation=https://mixos.dev/maild/
@@ -16,7 +19,7 @@ Environment=MIXOS_ETC=@{etc}
 Environment=MIXOS_VAR=@{var}
 Environment=HOME=%S/mixos/maild
 Environment=RUST_LOG=maild=info
-StateDirectory=mixos/maild
+StateDirectory=mixos/maild mixos/jmap
 StateDirectoryMode=0750
 RuntimeDirectory=maild
 RuntimeDirectoryMode=0750

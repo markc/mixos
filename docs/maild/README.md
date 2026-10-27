@@ -88,6 +88,8 @@ The unit documentation URL points to this manual.
 
 `maild.service` is the plain per-host form, for a host that runs the plain
 `noded.service` rather than per-session brokers. It reads the node config
-from `<config>`, creates `StateDirectory=mixos/maild`, and takes its data
-paths from the maild config. The sysusers declaration adds maild to the
+from `<config>`, creates `StateDirectory=mixos/maild mixos/jmap`, and takes its data
+paths from the maild config. Data paths the config leaves unset default
+under `<state>/jmap`, and DKIM, TLS and rule state under `<state>/maild`; with
+`ProtectSystem=strict` only those two directories are writable. The sysusers declaration adds maild to the
 `mixos-tls` group (gid 510), which it shares with webd for the TLS keys.

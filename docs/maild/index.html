@@ -303,8 +303,10 @@ configuration. It runs as the <code>maild</code> account. The unit uses
 The unit documentation URL points to this manual.</p>
 <p><code>maild.service</code> is the plain per-host form, for a host that runs the plain
 <code>noded.service</code> rather than per-session brokers. It reads the node config
-from <code>&lt;config&gt;</code>, creates <code>StateDirectory=mixos/maild</code>, and takes its data
-paths from the maild config. The sysusers declaration adds maild to the
+from <code>&lt;config&gt;</code>, creates <code>StateDirectory=mixos/maild mixos/jmap</code>, and takes its data
+paths from the maild config. Data paths the config leaves unset default
+under <code>&lt;state&gt;/jmap</code>, and DKIM, TLS and rule state under <code>&lt;state&gt;/maild</code>; with
+<code>ProtectSystem=strict</code> only those two directories are writable. The sysusers declaration adds maild to the
 <code>mixos-tls</code> group (gid 510), which it shares with webd for the TLS keys.</p>
         </article>
         <p class="doc-source"><a href="/maild/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
