@@ -294,7 +294,10 @@ mod tests {
         ] {
             assert!(value["desktop"]["appearance"].get("window_style").is_none());
             assert!(value["effective"]["desktop"].get("window_style").is_none());
-            assert_eq!(decode(value).unwrap().effective["desktop"].window_style, "mac");
+            assert_eq!(
+                decode(value).unwrap().effective["desktop"].window_style,
+                "mac"
+            );
         }
         for name in design::WindowStyle::NAMES
             .iter()

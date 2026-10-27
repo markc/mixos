@@ -164,10 +164,6 @@ fn window_style_defaults_preserve_existing_fixture_seals() {
         accepted.seal().unwrap();
         assert_eq!(accepted.content_digest, sealed);
         let saved = serde_json::to_value(&accepted).unwrap();
-        assert!(
-            saved["desktop"]["appearance"]
-                .get("window_style")
-                .is_none()
-        );
+        assert!(saved["desktop"]["appearance"].get("window_style").is_none());
     }
 }

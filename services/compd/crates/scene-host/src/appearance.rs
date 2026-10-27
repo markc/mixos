@@ -88,7 +88,9 @@ pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
     let window_style = snapshot
         .effective
         .get(CONTEXT)
-        .map_or_else(ChromeStyle::default, |effective| ChromeStyle::resolve(&effective.window_style));
+        .map_or_else(ChromeStyle::default, |effective| {
+            ChromeStyle::resolve(&effective.window_style)
+        });
     let text_scale = snapshot
         .effective
         .get(CONTEXT)
