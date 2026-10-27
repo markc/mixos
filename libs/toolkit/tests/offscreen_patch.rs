@@ -6,6 +6,7 @@ fn hidden_window_vendor_patch_guard() {
     let run = include_str!("../../../vendor/eframe/src/native/run.rs");
     let integration = include_str!("../../../vendor/eframe/src/native/wgpu_integration.rs");
     let modes = include_str!("../../../vendor/eframe/src/native/winit_integration.rs");
+    let epi = include_str!("../../../vendor/eframe/src/native/epi_integration.rs");
     let painter = include_str!("../../../vendor/egui-wgpu/src/winit.rs");
     assert!(run.contains("self.winit_app.overdue_pass_mode(window_id)"));
     assert!(run.contains("*repaint_time = (*repaint_time).max(*floor)"));
@@ -17,6 +18,9 @@ fn hidden_window_vendor_patch_guard() {
     );
     assert!(integration.contains("any(ActionRequested::wants_paint)"));
     assert!(integration.contains("paint_offscreen_and_update_textures("));
+    assert!(epi.contains("root_visible: native_options.viewport.visible.unwrap_or(true)"));
+    assert!(epi.contains("self.track_root_visibility(commands)"));
+    assert!(integration.contains("viewport_id == ViewportId::ROOT && !integration.root_visible"));
     assert!(
         painter.contains("&& !offscreen"),
         "offscreen bypasses surface acquire"

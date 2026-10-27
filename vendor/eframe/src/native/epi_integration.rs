@@ -181,6 +181,10 @@ pub struct EpiIntegration {
     last_auto_save: Instant,
     pub beginning: Instant,
     is_first_frame: bool,
+    /// Requested root visibility, retained even on backends which cannot
+    /// report window visibility. An explicitly hidden service owner must
+    /// never acquire a presenting surface just to create its children.
+    pub root_visible: bool,
     pub egui_ctx: egui::Context,
 
     /// Input that we have received, but not yet given to egui,
@@ -292,6 +296,7 @@ impl EpiIntegration {
                 .checked_sub(web_time::Duration::from_secs_f64(egui_ctx.time()))
                 .unwrap_or_else(Instant::now),
             is_first_frame: true,
+            root_visible: native_options.viewport.visible.unwrap_or(true),
             egui_ctx,
         }
     }
@@ -371,7 +376,11 @@ impl EpiIntegration {
         }
 
         self.pending_full_output.append(full_output);
-        core::mem::take(&mut self.pending_full_output)
+        let output = core::mem::take(&mut self.pending_full_output);
+        if let Some(root) = output.viewport_output.get(&ViewportId::ROOT) {
+            self.track_root_visibility(&root.commands);
+        }
+        output
     }
 
     /// Let the app tick its logic without showing any ui,
@@ -406,7 +415,18 @@ impl EpiIntegration {
             self.handle_close_request(canceled);
         }
 
+        if let Some(commands) = logic_output.viewport_commands.get(&ViewportId::ROOT) {
+            self.track_root_visibility(commands);
+        }
         logic_output
+    }
+
+    fn track_root_visibility(&mut self, commands: &[egui::ViewportCommand]) {
+        for command in commands {
+            if let egui::ViewportCommand::Visible(visible) = command {
+                self.root_visible = *visible;
+            }
+        }
     }
 
     /// Prepend any input we couldn't give to egui earlier, set the time, and run the app hook.
@@ -440,7 +460,7 @@ impl EpiIntegration {
 
     pub fn post_rendering(&mut self, window: &winit::window::Window) {
         profiling::function_scope!();
-        if core::mem::take(&mut self.is_first_frame) {
+        if self.root_visible && core::mem::take(&mut self.is_first_frame) {
             if let Some(window_settings) = &self.restored_window_settings {
                 window_settings.before_first_show(window);
             }

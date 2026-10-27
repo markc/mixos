@@ -148,9 +148,32 @@ fn directory_acceptance_resolves_dot_components_before_ending() {
     std::fs::create_dir(dir.path().join("sub")).unwrap();
     let mut window = window(json!({"directory":true,"current_folder":dir.path().join("sub/..")}));
     window.accept();
-    let Some(End::Accept(accept)) = window.take_end() else { panic!("expected acceptance"); };
+    let Some(End::Accept(accept)) = window.take_end() else {
+        panic!("expected acceptance");
+    };
     assert_eq!(path(&accept.paths[0]), dir.path());
     assert!(window.request.validate_acceptance(&accept).is_ok());
+}
+
+#[test]
+fn maximum_file_names_and_choices_keep_acceptance_buttons_reachable() {
+    let dir = tempfile::tempdir().unwrap();
+    for replace in [false, true] {
+        let names: Vec<_> = (0..256).map(|i| format!("{i:03}-{}.txt", "x".repeat(240))).collect();
+        if replace {
+            for name in &names { std::fs::write(dir.path().join(name), "original").unwrap(); }
+        }
+        let choices: Vec<_> = (0..16).map(|i| json!({"id":format!("choice-{i}"),"label":"A caller option", "options":[]})).collect();
+        let mut window = window(json!({"mode":"save_files","current_folder":dir.path(),"files":names,"choices":choices}));
+        if replace { window.accept(); assert!(window.replace.is_some()); }
+        let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(820.0,600.0))
+            .with_context_setup(|ctx| { toolkit::install(ctx,&toolkit::Theme::embedded()); toolkit::drive::install(ctx,"files"); })
+            .build_ui_state(|ui, window: &mut Window| { window.show(ui); let _ = toolkit::drive::logic(ui.ctx()); },window);
+        harness.run();
+        assert!(toolkit::drive::request(&harness.ctx,1,"ui.click",&json!({"label":if replace { "Replace" } else { "Save" }})).is_none());
+        for _ in 0..30 { harness.step(); if harness.state().ending { break; } }
+        assert!(matches!(harness.state_mut().take_end(),Some(End::Accept(_))));
+    }
 }
 
 #[test]

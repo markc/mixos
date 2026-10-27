@@ -23,6 +23,12 @@ licences; LICENSE-MIT and LICENSE-APACHE are from that upstream revision.
 - Glow marks offscreen capture unsupported in context data so toolkit can
   immediately refuse a known hidden window with an actionable message.
 - Uses the matching egui-wgpu patch, without changing public eframe APIs.
+- Preserve the root's explicitly requested visibility across first paint and
+  logic-only passes. Wgpu paints an explicitly hidden root offscreen even
+  when the native backend cannot report visibility. This lets chooser-only
+  services create secondary viewports without mapping a main window.
+  Explicit `Visible` commands still show or hide that owner. Native coverage:
+  `apps/dopus/tests/chooser_bus_test.mix`; refresh guard below.
 
 Guard: `cargo test -p toolkit --test offscreen_patch`; state-machine coverage
 in toolkit's `drive::tests`. Renderer guard and headless GPU test are recorded

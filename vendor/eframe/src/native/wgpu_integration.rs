@@ -704,7 +704,8 @@ impl WgpuWinitRunning<'_> {
 
             // A hidden window is not painted, since nothing would be shown — unless someone
             // wants the pixels anyway, e.g. to screenshot an app that is in the background:
-            let is_visible = viewport.info.visible().unwrap_or(true)
+            let is_visible = (viewport.info.visible().unwrap_or(true)
+                && (viewport_id != ViewportId::ROOT || integration.root_visible))
                 || viewport
                     .actions_requested
                     .iter()
@@ -796,7 +797,8 @@ impl WgpuWinitRunning<'_> {
 
         // Runs the update, which could call immediate viewports,
         // so make sure we hold no locks here!
-        let offscreen = mode == PassMode::Offscreen
+        let offscreen = (viewport_id == ViewportId::ROOT && !integration.root_visible)
+            || mode == PassMode::Offscreen
             || raw_input
                 .viewports
                 .get(&viewport_id)

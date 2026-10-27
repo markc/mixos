@@ -240,11 +240,23 @@ impl Window {
                     self.message = Some(label("chooser-select-entry"));
                     return;
                 }
-                selected.into_iter().map(|p| {
-                    if self.request.directory && p.components().any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir)) {
-                        p.canonicalize().unwrap_or(p)
-                    } else { p }
-                }).collect()
+                selected
+                    .into_iter()
+                    .map(|p| {
+                        if self.request.directory
+                            && p.components().any(|c| {
+                                matches!(
+                                    c,
+                                    std::path::Component::ParentDir | std::path::Component::CurDir
+                                )
+                            })
+                        {
+                            p.canonicalize().unwrap_or(p)
+                        } else {
+                            p
+                        }
+                    })
+                    .collect()
             }
             Mode::Save => {
                 let raw: &[u8] = if self.name == self.original_name.0 {
@@ -350,6 +362,9 @@ impl Window {
         });
         egui::Panel::bottom("files-controls").show(ui, |ui| {
             ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
+                let max_form = ctx.content_rect().height()
+                    * toolkit::chrome::Chrome::of(&ctx).style.dialog_resize_max_share as f32 / 2.0;
+                egui::ScrollArea::vertical().id_salt("files-options").max_height(max_form).show(ui, |ui| {
                 if self.request.mode == Mode::Save {
                     ui.horizontal(|ui| {
                         ui.label(label("chooser-name"));
@@ -447,6 +462,7 @@ impl Window {
                 if let Some(message) = &self.message {
                     ui.label(message);
                 }
+                });
                 ui.horizontal(|ui| {
                     if ui.button(&self.request.accept_label).clicked() {
                         clicked = Some("chooser.accept");
@@ -509,7 +525,9 @@ impl Window {
             ])
             .show(&ctx, |ui| {
                 ui.label(label("chooser-replace-body"));
-                ui.label(&names);
+                let max_names = ctx.content_rect().height()
+                    * toolkit::chrome::Chrome::of(&ctx).style.dialog_resize_max_share as f32 / 2.0;
+                egui::ScrollArea::vertical().id_salt("files-collisions").max_height(max_names).show(ui, |ui| { ui.label(&names); });
             });
             if let Some(answer) = shown.chosen {
                 clicked = Some(if answer == 0 {
