@@ -54,6 +54,9 @@ pub fn build_world_message(svc: &str, snapshot: &PropValue) -> BusMessage {
 /// event.
 ///
 /// Body shape per SPEC 07 §3.10: `{path, old, new, ts, cause}`.
+/// noded may send a `services.*` event with `old == new`: a capped burst
+/// that ended where it started still invalidates, so a reader that saw the
+/// mid-burst value re-reads. Treat it as "re-read", not as a change.
 /// Headers `command=props.changed`, `path=<path>`, `cause=<cause>` are
 /// set so subscribers can filter without parsing the body.
 pub fn build_props_changed_message(

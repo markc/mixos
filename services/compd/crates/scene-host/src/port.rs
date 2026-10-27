@@ -47,6 +47,8 @@ pub const MAX_PENDING_EVENTS: usize = 128;
 pub const EVENT_TIMEOUT: Duration = Duration::from_secs(2);
 const SEND_TIMEOUT: Duration = Duration::from_secs(2);
 const RETRY_INITIAL: Duration = Duration::from_secs(1);
+/// A registry burst collapses into one follow-up read after this pause.
+const REGISTRY_FOLLOW_UP: Duration = Duration::from_millis(100);
 const SHUTDOWN_BUDGET: Duration = Duration::from_secs(2);
 const SHUTDOWN_GRACE: Duration = Duration::from_millis(2300);
 const RUNTIME_GRACE: Duration = Duration::from_millis(100);
@@ -842,7 +844,7 @@ async fn serve(
                 if subscribed {
                     // Subscribe before read so a departure in the gap cannot
                     // leave a successful but obsolete full-set baseline.
-                    registry.request(|| registry_read(Arc::clone(client), Duration::ZERO, registry_mailbox.clone()));
+                    registry.request(|| registry_read(Arc::clone(client), REGISTRY_FOLLOW_UP, registry_mailbox.clone()));
                     registry_retries = 0;
                 }
             }
@@ -857,7 +859,7 @@ async fn serve(
                         registry_retries = 0;
                         if dirty {
                             registry_mailbox.record("dirty follow-up read scheduled");
-                            registry.request(|| registry_read(Arc::clone(client), Duration::ZERO, registry_mailbox.clone()));
+                            registry.request(|| registry_read(Arc::clone(client), REGISTRY_FOLLOW_UP, registry_mailbox.clone()));
                         }
                     } else {
                         let live = settings::native::live_generation(client);
@@ -899,7 +901,7 @@ async fn serve(
                                     // baseline read. Treat it as an invalidation,
                                     // never overwrite a newer snapshot with its set.
                                     registry_mailbox.record(format!("registry invalidated in_flight={}", registry.pending.is_some()));
-                                    registry.request(|| registry_read(Arc::clone(client), Duration::ZERO, registry_mailbox.clone()));
+                                    registry.request(|| registry_read(Arc::clone(client), REGISTRY_FOLLOW_UP, registry_mailbox.clone()));
                                 } else {
                                     registry_mailbox.record(format!("Route::Live dropped: generation={} live={live:?}", command.generation));
                                     tracing::warn!(generation = command.generation, ?live, "scene host registry delivery generation mismatch");
@@ -913,7 +915,7 @@ async fn serve(
                     Some(BoundedIncomingEvent::Overflow { dropped }) => {
                         registry_mailbox.record(format!("incoming overflow dropped={dropped}"));
                         notify(lane.publish(SettingsEvent::Lost));
-                        registry.request(|| registry_read(Arc::clone(client), Duration::ZERO, registry_mailbox.clone()));
+                        registry.request(|| registry_read(Arc::clone(client), REGISTRY_FOLLOW_UP, registry_mailbox.clone()));
                         tracing::warn!("scene host: incoming queue overflow; recovering settings and registry");
                     }
                     None => {
