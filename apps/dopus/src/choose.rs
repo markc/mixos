@@ -355,14 +355,19 @@ mod tests {
             *log.lock().unwrap(),
             ["open-disabled", "reply", "input", "close", "publish"]
         );
-        let answer = dispatch(&mut engine, &mut presenter, "files.choose", "{}", "caller", 4);
-        let error = futures::executor::block_on(deliver(
+        let answer = dispatch(
             &mut engine,
             &mut presenter,
-            answer,
-            async { false },
-        ))
-        .unwrap_err();
+            "files.choose",
+            "{}",
+            "caller",
+            4,
+        );
+        let error =
+            futures::executor::block_on(deliver(&mut engine, &mut presenter, answer, async {
+                false
+            }))
+            .unwrap_err();
         assert!(error.contains("incarnation lost"));
         assert!(rx.try_recv().is_err());
         assert_eq!(engine.list()["requests"], json!([]));
