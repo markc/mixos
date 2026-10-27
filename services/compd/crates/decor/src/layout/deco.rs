@@ -76,6 +76,7 @@ pub enum CaptionButton {
     Close,
     Minimize,
     Maximize,
+    Menu,
 }
 
 /// Which end of the titlebar the button cluster sits on.
@@ -232,6 +233,7 @@ impl ButtonCluster {
             CaptionButton::Close => &self.close,
             CaptionButton::Minimize => &self.minimize,
             CaptionButton::Maximize => &self.maximize,
+            CaptionButton::Menu => &self.minimize,
         }
     }
 }

@@ -288,8 +288,20 @@ the same path real input takes. The app registers these commands under its own
 prefix (`<app>.ui.tree` and so on):
 
 `ui.tree`, `ui.click`, `ui.pointer`, `ui.scroll`, `ui.key`, `ui.type`,
-`ui.menu`, `ui.menu.list`, `ui.menu.open`, `ui.menu.close`, `ui.capture`,
+`ui.menu`, `ui.menu.list`, `ui.menu.open`, `ui.menu.close`, `ui.menu.popup`, `ui.menu.form`, `ui.capture`,
 `window`, `window.state`
+
+Session `appearance.menu_style` chooses the horizontal bar, a hamburger button
+or a button hosted by compd for SSD windows. `appearance.menu_side` places the
+button at either end. The hamburger wraps the existing menu titles as submenu
+rows and shares navigation, highlights, search and command dispatch with the
+bar. F10 or a bare Alt opens the menus in either form.
+`ui.menu.list` and `ui.menu.open {path|menu}` use the same titles and paths in
+every form. `ui.menu.popup {side?: "left"|"right", x?: number}` opens the
+vertical menu at the content's top edge regardless of the selected form; x
+is a content-point coordinate and takes precedence over side.
+`ui.menu.form` returns `{style, side, effective}`; effective resolves `titlebar`
+to `button` under client-side decorations.
 
 The app forwards each request, with the prefix removed, to
 `drive::request` from app logic, including logic-only wakes. It sends back whatever `request`, or

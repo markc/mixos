@@ -2,6 +2,7 @@ window-minimize = Minimize
 window-maximize = Maximize
 window-restore = Restore
 window-close = Close
+window-menu = Menus
 toolkit-macros = Macros
 macros-close = Close
 macros-new-global = New global

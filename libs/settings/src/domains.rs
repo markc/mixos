@@ -100,6 +100,8 @@ fn view(effective: &Effective) -> &DesignReadProjection {
         decorations: _,
         caption_side: _,
         window_style: _,
+        menu_style: _,
+        menu_side: _,
         // Their classes are in `compare`: stroke paints, fonts reshape text.
         icon_stroke: _,
         font_family: _,
@@ -164,9 +166,15 @@ fn compare(old: &Effective, new: &Effective) -> ChangePlan {
     let style = old.style != new.style;
     let window_style = design::WindowStyle::resolve(&old.window_style)
         != design::WindowStyle::resolve(&new.window_style);
-    let framing =
-        old.decorations != new.decorations || old.caption_side != new.caption_side || window_style;
+    let menus = design::MenuStyle::resolve(&old.menu_style)
+        != design::MenuStyle::resolve(&new.menu_style)
+        || design::MenuSide::resolve(&old.menu_side) != design::MenuSide::resolve(&new.menu_side);
+    let framing = old.decorations != new.decorations
+        || old.caption_side != new.caption_side
+        || window_style
+        || menus;
     let paint = window_style
+        || menus
         || style
         || old.icon_stroke != new.icon_stroke
         || old.scheme != new.scheme
@@ -241,5 +249,23 @@ mod tests {
         assert!(!plan.resources && !plan.text);
         after.window_style = "future-style".into();
         assert!(compare(before, &after).is_empty());
+    }
+
+    #[test]
+    fn menu_changes_invalidate_paint_and_layout_only() {
+        let resolved = crate::resolve(&crate::Desktop::default()).unwrap();
+        let before = &resolved["desktop"];
+        for (style, side) in [("button", "left"), ("titlebar", "right"), ("bar", "right")] {
+            let mut after = before.clone();
+            after.menu_style = style.into();
+            after.menu_side = side.into();
+            let plan = compare(before, &after);
+            assert!(plan.paint && plan.layout);
+            assert!(!plan.resources && !plan.text);
+        }
+        let mut future = before.clone();
+        future.menu_style = "future-style".into();
+        future.menu_side = "future-side".into();
+        assert!(compare(before, &future).is_empty());
     }
 }

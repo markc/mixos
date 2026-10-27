@@ -250,6 +250,8 @@ fn fixture() -> CompSnapshot {
         decoration: DecorationSnapshot {
             enabled: true,
             style: "mac",
+            menu_button: false,
+            menu_side: "left",
         },
         bindings: BindingsSnapshot {
             enabled: true,

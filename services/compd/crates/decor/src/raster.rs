@@ -123,6 +123,10 @@ fn glyph(p: (f32, f32), rect: Rect, button: CaptionButton, ratio: f32, scale: f3
             d.abs()
         }
         CaptionButton::Minimize => segment(q, (-e, 0.0), (e, 0.0)),
+        CaptionButton::Menu => [-e, 0.0, e]
+            .into_iter()
+            .map(|y| segment(q, (-e, y), (e, y)))
+            .fold(f32::INFINITY, f32::min),
     }
 }
 
@@ -216,6 +220,27 @@ pub fn titlebar(
                         };
                         px = over(px, premul(colour, g));
                     }
+                }
+            }
+            if let Some(rect) = layout.menu_button {
+                let button = CaptionButton::Menu;
+                let bstate = state.button_state(button);
+                let colours = cluster.colors(button);
+                let shape = crate::layout::ButtonShape::FullHeightRect { width: rect.w };
+                let cov = coverage(button_shape(p, rect, shape, scale));
+                if bstate != crate::layout::ButtonState::Idle && cov > 0.0 {
+                    let fill = if theme.style == crate::layout::ChromeStyle::Mac {
+                        theme.colors.titlebar_unfocused
+                    } else {
+                        colours.fill(bstate, focus)
+                    };
+                    px = over(px, premul(fill, cov));
+                }
+                let g = coverage(
+                    glyph(p, rect, button, cluster.glyph_extent_ratio, scale) - stroke * 0.5,
+                );
+                if g > 0.0 {
+                    px = over(px, premul(theme.title_text(focus), g));
                 }
             }
             if border > 0.0 && border_colour.a > 0.0 {

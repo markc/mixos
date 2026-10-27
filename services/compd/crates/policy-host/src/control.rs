@@ -189,6 +189,7 @@ fn named_window(op: &WindowOp) -> Option<u64> {
         | WindowOp::Minimize { id, .. }
         | WindowOp::Focus { id, .. }
         | WindowOp::Raise { id, .. }
+        | WindowOp::Menu { id, .. }
         | WindowOp::Close { id, .. }
         | WindowOp::SendToWorkspace { id, .. } => Some(*id),
         WindowOp::Restore { target, .. } => target.map(|(id, _)| id),
@@ -338,6 +339,19 @@ fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
             raise,
         } => Some(focus(lp, *id, *generation, *raise)),
         WindowOp::Raise { id, generation } => Some(raise(lp, *id, *generation)),
+        WindowOp::Menu { id, generation } => Some(match motion_window(lp, *id, *generation) {
+            Ok((_, window)) => {
+                if decor::window::open_menu(&window) {
+                    ControlReply::Body(
+                        serde_json::json!({"id": id, "generation": generation, "queued": true}),
+                    )
+                } else {
+                    model::warn!("window {id} menu Bus call was not queued");
+                    ControlReply::refused("menu_unavailable", serde_json::json!({"id": id}))
+                }
+            }
+            Err(reply) => reply,
+        }),
         WindowOp::Close { id, generation } => Some(
             match policy::window::close(&lp.inner.comp.registry, *id, *generation) {
                 Ok((reply, effects)) => {

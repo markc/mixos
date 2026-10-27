@@ -35,6 +35,17 @@ This lets toolkit restore a saved maximised frame on its original display.
 
 ## Settings at startup
 
+The session's `appearance.menu_style: "titlebar"` adds a menu caption beside
+the caption cluster or at the opposite edge, according to `appearance.menu_side`.
+It appears only on SSD windows whose `dev.mixos.NAME` app has a registered
+`NAME` Bus service. Clicking queues `NAME.ui.menu.popup {side}` through the scene
+host's existing port; failures are logged without blocking the compositor.
+`comp.window.menu {id, generation}` uses the same path, with the usual window
+generation and session-lock checks. `comp.props` reports `decoration.menu_button`
+(the session's SSD menu request) and `decoration.menu_side`; per-window truth
+lists a `menu` button only where it is actually present. Settings and service
+registration changes repaint existing chrome live.
+
 Quoin prepares cached or embedded settings while its existing Bus
 supervisor registers. Its persistent cache is service-owned under the
 configured variable data directory at `compd/cache/settings`; all

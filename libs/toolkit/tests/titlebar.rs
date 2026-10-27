@@ -200,3 +200,63 @@ fn the_icon_bar_skips_unknown_and_duplicate_standard_actions() {
         ["help.macros", "view.search", "help.keys", "view.mode"]
     );
 }
+
+#[test]
+fn compact_menu_titlebars() {
+    use design::{CaptionSide, MenuSide, MenuStyle, RequestedDecorations};
+    for decorations in [RequestedDecorations::Client, RequestedDecorations::Server] {
+        for style in MenuStyle::ALL {
+            for side in MenuSide::ALL {
+                let registry = registry();
+                let strings = Strings::new(FTL);
+                let mut h = Harness::builder()
+                    .with_size(egui::vec2(640.0, 240.0))
+                    .wgpu()
+                    .build_ui(move |ui| {
+                        let _ = titlebar::show_bar(
+                            ui,
+                            "Demo",
+                            Some(Icon::Server),
+                            &registry,
+                            &(),
+                            &strings,
+                            &[],
+                        );
+                        egui::CentralPanel::default().show(ui, |_| {});
+                    });
+                toolkit::install(
+                    &h.ctx,
+                    &Theme::embedded()
+                        .framed(decorations, CaptionSide::Right)
+                        .with_menus(style, side),
+                );
+                h.run();
+                h.snapshot(format!(
+                    "menu_{}_{}_{}",
+                    decorations.name(),
+                    style.name(),
+                    side.name()
+                ));
+                if style.effective(toolkit::chrome::Chrome::of(&h.ctx).decorations)
+                    == MenuStyle::Button
+                {
+                    h.get_by_label("Menus").click();
+                    h.run();
+                    h.get_by_label("File").click();
+                    h.run();
+                    h.get_by_label("Quit");
+                    h.snapshot(format!(
+                        "menu_open_{}_{}_{}",
+                        decorations.name(),
+                        style.name(),
+                        side.name()
+                    ));
+                }
+                toolkit::menu::close(&h.ctx);
+                h.key_press(egui::Key::F10);
+                h.run();
+                assert!(toolkit::menu::is_open(&h.ctx));
+            }
+        }
+    }
+}

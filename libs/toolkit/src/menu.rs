@@ -119,7 +119,7 @@ impl Row {
     }
 
     pub fn is_submenu(&self) -> bool {
-        !self.children.is_empty()
+        self.id.is_none()
     }
 }
 
@@ -263,6 +263,20 @@ pub struct Nav {
 }
 
 impl Nav {
+    pub fn key_vertical(&mut self, key: NavKey, menus: &[Menu]) -> Outcome {
+        match key {
+            NavKey::Left if self.depth == 0 => Outcome::Stay,
+            NavKey::Right
+                if !self
+                    .current(menus)
+                    .is_some_and(|row| row.enabled && row.is_submenu()) =>
+            {
+                Outcome::Stay
+            }
+            _ => self.key(key, menus),
+        }
+    }
+
     /// The open top-level menu.
     pub fn open_menu(&self) -> Option<usize> {
         self.open
@@ -509,6 +523,12 @@ struct State {
     /// The menus drawn last frame (the whole model, not a search view), for
     /// the drive commands that list, open and close them.
     menus: Vec<Menu>,
+    compact: bool,
+    vertical: bool,
+    popup_anchor: Option<Rect>,
+    alt_down: bool,
+    alt_used: bool,
+    search_active: bool,
 }
 
 fn state_id() -> Id {
@@ -613,6 +633,25 @@ pub(crate) fn dismiss_anchored(ctx: &Context) {
         ctx.data_mut(|d| d.remove::<Nav>(cache.id));
     }
     ctx.data_mut(|d| d.remove::<AnchoredInput>(id));
+    anchored_open(ctx, false);
+}
+
+fn take_keyboard(ctx: &Context) {
+    let viewport = ctx.viewport_id();
+    let input_id = crate::window_id(viewport, "toolkit.anchored-input");
+    let title_id = crate::window_id(viewport, "toolkit.anchored-title");
+    ctx.data_mut(|d| {
+        if let Some(mut cache) = d.get_temp::<AnchoredInput>(input_id) {
+            cache.handled = true;
+            cache.result = None;
+            d.insert_temp(cache.id, Nav::default());
+            d.insert_temp(input_id, cache);
+        }
+        if let Some(mut title) = d.get_temp::<TitleInput>(title_id) {
+            title.close = true;
+            d.insert_temp(title_id, title);
+        }
+    });
     anchored_open(ctx, false);
 }
 
@@ -917,12 +956,85 @@ fn current_of(nav: &Nav, menus: &[Menu]) -> Option<Current> {
     })
 }
 
-/// The menus the bar drew last frame: every title, row, shortcut, tick and
+fn current_in_form(nav: &Nav, menus: &[Menu], vertical: bool) -> Option<Current> {
+    let mut current = current_of(nav, menus)?;
+    if vertical && let Some(Some(title)) = current.path.first() {
+        current.menu = title.clone();
+        current.path.remove(0);
+        current.depth = current.depth.saturating_sub(1);
+    }
+    Some(current)
+}
+
+/// The menus drawn last frame: every title, row, shortcut, tick and
 /// submenu, as the drive's `ui.menu.list` reports them.
 pub fn model(ctx: &Context) -> Vec<Menu> {
     ctx.data(|d| d.get_temp::<State>(state_id()))
         .map(|s| s.menus)
         .unwrap_or_default()
+}
+
+/// The same menus, with their titles forming the first vertical level.
+pub fn compact_model(menus: &[Menu]) -> Vec<Menu> {
+    vec![Menu {
+        title: crate::strings::own("window-menu"),
+        entries: menus
+            .iter()
+            .map(|menu| Entry::Row(Row::submenu(menu.title.clone(), menu.entries.clone())))
+            .collect(),
+    }]
+}
+
+pub fn form(ctx: &Context) -> serde_json::Value {
+    let chrome = Chrome::of(ctx);
+    serde_json::json!({
+        "style": chrome.menu_style.name(),
+        "side": chrome.menu_side.name(),
+        "effective": chrome.menu_style.effective(chrome.decorations).name(),
+    })
+}
+
+/// Open at the top of the content, independent of the selected menu form.
+pub fn popup(ctx: &Context, side: Option<design::MenuSide>, x: Option<f32>) -> Result<(), String> {
+    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    if st.menus.is_empty() {
+        return Err("this window has no menus".into());
+    }
+    take_keyboard(ctx);
+    let bounds = ctx.content_rect();
+    let side = side.unwrap_or(Chrome::of(ctx).menu_side);
+    let x = x
+        .unwrap_or(match side {
+            design::MenuSide::Left => bounds.left(),
+            design::MenuSide::Right => bounds.right(),
+        })
+        .clamp(bounds.left(), bounds.right());
+    st.popup_anchor = Some(Rect::from_min_max(
+        pos2(x, bounds.top()),
+        pos2(x, bounds.top()),
+    ));
+    st.vertical = true;
+    st.nav.open(0);
+    st.query.clear();
+    st.current = current_in_form(&st.nav, &compact_model(&st.menus), true);
+    ctx.data_mut(|d| d.insert_temp(state_id(), st));
+    ctx.request_repaint();
+    Ok(())
+}
+
+pub(crate) fn toggle(ctx: &Context) {
+    let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    st.popup_anchor = None;
+    st.vertical = true;
+    if st.nav.open_menu().is_some() {
+        st.nav.close();
+    } else {
+        st.nav.open(0);
+        take_keyboard(ctx);
+    }
+    st.title_press = true;
+    ctx.data_mut(|d| d.insert_temp(state_id(), st));
+    ctx.request_repaint();
 }
 
 /// Whether two labels name the same menu or row: case and a trailing
@@ -956,18 +1068,29 @@ fn find_label(entries: &[Entry], label: &str) -> Option<usize> {
 /// before the last that opens no submenu.
 pub fn open_path(ctx: &Context, path: &[String]) -> Result<Current, String> {
     let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
-    let menus = st.menus.clone();
+    let vertical = st.compact || st.popup_anchor.is_some();
+    let menus = if vertical {
+        compact_model(&st.menus)
+    } else {
+        st.menus.clone()
+    };
     let (title, rows) = path.split_first().ok_or("the path names no menu")?;
-    let menu = menus
+    let menu = st
+        .menus
         .iter()
         .position(|m| m.title == *title)
-        .or_else(|| menus.iter().position(|m| same_label(&m.title, title)))
+        .or_else(|| st.menus.iter().position(|m| same_label(&m.title, title)))
         .ok_or_else(|| format!("no menu {title:?}"))?;
     // A search typed into an open menu would show results, not the rows
     // named here: opening by path starts without one, as a click does.
     st.query.clear();
-    st.nav.open(menu);
-    for (level, label) in rows.iter().enumerate() {
+    st.nav.open(if vertical { 0 } else { menu });
+    st.vertical = vertical;
+    if vertical {
+        st.nav.hover(0, menu, &menus);
+    }
+    for (index_in_path, label) in rows.iter().enumerate() {
+        let level = index_in_path + usize::from(vertical);
         let entries = st
             .nav
             .level(&menus, level)
@@ -977,14 +1100,15 @@ pub fn open_path(ctx: &Context, path: &[String]) -> Result<Current, String> {
         if !row.enabled {
             return Err(format!("{label:?} is disabled"));
         }
-        if level + 1 < rows.len() && !row.is_submenu() {
+        if index_in_path + 1 < rows.len() && !row.is_submenu() {
             return Err(format!("{label:?} opens no submenu"));
         }
         st.nav.hover(level, index, &menus);
     }
     st.nav.depth = st.nav.levels().saturating_sub(1);
-    let current = current_of(&st.nav, &menus).expect("a menu is open");
+    let current = current_in_form(&st.nav, &menus, vertical).expect("a menu is open");
     st.current = Some(current.clone());
+    take_keyboard(ctx);
     ctx.data_mut(|d| d.insert_temp(state_id(), st));
     ctx.request_repaint();
     Ok(current)
@@ -996,6 +1120,8 @@ pub fn close(ctx: &Context) -> bool {
     let was = st.nav.open.is_some();
     st.nav.close();
     st.current = None;
+    st.popup_anchor = None;
+    st.vertical = st.compact;
     ctx.data_mut(|d| d.insert_temp(state_id(), st));
     ctx.request_repaint();
     was
@@ -1097,6 +1223,25 @@ pub fn bar_picked(
     menus: &[Menu],
     search: Option<&Search>,
 ) -> Option<(&'static str, bool)> {
+    render_picked(ui, menus, search, None)
+}
+
+/// Draw the nested vertical form from a button, or a content-edge anchor.
+pub fn compact_picked(
+    ui: &mut Ui,
+    menus: &[Menu],
+    search: Option<&Search>,
+    anchor: Rect,
+) -> Option<(&'static str, bool)> {
+    render_picked(ui, menus, search, Some(anchor))
+}
+
+fn render_picked(
+    ui: &mut Ui,
+    menus: &[Menu],
+    search: Option<&Search>,
+    anchor: Option<Rect>,
+) -> Option<(&'static str, bool)> {
     let ctx = ui.ctx().clone();
     let chrome = Chrome::of(&ctx);
     let model = menus.to_vec();
@@ -1121,7 +1266,7 @@ pub fn bar_picked(
             }
         });
         let ppp = ctx.pixels_per_point();
-        for menu in menus {
+        for menu in menus.iter().filter(|_| anchor.is_none()) {
             let galley = ui.painter().layout_no_wrap(
                 menu.title.clone(),
                 Chrome::menu_font(ui.style()),
@@ -1143,9 +1288,96 @@ pub fn bar_picked(
         st = State::default();
     }
     st.layer = Some(ui.layer_id());
+    st.compact = anchor.is_some();
+    let vertical = anchor.is_some() || st.popup_anchor.is_some();
+    if st.vertical != vertical {
+        st.nav.close();
+        st.query.clear();
+    }
+    st.vertical = vertical;
+    if vertical && anchor.is_none() {
+        for (index, menu) in menus.iter().enumerate() {
+            let galley = ui.painter().layout_no_wrap(
+                menu.title.clone(),
+                Chrome::menu_font(ui.style()),
+                chrome.palette.text_dim,
+            );
+            let size = vec2(
+                galley.size().x + 2.0 * chrome.metrics.menu_title_padding.x,
+                chrome.metrics.menu_title_height,
+            );
+            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+            response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &menu.title));
+            if response.hovered() {
+                ui.painter()
+                    .rect_filled(rect, chrome.metrics.radius_sm, chrome.palette.hover);
+            }
+            ui.painter().galley(
+                rect.center() - galley.size() / 2.0,
+                galley,
+                chrome.palette.text_dim,
+            );
+            if (response.hovered() && ui.input(|i| i.pointer.primary_pressed()))
+                || (response.clicked() && !response.clicked_by(PointerButton::Primary))
+            {
+                st.popup_anchor = None;
+                st.vertical = false;
+                st.nav.open(index);
+                st.title_press = true;
+                st.current = current_of(&st.nav, menus);
+                st.menus = model;
+                ctx.data_mut(|d| d.insert_temp(state_id(), st));
+                ctx.request_repaint();
+                return None;
+            }
+        }
+    }
+    let compact;
+    let menus = if vertical {
+        compact = compact_model(menus);
+        compact.as_slice()
+    } else {
+        menus
+    };
+    let search_level = usize::from(vertical);
+    let before = st.nav.clone();
+    let alt = ui.input(|i| i.modifiers.alt && !i.modifiers.ctrl && !i.modifiers.command);
+    if alt && !st.alt_down {
+        st.alt_used = false;
+    }
+    st.alt_used |= alt
+        && ui.input(|i| {
+            i.events.iter().any(|e| {
+                matches!(
+                    e,
+                    egui::Event::Key { pressed: true, .. } | egui::Event::Text(_)
+                )
+            })
+        });
+    let open_key = (st.alt_down && !alt && !st.alt_used)
+        || ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F10));
+    st.alt_down = alt;
+    if open_key && !menus.is_empty() {
+        if st.nav.open_menu().is_some() {
+            st.nav.close();
+        } else {
+            st.nav.open(0);
+            take_keyboard(&ctx);
+        }
+    }
     // While a query is typed, the search menu lists its results instead of
     // its rows; navigation and drawing work on that view of the model.
-    let searching = |st: &State| search.filter(|s| st.nav.open == Some(s.menu));
+    let searching = |st: &State| {
+        search.filter(|s| {
+            if vertical {
+                st.nav.open == Some(0)
+                    && st.nav.highlight.first() == Some(&Some(s.menu))
+                    && st.nav.levels() > 1
+            } else {
+                st.nav.open == Some(s.menu)
+            }
+        })
+    };
     // Keys held back last frame come first, now that the text typed before
     // them is in the query; but only into the menu and field they were
     // typed in. If the menu closed or the field lost the keyboard since,
@@ -1178,19 +1410,28 @@ pub fn bar_picked(
     let menus = match searching(&st) {
         Some(s) if !st.query.trim().is_empty() => {
             let mut changed = menus.to_vec();
-            changed[s.menu].entries = matching(menus, &st.query)
+            let results = matching(&model, &st.query)
                 .into_iter()
                 .map(Entry::Row)
                 .collect();
+            if vertical {
+                if let Entry::Row(row) = &mut changed[0].entries[s.menu] {
+                    row.children = results;
+                }
+            } else {
+                changed[s.menu].entries = results;
+            }
             view = changed;
             view.as_slice()
         }
         _ => menus,
     };
     st.nav.validate(menus);
-    let before = st.nav.clone();
     let mut fired = None;
     let typing = searching(&st).is_some() && ctx.memory(|m| m.has_focus(search_field_id()));
+    if typing {
+        st.nav.depth = search_level;
+    }
 
     // The open menu's keys come first: before focused widgets, which are
     // drawn later in the frame, and before global shortcuts (see `is_open`).
@@ -1201,6 +1442,16 @@ pub fn bar_picked(
     if st.nav.open.is_some() {
         ui.input_mut(|i| {
             i.events.retain(|event| {
+                if !typing
+                    && st.nav.open_menu().is_some()
+                    && let egui::Event::Text(text) = event
+                {
+                    if let Some(letter) = text.chars().next().filter(|c| c.is_alphabetic()) {
+                        st.nav.jump(letter, menus);
+                        keyed = true;
+                    }
+                    return false;
+                }
                 let egui::Event::Key {
                     key,
                     pressed: true,
@@ -1222,29 +1473,38 @@ pub fn bar_picked(
                 keyed = true;
                 if typing
                     && nav == NavKey::Enter
-                    && st.nav.highlight().first().copied().flatten().is_none()
+                    && st
+                        .nav
+                        .highlight()
+                        .get(search_level)
+                        .copied()
+                        .flatten()
+                        .is_none()
                 {
                     // Enter with nothing highlighted runs the first enabled
                     // result (none while the query is empty).
-                    let open = if st.query.trim().is_empty() {
-                        usize::MAX
-                    } else {
-                        st.nav.open.unwrap_or_default()
-                    };
-                    let first = menus.get(open).and_then(|m| {
-                        m.entries
-                            .iter()
-                            .filter_map(Entry::row)
-                            .find(|r| r.enabled && r.id.is_some())
-                            .and_then(|r| r.id)
-                    });
+                    let first = (!st.query.trim().is_empty())
+                        .then(|| st.nav.level(menus, search_level))
+                        .flatten()
+                        .and_then(|entries| {
+                            entries
+                                .iter()
+                                .filter_map(Entry::row)
+                                .find(|r| r.enabled && r.id.is_some())
+                                .and_then(|r| r.id)
+                        });
                     if let Some(id) = first {
                         fired = Some((id, in_results(&st)));
                         st.nav.close();
                     }
                 } else {
                     let from_results = in_results(&st);
-                    if let Outcome::Run(id) = st.nav.key(nav, menus) {
+                    let outcome = if vertical {
+                        st.nav.key_vertical(nav, menus)
+                    } else {
+                        st.nav.key(nav, menus)
+                    };
+                    if let Outcome::Run(id) = outcome {
                         fired = Some((id, from_results));
                     }
                 }
@@ -1267,7 +1527,7 @@ pub fn bar_picked(
     let font = Chrome::menu_font(ui.style());
     let mut titles: Vec<(Rect, Arc<Galley>, bool)> = Vec::with_capacity(menus.len());
     let mut on_title = false;
-    for (index, menu) in menus.iter().enumerate() {
+    for (index, menu) in menus.iter().enumerate().filter(|_| !vertical) {
         let galley =
             ui.painter()
                 .layout_no_wrap(menu.title.clone(), font.clone(), Color32::PLACEHOLDER);
@@ -1300,14 +1560,16 @@ pub fn bar_picked(
         }
         titles.push((rect, galley, response.hovered()));
     }
-    // The search field is cleared and takes the keyboard each time its menu
-    // opens, by pointer or by key (§3.5).
-    if let Some(s) = search
-        && st.nav.open == Some(s.menu)
-        && before.open_menu() != Some(s.menu)
-    {
-        st.query.clear();
-        st.focus_search = true;
+    if vertical {
+        let anchor = st
+            .popup_anchor
+            .or(anchor)
+            .unwrap_or_else(|| Rect::from_min_size(ctx.content_rect().min, Vec2::ZERO));
+        let galley = ui
+            .painter()
+            .layout_no_wrap(String::new(), font, Color32::PLACEHOLDER);
+        titles.push((anchor, galley, false));
+        on_title = st.title_press;
     }
     // Focus waits for the pointer to settle: egui hands focus back from a
     // field on the frame of any press or click that lands elsewhere, which
@@ -1319,10 +1581,11 @@ pub fn bar_picked(
         st.focus_search = false;
         if searching(&st).is_some() {
             ctx.memory_mut(|m| m.request_focus(search_field_id()));
+            st.nav.depth = search_level;
         }
     }
     let ppp = ctx.pixels_per_point();
-    for (index, (rect, galley, hovered)) in titles.iter().enumerate() {
+    for (index, (rect, galley, hovered)) in titles.iter().enumerate().filter(|_| !vertical) {
         if *hovered || st.nav.open == Some(index) {
             ui.painter()
                 .rect_filled(*rect, metrics.radius_sm, palette.hover);
@@ -1354,7 +1617,7 @@ pub fn bar_picked(
             let Some(entries) = st.nav.level(menus, level) else {
                 break;
             };
-            let min_width = if level == 0 {
+            let min_width = if level == 0 || (level == search_level && searching(&st).is_some()) {
                 metrics.menu_min_width
             } else {
                 0.0
@@ -1362,6 +1625,12 @@ pub fn bar_picked(
             let layout = Layout::new(ui, &chrome, entries, min_width);
             let outer = layout.size + margin.sum();
             if level == 0 {
+                if vertical
+                    && chrome.menu_side == design::MenuSide::Right
+                    && st.popup_anchor.is_none()
+                {
+                    origin.x = anchor.right() - outer.x;
+                }
                 origin.x = origin
                     .x
                     .min(screen.right() - metrics.edge_gap - outer.x)
@@ -1369,7 +1638,7 @@ pub fn bar_picked(
             }
             let rect = Rect::from_min_size(origin, outer);
             // The search menu's field and its separator band sit above the rows.
-            let header = searching(&st).filter(|_| level == 0);
+            let header = searching(&st).filter(|_| level == search_level);
             // The field, the separator and their item spacing come to about
             // one row and a separator band; the no-matches line is a row.
             let header_height = header.map_or(0.0, |_| {
@@ -1446,10 +1715,14 @@ pub fn bar_picked(
                 st.nav.close_below(level);
                 break;
             }
-            let child = st
-                .nav
-                .level(menus, level + 1)
-                .map(|e| Layout::new(ui, &chrome, e, 0.0).size + margin.sum());
+            let child = st.nav.level(menus, level + 1).map(|e| {
+                let min_width = if level + 1 == search_level && searching(&st).is_some() {
+                    metrics.menu_min_width
+                } else {
+                    0.0
+                };
+                Layout::new(ui, &chrome, e, min_width).size + margin.sum()
+            });
             let mut child = child.unwrap_or(Vec2::ZERO);
             child.y = child.y.min(tallest);
             let mut x = shown.frame.right() + metrics.submenu_gap;
@@ -1522,11 +1795,18 @@ pub fn bar_picked(
         st.scroll_press = false;
     }
 
-    st.current = current_of(&st.nav, menus);
+    let search_active = searching(&st).is_some();
+    if search_active && !st.search_active {
+        st.query.clear();
+        st.focus_search = true;
+    }
+    st.search_active = search_active;
+    st.current = current_in_form(&st.nav, menus, vertical);
     st.menus = model;
     st.frames = frames;
     if st.nav.open.is_none() {
         st.query.clear();
+        st.popup_anchor = None;
     }
     if st.nav != before || st.focus_search {
         ctx.request_repaint();

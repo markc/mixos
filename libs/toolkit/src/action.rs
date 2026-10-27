@@ -607,6 +607,38 @@ impl<S> Registry<S> {
             .collect()
     }
 
+    /// The registry's menus below a compact-menu anchor.
+    pub fn compact_menus(
+        &self,
+        ui: &mut egui::Ui,
+        state: &S,
+        strings: &Strings,
+        anchor: egui::Rect,
+    ) -> Vec<(&'static str, Origin)> {
+        let model = self.model(ui.ctx(), state, strings);
+        let search = self.search_menu.and_then(|key| {
+            let title = label_text(strings, key);
+            Some(menu::Search {
+                menu: model.iter().position(|menu| menu.title == title)?,
+                hint: crate::strings::own("search-menus"),
+                empty: crate::strings::own("no-matching-commands"),
+            })
+        });
+        menu::compact_picked(ui, &model, search.as_ref(), anchor)
+            .map(|(id, searched)| {
+                (
+                    id,
+                    if searched {
+                        Origin::Palette
+                    } else {
+                        Origin::Menu
+                    },
+                )
+            })
+            .into_iter()
+            .collect()
+    }
+
     /// Menu `menu` (a Fluent menu key) as `response`'s right-click menu:
     /// the menu bar's rows, ticks, shortcuts and enablement, generated the
     /// same way. Returns the command chosen this frame (run it with

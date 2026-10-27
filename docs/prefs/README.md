@@ -212,12 +212,15 @@ Preferences answers on the Bus as `prefs`. `prefs.info` reports the whole state;
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; `prefs.appearance.set`
 changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
-`contrast`, `decorations`, `caption_side`, `window_style`, `font_family`, `mono_family`,
+`contrast`, `decorations`, `caption_side`, `window_style`, `menu_style`, `menu_side`, `font_family`, `mono_family`,
 `text_scale`, `density`, `reduced_motion`). Family values are strings or null;
 text scale and density reset with 1.0, and reduced motion takes a boolean.
 Desktop → Windows places the window style picker beside caption placement.
 Its choices and labels come from the design registry; compd applies the chosen
 server-side furniture live. It does not change application-drawn captions.
+The same section offers Menus (Menu bar, Menu button, In the title bar) and
+Menu button (Left, Right). The side picker is enabled when menus are collapsed.
+In the title bar uses compd's button in SSD mode and the app's button in CSD mode.
 The section ids in tree order are `appearance`, `text_and_fonts`, `wallpaper`,
 `windows`, `apps_email`, `apps_term`, `apps_ced`, `accessibility`, and `software`.
 Navigation actions use `view.section.<id>`; retired section ids have no aliases. Search includes their `ui.*`

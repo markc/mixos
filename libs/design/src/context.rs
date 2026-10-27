@@ -289,6 +289,81 @@ macro_rules! window_style_registry {
 
 window_styles!(window_style_registry);
 
+/// Menu forms and their Prefs labels.
+#[macro_export]
+macro_rules! menu_styles {
+    ($registry:ident) => {
+        $registry! {
+            #[default]
+            Bar => ("bar", "look-menu-style-bar"),
+            Button => ("button", "look-menu-style-button"),
+            Titlebar => ("titlebar", "look-menu-style-titlebar"),
+        }
+    };
+}
+
+/// Menu button positions and their Prefs labels.
+#[macro_export]
+macro_rules! menu_sides {
+    ($registry:ident) => {
+        $registry! {
+            #[default]
+            Left => ("left", "look-menu-side-left"),
+            Right => ("right", "look-menu-side-right"),
+        }
+    };
+}
+
+macro_rules! menu_axis {
+    ($axis:ident, $($(#[$meta:meta])* $variant:ident => ($name:literal, $label:literal),)*) => {
+        #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum $axis { $($(#[$meta])* $variant,)* }
+
+        impl $axis {
+            pub const ALL: [Self; Self::NAMES.len()] = [$(Self::$variant,)*];
+            pub const NAMES: &'static [&'static str] = &[$($name,)*];
+
+            pub const fn name(self) -> &'static str {
+                match self { $(Self::$variant => $name,)* }
+            }
+
+            pub const fn label_id(self) -> &'static str {
+                match self { $(Self::$variant => $label,)* }
+            }
+
+            pub fn from_name(name: &str) -> Option<Self> {
+                Self::ALL.into_iter().find(|axis| axis.name() == name)
+            }
+
+            pub fn resolve(name: &str) -> Self {
+                Self::from_name(name).unwrap_or_default()
+            }
+
+            pub fn valid_name(name: &str) -> bool {
+                WindowStyle::valid_name(name)
+            }
+        }
+    };
+}
+
+macro_rules! menu_style_registry {
+    ($($entry:tt)*) => { menu_axis!(MenuStyle, $($entry)*); };
+}
+macro_rules! menu_side_registry {
+    ($($entry:tt)*) => { menu_axis!(MenuSide, $($entry)*); };
+}
+menu_styles!(menu_style_registry);
+menu_sides!(menu_side_registry);
+
+impl MenuStyle {
+    pub fn effective(self, decorations: Decorations) -> Self {
+        match (self, decorations) {
+            (Self::Titlebar, Decorations::Client) => Self::Button,
+            _ => self,
+        }
+    }
+}
+
 impl WindowStyle {
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|style| style.name() == name)
@@ -361,5 +436,35 @@ mod window_style_tests {
             assert!(!WindowStyle::valid_name(name));
         }
         assert!(!WindowStyle::valid_name(&"a".repeat(65)));
+    }
+}
+
+#[cfg(test)]
+mod menu_tests {
+    use super::*;
+
+    #[test]
+    fn menu_registries_and_decoration_resolution() {
+        for style in MenuStyle::ALL {
+            assert_eq!(MenuStyle::from_name(style.name()), Some(style));
+            assert!(MenuStyle::valid_name(style.name()));
+            assert!(style.label_id().starts_with("look-menu-style-"));
+            assert_eq!(style.effective(Decorations::Server), style);
+        }
+        for side in MenuSide::ALL {
+            assert_eq!(MenuSide::from_name(side.name()), Some(side));
+            assert!(MenuSide::valid_name(side.name()));
+            assert!(side.label_id().starts_with("look-menu-side-"));
+        }
+        assert_eq!(
+            MenuStyle::Titlebar.effective(Decorations::Client),
+            MenuStyle::Button
+        );
+        assert_eq!(MenuStyle::resolve("future-style"), MenuStyle::Bar);
+        assert_eq!(MenuSide::resolve("future-side"), MenuSide::Left);
+        for name in ["", "two words", "LEFT", "../menu"] {
+            assert!(!MenuStyle::valid_name(name));
+            assert!(!MenuSide::valid_name(name));
+        }
     }
 }

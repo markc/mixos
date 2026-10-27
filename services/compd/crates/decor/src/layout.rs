@@ -23,6 +23,7 @@
 pub mod deco;
 pub mod geom;
 pub mod presets;
+pub use design::{MenuSide, MenuStyle};
 
 pub use deco::{
     ButtonCluster, ButtonColors, ButtonShape, ButtonSide, ButtonState, CaptionButton, ChromeStyle,
@@ -105,6 +106,7 @@ pub struct ChromeLayout {
     pub content: Rect,
     /// Buttons in the same order as `theme.buttons.order`.
     pub buttons: [(CaptionButton, Rect); 3],
+    pub menu_button: Option<Rect>,
     /// Bounding rectangle of all caption buttons, including the gaps between
     /// them.
     pub button_cluster: Rect,
@@ -142,9 +144,20 @@ impl ChromeLayout {
     /// the uncovered interior hit-tests as frame (resize), never as
     /// `Content`, so no point is forwarded to a client outside its own buffer.
     pub fn compute(theme: &DecoTheme, content_size: Vec2) -> ChromeLayout {
+        Self::compute_with_menu(theme, content_size, None)
+    }
+
+    pub fn compute_with_menu(
+        theme: &DecoTheme,
+        content_size: Vec2,
+        menu_side: Option<design::MenuSide>,
+    ) -> ChromeLayout {
         let m = &theme.metrics;
         let ext = DecoExtents::of(theme);
-        let min = Self::min_content_size(theme);
+        let mut min = Self::min_content_size(theme);
+        if menu_side.is_some() {
+            min.x += m.titlebar_height + theme.buttons.gap;
+        }
         let chrome_size = vec2(content_size.x.max(min.x), content_size.y.max(min.y));
         let content_size = vec2(content_size.x.max(1.0), content_size.y.max(1.0));
         let win = ext.window_size_for_content(chrome_size);
@@ -197,7 +210,7 @@ impl ChromeLayout {
 
         // The span the button cluster occupies from its window edge.
         let cluster_span = c.edge_inset + 3.0 * bw + 2.0 * gap + m.title_pad;
-        let title_slot = match (m.title_align, c.side) {
+        let mut title_slot = match (m.title_align, c.side) {
             // Centred titles keep symmetric margins so the text stays truly
             // centred; the margin is the cluster span on both sides.
             (TitleAlign::Center, _) => rect(
@@ -220,6 +233,42 @@ impl ChromeLayout {
             ),
         };
 
+        let menu_button = menu_side.map(|side| {
+            let width = m.titlebar_height;
+            let x = match (side, c.side) {
+                (design::MenuSide::Left, ButtonSide::Left) => {
+                    button_cluster.x + button_cluster.w + c.gap
+                }
+                (design::MenuSide::Right, ButtonSide::Right) => button_cluster.x - c.gap - width,
+                (design::MenuSide::Left, _) => titlebar.x,
+                (design::MenuSide::Right, _) => titlebar.x + titlebar.w - width,
+            };
+            let button = rect(x, titlebar.y, width, titlebar.h);
+            let left = if side == design::MenuSide::Left {
+                button.x + button.w + m.title_pad
+            } else {
+                title_slot.x
+            };
+            let right = if side == design::MenuSide::Right {
+                button.x - m.title_pad
+            } else {
+                title_slot.x + title_slot.w
+            };
+            if m.title_align == TitleAlign::Center {
+                let inset = (left - titlebar.x).max(titlebar.x + titlebar.w - right);
+                title_slot = rect(
+                    titlebar.x + inset,
+                    titlebar.y,
+                    (titlebar.w - 2.0 * inset).max(0.0),
+                    titlebar.h,
+                );
+            } else {
+                let left = left.max(title_slot.x);
+                title_slot = rect(left, titlebar.y, (right - left).max(0.0), titlebar.h);
+            }
+            button
+        });
+
         let s = &m.shadow;
         let shadow = window.inflate(s.softness);
         let shadow = rect(shadow.x, shadow.y + s.offset_y, shadow.w, shadow.h);
@@ -229,6 +278,7 @@ impl ChromeLayout {
             titlebar,
             content,
             buttons,
+            menu_button,
             button_cluster,
             title_slot,
             shadow,
@@ -253,6 +303,9 @@ impl ChromeLayout {
     /// zone is a few pixels per corner.
     pub fn hit_test(&self, p: Vec2) -> ChromePart {
         if self.window.contains(p) {
+            if self.menu_button.is_some_and(|r| r.contains(p)) {
+                return ChromePart::Button(CaptionButton::Menu);
+            }
             for &(kind, r) in &self.buttons {
                 if r.contains(p) {
                     return ChromePart::Button(kind);
@@ -361,6 +414,51 @@ mod tests {
                     "{:?} {kind:?} vertical",
                     theme.style
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn menu_button_clears_the_cluster_and_title_in_every_style_and_side() {
+        for theme in themes() {
+            for side in design::MenuSide::ALL {
+                for width in [10.0, 640.0] {
+                    let layout =
+                        ChromeLayout::compute_with_menu(&theme, vec2(width, 480.0), Some(side));
+                    let button = layout.menu_button.unwrap();
+                    assert!(layout.titlebar.contains(button.center()));
+                    assert!(
+                        button.x >= layout.titlebar.x
+                            && button.x + button.w <= layout.titlebar.x + layout.titlebar.w
+                    );
+                    assert_eq!(
+                        layout.hit_test(button.center()),
+                        ChromePart::Button(CaptionButton::Menu)
+                    );
+                    for (_, caption) in layout.buttons {
+                        assert!(
+                            button.x + button.w <= caption.x || caption.x + caption.w <= button.x
+                        );
+                    }
+                    if layout.title_slot.w > 0.0 {
+                        assert!(
+                            button.x + button.w <= layout.title_slot.x
+                                || layout.title_slot.x + layout.title_slot.w <= button.x
+                        );
+                    }
+                    let same_side = matches!(
+                        (side, theme.buttons.side),
+                        (design::MenuSide::Left, ButtonSide::Left)
+                            | (design::MenuSide::Right, ButtonSide::Right)
+                    );
+                    if !same_side {
+                        if side == design::MenuSide::Left {
+                            assert_eq!(button.x, layout.titlebar.x);
+                        } else {
+                            assert_eq!(button.x + button.w, layout.titlebar.x + layout.titlebar.w);
+                        }
+                    }
+                }
             }
         }
     }

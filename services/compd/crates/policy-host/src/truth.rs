@@ -223,6 +223,7 @@ pub fn truth(lp: &Loop) -> Value {
                             decor::CaptionButton::Close => "close",
                             decor::CaptionButton::Maximize => "maximize",
                             decor::CaptionButton::Minimize => "minimize",
+                            decor::CaptionButton::Menu => "menu",
                         };
                         buttons.insert(name.to_string(), rect(r));
                     }

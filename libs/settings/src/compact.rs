@@ -82,6 +82,16 @@ pub struct CompactEffective {
         skip_serializing_if = "crate::model::is_default_window_style"
     )]
     pub window_style: String,
+    #[serde(
+        default = "crate::model::default_menu_style",
+        skip_serializing_if = "crate::model::is_default_menu_style"
+    )]
+    pub menu_style: String,
+    #[serde(
+        default = "crate::model::default_menu_side",
+        skip_serializing_if = "crate::model::is_default_menu_side"
+    )]
+    pub menu_side: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_stroke: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,6 +127,8 @@ pub fn encode(snapshot: &Snapshot) -> Result<CompactSnapshot, serde_json::Error>
                 decorations: e.decorations.clone(),
                 caption_side: e.caption_side.clone(),
                 window_style: e.window_style.clone(),
+                menu_style: e.menu_style.clone(),
+                menu_side: e.menu_side.clone(),
                 icon_stroke: e.icon_stroke,
                 font_family: e.font_family.clone(),
                 font_weight: e.font_weight,
@@ -164,6 +176,8 @@ impl CompactSnapshot {
                     decorations: e.decorations,
                     caption_side: e.caption_side,
                     window_style: e.window_style,
+                    menu_style: e.menu_style,
+                    menu_side: e.menu_side,
                     icon_stroke: e.icon_stroke,
                     font_family: e.font_family,
                     font_weight: e.font_weight,
@@ -328,5 +342,43 @@ mod tests {
         assert!(decode(dangling).unwrap_err().contains("unknown design"));
         wire["designs"]["extra"] = wire["designs"][&digest].clone();
         assert!(decode(wire).unwrap_err().contains("not named"));
+    }
+
+    #[test]
+    fn menus_round_trip_and_legacy_defaults_are_omitted() {
+        let old = snapshot(Desktop::default());
+        for value in [
+            serde_json::to_value(&old).unwrap(),
+            serde_json::to_value(encode(&old).unwrap()).unwrap(),
+        ] {
+            for key in ["menu_style", "menu_side"] {
+                assert!(value["desktop"]["appearance"].get(key).is_none());
+                assert!(value["effective"]["desktop"].get(key).is_none());
+            }
+            let decoded = decode(value).unwrap();
+            assert_eq!(decoded.effective["desktop"].menu_style, "bar");
+            assert_eq!(decoded.effective["desktop"].menu_side, "left");
+        }
+        for style in design::MenuStyle::NAMES
+            .iter()
+            .copied()
+            .chain(["future-style"])
+        {
+            for side in design::MenuSide::NAMES
+                .iter()
+                .copied()
+                .chain(["future-side"])
+            {
+                let mut desktop = Desktop::default();
+                desktop.appearance.menu_style = style.into();
+                desktop.appearance.menu_side = side.into();
+                let full = snapshot(desktop);
+                assert_eq!(decode(serde_json::to_value(&full).unwrap()).unwrap(), full);
+                assert_eq!(
+                    decode(serde_json::to_value(encode(&full).unwrap()).unwrap()).unwrap(),
+                    full
+                );
+            }
+        }
     }
 }

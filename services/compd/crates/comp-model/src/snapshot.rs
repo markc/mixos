@@ -360,6 +360,8 @@ pub struct FocusWindowSnapshot {
 pub struct DecorationSnapshot {
     pub enabled: bool,
     pub style: &'static str,
+    pub menu_button: bool,
+    pub menu_side: &'static str,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -832,7 +834,7 @@ impl FocusSnapshot {
         }
     }
 }
-flat_snapshot!(DecorationSnapshot, enabled, style);
+flat_snapshot!(DecorationSnapshot, enabled, style, menu_button, menu_side);
 flat_snapshot!(BindingsSnapshot, enabled, profile, table, user);
 flat_snapshot!(
     PortSnapshot,
@@ -1768,6 +1770,12 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         "Whether server-side decoration is enabled"
     ),
     descriptor!(&[L("decoration"), L("style")], String, "Live installed decoration style", enum = design::WindowStyle::NAMES),
+    descriptor!(
+        &[L("decoration"), L("menu_button")],
+        Bool,
+        "Whether the session requests an SSD menu button; each window also needs a registered app service"
+    ),
+    descriptor!(&[L("decoration"), L("menu_side")], String, "The SSD menu button side", enum = design::MenuSide::NAMES),
     descriptor!(
         &[L("bindings"), L("enabled")],
         Bool,

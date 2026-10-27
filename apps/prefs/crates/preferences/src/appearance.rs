@@ -88,6 +88,8 @@ pub struct Look {
     pub decorations: Decorations,
     pub captions: CaptionSide,
     pub window_style: String,
+    pub menu_style: String,
+    pub menu_side: String,
     pub font_family: Option<String>,
     pub mono_family: Option<String>,
     pub text_scale: f64,
@@ -105,6 +107,8 @@ impl Default for Look {
             decorations: Decorations::default(),
             captions: CaptionSide::default(),
             window_style: design::WindowStyle::default().name().into(),
+            menu_style: design::MenuStyle::default().name().into(),
+            menu_side: design::MenuSide::default().name().into(),
             font_family: None,
             mono_family: None,
             text_scale: 1.0,
@@ -131,7 +135,9 @@ impl Look {
             "mode":self.mode.name(),"contrast":self.contrast.name(),
             "decorations":resolved.mode.name(),"decorations_reason":resolved.reason,
             "caption_side":self.captions.name(),
-            "window_style":design::WindowStyle::resolve(&self.window_style).name()})
+            "window_style":design::WindowStyle::resolve(&self.window_style).name(),
+            "menu_style":design::MenuStyle::resolve(&self.menu_style).name(),
+            "menu_side":design::MenuSide::resolve(&self.menu_side).name()})
     }
 
     /// The profile's stored appearance.
@@ -147,6 +153,8 @@ impl Look {
             decorations: named("decorations", &stored.decorations, Decorations::from_name)?,
             captions: named("caption side", &stored.caption_side, CaptionSide::from_name)?,
             window_style: stored.window_style.clone(),
+            menu_style: stored.menu_style.clone(),
+            menu_side: stored.menu_side.clone(),
             font_family: stored.font_family.clone(),
             mono_family: stored.mono_family.clone(),
             ..Self::default()
@@ -208,6 +216,16 @@ impl Look {
             "font_family",
             self.font_family != base.font_family,
             json!(self.font_family),
+        );
+        put(
+            "menu_style",
+            self.menu_style != base.menu_style,
+            json!(self.menu_style),
+        );
+        put(
+            "menu_side",
+            self.menu_side != base.menu_side,
+            json!(self.menu_side),
         );
         put(
             "mono_family",
@@ -287,6 +305,26 @@ impl Look {
                 .ok_or("window_style must be a plain name of up to 64 bytes")?;
             look.window_style = name.into();
         }
+        for (key, slot, valid) in [
+            (
+                "menu_style",
+                &mut look.menu_style,
+                design::MenuStyle::valid_name as fn(&str) -> bool,
+            ),
+            (
+                "menu_side",
+                &mut look.menu_side,
+                design::MenuSide::valid_name as fn(&str) -> bool,
+            ),
+        ] {
+            if let Some(value) = args.get(key) {
+                *slot = value
+                    .as_str()
+                    .filter(|name| valid(name))
+                    .ok_or_else(|| format!("{key} must be a plain name of up to 64 bytes"))?
+                    .into();
+            }
+        }
         for (key, family) in [
             ("font_family", &mut look.font_family),
             ("mono_family", &mut look.mono_family),
@@ -334,6 +372,7 @@ impl Serialize for Look {
             "mode":self.mode.name(),"contrast":self.contrast.name(),
             "decorations":self.decorations.name(),"caption_side":self.captions.name(),
             "window_style":self.window_style,
+            "menu_style":self.menu_style,"menu_side":self.menu_side,
             "font_family":self.font_family,"mono_family":self.mono_family,
             "text_scale":self.text_scale,"density":self.density,"reduced_motion":self.reduced_motion})
         .serialize(s)
@@ -361,6 +400,8 @@ pub enum Axis {
     Decorations,
     CaptionSide,
     WindowStyle,
+    MenuStyle,
+    MenuSide,
     FontFamily,
     MonoFamily,
     TextScale,
@@ -369,7 +410,7 @@ pub enum Axis {
 }
 
 impl Axis {
-    pub const ALL: [Axis; 12] = [
+    pub const ALL: [Axis; 14] = [
         Axis::Scheme,
         Axis::Style,
         Axis::Mode,
@@ -377,6 +418,8 @@ impl Axis {
         Axis::Decorations,
         Axis::CaptionSide,
         Axis::WindowStyle,
+        Axis::MenuStyle,
+        Axis::MenuSide,
         Axis::FontFamily,
         Axis::MonoFamily,
         Axis::TextScale,
@@ -394,6 +437,8 @@ impl Axis {
             Axis::Decorations => a.decorations != b.decorations,
             Axis::CaptionSide => a.captions != b.captions,
             Axis::WindowStyle => a.window_style != b.window_style,
+            Axis::MenuStyle => a.menu_style != b.menu_style,
+            Axis::MenuSide => a.menu_side != b.menu_side,
             Axis::FontFamily => a.font_family != b.font_family,
             Axis::MonoFamily => a.mono_family != b.mono_family,
             Axis::TextScale => a.text_scale != b.text_scale,
@@ -412,6 +457,8 @@ impl Axis {
             Axis::Decorations => to.decorations = from.decorations,
             Axis::CaptionSide => to.captions = from.captions,
             Axis::WindowStyle => to.window_style = from.window_style.clone(),
+            Axis::MenuStyle => to.menu_style = from.menu_style.clone(),
+            Axis::MenuSide => to.menu_side = from.menu_side.clone(),
             Axis::FontFamily => to.font_family = from.font_family.clone(),
             Axis::MonoFamily => to.mono_family = from.mono_family.clone(),
             Axis::TextScale => to.text_scale = from.text_scale,
@@ -449,11 +496,16 @@ pub struct Submitted {
 
 impl Submitted {
     fn section(&self) -> crate::Section {
-        if self
-            .axes
-            .iter()
-            .any(|a| matches!(a, Axis::Decorations | Axis::CaptionSide | Axis::WindowStyle))
-        {
+        if self.axes.iter().any(|a| {
+            matches!(
+                a,
+                Axis::Decorations
+                    | Axis::CaptionSide
+                    | Axis::WindowStyle
+                    | Axis::MenuStyle
+                    | Axis::MenuSide
+            )
+        }) {
             crate::Section::Windows
         } else if self
             .axes
@@ -1611,6 +1663,8 @@ fn axis_key(axis: Axis) -> &'static str {
         Axis::Decorations => "appearance.decorations",
         Axis::CaptionSide => "appearance.caption_side",
         Axis::WindowStyle => "appearance.window_style",
+        Axis::MenuStyle => "appearance.menu_style",
+        Axis::MenuSide => "appearance.menu_side",
         Axis::FontFamily => "appearance.font_family",
         Axis::MonoFamily => "appearance.mono_family",
         Axis::TextScale => "ui.text_scale",
@@ -2064,6 +2118,48 @@ mod tests {
         assert_eq!(
             serde_json::to_value(look).unwrap()["window_style"],
             "future-style"
+        );
+    }
+
+    #[test]
+    fn menu_axes_apply_immediately_and_keep_unknown_names() {
+        for (key, names, default) in [
+            ("menu_style", design::MenuStyle::NAMES, "bar"),
+            ("menu_side", design::MenuSide::NAMES, "left"),
+        ] {
+            for name in names
+                .iter()
+                .copied()
+                .chain(["future-menu"])
+                .filter(|name| *name != default)
+            {
+                let mut e = read();
+                let mut args = json!({});
+                args[key] = json!(name);
+                e.set_look(&args).unwrap();
+                let (_, command, request) = next(&mut e);
+                assert_eq!(command, "settings.apply");
+                assert_eq!(request["changes"][format!("appearance.{key}")], name);
+                assert_eq!(
+                    serde_json::to_value(e.look.shown().unwrap()).unwrap()[key],
+                    name
+                );
+            }
+        }
+        let look = Look::from_stored(&Stored {
+            menu_style: "future-style".into(),
+            menu_side: "future-side".into(),
+            ..Stored::default()
+        })
+        .unwrap();
+        assert_eq!(look.effective()["menu_style"], "bar");
+        assert_eq!(look.effective()["menu_side"], "left");
+        let changed = look.with(&json!({"mode":"light"})).unwrap();
+        assert_eq!(changed.menu_style, "future-style");
+        assert_eq!(changed.menu_side, "future-side");
+        assert!(
+            look.with(&json!({"menu_style":"bad name", "mode":"light"}))
+                .is_err()
         );
     }
 

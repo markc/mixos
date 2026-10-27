@@ -624,6 +624,90 @@ fn help_opens_with_a_focused_empty_search_that_lists_ranked_matches() {
 }
 
 #[test]
+fn compact_help_keeps_search_and_empty_results_in_the_menu() {
+    for style in [design::MenuStyle::Button, design::MenuStyle::Titlebar] {
+        let theme =
+            fixture::theme(Scheme::Pro, Mode::Light).with_menus(style, design::MenuSide::Left);
+        let mut h = fixture::harness(
+            Harness::builder().with_size(egui::vec2(900.0, 500.0)),
+            &theme,
+        );
+        menu::open_path(&h.ctx, &["Help".into()]).unwrap();
+        h.run();
+        assert!(h.get_by_role(Role::TextInput).is_focused());
+        typed(&mut h, "no-such-command-xyz");
+        assert!(menu::is_open(&h.ctx));
+        assert!(h.get_by_role(Role::TextInput).is_focused());
+        menu::close(&h.ctx);
+        h.run();
+        menu::open_path(&h.ctx, &["Help".into()]).unwrap();
+        h.run();
+        typed(&mut h, "clo");
+        h.get_by_label("File › Close");
+        press(&mut h, Key::Enter);
+        assert_eq!(h.state().ran, ["file.close"]);
+        assert!(!menu::is_open(&h.ctx));
+    }
+}
+
+#[test]
+fn popup_anchors_and_bare_alt_work_with_collapsed_menus() {
+    for side in design::MenuSide::ALL {
+        let theme =
+            fixture::theme(Scheme::Pro, Mode::Light).with_menus(design::MenuStyle::Button, side);
+        let mut h = fixture::harness(
+            Harness::builder().with_size(egui::vec2(900.0, 500.0)),
+            &theme,
+        );
+        h.input_mut().modifiers = Modifiers::ALT;
+        h.run_steps(1);
+        h.input_mut().modifiers = Modifiers::NONE;
+        h.run();
+        assert!(menu::is_open(&h.ctx));
+        menu::close(&h.ctx);
+        h.run();
+        for (requested, x) in [
+            (design::MenuSide::Left, None),
+            (design::MenuSide::Right, None),
+            (side, Some(123.0)),
+        ] {
+            menu::popup(&h.ctx, Some(requested), x).unwrap();
+            h.run();
+            let rect = h.get_by_label("File").rect();
+            if let Some(x) = x {
+                assert!(rect.left() >= x && rect.left() < x + 50.0);
+            } else if requested == design::MenuSide::Left {
+                assert!(rect.left() < 50.0);
+            } else {
+                assert!(rect.left() > 450.0 && rect.right() <= 900.0);
+            }
+            menu::close(&h.ctx);
+            h.run();
+        }
+    }
+}
+
+#[test]
+fn a_forced_popup_can_close_and_reopen_a_bar_path_before_the_next_frame() {
+    let mut h = window();
+    menu::popup(&h.ctx, None, None).unwrap();
+    h.run();
+    assert!(menu::close(&h.ctx));
+    menu::open_path(
+        &h.ctx,
+        &[
+            "File".into(),
+            "Open Recent".into(),
+            "Clear Recent Files".into(),
+        ],
+    )
+    .unwrap();
+    h.run();
+    press(&mut h, Key::Enter);
+    assert_eq!(h.state().ran, ["file.clear-recent"]);
+}
+
+#[test]
 fn space_and_left_right_edit_the_query_while_up_down_move_the_highlight() {
     let mut h = window();
     open_help(&mut h);

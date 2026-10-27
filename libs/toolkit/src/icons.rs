@@ -108,6 +108,7 @@ icons! {
     LoaderCircle => "loader-circle",
     Mail => "mail",
     MailOpen => "mail-open",
+    Menu => "menu",
     MessageSquare => "message-square",
     Minus => "minus",
     Monitor => "monitor",

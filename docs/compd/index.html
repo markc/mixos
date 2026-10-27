@@ -265,6 +265,16 @@ intermediate unmaximise, focus, raise or workspace switch. The normal restore
 geometry is retained. An unknown output is refused before effects are applied.
 This lets toolkit restore a saved maximised frame on its original display.</p>
 <h2 id="settings-at-startup">Settings at startup</h2>
+<p>The session's <code>appearance.menu_style: "titlebar"</code> adds a menu caption beside
+the caption cluster or at the opposite edge, according to <code>appearance.menu_side</code>.
+It appears only on SSD windows whose <code>dev.mixos.NAME</code> app has a registered
+<code>NAME</code> Bus service. Clicking queues <code>NAME.ui.menu.popup {side}</code> through the scene
+host's existing port; failures are logged without blocking the compositor.
+<code>comp.window.menu {id, generation}</code> uses the same path, with the usual window
+generation and session-lock checks. <code>comp.props</code> reports <code>decoration.menu_button</code>
+(the session's SSD menu request) and <code>decoration.menu_side</code>; per-window truth
+lists a <code>menu</code> button only where it is actually present. Settings and service
+registration changes repaint existing chrome live.</p>
 <p>Quoin prepares cached or embedded settings while its existing Bus
 supervisor registers. Its persistent cache is service-owned under the
 configured variable data directory at <code>compd/cache/settings</code>; all

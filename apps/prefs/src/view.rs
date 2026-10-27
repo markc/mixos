@@ -1398,6 +1398,8 @@ fn axis_label(axis: Axis) -> &'static str {
         Axis::Decorations => "look-titlebar",
         Axis::CaptionSide => "look-captions",
         Axis::WindowStyle => "look-window-style",
+        Axis::MenuStyle => "look-menu-style",
+        Axis::MenuSide => "look-menu-side",
         Axis::FontFamily => "fonts-family",
         Axis::MonoFamily => "fonts-mono-family",
         Axis::TextScale => "size-text-scale",
@@ -1528,6 +1530,37 @@ fn decoration_controls(ui: &mut Ui, look: Look, events: &mut Vec<UiEvent>) {
             ..look.clone()
         }));
     }
+    ui.end_row();
+
+    field_label(ui, &label("look-menu-style"));
+    let styles: Vec<_> = design::MenuStyle::ALL
+        .into_iter()
+        .map(|style| (style.name(), label(style.label_id())))
+        .collect();
+    if let Some(style) = choices(ui, look.menu_style.as_str(), &styles) {
+        events.push(UiEvent::Look(Look {
+            menu_style: style.into(),
+            ..look.clone()
+        }));
+    }
+    ui.end_row();
+
+    field_label(ui, &label("look-menu-side"));
+    ui.add_enabled_ui(
+        design::MenuStyle::resolve(&look.menu_style) != design::MenuStyle::Bar,
+        |ui| {
+            let sides: Vec<_> = design::MenuSide::ALL
+                .into_iter()
+                .map(|side| (side.name(), label(side.label_id())))
+                .collect();
+            if let Some(side) = choices(ui, look.menu_side.as_str(), &sides) {
+                events.push(UiEvent::Look(Look {
+                    menu_side: side.into(),
+                    ..look.clone()
+                }));
+            }
+        },
+    );
     ui.end_row();
 
     // The system's title bar places its own buttons.
@@ -2236,14 +2269,65 @@ mod numeric_tests {
                 assert_eq!(h.state().decorations, Decorations::Auto);
                 h.get_by_label(expected);
                 assert_eq!(
-                    h.get_by_label("Left").accesskit_node().is_disabled(),
+                    h.get_all_by_label("Left")
+                        .last()
+                        .unwrap()
+                        .accesskit_node()
+                        .is_disabled(),
                     !enabled
                 );
                 assert_eq!(
-                    h.get_by_label("Right").accesskit_node().is_disabled(),
+                    h.get_all_by_label("Right")
+                        .last()
+                        .unwrap()
+                        .accesskit_node()
+                        .is_disabled(),
                     !enabled
                 );
             });
+        }
+    }
+
+    #[test]
+    fn menu_pickers_follow_the_registries_and_gate_the_side() {
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(760.0, 420.0))
+            .build_ui_state(
+                |ui, look: &mut Look| {
+                    let mut events = Vec::new();
+                    egui::Grid::new("menu-pickers")
+                        .num_columns(2)
+                        .show(ui, |ui| decoration_controls(ui, look.clone(), &mut events));
+                    for event in events {
+                        if let UiEvent::Look(next) = event {
+                            *look = next;
+                        }
+                    }
+                },
+                Look::default(),
+            );
+        toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+        h.run();
+        for style in design::MenuStyle::ALL {
+            h.get_all_by_label(&label(style.label_id()))
+                .next()
+                .unwrap()
+                .click();
+            h.run();
+            assert_eq!(h.state().menu_style, style.name());
+            for side in design::MenuSide::ALL {
+                let side_label = label(side.label_id());
+                let node = h.get_all_by_label(&side_label).next().unwrap();
+                assert_eq!(
+                    node.accesskit_node().is_disabled(),
+                    style == design::MenuStyle::Bar
+                );
+                if style != design::MenuStyle::Bar {
+                    node.click();
+                    h.run();
+                    assert_eq!(h.state().menu_side, side.name());
+                }
+            }
         }
     }
 

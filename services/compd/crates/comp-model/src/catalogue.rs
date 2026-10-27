@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The `comp.*` catalogue: 39 commands in three families and 13 topics.
+//! The `comp.*` catalogue: 40 commands in three families and 13 topics.
 
 pub use crate::observation::{
     CORNER_CLICKED_TOPIC_SUFFIX, CORNER_CLICKED_V2_TOPIC_SUFFIX, CORNER_ENTERED_TOPIC_SUFFIX,
@@ -70,7 +70,7 @@ pub const DIRECT_COMMANDS: &[&str] = &[
     "comp.workspaces.list",
 ];
 
-/// The 17 window-family commands (`{id, generation}`-addressed, plus the
+/// The 18 window-family commands (`{id, generation}`-addressed, plus the
 /// workspace switch, count and rename).
 pub const WINDOW_COMMANDS: &[&str] = &[
     "comp.window.maximize",
@@ -82,6 +82,7 @@ pub const WINDOW_COMMANDS: &[&str] = &[
     "comp.window.focus",
     "comp.window.raise",
     "comp.window.close",
+    "comp.window.menu",
     "comp.window.place",
     "comp.window.wait",
     "comp.window.stats",
@@ -137,12 +138,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_surface_is_39_commands_and_13_topics() {
+    fn the_surface_is_40_commands_and_13_topics() {
         assert_eq!(DIRECT_COMMANDS.len(), 17);
-        assert_eq!(WINDOW_COMMANDS.len(), 17);
+        assert_eq!(WINDOW_COMMANDS.len(), 18);
         assert_eq!(INPUT_COMMANDS.len(), 5);
         let commands = all_commands().collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(commands.len(), 39, "no command is in two families");
+        assert_eq!(commands.len(), 40, "no command is in two families");
         assert!(commands.iter().all(|command| command.starts_with("comp.")));
         assert!(
             READ_COMMANDS

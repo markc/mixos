@@ -508,8 +508,19 @@ tree, and injects queued pointer and key events through egui's input hook,
 the same path real input takes. The app registers these commands under its own
 prefix (<code>&lt;app&gt;.ui.tree</code> and so on):</p>
 <p><code>ui.tree</code>, <code>ui.click</code>, <code>ui.pointer</code>, <code>ui.scroll</code>, <code>ui.key</code>, <code>ui.type</code>,
-<code>ui.menu</code>, <code>ui.menu.list</code>, <code>ui.menu.open</code>, <code>ui.menu.close</code>, <code>ui.capture</code>,
+<code>ui.menu</code>, <code>ui.menu.list</code>, <code>ui.menu.open</code>, <code>ui.menu.close</code>, <code>ui.menu.popup</code>, <code>ui.menu.form</code>, <code>ui.capture</code>,
 <code>window</code>, <code>window.state</code></p>
+<p>Session <code>appearance.menu_style</code> chooses the horizontal bar, a hamburger button
+or a button hosted by compd for SSD windows. <code>appearance.menu_side</code> places the
+button at either end. The hamburger wraps the existing menu titles as submenu
+rows and shares navigation, highlights, search and command dispatch with the
+bar. F10 or a bare Alt opens the menus in either form.
+<code>ui.menu.list</code> and <code>ui.menu.open {path|menu}</code> use the same titles and paths in
+every form. <code>ui.menu.popup {side?: "left"|"right", x?: number}</code> opens the
+vertical menu at the content's top edge regardless of the selected form; x
+is a content-point coordinate and takes precedence over side.
+<code>ui.menu.form</code> returns <code>{style, side, effective}</code>; effective resolves <code>titlebar</code>
+to <code>button</code> under client-side decorations.</p>
 <p>The app forwards each request, with the prefix removed, to
 <code>drive::request</code> from app logic, including logic-only wakes. It sends back whatever <code>request</code>, or
 <code>drive::logic</code> (called once per logic wake), returns. It holds later commands

@@ -147,6 +147,8 @@ pub struct Theme {
     style: ResolvedStyle,
     decorations: RequestedDecorations,
     captions: CaptionSide,
+    menu_style: design::MenuStyle,
+    menu_side: design::MenuSide,
     overlay: Overlay,
     overlay_style: Option<ResolvedStyle>,
 }
@@ -310,6 +312,8 @@ impl Theme {
                     style,
                     decorations: RequestedDecorations::default(),
                     captions: CaptionSide::default(),
+                    menu_style: design::MenuStyle::default(),
+                    menu_side: design::MenuSide::default(),
                     overlay: Overlay::default(),
                     overlay_style: None,
                 })
@@ -338,6 +342,8 @@ impl Theme {
                 });
                 theme.decorations = self.decorations;
                 theme.captions = self.captions;
+                theme.menu_style = self.menu_style;
+                theme.menu_side = self.menu_side;
                 theme.ui = self.ui.clone();
                 // A rebuilt design drops the session's choices; carry them across.
                 theme.with_overlay(self.overlay.clone())?
@@ -356,6 +362,21 @@ impl Theme {
         self.decorations = decorations.into();
         self.captions = captions;
         self
+    }
+
+    /// The session's menu form and button position.
+    pub fn with_menus(mut self, style: design::MenuStyle, side: design::MenuSide) -> Self {
+        self.menu_style = style;
+        self.menu_side = side;
+        self
+    }
+
+    pub fn menu_style(&self) -> design::MenuStyle {
+        self.menu_style
+    }
+
+    pub fn menu_side(&self) -> design::MenuSide {
+        self.menu_side
     }
 
     /// `self` with the session's icon and type choices laid over it.

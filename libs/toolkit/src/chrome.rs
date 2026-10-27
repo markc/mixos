@@ -429,6 +429,8 @@ pub struct Chrome {
     /// Who draws the title bar, and where its captions go.
     pub decorations: Decorations,
     pub captions: CaptionSide,
+    pub menu_style: design::MenuStyle,
+    pub menu_side: design::MenuSide,
 }
 
 fn key() -> Id {
@@ -472,6 +474,8 @@ impl Chrome {
             metrics,
             decorations: theme.decorations(),
             captions: theme.captions(),
+            menu_style: theme.menu_style(),
+            menu_side: theme.menu_side(),
         }
     }
 
@@ -500,6 +504,8 @@ impl Chrome {
                 metrics: Metrics::from_egui(&style, &tokens),
                 decorations: Decorations::default(),
                 captions: CaptionSide::default(),
+                menu_style: design::MenuStyle::default(),
+                menu_side: design::MenuSide::default(),
             }
         })
     }

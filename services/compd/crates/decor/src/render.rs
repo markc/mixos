@@ -240,6 +240,7 @@ fn refresh(
                 && toplevel_has(window, xdg_toplevel::State::TiledRight);
     }
     next.title = title_of(window);
+    next.menu_side = crate::window::menu_side(window);
     next.content_size = (content_size.w, content_size.h);
     chrome.update(next, crate::window::generation());
     chrome.state().clone()

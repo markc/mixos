@@ -159,11 +159,15 @@ fn window_style_defaults_preserve_existing_fixture_seals() {
     ] {
         let mut accepted: settingsd::store::Accepted = strict::from_str(text).unwrap();
         assert_eq!(accepted.desktop.appearance.window_style, "mac");
+        assert_eq!(accepted.desktop.appearance.menu_style, "bar");
+        assert_eq!(accepted.desktop.appearance.menu_side, "left");
         accepted.check(&accepted.binding).unwrap();
         let sealed = accepted.content_digest.clone();
         accepted.seal().unwrap();
         assert_eq!(accepted.content_digest, sealed);
         let saved = serde_json::to_value(&accepted).unwrap();
         assert!(saved["desktop"]["appearance"].get("window_style").is_none());
+        assert!(saved["desktop"]["appearance"].get("menu_style").is_none());
+        assert!(saved["desktop"]["appearance"].get("menu_side").is_none());
     }
 }

@@ -209,11 +209,12 @@ pub fn show_with<S>(
             // Server-side decorations: the compositor draws the title,
             // captions and drag zone; this is the menu-bar row, the menus
             // from the inner margin and the right-hand group at its end.
-            let menus_left = bar.left() + m.title_bar_margin;
-            let group_right = bar.right() - m.title_bar_margin;
+            let mut menus_left = bar.left() + m.title_bar_margin;
+            let mut group_right = bar.right() - m.title_bar_margin;
+            let anchor = menu_button(ui, &chrome, &mut menus_left, &mut group_right);
             let room =
                 Rect::from_min_max(pos2(menus_left, bar.top()), pos2(group_right, bar.bottom()));
-            let menus_right = menus(ui, room, registry, state, strings, &mut fired);
+            let menus_right = menus(ui, room, registry, state, strings, anchor, &mut fired);
             right_group(
                 ui,
                 controls,
@@ -243,13 +244,21 @@ pub fn show_with<S>(
         // right end instead.
         let left = chrome.captions == CaptionSide::Left;
         let captions_width = 3.0 * m.caption_width;
-        let (start, room_end, end) = if left {
+        let (mut start, mut room_end, mut end) = if left {
             let end = bar.right() - m.title_bar_margin;
             (bar.left() + captions_width, end, end)
         } else {
             let captions = bar.right() - captions_width;
             (bar.left(), captions, captions - m.caption_gap)
         };
+        let mut menu_start = start + m.title_bar_margin;
+        let anchor = menu_button(ui, &chrome, &mut menu_start, &mut end);
+        start = menu_start - m.title_bar_margin;
+        if chrome.menu_style.effective(chrome.decorations) == design::MenuStyle::Button
+            && chrome.menu_side == design::MenuSide::Right
+        {
+            room_end = end;
+        }
         if let Some(icon) = icon {
             let at = pos2(start + m.title_bar_margin, bar.center().y - m.mark / 2.0);
             let mark = Rect::from_min_size(at, vec2(m.mark, m.mark))
@@ -259,7 +268,7 @@ pub fn show_with<S>(
 
         let menus_left = start + m.title_bar_margin + m.mark + m.mark_gap;
         let room = Rect::from_min_max(pos2(menus_left, bar.top()), pos2(room_end, bar.bottom()));
-        let menus_right = menus(ui, room, registry, state, strings, &mut fired);
+        let menus_right = menus(ui, room, registry, state, strings, anchor, &mut fired);
 
         let group_left = right_group(
             ui,
@@ -454,6 +463,7 @@ fn menus<S>(
     registry: &Registry<S>,
     state: &S,
     strings: &Strings,
+    anchor: Option<Rect>,
     fired: &mut Vec<(&'static str, Origin)>,
 ) -> f32 {
     let mut row = ui.new_child(
@@ -462,8 +472,54 @@ fn menus<S>(
             .layout(Layout::left_to_right(Align::Center)),
     );
     row.spacing_mut().item_spacing.x = 0.0;
-    fired.extend(registry.menus(&mut row, state, strings));
+    let chrome = Chrome::of(ui.ctx());
+    if chrome.menu_style.effective(chrome.decorations) == design::MenuStyle::Bar {
+        fired.extend(registry.menus(&mut row, state, strings));
+    } else {
+        let anchor = anchor.unwrap_or_else(|| {
+            let content = ui.ctx().content_rect();
+            let x = if chrome.menu_side == design::MenuSide::Left {
+                content.left()
+            } else {
+                content.right()
+            };
+            Rect::from_min_size(pos2(x, content.top()), egui::Vec2::ZERO)
+        });
+        fired.extend(registry.compact_menus(&mut row, state, strings, anchor));
+    }
     row.min_rect().right().max(room.left())
+}
+
+fn menu_button(ui: &mut Ui, chrome: &Chrome, left: &mut f32, right: &mut f32) -> Option<Rect> {
+    if chrome.menu_style.effective(chrome.decorations) != design::MenuStyle::Button {
+        return None;
+    }
+    let width = chrome.style.icon_button as f32;
+    let x = match chrome.menu_side {
+        design::MenuSide::Left => {
+            let x = *left;
+            *left += width;
+            x
+        }
+        design::MenuSide::Right => {
+            *right -= width;
+            *right
+        }
+    };
+    let bar = ui.max_rect();
+    let rect = Rect::from_min_max(pos2(x, bar.top()), pos2(x + width, bar.bottom()));
+    let mut cell = ui.new_child(
+        UiBuilder::new()
+            .max_rect(rect)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    let response = cell.add(IconButton::new(Icon::Menu).tooltip(label("window-menu")));
+    if (response.hovered() && ui.input(|i| i.pointer.primary_pressed()))
+        || (response.clicked() && !response.clicked_by(egui::PointerButton::Primary))
+    {
+        crate::menu::toggle(ui.ctx());
+    }
+    Some(response.rect)
 }
 
 /// Ask the platform for its own decorations, or for none, when that is not

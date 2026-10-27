@@ -78,7 +78,10 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
         }
         None => Theme::for_context(context),
     };
-    Ok(theme.framed(decorations, captions))
+    Ok(theme.framed(decorations, captions).with_menus(
+        design::MenuStyle::resolve(&effective.menu_style),
+        design::MenuSide::resolve(&effective.menu_side),
+    ))
 }
 
 /// Build the whole look from an accepted snapshot (on the worker).
@@ -105,13 +108,16 @@ pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
     let chrome = ChromeStyle::ALL
         .into_iter()
         .map(|style| {
-            ChromeTheme::from_read(
+            let mut chrome = ChromeTheme::from_read(
                 style,
                 theme.dictionary(),
                 family.clone(),
                 DecoFontWeight(title.weight),
                 title.font_size as f32 * text_scale,
-            )
+            );
+            chrome.menu_style = theme.menu_style();
+            chrome.menu_side = theme.menu_side();
+            chrome
         })
         .collect();
     Ok(Look {
@@ -235,6 +241,47 @@ mod tests {
                 look.chrome(look.window_style).deco.style,
                 ChromeStyle::resolve(name)
             );
+        }
+    }
+
+    #[test]
+    fn menus_reach_every_chrome_style_from_the_effective_settings() {
+        for style in design::MenuStyle::NAMES
+            .iter()
+            .copied()
+            .chain(["future-style"])
+        {
+            for side in design::MenuSide::NAMES
+                .iter()
+                .copied()
+                .chain(["future-side"])
+            {
+                let desktop = settings::Desktop::default();
+                let mut effective = settings::resolve(&desktop).unwrap();
+                effective.get_mut(CONTEXT).unwrap().menu_style = style.into();
+                effective.get_mut(CONTEXT).unwrap().menu_side = side.into();
+                let snapshot = Snapshot {
+                    schema: settings::SCHEMA,
+                    binding: settings::Binding {
+                        instance: "fixture".into(),
+                        profile: "default".into(),
+                    },
+                    incarnation: "test".into(),
+                    revision: settings::Revision(1),
+                    design_revision: settings::Revision(1),
+                    source_digest: settings::source_digest(settings::EMBEDDED_DEFAULT_SOURCE),
+                    desktop,
+                    effective,
+                };
+                let look = build(&snapshot).unwrap();
+                for window_style in ChromeStyle::ALL {
+                    let chrome = look.chrome(window_style);
+                    assert_eq!(chrome.menu_style, design::MenuStyle::resolve(style));
+                    assert_eq!(chrome.menu_side, design::MenuSide::resolve(side));
+                }
+                assert_eq!(look.theme.menu_style(), design::MenuStyle::resolve(style));
+                assert_eq!(look.theme.menu_side(), design::MenuSide::resolve(side));
+            }
         }
     }
 

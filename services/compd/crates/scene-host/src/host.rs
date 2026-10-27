@@ -715,6 +715,14 @@ impl SceneHost {
             actions: sender,
             waker,
         };
+        let menu_sink = port.event_sink();
+        decor::window::menu_emitter(move |service, side| {
+            menu_sink.emit(
+                service,
+                &format!("{service}.ui.menu.popup"),
+                json!({"side": side.name()}),
+            )
+        });
         // conf.mix's page order, as Quoin reads it at start.
         let mut host = Host::default();
         host.panels.load_state();
@@ -778,6 +786,9 @@ impl SceneHost {
     /// the loop's post-dispatch hook after the waker fired.
     pub fn service_port(&mut self, lp: &mut world::state::Loop) -> Serviced {
         let mut serviced = Serviced::default();
+        if self.port.settings_generation().is_none() {
+            serviced.changed |= decor::window::menu_services(BTreeSet::new());
+        }
         let panels = &mut self.host.panels;
         let port = &self.port;
         for _changed in self.settings.drain_with(
@@ -937,7 +948,10 @@ impl SceneHost {
         {
             match message {
                 Inbound::Registered(name) => self.service = Some(name),
-                Inbound::Refused(reason) => self.refused = Some(reason),
+                Inbound::Refused(reason) => {
+                    serviced.changed |= decor::window::menu_services(BTreeSet::new());
+                    self.refused = Some(reason);
+                }
                 Inbound::Request(request) => {
                     let generation = self.port.connection_generation();
                     if request.kind == SceneCommand::Layout
@@ -980,6 +994,7 @@ impl SceneHost {
                     serviced.answered += 1;
                 }
                 Inbound::Live(live) => {
+                    serviced.changed |= decor::window::menu_services(live.clone());
                     let notices = self.host.services_live(live);
                     self.host.panels.sync(&self.host.store);
                     serviced.changed |= !notices.is_empty();
@@ -1175,6 +1190,7 @@ impl SceneHost {
     }
 
     pub fn finish(self) {
+        decor::window::menu_services(BTreeSet::new());
         self.port.finish();
     }
 

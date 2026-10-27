@@ -79,6 +79,10 @@ pub struct Appearance {
     /// The server-side furniture preset; unknown names render as the default.
     #[serde(skip_serializing_if = "is_default_window_style")]
     pub window_style: String,
+    #[serde(skip_serializing_if = "is_default_menu_style")]
+    pub menu_style: String,
+    #[serde(skip_serializing_if = "is_default_menu_side")]
+    pub menu_side: String,
     /// The session icon stroke on Lucide's 24-unit grid, in quarter steps
     /// from [`ICON_STROKE_MIN`] to [`ICON_STROKE_MAX`]. None is the design's
     /// own `icon.stroke_width` token. Omitted at the default (see above).
@@ -115,6 +119,8 @@ impl Default for Appearance {
             decorations: "auto".into(),
             caption_side: "right".into(),
             window_style: default_window_style(),
+            menu_style: default_menu_style(),
+            menu_side: default_menu_side(),
             icon_stroke: None,
             font_family: None,
             font_weight: None,
@@ -394,6 +400,16 @@ pub struct Effective {
         skip_serializing_if = "is_default_window_style"
     )]
     pub window_style: String,
+    #[serde(
+        default = "default_menu_style",
+        skip_serializing_if = "is_default_menu_style"
+    )]
+    pub menu_style: String,
+    #[serde(
+        default = "default_menu_side",
+        skip_serializing_if = "is_default_menu_side"
+    )]
+    pub menu_side: String,
     // The session type and stroke choices, omitted when unset (see above).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_stroke: Option<f64>,
@@ -426,6 +442,18 @@ pub(crate) fn default_window_style() -> String {
 }
 pub(crate) fn is_default_window_style(value: &str) -> bool {
     value == design::WindowStyle::default().name()
+}
+pub(crate) fn default_menu_style() -> String {
+    design::MenuStyle::default().name().into()
+}
+pub(crate) fn is_default_menu_style(value: &str) -> bool {
+    value == design::MenuStyle::default().name()
+}
+pub(crate) fn default_menu_side() -> String {
+    design::MenuSide::default().name().into()
+}
+pub(crate) fn is_default_menu_side(value: &str) -> bool {
+    value == design::MenuSide::default().name()
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

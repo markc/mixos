@@ -404,6 +404,72 @@ fn a_shortcut_with_modifiers_runs_its_command() {
 }
 
 #[test]
+fn menu_paths_and_popups_work_in_every_form() {
+    use design::{CaptionSide, MenuSide, MenuStyle, RequestedDecorations};
+    let mut baseline = None;
+    for style in MenuStyle::ALL {
+        for decorations in [RequestedDecorations::Client, RequestedDecorations::Server] {
+            for side in MenuSide::ALL {
+                let mut h = window();
+                let theme = fixture::theme(Scheme::Pro, Mode::Light)
+                    .framed(decorations, CaptionSide::Right)
+                    .with_menus(style, side);
+                toolkit::install(&h.ctx, &theme);
+                h.run();
+                let form = ok(&mut h, "ui.menu.form", json!({}));
+                assert_eq!(
+                    form,
+                    json!({"style":style.name(), "side":side.name(), "effective":style.effective(theme.decorations()).name()})
+                );
+                let list = ok(&mut h, "ui.menu.list", json!({}));
+                if let Some(baseline) = &baseline {
+                    assert_eq!(&list, baseline);
+                } else {
+                    baseline = Some(list);
+                }
+                let opened = ok(
+                    &mut h,
+                    "ui.menu.open",
+                    json!({"path":["File","Open Recent","Clear Recent Files"]}),
+                );
+                assert_eq!(opened["menu"]["menu"], "File");
+                assert_eq!(
+                    opened["menu"]["path"],
+                    json!(["Open Recent", "Clear Recent Files"])
+                );
+                h.run();
+                ok(&mut h, "ui.key", json!({"key":"Enter"}));
+                assert_eq!(
+                    h.state().fixture.ran.last().copied(),
+                    Some("file.clear-recent")
+                );
+                ok(
+                    &mut h,
+                    "ui.menu.popup",
+                    json!({"side":side.name(), "x":450.0}),
+                );
+                h.run();
+                assert!(menu::is_open(&h.ctx));
+                assert_eq!(ok(&mut h, "ui.menu.form", json!({})), form);
+                ok(
+                    &mut h,
+                    "ui.menu.open",
+                    json!({"path":["File","Open Recent","Clear Recent Files"]}),
+                );
+                h.run();
+                ok(&mut h, "ui.key", json!({"key":"Enter"}));
+                assert_eq!(h.state().fixture.ran.len(), 2);
+                ok(&mut h, "ui.menu.popup", json!({}));
+                assert_eq!(ok(&mut h, "ui.menu.close", json!({}))["closed"], true);
+                for args in [json!({"side":"bad"}), json!({"side":2}), json!({"x":"bad"})] {
+                    refused(&mut h, "ui.menu.popup", args);
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn pointer_press_and_release_follow_the_menu_rules() {
     let mut h = window();
     let tree = ok(&mut h, "ui.tree", json!({"label":"Edit"}));

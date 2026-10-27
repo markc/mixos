@@ -336,3 +336,48 @@ fn unknown_commands_get_the_shared_refusal() {
         })
     );
 }
+
+#[test]
+fn menu_axes_survive_a_sealed_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    drop(authority(dir.path()));
+    for (index, style) in design::MenuStyle::NAMES
+        .iter()
+        .copied()
+        .chain(["future-style"])
+        .enumerate()
+    {
+        for side in design::MenuSide::NAMES
+            .iter()
+            .copied()
+            .chain(["future-side"])
+        {
+            let (store, accepted) = Store::open(dir.path(), &binding()).unwrap();
+            let mut authority = Authority::new(store, accepted).unwrap();
+            authority
+                .apply(ApplyRequest {
+                    binding: binding(),
+                    expected_incarnation: authority.accepted.incarnation.clone(),
+                    expected_revision: authority.accepted.revision,
+                    operation_id: format!("menu-{index}-{side}"),
+                    changes: BTreeMap::from([
+                        ("appearance.menu_style".into(), json!(style)),
+                        ("appearance.menu_side".into(), json!(side)),
+                    ]),
+                    reset: vec![],
+                    request_digest: None,
+                })
+                .unwrap();
+            let reply =
+                service::dispatch(&mut authority, "settings.appearance.get", &body("fixture"))
+                    .unwrap();
+            let snapshot = settings::compact::decode(reply["snapshot"].clone()).unwrap();
+            assert_eq!(snapshot.effective["desktop"].menu_style, style);
+            assert_eq!(snapshot.effective["desktop"].menu_side, side);
+            drop(authority);
+            let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
+            assert_eq!(reopened.desktop.appearance.menu_style, style);
+            assert_eq!(reopened.desktop.appearance.menu_side, side);
+        }
+    }
+}

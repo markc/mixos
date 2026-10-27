@@ -48,6 +48,8 @@ pub enum TokenSource {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChromeTheme {
     pub deco: DecoTheme,
+    pub menu_style: design::MenuStyle,
+    pub menu_side: design::MenuSide,
     pub tokens: TokenSource,
     /// The same design's tokens for in-compositor content (Mix Scenes): one
     /// compile serves both, so the scene host never loads the theme again.
@@ -128,6 +130,8 @@ impl ChromeTheme {
         deco.metrics.title_size_px = title_size;
         ChromeTheme {
             deco,
+            menu_style: design::MenuStyle::default(),
+            menu_side: design::MenuSide::default(),
             tokens: TokenSource::Prepared,
             palette: Palette::from_dictionary(dictionary),
         }
@@ -155,6 +159,8 @@ impl ChromeTheme {
         let palette = Palette::from_design(&design);
         ChromeTheme {
             deco,
+            menu_style: design::MenuStyle::default(),
+            menu_side: design::MenuSide::default(),
             tokens,
             palette,
         }

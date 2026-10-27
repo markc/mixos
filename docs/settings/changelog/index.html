@@ -251,6 +251,11 @@
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md"><code>libs/settings/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/settings/">settings</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
 <h2 id="unreleased">Unreleased</h2>
+<p><code>appearance.menu_style</code> and <code>appearance.menu_side</code> select the session's menu
+form and button position. Their design registries supply names and Prefs labels.
+Unknown plain names survive round-trips and render as the defaults, <code>bar</code> and
+<code>left</code>. Defaults are omitted from authored and effective bytes, preserving
+existing seals without a store format or wire schema change.</p>
 <p><code>appearance.window_style</code> carries the server-side furniture name in authored,
 effective, summary and compact snapshot data. The design registry supplies
 known names and Prefs labels; unknown plain names survive round-trips and

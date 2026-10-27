@@ -39,6 +39,10 @@ pub fn theme(appearance: &Appearance) -> Option<Theme> {
     // this look draws with them; a choice left unset keeps the design's value.
     Theme::for_context(context)
         .framed(decorations, captions)
+        .with_menus(
+            design::MenuStyle::resolve(&appearance.menu_style),
+            design::MenuSide::resolve(&appearance.menu_side),
+        )
         .with_overlay(Overlay::from_appearance(appearance))
         .ok()
 }
@@ -49,11 +53,17 @@ pub fn theme_or(appearance: &Appearance, session: &Theme) -> Theme {
     theme(appearance).unwrap_or_else(|| {
         // Framing is independent of the design package: an unsupported
         // source must still follow the session's requested decorations.
-        session.clone().framed(
-            Decorations::from_name(&appearance.decorations)
-                .unwrap_or(session.requested_decorations()),
-            CaptionSide::from_name(&appearance.caption_side).unwrap_or(session.captions()),
-        )
+        session
+            .clone()
+            .framed(
+                Decorations::from_name(&appearance.decorations)
+                    .unwrap_or(session.requested_decorations()),
+                CaptionSide::from_name(&appearance.caption_side).unwrap_or(session.captions()),
+            )
+            .with_menus(
+                design::MenuStyle::resolve(&appearance.menu_style),
+                design::MenuSide::resolve(&appearance.menu_side),
+            )
     })
 }
 
@@ -78,6 +88,8 @@ mod tests {
             decorations: "ssd".into(),
             caption_side: "left".into(),
             window_style: "win11".into(),
+            menu_style: "titlebar".into(),
+            menu_side: "right".into(),
             icon_stroke: None,
             font_family: None,
             font_weight: None,
@@ -92,6 +104,8 @@ mod tests {
         assert_eq!(theme.contrast(), Contrast::High);
         assert_eq!(theme.decorations(), design::Decorations::Server);
         assert_eq!(theme.captions(), CaptionSide::Left);
+        assert_eq!(theme.menu_style(), design::MenuStyle::Titlebar);
+        assert_eq!(theme.menu_side(), design::MenuSide::Right);
     }
 
     #[test]

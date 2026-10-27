@@ -24,6 +24,7 @@ pub struct ChromeState {
     pub cluster_hovered: bool,
     /// The caption button held down, if any.
     pub pressed: Option<CaptionButton>,
+    pub menu_side: Option<design::MenuSide>,
 }
 
 impl ChromeState {
@@ -46,7 +47,7 @@ impl ChromeState {
     }
 
     pub fn layout(&self, theme: &DecoTheme) -> ChromeLayout {
-        ChromeLayout::compute(theme, content_vec(self.content_size))
+        ChromeLayout::compute_with_menu(theme, content_vec(self.content_size), self.menu_side)
     }
 }
 

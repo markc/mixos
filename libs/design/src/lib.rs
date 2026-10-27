@@ -69,8 +69,8 @@ pub use colour_model::{
 };
 pub use compiler::compile_design;
 pub use context::{
-    CaptionSide, Contrast, Decorations, DesignContext, Mode, RequestedDecorations, Scheme, Style,
-    WindowStyle,
+    CaptionSide, Contrast, Decorations, DesignContext, MenuSide, MenuStyle, Mode,
+    RequestedDecorations, Scheme, Style, WindowStyle,
 };
 pub use design_model::{
     AuthoredMetric, DesignApplyDecision, DesignApplyTransition, DesignCompileFailure,

@@ -8,6 +8,7 @@
 //! generation, which repaints every chrome once.
 
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use crate::layout::{ChromePart, DecoExtents, Vec2};
@@ -20,6 +21,72 @@ use crate::theme::ChromeTheme;
 thread_local! {
     static THEME: RefCell<Option<Rc<ChromeTheme>>> = const { RefCell::new(None) };
     static GENERATION: Cell<u64> = const { Cell::new(0) };
+    static MENU_SERVICES: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    static MENU_EMIT: RefCell<Option<MenuEmit>> = const { RefCell::new(None) };
+}
+
+type MenuEmit = Rc<dyn Fn(&str, design::MenuSide) -> bool>;
+
+/// The scene host owns the Bus connection; chrome only queues through it.
+pub fn menu_emitter(emit: impl Fn(&str, design::MenuSide) -> bool + 'static) {
+    MENU_EMIT.with_borrow_mut(|slot| *slot = Some(Rc::new(emit)));
+}
+
+pub fn menu_services(services: BTreeSet<String>) -> bool {
+    let changed = MENU_SERVICES.with_borrow_mut(|live| {
+        if *live == services {
+            return false;
+        }
+        *live = services;
+        true
+    });
+    if changed {
+        GENERATION.set(GENERATION.get().wrapping_add(1));
+    }
+    changed
+}
+
+pub fn menu_service<'a>(app_id: &'a str, services: &BTreeSet<String>) -> Option<&'a str> {
+    let service = app_id.strip_prefix("dev.mixos.")?;
+    (!service.is_empty() && !service.contains('.') && services.contains(service)).then_some(service)
+}
+
+fn app_id(window: &Window) -> Option<String> {
+    if let Some(x11) = window.x11_surface() {
+        return Some(x11.class());
+    }
+    window.toplevel().and_then(|toplevel| {
+        smithay::wayland::compositor::with_states(toplevel.wl_surface(), |states| {
+            states
+                .data_map
+                .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
+                .and_then(|data| data.lock().ok().and_then(|role| role.app_id.clone()))
+        })
+    })
+}
+
+pub fn menu_side(window: &Window) -> Option<design::MenuSide> {
+    let theme = installed()?;
+    if theme.menu_style != design::MenuStyle::Titlebar || !decorated(window) {
+        return None;
+    }
+    let app_id = app_id(window)?;
+    MENU_SERVICES.with_borrow(|live| menu_service(&app_id, live).map(|_| theme.menu_side))
+}
+
+pub fn open_menu(window: &Window) -> bool {
+    let Some(side) = menu_side(window) else {
+        return false;
+    };
+    let Some(app_id) = app_id(window) else {
+        return false;
+    };
+    let service = MENU_SERVICES.with_borrow(|live| menu_service(&app_id, live).map(str::to_owned));
+    let Some(service) = service else {
+        return false;
+    };
+    let emit = MENU_EMIT.with_borrow(Clone::clone);
+    emit.is_some_and(|emit| emit(&service, side))
 }
 
 /// Install `theme` for this compositor thread (startup, or a theme change).
@@ -108,9 +175,10 @@ pub fn hit(
 ) -> Option<ChromeHit> {
     let extents = extents(window)?;
     let theme = installed()?;
-    let layout = crate::layout::ChromeLayout::compute(
+    let layout = crate::layout::ChromeLayout::compute_with_menu(
         &theme.deco,
         crate::layout::vec2(slot_size.w.max(0) as f32, slot_size.h.max(0) as f32),
+        menu_side(window),
     );
     let p = frame_point(extents, content_relative);
     match layout.hit_test(p) {
@@ -140,9 +208,10 @@ pub fn parts(
 ) -> Option<SpaceParts> {
     let extents = extents(window)?;
     let theme = installed()?;
-    let layout = crate::layout::ChromeLayout::compute(
+    let layout = crate::layout::ChromeLayout::compute_with_menu(
         &theme.deco,
         crate::layout::vec2(slot_size.w.max(0) as f32, slot_size.h.max(0) as f32),
+        menu_side(window),
     );
     let (ox, oy) = (
         slot_origin.x as f64 - extents.left as f64,
@@ -160,7 +229,13 @@ pub fn parts(
         buttons: layout
             .buttons
             .iter()
-            .map(|&(button, rect)| (button, place(rect)))
+            .copied()
+            .chain(
+                layout
+                    .menu_button
+                    .map(|rect| (crate::layout::CaptionButton::Menu, rect)),
+            )
+            .map(|(button, rect)| (button, place(rect)))
             .collect(),
     })
 }
@@ -244,5 +319,25 @@ mod tests {
         install(ChromeTheme::from_source(ChromeStyle::Mac, None));
         assert_ne!(generation(), before);
         assert!(installed().is_some());
+    }
+
+    #[test]
+    fn only_registered_mixos_app_services_get_a_menu() {
+        let services = BTreeSet::from(["ced".into(), "prefs".into()]);
+        assert_eq!(menu_service("dev.mixos.ced", &services), Some("ced"));
+        for id in [
+            "ced",
+            "org.example.ced",
+            "dev.mixos.",
+            "dev.mixos.term",
+            "dev.mixos.ced.extra",
+        ] {
+            assert_eq!(menu_service(id, &services), None);
+        }
+        let before = generation();
+        assert!(menu_services(services.clone()));
+        assert_ne!(generation(), before);
+        assert!(!menu_services(services));
+        menu_services(BTreeSet::new());
     }
 }

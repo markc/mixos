@@ -225,6 +225,10 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
         decoration: DecorationSnapshot {
             enabled: decor::window::ssd_enabled(),
             style: decor::window::installed().map_or("mac", |theme| theme.deco.style.name()),
+            menu_button: decor::window::ssd_enabled()
+                && decor::window::installed()
+                    .is_some_and(|theme| theme.menu_style == decor::layout::MenuStyle::Titlebar),
+            menu_side: decor::window::installed().map_or("left", |theme| theme.menu_side.name()),
         },
         // The binding filter and tables. Before the first Bus pass
         // builds the state, the profile's default table, enabled.

@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// The drive commands, after the app's prefix.
-pub const COMMANDS: [&str; 13] = [
+pub const COMMANDS: [&str; 15] = [
     "ui.tree",
     "ui.click",
     "ui.pointer",
@@ -40,6 +40,8 @@ pub const COMMANDS: [&str; 13] = [
     "ui.menu.list",
     "ui.menu.open",
     "ui.menu.close",
+    "ui.menu.popup",
+    "ui.menu.form",
     "ui.capture",
     "window",
     "window.state",
@@ -142,6 +144,18 @@ pub fn describe(app: &str) -> Vec<Value> {
             Value::Null,
             "Close every open menu; answers whether one was open",
             false,
+        ),
+        (
+            "ui.menu.popup",
+            json!({"side":"optional left or right","x":"optional horizontal position in content points"}),
+            "Open the vertical menu at the top of the window content in any menu form",
+            false,
+        ),
+        (
+            "ui.menu.form",
+            Value::Null,
+            "The selected menu style and side, and the effective form after resolving decorations",
+            true,
         ),
         (
             "ui.capture",
@@ -902,6 +916,31 @@ impl Drive {
                 });
             }
             "ui.menu.close" => return Some(ok(id, json!({"closed":menu::close(ctx)}))),
+            "ui.menu.form" => return Some(ok(id, menu::form(ctx))),
+            "ui.menu.popup" => {
+                let side = match args.get("side") {
+                    None => None,
+                    Some(Value::String(name)) => match design::MenuSide::from_name(name) {
+                        Some(side) => Some(side),
+                        None => return Some(refusal(id, "ARGUMENT", "side must be left or right")),
+                    },
+                    _ => return Some(refusal(id, "ARGUMENT", "side must be left or right")),
+                };
+                let x = match args.get("x") {
+                    None => None,
+                    Some(value) => match value
+                        .as_f64()
+                        .filter(|x| x.is_finite() && (*x as f32).is_finite())
+                    {
+                        Some(x) => Some(x as f32),
+                        None => return Some(refusal(id, "ARGUMENT", "x must be a finite number")),
+                    },
+                };
+                return Some(match menu::popup(ctx, side, x) {
+                    Ok(()) => ok(id, json!({"menu":menu_state(ctx)})),
+                    Err(message) => refusal(id, "ARGUMENT", &message),
+                });
+            }
             "window.state" => return Some(ok(id, window_state(ctx))),
             "window" => return self.window(ctx, id, args),
             "ui.click" => click(args),

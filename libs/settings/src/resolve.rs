@@ -51,6 +51,8 @@ fn describe_base() -> Value {
             "appearance.decorations": {"type":"string", "enum":["auto","csd","ssd"]},
             "appearance.caption_side": {"type":"string", "enum":["right","left"]},
             "appearance.window_style": {"type":"string", "known_values":design::WindowStyle::NAMES, "unknown":"retained; renders as the default", "max_bytes":64},
+            "appearance.menu_style": {"type":"string", "known_values":design::MenuStyle::NAMES, "unknown":"retained; renders as the default", "max_bytes":64},
+            "appearance.menu_side": {"type":"string", "known_values":design::MenuSide::NAMES, "unknown":"retained; renders as the default", "max_bytes":64},
             "appearance.icon_stroke": {"type":"number|null", "minimum":1.0, "maximum":3.0, "step":0.25, "null":"the design's own icon.stroke_width token"},
             "appearance.font_family": {"type":"string|null", "max_bytes":128, "null":"Inter"},
             "appearance.font_weight": {"type":"integer|null", "minimum":100, "maximum":900, "step":100, "null":"the scheme's own weight"},
@@ -275,6 +277,22 @@ pub fn resolve_with_embedded_and_accents(
                 "Use a plain window style name of up to 64 bytes",
             ));
         }
+        for (path, name, valid) in [
+            (
+                "appearance.menu_style",
+                &desktop.appearance.menu_style,
+                design::MenuStyle::valid_name as fn(&str) -> bool,
+            ),
+            (
+                "appearance.menu_side",
+                &desktop.appearance.menu_side,
+                design::MenuSide::valid_name as fn(&str) -> bool,
+            ),
+        ] {
+            if !valid(name) {
+                return Err(error(path, "Use a plain menu name of up to 64 bytes"));
+            }
+        }
         if let Some(stroke) = desktop.appearance.icon_stroke {
             // Quarter steps only: a stroke that is not on the grid is refused,
             // so every client quantises the same way.
@@ -432,6 +450,8 @@ pub fn resolve_with_embedded_and_accents(
                 decorations: appearance.decorations,
                 caption_side: appearance.caption_side,
                 window_style: appearance.window_style,
+                menu_style: appearance.menu_style,
+                menu_side: appearance.menu_side,
                 icon_stroke: appearance.icon_stroke,
                 font_family: appearance.font_family,
                 font_weight: appearance.font_weight,
@@ -503,6 +523,14 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
                 path,
                 value.unwrap_or(json!(defaults.appearance.window_style)),
             )?
+        }
+        "appearance.menu_style" => {
+            desktop.appearance.menu_style =
+                typed(path, value.unwrap_or(json!(defaults.appearance.menu_style)))?
+        }
+        "appearance.menu_side" => {
+            desktop.appearance.menu_side =
+                typed(path, value.unwrap_or(json!(defaults.appearance.menu_side)))?
         }
         // Each type setting is optional: null (or a reset) clears it back to
         // the design's own value.
@@ -880,6 +908,49 @@ mod tests {
             describe()["fields"]["appearance.window_style"]["known_values"],
             json!(design::WindowStyle::NAMES)
         );
+    }
+
+    #[test]
+    fn menu_axes_resolve_validate_and_reset() {
+        let original = Desktop::default();
+        for (key, names) in [
+            ("appearance.menu_style", design::MenuStyle::NAMES),
+            ("appearance.menu_side", design::MenuSide::NAMES),
+        ] {
+            assert_eq!(describe()["fields"][key]["known_values"], json!(names));
+            for name in names.iter().copied().chain(["future-menu"]) {
+                let changed =
+                    patch(&original, &BTreeMap::from([(key.into(), json!(name))]), &[]).unwrap();
+                let resolved = resolve(&changed).unwrap();
+                for effective in resolved.values() {
+                    let value = if key.ends_with("style") {
+                        &effective.menu_style
+                    } else {
+                        &effective.menu_side
+                    };
+                    assert_eq!(value, name);
+                    assert!(!effective.provenance.contains_key(key));
+                }
+                assert_eq!(
+                    patch(&changed, &BTreeMap::new(), &[key.into()]).unwrap(),
+                    original
+                );
+            }
+            for value in [
+                json!("bad name"),
+                json!(""),
+                json!(false),
+                json!("x".repeat(65)),
+            ] {
+                let result = patch(&original, &BTreeMap::from([(key.into(), value)]), &[])
+                    .and_then(|desktop| {
+                        resolve(&desktop)
+                            .map(|_| desktop)
+                            .map_err(|errors| errors[0].clone())
+                    });
+                assert_eq!(result.unwrap_err().path, key);
+            }
+        }
     }
 
     #[test]

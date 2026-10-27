@@ -319,6 +319,14 @@ The default is omitted from authored and effective data, preserving existing
 sealed bytes without a store format or snapshot schema change. Compd applies
 the effective desktop value live; <code>decoration.style</code> reports the installed
 preset and remains read-only.</p>
+<p><code>appearance.menu_style</code> selects <code>bar</code> (default), <code>button</code> or <code>titlebar</code>.
+<code>appearance.menu_side</code> selects <code>left</code> (default) or <code>right</code>. Both use the design
+registries, retain unknown plain names and omit their defaults from authored,
+effective and compact data. Older seals and snapshot schemas stay valid.
+The button is in the app's top row, before its mark or after its right-hand
+controls. <code>titlebar</code> uses compd's title bar for server-decorated windows whose
+<code>dev.mixos.NAME</code> app has a registered <code>NAME</code> Bus service; client-decorated windows
+use the app button. Both settings apply live and have no app override.</p>
 <p>The package source is pinned in accepted storage at profile creation. Null
 appearance.source selects that pinned source, including after binary upgrades;
 it does not silently adopt the upgraded binary's embedded defaults. Adopting a

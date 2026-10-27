@@ -10,6 +10,12 @@ generated: by docs/_build/gen-site.mix from libs/settings/CHANGELOG.md; do not e
 
 ## Unreleased
 
+`appearance.menu_style` and `appearance.menu_side` select the session's menu
+form and button position. Their design registries supply names and Prefs labels.
+Unknown plain names survive round-trips and render as the defaults, `bar` and
+`left`. Defaults are omitted from authored and effective bytes, preserving
+existing seals without a store format or wire schema change.
+
 `appearance.window_style` carries the server-side furniture name in authored,
 effective, summary and compact snapshot data. The design registry supplies
 known names and Prefs labels; unknown plain names survive round-trips and

@@ -2088,6 +2088,17 @@ This lets toolkit restore a saved maximised frame on its original display.
 
 ## Settings at startup
 
+The session's `appearance.menu_style: "titlebar"` adds a menu caption beside
+the caption cluster or at the opposite edge, according to `appearance.menu_side`.
+It appears only on SSD windows whose `dev.mixos.NAME` app has a registered
+`NAME` Bus service. Clicking queues `NAME.ui.menu.popup {side}` through the scene
+host's existing port; failures are logged without blocking the compositor.
+`comp.window.menu {id, generation}` uses the same path, with the usual window
+generation and session-lock checks. `comp.props` reports `decoration.menu_button`
+(the session's SSD menu request) and `decoration.menu_side`; per-window truth
+lists a `menu` button only where it is actually present. Settings and service
+registration changes repaint existing chrome live.
+
 Quoin prepares cached or embedded settings while its existing Bus
 supervisor registers. Its persistent cache is service-owned under the
 configured variable data directory at `compd/cache/settings`; all
@@ -7566,6 +7577,15 @@ The default is omitted from authored and effective data, preserving existing
 sealed bytes without a store format or snapshot schema change. Compd applies
 the effective desktop value live; `decoration.style` reports the installed
 preset and remains read-only.
+
+`appearance.menu_style` selects `bar` (default), `button` or `titlebar`.
+`appearance.menu_side` selects `left` (default) or `right`. Both use the design
+registries, retain unknown plain names and omit their defaults from authored,
+effective and compact data. Older seals and snapshot schemas stay valid.
+The button is in the app's top row, before its mark or after its right-hand
+controls. `titlebar` uses compd's title bar for server-decorated windows whose
+`dev.mixos.NAME` app has a registered `NAME` Bus service; client-decorated windows
+use the app button. Both settings apply live and have no app override.
 
 The package source is pinned in accepted storage at profile creation. Null
 appearance.source selects that pinned source, including after binary upgrades;
@@ -33898,12 +33918,15 @@ Preferences answers on the Bus as `prefs`. `prefs.info` reports the whole state;
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; `prefs.appearance.set`
 changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
-`contrast`, `decorations`, `caption_side`, `window_style`, `font_family`, `mono_family`,
+`contrast`, `decorations`, `caption_side`, `window_style`, `menu_style`, `menu_side`, `font_family`, `mono_family`,
 `text_scale`, `density`, `reduced_motion`). Family values are strings or null;
 text scale and density reset with 1.0, and reduced motion takes a boolean.
 Desktop → Windows places the window style picker beside caption placement.
 Its choices and labels come from the design registry; compd applies the chosen
 server-side furniture live. It does not change application-drawn captions.
+The same section offers Menus (Menu bar, Menu button, In the title bar) and
+Menu button (Left, Right). The side picker is enabled when menus are collapsed.
+In the title bar uses compd's button in SSD mode and the app's button in CSD mode.
 The section ids in tree order are `appearance`, `text_and_fonts`, `wallpaper`,
 `windows`, `apps_email`, `apps_term`, `apps_ced`, `accessibility`, and `software`.
 Navigation actions use `view.section.<id>`; retired section ids have no aliases. Search includes their `ui.*`
@@ -35457,8 +35480,20 @@ the same path real input takes. The app registers these commands under its own
 prefix (`<app>.ui.tree` and so on):
 
 `ui.tree`, `ui.click`, `ui.pointer`, `ui.scroll`, `ui.key`, `ui.type`,
-`ui.menu`, `ui.menu.list`, `ui.menu.open`, `ui.menu.close`, `ui.capture`,
+`ui.menu`, `ui.menu.list`, `ui.menu.open`, `ui.menu.close`, `ui.menu.popup`, `ui.menu.form`, `ui.capture`,
 `window`, `window.state`
+
+Session `appearance.menu_style` chooses the horizontal bar, a hamburger button
+or a button hosted by compd for SSD windows. `appearance.menu_side` places the
+button at either end. The hamburger wraps the existing menu titles as submenu
+rows and shares navigation, highlights, search and command dispatch with the
+bar. F10 or a bare Alt opens the menus in either form.
+`ui.menu.list` and `ui.menu.open {path|menu}` use the same titles and paths in
+every form. `ui.menu.popup {side?: "left"|"right", x?: number}` opens the
+vertical menu at the content's top edge regardless of the selected form; x
+is a content-point coordinate and takes precedence over side.
+`ui.menu.form` returns `{style, side, effective}`; effective resolves `titlebar`
+to `button` under client-side decorations.
 
 The app forwards each request, with the prefix removed, to
 `drive::request` from app logic, including logic-only wakes. It sends back whatever `request`, or
@@ -37705,6 +37740,12 @@ Use strict MixOS configuration and owned shutdown signalling.
 > Mirrored from [`libs/settings/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md), where releases update it. The component's page is [settings](README.md). This page describes the current `main` branch of MixOS.
 
 ## Unreleased
+
+`appearance.menu_style` and `appearance.menu_side` select the session's menu
+form and button position. Their design registries supply names and Prefs labels.
+Unknown plain names survive round-trips and render as the defaults, `bar` and
+`left`. Defaults are omitted from authored and effective bytes, preserving
+existing seals without a store format or wire schema change.
 
 `appearance.window_style` carries the server-side furniture name in authored,
 effective, summary and compact snapshot data. The design registry supplies

@@ -740,6 +740,8 @@ async fn serve(
                     let call = client.call(&event.to, &event.kind, event.body);
                     match tokio::time::timeout(EVENT_TIMEOUT, call).await {
                         Ok(Ok(_)) => {}
+                        Ok(Err(error)) if event.kind.ends_with(".ui.menu.popup") => tracing::warn!(%error, to = %event.to, "window menu call failed"),
+                        Err(_) if event.kind.ends_with(".ui.menu.popup") => tracing::warn!(to = %event.to, "window menu call timed out"),
                         Ok(Err(error)) => tracing::debug!(%error, to = %event.to, kind = %event.kind, "scene event failed"),
                         Err(_) => tracing::debug!(to = %event.to, kind = %event.kind, "scene event timed out"),
                     }
