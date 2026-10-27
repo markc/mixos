@@ -128,11 +128,11 @@ fn compose_attached(state: &State) -> bool {
 /// The registry: every command, its menu, its shortcut and its guard.
 pub fn registry() -> Registry<State> {
     let mut r = Registry::new();
-    r.dialog_menu("attachments");
+    r.dialog_menu("compose-attachments-menu");
     r.add(Action {
         id: "compose.attach",
         label: "compose-attach",
-        menu: Some("attachments"),
+        menu: Some("compose-attachments-menu"),
         submenu: None,
         group: 0,
         shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::A),
@@ -143,7 +143,7 @@ pub fn registry() -> Registry<State> {
     .add(Action {
         id: "compose.attachments.clear",
         label: "compose-attachments-clear",
-        menu: Some("attachments"),
+        menu: Some("compose-attachments-menu"),
         submenu: None,
         group: 1,
         shortcut: None,
@@ -673,7 +673,7 @@ mod tests {
         assert!(
             !model
                 .iter()
-                .any(|menu| menu.title == crate::label("attachments"))
+                .any(|menu| menu.title == crate::label("compose-attachments-menu"))
         );
     }
 

@@ -162,7 +162,7 @@ pub fn dialog(
         .show(ui.ctx(), |ui| {
             events.extend(
                 commands
-                    .menu_bar_for(ui, state, strings, &["attachments"])
+                    .menu_bar_for(ui, state, strings, &["compose-attachments-menu"])
                     .into_iter()
                     .map(|(id, origin)| UiEvent::Command(id, origin)),
             );
