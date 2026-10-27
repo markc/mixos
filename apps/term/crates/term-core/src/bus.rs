@@ -1478,11 +1478,8 @@ mod tests {
             let entries = manifest(service);
             assert_eq!(entries[0].name, "HELP");
             for entry in entries {
-                if entry.name == format!("{service}.debug")
-                    || entry.name == format!("{service}.debug.set")
-                {
-                    assert!(citizen::debug::request(service, &entry.name, "{}").is_some());
-                    assert_eq!(entry.read_only, entry.name.ends_with(".debug"));
+                if citizen::debug::request(service, &entry.name, "{}").is_some() {
+                    assert_eq!(entry.read_only, !entry.name.ends_with(".debug.set"));
                     continue; // Served before terminal argument parsing and tab locking.
                 }
                 let canonical = canonical_command(service, &entry.name).unwrap();

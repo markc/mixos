@@ -1216,7 +1216,7 @@ mod tests {
                 );
             } else if entry.name.starts_with("dopus.debug") {
                 assert!(citizen::debug::request("dopus", &entry.name, "{}").is_some());
-                assert_eq!(entry.read_only, entry.name.ends_with(".debug"));
+                assert_eq!(entry.read_only, !entry.name.ends_with(".debug.set"));
             } else {
                 assert_ne!(
                     refusal(&serve(&mut core, true, &entry.name, "{}")).as_deref(),

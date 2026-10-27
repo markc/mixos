@@ -82,7 +82,9 @@ where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
     fn on_layer(&mut self, subscriber: &mut S) {
-        if let Some(fallback) = &mut self.fallback { fallback.on_layer(subscriber); }
+        if let Some(fallback) = &mut self.fallback {
+            fallback.on_layer(subscriber);
+        }
     }
     fn on_new_span(&self, attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
         let mut fields = SpanFields::default();
@@ -107,7 +109,9 @@ where
             match sink.as_ref() {
                 Some(Ok(sink)) => sink.on_record(id, values, ctx),
                 Some(Err(_)) => {
-                    if let Some(fallback) = &self.fallback { fallback.on_record(id, values, ctx); }
+                    if let Some(fallback) = &self.fallback {
+                        fallback.on_record(id, values, ctx);
+                    }
                 }
                 None => {}
             }
@@ -127,38 +131,38 @@ where
                 None => return,
             },
         };
-                // Spans may predate the first event. Replay their retained
-                // fields before upstream's layer looks them up; no socket is
-                // needed for span creation or recording.
-                for span in ctx
-                    .lookup_current()
-                    .into_iter()
-                    .flat_map(|span| span.scope().from_root())
-                {
-                    let mut extensions = span.extensions_mut();
-                    let fields = extensions.get_mut::<SpanFields>().expect("span fields");
-                    if fields.installed {
-                        continue;
-                    }
-                    fields.installed = true;
-                    let owned = std::mem::take(&mut fields.fields);
-                    drop(extensions);
-                    let values: Vec<_> = span
-                        .metadata()
-                        .fields()
+        // Spans may predate the first event. Replay their retained
+        // fields before upstream's layer looks them up; no socket is
+        // needed for span creation or recording.
+        for span in ctx
+            .lookup_current()
+            .into_iter()
+            .flat_map(|span| span.scope().from_root())
+        {
+            let mut extensions = span.extensions_mut();
+            let fields = extensions.get_mut::<SpanFields>().expect("span fields");
+            if fields.installed {
+                continue;
+            }
+            fields.installed = true;
+            let owned = std::mem::take(&mut fields.fields);
+            drop(extensions);
+            let values: Vec<_> = span
+                .metadata()
+                .fields()
+                .iter()
+                .map(|field| {
+                    owned
                         .iter()
-                        .map(|field| {
-                            owned
-                                .iter()
-                                .find(|(key, _)| *key == field)
-                                .map(|(_, value)| value.value())
-                        })
-                        .collect();
-                    let set = span.metadata().fields().value_set_all(&values);
-                    let attrs = Attributes::new(span.metadata(), &set);
-                    sink.on_new_span(&attrs, &span.id(), ctx.clone());
-                }
-                sink.on_event(event, ctx);
+                        .find(|(key, _)| *key == field)
+                        .map(|(_, value)| value.value())
+                })
+                .collect();
+            let set = span.metadata().fields().value_set_all(&values);
+            let attrs = Attributes::new(span.metadata(), &set);
+            sink.on_new_span(&attrs, &span.id(), ctx.clone());
+        }
+        sink.on_event(event, ctx);
     }
 }
 
@@ -175,20 +179,25 @@ mod tests {
             self.0.lock().unwrap().extend_from_slice(bytes);
             Ok(bytes.len())
         }
-        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
     }
 
     #[test]
     fn failed_journal_preserves_json_and_spans_created_before_first_event() {
         let bytes = Arc::new(Mutex::new(Vec::new()));
         let captured = bytes.clone();
-        let fallback = tracing_subscriber::fmt::layer().json().with_writer(move || Writer(captured.clone()));
+        let fallback = tracing_subscriber::fmt::layer()
+            .json()
+            .with_writer(move || Writer(captured.clone()));
         let layer = LazyJournal::new("fixture", Some(Box::new(fallback)));
         // Force an unavailable journal without depending on the host's systemd.
         *layer.sink.lock().unwrap() = Some(Err(std::io::Error::from(std::io::ErrorKind::NotFound)));
         let subscriber = tracing_subscriber::registry().with(layer);
         tracing::subscriber::with_default(subscriber, || {
-            let span = tracing::info_span!("startup", generation = 1, phase = tracing::field::Empty);
+            let span =
+                tracing::info_span!("startup", generation = 1, phase = tracing::field::Empty);
             let _entered = span.enter();
             span.record("phase", "before");
             tracing::warn!(command = "fixture.drive", "first event");
@@ -197,7 +206,10 @@ mod tests {
         });
         let output = bytes.lock().unwrap();
         let text = std::str::from_utf8(&output).unwrap();
-        let lines: Vec<serde_json::Value> = text.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        let lines: Vec<serde_json::Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0]["fields"]["command"], "fixture.drive");
         assert_eq!(lines[0]["span"]["generation"], 1);

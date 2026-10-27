@@ -1052,7 +1052,7 @@ mod tests {
         for entry in entries {
             if entry.name.starts_with("backdrop.debug") {
                 assert!(citizen::debug::request(APP, &entry.name, "{}").is_some());
-                assert_eq!(entry.read_only, entry.name.ends_with(".debug"));
+                assert_eq!(entry.read_only, !entry.name.ends_with(".debug.set"));
                 continue; // The shared citizen lane serves these before the controller.
             }
             c.command(2, &entry.name, "{}");
