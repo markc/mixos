@@ -161,11 +161,16 @@ impl FileChooser {
                 Ok(answer) => {
                     self.pending = None;
                     match answer {
-                        Ok(Answer::Picked(paths)) => return Some(Outcome::Picked(paths)),
+                        Ok(Answer::Picked(paths)) => {
+                            Dialog::reset(ctx, self.id);
+                            return Some(Outcome::Picked(paths));
+                        }
                         Ok(Answer::Listed(listing)) => {
                             self.browsing = None;
                             self.directory = listing.directory;
-                            self.path = self.directory.display().to_string();
+                            if !ctx.memory(|m| m.has_focus(self.id.with("path"))) {
+                                self.path = self.directory.display().to_string();
+                            }
                             self.entries = listing.entries;
                             self.row_ids.clear();
                             self.capped = listing.capped;
@@ -696,6 +701,86 @@ mod tests {
             modified_date(UNIX_EPOCH + std::time::Duration::from_secs(951_782_400)).as_deref(),
             Some("2000-02-29")
         );
+    }
+
+    #[test]
+    fn listing_keeps_text_while_the_path_field_has_focus() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable;
+
+        let mut chooser = FileChooser::new("/tmp", "Choose files", "Attach");
+        chooser.started = true;
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(900.0, 700.0))
+            .build_ui_state(
+                |ui, chooser: &mut FileChooser| {
+                    chooser.show(ui.ctx());
+                },
+                chooser,
+            );
+        crate::install(&h.ctx, &crate::Theme::embedded());
+        h.run_steps(5);
+        h.get_by_label("Path").focus();
+        h.run();
+        assert!(h.get_by_label("Path").is_focused());
+        h.state_mut().path = "/tmp/still typing".into();
+        let (tx, rx) = mpsc::channel();
+        h.state_mut().pending = Some(rx);
+        tx.send(Ok(Answer::Listed(Listing {
+            directory: "/tmp/listed".into(),
+            entries: vec![entry("report.txt", false)],
+            capped: false,
+        })))
+        .unwrap();
+        h.run();
+        assert_eq!(h.state().directory, PathBuf::from("/tmp/listed"));
+        assert_eq!(h.state().path, "/tmp/still typing");
+        assert_eq!(h.state().entries.len(), 1);
+
+        h.ctx
+            .memory_mut(|m| m.surrender_focus(h.state().id.with("path")));
+        let (tx, rx) = mpsc::channel();
+        h.state_mut().pending = Some(rx);
+        tx.send(Ok(Answer::Listed(Listing {
+            directory: "/tmp/next".into(),
+            entries: Vec::new(),
+            capped: false,
+        })))
+        .unwrap();
+        h.run();
+        assert_eq!(h.state().path, "/tmp/next");
+    }
+
+    #[test]
+    fn picking_clears_the_dialog_placement() {
+        use egui_kittest::Harness;
+
+        let mut chooser = FileChooser::new("/tmp", "Choose files", "Attach");
+        chooser.started = true;
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(900.0, 700.0))
+            .build_ui_state(
+                |ui, state: &mut (FileChooser, Option<Outcome>)| {
+                    if state.1.is_none() {
+                        let before = ui.ctx().data(|data| data.len());
+                        state.1 = state.0.show(ui.ctx());
+                        if matches!(state.1, Some(Outcome::Picked(_))) {
+                            // Pick returns before drawing: only the placement
+                            // entry should disappear during this call.
+                            assert_eq!(ui.ctx().data(|data| data.len()) + 1, before);
+                        }
+                    }
+                },
+                (chooser, None),
+            );
+        crate::install(&h.ctx, &crate::Theme::embedded());
+        h.run_steps(5);
+        let (tx, rx) = mpsc::channel();
+        h.state_mut().0.pending = Some(rx);
+        let paths = vec![PathBuf::from("/tmp/report.txt")];
+        tx.send(Ok(Answer::Picked(paths.clone()))).unwrap();
+        h.run();
+        assert_eq!(h.state().1, Some(Outcome::Picked(paths)));
     }
 
     #[test]

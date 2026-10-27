@@ -267,6 +267,7 @@ compose-attachments-fix = Send is disabled. Remove missing, unreadable or invali
 compose-attachments-too-large = Send is disabled. Estimated message size { $size } exceeds the account limit of { $limit }.
 compose-attachments-too-large-default = Send is disabled. Estimated message size { $size } exceeds the default upload limit of { $limit }.
 compose-not-open = No compose dialog is open.
+compose-attachments-stale = The message changed while the files were being checked. Try adding them again.
 compose-attachments-menu = Attachments
 compose-attach = Attach files…
 compose-attach-title = Attach files

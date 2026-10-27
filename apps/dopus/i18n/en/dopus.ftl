@@ -77,3 +77,7 @@ mail-selection-files-only = Select one or more regular files to mail
 mail-opened = Opened a new message with { $count } files
 mail-added = Added { $count } files to the message being written
 mail-no-bus = The Bus is unavailable
+mail-outcome-unknown = Email may have received the files; check the message before trying again
+mail-not-sent = The files could not be sent to Email
+mail-launch-failed = Email could not be launched
+mail-did-not-appear = Email did not become available in time

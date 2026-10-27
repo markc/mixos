@@ -14,6 +14,63 @@ use serde_json::Value;
 
 pub use crate::commands::{Query, Then, Write};
 
+/// A filesystem inspection fenced to one version of one compose. The candidate
+/// draft is applied atomically only after the worker has checked the batch.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ComposeInspection {
+    pub ticket: u64,
+    pub draft_id: String,
+    pub revision: u64,
+    pub reply: Option<u64>,
+    pub opening: bool,
+    pub paths: Vec<std::path::PathBuf>,
+    pub draft: Composed,
+    pub limit: Option<u64>,
+}
+
+pub type InspectedAttachments =
+    Result<Vec<crate::state::ComposeAttachment>, (&'static str, String)>;
+
+impl ComposeInspection {
+    /// Runs on the effects runtime's blocking pool, never on the window thread.
+    pub fn inspect(&self) -> InspectedAttachments {
+        use crate::state::{ComposeAttachment, ComposeAttachmentState, code};
+
+        if self.opening {
+            jmap::validate_attachments(&self.draft, self.limit)
+                .map_err(|error| crate::commands::server_refusal(&error))?;
+        }
+        let attachments = ComposeAttachment::inspect_all(&self.draft.attachments);
+        if !self.opening {
+            for path in &self.paths {
+                let attachment = attachments
+                    .iter()
+                    .find(|a| a.path == *path)
+                    .expect("candidate contains every requested path");
+                let refusal = match attachment.state {
+                    ComposeAttachmentState::Ready => continue,
+                    ComposeAttachmentState::Relative => code::ATTACHMENT_RELATIVE,
+                    ComposeAttachmentState::Missing | ComposeAttachmentState::NotFile => {
+                        code::ATTACHMENT_NOT_FILE
+                    }
+                    ComposeAttachmentState::Unreadable => code::ATTACHMENT_UNREADABLE,
+                };
+                return Err((
+                    refusal,
+                    crate::label_with(
+                        "compose-attachment-add-failed",
+                        &[
+                            ("path", &attachment.path.display().to_string()),
+                            ("state", &crate::label(attachment.state.label())),
+                        ],
+                    ),
+                ));
+            }
+        }
+        Ok(attachments)
+    }
+}
+
 /// How long a settings write may stay unsettled before its caller hears
 /// it timed out.
 pub const WRITE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
@@ -43,6 +100,7 @@ impl std::fmt::Debug for Login {
 /// One unit of background work.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Work {
+    InspectComposeAttachments(ComposeInspection),
     /// Connect `account`: session discovery and the token exchange. Only the
     /// answer of its latest `generation` is applied.
     Connect {
@@ -250,6 +308,7 @@ impl Work {
             | Work::Attachment { account, .. }
             | Work::Suggest { account, .. } => Some(account),
             Work::Settings { .. }
+            | Work::InspectComposeAttachments(_)
             | Work::WriteDeadline { .. }
             | Work::ReadSettings
             | Work::SaveSecrets { .. }

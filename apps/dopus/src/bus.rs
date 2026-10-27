@@ -44,20 +44,22 @@ impl MailFailure {
 
 impl From<citizen::AppCallError> for MailFailure {
     fn from(error: citizen::AppCallError) -> Self {
-        let code = match &error {
-            citizen::AppCallError::Refused { code, .. } => code.clone(),
+        let (code, message) = match error {
+            citizen::AppCallError::Refused { code, message, .. } => (code, message),
             citizen::AppCallError::Transport(error) if error.outcome_unknown => {
-                "OUTCOME_UNKNOWN".into()
+                ("OUTCOME_UNKNOWN".into(), crate::label("mail-outcome-unknown"))
             }
-            citizen::AppCallError::Transport(_) => "NOT_SENT".into(),
-            citizen::AppCallError::LaunchFailed(_) | citizen::AppCallError::DidNotAppear => {
-                "NOT_RUNNING".into()
+            citizen::AppCallError::Transport(_) => {
+                ("NOT_SENT".into(), crate::label("mail-not-sent"))
+            }
+            citizen::AppCallError::LaunchFailed(_) => {
+                ("NOT_RUNNING".into(), crate::label("mail-launch-failed"))
+            }
+            citizen::AppCallError::DidNotAppear => {
+                ("NOT_RUNNING".into(), crate::label("mail-did-not-appear"))
             }
         };
-        Self {
-            code,
-            message: error.to_string(),
-        }
+        Self { code, message }
     }
 }
 
@@ -586,6 +588,50 @@ mod tests {
                 client,
                 vec!["/home/user/one".into(), "/home/user/two".into()],
             ))
+    }
+
+    #[test]
+    fn app_call_failures_use_the_catalogue_and_preserve_uncertainty() {
+        use citizen::{AppCallError, CallError};
+
+        for (error, code, key) in [
+            (
+                AppCallError::LaunchFailed("internal detail".into()),
+                "NOT_RUNNING",
+                "mail-launch-failed",
+            ),
+            (
+                AppCallError::DidNotAppear,
+                "NOT_RUNNING",
+                "mail-did-not-appear",
+            ),
+            (
+                AppCallError::Transport(CallError {
+                    message: "internal detail".into(),
+                    outcome_unknown: false,
+                }),
+                "NOT_SENT",
+                "mail-not-sent",
+            ),
+            (
+                AppCallError::Transport(CallError {
+                    message: "app call timed out; outcome unknown".into(),
+                    outcome_unknown: true,
+                }),
+                "OUTCOME_UNKNOWN",
+                "mail-outcome-unknown",
+            ),
+        ] {
+            let (rc, body, status) = mail_reply(Err(error.into()));
+            assert_eq!(rc, 10);
+            assert_eq!(
+                serde_json::from_str::<Value>(&body).unwrap()["error_code"],
+                code
+            );
+            assert_eq!(status, crate::label(key));
+            assert_ne!(status, key, "the Fluent key must exist");
+            assert!(!status.contains("internal detail"));
+        }
     }
 
     #[test]

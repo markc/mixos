@@ -1329,6 +1329,10 @@ fn dispatch(
             let reply_to = text(args, "reply_to")?.filter(|r| !r.trim().is_empty());
             // The editor's body cap is separate from the upload limit. Check
             // it first so an oversized body remains INVALID_ARGUMENT.
+            // Reserve this compose now, but leave all path inspection and
+            // attachment validation to the effects worker.
+            let mut draft = draft;
+            let paths = std::mem::take(&mut draft.attachments);
             state.open_compose(Some(&account), draft);
             if let Some(error) = state.close_failed_compose() {
                 return Err(invalid(&error));
@@ -1336,22 +1340,8 @@ fn dispatch(
             if let (Some(reply_to), Some(compose)) = (reply_to, state.compose.as_mut()) {
                 compose.draft.reply_to = Some(reply_to);
             }
-            state.check_compose_attachment_size();
-            if let Some(compose) = &state.compose {
-                let draft = Composed {
-                    body: compose.body.contents(),
-                    ..compose.draft.clone()
-                };
-                if let Err(error) = validate_message(state, &account, &draft) {
-                    state.compose = None;
-                    return Err(error);
-                }
-            }
-            state.reply(
-                id,
-                0,
-                json!({ "composing": account, "compose": state.info()["compose"] }),
-            );
+            state.inspect_compose_attachments(&paths, Some(id), true)
+                .map_err(|(code, message)| Bad(code, message))?;
         }
         "email.compose.attachment.add" => {
             let paths = args.get("paths").and_then(Value::as_array)
@@ -1359,8 +1349,8 @@ fn dispatch(
                 .iter().map(|path| path.as_str().map(std::path::PathBuf::from)
                     .ok_or_else(|| invalid("paths must hold absolute file paths")))
                 .collect::<Checked<Vec<_>>>()?;
-            state.add_compose_attachments(&paths).map_err(|(code, message)| Bad(code, message))?;
-            state.reply(id, 0, json!({ "compose": state.info()["compose"] }));
+            state.inspect_compose_attachments(&paths, Some(id), false)
+                .map_err(|(code, message)| Bad(code, message))?;
         }
         "email.compose.attachment.remove" => {
             let path = std::path::PathBuf::from(required(args, "path")?);
@@ -1878,14 +1868,16 @@ mod tests {
     }
 
     fn run(state: &mut State, command_name: &str, args: Value) -> Option<Forward> {
-        command(
+        let forward = command(
             state,
             &crate::actions::registry(),
             &crate::strings(),
             1,
             command_name,
             &args.to_string(),
-        )
+        );
+        state.finish_compose_inspections();
+        forward
     }
 
     #[test]

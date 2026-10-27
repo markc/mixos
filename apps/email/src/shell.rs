@@ -86,6 +86,7 @@ pub struct AttachmentDone {
 /// What finished off the UI thread. Completions carry their result; the
 /// shell resolves the Look pair itself (theme-follow, below).
 pub enum Event {
+    ComposeAttachments(crate::work::ComposeInspection, crate::work::InspectedAttachments),
     /// A Bus delivery.
     Delivery(citizen::Delivery),
     /// An account's connect finished. The client stays in the shell; the
@@ -112,6 +113,14 @@ pub enum Event {
     Printed(Option<u64>, Result<(String, bool), String>),
     /// Compose suggestion `ticket`'s debounce has passed.
     SuggestDue(u64),
+}
+
+async fn inspect_compose_attachments(inspection: crate::work::ComposeInspection) -> Event {
+    let worker = inspection.clone();
+    let result = tokio::task::spawn_blocking(move || worker.inspect())
+        .await
+        .unwrap_or_else(|error| Err((code::SERVER, error.to_string())));
+    Event::ComposeAttachments(inspection, result)
 }
 
 pub struct Shell {
@@ -546,6 +555,7 @@ enum Closing {
 fn closing(event: &Event) -> Closing {
     match event {
         Event::Connected(..)
+        | Event::ComposeAttachments(..)
         | Event::Account(..)
         | Event::Settled(..)
         | Event::SecretsSaved(..)
@@ -841,6 +851,9 @@ impl Shell {
     /// Perform one unit of work on the effects runtime.
     fn perform(&mut self, work: Work) {
         match work {
+            Work::InspectComposeAttachments(inspection) => {
+                self.spawn(inspect_compose_attachments(inspection));
+            }
             Work::Connect {
                 account,
                 generation,
@@ -1757,18 +1770,20 @@ impl Shell {
                 ui.ctx().request_repaint();
             }
             let mut errors = Vec::new();
+            let mut paths = Vec::new();
             for file in dropped {
                 // egui gives every drop a path; only a native drop's is absolute.
                 let path = file.path();
                 if path.is_absolute() {
-                    if let Err((_, message)) =
-                        self.state.add_compose_attachments(&[path.to_path_buf()])
-                    {
-                        errors.push(message);
-                    }
+                    paths.push(path.to_path_buf());
                 } else {
                     errors.push(label("compose-drop-no-path"));
                 }
+            }
+            if !paths.is_empty()
+                && let Err((_, message)) = self.state.add_compose_attachments(&paths)
+            {
+                errors.push(message);
             }
             if !errors.is_empty() {
                 self.state.attachment_notice = Some(errors.join("\n"));
@@ -1868,6 +1883,146 @@ fn prefs_open_error(error: citizen::AppCallError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pending_attachments(
+        state: &mut State,
+        opening: bool,
+        paths: &[PathBuf],
+    ) -> crate::work::ComposeInspection {
+        let args = if opening {
+            serde_json::json!({"to":"ann@example.invalid", "subject":"Files", "attachments":paths})
+        } else {
+            serde_json::json!({"paths":paths})
+        };
+        crate::commands::command(
+            state,
+            &crate::actions::registry(),
+            &crate::strings(),
+            42,
+            if opening {
+                "email.compose"
+            } else {
+                "email.compose.attachment.add"
+            },
+            &args.to_string(),
+        );
+        assert!(
+            state.take_replies().is_empty(),
+            "inspection must precede the reply"
+        );
+        state
+            .take_work()
+            .into_iter()
+            .find_map(|work| match work {
+                Work::InspectComposeAttachments(inspection) => Some(inspection),
+                _ => None,
+            })
+            .expect("queued filesystem inspection")
+    }
+
+    fn inspect(inspection: crate::work::ComposeInspection) -> Event {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let event = runtime.block_on(inspect_compose_attachments(inspection));
+        runtime.shutdown_timeout(std::time::Duration::from_millis(100));
+        event
+    }
+
+    #[test]
+    fn compose_attachment_replies_follow_background_inspection_and_keep_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let one = dir.path().join("one.txt");
+        let two = dir.path().join("two.txt");
+        std::fs::write(&one, b"one").unwrap();
+        std::fs::write(&two, b"two").unwrap();
+        let mut state = crate::state::tests::connected_many(&["a"]);
+        for opening in [true, false] {
+            let paths = if opening {
+                vec![one.clone()]
+            } else {
+                vec![one.clone(), two.clone(), one.clone()]
+            };
+            let pending = pending_attachments(&mut state, opening, &paths);
+            assert!(!state.compose_sendable());
+            state.apply_ui(UiEvent::SendCompose);
+            assert!(state.take_work().is_empty(), "Send must wait for inspection");
+            let event = inspect(pending);
+            assert!(
+                state.take_replies().is_empty(),
+                "a worker cannot reply before state accepts its result"
+            );
+            state.apply(event);
+            let replies = state.take_replies();
+            assert_eq!(replies.len(), 1);
+            assert_eq!((replies[0].id, replies[0].rc), (42, 0));
+            assert_eq!(replies[0].body["compose"], state.info()["compose"]);
+            if opening {
+                assert_eq!(replies[0].body["composing"], "a");
+            }
+        }
+        assert_eq!(state.compose.as_ref().unwrap().draft.attachments, [one, two]);
+    }
+
+    #[test]
+    fn late_inspection_never_attaches_to_a_closed_replaced_or_edited_compose() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("one.txt");
+        std::fs::write(&path, b"one").unwrap();
+        for opening in [true, false] {
+            for change in ["close", "replace", "edit"] {
+                let mut state = crate::state::tests::connected_many(&["a"]);
+                if !opening {
+                    state.open_compose(Some("a"), jmap::Composed::default());
+                    state.take_work();
+                }
+                let pending = pending_attachments(&mut state, opening, std::slice::from_ref(&path));
+                match change {
+                    "close" => state.compose = None,
+                    "replace" => {
+                        state.open_compose(Some("a"), jmap::Composed::default());
+                    }
+                    _ => state.apply_ui(UiEvent::ComposeField(
+                        crate::state::ComposeField::Subject,
+                        "Edited".into(),
+                    )),
+                }
+                state.apply(inspect(pending));
+                let replies = state.take_replies();
+                assert_eq!(replies.len(), 1);
+                assert_eq!(replies[0].id, 42);
+                assert_eq!(
+                    replies[0].body["error_code"],
+                    if change == "close" { code::NOT_FOUND } else { code::STALE }
+                );
+                if let Some(compose) = &state.compose {
+                    assert!(compose.draft.attachments.is_empty());
+                    assert!(compose.attachments.is_empty());
+                    assert!(compose.attachment_inspections.is_empty());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn attachment_batch_failure_is_atomic_and_answers_only_after_inspection() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("one.txt");
+        std::fs::write(&path, b"one").unwrap();
+        let mut state = crate::state::tests::connected_many(&["a"]);
+        state.open_compose(Some("a"), jmap::Composed::default());
+        state.take_work();
+        let revision = state.compose.as_ref().unwrap().revision;
+        let pending = pending_attachments(&mut state, false, &[path, dir.path().join("missing")]);
+        state.apply(inspect(pending));
+        let replies = state.take_replies();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].body["error_code"], code::ATTACHMENT_NOT_FILE);
+        let compose = state.compose.as_ref().unwrap();
+        assert!(compose.draft.attachments.is_empty());
+        assert_eq!(compose.revision, revision);
+    }
 
     #[test]
     fn opening_prefs_errors_use_the_catalogue() {

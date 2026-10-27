@@ -171,7 +171,10 @@ pub async fn call_app(
         )
         .await
         .map_err(|_| {
-            AppCallError::Transport(CallError::from("app call timed out; outcome unknown"))
+            AppCallError::Transport(CallError {
+                message: "app call timed out; outcome unknown".into(),
+                outcome_unknown: true,
+            })
         })?
         .map_err(AppCallError::Transport)?;
         if !missing(&reply, service) {
@@ -286,6 +289,43 @@ mod tests {
             Err(AppCallError::Transport(_))
         ));
         assert_eq!(client.log().len(), 1);
+    }
+
+    #[test]
+    fn deadline_during_a_delivered_call_is_uncertain() {
+        struct SlowApp(std::sync::atomic::AtomicUsize);
+
+        impl AppClient for SlowApp {
+            async fn app_call<'a>(
+                &'a self,
+                _service: &'a str,
+                _command: &'a str,
+                _body: &'a Value,
+                _limit: Duration,
+            ) -> Result<Reply, CallError> {
+                match self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
+                    0 => absent(),
+                    1 => reply(0, json!({})),
+                    _ => std::future::pending().await,
+                }
+            }
+        }
+
+        let client = SlowApp(std::sync::atomic::AtomicUsize::new(0));
+        let error = runtime()
+            .block_on(call_app(
+                &client,
+                "dev.mixos.email",
+                "email.compose",
+                json!({}),
+                Duration::from_secs(1),
+            ))
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            AppCallError::Transport(CallError { outcome_unknown: true, .. })
+        ));
+        assert_eq!(client.0.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 
     #[test]

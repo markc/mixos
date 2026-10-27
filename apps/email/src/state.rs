@@ -524,6 +524,8 @@ pub struct ComposeState {
     pub draft: Composed,
     /// File information checked on compose events, never by drawing a frame.
     pub attachments: Vec<ComposeAttachment>,
+    /// Pending inspections prevent Send from racing an attachment batch.
+    pub attachment_inspections: std::collections::BTreeSet<u64>,
     pub attachment_error: Option<String>,
     pub attachments_over_limit: bool,
     pub body: Body,
@@ -619,7 +621,7 @@ impl ComposeAttachmentState {
 }
 
 impl ComposeAttachment {
-    fn inspect_all(paths: &[std::path::PathBuf]) -> Vec<Self> {
+    pub(crate) fn inspect_all(paths: &[std::path::PathBuf]) -> Vec<Self> {
         let mut attachments: Vec<_> = paths.iter().map(|path| Self::inspect(path)).collect();
         let names: Vec<_> = attachments.iter().map(|a| a.name.clone()).collect();
         for (index, attachment) in attachments.iter_mut().enumerate() {
@@ -930,6 +932,7 @@ impl ComposeState {
             bcc_text: text(&draft.bcc),
             draft,
             attachments,
+            attachment_inspections: std::collections::BTreeSet::new(),
             attachment_error: None,
             attachments_over_limit: false,
             busy: false,
@@ -2886,6 +2889,9 @@ impl State {
     pub fn apply(&mut self, event: crate::shell::Event) {
         use crate::shell::{Done, Event};
         match event {
+            Event::ComposeAttachments(inspection, result) => {
+                self.compose_attachments_inspected(inspection, result);
+            }
             Event::Connected(tag, result) => {
                 self.connected(tag, result);
                 self.check_compose_attachment_size();
@@ -5989,49 +5995,126 @@ impl State {
         &mut self,
         paths: &[std::path::PathBuf],
     ) -> Result<(), (&'static str, String)> {
+        self.inspect_compose_attachments(paths, None, false)
+    }
+
+    pub(crate) fn inspect_compose_attachments(
+        &mut self,
+        paths: &[std::path::PathBuf],
+        reply: Option<u64>,
+        opening: bool,
+    ) -> Result<(), (&'static str, String)> {
+        let ticket = self.ticket();
         let compose = self
             .compose
-            .as_ref()
+            .as_mut()
             .ok_or_else(|| (code::NOT_FOUND, crate::label("compose-not-open")))?;
         if compose.busy {
             return Err((code::BUSY, crate::label("sending")));
         }
-        // Validate the whole batch before changing the draft. As with compose,
-        // symlink paths stay paths and no bytes are opened or snapshotted.
-        for attachment in ComposeAttachment::inspect_all(paths) {
-            let refusal = match attachment.state {
-                ComposeAttachmentState::Ready => continue,
-                ComposeAttachmentState::Relative => code::ATTACHMENT_RELATIVE,
-                ComposeAttachmentState::Missing | ComposeAttachmentState::NotFile => {
-                    code::ATTACHMENT_NOT_FILE
-                }
-                ComposeAttachmentState::Unreadable => code::ATTACHMENT_UNREADABLE,
-            };
-            return Err((
-                refusal,
-                crate::label_with(
-                    "compose-attachment-add-failed",
-                    &[
-                        ("path", &attachment.path.display().to_string()),
-                        ("state", &crate::label(attachment.state.label())),
-                    ],
-                ),
-            ));
-        }
-        let compose = self.compose.as_mut().expect("checked open compose");
-        let before = compose.draft.attachments.len();
+        let mut draft = compose.draft.clone();
+        draft.body = compose.body.contents();
         for path in paths {
-            if !compose.draft.attachments.contains(path) {
-                compose.draft.attachments.push(path.clone());
-                self.last_attachment_directory = path.parent().map(std::path::Path::to_path_buf);
+            if opening || !draft.attachments.contains(path) {
+                draft.attachments.push(path.clone());
             }
         }
-        if compose.draft.attachments.len() != before {
-            compose.revision += 1;
+        compose.attachment_inspections.insert(ticket);
+        let mut inspection = crate::work::ComposeInspection {
+            ticket,
+            draft_id: compose.draft_id.clone(),
+            revision: compose.revision,
+            reply,
+            opening,
+            paths: paths.to_vec(),
+            draft,
+            limit: None,
+        };
+        if let Some(compose) = &self.compose {
+            inspection.limit = self
+                .account(&compose.account)
+                .and_then(|a| a.session.as_ref())
+                .and_then(|s| s.max_size_upload);
         }
-        self.attachment_notice = None;
-        self.refresh_compose_attachments();
+        self.work.push(Work::InspectComposeAttachments(inspection));
         Ok(())
+    }
+
+    fn compose_attachments_inspected(
+        &mut self,
+        inspection: crate::work::ComposeInspection,
+        result: crate::work::InspectedAttachments,
+    ) {
+        // A restored draft may reuse its id and revision. Only the compose
+        // instance that queued this ticket can accept its result.
+        let pending = self
+            .compose
+            .as_mut()
+            .filter(|c| c.draft_id == inspection.draft_id)
+            .is_some_and(|c| c.attachment_inspections.remove(&inspection.ticket));
+        let refusal = match &self.compose {
+            None => Some((code::NOT_FOUND, crate::label("compose-not-open"))),
+            Some(c) if !pending || c.revision != inspection.revision => {
+                Some((code::STALE, crate::label("compose-attachments-stale")))
+            }
+            Some(c) if c.busy => Some((code::BUSY, crate::label("sending"))),
+            _ => None,
+        };
+        let superseded = refusal.is_some();
+        let result = match refusal {
+            Some(error) => Err(error),
+            None => result,
+        };
+        match result {
+            Err((code, message)) => {
+                // An invalid new compose closes only the version that asked.
+                if inspection.opening && !superseded {
+                    self.compose = None;
+                }
+                if let Some(reply) = inspection.reply {
+                    self.refuse(reply, code, &message);
+                } else if !superseded {
+                    self.attachment_notice = Some(message);
+                }
+            }
+            Ok(attachments) => {
+                let compose = self.compose.as_mut().expect("checked compose version");
+                let added = inspection.draft.attachments != compose.draft.attachments;
+                if added {
+                    self.last_attachment_directory = inspection
+                        .draft
+                        .attachments
+                        .last()
+                        .and_then(|p| p.parent())
+                        .map(std::path::Path::to_path_buf);
+                    compose.draft.attachments = inspection.draft.attachments;
+                    compose.revision += 1;
+                }
+                compose.attachments = attachments;
+                self.attachment_notice = None;
+                self.check_compose_attachment_size();
+                if let Some(reply) = inspection.reply {
+                    let mut body = json!({ "compose": self.info()["compose"] });
+                    if inspection.opening {
+                        body["composing"] = json!(self.compose.as_ref().unwrap().account);
+                    }
+                    self.reply(reply, 0, body);
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn finish_compose_inspections(&mut self) {
+        let work = std::mem::take(&mut self.work);
+        for item in work {
+            if let Work::InspectComposeAttachments(inspection) = item {
+                let result = inspection.inspect();
+                self.apply(crate::shell::Event::ComposeAttachments(inspection, result));
+            } else {
+                self.work.push(item);
+            }
+        }
     }
 
     pub fn attach_files(&mut self) {
@@ -6078,6 +6161,13 @@ impl State {
 
     /// Send the open compose, when its recipients and attachments are valid.
     pub fn send_compose(&mut self) {
+        if self
+            .compose
+            .as_ref()
+            .is_some_and(|c| !c.attachment_inspections.is_empty())
+        {
+            return;
+        }
         self.refresh_compose_attachments();
         let Some(compose) = &self.compose else {
             return;
@@ -6156,6 +6246,7 @@ impl State {
         match &self.compose {
             Some(compose) => {
                 !compose.busy
+                    && compose.attachment_inspections.is_empty()
                     && compose.attachment_error.is_none()
                     && self.account(&compose.account).is_some()
                     && !compose.to_text.trim().is_empty()
@@ -7089,6 +7180,33 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn inspection_cannot_land_in_a_reopened_copy_of_the_same_draft() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("one.txt");
+        std::fs::write(&path, b"one").unwrap();
+        let mut state = connected();
+        compose_files(&mut state, Vec::new());
+        state.add_compose_attachments(&[path]).unwrap();
+        let inspection = state
+            .take_work()
+            .into_iter()
+            .find_map(|work| match work {
+                Work::InspectComposeAttachments(inspection) => Some(inspection),
+                _ => None,
+            })
+            .unwrap();
+        let saved = state.compose.as_ref().unwrap().saved_draft();
+        state.compose = None;
+        assert!(state.open_saved(saved));
+        assert_eq!(state.compose.as_ref().unwrap().draft_id, inspection.draft_id);
+        assert_eq!(state.compose.as_ref().unwrap().revision, inspection.revision);
+        let result = inspection.inspect();
+        state.apply(Event::ComposeAttachments(inspection, result));
+        assert!(state.compose.as_ref().unwrap().draft.attachments.is_empty());
+        assert!(state.compose.as_ref().unwrap().attachments.is_empty());
+    }
+
+    #[test]
     fn attachment_add_deduplicates_atomically_and_clear_obeys_busy() {
         let dir = tempfile::tempdir().unwrap();
         let one = dir.path().join("one");
@@ -7103,17 +7221,18 @@ pub(crate) mod tests {
                 .add_compose_attachments(&[one.clone(), two.clone(), one.clone()])
                 .is_ok()
         );
+        state.finish_compose_inspections();
         assert_eq!(
             state.compose.as_ref().unwrap().draft.attachments,
             [one.clone(), two.clone()]
         );
         assert_eq!(state.compose.as_ref().unwrap().revision, revision + 1);
         assert_eq!(state.last_attachment_directory.as_deref(), Some(dir.path()));
-        assert!(
-            state
-                .add_compose_attachments(&[dir.path().join("missing")])
-                .is_err()
-        );
+        state
+            .add_compose_attachments(&[dir.path().join("missing")])
+            .unwrap();
+        state.finish_compose_inspections();
+        assert!(state.attachment_notice.is_some());
         assert_eq!(
             state.compose.as_ref().unwrap().draft.attachments,
             [one.clone(), two.clone()]
@@ -7132,6 +7251,7 @@ pub(crate) mod tests {
         assert!(compose.attachment_error.is_none());
         assert_eq!(compose.revision, revision + 2);
         assert!(state.add_compose_attachments(&[two]).is_ok());
+        state.finish_compose_inspections();
         state
             .account_mut("a")
             .unwrap()
@@ -7140,6 +7260,7 @@ pub(crate) mod tests {
             .unwrap()
             .max_size_upload = Some(1);
         assert!(state.add_compose_attachments(&[one]).is_ok());
+        state.finish_compose_inspections();
         assert!(state.compose.as_ref().unwrap().attachments_over_limit);
         assert!(!state.compose_sendable());
     }
