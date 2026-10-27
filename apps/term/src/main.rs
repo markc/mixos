@@ -49,7 +49,6 @@ fn main() {
     let mut cli_args: Vec<String> = std::env::args().collect();
     let _logging = toolkit::debug::init("term", "warn", &mut cli_args).unwrap_or_else(|error| {
         toolkit::debug::failure("term", &error);
-        eprintln!("term: {error}");
         std::process::exit(2);
     });
     // First, before the inherited-fd quarantine, the TERM probe and the
@@ -92,7 +91,6 @@ fn main() {
     };
     if let Err(error) = result {
         toolkit::debug::failure("term", &error);
-        eprintln!("term: {error}");
         std::process::exit(1);
     }
 }

@@ -2,12 +2,15 @@
 
 Every MixOS app and compd accepts `--debug[=LEVEL]`. `--debug` means
 `--debug=debug`; the levels are `off`, `error`, `warn`, `info`, `debug` and
-`trace`. The default baseline is `warn`, except Email's `warn,email=info`.
+`trace`. The default baseline is `warn`, except Email's `warn,email=info`
+and compd's `warn,compd=info` (one-time startup diagnostics).
 Non-empty `RUST_LOG` supplies the baseline instead. An explicit debug flag
 selects the initial live level while preserving that baseline for restoration.
 An invalid `RUST_LOG` is reported to stderr and falls back to the app's baseline;
 live controls remain available. An invalid `--debug=LEVEL` is a command-line error.
 The last debug flag wins. Flags after `--` are preserved for the app's parser.
+Help and version requests install no logging subscriber and open no journal socket,
+even with `--debug=trace` or an invalid `RUST_LOG`.
 
 ```console
 workshop --debug
@@ -51,7 +54,7 @@ send workshop workshop.debug.set body=$body
 Set accepts exactly one of `level` or `on`. `{on:true}` selects debug;
 `{on:false}` restores the recorded baseline. `{level:"off"}` disables all
 tracing events; `{level:"warn"}` selects a plain warn filter, including in
-Email. Both commands return `{level, on, filter, baseline}`. `on` is true
+Email and compd. Both commands return `{level, on, filter, baseline}`. `on` is true
 when the filter's maximum enabled verbosity is debug or trace. For a custom
 baseline, `filter` is the complete authority; `level` summarises its maximum.
 Unknown levels, extra fields and malformed requests are refused without
@@ -108,7 +111,7 @@ With `since`, it returns the earliest matching entries after that cursor.
 `off` selects none). `limit` defaults to 200 and must be 1–1,000.
 
 The ring exists only while the filter permits `info` or more verbose events
-(including Email's info baseline). Returning to `warn`, `error` or `off`
+(including Email's and compd's info baselines). Returning to `warn`, `error` or `off`
 frees it. Its sequence survives that reset. The ring drops oldest entries
 at 2,000 events or a conservative 1 MB resident-size budget; expired cursors
 resume at the oldest retained event. Individual text fields truncate at

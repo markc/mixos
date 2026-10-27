@@ -15,10 +15,10 @@ try
   $broker = $pb.start({dir: $run.path .. "/broker", name: "comp-debug", noded: $bin .. "/noded"})
   $session = $n.start({bin: $bin .. "/compd", tag: "debug", run: $run,
     config: realpath("tests/desktop/smoke-settings.json"), software: true,
-    args: ["--debug=error"], env: {RUST_LOG: "warn", HOME: $run.path}})
+    env: {RUST_LOG: "", HOME: $run.path}})
   expect($n.wait_ready($session, 40), "nested compd did not start: " .. $session.log)
   $initial = $n.call($session.service, "comp.debug", {})
-  expect($initial.rc == 0 and $initial.result.level == "error" and $initial.result.baseline == "warn", "nested flag/baseline: " .. json_encode($initial))
+  expect($initial.rc == 0 and $initial.result.level == "info" and $initial.result.baseline == "warn,compd=info", "nested default/baseline: " .. json_encode($initial))
   for $level in ["off", "error", "warn", "info", "debug", "trace"]
     $set = $n.call($session.service, "comp.debug.set", {level: $level})
     expect($set.rc == 0 and $set.result.level == $level, "set: " .. json_encode($set))
@@ -41,8 +41,10 @@ try
     sleep(0.1)
   end
   expect(contains($journal, "debug mode changed"), "no debug event under journalctl -t compd")
+  expect(contains($journal, "backend") and contains($journal, "built"), "default startup build/backend missing from journal")
   $set = $n.call($session.service, "comp.debug.set", {on: false})
-  expect($set.rc == 0 and not $set.result.on and $set.result.filter == "warn", "baseline shorthand")
+  expect($set.rc == 0 and not $set.result.on and $set.result.filter == "warn,compd=info", "baseline shorthand")
+  $set = $n.call($session.service, "comp.debug.set", {level: "warn"})
   $recent = $n.call($session.service, "comp.debug.recent", {})
   expect($recent.rc == 0 and len($recent.result.events) == 0, "comp ring freed at warn")
   for $body in [{}, {level: "invalid"}, {on: true, level: "debug"}, {level: "info", extra: 1}]

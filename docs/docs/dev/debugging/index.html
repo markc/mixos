@@ -236,12 +236,15 @@
 <h1 id="live-application-logging">Live application logging</h1>
 <p>Every MixOS app and compd accepts <code>--debug[=LEVEL]</code>. <code>--debug</code> means
 <code>--debug=debug</code>; the levels are <code>off</code>, <code>error</code>, <code>warn</code>, <code>info</code>, <code>debug</code> and
-<code>trace</code>. The default baseline is <code>warn</code>, except Email's <code>warn,email=info</code>.
+<code>trace</code>. The default baseline is <code>warn</code>, except Email's <code>warn,email=info</code>
+and compd's <code>warn,compd=info</code> (one-time startup diagnostics).
 Non-empty <code>RUST_LOG</code> supplies the baseline instead. An explicit debug flag
 selects the initial live level while preserving that baseline for restoration.
 An invalid <code>RUST_LOG</code> is reported to stderr and falls back to the app's baseline;
 live controls remain available. An invalid <code>--debug=LEVEL</code> is a command-line error.
-The last debug flag wins. Flags after <code>--</code> are preserved for the app's parser.</p>
+The last debug flag wins. Flags after <code>--</code> are preserved for the app's parser.
+Help and version requests install no logging subscriber and open no journal socket,
+even with <code>--debug=trace</code> or an invalid <code>RUST_LOG</code>.</p>
 <pre><code class="language-console">workshop --debug
 email --debug=info
 compd kms-live --debug=debug
@@ -276,7 +279,7 @@ send workshop workshop.debug.set body=$body
 <p>Set accepts exactly one of <code>level</code> or <code>on</code>. <code>{on:true}</code> selects debug;
 <code>{on:false}</code> restores the recorded baseline. <code>{level:"off"}</code> disables all
 tracing events; <code>{level:"warn"}</code> selects a plain warn filter, including in
-Email. Both commands return <code>{level, on, filter, baseline}</code>. <code>on</code> is true
+Email and compd. Both commands return <code>{level, on, filter, baseline}</code>. <code>on</code> is true
 when the filter's maximum enabled verbosity is debug or trace. For a custom
 baseline, <code>filter</code> is the complete authority; <code>level</code> summarises its maximum.
 Unknown levels, extra fields and malformed requests are refused without
@@ -321,7 +324,7 @@ With <code>since</code>, it returns the earliest matching entries after that cur
 <code>level</code> selects that severity and more severe events (<code>warn</code> includes errors;
 <code>off</code> selects none). <code>limit</code> defaults to 200 and must be 1–1,000.</p>
 <p>The ring exists only while the filter permits <code>info</code> or more verbose events
-(including Email's info baseline). Returning to <code>warn</code>, <code>error</code> or <code>off</code>
+(including Email's and compd's info baselines). Returning to <code>warn</code>, <code>error</code> or <code>off</code>
 frees it. Its sequence survives that reset. The ring drops oldest entries
 at 2,000 events or a conservative 1 MB resident-size budget; expired cursors
 resume at the oldest retained event. Individual text fields truncate at

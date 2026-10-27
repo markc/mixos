@@ -21,7 +21,12 @@ pub fn answered(service: &str, command: &str, rc: u8) {
 
 #[inline]
 pub fn failure(app: &str, error: &impl std::fmt::Display) {
-    tracing::error!(app, %error, "application error");
+    if tracing::enabled!(tracing::Level::ERROR) {
+        tracing::error!(app, %error, "application error");
+    } else {
+        // Startup failures and an explicit off filter still need one message.
+        eprintln!("{app}: {error}");
+    }
 }
 
 /// Own targets use Rust crate names (hyphens become underscores).
@@ -78,6 +83,7 @@ const WORKSPACE_TARGETS: &[&str] = &[
     "maild_auth",
     "maild_bayesian",
     "maild_rules",
+    "maildoc",
     "mds",
     "mesh",
     "mesh_sign",
@@ -287,18 +293,29 @@ pub(crate) fn stderr_mode(tty: bool, journal_active: bool) -> TriState {
 }
 
 /// Call first in main and retain the returned guard until process exit.
+/// Help/version requests return a passive guard without installing logging.
 /// RUST_LOG is recorded once; enabling debug replaces it, disabling restores it.
 pub fn init(
     identity: &str,
     off_filter: &str,
     args: &mut Vec<String>,
 ) -> Result<LogHandle, LogError> {
+    let level = strip_args(args)?;
+    if args.iter().skip(1).take_while(|arg| *arg != "--").any(|arg| {
+        matches!(arg.as_str(), "--help" | "-h" | "--version" | "-V")
+    }) {
+        return Ok(LogHandle {
+            guards: Vec::new(),
+            reload: None,
+            stats_installed: false,
+            shutdown_done: false,
+        });
+    }
     if CONTROL.get().is_some() {
         return Err(LogError::AlreadyInstalled(
             "debug control already installed".into(),
         ));
     }
-    let level = strip_args(args)?;
     // An invalid app default is a programming error. A bad environment
     // override must not prevent a GUI from starting or disable its live controls.
     parse_filter(off_filter)?;

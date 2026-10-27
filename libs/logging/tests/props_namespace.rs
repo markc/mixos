@@ -50,6 +50,49 @@ fn body(pairs: &[(&str, &str)]) -> PropValue {
     PropValue::Object(m)
 }
 
+#[test]
+fn property_reloads_resynchronise_the_log_facade() {
+    const CHILD: &str = "MIXOS_LOG_PROPS_FACADE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "property_reloads_resynchronise_the_log_facade", "--nocapture"])
+            .env(CHILD, "1").env_remove("RUST_LOG").output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("dependency debug admitted"), "{stderr}");
+        assert!(!stderr.contains("dependency debug rejected"), "{stderr}");
+        return;
+    }
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let guard = logging::init(
+            &logging::LogOpts { log_level: Some(logging::LogLevel::Warn), log_stderr: Some(logging::TriState::Always), ..Default::default() },
+            &logging::StatsOpts::default(), logging::LogDefaults::gui("fixture")
+        ).unwrap();
+        assert_eq!(log::max_level(), log::LevelFilter::Warn);
+        let store = build_store("fixture");
+        let mut router = PropsRouter::new("fixture");
+        let namespace = register(&mut router, &store).unwrap();
+        let runtime = namespace.runtime().clone();
+        runtime.set(singleton_key(), body(&[("level", "debug")]), set_opts(MergeMode::Replace)).await.unwrap();
+        logging::props::attach(&guard, namespace).await.unwrap();
+        assert_eq!(log::max_level(), log::LevelFilter::Debug);
+        log::debug!(target: "fake_dependency", "dependency debug admitted");
+        for (level, expected) in [("trace", log::LevelFilter::Trace), ("warn", log::LevelFilter::Warn), ("none", log::LevelFilter::Off)] {
+            let mut opts = set_opts(MergeMode::Replace);
+            opts.expected_version = None;
+            runtime.set(singleton_key(), body(&[("level", level)]), opts).await.unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            while log::max_level() != expected {
+                assert!(std::time::Instant::now() < deadline, "facade did not follow {level}");
+                tokio::task::yield_now().await;
+            }
+            if level == "warn" {
+                log::debug!(target: "fake_dependency", "dependency debug rejected");
+            }
+        }
+    });
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn registers_cleanly_against_propsrouter() {
     let store = build_store("demod");

@@ -3,6 +3,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tracing::level_filters::LevelFilter;
+use tracing_log::AsLog;
 
 struct Counting;
 static COUNTING: AtomicBool = AtomicBool::new(false);
@@ -34,7 +35,7 @@ fn child(name: &str, ignored: bool) -> bool {
     for initial in if ignored {
         &["warn"][..]
     } else {
-        &["warn", "off"][..]
+        &["warn", "off", "trace"][..]
     } {
         let mut command = std::process::Command::new(std::env::current_exe().unwrap());
         command.args(["--exact", name, "--nocapture"]);
@@ -86,26 +87,31 @@ fn default_resources_and_reload_hints() {
     }
     let mut args = vec!["fixture".into()];
     let initial = std::env::var("MIXOS_DEBUG_COST_CHILD").unwrap();
-    if initial == "off" {
-        args.push("--debug=off".into());
+    if initial != "warn" {
+        args.push(format!("--debug={initial}"));
     }
     let before_threads = threads();
     let before_sockets = sockets();
     let _guard = logging::debug::init("fixture", "warn", &mut args).unwrap();
     assert_eq!(threads(), before_threads);
-    assert_eq!(sockets(), before_sockets, "journald must be lazy");
+    if initial != "trace" {
+        assert_eq!(sockets(), before_sockets, "journald must be lazy");
+    }
     assert_eq!(
         LevelFilter::current(),
         initial.parse::<LevelFilter>().unwrap()
     );
-    assert!(!tracing::enabled!(target: "logging", tracing::Level::DEBUG));
-    assert!(!tracing::enabled!(target: "logging", tracing::Level::TRACE));
+    assert_eq!(log::max_level(), LevelFilter::current().as_log());
+    assert_eq!(tracing::enabled!(target: "logging", tracing::Level::DEBUG), initial == "trace");
+    assert_eq!(tracing::enabled!(target: "logging", tracing::Level::TRACE), initial == "trace");
     let span = tracing::warn_span!("startup", generation = 1, phase = tracing::field::Empty);
     let _entered = span.enter();
     span.record("phase", "ready");
-    assert_eq!(sockets(), before_sockets, "spans must not connect journald");
+    if initial != "trace" {
+        assert_eq!(sockets(), before_sockets, "spans must not connect journald");
+    }
     for level in [
-        "warn", "off", "debug", "trace", "warn", "debug", "warn", "off",
+        "warn", "off", "error", "warn", "info", "debug", "trace", "debug", "info", "warn", "error", "off",
     ] {
         set(level);
         if level == "debug" && std::path::Path::new("/run/systemd/journal/socket").exists() {
@@ -119,6 +125,7 @@ fn default_resources_and_reload_hints() {
             LevelFilter::current(),
             level.parse::<LevelFilter>().unwrap()
         );
+        assert_eq!(log::max_level(), level.parse::<log::LevelFilter>().unwrap());
         assert_eq!(
             tracing::enabled!(target: "logging", tracing::Level::DEBUG),
             matches!(level, "debug" | "trace")
@@ -128,12 +135,17 @@ fn default_resources_and_reload_hints() {
             level == "trace"
         );
     }
+    set("trace");
+    assert_eq!(log::max_level(), log::LevelFilter::Trace);
+    assert_eq!(logging::debug::request("fixture", "fixture.debug.set", r#"{"on":false}"#).unwrap().0, 0);
+    assert_eq!(log::max_level(), log::LevelFilter::Warn);
     for level in ["warn", "off"] {
         set(level);
         ALLOCATIONS.store(0, Ordering::Relaxed);
         COUNTING.store(true, Ordering::SeqCst);
         for id in 0..10_000 {
             disabled_site(std::hint::black_box(id));
+            log::trace!(target: "wgpu_core", "disabled dependency {}", std::hint::black_box(id));
         }
         COUNTING.store(false, Ordering::SeqCst);
         assert_eq!(ALLOCATIONS.load(Ordering::Relaxed), 0);

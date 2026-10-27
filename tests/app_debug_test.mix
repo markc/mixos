@@ -10,8 +10,19 @@ end
 for $app in ["backdrop", "ced", "dopus", "email", "monitor", "prefs", "screenshot", "term", "workshop"]
   $help = run_argv([$bin .. "/" .. $app, "--debug=trace", "--help"], {env: {RUST_LOG: "warn"}})
   expect($help.exit_code == 0 and contains($help.stdout, "--debug") and contains($help.stdout, "trace"), $app .. " --debug=trace --help: " .. $help.stderr)
+  expect($help.stderr == "", $app .. " help initialised logging: " .. $help.stderr)
+  if $app == "monitor" or $app == "prefs" then
+    expect(index_of($help.stdout, "Usage:") < index_of($help.stdout, "--debug"), $app .. " debug help precedes usage")
+  end
+  for $flag in ["--help", "--version"]
+    for $prefix in [[], ["--debug=trace"]]
+      $info = run_argv(concat([$bin .. "/" .. $app, $flag], $prefix), {env: {RUST_LOG: "[invalid"}})
+      expect($info.exit_code == 0 and $info.stderr == "", $app .. " " .. $flag .. " touched logging: " .. $info.stderr)
+    end
+  end
   $bad = run_argv([$bin .. "/" .. $app, "--debug=invalid"], {env: {RUST_LOG: "warn"}})
   expect($bad.exit_code != 0, $app .. " accepted an invalid level")
+  if $app == "workshop" then expect($bad.exit_code == 2, "workshop logging failure must exit 2") end
 end
 $dir = trim(run_argv_must(["mktemp", "-d", "/var/tmp/app-debug.XXXXXX"]))
 $broker = nil

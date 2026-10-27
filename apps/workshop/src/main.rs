@@ -145,8 +145,7 @@ fn main() {
     let mut args: Vec<String> = std::env::args().collect();
     let _logging = toolkit::debug::init("workshop", "warn", &mut args).unwrap_or_else(|e| {
         toolkit::debug::failure("workshop", &e);
-        eprintln!("workshop: {e}");
-        std::process::exit(1);
+        std::process::exit(2);
     });
     buildinfo::exit_on_version!(leading);
     if matches!(args.get(1).map(String::as_str), Some("--help" | "-h")) {
@@ -180,7 +179,6 @@ fn main() {
     });
     if let Err(error) = result {
         toolkit::debug::failure("workshop", &error);
-        eprintln!("workshop: {error}");
         std::process::exit(1);
     }
 }

@@ -13,7 +13,8 @@ mod wayland;
 mod wlcs;
 mod xwayland;
 
-use model::{info, warn};
+use logging::info;
+use model::warn;
 
 use dispatcher::wire::trait_::wire_trait::WireTrait;
 use smithay::reexports::calloop::generic::Generic;
@@ -80,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let environment = world::environment::type_::base::get();
     let mut log_args: Vec<String> = std::env::args().collect();
-    let _logging = logging::debug::init("compd", "warn", &mut log_args)?;
+    let _logging = logging::debug::init("compd", "warn,compd=info", &mut log_args)?;
 
     // Start the separate developer logging process (fan-in buffer + stderr drain).
     // Levels come from COMPOSITOR_LOG_LEVEL.

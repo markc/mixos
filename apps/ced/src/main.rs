@@ -183,7 +183,6 @@ pub(crate) fn main() {
     let mut cli_args: Vec<String> = std::env::args().collect();
     let _logging = toolkit::debug::init("ced", "warn", &mut cli_args).unwrap_or_else(|error| {
         toolkit::debug::failure("ced", &error);
-        eprintln!("ced: {error}");
         std::process::exit(2);
     });
     // First, before any config read or Bus connect: `--version` reports the
@@ -197,7 +196,6 @@ pub(crate) fn main() {
         Ok(args) => args,
         Err(e) => {
             toolkit::debug::failure("ced", &e);
-            eprintln!("ced: {e}");
             std::process::exit(2);
         }
     };
@@ -230,7 +228,6 @@ pub(crate) fn main() {
     };
     if let Err(error) = result {
         toolkit::debug::failure("ced", &error);
-        eprintln!("ced: {error}");
         std::process::exit(1);
     }
 }

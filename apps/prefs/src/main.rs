@@ -87,15 +87,14 @@ fn main() {
     let mut cli_args: Vec<String> = std::env::args().collect();
     let _logging = toolkit::debug::init("prefs", "warn", &mut cli_args).unwrap_or_else(|error| {
         toolkit::debug::failure("prefs", &error);
-        eprintln!("prefs: {error}");
         std::process::exit(2);
     });
     buildinfo::exit_on_version!(leading);
     if matches!(cli_args.get(1).map(String::as_str), Some("--help" | "-h")) {
-        println!("{}", toolkit::debug::HELP);
         println!(
             "prefs — MixOS preferences\nUsage: prefs [--noded-url URL] [--service NAME] [--comp NAME]"
         );
+        println!("{}", toolkit::debug::HELP);
         return;
     }
     let result = parse(cli_args.into_iter().skip(1)).and_then(|settings| {
@@ -118,7 +117,6 @@ fn main() {
     });
     if let Err(error) = result {
         toolkit::debug::failure("prefs", &error);
-        eprintln!("prefs: {error}");
         std::process::exit(1);
     }
 }

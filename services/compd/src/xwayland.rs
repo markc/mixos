@@ -233,7 +233,7 @@ fn start<'l>(dh: DisplayHandle, handle: LoopHandle<'l, Loop>) {
     // Safe here: `spawn` has inserted the client, and its registry request cannot be
     // dispatched until this function returns to the event loop.
     if protocols::xwm::base::set_filter_client(client.id()) {
-        info!("global filters now name the retried XWayland client");
+        logging::debug!("global filters now name the retried XWayland client");
     }
 
     let (source_dh, source_handle) = (dh.clone(), handle.clone());
@@ -272,7 +272,7 @@ fn start<'l>(dh: DisplayHandle, handle: LoopHandle<'l, Loop>) {
                         if let Err(err) = policy_host::xwayland::publish_descriptor(display_number) {
                             warn!("XWayland DISPLAY descriptor not published: {err}");
                         }
-                        info!("XWayland ready on :{display_number}");
+                        logging::debug!("XWayland ready on :{display_number}");
                     }
                     // A server with no window manager is a failed generation, as
                     // a startup crash is: nothing would ever count it, and
@@ -457,7 +457,7 @@ fn died(state: &mut Loop) {
     // user is actually using, whose own server is fine — this is the destructive
     // direction of the per-user clobber, and the one worth being careful about.
     lifecycle::push_session_env_if_active(publishes_shared_env(state), &[("DISPLAY", "")]);
-    info!(
+    logging::debug!(
         "XWayland teardown complete; {count} X11 window(s) retired, {withdrawn} withdrawn record(s) cleared"
     );
 }

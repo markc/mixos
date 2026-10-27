@@ -34,6 +34,8 @@ prometheus = [
 [dependencies]
 props = { workspace = true, optional = true, features = ["sqlite", "router"] }
 config.workspace = true
+log = "0.4"
+tracing-log = "0.2"
 tracing.workspace = true
 # `reload` is unconditionally enabled — the live-reloadable filter is
 # now a core capability (the `LogReloadHandle` wrapper hands runtime

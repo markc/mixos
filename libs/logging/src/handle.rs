@@ -181,9 +181,16 @@ impl LogReloadHandle {
     /// Swap the active `EnvFilter`. Returns `Err` if the subscriber was
     /// torn down.
     pub fn reload_filter(&self, filter: tracing_subscriber::EnvFilter) -> Result<(), LogError> {
+        use tracing_subscriber::filter::LevelFilter;
+        use tracing_log::AsLog;
+
         self.inner
             .reload(filter)
-            .map_err(|e| LogError::Reload(e.to_string()))
+            .map_err(|e| LogError::Reload(e.to_string()))?;
+        // try_init sets this only once. Keep facade dependencies in step with
+        // every live swap, including property-driven swaps and turning off.
+        log::set_max_level(LevelFilter::current().as_log());
+        Ok(())
     }
 }
 

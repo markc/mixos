@@ -27,7 +27,7 @@
 
 pub mod debug;
 /// Seam diagnostics for consumers that already use the logging core.
-pub use tracing::{debug, trace};
+pub use tracing::{debug, info, trace};
 mod defaults;
 mod handle;
 mod init;

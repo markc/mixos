@@ -152,7 +152,6 @@ fn main() {
     let mut cli_args: Vec<String> = std::env::args().collect();
     let _logging = toolkit::debug::init("dopus", "warn", &mut cli_args).unwrap_or_else(|error| {
         toolkit::debug::failure("dopus", &error);
-        eprintln!("dopus: {error}");
         std::process::exit(2);
     });
     // First, before any config read or Bus connect.
@@ -165,7 +164,6 @@ fn main() {
         Ok(args) => args,
         Err(e) => {
             toolkit::debug::failure("dopus", &e);
-            eprintln!("dopus: {e}");
             std::process::exit(2);
         }
     };
@@ -190,7 +188,6 @@ fn main() {
     };
     if let Err(error) = result {
         toolkit::debug::failure("dopus", &error);
-        eprintln!("dopus: {error}");
         std::process::exit(1);
     }
 }

@@ -194,7 +194,6 @@ fn main() {
     let _logging =
         toolkit::debug::init("backdrop", "warn", &mut cli_args).unwrap_or_else(|error| {
             toolkit::debug::failure("backdrop", &error);
-            eprintln!("backdrop: {error}");
             std::process::exit(2);
         });
     buildinfo::exit_on_version!();
@@ -202,7 +201,6 @@ fn main() {
         Ok(args) => args,
         Err(error) => {
             toolkit::debug::failure("backdrop", &error);
-            eprintln!("backdrop: {error}");
             std::process::exit(2);
         }
     };
@@ -211,7 +209,6 @@ fn main() {
             toolkit::layer::run(LayerOptions::background(control::APP), probe::Probe::new())
         {
             toolkit::debug::failure("backdrop", &error);
-            eprintln!("backdrop: {error}");
             std::process::exit(1);
         }
         return;
@@ -220,7 +217,6 @@ fn main() {
         Ok(started) => started,
         Err(error) => {
             toolkit::debug::failure("backdrop", &error);
-            eprintln!("backdrop: {error}");
             std::process::exit(1);
         }
     };
@@ -246,13 +242,11 @@ fn main() {
     };
     if let Err(error) = control::start(setup) {
         toolkit::debug::failure("backdrop", &error);
-        eprintln!("backdrop: {error}");
         std::process::exit(1);
     }
     let program = program::Backdrop::new(toolkit::Theme::load(), shared, wakers);
     if let Err(error) = toolkit::layer::run(LayerOptions::background(control::APP), program) {
         toolkit::debug::failure("backdrop", &error);
-        eprintln!("backdrop: {error}");
         std::process::exit(1);
     }
 }

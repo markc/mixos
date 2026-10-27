@@ -17,7 +17,6 @@ fn main() {
         Ok(args) => args,
         Err(error) => {
             toolkit::debug::failure("email", &error);
-            eprintln!("email: {error}");
             std::process::exit(2);
         }
     };
@@ -35,7 +34,6 @@ fn main() {
     };
     if let Err(error) = result {
         toolkit::debug::failure("email", &error);
-        eprintln!("email: {error}");
         std::process::exit(1);
     }
 }
@@ -45,7 +43,6 @@ fn init_logging(args: &mut Vec<String>) -> Option<logging::LogHandle> {
         Ok(handle) => Some(handle),
         Err(error) => {
             toolkit::debug::failure("email", &error);
-            eprintln!("email: {error}");
             // Retain Email's non-fatal policy for other logging failures.
             // Malformed environment filters recover inside the shared helper.
             None
