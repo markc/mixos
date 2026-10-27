@@ -130,7 +130,11 @@ fn compose_attached(state: &State) -> bool {
 }
 
 fn compose_document_ready(state: &State) -> bool {
-    compose_attachable(state) && state.compose.as_ref().is_some_and(|c| c.attachment_inspections.is_empty())
+    compose_attachable(state)
+        && state
+            .compose
+            .as_ref()
+            .is_some_and(|c| c.attachment_inspections.is_empty())
 }
 
 /// The registry: every command, its menu, its shortcut and its guard.

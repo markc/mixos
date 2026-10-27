@@ -239,7 +239,9 @@ impl FileChooser {
                             // The filename field belongs to the covered chooser.
                             // Let the replacement question own Enter and Escape.
                             ctx.memory_mut(|memory| {
-                                if let Some(id) = memory.focused() { memory.surrender_focus(id); }
+                                if let Some(id) = memory.focused() {
+                                    memory.surrender_focus(id);
+                                }
                             });
                         }
                         Ok(Answer::Save(path, false)) => {
@@ -896,6 +898,8 @@ mod tests {
         tx.send(Ok(Answer::Save(path.clone(), true))).unwrap();
         h.run();
         assert!(h.query_by_label("Replace").is_some());
+        h.get_by_label("Replace").focus();
+        h.run();
         h.key_press(Key::Enter);
         h.run();
         assert_eq!(
