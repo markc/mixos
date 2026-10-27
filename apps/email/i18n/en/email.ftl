@@ -27,6 +27,7 @@ sending = Sending…
 send-failed = Not sent: { $error }
 bad-recipient = Check the recipients: { $error }
 compose-title = Compose
+compose-idle = Choose File → New to write a message.
 compose-new = New
 compose-close = Close
 compose-undo = Undo

@@ -405,11 +405,11 @@ pub fn view(
             ui.weak(crate::label("loading"));
         } else {
             ui.label(if state.status.is_empty() {
-                crate::label("no-accounts-body")
+                crate::label(if state.accounts.is_empty() { "no-accounts-body" } else { "compose-idle" })
             } else {
                 state.status.clone()
             });
-            if state.status != crate::label("compose-owner-wait")
+            if state.accounts.is_empty() && state.status != crate::label("compose-owner-wait")
                 && ui
                     .add(toolkit::button::PushButton::secondary(crate::label(
                         "open-settings",
