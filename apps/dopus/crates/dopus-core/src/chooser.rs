@@ -683,7 +683,8 @@ impl Engine {
         }
     }
 
-    /// A reply that could not be sent must never leave an interactive window.
+    /// Close a prepared window whose reply could not be sent. The host must
+    /// then stop this incarnation: it cannot fulfil this accepted request.
     pub fn reply_failed(&mut self, id: &str, presenter: &mut impl Presenter) {
         if let Ok(Some(seq)) = self.own_sequence(id)
             && self.open.remove(&seq).is_some()

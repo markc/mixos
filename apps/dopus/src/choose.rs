@@ -96,16 +96,17 @@ async fn deliver(
     presenter: &mut impl Presenter,
     answer: Answer,
     reply: impl std::future::Future<Output = bool>,
-) -> Option<Outcome> {
+) -> Result<Option<Outcome>, String> {
     let sent = reply.await;
     if let Some(id) = answer.enable {
         if sent {
             engine.reply_sent(&id, presenter);
         } else {
             engine.reply_failed(&id, presenter);
+            return Err("files could not send the choose reply; incarnation lost".into());
         }
     }
-    answer.outcome
+    Ok(answer.outcome)
 }
 
 async fn publish(client: &SupervisedClient, outcome: Outcome) {
@@ -214,7 +215,7 @@ pub fn run_with_presenter(
                     citizen::debug::answered(SERVICE, &cmd.command, answer.rc);
                     let (rc, body) = (answer.rc, answer.body.to_string());
                     let sent = async { matches!(tokio::time::timeout(Duration::from_secs(2), client.respond(&cmd, rc, &body)).await, Ok(Ok(()))) };
-                    if let Some(outcome) = deliver(&mut engine, &mut presenter, answer, sent).await {
+                    if let Some(outcome) = deliver(&mut engine, &mut presenter, answer, sent).await? {
                         publish(&client, outcome).await;
                     }
                 }
@@ -335,7 +336,7 @@ mod tests {
             log.lock().unwrap().push("reply");
             true
         };
-        futures::executor::block_on(deliver(&mut engine, &mut presenter, answer, reply));
+        futures::executor::block_on(deliver(&mut engine, &mut presenter, answer, reply)).unwrap();
         let event = rx.try_recv().unwrap();
         assert!(
             engine
@@ -354,5 +355,16 @@ mod tests {
             *log.lock().unwrap(),
             ["open-disabled", "reply", "input", "close", "publish"]
         );
+        let answer = dispatch(&mut engine, &mut presenter, "files.choose", "{}", "caller", 4);
+        let error = futures::executor::block_on(deliver(
+            &mut engine,
+            &mut presenter,
+            answer,
+            async { false },
+        ))
+        .unwrap_err();
+        assert!(error.contains("incarnation lost"));
+        assert!(rx.try_recv().is_err());
+        assert_eq!(engine.list()["requests"], json!([]));
     }
 }
