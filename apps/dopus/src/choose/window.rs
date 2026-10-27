@@ -360,7 +360,17 @@ impl Window {
                 ));
             }
         });
-        egui::Panel::bottom("files-controls").show(ui, |ui| {
+        egui::Panel::bottom("files-buttons").show(ui, |ui| {
+            ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button(&self.request.accept_label).clicked() { clicked = Some("chooser.accept"); }
+                    if ui.button(label("cancel")).clicked() { clicked = Some("chooser.cancel"); }
+                });
+            });
+        });
+        let max_form = ctx.content_rect().height()
+            * toolkit::chrome::Chrome::of(&ctx).style.dialog_resize_max_share as f32 / 2.0;
+        egui::Panel::bottom("files-controls").max_size(max_form).show(ui, |ui| {
             ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
                 let max_form = ctx.content_rect().height()
                     * toolkit::chrome::Chrome::of(&ctx)
@@ -472,14 +482,6 @@ impl Window {
                             ui.label(message);
                         }
                     });
-                ui.horizontal(|ui| {
-                    if ui.button(&self.request.accept_label).clicked() {
-                        clicked = Some("chooser.accept");
-                    }
-                    if ui.button(label("cancel")).clicked() {
-                        clicked = Some("chooser.cancel");
-                    }
-                });
             });
         });
         let places_width = self
