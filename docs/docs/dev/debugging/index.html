@@ -239,6 +239,8 @@
 <code>trace</code>. The default baseline is <code>warn</code>, except Email's <code>warn,email=info</code>.
 Non-empty <code>RUST_LOG</code> supplies the baseline instead. An explicit debug flag
 selects the initial live level while preserving that baseline for restoration.
+An invalid <code>RUST_LOG</code> is reported to stderr and falls back to the app's baseline;
+live controls remain available. An invalid <code>--debug=LEVEL</code> is a command-line error.
 The last debug flag wins. Flags after <code>--</code> are preserved for the app's parser.</p>
 <pre><code class="language-console">workshop --debug
 email --debug=info

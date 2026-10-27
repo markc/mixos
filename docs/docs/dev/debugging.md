@@ -5,6 +5,8 @@ Every MixOS app and compd accepts `--debug[=LEVEL]`. `--debug` means
 `trace`. The default baseline is `warn`, except Email's `warn,email=info`.
 Non-empty `RUST_LOG` supplies the baseline instead. An explicit debug flag
 selects the initial live level while preserving that baseline for restoration.
+An invalid `RUST_LOG` is reported to stderr and falls back to the app's baseline;
+live controls remain available. An invalid `--debug=LEVEL` is a command-line error.
 The last debug flag wins. Flags after `--` are preserved for the app's parser.
 
 ```console

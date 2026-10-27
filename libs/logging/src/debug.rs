@@ -283,9 +283,14 @@ pub fn init(
     args: &mut Vec<String>,
 ) -> Result<LogHandle, LogError> {
     let level = strip_args(args)?;
-    let baseline = baseline(off_filter, std::env::var("RUST_LOG").ok());
-    // Validate the off filter even when starting in debug mode.
-    parse_filter(&baseline)?;
+    // An invalid app default is a programming error. A bad environment
+    // override must not prevent a GUI from starting or disable its live controls.
+    parse_filter(off_filter)?;
+    let mut baseline = baseline(off_filter, std::env::var("RUST_LOG").ok());
+    if let Err(error) = parse_filter(&baseline) {
+        eprintln!("{identity}: invalid RUST_LOG ({error}); using {off_filter}");
+        baseline = off_filter.to_owned();
+    }
     let filter = level.map(filter_for).unwrap_or_else(|| baseline.clone());
     let guard = crate::init::init_inner(
         &LogOpts {
@@ -357,7 +362,12 @@ fn answer(query: bool, body: &str) -> (u8, Value) {
             }
             None
         } else {
-            Some(serde_json::from_str::<SetRequest>(body).map_err(|e| e.to_string())?)
+            let request = serde_json::from_str::<SetRequest>(body).map_err(|e| e.to_string())?;
+            let shape: Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
+            if !shape.as_object().is_some_and(|fields| fields.len() == 1) {
+                return Err("provide an object with exactly one of level or on".into());
+            }
+            Some(request)
         };
         let mut control = CONTROL
             .get()
@@ -533,6 +543,8 @@ mod tests {
             r#"{"on":true,"extra":0}"#,
             r#"{"level":"bad"}"#,
             r#"{"level":"warn","on":true}"#,
+            r#"{"level":"warn","on":null}"#,
+            r#"["debug",null]"#,
         ] {
             assert_eq!(answer(false, body).0, 10);
         }

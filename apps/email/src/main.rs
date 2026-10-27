@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn invalid_log_filter_child() {
         if std::env::var_os("EMAIL_TEST_INVALID_LOG").is_some() {
-            assert!(super::init_logging(&mut vec!["email".into()]).is_none());
+            assert!(super::init_logging(&mut vec!["email".into()]).is_some());
             println!("startup continues");
         }
     }
