@@ -2184,6 +2184,26 @@ impl State {
         }
     }
 
+    /// Minimal, disposable rendering context. It owns no credentials, account
+    /// effects or mailbox contents and never runs the startup/reconnect path.
+    pub(crate) fn refresh_compose_view(&mut self, state: &State) {
+        self.mode = state.mode;
+        self.selected = state.selected.clone();
+        self.settings = state.settings.clone();
+        self.ui = state.ui.clone();
+        self.session_mode = state.session_mode;
+        self.accounts.retain(|a| state.account(&a.entry.id).is_some());
+        for real in &state.accounts {
+            let index = if let Some(i) = self.accounts.iter().position(|a| a.entry.id == real.entry.id) { i }
+                else { self.accounts.push(AccountView::new(real.entry.clone())); self.accounts.len()-1 };
+            let view = &mut self.accounts[index];
+            view.entry = real.entry.clone();
+            view.generation = real.generation;
+            view.phase = real.phase.clone();
+            view.session = real.session.clone();
+        }
+    }
+
     /// Connect `view` afresh with the password held, or wait for one.
     fn connect(&mut self, view: &mut AccountView) {
         self.disconnect(view);

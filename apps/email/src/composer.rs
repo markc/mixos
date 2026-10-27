@@ -40,6 +40,7 @@ pub(crate) fn swap(a: &mut State, b: &mut State) {
     std::mem::swap(&mut a.identity_editor, &mut b.identity_editor);
     std::mem::swap(&mut a.documents, &mut b.documents);
     std::mem::swap(&mut a.compose_clipboard, &mut b.compose_clipboard);
+    std::mem::swap(&mut a.status, &mut b.status);
 }
 
 fn context(state: &State) -> State {
@@ -133,9 +134,7 @@ impl Windows {
                 // No native surface ever changes identity or adopts another draft.
                 return false;
             }
-            let mut view = context(state);
-            swap(&mut view, &mut window.view);
-            window.view = view;
+            window.view.refresh_compose_view(state);
             window.palette = palette.clone();
             true
         });
@@ -228,7 +227,12 @@ pub fn view(ui: &mut egui::Ui, state: &State, registry: &Registry<State>, palett
         if state.status == crate::label("compose-owner-wait") { ui.label(&state.status); }
         if let Some(compose) = &state.compose {
             crate::view::compose::form(ui,compose,state,palette,&mut events);
-        } else { ui.label(&state.status); }
+        } else {
+            ui.label(if state.status.is_empty() { crate::label("no-accounts-body") } else { state.status.clone() });
+            if ui.add(toolkit::button::PushButton::secondary(crate::label("open-settings"))).clicked() {
+                events.push(UiEvent::Command("file.accounts", Origin::Menu));
+            }
+        }
     });
     crate::view::compose::confirm(ui,state,&mut events);
     crate::view::compose::document_replace(ui,state,&mut events);
@@ -248,6 +252,8 @@ pub fn registry() -> Registry<State> {
             shortcut: if id == "compose.new" { Some(egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::N)) } else { a.shortcut },
             icon:a.icon,enabled:a.enabled,run: if id == "file.quit" { |s| s.exiting = true } else { a.run } });
     }
+    let a = original.get("file.accounts").unwrap();
+    registry.add(Action {id:a.id,label:a.label,menu:None,submenu:None,group:0,shortcut:None,icon:a.icon,enabled:a.enabled,run:a.run});
     registry
 }
 
