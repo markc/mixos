@@ -148,7 +148,7 @@ pub fn run(args: &Args) -> Result<(), String> {
     };
     if args.compose {
         let store = toolkit::saved::Store::<serde_json::Value>::load(
-            config::AppDirs::resolve(APP).map(|d| d.state()), 0,
+            ::config::AppDirs::resolve(APP).map(|d| d.state()), 0,
         );
         if let Some(frame) = store.windows.get("compose-1") {
             viewport = frame.viewport(viewport);
