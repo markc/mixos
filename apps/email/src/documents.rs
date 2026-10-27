@@ -441,8 +441,8 @@ impl State {
                 let fence = entry.flatten();
                 // The same message, even edited since, still owns the error;
                 // a different message never shows another one's failure.
-                let same_message = fence.as_ref().map(|f| &f.0)
-                    == self.compose.as_ref().map(|c| &c.draft_id);
+                let same_message =
+                    fence.as_ref().map(|f| &f.0) == self.compose.as_ref().map(|c| &c.draft_id);
                 match result {
                     Err(error) if !same_message => self.status = error.1,
                     Err(error) => self.document_error(error),
