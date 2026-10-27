@@ -353,6 +353,9 @@ impl FileChooser {
                             let width = (ui.available_width() - tail).max(height);
                             let response = ui
                                 .allocate_ui(egui::vec2(width, field::height_of(ui.ctx())), |ui| {
+                                    // The name fills its cell, so size and date
+                                    // start at the same x on every row.
+                                    ui.set_min_width(width);
                                     ui.set_max_width(width);
                                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                                     button::selectable(ui, selected, &entry.name)
