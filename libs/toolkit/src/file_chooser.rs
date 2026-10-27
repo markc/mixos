@@ -290,6 +290,7 @@ impl FileChooser {
         }
         if let Some(path) = self.replace.clone() {
             let id = self.id.with("replace");
+            ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
             let shown = Dialog::new(id, own("file-chooser-replace-title"))
                 .buttons(vec![
                     Choice::new(own("file-chooser-replace"), Role::Default),
@@ -325,10 +326,10 @@ impl FileChooser {
         let list_focused = ctx
             .memory(|m| m.focused())
             .is_none_or(|id| self.row_ids.contains(&id));
-        let list_keys = list_focused && !egui::Popup::is_any_open(&ctx);
+        let list_keys = ui.is_enabled() && list_focused && !egui::Popup::is_any_open(&ctx);
         // Consume before TextEdit: Enter otherwise gives up focus and can
         // also activate the dialog's default button.
-        let submit = path_focused && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
+        let submit = ui.is_enabled() && path_focused && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
         ui.add(
             field::text_edit(
                 &mut self.path,
@@ -883,7 +884,8 @@ mod tests {
         assert!(h.state().1.is_none());
         h.state_mut().0.replace = Some(path.clone());
         h.run();
-        h.get_by_label("Replace").click();
+        assert!(h.query_by_label("Replace").is_some());
+        h.key_press(Key::Enter);
         h.run();
         assert_eq!(
             h.state().1,

@@ -599,11 +599,11 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
 
     let registry = actions::registry();
     h.state_mut().1.clear();
-    // The compose dialog's own commands (Attach files…, Ctrl+Shift+A) are
+    // The compose dialog's own commands (File and Attachments) are
     // meant to work while the body has the keyboard, as in Thunderbird.
     for command in registry
         .iter()
-        .filter(|c| c.menu != Some("compose-attachments-menu"))
+        .filter(|c| !matches!(c.menu, Some("compose-file-menu" | "compose-attachments-menu")))
     {
         for chord in registry.shortcuts_of(command.id) {
             assert!(
@@ -666,6 +666,26 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
             toolkit::action::Origin::Shortcut
         )]
     );
+}
+
+#[test]
+fn compose_file_shortcuts_work_while_the_body_has_focus() {
+    for (key, modifiers, expected) in [
+        (egui::Key::O, egui::Modifiers::COMMAND, "compose.open"),
+        (egui::Key::S, egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT), "compose.save_as"),
+    ] {
+        let mut state = opened("text/plain", PLAIN);
+        state.compose();
+        let mut h = window(state, &theme(Scheme::Pro, Mode::Dark));
+        h.get_by_label("Body").click();
+        h.run();
+        assert!(email::view::compose::body_focused(&h.ctx));
+        h.state_mut().1.clear();
+        h.key_press_modifiers(modifiers, key);
+        h.run();
+        assert!(h.state().1.iter().any(|e| matches!(e, UiEvent::Command(id, Origin::Shortcut) if *id == expected)));
+        assert!(h.state().0.documents.modal());
+    }
 }
 
 #[test]

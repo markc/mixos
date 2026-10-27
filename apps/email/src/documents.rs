@@ -369,7 +369,9 @@ impl State {
                     match result {
                         Err(error) => self.document_error(error),
                         Ok(()) => {
-                            if let Some(compose) = &mut self.compose { compose.error = None; }
+                            if let Some(compose) = &mut self.compose {
+                                compose.error = None;
+                            }
                         }
                     }
                 }
