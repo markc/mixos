@@ -88,7 +88,7 @@ try
   $broker = $n.private_bus({dir:$tmp .. "/broker", name:"chooser-test", noded:$noded})
   mkdir($tmp .. "/home/Documents", {parents:true})
   write_file($tmp .. "/home/notes.txt", "original")
-  write_file($tmp .. "/settings.json", "{}")
+  write_file($tmp .. "/settings.json", read_file($root .. "/tests/desktop/smoke-settings.json"))
   $session = $n.start({bin:$comp, tag:"chooser", run:$run, config:$tmp .. "/settings.json", software:true})
   check($n.wait_ready($session, 40), "nested compd did not start: " .. $session.log)
   $client = $n.client_env($session, {HOME:$tmp .. "/home", XDG_CONFIG_HOME:$tmp .. "/config", XDG_STATE_HOME:$tmp .. "/state",
