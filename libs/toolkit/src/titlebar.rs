@@ -333,7 +333,9 @@ pub fn show_with<S>(
         let drag: Vec<_> = if server {
             Vec::new()
         } else {
-            free_gaps(bar, &[group(0), group(1), group(2), group(3)])
+            // The title only paints, so it stays part of the drag zone
+            // (press to move, double-click to maximise).
+            free_gaps(bar, &[group(0), group(1), group(2)])
                 .into_iter()
                 .enumerate()
                 .map(|(index, gap)| {
