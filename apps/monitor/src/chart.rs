@@ -111,12 +111,16 @@ fn render(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) ->
     let duration = chart.samples.saturating_sub(1).max(1) as f64 * interval_s;
     let ticks = YTicks::for_scale(chart.scale);
     let text_height = ui.text_style_height(&egui::TextStyle::Body);
+    // The top tick is centred on the plot edge and extends upwards by half
+    // a line. Reserve that overhang plus the theme's normal gap below subtitles.
+    ui.add_space(text_height * 0.5 + ui.spacing().item_spacing.y);
     let y_axis = AxisHints::new_y()
         .formatter(|mark, _| (chart.format)(mark.value))
         .tick_label_color(ui.visuals().text_color())
         // All of our marks are labelled. The default 20–30 pt fade hides
         // otherwise well-spaced text in the shorter Performance charts.
         .label_spacing(0.0..=text_height);
+    let time_only = egui::Vec2b::new(true, false);
     let mut plot = Plot::new(id)
         .width(size.x)
         // Leave room for every tick and the existing x axis, including at
@@ -124,11 +128,13 @@ fn render(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) ->
         .height(size.y.max((ticks.intervals as f32 + 3.0) * text_height))
         .default_x_bounds(-duration, 0.0)
         .default_y_bounds(0.0, ticks.max())
-        .allow_drag([true, false])
-        .allow_zoom([true, false])
+        .allow_drag(time_only)
+        .allow_zoom(time_only)
+        .allow_axis_zoom_drag(time_only)
         .allow_boxed_zoom(false)
-        .allow_scroll(false)
-        .allow_double_click_reset(true)
+        .allow_scroll(time_only)
+        // Reset x explicitly below; the native reset enables both auto bounds.
+        .allow_double_click_reset(false)
         .show_grid([false, true])
         .show_y(false)
         .x_axis_label(crate::label("graph-seconds-ago"))
@@ -174,6 +180,7 @@ fn render(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) ->
         // The resource scale follows incoming data while x stays where the
         // person put it. Bounds changes never reset their time range.
         plot_ui.set_plot_bounds_y(0.0..=ticks.max());
+        let reset_time = plot_ui.response().double_clicked();
         // egui_plot's native zoom handles pinch/Ctrl-wheel. Plain wheel also
         // zooms x, centred at the pointer; consume it before the pane scrolls.
         if plot_ui.response().hovered() {
@@ -185,9 +192,24 @@ fn render(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) ->
                 input.smooth_scroll_delta.y = 0.0;
                 delta
             });
-            if scroll != 0.0 {
-                plot_ui.zoom_bounds_around_hovered(Vec2::new((scroll * 0.01).exp(), 1.0));
+            if !reset_time
+                && scroll != 0.0
+                && let Some(pointer) = plot_ui.pointer_coordinate()
+            {
+                // PlotUi::zoom_bounds modifies both axes and their auto-bound
+                // state. Set just x, so wheel input cannot change y at all.
+                let bounds = plot_ui.plot_bounds();
+                let factor = f64::from((scroll * 0.01).exp());
+                let left = pointer.x + (bounds.min()[0] - pointer.x) / factor;
+                let right = pointer.x + (bounds.max()[0] - pointer.x) / factor;
+                if left.is_finite() && right.is_finite() && left < right {
+                    plot_ui.set_plot_bounds_x(left..=right);
+                }
             }
+        }
+        if reset_time {
+            // Apply after navigation so reset wins over wheel input in this pass.
+            plot_ui.set_plot_bounds_x(-duration..=0.0);
         }
         for (series, colour) in chart.series.iter().zip(colours) {
             plot_ui.line(
@@ -243,14 +265,17 @@ mod tests {
     fn short_charts_paint_every_y_tick_label_in_the_resource_unit() {
         use egui::Shape;
         use egui_kittest::Harness;
-        fn collect_text(shape: &Shape, labels: &mut Vec<String>) {
+        fn collect_text(shape: &Shape, labels: &mut Vec<(String, egui::Rect)>) {
             match shape {
                 Shape::Vec(shapes) => {
                     for shape in shapes {
                         collect_text(shape, labels);
                     }
                 }
-                Shape::Text(text) => labels.push(text.galley.text().to_owned()),
+                Shape::Text(text) => labels.push((
+                    text.galley.text().to_owned(),
+                    egui::Rect::from_min_size(text.pos, text.galley.size()),
+                )),
                 _ => {}
             }
         }
@@ -276,6 +301,7 @@ mod tests {
                 .with_context_setup(|ctx| toolkit::install(ctx, &toolkit::Theme::embedded()))
                 .with_size(egui::vec2(640.0, 200.0))
                 .build_ui(move |ui| {
+                    ui.small("Subtitle");
                     show(
                         ui,
                         "short-chart",
@@ -298,10 +324,24 @@ mod tests {
             for shape in &h.output().shapes {
                 collect_text(&shape.shape, &mut labels);
             }
+            let subtitle = labels
+                .iter()
+                .find(|(label, _)| label == "Subtitle")
+                .unwrap()
+                .1;
             for expected in expected {
                 assert!(
-                    labels.iter().any(|label| label == expected),
+                    labels.iter().any(|(label, _)| label == expected),
                     "missing y tick {expected}: {labels:?}"
+                );
+                let tick = labels
+                    .iter()
+                    .find(|(label, _)| label == expected)
+                    .unwrap()
+                    .1;
+                assert!(
+                    tick.top() > subtitle.bottom(),
+                    "y tick {expected} touches subtitle"
                 );
             }
         }
@@ -329,8 +369,12 @@ mod tests {
         use egui_kittest::Harness;
         let mut h = Harness::builder()
             .with_size(vec2(640.0, 320.0))
+            // The default 250 ms step puts two press/release pairs 500 ms
+            // apart, outside egui's double-click window.
+            .with_step_dt(1.0 / 60.0)
+            .with_max_steps(120)
             .build_ui_state(
-                |ui, state: &mut (Rect, [f64; 2], [f64; 2])| {
+                |ui, state: &mut (Rect, [f64; 2], [f64; 2], bool)| {
                     let plot = render(
                         ui,
                         "test-chart",
@@ -351,9 +395,10 @@ mod tests {
                         *plot.transform.frame(),
                         plot.transform.bounds().min(),
                         plot.transform.bounds().max(),
+                        plot.response.double_clicked(),
                     );
                 },
-                (Rect::NOTHING, [0.0; 2], [0.0; 2]),
+                (Rect::NOTHING, [0.0; 2], [0.0; 2], false),
             );
         h.run();
         let initial = *h.state();
@@ -370,6 +415,12 @@ mod tests {
         let zoomed = *h.state();
         assert!(zoomed.2[0] - zoomed.1[0] < initial.2[0] - initial.1[0]);
         assert_eq!((zoomed.1[1], zoomed.2[1]), (0.0, 100.0));
+        // Pinch uses egui_plot's native zoom path rather than our wheel path.
+        h.event(Event::Zoom(1.25));
+        h.step();
+        assert!(h.state().2[0] - h.state().1[0] < zoomed.2[0] - zoomed.1[0]);
+        assert_eq!((h.state().1[1], h.state().2[1]), (0.0, 100.0));
+        let zoomed = *h.state();
         let button = |pos: Pos2, pressed| Event::PointerButton {
             pos,
             button: PointerButton::Primary,
@@ -385,15 +436,19 @@ mod tests {
         h.run();
         assert!((h.state().1[0] - zoomed.1[0]).abs() > 0.1);
         assert_eq!((h.state().1[1], h.state().2[1]), (0.0, 100.0));
-        // Two stationary clicks inside the plot use egui_plot's reset path.
+        // Two stationary clicks inside the plot reset the time range.
+        let mut saw_reset = false;
         for _ in 0..2 {
             h.event(button(end, true));
             h.step();
             h.event(button(end, false));
             h.step();
+            saw_reset |= h.state().3;
         }
         h.run();
+        assert!(saw_reset, "the fixture must deliver a plot double-click");
         assert!((h.state().1[0] - initial.1[0]).abs() < 0.01);
         assert!((h.state().2[0] - initial.2[0]).abs() < 0.01);
+        assert_eq!((h.state().1[1], h.state().2[1]), (0.0, 100.0));
     }
 }
