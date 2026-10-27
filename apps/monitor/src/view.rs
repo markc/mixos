@@ -10,7 +10,7 @@
 //! virtualised table. The performance page is a list of sections (CPU,
 //! memory, each disk and network interface, each with a small graph) beside
 //! the chosen section's graphs and figures.
-use crate::chart::{self, Chart, Series};
+use crate::chart::{self, Chart, Scale, Series};
 use crate::{label, label_with};
 use egui::{Align, Layout, RichText, ScrollArea, Sense, Ui, Vec2};
 use egui_extras::{Column as Width, TableBuilder};
@@ -535,7 +535,7 @@ fn cpu(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
             }],
             samples: vitals::history::WINDOW,
             interval_s: s.interval_s,
-            max: 100.0,
+            scale: Scale::Percent,
             format: percent,
         },
     );
@@ -619,7 +619,7 @@ fn memory(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
             }],
             samples: vitals::history::WINDOW,
             interval_s: s.interval_s,
-            max: (m.total as f64).max(1.0),
+            scale: Scale::Bytes(m.total as f64),
             format: bytes,
         },
     );
@@ -669,7 +669,7 @@ fn disk(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
             }],
             samples: vitals::history::WINDOW,
             interval_s: s.interval_s,
-            max: 100.0,
+            scale: Scale::Percent,
             format: percent,
         },
     );
@@ -702,7 +702,7 @@ fn disk(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
             ],
             samples: vitals::history::WINDOW,
             interval_s: s.interval_s,
-            max: top,
+            scale: Scale::Bytes(top),
             format: rate,
         },
     );
@@ -784,7 +784,7 @@ fn net(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
             ],
             samples: vitals::history::WINDOW,
             interval_s: s.interval_s,
-            max: top,
+            scale: Scale::Bytes(top),
             format: rate,
         },
     );

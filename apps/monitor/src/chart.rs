@@ -3,7 +3,7 @@
 //! The replaceable large-chart renderer. The engine supplies the same rings
 //! used by painted sparklines; plotting types never enter that data path.
 use egui::{Ui, Vec2};
-use egui_plot::{HoverPosition, Legend, Line, Plot};
+use egui_plot::{AxisHints, GridMark, HoverPosition, Legend, Line, Plot, PlotResponse};
 use toolkit::graph::{self, Hue};
 
 pub struct Series<'a> {
@@ -16,8 +16,65 @@ pub struct Chart<'a> {
     pub series: &'a [Series<'a>],
     pub samples: usize,
     pub interval_s: f64,
-    pub max: f64,
+    pub scale: Scale,
     pub format: fn(f64) -> String,
+}
+
+/// Range semantics belong to the caller, independently of its unit formatter.
+#[derive(Clone, Copy)]
+pub enum Scale {
+    Percent,
+    /// Cover this many bytes (or bytes/s), rounded up in binary display units.
+    Bytes(f64),
+}
+
+#[derive(Clone, Copy, Debug)]
+struct YTicks {
+    step: f64,
+    intervals: usize,
+}
+
+impl YTicks {
+    fn for_scale(scale: Scale) -> Self {
+        let Scale::Bytes(peak) = scale else {
+            return Self {
+                step: 25.0,
+                intervals: 4,
+            };
+        };
+        let peak = if peak.is_finite() { peak.max(1.0) } else { 1.0 };
+        // Round in the same B/KiB/MiB/... units as the formatter, so the
+        // labels read 10/20/30/40 GiB rather than 9.3/18.6/27.9 GiB.
+        let mut unit = 1.0;
+        for _ in 0..5 {
+            if peak / unit < 1024.0 {
+                break;
+            }
+            unit *= 1024.0;
+        }
+        let target = (peak / unit / 4.0).max(1.0 / unit);
+        let magnitude = 10f64.powf(target.log10().floor());
+        let factor = [1.0, 2.0, 2.5, 5.0, 10.0]
+            .into_iter()
+            .find(|factor| factor * magnitude >= target)
+            .unwrap_or(10.0);
+        let step = (factor * magnitude * unit).max(1.0);
+        let intervals = (peak / step).ceil().clamp(2.0, 4.0) as usize;
+        Self { step, intervals }
+    }
+
+    fn max(self) -> f64 {
+        self.step * self.intervals as f64
+    }
+
+    fn marks(self) -> Vec<GridMark> {
+        (0..=self.intervals)
+            .map(|i| GridMark {
+                value: self.step * i as f64,
+                step_size: self.step,
+            })
+            .collect()
+    }
 }
 
 pub fn readout(name: &str, value: f64, age_s: f64, format: fn(f64) -> String) -> String {
@@ -40,17 +97,33 @@ fn points(values: &[f64], samples: usize, interval_s: f64) -> Vec<[f64; 2]> {
 }
 
 pub fn show(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) {
+    let _ = render(ui, id, size, chart);
+}
+
+// Return the actual response to renderer tests; do not reconstruct egui_plot's
+// private memory key from its id salt. Plotting types stay inside this module.
+fn render(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) -> PlotResponse<()> {
     let interval_s = if chart.interval_s.is_finite() && chart.interval_s > 0.0 {
         chart.interval_s
     } else {
         1.0
     };
     let duration = chart.samples.saturating_sub(1).max(1) as f64 * interval_s;
+    let ticks = YTicks::for_scale(chart.scale);
+    let text_height = ui.text_style_height(&egui::TextStyle::Body);
+    let y_axis = AxisHints::new_y()
+        .formatter(|mark, _| (chart.format)(mark.value))
+        .tick_label_color(ui.visuals().text_color())
+        // All of our marks are labelled. The default 20–30 pt fade hides
+        // otherwise well-spaced text in the shorter Performance charts.
+        .label_spacing(0.0..=text_height);
     let mut plot = Plot::new(id)
         .width(size.x)
-        .height(size.y)
+        // Leave room for every tick and the existing x axis, including at
+        // larger desktop text scales. Never squeeze five labels together.
+        .height(size.y.max((ticks.intervals as f32 + 3.0) * text_height))
         .default_x_bounds(-duration, 0.0)
-        .default_y_bounds(0.0, chart.max.max(1.0))
+        .default_y_bounds(0.0, ticks.max())
         .allow_drag([true, false])
         .allow_zoom([true, false])
         .allow_boxed_zoom(false)
@@ -60,7 +133,8 @@ pub fn show(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) 
         .show_y(false)
         .x_axis_label(crate::label("graph-seconds-ago"))
         .x_axis_formatter(|mark, _| format!("{:.0}", -mark.value))
-        .y_axis_formatter(|mark, _| (chart.format)(mark.value))
+        .custom_y_axes(vec![y_axis])
+        .y_grid_spacer(move |_| ticks.marks())
         .label_formatter(|hover| {
             let position = match hover {
                 HoverPosition::NearDataPoint { position, .. }
@@ -99,7 +173,7 @@ pub fn show(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) 
     plot.show(ui, |plot_ui| {
         // The resource scale follows incoming data while x stays where the
         // person put it. Bounds changes never reset their time range.
-        plot_ui.set_plot_bounds_y(0.0..=chart.max.max(1.0));
+        plot_ui.set_plot_bounds_y(0.0..=ticks.max());
         // egui_plot's native zoom handles pinch/Ctrl-wheel. Plain wheel also
         // zooms x, centred at the pointer; consume it before the pane scrolls.
         if plot_ui.response().hovered() {
@@ -125,12 +199,114 @@ pub fn show(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) 
                 .width(1.5),
             );
         }
-    });
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn percentage_ticks_are_fixed_and_byte_ticks_cover_the_range_with_few_marks() {
+        let percent = YTicks::for_scale(Scale::Percent);
+        assert_eq!(
+            percent
+                .marks()
+                .iter()
+                .map(|mark| mark.value)
+                .collect::<Vec<_>>(),
+            [0.0, 25.0, 50.0, 75.0, 100.0]
+        );
+        for peak in [
+            0.0,
+            1.0,
+            31.0,
+            999.0,
+            1024.0,
+            5e6,
+            32.0 * 1024f64.powi(3),
+            u64::MAX as f64,
+        ] {
+            let ticks = YTicks::for_scale(Scale::Bytes(peak));
+            let marks = ticks.marks();
+            assert!((3..=5).contains(&marks.len()));
+            assert!(ticks.max() >= peak);
+            assert_eq!(marks.first().unwrap().value, 0.0);
+            assert_eq!(marks.last().unwrap().value, ticks.max());
+        }
+        let memory = YTicks::for_scale(Scale::Bytes(32.0 * 1024f64.powi(3)));
+        assert_eq!(memory.step, 10.0 * 1024f64.powi(3));
+        assert_eq!(memory.max(), 40.0 * 1024f64.powi(3));
+    }
+
+    #[test]
+    fn short_charts_paint_every_y_tick_label_in_the_resource_unit() {
+        use egui::Shape;
+        use egui_kittest::Harness;
+        fn collect_text(shape: &Shape, labels: &mut Vec<String>) {
+            match shape {
+                Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        collect_text(shape, labels);
+                    }
+                }
+                Shape::Text(text) => labels.push(text.galley.text().to_owned()),
+                _ => {}
+            }
+        }
+        type Formatter = fn(f64) -> String;
+        for (scale, format, expected) in [
+            (
+                Scale::Percent,
+                vitals::format::percent as Formatter,
+                vec!["0.0%", "25.0%", "50.0%", "75.0%", "100.0%"],
+            ),
+            (
+                Scale::Bytes(32.0 * 1024f64.powi(3)),
+                vitals::format::bytes as Formatter,
+                vec!["0 B", "10.0 GiB", "20.0 GiB", "30.0 GiB", "40.0 GiB"],
+            ),
+            (
+                Scale::Bytes(5e6),
+                vitals::format::rate as Formatter,
+                vec!["0 B/s", "2.0 MiB/s", "4.0 MiB/s", "6.0 MiB/s"],
+            ),
+        ] {
+            let mut h = Harness::builder()
+                .with_context_setup(|ctx| toolkit::install(ctx, &toolkit::Theme::embedded()))
+                .with_size(egui::vec2(640.0, 200.0))
+                .build_ui(move |ui| {
+                    show(
+                        ui,
+                        "short-chart",
+                        egui::vec2(600.0, 120.0),
+                        Chart {
+                            series: &[Series {
+                                name: "sample",
+                                hue: Hue::Accent,
+                                values: &[0.0; 60],
+                            }],
+                            samples: 60,
+                            interval_s: 1.0,
+                            scale,
+                            format,
+                        },
+                    );
+                });
+            h.run();
+            let mut labels = Vec::new();
+            for shape in &h.output().shapes {
+                collect_text(&shape.shape, &mut labels);
+            }
+            for expected in expected {
+                assert!(
+                    labels.iter().any(|label| label == expected),
+                    "missing y tick {expected}: {labels:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn time_runs_to_zero_and_partial_histories_keep_the_sample_interval() {
         assert_eq!(
@@ -155,8 +331,7 @@ mod tests {
             .with_size(vec2(640.0, 320.0))
             .build_ui_state(
                 |ui, state: &mut (Rect, [f64; 2], [f64; 2])| {
-                    let id = ui.make_persistent_id("test-chart");
-                    show(
+                    let plot = render(
                         ui,
                         "test-chart",
                         vec2(600.0, 260.0),
@@ -168,15 +343,14 @@ mod tests {
                             }],
                             samples: 60,
                             interval_s: 1.0,
-                            max: 100.0,
+                            scale: Scale::Percent,
                             format: vitals::format::percent,
                         },
                     );
-                    let memory = egui_plot::PlotMemory::load(ui.ctx(), id).unwrap();
                     *state = (
-                        *memory.transform().frame(),
-                        memory.bounds().min(),
-                        memory.bounds().max(),
+                        *plot.transform.frame(),
+                        plot.transform.bounds().min(),
+                        plot.transform.bounds().max(),
                     );
                 },
                 (Rect::NOTHING, [0.0; 2], [0.0; 2]),

@@ -306,7 +306,7 @@ mod tests {
             } else {
                 egui::Visuals::light()
             });
-            let _ = ctx.run_ui(Default::default(), |ui| {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
                 let p = crate::chrome::Chrome::of(ui.ctx()).palette;
                 for (hue, base) in [
                     (Hue::Accent, p.accent),
@@ -326,6 +326,7 @@ mod tests {
                     assert!(adjusted.v <= 0.56 && adjusted.s >= 0.54);
                 }
             });
+            output.textures_delta.clear();
         }
     }
 }
