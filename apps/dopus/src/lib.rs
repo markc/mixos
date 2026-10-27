@@ -25,6 +25,8 @@
 //! Modules:
 //! - [`bus`]: the Bus thread (`dopus.*` commands, topics, the session look);
 //! - [`commands`]: the `dopus.v1` Bus surface, shared by window and headless;
+//! - [`choose`]: the separate `files` Bus provider, backed by the pure
+//!   [`dopus_core::chooser`] engine; no twin-pane window or core workers;
 //! - [`keymap`]: the default chords (the person's own come from the desktop
 //!   profile);
 //! - [`app`]: the window's state around the core; [`commands`]: the
@@ -35,6 +37,7 @@ pub mod actions;
 pub mod app;
 pub mod bus;
 pub mod commands;
+pub mod choose;
 pub mod config;
 pub mod dirs;
 pub mod elide;

@@ -45,6 +45,8 @@ $env = {MIXOS_NODE_CONFIG: $node, MIX_STATS: "off", PATH: "/usr/bin:/bin",
   DOPUS_LOG: "info"}
 $noded_pid = nil
 $dopus_pid = nil
+$chooser_pid = nil
+$target = "dopus-test"
 $alpha = $tmp .. "/work/alpha"
 $beta = $tmp .. "/work/beta"
 $gamma = $tmp .. "/work/gamma"
@@ -60,7 +62,7 @@ end
 -- One-shot client. `$line` is literal Mix source after `send dopus-test`;
 -- runtime values come in as `$a`, decoded from argv.
 fn call($line, $a)
-  $src = "$a = json_parse($1)\nsend dopus-test " .. $line ..
+  $src = "$a = json_parse($1)\nsend " .. $target .. " " .. $line ..
     " timeout=15\nprint(json_encode({rc: $rc, result: $result, reply: $reply}))\n"
   write_file($tmp .. "/step.mix", $src)
   $run = run_argv([$mix, $tmp .. "/step.mix", json_encode($a)], {clear_env: true, env: $env, timeout: 20})
@@ -382,6 +384,45 @@ try
   check(not $dupe.ok, "a second dopus-test registered")
   check(contains($dupe.stderr, "already registered"), "duplicate diagnostics: " .. $dupe.stderr)
 
+  -- Chooser mode is a separate service, with no main window and no DOpus
+  -- commands. Stage 2a has no presenter, so a valid request is UNAVAILABLE.
+  refused('files.choose', {}, "UNKNOWN_COMMAND")
+  $target = "files"
+  $chooser_pid = spawn([$dopus, "--choose-service", "--noded-url", $url],
+    {detach: true, clear_env: true, env: $env, stdout: {file: $tmp .. "/files.log"}, stderr: "stdout"})
+  $chooser_ready = false
+  for $i = 1 to 80
+    $r = call('files.choose.list', {})
+    if $r.rc == 0 then $chooser_ready = true; break end
+    sleep(0.2)
+  end
+  check($chooser_ready, "chooser service did not register")
+  $listing = $r.reply
+  check(re_match($listing.incarnation, "^[0-9a-f]{16}$") and length($listing.requests) == 0,
+    "chooser initial list: " .. json_encode($listing))
+  $chooser_desc = ok('app.describe', {})
+  check($chooser_desc.app == "files" and deep_eq($chooser_desc.commands,
+    ["files.choose", "files.choose.result", "files.choose.cancel", "files.choose.list"]),
+    "chooser command set: " .. json_encode($chooser_desc))
+  $chooser_help = ok('HELP', {})
+  check(length($chooser_help) == 6, "chooser HELP must list four commands and two discovery commands")
+  refused('dopus.ping', {}, "UNKNOWN_COMMAND")
+  refused('dopus.quit', {}, "UNKNOWN_COMMAND")
+  refused('files.choose mode="bad"', {}, "ARGUMENT")
+  refused('files.choose mode="save" multiple=false', {}, "ARGUMENT")
+  refused('files.choose mode="save_files"', {}, "ARGUMENT")
+  refused('files.choose', {}, "UNAVAILABLE")
+  refused('files.choose mode="save" current_name="file.txt"', {}, "UNAVAILABLE")
+  refused('files.choose mode="save_files" files=["a", "b"]', {}, "UNAVAILABLE")
+  $unknown = $listing.incarnation .. "-1"
+  $result = refused('files.choose.result request=$a.id', {id: $unknown}, "ARGUMENT")
+  check($result.reason == "unknown", "unknown result must carry reason")
+  ok('files.choose.cancel request=$a.id', {id: $unknown})
+  ok('files.choose.cancel request="0000000000000000-1"', {})
+  refused('files.choose.cancel request="bad"', {}, "ARGUMENT")
+  check(length(ok('files.choose.list', {}).requests) == 0, "refused chooser kept a request")
+  $target = "dopus-test"
+
   -- 10b. Every file action is reachable. Headless answers modal requests
   -- No; windowed callers answer the same dialogs through drive input.
   for $id in ["file.open", "file.new-folder", "file.rename", "file.delete"]
@@ -469,7 +510,7 @@ catch $err
 finally
   -- Cleanup raises NOTHING (run_argv, never run_argv_must): a cleanup
   -- failure must never mask the original error raised in the try body.
-  for each $child in [$watch_pid, $dopus_pid, $noded_pid]
+  for each $child in [$chooser_pid, $watch_pid, $dopus_pid, $noded_pid]
     if $child != nil then
       $_kill = run_argv(["kill", "--", to_string($child)], {timeout: 10})
       -- Bounded exit wait before rm -rf: kill(1) returns before the

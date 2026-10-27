@@ -30,6 +30,7 @@ dopus-core = { path = "crates/dopus-core" }
 eframe.workspace = true
 egui.workspace = true
 futures.workspace = true
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 settings.workspace = true

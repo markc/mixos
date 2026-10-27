@@ -1,0 +1,395 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+
+use super::*;
+
+fn defaults() -> Defaults {
+    Defaults { open_title: "Open".into(), save_title: "Save".into(), save_files_title: "Save files".into(), open_accept: "Open".into(), save_accept: "Save".into() }
+}
+
+#[derive(Default)]
+struct TestPresenter {
+    opened: Vec<OpenRequest>,
+    ready: Vec<String>,
+    closed: Vec<String>,
+    unavailable: bool,
+}
+
+impl Presenter for TestPresenter {
+    fn open(&mut self, request: &OpenRequest) -> std::result::Result<(), Unavailable> {
+        if self.unavailable { return Err(Unavailable("no display".into())); }
+        assert!(!request.ready);
+        self.opened.push(request.clone());
+        Ok(())
+    }
+    fn input_ready(&mut self, id: &str) { self.ready.push(id.to_owned()); }
+    fn close(&mut self, id: &str) { self.closed.push(id.to_owned()); }
+}
+
+fn engine() -> Engine { Engine::new(0x9f2c41d07ab3e655, defaults(), b"/home/user".to_vec()).unwrap() }
+fn body(id: &str) -> String { json!({"request":id}).to_string() }
+fn parse(value: Value) -> Result<Request> { Request::parse(&value.to_string(), &defaults()) }
+fn filter() -> Value { json!({"name":"Images","patterns":["*.png"],"mime_types":[]}) }
+fn option() -> Value { json!({"id":"utf8","label":"UTF-8"}) }
+fn choice() -> Value { json!({"id":"encoding","label":"Encoding","options":[option()]}) }
+fn checkbox() -> Value { json!({"id":"compress","label":"Compress","options":[]}) }
+fn accepted_path(path: &[u8]) -> End {
+    End::Accept(Acceptance { paths: vec![path.to_vec()], folder: None, current_filter: None, choices: BTreeMap::new() })
+}
+fn open(e: &mut Engine, p: &mut TestPresenter, request: Value, caller: &str, now: u64) -> String {
+    let reply = e.choose(&request.to_string(), caller, now, p).unwrap();
+    let id = reply["request"].as_str().unwrap().to_owned();
+    e.reply_sent(&id, p);
+    id
+}
+fn argument(value: Value) {
+    assert_eq!(parse(value.clone()).unwrap_err().error_code, "ARGUMENT", "{value}");
+}
+
+#[test]
+fn every_top_level_type_range_and_wrong_mode_refuses() {
+    for value in [json!(null), json!([]), json!(1), json!("x")] { argument(value); }
+    for bad in ["{", "true", "[]"] { assert!(Request::parse(bad, &defaults()).is_err()); }
+    for (field, bad_values) in [
+        ("mode", vec![json!(null), json!(true), json!(""), json!("other")]),
+        ("title", vec![json!(1), json!(""), json!("é".repeat(129))]),
+        ("accept_label", vec![json!(false), json!(""), json!("x".repeat(65))]),
+        ("multiple", vec![json!(1), json!("false"), json!(null)]),
+        ("directory", vec![json!([]), json!("true"), json!(null)]),
+        ("filters", vec![json!({}), json!(null), json!(vec![filter(); 65])]),
+        ("current_filter", vec![json!([]), json!(null)]),
+        ("choices", vec![json!(false), json!(null), json!(vec![checkbox(); 17])]),
+        ("parent_window", vec![json!(1), json!("x".repeat(257))]),
+        ("correlation", vec![json!(null), json!(""), json!("x".repeat(257))]),
+        ("on_behalf_of", vec![json!(3), json!(""), json!("x".repeat(129))]),
+        ("current_folder", vec![json!(null), json!(false), json!("relative"), json!("/a\0b"), json!("/".to_owned() + &"x".repeat(4096))]),
+    ] {
+        for bad in bad_values { argument(json!({field:bad})); }
+    }
+    for mode in ["open", "save", "save_files"] {
+        for field in ["multiple", "directory", "filters", "current_filter", "current_name", "current_file", "files"] {
+            let allowed = match field {
+                "multiple" | "directory" => mode == "open",
+                "filters" | "current_filter" => mode != "save_files",
+                "files" => mode == "save_files", _ => mode == "save",
+            };
+            if !allowed { argument(json!({"mode":mode, "files":["a"], field:null})); }
+        }
+    }
+    for bad in [json!(null), json!(false), json!("relative"), json!("/a\0b")] {
+        argument(json!({"mode":"save", "current_file":bad}));
+    }
+    for bad in [json!(null), json!(false), json!(""), json!("a/b"), json!("."), json!(".."), json!("\0"), json!("x".repeat(256)), json!({"bytes":1})] {
+        argument(json!({"mode":"save", "current_name":bad}));
+    }
+    for value in [json!({"mode":"save_files"}), json!({"mode":"save_files","files":[]}),
+        json!({"mode":"save_files","files":null}), json!({"mode":"save_files","files":"a"}),
+        json!({"mode":"save_files","files":["a", {"bytes":"%61"}]}),
+        json!({"mode":"save_files","files":vec!["a";257]}),
+        json!({"mode":"save_files","files":["a/b"]})] { argument(value); }
+}
+
+#[test]
+fn every_filter_refusal_and_large_valid_filter() {
+    for bad in [json!(null), json!({}), json!({"name":"a","patterns":[]}),
+        json!({"name":1,"patterns":["*"],"mime_types":[]}),
+        json!({"name":"","patterns":["*"],"mime_types":[]}),
+        json!({"name":"x".repeat(129),"patterns":["*"],"mime_types":[]}),
+        json!({"name":"a","patterns":"*","mime_types":[]}),
+        json!({"name":"a","patterns":[],"mime_types":null}),
+        json!({"name":"a","patterns":[],"mime_types":[]}),
+        json!({"name":"a","patterns":[1],"mime_types":[]}),
+        json!({"name":"a","patterns":[""],"mime_types":[]}),
+        json!({"name":"a","patterns":[],"mime_types":["x".repeat(257)]}),
+        json!({"name":"a","patterns":vec!["*";512],"mime_types":["image/png"]})] {
+        argument(json!({"filters":[bad.clone()]}));
+        argument(json!({"current_filter":bad}));
+    }
+    let large = json!({"name":"x".repeat(128),"patterns":vec!["x".repeat(256);300],"mime_types":vec!["image/*";212]});
+    assert!(parse(json!({"filters":[large]})).is_ok());
+}
+
+#[test]
+fn every_choice_and_option_refusal() {
+    for bad in [json!(null), json!({}), json!({"id":"a","label":"b"}),
+        json!({"id":1,"label":"b","options":[]}),
+        json!({"id":"","label":"b","options":[]}),
+        json!({"id":"x".repeat(65),"label":"b","options":[]}),
+        json!({"id":"a","label":null,"options":[]}),
+        json!({"id":"a","label":"","options":[]}),
+        json!({"id":"a","label":"x".repeat(129),"options":[]}),
+        json!({"id":"a","label":"b","options":null}),
+        json!({"id":"a","label":"b","options":vec![option();33]}),
+        json!({"id":"a","label":"b","options":[],"default":true}),
+        json!({"id":"a","label":"b","options":[],"default":""}),
+        json!({"id":"a","label":"b","options":[],"default":"yes"}),
+        json!({"id":"a","label":"b","options":[option()],"default":"missing"}),
+        json!({"id":"a","label":"b","options":[option(),option()]})] { argument(json!({"choices":[bad]})); }
+    for bad in [json!(null), json!({}), json!({"id":"a"}), json!({"id":1,"label":"a"}),
+        json!({"id":"","label":"a"}), json!({"id":"x".repeat(65),"label":"a"}),
+        json!({"id":"a","label":false}), json!({"id":"a","label":""}),
+        json!({"id":"a","label":"x".repeat(129)})] {
+        argument(json!({"choices":[{"id":"a","label":"b","options":[bad]}]}));
+    }
+    argument(json!({"choices":[checkbox(),checkbox()]}));
+}
+
+#[test]
+fn boundaries_unknown_fields_and_precedence() {
+    assert!(parse(json!({"title":"é".repeat(128),"accept_label":"_O_pen", "parent_window":"", "unknown":null})).is_ok());
+    assert_eq!(parse(json!({"accept_label":"_O_pen"})).unwrap().accept_label, "Open");
+    let mut raw = "{}".to_owned();
+    raw.push_str(&" ".repeat(MAX_BODY - 2));
+    assert!(Request::parse(&raw, &defaults()).is_ok());
+    raw.push(' ');
+    assert_eq!(Request::parse(&raw, &defaults()).unwrap_err().error_code, "ARGUMENT");
+    let req = parse(json!({"mode":"save","current_file":"file:///a/%FF", "current_folder":"/other","current_name":"other"})).unwrap();
+    assert_eq!(req.current_folder.unwrap(), b"/a");
+    assert_eq!(req.current_name.unwrap(), b"\xff");
+    argument(json!({"mode":"save","current_file":"/good/file","current_folder":false}));
+    let files: Vec<_> = (0..256).map(|i| format!("file-{i}")).collect();
+    assert_eq!(parse(json!({"mode":"save_files","files":files})).unwrap().files.len(), 256);
+    assert!(name(&json!("é".repeat(127))).is_ok());
+    assert!(name(&json!({"bytes":"%FF".repeat(255),"ignored":true})).is_ok());
+    assert!(location(&json!("/".to_owned()+&"x".repeat(4095))).is_ok());
+    assert!(location(&json!("file:///".to_owned()+&"%FF".repeat(4095))).is_ok());
+}
+
+#[test]
+fn locations_names_and_exact_byte_uri_round_trip() {
+    for invalid in ["http:///tmp", "file:/tmp", "file://example.org/tmp", "file://user@localhost/tmp", "file://localhost:80/tmp",
+        "file://", "file://localhost", "file:///a%00", "file:///%", "file:///%0", "file:///%GG", "file:///a?query", "file:///a#fragment"] {
+        assert!(location(&json!(invalid)).is_err(), "{invalid}");
+    }
+    for invalid in ["", ".", "..", "%2E%2E", "a%2Fb", "%00", "%", "%0Z"] { assert!(name(&json!({"bytes":invalid})).is_err(), "{invalid}"); }
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    let bytes = b"/tmp/\xff space#?%\xc3\xa9".to_vec();
+    let path = std::path::PathBuf::from(std::ffi::OsString::from_vec(bytes.clone()));
+    let uri = file_uri(path.as_os_str().as_bytes()).unwrap();
+    assert_eq!(uri, "file:///tmp/%FF%20space%23%3F%25%C3%A9");
+    assert_eq!(location(&json!(uri)).unwrap(), bytes);
+    assert_eq!(location(&json!("file://localhost/tmp/%FF")).unwrap(), b"/tmp/\xff");
+    assert_eq!(location(&json!("/tmp/a#?%" )).unwrap(), b"/tmp/a#?%");
+    let n = name(&json!({"bytes":"%FF%20%25"})).unwrap();
+    assert_eq!(n, b"\xff %");
+}
+
+#[test]
+fn filters_select_standalone_match_or_insert_and_match_files() {
+    let a = filter();
+    let b = json!({"name":"Text","patterns":["*.txt"],"mime_types":["text/*"]});
+    let standalone = parse(json!({"current_filter":a})).unwrap();
+    assert!(!standalone.filter_menu);
+    assert_eq!(standalone.current_filter, Some(parse_filter(&a).unwrap()));
+    let default = parse(json!({"filters":[a.clone(),b.clone()]})).unwrap();
+    assert_eq!(default.current_filter, Some(parse_filter(&a).unwrap()));
+    let matching = parse(json!({"filters":[a.clone(),b.clone()],"current_filter":b})).unwrap();
+    assert!(matching.filter_menu);
+    assert_eq!(matching.filters.len(), 2);
+    assert_eq!(matching.current_filter, Some(parse_filter(&b).unwrap()));
+    let added = parse(json!({"filters":[a],"current_filter":b})).unwrap();
+    assert_eq!(added.filters, vec![parse_filter(&b).unwrap(), parse_filter(&a).unwrap()]);
+    let f = parse_filter(&json!({"name":"Test","patterns":["a[0-9]?.png"],"mime_types":["text/*","image/jpeg"]})).unwrap();
+    for (name, directory, mime, matches) in [("a2b.png",false,"image/png",true), ("A2b.png",false,"image/png",false),
+        ("other",false,"text/plain",true), ("other",false,"image/jpeg",true), ("other",false,"image/png",false), ("folder",true,"inode/directory",true)] {
+        assert_eq!(f.matches(name, directory, mime), matches);
+    }
+    let f = parse_filter(&filter()).unwrap();
+    assert_eq!(f.save_name(b"image"), b"image.png");
+    assert_eq!(f.save_name(b"image.jpg"), b"image.jpg");
+    assert_eq!(f.save_name(b"\xff"), b"\xff.png");
+}
+
+#[test]
+fn choice_defaults_and_selected_values_are_complete() {
+    let req = parse(json!({"choices":[checkbox(),choice()]})).unwrap();
+    assert_eq!(req.choice_defaults(), BTreeMap::from([("compress".into(),"false".into()),("encoding".into(),"utf8".into())]));
+    assert_eq!(parse(json!({"choices":[{"id":"a","label":"a","options":[],"default":"true"}]})).unwrap().choice_defaults()["a"], "true");
+    let mut e = engine(); let mut p = TestPresenter::default();
+    let id = open(&mut e, &mut p, json!({"choices":[checkbox(),choice()],"current_filter":filter()}), "caller", 1);
+    let outcome = e.end(&id, accepted_path(b"/tmp/a.png"), 2, &mut p).unwrap().unwrap();
+    assert_eq!(outcome.choices, Some(req.choice_defaults()));
+    assert_eq!(outcome.current_filter, Some(parse_filter(&filter()).unwrap()));
+}
+
+#[test]
+fn desk_and_caller_limits_and_per_app_keying() {
+    let mut e = engine(); let mut p = TestPresenter::default();
+    for app in ["app-a", "app-b", "app-c", "app-d"] {
+        for _ in 0..2 { open(&mut e, &mut p, json!({"on_behalf_of":app}), "local:portald", 1); }
+        let error = e.choose(&json!({"on_behalf_of":app}).to_string(), "local:portald", 1, &mut p).unwrap_err();
+        assert_eq!(error.error_code, "BUSY");
+    }
+    assert_eq!(e.list()["requests"].as_array().unwrap().len(), 8);
+    assert_eq!(e.choose("{}", "fresh-caller", 1, &mut p).unwrap_err().error_code, "BUSY");
+    assert_eq!(p.opened.len(), 8);
+    let id = p.opened[0].id.clone();
+    e.cancel(&body(&id), 2, &mut p).unwrap();
+    open(&mut e, &mut p, json!({}), "fresh-caller", 3);
+
+    let mut e = engine(); let mut p = TestPresenter::default();
+    for caller in ["local:connection:1", "local:connection:2"] {
+        for app in [None, Some("app")] {
+            for _ in 0..2 { open(&mut e, &mut p, app.map(|app| json!({"on_behalf_of":app})).unwrap_or(json!({})), caller, 1); }
+        }
+    }
+    assert_eq!(p.opened.len(), 8);
+}
+
+#[test]
+fn rate_is_ten_per_ten_seconds_independently_for_forwarded_apps() {
+    let mut e = engine(); let mut p = TestPresenter::default();
+    for i in 0..10 {
+        let id = open(&mut e, &mut p, json!({"on_behalf_of":"a"}), "portald", i);
+        e.end(&id, End::Cancel, i, &mut p).unwrap();
+    }
+    assert_eq!(e.choose(r#"{"on_behalf_of":"a"}"#, "portald", 9999, &mut p).unwrap_err().error_code, "BUSY");
+    open(&mut e, &mut p, json!({"on_behalf_of":"b"}), "portald", 9999);
+    open(&mut e, &mut p, json!({"on_behalf_of":"a"}), "other-connection", 9999);
+    open(&mut e, &mut p, json!({"on_behalf_of":"a"}), "portald", 10000);
+}
+
+#[test]
+fn incarnations_sequences_refusals_and_restart() {
+    let mut e = engine(); let mut p = TestPresenter::default();
+    let first = open(&mut e, &mut p, json!({}), "caller", 1);
+    assert_eq!(first, "9f2c41d07ab3e655-1");
+    e.end(&first, End::Cancel, 2, &mut p).unwrap();
+    let second = open(&mut e, &mut p, json!({}), "caller", 3);
+    assert_eq!(second, "9f2c41d07ab3e655-2");
+    let mut restarted = Engine::new(0x1234, defaults(), b"/home/user".to_vec()).unwrap();
+    let third = open(&mut restarted, &mut p, json!({}), "caller", 4);
+    assert_eq!(third, "0000000000001234-1");
+    assert_eq!(restarted.result(&body(&first), 4).unwrap_err().reason, Some("unknown"));
+    assert!(restarted.cancel(&body(&first), 4, &mut p).unwrap().is_none());
+    e.sequence = u64::MAX;
+    assert_eq!(e.choose("{}", "new", 10, &mut p).unwrap_err().error_code, "UNAVAILABLE");
+}
+
+#[test]
+fn first_end_wins_outcome_shapes_results_and_publication_once() {
+    for (end, response, reason) in [(accepted_path(b"/tmp/a"),0,"chosen"), (End::Cancel,1,"cancelled"), (End::Caller,1,"caller"), (End::Failed("broken".into()),2,"failed")] {
+        let mut e = engine(); let mut p = TestPresenter::default();
+        let id = open(&mut e, &mut p, json!({"correlation":"corr"}), "caller", 1);
+        assert_eq!(e.result(&body(&id), 2).unwrap(), json!({"state":"open"}));
+        let outcome = e.end(&id, end, 3, &mut p).unwrap().unwrap();
+        assert_eq!((outcome.response, outcome.reason), (response, reason));
+        let value = json!(outcome);
+        assert_eq!(value["correlation"], "corr");
+        for key in ["uris","choices"] { assert_eq!(value.get(key).is_some(), response == 0); }
+        assert!(value.get("current_filter").is_none());
+        assert_eq!(value.get("message").is_some(), response == 2);
+        for later in [End::Cancel, End::Caller, End::Failed("late".into()), accepted_path(b"/tmp/later")] {
+            assert!(e.end(&id, later, 4, &mut p).unwrap().is_none());
+        }
+        for _ in 0..2 { assert_eq!(e.result(&body(&id), 5).unwrap(), json!({"state":"done","outcome":outcome})); }
+        assert_eq!(p.closed.len(), 1);
+    }
+}
+
+#[test]
+fn retention_eviction_unknown_expired_and_cancel_is_open_and_idempotent() {
+    let mut e = engine(); let mut p = TestPresenter::default();
+    let mut ids = Vec::new();
+    for i in 0..65 {
+        let id = open(&mut e, &mut p, json!({}), &format!("caller-{i}"), i);
+        e.cancel(&body(&id), i, &mut p).unwrap();
+        ids.push(id);
+    }
+    assert_eq!(e.done.len(), 64);
+    assert_eq!(e.result(&body(&ids[0]), 66).unwrap_err().reason, Some("expired"));
+    assert!(e.result(&body(&ids[1]), 600000).is_ok());
+    assert_eq!(e.result(&body(&ids[1]), 600001).unwrap_err().reason, Some("expired"));
+    let future = "9f2c41d07ab3e655-999";
+    assert_eq!(e.result(&body(future), 600001).unwrap_err().reason, Some("unknown"));
+    for id in [&ids[0], &ids[1], &ids[64], future, "0000000000000000-1"] {
+        assert!(e.cancel(&body(id), 600001, &mut p).unwrap().is_none());
+    }
+    let id = open(&mut e, &mut p, json!({}), "someone-else", 600002);
+    // cancel accepts no caller identity: any caller may cancel this one.
+    let outcome = e.cancel(&body(&id), 600003, &mut p).unwrap().unwrap();
+    assert_eq!((outcome.response,outcome.reason), (1,"caller"));
+    assert!(e.cancel(&body(&id), 600004, &mut p).unwrap().is_none());
+    for bad in [json!({}),json!({"request":null}),json!({"request":1}),json!({"request":""}),json!({"request":"bogus"}),
+        json!({"request":"9F2C41D07AB3E655-1"}),json!({"request":"9f2c41d07ab3e655-0"}),json!({"request":"9f2c41d07ab3e655-01"}),
+        json!({"request":"9f2c41d07ab3e655-18446744073709551616"})] {
+        assert_eq!(e.cancel(&bad.to_string(), 600004, &mut p).unwrap_err().error_code,"ARGUMENT");
+        assert_eq!(e.result(&bad.to_string(), 600004).unwrap_err().error_code,"ARGUMENT");
+    }
+}
+
+#[test]
+fn save_files_containment_order_and_non_utf8_names() {
+    let mut e = engine(); let mut p = TestPresenter::default();
+    let id = open(&mut e, &mut p, json!({"mode":"save_files","files":[{"bytes":"%FF"},"normal"]}), "caller", 1);
+    for paths in [vec![b"/chosen/../escape".to_vec(),b"/chosen/normal".to_vec()],
+        vec![b"/elsewhere/\xff".to_vec(),b"/chosen/normal".to_vec()],
+        vec![b"/chosen/normal".to_vec(),b"/chosen/\xff".to_vec()],vec![b"/chosen/\xff".to_vec()]] {
+        let end = End::Accept(Acceptance { paths, folder:Some(b"/chosen".to_vec()),current_filter:None,choices:BTreeMap::new() });
+        assert_eq!(e.end(&id,end,2,&mut p).unwrap_err().error_code,"ARGUMENT");
+    }
+    let end = End::Accept(Acceptance { paths:vec![b"/chosen/\xff".to_vec(),b"/chosen/normal".to_vec()],folder:Some(b"/chosen".to_vec()),current_filter:None,choices:BTreeMap::new() });
+    assert_eq!(e.end(&id,end,3,&mut p).unwrap().unwrap().uris.unwrap(), ["file:///chosen/%FF","file:///chosen/normal"]);
+    let id = open(&mut e, &mut p,json!({"mode":"save_files","files":["a"]}),"caller",4);
+    let end = End::Accept(Acceptance { paths:vec![b"/a".to_vec()],folder:Some(b"/".to_vec()),current_filter:None,choices:BTreeMap::new() });
+    assert_eq!(e.end(&id,end,5,&mut p).unwrap().unwrap().uris.unwrap(), ["file:///a"]);
+}
+
+#[test]
+fn acceptance_cardinality_paths_filters_and_choices_are_rechecked() {
+    for (req, paths) in [(json!({}),vec![]), (json!({}),vec![b"/a".to_vec(),b"/b".to_vec()]),
+        (json!({"mode":"save"}),vec![b"/a".to_vec(),b"/b".to_vec()]),(json!({}),vec![b"relative".to_vec()]),
+        (json!({}),vec![b"/a\0b".to_vec()])] {
+        let mut e = engine(); let mut p = TestPresenter::default();
+        let id = open(&mut e,&mut p,req,"caller",1);
+        assert!(e.end(&id,End::Accept(Acceptance { paths,folder:None,current_filter:None,choices:BTreeMap::new() }),2,&mut p).is_err());
+        assert_eq!(e.list()["requests"].as_array().unwrap().len(),1);
+    }
+    let mut e = engine(); let mut p = TestPresenter::default();
+    let id = open(&mut e,&mut p,json!({"multiple":true}),"caller",1);
+    assert!(e.end(&id,End::Accept(Acceptance { paths:vec![b"/a".to_vec(),b"/b".to_vec()],folder:None,current_filter:None,choices:BTreeMap::new() }),2,&mut p).unwrap().is_some());
+    let id = open(&mut e,&mut p,json!({"choices":[choice(),checkbox()]}),"caller",3);
+    for (id_value,value) in [("encoding","bad"),("compress","yes"),("unknown","true")] {
+        assert!(e.end(&id,End::Accept(Acceptance { paths:vec![b"/a".to_vec()],folder:None,current_filter:None,choices:BTreeMap::from([(id_value.into(),value.into())]) }),4,&mut p).is_err());
+    }
+}
+
+#[test]
+fn list_order_defaults_remembered_folder_and_refusals_keep_nothing() {
+    let mut e = engine(); let mut p = TestPresenter::default();
+    let a = open(&mut e,&mut p,json!({"correlation":"a","on_behalf_of":"app"}),"portald",100);
+    let b = open(&mut e,&mut p,json!({"mode":"save","title":"Second"}),"agent",101);
+    let rows = e.list()["requests"].as_array().unwrap().clone();
+    assert_eq!(rows[0],json!({"request":a,"mode":"open","title":"Open","caller":"portald","on_behalf_of":"app","correlation":"a","opened_ms":100}));
+    assert_eq!(rows[1]["request"],b);
+    assert_eq!(p.opened[0].request.current_folder.as_deref(),Some(b"/home/user".as_slice()));
+    e.end(&a,accepted_path(b"/picked/\xff"),102,&mut p).unwrap();
+    open(&mut e,&mut p,json!({"on_behalf_of":"app"}),"new-portald",103);
+    assert_eq!(p.opened.last().unwrap().request.current_folder.as_deref(),Some(b"/picked".as_slice()));
+    let before = e.list();
+    p.unavailable = true;
+    for _ in 0..20 { assert_eq!(e.choose("{}","no-window",104,&mut p).unwrap_err().error_code,"UNAVAILABLE"); }
+    assert_eq!(e.list(),before);
+    assert!(!e.recent.keys().any(|key| key.0 == "no-window"));
+}
+
+#[test]
+fn reply_precedes_input_and_first_outcome_failed_reply_closes() {
+    let mut e = engine(); let mut p = TestPresenter::default();
+    let reply = e.choose("{}","caller",1,&mut p).unwrap();
+    let id = reply["request"].as_str().unwrap();
+    assert!(p.ready.is_empty());
+    assert_eq!(e.end(id,End::Cancel,2,&mut p).unwrap_err().error_code,"BUSY");
+    assert!(e.done.is_empty());
+    // The host has now sent the reply. Only now may the presenter take input.
+    e.reply_sent(id,&mut p);
+    e.reply_sent(id,&mut p);
+    assert_eq!(p.ready,[id]);
+    assert!(e.end(id,End::Cancel,3,&mut p).unwrap().is_some());
+    assert!(e.end(id,End::Cancel,4,&mut p).unwrap().is_none());
+    let reply = e.choose("{}","caller",5,&mut p).unwrap();
+    let id = reply["request"].as_str().unwrap();
+    e.reply_failed(id,&mut p);
+    assert!(e.open.is_empty());
+    assert_eq!(p.closed.last().unwrap(),id);
+}

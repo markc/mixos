@@ -53,6 +53,7 @@
 //!    the startup ratio.
 
 pub mod config;
+pub mod chooser;
 pub mod events;
 pub mod model;
 pub mod ops;

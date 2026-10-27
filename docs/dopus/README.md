@@ -159,6 +159,15 @@ accepted `dopus.action` runs on `<service>.action.executed` too.
 Headless instances cancel name prompts and confirmations because there is
 no window to answer them; copy and move still use the real filesystem worker.
 
+`dopus --choose-service` is a separate process registered as `files`, without
+the twin-pane window or the `dopus.*` commands. It serves `files.choose`,
+`files.choose.result`, `files.choose.cancel` and `files.choose.list`, plus
+`HELP` and `app.describe`, under the [file chooser contract](../docs/spec/files/README.md).
+Step 2a supplies the request engine and Bus host; until the chooser window
+lands in step 2b, valid choose requests return rc 10, `UNAVAILABLE`. The
+component owns the `files@.service` session unit template; adding it does
+not enable or start a service.
+
 ## Macro Bus commands
 
 The shared [macro Bus surface](/macros/#bus-commands) uses this process's

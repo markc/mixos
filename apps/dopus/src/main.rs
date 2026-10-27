@@ -16,14 +16,17 @@ use dopus_core::DopusCore;
 const HELP: &str = "dopus — the MixOS twin-pane file manager\n\
 Usage: dopus [LEFT [RIGHT]]\n\
   --headless        no window: the core and the `dopus` Bus port only\n\
+  --choose-service  no main window: serve the system chooser as `files`\n\
   --service NAME    register as NAME instead of `dopus` (tests)\n\
   --noded-url URL   the broker (default: the session's)\n\
   --print-config    print the resolved configuration and exit\n\
   --version         print version and build hash, and nothing else\n\
-Bus: serves `dopus.*` (schema dopus.v1) and the window's drive commands.";
+Bus: serves `dopus.*` (schema dopus.v1) and the window's drive commands;\n\
+     --choose-service serves only files.choose[.result|.cancel|.list] and discovery.";
 
 struct Args {
     headless: bool,
+    choose_service: bool,
     print_config: bool,
     service: String,
     url: String,
@@ -33,6 +36,7 @@ struct Args {
 fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut out = Args {
         headless: false,
+        choose_service: false,
         print_config: false,
         service: commands::SERVICE.to_owned(),
         url: ::bus::client_helpers::resolve_noded_url(),
@@ -45,6 +49,7 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
             _ if only_paths => out.paths.push(a),
             "--" => only_paths = true,
             "--headless" => out.headless = true,
+            "--choose-service" => out.choose_service = true,
             "--print-config" => out.print_config = true,
             "--noded-url" => out.url = args.next().ok_or("--noded-url needs a URL")?,
             "--service" => {
@@ -61,6 +66,9 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
             }
             _ => out.paths.push(a),
         }
+    }
+    if out.choose_service && (out.headless || out.print_config || out.service != commands::SERVICE || !out.paths.is_empty()) {
+        return Err("--choose-service takes only --noded-url and logging options".into());
     }
     Ok(out)
 }
@@ -177,7 +185,9 @@ fn main() {
         return;
     }
     let paths = absolute(args.paths.clone());
-    let result = if args.headless {
+    let result = if args.choose_service {
+        dopus::choose::run(&args.url)
+    } else if args.headless {
         let (config, file) = dopus::config::load(dirs.as_ref().map(AppDirs::config_dir).as_deref());
         dopus::headless::run(config, file, dirs, &args.service, &args.url, &paths)
     } else if bus::probe_running(&args.url, &args.service) {
@@ -213,8 +223,13 @@ mod tests {
             vec!["--service", "noded-x"],
             vec!["--service", "Dopus"],
             vec!["--service"],
+            vec!["--choose-service", "--headless"],
+            vec!["--choose-service", "--service", "chooser-test"],
+            vec!["--choose-service", "/tmp"],
         ] {
             assert!(parse(bad.into_iter().map(str::to_owned)).is_err());
         }
+        let chooser = parse(["--choose-service", "--noded-url", "tcp://127.0.0.1:1234"].into_iter().map(str::to_owned)).unwrap();
+        assert!(chooser.choose_service);
     }
 }
