@@ -36,8 +36,8 @@
 pub mod actions;
 pub mod app;
 pub mod bus;
-pub mod commands;
 pub mod choose;
+pub mod commands;
 pub mod config;
 pub mod dirs;
 pub mod elide;

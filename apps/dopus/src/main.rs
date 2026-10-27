@@ -67,7 +67,12 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
             _ => out.paths.push(a),
         }
     }
-    if out.choose_service && (out.headless || out.print_config || out.service != commands::SERVICE || !out.paths.is_empty()) {
+    if out.choose_service
+        && (out.headless
+            || out.print_config
+            || out.service != commands::SERVICE
+            || !out.paths.is_empty())
+    {
         return Err("--choose-service takes only --noded-url and logging options".into());
     }
     Ok(out)
@@ -229,7 +234,12 @@ mod tests {
         ] {
             assert!(parse(bad.into_iter().map(str::to_owned)).is_err());
         }
-        let chooser = parse(["--choose-service", "--noded-url", "tcp://127.0.0.1:1234"].into_iter().map(str::to_owned)).unwrap();
+        let chooser = parse(
+            ["--choose-service", "--noded-url", "tcp://127.0.0.1:1234"]
+                .into_iter()
+                .map(str::to_owned),
+        )
+        .unwrap();
         assert!(chooser.choose_service);
     }
 }

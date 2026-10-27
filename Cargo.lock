@@ -2309,6 +2309,7 @@ dependencies = [
  "egui",
  "egui_kittest",
  "futures",
+ "rand 0.8.8",
  "serde",
  "serde_json",
  "settings",
@@ -2326,8 +2327,10 @@ dependencies = [
  "chrono",
  "config",
  "files",
+ "glob",
  "nix 0.29.0",
  "serde",
+ "serde_json",
  "tempfile",
  "thumbs",
 ]

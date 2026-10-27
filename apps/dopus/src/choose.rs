@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ::bus::native_client::{ConnState, SupervisedClient};
-use dopus_core::chooser::{COMMANDS, Defaults, End, Engine, Outcome, Presenter, Refusal, Unavailable};
+use dopus_core::chooser::{
+    COMMANDS, Defaults, End, Engine, Outcome, Presenter, Refusal, Unavailable,
+};
 use serde_json::{Value, json};
 
 pub const SERVICE: &str = "files";
@@ -41,7 +43,23 @@ pub fn manifest() -> Vec<::bus::CommandDescriptor> {
     ];
     for (name, read_only) in COMMANDS {
         let args: &[&str] = match *name {
-            "files.choose" => &["mode?", "title?", "accept_label?", "multiple?", "directory?", "filters?", "current_filter?", "choices?", "current_folder?", "current_name?", "current_file?", "files?", "parent_window?", "correlation?", "on_behalf_of?"],
+            "files.choose" => &[
+                "mode?",
+                "title?",
+                "accept_label?",
+                "multiple?",
+                "directory?",
+                "filters?",
+                "current_filter?",
+                "choices?",
+                "current_folder?",
+                "current_name?",
+                "current_file?",
+                "files?",
+                "parent_window?",
+                "correlation?",
+                "on_behalf_of?",
+            ],
             "files.choose.result" | "files.choose.cancel" => &["request"],
             _ => &[],
         };
@@ -73,12 +91,19 @@ pub struct Presentation {
 }
 
 /// The actual host ordering, shared with the immediate-answer test presenter.
-async fn deliver(engine: &mut Engine, presenter: &mut impl Presenter, answer: Answer,
-    reply: impl std::future::Future<Output = bool>) -> Option<Outcome> {
+async fn deliver(
+    engine: &mut Engine,
+    presenter: &mut impl Presenter,
+    answer: Answer,
+    reply: impl std::future::Future<Output = bool>,
+) -> Option<Outcome> {
     let sent = reply.await;
     if let Some(id) = answer.enable {
-        if sent { engine.reply_sent(&id, presenter); }
-        else { engine.reply_failed(&id, presenter); }
+        if sent {
+            engine.reply_sent(&id, presenter);
+        } else {
+            engine.reply_failed(&id, presenter);
+        }
     }
     answer.outcome
 }
@@ -87,33 +112,64 @@ async fn publish(client: &SupervisedClient, outcome: Outcome) {
     let headers = BTreeMap::from([("name".to_owned(), TOPIC.to_owned())]);
     let frame = citizen::outbox::frame(TOPIC, &json!(outcome));
     // A single attempt. Pulling the retained outcome recovers a missed event.
-    if !matches!(tokio::time::timeout(Duration::from_secs(2),
-        client.call_with_headers_raw("noded", "topic.publish", &headers, &frame)).await, Ok(Ok((0, _, _)))) {
+    if !matches!(
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            client.call_with_headers_raw("noded", "topic.publish", &headers, &frame)
+        )
+        .await,
+        Ok(Ok((0, _, _)))
+    ) {
         tracing::warn!("files outcome publication failed");
     }
 }
 
 /// This dispatch is also used by tests; transport ordering stays in the host.
-pub fn dispatch(engine: &mut Engine, presenter: &mut impl Presenter, command: &str, body: &str, caller: &str, now: u64) -> Answer {
+pub fn dispatch(
+    engine: &mut Engine,
+    presenter: &mut impl Presenter,
+    command: &str,
+    body: &str,
+    caller: &str,
+    now: u64,
+) -> Answer {
     let mut outcome = None;
     let mut enable = None;
     let result = match command {
         "HELP" => Ok(serde_json::to_value(manifest()).expect("manifest serialises")),
         "app.describe" => Ok(describe()),
-        "files.choose" => engine.choose(body, caller, now, presenter).inspect(|reply| {
-            enable = reply["request"].as_str().map(str::to_owned);
-        }),
+        "files.choose" => engine
+            .choose(body, caller, now, presenter)
+            .inspect(|reply| {
+                enable = reply["request"].as_str().map(str::to_owned);
+            }),
         "files.choose.result" => engine.result(body, now),
         "files.choose.cancel" => engine.cancel(body, now, presenter).map(|ended| {
             outcome = ended;
             json!({})
         }),
-        "files.choose.list" => { engine.sweep(now); Ok(engine.list()) },
-        _ => Err(Refusal::new("UNKNOWN_COMMAND", "unknown file chooser command")),
+        "files.choose.list" => {
+            engine.sweep(now);
+            Ok(engine.list())
+        }
+        _ => Err(Refusal::new(
+            "UNKNOWN_COMMAND",
+            "unknown file chooser command",
+        )),
     };
     match result {
-        Ok(body) => Answer { rc: 0, body, enable, outcome },
-        Err(refusal) => Answer { rc: 10, body: json!(refusal), enable: None, outcome: None },
+        Ok(body) => Answer {
+            rc: 0,
+            body,
+            enable,
+            outcome,
+        },
+        Err(refusal) => Answer {
+            rc: 10,
+            body: json!(refusal),
+            enable: None,
+            outcome: None,
+        },
     }
 }
 
@@ -126,8 +182,15 @@ pub fn run(url: &str) -> Result<(), String> {
 
 /// Stage 2b supplies its window presenter and event channel here. Only this
 /// loop mutates the engine, replies to callers or publishes chosen outcomes.
-pub fn run_with_presenter(url: &str, mut presenter: impl Presenter, mut events: tokio::sync::mpsc::UnboundedReceiver<Presentation>) -> Result<(), String> {
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
+pub fn run_with_presenter(
+    url: &str,
+    mut presenter: impl Presenter,
+    mut events: tokio::sync::mpsc::UnboundedReceiver<Presentation>,
+) -> Result<(), String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
     runtime.block_on(async {
         let client = tokio::time::timeout(Duration::from_secs(5),
             SupervisedClient::connect_options(SERVICE, url).fatal_on_registration_rejection(true).connect())
@@ -184,16 +247,36 @@ mod tests {
         let mut engine = Engine::new(42, defaults(), b"/home/user".to_vec()).unwrap();
         let mut presenter = NoPresenter;
         for _ in 0..20 {
-            let answer = dispatch(&mut engine, &mut presenter, "files.choose", "{}", "local:test", 1);
+            let answer = dispatch(
+                &mut engine,
+                &mut presenter,
+                "files.choose",
+                "{}",
+                "local:test",
+                1,
+            );
             assert_eq!(answer.rc, 10);
             assert_eq!(answer.body["error_code"], "UNAVAILABLE");
             assert!(answer.enable.is_none());
         }
         assert_eq!(engine.list()["requests"], json!([]));
-        let invalid = dispatch(&mut engine, &mut presenter, "files.choose", r#"{"mode":"bad"}"#, "test", 1);
+        let invalid = dispatch(
+            &mut engine,
+            &mut presenter,
+            "files.choose",
+            r#"{"mode":"bad"}"#,
+            "test",
+            1,
+        );
         assert_eq!(invalid.rc, 10);
         assert_eq!(invalid.body["error_code"], "ARGUMENT");
-        for command in ["dopus.ping", "dopus.quit", "dopus.open", "dopus.macros.list", "files.ui.tree"] {
+        for command in [
+            "dopus.ping",
+            "dopus.quit",
+            "dopus.open",
+            "dopus.macros.list",
+            "files.ui.tree",
+        ] {
             let answer = dispatch(&mut engine, &mut presenter, command, "{}", "test", 1);
             assert_eq!(answer.rc, 10);
             assert_eq!(answer.body["error_code"], "UNKNOWN_COMMAND");
@@ -215,27 +298,61 @@ mod tests {
         }
         impl Presenter for Immediate {
             fn open(&mut self, _: &dopus_core::chooser::OpenRequest) -> Result<(), Unavailable> {
-                self.log.lock().unwrap().push("open-disabled"); Ok(())
+                self.log.lock().unwrap().push("open-disabled");
+                Ok(())
             }
             fn input_ready(&mut self, id: &str) {
                 self.log.lock().unwrap().push("input");
-                self.events.send(Presentation { request:id.into(), end:End::Cancel }).unwrap();
+                self.events
+                    .send(Presentation {
+                        request: id.into(),
+                        end: End::Cancel,
+                    })
+                    .unwrap();
             }
-            fn close(&mut self, _: &str) { self.log.lock().unwrap().push("close"); }
+            fn close(&mut self, _: &str) {
+                self.log.lock().unwrap().push("close");
+            }
         }
         let log = Arc::new(Mutex::new(Vec::new()));
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut presenter = Immediate { log:log.clone(), events:tx };
+        let mut presenter = Immediate {
+            log: log.clone(),
+            events: tx,
+        };
         let mut engine = Engine::new(1, defaults(), b"/home/user".to_vec()).unwrap();
-        let answer = dispatch(&mut engine, &mut presenter, "files.choose", "{}", "caller", 1);
+        let answer = dispatch(
+            &mut engine,
+            &mut presenter,
+            "files.choose",
+            "{}",
+            "caller",
+            1,
+        );
         assert_eq!(answer.rc, 0);
         assert!(rx.try_recv().is_err());
-        let reply = async { log.lock().unwrap().push("reply"); true };
+        let reply = async {
+            log.lock().unwrap().push("reply");
+            true
+        };
         futures::executor::block_on(deliver(&mut engine, &mut presenter, answer, reply));
         let event = rx.try_recv().unwrap();
-        assert!(engine.end(&event.request,event.end,2,&mut presenter).unwrap().is_some());
+        assert!(
+            engine
+                .end(&event.request, event.end, 2, &mut presenter)
+                .unwrap()
+                .is_some()
+        );
         log.lock().unwrap().push("publish");
-        assert!(engine.end(&event.request,End::Caller,3,&mut presenter).unwrap().is_none());
-        assert_eq!(*log.lock().unwrap(),["open-disabled","reply","input","close","publish"]);
+        assert!(
+            engine
+                .end(&event.request, End::Caller, 3, &mut presenter)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            *log.lock().unwrap(),
+            ["open-disabled", "reply", "input", "close", "publish"]
+        );
     }
 }

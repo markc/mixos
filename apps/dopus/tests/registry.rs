@@ -48,25 +48,40 @@ fn described() -> Vec<String> {
 fn window_commands_match_the_window_registry_entries() {
     let described = described();
     assert!(!described.is_empty());
-    let registered: Vec<_> = registered("dopus").into_iter().filter(|name| name.starts_with("dopus.")).collect();
+    let registered: Vec<_> = registered("dopus")
+        .into_iter()
+        .filter(|name| name.starts_with("dopus."))
+        .collect();
     assert_eq!(registered, described);
 }
 
 #[test]
 fn chooser_commands_match_the_chooser_registry_entries() {
-    let served: Vec<_> = dopus::choose::manifest().into_iter()
+    let served: Vec<_> = dopus::choose::manifest()
+        .into_iter()
         .filter(|entry| entry.name != "HELP" && entry.name != "app.describe")
-        .map(|entry| entry.name).collect();
-    let expected: Vec<_> = dopus_core::chooser::COMMANDS.iter().map(|(name, _)| (*name).to_owned()).collect();
+        .map(|entry| entry.name)
+        .collect();
+    let expected: Vec<_> = dopus_core::chooser::COMMANDS
+        .iter()
+        .map(|(name, _)| (*name).to_owned())
+        .collect();
     assert_eq!(served, expected);
-    let registered: Vec<_> = registered("dopus").into_iter().filter(|name| name.starts_with("files.")).collect();
+    let registered: Vec<_> = registered("dopus")
+        .into_iter()
+        .filter(|name| name.starts_with("files."))
+        .collect();
     assert_eq!(registered, served);
 }
 
 #[test]
 fn both_modes_account_for_every_owned_entry() {
     let mut expected = described();
-    expected.extend(dopus_core::chooser::COMMANDS.iter().map(|(name, _)| (*name).to_owned()));
+    expected.extend(
+        dopus_core::chooser::COMMANDS
+            .iter()
+            .map(|(name, _)| (*name).to_owned()),
+    );
     expected.sort();
     let mut registered = registered("dopus");
     registered.sort();
@@ -90,6 +105,8 @@ fn class_of(name: &str) -> Option<&'static str> {
 #[test]
 fn read_only_commands_are_queries() {
     for (name, read_only) in COMMANDS.iter().chain(dopus_core::chooser::COMMANDS) {
-        if *read_only { assert_eq!(class_of(name), Some("query"), "{name}"); }
+        if *read_only {
+            assert_eq!(class_of(name), Some("query"), "{name}");
+        }
     }
 }

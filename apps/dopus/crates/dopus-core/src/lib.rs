@@ -52,8 +52,8 @@
 //!    derives from core state only, so an app that never sets it persists
 //!    the startup ratio.
 
-pub mod config;
 pub mod chooser;
+pub mod config;
 pub mod events;
 pub mod model;
 pub mod ops;
