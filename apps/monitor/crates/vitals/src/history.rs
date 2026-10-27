@@ -13,7 +13,7 @@ pub const WINDOW: usize = 60;
 
 /// The series Monitor graphs, as monitord names them (a trailing `*` is a
 /// prefix), for the seeding `monitord.history` call.
-pub const SEEDED: [&str; 5] = ["cpu.busy", "cpu.core.*", "mem.used", "disk.*", "net.*"];
+pub const SEEDED: [&str; 6] = ["cpu.busy", "cpu.core.*", "mem.used", "disk.*", "net.*", "tcp.*"];
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Rings {
@@ -41,7 +41,7 @@ impl Rings {
     }
 
     pub fn last(&self, name: &str) -> Option<f64> {
-        self.series.get(name)?.back().copied()
+        self.series.get(name)?.back().copied().filter(|v| v.is_finite())
     }
 
     pub fn clear(&mut self) {
@@ -78,6 +78,14 @@ impl Rings {
                 self.push(&format!("net.{}.tx", i.name), v);
             }
         }
+        // Preserve missing intervals across paired TCP series. A reset in
+        // one counter must not pair yesterday's denominator with today's
+        // retransmits. NaN stays internal and is skipped by the renderer.
+        for (name, value) in s.tcp.series() {
+            let ring = self.series.entry(name.to_owned()).or_default();
+            ring.push_back(value.filter(|v| v.is_finite()).unwrap_or(f64::NAN));
+            while ring.len() > WINDOW { ring.pop_front(); }
+        }
     }
 
     /// Seed from a `monitord.history` reply: each series' points are
@@ -88,6 +96,7 @@ impl Rings {
             return;
         };
         for (name, points) in series {
+            if name.starts_with("tcp.") { continue; }
             let seeded: Vec<f64> = points
                 .as_array()
                 .into_iter()
@@ -101,6 +110,19 @@ impl Rings {
             while ring.len() > WINDOW {
                 ring.pop_front();
             }
+        }
+        let mut times: Vec<f64> = series.iter().filter(|(n, _)| n.starts_with("tcp."))
+            .flat_map(|(_, p)| p.as_array().into_iter().flatten())
+            .filter_map(|p| p.get(0)?.as_f64()).filter(|v| v.is_finite()).collect();
+        times.sort_by(f64::total_cmp);
+        times.dedup();
+        for (name, _) in crate::model::Tcp::default().series() {
+            let points = series.get(name).and_then(Value::as_array);
+            let ring = self.series.entry(name.into()).or_default();
+            let held: Vec<_> = ring.drain(..).collect();
+            ring.extend(times.iter().map(|t| points.and_then(|p| p.iter().find(|p| p.get(0).and_then(Value::as_f64) == Some(*t)))
+                .and_then(|p| p.get(1)?.as_f64()).unwrap_or(f64::NAN)).chain(held));
+            while ring.len() > WINDOW { ring.pop_front(); }
         }
     }
 }
@@ -125,6 +147,27 @@ pub fn scale(values: &[f64], floor: f64) -> f64 {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn tcp_missing_intervals_keep_ratios_aligned_and_are_never_zero() {
+        let mut r = Rings::default();
+        r.seed(&json!({"series": {
+            "tcp.out_segs": [[1,100,100,100],[3,200,200,200]],
+            "tcp.retrans_segs": [[1,2,2,2],[2,5,5,5],[3,10,10,10]]
+        }}));
+        assert!(r.get("tcp.out_segs")[1].is_nan());
+        let mut s = Snapshot::default();
+        s.tcp.out_segs = Some(1000.0);
+        r.record(&s);
+        let out = r.get("tcp.out_segs");
+        let retrans = r.get("tcp.retrans_segs");
+        assert_eq!(out.len(), retrans.len());
+        assert_eq!(crate::model::retransmit_percent(retrans[2], out[2]), Some(5.0));
+        assert!(crate::model::retransmit_percent(retrans[1], out[1]).is_none());
+        assert!(crate::model::retransmit_percent(retrans[3], out[3]).is_none());
+        assert!(crate::model::retransmit_percent(0.0, 0.0).is_none());
+        assert_eq!(r.last("tcp.retrans_segs"), None);
+    }
 
     #[test]
     fn rings_keep_the_window() {

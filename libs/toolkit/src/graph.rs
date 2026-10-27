@@ -46,9 +46,11 @@ fn readout_rows(series: &[(&[f64], Hue)], steps: usize, readout: Readout<'_>) ->
         .filter_map(|(i, (values, _))| {
             let n = values.len().min(readout.samples);
             if steps < n {
+                let value = values[values.len() - 1 - steps];
+                if !value.is_finite() { return None; }
                 Some((readout.format)(
                     i,
-                    values[values.len() - 1 - steps],
+                    value,
                     (steps as f64 * readout.interval_s).max(0.0).round() as u64,
                 ))
             } else {
@@ -115,6 +117,7 @@ fn points(rect: Rect, values: &[f64], max: f64, samples: usize) -> Vec<Pos2> {
     values
         .iter()
         .enumerate()
+        .filter(|(_, value)| value.is_finite())
         .map(|(i, v)| pos2(x_of(rect, i, n, samples), y_of(rect, *v, max)))
         .collect()
 }

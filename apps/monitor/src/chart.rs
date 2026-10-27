@@ -32,6 +32,8 @@ pub enum Scale {
     Capacity(f64),
     /// Cover this peak rate in bytes/s, rounded up in binary display units.
     Rate(f64),
+    /// Event rates and gauges use decimal counts, with caller-owned units.
+    Count(f64),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -53,18 +55,19 @@ impl YTicks {
                 intervals: 4,
             };
         }
-        let Scale::Rate(peak) = scale else {
-            return Self {
+        let peak = match scale {
+            Scale::Rate(peak) | Scale::Count(peak) => peak,
+            _ => return Self {
                 step: 25.0,
                 intervals: 4,
-            };
+            },
         };
         let peak = if peak.is_finite() { peak.max(1.0) } else { 1.0 };
         // Round in the same B/KiB/MiB/... units as the formatter, so the
         // labels read 10/20/30/40 GiB rather than 9.3/18.6/27.9 GiB.
         let mut unit = 1.0;
         for _ in 0..5 {
-            if peak / unit < 1024.0 {
+            if matches!(scale, Scale::Count(_)) || peak / unit < 1024.0 {
                 break;
             }
             unit *= 1024.0;
@@ -195,9 +198,11 @@ fn readout_at(chart: &Chart<'_>, x: f64, interval_s: f64, hidden: &ItemIdSet) ->
         .filter_map(|series| {
             let n = series.values.len().min(chart.samples);
             if steps < n && !hidden.contains(&ItemId::new(series.name)) {
+                let value = series.values[series.values.len() - 1 - steps];
+                if !value.is_finite() { return None; }
                 Some(readout(
                     series.name,
-                    series.values[series.values.len() - 1 - steps],
+                    value,
                     steps as f64 * interval_s,
                     chart.format,
                 ))
@@ -224,6 +229,7 @@ fn points(values: &[f64], samples: usize, interval_s: f64) -> Vec<[f64; 2]> {
     values[values.len() - n..]
         .iter()
         .enumerate()
+        .filter(|(_, value)| value.is_finite())
         .map(|(i, value)| [-((n - 1 - i) as f64) * interval_s, *value])
         .collect()
 }
@@ -232,9 +238,21 @@ pub fn show(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) 
     let _ = render(ui, id, size, chart);
 }
 
+/// A caller-owned derived readout at the same sample as the plotted data.
+/// Keeps ratios and resource semantics out of the chart renderer.
+pub fn show_annotated(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2,
+    chart: Chart<'_>, annotation: &dyn Fn(usize) -> Option<String>) {
+    let _ = render_custom(ui, id, size, chart, Some(annotation));
+}
+
 // Return the actual response to renderer tests; do not reconstruct egui_plot's
 // private memory key from its id salt. Plotting types stay inside this module.
 fn render(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) -> PlotResponse<()> {
+    render_custom(ui, id, size, chart, None)
+}
+
+fn render_custom(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>,
+    annotation: Option<&dyn Fn(usize) -> Option<String>>) -> PlotResponse<()> {
     let interval_s = if chart.interval_s.is_finite() && chart.interval_s > 0.0 {
         chart.interval_s
     } else {
@@ -298,12 +316,18 @@ fn render(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) ->
                 HoverPosition::NearDataPoint { position, .. }
                 | HoverPosition::Elsewhere { position } => position,
             };
-            readout_at(
+            let x = pointer_time.get().unwrap_or(position.x);
+            let mut text = readout_at(
                 &chart,
-                pointer_time.get().unwrap_or(position.x),
+                x,
                 interval_s,
                 &hidden,
-            )
+            )?;
+            if let Some(extra) = annotation.and_then(|f| f((-x / interval_s).round() as usize)) {
+                text.push('\n');
+                text.push_str(&extra);
+            }
+            Some(text)
         });
     if chart.series.len() > 1 {
         plot = plot.legend(Legend::default());

@@ -1,0 +1,491 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! Unprivileged TCP socket diagnostics. Wire layouts are Linux UAPI:
+//! linux/{netlink,inet_diag,sock_diag,tcp}.h, not a C struct cast. Integers
+//! are native endian except addresses/ports. tcp_info grows by appending:
+//! read each optional field only when its bytes are present.
+use crate::{kernel::{self, Root}, process::Users};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, io, net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd}, sync::{Arc, Mutex}, time::{Duration, Instant}};
+
+const SOCK_DIAG_BY_FAMILY: u16 = 20;
+const INET_DIAG_INFO: u16 = 2;
+const HEADER: usize = 16;
+const DIAG: usize = 72;
+/// Refuse an oversized dump rather than silently misreport its top talkers.
+pub const MAX_SOCKETS: usize = 65_536;
+pub const HOLD: Duration = Duration::from_secs(30);
+const DUMP_TIMEOUT: Duration = Duration::from_secs(2);
+
+fn u16_at(b: &[u8], at: usize) -> Option<u16> { Some(u16::from_ne_bytes(b.get(at..at+2)?.try_into().ok()?)) }
+fn u32_at(b: &[u8], at: usize) -> Option<u32> { Some(u32::from_ne_bytes(b.get(at..at+4)?.try_into().ok()?)) }
+fn u64_at(b: &[u8], at: usize) -> Option<u64> { Some(u64::from_ne_bytes(b.get(at..at+8)?.try_into().ok()?)) }
+fn aligned(n: usize) -> usize { (n + 3) & !3 }
+fn invalid() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "malformed inet_diag dump") }
+
+/// nlmsghdr + inet_diag_req_v2; all states, no address/port filter.
+fn request(family: u8, seq: u32) -> Vec<u8> {
+    let mut b = vec![0; HEADER + 56];
+    let len = b.len() as u32;
+    b[0..4].copy_from_slice(&len.to_ne_bytes());
+    b[4..6].copy_from_slice(&SOCK_DIAG_BY_FAMILY.to_ne_bytes());
+    b[6..8].copy_from_slice(&0x301u16.to_ne_bytes()); // REQUEST | DUMP
+    b[8..12].copy_from_slice(&seq.to_ne_bytes());
+    b[16] = family;
+    b[17] = libc::IPPROTO_TCP as u8;
+    b[18] = 1 << (INET_DIAG_INFO - 1);
+    b[20..24].copy_from_slice(&u32::MAX.to_ne_bytes());
+    b[64..72].fill(0xff); // INET_DIAG_NOCOOKIE
+    b
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Raw {
+    pub cookie: [u32; 2],
+    pub local: IpAddr,
+    pub remote: IpAddr,
+    pub local_port: u16,
+    pub remote_port: u16,
+    pub ifindex: u32,
+    pub state: u8,
+    pub uid: u32,
+    pub bytes_received: Option<u64>,
+    pub bytes_acked: Option<u64>,
+    pub rtt_us: Option<u32>,
+    pub retransmits: Option<u32>,
+}
+
+fn diag(b: &[u8]) -> io::Result<Raw> {
+    if b.len() < DIAG { return Err(invalid()); }
+    let address = |at| -> io::Result<IpAddr> {
+        match i32::from(b[0]) {
+            libc::AF_INET => Ok(Ipv4Addr::from(<[u8; 4]>::try_from(&b[at..at+4]).map_err(|_| invalid())?).into()),
+            libc::AF_INET6 => Ok(Ipv6Addr::from(<[u8; 16]>::try_from(&b[at..at+16]).map_err(|_| invalid())?).into()),
+            _ => Err(invalid()),
+        }
+    };
+    let mut r = Raw {
+        cookie: [u32_at(b, 44).ok_or_else(invalid)?, u32_at(b, 48).ok_or_else(invalid)?],
+        local: address(8)?, remote: address(24)?,
+        local_port: u16::from_be_bytes([b[4], b[5]]),
+        remote_port: u16::from_be_bytes([b[6], b[7]]),
+        ifindex: u32_at(b, 40).ok_or_else(invalid)?, state: b[1],
+        uid: u32_at(b, 64).ok_or_else(invalid)?, bytes_received: None,
+        bytes_acked: None, rtt_us: None, retransmits: None,
+    };
+    let mut at = DIAG;
+    while at < b.len() {
+        let len = usize::from(u16_at(b, at).ok_or_else(invalid)?);
+        let kind = u16_at(b, at+2).ok_or_else(invalid)? & 0x3fff;
+        if len < 4 || at + len > b.len() { return Err(invalid()); }
+        if kind == INET_DIAG_INFO {
+            let info = &b[at+4..at+len];
+            r.rtt_us = u32_at(info, 68);
+            r.retransmits = u32_at(info, 100); // tcpi_total_retrans, not retry backoff
+            r.bytes_acked = u64_at(info, 120);
+            r.bytes_received = u64_at(info, 128);
+        }
+        at += aligned(len);
+    }
+    Ok(r)
+}
+
+/// Consume a multipart datagram, returning whether NLMSG_DONE was seen.
+/// An interrupted, truncated or error dump never becomes a valid table.
+fn decode(b: &[u8], seq: u32, rows: &mut Vec<Raw>) -> io::Result<bool> {
+    let mut at = 0;
+    while at < b.len() {
+        let h = b.get(at..at+HEADER).ok_or_else(invalid)?;
+        let len = u32_at(h, 0).ok_or_else(invalid)? as usize;
+        if len < HEADER { return Err(invalid()); }
+        let msg = b.get(at+HEADER..at+len).ok_or_else(invalid)?;
+        if u32_at(h, 8) != Some(seq) { return Err(invalid()); }
+        if u16_at(h, 6).ok_or_else(invalid)? & 0x10 != 0 {
+            return Err(io::Error::other("inet_diag dump interrupted; retry"));
+        }
+        match u16_at(h, 4).ok_or_else(invalid)? {
+            1 => {}, // NLMSG_NOOP
+            2 | 3 => {
+                if msg.len() >= 4 {
+                    let error = i32::from_ne_bytes(msg[..4].try_into().map_err(|_| invalid())?);
+                    if error != 0 { return Err(io::Error::from_raw_os_error(error.saturating_neg())); }
+                } else if u16_at(h, 4) == Some(2) { return Err(invalid()); }
+                if u16_at(h, 4) == Some(3) { return Ok(true); }
+            }
+            4 => return Err(io::Error::other("inet_diag overrun")),
+            SOCK_DIAG_BY_FAMILY => {
+                if rows.len() >= MAX_SOCKETS { return Err(io::Error::other("TCP socket limit exceeded")); }
+                rows.push(diag(msg)?);
+            }
+            _ => return Err(invalid()),
+        }
+        at += aligned(len);
+    }
+    Ok(false)
+}
+
+/// One bounded IPv4 + IPv6 dump. Connected netlink accepts only the kernel;
+/// recvfrom checks the sender too. OwnedFd closes on every exit path.
+pub fn dump() -> io::Result<Vec<Raw>> {
+    dump_with(|_| {})
+}
+
+fn dump_with(mut observe: impl FnMut(&[u8])) -> io::Result<Vec<Raw>> {
+    // SAFETY: socket has constant domain/type/protocol and returns a new fd.
+    let fd = unsafe { libc::socket(libc::AF_NETLINK, libc::SOCK_RAW | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK, libc::NETLINK_SOCK_DIAG) };
+    if fd < 0 { return Err(io::Error::last_os_error()); }
+    // SAFETY: socket returned a fresh fd, now exclusively owned here.
+    let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+    // SAFETY: sockaddr_nl's all-zero representation is valid.
+    let mut kernel: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
+    kernel.nl_family = libc::AF_NETLINK as u16;
+    // SAFETY: pointer and length describe the valid address for this call.
+    if unsafe { libc::connect(fd.as_raw_fd(), (&kernel as *const libc::sockaddr_nl).cast(), std::mem::size_of_val(&kernel) as _) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut rows = Vec::new();
+    let mut buffer = vec![0; 65_536];
+    let deadline = Instant::now() + DUMP_TIMEOUT;
+    for (seq, family) in [(1, libc::AF_INET), (2, libc::AF_INET6)] {
+        let req = request(family as u8, seq);
+        // SAFETY: req is a valid readable byte slice; connected peer is kernel.
+        if unsafe { libc::send(fd.as_raw_fd(), req.as_ptr().cast(), req.len(), 0) } != req.len() as isize {
+            return Err(io::Error::last_os_error());
+        }
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() { return Err(io::Error::new(io::ErrorKind::TimedOut, "inet_diag timeout")); }
+            let mut poll = libc::pollfd { fd: fd.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+            // SAFETY: poll points at one valid pollfd.
+            let ready = unsafe { libc::poll(&mut poll, 1, left.as_millis().max(1) as i32) };
+            if ready < 0 {
+                let e = io::Error::last_os_error();
+                if e.kind() == io::ErrorKind::Interrupted { continue; }
+                return Err(e);
+            }
+            if ready == 0 { continue; }
+            let mut sender = kernel;
+            let mut addrlen = std::mem::size_of_val(&sender) as libc::socklen_t;
+            // SAFETY: buffer and sender are writable for the given lengths.
+            let n = unsafe { libc::recvfrom(fd.as_raw_fd(), buffer.as_mut_ptr().cast(), buffer.len(), libc::MSG_TRUNC,
+                (&mut sender as *mut libc::sockaddr_nl).cast(), &mut addrlen) };
+            if n < 0 {
+                let e = io::Error::last_os_error();
+                if matches!(e.kind(), io::ErrorKind::Interrupted | io::ErrorKind::WouldBlock) { continue; }
+                return Err(e);
+            }
+            if n == 0 || n as usize > buffer.len() || sender.nl_pid != 0 { return Err(invalid()); }
+            observe(&buffer[..n as usize]);
+            if decode(&buffer[..n as usize], seq, &mut rows)? { break; }
+        }
+    }
+    Ok(rows)
+}
+
+pub const STATES: [&str; 13] = ["unknown", "established", "syn-sent", "syn-recv", "fin-wait-1", "fin-wait-2", "time-wait", "close", "close-wait", "last-ack", "listen", "closing", "new-syn-recv"];
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Connection {
+    pub cookie: [u32; 2],
+    pub local: IpAddr,
+    pub remote: IpAddr,
+    pub local_port: u16,
+    pub remote_port: u16,
+    pub ifindex: u32,
+    pub state: String,
+    pub rx_bps: Option<f64>,
+    pub tx_bps: Option<f64>,
+    pub rtt_us: Option<u32>,
+    pub retransmits: Option<u32>,
+    pub uid: u32,
+    pub user: String,
+}
+
+fn table(before: &[Raw], after: &[Raw], dt: f64, users: &Users) -> Vec<Connection> {
+    let previous: HashMap<_, _> = before.iter().filter(|r| r.cookie != [u32::MAX; 2]).map(|r| (r.cookie, r)).collect();
+    after.iter().map(|r| {
+        let p = previous.get(&r.cookie);
+        Connection {
+            cookie: r.cookie, local: r.local, remote: r.remote,
+            local_port: r.local_port, remote_port: r.remote_port, ifindex: r.ifindex,
+            state: STATES.get(r.state as usize).unwrap_or(&"unknown").to_string(),
+            rx_bps: p.and_then(|p| kernel::rate(p.bytes_received?, r.bytes_received?, dt)),
+            tx_bps: p.and_then(|p| kernel::rate(p.bytes_acked?, r.bytes_acked?, dt)),
+            rtt_us: r.rtt_us, retransmits: r.retransmits, uid: r.uid, user: users.name(r.uid),
+        }
+    }).collect()
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Query {
+    pub limit: Option<usize>,
+    pub sort: Option<String>,
+    pub state: Option<String>,
+    /// Match either local or remote port.
+    pub port: Option<u16>,
+}
+
+impl Query {
+    pub fn validate(&self) -> Result<(), String> {
+        if !["throughput", "rx", "tx", "rtt", "retransmits"].contains(&self.sort.as_deref().unwrap_or("throughput")) {
+            return Err("sort must be throughput, rx, tx, rtt or retransmits".into());
+        }
+        if self.state.as_deref().is_some_and(|s| !STATES[1..].contains(&s)) {
+            return Err(format!("state must be one of {}", STATES[1..].join(", ")));
+        }
+        Ok(())
+    }
+}
+
+pub fn select(table: &[Connection], query: &Query) -> (Vec<Connection>, usize) {
+    let mut rows: Vec<_> = table.iter().filter(|r| {
+        query.state.as_ref().is_none_or(|s| *s == r.state)
+            && query.port.is_none_or(|p| p == r.local_port || p == r.remote_port)
+    }).cloned().collect();
+    let score = |r: &Connection| match query.sort.as_deref().unwrap_or("throughput") {
+        "rx" => r.rx_bps.unwrap_or(-1.0), "tx" => r.tx_bps.unwrap_or(-1.0),
+        "rtt" => r.rtt_us.map(f64::from).unwrap_or(-1.0),
+        "retransmits" => r.retransmits.map(f64::from).unwrap_or(-1.0),
+        _ => r.rx_bps.unwrap_or(0.0) + r.tx_bps.unwrap_or(0.0),
+    };
+    rows.sort_by(|a,b| score(b).total_cmp(&score(a)).then(a.cookie.cmp(&b.cookie)));
+    let total = rows.len();
+    rows.truncate(query.limit.unwrap_or(20).clamp(1, 1000));
+    (rows, total)
+}
+
+#[derive(Default)]
+struct State {
+    until: Option<Instant>,
+    scan: Option<(Instant, Vec<Raw>)>,
+    rows: Option<(Instant, Arc<Vec<Connection>>)>,
+    error: Option<String>,
+}
+
+impl State {
+    fn expire(&mut self, now: Instant) -> bool {
+        let active = self.until.is_some_and(|u| now < u);
+        if !active { *self = Self::default(); }
+        active
+    }
+}
+
+type Source = dyn Fn() -> io::Result<Vec<Raw>> + Send + Sync;
+
+pub struct Sampler {
+    state: Mutex<State>,
+    /// Coalesce simultaneous cold requests; no blocking guard across await.
+    request: tokio::sync::Mutex<()>,
+    source: Box<Source>,
+    root: Root,
+    interval: Duration,
+}
+
+impl Sampler {
+    pub fn new(root: Root, interval: Duration) -> Arc<Self> {
+        Arc::new(Self { state: Mutex::new(State::default()), request: tokio::sync::Mutex::new(()),
+            source: Box::new(dump), root, interval })
+    }
+
+    fn sample(&self, s: &mut State) -> io::Result<()> {
+        let raw = (self.source)()?;
+        if raw.len() > MAX_SOCKETS { return Err(io::Error::other("TCP socket limit exceeded")); }
+        let at = Instant::now();
+        if let Some((then, before)) = &s.scan {
+            s.rows = Some((at, Arc::new(table(before, &raw, at.duration_since(*then).as_secs_f64(), &Users::read(&self.root)))));
+        }
+        s.scan = Some((at, raw));
+        s.error = None;
+        Ok(())
+    }
+
+    pub fn tick(&self) {
+        let mut s = self.state.lock().unwrap();
+        if s.expire(Instant::now()) && let Err(e) = self.sample(&mut s) {
+            s.error = Some(e.to_string());
+            s.scan = None;
+            s.rows = None;
+        }
+    }
+
+    pub async fn get(self: &Arc<Self>) -> anyhow::Result<Arc<Vec<Connection>>> {
+        let _request = self.request.lock().await;
+        {
+            let mut s = self.state.lock().unwrap();
+            s.expire(Instant::now());
+            s.until = Some(Instant::now() + HOLD);
+            if let Some((at, rows)) = &s.rows && at.elapsed() < self.interval * 2 && s.error.is_none() {
+                return Ok(rows.clone());
+            }
+            s.scan = None;
+            s.rows = None;
+        }
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || me.sample(&mut me.state.lock().unwrap())).await??;
+        tokio::time::sleep(self.interval).await;
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || me.sample(&mut me.state.lock().unwrap())).await??;
+        self.state.lock().unwrap().rows.as_ref().map(|(_, r)| r.clone())
+            .ok_or_else(|| anyhow::anyhow!("no TCP connection table"))
+    }
+
+    pub fn status(&self) -> serde_json::Value {
+        let mut s = self.state.lock().unwrap();
+        let active = s.expire(Instant::now());
+        serde_json::json!({"active":active,"rows":s.rows.as_ref().map(|(_,r)| r.len()),"error":s.error})
+    }
+}
+
+/// Independent of system sampling: a slow diagnostic dump cannot delay /proc.
+pub async fn run(sampler: Arc<Sampler>) {
+    let mut timer = tokio::time::interval(sampler.interval);
+    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        timer.tick().await;
+        let sampler = sampler.clone();
+        let _ = tokio::task::spawn_blocking(move || sampler.tick()).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn raw(cookie: u32, bytes: u64) -> Raw {
+        Raw { cookie: [cookie, 0], local: "192.0.2.1".parse().unwrap(),
+            remote: "198.51.100.2".parse().unwrap(), local_port: 443, remote_port: 45000,
+            ifindex: 0, state: 1, uid: 1000, bytes_received: Some(bytes),
+            bytes_acked: Some(bytes*2), rtt_us: Some(1500), retransmits: Some(2) }
+    }
+
+    #[test]
+    fn cookies_rates_resets_new_sockets_sort_filter_and_limits() {
+        let users = Users::parse("alice:x:1000:1000::/home/user:/bin/mix\n");
+        let before = [raw(1, 100), raw(2, 500)];
+        let after = [raw(1, 500), raw(2, 100), raw(3, 10)];
+        let rows = table(&before, &after, 2.0, &users);
+        assert_eq!((rows[0].rx_bps, rows[0].tx_bps), (Some(200.0), Some(400.0)));
+        assert_eq!(rows[0].user, "alice");
+        assert_eq!(rows[1].rx_bps, None);
+        assert_eq!(rows[2].tx_bps, None);
+        assert_eq!(table(&before, &after, 0.0, &users)[0].rx_bps, None);
+        let (top, total) = select(&rows, &Query { limit: Some(1), ..Query::default() });
+        assert_eq!(total, 3);
+        assert_eq!(top[0].cookie, [1, 0]);
+        assert_eq!(select(&rows, &Query { state: Some("listen".into()), ..Query::default() }).1, 0);
+        assert_eq!(select(&rows, &Query { port: Some(45000), ..Query::default() }).1, 3);
+        assert_eq!(select(&rows, &Query { port: Some(80), ..Query::default() }).1, 0);
+        assert!(Query { sort: Some("oops".into()), ..Query::default() }.validate().is_err());
+        assert!(Query { state: Some("oops".into()), ..Query::default() }.validate().is_err());
+        let unknown = raw(u32::MAX, 1);
+        let unknown = Raw { cookie: [u32::MAX; 2], ..unknown };
+        assert_eq!(table(std::slice::from_ref(&unknown), &[unknown.clone()], 1.0, &users)[0].rx_bps, None);
+    }
+
+    #[tokio::test]
+    async fn cold_calls_coalesce_hold_and_expiry_discards_every_row() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        let scans = Arc::new(AtomicU64::new(0));
+        let count = scans.clone();
+        let sampler = Arc::new(Sampler { state: Mutex::new(State::default()), request: tokio::sync::Mutex::new(()),
+            source: Box::new(move || Ok(vec![raw(1, count.fetch_add(100, Ordering::SeqCst))])),
+            root: Root::new("/nonexistent"), interval: Duration::from_millis(20) });
+        sampler.tick();
+        assert_eq!(scans.load(Ordering::SeqCst), 0, "idle must not dump");
+        let (a,b) = tokio::join!(sampler.get(), sampler.get());
+        assert!(a.unwrap()[0].rx_bps.unwrap() > 0.0);
+        assert!(Arc::ptr_eq(&b.unwrap(), &sampler.get().await.unwrap()));
+        assert_eq!(scans.load(Ordering::SeqCst), 200, "one cold pair for concurrent requests");
+        assert_eq!(sampler.status()["active"], true);
+        sampler.tick();
+        assert_eq!(scans.load(Ordering::SeqCst), 300);
+        {
+            let mut s = sampler.state.lock().unwrap();
+            let until = s.until.unwrap();
+            assert!(s.expire(until - Duration::from_nanos(1)));
+            assert!(!s.expire(until));
+            assert!(s.scan.is_none() && s.rows.is_none());
+        }
+        sampler.tick();
+        assert_eq!(scans.load(Ordering::SeqCst), 300);
+        sampler.get().await.unwrap();
+        assert_eq!(scans.load(Ordering::SeqCst), 500, "expired call needs another pair");
+    }
+
+    #[test]
+    fn malformed_messages_errors_and_interruptions_are_refused() {
+        let mut rows = Vec::new();
+        for bytes in [vec![], vec![0; 15], vec![0; 16]] {
+            if !bytes.is_empty() { assert!(decode(&bytes, 1, &mut rows).is_err()); }
+        }
+        let mut done = vec![0; 20];
+        done[..4].copy_from_slice(&20u32.to_ne_bytes());
+        done[4..6].copy_from_slice(&3u16.to_ne_bytes());
+        done[8..12].copy_from_slice(&1u32.to_ne_bytes());
+        assert!(decode(&done, 1, &mut rows).unwrap());
+        assert!(decode(&done, 2, &mut rows).is_err());
+        done[6] = 0x10;
+        assert!(decode(&done, 1, &mut rows).is_err());
+        done[6] = 0;
+        done[4..6].copy_from_slice(&2u16.to_ne_bytes());
+        done[16..20].copy_from_slice(&(-libc::EPERM).to_ne_bytes());
+        assert_eq!(decode(&done, 1, &mut rows).unwrap_err().raw_os_error(), Some(libc::EPERM));
+        assert!(diag(&[0; 71]).is_err());
+    }
+
+    /// Exercises the worker's own sockets, without a broker or privilege.
+    /// Only neutralised wire bytes are printed, for the captured fixture.
+    #[test]
+    fn live_unprivileged_ipv4_and_ipv6_dumps() {
+        use std::{io::{Read, Write}, net::{TcpListener, TcpStream}};
+        for bind in ["127.0.0.1:0", "[::1]:0"] {
+            let listener = TcpListener::bind(bind).unwrap();
+            let address = listener.local_addr().unwrap();
+            let mut client = TcpStream::connect(address).unwrap();
+            let (mut server, _) = listener.accept().unwrap();
+            client.write_all(&[42; 128]).unwrap();
+            server.read_exact(&mut [0; 128]).unwrap();
+            let rows = dump_with(|data| {
+                if !cfg!(target_endian = "little") { return; }
+                let mut at = 0;
+                while at + HEADER <= data.len() {
+                    let len = u32_at(data, at).unwrap() as usize;
+                    if len < HEADER || at+len > data.len() { break; }
+                    let msg = &data[at+HEADER..at+len];
+                    if u16_at(data, at+4) == Some(SOCK_DIAG_BY_FAMILY)
+                        && let Ok(r) = diag(msg)
+                        && r.local_port == address.port() && r.state == 1
+                    {
+                        let mut fixture = data[at..at+len].to_vec();
+                        fixture[8..12].copy_from_slice(&1u32.to_le_bytes());
+                        fixture[12..16].fill(0);
+                        let b = &mut fixture[HEADER..];
+                        b[4..6].copy_from_slice(&443u16.to_be_bytes());
+                        b[6..8].copy_from_slice(&45000u16.to_be_bytes());
+                        b[8..40].fill(0);
+                        if address.is_ipv4() {
+                            b[8..12].copy_from_slice(&[192,0,2,1]);
+                            b[24..28].copy_from_slice(&[198,51,100,2]);
+                        } else {
+                            b[8..24].copy_from_slice(&"2001:db8::1".parse::<Ipv6Addr>().unwrap().octets());
+                            b[24..40].copy_from_slice(&"2001:db8::2".parse::<Ipv6Addr>().unwrap().octets());
+                        }
+                        b[40..52].fill(0);
+                        b[44..48].copy_from_slice(&1u32.to_le_bytes());
+                        b[64..68].copy_from_slice(&1000u32.to_le_bytes());
+                        b[68..72].fill(0);
+                        eprintln!("neutral inet_diag {}: {}", if address.is_ipv4() {"v4"} else {"v6"}, fixture.iter().map(|b| format!("{b:02x}")).collect::<String>());
+                    }
+                    at += aligned(len);
+                }
+            }).unwrap();
+            let socket = rows.iter().find(|r| r.local_port == address.port() && r.state == 1).unwrap();
+            assert!(socket.bytes_received.unwrap() >= 128);
+            assert!(socket.rtt_us.is_some());
+            assert!(rows.iter().any(|r| r.local_port == address.port() && r.state == 10));
+            assert!(dump().unwrap().iter().any(|r| r.cookie == socket.cookie));
+        }
+    }
+}

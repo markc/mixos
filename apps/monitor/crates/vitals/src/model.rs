@@ -122,6 +122,84 @@ pub struct Interface {
     pub tx_bytes: u64,
 }
 
+/// System TCP rates are segments/events per second, established is a gauge.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Tcp {
+    pub in_segs: Option<f64>,
+    pub out_segs: Option<f64>,
+    pub retrans_segs: Option<f64>,
+    pub in_errs: Option<f64>,
+    pub active_opens: Option<f64>,
+    pub passive_opens: Option<f64>,
+    pub out_rsts: Option<f64>,
+    pub estab_resets: Option<f64>,
+    pub listen_overflows: Option<f64>,
+    pub listen_drops: Option<f64>,
+    pub established: Option<u64>,
+    pub sockstat: Sockstat,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Sockstat {
+    pub inuse: Option<u64>,
+    pub orphan: Option<u64>,
+    pub tw: Option<u64>,
+    pub alloc: Option<u64>,
+    pub mem: Option<u64>,
+}
+
+impl Tcp {
+    pub fn series(&self) -> [(&'static str, Option<f64>); 11] {
+        [("tcp.in_segs", self.in_segs), ("tcp.out_segs", self.out_segs),
+         ("tcp.retrans_segs", self.retrans_segs), ("tcp.in_errs", self.in_errs),
+         ("tcp.active_opens", self.active_opens), ("tcp.passive_opens", self.passive_opens),
+         ("tcp.out_rsts", self.out_rsts), ("tcp.estab_resets", self.estab_resets),
+         ("tcp.listen_overflows", self.listen_overflows), ("tcp.listen_drops", self.listen_drops),
+         ("tcp.established", self.established.map(|v| v as f64))]
+    }
+}
+
+/// Derived at display time, never stored. No traffic has no defined ratio.
+pub fn retransmit_percent(retrans: f64, out: f64) -> Option<f64> {
+    (retrans.is_finite() && out.is_finite() && retrans >= 0.0 && out > 0.0)
+        .then(|| retrans * 100.0 / out)
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Connection {
+    pub cookie: [u32; 2],
+    pub local: String,
+    pub remote: String,
+    pub local_port: u16,
+    pub remote_port: u16,
+    pub ifindex: u32,
+    pub state: String,
+    pub rx_bps: Option<f64>,
+    pub tx_bps: Option<f64>,
+    pub rtt_us: Option<u32>,
+    pub retransmits: Option<u32>,
+    pub uid: u32,
+    pub user: String,
+}
+
+impl Connection {
+    pub fn peer(&self) -> String {
+        if self.remote.contains(':') { format!("[{}]:{}", self.remote, self.remote_port) }
+        else { format!("{}:{}", self.remote, self.remote_port) }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Connections {
+    pub total: usize,
+    pub count: usize,
+    pub rows: Vec<Connection>,
+}
+
 /// `monitord.snapshot`.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -138,6 +216,7 @@ pub struct Snapshot {
     pub disks: Vec<Disk>,
     pub filesystems: Vec<Filesystem>,
     pub net: Vec<Interface>,
+    pub tcp: Tcp,
 }
 
 /// One row of `monitord.processes`.
@@ -249,7 +328,7 @@ impl Column {
 /// The performance page's sections: `cpu`, `memory`, `disk:<name>`,
 /// `net:<name>`.
 pub fn sections(snapshot: Option<&Snapshot>) -> Vec<String> {
-    let mut out = vec!["cpu".to_owned(), "memory".to_owned()];
+    let mut out = vec!["cpu".to_owned(), "memory".to_owned(), "tcp".to_owned()];
     if let Some(s) = snapshot {
         out.extend(s.disks.iter().map(|d| format!("disk:{}", d.name)));
         out.extend(s.net.iter().map(|i| format!("net:{}", i.name)));
@@ -313,7 +392,7 @@ pub fn describe() -> Value {
         {"name":"monitor.quit","description":"Close the window","read_only":false},
         {"name":"monitor.node","args":{"node":"a mesh node name, or null for this node"},"description":"Watch another node's monitord, or this node's","read_only":false},
         {"name":"monitor.tab","args":{"tab":"processes or performance"},"description":"Show a page","read_only":false},
-        {"name":"monitor.section","args":{"section":"cpu, memory, disk:<name> or net:<name>"},"description":"Show one section of the performance page","read_only":false},
+        {"name":"monitor.section","args":{"section":"cpu, memory, tcp, disk:<name> or net:<name>"},"description":"Show one section of the performance page","read_only":false},
         {"name":"monitor.sort","args":{"column":"name, pid, user, cpu, memory or io","reverse":"optional bool"},"description":"Sort the process table, as clicking its header does","read_only":false},
         {"name":"monitor.filter","args":{"text":"string"},"description":"Filter the process table by name or command line","read_only":false},
         {"name":"monitor.tree","args":{"on":"bool"},"description":"Show processes as a tree, parents before children","read_only":false},
@@ -390,8 +469,8 @@ mod tests {
         };
         assert_eq!(
             sections(Some(&s)),
-            ["cpu", "memory", "disk:sda", "net:eth0"]
+            ["cpu", "memory", "tcp", "disk:sda", "net:eth0"]
         );
-        assert_eq!(sections(None), ["cpu", "memory"]);
+        assert_eq!(sections(None), ["cpu", "memory", "tcp"]);
     }
 }

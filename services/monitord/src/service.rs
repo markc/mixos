@@ -51,6 +51,11 @@ pub const COMMANDS: &[Command] = &[
         summary: "The history series monitord holds, live (last ten minutes) and stored",
     },
     Command {
+        name: "monitord.connections",
+        args: &["limit", "sort", "state", "port"],
+        summary: "Live TCP peers, rates, RTT, retransmits and owning user; no connection history",
+    },
+    Command {
         name: "monitord.history",
         args: &["series", "from", "since", "to", "max_points"],
         summary: "History of named series as [time, avg, min, max] points, from memory or the database",
@@ -105,6 +110,13 @@ pub async fn dispatch(
         }
         "monitord.processes" => processes(engine, args(body)?).await,
         "monitord.process" => process(engine, args(body)?).await,
+        "monitord.connections" => {
+            let query: crate::connections::Query = args(body)?;
+            query.validate().map_err(bad)?;
+            let table = engine.connections.get().await.map_err(failed)?;
+            let (rows, total) = crate::connections::select(&table, &query);
+            Ok(json!({"ts":sampler::now_unix(), "total":total, "count":rows.len(), "rows":rows}))
+        }
         "monitord.series" => Ok(json!({
             "live": engine.live_names(),
             "stored": engine.stored_names(),
@@ -134,6 +146,7 @@ pub fn status(engine: &Engine) -> Value {
         "interval_s": engine.interval.as_secs_f64(),
         "root": engine.root.path(),
         "process_sampler": engine.process_sampler(),
+        "connection_sampler": engine.connections.status(),
         "history": engine.history_status(),
     })
 }

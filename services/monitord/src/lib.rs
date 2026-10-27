@@ -9,6 +9,7 @@
 pub mod action;
 pub mod bus_loop;
 pub mod cli;
+pub mod connections;
 pub mod engine;
 pub mod history;
 pub mod kernel;
@@ -36,6 +37,7 @@ pub struct ServeConfig {
 pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
     let engine = engine::Engine::new(config.engine);
     let sampling = tokio::spawn(engine::run(engine.clone()));
+    let connections = tokio::spawn(connections::run(engine.connections.clone()));
     let bus = config.noded_url.map(|url| {
         let engine = engine.clone();
         tokio::spawn(async move {
@@ -55,6 +57,7 @@ pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
         _ = sigint.recv() => {}
     }
     sampling.abort();
+    connections.abort();
     if let Some(bus) = bus {
         bus.abort();
     }

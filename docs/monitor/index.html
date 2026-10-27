@@ -259,6 +259,21 @@ interface its receive and send rates.</li>
 <li><strong>Node:</strong> the chooser in the tool bar lists this node and the mesh peers.
 Choosing one reads that node's monitord as <code>monitord.&lt;node&gt;.bus</code>. The
 graphs start full: Monitor asks monitord for the last minute first.</li>
+<li><strong>TCP:</strong> a Performance entry with a segments in/out sparkline. Its page
+has four interactive charts: segments in/out, retransmits per second,
+established connections, and active/passive opens plus sent/established
+resets per second. Hovering the retransmit chart also shows retransmits
+divided by sent segments as a percentage for that interval; no sent
+segments or a missing counter makes the percentage unavailable.
+The top 20 connections by throughput show remote endpoint, local port,
+state, receive/send bytes per second, RTT, lifetime retransmits and owning
+user. Monitor calls <code>monitord.connections</code> only while this page is selected,
+once a second unless paused. A cold read takes about a second to establish
+real rates; errors and unavailable values are shown explicitly. The same
+node chooser selects a remote host's TCP page and peers. Sockstat counts
+below the charts are live only. Connection details are never history.
+Peer addresses and users are open on the Bus, like <code>ss</code>; see
+<a href="/monitord/#monitordconnections">monitord's privacy note</a>.</li>
 </ul>
 <p>Monitor reads once a second. Pause (Ctrl+P) holds the readings still;
 Refresh (Ctrl+R) reads once.</p>
@@ -291,7 +306,7 @@ is shown. Acting on another node, or as another user, is
 <tr><td><code>monitor.rows</code></td><td>—</td><td>The process rows in the order shown</td></tr>
 <tr><td><code>monitor.node</code></td><td><code>node</code> (a name, or null for this node)</td><td>Watch another node</td></tr>
 <tr><td><code>monitor.tab</code></td><td><code>tab</code> (<code>processes</code> or <code>performance</code>)</td><td>Show a page</td></tr>
-<tr><td><code>monitor.section</code></td><td><code>section</code> (<code>cpu</code>, <code>memory</code>, <code>disk:&lt;name&gt;</code>, <code>net:&lt;name&gt;</code>)</td><td>Show one performance section</td></tr>
+<tr><td><code>monitor.section</code></td><td><code>section</code> (<code>cpu</code>, <code>memory</code>, <code>tcp</code>, <code>disk:&lt;name&gt;</code>, <code>net:&lt;name&gt;</code>)</td><td>Show one performance section</td></tr>
 <tr><td><code>monitor.sort</code></td><td><code>column</code>, optional <code>reverse</code></td><td>Sort the table</td></tr>
 <tr><td><code>monitor.filter</code></td><td><code>text</code></td><td>Filter the table</td></tr>
 <tr><td><code>monitor.tree</code></td><td><code>on</code></td><td>Tree or flat</td></tr>

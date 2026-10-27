@@ -224,3 +224,13 @@ async fn status_names_the_component_and_its_database() {
     let unknown = dispatch(&engine, "monitord.reboot", &json!({})).await;
     assert_eq!(unknown.unwrap_err()["error_code"], "UNKNOWN_COMMAND");
 }
+
+#[tokio::test]
+async fn connections_reject_unknown_arguments_before_sampling() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path()).await;
+    for body in [json!({"sort":"cpu"}), json!({"state":"oops"}), json!({"port":65536}), json!({"filter":"oops"})] {
+        assert_eq!(dispatch(&e, "monitord.connections", &body).await.unwrap_err()["status"], "bad_request");
+    }
+    assert_eq!(ok(&e,"monitord.status",json!({})).await["connection_sampler"]["active"],false);
+}

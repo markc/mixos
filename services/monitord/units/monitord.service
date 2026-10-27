@@ -29,8 +29,8 @@ ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
 NoNewPrivileges=yes
-# Unix sockets and loopback inet for the Bus broker.
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Unix/inet for the Bus broker; unprivileged inet_diag for TCP peers.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes

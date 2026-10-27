@@ -49,6 +49,7 @@ pub struct Engine {
     store_error: Mutex<Option<String>>,
     procs: Mutex<Procs>,
     users: Mutex<(Users, Instant)>,
+    pub connections: Arc<crate::connections::Sampler>,
 }
 
 impl Engine {
@@ -78,6 +79,7 @@ impl Engine {
             store_error: Mutex::new(store_error),
             procs: Mutex::new(Procs::default()),
             users: Mutex::new((Users::read(&root), Instant::now())),
+            connections: crate::connections::Sampler::new(root.clone(), config.interval),
             root,
         })
     }

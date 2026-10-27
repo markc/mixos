@@ -9,7 +9,7 @@
 //! a reply whose ticket is not the one in flight for its kind is dropped, so
 //! a late answer from a node Monitor stopped watching never lands.
 use crate::history::{Rings, SEEDED, WINDOW};
-use crate::model::{self, APP_ID, Column, Processes, Snapshot, Tab};
+use crate::model::{self, APP_ID, Column, Processes, Connections, Snapshot, Tab};
 use design::{CaptionSide, Mode, RequestedDecorations as Decorations, Scheme, Style};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -25,6 +25,7 @@ pub enum Fetch {
     Processes,
     History,
     Peers,
+    Connections,
 }
 
 /// A signal the local process actions send.
@@ -238,6 +239,8 @@ pub struct Engine {
     pub ui: UiState,
     pub snapshot: Option<Snapshot>,
     pub processes: Option<Processes>,
+    pub connections: Option<Connections>,
+    pub connections_error: Option<String>,
     pub rings: Rings,
     /// The mesh nodes Monitor can watch, besides this one.
     pub peers: Vec<String>,
@@ -261,6 +264,8 @@ impl Engine {
             ui: UiState::default(),
             snapshot: None,
             processes: None,
+            connections: None,
+            connections_error: None,
             rings: Rings::default(),
             peers: Vec::new(),
             status: label("connecting"),
@@ -333,6 +338,7 @@ impl Engine {
     /// Forget an in-flight fetch: its reply, when it comes, is dropped.
     fn cancel(&mut self, kind: Fetch) {
         self.inflight.remove(&kind);
+        self.effects.retain(|e| !matches!(e, Effect::Fetch { kind: k, .. } if *k == kind));
     }
 
     /// The `monitord.processes` body for the table as it is set.
@@ -365,6 +371,19 @@ impl Engine {
         if self.ui.tab == Tab::Processes {
             let query = self.query();
             self.fetch(Fetch::Processes, "monitord.processes", query);
+        }
+        self.poll_connections();
+    }
+
+    fn tcp_visible(&self) -> bool {
+        self.ui.tab == Tab::Performance && self.ui.section == "tcp"
+    }
+
+    fn poll_connections(&mut self) {
+        if self.tcp_visible() {
+            self.fetch(Fetch::Connections, "monitord.connections", json!({"limit":20,"sort":"throughput"}));
+        } else {
+            self.cancel(Fetch::Connections);
         }
     }
 
@@ -412,6 +431,19 @@ impl Engine {
                 Err(error) => self.unreachable(error.to_string()),
             },
             (Fetch::History, Ok(value)) => self.rings.seed(&value),
+            (Fetch::Connections, result) => {
+                match result.and_then(|v| serde_json::from_value::<Connections>(v).map_err(|e| e.to_string())) {
+                    Ok(mut table) => {
+                        table.rows.truncate(20);
+                        self.connections = Some(table);
+                        self.connections_error = None;
+                    }
+                    Err(error) => {
+                        self.connections = None;
+                        self.connections_error = Some(error);
+                    }
+                }
+            }
             (Fetch::Peers, Ok(value)) => self.peers = model::peers(&value),
             // No history yet, or no mesh: the graphs fill live, the node
             // list stays as it was.
@@ -461,11 +493,13 @@ impl Engine {
         self.ui.node = node;
         self.snapshot = None;
         self.processes = None;
+        self.connections = None;
+        self.connections_error = None;
         self.rings.clear();
         self.error = None;
         self.ui.selected = None;
         self.status = self.label("connecting");
-        for kind in [Fetch::Snapshot, Fetch::Processes, Fetch::History] {
+        for kind in [Fetch::Snapshot, Fetch::Processes, Fetch::History, Fetch::Connections] {
             self.cancel(kind);
         }
         self.watch();
@@ -477,6 +511,7 @@ impl Engine {
             return;
         }
         self.ui.tab = tab;
+        if !self.ui.paused || !self.tcp_visible() { self.poll_connections(); }
         if tab == Tab::Processes && !self.ui.paused {
             let query = self.query();
             self.fetch(Fetch::Processes, "monitord.processes", query);
@@ -499,6 +534,7 @@ impl Engine {
             return Err(self.label("invalid-section"));
         }
         self.ui.section = section.to_owned();
+        if !self.ui.paused || !self.tcp_visible() { self.poll_connections(); }
         Ok(())
     }
 
@@ -640,7 +676,7 @@ impl Engine {
 
     pub fn focus_filter(&mut self) {
         if self.ui.dialog.is_none() {
-            self.ui.tab = Tab::Processes;
+            self.set_tab(Tab::Processes);
             self.ui.focus_filter = true;
         }
     }
@@ -1083,6 +1119,45 @@ mod tests {
 
     fn label(key: &str) -> String {
         key.to_owned()
+    }
+
+    #[test]
+    fn connections_only_poll_on_tcp_and_discard_late_page_and_node_replies() {
+        let mut e = ready();
+        assert!(!fetches(&mut e).contains_key(&Fetch::Connections));
+        e.set_section("tcp").unwrap();
+        assert!(!fetches(&mut e).contains_key(&Fetch::Connections));
+        e.set_tab(Tab::Performance);
+        let f = fetches(&mut e);
+        let old = f[&Fetch::Connections].0;
+        assert_eq!(f[&Fetch::Connections].1, "monitord");
+        assert_eq!(f[&Fetch::Connections].2, json!({"limit":20,"sort":"throughput"}));
+        e.set_section("cpu").unwrap();
+        e.fetched(Fetch::Connections, old, Ok(json!({"rows":[{}]})));
+        assert!(e.connections.is_none());
+        e.tick();
+        assert!(!fetches(&mut e).contains_key(&Fetch::Connections));
+        e.set_section("tcp").unwrap();
+        let old = fetches(&mut e)[&Fetch::Connections].0;
+        e.set_node(Some("beta".into())).unwrap();
+        let f = fetches(&mut e);
+        assert_eq!(f[&Fetch::Connections].1, "monitord.beta.bus");
+        e.fetched(Fetch::Connections, old, Ok(json!({"rows":[{}]})));
+        assert!(e.connections.is_none());
+        e.fetched(Fetch::Connections, f[&Fetch::Connections].0, Ok(json!({"rows":[{"remote":"192.0.2.1","remote_port":443}]})));
+        assert_eq!(e.connections.as_ref().unwrap().rows[0].peer(), "192.0.2.1:443");
+        e.toggle_pause();
+        e.tick();
+        assert!(!fetches(&mut e).contains_key(&Fetch::Connections));
+        e.refresh();
+        assert!(fetches(&mut e).contains_key(&Fetch::Connections));
+        e.set_tab(Tab::Processes);
+        e.tick();
+        assert!(!fetches(&mut e).contains_key(&Fetch::Connections));
+        e.toggle_pause();
+        e.set_tab(Tab::Performance);
+        e.set_section("memory").unwrap();
+        assert!(!fetches(&mut e).contains_key(&Fetch::Connections), "cancel even a queued TCP request before shell sees it");
     }
 
     /// The tickets of the queued fetches, by kind.

@@ -3,7 +3,7 @@
 //! System-wide sampling: two readings of the kernel's counters become one
 //! snapshot of rates and percentages, and a flat list of named series for
 //! history.
-use crate::kernel::{self, Root, cpu, disk, load, memory, net, pressure};
+use crate::kernel::{self, Root, cpu, disk, load, memory, net, pressure, tcp};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -15,6 +15,7 @@ pub struct Reading {
     pub stat: cpu::Stat,
     pub disks: Vec<(String, disk::Counters)>,
     pub net: Vec<(String, net::Counters)>,
+    pub tcp: tcp::Reading,
 }
 
 pub fn read(root: &Root) -> Reading {
@@ -26,6 +27,7 @@ pub fn read(root: &Root) -> Reading {
             .unwrap_or_default(),
         disks: disk::disks(root),
         net: net::interfaces(root),
+        tcp: tcp::read(root),
     }
 }
 
@@ -102,6 +104,7 @@ pub struct Snapshot {
     pub disks: Vec<Disk>,
     pub filesystems: Vec<disk::Filesystem>,
     pub net: Vec<Interface>,
+    pub tcp: tcp::Tcp,
 }
 
 pub fn now_unix() -> f64 {
@@ -235,6 +238,7 @@ pub fn snapshot(root: &Root, fixed: &mut Fixed, before: &Reading, after: &Readin
         disks,
         filesystems: disk::filesystems(root),
         net,
+        tcp: tcp::snapshot(&before.tcp, &after.tcp, dt),
     }
 }
 
@@ -293,6 +297,10 @@ pub fn series(s: &Snapshot) -> Vec<(String, f64, bool)> {
         put(format!("net.{}.rx", i.name), i.rx_bps, true);
         put(format!("net.{}.tx", i.name), i.tx_bps, true);
     }
+    for ((name, _), value) in tcp::FIELDS.iter().zip(s.tcp.rates()) {
+        put(format!("tcp.{name}"), value, true);
+    }
+    put("tcp.established".into(), s.tcp.established.map(|v| v as f64), true);
     out
 }
 
@@ -317,4 +325,45 @@ pub fn summary(s: &Snapshot) -> serde_json::Value {
         },
         "tasks": s.tasks.total,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::history::{Store, Live, Retention, Tier};
+
+    #[test]
+    fn tcp_exactly_eleven_durable_series_roll_up_with_extrema_and_no_sockstat() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Root::new(dir.path());
+        let mut fixed = Fixed::read(&root);
+        let mut before = read(&root);
+        for (_, key) in tcp::FIELDS { before.tcp.counters.insert(key.into(), 100); }
+        let mut after = before.clone();
+        after.at += std::time::Duration::from_secs(2);
+        for (_, key) in tcp::FIELDS { after.tcp.counters.insert(key.into(), 120); }
+        after.tcp.counters.insert("CurrEstab".into(), 7);
+        after.tcp.sockstat = tcp::sockstat("TCP: inuse 9 orphan 1 tw 2 alloc 10 mem 20");
+        let s = snapshot(&root, &mut fixed, &before, &after);
+        assert_eq!(s.tcp.rates(), [Some(10.0); 10]);
+        let values: Vec<_> = series(&s).into_iter().filter(|(n,_,_)| n.starts_with("tcp.")).collect();
+        assert_eq!(values.len(), 11);
+        assert!(values.iter().all(|(_,_,durable)| *durable));
+        assert!(values.iter().all(|(n,_,_)| !n.contains("sockstat")));
+        let mut live = Live::default();
+        let mut store = Store::open(&dir.path().join("history.db"), Retention::default()).unwrap();
+        for (t, multiplier) in [(7200.0, 1.0), (7201.0, 3.0), (10800.0, 1.0)] {
+            let values: Vec<_> = values.iter().map(|(n,v,d)| (n.clone(),v*multiplier,*d)).collect();
+            live.push(t, &values);
+            store.add(t, &values).unwrap();
+        }
+        for (name, value, _) in &values {
+            for tier in [Tier::Minute, Tier::Hour] {
+                let points = store.query(tier, name, 7200, 10799, tier.seconds()).unwrap();
+                assert_eq!(points, vec![[7200.0, value*2.0, *value, value*3.0]]);
+            }
+            assert_eq!(live.query(name, 10800.0, 10800.0, 1)[0][1], *value);
+        }
+        assert_eq!(snapshot(&root, &mut fixed, &read(&root), &after).tcp.in_segs, None);
+    }
 }

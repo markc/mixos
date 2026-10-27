@@ -26,6 +26,21 @@ watched from one that has one. The reasons are in the
 - **Node:** the chooser in the tool bar lists this node and the mesh peers.
   Choosing one reads that node's monitord as `monitord.<node>.bus`. The
   graphs start full: Monitor asks monitord for the last minute first.
+- **TCP:** a Performance entry with a segments in/out sparkline. Its page
+  has four interactive charts: segments in/out, retransmits per second,
+  established connections, and active/passive opens plus sent/established
+  resets per second. Hovering the retransmit chart also shows retransmits
+  divided by sent segments as a percentage for that interval; no sent
+  segments or a missing counter makes the percentage unavailable.
+  The top 20 connections by throughput show remote endpoint, local port,
+  state, receive/send bytes per second, RTT, lifetime retransmits and owning
+  user. Monitor calls `monitord.connections` only while this page is selected,
+  once a second unless paused. A cold read takes about a second to establish
+  real rates; errors and unavailable values are shown explicitly. The same
+  node chooser selects a remote host's TCP page and peers. Sockstat counts
+  below the charts are live only. Connection details are never history.
+  Peer addresses and users are open on the Bus, like `ss`; see
+  [monitord's privacy note](../monitord/README.md#monitordconnections).
 
 Monitor reads once a second. Pause (Ctrl+P) holds the readings still;
 Refresh (Ctrl+R) reads once.
@@ -65,7 +80,7 @@ Everything in the window is a command or a command, under `monitor`:
 | `monitor.rows` | — | The process rows in the order shown |
 | `monitor.node` | `node` (a name, or null for this node) | Watch another node |
 | `monitor.tab` | `tab` (`processes` or `performance`) | Show a page |
-| `monitor.section` | `section` (`cpu`, `memory`, `disk:<name>`, `net:<name>`) | Show one performance section |
+| `monitor.section` | `section` (`cpu`, `memory`, `tcp`, `disk:<name>`, `net:<name>`) | Show one performance section |
 | `monitor.sort` | `column`, optional `reverse` | Sort the table |
 | `monitor.filter` | `text` | Filter the table |
 | `monitor.tree` | `on` | Tree or flat |

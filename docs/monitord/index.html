@@ -210,6 +210,7 @@
                     <nav id="toc-nav">
                         <a href="#asking-it">Asking it</a>
                         <a href="#monitordsnapshot" class="toc-h3">monitord.snapshot</a>
+                        <a href="#monitordconnections" class="toc-h3">monitord.connections</a>
                         <a href="#monitordprocesses" class="toc-h3">monitord.processes</a>
                         <a href="#monitordprocess" class="toc-h3">monitord.process</a>
                         <a href="#monitordhistory" class="toc-h3">monitord.history</a>
@@ -266,6 +267,7 @@ gives: <code>error_code</code> <code>UNKNOWN_COMMAND</code>, with <code>message<
 <tr><td><code>monitord.processes</code></td><td><code>sort</code>, <code>reverse</code>, <code>limit</code>, <code>filter</code>, <code>user</code>, <code>tree</code>, <code>kernel_threads</code></td><td>The process table</td></tr>
 <tr><td><code>monitord.process</code></td><td><code>pid</code></td><td>One process in full</td></tr>
 <tr><td><code>monitord.series</code></td><td>—</td><td>The history series held: <code>live</code> and <code>stored</code></td></tr>
+<tr><td><code>monitord.connections</code></td><td><code>limit</code>, <code>sort</code>, <code>state</code>, <code>port</code></td><td>Live TCP peers, throughput, RTT, retransmits and owning user</td></tr>
 <tr><td><code>monitord.history</code></td><td><code>series</code>, <code>from</code> or <code>since</code>, <code>to</code>, <code>max_points</code></td><td>Points for each series</td></tr>
 </tbody></table>
 <p>Unknown body fields are refused, so a typo is an error, not a silent
@@ -292,8 +294,55 @@ with I/O in flight). Loop and RAM devices are left out.</li>
 <code>device</code>, <code>kind</code>, <code>total</code>, <code>used</code>, <code>available</code>.</li>
 <li><code>net</code>: each interface but loopback, with <code>state</code>, <code>physical</code>,
 <code>speed_mbps</code>, <code>rx_bps</code>, <code>tx_bps</code> and the running totals.</li>
+<li><code>tcp</code>: <code>in_segs</code>, <code>out_segs</code>, <code>retrans_segs</code>, <code>in_errs</code>, <code>active_opens</code>,
+<code>passive_opens</code>, <code>out_rsts</code>, <code>estab_resets</code>, <code>listen_overflows</code> and
+<code>listen_drops</code>, all events per second over <code>interval_s</code>; <code>established</code>
+is the current established/close-wait gauge (<code>CurrEstab</code>). <code>sockstat</code>
+holds TCP <code>inuse</code>, <code>orphan</code>, <code>tw</code>, <code>alloc</code> counts and <code>mem</code> (kernel buffer
+pages). These come from <code>/proc/net/snmp</code> (<code>Tcp</code>), <code>/proc/net/netstat</code>
+(<code>TcpExt</code>) and <code>/proc/net/sockstat</code>, with no connection scan.</li>
 </ul>
-<p>A value monitord can't know is <code>null</code>, never zero.</p>
+<p>A value monitord can't know is <code>null</code>, never zero.
+Counter resets or wrap give a null rate for that interval, as do counters
+without a previous sample. The next interval resumes normally.</p>
+<h3 id="monitordconnections"><code>monitord.connections</code></h3>
+<pre><code class="language-text">{"limit":20,"sort":"throughput","state":"established","port":443}
+</code></pre>
+<p>Shows the host's peers, like <code>ss</code>. An unprivileged <code>NETLINK_SOCK_DIAG</code>
+<code>inet_diag</code> dump covers IPv4 and IPv6 sockets in all states and requests
+<code>INET_DIAG_INFO</code> (<code>tcp_info</code>). No new crate or capability is needed: the
+reader uses the existing <code>libc</code> dependency and Linux UAPI byte layouts.</p>
+<ul>
+<li><code>limit</code> defaults to 20 and is clamped to 1–1000.</li>
+<li><code>sort</code>: <code>throughput</code> (rx + tx, default), <code>rx</code>, <code>tx</code>, <code>rtt</code> or
+<code>retransmits</code>, largest first; ties use the socket cookie.</li>
+<li><code>state</code>: optional kernel state name: <code>established</code>, <code>syn-sent</code>,
+<code>syn-recv</code>, <code>fin-wait-1</code>, <code>fin-wait-2</code>, <code>time-wait</code>, <code>close</code>,
+<code>close-wait</code>, <code>last-ack</code>, <code>listen</code>, <code>closing</code> or <code>new-syn-recv</code>.</li>
+<li><code>port</code>: optional port number matching either endpoint.</li>
+</ul>
+<p>The reply has <code>ts</code>, <code>total</code> (matching sockets), <code>count</code> and <code>rows</code>.
+Each row has <code>cookie</code> (the two <code>idiag_cookie</code> words), <code>local</code>, <code>remote</code>
+(IP addresses), <code>local_port</code>, <code>remote_port</code>, <code>ifindex</code>, <code>state</code>, <code>rx_bps</code>,
+<code>tx_bps</code>, <code>rtt_us</code>, <code>retransmits</code> (lifetime <code>tcpi_total_retrans</code>), <code>uid</code>
+and <code>user</code>. The uid is <code>idiag_uid</code>; the name comes from readable
+<code>/etc/passwd</code>, otherwise its numeric uid. There is no process attribution.
+IPv6 addresses stay unbracketed in JSON; the UI brackets peer endpoints.</p>
+<p>Each request holds a separate sampler on for 30 s. A cold request takes two
+dumps one configured sample interval apart (1 s by default). Rates are
+<code>bytes_received</code> and <code>bytes_acked</code> deltas divided by elapsed monotonic time,
+matched by cookie. New sockets, resets and unavailable tcp_info fields have
+null rates. Closed sockets disappear. No summed host TCP byte rate is
+reported because it would miss bytes from closing sockets.</p>
+<p>Nothing per connection is stored in history. The sampler drops idle state
+after its hold expires, caps each dump at 65,536 sockets, each datagram at
+64 KiB and the complete dump at 2 s. Oversized or interrupted dumps fail
+explicitly rather than showing a misleading partial top list.</p>
+<p><strong>Privacy:</strong> peer addresses, ports and users are open to Bus readers,
+including readers on the mesh, just as process command lines are. Watching
+a remote node shows that host's peers. No payloads are read or retained.
+<code>monitord.status.connection_sampler</code> reports activity, cached row count and
+the latest sampling error.</p>
 <h3 id="monitordprocesses"><code>monitord.processes</code></h3>
 <pre><code class="language-text">{"sort":"cpu", "limit":100, "filter":"firefox", "user":"alice", "tree":false}
 </code></pre>
@@ -347,6 +396,15 @@ buckets of <code>step_s</code> seconds so a series has at most <code>max_points<
 <code>load.1</code>, <code>load.5</code>, <code>load.15</code>, <code>psi.&lt;cpu|memory|io&gt;.&lt;some|full&gt;</code>,
 <code>disk.&lt;name&gt;.&lt;read|write|busy&gt;</code> and <code>net.&lt;name&gt;.&lt;rx|tx&gt;</code>, plus, in memory
 only, <code>cpu.core.&lt;n&gt;.busy</code> and <code>cpu.core.&lt;n&gt;.mhz</code>.</p>
+<p>TCP adds exactly these stored series to all three tiers (average, minimum,
+maximum): <code>tcp.in_segs</code>, <code>tcp.out_segs</code>, <code>tcp.retrans_segs</code>, <code>tcp.in_errs</code>,
+<code>tcp.active_opens</code>, <code>tcp.passive_opens</code>, <code>tcp.out_rsts</code>, <code>tcp.estab_resets</code>,
+<code>tcp.listen_overflows</code>, <code>tcp.listen_drops</code> (rates/s) and <code>tcp.established</code>
+(gauge). Sockstat counts appear only in the live snapshot. Retransmit
+percentages are computed by Monitor from the two rate series, never stored.</p>
+<p>Reader references: the kernel's <a href="https://docs.kernel.org/networking/snmp_counter.html">SNMP counter documentation</a>
+and the Linux UAPI headers <code>linux/inet_diag.h</code>, <code>linux/netlink.h</code> and
+<code>linux/tcp.h</code>.</p>
 <h3 id="the-summary-topic">The summary topic</h3>
 <p>Every 5 seconds monitord publishes a small retained summary on
 <code>monitord.summary</code>: host, CPU busy and core count, memory, swap, load, total
@@ -382,9 +440,10 @@ when it comes back.</p>
 <h2 id="testing">Testing</h2>
 <pre><code class="language-text">cargo test -p monitord
 </code></pre>
-<p>The kernel readers take the text of each file, and the command tests run
-against a fixture <code>/proc</code> and <code>/sys</code> tree, so no test needs a real host or
-a broker.</p>
+<p>The kernel readers take fixture text, and command tests use fixture
+<code>/proc</code> and <code>/sys</code> trees. Netlink encode/decode tests use captured,
+neutralised wire fixtures; a separate unprivileged test dumps its own
+loopback TCP sockets on the build worker. No test needs a broker.</p>
         </article>
         <p class="doc-source"><a href="/monitord/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

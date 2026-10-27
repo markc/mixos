@@ -37,6 +37,7 @@ gives: `error_code` `UNKNOWN_COMMAND`, with `message` and `command`.
 | `monitord.processes` | `sort`, `reverse`, `limit`, `filter`, `user`, `tree`, `kernel_threads` | The process table |
 | `monitord.process` | `pid` | One process in full |
 | `monitord.series` | — | The history series held: `live` and `stored` |
+| `monitord.connections` | `limit`, `sort`, `state`, `port` | Live TCP peers, throughput, RTT, retransmits and owning user |
 | `monitord.history` | `series`, `from` or `since`, `to`, `max_points` | Points for each series |
 
 Unknown body fields are refused, so a typo is an error, not a silent
@@ -65,8 +66,62 @@ Sizes are bytes; rates are per second.
   `device`, `kind`, `total`, `used`, `available`.
 - `net`: each interface but loopback, with `state`, `physical`,
   `speed_mbps`, `rx_bps`, `tx_bps` and the running totals.
+- `tcp`: `in_segs`, `out_segs`, `retrans_segs`, `in_errs`, `active_opens`,
+  `passive_opens`, `out_rsts`, `estab_resets`, `listen_overflows` and
+  `listen_drops`, all events per second over `interval_s`; `established`
+  is the current established/close-wait gauge (`CurrEstab`). `sockstat`
+  holds TCP `inuse`, `orphan`, `tw`, `alloc` counts and `mem` (kernel buffer
+  pages). These come from `/proc/net/snmp` (`Tcp`), `/proc/net/netstat`
+  (`TcpExt`) and `/proc/net/sockstat`, with no connection scan.
 
 A value monitord can't know is `null`, never zero.
+Counter resets or wrap give a null rate for that interval, as do counters
+without a previous sample. The next interval resumes normally.
+
+### `monitord.connections`
+
+```text
+{"limit":20,"sort":"throughput","state":"established","port":443}
+```
+
+Shows the host's peers, like `ss`. An unprivileged `NETLINK_SOCK_DIAG`
+`inet_diag` dump covers IPv4 and IPv6 sockets in all states and requests
+`INET_DIAG_INFO` (`tcp_info`). No new crate or capability is needed: the
+reader uses the existing `libc` dependency and Linux UAPI byte layouts.
+
+- `limit` defaults to 20 and is clamped to 1–1000.
+- `sort`: `throughput` (rx + tx, default), `rx`, `tx`, `rtt` or
+  `retransmits`, largest first; ties use the socket cookie.
+- `state`: optional kernel state name: `established`, `syn-sent`,
+  `syn-recv`, `fin-wait-1`, `fin-wait-2`, `time-wait`, `close`,
+  `close-wait`, `last-ack`, `listen`, `closing` or `new-syn-recv`.
+- `port`: optional port number matching either endpoint.
+
+The reply has `ts`, `total` (matching sockets), `count` and `rows`.
+Each row has `cookie` (the two `idiag_cookie` words), `local`, `remote`
+(IP addresses), `local_port`, `remote_port`, `ifindex`, `state`, `rx_bps`,
+`tx_bps`, `rtt_us`, `retransmits` (lifetime `tcpi_total_retrans`), `uid`
+and `user`. The uid is `idiag_uid`; the name comes from readable
+`/etc/passwd`, otherwise its numeric uid. There is no process attribution.
+IPv6 addresses stay unbracketed in JSON; the UI brackets peer endpoints.
+
+Each request holds a separate sampler on for 30 s. A cold request takes two
+dumps one configured sample interval apart (1 s by default). Rates are
+`bytes_received` and `bytes_acked` deltas divided by elapsed monotonic time,
+matched by cookie. New sockets, resets and unavailable tcp_info fields have
+null rates. Closed sockets disappear. No summed host TCP byte rate is
+reported because it would miss bytes from closing sockets.
+
+Nothing per connection is stored in history. The sampler drops idle state
+after its hold expires, caps each dump at 65,536 sockets, each datagram at
+64 KiB and the complete dump at 2 s. Oversized or interrupted dumps fail
+explicitly rather than showing a misleading partial top list.
+
+**Privacy:** peer addresses, ports and users are open to Bus readers,
+including readers on the mesh, just as process command lines are. Watching
+a remote node shows that host's peers. No payloads are read or retained.
+`monitord.status.connection_sampler` reports activity, cached row count and
+the latest sampling error.
 
 ### `monitord.processes`
 
@@ -133,6 +188,17 @@ The series are `cpu.busy`, `cpu.user`, `cpu.system`, `cpu.iowait`,
 `disk.<name>.<read|write|busy>` and `net.<name>.<rx|tx>`, plus, in memory
 only, `cpu.core.<n>.busy` and `cpu.core.<n>.mhz`.
 
+TCP adds exactly these stored series to all three tiers (average, minimum,
+maximum): `tcp.in_segs`, `tcp.out_segs`, `tcp.retrans_segs`, `tcp.in_errs`,
+`tcp.active_opens`, `tcp.passive_opens`, `tcp.out_rsts`, `tcp.estab_resets`,
+`tcp.listen_overflows`, `tcp.listen_drops` (rates/s) and `tcp.established`
+(gauge). Sockstat counts appear only in the live snapshot. Retransmit
+percentages are computed by Monitor from the two rate series, never stored.
+
+Reader references: the kernel's [SNMP counter documentation](https://docs.kernel.org/networking/snmp_counter.html)
+and the Linux UAPI headers `linux/inet_diag.h`, `linux/netlink.h` and
+`linux/tcp.h`.
+
 ### The summary topic
 
 Every 5 seconds monitord publishes a small retained summary on
@@ -181,6 +247,7 @@ when it comes back.
 cargo test -p monitord
 ```
 
-The kernel readers take the text of each file, and the command tests run
-against a fixture `/proc` and `/sys` tree, so no test needs a real host or
-a broker.
+The kernel readers take fixture text, and command tests use fixture
+`/proc` and `/sys` trees. Netlink encode/decode tests use captured,
+neutralised wire fixtures; a separate unprivileged test dumps its own
+loopback TCP sockets on the build worker. No test needs a broker.

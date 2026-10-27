@@ -239,15 +239,32 @@
 </blockquote>
 <h2 id="010-draft">0.1.0 (draft)</h2>
 <ul>
-<li>Read commands <code>monitord.status</code>, <code>monitord.snapshot</code>, <code>monitord.processes</code>,
+<li>
+<p>Add system-wide TCP snapshot and eleven durable rate/gauge history series;
+sockstat counts stay in the live snapshot.</p>
+</li>
+<li>
+<p>Add <code>monitord.connections</code>: unprivileged IPv4/IPv6 inet_diag, live rates,
+RTT, retransmits and owning user, on request with a 30 s hold. Peer
+addresses are open on the Bus. No connection history or capability.</p>
+</li>
+<li>
+<p>Read commands <code>monitord.status</code>, <code>monitord.snapshot</code>, <code>monitord.processes</code>,
 <code>monitord.process</code>, <code>monitord.series</code> and <code>monitord.history</code>, all
-queries.</li>
-<li>Retained topic <code>monitord.summary</code>, every 5 s.</li>
-<li>History: every sample for 10 minutes in memory; minute rollups for 7 days
+queries.</p>
+</li>
+<li>
+<p>Retained topic <code>monitord.summary</code>, every 5 s.</p>
+</li>
+<li>
+<p>History: every sample for 10 minutes in memory; minute rollups for 7 days
 and hour rollups for a year in SQLite (<code>/var/lib/monitord/history.db</code>,
-schema 1).</li>
-<li>Command line: <code>serve</code>, <code>snapshot</code>, <code>ps</code>, <code>history</code>, and the local actions
-<code>signal</code> and <code>renice</code>, which run as the caller.</li>
+schema 1).</p>
+</li>
+<li>
+<p>Command line: <code>serve</code>, <code>snapshot</code>, <code>ps</code>, <code>history</code>, and the local actions
+<code>signal</code> and <code>renice</code>, which run as the caller.</p>
+</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/monitord/changelog.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

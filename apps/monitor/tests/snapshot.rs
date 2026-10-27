@@ -37,6 +37,9 @@ fn snapshot(cores: usize, busy: f64) -> Value {
                          "total": 1_000_000_000_000u64, "used": 412_000_000_000u64}],
         "net": [{"name": "eth0", "state": "up", "physical": true, "speed_mbps": 1000,
                  "rx_bps": 310_000.0, "tx_bps": 42_000.0, "rx_bytes": 9_876_543_210u64, "tx_bytes": 1_234_567_890u64}],
+        "tcp": {"in_segs":1800.0, "out_segs":1200.0, "retrans_segs":12.0,
+            "established":42, "active_opens":4.0, "passive_opens":8.0, "out_rsts":2.0, "estab_resets":1.0,
+            "sockstat":{"inuse":48,"orphan":1,"tw":16,"alloc":52,"mem":280}},
     })
 }
 
@@ -100,6 +103,14 @@ fn engine(cores: usize, rows: usize, tab: Tab) -> Engine {
         series("disk.nvme0n1.write", 1.5, 0.0, 1.0e6),
         series("net.eth0.rx", 0.2, 1.0e4, 6.0e5),
         series("net.eth0.tx", 2.2, 1.0e3, 9.0e4),
+        series("tcp.in_segs", 0.5, 200.0, 2000.0),
+        series("tcp.out_segs", 1.0, 100.0, 1500.0),
+        series("tcp.retrans_segs", 2.0, 0.0, 30.0),
+        series("tcp.established", 0.0, 25.0, 60.0),
+        series("tcp.active_opens", 1.0, 0.0, 10.0),
+        series("tcp.passive_opens", 2.0, 0.0, 20.0),
+        series("tcp.out_rsts", 3.0, 0.0, 5.0),
+        series("tcp.estab_resets", 4.0, 0.0, 3.0),
     ] {
         seeded.insert(name, values);
     }
@@ -124,6 +135,16 @@ fn engine(cores: usize, rows: usize, tab: Tab) -> Engine {
         Ok(json!({"node": "alpha", "peers": [{"name": "beta"}, {"name": "gamma"}]})),
     );
     e.set_tab(tab);
+    e.connections = Some(serde_json::from_value(json!({"total":42, "count":20,
+        "rows":(0..20).map(|i| json!({
+            "cookie":[i,0], "local":"192.0.2.1", "local_port":443,
+            "remote":if i == 0 {"2001:db8::2".into()} else {format!("198.51.100.{}",i+1)},
+            "remote_port":45000+i,"state":if i == 2 {"listen"} else {"established"},
+            "rx_bps":if i == 2 {Value::Null} else {json!(300000.0/(i+1) as f64)},
+            "tx_bps":if i == 2 {Value::Null} else {json!(42000.0/(i+1) as f64)},
+            "rtt_us":if i == 2 {Value::Null} else {json!(1500+i*200)},
+            "retransmits":if i == 2 {Value::Null} else {json!(i)}, "user":if i == 1 {"1001"} else {"alice"}
+        })).collect::<Vec<_>>() })).unwrap());
     e.take_effects();
     e
 }
@@ -226,6 +247,33 @@ fn performance_net_light() {
         Some("net:eth0"),
         None,
     );
+}
+
+#[test]
+fn performance_tcp_dark() {
+    render(dark(), "performance_tcp_dark", engine(4,10,Tab::Performance), Some("tcp"), None);
+}
+
+#[test]
+fn performance_tcp_light() {
+    render(light(), "performance_tcp_light", engine(4,10,Tab::Performance), Some("tcp"), None);
+}
+
+#[test]
+fn tcp_page_exposes_charts_and_connections_in_both_themes() {
+    use egui_kittest::kittest::Queryable;
+    for theme in [dark(),light()] {
+        let mut engine = engine(4,10,Tab::Performance);
+        engine.set_section("tcp").unwrap();
+        let registry = actions::registry();
+        let strings = strings();
+        let mut h = Harness::builder().with_context_setup(move |ctx| toolkit::install(ctx,&theme))
+            .with_size(egui::vec2(1040.0,680.0)).build_ui(move |ui| { view(ui,&engine,&registry,&strings); });
+        h.run();
+        for text in ["Segments in / out", "Established", "Opens and resets per second", "Top 20 connections by throughput"] {
+            assert!(!h.query_all_by_label(text).collect::<Vec<_>>().is_empty(), "{text} missing");
+        }
+    }
 }
 
 #[test]
