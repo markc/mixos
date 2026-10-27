@@ -363,6 +363,11 @@ fn filters_select_standalone_match_or_insert_and_match_files() {
     assert_eq!(f.save_name(b"image"), b"image.png");
     assert_eq!(f.save_name(b"image.jpg"), b"image.jpg");
     assert_eq!(f.save_name(b"\xff"), b"\xff.png");
+    let mut compound = f.clone();
+    compound.patterns = vec!["*.tar.gz".into()];
+    assert_eq!(compound.save_name(b"archive"), b"archive.tar.gz");
+    compound.patterns = vec!["*.p?g".into()];
+    assert_eq!(compound.save_name(b"image"), b"image");
 }
 
 #[test]

@@ -94,7 +94,7 @@ impl Filter {
         if self.patterns.len() == 1
             && let Some(ext) = self.patterns[0].strip_prefix("*.")
             && !ext.is_empty()
-            && !ext.contains(['*', '?', '[', ']', '/', '.'])
+            && !ext.contains(['*', '?', '[', ']', '/'])
             && !name.iter().skip(1).any(|b| *b == b'.')
         {
             let mut name = name.to_vec();
