@@ -258,7 +258,13 @@ pub fn show(ui: &mut Ui, id: impl egui::AsIdSalt, size: Vec2, chart: Chart<'_>) 
     let _ = render(ui, id, size, chart);
 }
 
-pub fn show_titled(ui: &mut Ui, id: impl egui::AsIdSalt, title: &str, size: Vec2, chart: Chart<'_>) {
+pub fn show_titled(
+    ui: &mut Ui,
+    id: impl egui::AsIdSalt,
+    title: &str,
+    size: Vec2,
+    chart: Chart<'_>,
+) {
     let _ = render_custom(ui, id, size, chart, Some(title), None);
 }
 
@@ -287,12 +293,20 @@ fn header_rows(width: f32, title: f32, entries: &[f32], gap: f32) -> Vec<Vec<usi
     let mut rows = vec![Vec::new()];
     let mut remaining = (width - title - gap).max(0.0);
     for (i, entry) in entries.iter().enumerate() {
-        let spacing = if rows.last().unwrap().is_empty() { 0.0 } else { gap };
+        let spacing = if rows.last().unwrap().is_empty() {
+            0.0
+        } else {
+            gap
+        };
         if *entry + spacing > remaining && (!rows.last().unwrap().is_empty() || rows.len() == 1) {
             rows.push(Vec::new());
             remaining = width;
         }
-        let spacing = if rows.last().unwrap().is_empty() { 0.0 } else { gap };
+        let spacing = if rows.last().unwrap().is_empty() {
+            0.0
+        } else {
+            gap
+        };
         rows.last_mut().unwrap().push(i);
         remaining -= entry + spacing;
     }
@@ -301,43 +315,88 @@ fn header_rows(width: f32, title: f32, entries: &[f32], gap: f32) -> Vec<Vec<usi
 
 /// One measured title header. Swatch and text have separate rectangles,
 /// rather than relying on whitespace surviving a widget's text layout.
-fn title_line(ui: &mut Ui, plot_id: egui::Id, title: &str, width: f32,
-    series: &[Series<'_>], hidden: &mut ItemIdSet) {
+fn title_line(
+    ui: &mut Ui,
+    plot_id: egui::Id,
+    title: &str,
+    width: f32,
+    series: &[Series<'_>],
+    hidden: &mut ItemIdSet,
+) {
     let font = egui::TextStyle::Small.resolve(ui.style());
     let height = ui.text_style_height(&egui::TextStyle::Small);
     let swatch = height * 0.4;
     let gap = ui.spacing().item_spacing.x * 0.5;
-    let title = ui.painter().layout_no_wrap(title.to_owned(), font.clone(), ui.visuals().text_color());
-    let entries: Vec<_> = series.iter().filter(|_| series.len() > 1).map(|s| {
-        let colour = if hidden.contains(&ItemId::new(s.name)) { ui.visuals().weak_text_color() } else { graph::tint(ui, s.hue) };
-        (ui.painter().layout_no_wrap(s.legend_label.unwrap_or(s.name).to_owned(), font.clone(), colour), colour)
-    }).collect();
-    let widths: Vec<_> = entries.iter().map(|(g,_)| swatch + gap + g.size().x).collect();
+    let title =
+        ui.painter()
+            .layout_no_wrap(title.to_owned(), font.clone(), ui.visuals().text_color());
+    let entries: Vec<_> = series
+        .iter()
+        .filter(|_| series.len() > 1)
+        .map(|s| {
+            let colour = if hidden.contains(&ItemId::new(s.name)) {
+                ui.visuals().weak_text_color()
+            } else {
+                graph::tint(ui, s.hue)
+            };
+            (
+                ui.painter().layout_no_wrap(
+                    s.legend_label.unwrap_or(s.name).to_owned(),
+                    font.clone(),
+                    colour,
+                ),
+                colour,
+            )
+        })
+        .collect();
+    let widths: Vec<_> = entries
+        .iter()
+        .map(|(g, _)| swatch + gap + g.size().x)
+        .collect();
     let rows = header_rows(width, title.size().x, &widths, gap);
-    let total_height = rows.len() as f32 * height + (rows.len()-1) as f32 * ui.spacing().item_spacing.y;
+    let total_height =
+        rows.len() as f32 * height + (rows.len() - 1) as f32 * ui.spacing().item_spacing.y;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, total_height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
+    let title_rect = egui::Rect::from_min_size(rect.min, title.size()).intersect(rect);
+    ui.interact(title_rect, plot_id.with("title"), egui::Sense::hover())
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, title.text()));
     painter.galley(rect.min, title, ui.visuals().text_color());
     for (row_index, row) in rows.iter().enumerate() {
-        let row_width = row.iter().map(|&i| widths[i]).sum::<f32>() + row.len().saturating_sub(1) as f32 * gap;
+        let row_width =
+            row.iter().map(|&i| widths[i]).sum::<f32>() + row.len().saturating_sub(1) as f32 * gap;
         let mut x = rect.right() - row_width;
         let y = rect.top() + row_index as f32 * (height + ui.spacing().item_spacing.y);
         for &i in row {
-            let entry = egui::Rect::from_min_size(egui::pos2(x,y), egui::vec2(widths[i],height));
+            let entry = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(widths[i], height));
             let visible = !hidden.contains(&ItemId::new(series[i].name));
-            let response = ui.interact(entry.intersect(rect), plot_id.with(series[i].name), egui::Sense::click());
+            let response = ui.interact(
+                entry.intersect(rect),
+                plot_id.with(series[i].name),
+                egui::Sense::click(),
+            );
             if response.hovered() || response.has_focus() {
                 painter.rect_filled(entry, 0.0, ui.visuals().widgets.hovered.bg_fill);
             }
-            let centre = egui::pos2(x + swatch*0.5, entry.center().y);
-            painter.circle_filled(centre, swatch*0.5, entries[i].1);
-            painter.galley(egui::pos2(x+swatch+gap,y), entries[i].0.clone(), entries[i].1);
-            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, visible, series[i].name));
+            let centre = egui::pos2(x + swatch * 0.5, entry.center().y);
+            painter.circle_filled(centre, swatch * 0.5, entries[i].1);
+            painter.galley(
+                egui::pos2(x + swatch + gap, y),
+                entries[i].0.clone(),
+                entries[i].1,
+            );
+            response.widget_info(|| {
+                egui::WidgetInfo::selected(egui::Role::Button, true, visible, series[i].name)
+            });
             let clicked = response.clicked();
             response.on_hover_text(series[i].name);
             if clicked {
                 let id = ItemId::new(series[i].name);
-                if visible { hidden.insert(id); } else { hidden.remove(&id); }
+                if visible {
+                    hidden.insert(id);
+                } else {
+                    hidden.remove(&id);
+                }
             }
             x += widths[i] + gap;
         }
@@ -501,25 +560,25 @@ mod tests {
                 |ui, state: &mut (egui::Rect, ItemIdSet, String)| {
                     let series = [
                         Series {
-                legend_label: None,
+                            legend_label: None,
                             name: "Active opens",
                             hue: Hue::Series(1),
                             values: &[1.0, 2.0],
                         },
                         Series {
-                legend_label: None,
+                            legend_label: None,
                             name: "Passive opens",
                             hue: Hue::Series(2),
                             values: &[3.0, 4.0],
                         },
                         Series {
-                legend_label: None,
+                            legend_label: None,
                             name: "Sent resets",
                             hue: Hue::Series(3),
                             values: &[5.0, 6.0],
                         },
                         Series {
-                legend_label: None,
+                            legend_label: None,
                             name: "Established resets",
                             hue: Hue::Series(4),
                             values: &[7.0, 8.0],
@@ -533,7 +592,14 @@ mod tests {
                         scale: Scale::Count(10.0),
                         format: vitals::format::percent,
                     };
-                    let output = render_custom(ui, "legend-test", egui::vec2(360.0, 150.0), chart, Some("Rates"), None);
+                    let output = render_custom(
+                        ui,
+                        "legend-test",
+                        egui::vec2(360.0, 150.0),
+                        chart,
+                        Some("Rates"),
+                        None,
+                    );
                     state.0 = *output.transform.frame();
                     state.1 = PlotMemory::load(ui.ctx(), id).unwrap().hidden_items;
                     state.2 = readout_at(
@@ -579,51 +645,106 @@ mod tests {
     fn title_legends_keep_labelled_y_ticks_plot_height_and_clear_space_for_swatches() {
         use egui::{Rect, Shape};
         use egui_kittest::{Harness, kittest::Queryable};
-        fn shapes(shape: &Shape, text: &mut Vec<(String,Rect)>, circles: &mut Vec<Rect>) {
+        fn shapes(shape: &Shape, text: &mut Vec<(String, Rect)>, circles: &mut Vec<Rect>) {
             match shape {
-                Shape::Vec(list) => for shape in list { shapes(shape,text,circles); },
-                Shape::Text(t) => text.push((t.galley.text().to_owned(),Rect::from_min_size(t.pos,t.galley.size()))),
-                Shape::Circle(c) => circles.push(Rect::from_center_size(c.center,Vec2::splat(c.radius*2.0))),
-                _ => {},
+                Shape::Vec(list) => {
+                    for shape in list {
+                        shapes(shape, text, circles);
+                    }
+                }
+                Shape::Text(t) => text.push((
+                    t.galley.text().to_owned(),
+                    Rect::from_min_size(t.pos, t.galley.size()),
+                )),
+                Shape::Circle(c) => circles.push(Rect::from_center_size(
+                    c.center,
+                    Vec2::splat(c.radius * 2.0),
+                )),
+                _ => {}
             }
         }
-        for theme in [toolkit::Theme::embedded(), toolkit::Theme::for_context(design::DesignContext::revision_one())] {
+        for theme in [
+            toolkit::Theme::embedded(),
+            toolkit::Theme::for_context(design::DesignContext::revision_one()),
+        ] {
             let mut plain_height: Option<f32> = None;
-            for with_legend in [false,true] {
+            for with_legend in [false, true] {
                 let theme = theme.clone();
                 let mut h = Harness::builder()
-                    .with_context_setup(move |ctx| toolkit::install(ctx,&theme))
-                    .with_size(egui::vec2(400.0,280.0))
-                    .build_ui_state(move |ui, frame| {
-                        let series: Vec<_> = [
-                            ("Active opens","Active"), ("Passive opens","Passive"),
-                            ("Sent resets","Sent"), ("Established resets","Estab."),
-                        ].into_iter().take(if with_legend {4} else {1}).enumerate().map(|(i,(name,short))| Series {
-                            name, legend_label:Some(short), hue:Hue::Series(i+1), values:&[10.0,20.0],
-                        }).collect();
-                        let output = render_custom(ui,"height-test",egui::vec2(360.0,130.0),Chart {
-                            series:&series,samples:60,interval_s:1.0,scale:Scale::Percent,format:vitals::format::percent,
-                        },Some("Rates"),None);
-                        *frame = *output.transform.frame();
-                    },Rect::NOTHING);
+                    .with_context_setup(move |ctx| toolkit::install(ctx, &theme))
+                    .with_size(egui::vec2(400.0, 280.0))
+                    .build_ui_state(
+                        move |ui, frame| {
+                            let series: Vec<_> = [
+                                ("Active opens", "Active"),
+                                ("Passive opens", "Passive"),
+                                ("Sent resets", "Sent"),
+                                ("Established resets", "Estab."),
+                            ]
+                            .into_iter()
+                            .take(if with_legend { 4 } else { 1 })
+                            .enumerate()
+                            .map(|(i, (name, short))| Series {
+                                name,
+                                legend_label: Some(short),
+                                hue: Hue::Series(i + 1),
+                                values: &[10.0, 20.0],
+                            })
+                            .collect();
+                            let output = render_custom(
+                                ui,
+                                "height-test",
+                                egui::vec2(360.0, 130.0),
+                                Chart {
+                                    series: &series,
+                                    samples: 60,
+                                    interval_s: 1.0,
+                                    scale: Scale::Percent,
+                                    format: vitals::format::percent,
+                                },
+                                Some("Rates"),
+                                None,
+                            );
+                            *frame = *output.transform.frame();
+                        },
+                        Rect::NOTHING,
+                    );
                 h.run();
                 let mut text = Vec::new();
                 let mut circles = Vec::new();
-                for shape in &h.output().shapes { shapes(&shape.shape,&mut text,&mut circles); }
-                for label in ["0 %","25 %","50 %","75 %","100 %"] {
-                    assert!(text.iter().any(|(s,_)| s == label), "missing {label} with legend={with_legend}");
+                for shape in &h.output().shapes {
+                    shapes(&shape.shape, &mut text, &mut circles);
+                }
+                for label in ["0 %", "25 %", "50 %", "75 %", "100 %"] {
+                    assert!(
+                        text.iter().any(|(s, _)| s == label),
+                        "missing {label} with legend={with_legend}"
+                    );
                 }
                 if let Some(height) = plain_height {
-                    assert!((h.state().height()-height).abs() < 0.5, "a title legend must not shrink the plot");
-                } else { plain_height = Some(h.state().height()); }
+                    assert!(
+                        (h.state().height() - height).abs() < 0.5,
+                        "a title legend must not shrink the plot"
+                    );
+                } else {
+                    plain_height = Some(h.state().height());
+                }
                 if with_legend {
-                    let title = text.iter().find(|(s,_)| s == "Rates").unwrap().1;
-                    for (name,short) in [("Active opens","Active"),("Passive opens","Passive"),("Sent resets","Sent"),("Established resets","Estab.")] {
+                    let title = text.iter().find(|(s, _)| s == "Rates").unwrap().1;
+                    for (name, short) in [
+                        ("Active opens", "Active"),
+                        ("Passive opens", "Passive"),
+                        ("Sent resets", "Sent"),
+                        ("Established resets", "Estab."),
+                    ] {
                         let hit = h.get_by_label(name).rect();
-                        let label = text.iter().find(|(s,_)| s == short).unwrap().1;
+                        let label = text.iter().find(|(s, _)| s == short).unwrap().1;
                         let swatch = circles.iter().find(|r| hit.contains(r.center())).unwrap();
                         assert!(swatch.right() < label.left(), "swatch overlaps {name}");
-                        assert!((label.top()-title.top()).abs() < 0.5, "legend belongs on the title line");
+                        assert!(
+                            (label.top() - title.top()).abs() < 0.5,
+                            "legend belongs on the title line"
+                        );
                         assert!(label.bottom() < h.state().top());
                     }
                 }
@@ -726,13 +847,13 @@ mod tests {
         let chart = Chart {
             series: &[
                 Series {
-                legend_label: None,
+                    legend_label: None,
                     name: "Receive",
                     hue: Hue::Accent,
                     values: &[1.0, 2.0],
                 },
                 Series {
-                legend_label: None,
+                    legend_label: None,
                     name: "Send",
                     hue: Hue::AccentPlus,
                     values: &[3.0, 4.0],
@@ -865,7 +986,7 @@ mod tests {
                         egui::vec2(600.0, 120.0),
                         Chart {
                             series: &[Series {
-                legend_label: None,
+                                legend_label: None,
                                 name: "sample",
                                 hue: Hue::Accent,
                                 values: &[0.0; 60],
@@ -939,7 +1060,7 @@ mod tests {
                         vec2(600.0, 260.0),
                         Chart {
                             series: &[Series {
-                legend_label: None,
+                                legend_label: None,
                                 name: "CPU",
                                 hue: Hue::Accent,
                                 values: &[20.0; 60],
@@ -1053,7 +1174,7 @@ mod tests {
                                 vec2(580.0, 120.0),
                                 Chart {
                                     series: &[Series {
-                legend_label: None,
+                                        legend_label: None,
                                         name: "CPU",
                                         hue: Hue::Accent,
                                         values: &[20.0; 60],

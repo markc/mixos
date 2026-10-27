@@ -747,13 +747,13 @@ fn disk(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
         Chart {
             series: &[
                 Series {
-                legend_label: None,
+                    legend_label: None,
                     name: &label("read"),
                     hue: Kind::Disk.hue(),
                     values: &read,
                 },
                 Series {
-                legend_label: None,
+                    legend_label: None,
                     name: &label("write"),
                     hue: Hue::AccentPlus,
                     values: &write,
@@ -832,13 +832,13 @@ fn net(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
         Chart {
             series: &[
                 Series {
-                legend_label: None,
+                    legend_label: None,
                     name: &label("receive"),
                     hue: Kind::Net.hue(),
                     values: &rx,
                 },
                 Series {
-                legend_label: None,
+                    legend_label: None,
                     name: &label("send"),
                     hue: Hue::AccentPlus,
                     values: &tx,
@@ -889,13 +889,18 @@ fn tcp_chart(
         .map(|(key, _, _)| engine.rings.get(key))
         .collect();
     let labels: Vec<_> = fields.iter().map(|(_, key, _)| label(key)).collect();
-    let legend_labels: Vec<_> = fields.iter().map(|(_,key,_)| label(match *key {
-        "tcp-active-opens" => "tcp-active-short",
-        "tcp-passive-opens" => "tcp-passive-short",
-        "tcp-out-rsts" => "tcp-rsts-short",
-        "tcp-estab-resets" => "tcp-resets-short",
-        key => key,
-    })).collect();
+    let legend_labels: Vec<_> = fields
+        .iter()
+        .map(|(_, key, _)| {
+            label(match *key {
+                "tcp-active-opens" => "tcp-active-short",
+                "tcp-passive-opens" => "tcp-passive-short",
+                "tcp-out-rsts" => "tcp-rsts-short",
+                "tcp-estab-resets" => "tcp-resets-short",
+                key => key,
+            })
+        })
+        .collect();
     let series: Vec<_> = fields
         .iter()
         .zip(&values)
@@ -917,11 +922,20 @@ fn tcp_chart(
         format: if gauge { count } else { tcp_rate },
     };
     let size = Vec2::new(ui.available_width(), 130.0);
-    let heading = label(if title == "tcp-opens-resets" { "tcp-opens-resets-short" } else {title});
+    let heading = label(if title == "tcp-opens-resets" {
+        "tcp-opens-resets-short"
+    } else {
+        title
+    });
     match annotation {
-        Some(annotation) => {
-            chart::show_annotated(ui, (title, &engine.ui.node), &heading, size, chart, annotation)
-        }
+        Some(annotation) => chart::show_annotated(
+            ui,
+            (title, &engine.ui.node),
+            &heading,
+            size,
+            chart,
+            annotation,
+        ),
         None => chart::show_titled(ui, (title, &engine.ui.node), &heading, size, chart),
     }
 }
