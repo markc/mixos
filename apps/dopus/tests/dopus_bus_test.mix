@@ -299,7 +299,8 @@ try
   -- to act on, every selection-taking file.* row reads disabled;
   -- file.new-folder stays ENABLED (it needs only the idle single-flight
   -- slot — a new folder is exactly what an empty dir is for). Back on
-  -- alpha with a fresh selection, all six read enabled.
+  -- alpha with a fresh selection, all seven read enabled (file.mail too:
+  -- alpha's one entry, a.txt, is a regular file).
   act("nav.switch-pane")
   ok('dopus.open paths=[$a.g]', {g: $gamma})
   $acts = ok('dopus.actions.list', {})
@@ -314,7 +315,7 @@ try
       end
     end
   end
-  check($disabled == 5, "expected 5 disabled file rows in an empty dir, got " .. to_string($disabled))
+  check($disabled == 6, "expected 6 disabled file rows in an empty dir, got " .. to_string($disabled))
   ok('dopus.open paths=[$a.l]', {l: $alpha})
   $relisted = false
   for each $i in range(1, 25)
@@ -331,7 +332,7 @@ try
       $enabled = $enabled + 1
     end
   end
-  check($enabled == 6, "expected 6 enabled file rows with a selection, got " .. to_string($enabled))
+  check($enabled == 7, "expected 7 enabled file rows with a selection, got " .. to_string($enabled))
 
   -- 10. refusals stay honest
   refused('dopus.action id="no.such-action"', {}, "INVALID_ARGUMENT")
@@ -421,7 +422,7 @@ try
       check($row.enabled != nil, "file row without enabled: " .. json_encode($row))
     end
   end
-  check($file_rows == 6, "expected 6 file.* rows in actions.list, got " .. to_string($file_rows))
+  check($file_rows == 7, "expected 7 file.* rows in actions.list, got " .. to_string($file_rows))
 
   -- 10c. dopus-test.action.executed carried every accepted dopus.action, in
   -- order, from the bus, and nothing else: no refused action (unknown id,
