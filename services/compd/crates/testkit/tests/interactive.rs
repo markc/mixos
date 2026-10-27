@@ -304,6 +304,7 @@ fn every_drag_zone_commits_its_placement_frame_and_protocol_states() {
         h.roundtrip();
         for edge in [State::TiledLeft,State::TiledRight,State::TiledTop,State::TiledBottom] {
             assert_eq!(window.toplevel().unwrap().with_pending_state(|state|state.states.contains(edge)), tile.is_some());
+            assert_eq!(h.client.state.toplevel_configures.last().unwrap().states.contains(&(edge as u32)),tile.is_some(),"tiled state reaches the client");
         }
         assert_eq!(window.toplevel().unwrap().with_pending_state(|state|state.states.contains(State::Maximized)),tile.is_none());
         {
@@ -312,6 +313,10 @@ fn every_drag_zone_commits_its_placement_frame_and_protocol_states() {
         }
         for edge in [State::TiledLeft,State::TiledRight,State::TiledTop,State::TiledBottom] {
             assert!(!window.toplevel().unwrap().with_pending_state(|state|state.states.contains(edge)));
+        }
+        h.roundtrip();
+        for edge in [State::TiledLeft,State::TiledRight,State::TiledTop,State::TiledBottom] {
+            assert!(!h.client.state.toplevel_configures.last().unwrap().states.contains(&(edge as u32)));
         }
     }
 }
@@ -333,6 +338,12 @@ fn preview_changes_rectangle_hides_and_reuses_ids() {
     let right = preview(&h);
     assert_eq!(right[4].geometry(1.0.into()),smithay::utils::Rectangle::new((960,0).into(),(960,540).into()));
     for (a,b) in left.iter().zip(&right) { assert_eq!(a.id(),b.id()); }
+    h.key(50,true,false);
+    apply(&mut h,&window); // no pointer motion: every host pass sees modifiers
+    assert!(preview(&h).is_empty());
+    h.key(50,false,false);
+    apply(&mut h,&window);
+    assert_eq!(preview(&h).len(),5);
     motion(&mut h,(960.0,1079.0));
     apply(&mut h,&window);
     assert!(preview(&h).is_empty());
@@ -412,6 +423,7 @@ fn escape_restores_start_geometry_placement_and_saved_float_without_client_keys(
         assert_eq!(h.comp().placement(id),Placement::Floating);
         assert!(!preview(&h).is_empty());
         assert!(h.key(9,true,false),"Escape press consumed");
+        assert!(!h.wire.state.seat.seat.get_pointer().unwrap().with_grab(|_,grab|grab.is::<dispatcher::wayland::grab::interactive::InteractiveGrab>()).unwrap_or(false));
         assert!(h.comp().interactive.unwrap().cancelled);
         apply(&mut h,&window);
         assert!(h.comp().interactive.is_none());

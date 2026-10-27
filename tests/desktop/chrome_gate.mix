@@ -277,7 +277,7 @@ fn await_window($svc, $id, $want, $x, $y)
   return $last
 end
 
-fn input_phase($svc)
+fn input_phase($svc, $kenv, $logs)
   $tr = truth_once($svc)
   if $tr.rc != 0 or len($tr.reply.chrome.decorated) == 0 then
     return "no decorated window in compd.truth"
@@ -330,11 +330,20 @@ fn input_phase($svc)
     return "I2b: no usable output area in truth"
   end
   $c = centre($w.parts.titlebar)
-  for each $step in [["comp.input.pointer.move", {x: $c[0], y: $c[1]}], ["comp.input.pointer.button", {button: "left", action: "press"}], ["comp.input.pointer.move", {x: $usable.x, y: $usable.y + $usable.height / 2}], ["comp.input.pointer.button", {button: "left", action: "release"}]]
+  for each $step in [["comp.input.pointer.move", {x: $c[0], y: $c[1]}], ["comp.input.pointer.button", {button: "left", action: "press"}], ["comp.input.pointer.move", {x: $usable.x, y: $usable.y + $usable.height / 2}]]
     $e = human($svc, $step[0], $step[1])
     if $e != nil then
       return "I2b " .. $e
     end
+  end
+  -- Keep the armed preview for visual QA when COMPD_KEEP_RUN=1.
+  $preview = run_argv([$shot, $logs .. "/tile-preview.ppm"], {env: $kenv, timeout: 20})
+  if $preview.exit_code != 0 then
+    return "I2b: preview screenshot failed: " .. $preview.stderr
+  end
+  $e = human($svc, "comp.input.pointer.button", {button: "left", action: "release"})
+  if $e != nil then
+    return "I2b " .. $e
   end
   sleep(0.5)
   $w = await_window($svc, $id, "present", 0, 0)
@@ -655,7 +664,7 @@ fn run_once($label, $ssd)
   end
   $input = nil
   if $label == "on" and $r.exit_code == 0 then
-    $input = input_phase($svc)
+    $input = input_phase($svc, $kenv, $logs)
   end
   stop([$kp, $cp, $wp])
   if $input != nil then
@@ -812,7 +821,7 @@ if $why != nil then
   end
   exit(1)
 end
-print("PASS: server-side chrome draws a titlebar above the client in the theme's colour (off: it does not); rounded at the bottom too; titlebar drag moves, maximise toggles, close closes, and a close press released off it does not")
+print("PASS: server-side chrome draws a titlebar above the client in the theme's colour (off: it does not); rounded at the bottom too; titlebar drag moves and edge-tiles, drag-away restores, maximise toggles, close closes, and a close press released off it does not")
 $CLEANUP.ok = true
 exit(0)
 finally
