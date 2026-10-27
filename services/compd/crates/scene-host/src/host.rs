@@ -729,19 +729,23 @@ impl SceneHost {
             waker,
         };
         let menu_sink = port.event_sink();
-        decor::window::menu_emitter(move |service, side, x| {
+        decor::window::menu_emitter(move |service, viewport, side, x| {
+            let mut args = json!({"side": side.name(), "x": x});
+            if let Some(viewport) = viewport { args["viewport"] = json!(viewport); }
             menu_sink.emit(
                 service,
                 &format!("{service}.ui.menu.popup"),
-                json!({"side": side.name(), "x": x}),
+                args,
             )
         });
         let action_sink = port.event_sink();
-        decor::window::action_emitter(move |service, command| {
+        decor::window::action_emitter(move |service, viewport, command| {
+            let mut args = json!({"id":command});
+            if let Some(viewport) = viewport { args["window"] = json!(viewport); }
             action_sink.emit(
                 service,
                 &format!("{service}.execute"),
-                json!({"id":command}),
+                args,
             )
         });
         // conf.mix's page order, as Quoin reads it at start.

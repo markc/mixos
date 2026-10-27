@@ -2,6 +2,10 @@
 
 ## Unreleased — 2026-10-27
 
+- Resolve dotted app IDs to their first Bus service segment. Route titlebar
+  menu requests with the suffix as `viewport`, and actions with it as `window`,
+  so separate composers receive their own menu input under server decorations.
+
 - Use the shared design title band layout for all four groups and centre
   MixOS titles by default. Host registered apps' revisioned Action Bars through
   the existing scene-host registry and Bus client, with shared Lucide rasters,

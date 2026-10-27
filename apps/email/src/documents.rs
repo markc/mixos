@@ -222,11 +222,6 @@ impl DocumentState {
     pub fn saving(&self) -> bool {
         !self.saving.is_empty()
     }
-    pub(crate) fn opening_ticket(&self) -> Option<u64> {
-        self.pending
-            .iter()
-            .find_map(|(&ticket, r)| (!r.send).then_some(ticket))
-    }
     pub fn modal(&self) -> bool {
         self.chooser.is_some() || self.replace.is_some() || self.folder.is_some()
     }
@@ -276,7 +271,7 @@ impl State {
         reply: Option<u64>,
         send: bool,
         dropped: bool,
-    ) -> Result<()> {
+    ) -> Result<u64> {
         if !path.is_absolute() {
             return Err((code::DOCUMENT_PATH, crate::label("document-absolute-path")));
         }
@@ -307,7 +302,7 @@ impl State {
         if let Some(id) = reply {
             self.await_document(id);
         }
-        Ok(())
+        Ok(ticket)
     }
 
     pub fn open_document(&mut self) {

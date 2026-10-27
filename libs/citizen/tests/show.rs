@@ -3,6 +3,8 @@
 use futures::StreamExt;
 use serde_json::{Value, json};
 
+/// Characterisation test: records the existing exact app-id and PID match;
+/// this is not a regression test for a change to citizen::show.
 #[test]
 fn show_matches_exact_app_id_and_pid_even_when_a_child_is_listed_first() {
     let broker = test_broker::Broker::start();

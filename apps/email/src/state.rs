@@ -3979,7 +3979,10 @@ impl State {
             return;
         };
         match choice {
-            DraftChoice::Back => return,
+            DraftChoice::Back => {
+                if asked == Confirm::Quit { self.cancel_quit(); }
+                return;
+            }
             DraftChoice::Keep => {
                 self.store_draft(false);
                 if self.take_compose().is_some() {
@@ -4100,6 +4103,11 @@ impl State {
             }
             _ => true,
         }
+    }
+
+    pub(crate) fn cancel_quit(&mut self) {
+        self.quit_ok = false;
+        self.exiting = false;
     }
 
     /// The open email of the current account, with its account.

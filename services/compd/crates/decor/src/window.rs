@@ -27,10 +27,10 @@ thread_local! {
     static ACTION_EMIT: RefCell<Option<ActionEmit>> = const { RefCell::new(None) };
 }
 
-type MenuEmit = Rc<dyn Fn(&str, design::MenuSide, f32) -> bool>;
-type ActionEmit = Rc<dyn Fn(&str, &str) -> bool>;
+type MenuEmit = Rc<dyn Fn(&str, Option<&str>, design::MenuSide, f32) -> bool>;
+type ActionEmit = Rc<dyn Fn(&str, Option<&str>, &str) -> bool>;
 
-pub fn action_emitter(emit: impl Fn(&str, &str) -> bool + 'static) {
+pub fn action_emitter(emit: impl Fn(&str, Option<&str>, &str) -> bool + 'static) {
     ACTION_EMIT.with_borrow_mut(|slot| *slot = Some(Rc::new(emit)));
 }
 
@@ -77,7 +77,8 @@ pub fn execute_action(window: &Window, command: &str) -> bool {
     {
         return false;
     }
-    ACTION_EMIT.with_borrow(|emit| emit.as_ref().is_some_and(|emit| emit(&service, command)))
+    let app = app_id(window).unwrap_or_default();
+    ACTION_EMIT.with_borrow(|emit| emit.as_ref().is_some_and(|emit| emit(&service, menu_viewport(&app), command)))
 }
 
 pub fn click_action(window: &Window, revision: u64, index: usize) -> bool {
@@ -95,7 +96,7 @@ pub fn layout(window: &Window, size: Vec2) -> Option<Rc<crate::layout::ChromeLay
 }
 
 /// The scene host owns the Bus connection; chrome only queues through it.
-pub fn menu_emitter(emit: impl Fn(&str, design::MenuSide, f32) -> bool + 'static) {
+pub fn menu_emitter(emit: impl Fn(&str, Option<&str>, design::MenuSide, f32) -> bool + 'static) {
     MENU_EMIT.with_borrow_mut(|slot| *slot = Some(Rc::new(emit)));
 }
 
@@ -135,8 +136,15 @@ fn menu_service_name(service: &str) -> bool {
 }
 
 pub fn menu_service<'a>(app_id: &'a str, services: &BTreeSet<String>) -> Option<&'a str> {
-    let service = app_id.strip_prefix("dev.mixos.")?;
+    let service = app_id.strip_prefix("dev.mixos.")?.split('.').next()?;
     (menu_service_name(service) && services.contains(service)).then_some(service)
+}
+
+/// A dotted app-id suffix names the application's drive viewport. The first
+/// segment remains the registered Bus service (e.g. email.compose-2).
+pub fn menu_viewport(app_id: &str) -> Option<&str> {
+    app_id.strip_prefix("dev.mixos.")?.split_once('.')
+        .map(|(_, viewport)| viewport).filter(|v| !v.is_empty())
 }
 
 fn app_id(window: &Window) -> Option<String> {
@@ -154,22 +162,22 @@ fn app_id(window: &Window) -> Option<String> {
 }
 
 pub fn menu_side(window: &Window) -> Option<design::MenuSide> {
-    menu_target(window).map(|(_, side)| side)
+    menu_target(window).map(|(_, _, side)| side)
 }
 
-fn menu_target(window: &Window) -> Option<(String, design::MenuSide)> {
+fn menu_target(window: &Window) -> Option<(String, Option<String>, design::MenuSide)> {
     let theme = installed()?;
     if theme.menu_style != design::MenuStyle::Titlebar || !decorated(window) {
         return None;
     }
     let app_id = app_id(window)?;
     MENU_SERVICES.with_borrow(|live| {
-        menu_service(&app_id, live).map(|service| (service.to_owned(), theme.menu_side))
+        menu_service(&app_id, live).map(|service| (service.to_owned(), menu_viewport(&app_id).map(str::to_owned), theme.menu_side))
     })
 }
 
 pub fn open_menu(window: &Window) -> bool {
-    let Some((service, side)) = menu_target(window) else {
+    let Some((service, viewport, side)) = menu_target(window) else {
         return false;
     };
     let Some(theme) = installed() else {
@@ -189,7 +197,7 @@ pub fn open_menu(window: &Window) -> bool {
         return false;
     };
     let emit = MENU_EMIT.with_borrow(Clone::clone);
-    emit.is_some_and(|emit| emit(&service, side, x))
+    emit.is_some_and(|emit| emit(&service, viewport.as_deref(), side, x))
 }
 
 /// The popup anchor in client content units: the button's left edge, or its
@@ -490,10 +498,19 @@ mod tests {
             "org.example.ced",
             "dev.mixos.",
             "dev.mixos.term",
-            "dev.mixos.ced.extra",
         ] {
             assert_eq!(menu_service(id, &services), None);
         }
+    }
+
+    #[test]
+    fn composers_share_the_service_but_address_their_own_menu() {
+        let live = BTreeSet::from(["email".into()]);
+        for (app, viewport) in [("dev.mixos.email", None), ("dev.mixos.email.compose-2", Some("compose-2"))] {
+            assert_eq!(menu_service(app, &live), Some("email"));
+            assert_eq!(menu_viewport(app), viewport);
+        }
+        assert_eq!(menu_service("dev.mixos.missing.compose-2", &live), None);
     }
 
     #[test]

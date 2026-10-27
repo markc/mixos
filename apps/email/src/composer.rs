@@ -38,6 +38,7 @@ pub(crate) struct Window {
 pub(crate) fn swap(a: &mut State, b: &mut State) {
     std::mem::swap(&mut a.compose, &mut b.compose);
     std::mem::swap(&mut a.confirm, &mut b.confirm);
+    std::mem::swap(&mut a.restore, &mut b.restore);
     std::mem::swap(&mut a.attachment_chooser, &mut b.attachment_chooser);
     std::mem::swap(&mut a.attachment_notice, &mut b.attachment_notice);
     std::mem::swap(&mut a.identity_editor, &mut b.identity_editor);
@@ -77,7 +78,8 @@ pub(crate) struct Windows {
     pub owner_closing: bool,
     pub quitting: bool,
     pub keymap: toolkit::keymap::Overrides,
-    pub drops: BTreeMap<u64, (Option<String>, std::path::PathBuf)>,
+    // First path is the document (also attached if reading it fails).
+    pub drops: BTreeMap<u64, (Option<String>, Vec<std::path::PathBuf>)>,
     next: u64,
 }
 
@@ -134,6 +136,9 @@ impl Windows {
         };
         let mut view = context(state);
         swap(state, &mut view);
+        // Offers stay with the mailbox; only fill_root transfers the launch
+        // offer to a compose-only owner. Thereafter swap owns it like input.
+        std::mem::swap(&mut state.restore, &mut view.restore);
         let had_compose = view.compose.is_some() || view.documents.opening();
         self.windows.insert(
             name.clone(),
@@ -202,9 +207,6 @@ impl Windows {
                 return false;
             }
             window.view.refresh_compose_view(state);
-            if self.compose_only && owner_held {
-                window.view.restore = state.restore.clone();
-            }
             window.palette = palette.clone();
             window.keymap = self.keymap.clone();
             true

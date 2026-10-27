@@ -320,8 +320,12 @@ tiling with a real Super modifier or <code>comp.window.tile_key</code>.</p>
 <p>The session's <code>appearance.menu_style: "titlebar"</code> adds a menu caption aligned
 left, centre or right, according to <code>appearance.menu_side</code>.
 It appears only on SSD windows whose <code>dev.mixos.NAME</code> app has a registered
-<code>NAME</code> Bus service. Clicking queues <code>NAME.ui.menu.popup {side, x}</code> through the scene
+<code>NAME</code> Bus service. A dotted suffix names an owned viewport:
+<code>dev.mixos.email.compose-2</code> resolves to service <code>email</code>, viewport <code>compose-2</code>.
+Clicking queues <code>NAME.ui.menu.popup {side, x, viewport?}</code> through the scene
 host's existing port; failures are logged without blocking the compositor.
+Titlebar actions carry the same suffix as <code>window</code> on <code>NAME.execute</code> so the
+action reaches the owning composer. Unsuffixed app IDs keep their root target.
 The x coordinate is relative to client content, converted from the logical
 decoration slot to the committed client width, without applying output scale
 again.

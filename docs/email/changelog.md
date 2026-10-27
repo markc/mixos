@@ -10,6 +10,18 @@ generated: by docs/_build/gen-site.mix from apps/email/CHANGELOG.md; do not edit
 
 ## Unreleased
 
+- Keep compose-only restore offers in the owning window across refreshes.
+  Later and the final Discard start the requested blank message; file launches
+  suppress kept-draft offers for that run without deleting saved drafts.
+- Quit waits quietly for closed windows' Save As writes. Cancel revokes prior
+  quit permission and deferred owner close; both empty and object Quit bodies
+  return the same fields and publish the registry execution.
+- Batch mixed mailbox drops into one composer and register document drops by
+  the returned read ticket. Add the missing closed-composer label and check
+  literal source label keys against the English catalogue.
+- Refuse `window` on compose, reply and forward, which always create windows;
+  stamp opened window names only on compose-opening command replies.
+
 - Fix mailbox Quit with simultaneous composer input, retain pending Save As
   writes through Close and Quit, and carry completed send/save outcomes to
   the mailbox. Only Cancel on a Quit question revokes a deferred owner close.

@@ -1030,6 +1030,11 @@ fn dispatch(
     command_name: &str,
     args: &Value,
 ) -> Checked<()> {
+    if matches!(command_name, "email.compose" | "email.reply" | "email.forward")
+        && args.get("window").is_some()
+    {
+        return Err(invalid("compose always creates a new window; window is not accepted"));
+    }
     let query = |state: &mut State, account: String, query: Query| {
         state.query(account, id, query, Then::Answer);
     };
@@ -1677,6 +1682,23 @@ mod tests {
     use super::*;
     use crate::state::tests::connected_many;
     use crate::work::Work;
+
+    #[test]
+    fn round2_opening_commands_refuse_every_window_argument() {
+        for command in ["email.compose", "email.reply", "email.forward"] {
+            for window in [json!("compose-1"), json!(17), Value::Null] {
+                let mut state = connected_many(&["a"]);
+                state.take_work();
+                run(&mut state, command, json!({"window":window, "id":"message"}));
+                let reply = state.take_replies().pop().unwrap();
+                assert_eq!(reply.rc, 10);
+                assert_eq!(reply.body["error_code"], code::INVALID_ARGUMENT);
+                assert!(reply.body["message"].as_str().unwrap().contains("always creates a new window"));
+                assert!(state.compose.is_none());
+                assert!(state.take_work().is_empty());
+            }
+        }
+    }
 
     #[test]
     fn adding_attachments_answers_with_compose_and_distinct_refusals() {

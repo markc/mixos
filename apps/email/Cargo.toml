@@ -49,6 +49,7 @@ tracing.workspace = true
 toolkit.workspace = true
 
 [dev-dependencies]
+citizen = { workspace = true, features = ["testing"] }
 test-broker = { path = "../../libs/test-broker" }
 egui_kittest.workspace = true
 tempfile.workspace = true

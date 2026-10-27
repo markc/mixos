@@ -44,14 +44,19 @@ relative CLI paths are resolved before forwarding. If Email is running,
 the citizen probe forwards `email.compose` and opens another composer there.
 A plain launch raises the existing owner, including a compose-only owner.
 Without a file, compose-only startup offers kept drafts before starting a
-blank message. File › New starts a blank message if the offer is deferred.
+blank message. Later, or Discard on the final offered draft, starts the blank
+message immediately. A file launch suppresses kept-draft offers for that run;
+the drafts stay saved for a later launch.
 Document read failures leave no empty child behind; compose-only root errors
 remain visible in that window.
 
 Drop a mail document to open another composer. Ordinary files dropped on the
 mailbox open a new composer with the files attached, extending the stage 2
 attachment behaviour to the separate windows. Ordinary Markdown such as a
-README dropped on a composer is attached to that composer. Drops never send.
+README dropped on a composer is attached to that composer. A mixed mailbox
+drop opens one composer for the document and its accompanying files; if the
+Markdown is an ordinary README, it joins the attachments in that same composer.
+Drops never send.
 
 **Root ownership on Wayland:** the first native window remains the process
 owner for its whole lifetime. Closing the mailbox while composers remain
@@ -77,8 +82,12 @@ last. This also works when Wayland grants a new Bus composer no focus event.
 An unknown name returns `NOT_FOUND`; a non-string `window` returns
 `INVALID_ARGUMENT`. `email.compose`, reply, forward, document opens and
 `email.execute {id:"compose.new"}` answer with the `window` they opened.
-`email.compose` always creates a new composer. `email.quit` reports
-`confirming` and the `windows` that will ask about their drafts.
+`email.compose`, `email.reply` and `email.forward` always create a new composer
+and refuse any `window` argument with `INVALID_ARGUMENT`. Successful replies
+from other commands do not acquire an opened-window field.
+`email.quit` accepts an empty body or `{}` and reports the same `quitting`,
+`confirming` and `windows` fields for both. Cancel clears the current quit
+permission, so a later Quit asks about remaining drafts again.
 Toolkit commands instead use
 `viewport`, for example `email.ui.tree {viewport:"compose-2"}` and
 `email.ui.menu.list {viewport:"compose-2"}`; menu open and all other drive
