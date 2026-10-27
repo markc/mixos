@@ -61,6 +61,9 @@ fn recent_fields_paging_filter_limits_and_release() {
             10
         );
     }
+    for id in 0..400 { tracing::debug!(target: "logging", window_id = id, "page test"); }
+    assert_eq!(call(".recent", json!({}))["events"].as_array().unwrap().len(), 200);
+    assert!(call(".recent", json!({"since": 0, "limit": 1000}))["events"].as_array().unwrap().len() <= 1000);
     for level in ["warn", "off", "info", "warn"] {
         call(".set", json!({"level":level}));
         assert_eq!(call(".recent", json!({}))["events"], json!([]));

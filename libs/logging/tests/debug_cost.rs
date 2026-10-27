@@ -31,23 +31,27 @@ fn child(name: &str, ignored: bool) -> bool {
     if std::env::var_os("MIXOS_DEBUG_COST_CHILD").is_some() {
         return true;
     }
-    for initial in if ignored { &["warn"][..] } else { &["warn", "off"][..] } {
-    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
-    command.args(["--exact", name, "--nocapture"]);
-    if ignored {
-        command.arg("--ignored");
-    }
-    let output = command
-        .env("MIXOS_DEBUG_COST_CHILD", initial)
-        .env_remove("RUST_LOG")
-        .output()
-        .unwrap();
-    print!("{}", String::from_utf8_lossy(&output.stdout));
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    for initial in if ignored {
+        &["warn"][..]
+    } else {
+        &["warn", "off"][..]
+    } {
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command.args(["--exact", name, "--nocapture"]);
+        if ignored {
+            command.arg("--ignored");
+        }
+        let output = command
+            .env("MIXOS_DEBUG_COST_CHILD", initial)
+            .env_remove("RUST_LOG")
+            .output()
+            .unwrap();
+        print!("{}", String::from_utf8_lossy(&output.stdout));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     false
 }
@@ -82,13 +86,18 @@ fn default_resources_and_reload_hints() {
     }
     let mut args = vec!["fixture".into()];
     let initial = std::env::var("MIXOS_DEBUG_COST_CHILD").unwrap();
-    if initial == "off" { args.push("--debug=off".into()); }
+    if initial == "off" {
+        args.push("--debug=off".into());
+    }
     let before_threads = threads();
     let before_sockets = sockets();
     let _guard = logging::debug::init("fixture", "warn", &mut args).unwrap();
     assert_eq!(threads(), before_threads);
     assert_eq!(sockets(), before_sockets, "journald must be lazy");
-    assert_eq!(LevelFilter::current(), initial.parse::<LevelFilter>().unwrap());
+    assert_eq!(
+        LevelFilter::current(),
+        initial.parse::<LevelFilter>().unwrap()
+    );
     assert!(!tracing::enabled!(target: "logging", tracing::Level::DEBUG));
     assert!(!tracing::enabled!(target: "logging", tracing::Level::TRACE));
     let span = tracing::warn_span!("startup", generation = 1, phase = tracing::field::Empty);
@@ -99,6 +108,9 @@ fn default_resources_and_reload_hints() {
         "warn", "off", "debug", "trace", "warn", "debug", "warn", "off",
     ] {
         set(level);
+        if level == "debug" && std::path::Path::new("/run/systemd/journal/socket").exists() {
+            assert_eq!(sockets(), before_sockets + 1, "first admitted event opens exactly one journal socket");
+        }
         assert_eq!(
             LevelFilter::current(),
             level.parse::<LevelFilter>().unwrap()

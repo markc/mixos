@@ -18,8 +18,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 use crate::defaults::{LogDefaults, RotationMode};
 use crate::handle::{LogError, LogHandle};
 use crate::opts::{LogFormat, LogLevel, LogOpts, StatsOpts, TriState};
-use crate::stats::{JsonlSink, StatsRecorderBuilder};
 use crate::sink::Sink;
+use crate::stats::{JsonlSink, StatsRecorderBuilder};
 
 // Core copies of the plan §4.3 numeric bounds. Held literally here
 // (not imported) because the canonical substrate exports live in the
