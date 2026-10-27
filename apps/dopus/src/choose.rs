@@ -96,23 +96,30 @@ async fn deliver(
     presenter: &mut impl Presenter,
     answer: Answer,
     reply: impl std::future::Future<Output = bool>,
-) -> Result<Option<Outcome>, String> {
+) -> Option<Outcome> {
     let sent = reply.await;
     if let Some(id) = answer.enable {
         if sent {
             engine.reply_sent(&id, presenter);
         } else {
             engine.reply_failed(&id, presenter);
-            return Err("files could not send the choose reply; incarnation lost".into());
+            tracing::warn!(request = id, "files could not send the choose reply; request lost");
         }
     }
-    Ok(answer.outcome)
+    answer.outcome
+}
+
+fn publication_headers() -> BTreeMap<String, String> {
+    BTreeMap::from([
+        ("name".to_owned(), TOPIC.to_owned()),
+        ("retain".to_owned(), "false".to_owned()),
+    ])
 }
 
 async fn publish(client: &SupervisedClient, outcome: Outcome) {
-    let headers = BTreeMap::from([("name".to_owned(), TOPIC.to_owned())]);
+    let headers = publication_headers();
     let frame = citizen::outbox::frame(TOPIC, &json!(outcome));
-    // A single attempt. Pulling the retained outcome recovers a missed event.
+    // A single attempt. The engine's ten-minute result store recovers a missed event.
     if !matches!(
         tokio::time::timeout(
             Duration::from_secs(2),
@@ -215,7 +222,7 @@ pub fn run_with_presenter(
                     citizen::debug::answered(SERVICE, &cmd.command, answer.rc);
                     let (rc, body) = (answer.rc, answer.body.to_string());
                     let sent = async { matches!(tokio::time::timeout(Duration::from_secs(2), client.respond(&cmd, rc, &body)).await, Ok(Ok(()))) };
-                    if let Some(outcome) = deliver(&mut engine, &mut presenter, answer, sent).await? {
+                    if let Some(outcome) = deliver(&mut engine, &mut presenter, answer, sent).await {
                         publish(&client, outcome).await;
                     }
                 }
@@ -242,6 +249,14 @@ pub fn run_with_presenter(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn outcome_publication_explicitly_disables_broker_retention() {
+        assert_eq!(publication_headers(), BTreeMap::from([
+            ("name".into(), "files.chosen".into()),
+            ("retain".into(), "false".into()),
+        ]));
+    }
 
     #[test]
     fn no_presenter_refuses_and_keeps_nothing_and_no_dopus_commands_leak() {
@@ -307,7 +322,12 @@ mod tests {
                 self.events
                     .send(Presentation {
                         request: id.into(),
-                        end: End::Cancel,
+                        end: End::Accept(dopus_core::chooser::Acceptance {
+                            paths: vec![b"/tmp/first".to_vec()],
+                            folder: None,
+                            current_filter: None,
+                            choices: BTreeMap::new(),
+                        }),
                     })
                     .unwrap();
             }
@@ -336,14 +356,22 @@ mod tests {
             log.lock().unwrap().push("reply");
             true
         };
-        futures::executor::block_on(deliver(&mut engine, &mut presenter, answer, reply)).unwrap();
+        assert!(futures::executor::block_on(deliver(&mut engine, &mut presenter, answer, reply)).is_none());
+        // A second request's failed (or timed-out) reply cannot lose the first.
+        let answer = dispatch(&mut engine, &mut presenter, "files.choose", "{}", "caller", 1);
+        let lost = answer.body["request"].as_str().unwrap().to_owned();
+        assert!(futures::executor::block_on(deliver(&mut engine, &mut presenter, answer, async { false })).is_none());
+        assert_eq!(rx.len(), 1);
+        let lost_result = dispatch(&mut engine, &mut presenter, "files.choose.result", &json!({"request":lost}).to_string(), "caller", 2);
+        assert_eq!(lost_result.rc, 10);
+        assert_eq!(lost_result.body["error_code"], "ARGUMENT");
+        assert_eq!(lost_result.body["reason"], "unknown");
+        assert_eq!(engine.list()["requests"].as_array().unwrap().len(), 1);
         let event = rx.try_recv().unwrap();
-        assert!(
-            engine
-                .end(&event.request, event.end, 2, &mut presenter)
-                .unwrap()
-                .is_some()
-        );
+        let outcome = engine.end(&event.request, event.end, 2, &mut presenter).unwrap().unwrap();
+        assert_eq!(outcome.response, 0);
+        assert_eq!(outcome.uris.as_ref().unwrap(), &["file:///tmp/first"]);
+        assert_eq!(engine.result(&json!({"request":event.request}).to_string(), 3).unwrap()["outcome"], json!(outcome));
         log.lock().unwrap().push("publish");
         assert!(
             engine
@@ -353,7 +381,7 @@ mod tests {
         );
         assert_eq!(
             *log.lock().unwrap(),
-            ["open-disabled", "reply", "input", "close", "publish"]
+            ["open-disabled", "reply", "input", "open-disabled", "close", "close", "publish"]
         );
         let answer = dispatch(
             &mut engine,
@@ -363,12 +391,11 @@ mod tests {
             "caller",
             4,
         );
-        let error =
+        assert!(
             futures::executor::block_on(deliver(&mut engine, &mut presenter, answer, async {
                 false
             }))
-            .unwrap_err();
-        assert!(error.contains("incarnation lost"));
+            .is_none());
         assert!(rx.try_recv().is_err());
         assert_eq!(engine.list()["requests"], json!([]));
     }

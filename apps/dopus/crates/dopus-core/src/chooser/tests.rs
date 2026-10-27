@@ -160,7 +160,9 @@ fn every_top_level_type_range_and_wrong_mode_refuses() {
             }
         }
     }
-    for bad in [json!(null), json!(false), json!("relative"), json!("/a\0b")] {
+    for bad in [json!(null), json!(false), json!("relative"), json!("/a\0b"),
+        json!("/"), json!("/a/"), json!("/a/."), json!("/a/..")
+    ] {
         argument(json!({"mode":"save", "current_file":bad}));
     }
     for bad in [
@@ -203,6 +205,7 @@ fn every_filter_refusal_and_large_valid_filter() {
         json!({"name":"a","patterns":[],"mime_types":[]}),
         json!({"name":"a","patterns":[1],"mime_types":[]}),
         json!({"name":"a","patterns":[""],"mime_types":[]}),
+        json!({"name":"a","patterns":["[abc"],"mime_types":[]}),
         json!({"name":"a","patterns":[],"mime_types":["x".repeat(257)]}),
         json!({"name":"a","patterns":vec!["*";512],"mime_types":["image/png"]}),
     ] {
@@ -302,6 +305,7 @@ fn locations_names_and_exact_byte_uri_round_trip() {
         "file:///%GG",
         "file:///a?query",
         "file:///a#fragment",
+        "file:///tmp/é",
     ] {
         assert!(location(&json!(invalid)).is_err(), "{invalid}");
     }
@@ -323,6 +327,8 @@ fn locations_names_and_exact_byte_uri_round_trip() {
         b"/tmp/\xff"
     );
     assert_eq!(location(&json!("/tmp/a#?%")).unwrap(), b"/tmp/a#?%");
+    assert_eq!(location(&json!("file:///tmp/a+;=b")).unwrap(), b"/tmp/a+;=b");
+    assert_eq!(location(&json!(file_uri(b"/tmp/a+;=b").unwrap())).unwrap(), b"/tmp/a+;=b");
     let n = name(&json!({"bytes":"%FF%20%25"})).unwrap();
     assert_eq!(n, b"\xff %");
 }
@@ -359,15 +365,55 @@ fn filters_select_standalone_match_or_insert_and_match_files() {
     ] {
         assert_eq!(f.matches(name, directory, mime), matches);
     }
-    let f = parse_filter(&filter()).unwrap();
-    assert_eq!(f.save_name(b"image"), b"image.png");
-    assert_eq!(f.save_name(b"image.jpg"), b"image.jpg");
-    assert_eq!(f.save_name(b"\xff"), b"\xff.png");
-    let mut compound = f.clone();
-    compound.patterns = vec!["*.tar.gz".into()];
-    assert_eq!(compound.save_name(b"archive"), b"archive.tar.gz");
-    compound.patterns = vec!["*.p?g".into()];
-    assert_eq!(compound.save_name(b"image"), b"image");
+    assert_eq!(f.patterns(), &["a[0-9]?.png"]);
+    assert_eq!(f.compiled.len(), 1);
+    assert_eq!(json!(f).as_object().unwrap().len(), 3);
+}
+
+#[test]
+fn single_pattern_extension_is_save_only_and_suffix_is_case_sensitive() {
+    let req = parse(json!({"mode":"save","current_filter":filter()})).unwrap();
+    for (typed, expected) in [
+        (b"image".as_slice(), b"image.png".as_slice()),
+        (b"image.jpg", b"image.jpg.png"),
+        (b"image.PNG", b"image.PNG.png"),
+        (b"image.png", b"image.png"),
+        (b"\xff", b"\xff.png"),
+    ] {
+        assert_eq!(req.save_name(typed), expected);
+    }
+    let compound = parse(json!({"mode":"save","current_filter":{
+        "name":"Archive","patterns":["*.tar.gz"],"mime_types":[]
+    }})).unwrap();
+    for (typed, expected) in [
+        ("archive", "archive.tar.gz"),
+        ("archive.tar", "archive.tar.tar.gz"),
+        ("archive.tar.gz", "archive.tar.gz"),
+        ("name.", "name..tar.gz"),
+        (".bashrc", ".bashrc.tar.gz"),
+    ] {
+        assert_eq!(compound.save_name(typed.as_bytes()), expected.as_bytes());
+    }
+    for patterns in [vec!["*.p?g"], vec!["*.png", "*.jpg"], vec!["*."], vec!["*.[ab]"]] {
+        let req = parse(json!({"mode":"save","current_filter":{
+            "name":"Other","patterns":patterns,"mime_types":[]
+        }})).unwrap();
+        assert_eq!(req.save_name(b"image"), b"image");
+    }
+    for req in [json!({"current_filter":filter()}), json!({"mode":"save_files","files":["image"]}), json!({"mode":"save"})] {
+        assert_eq!(parse(req).unwrap().save_name(b"image"), b"image");
+    }
+}
+
+#[test]
+fn filters_without_current_filter_publish_the_first_filter() {
+    let mut e = engine();
+    let mut p = TestPresenter::default();
+    let id = open(&mut e, &mut p, json!({"filters":[filter(),{
+        "name":"Text","patterns":["*.txt"],"mime_types":[]
+    }]}), "caller", 1);
+    let outcome = e.end(&id, accepted_path(b"/tmp/a.png"), 2, &mut p).unwrap().unwrap();
+    assert_eq!(json!(outcome)["current_filter"], filter());
 }
 
 #[test]
@@ -465,15 +511,15 @@ fn desk_and_caller_limits_and_per_app_keying() {
 fn rate_is_ten_per_ten_seconds_independently_for_forwarded_apps() {
     let mut e = engine();
     let mut p = TestPresenter::default();
-    for i in 0..10 {
-        let id = open(&mut e, &mut p, json!({"on_behalf_of":"a"}), "portald", i);
-        e.end(&id, End::Cancel, i, &mut p).unwrap();
+    for _ in 0..10 {
+        let id = open(&mut e, &mut p, json!({"on_behalf_of":"a"}), "portald", 0);
+        e.end(&id, End::Cancel, 0, &mut p).unwrap();
     }
     assert_eq!(
         e.choose(r#"{"on_behalf_of":"a"}"#, "portald", 9999, &mut p)
             .unwrap_err()
-            .error_code,
-        "BUSY"
+            .message,
+        "chooser rate limit reached"
     );
     open(&mut e, &mut p, json!({"on_behalf_of":"b"}), "portald", 9999);
     open(
@@ -490,6 +536,53 @@ fn rate_is_ten_per_ten_seconds_independently_for_forwarded_apps() {
         "portald",
         10000,
     );
+}
+
+#[test]
+fn rate_counts_argument_refusals_before_field_and_filter_validation() {
+    for invalid in [
+        "{".to_owned(),
+        "[]".to_owned(),
+        json!({"mode":"bad"}).to_string(),
+        json!({"on_behalf_of":false}).to_string(),
+        " ".repeat(MAX_BODY + 1),
+        json!({"on_behalf_of":"app","filters":[{
+            "name":"Broken","patterns":["[abc"],"mime_types":[]
+        }]}).to_string(),
+    ] {
+        let mut e = engine();
+        let mut p = TestPresenter::default();
+        for _ in 0..10 {
+            assert_eq!(e.choose(&invalid, "caller", 0, &mut p).unwrap_err().error_code, "ARGUMENT");
+        }
+        let error = e.choose(&invalid, "caller", 9999, &mut p).unwrap_err();
+        assert_eq!(error.error_code, "BUSY");
+        assert_eq!(error.message, "chooser rate limit reached");
+        assert!(p.opened.is_empty());
+        assert!(e.open.is_empty());
+        assert!(e.done.is_empty());
+        assert_eq!(e.recent.values().next().unwrap().len(), 10);
+        // The failed 11th attempt is also counted; no unbounded queue.
+        assert_eq!(e.choose(&invalid, "caller", 10000, &mut p).unwrap_err().error_code, "ARGUMENT");
+    }
+}
+
+#[test]
+fn rate_caller_table_is_capped_and_old_entries_are_evicted() {
+    let mut e = engine();
+    let mut p = TestPresenter::default();
+    for i in 0..MAX_RATE_CALLERS {
+        let invalid = json!({"on_behalf_of":format!("app-{i}"),"mode":"bad"});
+        assert_eq!(e.choose(&invalid.to_string(), "portald", 0, &mut p).unwrap_err().error_code, "ARGUMENT");
+    }
+    assert_eq!(e.recent.len(), MAX_RATE_CALLERS);
+    let error = e.choose(r#"{"on_behalf_of":"fresh"}"#, "portald", 9999, &mut p).unwrap_err();
+    assert_eq!(error.error_code, "BUSY");
+    assert_eq!(error.message, "chooser rate caller table full");
+    assert_eq!(e.recent.len(), MAX_RATE_CALLERS);
+    assert!(p.opened.is_empty());
+    open(&mut e, &mut p, json!({"on_behalf_of":"fresh"}), "portald", 10000);
+    assert_eq!(e.recent.len(), 1);
 }
 
 #[test]
@@ -682,6 +775,18 @@ fn acceptance_cardinality_paths_filters_and_choices_are_rechecked() {
         (json!({"mode":"save"}), vec![b"/a".to_vec(), b"/b".to_vec()]),
         (json!({}), vec![b"relative".to_vec()]),
         (json!({}), vec![b"/a\0b".to_vec()]),
+        (json!({}), vec![b"/tmp/..".to_vec()]),
+        (json!({}), vec![b"/tmp/".to_vec()]),
+        (json!({}), vec![b"/tmp/.".to_vec()]),
+        (json!({}), vec![b"/".to_vec()]),
+        (json!({"mode":"save"}), vec![b"/tmp/..".to_vec()]),
+        (json!({"mode":"save"}), vec![b"/tmp/".to_vec()]),
+        (json!({"directory":true}), vec![b"/tmp/..".to_vec()]),
+        (json!({"directory":true}), vec![b"/tmp/.".to_vec()]),
+        (json!({"directory":true}), vec![b"/tmp/../folder".to_vec()]),
+        (json!({"directory":true}), vec![b"/tmp/./folder".to_vec()]),
+        (json!({"multiple":true}), vec![b"/tmp/a".to_vec(), b"/tmp/".to_vec()]),
+        (json!({}), vec![format!("/tmp/{}", "a".repeat(256)).into_bytes()]),
     ] {
         let mut e = engine();
         let mut p = TestPresenter::default();
@@ -750,6 +855,27 @@ fn acceptance_cardinality_paths_filters_and_choices_are_rechecked() {
 }
 
 #[test]
+fn directories_and_multiple_directories_accept_and_remember_the_folder() {
+    for (request, paths, remembered) in [
+        (json!({"directory":true}), vec![b"/".to_vec()], b"/".to_vec()),
+        (json!({"directory":true}), vec![b"/tmp/folder/".to_vec()], b"/tmp/folder/".to_vec()),
+        (json!({"directory":true,"multiple":true}), vec![b"/tmp/one".to_vec(), b"/tmp/two".to_vec()], b"/tmp/one".to_vec()),
+    ] {
+        let mut e = engine();
+        let mut p = TestPresenter::default();
+        let id = open(&mut e, &mut p, request, "caller", 1);
+        let expected: Vec<_> = paths.iter().map(|path| file_uri(path).unwrap()).collect();
+        let outcome = e.end(&id, End::Accept(Acceptance {
+            paths, folder: None, current_filter: None, choices: BTreeMap::new(),
+        }), 2, &mut p).unwrap().unwrap();
+        assert_eq!(outcome.response, 0);
+        assert_eq!(outcome.uris.unwrap(), expected);
+        open(&mut e, &mut p, json!({}), "caller", 3);
+        assert_eq!(p.opened.last().unwrap().request.current_folder.as_ref(), Some(&remembered));
+    }
+}
+
+#[test]
 fn list_order_defaults_remembered_folder_and_refusals_keep_nothing() {
     let mut e = engine();
     let mut p = TestPresenter::default();
@@ -773,6 +899,8 @@ fn list_order_defaults_remembered_folder_and_refusals_keep_nothing() {
         json!({"request":a,"mode":"open","title":"Open","caller":"portald","on_behalf_of":"app","correlation":"a","opened_ms":100})
     );
     assert_eq!(rows[1]["request"], b);
+    assert!(rows[1].get("on_behalf_of").is_none());
+    assert!(rows[1].get("correlation").is_none());
     assert_eq!(
         p.opened[0].request.current_folder.as_deref(),
         Some(b"/home/user".as_slice())
@@ -813,14 +941,14 @@ fn rate_counts_window_limit_refusals_before_a_slot_is_freed() {
     open(&mut e, &mut p, json!({}), "busy", 0);
     for _ in 0..8 {
         assert_eq!(
-            e.choose("{}", "busy", 0, &mut p).unwrap_err().error_code,
-            "BUSY"
+            e.choose("{}", "busy", 0, &mut p).unwrap_err().message,
+            "chooser limit reached"
         );
     }
     e.cancel(&body(&first), 1, &mut p).unwrap();
     assert_eq!(
-        e.choose("{}", "busy", 1, &mut p).unwrap_err().error_code,
-        "BUSY"
+        e.choose("{}", "busy", 1, &mut p).unwrap_err().message,
+        "chooser rate limit reached"
     );
     open(&mut e, &mut p, json!({}), "busy", 10_000);
 }
@@ -848,6 +976,7 @@ fn reply_precedes_input_and_first_outcome_failed_reply_closes() {
     e.reply_failed(id, &mut p);
     assert!(e.open.is_empty());
     assert_eq!(p.closed.last().unwrap(), id);
+    assert_eq!(e.result(&body(id), 6).unwrap_err().reason, Some("unknown"));
 }
 
 #[test]

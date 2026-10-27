@@ -16,6 +16,7 @@ use serde_json::{Map, Value, json};
 pub const MAX_BODY: usize = 256 * 1024;
 const RETENTION_MS: u64 = 600_000;
 const RATE_MS: u64 = 10_000;
+const MAX_RATE_CALLERS: usize = 1024;
 
 /// All four commands; the bool denotes a query.
 pub const COMMANDS: &[(&str, bool)] = &[
@@ -57,20 +58,25 @@ pub enum Mode {
     SaveFiles,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Filter {
     pub name: String,
-    pub patterns: Vec<String>,
+    patterns: Vec<String>,
     pub mime_types: Vec<String>,
+    #[serde(skip)]
+    compiled: Vec<glob::Pattern>,
 }
 
 impl Filter {
+    pub fn patterns(&self) -> &[String] {
+        &self.patterns
+    }
+
     /// Supply the MIME type from the shared MIME database. Folders always pass.
     pub fn matches(&self, name: &str, directory: bool, mime: &str) -> bool {
         directory
-            || self.patterns.iter().any(|pattern| {
-                glob::Pattern::new(pattern).is_ok_and(|p| {
-                    p.matches_with(
+            || self.compiled.iter().any(|pattern| {
+                    pattern.matches_with(
                         name,
                         glob::MatchOptions {
                             case_sensitive: true,
@@ -78,7 +84,6 @@ impl Filter {
                             require_literal_leading_dot: false,
                         },
                     )
-                })
             })
             || self.mime_types.iter().any(|pattern| {
                 pattern == mime
@@ -90,12 +95,12 @@ impl Filter {
     }
 
     /// The save-only `*.ext` rule; complex globs do not suggest an extension.
-    pub fn save_name(&self, name: &[u8]) -> Vec<u8> {
+    fn save_name(&self, name: &[u8]) -> Vec<u8> {
         if self.patterns.len() == 1
             && let Some(ext) = self.patterns[0].strip_prefix("*.")
             && !ext.is_empty()
             && !ext.contains(['*', '?', '[', ']', '/'])
-            && !name.iter().skip(1).any(|b| *b == b'.')
+            && !name.ends_with(format!(".{ext}").as_bytes())
         {
             let mut name = name.to_vec();
             name.push(b'.');
@@ -328,7 +333,13 @@ pub fn file_uri(path: &[u8]) -> Result<String> {
 }
 
 fn parse_filter(value: &Value) -> Result<Filter> {
-    let filter: Filter = serde_json::from_value(value.clone())
+    #[derive(Deserialize)]
+    struct Fields {
+        name: String,
+        patterns: Vec<String>,
+        mime_types: Vec<String>,
+    }
+    let filter: Fields = serde_json::from_value(value.clone())
         .map_err(|_| Refusal::argument("filter: expected {name, patterns, mime_types}"))?;
     bounded(&filter.name, 1, 128, "filter.name")?;
     let entries = filter.patterns.len() + filter.mime_types.len();
@@ -338,7 +349,11 @@ fn parse_filter(value: &Value) -> Result<Filter> {
     for s in filter.patterns.iter().chain(&filter.mime_types) {
         bounded(s, 1, 256, "filter entry")?;
     }
-    Ok(filter)
+    let compiled = filter.patterns.iter().map(|pattern| {
+        glob::Pattern::new(pattern)
+            .map_err(|error| Refusal::argument(format!("invalid filter pattern: {error}")))
+    }).collect::<Result<_>>()?;
+    Ok(Filter { name: filter.name, patterns: filter.patterns, mime_types: filter.mime_types, compiled })
 }
 
 fn parse_choice(value: &Value) -> Result<Choice> {
@@ -391,7 +406,10 @@ fn parse_choice(value: &Value) -> Result<Choice> {
 
 impl Request {
     pub fn parse(body: &str, defaults: &Defaults) -> Result<Self> {
-        let m = object(body)?;
+        Self::parse_object(object(body)?, defaults)
+    }
+
+    fn parse_object(m: Map<String, Value>, defaults: &Defaults) -> Result<Self> {
         let mode = match text(&m, "mode", 1, 10)?.unwrap_or("open") {
             "open" => Mode::Open,
             "save" => Mode::Save,
@@ -479,6 +497,7 @@ impl Request {
                 .iter()
                 .rposition(|b| *b == b'/')
                 .expect("absolute path");
+            validate_name(&file[slash + 1..])?;
             current_folder = Some(if slash == 0 {
                 vec![b'/']
             } else {
@@ -511,6 +530,15 @@ impl Request {
             .iter()
             .map(|c| (c.id.clone(), c.default.clone()))
             .collect()
+    }
+
+    /// Apply the single-pattern extension rule only in save mode.
+    pub fn save_name(&self, name: &[u8]) -> Vec<u8> {
+        if self.mode == Mode::Save && let Some(filter) = &self.current_filter {
+            filter.save_name(name)
+        } else {
+            name.to_vec()
+        }
     }
 }
 
@@ -580,6 +608,7 @@ pub struct Engine {
     home: Vec<u8>,
     open: BTreeMap<u64, OpenRequest>,
     done: VecDeque<(u64, Outcome)>,
+    lost: HashSet<u64>,
     recent: HashMap<Caller, VecDeque<u64>>,
     remembered: HashMap<(bool, String), Vec<u8>>,
 }
@@ -594,6 +623,7 @@ impl Engine {
             home,
             open: BTreeMap::new(),
             done: VecDeque::new(),
+            lost: HashSet::new(),
             recent: HashMap::new(),
             remembered: HashMap::new(),
         })
@@ -626,16 +656,29 @@ impl Engine {
         now: u64,
         presenter: &mut impl Presenter,
     ) -> Result<Value> {
-        let mut request = Request::parse(body, &self.defaults)?;
+        // Decode only the object and caller claim before accounting. Full
+        // field/filter validation happens after the cheap, bounded rate gate.
+        // Malformed objects/claims count against the connection itself.
+        let object = object(body);
+        let claim = object.as_ref().ok().and_then(|m| m.get("on_behalf_of"))
+            .and_then(Value::as_str).filter(|s| (1..=128).contains(&s.len()));
         self.sweep(now);
-        let key = Caller(caller.to_owned(), request.on_behalf_of.clone());
+        let key = Caller(caller.to_owned(), claim.map(str::to_owned));
+        if !self.recent.contains_key(&key) && self.recent.len() >= MAX_RATE_CALLERS {
+            return Err(Refusal::new("BUSY", "chooser rate caller table full"));
+        }
         let recent = self.recent.entry(key.clone()).or_default();
-        if recent.len() >= 10 {
+        let limited = recent.len() >= 10;
+        if limited {
+            recent.pop_front();
+        }
+        // Keep the latest ten attempts, including refusals, so continuing
+        // traffic cannot evade the rolling window or grow a caller's queue.
+        recent.push_back(now);
+        if limited {
             return Err(Refusal::new("BUSY", "chooser rate limit reached"));
         }
-        // Count valid attempts, including window-limit and availability
-        // refusals. These counters retain no request, window or outcome.
-        recent.push_back(now);
+        let mut request = Request::parse_object(object?, &self.defaults)?;
         if self.open.len() >= 8
             || self
                 .open
@@ -688,12 +731,13 @@ impl Engine {
         }
     }
 
-    /// Close a prepared window whose reply could not be sent. The host must
-    /// then stop this incarnation: it cannot fulfil this accepted request.
+    /// Lose only the prepared request whose reply could not be sent. It has
+    /// no outcome; result queries must distinguish it from expired outcomes.
     pub fn reply_failed(&mut self, id: &str, presenter: &mut impl Presenter) {
         if let Ok(Some(seq)) = self.own_sequence(id)
             && self.open.remove(&seq).is_some()
         {
+            self.lost.insert(seq);
             presenter.close(id);
         }
     }
@@ -708,7 +752,7 @@ impl Engine {
         if let Some((_, outcome)) = self.done.iter().find(|(_, outcome)| outcome.request == id) {
             return Ok(json!({"state":"done", "outcome":outcome}));
         }
-        let reason = if seq.is_some_and(|s| s <= self.sequence) {
+        let reason = if seq.is_some_and(|s| s <= self.sequence && !self.lost.contains(&s)) {
             "expired"
         } else {
             "unknown"
@@ -732,8 +776,11 @@ impl Engine {
 
     pub fn list(&self) -> Value {
         json!({"incarnation":self.incarnation, "requests":self.open.values().map(|o| {
-            json!({"request":o.id,"mode":o.request.mode,"title":o.request.title,"caller":o.caller,
-                "on_behalf_of":o.request.on_behalf_of,"correlation":o.request.correlation,"opened_ms":o.opened_ms})
+            let mut row = json!({"request":o.id,"mode":o.request.mode,"title":o.request.title,
+                "caller":o.caller,"opened_ms":o.opened_ms});
+            if let Some(claim) = &o.request.on_behalf_of { row["on_behalf_of"] = json!(claim); }
+            if let Some(correlation) = &o.request.correlation { row["correlation"] = json!(correlation); }
+            row
         }).collect::<Vec<_>>()})
     }
 
@@ -844,6 +891,12 @@ fn accepted(request: &Request, accept: Acceptance) -> Result<Accepted> {
     }
     for path in &accept.paths {
         valid_path(path)?;
+        if path.split(|b| *b == b'/').any(|part| part == b"." || part == b"..") {
+            return Err(Refusal::argument("chosen path contains . or .. component"));
+        }
+        if !request.directory {
+            validate_name(path.rsplit(|b| *b == b'/').next().expect("path component"))?;
+        }
     }
     let first = &accept.paths[0];
     let folder = if request.mode == Mode::SaveFiles {
