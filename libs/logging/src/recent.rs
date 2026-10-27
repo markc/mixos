@@ -322,7 +322,7 @@ mod tests {
     fn growing_deque_storage_is_charged_against_the_byte_bound() {
         let mut ring = Ring::new();
         for seq in 1..=3_000 {
-            ring.push(entry(seq, "x".repeat(650)));
+            ring.push(entry(seq, "x".repeat(480)));
             let storage = std::mem::size_of::<Ring>()
                 + ring.entries.capacity() * std::mem::size_of::<(Entry, usize)>();
             let retained: usize = ring.entries.iter().map(|(_, bytes)| bytes).sum();
