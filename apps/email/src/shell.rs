@@ -835,7 +835,11 @@ impl Shell {
                                 .extension()
                                 .is_some_and(|e| e.eq_ignore_ascii_case("md"))
                             {
-                                dropped_documents.push((Some(window.name.clone()), account.clone(), path.clone()));
+                                dropped_documents.push((
+                                    Some(window.name.clone()),
+                                    account.clone(),
+                                    path.clone(),
+                                ));
                                 false
                             } else {
                                 true
@@ -858,10 +862,10 @@ impl Shell {
                     });
                 }
                 let quit_question = self.state.confirm == Some(crate::state::Confirm::Quit);
-                if quit_question && input
-                    .events
-                    .iter()
-                    .any(|e| matches!(e, UiEvent::ConfirmDraft(crate::state::DraftChoice::Back)))
+                if quit_question
+                    && input.events.iter().any(|e| {
+                        matches!(e, UiEvent::ConfirmDraft(crate::state::DraftChoice::Back))
+                    })
                 {
                     self.composers.quitting = false;
                     self.composers.owner_closing = false;
@@ -923,10 +927,18 @@ impl Shell {
         self.advance_close();
     }
 
-    fn open_dropped_document(&mut self, origin: Option<String>, account: Option<String>, path: PathBuf) {
+    fn open_dropped_document(
+        &mut self,
+        origin: Option<String>,
+        account: Option<String>,
+        path: PathBuf,
+    ) {
         let result = account
             .ok_or_else(|| (code::UNKNOWN_ACCOUNT, label("no-account")))
-            .and_then(|a| self.state.read_document(a, path.clone(), None, false, false));
+            .and_then(|a| {
+                self.state
+                    .read_document(a, path.clone(), None, false, false)
+            });
         if let Err((_, message)) = result {
             self.state.status = message;
         } else if let Some(ticket) = self.state.documents.opening_ticket() {
@@ -937,7 +949,10 @@ impl Shell {
     }
 
     fn attach_drop(&mut self, origin: Option<String>, paths: Vec<PathBuf>) {
-        let target = origin.as_ref().and_then(|name| self.composers.windows.get(name)).cloned();
+        let target = origin
+            .as_ref()
+            .and_then(|name| self.composers.windows.get(name))
+            .cloned();
         if origin.is_some() && target.is_none() {
             self.state.status = label("compose-not-open");
             return;
@@ -1061,8 +1076,15 @@ impl Shell {
             }
         }
         for mut reply in self.state.take_replies() {
-            if reply.rc == 0 && (reply.body.get("composing").is_some() || reply.body["executed"] == "compose.new") {
-                reply.body["window"] = json!(window.map(str::to_owned).unwrap_or_else(|| self.composers.next_name()));
+            if reply.rc == 0
+                && (reply.body.get("composing").is_some()
+                    || reply.body["executed"] == "compose.new")
+            {
+                reply.body["window"] = json!(
+                    window
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| self.composers.next_name())
+                );
             }
             self.bus.reply(reply.id, reply.rc, reply.body);
         }
@@ -1668,17 +1690,27 @@ impl Shell {
                 continue;
             }
             let target = self.composers.target(&event);
-            let fallback = if let Event::MailDocument(ticket, crate::documents::Answer::Read(result)) = &event {
-                self.composers.drops.remove(ticket).filter(|_| result.is_err() && target.is_some())
-            } else {
-                None
-            };
+            let fallback =
+                if let Event::MailDocument(ticket, crate::documents::Answer::Read(result)) = &event
+                {
+                    self.composers
+                        .drops
+                        .remove(ticket)
+                        .filter(|_| result.is_err() && target.is_some())
+                } else {
+                    None
+                };
             if let Some(window) = target {
                 let mut window = window.lock().unwrap();
-                let outcome = matches!(&event, Event::Account(_, Done::Sent(..)) | Event::MailDocument(_, crate::documents::Answer::Saved(_)));
+                let outcome = matches!(
+                    &event,
+                    Event::Account(_, Done::Sent(..))
+                        | Event::MailDocument(_, crate::documents::Answer::Saved(_))
+                );
                 crate::composer::swap(&mut self.state, &mut window.view);
                 self.state.apply(event);
-                let notice = (outcome && self.state.compose.is_none()).then(|| self.state.status.clone());
+                let notice =
+                    (outcome && self.state.compose.is_none()).then(|| self.state.status.clone());
                 self.settle_for(Some(&window.name));
                 if let Some(notice) = &notice {
                     self.state.status = notice.clone();
@@ -1797,8 +1829,14 @@ impl Shell {
                         .is_some_and(|id| id.starts_with("compose.") || id == "mail.send")
                         || a.get("window").is_some()
                 }));
-        if routed && args.as_ref().and_then(|a| a.get("window")).is_some_and(|w| !w.is_string()) {
-            self.state.refuse(id, code::INVALID_ARGUMENT, "window must be a string");
+        if routed
+            && args
+                .as_ref()
+                .and_then(|a| a.get("window"))
+                .is_some_and(|w| !w.is_string())
+        {
+            self.state
+                .refuse(id, code::INVALID_ARGUMENT, "window must be a string");
             self.settle();
             return;
         }
@@ -1814,10 +1852,19 @@ impl Shell {
             return;
         }
         if command_name == "email.quit" && args.is_some() {
-            let windows: Vec<_> = self.composers.windows.values().filter_map(|w| {
-                let w = w.lock().unwrap();
-                w.view.compose.as_ref().is_some_and(|c| c.keepable()).then(|| w.name.clone())
-            }).collect();
+            let windows: Vec<_> = self
+                .composers
+                .windows
+                .values()
+                .filter_map(|w| {
+                    let w = w.lock().unwrap();
+                    w.view
+                        .compose
+                        .as_ref()
+                        .is_some_and(|c| c.keepable())
+                        .then(|| w.name.clone())
+                })
+                .collect();
             self.composers.quitting = true;
             self.bus.reply(id, 0, json!({"quitting":windows.is_empty(), "confirming":!windows.is_empty(), "windows":windows}));
             self.advance_close();
@@ -1845,7 +1892,10 @@ impl Shell {
             return;
         }
         // New always creates a sibling, even when a window was named.
-        let target = target.filter(|_| !(command_name == "email.execute" && args.as_ref().is_some_and(|a| a["id"] == "compose.new")));
+        let target = target.filter(|_| {
+            !(command_name == "email.execute"
+                && args.as_ref().is_some_and(|a| a["id"] == "compose.new"))
+        });
         let mut target = target.as_ref().map(|w| w.lock().unwrap());
         if let Some(window) = &mut target {
             crate::composer::swap(&mut self.state, &mut window.view);
@@ -2464,7 +2514,11 @@ mod tests {
         shell.sync_composers();
     }
 
-    pub(super) fn composer_choice(shell: &mut Shell, name: &str, choice: crate::state::DraftChoice) {
+    pub(super) fn composer_choice(
+        shell: &mut Shell,
+        name: &str,
+        choice: crate::state::DraftChoice,
+    ) {
         shell.composers.windows[name]
             .lock()
             .unwrap()

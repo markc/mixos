@@ -246,15 +246,16 @@ impl Windows {
                 window.lock().unwrap().show(ui);
                 continue;
             }
-            let builder =
-                toolkit::titlebar::viewport(&format!("{}.{name}", crate::APP_ID), &crate::label("compose-title"))
-                    .with_title(format!("{} — {}", crate::label("compose-title"), name))
-                    .with_decorations(
-                        toolkit::chrome::Chrome::of(&ctx).decorations
-                            == design::Decorations::Server,
-                    )
-                    .with_inner_size([900.0, 700.0])
-                    .with_min_inner_size([640.0, 480.0]);
+            let builder = toolkit::titlebar::viewport(
+                &format!("{}.{name}", crate::APP_ID),
+                &crate::label("compose-title"),
+            )
+            .with_title(format!("{} — {}", crate::label("compose-title"), name))
+            .with_decorations(
+                toolkit::chrome::Chrome::of(&ctx).decorations == design::Decorations::Server,
+            )
+            .with_inner_size([900.0, 700.0])
+            .with_min_inner_size([640.0, 480.0]);
             let builder = toolkit::saved::secondary::builder(&ctx, APP, &name, builder);
             let weak = Arc::downgrade(window);
             ctx.show_viewport_deferred(viewport, builder, move |ui, _| {
@@ -269,12 +270,19 @@ impl Windows {
 impl Window {
     fn finished(&self) -> bool {
         !self.view.documents.saving()
-            && (self.closed || (self.had_compose && self.view.compose.is_none() && !self.view.documents.opening()))
+            && (self.closed
+                || (self.had_compose
+                    && self.view.compose.is_none()
+                    && !self.view.documents.opening()))
     }
 
     fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        if self.had_compose && self.view.compose.is_none() && !self.view.documents.opening() && self.view.status.is_empty() {
+        if self.had_compose
+            && self.view.compose.is_none()
+            && !self.view.documents.opening()
+            && self.view.status.is_empty()
+        {
             self.view.status = crate::label("compose-owner-wait");
         }
         if self.viewport == ViewportId::ROOT {
@@ -963,18 +971,30 @@ mod tests {
         use egui_kittest::kittest::Queryable;
         let (mut state, _, theme, _) = fixture(true);
         state.offer_drafts(vec![crate::drafts::SavedDraft {
-            id: "kept".into(), account: "a".into(), subject: "kept subject".into(), ..Default::default()
+            id: "kept".into(),
+            account: "a".into(),
+            subject: "kept subject".into(),
+            ..Default::default()
         }]);
         let palette = editor::Palette::from_theme(&theme);
         let mut h = egui_kittest::Harness::builder()
             .with_size(egui::vec2(900.0, 700.0))
-            .build_ui_state(move |ui, state| {
-                for event in view(ui, state, &registry(), &palette) { state.apply_ui(event); }
-            }, state);
+            .build_ui_state(
+                move |ui, state| {
+                    for event in view(ui, state, &registry(), &palette) {
+                        state.apply_ui(event);
+                    }
+                },
+                state,
+            );
         toolkit::install(&h.ctx, &theme);
         h.run();
+        h.snapshot("compose_restore_draft");
         h.get_by_label(&crate::label("restore-draft")).click();
         h.run();
-        assert_eq!(h.state().compose.as_ref().unwrap().draft.subject, "kept subject");
+        assert_eq!(
+            h.state().compose.as_ref().unwrap().draft.subject,
+            "kept subject"
+        );
     }
 }

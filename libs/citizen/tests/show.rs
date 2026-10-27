@@ -10,7 +10,10 @@ fn show_matches_exact_app_id_and_pid_even_when_a_child_is_listed_first() {
     let (app, _deliveries) = citizen::start("email", "email-show-test", &broker.url).unwrap();
     let responder = comp.clone();
     let worker = std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         runtime.block_on(async move {
             let mut seen = Vec::new();
             tokio::time::timeout(std::time::Duration::from_secs(20), async {
@@ -42,8 +45,17 @@ fn show_matches_exact_app_id_and_pid_even_when_a_child_is_listed_first() {
             seen
         })
     });
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-    let answer = runtime.block_on(citizen::show(app.clone(), "comp-test".into(), "dev.mixos.email")).unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let answer = runtime
+        .block_on(citizen::show(
+            app.clone(),
+            "comp-test".into(),
+            "dev.mixos.email",
+        ))
+        .unwrap();
     assert_eq!(answer["shown"], true);
     assert_eq!(worker.join().unwrap().last().unwrap(), "comp.window.focus");
     app.quit();

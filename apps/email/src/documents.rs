@@ -223,7 +223,9 @@ impl DocumentState {
         !self.saving.is_empty()
     }
     pub(crate) fn opening_ticket(&self) -> Option<u64> {
-        self.pending.iter().find_map(|(&ticket, r)| (!r.send).then_some(ticket))
+        self.pending
+            .iter()
+            .find_map(|(&ticket, r)| (!r.send).then_some(ticket))
     }
     pub fn modal(&self) -> bool {
         self.chooser.is_some() || self.replace.is_some() || self.folder.is_some()
