@@ -301,9 +301,12 @@ pub fn init(
     args: &mut Vec<String>,
 ) -> Result<LogHandle, LogError> {
     let level = strip_args(args)?;
-    if args.iter().skip(1).take_while(|arg| *arg != "--").any(|arg| {
-        matches!(arg.as_str(), "--help" | "-h" | "--version" | "-V")
-    }) {
+    if args
+        .iter()
+        .skip(1)
+        .take_while(|arg| *arg != "--")
+        .any(|arg| matches!(arg.as_str(), "--help" | "-h" | "--version" | "-V"))
+    {
         return Ok(LogHandle {
             guards: Vec::new(),
             reload: None,

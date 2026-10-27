@@ -102,8 +102,14 @@ fn default_resources_and_reload_hints() {
         initial.parse::<LevelFilter>().unwrap()
     );
     assert_eq!(log::max_level(), LevelFilter::current().as_log());
-    assert_eq!(tracing::enabled!(target: "logging", tracing::Level::DEBUG), initial == "trace");
-    assert_eq!(tracing::enabled!(target: "logging", tracing::Level::TRACE), initial == "trace");
+    assert_eq!(
+        tracing::enabled!(target: "logging", tracing::Level::DEBUG),
+        initial == "trace"
+    );
+    assert_eq!(
+        tracing::enabled!(target: "logging", tracing::Level::TRACE),
+        initial == "trace"
+    );
     let span = tracing::warn_span!("startup", generation = 1, phase = tracing::field::Empty);
     let _entered = span.enter();
     span.record("phase", "ready");
@@ -111,7 +117,8 @@ fn default_resources_and_reload_hints() {
         assert_eq!(sockets(), before_sockets, "spans must not connect journald");
     }
     for level in [
-        "warn", "off", "error", "warn", "info", "debug", "trace", "debug", "info", "warn", "error", "off",
+        "warn", "off", "error", "warn", "info", "debug", "trace", "debug", "info", "warn", "error",
+        "off",
     ] {
         set(level);
         if level == "debug" && std::path::Path::new("/run/systemd/journal/socket").exists() {
@@ -137,7 +144,12 @@ fn default_resources_and_reload_hints() {
     }
     set("trace");
     assert_eq!(log::max_level(), log::LevelFilter::Trace);
-    assert_eq!(logging::debug::request("fixture", "fixture.debug.set", r#"{"on":false}"#).unwrap().0, 0);
+    assert_eq!(
+        logging::debug::request("fixture", "fixture.debug.set", r#"{"on":false}"#)
+            .unwrap()
+            .0,
+        0
+    );
     assert_eq!(log::max_level(), log::LevelFilter::Warn);
     for level in ["warn", "off"] {
         set(level);

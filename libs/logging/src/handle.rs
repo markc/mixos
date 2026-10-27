@@ -181,8 +181,8 @@ impl LogReloadHandle {
     /// Swap the active `EnvFilter`. Returns `Err` if the subscriber was
     /// torn down.
     pub fn reload_filter(&self, filter: tracing_subscriber::EnvFilter) -> Result<(), LogError> {
-        use tracing_subscriber::filter::LevelFilter;
         use tracing_log::AsLog;
+        use tracing_subscriber::filter::LevelFilter;
 
         self.inner
             .reload(filter)

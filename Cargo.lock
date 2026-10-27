@@ -5174,6 +5174,7 @@ dependencies = [
  "chrono",
  "clap",
  "config",
+ "log",
  "metrics",
  "metrics-exporter-prometheus",
  "metrics-util 0.18.0",
@@ -5189,6 +5190,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-journald",
+ "tracing-log",
  "tracing-subscriber",
 ]
 
