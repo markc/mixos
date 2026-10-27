@@ -77,6 +77,7 @@ mod tests {
             contrast: "high".into(),
             decorations: "ssd".into(),
             caption_side: "left".into(),
+            window_style: "win11".into(),
             icon_stroke: None,
             font_family: None,
             font_weight: None,
