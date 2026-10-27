@@ -277,6 +277,11 @@ pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut 
         },
     );
 
+    if world::comp::tiling::key(&mut _loop.inner.comp, &mut _loop.state,
+        key_code.raw(), key_state == KeyState::Pressed, Some(keysym.raw()), time) {
+        return;
+    }
+
     // Pen click-to-bind: while the settings Pen tab is capturing a key, swallow all
     // keys; the first non-modifier press records the combo (Escape cancels). Uses the
     // layout-agnostic sym so a captured binding matches regardless of active layout.
@@ -356,6 +361,10 @@ pub fn inject_key(_loop: &mut Loop, key_code: Keycode, pressed: bool, time: u32)
         key_state,
         |_d, modifiers, handle| (handle.modified_sym(), *modifiers),
     );
+    if world::comp::tiling::key(&mut _loop.inner.comp, &mut _loop.state,
+        key_code.raw(), pressed, Some(keysym.raw()), time) {
+        return;
+    }
     let ui_focused = _loop
         .inner
         .surface()

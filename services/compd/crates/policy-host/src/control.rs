@@ -854,7 +854,8 @@ pub fn apply_interactive(lp: &mut Loop) {
         .find(|output| lp.inner.cursor_output.as_ref() == Some(&world::state::output_key(output)))
         .and_then(|output| {
             let area = lp.inner.space_state().state.output_geometry(output)?;
-            Some(area.loc.to_f64() + cursor / output.current_scale().fractional_scale())
+            let scale = output.current_scale().fractional_scale();
+            Some(area.loc.to_f64() + Point::from((cursor.x / scale, cursor.y / scale)))
         })
         .unwrap_or(grab.pointer_start + smithay::utils::Point::from(grab.delta));
     let changed = {

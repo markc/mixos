@@ -331,11 +331,6 @@ pub fn key(
     keysym: Option<u32>,
     modifiers: &ModifiersState,
 ) -> bool {
-    let time = lp.inner.start_time.elapsed().as_millis() as u32;
-    if super::tiling::key(&mut lp.inner.comp, &mut lp.state, keycode, pressed, keysym, time) {
-        lp.inner.comp.bindings.last_edge = Some(KeyEdge { took: true, modifier: false });
-        return true;
-    }
     let modifiers = Modifiers {
         ctrl: modifiers.ctrl,
         alt: modifiers.alt,

@@ -2079,6 +2079,22 @@ owns the frame loop, scheduling, compositing or protocol handling.
 
 ## Restoring maximised windows
 
+Dragging a resizable window to an outer side edge previews a half tile; the
+top and bottom quarter of each side preview a quarter tile. A 20 logical px
+side band takes precedence over the 5 px top band, which previews a real
+maximise. Zones use the usable area, so a pointer over an edge panel still
+counts. Shared output edges do not arm. Shift disables these zones.
+
+Release commits the preview. Escape cancels a move and restores its starting
+geometry and placement, including a maximised or tiled start. Dragging away
+keeps the original saved floating geometry. Hot corners remain active during
+the grab and do not take ownership of a titlebar press.
+
+The static preview uses the theme focus ring: a 25% fill and a solid 2 px
+outline, above panels and below screen UI. Tiles advertise all four xdg tiled
+edges and square compd's own chrome. Size hints prevent fixed-size tiling and
+top maximise when a maximum size cannot fit the usable area.
+
 `comp.window.maximize {id, generation, output?}` accepts an output key or
 native output name. Omitting it preserves the existing output choice. An
 explicit output retargets an already maximised window directly, without an

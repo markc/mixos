@@ -318,6 +318,45 @@ fn input_phase($svc)
     end
     sleep(0.5)
   end
+  -- I2b: human-seat titlebar drag into an outer side band, then drag away.
+  -- comp.motion.run's agent pointer deliberately cannot hit SSD chrome (the
+  -- agent has no chrome focus); use the gate's existing real human path.
+  $tr = truth_once($svc)
+  $usable = nil
+  for each $key in keys($tr.reply.outputs)
+    $usable = $tr.reply.outputs[$key].usable
+  end
+  if $usable == nil then
+    return "I2b: no usable output area in truth"
+  end
+  $c = centre($w.parts.titlebar)
+  for each $step in [["comp.input.pointer.move", {x: $c[0], y: $c[1]}], ["comp.input.pointer.button", {button: "left", action: "press"}], ["comp.input.pointer.move", {x: $usable.x, y: $usable.y + $usable.height / 2}], ["comp.input.pointer.button", {button: "left", action: "release"}]]
+    $e = human($svc, $step[0], $step[1])
+    if $e != nil then
+      return "I2b " .. $e
+    end
+  end
+  sleep(0.5)
+  $w = await_window($svc, $id, "present", 0, 0)
+  if $w == nil then
+    return "I2b: tile lost the window"
+  end
+  $f = $w.parts.frame
+  if $w.row.maximized or abs($f[0] - $usable.x) > 2 or abs($f[1] - $usable.y) > 2 or abs($f[2] - round($usable.width / 2)) > 2 or abs($f[3] - $usable.height) > 2 then
+    return "I2b: side drag did not tile to the usable left half: " .. json_encode($w)
+  end
+  $c = centre($w.parts.titlebar)
+  for each $step in [["comp.input.pointer.move", {x: $c[0], y: $c[1]}], ["comp.input.pointer.button", {button: "left", action: "press"}], ["comp.input.pointer.move", {x: $usable.x + $usable.width / 2, y: $usable.y + $usable.height / 2}], ["comp.input.pointer.button", {button: "left", action: "release"}]]
+    $e = human($svc, $step[0], $step[1])
+    if $e != nil then
+      return "I2b restore " .. $e
+    end
+  end
+  sleep(0.5)
+  $w = await_window($svc, $id, "present", 0, 0)
+  if $w == nil or abs($w.row.width - 400) > 2 or abs($w.row.height - 240) > 2 then
+    return "I2b: drag-away did not restore the original content size: " .. json_encode($w)
+  end
   -- I3: press close, slide off onto the titlebar, release: nothing closes.
   $cl = centre($w.parts.buttons.close)
   $tb = centre($w.parts.titlebar)

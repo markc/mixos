@@ -123,12 +123,14 @@ pub fn key(comp: &mut CompState, dispatch: &mut dispatcher::state::Dispatch,
     code: u32, pressed: bool, sym: Option<u32>, time: u32) -> bool {
     if comp.drag_escape == Some(code) {
         if !pressed { comp.drag_escape = None; }
+        comp.bindings.last_edge = Some(super::bindings::KeyEdge { took: true, modifier: false });
         return true;
     }
     if pressed && sym == Some(smithay::input::keyboard::keysyms::KEY_Escape)
         && comp.interactive.is_some_and(|grab| grab.edges == 0 && !grab.ended)
         && dispatcher::wayland::grab::interactive::cancel(dispatch, time) {
         comp.drag_escape = Some(code);
+        comp.bindings.last_edge = Some(super::bindings::KeyEdge { took: true, modifier: false });
         return true;
     }
     false
