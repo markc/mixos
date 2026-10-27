@@ -703,7 +703,7 @@ impl Panels {
                 return false;
             };
             // The core's deadzone is a square: BOTH adjacent edge distances
-            // must be <= its logical size (default 10), never an edge band.
+            // must be <= its logical size (default 4), never an edge band.
             let diagnostics = pointer.detector.diagnostics(now);
             let Some(corner) = diagnostics.candidate.or(diagnostics.engaged) else {
                 return false;
@@ -715,7 +715,7 @@ impl Panels {
                     corner,
                     position: pointer.sample.position,
                     shift,
-                    tolerance: pointer.detector.config().deadzone_px(),
+                    tolerance: world::comp::corners::CORNER_CLICK_SLOP_PX as f32,
                 }),
             );
             return true;

@@ -25,6 +25,7 @@
 
 use std::time::Instant;
 
+pub use policy::corner::CORNER_CLICK_SLOP_PX;
 use policy::corner::{
     Corner, CornerConfig, CornerDetector, CornerEvent, CornerEvents, CornerPresses, CornerTopic,
     PressFacts,
@@ -151,7 +152,7 @@ impl Corners {
         }
         let events = self.detector.sample(self.now_ms(), local, attempted);
         self.emit(events);
-        self.presses.pointer_moved(local, self.config.deadzone_px);
+        self.presses.pointer_moved(local, CORNER_CLICK_SLOP_PX);
         self.last = Some(local);
         self.detector.contact_corner().is_some()
     }

@@ -241,11 +241,16 @@ pub struct CornerConfig {
     pub discovery: bool,
 }
 
+/// How far, in logical units, the pointer may stray from a corner press
+/// before its click is cancelled. Kept apart from the hotspot size, so a
+/// small hotspot does not make corner clicks fragile.
+pub const CORNER_CLICK_SLOP_PX: f64 = 10.0;
+
 impl Default for CornerConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            deadzone_px: 10.0,
+            deadzone_px: 4.0,
             dwell_ms: 200,
             velocity_max_px_s: 1_500.0,
             affordance: true,

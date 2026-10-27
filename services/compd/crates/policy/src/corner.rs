@@ -7,7 +7,7 @@
 // the shared event sequence.
 
 //! Allocation-free compositor-side hot-corner detection, in output-local
-//! logical coordinates. Defaults: a 10 px hotspot, a 200 ms dwell and a
+//! logical coordinates. Defaults: a 4 px hotspot, a 200 ms dwell and a
 //! 1500 px/s speed cap; an outward push engages early.
 
 use std::collections::BTreeMap;
@@ -16,7 +16,7 @@ use std::time::Duration;
 use comp_model::observation::ObservationRecord;
 use comp_model::request::{BTN_LEFT, BTN_RIGHT};
 
-pub use comp_model::observation::{Corner, CornerConfig};
+pub use comp_model::observation::{CORNER_CLICK_SLOP_PX, Corner, CornerConfig};
 
 const MOTION_EPSILON_PX: f64 = 0.001;
 const MIN_STATIONARY_CONFIRM_MS: u64 = 1;
@@ -474,12 +474,12 @@ impl CornerPresses {
         }
     }
 
-    /// The pointer moved: a click whose pointer strayed past the hotspot
-    /// size from its press is cancelled.
-    pub fn pointer_moved(&mut self, position: (f64, f64), deadzone: f64) {
+    /// The pointer moved: a click whose pointer strayed more than `slop`
+    /// ([`CORNER_CLICK_SLOP_PX`] in the engine) from its press is cancelled.
+    pub fn pointer_moved(&mut self, position: (f64, f64), slop: f64) {
         for action in self.presses.values_mut() {
             let Some(press) = action else { continue };
-            if (position.0 - press.position.0).hypot(position.1 - press.position.1) > deadzone {
+            if (position.0 - press.position.0).hypot(position.1 - press.position.1) > slop {
                 *action = None;
             }
         }
@@ -534,8 +534,17 @@ mod tests {
 
     const SIZE: (f64, f64) = (1_000.0, 800.0);
 
+    /// Geometry tests pin a 10 px hotspot so they do not move with the
+    /// product default; the default itself is asserted separately.
+    fn config() -> CornerConfig {
+        CornerConfig {
+            deadzone_px: 10.0,
+            ..CornerConfig::default()
+        }
+    }
+
     fn detector() -> CornerDetector {
-        CornerDetector::new(CornerConfig::default(), SIZE)
+        CornerDetector::new(config(), SIZE)
     }
 
     fn entered(events: CornerEvents) -> Option<(Corner, u64)> {
@@ -628,7 +637,7 @@ mod tests {
         detector.sample(300, (5.0, 5.0), (0.0, 0.0));
         detector.sample(500, (5.0, 5.0), (0.0, 0.0));
         assert!(matches!(
-            detector.reconfigure(CornerConfig::default(), (900.0, 800.0))[0],
+            detector.reconfigure(config(), (900.0, 800.0))[0],
             Some(CornerEvent::Left { .. })
         ));
     }
@@ -637,7 +646,7 @@ mod tests {
     fn disabled_invalid_and_non_monotonic_samples_suppress_engagement() {
         let mut config = CornerConfig {
             enabled: false,
-            ..CornerConfig::default()
+            ..config()
         };
         let mut disabled = CornerDetector::new(config, SIZE);
         assert_eq!(disabled.sample(0, (5.0, 5.0), (-1.0, 0.0)), [None, None]);
@@ -652,18 +661,22 @@ mod tests {
     }
 
     #[test]
-    fn default_hotspot_is_ten_logical_units_and_edges_are_inclusive() {
+    fn default_hotspot_is_four_logical_units_and_edges_are_inclusive() {
         let config = CornerConfig::default();
-        assert_eq!(config.deadzone_px, 10.0);
+        assert_eq!(config.deadzone_px, 4.0);
         assert!(config.valid());
         assert!(config.affordance, "hover reveal is on unless disabled");
         assert!(
             !config.discovery,
             "the shell opts in to the first-run flash"
         );
-        assert_eq!(corner_at((10.0, 10.0), SIZE, 10.0), Some(Corner::TopLeft));
-        assert_eq!(corner_at((10.5, 1.0), SIZE, 10.0), None);
-        assert_eq!(corner_at((11.0, 11.0), SIZE, 10.0), None);
+        assert_eq!(corner_at((4.0, 4.0), SIZE, 4.0), Some(Corner::TopLeft));
+        assert_eq!(corner_at((4.5, 1.0), SIZE, 4.0), None);
+        assert_eq!(corner_at((5.0, 5.0), SIZE, 4.0), None);
+        assert_eq!(
+            CORNER_CLICK_SLOP_PX, 10.0,
+            "clicks keep their own tolerance"
+        );
     }
 
     #[test]
@@ -675,7 +688,7 @@ mod tests {
         let config = CornerConfig {
             affordance: false,
             discovery: true,
-            ..CornerConfig::default()
+            ..config()
         };
         assert_eq!(detector.reconfigure(config, SIZE), [None, None]);
         assert_eq!(detector.engaged_corner(), Some(Corner::TopLeft));
@@ -685,7 +698,7 @@ mod tests {
     fn zero_dwell_still_requires_a_follow_up_sample() {
         let config = CornerConfig {
             dwell_ms: 0,
-            ..CornerConfig::default()
+            ..config()
         };
         let mut detector = CornerDetector::new(config, SIZE);
         assert_eq!(entered(detector.sample(0, (5.0, 5.0), (0.0, 0.0))), None);
@@ -708,7 +721,7 @@ mod tests {
                 config.velocity_max_px_s,
                 config.enabled
             ),
-            (10.0, 200, 1_500.0, true)
+            (4.0, 200, 1_500.0, true)
         );
         assert!(pushes_outward(Corner::BottomRight, (1.0, 0.0)));
         assert!(!pushes_outward(Corner::BottomRight, (-1.0, -1.0)));
