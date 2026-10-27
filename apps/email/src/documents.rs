@@ -365,9 +365,13 @@ impl State {
                     .saving
                     .remove(&ticket)
                     .is_some_and(|f| f == self.document_fence())
-                    && let Err(error) = result
                 {
-                    self.document_error(error);
+                    match result {
+                        Err(error) => self.document_error(error),
+                        Ok(()) => {
+                            if let Some(compose) = &mut self.compose { compose.error = None; }
+                        }
+                    }
                 }
             }
             Answer::Read(result) => {
@@ -799,7 +803,7 @@ mod tests {
         let path = dir.path().join("mail.md");
         let attachment = dir.path().join("note.txt");
         std::fs::write(&attachment, "one").unwrap();
-        let doc = MailDocument {
+        let mut doc = MailDocument {
             to: vec!["bob@example.invalid".into()],
             subject: "[PATCH] Example".into(),
             reply_to: Some("ann@a.example.invalid".into()),
@@ -824,6 +828,8 @@ mod tests {
         assert_eq!(compose.body.contents(), doc.body);
         assert_eq!(compose.draft.attachments, [attachment.clone()]);
         std::fs::write(&attachment, "changed at send time").unwrap();
+        doc.subject = "Changed document".into();
+        std::fs::write(&path, maildoc::write(&doc).unwrap()).unwrap();
         let mut send = connected_many(&["a"]);
         command(&mut send, "email.send", json!({"document": path}));
         finish(&mut send);
@@ -839,6 +845,7 @@ mod tests {
             })
             .expect("a send, never a compose");
         assert_eq!(draft.attachments, [attachment]);
+        assert_eq!(draft.subject, "Changed document");
         let mime = String::from_utf8(jmap::build_mime(&draft).unwrap()).unwrap();
         assert!(mime.contains("Reply-To: ann@a.example.invalid\r\n"));
         assert!(mime.contains("References: <first@example.invalid> <second@example.invalid>\r\n"));
@@ -953,5 +960,10 @@ mod tests {
                 .contains("control")
         );
         assert_eq!(read(&path).unwrap().subject, "Saved");
+        state.compose.as_mut().unwrap().draft.subject = "Recovered".into();
+        state.write_document(path.clone(), true);
+        finish(&mut state);
+        assert!(state.compose.as_ref().unwrap().error.is_none());
+        assert_eq!(read(&path).unwrap().subject, "Recovered");
     }
 }
