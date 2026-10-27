@@ -77,7 +77,7 @@ fn property_reloads_resynchronise_the_log_facade() {
         logging::props::attach(&guard, namespace).await.unwrap();
         assert_eq!(log::max_level(), log::LevelFilter::Debug);
         log::debug!(target: "fake_dependency", "dependency debug admitted");
-        for (level, expected) in [("trace", log::LevelFilter::Trace), ("warn", log::LevelFilter::Warn), ("none", log::LevelFilter::Off)] {
+        for (level, expected) in [("info", log::LevelFilter::Info), ("debug", log::LevelFilter::Debug), ("warn", log::LevelFilter::Warn), ("none", log::LevelFilter::Off)] {
             let mut opts = set_opts(MergeMode::Replace);
             opts.expected_version = None;
             runtime.set(singleton_key(), body(&[("level", level)]), opts).await.unwrap();
