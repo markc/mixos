@@ -17,6 +17,7 @@ pub const MAX_BODY: usize = 256 * 1024;
 const RETENTION_MS: u64 = 600_000;
 const RATE_MS: u64 = 10_000;
 const MAX_RATE_CALLERS: usize = 1024;
+const MAX_REMEMBERED_CALLERS: usize = 128;
 
 /// All four commands; the bool denotes a query.
 pub const COMMANDS: &[(&str, bool)] = &[
@@ -96,11 +97,16 @@ impl Filter {
 
     /// The save-only `*.ext` rule; complex globs do not suggest an extension.
     fn save_name(&self, name: &[u8]) -> Vec<u8> {
+        let has_extension = name
+            .iter()
+            .enumerate()
+            .skip(1)
+            .any(|(i, b)| *b == b'.' && i + 1 < name.len());
         if self.patterns.len() == 1
             && let Some(ext) = self.patterns[0].strip_prefix("*.")
             && !ext.is_empty()
             && !ext.contains(['*', '?', '[', ']', '/'])
-            && !name.ends_with(format!(".{ext}").as_bytes())
+            && !has_extension
         {
             let mut name = name.to_vec();
             name.push(b'.');
@@ -452,12 +458,16 @@ impl Request {
             })
             .to_owned();
         let accept_label = text(&m, "accept_label", 1, 64)?
-            .unwrap_or(if mode == Mode::Open {
-                &defaults.open_accept
-            } else {
-                &defaults.save_accept
-            })
-            .replace('_', "");
+            .map(|label| label.replace('_', ""))
+            .filter(|label| !label.is_empty())
+            .unwrap_or_else(|| {
+                if mode == Mode::Open {
+                    &defaults.open_accept
+                } else {
+                    &defaults.save_accept
+                }
+                .replace('_', "")
+            });
         let mut filters: Vec<_> = list(&m, "filters", 0, 64)?
             .iter()
             .map(parse_filter)
@@ -621,7 +631,8 @@ pub struct Engine {
     done: VecDeque<(u64, Outcome)>,
     lost: HashSet<u64>,
     recent: HashMap<Caller, VecDeque<u64>>,
-    remembered: HashMap<(bool, String), Vec<u8>>,
+    /// Oldest use first; bounded linear lookup avoids a second recency index.
+    remembered: VecDeque<((bool, String), Vec<u8>)>,
 }
 
 impl Engine {
@@ -636,7 +647,7 @@ impl Engine {
             done: VecDeque::new(),
             lost: HashSet::new(),
             recent: HashMap::new(),
-            remembered: HashMap::new(),
+            remembered: VecDeque::new(),
         })
     }
 
@@ -704,14 +715,19 @@ impl Engine {
         {
             return Err(Refusal::new("BUSY", "chooser limit reached"));
         }
-        if request.current_folder.is_none() {
+        let remembered_position = if request.current_folder.is_none() {
+            let key = remember_key(caller, &request);
+            let position = self.remembered.iter().position(|(k, _)| *k == key);
             request.current_folder = Some(
-                self.remembered
-                    .get(&remember_key(caller, &request))
+                position
+                    .map(|i| &self.remembered[i].1)
                     .unwrap_or(&self.home)
                     .clone(),
             );
-        }
+            position
+        } else {
+            None
+        };
         let sequence = self
             .sequence
             .checked_add(1)
@@ -727,6 +743,10 @@ impl Engine {
         presenter
             .open(&opened)
             .map_err(|e| Refusal::new("UNAVAILABLE", e.0))?;
+        if let Some(position) = remembered_position {
+            let entry = self.remembered.remove(position).expect("remembered folder");
+            self.remembered.push_back(entry);
+        }
         self.sequence = sequence;
         let mut reply = json!({"request":id, "topic":"files.chosen"});
         if let Some(correlation) = &opened.request.correlation {
@@ -830,8 +850,12 @@ impl Engine {
         match end {
             End::Accept(accept) => {
                 let (uris, filter, choices, folder) = accepted(&open.request, accept)?;
-                self.remembered
-                    .insert(remember_key(&open.caller, &open.request), folder);
+                let key = remember_key(&open.caller, &open.request);
+                self.remembered.retain(|(k, _)| *k != key);
+                self.remembered.push_back((key, folder));
+                if self.remembered.len() > MAX_REMEMBERED_CALLERS {
+                    self.remembered.pop_front();
+                }
                 outcome.response = 0;
                 outcome.reason = "chosen";
                 outcome.uris = Some(uris);

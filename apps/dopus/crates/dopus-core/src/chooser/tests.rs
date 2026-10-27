@@ -70,6 +70,11 @@ fn accepted_path(path: &[u8]) -> End {
 fn open(e: &mut Engine, p: &mut TestPresenter, request: Value, caller: &str, now: u64) -> String {
     let reply = e.choose(&request.to_string(), caller, now, p).unwrap();
     let id = reply["request"].as_str().unwrap().to_owned();
+    let mut expected = json!({"request":id,"topic":"files.chosen"});
+    if let Some(correlation) = request.get("correlation") {
+        expected["correlation"] = correlation.clone();
+    }
+    assert_eq!(reply, expected);
     e.reply_sent(&id, p);
     id
 }
@@ -270,6 +275,19 @@ fn boundaries_unknown_fields_and_precedence() {
             .accept_label,
         "Open"
     );
+    for label in ["_", "___", &"_".repeat(64)] {
+        for (mode, files, expected) in [
+            ("open", None, "Open"),
+            ("save", None, "Save"),
+            ("save_files", Some(json!(["a"])), "Save"),
+        ] {
+            let mut request = json!({"mode":mode,"accept_label":label});
+            if let Some(files) = files {
+                request["files"] = files;
+            }
+            assert_eq!(parse(request).unwrap().accept_label, expected);
+        }
+    }
     let mut raw = "{}".to_owned();
     raw.push_str(&" ".repeat(MAX_BODY - 2));
     assert!(Request::parse(&raw, &defaults()).is_ok());
@@ -384,14 +402,19 @@ fn filters_select_standalone_match_or_insert_and_match_files() {
 }
 
 #[test]
-fn single_pattern_extension_is_save_only_and_suffix_is_case_sensitive() {
+fn single_pattern_extension_is_save_only_and_preserves_existing_extensions() {
     let req = parse(json!({"mode":"save","current_filter":filter()})).unwrap();
     for (typed, expected) in [
         (b"image".as_slice(), b"image.png".as_slice()),
-        (b"image.jpg", b"image.jpg.png"),
-        (b"image.PNG", b"image.PNG.png"),
+        (b"photo.jpg", b"photo.jpg"),
+        (b"image.PNG", b"image.PNG"),
         (b"image.png", b"image.png"),
+        (b"name.", b"name..png"),
+        (b".bashrc", b".bashrc.png"),
+        (b".config.json", b".config.json"),
+        (b"name.ext.", b"name.ext."),
         (b"\xff", b"\xff.png"),
+        (b"\xff.jpg", b"\xff.jpg"),
     ] {
         assert_eq!(req.save_name(typed), expected);
     }
@@ -401,7 +424,7 @@ fn single_pattern_extension_is_save_only_and_suffix_is_case_sensitive() {
     .unwrap();
     for (typed, expected) in [
         ("archive", "archive.tar.gz"),
-        ("archive.tar", "archive.tar.tar.gz"),
+        ("archive.tar", "archive.tar"),
         ("archive.tar.gz", "archive.tar.gz"),
         ("name.", "name..tar.gz"),
         (".bashrc", ".bashrc.tar.gz"),
@@ -541,19 +564,21 @@ fn desk_and_caller_limits_and_per_app_keying() {
 }
 
 #[test]
-fn rate_is_ten_per_ten_seconds_independently_for_forwarded_apps() {
+fn rate_refuses_the_eleventh_within_ten_seconds_independently_for_forwarded_apps() {
     let mut e = engine();
     let mut p = TestPresenter::default();
     for _ in 0..10 {
         let id = open(&mut e, &mut p, json!({"on_behalf_of":"a"}), "portald", 0);
         e.end(&id, End::Cancel, 0, &mut p).unwrap();
     }
-    assert_eq!(
-        e.choose(r#"{"on_behalf_of":"a"}"#, "portald", 9999, &mut p)
-            .unwrap_err()
-            .message,
-        "chooser rate limit reached"
-    );
+    assert_eq!(p.opened.len(), 10);
+    let error = e
+        .choose(r#"{"on_behalf_of":"a"}"#, "portald", 9999, &mut p)
+        .unwrap_err();
+    assert_eq!(error.error_code, "BUSY");
+    assert_eq!(error.message, "chooser rate limit reached");
+    assert_eq!(p.opened.len(), 10);
+    assert!(e.open.is_empty());
     open(&mut e, &mut p, json!({"on_behalf_of":"b"}), "portald", 9999);
     open(
         &mut e,
@@ -1023,6 +1048,51 @@ fn list_order_defaults_remembered_folder_and_refusals_keep_nothing() {
 }
 
 #[test]
+fn remembered_folders_cap_at_128_and_evict_least_recent_reads_or_acceptances() {
+    let mut e = engine();
+    let mut p = TestPresenter::default();
+    // Equal timestamps make the order depend on use, not clock resolution.
+    for i in 0..128 {
+        let id = open(
+            &mut e,
+            &mut p,
+            json!({"on_behalf_of":format!("app-{i}")}),
+            "portald",
+            0,
+        );
+        e.end(&id, accepted_path(format!("/folder-{i}/file").as_bytes()), 0, &mut p)
+            .unwrap();
+        assert_eq!(e.remembered.len(), i + 1);
+    }
+    // Reusing a folder refreshes it even if the chooser is then cancelled.
+    let id = open(&mut e, &mut p, json!({"on_behalf_of":"app-0"}), "new-portald", 0);
+    assert_eq!(p.opened.last().unwrap().request.current_folder.as_deref(), Some(b"/folder-0".as_slice()));
+    e.end(&id, End::Cancel, 0, &mut p).unwrap();
+    // An acceptance updates an existing entry without increasing the count.
+    let id = open(&mut e, &mut p, json!({"on_behalf_of":"app-1","current_folder":"/override"}), "portald", 0);
+    e.end(&id, accepted_path(b"/updated/file"), 0, &mut p).unwrap();
+    assert_eq!(e.remembered.len(), 128);
+    // A failed presentation does not refresh the least recently used entry.
+    p.unavailable = true;
+    assert_eq!(e.choose(r#"{"on_behalf_of":"app-2"}"#, "portald", 0, &mut p).unwrap_err().error_code, "UNAVAILABLE");
+    p.unavailable = false;
+    for i in 128..130 {
+        let id = open(&mut e, &mut p, json!({"on_behalf_of":format!("app-{i}")}), "portald", 0);
+        e.end(&id, accepted_path(b"/new/file"), 0, &mut p).unwrap();
+        assert_eq!(e.remembered.len(), 128);
+        assert!(!e.remembered.iter().any(|(key, _)| key == &(true, format!("app-{}", i - 126))));
+    }
+    let expected: Vec<_> = (4..128).chain([0, 1, 128, 129]).map(|i| (true, format!("app-{i}"))).collect();
+    assert_eq!(e.remembered.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>(), expected);
+    for (app, folder) in [("app-0", "/folder-0"), ("app-1", "/updated"), ("app-2", "/home/user"), ("app-3", "/home/user")] {
+        let id = open(&mut e, &mut p, json!({"on_behalf_of":app}), "portald", 0);
+        assert_eq!(p.opened.last().unwrap().request.current_folder.as_deref(), Some(folder.as_bytes()));
+        e.end(&id, End::Cancel, 0, &mut p).unwrap();
+    }
+    assert_eq!(e.remembered.len(), 128);
+}
+
+#[test]
 fn rate_counts_window_limit_refusals_before_a_slot_is_freed() {
     let mut e = engine();
     let mut p = TestPresenter::default();
@@ -1046,7 +1116,10 @@ fn rate_counts_window_limit_refusals_before_a_slot_is_freed() {
 fn reply_precedes_input_and_first_outcome_failed_reply_closes() {
     let mut e = engine();
     let mut p = TestPresenter::default();
-    let reply = e.choose("{}", "caller", 1, &mut p).unwrap();
+    let reply = e
+        .choose(r#"{"correlation":"corr"}"#, "caller", 1, &mut p)
+        .unwrap();
+    assert_eq!(reply, json!({"request":"9f2c41d07ab3e655-1","topic":"files.chosen","correlation":"corr"}));
     let id = reply["request"].as_str().unwrap();
     assert!(p.ready.is_empty());
     assert_eq!(
@@ -1061,6 +1134,7 @@ fn reply_precedes_input_and_first_outcome_failed_reply_closes() {
     assert!(e.end(id, End::Cancel, 3, &mut p).unwrap().is_some());
     assert!(e.end(id, End::Cancel, 4, &mut p).unwrap().is_none());
     let reply = e.choose("{}", "caller", 5, &mut p).unwrap();
+    assert_eq!(reply, json!({"request":"9f2c41d07ab3e655-2","topic":"files.chosen"}));
     let id = reply["request"].as_str().unwrap();
     e.reply_failed(id, &mut p);
     assert!(e.open.is_empty());

@@ -7314,8 +7314,8 @@ has a new prefix. `correlation` is present when the caller gave one.
 Refusals open no window and keep nothing:
 
 - `BUSY` when 8 choosers are already open on the desk; when 2 are open for
-  this caller; or when this caller has made more than 10 requests in the last
-  10 seconds. The **caller** for both limits is the pair (broker connection,
+  this caller; or when this caller has already made 10 requests in the last
+  10 seconds (the 11th is refused). The **caller** for both limits is the pair (broker connection,
   `on_behalf_of`) when `on_behalf_of` is given, else the broker connection
   alone, so the apps behind portald are limited one by one;
 - `UNAVAILABLE` when the chooser window cannot be opened (no display, for
@@ -7458,7 +7458,8 @@ They are shown under the file list, in order.
   with a message.
 - **Remembered folder.** The last folder accepted is kept per
   `on_behalf_of`, else per caller, and is where the next chooser for it opens
-  when no `current_folder` or `current_file` is given.
+  when no `current_folder` or `current_file` is given. At most 128 callers are
+  remembered, with the least recently used dropped first.
 - **Who is asking.** When the caller is not `portald`, the window names the
   caller by `citizen::caller_key`, so a person can tell an agent's request
   from an app's. `on_behalf_of` is the caller's claim, not an identity: it is

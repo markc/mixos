@@ -324,8 +324,8 @@ has a new prefix. <code>correlation</code> is present when the caller gave one.<
 <p>Refusals open no window and keep nothing:</p>
 <ul>
 <li><code>BUSY</code> when 8 choosers are already open on the desk; when 2 are open for
-this caller; or when this caller has made more than 10 requests in the last
-10 seconds. The <strong>caller</strong> for both limits is the pair (broker connection,
+this caller; or when this caller has already made 10 requests in the last
+10 seconds (the 11th is refused). The <strong>caller</strong> for both limits is the pair (broker connection,
 <code>on_behalf_of</code>) when <code>on_behalf_of</code> is given, else the broker connection
 alone, so the apps behind portald are limited one by one;</li>
 <li><code>UNAVAILABLE</code> when the chooser window cannot be opened (no display, for
@@ -449,7 +449,8 @@ it exists, as a path bar would; otherwise Accept is refused in the window
 with a message.</li>
 <li><strong>Remembered folder.</strong> The last folder accepted is kept per
 <code>on_behalf_of</code>, else per caller, and is where the next chooser for it opens
-when no <code>current_folder</code> or <code>current_file</code> is given.</li>
+when no <code>current_folder</code> or <code>current_file</code> is given. At most 128 callers are
+remembered, with the least recently used dropped first.</li>
 <li><strong>Who is asking.</strong> When the caller is not <code>portald</code>, the window names the
 caller by <code>citizen::caller_key</code>, so a person can tell an agent's request
 from an app's. <code>on_behalf_of</code> is the caller's claim, not an identity: it is
