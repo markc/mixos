@@ -17,6 +17,7 @@ $broker = nil
 $session = nil
 $provider = nil
 $watcher = nil
+$slow = nil
 $passed = false
 
 fn check($condition, $message)
@@ -210,10 +211,55 @@ try
   ended($id,1,"cancelled")
   topic($id)
   native_count($session.service,0)
+  -- Placement must not hold up validation, cancellation or window driving.
+  -- A real Bus peer deliberately takes longer than the capture timeout.
+  kill($provider,15)
+  for $i = 1 to 80
+    if not process_alive($provider) then break end
+    sleep(0.1)
+  end
+  check(not process_alive($provider),"owned provider did not stop")
+  write_file($tmp .. "/slow.mix", 'on comp.props.get' .. "\n" ..
+    '  append_file(env("CHOOSER_CAPTURE_LOG"), json_encode($event.args) .. "\n")' .. "\n" ..
+    '  sleep(2)' .. "\n" .. '  reply(0, "null")' .. "\nend\n")
+  write_file($tmp .. "/captures.jsonl", "")
+  $slow = spawn([$mix,"--serve",$tmp .. "/slow.mix","--name","slow-placement"],
+    {env:{CHOOSER_CAPTURE_LOG:$tmp .. "/captures.jsonl"},stdout:{file:$tmp .. "/slow.log"},stderr:"stdout",detach:true})
+  for $i = 1 to 80
+    $r = $n.call("slow-placement","INFO",{})
+    if $r.rc == 0 then break end
+    sleep(0.1)
+  end
+  check($r.rc == 0,"slow placement peer did not register")
+  $client.MIXOS_COMP_SERVICE = "slow-placement"
+  $provider = spawn([$dopus,"--choose-service","--noded-url",$broker.url],
+    {env:$client,stdout:{file:$tmp .. "/slow-files.log"},stderr:"stdout",detach:true})
+  for $i = 1 to 100
+    $r = $n.call("files","files.choose.list",{})
+    if $r.rc == 0 then break end
+    sleep(0.1)
+  end
+  check($r.rc == 0,"provider did not restart on private broker")
+  $before = time()
+  $bad = $n.call("files","files.choose",{mode:"bad"})
+  check($bad.rc == 10 and $bad.result.error_code == "ARGUMENT","invalid request was accepted")
+  check(time() - $before < 0.6,"refused request waited for placement")
+  check(read_file($tmp .. "/captures.jsonl") == "","refused request captured placement")
+  $before = time()
+  $id = choose({directory:true})
+  check(time() - $before < 0.6,"choose reply waited for placement")
+  -- The capture is still waiting; an unknown drive target must refuse now.
+  $before = time()
+  $bad = $n.call("files","files.ui.tree",{viewport:"bogus"})
+  check($bad.rc == 10 and $bad.result.error_code == "ARGUMENT","bad target reached UI")
+  call("files.choose.cancel",{request:$id})
+  check(time() - $before < 0.6,"drive/cancel queued behind placement")
+  ended($id,1,"caller")
+  native_count($session.service,0)
   $passed = true
   print("PASS chooser window Bus, native viewports, save, open, directory, cancel, close, remembered folder and concurrent drive")
 finally
-  for $child in [$provider, $watcher]
+  for $child in [$provider, $watcher, $slow]
     if $child != nil and process_alive($child) then kill($child,15) end
   end
   if $session != nil then $n.stop($session) end

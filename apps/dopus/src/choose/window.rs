@@ -435,7 +435,7 @@ impl Window {
         egui::Panel::bottom("files-buttons").show(ui, |ui| {
             ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
                 ui.horizontal(|ui| {
-                    if ui.add(toolkit::PushButton::primary(dopus_core::sanitise_display_text(&self.request.accept_label))).clicked() {
+                    if ui.add(toolkit::button::PushButton::primary(dopus_core::sanitise_display_text(&self.request.accept_label))).clicked() {
                         clicked = Some("chooser.accept");
                     }
                     if ui.button(label("cancel")).clicked() {
@@ -473,7 +473,7 @@ impl Window {
                                                 .desired_width(f32::INFINITY),
                                         )
                                         .accessible_name(label("chooser-name"));
-                                        if self.focus_name {
+                                        if self.focus_name && self.ready && !self.ending {
                                             field.request_focus();
                                             if let Some(mut state) = egui::TextEdit::load_state(&ctx, field.id) {
                                                 let end = self.name.rfind('.').filter(|i| *i > 0)
