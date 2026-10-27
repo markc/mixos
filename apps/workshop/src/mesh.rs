@@ -898,7 +898,7 @@ mod tests {
     fn geometry_cache_reuses_curves_and_invalidates_rect_peers_unit_and_theme() {
         let ctx = egui::Context::default();
         toolkit::install(&ctx, &toolkit::Theme::embedded());
-        let _ = ctx.run_ui(Default::default(), |ui| {
+        let mut output = ctx.run_ui(Default::default(), |ui| {
             let key = GeometryKey {
                 rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(700.0, 480.0)),
                 unit: 18.0,
@@ -929,6 +929,7 @@ mod tests {
                 assert!(Arc::ptr_eq(&next, &geometry_for(ui, changed)));
             }
         });
+        output.textures_delta.clear();
     }
     fn layout(peers: usize, size: Vec2) -> Vec<Placement> {
         map_layout(
