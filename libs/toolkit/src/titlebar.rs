@@ -623,25 +623,6 @@ fn decorations_changed(ctx: &egui::Context, viewport: egui::ViewportId, server: 
     asked != server
 }
 
-#[cfg(test)]
-mod decoration_tests {
-    use super::decorations_changed;
-
-    #[test]
-    fn each_viewport_keeps_its_own_decoration_ask() {
-        let ctx = egui::Context::default();
-        let root = egui::ViewportId::ROOT;
-        let child = egui::ViewportId::from_hash_of("compose-2");
-        assert!(decorations_changed(&ctx, root, true));
-        assert!(!decorations_changed(&ctx, child, false));
-        // A shared flag would flip here and re-ask on every pass.
-        assert!(!decorations_changed(&ctx, root, true));
-        assert!(!decorations_changed(&ctx, child, false));
-        assert!(decorations_changed(&ctx, child, true));
-        assert!(!decorations_changed(&ctx, root, true));
-    }
-}
-
 /// Lay out and draw the right-hand group, right to left from `right`, in
 /// the room down to `left`; push the commands its controls ran. Returns
 /// the group's left edge (`right` when nothing shows).
@@ -978,5 +959,24 @@ pub fn combo_width_of(ctx: &egui::Context) -> egui::Rangef {
     egui::Rangef {
         min: crate::chrome::Chrome::of(ctx).style.title_combo_min_width as f32,
         max: crate::chrome::Chrome::of(ctx).style.title_combo_max_width as f32,
+    }
+}
+
+#[cfg(test)]
+mod decoration_tests {
+    use super::decorations_changed;
+
+    #[test]
+    fn each_viewport_keeps_its_own_decoration_ask() {
+        let ctx = egui::Context::default();
+        let root = egui::ViewportId::ROOT;
+        let child = egui::ViewportId::from_hash_of("compose-2");
+        assert!(decorations_changed(&ctx, root, true));
+        assert!(!decorations_changed(&ctx, child, false));
+        // A shared flag would flip here and re-ask on every pass.
+        assert!(!decorations_changed(&ctx, root, true));
+        assert!(!decorations_changed(&ctx, child, false));
+        assert!(decorations_changed(&ctx, child, true));
+        assert!(!decorations_changed(&ctx, root, true));
     }
 }
