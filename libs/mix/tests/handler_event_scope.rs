@@ -341,6 +341,23 @@ struct RefusedReply {
 }
 
 impl BusHandler for RefusedReply {
+    fn emit<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: &'a Value,
+    ) -> BusFuture<'a, MixResult<()>> {
+        Box::pin(async { unreachable!("test only replies") })
+    }
+
+    fn port_exists<'a>(&'a self, _: &'a str) -> BusFuture<'a, MixResult<bool>> {
+        Box::pin(async { unreachable!("test only replies") })
+    }
+
+    fn next_incoming<'a>(&'a self) -> BusFuture<'a, Option<IncomingEvent>> {
+        Box::pin(async { unreachable!("test dispatches directly") })
+    }
+
     fn send<'a>(
         &'a self,
         _: &'a str,
@@ -476,4 +493,23 @@ async fn other_reply_failure_remains_an_observable_handler_fault() {
     // Handler error and the failed HANDLER_FAULT synthesis both stay errors.
     assert_eq!(records.0.load(std::sync::atomic::Ordering::Relaxed), 2);
     assert_eq!(s.eval.handler_count(), 1);
+}
+
+#[tokio::test]
+async fn shutdown_code_raised_by_script_still_records_a_fault() {
+    let records = ErrorRecords::default();
+    let _guard = tracing::subscriber::set_default(records.clone());
+    let source = "on refresh\n raise(\"BUS_REPLY_SHUTTING_DOWN\", \"script fault\")\nend\n";
+    let mut s = setup(source).await;
+    let runtime = Rc::new(RecordingRuntime {
+        faults: RefCell::new(Vec::new()),
+    });
+    s.eval.set_serve_runtime(runtime.clone());
+    s.eval
+        .dispatch_event(mk_event("refresh", "", &[]))
+        .await
+        .unwrap();
+    assert_eq!(runtime.faults.borrow().len(), 1);
+    assert!(s.stderr.to_string_lossy().contains("script fault"));
+    assert_eq!(records.0.load(std::sync::atomic::Ordering::Relaxed), 1);
 }
