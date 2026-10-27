@@ -85,7 +85,14 @@ fn manifest() -> Vec<bus::CommandDescriptor> {
     .map(|(name, args, description, read_only)| {
         bus::CommandDescriptor::new(name, args, description, read_only)
     })
-    .chain(citizen::debug::describe(APP).into_iter().map(|v| bus::CommandDescriptor::new(v["name"].as_str().unwrap(), &["level?", "on?"], v["description"].as_str().unwrap(), v["read_only"].as_bool().unwrap())))
+    .chain(citizen::debug::describe(APP).into_iter().map(|v| {
+        bus::CommandDescriptor::new(
+            v["name"].as_str().unwrap(),
+            &["level?", "on?"],
+            v["description"].as_str().unwrap(),
+            v["read_only"].as_bool().unwrap(),
+        )
+    }))
     .collect()
 }
 /// Messages the controller's inbox holds before a sender waits.
@@ -1146,7 +1153,17 @@ mod tests {
             .iter()
             .map(|(name, class)| ((*name).to_owned(), (*class).to_owned()))
             .collect();
-        answered.extend(citizen::debug::describe(APP).into_iter().map(|v| (v["name"].as_str().unwrap().to_owned(), if v["read_only"] == true { "query" } else { "intent" }.to_owned())));
+        answered.extend(citizen::debug::describe(APP).into_iter().map(|v| {
+            (
+                v["name"].as_str().unwrap().to_owned(),
+                if v["read_only"] == true {
+                    "query"
+                } else {
+                    "intent"
+                }
+                .to_owned(),
+            )
+        }));
         answered.sort();
         assert_eq!(registered, answered);
     }

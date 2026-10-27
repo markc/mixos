@@ -36,7 +36,11 @@ fn described() -> Vec<String> {
                 .iter()
                 .map(|v| format!("{APP}.{v}")),
         )
-        .chain(toolkit::debug::describe(APP).into_iter().map(|v| v["name"].as_str().unwrap().to_owned()))
+        .chain(
+            toolkit::debug::describe(APP)
+                .into_iter()
+                .map(|v| v["name"].as_str().unwrap().to_owned()),
+        )
         .collect()
 }
 

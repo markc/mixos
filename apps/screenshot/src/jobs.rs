@@ -201,7 +201,10 @@ pub fn describe(window: bool) -> Value {
     if window && let Some(command_names) = surface["commands"].as_array_mut() {
         command_names.extend(toolkit::drive::describe(crate::SERVICE));
     }
-    surface["commands"].as_array_mut().unwrap().extend(toolkit::debug::describe(crate::SERVICE));
+    surface["commands"]
+        .as_array_mut()
+        .unwrap()
+        .extend(toolkit::debug::describe(crate::SERVICE));
     surface
 }
 

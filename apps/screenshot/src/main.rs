@@ -213,10 +213,11 @@ fn window(args: &Args) -> Result<(), String> {
 
 fn main() {
     let mut cli_args: Vec<String> = std::env::args().collect();
-    let _logging = toolkit::debug::init("screenshot", "warn", &mut cli_args).unwrap_or_else(|error| {
-        eprintln!("screenshot: {error}");
-        std::process::exit(2);
-    });
+    let _logging =
+        toolkit::debug::init("screenshot", "warn", &mut cli_args).unwrap_or_else(|error| {
+            eprintln!("screenshot: {error}");
+            std::process::exit(2);
+        });
     buildinfo::exit_on_version!(leading);
     if cli_args.iter().any(|a| a == "--help" || a == "-h") {
         println!("{HELP}\n{}", toolkit::debug::HELP);

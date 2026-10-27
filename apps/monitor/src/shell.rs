@@ -706,10 +706,16 @@ mod tests {
                 .iter()
                 .map(|v| v["name"].as_str().unwrap().to_owned()),
         );
-        expected.extend(toolkit::debug::describe(APP).iter().map(|v| v["name"].as_str().unwrap().to_owned()));
+        expected.extend(
+            toolkit::debug::describe(APP)
+                .iter()
+                .map(|v| v["name"].as_str().unwrap().to_owned()),
+        );
         assert_eq!(names, expected);
         for name in &names {
-            if name.starts_with(&format!("{APP}.macros.")) || name.starts_with(&format!("{APP}.debug")) {
+            if name.starts_with(&format!("{APP}.macros."))
+                || name.starts_with(&format!("{APP}.debug"))
+            {
                 continue;
             }
             let mut e = engine();

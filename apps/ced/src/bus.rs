@@ -53,7 +53,12 @@ pub fn help(window: bool) -> Vec<::bus::CommandDescriptor> {
         }
     }));
     entries.extend(citizen::debug::describe("ced").into_iter().map(|value| {
-        ::bus::CommandDescriptor::new(value["name"].as_str().unwrap(), &["level?", "on?"], value["description"].as_str().unwrap(), value["read_only"].as_bool().unwrap())
+        ::bus::CommandDescriptor::new(
+            value["name"].as_str().unwrap(),
+            &["level?", "on?"],
+            value["description"].as_str().unwrap(),
+            value["read_only"].as_bool().unwrap(),
+        )
     }));
     entries
 }

@@ -1944,7 +1944,10 @@ mod tests {
             .collect();
         assert_eq!(
             names.len(),
-            COMMANDS.len() + drive::COMMANDS.len() + citizen::macros::describe(APP).len() + toolkit::debug::describe(APP).len()
+            COMMANDS.len()
+                + drive::COMMANDS.len()
+                + citizen::macros::describe(APP).len()
+                + toolkit::debug::describe(APP).len()
         );
     }
 

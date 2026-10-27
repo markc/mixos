@@ -72,7 +72,12 @@ pub fn manifest(service: &str) -> Vec<::bus::CommandDescriptor> {
         }
     }));
     entries.extend(citizen::debug::describe(service).into_iter().map(|value| {
-        ::bus::CommandDescriptor::new(value["name"].as_str().unwrap(), &["level?", "on?"], value["description"].as_str().unwrap(), value["read_only"].as_bool().unwrap())
+        ::bus::CommandDescriptor::new(
+            value["name"].as_str().unwrap(),
+            &["level?", "on?"],
+            value["description"].as_str().unwrap(),
+            value["read_only"].as_bool().unwrap(),
+        )
     }));
     entries
 }
@@ -1463,7 +1468,9 @@ mod tests {
             let entries = manifest(service);
             assert_eq!(entries[0].name, "HELP");
             for entry in entries {
-                if entry.name == format!("{service}.debug") || entry.name == format!("{service}.debug.set") {
+                if entry.name == format!("{service}.debug")
+                    || entry.name == format!("{service}.debug.set")
+                {
                     assert!(citizen::debug::request(service, &entry.name, "{}").is_some());
                     assert_eq!(entry.read_only, entry.name.ends_with(".debug"));
                     continue; // Served before terminal argument parsing and tab locking.
