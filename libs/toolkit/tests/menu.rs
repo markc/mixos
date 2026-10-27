@@ -688,6 +688,175 @@ fn popup_anchors_and_bare_alt_work_with_collapsed_menus() {
 }
 
 #[test]
+fn alt_gestures_and_focus_loss_do_not_open_menus() {
+    for style in [design::MenuStyle::Bar, design::MenuStyle::Button] {
+        for gesture in ["click", "secondary", "drag", "wheel", "tab", "focus"] {
+            let theme =
+                fixture::theme(Scheme::Pro, Mode::Light).with_menus(style, design::MenuSide::Left);
+            let mut h = fixture::harness(
+                Harness::builder().with_size(egui::vec2(900.0, 500.0)),
+                &theme,
+            );
+            let pos = egui::pos2(850.0, 450.0);
+            let button = if gesture == "secondary" {
+                PointerButton::Secondary
+            } else {
+                PointerButton::Primary
+            };
+            if gesture == "drag" {
+                h.event(Event::PointerButton {
+                    pos,
+                    button,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                });
+                h.run_steps(1);
+            }
+            h.input_mut().modifiers = Modifiers::ALT;
+            h.run_steps(1);
+            match gesture {
+                "click" | "secondary" => {
+                    for pressed in [true, false] {
+                        h.event(Event::PointerButton {
+                            pos,
+                            button,
+                            pressed,
+                            modifiers: Modifiers::ALT,
+                        });
+                    }
+                }
+                "drag" => h.event(Event::PointerMoved(pos + egui::vec2(20.0, 20.0))),
+                "wheel" => h.event(Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Line,
+                    delta: egui::vec2(0.0, 1.0),
+                    modifiers: Modifiers::ALT,
+                }),
+                "tab" => h.event(Event::Key {
+                    key: Key::Tab,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: Modifiers::ALT,
+                }),
+                "focus" => h.event(Event::WindowFocused(false)),
+                _ => unreachable!(),
+            }
+            h.run_steps(1);
+            if gesture == "focus" {
+                h.event(Event::WindowFocused(true));
+                h.run_steps(1);
+            }
+            if gesture == "drag" {
+                h.event(Event::PointerButton {
+                    pos,
+                    button,
+                    pressed: false,
+                    modifiers: Modifiers::ALT,
+                });
+                h.run_steps(1);
+            }
+            h.input_mut().modifiers = Modifiers::NONE;
+            h.run();
+            assert!(!menu::is_open(&h.ctx), "{style:?}: {gesture}");
+            h.input_mut().modifiers = Modifiers::ALT;
+            h.run_steps(1);
+            h.input_mut().modifiers = Modifiers::NONE;
+            h.run();
+            assert!(
+                menu::is_open(&h.ctx),
+                "a fresh bare Alt still works after {gesture}"
+            );
+        }
+    }
+}
+
+#[test]
+fn f10_stays_available_to_the_user() {
+    for style in [design::MenuStyle::Bar, design::MenuStyle::Button] {
+        let mut h = window();
+        toolkit::install(
+            &h.ctx,
+            &fixture::theme(Scheme::Pro, Mode::Light).with_menus(style, design::MenuSide::Left),
+        );
+        h.run();
+        h.event(Event::Key {
+            key: Key::F10,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+        h.run_steps(1);
+        assert!(!menu::is_open(&h.ctx));
+        assert!(h.ctx.input(|i| i.events.iter().any(|event| matches!(
+            event,
+            Event::Key {
+                key: Key::F10,
+                pressed: true,
+                ..
+            }
+        ))));
+    }
+}
+
+#[test]
+fn disabled_menus_open_and_empty_submenus_keep_their_bar_shape() {
+    for compact in [false, true] {
+        let menus = vec![Menu {
+            title: "Edit".into(),
+            entries: vec![
+                Entry::Row(Row::command("cut", "Cut", None, false)),
+                Entry::Row(Row::submenu("Open Recent", vec![])),
+            ],
+        }];
+        assert!(!menus[0].entries[1].row().unwrap().is_submenu());
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(800.0, 500.0))
+            .build_ui(move |ui| {
+                ui.horizontal(|ui| {
+                    if compact {
+                        let _ = menu::compact_picked(
+                            ui,
+                            &menus,
+                            None,
+                            egui::Rect::from_min_size(egui::pos2(10.0, 30.0), egui::Vec2::ZERO),
+                        );
+                    } else {
+                        let _ = menu::bar(ui, &menus);
+                    }
+                });
+            });
+        toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+        toolkit::drive::install(&h.ctx, "demo");
+        h.run();
+        let list =
+            toolkit::drive::request(&h.ctx, 1, "ui.menu.list", &serde_json::json!({})).unwrap();
+        assert!(list.body["menus"][0]["rows"][1].get("submenu").is_none());
+        let opened = toolkit::drive::request(
+            &h.ctx,
+            2,
+            "ui.menu.open",
+            &serde_json::json!({"path": ["Edit"]}),
+        )
+        .unwrap();
+        assert_eq!(opened.rc, 0);
+        h.run();
+        assert!(h.get_by_label("Cut").accesskit_node().is_disabled());
+        assert_eq!(menu::current(&h.ctx).unwrap().menu, "Edit");
+        menu::close(&h.ctx);
+        h.run();
+        if compact {
+            menu::popup(&h.ctx, None, None).unwrap();
+            h.run();
+        }
+        h.get_by_label("Edit").click();
+        h.run();
+        assert!(h.get_by_label("Cut").accesskit_node().is_disabled());
+        assert!(menu::is_open(&h.ctx));
+    }
+}
+
+#[test]
 fn a_forced_popup_can_close_and_reopen_a_bar_path_before_the_next_frame() {
     let mut h = window();
     menu::popup(&h.ctx, None, None).unwrap();

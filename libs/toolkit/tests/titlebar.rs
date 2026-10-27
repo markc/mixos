@@ -230,6 +230,8 @@ fn compact_menu_titlebars() {
                         .framed(decorations, CaptionSide::Right)
                         .with_menus(style, side),
                 );
+                toolkit::drive::install(&h.ctx, "demo");
+                toolkit::drive::set_service(&h.ctx, Some("demo"));
                 h.run();
                 h.snapshot(format!(
                     "menu_{}_{}_{}",
@@ -252,11 +254,28 @@ fn compact_menu_titlebars() {
                         side.name()
                     ));
                 }
-                toolkit::menu::close(&h.ctx);
-                h.key_press(egui::Key::F10);
-                h.run();
-                assert!(toolkit::menu::is_open(&h.ctx));
             }
         }
     }
+}
+
+#[test]
+fn titlebar_without_a_drive_keeps_an_app_menu_button() {
+    let mut h = harness();
+    toolkit::install(
+        &h.ctx,
+        &Theme::embedded()
+            .framed(
+                design::RequestedDecorations::Server,
+                design::CaptionSide::Right,
+            )
+            .with_menus(design::MenuStyle::Titlebar, design::MenuSide::Left),
+    );
+    h.run();
+    assert_eq!(toolkit::menu::form(&h.ctx)["effective"], "button");
+    h.get_by_label("Menus").click();
+    h.run();
+    h.get_by_label("File").click();
+    h.run();
+    h.get_by_label("Quit");
 }

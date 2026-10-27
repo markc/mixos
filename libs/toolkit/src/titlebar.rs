@@ -254,7 +254,7 @@ pub fn show_with<S>(
         let mut menu_start = start + m.title_bar_margin;
         let anchor = menu_button(ui, &chrome, &mut menu_start, &mut end);
         start = menu_start - m.title_bar_margin;
-        if chrome.menu_style.effective(chrome.decorations) == design::MenuStyle::Button
+        if crate::menu::effective(ui.ctx()) == design::MenuStyle::Button
             && chrome.menu_side == design::MenuSide::Right
         {
             room_end = end;
@@ -473,7 +473,7 @@ fn menus<S>(
     );
     row.spacing_mut().item_spacing.x = 0.0;
     let chrome = Chrome::of(ui.ctx());
-    if chrome.menu_style.effective(chrome.decorations) == design::MenuStyle::Bar {
+    if crate::menu::effective(ui.ctx()) == design::MenuStyle::Bar {
         fired.extend(registry.menus(&mut row, state, strings));
     } else {
         let anchor = anchor.unwrap_or_else(|| {
@@ -491,7 +491,7 @@ fn menus<S>(
 }
 
 fn menu_button(ui: &mut Ui, chrome: &Chrome, left: &mut f32, right: &mut f32) -> Option<Rect> {
-    if chrome.menu_style.effective(chrome.decorations) != design::MenuStyle::Button {
+    if crate::menu::effective(ui.ctx()) != design::MenuStyle::Button {
         return None;
     }
     let width = chrome.style.icon_button as f32;

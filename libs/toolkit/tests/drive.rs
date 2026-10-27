@@ -10,6 +10,7 @@ mod fixture;
 use design::{Mode, Scheme};
 use egui::{Color32, ColorImage, Context, FullOutput, ViewportCommand, ViewportId};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 use fixture::Fixture;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -415,6 +416,7 @@ fn menu_paths_and_popups_work_in_every_form() {
                     .framed(decorations, CaptionSide::Right)
                     .with_menus(style, side);
                 toolkit::install(&h.ctx, &theme);
+                drive::set_service(&h.ctx, Some("demo"));
                 h.run();
                 let form = ok(&mut h, "ui.menu.form", json!({}));
                 assert_eq!(
@@ -496,6 +498,44 @@ fn pointer_press_and_release_follow_the_menu_rules() {
         json!({"x":x,"y":y,"action":"release"}),
     );
     assert_eq!(closed["menu"], Value::Null);
+}
+
+#[test]
+fn titlebar_menus_follow_the_drives_actual_registration() {
+    let mut h = window();
+    let theme = fixture::theme(Scheme::Pro, Mode::Light)
+        .framed(
+            design::RequestedDecorations::Server,
+            design::CaptionSide::Right,
+        )
+        .with_menus(design::MenuStyle::Titlebar, design::MenuSide::Left);
+    toolkit::install(&h.ctx, &theme);
+    for (service, effective) in [
+        (None, "button"),
+        (Some("demo"), "titlebar"),
+        (Some("other-instance"), "button"),
+        (None, "button"),
+        (Some("demo"), "titlebar"),
+    ] {
+        drive::set_service(&h.ctx, service);
+        h.run();
+        assert_eq!(
+            ok(&mut h, "ui.menu.form", json!({}))["effective"],
+            effective
+        );
+        assert_eq!(h.query_by_label("Menus").is_some(), effective == "button");
+        ok(
+            &mut h,
+            "ui.menu.open",
+            json!({"path":["File","Open Recent","Clear Recent Files"]}),
+        );
+        h.run();
+        ok(&mut h, "ui.key", json!({"key":"Enter"}));
+        assert_eq!(
+            h.state().fixture.ran.last().copied(),
+            Some("file.clear-recent")
+        );
+    }
 }
 
 #[test]

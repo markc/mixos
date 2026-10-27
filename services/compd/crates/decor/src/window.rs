@@ -25,14 +25,18 @@ thread_local! {
     static MENU_EMIT: RefCell<Option<MenuEmit>> = const { RefCell::new(None) };
 }
 
-type MenuEmit = Rc<dyn Fn(&str, design::MenuSide) -> bool>;
+type MenuEmit = Rc<dyn Fn(&str, design::MenuSide, f32) -> bool>;
 
 /// The scene host owns the Bus connection; chrome only queues through it.
-pub fn menu_emitter(emit: impl Fn(&str, design::MenuSide) -> bool + 'static) {
+pub fn menu_emitter(emit: impl Fn(&str, design::MenuSide, f32) -> bool + 'static) {
     MENU_EMIT.with_borrow_mut(|slot| *slot = Some(Rc::new(emit)));
 }
 
 pub fn menu_services(services: BTreeSet<String>) -> bool {
+    let services = services
+        .into_iter()
+        .filter(|name| menu_service_name(name))
+        .collect();
     let changed = MENU_SERVICES.with_borrow_mut(|live| {
         if *live == services {
             return false;
@@ -40,15 +44,21 @@ pub fn menu_services(services: BTreeSet<String>) -> bool {
         *live = services;
         true
     });
-    if changed {
+    let repaint =
+        changed && installed().is_some_and(|theme| theme.menu_style == design::MenuStyle::Titlebar);
+    if repaint {
         GENERATION.set(GENERATION.get().wrapping_add(1));
     }
-    changed
+    repaint
+}
+
+fn menu_service_name(service: &str) -> bool {
+    !service.is_empty() && !service.contains('.')
 }
 
 pub fn menu_service<'a>(app_id: &'a str, services: &BTreeSet<String>) -> Option<&'a str> {
     let service = app_id.strip_prefix("dev.mixos.")?;
-    (!service.is_empty() && !service.contains('.') && services.contains(service)).then_some(service)
+    (menu_service_name(service) && services.contains(service)).then_some(service)
 }
 
 fn app_id(window: &Window) -> Option<String> {
@@ -66,27 +76,48 @@ fn app_id(window: &Window) -> Option<String> {
 }
 
 pub fn menu_side(window: &Window) -> Option<design::MenuSide> {
+    menu_target(window).map(|(_, side)| side)
+}
+
+fn menu_target(window: &Window) -> Option<(String, design::MenuSide)> {
     let theme = installed()?;
     if theme.menu_style != design::MenuStyle::Titlebar || !decorated(window) {
         return None;
     }
     let app_id = app_id(window)?;
-    MENU_SERVICES.with_borrow(|live| menu_service(&app_id, live).map(|_| theme.menu_side))
+    MENU_SERVICES.with_borrow(|live| {
+        menu_service(&app_id, live).map(|service| (service.to_owned(), theme.menu_side))
+    })
 }
 
 pub fn open_menu(window: &Window) -> bool {
-    let Some(side) = menu_side(window) else {
+    let Some((service, side)) = menu_target(window) else {
         return false;
     };
-    let Some(app_id) = app_id(window) else {
+    let Some(theme) = installed() else {
         return false;
     };
-    let service = MENU_SERVICES.with_borrow(|live| menu_service(&app_id, live).map(str::to_owned));
-    let Some(service) = service else {
+    let geometry = window.geometry().size;
+    let size = crate::render::layout_of(window)
+        .filter(|layout| layout.content.w > 1.0 && layout.content.h > 1.0)
+        .map_or(
+            crate::layout::vec2(geometry.w as f32, geometry.h as f32),
+            |layout| crate::layout::vec2(layout.content.w, layout.content.h),
+        );
+    let layout = crate::layout::ChromeLayout::compute_with_menu(&theme.deco, size, Some(side));
+    let Some(x) = menu_x(&layout, geometry.w as f32) else {
         return false;
     };
     let emit = MENU_EMIT.with_borrow(Clone::clone);
-    emit.is_some_and(|emit| emit(&service, side))
+    emit.is_some_and(|emit| emit(&service, side, x))
+}
+
+fn menu_x(layout: &crate::layout::ChromeLayout, content_width: f32) -> Option<f32> {
+    let button = layout.menu_button?;
+    // Layout is in logical slot pixels; the client may be scaled into that slot.
+    (layout.content.w > 0.0 && content_width > 0.0).then(|| {
+        ((button.x - layout.content.x) * content_width / layout.content.w).clamp(0.0, content_width)
+    })
 }
 
 /// Install `theme` for this compositor thread (startup, or a theme change).
@@ -334,10 +365,61 @@ mod tests {
         ] {
             assert_eq!(menu_service(id, &services), None);
         }
-        let before = generation();
-        assert!(menu_services(services.clone()));
-        assert_ne!(generation(), before);
-        assert!(!menu_services(services));
+    }
+
+    #[test]
+    fn registry_changes_repaint_only_relevant_titlebar_menus() {
         menu_services(BTreeSet::new());
+        install(ChromeTheme::from_source(ChromeStyle::Mac, None));
+        let before = generation();
+        assert!(!menu_services(BTreeSet::from(["ced".into()])));
+        assert_eq!(generation(), before);
+        let mut theme = ChromeTheme::from_source(ChromeStyle::Mac, None);
+        theme.menu_style = design::MenuStyle::Titlebar;
+        install(theme);
+        let before = generation();
+        assert!(!menu_services(BTreeSet::from([
+            "ced".into(),
+            "background.worker".into(),
+            "".into()
+        ])));
+        assert_eq!(generation(), before);
+        assert!(menu_services(BTreeSet::from([
+            "ced".into(),
+            "prefs".into()
+        ])));
+        assert_ne!(generation(), before);
+        let before = generation();
+        assert!(!menu_services(BTreeSet::from([
+            "ced".into(),
+            "prefs".into(),
+            "another.worker".into()
+        ])));
+        assert_eq!(generation(), before);
+        assert!(menu_services(BTreeSet::from(["prefs".into()])));
+        assert_ne!(generation(), before);
+        install(ChromeTheme::from_source(ChromeStyle::Mac, None));
+        let before = generation();
+        assert!(!menu_services(BTreeSet::new()));
+        assert_eq!(generation(), before);
+    }
+
+    #[test]
+    fn menu_anchor_is_in_client_content_coordinates() {
+        for style in ChromeStyle::ALL {
+            let theme = presets::resolve(style, Scheme::Ocean, Mode::Light);
+            for side in design::MenuSide::ALL {
+                let layout =
+                    ChromeLayout::compute_with_menu(&theme, vec2(640.0, 480.0), Some(side));
+                let button = layout.menu_button.unwrap();
+                let x = button.x - layout.content.x;
+                for ratio in [0.5, 1.0, 2.0] {
+                    assert!((menu_x(&layout, 640.0 * ratio).unwrap() - x * ratio).abs() < 0.001);
+                }
+                assert!(menu_x(&layout, 0.0).is_none());
+            }
+            let layout = ChromeLayout::compute(&theme, vec2(640.0, 480.0));
+            assert!(menu_x(&layout, 640.0).is_none());
+        }
     }
 }

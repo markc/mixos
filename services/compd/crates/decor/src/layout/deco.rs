@@ -225,6 +225,7 @@ pub struct ButtonCluster {
     pub close: ButtonColors,
     pub minimize: ButtonColors,
     pub maximize: ButtonColors,
+    pub menu: ButtonColors,
 }
 
 impl ButtonCluster {
@@ -233,7 +234,7 @@ impl ButtonCluster {
             CaptionButton::Close => &self.close,
             CaptionButton::Minimize => &self.minimize,
             CaptionButton::Maximize => &self.maximize,
-            CaptionButton::Menu => &self.minimize,
+            CaptionButton::Menu => &self.menu,
         }
     }
 }

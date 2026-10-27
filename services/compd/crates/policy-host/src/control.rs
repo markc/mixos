@@ -346,7 +346,6 @@ fn window_op(lp: &mut Loop, op: &WindowOp) -> Option<ControlReply> {
                         serde_json::json!({"id": id, "generation": generation, "queued": true}),
                     )
                 } else {
-                    model::warn!("window {id} menu Bus call was not queued");
                     ControlReply::refused("menu_unavailable", serde_json::json!({"id": id}))
                 }
             }

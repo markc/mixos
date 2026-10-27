@@ -295,13 +295,17 @@ Session `appearance.menu_style` chooses the horizontal bar, a hamburger button
 or a button hosted by compd for SSD windows. `appearance.menu_side` places the
 button at either end. The hamburger wraps the existing menu titles as submenu
 rows and shares navigation, highlights, search and command dispatch with the
-bar. F10 or a bare Alt opens the menus in either form.
+bar. A bare Alt opens the menus in either form; function keys belong to the user.
+Alt used with a pointer gesture, wheel, another key or a focus change never
+opens the menus on release.
 `ui.menu.list` and `ui.menu.open {path|menu}` use the same titles and paths in
 every form. `ui.menu.popup {side?: "left"|"right", x?: number}` opens the
 vertical menu at the content's top edge regardless of the selected form; x
 is a content-point coordinate and takes precedence over side.
 `ui.menu.form` returns `{style, side, effective}`; effective resolves `titlebar`
-to `button` under client-side decorations.
+to `button` under client-side decorations or without a live Drive registration
+under the command prefix. Apps pass their actual registered service name and
+clear it on disconnect; an aliased or offline window keeps its own menu button.
 
 The app forwards each request, with the prefix removed, to
 `drive::request` from app logic, including logic-only wakes. It sends back whatever `request`, or

@@ -340,7 +340,7 @@ macro_rules! menu_axis {
             }
 
             pub fn valid_name(name: &str) -> bool {
-                WindowStyle::valid_name(name)
+                valid_appearance_name(name)
             }
         }
     };
@@ -375,13 +375,16 @@ impl WindowStyle {
 
     /// Unknown names are retained for profiles shared with newer binaries.
     pub fn valid_name(name: &str) -> bool {
-        Self::from_name(name).is_some()
-            || (!name.is_empty()
-                && name.len() <= 64
-                && name
-                    .bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'))
+        valid_appearance_name(name)
     }
+}
+
+fn valid_appearance_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 /// The compile-time selection used to flatten a design source.

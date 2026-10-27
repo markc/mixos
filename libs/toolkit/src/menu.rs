@@ -119,7 +119,7 @@ impl Row {
     }
 
     pub fn is_submenu(&self) -> bool {
-        self.id.is_none()
+        !self.children.is_empty()
     }
 }
 
@@ -260,21 +260,27 @@ pub struct Nav {
     open: Option<usize>,
     highlight: Vec<Option<usize>>,
     depth: usize,
+    vertical_root: bool,
 }
 
 impl Nav {
     pub fn key_vertical(&mut self, key: NavKey, menus: &[Menu]) -> Outcome {
+        self.vertical_root = true;
         match key {
             NavKey::Left if self.depth == 0 => Outcome::Stay,
             NavKey::Right
                 if !self
                     .current(menus)
-                    .is_some_and(|row| row.enabled && row.is_submenu()) =>
+                    .is_some_and(|row| row.enabled && self.submenu(row, self.depth)) =>
             {
                 Outcome::Stay
             }
             _ => self.key(key, menus),
         }
+    }
+
+    fn submenu(&self, row: &Row, level: usize) -> bool {
+        row.is_submenu() || (self.vertical_root && level == 0 && row.id.is_none())
     }
 
     /// The open top-level menu.
@@ -299,6 +305,7 @@ impl Nav {
             open: Some(menu),
             highlight: vec![None],
             depth: 0,
+            vertical_root: self.vertical_root,
         };
     }
 
@@ -319,7 +326,7 @@ impl Nav {
             // (enabled, is a submenu) of the level's highlighted row.
             let lit = self.highlight[level]
                 .and_then(|index| self.level(menus, level)?.get(index)?.row())
-                .map(|r| (r.enabled, r.is_submenu()));
+                .map(|r| (r.enabled, self.submenu(r, level)));
             if self.highlight[level].is_some() && !lit.is_some_and(|(enabled, _)| enabled) {
                 self.highlight[level] = None;
             }
@@ -351,7 +358,7 @@ impl Nav {
         let mut entries = menus.get(self.open?)?.entries.as_slice();
         for parent in 0..level {
             let row = entries.get((*self.highlight.get(parent)?)?)?.row()?;
-            if !row.is_submenu() {
+            if !self.submenu(row, parent) {
                 return None;
             }
             entries = &row.children;
@@ -388,7 +395,7 @@ impl Nav {
             NavKey::Right => {
                 if self
                     .current(menus)
-                    .is_some_and(|row| row.enabled && row.is_submenu())
+                    .is_some_and(|row| row.enabled && self.submenu(row, self.depth))
                 {
                     self.enter(menus);
                 } else {
@@ -404,7 +411,7 @@ impl Nav {
                 }
             }
             NavKey::Enter => match self.current(menus) {
-                Some(row) if row.enabled && row.is_submenu() => self.enter(menus),
+                Some(row) if row.enabled && self.submenu(row, self.depth) => self.enter(menus),
                 Some(Row {
                     id: Some(id),
                     enabled: true,
@@ -456,7 +463,7 @@ impl Nav {
         match row {
             Some(row) if row.enabled => {
                 self.highlight[level] = Some(index);
-                if row.is_submenu() {
+                if self.submenu(row, level) {
                     self.highlight.push(None);
                 }
             }
@@ -528,6 +535,7 @@ struct State {
     popup_anchor: Option<Rect>,
     alt_down: bool,
     alt_used: bool,
+    alt_blocked: bool,
     search_active: bool,
 }
 
@@ -980,7 +988,12 @@ pub fn compact_model(menus: &[Menu]) -> Vec<Menu> {
         title: crate::strings::own("window-menu"),
         entries: menus
             .iter()
-            .map(|menu| Entry::Row(Row::submenu(menu.title.clone(), menu.entries.clone())))
+            .map(|menu| {
+                Entry::Row(Row {
+                    enabled: true,
+                    ..Row::submenu(menu.title.clone(), menu.entries.clone())
+                })
+            })
             .collect(),
     }]
 }
@@ -990,8 +1003,18 @@ pub fn form(ctx: &Context) -> serde_json::Value {
     serde_json::json!({
         "style": chrome.menu_style.name(),
         "side": chrome.menu_side.name(),
-        "effective": chrome.menu_style.effective(chrome.decorations).name(),
+        "effective": effective(ctx).name(),
     })
+}
+
+pub(crate) fn effective(ctx: &Context) -> design::MenuStyle {
+    let chrome = Chrome::of(ctx);
+    let style = chrome.menu_style.effective(chrome.decorations);
+    if style == design::MenuStyle::Titlebar && !crate::drive::menu_service(ctx) {
+        design::MenuStyle::Button
+    } else {
+        style
+    }
 }
 
 /// Open at the top of the content, independent of the selected menu form.
@@ -1014,6 +1037,7 @@ pub fn popup(ctx: &Context, side: Option<design::MenuSide>, x: Option<f32>) -> R
         pos2(x, bounds.top()),
     ));
     st.vertical = true;
+    st.nav.vertical_root = true;
     st.nav.open(0);
     st.query.clear();
     st.current = current_in_form(&st.nav, &compact_model(&st.menus), true);
@@ -1026,6 +1050,7 @@ pub(crate) fn toggle(ctx: &Context) {
     let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
     st.popup_anchor = None;
     st.vertical = true;
+    st.nav.vertical_root = true;
     if st.nav.open_menu().is_some() {
         st.nav.close();
     } else {
@@ -1084,6 +1109,7 @@ pub fn open_path(ctx: &Context, path: &[String]) -> Result<Current, String> {
     // A search typed into an open menu would show results, not the rows
     // named here: opening by path starts without one, as a click does.
     st.query.clear();
+    st.nav.vertical_root = vertical;
     st.nav.open(if vertical { 0 } else { menu });
     st.vertical = vertical;
     if vertical {
@@ -1245,6 +1271,16 @@ fn render_picked(
     let ctx = ui.ctx().clone();
     let chrome = Chrome::of(&ctx);
     let model = menus.to_vec();
+    let lost_focus = ui.input(|i| i.events.contains(&egui::Event::WindowFocused(false)));
+    if lost_focus {
+        ctx.data_mut(|d| {
+            let mut st: State = d.get_temp(state_id()).unwrap_or_default();
+            st.alt_down = false;
+            st.alt_used = false;
+            st.alt_blocked = true;
+            d.insert_temp(state_id(), st);
+        });
+    }
     // A covered bar still draws, but cannot replace the menu/drive state
     // belonging to the dialog above it.
     // It looks exactly like an idle bar (same colour, rounding and
@@ -1260,6 +1296,7 @@ fn render_picked(
                     State {
                         layer: st.layer,
                         menus: st.menus,
+                        alt_blocked: st.alt_blocked,
                         ..Default::default()
                     },
                 );
@@ -1285,7 +1322,10 @@ fn render_picked(
     }
     let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
     if st.layer.is_some_and(|layer| layer != ui.layer_id()) {
-        st = State::default();
+        st = State {
+            alt_blocked: st.alt_blocked,
+            ..State::default()
+        };
     }
     st.layer = Some(ui.layer_id());
     st.compact = anchor.is_some();
@@ -1340,22 +1380,35 @@ fn render_picked(
         menus
     };
     let search_level = usize::from(vertical);
+    st.nav.vertical_root = vertical;
     let before = st.nav.clone();
-    let alt = ui.input(|i| i.modifiers.alt && !i.modifiers.ctrl && !i.modifiers.command);
+    let held_alt = ui.input(|i| i.modifiers.alt);
+    st.alt_blocked |= lost_focus;
+    if !lost_focus && !held_alt {
+        st.alt_blocked = false;
+    }
+    let alt = !lost_focus && !st.alt_blocked && held_alt;
     if alt && !st.alt_down {
         st.alt_used = false;
     }
-    st.alt_used |= alt
+    st.alt_used |= (alt || st.alt_down)
         && ui.input(|i| {
-            i.events.iter().any(|e| {
-                matches!(
-                    e,
-                    egui::Event::Key { pressed: true, .. } | egui::Event::Text(_)
-                )
-            })
+            i.modifiers.ctrl
+                || i.modifiers.command
+                || i.modifiers.shift
+                || i.pointer.any_down()
+                || i.pointer.any_pressed()
+                || i.events.iter().any(|e| {
+                    matches!(
+                        e,
+                        egui::Event::Key { pressed: true, .. }
+                            | egui::Event::Text(_)
+                            | egui::Event::PointerButton { pressed: true, .. }
+                            | egui::Event::MouseWheel { .. }
+                    )
+                })
         });
-    let open_key = (st.alt_down && !alt && !st.alt_used)
-        || ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F10));
+    let open_key = st.alt_down && !alt && !st.alt_used;
     st.alt_down = alt;
     if open_key && !menus.is_empty() {
         if st.nav.open_menu().is_some() {
@@ -1776,7 +1829,7 @@ fn render_picked(
                 fired = Some((*id, in_results(&st)));
                 st.nav.close();
             }
-            Some((level, index, row)) if row.enabled && row.is_submenu() => {
+            Some((level, index, row)) if row.enabled && st.nav.submenu(row, level) => {
                 if st.inside_press {
                     st.nav.hover(level, index, menus);
                     st.nav.depth = level;

@@ -1291,6 +1291,15 @@ impl Shell {
     /// completion can never change what an earlier one acted on.
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
+            match &event {
+                Event::Delivery(citizen::Delivery::Connected) => {
+                    drive::set_service(&self.ctx, Some(self.bus.service()))
+                }
+                Event::Delivery(citizen::Delivery::Disconnected) => {
+                    drive::set_service(&self.ctx, None)
+                }
+                _ => {}
+            }
             if let Event::Look(ticket, result) = event {
                 self.looked(ticket, result);
                 self.settle();

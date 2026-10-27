@@ -122,6 +122,7 @@ pub fn mac(mode: Mode) -> DecoTheme {
             glyphs: GlyphPolicy::ClusterHover,
             close: traffic(0xFF5F57, 0x730B01),
             minimize: traffic(0xFEBC2E, 0x7A5A02),
+            menu: traffic(0xFEBC2E, 0x7A5A02),
             maximize: traffic(0x28C840, 0x0A530F),
         },
     }
@@ -238,6 +239,7 @@ pub fn win11(mode: Mode) -> DecoTheme {
                 glyph_hover: Srgba::hex(0xFFFFFF),
             },
             minimize: plain,
+            menu: plain,
             maximize: plain,
         },
     }
@@ -377,6 +379,7 @@ pub fn mixos(scheme: Scheme, mode: Mode) -> DecoTheme {
             glyphs: GlyphPolicy::Always,
             close: button(true),
             minimize: button(false),
+            menu: button(false),
             maximize: button(false),
         },
     }
@@ -457,9 +460,23 @@ mod tests {
                     assert_eq!(t.style, style);
                     assert_eq!(t.mode, mode);
                     assert!(t.metrics.titlebar_height > 0.0);
+                    assert_eq!(t.buttons.menu, t.buttons.minimize);
                 }
             }
         }
+    }
+
+    #[test]
+    fn menu_colours_have_their_own_slot() {
+        let mut theme = win11(Mode::Light);
+        let minimize = theme.buttons.minimize;
+        theme.buttons.menu = theme.buttons.close;
+        assert_eq!(
+            *theme.buttons.colors(CaptionButton::Menu),
+            theme.buttons.close
+        );
+        assert_eq!(theme.buttons.minimize, minimize);
+        assert_ne!(*theme.buttons.colors(CaptionButton::Menu), minimize);
     }
 
     #[test]

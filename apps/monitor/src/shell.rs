@@ -334,6 +334,15 @@ impl Shell {
 
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
+            match &event {
+                Event::Delivery(citizen::Delivery::Connected) => {
+                    drive::set_service(&self.ctx, Some(self.bus.service()))
+                }
+                Event::Delivery(citizen::Delivery::Disconnected) => {
+                    drive::set_service(&self.ctx, None)
+                }
+                _ => {}
+            }
             match event {
                 Event::Delivery(Delivery::Theme) => {
                     self.file_theme = Theme::load();

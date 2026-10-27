@@ -622,6 +622,10 @@ impl Shell {
 
     /// One frame's logic; it runs even while the window is hidden.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        drive::set_service(
+            ctx,
+            self.transport.connected().then(|| self.transport.service()),
+        );
         self.app.now = ctx.input(|i| i.time);
         if !self.deferred.is_empty() {
             // Input held back last frame comes before this frame's.

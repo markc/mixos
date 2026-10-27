@@ -545,6 +545,7 @@ impl Shell {
 
     /// One frame's logic; it runs even while the window is hidden.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        drive::set_service(ctx, self.bus.connected().then(|| self.bus.name()));
         for answer in drive::logic(ctx) {
             self.answer(answer.id, answer.rc, answer.body);
         }

@@ -327,6 +327,7 @@ fn apply_dictionary(theme: &mut DecoTheme, dictionary: &ResolvedDictionary) {
             recolour_button(&mut b.close, primitive("status.danger"), glyph);
             recolour_button(&mut b.minimize, primitive("status.warning"), glyph);
             recolour_button(&mut b.maximize, primitive("status.success"), glyph);
+            recolour_button(&mut b.menu, surface("muted"), foreground("card"));
             for button in [&mut b.close, &mut b.minimize, &mut b.maximize] {
                 recolour(&mut button.fill_unfocused, non_text("border"));
             }
@@ -340,7 +341,7 @@ fn apply_dictionary(theme: &mut DecoTheme, dictionary: &ResolvedDictionary) {
                 ChromeStyle::Mixos => surface("accent"),
                 _ => glyph,
             };
-            for button in [&mut b.minimize, &mut b.maximize] {
+            for button in [&mut b.minimize, &mut b.maximize, &mut b.menu] {
                 recolour(&mut button.fill_idle, glyph);
                 recolour(&mut button.fill_unfocused, glyph);
                 recolour(&mut button.fill_hover, hover);

@@ -208,6 +208,13 @@ impl Shell {
 
     /// Apply every Bus delivery that has arrived.
     fn pump_bus(&mut self) {
+        drive::set_service(
+            &self.ctx,
+            self.bus
+                .as_ref()
+                .filter(|bus| bus.handle.connected())
+                .map(|bus| bus.handle.service()),
+        );
         while let Some(delivery) = self.bus.as_mut().and_then(|b| b.deliveries.try_recv().ok()) {
             match delivery {
                 Delivery::Mail { id, result } => self.app.mailed(id, result),

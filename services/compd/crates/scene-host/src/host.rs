@@ -716,11 +716,11 @@ impl SceneHost {
             waker,
         };
         let menu_sink = port.event_sink();
-        decor::window::menu_emitter(move |service, side| {
+        decor::window::menu_emitter(move |service, side, x| {
             menu_sink.emit(
                 service,
                 &format!("{service}.ui.menu.popup"),
-                json!({"side": side.name()}),
+                json!({"side": side.name(), "x": x}),
             )
         });
         // conf.mix's page order, as Quoin reads it at start.

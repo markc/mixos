@@ -326,7 +326,9 @@ effective and compact data. Older seals and snapshot schemas stay valid.
 The button is in the app's top row, before its mark or after its right-hand
 controls. <code>titlebar</code> uses compd's title bar for server-decorated windows whose
 <code>dev.mixos.NAME</code> app has a registered <code>NAME</code> Bus service; client-decorated windows
-use the app button. Both settings apply live and have no app override.</p>
+use the app button. An app without its own live Drive registration under its
+command prefix also keeps the app button. Both settings apply live and have no
+app override.</p>
 <p>The package source is pinned in accepted storage at profile creation. Null
 appearance.source selects that pinned source, including after binary upgrades;
 it does not silently adopt the upgraded binary's embedded defaults. Adopting a

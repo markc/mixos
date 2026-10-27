@@ -95,12 +95,6 @@ pub fn release(lp: &mut Loop) {
 
 /// An intent from the chrome, as the request the client itself would make.
 fn apply(lp: &mut Loop, window: &Window, intent: Intent) {
-    if intent == Intent::Menu {
-        if !decor::window::open_menu(window) {
-            model::warn!("window menu Bus call was not queued");
-        }
-        return;
-    }
     let Some(handle) = SurfaceHandle::of_window(window) else {
         return;
     };
@@ -134,6 +128,11 @@ fn apply(lp: &mut Loop, window: &Window, intent: Intent) {
             handle,
             request: WindowRequest::Close,
         }),
-        Intent::Menu => unreachable!("handled before Wayland requests"),
+        Intent::Menu => {
+            if !decor::window::open_menu(window) {
+                model::warn!("window menu Bus call was not queued");
+            }
+            return;
+        }
     }
 }

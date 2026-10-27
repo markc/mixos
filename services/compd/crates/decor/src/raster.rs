@@ -229,18 +229,18 @@ pub fn titlebar(
                 let shape = crate::layout::ButtonShape::FullHeightRect { width: rect.w };
                 let cov = coverage(button_shape(p, rect, shape, scale));
                 if bstate != crate::layout::ButtonState::Idle && cov > 0.0 {
-                    let fill = if theme.style == crate::layout::ChromeStyle::Mac {
-                        theme.colors.titlebar_unfocused
-                    } else {
-                        colours.fill(bstate, focus)
-                    };
-                    px = over(px, premul(fill, cov));
+                    px = over(px, premul(colours.fill(bstate, focus), cov));
                 }
                 let g = coverage(
                     glyph(p, rect, button, cluster.glyph_extent_ratio, scale) - stroke * 0.5,
                 );
                 if g > 0.0 {
-                    px = over(px, premul(theme.title_text(focus), g));
+                    let colour = if bstate == crate::layout::ButtonState::Idle {
+                        colours.glyph
+                    } else {
+                        colours.glyph_hover
+                    };
+                    px = over(px, premul(colour, g));
                 }
             }
             if border > 0.0 && border_colour.a > 0.0 {

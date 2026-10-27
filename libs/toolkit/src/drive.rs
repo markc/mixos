@@ -154,7 +154,7 @@ pub fn describe(app: &str) -> Vec<Value> {
         (
             "ui.menu.form",
             Value::Null,
-            "The selected menu style and side, and the effective form after resolving decorations",
+            "The selected menu style and side, and the effective form after resolving decorations and live Bus registration",
             true,
         ),
         (
@@ -216,11 +216,39 @@ pub fn install(ctx: &Context, app: &str) {
 
 /// [`install`] with explicit [`Options`].
 pub fn install_with(ctx: &Context, app: &str, options: Options) {
+    ctx.data_mut(|d| d.insert_temp(service_key(), false));
     ctx.add_plugin(Drive {
         app: app.to_owned(),
         options,
         ..Drive::default()
     });
+}
+
+/// Follow the app's live Bus registration, including disconnects.
+pub fn set_service(ctx: &Context, service: Option<&str>) {
+    let status = ctx.with_plugin(|drive: &mut Drive| {
+        let changed = drive.service.as_deref() != service;
+        if changed {
+            drive.service = service.map(str::to_owned);
+        }
+        (
+            changed,
+            drive.service.as_deref() == Some(drive.app.as_str()),
+        )
+    });
+    if let Some((true, hosted)) = status {
+        ctx.data_mut(|d| d.insert_temp(service_key(), hosted));
+        ctx.request_repaint();
+    }
+}
+
+fn service_key() -> egui::Id {
+    egui::Id::unique("toolkit.drive.menu-service")
+}
+
+pub(crate) fn menu_service(ctx: &Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(service_key()))
+        .unwrap_or(false)
 }
 
 /// `command` only queues input behind the input before it, so an app may hand
@@ -603,6 +631,7 @@ pub struct Drive {
     deadlines: HashMap<u64, Instant>,
     screenshots: std::sync::Arc<std::sync::Mutex<Vec<(u64, std::sync::Arc<ColorImage>)>>>,
     app: String,
+    service: Option<String>,
     options: Options,
     tree: Option<TreeUpdate>,
     queue: VecDeque<(u64, Job)>,

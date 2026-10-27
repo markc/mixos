@@ -221,6 +221,7 @@ server-side furniture live. It does not change application-drawn captions.
 The same section offers Menus (Menu bar, Menu button, In the title bar) and
 Menu button (Left, Right). The side picker is enabled when menus are collapsed.
 In the title bar uses compd's button in SSD mode and the app's button in CSD mode.
+An offline or aliased app keeps its own menu button in SSD mode too.
 The section ids in tree order are `appearance`, `text_and_fonts`, `wallpaper`,
 `windows`, `apps_email`, `apps_term`, `apps_ced`, `accessibility`, and `software`.
 Navigation actions use `view.section.<id>`; retired section ids have no aliases. Search includes their `ui.*`

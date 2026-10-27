@@ -528,6 +528,15 @@ impl Shell {
     /// unanswered; completions are applied at once.
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
+            match &event {
+                Event::Delivery(citizen::Delivery::Connected) => {
+                    drive::set_service(&self.ctx, Some(self.bus.service()))
+                }
+                Event::Delivery(citizen::Delivery::Disconnected) => {
+                    drive::set_service(&self.ctx, None)
+                }
+                _ => {}
+            }
             if let Event::Subscription(topic, on) = event {
                 if on {
                     self.watched_topics.insert(topic);

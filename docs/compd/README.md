@@ -38,8 +38,11 @@ This lets toolkit restore a saved maximised frame on its original display.
 The session's `appearance.menu_style: "titlebar"` adds a menu caption beside
 the caption cluster or at the opposite edge, according to `appearance.menu_side`.
 It appears only on SSD windows whose `dev.mixos.NAME` app has a registered
-`NAME` Bus service. Clicking queues `NAME.ui.menu.popup {side}` through the scene
+`NAME` Bus service. Clicking queues `NAME.ui.menu.popup {side, x}` through the scene
 host's existing port; failures are logged without blocking the compositor.
+The x coordinate is relative to client content, converted from the logical
+decoration slot to the committed client width, without applying output scale
+again.
 `comp.window.menu {id, generation}` uses the same path, with the usual window
 generation and session-lock checks. `comp.props` reports `decoration.menu_button`
 (the session's SSD menu request) and `decoration.menu_side`; per-window truth
