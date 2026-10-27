@@ -119,7 +119,7 @@ try
   $broker = $n.private_bus({dir:$tmp .. "/broker", name:"chooser-test", noded:$noded})
   mkdir($tmp .. "/home/Documents", {parents:true})
   mkdir($tmp .. "/dopus/config", {parents:true})
-  $saved_places = 'schema_version: 2' .. "\n" .. 'bookmarks: [{name: "My archive", path: "' .. $tmp .. '/home/Documents"}]' .. "\n"
+  $saved_places = 'schema_version: 2' .. "\n" .. 'active_pane: "right"' .. "\n" .. 'bookmarks: [{name: "My archive", path: "' .. $tmp .. '/home/Documents"}]' .. "\n"
   write_file($tmp .. "/dopus/config/config.conf.mix", $saved_places)
   write_file($tmp .. "/home/notes.txt", "original")
   write_file($tmp .. "/settings.json", read_file($root .. "/tests/desktop/smoke-settings.json"))

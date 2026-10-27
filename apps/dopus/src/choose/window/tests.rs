@@ -115,7 +115,7 @@ fn chooser_uses_saved_bookmarks_without_writing_configuration() {
     let dir = tempfile::tempdir().unwrap();
     let saved = dir.path().join("config.conf.mix");
     let raw = format!(
-        "schema_version: 2\nbookmarks: [{{name: \"My archive\", path: \"{}\"}}]\n",
+        "schema_version: 2\nactive_pane: \"right\"\nbookmarks: [{{name: \"My archive\", path: \"{}\"}}]\n",
         dir.path().display()
     );
     std::fs::write(&saved, &raw).unwrap();
@@ -123,6 +123,7 @@ fn chooser_uses_saved_bookmarks_without_writing_configuration() {
     let request = Request::parse("{}", &crate::choose::defaults()).unwrap();
     let mut w = Window::with_config("0000000000000001-1", "local:agent", request, config.clone());
     w.ready = true;
+    assert_eq!(w.app.core.active(), PaneId::Left);
     let mut h = harness(w);
     h.get_by_label("My archive").click();
     h.run();

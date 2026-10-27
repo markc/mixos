@@ -413,7 +413,7 @@ impl DopusCore {
                     config.right.ascending,
                 ),
             ],
-            active: if config.active_pane == "right" {
+            active: if !chooser && config.active_pane == "right" {
                 PaneId::Right
             } else {
                 PaneId::Left
