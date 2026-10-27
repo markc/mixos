@@ -209,6 +209,7 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#running-it">Running it</a>
+                        <a href="#compose">Compose</a>
                         <a href="#accounts-are-set-up-in-preferences">Accounts are set up in Preferences</a>
                         <a href="#the-window">The window</a>
                         <a href="#keyboard">Keyboard</a>
@@ -249,9 +250,52 @@ listed, read, composed, sent, flagged, moved and deleted. Calendars,
 events, address books and contacts are listed, shown and created. Every
 action can also be done over the Bus.</p>
 <h2 id="running-it">Running it</h2>
-<pre><code>email [--noded-url URL] [--service NAME]
+<pre><code>email [--compose [FILE.md]] [--noded-url URL] [--service NAME]
 </code></pre>
 <p>A second launch raises the first window.</p>
+<h2 id="compose">Compose</h2>
+<p>Compose, Reply, Reply All, Forward, Send as New, restored drafts and dropped
+mail documents each open a separate window in Email's process. Each composer
+has its own draft, attachments, chooser, autosave timer and document operations.
+There is no compose window.</p>
+<p>The window chrome holds <strong>File</strong> (New, Open…, Save As…, Send, Close, Quit),
+<strong>Edit</strong> (body Undo, Redo, Cut, Copy, Paste), <strong>Attachments</strong> (Attach files…,
+Remove all attachments) and <strong>View</strong> (theme). Ctrl+N opens another composer;
+Ctrl+W closes this one. Close asks <strong>Keep Draft / Discard / Keep Editing</strong>
+when there is content. Ctrl+Q asks about each draft in turn; Keep Editing
+cancels the quit. Drafts already kept or discarded during that quit remain
+closed. Unsaved drafts are also autosaved in the private draft store.</p>
+<p><code>email --compose</code> starts with a composer as the root window, without a
+mailbox. An optional file loads through the same mail-document path as Open…;
+relative CLI paths are resolved before forwarding. If Email is running,
+the citizen probe forwards <code>email.compose</code> and opens another composer there.
+A plain launch raises the existing owner, including a compose-only owner.</p>
+<p><strong>Root ownership on Wayland:</strong> the first native window remains the process
+owner for its whole lifetime. Closing the mailbox while composers remain
+keeps that owner visible with a notice; it exits after the final composer
+closes. Closing a root composer similarly waits for its children, then asks
+about its own draft. Keep Editing cancels the pending close. A successful send
+can leave an empty root owner until its children finish. A child's draft is
+never promoted into the root surface: changing a surface's logical identity
+would leave its original Wayland app ID and break placement. No hidden root
+or <code>set_visible(false)</code> workaround is used.</p>
+<p>Windows are named <code>compose-1</code>, <code>compose-2</code>, and so on for the life of the
+process, with app IDs <code>dev.mixos.email.compose-&lt;n&gt;</code>. Each has a saved frame
+under its own name, including a compose-only root. Names are never reused
+within a process. Mailbox and compose frames keep separate placement keys.</p>
+<p><code>email.info {window:"compose-2"}</code> returns that composer's state and the
+<code>compose_windows</code> list. <code>email.compose.attachment.add/remove</code> and compose
+actions through <code>email.execute</code> accept the same <code>window</code> argument. Omission
+selects the most recently focused composer; an unknown name is refused.
+<code>email.compose</code> always creates a new composer. Toolkit commands instead use
+<code>viewport</code>, for example <code>email.ui.tree {viewport:"compose-2"}</code> and
+<code>email.ui.menu.list {viewport:"compose-2"}</code>; menu open and all other drive
+commands honour the same target.</p>
+<p>Representative headless workload: two native deferred composer viewports,
+each with a local editor, attachment metadata and an independent document
+operation; drive each tree and menu, close one and quit the other. Account
+clients and credentials stay in the root engine. Deferred rendering copies
+only the account summaries it needs and queues input back to that engine.</p>
 <h2 id="accounts-are-set-up-in-preferences">Accounts are set up in Preferences</h2>
 <p>Accounts are configured in <strong>Preferences → Apps → Email</strong>, not in the app
 (<a href="/docs/decisions/2026-10-16-email-accounts-in-settings/">decision</a>).
@@ -367,7 +411,7 @@ their own <strong>Open</strong>/<strong>Save</strong> menu.</p>
 <p><strong>Compose</strong> (To, Cc, Bcc, Subject, body, and From when there are
 several accounts), reply, reply all and forward. If the account's login
 (server or address) changes while a draft is open, Send waits: the
-dialog shows the new address and <strong>Use New Address</strong>. Mail is sent through
+composer shows the new address and <strong>Use New Address</strong>. Mail is sent through
 the proven recipe: build the message, upload it, create the Email in
 Drafts, submit it, then file it in Sent. <strong>Sending requires maild</strong>, because the create step
 uses maild's extension of a top-level <code>blobId</code> on <code>Email/set</code>. A strict
@@ -378,7 +422,7 @@ so it refuses the send; <code>Email/import</code> is future work.
 choice: HTML markup, CSS and script are attack surfaces in transit and at
 the reader. Do not add HTML creation
 (<a href="/docs/decisions/2026-10-27-email-sends-no-html/">decision</a>).
-The compose dialog's <strong>File</strong> menu has <strong>Open…</strong> (Ctrl+O) and
+The compose window's <strong>File</strong> menu has <strong>Open…</strong> (Ctrl+O) and
 <strong>Save As…</strong> (Ctrl+Shift+S). They read and write <a href="/maildoc/">mail documents</a>,
 ordinary <code>.md</code> files with <code>mail-*</code> headers and a Markdown body. Opening
 asks <strong>Replace / Cancel</strong> when the composer has content. Saving asks before
@@ -399,9 +443,7 @@ Format refusals are <code>DOCUMENT_TOO_LARGE</code>, <code>DOCUMENT_CARRIAGE_RET
 <code>DOCUMENT_PATH</code> (relative path), <code>DOCUMENT_IO</code> or <code>DOCUMENT_ENCODING</code>
 (UTF-8 required). A changed account or compose refuses a late read as
 <code>STALE</code> or <code>SUPERSEDED</code>.
-A dropped <code>.md</code> mail document opens a composer and never sends. Ordinary
-Markdown joins the attachments while composing; otherwise its format
-refusal appears in the status line. Local drafts remain private JSON.
+A dropped <code>.md</code> mail document opens a composer and never sends. Invalid mail documents show their format refusal in the new window. Local drafts remain private JSON.
 <code>email.compose</code> and <code>email.send</code> accept <code>attachments: ["/home/user/report.pdf"]</code>.
 Paths must be absolute, readable regular files; symlinks are followed.
 Compose and local drafts keep the paths, never the file contents. Restoring
@@ -409,7 +451,7 @@ a draft restores its attachment paths, and Send reads their current contents
 in the background. Under Subject, a paperclip row shows each file's name,
 human-readable size and an × button to remove it, followed by the total
 known file size. The paperclip button is always available while editing:
-it opens the toolkit's multi-file chooser. The compose dialog's own
+it opens the toolkit's multi-file chooser. The compose window's own
 <strong>Attachments</strong> menu offers <strong>Attach files…</strong> (Ctrl+Shift+A) and
 <strong>Remove all attachments</strong>. The chooser starts beside the last file added
 this session, or at Home; it supports editable paths, hidden files,
@@ -438,7 +480,7 @@ when the server gives none. Paths and estimated size are checked on the Bus
 request; Send checks the files again and checks the exact encoded size.
 The send worker resolves an uncertain earlier submission before reading
 attachments. A confirmed earlier submission is filed in Sent without
-sending another copy. The compose dialog still requires valid attachments
+sending another copy. The compose window still requires valid attachments
 before it queues a send.
 Sends with attachments log the caller key and attachment paths in Email's
 application log; these details are never added to the message.
@@ -614,9 +656,9 @@ never waits on them.</p>
 <tr><td><code>email.junk {ids, junk}</code></td><td>intent</td><td>move to the Junk mailbox (<code>junk: true</code>) or back to the inbox; maild trains spam or ham on the move; answers <code>{ids, mailbox}</code></td></tr>
 <tr><td><code>email.send {document?, from?, to?, cc?, bcc?, reply_to?, subject?, body?, in_reply_to?, references?, attachments?}</code></td><td>intent</td><td>send a mail document or inline fields (To and subject required); From/Reply-To must be owned identity addresses; references is an ordered string or list; attachments are absolute paths read at send time</td></tr>
 <tr><td><code>email.compose {document?, to?, cc?, bcc?, reply_to?, subject?, body?, in_reply_to?, references?, attachments?}</code></td><td>intent</td><td>open a mail document or inline fields; document excludes inline fields; Send reads attachment paths</td></tr>
-<tr><td><code>email.compose.attachment.add {paths:["/home/user/report.pdf"]}</code></td><td>intent</td><td>add to the open compose in order, omitting duplicate paths; no compose: <code>NOT_FOUND</code>, sending: <code>BUSY</code>; relative, non-regular or unreadable paths use <code>ATTACHMENT_RELATIVE</code>, <code>ATTACHMENT_NOT_FILE</code> or <code>ATTACHMENT_UNREADABLE</code>; an invalid batch changes nothing; answers <code>{compose}</code></td></tr>
-<tr><td><code>email.compose.attachment.remove {path}</code></td><td>intent</td><td>remove all occurrences of the exact path from the open compose; no compose or unknown path: <code>NOT_FOUND</code>, sending: <code>BUSY</code>; answers <code>{compose}</code></td></tr>
-<tr><td><code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose dialog, filled in</td></tr>
+<tr><td><code>email.compose.attachment.add {window?, paths:["/home/user/report.pdf"]}</code></td><td>intent</td><td>add to the open compose in order, omitting duplicate paths; no compose: <code>NOT_FOUND</code>, sending: <code>BUSY</code>; relative, non-regular or unreadable paths use <code>ATTACHMENT_RELATIVE</code>, <code>ATTACHMENT_NOT_FILE</code> or <code>ATTACHMENT_UNREADABLE</code>; an invalid batch changes nothing; answers <code>{compose}</code></td></tr>
+<tr><td><code>email.compose.attachment.remove {window?, path}</code></td><td>intent</td><td>remove all occurrences of the exact path from the open compose; no compose or unknown path: <code>NOT_FOUND</code>, sending: <code>BUSY</code>; answers <code>{compose}</code></td></tr>
+<tr><td><code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose window, filled in</td></tr>
 <tr><td><code>email.calendar.select</code>, <code>email.event.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code>; <code>end</code> or an ISO 8601 <code>duration</code></td></tr>
 <tr><td><code>email.book.select</code>, <code>email.contact.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code></td></tr>
 <tr><td><code>email.ui.*</code>, <code>email.window</code>, <code>email.window.state</code></td><td>input, query</td><td>the toolkit <a href="/docs/drive/">drive commands</a></td></tr>

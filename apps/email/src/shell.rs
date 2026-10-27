@@ -787,13 +787,25 @@ impl Shell {
 
     fn composer_input(&mut self) {
         let windows: Vec<_> = self.composers.windows.values().cloned().collect();
-        let registry = crate::composer::registry();
+        let mut registry = crate::composer::registry();
+        registry.rebind(&self.keymap);
         let mut cancelled_quit = false;
+        let mut dropped_documents = Vec::new();
         for window in windows {
             let mut window = window.lock().unwrap();
             crate::composer::swap(&mut self.state, &mut window.view);
             std::mem::swap(&mut self.draft_due, &mut window.draft_due);
             for mut input in std::mem::take(&mut window.pending) {
+                for event in &mut input.events {
+                    if let UiEvent::ComposeDrop(paths) = event {
+                        let account = self.state.compose.as_ref().map(|c| c.account.clone()).or_else(|| self.state.compose_account());
+                        paths.retain(|path| {
+                            if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("md")) {
+                                dropped_documents.push((account.clone(),path.clone())); false
+                            } else { true }
+                        });
+                    }
+                }
                 let close = input.events.iter().any(|e| matches!(e, UiEvent::CloseCompose | UiEvent::Command("compose.close", _)));
                 if close && self.composers.hold_owner(window.viewport, &mut self.state) {
                     input.events.retain(|e| !matches!(e, UiEvent::CloseCompose | UiEvent::Command("compose.close", _)));
@@ -831,7 +843,18 @@ impl Shell {
             self.state.compose();
         }
         self.sync_composers();
+        for (account,path) in dropped_documents {
+            self.open_dropped_document(account,path);
+        }
         self.advance_close();
+    }
+
+    fn open_dropped_document(&mut self, account: Option<String>, path: PathBuf) {
+        let result = account.ok_or_else(|| (code::UNKNOWN_ACCOUNT,label("no-account")))
+            .and_then(|a| self.state.read_document(a,path,None,false,false));
+        if let Err((_,message)) = result { self.state.status = message; }
+        self.sync_composers();
+        self.settle();
     }
 
     fn advance_close(&mut self) {
@@ -1728,6 +1751,7 @@ impl Shell {
         for note in self.commands.rebind(&keymap) {
             eprintln!("email: keymap: {note}");
         }
+        self.composers.keymap = keymap.clone();
         self.keymap = keymap;
     }
 
@@ -2015,7 +2039,11 @@ impl Shell {
                 }
             }
             if !paths.is_empty() {
-                self.state.drop_files(paths);
+                for path in paths {
+                    if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("md")) {
+                        self.open_dropped_document(self.state.compose_account(),path);
+                    }
+                }
             }
             if !errors.is_empty() {
                 self.state.attachment_notice = Some(errors.join("\n"));

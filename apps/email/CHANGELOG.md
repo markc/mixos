@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Replace the modal composer with one window per message, with File, Edit,
+  Attachments and View menus in its chrome. Add `email --compose [FILE.md]`
+  and single-instance forwarding through the citizen probe.
+- Give each composer independent drafts, document operations, attachments,
+  Bus targeting (`window`) and saved placement (`compose-<n>`). Toolkit drive
+  commands use `viewport`, including compose menus.
+- Retain the first native window as process owner while children remain;
+  never promote or rename a child into its surface. Close waits for children;
+  Quit asks per draft and supports cancellation.
+
 - Open and save inert mail documents from compose's File menu (Ctrl+O,
   Ctrl+Shift+S), with replace questions and background file I/O. Remember the
   Open/Save folder for the session, initially XDG Documents or Home.

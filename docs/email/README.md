@@ -16,10 +16,61 @@ action can also be done over the Bus.
 ## Running it
 
 ```
-email [--noded-url URL] [--service NAME]
+email [--compose [FILE.md]] [--noded-url URL] [--service NAME]
 ```
 
 A second launch raises the first window.
+
+## Compose
+
+Compose, Reply, Reply All, Forward, Send as New, restored drafts and dropped
+mail documents each open a separate window in Email's process. Each composer
+has its own draft, attachments, chooser, autosave timer and document operations.
+There is no compose window.
+
+The window chrome holds **File** (New, Open…, Save As…, Send, Close, Quit),
+**Edit** (body Undo, Redo, Cut, Copy, Paste), **Attachments** (Attach files…,
+Remove all attachments) and **View** (theme). Ctrl+N opens another composer;
+Ctrl+W closes this one. Close asks **Keep Draft / Discard / Keep Editing**
+when there is content. Ctrl+Q asks about each draft in turn; Keep Editing
+cancels the quit. Drafts already kept or discarded during that quit remain
+closed. Unsaved drafts are also autosaved in the private draft store.
+
+`email --compose` starts with a composer as the root window, without a
+mailbox. An optional file loads through the same mail-document path as Open…;
+relative CLI paths are resolved before forwarding. If Email is running,
+the citizen probe forwards `email.compose` and opens another composer there.
+A plain launch raises the existing owner, including a compose-only owner.
+
+**Root ownership on Wayland:** the first native window remains the process
+owner for its whole lifetime. Closing the mailbox while composers remain
+keeps that owner visible with a notice; it exits after the final composer
+closes. Closing a root composer similarly waits for its children, then asks
+about its own draft. Keep Editing cancels the pending close. A successful send
+can leave an empty root owner until its children finish. A child's draft is
+never promoted into the root surface: changing a surface's logical identity
+would leave its original Wayland app ID and break placement. No hidden root
+or `set_visible(false)` workaround is used.
+
+Windows are named `compose-1`, `compose-2`, and so on for the life of the
+process, with app IDs `dev.mixos.email.compose-<n>`. Each has a saved frame
+under its own name, including a compose-only root. Names are never reused
+within a process. Mailbox and compose frames keep separate placement keys.
+
+`email.info {window:"compose-2"}` returns that composer's state and the
+`compose_windows` list. `email.compose.attachment.add/remove` and compose
+actions through `email.execute` accept the same `window` argument. Omission
+selects the most recently focused composer; an unknown name is refused.
+`email.compose` always creates a new composer. Toolkit commands instead use
+`viewport`, for example `email.ui.tree {viewport:"compose-2"}` and
+`email.ui.menu.list {viewport:"compose-2"}`; menu open and all other drive
+commands honour the same target.
+
+Representative headless workload: two native deferred composer viewports,
+each with a local editor, attachment metadata and an independent document
+operation; drive each tree and menu, close one and quit the other. Account
+clients and credentials stay in the root engine. Deferred rendering copies
+only the account summaries it needs and queues input back to that engine.
 
 ## Accounts are set up in Preferences
 
@@ -140,7 +191,7 @@ A malformed file loads defaults and is never overwritten.
 - **Compose** (To, Cc, Bcc, Subject, body, and From when there are
   several accounts), reply, reply all and forward. If the account's login
   (server or address) changes while a draft is open, Send waits: the
-  dialog shows the new address and **Use New Address**. Mail is sent through
+  composer shows the new address and **Use New Address**. Mail is sent through
   the proven recipe: build the message, upload it, create the Email in
   Drafts, submit it, then file it in Sent. **Sending requires maild**, because the create step
   uses maild's extension of a top-level `blobId` on `Email/set`. A strict
@@ -151,7 +202,7 @@ A malformed file loads defaults and is never overwritten.
   choice: HTML markup, CSS and script are attack surfaces in transit and at
   the reader. Do not add HTML creation
   ([decision](../docs/decisions/2026-10-27-email-sends-no-html.md)).
-  The compose dialog's **File** menu has **Open…** (Ctrl+O) and
+  The compose window's **File** menu has **Open…** (Ctrl+O) and
   **Save As…** (Ctrl+Shift+S). They read and write [mail documents](../maildoc/README.md),
   ordinary `.md` files with `mail-*` headers and a Markdown body. Opening
   asks **Replace / Cancel** when the composer has content. Saving asks before
@@ -172,9 +223,7 @@ A malformed file loads defaults and is never overwritten.
   `DOCUMENT_PATH` (relative path), `DOCUMENT_IO` or `DOCUMENT_ENCODING`
   (UTF-8 required). A changed account or compose refuses a late read as
   `STALE` or `SUPERSEDED`.
-  A dropped `.md` mail document opens a composer and never sends. Ordinary
-  Markdown joins the attachments while composing; otherwise its format
-  refusal appears in the status line. Local drafts remain private JSON.
+  A dropped `.md` mail document opens a composer and never sends. Invalid mail documents show their format refusal in the new window. Local drafts remain private JSON.
   `email.compose` and `email.send` accept `attachments: ["/home/user/report.pdf"]`.
   Paths must be absolute, readable regular files; symlinks are followed.
   Compose and local drafts keep the paths, never the file contents. Restoring
@@ -182,7 +231,7 @@ A malformed file loads defaults and is never overwritten.
   in the background. Under Subject, a paperclip row shows each file's name,
   human-readable size and an × button to remove it, followed by the total
   known file size. The paperclip button is always available while editing:
-  it opens the toolkit's multi-file chooser. The compose dialog's own
+  it opens the toolkit's multi-file chooser. The compose window's own
   **Attachments** menu offers **Attach files…** (Ctrl+Shift+A) and
   **Remove all attachments**. The chooser starts beside the last file added
   this session, or at Home; it supports editable paths, hidden files,
@@ -211,7 +260,7 @@ A malformed file loads defaults and is never overwritten.
   request; Send checks the files again and checks the exact encoded size.
   The send worker resolves an uncertain earlier submission before reading
   attachments. A confirmed earlier submission is filed in Sent without
-  sending another copy. The compose dialog still requires valid attachments
+  sending another copy. The compose window still requires valid attachments
   before it queues a send.
   Sends with attachments log the caller key and attachment paths in Email's
   application log; these details are never added to the message.
@@ -383,9 +432,9 @@ never waits on them.
 | `email.junk {ids, junk}` | intent | move to the Junk mailbox (`junk: true`) or back to the inbox; maild trains spam or ham on the move; answers `{ids, mailbox}` |
 | `email.send {document?, from?, to?, cc?, bcc?, reply_to?, subject?, body?, in_reply_to?, references?, attachments?}` | intent | send a mail document or inline fields (To and subject required); From/Reply-To must be owned identity addresses; references is an ordered string or list; attachments are absolute paths read at send time |
 | `email.compose {document?, to?, cc?, bcc?, reply_to?, subject?, body?, in_reply_to?, references?, attachments?}` | intent | open a mail document or inline fields; document excludes inline fields; Send reads attachment paths |
-| `email.compose.attachment.add {paths:["/home/user/report.pdf"]}` | intent | add to the open compose in order, omitting duplicate paths; no compose: `NOT_FOUND`, sending: `BUSY`; relative, non-regular or unreadable paths use `ATTACHMENT_RELATIVE`, `ATTACHMENT_NOT_FILE` or `ATTACHMENT_UNREADABLE`; an invalid batch changes nothing; answers `{compose}` |
-| `email.compose.attachment.remove {path}` | intent | remove all occurrences of the exact path from the open compose; no compose or unknown path: `NOT_FOUND`, sending: `BUSY`; answers `{compose}` |
-| `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
+| `email.compose.attachment.add {window?, paths:["/home/user/report.pdf"]}` | intent | add to the open compose in order, omitting duplicate paths; no compose: `NOT_FOUND`, sending: `BUSY`; relative, non-regular or unreadable paths use `ATTACHMENT_RELATIVE`, `ATTACHMENT_NOT_FILE` or `ATTACHMENT_UNREADABLE`; an invalid batch changes nothing; answers `{compose}` |
+| `email.compose.attachment.remove {window?, path}` | intent | remove all occurrences of the exact path from the open compose; no compose or unknown path: `NOT_FOUND`, sending: `BUSY`; answers `{compose}` |
+| `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose window, filled in |
 | `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |
 | `email.book.select`, `email.contact.create/update/delete` | intent | `create` answers `{id}` |
 | `email.ui.*`, `email.window`, `email.window.state` | input, query | the toolkit [drive commands](../docs/drive.md) |

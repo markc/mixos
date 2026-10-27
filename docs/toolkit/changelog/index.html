@@ -244,13 +244,26 @@
 <h1 id="changelog">Changelog</h1>
 <h2 id="unreleased--2026-10-28">Unreleased — 2026-10-28</h2>
 <ul>
-<li>Refuse captures with <code>NOT_SHOWN</code> after 1.5 seconds without a viewport UI
+<li>
+<p>Scope menu models, navigation and search state to each viewport. Every
+drive command honours its named <code>viewport</code>, including menu list/open and
+root aliases. Saved-window capture workers use distinct per-window identities.</p>
+</li>
+<li>
+<p>Make chooser outcomes cloneable so deferred viewports can queue them for
+their owning engine without running file operations in rendering copies.</p>
+</li>
+<li>
+<p>Refuse captures with <code>NOT_SHOWN</code> after 1.5 seconds without a viewport UI
 pass, or after emitting a screenshot whose GPU copy is never submitted.
 Collect completed GPU readbacks first and discard late callbacks by
 screenshot attempt tag.
-A renderer receipt protects submitted GPU copies until the capture deadline.</li>
-<li>Default and cap capture deadlines at five seconds from acceptance,
-including queue time, so refusals precede a ten-second caller timeout.</li>
+A renderer receipt protects submitted GPU copies until the capture deadline.</p>
+</li>
+<li>
+<p>Default and cap capture deadlines at five seconds from acceptance,
+including queue time, so refusals precede a ten-second caller timeout.</p>
+</li>
 </ul>
 <h2 id="unreleased--2026-10-27">Unreleased — 2026-10-27</h2>
 <ul>

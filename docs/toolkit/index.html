@@ -588,13 +588,25 @@ has emitted the screenshot command, only that capture timeout can refuse it;
 the no-UI-pass threshold never cancels an in-flight readback. The rule
 also applies to child captures still awaiting dispatch to their UI, and
 uses the integration's scheduled logic wake.</p>
-<p><code>viewport: "macro-editor"</code> addresses the editor owned by the app window
-handling the request. Names become available on the first native child
+<p>Every drive command honours <code>viewport</code>, including <code>ui.tree</code>, <code>ui.menu.list</code>,
+<code>ui.menu.open</code>, menu close/popup/form, input, capture and window commands.
+For example, <code>viewport: "macro-editor"</code> or <code>viewport: "compose-2"</code> addresses
+a named window owned by the app handling the request. Omission selects the
+app's root. A named root is also supported. Menu models, navigation, search
+and popup state belong to their viewport; opening one window's menu never
+opens or replaces another's. An unknown name is refused with <code>NOT_FOUND</code>,
+and a non-string name with <code>ARGUMENT</code>.</p>
+<p>Names become available on the first native child
 pass; an embedded editor has no separately drivable viewport. Closing one
 window removes only its own editor. Child requests have a ten-second
 deadline by default (the configured <code>Options::capture_timeout</code>); <code>logic</code>
 returns <code>TIMEOUT</code> if the child stops rendering before completing a request,
 so later Bus commands can proceed.</p>
+<p>The file chooser belongs to its caller's viewport. Keep the chooser and its
+outcome with that window's document state, and apply the outcome through the
+owning engine. A deferred viewport callback must queue picked/save outcomes
+rather than start document effects in a rendering copy. Separate composers
+can open choosers and load or save documents independently.</p>
 <h3 id="strings-thumbnails-layer-surfaces">Strings, thumbnails, layer surfaces</h3>
 <ul>
 <li><code>strings</code>: <code>Strings::new(ftl)</code> wraps an app's Fluent catalogue

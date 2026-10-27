@@ -40,6 +40,22 @@ use crate::{APP, APP_ID};
 
 pub const SCHEMA: &str = "email.v1";
 
+/// Compose commands use a stable window name; omission selects the most
+/// recently focused composer. Toolkit input uses its separate `viewport` key.
+#[derive(Clone, Debug, Default, serde::Deserialize, Serialize)]
+pub struct WindowRequest {
+    pub window: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, Serialize)]
+pub struct ExecuteRequest {
+    pub id: String,
+    #[serde(default)]
+    pub params: Option<Value>,
+    #[serde(default)]
+    pub window: Option<String>,
+}
+
 /// One command as `HELP` and `app.describe` list it.
 pub struct Command {
     pub name: &'static str,
@@ -77,7 +93,7 @@ pub const COMMANDS: &[Command] = &[
     command_spec(
         "email.info",
         true,
-        "{}",
+        r#"{"window":"optional compose window name; default most recently focused"}"#,
         "The whole window state: accounts (no secret), selection, mode, lists shown, compose, dialogs and UI shape",
     ),
     command_spec(
@@ -157,7 +173,7 @@ pub const COMMANDS: &[Command] = &[
     command_spec(
         "email.execute",
         false,
-        r#"{"id":"command id from email.actions"}"#,
+        r#"{"id":"command id from email.actions","window":"optional compose window name for compose actions; default most recently focused"}"#,
         "Run one app command by id, as its menu item or shortcut would",
     ),
     command_spec(
@@ -272,18 +288,18 @@ pub const COMMANDS: &[Command] = &[
         "email.compose",
         false,
         r#"{"account":"optional account id","document":"optional absolute mail document path; excludes all inline message fields","to":"optional addresses","cc":"optional addresses","bcc":"optional addresses","reply_to":"optional address (absent: the identity's)","subject":"optional string","body":"optional string","in_reply_to":"optional Message-ID","references":"optional ordered Message-ID string or list","attachments":"optional list of absolute file paths"}"#,
-        "Open the compose dialog, filled in",
+        "Open a new compose window, filled in",
     ),
     command_spec(
         "email.compose.attachment.add",
         false,
-        r#"{"paths":["absolute file path"]}"#,
+        r#"{"paths":["absolute file path"],"window":"optional compose window name; default most recently focused"}"#,
         "Add file paths to the open compose; answers with compose state",
     ),
     command_spec(
         "email.compose.attachment.remove",
         false,
-        r#"{"path":"attachment path as listed by email.info"}"#,
+        r#"{"path":"attachment path as listed by email.info","window":"optional compose window name; default most recently focused"}"#,
         "Remove every occurrence of a path from the open compose; answers with compose state",
     ),
     command_spec(

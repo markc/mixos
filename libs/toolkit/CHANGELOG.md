@@ -3,6 +3,12 @@
 
 ## Unreleased — 2026-10-28
 
+- Scope menu models, navigation and search state to each viewport. Every
+  drive command honours its named `viewport`, including menu list/open and
+  root aliases. Saved-window capture workers use distinct per-window identities.
+- Make chooser outcomes cloneable so deferred viewports can queue them for
+  their owning engine without running file operations in rendering copies.
+
 - Refuse captures with `NOT_SHOWN` after 1.5 seconds without a viewport UI
   pass, or after emitting a screenshot whose GPU copy is never submitted.
   Collect completed GPU readbacks first and discard late callbacks by

@@ -27,6 +27,7 @@ pub(crate) struct Window {
     pub focused: Option<std::time::Instant>,
     pub had_compose: bool,
     pub closed: bool,
+    keymap: toolkit::keymap::Overrides,
     palette: editor::Palette,
 }
 
@@ -64,6 +65,7 @@ pub(crate) struct Windows {
     pub root: Option<String>,
     pub owner_closing: bool,
     pub quitting: bool,
+    pub keymap: toolkit::keymap::Overrides,
     next: u64,
 }
 
@@ -101,6 +103,7 @@ impl Windows {
             name, viewport, view, pending: Vec::new(), draft_due: None,
             focused: Some(std::time::Instant::now()), palette,
             had_compose: false, closed: false,
+            keymap: self.keymap.clone(),
         })));
     }
 
@@ -136,6 +139,7 @@ impl Windows {
             }
             window.view.refresh_compose_view(state);
             window.palette = palette.clone();
+            window.keymap = self.keymap.clone();
             true
         });
     }
@@ -190,7 +194,9 @@ impl Window {
                 editor::Clipboard::Paste => ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste),
             }
         }
-        let mut events = view(ui, &self.view, &registry(), &self.palette);
+        let mut commands = registry();
+        commands.rebind(&self.keymap);
+        let mut events = view(ui, &self.view, &commands, &self.palette);
         if let Some(outcome) = self.view.documents.chooser.as_mut().and_then(|c| c.show(&ctx)) {
             self.view.documents.last_directory = self.view.documents.chooser.as_ref().map(|c| c.directory().to_owned());
             self.view.documents.chooser = None;

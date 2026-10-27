@@ -376,13 +376,27 @@ the no-UI-pass threshold never cancels an in-flight readback. The rule
 also applies to child captures still awaiting dispatch to their UI, and
 uses the integration's scheduled logic wake.
 
-`viewport: "macro-editor"` addresses the editor owned by the app window
-handling the request. Names become available on the first native child
+Every drive command honours `viewport`, including `ui.tree`, `ui.menu.list`,
+`ui.menu.open`, menu close/popup/form, input, capture and window commands.
+For example, `viewport: "macro-editor"` or `viewport: "compose-2"` addresses
+a named window owned by the app handling the request. Omission selects the
+app's root. A named root is also supported. Menu models, navigation, search
+and popup state belong to their viewport; opening one window's menu never
+opens or replaces another's. An unknown name is refused with `NOT_FOUND`,
+and a non-string name with `ARGUMENT`.
+
+Names become available on the first native child
 pass; an embedded editor has no separately drivable viewport. Closing one
 window removes only its own editor. Child requests have a ten-second
 deadline by default (the configured `Options::capture_timeout`); `logic`
 returns `TIMEOUT` if the child stops rendering before completing a request,
 so later Bus commands can proceed.
+
+The file chooser belongs to its caller's viewport. Keep the chooser and its
+outcome with that window's document state, and apply the outcome through the
+owning engine. A deferred viewport callback must queue picked/save outcomes
+rather than start document effects in a rendering copy. Separate composers
+can open choosers and load or save documents independently.
 
 ### Strings, thumbnails, layer surfaces
 

@@ -205,7 +205,7 @@ pub fn describe(app: &str) -> Vec<Value> {
             if args.is_null() {
                 args = json!({});
             }
-            args["viewport"] = json!("optional owned window name: macro-editor; omitted for the app window");
+            args["viewport"] = json!("optional owned window name (for example macro-editor or compose-2), honoured by every drive command; omitted for the app window");
             entry["args"] = args;
             entry
         })
@@ -290,6 +290,13 @@ fn service_key() -> egui::Id {
 }
 
 pub(crate) fn menu_service(ctx: &Context) -> Option<String> {
+    let viewport = ctx.viewport_id();
+    let local = crate::window_id(viewport, "toolkit.drive.local-chrome");
+    // Compositor-hosted menus address the root service, without a viewport.
+    // Named composers (including a compose-only root) draw their own chrome.
+    if viewport != egui::ViewportId::ROOT || ctx.data(|d| d.get_temp::<bool>(local)) == Some(true) {
+        return None;
+    }
     let registration = ctx.data(|d| d.get_temp::<MenuService>(service_key()))?;
     registration.service.filter(|service| {
         !service.is_empty() && !service.contains('.') && *service == registration.app
@@ -564,7 +571,10 @@ pub fn register_viewport(
     viewport: egui::ViewportId,
 ) {
     logging::trace!(?owner, name, ?viewport, "owned viewport registered");
-    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(("drive-viewport", owner, name)), viewport));
+    ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::unique(("drive-viewport", owner, name)), viewport);
+        d.insert_temp(crate::window_id(viewport,"toolkit.drive.local-chrome"),true);
+    });
 }
 
 pub fn unregister_viewport(
@@ -3100,6 +3110,49 @@ mod tests {
             (Some(4), Some(3))
         );
         assert!(path.is_file());
+    }
+
+    #[test]
+    fn viewport_menu_requests_use_only_the_target_windows_model_and_navigation() {
+        let ctx = Context::default();
+        crate::install(&ctx,&crate::Theme::embedded());
+        install(&ctx,"demo"); ctx.set_embed_viewports(false);
+        let child = egui::ViewportId::from_hash_of("compose-2");
+        register_viewport(&ctx,egui::ViewportId::ROOT,"compose-2",child);
+        register_viewport(&ctx,egui::ViewportId::ROOT,"owner",egui::ViewportId::ROOT);
+        let frame = |viewport| {
+            let mut input = RawInput {viewport_id:viewport,..Default::default()};
+            input.viewports.insert(child,Default::default());
+            ctx.run_ui(input,|ui| {
+                if viewport == egui::ViewportId::ROOT {
+                    ui.ctx().show_viewport_deferred(child,egui::ViewportBuilder::default(),|_,_| {});
+                }
+                let title = if viewport == child {"Attachments"} else {"Mailbox"};
+                crate::menu::bar(ui,&[crate::menu::Menu {title:title.into(),entries:vec![
+                    crate::menu::Entry::Row(crate::menu::Row::command("test","Test",None,true))
+                ]}]);
+                ui.label(title);
+            }).drop_without_applying_deltas();
+        };
+        frame(egui::ViewportId::ROOT); frame(child);
+        let root = request(&ctx,1,"ui.menu.list",&json!({"viewport":"owner"})).unwrap();
+        assert_eq!(root.body["menus"][0]["title"],"Mailbox");
+        for (id,command,args) in [
+            (2,"ui.menu.list",json!({"viewport":"compose-2"})),
+            (3,"ui.menu.open",json!({"viewport":"compose-2","menu":"Attachments"})),
+            (4,"ui.tree",json!({"viewport":"compose-2"})),
+            (5,"ui.menu.close",json!({"viewport":"compose-2"})),
+        ] {
+            assert!(request(&ctx,id,command,&args).is_none()); frame(child);
+            let answer = logic(&ctx).pop().unwrap();
+            assert_eq!(answer.rc,0,"{:?}",answer.body);
+            if id == 2 { assert_eq!(answer.body["menus"][0]["title"],"Attachments"); }
+            if id == 3 { assert!(answer.body.to_string().contains("Attachments")); }
+            if id == 4 { assert!(answer.body.to_string().contains("Attachments")); }
+            assert!(request(&ctx,100,"ui.menu",&json!({})).unwrap().body["menu"].is_null());
+        }
+        assert_eq!(request(&ctx,6,"ui.menu.list",&json!({"viewport":"missing"})).unwrap().body["error_code"],"NOT_FOUND");
+        assert_eq!(request(&ctx,7,"ui.menu.open",&json!({"viewport":1})).unwrap().body["error_code"],"ARGUMENT");
     }
 
     #[test]
