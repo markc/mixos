@@ -14,7 +14,7 @@
 //! override (`--scene-service NAME` / preference `scene_service`) or not at
 //! all. It never silently takes a different name.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -137,7 +137,63 @@ pub struct Port {
     registry: RegistryMailbox,
 }
 
-type RegistryMailbox = Arc<Mutex<Option<(u64, BTreeSet<String>)>>>;
+const REGISTRY_HISTORY: usize = 64;
+
+#[derive(Clone, Default)]
+struct RegistryMailbox(Arc<Mutex<RegistryState>>);
+
+#[derive(Default)]
+struct RegistryState {
+    pending: Option<(u64, BTreeSet<String>)>,
+    events: VecDeque<String>,
+    sequence: u64,
+}
+
+impl RegistryState {
+    fn record(&mut self, event: String) {
+        self.sequence = self.sequence.wrapping_add(1);
+        let event: String = event.chars().take(512).collect();
+        tracing::debug!(event = %event, "scene host registry");
+        if self.events.len() == REGISTRY_HISTORY {
+            self.events.pop_front();
+        }
+        self.events.push_back(format!("{}: {event}", self.sequence));
+    }
+}
+
+impl RegistryMailbox {
+    fn record(&self, event: impl Into<String>) {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .record(event.into());
+    }
+
+    fn store(&self, generation: u64, services: BTreeSet<String>) {
+        let mut state = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.record(format!(
+            "mailbox written generation={generation} count={} prefs={}",
+            services.len(),
+            services.contains("prefs")
+        ));
+        state.pending = Some((generation, services));
+    }
+
+    #[cfg(test)]
+    fn history(&self) -> String {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .events
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
 
 /// Coalesce invalidations without cancelling a read that is making progress.
 /// A burst during one read owes one follow-up read, regardless of its size.
@@ -178,12 +234,28 @@ impl<F: std::future::Future> RegistryRead<F> {
 fn take_registry(registry: &RegistryMailbox, live: Option<u64>) -> Option<Inbound> {
     // A temporary lack of live evidence must not consume the only baseline.
     // Once a new connection is live, its snapshot supersedes any old one.
-    let generation = live?;
-    let (captured, services) = registry
+    let mut state = registry
+        .0
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .take()?;
-    (captured == generation).then_some(Inbound::Live(services))
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    state.pending.as_ref()?;
+    let Some(generation) = live else {
+        state.record("mailbox retained: no live generation on UI".into());
+        return None;
+    };
+    let (captured, services) = state.pending.take()?;
+    if captured != generation {
+        let event = format!("mailbox dropped: captured generation={captured} live={generation}");
+        tracing::warn!(%event, "scene host registry generation mismatch");
+        state.record(event);
+        return None;
+    }
+    state.record(format!(
+        "try_recv -> Inbound::Live generation={generation} count={} prefs={}",
+        services.len(),
+        services.contains("prefs")
+    ));
+    Some(Inbound::Live(services))
 }
 
 /// The names to try, in order: `shell`, then the override when it differs.
@@ -444,6 +516,13 @@ pub fn route(service: &str, command: &IncomingCommand) -> Route {
         && command.topic() == Some(REGISTRY_TOPIC)
     {
         if !from_local_broker(command) {
+            tracing::warn!(
+                from = %command.from,
+                broker_service = ?command.header("broker_service"),
+                broker_origin = ?command.header("broker_origin"),
+                reason = "non_local_broker_origin",
+                "scene host registry Route::Forged"
+            );
             return Route::Forged;
         }
         return serde_json::from_str::<Value>(&command.body)
@@ -456,7 +535,16 @@ pub fn route(service: &str, command: &IncomingCommand) -> Route {
                     .map(|name| name.as_str().map(str::to_owned))
                     .collect::<Option<BTreeSet<String>>>()
             })
-            .map_or(Route::Ignore, Route::Live);
+            .map_or(Route::Ignore, |services| {
+                tracing::debug!(
+                    count = services.len(),
+                    generation = command.generation,
+                    from = %command.from,
+                    broker_service = ?command.header("broker_service"),
+                    "scene host registry Route::Live"
+                );
+                Route::Live(services)
+            });
     }
     if command.is_topic_delivery() || command.command.is_empty() {
         return Route::Ignore;
@@ -569,6 +657,7 @@ async fn worker(
     mut lane: SettingsLane<Arc<Look>>,
     registry_mailbox: RegistryMailbox,
 ) {
+    registry_mailbox.record("worker started; connecting scene host");
     let waker = Arc::clone(&delivery.waker);
     let notify = move |needed| {
         if needed {
@@ -594,8 +683,14 @@ async fn worker(
                 connecting = None;
                 match result {
                     Connected::Client(client, service) => break Some((client, service)),
-                    Connected::Refused(reason) => { let _ = delivery.send(Inbound::Refused(reason)); }
-                    Connected::Stopped => break None,
+                    Connected::Refused(reason) => {
+                        registry_mailbox.record(format!("connection refused: {reason}"));
+                        let _ = delivery.send(Inbound::Refused(reason));
+                    }
+                    Connected::Stopped => {
+                        registry_mailbox.record("connection stopped");
+                        break None;
+                    }
                 }
             }
         }
@@ -605,6 +700,11 @@ async fn worker(
     drop(connecting.take());
     let deadline = if let Some((client, service)) = &connected {
         let _ = published.set(Arc::clone(client));
+        registry_mailbox.record(format!(
+            "connected service={service} state={:?} generation={}",
+            client.state(),
+            client.connection_generation()
+        ));
         notify(lane.connect(Arc::clone(client)));
         tracing::info!(
             "scene host: registered as `{service}` via {}",
@@ -675,6 +775,10 @@ async fn serve(
     let mut lifecycle_open = true;
     let mut incoming_open = true;
     let initial_state = *lifecycle.borrow_and_update();
+    registry_mailbox.record(format!(
+        "serve started state={initial_state:?} generation={}",
+        client.connection_generation()
+    ));
     if matches!(initial_state, ConnState::Fatal | ConnState::ShuttingDown) {
         let _ = delivery.send(Inbound::Refused(terminal_reason(client)));
     }
@@ -687,8 +791,12 @@ async fn serve(
     let mut sends = tokio::task::JoinSet::new();
     let mut registry = RegistryRead::new();
     let mut registry_retries = 0;
-    let mut registry_subscription = (initial_state == ConnState::Connected)
-        .then(|| Box::pin(registry_subscribe(Arc::clone(client))));
+    let mut registry_subscription = (initial_state == ConnState::Connected).then(|| {
+        Box::pin(registry_subscribe(
+            Arc::clone(client),
+            registry_mailbox.clone(),
+        ))
+    });
     loop {
         tokio::select! {
             changed = shutdown.changed() => {
@@ -706,10 +814,11 @@ async fn serve(
             changed = lifecycle.changed(), if lifecycle_open => {
                 if changed.is_err() { lifecycle_open = false; }
                 let state = *lifecycle.borrow_and_update();
+                registry_mailbox.record(format!("lifecycle state={state:?} generation={}", client.connection_generation()));
                 notify(lane.publish(SettingsEvent::Wake));
                 registry.cancel();
                 registry_subscription = (lifecycle_open && state == ConnState::Connected)
-                    .then(|| Box::pin(registry_subscribe(Arc::clone(client))));
+                    .then(|| Box::pin(registry_subscribe(Arc::clone(client), registry_mailbox.clone())));
                 if !lifecycle_open || matches!(state, ConnState::Fatal | ConnState::ShuttingDown) {
                     let _ = delivery.send(Inbound::Refused(terminal_reason(client)));
                 }
@@ -720,25 +829,33 @@ async fn serve(
                 if subscribed {
                     // Subscribe before read so a departure in the gap cannot
                     // leave a successful but obsolete full-set baseline.
-                    registry.request(|| registry_read(Arc::clone(client), Duration::ZERO));
+                    registry.request(|| registry_read(Arc::clone(client), Duration::ZERO, registry_mailbox.clone()));
                     registry_retries = 0;
                 }
             }
             result = async { registry.pending.as_mut().expect("guarded registry read").await }, if registry.pending.is_some() => {
                 let dirty = registry.complete();
+                registry_mailbox.record(format!("read completed dirty={dirty} success={}", result.is_some()));
                 if let Some((generation, services)) = result {
                     if settings::native::live_generation(client) == Some(generation) {
-                        *registry_mailbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((generation, services));
+                        registry_mailbox.store(generation, services);
                         (delivery.waker)();
+                        registry_mailbox.record("mailbox wake fired");
                         registry_retries = 0;
                         if dirty {
-                            registry.request(|| registry_read(Arc::clone(client), Duration::ZERO));
+                            registry_mailbox.record("dirty follow-up read scheduled");
+                            registry.request(|| registry_read(Arc::clone(client), Duration::ZERO, registry_mailbox.clone()));
                         }
+                    } else {
+                        let live = settings::native::live_generation(client);
+                        registry_mailbox.record(format!("read result dropped: generation={generation} live={live:?}"));
+                        tracing::warn!(generation, ?live, "scene host registry read result generation mismatch");
                     }
                 } else if settings::native::live_generation(client).is_some() {
                     let delay = RETRY_INITIAL * (1 << registry_retries.min(3));
                     registry_retries = (registry_retries + 1).min(3);
-                    registry.request(|| registry_read(Arc::clone(client), delay));
+                    registry_mailbox.record(format!("read retry scheduled delay={delay:?}"));
+                    registry.request(|| registry_read(Arc::clone(client), delay, registry_mailbox.clone()));
                 } else {
                     tracing::debug!("scene host: registry recovery awaits a live connection");
                 }
@@ -748,29 +865,48 @@ async fn serve(
                     Some(BoundedIncomingEvent::Command(command)) => {
                         if let Some(wake) = lane.delivery(&command) {
                             notify(wake);
-                        } else if let Route::Live(_) = route(service, &command) {
-                            if settings::native::live_generation(client) == Some(command.generation) {
-                                // A buffered diff can predate a just-completed
-                                // baseline read. Treat it as an invalidation,
-                                // never overwrite a newer snapshot with its set.
-                                registry.request(|| registry_read(Arc::clone(client), Duration::ZERO));
-                            }
                         } else {
-                            if let Some((command, rc, body)) = admit(service, delivery, command) {
+                            let routed = route(service, &command);
+                            if command.topic() == Some(REGISTRY_TOPIC) {
+                                let (kind, reason) = match &routed {
+                                    Route::Live(_) => ("Live", "verified_broker_registered_services"),
+                                    Route::Forged => ("Forged", "non_local_broker_origin"),
+                                    _ => ("Ignore", "missing_broker_identity_or_unrelated_or_invalid_payload"),
+                                };
+                                registry_mailbox.record(format!(
+                                    "Route::{kind} topic={REGISTRY_TOPIC} command={:?} from={:?} broker_service={:?} broker_origin={:?} generation={} reason={reason}",
+                                    command.command, command.from, command.header("broker_service"), command.header("broker_origin"), command.generation
+                                ));
+                            }
+                            if let Route::Live(_) = routed {
+                                let live = settings::native::live_generation(client);
+                                if live == Some(command.generation) {
+                                    // A buffered diff can predate a just-completed
+                                    // baseline read. Treat it as an invalidation,
+                                    // never overwrite a newer snapshot with its set.
+                                    registry_mailbox.record(format!("registry invalidated in_flight={}", registry.pending.is_some()));
+                                    registry.request(|| registry_read(Arc::clone(client), Duration::ZERO, registry_mailbox.clone()));
+                                } else {
+                                    registry_mailbox.record(format!("Route::Live dropped: generation={} live={live:?}", command.generation));
+                                    tracing::warn!(generation = command.generation, ?live, "scene host registry delivery generation mismatch");
+                                }
+                            } else if let Some((command, rc, body)) = admit(service, delivery, command) {
                                 let client = Arc::clone(client);
                                 replies.spawn(async move { refuse(&client, &command, rc, body).await; });
                             }
                         }
                     }
-                    Some(BoundedIncomingEvent::Overflow { .. }) => {
+                    Some(BoundedIncomingEvent::Overflow { dropped }) => {
+                        registry_mailbox.record(format!("incoming overflow dropped={dropped}"));
                         notify(lane.publish(SettingsEvent::Lost));
-                        registry.request(|| registry_read(Arc::clone(client), Duration::ZERO));
+                        registry.request(|| registry_read(Arc::clone(client), Duration::ZERO, registry_mailbox.clone()));
                         tracing::warn!("scene host: incoming queue overflow; recovering settings and registry");
                     }
                     None => {
                         incoming_open = false;
                         registry.cancel();
                         registry_subscription = None;
+                        registry_mailbox.record("incoming lane closed");
                         notify(lane.publish(SettingsEvent::Wake));
                         let _ = delivery.send(Inbound::Refused("Bus incoming lane closed; retaining settings resources".into()));
                     }
@@ -838,12 +974,22 @@ fn terminal_reason(client: &SupervisedClient) -> String {
 async fn registry_read(
     client: Arc<SupervisedClient>,
     delay: Duration,
+    diagnostics: RegistryMailbox,
 ) -> Option<(u64, BTreeSet<String>)> {
     if !delay.is_zero() {
         tokio::time::sleep(delay).await;
     }
-    let generation = settings::native::live_generation(&client)?;
-    let services = tokio::time::timeout(
+    let Some(generation) = settings::native::live_generation(&client) else {
+        diagnostics.record(format!(
+            "read skipped: state={:?} has no live generation",
+            client.state()
+        ));
+        return None;
+    };
+    diagnostics.record(format!(
+        "read sent: noded.props.get services.registered generation={generation}"
+    ));
+    let response = tokio::time::timeout(
         SEND_TIMEOUT,
         client.call(
             "noded",
@@ -851,38 +997,99 @@ async fn registry_read(
             json!({"path":"services.registered"}),
         ),
     )
-    .await
-    .ok()?
-    .ok()?;
-    let services = services
-        .as_array()?
+    .await;
+    let value = match response {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => {
+            diagnostics.record(format!("read failed generation={generation}: {error}"));
+            tracing::warn!(generation, %error, "scene host registry read failed");
+            return None;
+        }
+        Err(_) => {
+            diagnostics.record(format!(
+                "read timed out generation={generation} budget={SEND_TIMEOUT:?}"
+            ));
+            tracing::warn!(generation, "scene host registry read timed out");
+            return None;
+        }
+    };
+    let Some(names) = value.as_array() else {
+        diagnostics.record(format!(
+            "read rejected: expected string array, received {value}"
+        ));
+        tracing::warn!(generation, "scene host registry read returned a non-array");
+        return None;
+    };
+    diagnostics.record(format!(
+        "read result generation={generation} array_size={}",
+        names.len()
+    ));
+    let Some(services) = names
         .iter()
         .map(|name| name.as_str().map(str::to_owned))
-        .collect::<Option<BTreeSet<_>>>()?;
-    if settings::native::live_generation(&client) != Some(generation) {
+        .collect::<Option<BTreeSet<_>>>()
+    else {
+        diagnostics.record("read rejected: array contains a non-string service name");
+        tracing::warn!(
+            generation,
+            "scene host registry read returned a non-string service name"
+        );
+        return None;
+    };
+    let live = settings::native::live_generation(&client);
+    if live != Some(generation) {
+        diagnostics.record(format!("read dropped: generation={generation} live={live:?}"));
+        tracing::warn!(
+            generation,
+            ?live,
+            "scene host registry read generation mismatch"
+        );
         return None;
     }
-    tracing::debug!(
-        generation,
-        count = services.len(),
-        "scene host: registry snapshot read"
-    );
+    diagnostics.record(format!(
+        "read accepted generation={generation} services={services:?}"
+    ));
     Some((generation, services))
 }
 
-async fn registry_subscribe(client: Arc<SupervisedClient>) -> bool {
+async fn registry_subscribe(client: Arc<SupervisedClient>, diagnostics: RegistryMailbox) -> bool {
     let mut attempt = 0;
     loop {
-        if settings::native::live_generation(&client).is_none() {
+        let Some(generation) = settings::native::live_generation(&client) else {
+            diagnostics.record(format!(
+                "subscribe skipped: state={:?} has no live generation",
+                client.state()
+            ));
             return false;
+        };
+        diagnostics.record(format!(
+            "subscribe sent topic={REGISTRY_TOPIC} generation={generation} attempt={attempt}"
+        ));
+        match tokio::time::timeout(SEND_TIMEOUT, client.subscribe_topic(REGISTRY_TOPIC)).await {
+            Ok(Ok(())) => {
+                diagnostics.record(format!(
+                    "subscribe ok topic={REGISTRY_TOPIC} generation={generation}"
+                ));
+                return true;
+            }
+            Ok(Err(error)) => {
+                diagnostics.record(format!("subscribe failed generation={generation}: {error}"));
+                tracing::warn!(
+                    generation,
+                    %error,
+                    "scene host registry subscription failed; retrying"
+                );
+            }
+            Err(_) => {
+                diagnostics.record(format!(
+                    "subscribe timed out generation={generation} budget={SEND_TIMEOUT:?}"
+                ));
+                tracing::warn!(
+                    generation,
+                    "scene host registry subscription timed out; retrying"
+                );
+            }
         }
-        if matches!(
-            tokio::time::timeout(SEND_TIMEOUT, client.subscribe_topic(REGISTRY_TOPIC)).await,
-            Ok(Ok(()))
-        ) {
-            return true;
-        }
-        tracing::warn!("scene host: registry subscription failed; retrying");
         tokio::time::sleep(RETRY_INITIAL * (1 << attempt.min(3))).await;
         attempt = (attempt + 1).min(3);
     }
@@ -1080,7 +1287,10 @@ mod tests {
                 .poll(&mut context),
             Poll::Ready(100)
         );
-        assert!(!registry.complete(), "a settled burst must not keep reading");
+        assert!(
+            !registry.complete(),
+            "a settled burst must not keep reading"
+        );
         assert!(registry.pending.is_none());
         assert_eq!(starts.load(Ordering::SeqCst), 2);
     }
@@ -1088,22 +1298,25 @@ mod tests {
     #[test]
     fn registry_baseline_waits_for_live_evidence_and_fences_old_connections() {
         let registry = RegistryMailbox::default();
-        *registry.lock().unwrap() = Some((5, BTreeSet::from(["prefs".into()])));
+        registry.store(5, BTreeSet::from(["prefs".into()]));
         assert!(take_registry(&registry, None).is_none());
         assert!(
             matches!(take_registry(&registry, Some(5)), Some(Inbound::Live(names)) if names.contains("prefs"))
         );
         assert!(take_registry(&registry, Some(5)).is_none());
-        *registry.lock().unwrap() = Some((5, BTreeSet::from(["old-app".into()])));
+        registry.store(5, BTreeSet::from(["old-app".into()]));
         assert!(take_registry(&registry, Some(6)).is_none());
-        *registry.lock().unwrap() = Some((6, BTreeSet::from(["prefs".into()])));
+        registry.store(6, BTreeSet::from(["prefs".into()]));
         assert!(
             matches!(take_registry(&registry, Some(6)), Some(Inbound::Live(names)) if names.contains("prefs"))
         );
     }
 
-    fn menu_registry_port(url: &str, cache: &std::path::Path) -> (Port, Receiver<()>) {
-        let (notify, wake) = mpsc::channel();
+    fn menu_registry_port(
+        url: &str,
+        cache: &std::path::Path,
+    ) -> (Port, tokio_mpsc::UnboundedReceiver<()>) {
+        let (notify, wake) = tokio_mpsc::unbounded_channel();
         let port = Port::start_at(
             HostConfig {
                 noded_url: url.into(),
@@ -1118,18 +1331,55 @@ mod tests {
         (port, wake)
     }
 
-    fn wait_menu_registry(port: &Port, wake: &Receiver<()>, has_app: bool) -> BTreeSet<String> {
-        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    async fn wait_menu_registry(
+        port: &Port,
+        wake: &mut tokio_mpsc::UnboundedReceiver<()>,
+        has_app: bool,
+        phase: &str,
+    ) -> BTreeSet<String> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+        port.registry
+            .record(format!("test wait phase={phase} expected_prefs={has_app}"));
         loop {
             while let Some(message) = port.try_recv() {
+                port.registry.record(format!("test received {message:?}"));
                 match message {
-                    Inbound::Live(names) if names.contains("prefs") == has_app => return names,
-                    Inbound::Refused(reason) => panic!("scene host refused: {reason}"),
+                    Inbound::Live(names) if names.contains("prefs") == has_app => {
+                        eprintln!("registry phase={phase} converged: {names:?}");
+                        return names;
+                    }
+                    Inbound::Refused(reason) => panic!(
+                        "registry phase={phase}: scene host refused: {reason}\n{}",
+                        port.registry.history()
+                    ),
                     _ => {}
                 }
             }
-            wake.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
-                .expect("menu registry did not converge");
+            // Yield this current-thread runtime so the test citizen's reader,
+            // supervisor and close tasks can run while the host worker waits.
+            match tokio::time::timeout_at(deadline, wake.recv()).await {
+                Ok(Some(())) => port.registry.record("test received wake"),
+                outcome => {
+                    let lifecycle = port
+                        .client
+                        .get()
+                        .map(|client| (client.state(), client.connection_generation()));
+                    let mailbox = {
+                        let state = port.registry.0.lock().unwrap();
+                        state.pending.as_ref().map(|(generation, names)| {
+                            (*generation, names.len(), names.contains("prefs"))
+                        })
+                    };
+                    panic!(
+                        "menu registry did not converge: phase={phase} expected_prefs={has_app} \
+                         wake={outcome:?} lifecycle={lifecycle:?} live_generation={:?} \
+                         pending_mailbox=(generation,count,prefs)={mailbox:?}\n\
+                         last {REGISTRY_HISTORY} registry events:\n{}",
+                        port.settings_generation(),
+                        port.registry.history()
+                    );
+                }
+            }
         }
     }
 
@@ -1139,6 +1389,7 @@ mod tests {
         let url = std::env::var("MIXOS_NODED_URL").unwrap();
         let cache = tempfile::tempdir().unwrap();
         for app_first in [false, true] {
+            let case = if app_first { "app-first" } else { "host-first" };
             let mut app = if app_first {
                 Some(
                     SupervisedClient::connect_options("prefs", &url)
@@ -1149,10 +1400,16 @@ mod tests {
             } else {
                 None
             };
-            let (mut port, wake) = menu_registry_port(&url, cache.path());
+            let (mut port, mut wake) = menu_registry_port(&url, cache.path());
             // No scenes have been loaded: the baseline is the whole broker
             // registry, including an app already running before compd starts.
-            let names = wait_menu_registry(&port, &wake, app_first);
+            let names = wait_menu_registry(
+                &port,
+                &mut wake,
+                app_first,
+                &format!("{case}/baseline"),
+            )
+            .await;
             assert!(names.contains("shell"));
             if !app_first {
                 app = Some(
@@ -1163,15 +1420,27 @@ mod tests {
                 );
                 // Production noded publishes without `from`, using
                 // broker_service. The pre-fix route misses this arrival.
-                wait_menu_registry(&port, &wake, true);
+                wait_menu_registry(&port, &mut wake, true, "host-first/app-arrival").await;
             }
             port.finish();
-            let (mut restarted, wake) = menu_registry_port(&url, cache.path());
+            let (mut restarted, mut wake) = menu_registry_port(&url, cache.path());
             // The app did not reconnect. A subscribe-only host cannot pass:
             // the registry topic is not retained; it needs an initial read.
-            wait_menu_registry(&restarted, &wake, true);
+            wait_menu_registry(
+                &restarted,
+                &mut wake,
+                true,
+                &format!("{case}/host-restart"),
+            )
+            .await;
             app.unwrap().close().await;
-            wait_menu_registry(&restarted, &wake, false);
+            wait_menu_registry(
+                &restarted,
+                &mut wake,
+                false,
+                &format!("{case}/app-departure"),
+            )
+            .await;
             restarted.finish();
         }
     }
