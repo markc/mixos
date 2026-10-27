@@ -294,7 +294,9 @@ pub fn init(
     args: &mut Vec<String>,
 ) -> Result<LogHandle, LogError> {
     if CONTROL.get().is_some() {
-        return Err(LogError::AlreadyInstalled("debug control already installed".into()));
+        return Err(LogError::AlreadyInstalled(
+            "debug control already installed".into(),
+        ));
     }
     let level = strip_args(args)?;
     // An invalid app default is a programming error. A bad environment

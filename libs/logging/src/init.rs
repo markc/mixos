@@ -19,6 +19,7 @@ use crate::defaults::{LogDefaults, RotationMode};
 use crate::handle::{LogError, LogHandle};
 use crate::opts::{LogFormat, LogLevel, LogOpts, StatsOpts, TriState};
 use crate::stats::{JsonlSink, StatsRecorderBuilder};
+use crate::sink::Sink;
 
 // Core copies of the plan §4.3 numeric bounds. Held literally here
 // (not imported) because the canonical substrate exports live in the
@@ -286,11 +287,11 @@ pub(crate) fn init_inner(
     // `.open` sink renames to `.done` rather than leaking past the
     // failed init.
     if let Err(e) = registry
-        .with(stderr_layer)
-        .with(file_layer)
-        .with(journald_layer)
-        .with(stats_event_layer)
-        .with(live_debug.then_some(crate::recent::RecentLayer))
+        .with(Sink(stderr_layer))
+        .with(Sink(file_layer))
+        .with(Sink(journald_layer))
+        .with(Sink(stats_event_layer))
+        .with(Sink(live_debug.then_some(crate::recent::RecentLayer)))
         .try_init()
     {
         if stats_installed {

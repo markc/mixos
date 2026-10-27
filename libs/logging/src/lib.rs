@@ -36,6 +36,7 @@ mod opts;
 #[cfg(feature = "prometheus")]
 mod prometheus_attach;
 mod recent;
+mod sink;
 pub mod stats;
 
 pub use defaults::{LogDefaults, RotationMode};

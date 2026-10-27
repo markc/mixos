@@ -41,7 +41,8 @@ struct Ring {
 impl Ring {
     fn new() -> Self {
         let entries = VecDeque::with_capacity(MAX_EVENTS);
-        let bytes = entries.capacity() * std::mem::size_of::<(Entry, usize)>() + std::mem::size_of::<Self>();
+        let bytes = entries.capacity() * std::mem::size_of::<(Entry, usize)>()
+            + std::mem::size_of::<Self>();
         Self { entries, bytes }
     }
 
