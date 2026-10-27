@@ -76,14 +76,14 @@ impl Filter {
     pub fn matches(&self, name: &str, directory: bool, mime: &str) -> bool {
         directory
             || self.compiled.iter().any(|pattern| {
-                    pattern.matches_with(
-                        name,
-                        glob::MatchOptions {
-                            case_sensitive: true,
-                            require_literal_separator: true,
-                            require_literal_leading_dot: false,
-                        },
-                    )
+                pattern.matches_with(
+                    name,
+                    glob::MatchOptions {
+                        case_sensitive: true,
+                        require_literal_separator: true,
+                        require_literal_leading_dot: false,
+                    },
+                )
             })
             || self.mime_types.iter().any(|pattern| {
                 pattern == mime
@@ -349,11 +349,20 @@ fn parse_filter(value: &Value) -> Result<Filter> {
     for s in filter.patterns.iter().chain(&filter.mime_types) {
         bounded(s, 1, 256, "filter entry")?;
     }
-    let compiled = filter.patterns.iter().map(|pattern| {
-        glob::Pattern::new(pattern)
-            .map_err(|error| Refusal::argument(format!("invalid filter pattern: {error}")))
-    }).collect::<Result<_>>()?;
-    Ok(Filter { name: filter.name, patterns: filter.patterns, mime_types: filter.mime_types, compiled })
+    let compiled = filter
+        .patterns
+        .iter()
+        .map(|pattern| {
+            glob::Pattern::new(pattern)
+                .map_err(|error| Refusal::argument(format!("invalid filter pattern: {error}")))
+        })
+        .collect::<Result<_>>()?;
+    Ok(Filter {
+        name: filter.name,
+        patterns: filter.patterns,
+        mime_types: filter.mime_types,
+        compiled,
+    })
 }
 
 fn parse_choice(value: &Value) -> Result<Choice> {
@@ -534,7 +543,9 @@ impl Request {
 
     /// Apply the single-pattern extension rule only in save mode.
     pub fn save_name(&self, name: &[u8]) -> Vec<u8> {
-        if self.mode == Mode::Save && let Some(filter) = &self.current_filter {
+        if self.mode == Mode::Save
+            && let Some(filter) = &self.current_filter
+        {
             filter.save_name(name)
         } else {
             name.to_vec()
@@ -660,8 +671,12 @@ impl Engine {
         // field/filter validation happens after the cheap, bounded rate gate.
         // Malformed objects/claims count against the connection itself.
         let object = object(body);
-        let claim = object.as_ref().ok().and_then(|m| m.get("on_behalf_of"))
-            .and_then(Value::as_str).filter(|s| (1..=128).contains(&s.len()));
+        let claim = object
+            .as_ref()
+            .ok()
+            .and_then(|m| m.get("on_behalf_of"))
+            .and_then(Value::as_str)
+            .filter(|s| (1..=128).contains(&s.len()));
         self.sweep(now);
         let key = Caller(caller.to_owned(), claim.map(str::to_owned));
         if !self.recent.contains_key(&key) && self.recent.len() >= MAX_RATE_CALLERS {
@@ -891,7 +906,10 @@ fn accepted(request: &Request, accept: Acceptance) -> Result<Accepted> {
     }
     for path in &accept.paths {
         valid_path(path)?;
-        if path.split(|b| *b == b'/').any(|part| part == b"." || part == b"..") {
+        if path
+            .split(|b| *b == b'/')
+            .any(|part| part == b"." || part == b"..")
+        {
             return Err(Refusal::argument("chosen path contains . or .. component"));
         }
         if !request.directory {
