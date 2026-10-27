@@ -1321,6 +1321,7 @@ version = "0.1.2"
 dependencies = [
  "bus",
  "futures",
+ "logging",
  "macros",
  "serde_json",
  "test-broker",
@@ -10150,6 +10151,7 @@ dependencies = [
  "icons",
  "image",
  "libc",
+ "logging",
  "macros",
  "paths",
  "png 0.18.1",

@@ -25,8 +25,8 @@
 //!   `EnvFilter::off()` behind a reload handle so a later filter swap
 //!   (or `RUST_LOG`) can raise it without restarting the binary.
 
-mod defaults;
 pub mod debug;
+mod defaults;
 mod handle;
 mod init;
 mod opts;
