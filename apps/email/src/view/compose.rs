@@ -4,7 +4,8 @@
 //! Send uses the shared engine; failures keep the draft and its error visible.
 //!
 //! Typed content is kept as a local draft. Closing a window asks first;
-//! Keep Draft is the default. Kept drafts are offered at mailbox startup.
+//! Keep Draft is the default. Kept drafts are offered at startup, including
+//! compose-only launches.
 
 use egui::Ui;
 use toolkit::dialog::{self, Choice};

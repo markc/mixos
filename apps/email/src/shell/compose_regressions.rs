@@ -543,6 +543,7 @@ fn review_window_refusals_are_typed_and_do_not_mutate_composers() {
         for (command, mut args) in [
             ("email.execute", json!({"id":"compose.close"})),
             ("email.execute", json!({"id":"compose.new"})),
+            ("email.execute", json!({"id":"file.quit"})),
             ("email.info", json!({})),
             ("email.compose.attachment.add", json!({"paths":[]})),
             (
