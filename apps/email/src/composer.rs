@@ -25,6 +25,7 @@ pub(crate) struct Window {
     pub pending: Vec<Input>,
     pub draft_due: Option<std::time::Instant>,
     pub focused: Option<std::time::Instant>,
+    order: u64,
     pub had_compose: bool,
     pub closed: bool,
     keymap: toolkit::keymap::Overrides,
@@ -92,7 +93,10 @@ impl Windows {
         }
         self.windows
             .values()
-            .max_by_key(|w| w.lock().unwrap().focused)
+            .max_by_key(|w| {
+                let w = w.lock().unwrap();
+                (w.focused, w.order)
+            })
             .cloned()
     }
 
@@ -131,7 +135,8 @@ impl Windows {
                 view,
                 pending: Vec::new(),
                 draft_due: None,
-                focused: Some(std::time::Instant::now()),
+                focused: None,
+                order: self.next,
                 palette,
                 had_compose,
                 closed: false,
@@ -640,6 +645,29 @@ mod tests {
         );
         assert!(windows.owner_finished());
         assert_eq!(windows.root.as_deref(), Some("compose-1"));
+    }
+
+    #[test]
+    fn default_routing_uses_real_focus_with_creation_order_only_as_fallback() {
+        let (mut state, mut windows, theme, _) = fixture(false);
+        for _ in 0..2 {
+            state.compose();
+            windows.adopt(&mut state, editor::Palette::from_theme(&theme));
+        }
+        let first = windows.windows["compose-1"].clone();
+        let second = windows.windows["compose-2"].clone();
+        let args = serde_json::json!({});
+        assert!(Arc::ptr_eq(&windows.selected(&args).unwrap(), &second));
+        let focused = std::time::Instant::now();
+        first.lock().unwrap().focused = Some(focused);
+        assert!(Arc::ptr_eq(&windows.selected(&args).unwrap(), &first));
+        second.lock().unwrap().focused = Some(focused + std::time::Duration::from_millis(1));
+        assert!(Arc::ptr_eq(&windows.selected(&args).unwrap(), &second));
+        assert!(Arc::ptr_eq(
+            &windows.selected(&serde_json::json!({"window":"compose-1"})).unwrap(),
+            &first
+        ));
+        assert!(windows.selected(&serde_json::json!({"window":"missing"})).is_none());
     }
 
     #[test]
