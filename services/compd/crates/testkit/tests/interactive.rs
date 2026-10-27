@@ -629,7 +629,7 @@ fn escape_restores_start_geometry_placement_and_saved_float_without_client_keys(
             );
         }
         let origin = h.wire.inner.space.state.element_location(&window);
-        let size = slot::size_of(&window);
+        let size = slot::size_of(&window).unwrap_or(window.geometry().size);
         let saved = h.comp().float_geometry(id);
         begin_move(&mut h, &window);
         motion(&mut h, (0.0, 540.0));
@@ -654,7 +654,7 @@ fn escape_restores_start_geometry_placement_and_saved_float_without_client_keys(
         assert!(h.comp().interactive.is_none());
         assert_eq!(h.comp().placement(id), start);
         assert_eq!(h.wire.inner.space.state.element_location(&window), origin);
-        assert_eq!(slot::size_of(&window), size);
+        assert_eq!(slot::size_of(&window), Some(size));
         assert_eq!(h.comp().float_geometry(id), saved);
         assert!(preview(&h).is_empty());
         assert!(
