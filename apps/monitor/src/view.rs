@@ -10,13 +10,14 @@
 //! virtualised table. The performance page is a list of sections (CPU,
 //! memory, each disk and network interface, each with a small graph) beside
 //! the chosen section's graphs and figures.
-use crate::graph::{self, Kind};
+use crate::chart::{self, Chart, Series};
 use crate::{label, label_with};
 use egui::{Align, Layout, RichText, ScrollArea, Sense, Ui, Vec2};
 use egui_extras::{Column as Width, TableBuilder};
 use toolkit::action::Origin;
 use toolkit::button::PushButton;
 use toolkit::dialog::{self, Choice};
+use toolkit::graph::{self, Hue, Readout};
 use toolkit::titlebar::{self, Action};
 use toolkit::{Icon, Registry, Strings, bars, combo, field, icons, panel, tooltip};
 use vitals::format::{bytes, mhz, percent, rate, uptime};
@@ -304,6 +305,34 @@ fn processes(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         });
 }
 
+/// Monitor owns resource semantics; toolkit only knows theme-relative hues.
+#[derive(Clone, Copy)]
+enum Kind {
+    Cpu,
+    Memory,
+    Disk,
+    Net,
+}
+
+impl Kind {
+    fn hue(self) -> Hue {
+        match self {
+            Self::Cpu => Hue::Accent,
+            Self::Memory => Hue::AccentPlus,
+            Self::Disk => Hue::Warning,
+            Self::Net => Hue::AccentMinus,
+        }
+    }
+
+    fn format(self) -> fn(f64) -> String {
+        match self {
+            Self::Cpu | Self::Disk => percent,
+            Self::Memory => bytes,
+            Self::Net => rate,
+        }
+    }
+}
+
 /// The section list's title and one-line figure for `key`.
 fn section_text(s: &Snapshot, key: &str) -> Option<(String, String, Kind)> {
     if key == "cpu" {
@@ -398,7 +427,21 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                     let response = ui
                         .horizontal(|ui| {
                             let (values, max) = section_series(engine, &key);
-                            graph::line(ui, Vec2::new(64.0, 36.0), &values, max, kind);
+                            let format = |_, value, age| {
+                                chart::readout("", value, age as f64, kind.format())
+                            };
+                            graph::line(
+                                ui,
+                                Vec2::new(64.0, 36.0),
+                                &values,
+                                max,
+                                kind.hue(),
+                                Readout {
+                                    samples: vitals::history::WINDOW,
+                                    interval_s: s.interval_s,
+                                    format: &format,
+                                },
+                            );
                             ui.vertical(|ui| {
                                 // Both drawn every frame; either click chooses.
                                 let title = toolkit::selectable(
@@ -480,12 +523,21 @@ fn graph_size(ui: &Ui, share: f32) -> Vec2 {
 fn cpu(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
     heading(ui, &label("cpu"), s.cpu.model.as_deref());
     ui.small(format!("{} % · 60 s", label("utilisation")));
-    graph::line(
+    chart::show(
         ui,
+        ("cpu", &engine.ui.node),
         graph_size(ui, 0.3),
-        &engine.rings.get("cpu.busy"),
-        100.0,
-        Kind::Cpu,
+        Chart {
+            series: &[Series {
+                name: &label("utilisation"),
+                hue: Kind::Cpu.hue(),
+                values: &engine.rings.get("cpu.busy"),
+            }],
+            samples: vitals::history::WINDOW,
+            interval_s: s.interval_s,
+            max: 100.0,
+            format: percent,
+        },
     );
     ui.add_space(8.0);
     // Each logical processor, in as square a grid as the width allows.
@@ -501,11 +553,26 @@ fn cpu(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
         egui::Grid::new("cores").spacing([6.0, 6.0]).show(ui, |ui| {
             for (i, core) in s.cpu.per_core.iter().enumerate() {
                 let values = engine.rings.get(&format!("cpu.core.{}.busy", core.cpu));
-                graph::line(ui, cell, &values, 100.0, Kind::Cpu).on_hover_text(format!(
-                    "CPU {} · {}",
-                    core.cpu,
-                    percent(core.busy)
-                ));
+                let format = |_, value, age| {
+                    chart::readout(
+                        &label_with("graph-core", &[("core", &core.cpu.to_string())]),
+                        value,
+                        age as f64,
+                        percent,
+                    )
+                };
+                graph::line(
+                    ui,
+                    cell,
+                    &values,
+                    100.0,
+                    Kind::Cpu.hue(),
+                    Readout {
+                        samples: vitals::history::WINDOW,
+                        interval_s: s.interval_s,
+                        format: &format,
+                    },
+                );
                 if (i + 1) % columns == 0 {
                     ui.end_row();
                 }
@@ -540,12 +607,21 @@ fn memory(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
     let m = &s.memory;
     heading(ui, &label("memory"), Some(&bytes(m.total as f64)));
     ui.small(format!("{} · 60 s", label("in-use")));
-    graph::line(
+    chart::show(
         ui,
+        ("memory", &engine.ui.node),
         graph_size(ui, 0.4),
-        &engine.rings.get("mem.used"),
-        (m.total as f64).max(1.0),
-        Kind::Memory,
+        Chart {
+            series: &[Series {
+                name: &label("in-use"),
+                hue: Kind::Memory.hue(),
+                values: &engine.rings.get("mem.used"),
+            }],
+            samples: vitals::history::WINDOW,
+            interval_s: s.interval_s,
+            max: (m.total as f64).max(1.0),
+            format: bytes,
+        },
     );
     ui.add_space(8.0);
     let share = if m.total > 0 {
@@ -553,7 +629,7 @@ fn memory(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
     } else {
         0.0
     };
-    graph::meter(ui, ui.available_width(), share, Kind::Memory);
+    graph::meter(ui, ui.available_width(), share, Kind::Memory.hue());
     ui.add_space(8.0);
     let mut pairs = vec![
         (label("in-use"), bytes(m.used as f64)),
@@ -581,7 +657,22 @@ fn disk(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
     heading(ui, &format!("{} {name}", label("disk")), d.model.as_deref());
     ui.small(format!("{} % · 60 s", label("active-time")));
     let busy = engine.rings.get(&format!("disk.{name}.busy"));
-    graph::line(ui, graph_size(ui, 0.3), &busy, 100.0, Kind::Disk);
+    chart::show(
+        ui,
+        ("disk-busy", &engine.ui.node, name),
+        graph_size(ui, 0.3),
+        Chart {
+            series: &[Series {
+                name: &label("active-time"),
+                hue: Kind::Disk.hue(),
+                values: &busy,
+            }],
+            samples: vitals::history::WINDOW,
+            interval_s: s.interval_s,
+            max: 100.0,
+            format: percent,
+        },
+    );
     ui.add_space(8.0);
     let read = engine.rings.get(&format!("disk.{name}.read"));
     let write = engine.rings.get(&format!("disk.{name}.write"));
@@ -592,14 +683,28 @@ fn disk(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
         label("write"),
         rate(top)
     ));
-    graph::lines(
+    chart::show(
         ui,
+        ("disk-rates", &engine.ui.node, name),
         graph_size(ui, 0.25),
-        &[
-            (read.as_slice(), Kind::Disk),
-            (write.as_slice(), Kind::Memory),
-        ],
-        top,
+        Chart {
+            series: &[
+                Series {
+                    name: &label("read"),
+                    hue: Kind::Disk.hue(),
+                    values: &read,
+                },
+                Series {
+                    name: &label("write"),
+                    hue: Kind::Memory.hue(),
+                    values: &write,
+                },
+            ],
+            samples: vitals::history::WINDOW,
+            interval_s: s.interval_s,
+            max: top,
+            format: rate,
+        },
     );
     ui.add_space(8.0);
     let pairs = vec![
@@ -635,7 +740,7 @@ fn disk(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
                     } else {
                         0.0
                     };
-                    graph::meter(ui, 160.0, share, Kind::Disk);
+                    graph::meter(ui, 160.0, share, Kind::Disk.hue());
                 });
             });
         }
@@ -660,11 +765,28 @@ fn net(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
         label("send"),
         rate(top)
     ));
-    graph::lines(
+    chart::show(
         ui,
+        ("net-rates", &engine.ui.node, name),
         graph_size(ui, 0.45),
-        &[(rx.as_slice(), Kind::Net), (tx.as_slice(), Kind::Memory)],
-        top,
+        Chart {
+            series: &[
+                Series {
+                    name: &label("receive"),
+                    hue: Kind::Net.hue(),
+                    values: &rx,
+                },
+                Series {
+                    name: &label("send"),
+                    hue: Kind::Memory.hue(),
+                    values: &tx,
+                },
+            ],
+            samples: vitals::history::WINDOW,
+            interval_s: s.interval_s,
+            max: top,
+            format: rate,
+        },
     );
     ui.add_space(8.0);
     let mut pairs = vec![

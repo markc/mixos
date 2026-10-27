@@ -33,6 +33,7 @@
 //! - [`combo`]: combo boxes;
 //! - [`slider`]: sliders and slider rows;
 //! - [`canvas`]: the canvas surround and its scrollbars;
+//! - [`graph`]: small painted histories, theme hues, meters and hover readouts;
 //! - [`tooltip`]: tooltip wording;
 //! - [`dialog`]: modal dialogs and their button rows.
 //!
@@ -55,6 +56,7 @@ pub mod executed;
 pub mod field;
 pub mod file_chooser;
 pub mod fonts;
+pub mod graph;
 pub mod icons;
 pub mod keymap;
 #[cfg(feature = "layer")]

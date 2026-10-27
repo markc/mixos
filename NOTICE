@@ -13,6 +13,10 @@ Emil Ernerfeldt and egui contributors, MIT OR Apache-2.0. Original upstream
 LICENSE-MIT and LICENSE-APACHE retained. Hidden-window capture changes and
 guards are recorded in each PATCHES.md.
 
+Monitor's interactive charts use egui_plot 0.38.0 from crates.io,
+Emil Ernerfeldt and egui_plot contributors, MIT OR Apache-2.0.
+No upstream source or assets are copied into this tree.
+
 The wlcs callback structure in services/compd/crates/wlcs/src/lib.rs was informed
 by Smithay 0.7 wlcs_anvil, Victor Berger, Victoria Brekenfeld and contributors,
 MIT (vendor/smithay/LICENSE.txt). Small client/surface lookup fragments in

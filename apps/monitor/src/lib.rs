@@ -4,11 +4,11 @@
 //! monitord reports, for this node or any node on the mesh.
 //!
 //! The behaviour is the `vitals` engine; this crate is the egui shell
-//! around it (AGENTS.md §4.1): [`view`] draws the engine's state, [`graph`]
+//! around it (AGENTS.md §4.1): [`view`] draws the engine's state, [`chart`]
 //! draws its history, [`shell`] runs its effects, and [`commands`] is the
 //! registry every action goes through, from the menu, a shortcut or the Bus.
 pub mod actions;
-pub mod graph;
+pub mod chart;
 pub mod shell;
 pub mod view;
 

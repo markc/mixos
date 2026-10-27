@@ -132,5 +132,7 @@ mesh-top-commands = Top commands
 mesh-ping-result = Last ping: { $ms } ms · { $age } seconds ago
 mesh-ping-failed = Last ping: no reply · { $age } seconds ago
 mesh-not-pinged = This peer has not been pinged.
+mesh-message-history = Messages/s · last 5 minutes · out solid, in dashed
+mesh-history-readout = { $direction }: { $value } messages/s · { $age } s ago
 mesh-unnamed = Unnamed mesh node: { $out } out · { $in } in since start. These events cannot be placed on the map.
 mesh-unplaced-peer = { $name } · unplaced mesh peer: { $out } out · { $in } in since start.

@@ -6,6 +6,7 @@
 //! and look at the images before committing them.
 use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 use inspector::bus::Reply;
 use inspector::model::Command;
 use inspector::{Dialog, Effect, Engine, Selection, Snapshot};
@@ -143,6 +144,10 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
         });
     toolkit::install(&harness.ctx, &theme);
     harness.run();
+    if name.starts_with("mesh_peer_") {
+        harness.get_by_label("alpha · mesh peer").focus();
+        harness.run();
+    }
     harness.snapshot(name);
 }
 
@@ -198,6 +203,16 @@ fn mesh_studio_dark() {
 #[test]
 fn mesh_pro_light() {
     window(chrome(Scheme::Pro, Mode::Light), "mesh_pro_light");
+}
+
+#[test]
+fn mesh_peer_studio_dark() {
+    window(chrome(Scheme::Studio, Mode::Dark), "mesh_peer_studio_dark");
+}
+
+#[test]
+fn mesh_peer_pro_light() {
+    window(chrome(Scheme::Pro, Mode::Light), "mesh_peer_pro_light");
 }
 
 #[test]

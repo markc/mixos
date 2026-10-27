@@ -423,6 +423,13 @@ opens with a field that searches every command. The desktop profile can
 rebind the shortcuts (<code>keymaps.workshop.&lt;id&gt;</code>), and <code>workshop.actions</code>
 reports the ones in force.</p>
 <h2 id="mesh-map">Mesh map</h2>
+<p>The inspected peer's node panel includes a five-minute messages/s sparkline:
+outgoing is solid and shaded, incoming dashed. Hover shows both sample values
+and their age. The panel retains the last hovered or focused node so the
+pointer can reach its graph. The existing bounded tally buckets supply exactly
+300 one-second samples, oldest first through the current partial second,
+with zero-filled gaps. Histories are included in the typed summary cache and
+rebuilt only when its revision or wall-clock second changes.</p>
 <p>Select <strong>Nodes → Mesh</strong> (<code>nodes:mesh</code>) to draw this node in the centre and
 its peers around an ellipse in Details. Selecting Mesh refreshes <code>noded.info</code>
 and <code>noded.peers</code>, and starts the same observation stream as Traffic's

@@ -211,6 +211,7 @@
                         <a href="#who-uses-it">Who uses it</a>
                         <a href="#starting-an-app">Starting an app</a>
                         <a href="#main-pieces">Main pieces</a>
+                        <a href="#graphs" class="toc-h3">Graphs</a>
                         <a href="#adopting-saved-window-state" class="toc-h3">Adopting saved window state</a>
                         <a href="#theme-and-look" class="toc-h3">Theme and look</a>
                         <a href="#window-chrome-and-components" class="toc-h3">Window chrome and components</a>
@@ -326,6 +327,20 @@ let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke,
                                 &amp;commands, &amp;state, &amp;strings);
 </code></pre>
 <h2 id="main-pieces">Main pieces</h2>
+<h3 id="graphs">Graphs</h3>
+<p><code>toolkit::graph</code> paints small histories directly: <code>line</code> for one shaded
+series, <code>lines</code> for a shaded first series and dashed additional series,
+and <code>meter</code> for a horizontal share. <code>Hue::{Accent, AccentPlus, AccentMinus, Warning}</code> and <code>tint</code> derive legible colours from the current theme.
+There are no application types or sampling dependencies in this module.</p>
+<p>Values run oldest first. Pass a <code>Readout</code> with the window's sample capacity,
+sample interval in seconds and a formatter taking series index, value and
+age in seconds. Partial histories keep their spacing at the right edge.
+Hover draws a thin cursor at the nearest sample and shows the caller's
+unit and localised age text. Formatting only runs for a visible hover tooltip.
+Monitor uses it for the side list and per-CPU grid; Workshop uses it for
+per-link message histories. Small graphs stay painted; large interactive
+charts use <code>egui_plot</code>, currently behind Monitor's replaceable chart module.
+The split and chart appearance remain provisional pending visual acceptance.</p>
 <h3 id="adopting-saved-window-state">Adopting saved window state</h3>
 <p>Use <code>toolkit::saved::Store&lt;MyArrangement&gt;</code> for each window kind. The app
 struct derives <code>Serialize</code>, <code>Deserialize</code> and <code>Default</code> and contains only

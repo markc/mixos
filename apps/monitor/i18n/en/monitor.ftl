@@ -71,3 +71,6 @@ system = System
 iowait = I/O wait
 no-readings = Waiting for the first reading…
 not-local = End task and Kill act only on this node
+graph-age = { $age } s ago
+graph-seconds-ago = Seconds ago
+graph-core = CPU { $core }

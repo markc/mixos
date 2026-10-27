@@ -26,6 +26,7 @@ layers: {
   "email": 1,
   "toolkit": 1,
   "egui": 1,
+  "egui_plot": 1,
   "eframe": 1,
   "egui-wgpu": 1,
   "winit": 1,

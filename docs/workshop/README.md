@@ -211,6 +211,14 @@ reports the ones in force.
 
 ## Mesh map
 
+The inspected peer's node panel includes a five-minute messages/s sparkline:
+outgoing is solid and shaded, incoming dashed. Hover shows both sample values
+and their age. The panel retains the last hovered or focused node so the
+pointer can reach its graph. The existing bounded tally buckets supply exactly
+300 one-second samples, oldest first through the current partial second,
+with zero-filled gaps. Histories are included in the typed summary cache and
+rebuilt only when its revision or wall-clock second changes.
+
 Select **Nodes → Mesh** (`nodes:mesh`) to draw this node in the centre and
 its peers around an ellipse in Details. Selecting Mesh refreshes `noded.info`
 and `noded.peers`, and starts the same observation stream as Traffic's

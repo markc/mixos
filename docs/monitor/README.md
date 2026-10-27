@@ -30,6 +30,17 @@ watched from one that has one. The reasons are in the
 Monitor reads once a second. Pause (Ctrl+P) holds the readings still;
 Refresh (Ctrl+R) reads once.
 
+The main Performance graphs use interactive `egui_plot` charts: seconds ago
+on x (zero at the right), resource units on y, and legends for disk read/write
+and network receive/send. Hover shows sampled values and their age. Drag to
+pan time, scroll or pinch to zoom time, and double-click to reset the range.
+The y scale follows the resource. Side-list sparklines and the per-CPU grid
+stay painted with `toolkit::graph`, including nearest-sample hover readouts;
+memory and filesystem meters keep the same painter. Chart colours and text
+follow the theme. The renderer lives in `src/chart.rs`, behind plain series
+data and unit formatters, so its provisional look can change independently
+of history collection.
+
 ## End task and Kill
 
 End task (Delete) asks the selected process to finish (SIGTERM). Kill

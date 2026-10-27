@@ -690,7 +690,14 @@ pub fn view(
             .request_repaint_after(std::time::Duration::from_secs_f64((start - frame).max(0.0)));
     }
 
-    let mut panel_node = 0;
+    // Retain the inspected peer while the pointer moves into its graph.
+    let panel_id = ui.id().with("mesh-panel-node");
+    let panel_name = ui.ctx().data_mut(|d| d.get_temp::<String>(panel_id));
+    let mut panel_node = mesh
+        .nodes
+        .iter()
+        .position(|node| Some(&node.name) == panel_name.as_ref())
+        .unwrap_or(0);
     for (i, node) in mesh.nodes.iter().enumerate() {
         let Placement {
             at,
@@ -712,6 +719,8 @@ pub fn view(
         });
         if response.hovered() || response.has_focus() {
             panel_node = i;
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(panel_id, node.name.clone()));
         }
         let border = if snapshot
             .pings
@@ -821,6 +830,41 @@ fn node_panel(ui: &mut Ui, snapshot: &MeshView, node: &inspector::mesh::Node) {
                 ui.end_row();
             }
         });
+    if !node.local
+        && let Some(link) = link
+    {
+        use toolkit::graph::{self, Hue, Readout};
+        ui.small(label("mesh-message-history"));
+        let history = &link.history;
+        let format = |series, value, age: u64| {
+            label_with(
+                "mesh-history-readout",
+                &[
+                    (
+                        "direction",
+                        &label(if series == 0 { "mesh-out" } else { "mesh-in" }),
+                    ),
+                    ("value", &format!("{value:.0}")),
+                    ("age", &age.to_string()),
+                ],
+            )
+        };
+        let height = ui.text_style_height(&egui::TextStyle::Body) * 4.0;
+        graph::lines(
+            ui,
+            Vec2::new(ui.available_width(), height),
+            &[
+                (history.out.as_slice(), Hue::Accent),
+                (history.input.as_slice(), Hue::Warning),
+            ],
+            history.max,
+            Readout {
+                samples: inspector::mesh::HISTORY_S,
+                interval_s: 1.0,
+                format: &format,
+            },
+        );
+    }
     let stats = if node.local {
         Some(&snapshot.local_stats)
     } else {
@@ -882,15 +926,22 @@ mod tests {
         );
         let mut cache = SummaryCache::default();
         let first = cache.get(&mesh, clock());
+        assert_eq!(first.links["beta"].history.out[299], 1.0);
         assert!(Arc::ptr_eq(&first, &cache.get(&mesh, clock() + 999)));
         let second = cache.get(&mesh, clock() + 1000);
         assert!(!Arc::ptr_eq(&first, &second));
+        assert_eq!(second.links["beta"].history.out[298], 1.0);
+        assert_eq!(second.links["beta"].history.out[299], 0.0);
         mesh.set_observing(true, None);
         let changed = cache.get(&mesh, clock() + 1000);
         assert!(!Arc::ptr_eq(&second, &changed));
         assert!(changed.observing);
         let expired = cache.get(&mesh, clock() + 301_000);
         assert_eq!(expired.links["beta"].counts.out, [1, 0, 0]);
+        assert_eq!(
+            expired.links["beta"].history,
+            inspector::mesh::LinkHistory::default()
+        );
         assert_eq!(expired.last_event_age_ms, Some(301_000));
     }
 

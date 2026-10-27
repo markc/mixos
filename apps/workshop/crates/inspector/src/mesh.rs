@@ -12,6 +12,8 @@ pub const PENDING_MAX: usize = 2000;
 pub const RECENT_MS: u64 = 15_000;
 const PENDING_MS: u64 = 60_000;
 const WINDOW_S: u64 = 300;
+/// Samples in a link's five-minute per-second history.
+pub const HISTORY_S: usize = 300;
 const TEXT_MAX: usize = 256;
 pub const UNKNOWN: &str = "?";
 const OTHER: &str = "(other)";
@@ -177,6 +179,26 @@ pub struct ViewStats {
 pub struct ViewLink {
     pub counts: LinkCounts,
     pub stats: ViewStats,
+    pub history: LinkHistory,
+}
+
+/// Oldest first, ending with the current (possibly incomplete) second.
+/// Missing seconds are zero, including time before observation started.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LinkHistory {
+    pub out: Vec<f64>,
+    pub input: Vec<f64>,
+    /// Cached shared scale, at least one message/s.
+    pub max: f64,
+}
+impl Default for LinkHistory {
+    fn default() -> Self {
+        Self {
+            out: vec![0.0; HISTORY_S],
+            input: vec![0.0; HISTORY_S],
+            max: 1.0,
+        }
+    }
 }
 #[derive(Clone, Debug)]
 pub struct ViewPing {
@@ -602,6 +624,26 @@ impl Mesh {
                 sum.saturating_add(*counts.get(key).unwrap_or(&0))
             })
     }
+    /// Exactly 300 one-second buckets, [now-299 s, now], from existing
+    /// bounded storage. Unlike aggregate inclusive windows this has exactly
+    /// 300 cells. Future buckets after a clock step back are ignored.
+    pub fn link_history_at(&self, peer: &str, now: u64) -> LinkHistory {
+        let mut history = LinkHistory::default();
+        let out = format!("out:{peer}");
+        let input = format!("in:{peer}");
+        for i in 0..HISTORY_S {
+            let Some(second) = (now / 1000).checked_sub((HISTORY_S - 1 - i) as u64) else {
+                continue;
+            };
+            if let Some(bucket) = self.buckets.get(&second) {
+                history.out[i] = bucket.get(&out).copied().unwrap_or(0) as f64;
+                history.input[i] = bucket.get(&input).copied().unwrap_or(0) as f64;
+                history.max = history.max.max(history.out[i]).max(history.input[i]);
+            }
+        }
+        history
+    }
+
     pub fn view_at(&self, now: u64) -> MeshView {
         let m1 = now.saturating_sub(60_000);
         let m5 = now.saturating_sub(WINDOW_S * 1000);
@@ -641,12 +683,17 @@ impl Mesh {
                 peer.clone(),
                 ViewLink {
                     counts,
+                    history: self.link_history_at(peer, now),
                     stats: ViewStats {
                         services: top_counts(&link.services, 6),
                         commands: top_counts(&link.commands, 5),
                     },
                 },
             );
+        }
+        // Keep quiet peers' zero histories in the same typed cache too.
+        for node in self.nodes.iter().filter(|node| !node.local) {
+            view.links.entry(node.name.clone()).or_default();
         }
         view.pings = self
             .pings
@@ -1680,6 +1727,51 @@ mod tests {
         assert_eq!(st.snapshot_at(base() + 300_999)["links"][0]["out_5m"], 1);
         assert_eq!(st.snapshot_at(base() + 301_000)["links"][0]["out_5m"], 0);
         assert_eq!(st.snapshot_at(base() + 301_000)["links"][0]["out_msgs"], 1);
+    }
+    #[test]
+    fn link_history_is_bounded_zero_filled_directional_and_cached_in_typed_view() {
+        let mut mesh = state();
+        nodes(&mut mesh);
+        let now = base() + 400_000;
+        for (age, direction, peer) in [
+            (300, "mesh_out", "beta"), // Outside the 300-cell graph.
+            (299, "mesh_out", "beta"),
+            (12, "mesh_in", "beta"),
+            (12, "mesh_in", "beta"),
+            (0, "mesh_out", "beta"),
+            (0, "mesh_out", "gamma"),
+        ] {
+            mesh.add_event_at(
+                &json!({"direction":direction,"peer":peer,
+                "ts":iso_ms(now - age * 1000)}),
+                now,
+            );
+        }
+        let history = mesh.link_history_at("beta", now);
+        assert_eq!((history.out.len(), history.input.len()), (300, 300));
+        assert_eq!(
+            (history.out[0], history.input[287], history.out[299]),
+            (1.0, 2.0, 1.0)
+        );
+        assert_eq!(history.out.iter().sum::<f64>(), 2.0);
+        assert_eq!(history.input.iter().sum::<f64>(), 2.0);
+        assert_eq!(history.max, 2.0);
+        assert_eq!(mesh.view_at(now).links["beta"].history, history);
+        assert_eq!(mesh.link_history_at("missing", now), LinkHistory::default());
+        assert_eq!(
+            mesh.link_history_at("beta", now + 300_000),
+            LinkHistory::default()
+        );
+        let stepped_back = mesh.link_history_at("beta", now - 1000);
+        assert_eq!(stepped_back.out.iter().sum::<f64>(), 2.0); // Both old boundary samples now fit.
+        let early = mesh.link_history_at("beta", 0);
+        assert_eq!(early, LinkHistory::default());
+        let mut quiet = state();
+        nodes(&mut quiet);
+        assert_eq!(
+            quiet.view_at(base()).links["beta"].history,
+            LinkHistory::default()
+        );
     }
     #[test]
     fn topology_uses_active_authority_addresses_and_caps_nodes_pings_and_labels() {
