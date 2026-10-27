@@ -206,7 +206,10 @@ mod tests {
         let text = std::str::from_utf8(&output).unwrap();
         assert!(!text.contains("application error"), "{text}");
         assert!(!text.contains("service already registered"), "{text}");
-        assert!(text.contains("ordinary error still reaches fallback"), "{text}");
+        assert!(
+            text.contains("ordinary error still reaches fallback"),
+            "{text}"
+        );
     }
 
     #[test]

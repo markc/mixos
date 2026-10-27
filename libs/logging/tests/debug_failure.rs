@@ -15,8 +15,8 @@ fn fatal_errors_print_once_and_reach_enabled_sinks() {
         let mut args = vec![app.clone(), format!("--debug={level}")];
         let _guard = logging::debug::init(&app, "warn", &mut args).unwrap();
         logging::debug::failure(&app, &ERROR);
-        let (rc, recent) = logging::debug::request(&app, &format!("{app}.debug.recent"), "{}")
-            .unwrap();
+        let (rc, recent) =
+            logging::debug::request(&app, &format!("{app}.debug.recent"), "{}").unwrap();
         assert_eq!(rc, 0);
         let failures: Vec<_> = recent["events"]
             .as_array()
@@ -67,9 +67,8 @@ fn fatal_errors_print_once_and_reach_enabled_sinks() {
                     0
                 );
                 // SAFETY: each owned openpty fd is transferred exactly once.
-                let (mut master, slave) = unsafe {
-                    (File::from_raw_fd(master), File::from_raw_fd(slave))
-                };
+                let (mut master, slave) =
+                    unsafe { (File::from_raw_fd(master), File::from_raw_fd(slave)) };
                 let status = command.stderr(slave).status().unwrap();
                 // Drop Command's slave handle so read_to_end observes EOF/EIO.
                 drop(command);
@@ -88,7 +87,11 @@ fn fatal_errors_print_once_and_reach_enabled_sinks() {
             // Debug startup messages are allowed; the fatal error is exactly one
             // plain line, with no duplicate formatted 'application error' event.
             assert_eq!(stderr.matches(ERROR).count(), 1, "{stderr}");
-            assert_eq!(stderr.lines().filter(|line| *line == expected).count(), 1, "{stderr}");
+            assert_eq!(
+                stderr.lines().filter(|line| *line == expected).count(),
+                1,
+                "{stderr}"
+            );
             assert!(!stderr.contains("application error"), "{stderr}");
             if level != "debug" {
                 assert_eq!(stderr, format!("{expected}\n"));
@@ -126,7 +129,10 @@ fn assert_journal(app: &str, enabled: bool) {
             assert_eq!(records[0]["MESSAGE"], "application error");
             return;
         }
-        assert!(std::time::Instant::now() < deadline, "missing journal record for {app}");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "missing journal record for {app}"
+        );
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
 }

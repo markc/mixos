@@ -5174,6 +5174,7 @@ dependencies = [
  "chrono",
  "clap",
  "config",
+ "libc",
  "log",
  "metrics",
  "metrics-exporter-prometheus",
