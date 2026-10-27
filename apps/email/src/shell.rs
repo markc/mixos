@@ -2775,11 +2775,18 @@ mod tests {
         composer_choice(&mut shell, "compose-1", crate::state::DraftChoice::Discard);
         assert!(window.lock().unwrap().view.documents.saving());
         let ctx = shell.ctx.clone();
+        let viewport = window.lock().unwrap().viewport;
+        let mut input = egui::RawInput::default();
+        input.viewports.insert(viewport, Default::default());
         // Drain the first close/focus, then check subsequent frames emit none.
-        ctx.run_ui(Default::default(), |_| {})
+        ctx.run_ui(input.clone(), |ui| shell.composers.show(ui))
             .drop_without_applying_deltas();
         for _ in 0..4 {
-            let output = ctx.run_ui(Default::default(), |_| shell.advance_close());
+            let output = ctx.run_ui(input.clone(), |ui| {
+                shell.composers.show(ui);
+                shell.advance_close();
+            });
+            assert!(output.viewport_output.contains_key(&viewport));
             assert!(
                 output
                     .viewport_output
