@@ -785,9 +785,9 @@ mod tests {
         let mut rows = table(&raw, &raw, 1.0, &Users::default());
         for row in &mut rows {
             let id = row.cookie[0];
-            row.local_port = if id % 3 == 0 { 80 } else { 443 };
-            row.state = if id % 7 == 0 { "listen" } else { "established" }.into();
-            row.rx_bps = (id % 11 != 0).then_some(f64::from(id));
+            row.local_port = if id.is_multiple_of(3) { 80 } else { 443 };
+            row.state = if id.is_multiple_of(7) { "listen" } else { "established" }.into();
+            row.rx_bps = (!id.is_multiple_of(11)).then_some(f64::from(id));
             row.tx_bps = row.rx_bps.map(|_| f64::from(4096 - id));
             row.rtt_us = row.rx_bps.map(|_| id % 101);
             row.retransmits = row.rx_bps.map(|_| id % 17);
@@ -803,7 +803,7 @@ mod tests {
                 let mut expected: Vec<_> = rows.iter().filter(|r| r.local_port == 80).collect();
                 expected.sort_by_key(|r| {
                     let id = r.cookie[0];
-                    let score = (id % 11 != 0).then_some(match sort {
+                    let score = (!id.is_multiple_of(11)).then_some(match sort {
                         "rx" => id,
                         "tx" => 4096 - id,
                         "rtt" => id % 101,
@@ -811,7 +811,7 @@ mod tests {
                         _ => 4096,
                     });
                     (
-                        sort == "throughput" && id % 7 == 0,
+                        sort == "throughput" && id.is_multiple_of(7),
                         Reverse(score),
                         r.cookie,
                     )
