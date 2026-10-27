@@ -511,7 +511,8 @@ impl Chrome {
                 band: Default::default(),
             }
         });
-        if ctx.data(|d| d.get_temp::<bool>(crate::window_id(ctx.viewport_id(), "toolkit.chrome.client-side"))).unwrap_or(false) {
+        let local = crate::window_id(ctx.viewport_id(), "toolkit.chrome.client-side");
+        if ctx.data(|d| d.get_temp::<bool>(local)).unwrap_or(false) {
             chrome.decorations = Decorations::Client;
         }
         chrome
@@ -526,7 +527,8 @@ impl Chrome {
 /// Keep this viewport's complete local frame, even when the session uses
 /// server decorations. Other viewports and later theme changes keep their policy.
 pub fn client_side(ctx: &Context) {
-    ctx.data_mut(|d| d.insert_temp(crate::window_id(ctx.viewport_id(), "toolkit.chrome.client-side"), true));
+    let local = crate::window_id(ctx.viewport_id(), "toolkit.chrome.client-side");
+    ctx.data_mut(|d| d.insert_temp(local, true));
 }
 
 /// Make `chrome` the one [`Chrome::of`] returns on `ctx`.

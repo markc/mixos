@@ -790,7 +790,12 @@ impl Shell {
     fn sync_composers(&mut self) {
         if self.composers.suppress_restore {
             self.state.restore.clear();
-            if let Some(root) = self.composers.root.as_ref().and_then(|n| self.composers.windows.get(n)) {
+            if let Some(root) = self
+                .composers
+                .root
+                .as_ref()
+                .and_then(|n| self.composers.windows.get(n))
+            {
                 root.lock().unwrap().view.restore.clear();
             }
         }
@@ -1791,9 +1796,16 @@ impl Shell {
                 window.swap(&mut self.state);
                 let failed_launch = window.viewport == egui::ViewportId::ROOT
                     && self.composers.suppress_restore
-                    && matches!(&event, Event::MailDocument(_, crate::documents::Answer::Read(Err(_))));
+                    && matches!(
+                        &event,
+                        Event::MailDocument(_, crate::documents::Answer::Read(Err(_)))
+                    );
                 self.state.apply(event);
-                if failed_launch && self.state.compose.is_none() && !self.state.documents.opening() && !window.closed {
+                if failed_launch
+                    && self.state.compose.is_none()
+                    && !self.state.documents.opening()
+                    && !window.closed
+                {
                     let error = std::mem::take(&mut self.state.status);
                     self.state.compose();
                     if let Some(compose) = &mut self.state.compose {
@@ -1924,12 +1936,13 @@ impl Shell {
         let composer_action =
             action.is_some_and(|id| id.starts_with("compose.") || id == "mail.send");
         let opening = command_name == "email.execute" && action == Some("compose.new");
-        let routed = !opening && (command_name.starts_with("email.compose.")
-            || command_name == "email.info"
-            || (command_name == "email.execute"
-                && args
-                    .as_ref()
-                    .is_some_and(|a| composer_action || a.get("window").is_some())));
+        let routed = !opening
+            && (command_name.starts_with("email.compose.")
+                || command_name == "email.info"
+                || (command_name == "email.execute"
+                    && args
+                        .as_ref()
+                        .is_some_and(|a| composer_action || a.get("window").is_some())));
         if routed
             && args
                 .as_ref()

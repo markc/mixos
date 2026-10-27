@@ -1033,11 +1033,24 @@ mod tests {
                 state.compose();
                 windows.adopt(&mut state, editor::Palette::from_theme(&theme));
                 let viewport = windows.windows["compose-1"].lock().unwrap().viewport;
-                let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 700.0))), ..Default::default() };
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 700.0),
+                    )),
+                    ..Default::default()
+                };
                 let output = ctx.run_ui(input.clone(), |ui| windows.show(ui));
                 if !standalone {
-                    assert_eq!(output.viewport_output[&viewport].builder.decorations, Some(false));
-                    assert_eq!(toolkit::chrome::Chrome::of(&ctx).decorations, decorations, "mailbox policy survives child paint");
+                    assert_eq!(
+                        output.viewport_output[&viewport].builder.decorations,
+                        Some(false)
+                    );
+                    assert_eq!(
+                        toolkit::chrome::Chrome::of(&ctx).decorations,
+                        decorations,
+                        "mailbox policy survives child paint"
+                    );
                 }
                 output.drop_without_applying_deltas();
                 let mut input = input;
@@ -1045,12 +1058,26 @@ mod tests {
                 input.viewports.insert(viewport, Default::default());
                 let output = ctx.run_ui(input, |ui| {
                     windows.windows["compose-1"].lock().unwrap().show(ui);
-                    assert_eq!(toolkit::chrome::Chrome::of(ui.ctx()).decorations, design::Decorations::Client);
+                    assert_eq!(
+                        toolkit::chrome::Chrome::of(ui.ctx()).decorations,
+                        design::Decorations::Client
+                    );
                     assert!(!toolkit::titlebar::hosting::hosted(ui.ctx()));
                 });
-                assert!(!output.viewport_output[&viewport].commands.iter().any(|c| matches!(c, egui::ViewportCommand::Decorations(true))));
+                assert!(
+                    !output.viewport_output[&viewport]
+                        .commands
+                        .iter()
+                        .any(|c| matches!(c, egui::ViewportCommand::Decorations(true)))
+                );
                 output.drop_without_applying_deltas();
-                let answer = toolkit::drive::request(&ctx, 1, "ui.menu.list", &serde_json::json!({"viewport":"compose-1"})).unwrap();
+                let answer = toolkit::drive::request(
+                    &ctx,
+                    1,
+                    "ui.menu.list",
+                    &serde_json::json!({"viewport":"compose-1"}),
+                )
+                .unwrap();
                 assert_eq!(answer.rc, 0);
                 assert!(answer.body.to_string().contains("Save As"));
                 assert!(!answer.body.to_string().contains("mail.compose"));
@@ -1064,7 +1091,11 @@ mod tests {
         let theme = theme.framed(design::Decorations::Server, design::CaptionSide::Auto);
         state.compose();
         let palette = editor::Palette::from_theme(&theme);
-        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(900.0, 700.0)).build_ui(move |ui| { view(ui, &state, &registry(), &palette); });
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(900.0, 700.0))
+            .build_ui(move |ui| {
+                view(ui, &state, &registry(), &palette);
+            });
         toolkit::install(&h.ctx, &theme);
         h.run();
         h.snapshot("compose_window_server_preference");

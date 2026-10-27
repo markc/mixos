@@ -522,7 +522,14 @@ mod tests {
             ("dev.mixos.email", None),
             ("dev.mixos.email.compose-2", Some("compose-2")),
         ] {
-            assert_eq!(menu_service(app, &live), if viewport.is_none() { Some("email") } else { None });
+            assert_eq!(
+                menu_service(app, &live),
+                if viewport.is_none() {
+                    Some("email")
+                } else {
+                    None
+                }
+            );
             assert_eq!(menu_viewport(app), viewport);
         }
         assert_eq!(menu_service("dev.mixos.missing.compose-2", &live), None);
