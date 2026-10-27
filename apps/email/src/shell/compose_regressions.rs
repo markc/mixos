@@ -189,12 +189,18 @@ fn review_readme_drop_attaches_to_its_composer() {
 
 #[test]
 fn review_mailbox_drops_open_a_composer_with_attachments() {
+    #[derive(Debug)]
+    struct DropPath(PathBuf);
+    impl egui::DroppedFile for DropPath {
+        fn path(&self) -> &std::path::Path { &self.0 }
+        fn bytes(&self) -> Result<Vec<u8>, String> { std::fs::read(&self.0).map_err(|e| e.to_string()) }
+    }
     for filename in ["notes.txt", "README.md"] {
         let (mut shell, _broker) = compose_fixture(false);
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(filename);
         std::fs::write(&path, "ordinary file\n").unwrap();
-        let input = egui::RawInput { dropped_files: vec![egui::DroppedFile::from(path.clone())], ..Default::default() };
+        let input = egui::RawInput { dropped_files: vec![Arc::new(DropPath(path.clone()))], ..Default::default() };
         let ctx = shell.ctx.clone();
         ctx.run_ui(input, |ui| shell.ui(ui)).drop_without_applying_deltas();
         for _ in 0..100 {
