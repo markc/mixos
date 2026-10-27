@@ -12,7 +12,7 @@ use design::{Mode, Scheme};
 use egui::accesskit::Role;
 use egui::{Event, Key, Modifiers, PointerButton, Pos2};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use fixture::Fixture;
 use toolkit::menu::{self, Current, Entry, Menu, Row};
 
@@ -659,9 +659,9 @@ fn popup_anchors_and_bare_alt_work_with_collapsed_menus() {
             Harness::builder().with_size(egui::vec2(900.0, 500.0)),
             &theme,
         );
-        h.input_mut().modifiers = Modifiers::ALT;
+        h.event(Event::ModifiersChanged(Modifiers::ALT));
         h.run_steps(1);
-        h.input_mut().modifiers = Modifiers::NONE;
+        h.event(Event::ModifiersChanged(Modifiers::NONE));
         h.run();
         assert!(menu::is_open(&h.ctx));
         menu::close(&h.ctx);
@@ -712,7 +712,7 @@ fn alt_gestures_and_focus_loss_do_not_open_menus() {
                 });
                 h.run_steps(1);
             }
-            h.input_mut().modifiers = Modifiers::ALT;
+            h.event(Event::ModifiersChanged(Modifiers::ALT));
             h.run_steps(1);
             match gesture {
                 "click" | "secondary" => {
@@ -729,6 +729,8 @@ fn alt_gestures_and_focus_loss_do_not_open_menus() {
                 "wheel" => h.event(Event::MouseWheel {
                     unit: egui::MouseWheelUnit::Line,
                     delta: egui::vec2(0.0, 1.0),
+                    phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Unknown,
                     modifiers: Modifiers::ALT,
                 }),
                 "tab" => h.event(Event::Key {
@@ -755,12 +757,12 @@ fn alt_gestures_and_focus_loss_do_not_open_menus() {
                 });
                 h.run_steps(1);
             }
-            h.input_mut().modifiers = Modifiers::NONE;
+            h.event(Event::ModifiersChanged(Modifiers::NONE));
             h.run();
             assert!(!menu::is_open(&h.ctx), "{style:?}: {gesture}");
-            h.input_mut().modifiers = Modifiers::ALT;
+            h.event(Event::ModifiersChanged(Modifiers::ALT));
             h.run_steps(1);
-            h.input_mut().modifiers = Modifiers::NONE;
+            h.event(Event::ModifiersChanged(Modifiers::NONE));
             h.run();
             assert!(
                 menu::is_open(&h.ctx),
@@ -943,7 +945,6 @@ fn open_theme(h: &mut Harness<'_, Fixture>) {
 
 #[test]
 fn theme_choices_are_ticked_radio_items_and_a_click_chooses() {
-    use egui_kittest::kittest::NodeT;
     let mut h = window();
     open_theme(&mut h);
     assert_eq!(path(&h), labels("View", &[Some("Theme"), Some("Ocean")]));

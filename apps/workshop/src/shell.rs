@@ -532,9 +532,7 @@ impl Shell {
                 Event::Delivery(Delivery::Connected) => {
                     drive::set_service(&self.ctx, Some(self.bus.service()))
                 }
-                Event::Delivery(Delivery::Disconnected) => {
-                    drive::set_service(&self.ctx, None)
-                }
+                Event::Delivery(Delivery::Disconnected) => drive::set_service(&self.ctx, None),
                 _ => {}
             }
             if let Event::Subscription(topic, on) = event {
