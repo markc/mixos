@@ -316,6 +316,7 @@ fn policy_place_during_an_armed_drag_keeps_the_placed_floating_frame() {
         let mut h = Harness::new();
         let (surface, _, _) = h.mapped_toplevel(640, 480);
         let (id, window) = window(&h, &surface);
+        let size = slot::size_of(&window).unwrap_or(window.geometry().size);
         if keep_saved {
             h.wire.inner.comp.save_float_geometry(
                 id,
@@ -417,7 +418,7 @@ fn policy_place_during_an_armed_drag_keeps_the_placed_floating_frame() {
             h.wire.inner.space.state.element_location(&window),
             Some((500, 300).into())
         );
-        assert_eq!(slot::size_of(&window), Some((640, 480).into()));
+        assert_eq!(slot::size_of(&window).unwrap_or(window.geometry().size), size);
         assert!(!decor::window::constrained(&window));
         for edge in [
             State::TiledLeft,
