@@ -500,7 +500,7 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                 let app = drive.app.clone();
                 let options = drive.options.clone();
                 let child = drive.children.entry(target).or_insert_with(|| {
-                                    Box::new(Drive {
+                    Box::new(Drive {
                         app,
                         options,
                         ..Drive::default()
@@ -558,13 +558,8 @@ pub fn register_viewport(
     name: &str,
     viewport: egui::ViewportId,
 ) {
-    ctx.data_mut(|d| {
-        let key = egui::Id::unique(("drive-viewport", owner, name));
-        if d.get_temp::<egui::ViewportId>(key) != Some(viewport) {
-            logging::debug!(?owner, name, ?viewport, "owned viewport registered");
-            d.insert_temp(key, viewport);
-        }
-    });
+    logging::trace!(?owner, name, ?viewport, "owned viewport registered");
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(("drive-viewport", owner, name)), viewport));
 }
 
 pub fn unregister_viewport(
@@ -2439,7 +2434,7 @@ mod tests {
         ctx.with_plugin(|drive: &mut Drive| {
             drive.children.insert(
                 child,
-                                Box::new(Drive {
+                Box::new(Drive {
                     running: Some(Running {
                         id: 7,
                         steps: VecDeque::from([Step::Await {

@@ -40,17 +40,15 @@ struct Ring {
 
 impl Ring {
     fn new() -> Self {
-        Self {
-            entries: VecDeque::new(),
-            bytes: 0,
-        }
+        let entries = VecDeque::with_capacity(MAX_EVENTS);
+        let bytes = entries.capacity() * std::mem::size_of::<(Entry, usize)>() + std::mem::size_of::<Self>();
+        Self { entries, bytes }
     }
 
     fn push(&mut self, entry: Entry) {
         // Conservative resident-size charge includes map nodes, JSON values,
         // deque slots and allocator overhead, rather than just wire bytes.
-        let bytes = std::mem::size_of::<Entry>() * 2
-            + 256
+        let bytes = 256
             + entry.ts.len()
             + entry.target.len()
             + entry.message.len()

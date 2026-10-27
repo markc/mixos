@@ -221,23 +221,20 @@ pub(crate) fn init_inner(
     // materialised as `Option<Layer>` — `tracing_subscriber::Layer for
     // Option<L>` makes a `None` layer a no-op at runtime.
 
-    // Build the journald layer first so we can decide whether to also
-    // emit on stderr. Under systemd the journald layer captures
-    // everything natively; a stderr layer there would double every
-    // entry (systemd also captures the unit's stderr into the journal).
+    // Install a lazy journald layer without opening a socket. It owns the
+    // fallback when first use fails; a terminal has its own stderr layer.
     let journal_fallback = if live_debug {
         !std::io::stderr().is_terminal()
     } else {
-        opts.log_stderr.unwrap_or(TriState::Auto) != TriState::Always
+        opts.log_stderr.unwrap_or(TriState::Auto) == TriState::Auto
     };
     let journald_layer =
         journald_on.then(|| crate::journal::LazyJournal::new(&defaults.identity, journal_fallback));
     let journald_active = journald_layer.is_some();
 
-    // stderr sink resolution. `Auto` is on only when journald did NOT
-    // install — so journald-primary daemons don't get duplicated lines,
-    // and a journald connect failure (layer = None) transparently falls
-    // back to stderr. `Always`/`Never` are honoured verbatim.
+    // Auto uses stderr when journald was not requested. A first-event
+    // connection failure falls back inside LazyJournal. Explicit Never
+    // remains silent for ordinary callers; live diagnostics always fall back.
     let stderr_on = match if live_debug {
         crate::debug::stderr_mode(std::io::stderr().is_terminal(), journald_active)
     } else {

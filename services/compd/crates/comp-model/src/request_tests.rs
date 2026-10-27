@@ -1862,4 +1862,3 @@ fn debug_commands_are_live_direct_requests_under_literal_names() {
     assert!(!crate::catalogue::read_only("comp.debug.set"));
     assert!(classify("comp-nested.debug", &json!({}), false).is_err());
 }
-

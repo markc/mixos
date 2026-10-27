@@ -94,9 +94,10 @@ where
         let span = ctx.span(id).expect("registered span");
         let mut extensions = span.extensions_mut();
         let fields = extensions.get_mut::<SpanFields>().expect("span fields");
-        values.record(fields);
         let installed = fields.installed;
+        if !installed { values.record(fields); }
         drop(extensions);
+        drop(span);
         if installed && let Some(Ok(sink)) = sink.as_ref() {
             sink.on_record(id, values, ctx);
         }
