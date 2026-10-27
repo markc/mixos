@@ -29,7 +29,7 @@ macro_rules! actions {
                     submenu: None,
                     group: row.3,
                     shortcut: first_free($id, &mut $used),
-                    icon: None,
+                    icon: ($id == "file.mail").then_some(toolkit::Icon::Mail),
                     enabled: |a: &App| a.enabled($id),
                     run: |a: &mut App| a.action($id),
                 };
@@ -79,6 +79,7 @@ pub fn registry() -> Registry<App> {
     let go = Some("go");
     actions! { r, used;
         "file.open", "file-open", file, 0;
+        "file.mail", "file-mail", file, 0;
         "file.new-folder", "file-new-folder", file, 0;
         "file.rename", "file-rename", file, 1;
         "file.copy-other-pane", "file-copy", file, 1;

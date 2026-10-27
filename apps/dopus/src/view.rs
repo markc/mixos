@@ -225,6 +225,7 @@ mod column_tests {
                     path: PathBuf::from(format!("sample-{i}.mkv")),
                     name: format!("sample-{i}.mkv"),
                     is_dir: false,
+                    is_file: true,
                     size: Some(i * 1024 * 1024),
                     child_count: None,
                     modified: Some(std::time::SystemTime::UNIX_EPOCH),
@@ -285,6 +286,7 @@ mod column_tests {
                     path: PathBuf::from("Blue Murder Motel extended episode name.mkv"),
                     name: "Blue Murder Motel extended episode name.mkv".into(),
                     is_dir: false,
+                    is_file: true,
                     size: Some(565 * 1024 * 1024),
                     child_count: None,
                     modified: Some(std::time::SystemTime::UNIX_EPOCH),
@@ -1038,6 +1040,7 @@ fn row(
     response.context_menu(|ui| {
         for id in [
             "file.open",
+            "file.mail",
             "file.copy-other-pane",
             "file.move-other-pane",
             "file.rename",

@@ -243,9 +243,21 @@
 <h1 id="changelog">Changelog</h1>
 <h2 id="unreleased--2026-10-27">Unreleased — 2026-10-27</h2>
 <ul>
-<li>Keep <code>drive::input_request</code> available when local and injected input share
+<li>
+<p>Add a reusable multi-file chooser with asynchronous directory/path probes,
+bounded listings and outstanding workers, keyboard navigation, hidden files,
+Ctrl/Shift selection, stable accessible labels and stacked modal behaviour.</p>
+</li>
+<li>
+<p>Let registries mark dialog-only menus and render selected menus inside a Ui.
+Covered bars leave the active dialog's menu and drive state alone. Dialogs
+can suspend their controls and keyboard handling while a child is open.</p>
+</li>
+<li>
+<p>Keep <code>drive::input_request</code> available when local and injected input share
 a pass. Expose <code>drive::input_mixed</code> so apps can record that ambiguity without
-losing the drive caller or changing input timing.</li>
+losing the drive caller or changing input timing.</p>
+</li>
 </ul>
 <h2 id="unreleased--2026-10-24">Unreleased — 2026-10-24</h2>
 <ul>

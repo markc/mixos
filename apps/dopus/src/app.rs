@@ -69,6 +69,10 @@ pub enum Answer {
 /// Work for the shell.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
+    Mail {
+        id: Option<u64>,
+        paths: Vec<PathBuf>,
+    },
     /// Reply to Bus command `id`.
     Reply {
         id: u64,
@@ -206,6 +210,7 @@ impl App {
         let idle = !a.operation_running;
         match action {
             "file.open" => a.has_selection,
+            "file.mail" => a.selection_all_files,
             "file.new-folder" => idle,
             "file.rename" => a.has_selection && idle && a.selection_count == 1,
             "file.copy-other-pane" | "file.move-other-pane" | "file.delete" => {
@@ -242,6 +247,7 @@ impl App {
             return;
         }
         match commands::apply_action_in(action, &mut self.core, pane) {
+            Ok(Applied::Mail(paths)) => self.effects.push(Effect::Mail { id: None, paths }),
             Ok(Applied::Done) => {}
             Ok(Applied::ToggleSidebar(sidebar)) => self.core.toggle_sidebar(sidebar),
             Ok(Applied::LocationFocus(pane)) => self.edit_location(pane),
@@ -271,6 +277,10 @@ impl App {
         self.ran.extend(commands::accepted_action(command, &served));
         for served in served {
             match served {
+                Served::Mail { id, paths } => self.effects.push(Effect::Mail {
+                    id: Some(id),
+                    paths,
+                }),
                 Served::Reply { id, rc, body } => self.effects.push(Effect::Reply { id, rc, body }),
                 Served::ToggleSidebar {
                     id,
@@ -309,6 +319,18 @@ impl App {
         })
         .unwrap_or_default();
         self.effects.push(Effect::Reply { id, rc: 0, body });
+    }
+
+    pub fn mailed(
+        &mut self,
+        id: Option<u64>,
+        result: Result<crate::bus::MailOutcome, crate::bus::MailFailure>,
+    ) {
+        let (rc, body, status) = crate::bus::mail_reply(result);
+        self.status = Some(status);
+        if let Some(id) = id {
+            self.effects.push(Effect::Reply { id, rc, body });
+        }
     }
 
     /// Take the core's derived events: dialogs queue (law 3), `OpenFile`

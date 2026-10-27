@@ -10,6 +10,15 @@ generated: by docs/_build/gen-site.mix from apps/email/CHANGELOG.md; do not edit
 
 ## Unreleased
 
+- Add an Attachments menu inside compose, with Attach files… (Ctrl+Shift+A),
+  Remove all attachments and a one-click paperclip button. The shared chooser
+  runs above compose and remembers the last attachment directory this session.
+- Add `email.compose.attachment.add {paths}` and dropped-file attachment entry.
+  They share atomic path validation, deduplication, draft revisions, metadata
+  refresh and size warnings; sending refuses changes.
+- Use citizen's shared app-launch helper when opening Prefs, preserving app
+  refusals and avoiding repeated commands after an uncertain outcome.
+
 - `email.execute` refuses `mail.send` when final validation prevents queueing,
   returning the compose error rather than a successful `executed` reply.
 - Compose attachment metadata keeps the plain basename in `name` and the

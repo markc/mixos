@@ -72,6 +72,7 @@ One line per component with a page: kind, then install profiles. The
 - [bus](https://mixos.dev/bus/README.md): lib; profiles: none (library). The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts.
 - [ced](https://mixos.dev/ced/README.md): app; profiles: unclassified. The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [citizen](https://mixos.dev/citizen/README.md): lib; profiles: none (library). An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore.
+  - [citizen — changelog](https://mixos.dev/citizen/changelog.md): Release notes of the citizen component, mirrored from libs/citizen/CHANGELOG.md.
 - [compd](https://mixos.dev/compd/README.md): service; profiles: unclassified. The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree.
   - [compd — changelog](https://mixos.dev/compd/changelog.md): Release notes of the compd component, mirrored from services/compd/CHANGELOG.md.
 - [config](https://mixos.dev/config/README.md): lib; profiles: none (library). Where MixOS keeps its files and how a conf.mix file is read, with one directory rule for every component and descriptor-safe atomic file helpers.
@@ -79,7 +80,8 @@ One line per component with a page: kind, then install profiles. The
 - [davproto](https://mixos.dev/davproto/README.md): lib; profiles: none (library). CalDAV and CardDAV codecs that convert between JSCalendar or JSContact and iCalendar or vCard, with strong ETags, and no transport or storage.
 - [design](https://mixos.dev/design/README.md): lib; profiles: none (library). The MixOS design-token system, which compiles a strict-data theme source into resolved colours, metrics, typography and button tables for one scheme, mode and contrast.
 - [dnsd](https://mixos.dev/dnsd/README.md): service; profiles: server. authoritative mesh DNS for the zones in zones.mix
-- [dopus](https://mixos.dev/dopus/README.md): app; profiles: unclassified. MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads and navigates but never changes files.
+- [dopus](https://mixos.dev/dopus/README.md): app; profiles: unclassified. MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and the same actions over the Bus.
+  - [dopus — changelog](https://mixos.dev/dopus/changelog.md): Release notes of the dopus component, mirrored from apps/dopus/CHANGELOG.md.
 - [edit](https://mixos.dev/edit/README.md): lib; profiles: none (library). Shared headless text buffers used by editd and Ced, with revision checks, transactions, operational transforms, per-origin undo, anchors and search.
 - [editd](https://mixos.dev/editd/README.md): service; profiles: unclassified. The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
   - [editd — changelog](https://mixos.dev/editd/changelog.md): Release notes of the editd component, mirrored from services/editd/CHANGELOG.md.
@@ -163,6 +165,7 @@ One line per component with a page: kind, then install profiles. The
   - [Default-layout compatibility fixtures](https://mixos.dev/paths/compatibility.md): The table in libs/paths/src/layout_tests.rs applies main's 32650ae5:libs/config/src/dir.rs match arms by hand: a direct override wins, then the whole-tree…
 - [portald](https://mixos.dev/portald/README.md): service; profiles: unclassified. How portald serves the XDG Settings and ScreenCast portals on the session bus, where the appearance values and screen frames come from, and how applications and agents use them.
 - [prefs](https://mixos.dev/prefs/README.md): app; profiles: unclassified. Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window.
+  - [prefs — changelog](https://mixos.dev/prefs/changelog.md): Release notes of the prefs component, mirrored from apps/prefs/CHANGELOG.md.
 - [props](https://mixos.dev/props/README.md): lib; profiles: none (library). Property read types, revisions, namespace storage and native Bus routing for MixOS services.
 - [releasesd](https://mixos.dev/releasesd/README.md): service; profiles: unclassified. How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus.
 - [scene](https://mixos.dev/scene/README.md): lib; profiles: none (library). The Mix Scenes document core, which parses, lints, resolves and diffs scene documents and their bindings without a renderer or interpreter.

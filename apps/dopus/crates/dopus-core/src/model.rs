@@ -68,6 +68,8 @@ pub struct FileEntry {
     pub path: PathBuf,
     pub name: String,
     pub is_dir: bool,
+    /// Regular file, following symlinks; captured by the listing worker.
+    pub is_file: bool,
     pub size: Option<u64>,
     pub child_count: Option<usize>,
     pub modified: Option<SystemTime>,
@@ -423,6 +425,7 @@ impl DopusCore {
             can_go_parent: pane.path.parent().is_some(),
             has_selection: pane.action_selection_available(),
             selection_count: pane.selected_paths.len(),
+            selection_all_files: self.selection_all_files(self.active),
             selection_is_dir: pane
                 .selected
                 .as_deref()
@@ -895,6 +898,16 @@ impl DopusCore {
         remaining.sort();
         selected.extend(remaining);
         selected
+    }
+
+    /// Use the worker's metadata; availability never stats a mount on the UI thread.
+    pub fn selection_all_files(&self, pane: PaneId) -> bool {
+        let model = self.pane(pane);
+        model.action_selection_available()
+            && model
+                .selected_paths
+                .iter()
+                .all(|path| find_entry(model, path).is_some_and(|entry| entry.is_file))
     }
 
     /// Top-level selected paths for recursive operations and drag payloads.
@@ -1833,8 +1846,9 @@ pub fn read_directory(directory: &Path, show_hidden: bool) -> Result<Vec<FileEnt
         // retains the real OsString bytes for every filesystem operation.
         let name = sanitise_display_text(&lossy_name);
         let path = entry.path();
-        let metadata = entry.metadata().ok();
+        let metadata = std::fs::metadata(&path).ok();
         let is_dir = metadata.as_ref().is_some_and(std::fs::Metadata::is_dir);
+        let is_file = metadata.as_ref().is_some_and(std::fs::Metadata::is_file);
         let size = metadata
             .as_ref()
             .filter(|_| !is_dir)
@@ -1843,6 +1857,7 @@ pub fn read_directory(directory: &Path, show_hidden: bool) -> Result<Vec<FileEnt
             path,
             name,
             is_dir,
+            is_file,
             size,
             child_count: None,
             modified: metadata.and_then(|metadata| metadata.modified().ok()),
@@ -2228,6 +2243,7 @@ pub struct AvailabilitySnapshot {
     pub can_go_parent: bool,
     pub has_selection: bool,
     pub selection_count: usize,
+    pub selection_all_files: bool,
     pub selection_is_dir: bool,
     pub rows_available: bool,
     pub operation_running: bool,
@@ -2779,6 +2795,7 @@ mod tests {
             path: PathBuf::from(name),
             name: name.into(),
             is_dir,
+            is_file: !is_dir,
             size: None,
             child_count: None,
             modified: None,
@@ -2927,6 +2944,7 @@ mod tests {
             path: "/fixture\nancestor/short\nname.md".into(),
             name: "short\u{fffd}name.md".into(),
             is_dir: false,
+            is_file: true,
             size: Some(12),
             child_count: None,
             modified: None,

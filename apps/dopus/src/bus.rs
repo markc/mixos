@@ -21,9 +21,126 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
 use crate::commands::Command;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailOutcome {
+    pub added: bool,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailFailure {
+    pub code: String,
+    pub message: String,
+}
+
+impl MailFailure {
+    pub fn unavailable() -> Self {
+        Self {
+            code: "UNAVAILABLE".into(),
+            message: crate::label("mail-no-bus"),
+        }
+    }
+}
+
+impl From<citizen::AppCallError> for MailFailure {
+    fn from(error: citizen::AppCallError) -> Self {
+        let code = match &error {
+            citizen::AppCallError::Refused { code, .. } => code.clone(),
+            citizen::AppCallError::Transport(error) if error.outcome_unknown => {
+                "OUTCOME_UNKNOWN".into()
+            }
+            citizen::AppCallError::Transport(_) => "NOT_SENT".into(),
+            citizen::AppCallError::LaunchFailed(_) | citizen::AppCallError::DidNotAppear => {
+                "NOT_RUNNING".into()
+            }
+        };
+        Self {
+            code,
+            message: error.to_string(),
+        }
+    }
+}
+
+/// Runs on the Bus task. Only an explicit BUSY refusal switches to adding to
+/// the current compose; a lost compose reply must never cause a second effect.
+pub async fn mail_selection(
+    client: &impl citizen::AppClient,
+    paths: Vec<std::path::PathBuf>,
+) -> Result<MailOutcome, MailFailure> {
+    // Pane paths normally are absolute. Resolve a relative configured root
+    // here, off the window thread, without canonicalising away symlink paths.
+    let cwd = if paths.iter().any(|path| !path.is_absolute()) {
+        std::env::current_dir().map_err(|error| MailFailure {
+            code: "INVALID_ARGUMENT".into(),
+            message: error.to_string(),
+        })?
+    } else {
+        std::path::PathBuf::new()
+    };
+    let paths: Vec<_> = paths.into_iter().map(|path| cwd.join(path)).collect();
+    let count = paths.len();
+    match citizen::call_app(
+        client,
+        "dev.mixos.email",
+        "email.compose",
+        serde_json::json!({"attachments":paths}),
+        Duration::from_secs(10),
+    )
+    .await
+    {
+        Ok(_) => Ok(MailOutcome {
+            added: false,
+            count,
+        }),
+        Err(citizen::AppCallError::Refused { code, .. }) if code == "BUSY" => {
+            citizen::call_app(
+                client,
+                "dev.mixos.email",
+                "email.compose.attachment.add",
+                serde_json::json!({"paths":paths}),
+                Duration::from_secs(10),
+            )
+            .await
+            .map_err(MailFailure::from)?;
+            Ok(MailOutcome { added: true, count })
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// The status line and Bus reply describe the same completed operation.
+pub fn mail_reply(result: Result<MailOutcome, MailFailure>) -> (u8, String, String) {
+    match result {
+        Ok(outcome) => {
+            let status = crate::label_with(
+                if outcome.added {
+                    "mail-added"
+                } else {
+                    "mail-opened"
+                },
+                &[("count", &outcome.count.to_string())],
+            );
+            let body = serde_json::json!({"id":"file.mail","ok":true,"result":{
+                "added":outcome.added,"count":outcome.count,"message":status,
+            }})
+            .to_string();
+            (0, body, status)
+        }
+        Err(error) => {
+            let body =
+                serde_json::json!({"error_code":error.code,"message":error.message}).to_string();
+            (10, body, error.message)
+        }
+    }
+}
+
 /// Everything the Bus thread delivers to the host.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Delivery {
+    Mail {
+        id: Option<u64>,
+        result: Result<MailOutcome, MailFailure>,
+    },
     /// A `dopus.*` command.
     Command(Command),
     /// A frame on a subscribed topic.
@@ -52,10 +169,21 @@ pub enum Delivery {
 }
 
 enum Work {
-    Respond { id: u64, rc: u8, body: String },
+    Mail {
+        id: Option<u64>,
+        paths: Vec<std::path::PathBuf>,
+    },
+    Respond {
+        id: u64,
+        rc: u8,
+        body: String,
+    },
     Subscribe(String),
     Look(settings::follow::Read),
-    LookRetry { delay: Duration, generation: u64 },
+    LookRetry {
+        delay: Duration,
+        generation: u64,
+    },
     Quit,
 }
 
@@ -71,6 +199,9 @@ pub struct BusHandle {
 }
 
 impl BusHandle {
+    pub fn mail(&self, id: Option<u64>, paths: Vec<std::path::PathBuf>) -> bool {
+        self.tx.send(Work::Mail { id, paths }).is_ok()
+    }
     pub fn connected(&self) -> bool {
         self.client.is_connected()
     }
@@ -284,6 +415,13 @@ async fn run(
             }
             next = work.recv() => {
                 match next {
+                    Some(Work::Mail { id, paths }) => {
+                        let (c, o) = (client.clone(), out.clone());
+                        tokio::spawn(async move {
+                            let result = mail_selection(c.as_ref(), paths).await;
+                            o.send(Delivery::Mail { id, result });
+                        });
+                    }
                     None => break,
                     Some(Work::Respond { id, rc, body }) => {
                         // Awaited in place, so a reply is on the wire before a
@@ -422,5 +560,88 @@ pub fn forward_open(url: &str, service: &str, paths: &[String]) -> Result<(), St
         Some((0, _)) => Ok(()),
         Some((rc, body)) => Err(format!("dopus.open refused (rc {rc}): {body}")),
         None => Err(format!("no answer from {service}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use citizen::{Handle, Reply};
+    use serde_json::{Value, json};
+
+    fn reply(rc: u8, body: Value) -> Result<Reply, citizen::CallError> {
+        Ok(Reply {
+            rc,
+            body: body.to_string(),
+            error: None,
+        })
+    }
+
+    fn mail(client: &Handle) -> Result<MailOutcome, MailFailure> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(mail_selection(
+                client,
+                vec!["/home/user/one".into(), "/home/user/two".into()],
+            ))
+    }
+
+    #[test]
+    fn busy_falls_back_to_add_with_the_same_paths() {
+        let client = Handle::scripted(vec![
+            reply(10, json!({"error_code":"BUSY","message":"compose open"})),
+            reply(0, json!({"compose":{}})),
+        ]);
+        let outcome = mail(&client).unwrap();
+        assert_eq!(
+            outcome,
+            MailOutcome {
+                added: true,
+                count: 2
+            }
+        );
+        let calls: Vec<_> = client
+            .log()
+            .into_iter()
+            .filter_map(|entry| match entry {
+                citizen::Logged::Call { command, body, .. } => {
+                    Some((command, serde_json::from_str::<Value>(&body).unwrap()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(calls[0].0, "email.compose");
+        assert_eq!(calls[1].0, "email.compose.attachment.add");
+        assert_eq!(calls[0].1["attachments"], calls[1].1["paths"]);
+        let (rc, body, status) = mail_reply(Ok(outcome));
+        assert_eq!(rc, 0);
+        assert_eq!(status, "Added 2 files to the message being written");
+        assert_eq!(
+            serde_json::from_str::<Value>(&body).unwrap()["result"]["message"],
+            status
+        );
+    }
+
+    #[test]
+    fn opened_status_and_refusals_are_returned_without_other_calls() {
+        let client = Handle::scripted(vec![reply(0, json!({}))]);
+        let (rc, _, status) = mail_reply(mail(&client));
+        assert_eq!(rc, 0);
+        assert_eq!(status, "Opened a new message with 2 files");
+        assert_eq!(client.log().len(), 1);
+        let client = Handle::scripted(vec![reply(
+            10,
+            json!({"error_code":"ATTACHMENT_UNREADABLE","message":"cannot read file"}),
+        )]);
+        let (rc, body, status) = mail_reply(mail(&client));
+        assert_eq!(rc, 10);
+        assert_eq!(status, "cannot read file");
+        assert_eq!(
+            serde_json::from_str::<Value>(&body).unwrap()["error_code"],
+            "ATTACHMENT_UNREADABLE"
+        );
+        assert_eq!(client.log().len(), 1);
     }
 }

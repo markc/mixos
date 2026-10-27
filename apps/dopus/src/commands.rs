@@ -299,6 +299,10 @@ pub struct ServerMeta {
 /// One served command's answer.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Served {
+    Mail {
+        id: u64,
+        paths: Vec<PathBuf>,
+    },
     /// Toggle a sidebar, then reply to `id`.
     ToggleSidebar {
         id: u64,
@@ -306,7 +310,11 @@ pub enum Served {
         action: String,
     },
     /// Reply `(rc, body)` to command `id`.
-    Reply { id: u64, rc: u8, body: String },
+    Reply {
+        id: u64,
+        rc: u8,
+        body: String,
+    },
     /// Apply the theme selection, then reply with the scheme and mode shown.
     ThemeSet {
         id: u64,
@@ -326,7 +334,9 @@ pub enum Served {
         action: String,
     },
     /// Quit (the reply went out before this).
-    Quit { id: u64 },
+    Quit {
+        id: u64,
+    },
 }
 
 impl Served {
@@ -382,6 +392,7 @@ pub const ACTIONS: &[(&str, &str)] = &[
     ("view.toggle-properties", "Show or hide Properties"),
     ("location.focus", "Focus the location bar"),
     ("file.open", "Open the selection"),
+    ("file.mail", "Mail selection"),
     ("file.new-folder", "New folder"),
     ("file.rename", "Rename the selection"),
     (
@@ -445,6 +456,7 @@ fn theme_action(action: &str) -> Option<ThemeAction> {
 /// remote caller pressed: the Bus and the keyboard share this.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Applied {
+    Mail(Vec<PathBuf>),
     ToggleSidebar(dopus_core::config::Sidebar),
     Done,
     /// The window focuses this pane's location bar; headless refuses.
@@ -501,6 +513,12 @@ pub fn apply_action_in(
         }
     };
     match action {
+        "file.mail" => {
+            if !core.selection_all_files(pane) {
+                return Err(gated(&crate::label("mail-selection-files-only")));
+            }
+            Ok(Applied::Mail(core.selected_paths(pane)))
+        }
         "view.toggle-places" => Ok(Applied::ToggleSidebar(dopus_core::config::Sidebar::Places)),
         "view.toggle-properties" => Ok(Applied::ToggleSidebar(
             dopus_core::config::Sidebar::Properties,
@@ -650,6 +668,7 @@ pub fn apply_availability(
         let idle = !availability.operation_running;
         row.enabled = match row.id.as_str() {
             "file.open" => selection,
+            "file.mail" => availability.selection_all_files,
             "file.new-folder" => idle,
             "file.rename" => selection && idle && availability.selection_count == 1,
             "file.copy-other-pane" | "file.move-other-pane" | "file.delete" => selection && idle,
@@ -935,6 +954,7 @@ pub fn serve_command(
             };
             let pane = req.pane.resolve(core);
             match apply_action_in(&req.id, core, pane) {
+                Ok(Applied::Mail(paths)) => vec![Served::Mail { id, paths }],
                 Ok(Applied::ToggleSidebar(_)) if !window => vec![window_refusal(
                     id,
                     meta,
@@ -1092,6 +1112,53 @@ mod tests {
         config.right.path = dir.path().to_owned();
         let (core, _rx) = DopusCore::new(config, None);
         (dir, core)
+    }
+
+    #[test]
+    fn mail_selection_requires_regular_files_and_is_bus_callable() {
+        let (dir, mut core) = core();
+        let file = dir.path().join("file");
+        let link = dir.path().join("link");
+        let folder = dir.path().join("folder");
+        std::fs::write(&file, b"x").unwrap();
+        std::fs::create_dir(&folder).unwrap();
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        core.on_event(CoreEvent::ListingArrived {
+            pane: PaneId::Left,
+            generation: core.pane(PaneId::Left).generation,
+            path: dir.path().to_owned(),
+            root: true,
+            result: dopus_core::model::read_directory(dir.path(), true),
+        });
+        assert!(!core.availability().selection_all_files);
+        assert!(apply_action("file.mail", &mut core).is_err());
+        core.select_path(PaneId::Left, Some(file.clone()));
+        core.select_modified(PaneId::Left, link.clone(), true, false);
+        assert!(core.availability().selection_all_files);
+        let served = serve(&mut core, true, "dopus.action", r#"{"id":"file.mail"}"#);
+        assert!(
+            matches!(&served[..], [Served::Mail { paths, .. }] if paths == &[file.clone(), link.clone()])
+        );
+        let mut table = action_table(crate::keymap::default_keys);
+        apply_availability(&mut table, &core.availability());
+        assert!(
+            table
+                .iter()
+                .find(|row| row.id == "file.mail")
+                .unwrap()
+                .enabled
+        );
+        core.select_modified(PaneId::Left, folder, true, false);
+        assert!(!core.availability().selection_all_files);
+        assert!(apply_action("file.mail", &mut core).is_err());
+        apply_availability(&mut table, &core.availability());
+        assert!(
+            !table
+                .iter()
+                .find(|row| row.id == "file.mail")
+                .unwrap()
+                .enabled
+        );
     }
 
     fn serve(core: &mut DopusCore, headless: bool, command_name: &str, body: &str) -> Vec<Served> {
@@ -1341,6 +1408,7 @@ mod tests {
                     path: dir.path().join("folder"),
                     name: "folder".into(),
                     is_dir: true,
+                    is_file: false,
                     size: None,
                     child_count: Some(99),
                     modified: None,
@@ -1349,6 +1417,7 @@ mod tests {
                     path: dir.path().join("file"),
                     name: "file".into(),
                     is_dir: false,
+                    is_file: true,
                     size: Some(1536),
                     child_count: None,
                     modified: None,

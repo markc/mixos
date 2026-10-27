@@ -1229,26 +1229,17 @@ impl Shell {
     fn open_prefs(&mut self) {
         let bus = self.bus.clone();
         self.spawn(async move {
-            let section = json!({"name": "apps_email"});
-            let asked = bus.call("prefs", "prefs.section", section.clone()).await;
-            if asked.as_ref().is_ok_and(|r| r.rc == 0) {
-                return Event::PrefsOpened(Ok(()));
-            }
-            let launched = bus
-                .call("apps", "apps.launch", json!({"id": PREFS_APP_ID}))
-                .await;
-            if !launched.as_ref().is_ok_and(|r| r.rc == 0) {
-                return Event::PrefsOpened(Err(label("no-launcher")));
-            }
-            // A launch registers within seconds; ask until it answers.
-            for _ in 0..40 {
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                let asked = bus.call("prefs", "prefs.section", section.clone()).await;
-                if asked.is_ok_and(|r| r.rc == 0) {
-                    return Event::PrefsOpened(Ok(()));
-                }
-            }
-            Event::PrefsOpened(Err(label("prefs-silent")))
+            let result = citizen::call_app(
+                &bus,
+                PREFS_APP_ID,
+                "prefs.section",
+                json!({"name":"apps_email"}),
+                std::time::Duration::from_secs(10),
+            )
+            .await
+            .map(|_| ())
+            .map_err(|error| error.to_string());
+            Event::PrefsOpened(result)
         });
     }
 
@@ -1742,6 +1733,44 @@ impl Shell {
         );
         let origin = driven_origin(ui.ctx(), &self.drive_callers);
         apply_ui_events(&mut self.state, &self.commands, events, origin);
+        if self.state.compose.is_none() {
+            self.state.attachment_chooser = None;
+            self.state.attachment_notice = None;
+        }
+        let picked = self
+            .state
+            .attachment_chooser
+            .as_mut()
+            .and_then(|chooser| chooser.show(ui.ctx()));
+        if let Some(outcome) = picked {
+            ui.ctx().request_repaint();
+            self.state.attachment_chooser = None;
+            if let toolkit::file_chooser::Outcome::Picked(paths) = outcome
+                && let Err((_, message)) = self.state.add_compose_attachments(&paths)
+            {
+                self.state.attachment_notice = Some(message);
+            }
+        }
+        if self.state.compose.is_some() {
+            let dropped = ui.ctx().input(|input| input.raw.dropped_files.clone());
+            if !dropped.is_empty() {
+                ui.ctx().request_repaint();
+            }
+            let mut errors = Vec::new();
+            for file in dropped {
+                match file.path {
+                    Some(path) => {
+                        if let Err((_, message)) = self.state.add_compose_attachments(&[path]) {
+                            errors.push(message);
+                        }
+                    }
+                    None => errors.push(label("compose-drop-no-path")),
+                }
+            }
+            if !errors.is_empty() {
+                self.state.attachment_notice = Some(errors.join("\n"));
+            }
+        }
         self.settle();
         // A theme change is installed by the next frame's logic, before any
         // drawing: never midway through the frame that saw the click. So is

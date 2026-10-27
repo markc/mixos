@@ -113,9 +113,44 @@ const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
     Some(KeyboardShortcut::new(modifiers, key))
 }
 
+fn compose_attachable(state: &State) -> bool {
+    state.compose.as_ref().is_some_and(|compose| !compose.busy)
+}
+
+fn compose_attached(state: &State) -> bool {
+    compose_attachable(state)
+        && state
+            .compose
+            .as_ref()
+            .is_some_and(|c| !c.draft.attachments.is_empty())
+}
+
 /// The registry: every command, its menu, its shortcut and its guard.
 pub fn registry() -> Registry<State> {
     let mut r = Registry::new();
+    r.dialog_menu("attachments");
+    r.add(Action {
+        id: "compose.attach",
+        label: "compose-attach",
+        menu: Some("attachments"),
+        submenu: None,
+        group: 0,
+        shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::A),
+        icon: Some(Icon::Paperclip),
+        enabled: compose_attachable,
+        run: State::attach_files,
+    })
+    .add(Action {
+        id: "compose.attachments.clear",
+        label: "compose-attachments-clear",
+        menu: Some("attachments"),
+        submenu: None,
+        group: 1,
+        shortcut: None,
+        icon: None,
+        enabled: compose_attached,
+        run: State::clear_compose_attachments,
+    });
     r.add(toolkit::macros::command(
         |s: &State| s.ui.macros_open || undialogued(s),
         |s: &mut State| {
@@ -544,8 +579,19 @@ pub fn shortcuts(
     state: &State,
     registry: &Registry<State>,
 ) -> Vec<&'static str> {
-    if state.compose.is_some() && crate::view::compose::body_focused(ctx) {
+    if state.attachment_chooser.is_some() {
         Vec::new()
+    } else if state.compose.is_some() && crate::view::compose::body_focused(ctx) {
+        if compose_attachable(state)
+            && registry
+                .shortcuts_of("compose.attach")
+                .iter()
+                .any(|shortcut| ctx.input_mut(|input| input.consume_shortcut(shortcut)))
+        {
+            vec!["compose.attach"]
+        } else {
+            Vec::new()
+        }
     } else {
         registry.shortcuts(ctx, state)
     }
@@ -600,6 +646,36 @@ fn set_choice(state: &mut State, choice: toolkit::theme_menu::Choice) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attachments_are_dialog_only_and_guards_follow_the_compose() {
+        let mut state = crate::state::tests::connected_many(&["a"]);
+        let registry = registry();
+        let attach = registry.get("compose.attach").unwrap();
+        let clear = registry.get("compose.attachments.clear").unwrap();
+        assert!(!(attach.enabled)(&state));
+        assert!(!(clear.enabled)(&state));
+        state.compose();
+        assert!((attach.enabled)(&state));
+        assert!(!(clear.enabled)(&state));
+        state
+            .compose
+            .as_mut()
+            .unwrap()
+            .draft
+            .attachments
+            .push("/home/user/file".into());
+        assert!((clear.enabled)(&state));
+        state.compose.as_mut().unwrap().busy = true;
+        assert!(!(attach.enabled)(&state));
+        assert!(!(clear.enabled)(&state));
+        let model = registry.model(&egui::Context::default(), &state, &crate::strings());
+        assert!(
+            !model
+                .iter()
+                .any(|menu| menu.title == crate::label("attachments"))
+        );
+    }
 
     /// Every label is in the catalogue.
     #[test]

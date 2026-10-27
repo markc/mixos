@@ -111,6 +111,14 @@ pub fn run(
     tracing::info!("dopus headless as `{service}`");
     runtime.block_on(async {
         while let Some(delivery) = deliveries.next().await {
+            if let Delivery::Mail { id, result } = delivery {
+                let (rc, body, status) = bus::mail_reply(result);
+                tracing::info!("{status}");
+                if let Some(id) = id {
+                    bus.respond(id, rc, body);
+                }
+                continue;
+            }
             let Delivery::Command(command) = delivery else {
                 if delivery == Delivery::Stopped {
                     break;
@@ -127,6 +135,13 @@ pub fn run(
             let ran = commands::accepted_action(&command, &served);
             for served in served {
                 match served {
+                    Served::Mail { id, paths } => {
+                        if !bus.mail(Some(id), paths) {
+                            let (rc, body, _) =
+                                bus::mail_reply(Err(bus::MailFailure::unavailable()));
+                            bus.respond(id, rc, body);
+                        }
+                    }
                     Served::Reply { id, rc, body } => bus.respond(id, rc, body),
                     Served::Quit { .. } => quit = true,
                     // serve_command refuses every window effect headless.

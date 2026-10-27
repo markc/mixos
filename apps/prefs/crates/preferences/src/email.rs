@@ -31,13 +31,8 @@ pub use settings::email::{
 
 /// The email app's Bus service.
 pub const EMAIL: &str = "email";
-/// The service that launches applications.
-pub const APPS: &str = "apps";
 /// The email app's id, as `apps.launch` takes it.
 pub const EMAIL_APP_ID: &str = "dev.mixos.email";
-/// How long to wait for Email to register after launching it, one wait per
-/// attempt (about 16 s in all). A registration on the Bus ends a wait early.
-pub const LAUNCH_WAITS_MS: [u64; 6] = [250, 500, 1000, 2000, 4000, 8000];
 
 /// A password on its way to the email app. It is never serialised, prints
 /// as `Secret(..)`, and its bytes are overwritten when it is dropped.
@@ -702,10 +697,6 @@ impl Action {
 pub enum Stage {
     /// Its call to Email is in flight.
     Sending,
-    /// Email was not on the Bus: `apps.launch` is in flight.
-    Launching,
-    /// Email was launched: waiting for it to register.
-    Waiting,
 }
 
 /// The action in progress: one at a time.
@@ -714,10 +705,6 @@ pub struct Task {
     pub action: Action,
     pub stage: Stage,
     ticket: u64,
-    /// Email has been launched for it.
-    launched: bool,
-    /// Waits spent of [`LAUNCH_WAITS_MS`].
-    waits: usize,
     /// The `prefs.email.password` command that asked, answered when it ends.
     reply: Option<u64>,
     /// Email may be launched for it; a forget after a removal only tries an
@@ -1456,8 +1443,6 @@ impl Engine {
             action,
             stage: Stage::Sending,
             ticket,
-            launched: false,
-            waits: 0,
             reply,
             may_launch,
             name,
@@ -1465,8 +1450,8 @@ impl Engine {
         self.send_action();
     }
 
-    /// Send the task's call to Email under a fresh ticket, so an earlier
-    /// wait's late firing is ignored.
+    /// Send the task's call under a fresh ticket. The shell delegates app
+    /// launching and registration waits to citizen.
     fn send_action(&mut self) {
         if self.email.task.is_none() {
             return;
@@ -1491,6 +1476,7 @@ impl Engine {
             command: command_name,
             body,
             secret,
+            launch: task.may_launch && !matches!(task.action, Action::Remove(_)),
         });
     }
 
@@ -1508,22 +1494,14 @@ impl Engine {
             command: "email.accounts",
             body: json!({}),
             secret: None,
+            launch: false,
         });
     }
 
-    /// The set of Bus services changed: Email may have come or gone, and a
-    /// task waiting for it to register tries now.
+    /// The set of Bus services changed: refresh the Email section's status.
     pub(crate) fn email_services_changed(&mut self) {
         if self.section() == Section::Email {
             self.query_email_accounts();
-        }
-        if self
-            .email
-            .task
-            .as_ref()
-            .is_some_and(|t| t.stage == Stage::Waiting)
-        {
-            self.send_action();
         }
     }
 
@@ -1536,11 +1514,7 @@ impl Engine {
             && task.ticket == ticket
         {
             let answer = crate::appearance::answer(result);
-            match task.stage {
-                Stage::Sending => self.action_answered(task, answer),
-                Stage::Launching => self.launch_answered(task, answer),
-                Stage::Waiting => {}
-            }
+            self.action_answered(task, answer);
         }
         if self.quitting && !self.busy() {
             self.close_now();
@@ -1606,11 +1580,17 @@ impl Engine {
                 self.email.service = Service::Running;
                 self.query_email_accounts();
             }
-            Answer::Missing if !task.launched && task.may_launch => self.launch_email(task),
-            Answer::Missing => self.wait_for_email(task),
+            Answer::Missing => {
+                let text = self.label("email-not-running", &[]);
+                self.end_action(task, Err(("NOT_RUNNING", text)), Value::Null);
+            }
             Answer::Refused(value) if unknown_command(&value) => {
                 let text = self.label("email-unsupported", &[]);
                 self.end_action(task, Err(("UNSUPPORTED", text)), Value::Null);
+            }
+            Answer::Refused(value) if value["error_code"] == "NOT_RUNNING" => {
+                let text = self.label("email-launch-failed", &[("message", &refusal(&value))]);
+                self.end_action(task, Err(("NOT_RUNNING", text)), Value::Null);
             }
             Answer::Refused(value) => {
                 let message = refusal(&value);
@@ -1733,74 +1713,6 @@ impl Engine {
             &[("account", &name), ("message", &message)],
         );
         self.end_action(task, Err(("NOT_FORGOTTEN", text)), Value::Null);
-    }
-
-    /// Email is not on the Bus: launch it, once per task.
-    fn launch_email(&mut self, mut task: Task) {
-        self.status = self.label("email-launching", &[]);
-        self.failed = false;
-        let ticket = self.next();
-        task.ticket = ticket;
-        task.stage = Stage::Launching;
-        task.launched = true;
-        self.email.task = Some(task);
-        self.effects.push(Effect::Mail {
-            ticket,
-            service: APPS,
-            command: "apps.launch",
-            body: json!({"id":EMAIL_APP_ID}),
-            secret: None,
-        });
-    }
-
-    fn launch_answered(&mut self, task: Task, answer: Answer) {
-        match answer {
-            Answer::Ok(_) => self.wait_for_email(task),
-            Answer::Missing => {
-                let text = self.label("email-no-launcher", &[]);
-                self.end_action(task, Err(("NOT_RUNNING", text)), Value::Null);
-            }
-            Answer::Refused(value) => {
-                let message = refusal(&value);
-                let text = self.label("email-launch-failed", &[("message", &message)]);
-                self.end_action(task, Err(("NOT_RUNNING", text)), Value::Null);
-            }
-            // A lost launch may have started Email: wait for it all the same.
-            Answer::Lost(_) => self.wait_for_email(task),
-            Answer::NotSent(message) => {
-                let text = self.label("email-launch-failed", &[("message", &message)]);
-                self.end_action(task, Err(("NOT_RUNNING", text)), Value::Null);
-            }
-        }
-    }
-
-    /// Wait for Email to register, or give up once the waits are spent.
-    fn wait_for_email(&mut self, mut task: Task) {
-        let Some(&after_ms) = LAUNCH_WAITS_MS.get(task.waits) else {
-            let text = self.label("email-did-not-start", &[]);
-            self.end_action(task, Err(("NOT_RUNNING", text)), Value::Null);
-            return;
-        };
-        self.status = self.label("email-waiting", &[]);
-        self.failed = false;
-        let ticket = self.next();
-        task.ticket = ticket;
-        task.stage = Stage::Waiting;
-        task.waits += 1;
-        self.email.task = Some(task);
-        self.effects.push(Effect::Wait { ticket, after_ms });
-    }
-
-    /// A wait asked for by [`Effect::Wait`] is over: try Email again.
-    pub fn waited(&mut self, ticket: u64) {
-        if self
-            .email
-            .task
-            .as_ref()
-            .is_some_and(|t| t.ticket == ticket && t.stage == Stage::Waiting)
-        {
-            self.send_action();
-        }
     }
 
     /// The task is over: say how, answer the Bus command that asked, and
@@ -2525,6 +2437,7 @@ mod tests {
                     command: command_name,
                     body,
                     secret,
+                    ..
                 } => Some((
                     *ticket,
                     *service,
@@ -2535,6 +2448,55 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn password_effect_delegates_launching_and_failure_returns_the_secret() {
+        let mut e = read();
+        e.select_email_account("a");
+        e.edit_email_password(Secret::new("example-password"));
+        e.set_email_password();
+        let effects = e.take_effects();
+        let calls = mail_calls(&effects);
+        assert_eq!(calls[0].2, "email.account.password.set");
+        assert_eq!(calls[0].3, json!({"id":"a"}));
+        assert!(calls[0].4);
+        assert!(
+            effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Mail { launch: true, .. }))
+        );
+        assert!(!format!("{effects:?}").contains("example-password"));
+        e.mailed(
+            calls[0].0,
+            reply(
+                10,
+                json!({"error_code":"NOT_RUNNING","message":"app did not appear"}),
+            ),
+        );
+        assert!(e.email.task.is_none() && e.failed);
+        assert_eq!(e.email.password.expose(), "example-password");
+        assert!(mail_calls(&e.take_effects()).is_empty());
+    }
+
+    #[test]
+    fn forget_confirmation_delegates_launch_with_an_empty_password() {
+        let mut e = read();
+        e.select_email_account("a");
+        e.forget_email_password();
+        assert!(mail_calls(&e.take_effects()).is_empty());
+        e.confirm_email();
+        let effects = e.take_effects();
+        let calls = mail_calls(&effects);
+        assert_eq!(calls[0].3, json!({"id":"a","password":""}));
+        assert!(
+            effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Mail { launch: true, .. }))
+        );
+        e.mailed(calls[0].0, reply(0, json!({"id":"a","has_password":false})));
+        assert!(!e.failed);
+        assert!(e.email.task.is_none());
     }
 
     /// An engine whose settingsd read holds two accounts, Work the default,
@@ -2752,65 +2714,6 @@ mod tests {
         );
     }
 
-    /// The password goes to Email in the effect's secret, never its body;
-    /// a set password leaves memory and the Bus command is answered.
-    #[test]
-    fn set_password_launches_email_when_absent_then_sends_once_it_registers() {
-        let mut e = read();
-        e.edit_terminal(crate::terminal::Setting::Term("BAD".into()));
-        let problem = e.look.problem.clone();
-        e.select_email_account("a");
-        e.edit_email_password(Secret::new("hunter2"));
-        assert!(e.can_set_email_password());
-        e.set_email_password();
-        assert!(e.email.password.is_empty(), "the field empties as it sends");
-        let effects = e.take_effects();
-        let calls = mail_calls(&effects);
-        assert_eq!(calls[0].2, "email.account.password.set");
-        assert_eq!(calls[0].3, json!({"id":"a"}), "no password in the body");
-        assert!(calls[0].4, "the secret rides beside it");
-        assert!(!format!("{effects:?}").contains("hunter2"));
-        e.mailed(calls[0].0, missing());
-        let calls = mail_calls(&e.take_effects());
-        assert_eq!((calls[0].1, calls[0].2), (APPS, "apps.launch"));
-        assert_eq!(e.look.problem, problem, "launch preserves the Term problem");
-        assert_eq!(calls[0].3, json!({"id":EMAIL_APP_ID}));
-        e.mailed(calls[0].0, reply(0, json!({"launched":true})));
-        assert_eq!(
-            e.look.problem, problem,
-            "waiting preserves the Term problem"
-        );
-        let wait = e
-            .take_effects()
-            .into_iter()
-            .find_map(|x| match x {
-                Effect::Wait { ticket, after_ms } => Some((ticket, after_ms)),
-                _ => None,
-            })
-            .unwrap();
-        assert_eq!(wait.1, LAUNCH_WAITS_MS[0]);
-        assert!(e.busy());
-        // Email registers before the wait is over: it is tried at once, and
-        // the timer's late firing is ignored.
-        e.delivery(citizen::Delivery::Changed);
-        let effects = e.take_effects();
-        let calls = mail_calls(&effects);
-        let set = calls
-            .iter()
-            .find(|c| c.2 == "email.account.password.set")
-            .expect("tried again");
-        e.waited(wait.0);
-        assert!(mail_calls(&e.take_effects()).is_empty());
-        e.mailed(set.0, reply(0, json!({})));
-        assert!(e.email.task.is_none());
-        assert!(!e.failed);
-        assert!(e.status.starts_with("email-password-set"), "{}", e.status);
-        assert_eq!(
-            e.look.problem, problem,
-            "the account outcome is inline only"
-        );
-    }
-
     #[test]
     fn rejected_password_is_an_inline_outcome_not_a_settings_problem() {
         let mut e = read();
@@ -2841,38 +2744,6 @@ mod tests {
     }
 
     #[test]
-    fn a_launch_that_never_registers_gives_up_and_returns_the_password() {
-        let mut e = read();
-        e.select_email_account("a");
-        e.edit_email_password(Secret::new("hunter2"));
-        e.set_email_password();
-        let calls = mail_calls(&e.take_effects());
-        e.mailed(calls[0].0, missing());
-        let calls = mail_calls(&e.take_effects());
-        e.mailed(calls[0].0, reply(0, json!({})));
-        let mut tries = 0;
-        loop {
-            let effects = e.take_effects();
-            let Some(ticket) = effects.iter().find_map(|x| match x {
-                Effect::Wait { ticket, .. } => Some(*ticket),
-                _ => None,
-            }) else {
-                break;
-            };
-            e.waited(ticket);
-            let calls = mail_calls(&e.take_effects());
-            assert_eq!(calls.len(), 1);
-            assert_eq!(calls[0].2, "email.account.password.set", "no second launch");
-            tries += 1;
-            e.mailed(calls[0].0, missing());
-        }
-        assert_eq!(tries, LAUNCH_WAITS_MS.len(), "bounded");
-        assert!(e.email.task.is_none() && e.failed);
-        assert!(e.status.starts_with("email-did-not-start"));
-        assert_eq!(e.email.password.expose(), "hunter2", "back in the field");
-    }
-
-    #[test]
     fn an_email_without_the_command_is_reported_not_retried() {
         let mut e = read();
         e.select_email_account("b");
@@ -2889,54 +2760,6 @@ mod tests {
         assert!(e.failed && e.status == "email-unsupported");
         assert!(mail_calls(&e.take_effects()).is_empty());
         assert!(e.can_connect_email_account());
-    }
-
-    /// Forget password asks first (Cancel the default), then sends the one
-    /// empty password, launching Email when it is absent like Set password.
-    #[test]
-    fn forget_asks_first_then_sends_an_empty_password_through_the_launch_path() {
-        let mut e = read();
-        e.select_email_account("a");
-        e.forget_email_password();
-        assert_eq!(e.ui.dialog, Some(Dialog::ForgetPassword("a".into())));
-        assert!(
-            mail_calls(&e.take_effects()).is_empty(),
-            "nothing before the confirm"
-        );
-        e.close_dialog();
-        e.confirm_email();
-        assert!(mail_calls(&e.take_effects()).is_empty());
-        e.forget_email_password();
-        e.confirm_email();
-        let calls = mail_calls(&e.take_effects());
-        assert_eq!(calls[0].2, "email.account.password.set");
-        assert_eq!(calls[0].3, json!({"id":"a","password":""}));
-        assert!(!calls[0].4, "no secret rides with a forget");
-        e.mailed(calls[0].0, missing());
-        let calls = mail_calls(&e.take_effects());
-        assert_eq!((calls[0].1, calls[0].2), (APPS, "apps.launch"));
-        e.mailed(
-            calls[0].0,
-            reply(0, json!({"argv":[],"id":EMAIL_APP_ID,"pid":7})),
-        );
-        let wait = e
-            .take_effects()
-            .into_iter()
-            .find_map(|x| match x {
-                Effect::Wait { ticket, .. } => Some(ticket),
-                _ => None,
-            })
-            .unwrap();
-        e.waited(wait);
-        let calls = mail_calls(&e.take_effects());
-        assert_eq!(calls[0].3, json!({"id":"a","password":""}));
-        e.mailed(calls[0].0, reply(0, json!({"id":"a","has_password":false})));
-        assert!(!e.failed);
-        assert!(
-            e.status.starts_with("email-password-forgotten"),
-            "{}",
-            e.status
-        );
     }
 
     /// An empty password goes out only as a forget: typed Set password and
@@ -3179,7 +3002,7 @@ mod tests {
         assert!(
             !effects
                 .iter()
-                .any(|x| matches!(x, Effect::Mail { service: APPS, .. })),
+                .any(|x| matches!(x, Effect::Mail { launch: true, .. })),
             "never launched for it"
         );
         // An unknown account is refused at once.

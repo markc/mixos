@@ -134,7 +134,14 @@ pub fn body_focused(ctx: &egui::Context) -> bool {
 }
 
 /// The compose dialog, when a draft is open.
-pub fn dialog(ui: &mut Ui, state: &State, palette: &editor::Palette, events: &mut Vec<UiEvent>) {
+pub fn dialog(
+    ui: &mut Ui,
+    state: &State,
+    commands: &toolkit::Registry<State>,
+    strings: &toolkit::Strings,
+    palette: &editor::Palette,
+    events: &mut Vec<UiEvent>,
+) {
     let Some(compose) = &state.compose else {
         return;
     };
@@ -149,9 +156,16 @@ pub fn dialog(ui: &mut Ui, state: &State, palette: &editor::Palette, events: &mu
     // The body can be resized; egui keeps the size for this id while the
     // app runs, so the window opens at the size it was last left at.
     let shown = dialog::Dialog::new(id, crate::label("compose-title"))
+        .enabled(state.attachment_chooser.is_none())
         .buttons(choices)
         .resizable(egui::vec2(720.0, 560.0), egui::vec2(480.0, 320.0))
         .show(ui.ctx(), |ui| {
+            events.extend(
+                commands
+                    .menu_bar_for(ui, state, strings, &["attachments"])
+                    .into_iter()
+                    .map(|(id, origin)| UiEvent::Command(id, origin)),
+            );
             form(ui, compose, state, palette, events);
         });
     if shown.chosen == Some(send_index) {
@@ -179,7 +193,7 @@ fn recipients(
     let suggest = compose
         .suggest
         .as_ref()
-        .filter(|s| s.field == field && !s.items.is_empty());
+        .filter(|s| ui.is_enabled() && s.field == field && !s.items.is_empty());
     let focused = ui.memory(|m| m.has_focus(id));
     if let Some(suggest) = suggest
         && focused
@@ -590,22 +604,28 @@ fn form(
                 events.push(UiEvent::ComposeField(ComposeField::Subject, buffer));
             }
         });
-        if !compose.attachments.is_empty() {
-            row(ui, &crate::label("compose-attachments"), column, |ui, _| {
-                ui.vertical(|ui| {
-                    ui.set_max_width(attachment_width);
-                    ui.horizontal_wrapped(|ui| {
-                        let chrome = toolkit::chrome::Chrome::of(ui.ctx());
-                        ui.add(toolkit::icons::image_of(
-                            ui.ctx(),
-                            toolkit::Icon::Paperclip,
-                            icon * chrome.style.button_icon_share as f32,
-                            chrome.palette.icon,
+        row(ui, &crate::label("compose-attachments"), column, |ui, _| {
+            ui.vertical(|ui| {
+                ui.set_max_width(attachment_width);
+                ui.horizontal_wrapped(|ui| {
+                    if ui
+                        .add(
+                            toolkit::button::IconButton::new(toolkit::Icon::Paperclip)
+                                .size(icon)
+                                .tooltip(crate::label("compose-attach")),
+                        )
+                        .clicked()
+                    {
+                        events.push(UiEvent::Command(
+                            "compose.attach",
+                            toolkit::action::Origin::Menu,
                         ));
-                        for (index, attachment) in compose.attachments.iter().enumerate() {
-                            attachment_chip(ui, attachment, index, icon, events);
-                        }
-                    });
+                    }
+                    for (index, attachment) in compose.attachments.iter().enumerate() {
+                        attachment_chip(ui, attachment, index, icon, events);
+                    }
+                });
+                if !compose.attachments.is_empty() {
                     ui.weak(crate::label_with(
                         "compose-attachments-total",
                         &[(
@@ -613,12 +633,15 @@ fn form(
                             &crate::attachments::human_size(compose.attachment_size()),
                         )],
                     ));
-                    if let Some(error) = &compose.attachment_error {
-                        ui.colored_label(ui.visuals().error_fg_color, error);
-                    }
-                });
+                }
+                if let Some(error) = &state.attachment_notice {
+                    ui.colored_label(ui.visuals().error_fg_color, error);
+                }
+                if let Some(error) = &compose.attachment_error {
+                    ui.colored_label(ui.visuals().error_fg_color, error);
+                }
             });
-        }
+        });
         ui.add_space(4.0);
         // The text takes the composer's own padding, font and size.
         toolkit::content::surface(ui, &state.settings.composer, |ui| {

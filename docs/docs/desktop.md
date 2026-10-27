@@ -33,7 +33,7 @@ yet. They are listed on both this page and the server page until they do.
 - [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
 - [ced](../ced/README.md) (app): The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [compd](../compd/README.md) (service): The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree.
-- [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
+- [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and the same actions over the Bus.
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo.

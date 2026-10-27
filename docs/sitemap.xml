@@ -164,7 +164,9 @@
   <url><loc>https://mixos.dev/workshop/</loc></url>
   <url><loc>https://mixos.dev/action/changelog/</loc></url>
   <url><loc>https://mixos.dev/bridged/changelog/</loc></url>
+  <url><loc>https://mixos.dev/citizen/changelog/</loc></url>
   <url><loc>https://mixos.dev/compd/changelog/</loc></url>
+  <url><loc>https://mixos.dev/dopus/changelog/</loc></url>
   <url><loc>https://mixos.dev/editd/changelog/</loc></url>
   <url><loc>https://mixos.dev/email/changelog/</loc></url>
   <url><loc>https://mixos.dev/hostd/changelog/</loc></url>
@@ -177,6 +179,7 @@
   <url><loc>https://mixos.dev/mixos-mcp/changelog/</loc></url>
   <url><loc>https://mixos.dev/monitord/changelog/</loc></url>
   <url><loc>https://mixos.dev/noded/changelog/</loc></url>
+  <url><loc>https://mixos.dev/prefs/changelog/</loc></url>
   <url><loc>https://mixos.dev/settings/changelog/</loc></url>
   <url><loc>https://mixos.dev/settingsd/changelog/</loc></url>
   <url><loc>https://mixos.dev/term/changelog/</loc></url>

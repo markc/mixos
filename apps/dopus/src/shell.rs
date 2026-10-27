@@ -210,6 +210,7 @@ impl Shell {
     fn pump_bus(&mut self) {
         while let Some(delivery) = self.bus.as_mut().and_then(|b| b.deliveries.try_recv().ok()) {
             match delivery {
+                Delivery::Mail { id, result } => self.app.mailed(id, result),
                 Delivery::Command(cmd) => {
                     if self.exiting {
                         self.refuse_closing(cmd.id);
@@ -301,6 +302,16 @@ impl Shell {
         while !self.app.effects.is_empty() {
             for effect in std::mem::take(&mut self.app.effects) {
                 match effect {
+                    Effect::Mail { id, paths } => {
+                        if !self
+                            .bus
+                            .as_ref()
+                            .is_some_and(|bus| bus.handle.mail(id, paths))
+                        {
+                            self.app
+                                .mailed(id, Err(crate::bus::MailFailure::unavailable()));
+                        }
+                    }
                     Effect::Reply { id, rc, body } => self.respond(id, rc, body),
                     Effect::OpenFile(path) => self.open_file(path),
                     Effect::ThemeSet { id, scheme, mode } => self.theme_set(id, scheme, mode),

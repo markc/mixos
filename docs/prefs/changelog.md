@@ -1,0 +1,17 @@
+---
+title: prefs — changelog
+description: Release notes of the prefs component, mirrored from apps/prefs/CHANGELOG.md.
+generated: by docs/_build/gen-site.mix from apps/prefs/CHANGELOG.md; do not edit
+---
+
+> Mirrored from [`apps/prefs/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/prefs/CHANGELOG.md), where releases update it. The component's page is [prefs](README.md). This page describes the current `main` branch of MixOS.
+
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
+# Changelog
+
+## Unreleased — 2026-10-27
+
+- Delegate Email launching and registration waits to citizen's shared async
+  helper. Keep passwords outside effect bodies until sending, preserve
+  refusals, and return a failed password to its field. Account status reads
+  and best-effort password removal do not launch Email.

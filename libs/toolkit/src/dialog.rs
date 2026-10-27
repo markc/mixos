@@ -108,6 +108,7 @@ pub struct Dialog {
     /// app runs. None keeps the fixed width range.
     resize: Option<(Vec2, Vec2)>,
     choices: Vec<Choice>,
+    enabled: bool,
 }
 
 impl Dialog {
@@ -118,6 +119,7 @@ impl Dialog {
             width: None,
             resize: None,
             choices: Vec::new(),
+            enabled: true,
         }
     }
 
@@ -140,6 +142,12 @@ impl Dialog {
         self
     }
 
+    /// Suspend this dialog while a child dialog is open above it.
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
     /// Forget where the dialog was, so it opens centred next time.
     pub fn reset(ctx: &Context, id: impl Into<Id>) {
         ctx.data_mut(|d| d.remove::<Placement>(id.into()));
@@ -152,6 +160,7 @@ impl Dialog {
             width,
             resize,
             choices,
+            enabled,
         } = self;
         let tokens = Chrome::of(ctx).style;
         let width = width.unwrap_or(Rangef {
@@ -186,6 +195,9 @@ impl Dialog {
             .area(area)
             .backdrop_color(Color32::TRANSPARENT)
             .show(ctx, |ui| {
+                if !enabled {
+                    ui.disable();
+                }
                 ctx.accesskit_node_builder(id, |node| node.set_modal());
                 if resize.is_none() {
                     ui.set_min_width(width.min);
@@ -245,7 +257,7 @@ impl Dialog {
         ctx.data_mut(|d| d.insert_temp(id, place));
 
         let mut dismissed = false;
-        if chosen.is_none() && modal.is_top_modal && !modal.any_popup_open {
+        if enabled && chosen.is_none() && modal.is_top_modal && !modal.any_popup_open {
             let find = |role: Role| choices.iter().position(|c| c.role == role && c.enabled);
             if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
                 chosen = find(Role::Cancel);

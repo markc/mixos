@@ -239,51 +239,97 @@
 </blockquote>
 <h2 id="unreleased">Unreleased</h2>
 <ul>
-<li><code>email.execute</code> refuses <code>mail.send</code> when final validation prevents queueing,
-returning the compose error rather than a successful <code>executed</code> reply.</li>
-<li>Compose attachment metadata keeps the plain basename in <code>name</code> and the
-qualified display text in <code>label</code>. Failed sends clear their audit origin.</li>
-<li>Mixed local/drive input passes retain the drive caller and request id in
+<li>
+<p>Add an Attachments menu inside compose, with Attach files… (Ctrl+Shift+A),
+Remove all attachments and a one-click paperclip button. The shared chooser
+runs above compose and remembers the last attachment directory this session.</p>
+</li>
+<li>
+<p>Add <code>email.compose.attachment.add {paths}</code> and dropped-file attachment entry.
+They share atomic path validation, deduplication, draft revisions, metadata
+refresh and size warnings; sending refuses changes.</p>
+</li>
+<li>
+<p>Use citizen's shared app-launch helper when opening Prefs, preserving app
+refusals and avoiding repeated commands after an uncertain outcome.</p>
+</li>
+<li>
+<p><code>email.execute</code> refuses <code>mail.send</code> when final validation prevents queueing,
+returning the compose error rather than a successful <code>executed</code> reply.</p>
+</li>
+<li>
+<p>Compose attachment metadata keeps the plain basename in <code>name</code> and the
+qualified display text in <code>label</code>. Failed sends clear their audit origin.</p>
+</li>
+<li>
+<p>Mixed local/drive input passes retain the drive caller and request id in
 send audits, with <code>mixed_input=true</code> recording the ambiguity. Other send
-audits use <code>mixed_input=false</code>.</li>
-<li>Narrow chip labels retain at least four em of width and truncate their text.</li>
-<li>Attachment chips wrap within the compose form's field width. Scoped chip
-frames no longer expand the row and dialog instead of starting a new row.</li>
-<li><code>email.send</code> and <code>email.compose</code> accept an optional <code>attachments</code> list of
+audits use <code>mixed_input=false</code>.</p>
+</li>
+<li>
+<p>Narrow chip labels retain at least four em of width and truncate their text.</p>
+</li>
+<li>
+<p>Attachment chips wrap within the compose form's field width. Scoped chip
+frames no longer expand the row and dialog instead of starting a new row.</p>
+</li>
+<li>
+<p><code>email.send</code> and <code>email.compose</code> accept an optional <code>attachments</code> list of
 absolute file paths. Symlinks are followed; relative paths, non-files,
-unreadable files and oversized messages have distinct refusal codes.</li>
-<li>Send reads files at send time and emits multipart MIME with desktop MIME
+unreadable files and oversized messages have distinct refusal codes.</p>
+</li>
+<li>
+<p>Send reads files at send time and emits multipart MIME with desktop MIME
 types, base64 and RFC 2231 filenames. The encoded message is limited by
-JMAP <code>maxSizeUpload</code>, or 25 MiB when the server advertises no limit.</li>
-<li>Local drafts save and restore attachment paths (never file contents),
-including across restarts. Older drafts still load without attachments.</li>
-<li>Send resolves an earlier uncertain submission before checking local files or
+JMAP <code>maxSizeUpload</code>, or 25 MiB when the server advertises no limit.</p>
+</li>
+<li>
+<p>Local drafts save and restore attachment paths (never file contents),
+including across restarts. Older drafts still load without attachments.</p>
+</li>
+<li>
+<p>Send resolves an earlier uncertain submission before checking local files or
 upload limits. Attachment reads and encoding run off the async runtime;
-command validation uses metadata only, and MIME bytes are rendered once.</li>
-<li>Standalone MIME builders impose no upload limit; Send applies the server's
-limit to the exact encoded bytes.</li>
-<li>Sends with attachments log the caller key and paths in the Email app.
+command validation uses metadata only, and MIME bytes are rendered once.</p>
+</li>
+<li>
+<p>Standalone MIME builders impose no upload limit; Send applies the server's
+limit to the exact encoded bytes.</p>
+</li>
+<li>
+<p>Sends with attachments log the caller key and paths in the Email app.
 Person-initiated sends use <code>window</code>; <code>mail.send</code> through <code>email.execute</code>
 retains the Bus caller. Driven sends retain the actual replayed request id
-and caller through compose state and queued work for audit correlation.</li>
-<li>Compose shows attachment chips under Subject with names, sizes, file status,
+and caller through compose state and queued work for audit correlation.</p>
+</li>
+<li>
+<p>Compose shows attachment chips under Subject with names, sizes, file status,
 removal and a total. Missing, unreadable and invalid files or an oversized
 encoded message disable Send. Chips wrap, preserve text line height and
 disambiguate colliding filenames with their parent directories. Oversize
 warnings appear on the total line, with distinct account/default limits.
 Files are checked on open, removal, send failure and before Send;
-text edits update the estimate from cached sizes without polling files.</li>
-<li><code>email.info</code> and the compose reply include the attachment metadata, total,
+text edits update the estimate from cached sizes without polling files.</p>
+</li>
+<li>
+<p><code>email.info</code> and the compose reply include the attachment metadata, total,
 warning and Send enablement. <code>email.compose.attachment.remove {path}</code> removes
-a path through the same state mutation as the chip's remove button.</li>
-<li>Attachment-only drafts are kept too. Restoring a vanished file preserves its
-path and shows it as missing; draft schema 1 remains compatible.</li>
-<li>Invalid logging configuration reports its error and lets the GUI start
-without a subscriber.</li>
-<li>MIME size estimates reserve the maximum 255-byte media type per part,
+a path through the same state mutation as the chip's remove button.</p>
+</li>
+<li>
+<p>Attachment-only drafts are kept too. Restoring a vanished file preserves its
+path and shows it as missing; draft schema 1 remains compatible.</p>
+</li>
+<li>
+<p>Invalid logging configuration reports its error and lets the GUI start
+without a subscriber.</p>
+</li>
+<li>
+<p>MIME size estimates reserve the maximum 255-byte media type per part,
 without loading the MIME database or reading file contents. Send restores
 name/content sniffing on its worker; estimates bound actual MIME size with
-under 300 bytes of headroom per part.</li>
+under 300 bytes of headroom per part.</p>
+</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/email/changelog.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

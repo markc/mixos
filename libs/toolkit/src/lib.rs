@@ -53,6 +53,7 @@ pub mod dialog;
 pub mod drive;
 pub mod executed;
 pub mod field;
+pub mod file_chooser;
 pub mod fonts;
 pub mod icons;
 pub mod keymap;

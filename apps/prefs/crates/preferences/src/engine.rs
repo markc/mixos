@@ -48,7 +48,7 @@ pub enum Effect {
         ticket: u64,
         path: Option<String>,
     },
-    /// Call `command` on `service` (the email app, or apps to launch it) and
+    /// Call `command` on `service` (launching it first when requested) and
     /// report [`Engine::mailed`] with `ticket`. A `secret` goes into the
     /// body as `password` only as the shell sends it; it is never in `body`.
     Mail {
@@ -57,12 +57,7 @@ pub enum Effect {
         command: &'static str,
         body: Value,
         secret: Option<crate::email::Secret>,
-    },
-    /// Report [`Engine::waited`] with `ticket` after `after_ms`: a bounded
-    /// wait for a launched app to register.
-    Wait {
-        ticket: u64,
-        after_ms: u64,
+        launch: bool,
     },
     /// Restore and focus the window and report [`Engine::shown`].
     Show {

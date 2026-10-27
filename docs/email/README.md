@@ -155,7 +155,15 @@ A malformed file loads defaults and is never overwritten.
   a draft restores its attachment paths, and Send reads their current contents
   in the background. Under Subject, a paperclip row shows each file's name,
   human-readable size and an × button to remove it, followed by the total
-  known file size. The row is hidden when there are no attachments. Missing,
+  known file size. The paperclip button is always available while editing:
+  it opens the toolkit's multi-file chooser. The compose dialog's own
+  **Attachments** menu offers **Attach files…** (Ctrl+Shift+A) and
+  **Remove all attachments**. The chooser starts beside the last file added
+  this session, or at Home; it supports editable paths, hidden files,
+  Ctrl/Shift selection and keyboard navigation. Directory reads run in the
+  background and show at most 10,000 entries. Files dropped onto the window
+  join the open compose too. Additions keep path order and omit duplicates;
+  invalid dropped items show an inline error. Missing,
   unreadable and non-regular files stay listed with their state and disable
   Send. Chips wrap onto further rows and long names keep room for removal.
   Files sharing a name include their parent directory in both the chip and
@@ -330,6 +338,7 @@ never waits on them.
 | `email.junk {ids, junk}` | intent | move to the Junk mailbox (`junk: true`) or back to the inbox; maild trains spam or ham on the move; answers `{ids, mailbox}` |
 | `email.send {to, cc?, bcc?, subject, body, in_reply_to?, attachments?}` | intent | send without the dialog; attachments are absolute file paths |
 | `email.compose {to?, cc?, bcc?, reply_to?, subject?, body?, attachments?}` | intent | open compose with optional absolute attachment paths; Send reads the files |
+| `email.compose.attachment.add {paths:["/home/user/report.pdf"]}` | intent | add to the open compose in order, omitting duplicate paths; no compose: `NOT_FOUND`, sending: `BUSY`; relative, non-regular or unreadable paths use `ATTACHMENT_RELATIVE`, `ATTACHMENT_NOT_FILE` or `ATTACHMENT_UNREADABLE`; an invalid batch changes nothing; answers `{compose}` |
 | `email.compose.attachment.remove {path}` | intent | remove all occurrences of the exact path from the open compose; no compose or unknown path: `NOT_FOUND`, sending: `BUSY`; answers `{compose}` |
 | `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
 | `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |

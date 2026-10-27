@@ -90,6 +90,7 @@ pub struct Registry<S> {
     commands: Vec<Action<S>>,
     /// Fluent key of the menu that opens with a search field (§3.5).
     search_menu: Option<&'static str>,
+    dialog_menus: Vec<&'static str>,
     /// The UI-free registry owns dispatch, choices, labels and binding policy.
     core: ::action::Registry<S>,
     /// Parsed accelerator cache, refreshed only when bindings change.
@@ -104,6 +105,7 @@ impl<S> Default for Registry<S> {
         Self {
             commands: Vec::new(),
             search_menu: None,
+            dialog_menus: Vec::new(),
             core: ::action::Registry::new(),
             extras: HashMap::new(),
             parsed_defaults: HashMap::new(),
@@ -673,9 +675,47 @@ impl<S> Registry<S> {
     /// rows in registry order, a submenu row where a submenu's first command
     /// is, and a separator wherever the group changes.
     pub fn model(&self, ctx: &egui::Context, state: &S, strings: &Strings) -> Vec<Menu> {
+        self.menu_model(ctx, state, strings, |key| !self.dialog_menus.contains(&key))
+    }
+
+    /// Keep a menu available to dialogs and commands, but out of the window bar.
+    pub fn dialog_menu(&mut self, key: &'static str) -> &mut Self {
+        if !self.dialog_menus.contains(&key) {
+            self.dialog_menus.push(key);
+        }
+        self
+    }
+
+    /// Draw just these menus inside a dialog, using the normal menu/drive path.
+    pub fn menu_bar_for(
+        &self,
+        ui: &mut egui::Ui,
+        state: &S,
+        strings: &Strings,
+        keys: &[&str],
+    ) -> Vec<(&'static str, Origin)> {
+        let model = self.menu_model(ui.ctx(), state, strings, |key| keys.contains(&key));
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            menu::bar_picked(ui, &model, None)
+                .map(|(id, _)| (id, Origin::Menu))
+                .into_iter()
+                .collect()
+        })
+        .inner
+    }
+
+    fn menu_model(
+        &self,
+        ctx: &egui::Context,
+        state: &S,
+        strings: &Strings,
+        include: impl Fn(&str) -> bool,
+    ) -> Vec<Menu> {
         let mut keys: Vec<&'static str> = Vec::new();
         for command in &self.commands {
             if let Some(key) = command.menu
+                && include(key)
                 && !keys.contains(&key)
             {
                 keys.push(key);
@@ -829,6 +869,7 @@ impl<S> EngineAdapter<S> {
         let mut ui = Registry {
             commands,
             search_menu: None,
+            dialog_menus: Vec::new(),
             core,
             extras: HashMap::new(),
             parsed_defaults: HashMap::new(),
@@ -957,6 +998,26 @@ mod tests {
     }
 
     const FTL: &str = "menu-edit = Edit\ncmd-bump = Bump\ncmd-reset = Reset\n";
+
+    #[test]
+    fn dialog_menus_keep_commands_but_do_not_enter_the_main_model() {
+        let mut r = registry();
+        r.dialog_menu("menu-edit");
+        let state = Counter::default();
+        assert!(
+            r.model(&egui::Context::default(), &state, &Strings::new(FTL))
+                .is_empty()
+        );
+        assert!(r.get("count.bump").is_some());
+        let model = r.menu_model(
+            &egui::Context::default(),
+            &state,
+            &Strings::new(FTL),
+            |key| key == "menu-edit",
+        );
+        assert_eq!(model.len(), 1);
+        assert_eq!(model[0].title, "Edit");
+    }
 
     #[test]
     fn help_is_last_without_reordering_other_menus() {

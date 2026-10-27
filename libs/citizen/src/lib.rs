@@ -12,6 +12,8 @@
 //! that the app's name (`workshop`, `prefs`) is a parameter: it names the
 //! worker thread, the closing refusal and the `<app>.ping` / `<app>.show`
 //! commands used for single-instance activation.
+pub mod app;
+pub use app::{AppCallError, AppClient, call_app};
 pub mod macros;
 pub mod outbox;
 
@@ -348,6 +350,28 @@ impl Handle {
             service: Arc::from("sink"),
             log: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+    /// A sink that answers outgoing calls in order, for effect-worker tests.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn scripted(replies: Vec<Result<Reply, CallError>>) -> Self {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        std::thread::spawn(move || {
+            let mut replies = replies.into_iter();
+            while let Some(effect) = rx.blocking_recv() {
+                match effect {
+                    Effect::Call(_, _, _, _, answer) => {
+                        let _ =
+                            answer.send(replies.next().unwrap_or_else(|| {
+                                Err(CallError::not_sent("test replies exhausted"))
+                            }));
+                    }
+                    Effect::Subscription(_, _, answer) => {
+                        let _ = answer.send(Ok(()));
+                    }
+                }
+            }
+        });
+        Self { tx, ..Self::sink() }
     }
     #[cfg(any(test, feature = "testing"))]
     pub fn log(&self) -> Vec<Logged> {

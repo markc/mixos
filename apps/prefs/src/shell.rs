@@ -37,8 +37,6 @@ pub enum Event {
     Shown(u64, Option<u64>, Result<Value, String>),
     /// A call to the email app (or to apps, launching it) finished.
     Mailed(u64, Result<Reply, CallError>),
-    /// A wait the engine asked for is over.
-    Waited(u64),
 }
 
 /// Apply one finished event to the engine.
@@ -51,7 +49,6 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Browsed(ticket, result) => engine.browsed(ticket, result),
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
         Event::Mailed(ticket, result) => engine.mailed(ticket, result),
-        Event::Waited(ticket) => engine.waited(ticket),
     }
 }
 
@@ -468,6 +465,7 @@ impl Shell {
                 command: command_name,
                 mut body,
                 secret,
+                launch,
             } => {
                 // The password joins the body only here, as it is sent.
                 if let Some(secret) = &secret {
@@ -475,16 +473,24 @@ impl Shell {
                 }
                 let bus = self.bus.clone();
                 self.spawn(async move {
-                    let result = bus
-                        .raw_within(service, command_name, body.to_string(), MAIL_BUDGET)
-                        .await;
+                    let result = if launch {
+                        match citizen::call_app(
+                            &bus,
+                            preferences::email::EMAIL_APP_ID,
+                            command_name,
+                            body,
+                            Duration::from_secs(16),
+                        )
+                        .await
+                        {
+                            Ok(reply) => Ok(reply),
+                            Err(error) => error.into_result(),
+                        }
+                    } else {
+                        bus.raw_within(service, command_name, body.to_string(), MAIL_BUDGET)
+                            .await
+                    };
                     Event::Mailed(ticket, result)
-                });
-            }
-            Effect::Wait { ticket, after_ms } => {
-                self.spawn(async move {
-                    tokio::time::sleep(Duration::from_millis(after_ms)).await;
-                    Event::Waited(ticket)
                 });
             }
             Effect::Show { ticket, reply } => {

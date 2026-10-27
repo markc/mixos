@@ -275,6 +275,12 @@ pub const COMMANDS: &[Command] = &[
         "Open the compose dialog, filled in",
     ),
     command_spec(
+        "email.compose.attachment.add",
+        false,
+        r#"{"paths":["absolute file path"]}"#,
+        "Add file paths to the open compose; answers with compose state",
+    ),
+    command_spec(
         "email.compose.attachment.remove",
         false,
         r#"{"path":"attachment path as listed by email.info"}"#,
@@ -1347,6 +1353,15 @@ fn dispatch(
                 json!({ "composing": account, "compose": state.info()["compose"] }),
             );
         }
+        "email.compose.attachment.add" => {
+            let paths = args.get("paths").and_then(Value::as_array)
+                .ok_or_else(|| invalid("paths must be a list of absolute file paths"))?
+                .iter().map(|path| path.as_str().map(std::path::PathBuf::from)
+                    .ok_or_else(|| invalid("paths must hold absolute file paths")))
+                .collect::<Checked<Vec<_>>>()?;
+            state.add_compose_attachments(&paths).map_err(|(code, message)| Bad(code, message))?;
+            state.reply(id, 0, json!({ "compose": state.info()["compose"] }));
+        }
         "email.compose.attachment.remove" => {
             let path = std::path::PathBuf::from(required(args, "path")?);
             let compose = state
@@ -1613,6 +1628,71 @@ mod tests {
     use super::*;
     use crate::state::tests::connected_many;
     use crate::work::Work;
+
+    #[test]
+    fn adding_attachments_answers_with_compose_and_distinct_refusals() {
+        let dir = tempfile::tempdir().unwrap();
+        let one = dir.path().join("one.txt");
+        let two = dir.path().join("two.txt");
+        std::fs::write(&one, b"one").unwrap();
+        std::fs::write(&two, b"two").unwrap();
+        let mut state = connected_many(&["a"]);
+        run(
+            &mut state,
+            "email.compose.attachment.add",
+            json!({"paths":[one]}),
+        );
+        assert_eq!(state.take_replies()[0].body["error_code"], code::NOT_FOUND);
+        run(&mut state, "email.compose", json!({"attachments":[one]}));
+        assert_eq!(state.take_replies()[0].rc, 0);
+        run(
+            &mut state,
+            "email.compose.attachment.add",
+            json!({"paths":[one, two, one]}),
+        );
+        let reply = state.take_replies().remove(0);
+        assert_eq!(reply.rc, 0);
+        assert_eq!(reply.body["compose"], state.info()["compose"]);
+        assert_eq!(
+            state.compose.as_ref().unwrap().draft.attachments,
+            [one.clone(), two.clone()]
+        );
+        let revision = state.compose.as_ref().unwrap().revision;
+        let loop_path = dir.path().join("loop");
+        std::os::unix::fs::symlink(&loop_path, &loop_path).unwrap();
+        for (path, code) in [
+            (
+                std::path::PathBuf::from("relative"),
+                code::ATTACHMENT_RELATIVE,
+            ),
+            (dir.path().to_owned(), code::ATTACHMENT_NOT_FILE),
+            (dir.path().join("gone"), code::ATTACHMENT_NOT_FILE),
+            (loop_path, code::ATTACHMENT_UNREADABLE),
+        ] {
+            run(
+                &mut state,
+                "email.compose.attachment.add",
+                json!({"paths":[path]}),
+            );
+            assert_eq!(state.take_replies()[0].body["error_code"], code);
+            assert_eq!(state.compose.as_ref().unwrap().revision, revision);
+        }
+        for args in [json!({}), json!({"paths":"bad"}), json!({"paths":[3]})] {
+            run(&mut state, "email.compose.attachment.add", args);
+            assert_eq!(
+                state.take_replies()[0].body["error_code"],
+                code::INVALID_ARGUMENT
+            );
+        }
+        state.compose.as_mut().unwrap().busy = true;
+        run(
+            &mut state,
+            "email.compose.attachment.add",
+            json!({"paths":[one]}),
+        );
+        assert_eq!(state.take_replies()[0].body["error_code"], code::BUSY);
+        assert_eq!(state.compose.as_ref().unwrap().revision, revision);
+    }
 
     #[test]
     fn compose_reply_and_info_expose_the_chips_and_removal_saves_the_edit() {

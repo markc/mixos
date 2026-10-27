@@ -167,7 +167,7 @@ pub fn view(
     } else {
         window(ui, state, commands, strings, &mut events);
     }
-    compose::dialog(ui, state, palette, &mut events);
+    compose::dialog(ui, state, commands, strings, palette, &mut events);
     compose::confirm(ui, state, &mut events);
     identities::dialog(ui, state, &mut events);
     compose::restore(ui, state, &mut events);

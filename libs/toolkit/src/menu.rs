@@ -483,6 +483,7 @@ pub struct Current {
 
 #[derive(Clone, Default)]
 struct State {
+    layer: Option<egui::LayerId>,
     nav: Nav,
     /// The current press began on a menu title (the opening press).
     title_press: bool,
@@ -1099,7 +1100,33 @@ pub fn bar_picked(
     let ctx = ui.ctx().clone();
     let chrome = Chrome::of(&ctx);
     let model = menus.to_vec();
+    // A covered bar still draws, but cannot replace the menu/drive state
+    // belonging to the dialog above it.
+    if !ui.is_enabled() || !ctx.memory(|m| m.allows_interaction(ui.layer_id())) {
+        for menu in menus {
+            let galley = ui.painter().layout_no_wrap(
+                menu.title.clone(),
+                Chrome::menu_font(ui.style()),
+                chrome.palette.text,
+            );
+            let size = vec2(
+                galley.size().x + 2.0 * chrome.metrics.menu_title_padding.x,
+                chrome.metrics.menu_title_height,
+            );
+            let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+            ui.painter().galley(
+                rect.center() - galley.size() / 2.0,
+                galley,
+                chrome.palette.text,
+            );
+        }
+        return None;
+    }
     let mut st: State = ctx.data(|d| d.get_temp(state_id())).unwrap_or_default();
+    if st.layer.is_some_and(|layer| layer != ui.layer_id()) {
+        st = State::default();
+    }
+    st.layer = Some(ui.layer_id());
     // While a query is typed, the search menu lists its results instead of
     // its rows; navigation and drawing work on that view of the model.
     let searching = |st: &State| search.filter(|s| st.nav.open == Some(s.menu));

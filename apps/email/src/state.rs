@@ -1703,6 +1703,9 @@ pub struct State {
     /// The migration completed: the shell rewrites the config as schema 2.
     migrated: bool,
     pub compose: Option<ComposeState>,
+    pub attachment_chooser: Option<toolkit::file_chooser::FileChooser>,
+    pub attachment_notice: Option<String>,
+    last_attachment_directory: Option<std::path::PathBuf>,
     /// The identities dialog, while open.
     pub identity_editor: Option<IdentityEditor>,
     /// The pane that has the keyboard: Tab moves it, and the arrow keys act on it.
@@ -1782,6 +1785,9 @@ impl State {
             migration: None,
             migrated: false,
             compose: None,
+            attachment_chooser: None,
+            attachment_notice: None,
+            last_attachment_directory: None,
             identity_editor: None,
             pane: Pane::List,
             confirm: None,
@@ -5415,6 +5421,11 @@ impl State {
         }
         compose.draft_id = self.new_draft_id();
         compose.identity = identity;
+        if let Some(path) = compose.draft.attachments.last() {
+            self.last_attachment_directory = path.parent().map(std::path::Path::to_path_buf);
+        }
+        self.attachment_notice = None;
+        self.attachment_chooser = None;
         self.compose = Some(compose);
         self.check_compose_attachment_size();
         true
@@ -5971,6 +5982,80 @@ impl State {
                 None => message,
             });
         }
+    }
+
+    /// All attachment entry points share validation, order and draft revision.
+    pub fn add_compose_attachments(
+        &mut self,
+        paths: &[std::path::PathBuf],
+    ) -> Result<(), (&'static str, String)> {
+        let compose = self
+            .compose
+            .as_ref()
+            .ok_or_else(|| (code::NOT_FOUND, crate::label("compose-not-open")))?;
+        if compose.busy {
+            return Err((code::BUSY, crate::label("sending")));
+        }
+        // Validate the whole batch before changing the draft. As with compose,
+        // symlink paths stay paths and no bytes are opened or snapshotted.
+        for attachment in ComposeAttachment::inspect_all(paths) {
+            let refusal = match attachment.state {
+                ComposeAttachmentState::Ready => continue,
+                ComposeAttachmentState::Relative => code::ATTACHMENT_RELATIVE,
+                ComposeAttachmentState::Missing | ComposeAttachmentState::NotFile => {
+                    code::ATTACHMENT_NOT_FILE
+                }
+                ComposeAttachmentState::Unreadable => code::ATTACHMENT_UNREADABLE,
+            };
+            return Err((
+                refusal,
+                crate::label_with(
+                    "compose-attachment-add-failed",
+                    &[
+                        ("path", &attachment.path.display().to_string()),
+                        ("state", &crate::label(attachment.state.label())),
+                    ],
+                ),
+            ));
+        }
+        let compose = self.compose.as_mut().expect("checked open compose");
+        let before = compose.draft.attachments.len();
+        for path in paths {
+            if !compose.draft.attachments.contains(path) {
+                compose.draft.attachments.push(path.clone());
+                self.last_attachment_directory = path.parent().map(std::path::Path::to_path_buf);
+            }
+        }
+        if compose.draft.attachments.len() != before {
+            compose.revision += 1;
+        }
+        self.attachment_notice = None;
+        self.refresh_compose_attachments();
+        Ok(())
+    }
+
+    pub fn attach_files(&mut self) {
+        if self.compose.as_ref().is_some_and(|c| !c.busy) && self.attachment_chooser.is_none() {
+            self.attachment_chooser = Some(toolkit::file_chooser::FileChooser::new(
+                self.last_attachment_directory
+                    .clone()
+                    .unwrap_or_else(toolkit::file_chooser::home),
+                crate::label("compose-attach-title"),
+                crate::label("compose-attach-confirm"),
+            ));
+        }
+    }
+
+    pub fn clear_compose_attachments(&mut self) {
+        let Some(compose) = self.compose.as_mut().filter(|c| !c.busy) else {
+            return;
+        };
+        if !compose.draft.attachments.is_empty() {
+            compose.draft.attachments.clear();
+            compose.revision += 1;
+        }
+        self.attachment_notice = None;
+        self.refresh_compose_attachments();
     }
 
     /// The chip and Bus intent share this mutation, including draft revision.
@@ -7001,6 +7086,62 @@ pub(crate) mod tests {
             }
         ));
         state.take_work();
+    }
+
+    #[test]
+    fn attachment_add_deduplicates_atomically_and_clear_obeys_busy() {
+        let dir = tempfile::tempdir().unwrap();
+        let one = dir.path().join("one");
+        let two = dir.path().join("two");
+        std::fs::write(&one, b"one").unwrap();
+        std::fs::write(&two, b"two").unwrap();
+        let mut state = connected();
+        compose_files(&mut state, vec![one.clone()]);
+        let revision = state.compose.as_ref().unwrap().revision;
+        assert!(
+            state
+                .add_compose_attachments(&[one.clone(), two.clone(), one.clone()])
+                .is_ok()
+        );
+        assert_eq!(
+            state.compose.as_ref().unwrap().draft.attachments,
+            [one.clone(), two.clone()]
+        );
+        assert_eq!(state.compose.as_ref().unwrap().revision, revision + 1);
+        assert_eq!(state.last_attachment_directory.as_deref(), Some(dir.path()));
+        assert!(
+            state
+                .add_compose_attachments(&[dir.path().join("missing")])
+                .is_err()
+        );
+        assert_eq!(
+            state.compose.as_ref().unwrap().draft.attachments,
+            [one.clone(), two.clone()]
+        );
+        state.compose.as_mut().unwrap().busy = true;
+        assert_eq!(
+            state.add_compose_attachments(&[]).unwrap_err().0,
+            code::BUSY
+        );
+        state.clear_compose_attachments();
+        assert_eq!(state.compose.as_ref().unwrap().draft.attachments.len(), 2);
+        state.compose.as_mut().unwrap().busy = false;
+        state.clear_compose_attachments();
+        let compose = state.compose.as_ref().unwrap();
+        assert!(compose.draft.attachments.is_empty() && compose.attachments.is_empty());
+        assert!(compose.attachment_error.is_none());
+        assert_eq!(compose.revision, revision + 2);
+        assert!(state.add_compose_attachments(&[two]).is_ok());
+        state
+            .account_mut("a")
+            .unwrap()
+            .session
+            .as_mut()
+            .unwrap()
+            .max_size_upload = Some(1);
+        assert!(state.add_compose_attachments(&[one]).is_ok());
+        assert!(state.compose.as_ref().unwrap().attachments_over_limit);
+        assert!(!state.compose_sendable());
     }
 
     #[test]

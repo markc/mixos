@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="MixOS&#x27;s twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads and navigates but never changes files.">
+    <meta name="description" content="MixOS&#x27;s twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and the same actions over the Bus.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -291,6 +291,7 @@ Ctrl+Alt+1 to 6 for a scheme; View › Theme has the full choice). Help ›
 Keyboard Shortcuts lists every key in force.</p>
 <table><thead><tr><th>Menu</th><th>Action</th><th>Keys</th></tr></thead><tbody>
 <tr><td>File</td><td>Open</td><td>Enter</td></tr>
+<tr><td></td><td>Mail selection</td><td>Ctrl+M</td></tr>
 <tr><td></td><td>New Folder</td><td>Ctrl+Shift+N</td></tr>
 <tr><td></td><td>Rename</td><td>Ctrl+E</td></tr>
 <tr><td></td><td>Copy to Other Pane</td><td>Ctrl+C</td></tr>
@@ -339,6 +340,16 @@ FUSE and automounted filesystems too.</p>
 <code>file.move-other-pane</code> and <code>file.delete</code>. <code>dopus.actions.list</code> reports the
 same availability as the keyboard and menus: selection, an idle worker and
 valid arguments still matter.</p>
+<p><strong>Mail selection</strong> (<code>dopus.action {id:"file.mail"}</code>) sends the current pane's
+selected file paths to Email. It is available for one or more regular files,
+including symlinks to files, and appears in the File and row context menus.
+It launches Email through the session launcher when needed. A new message
+opens with the files attached; if a compose is already open, the files join
+that message instead. Email keeps paths and reads the bytes at send time.
+The Bus task performs these calls without blocking the window. The status
+area and action reply report whether a message opened, files were added or
+Email refused; the reply's <code>result</code> contains <code>added</code>, <code>count</code> and <code>message</code>.
+Headless instances support this action on their selection too.</p>
 <p>File actions keep the normal name prompts, destructive confirmations and
 drop choices. After <code>dopus.action {id:"file.new-folder"}</code>, use
 <code>dopus.ui.type {text:"Projects"}</code> and <code>dopus.ui.click {label:"OK"}</code> to

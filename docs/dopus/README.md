@@ -1,6 +1,6 @@
 ---
 title: DOpus
-description: MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads and navigates but never changes files.
+description: MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and the same actions over the Bus.
 ---
 
 # DOpus
@@ -63,6 +63,7 @@ Keyboard Shortcuts lists every key in force.
 | Menu | Action | Keys |
 |---|---|---|
 | File | Open | Enter |
+| | Mail selection | Ctrl+M |
 | | New Folder | Ctrl+Shift+N |
 | | Rename | Ctrl+E |
 | | Copy to Other Pane | Ctrl+C |
@@ -117,6 +118,17 @@ Every action accepts local and mesh callers, including `file.open`,
 `file.move-other-pane` and `file.delete`. `dopus.actions.list` reports the
 same availability as the keyboard and menus: selection, an idle worker and
 valid arguments still matter.
+
+**Mail selection** (`dopus.action {id:"file.mail"}`) sends the current pane's
+selected file paths to Email. It is available for one or more regular files,
+including symlinks to files, and appears in the File and row context menus.
+It launches Email through the session launcher when needed. A new message
+opens with the files attached; if a compose is already open, the files join
+that message instead. Email keeps paths and reads the bytes at send time.
+The Bus task performs these calls without blocking the window. The status
+area and action reply report whether a message opened, files were added or
+Email refused; the reply's `result` contains `added`, `count` and `message`.
+Headless instances support this action on their selection too.
 
 File actions keep the normal name prompts, destructive confirmations and
 drop choices. After `dopus.action {id:"file.new-folder"}`, use

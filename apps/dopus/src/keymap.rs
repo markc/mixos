@@ -14,6 +14,7 @@ pub const DEFAULT: &[(&str, &str)] = &[
     ("Ctrl+I", "view.toggle-properties"),
     ("Ctrl+L", "location.focus"),
     ("Enter", "file.open"),
+    ("Ctrl+M", "file.mail"),
     ("Ctrl+Shift+N", "file.new-folder"),
     ("Ctrl+E", "file.rename"),
     ("Ctrl+C", "file.copy-other-pane"),

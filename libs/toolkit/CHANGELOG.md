@@ -3,6 +3,13 @@
 
 ## Unreleased — 2026-10-27
 
+- Add a reusable multi-file chooser with asynchronous directory/path probes,
+  bounded listings and outstanding workers, keyboard navigation, hidden files,
+  Ctrl/Shift selection, stable accessible labels and stacked modal behaviour.
+- Let registries mark dialog-only menus and render selected menus inside a Ui.
+  Covered bars leave the active dialog's menu and drive state alone. Dialogs
+  can suspend their controls and keyboard handling while a child is open.
+
 - Keep `drive::input_request` available when local and injected input share
   a pass. Expose `drive::input_mixed` so apps can record that ambiguity without
   losing the drive caller or changing input timing.

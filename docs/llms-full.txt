@@ -738,14 +738,14 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [buildinfo](../buildinfo/README.md) | lib | none (library) | [`libs/buildinfo`](https://github.com/markc/mixos/tree/main/libs/buildinfo) | Compile-time build provenance for MixOS binaries, and the --version contract every binary answers. |
 | [bus](../bus/README.md) | lib | none (library) | [`libs/bus`](https://github.com/markc/mixos/tree/main/libs/bus) | The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts. |
 | [ced](../ced/README.md) | app | unclassified | [`apps/ced`](https://github.com/markc/mixos/tree/main/apps/ced) | The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live. |
-| [citizen](../citizen/README.md) | lib | none (library) | [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/citizen) | An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore. |
+| [citizen](../citizen/README.md) · [changelog](../citizen/changelog.md) | lib | none (library) | [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/citizen) | An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore. |
 | [compd](../compd/README.md) · [changelog](../compd/changelog.md) | service | unclassified | [`services/compd`](https://github.com/markc/mixos/tree/main/services/compd) | The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree. |
 | [config](../config/README.md) | lib | none (library) | [`libs/config`](https://github.com/markc/mixos/tree/main/libs/config) | Where MixOS keeps its files and how a conf.mix file is read, with one directory rule for every component and descriptor-safe atomic file helpers. |
 | [daemon](../daemon/README.md) | lib | none (library) | [`libs/daemon`](https://github.com/markc/mixos/tree/main/libs/daemon) | Shared HTTP host parsing, listener guards, TLS and ACME provisioning. |
 | [davproto](../davproto/README.md) | lib | none (library) | [`libs/davproto`](https://github.com/markc/mixos/tree/main/libs/davproto) | CalDAV and CardDAV codecs that convert between JSCalendar or JSContact and iCalendar or vCard, with strong ETags, and no transport or storage. |
 | [design](../design/README.md) | lib | none (library) | [`libs/design`](https://github.com/markc/mixos/tree/main/libs/design) | The MixOS design-token system, which compiles a strict-data theme source into resolved colours, metrics, typography and button tables for one scheme, mode and contrast. |
 | [dnsd](../dnsd/README.md) | service | server | [`services/dnsd`](https://github.com/markc/mixos/tree/main/services/dnsd) | authoritative mesh DNS for the zones in zones.mix |
-| [dopus](../dopus/README.md) | app | unclassified | [`apps/dopus`](https://github.com/markc/mixos/tree/main/apps/dopus) | MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads… |
+| [dopus](../dopus/README.md) · [changelog](../dopus/changelog.md) | app | unclassified | [`apps/dopus`](https://github.com/markc/mixos/tree/main/apps/dopus) | MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and the same actions over the Bus. |
 | [edit](../edit/README.md) | lib | none (library) | [`libs/edit`](https://github.com/markc/mixos/tree/main/libs/edit) | Shared headless text buffers used by editd and Ced, with revision checks, transactions, operational transforms, per-origin undo, anchors and search. |
 | [editd](../editd/README.md) · [changelog](../editd/changelog.md) | service | unclassified | [`services/editd`](https://github.com/markc/mixos/tree/main/services/editd) | The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery. |
 | [editor](../editor/README.md) | lib | none (library) | [`libs/editor`](https://github.com/markc/mixos/tree/main/libs/editor) | The shared plain-text editor widget for MixOS egui applications, a virtualised monospace view over the headless editing model that works on a local file or a shared buffer. |
@@ -772,7 +772,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [notifyd](../notifyd/README.md) | service | unclassified | [`services/notifyd`](https://github.com/markc/mixos/tree/main/services/notifyd) | How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed. |
 | [paths](../paths/README.md) | lib | none (library) | [`libs/paths`](https://github.com/markc/mixos/tree/main/libs/paths) |  |
 | [portald](../portald/README.md) | service | unclassified | [`services/portald`](https://github.com/markc/mixos/tree/main/services/portald) | How portald serves the XDG Settings and ScreenCast portals on the session bus, where the appearance values and screen frames come from, and how applications and agents use them. |
-| [prefs](../prefs/README.md) | app | unclassified | [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs) | Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window. |
+| [prefs](../prefs/README.md) · [changelog](../prefs/changelog.md) | app | unclassified | [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs) | Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window. |
 | [props](../props/README.md) | lib | none (library) | [`libs/props`](https://github.com/markc/mixos/tree/main/libs/props) | Property read types, revisions, namespace storage and native Bus routing for MixOS services. |
 | [releasesd](../releasesd/README.md) | service | unclassified | [`services/releasesd`](https://github.com/markc/mixos/tree/main/services/releasesd) | How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus. |
 | [scene](../scene/README.md) | lib | none (library) | [`libs/scene`](https://github.com/markc/mixos/tree/main/libs/scene) | The Mix Scenes document core, which parses, lints, resolves and diffs scene documents and their bindings without a renderer or interpreter. |
@@ -7986,6 +7986,7 @@ Keyboard Shortcuts lists every key in force.
 | Menu | Action | Keys |
 |---|---|---|
 | File | Open | Enter |
+| | Mail selection | Ctrl+M |
 | | New Folder | Ctrl+Shift+N |
 | | Rename | Ctrl+E |
 | | Copy to Other Pane | Ctrl+C |
@@ -8040,6 +8041,17 @@ Every action accepts local and mesh callers, including `file.open`,
 `file.move-other-pane` and `file.delete`. `dopus.actions.list` reports the
 same availability as the keyboard and menus: selection, an idle worker and
 valid arguments still matter.
+
+**Mail selection** (`dopus.action {id:"file.mail"}`) sends the current pane's
+selected file paths to Email. It is available for one or more regular files,
+including symlinks to files, and appears in the File and row context menus.
+It launches Email through the session launcher when needed. A new message
+opens with the files attached; if a compose is already open, the files join
+that message instead. Email keeps paths and reads the bytes at send time.
+The Bus task performs these calls without blocking the window. The status
+area and action reply report whether a message opened, files were added or
+Email refused; the reply's `result` contains `added`, `count` and `message`.
+Headless instances support this action on their selection too.
 
 File actions keep the normal name prompts, destructive confirmations and
 drop choices. After `dopus.action {id:"file.new-folder"}`, use
@@ -8550,7 +8562,15 @@ A malformed file loads defaults and is never overwritten.
   a draft restores its attachment paths, and Send reads their current contents
   in the background. Under Subject, a paperclip row shows each file's name,
   human-readable size and an × button to remove it, followed by the total
-  known file size. The row is hidden when there are no attachments. Missing,
+  known file size. The paperclip button is always available while editing:
+  it opens the toolkit's multi-file chooser. The compose dialog's own
+  **Attachments** menu offers **Attach files…** (Ctrl+Shift+A) and
+  **Remove all attachments**. The chooser starts beside the last file added
+  this session, or at Home; it supports editable paths, hidden files,
+  Ctrl/Shift selection and keyboard navigation. Directory reads run in the
+  background and show at most 10,000 entries. Files dropped onto the window
+  join the open compose too. Additions keep path order and omit duplicates;
+  invalid dropped items show an inline error. Missing,
   unreadable and non-regular files stay listed with their state and disable
   Send. Chips wrap onto further rows and long names keep room for removal.
   Files sharing a name include their parent directory in both the chip and
@@ -8725,6 +8745,7 @@ never waits on them.
 | `email.junk {ids, junk}` | intent | move to the Junk mailbox (`junk: true`) or back to the inbox; maild trains spam or ham on the move; answers `{ids, mailbox}` |
 | `email.send {to, cc?, bcc?, subject, body, in_reply_to?, attachments?}` | intent | send without the dialog; attachments are absolute file paths |
 | `email.compose {to?, cc?, bcc?, reply_to?, subject?, body?, attachments?}` | intent | open compose with optional absolute attachment paths; Send reads the files |
+| `email.compose.attachment.add {paths:["/home/user/report.pdf"]}` | intent | add to the open compose in order, omitting duplicate paths; no compose: `NOT_FOUND`, sending: `BUSY`; relative, non-regular or unreadable paths use `ATTACHMENT_RELATIVE`, `ATTACHMENT_NOT_FILE` or `ATTACHMENT_UNREADABLE`; an invalid batch changes nothing; answers `{compose}` |
 | `email.compose.attachment.remove {path}` | intent | remove all occurrences of the exact path from the open compose; no compose or unknown path: `NOT_FOUND`, sending: `BUSY`; answers `{compose}` |
 | `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
 | `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |
@@ -36585,6 +36606,23 @@ written in Mix on `tcp_listen`.
 
 ---
 
+<!-- page: https://mixos.dev/citizen/changelog/ (source: https://mixos.dev/citizen/changelog.md) -->
+
+> Mirrored from [`libs/citizen/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/citizen/CHANGELOG.md), where releases update it. The component's page is [citizen](README.md). This page describes the current `main` branch of MixOS.
+
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
+# Changelog
+
+## Unreleased — 2026-10-27
+
+- Add `call_app` for Handle and SupervisedClient: call an app, launch it once
+  only when its service is absent, then retry within a registration wait limit.
+  Typed errors distinguish transport uncertainty, launch failure, timeout and
+  app refusal. Refusals retain their original reply, code and message.
+- Add a scripted sink for testing effect workers without a broker.
+
+---
+
 <!-- page: https://mixos.dev/compd/changelog/ (source: https://mixos.dev/compd/changelog.md) -->
 
 # Changelog
@@ -36669,6 +36707,24 @@ written in Mix on `tcp_listen`.
 
 ---
 
+<!-- page: https://mixos.dev/dopus/changelog/ (source: https://mixos.dev/dopus/changelog.md) -->
+
+> Mirrored from [`apps/dopus/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/dopus/CHANGELOG.md), where releases update it. The component's page is [dopus](README.md). This page describes the current `main` branch of MixOS.
+
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
+# Changelog
+
+## Unreleased — 2026-10-27
+
+- Add Mail selection to File, the row context menu and Ctrl+M, available for
+  selections of regular files (symlinks followed). Listing workers supply
+  regular-file metadata, keeping availability checks off the filesystem.
+- Pass attachment paths to Email over the existing Bus task, launching it
+  through citizen when absent. BUSY falls back to adding to the open compose.
+  Status and Bus replies report the outcome; headless calls share this path.
+
+---
+
 <!-- page: https://mixos.dev/editd/changelog/ (source: https://mixos.dev/editd/changelog.md) -->
 
 # editd Bus contract
@@ -36690,6 +36746,15 @@ the predecessor repository at revision
 > Mirrored from [`apps/email/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/email/CHANGELOG.md), where releases update it. The component's page is [email](README.md). This page describes the current `main` branch of MixOS.
 
 ## Unreleased
+
+- Add an Attachments menu inside compose, with Attach files… (Ctrl+Shift+A),
+  Remove all attachments and a one-click paperclip button. The shared chooser
+  runs above compose and remembers the last attachment directory this session.
+- Add `email.compose.attachment.add {paths}` and dropped-file attachment entry.
+  They share atomic path validation, deduplication, draft revisions, metadata
+  refresh and size warnings; sending refuses changes.
+- Use citizen's shared app-launch helper when opening Prefs, preserving app
+  refusals and avoiding repeated commands after an uncertain outcome.
 
 - `email.execute` refuses `mail.send` when final validation prevents queueing,
   returning the compose error rather than a successful `executed` reply.
@@ -37519,6 +37584,22 @@ Use strict MixOS configuration and owned shutdown signalling.
 
 ---
 
+<!-- page: https://mixos.dev/prefs/changelog/ (source: https://mixos.dev/prefs/changelog.md) -->
+
+> Mirrored from [`apps/prefs/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/prefs/CHANGELOG.md), where releases update it. The component's page is [prefs](README.md). This page describes the current `main` branch of MixOS.
+
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
+# Changelog
+
+## Unreleased — 2026-10-27
+
+- Delegate Email launching and registration waits to citizen's shared async
+  helper. Keep passwords outside effect bodies until sending, preserve
+  refusals, and return a failed password to its field. Account status reads
+  and best-effort password removal do not launch Email.
+
+---
+
 <!-- page: https://mixos.dev/settings/changelog/ (source: https://mixos.dev/settings/changelog.md) -->
 
 # settings contract changes
@@ -37811,6 +37892,13 @@ their bytes.
 
 ## Unreleased — 2026-10-27
 
+- Add a reusable multi-file chooser with asynchronous directory/path probes,
+  bounded listings and outstanding workers, keyboard navigation, hidden files,
+  Ctrl/Shift selection, stable accessible labels and stacked modal behaviour.
+- Let registries mark dialog-only menus and render selected menus inside a Ui.
+  Covered bars leave the active dialog's menu and drive state alone. Dialogs
+  can suspend their controls and keyboard handling while a child is open.
+
 - Keep `drive::input_request` available when local and injected input share
   a pass. Expose `drive::input_mixed` so apps can record that ambiguity without
   losing the drive caller or changing input timing.
@@ -37900,7 +37988,7 @@ yet. They are listed on both this page and the server page until they do.
 - [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
 - [ced](../ced/README.md) (app): The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [compd](../compd/README.md) (service): The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree.
-- [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
+- [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and the same actions over the Bus.
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo.
@@ -37954,7 +38042,7 @@ yet. They are listed on both this page and the desktop page until they do.
 - [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
 - [ced](../ced/README.md) (app): The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [compd](../compd/README.md) (service): The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree.
-- [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads…
+- [dopus](../dopus/README.md) (app): MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and the same actions over the Bus.
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo.

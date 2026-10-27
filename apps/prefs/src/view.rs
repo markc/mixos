@@ -180,8 +180,6 @@ pub fn view(
             if let Some(task) = &engine.email.task {
                 let key = match task.stage {
                     preferences::email::Stage::Sending => "email-task-sending",
-                    preferences::email::Stage::Launching => "email-launching",
-                    preferences::email::Stage::Waiting => "email-waiting",
                 };
                 ui.small(RichText::new(label(key)).weak());
             } else if engine.section() == engine.look.status_source
