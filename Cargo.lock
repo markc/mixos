@@ -2710,6 +2710,7 @@ dependencies = [
  "jmap",
  "libc",
  "logging",
+ "maildoc",
  "pulldown-cmark",
  "serde",
  "serde_json",

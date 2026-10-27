@@ -339,3 +339,205 @@ fn composed(state: &State, account: &str, doc: &MailDocument) -> Result<(jmap::C
         in_reply_to: doc.in_reply_to.clone(), references: doc.references.clone(),
     }, sender.id))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shell::Event;
+    use crate::state::tests::connected_many;
+    use serde_json::{Value, json};
+
+    fn command(state: &mut State, name: &str, args: Value) {
+        crate::commands::command(state, &crate::actions::registry(), &crate::strings(), 71, name, &args.to_string());
+    }
+
+    fn finish(state: &mut State) {
+        for work in state.take_work() {
+            match work {
+                Work::MailDocument(work) => {
+                    let (ticket, answer) = work.perform();
+                    state.apply(Event::MailDocument(ticket, answer));
+                }
+                other => state.queue_work(other),
+            }
+        }
+        state.finish_compose_inspections();
+    }
+
+    #[test]
+    fn bus_documents_have_distinct_format_refusals_on_compose_and_send() {
+        let cases = [
+            ("x".into(), code::DOCUMENT_FRAMING),
+            ("---\r\n---\r\n".into(), code::DOCUMENT_CARRIAGE_RETURN),
+            ("---\nto: email\n---\n".into(), code::DOCUMENT_HEADER_NOT_ALLOWED),
+            ("---\nmail-to\n---\n".into(), code::DOCUMENT_MALFORMED_HEADER),
+            ("---\nmail-subject: A\nmail-subject: B\n---\n".into(), code::DOCUMENT_DUPLICATE_HEADER),
+            ("---\nmail-subject: \"\"\n---\n".into(), code::DOCUMENT_EMPTY_VALUE),
+            ("---\nmail-attachments: [\"relative\"]\n---\n".into(), code::DOCUMENT_INVALID_VALUE),
+            ("x".repeat(maildoc::MAX_DOCUMENT_BYTES + 1), code::DOCUMENT_TOO_LARGE),
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mail.md");
+        for name in ["email.compose", "email.send"] {
+            for (text, expected) in &cases {
+                let mut state = connected_many(&["a"]);
+                std::fs::write(&path, text).unwrap();
+                command(&mut state, name, json!({"document": path}));
+                assert!(state.take_replies().is_empty(), "read must be deferred");
+                finish(&mut state);
+                assert_eq!(state.take_replies()[0].body["error_code"], *expected);
+                assert!(state.compose.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn bus_documents_refuse_inline_fields_relative_paths_encoding_and_missing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mail.md");
+        for name in ["email.compose", "email.send"] {
+            for field in ["to", "cc", "bcc", "from", "from_name", "reply_to", "subject", "body", "attachments", "in_reply_to", "references"] {
+                let mut state = connected_many(&["a"]);
+                command(&mut state, name, json!({"document": path, (field): null}));
+                assert_eq!(state.take_replies()[0].body["error_code"], code::DOCUMENT_INLINE);
+            }
+            let mut state = connected_many(&["a"]);
+            command(&mut state, name, json!({"document": "relative.md"}));
+            assert_eq!(state.take_replies()[0].body["error_code"], code::DOCUMENT_PATH);
+            command(&mut state, name, json!({"document": path}));
+            finish(&mut state);
+            assert_eq!(state.take_replies()[0].body["error_code"], code::DOCUMENT_IO);
+            std::fs::write(&path, [0xff]).unwrap();
+            command(&mut state, name, json!({"document": path}));
+            finish(&mut state);
+            assert_eq!(state.take_replies()[0].body["error_code"], code::DOCUMENT_ENCODING);
+            std::fs::remove_file(&path).unwrap();
+        }
+    }
+
+    #[test]
+    fn document_identity_is_scoped_to_the_chosen_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mail.md");
+        for name in ["email.compose", "email.send"] {
+            for header in ["mail-from", "mail-reply-to"] {
+                for address in ["forged@example.invalid", "ann@b.example.invalid"] {
+                    let mut state = connected_many(&["a", "b"]);
+                    std::fs::write(&path, format!("---\n{header}: {address}\n---\n")).unwrap();
+                    command(&mut state, name, json!({"account": "a", "document": path}));
+                    finish(&mut state);
+                    assert_eq!(state.take_replies()[0].body["error_code"], code::IDENTITY_MISMATCH);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn compose_reads_on_arrival_and_keeps_paths_threading_and_reply_to() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mail.md");
+        let attachment = dir.path().join("note.txt");
+        std::fs::write(&attachment, "one").unwrap();
+        let doc = MailDocument {
+            to: vec!["bob@example.invalid".into()], subject: "[PATCH] Example".into(),
+            reply_to: Some("ann@a.example.invalid".into()), body: "**Plain** Markdown".into(),
+            references: vec!["<first@example.invalid>".into(), "<second@example.invalid>".into()],
+            in_reply_to: Some("<second@example.invalid>".into()), attachments: vec![attachment.clone()],
+            ..MailDocument::default()
+        };
+        std::fs::write(&path, maildoc::write(&doc).unwrap()).unwrap();
+        let mut state = connected_many(&["a"]);
+        command(&mut state, "email.compose", json!({"document": path}));
+        finish(&mut state);
+        assert_eq!(state.take_replies()[0].rc, 0);
+        let compose = state.compose.as_ref().unwrap();
+        assert_eq!(compose.draft.from, "ann@a.example.invalid");
+        assert_eq!(compose.draft.references, doc.references);
+        assert_eq!(compose.draft.reply_to, doc.reply_to);
+        assert_eq!(compose.body.contents(), doc.body);
+        assert_eq!(compose.draft.attachments, [attachment.clone()]);
+        std::fs::write(&attachment, "changed at send time").unwrap();
+        let mut send = connected_many(&["a"]);
+        command(&mut send, "email.send", json!({"document": path}));
+        finish(&mut send);
+        let draft = send.take_work().into_iter().find_map(|w| match w {
+            Work::Write { write: crate::commands::Write::Send { draft }, .. } => Some(draft), _ => None,
+        }).expect("a send, never a compose");
+        assert_eq!(draft.attachments, [attachment]);
+        let mime = String::from_utf8(jmap::build_mime(&draft).unwrap()).unwrap();
+        assert!(mime.contains("Reply-To: ann@a.example.invalid\r\n"));
+        assert!(mime.contains("References: <first@example.invalid> <second@example.invalid>\r\n"));
+        assert!(mime.contains("Content-Type: text/plain"));
+        assert!(!mime.contains("Content-Type: text/html"));
+        assert!(mime.contains("Y2hhbmdlZCBhdCBzZW5kIHRpbWU="));
+    }
+
+    #[test]
+    fn open_replacement_cancel_and_stale_reads_preserve_the_draft() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mail.md");
+        std::fs::write(&path, "---\nmail-subject: Loaded\n---\nBody").unwrap();
+        let mut state = connected_many(&["a"]);
+        state.open_compose(Some("a"), jmap::Composed { subject: "Keep".into(), ..Default::default() });
+        state.read_document("a".into(), path.clone(), None, false, false).unwrap();
+        finish(&mut state);
+        assert!(state.documents.replace.is_some());
+        state.confirm_document_replace(false);
+        assert_eq!(state.compose.as_ref().unwrap().draft.subject, "Keep");
+        state.read_document("a".into(), path.clone(), None, false, false).unwrap();
+        state.apply_ui(crate::view::UiEvent::ComposeField(crate::state::ComposeField::Subject, "Newer".into()));
+        finish(&mut state);
+        assert!(state.documents.replace.is_none());
+        assert_eq!(state.compose.as_ref().unwrap().draft.subject, "Newer");
+        state.read_document("a".into(), path, None, false, false).unwrap();
+        finish(&mut state);
+        state.confirm_document_replace(true);
+        assert_eq!(state.compose.as_ref().unwrap().draft.subject, "Loaded");
+        assert_eq!(state.compose.as_ref().unwrap().body.contents(), "Body");
+    }
+
+    #[test]
+    fn drops_open_documents_and_plain_markdown_falls_back_to_an_attachment() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mail.md");
+        std::fs::write(&path, "---\nmail-subject: Dropped\n---\n").unwrap();
+        let mut state = connected_many(&["a"]);
+        state.drop_files(vec![path.clone()]);
+        finish(&mut state);
+        assert_eq!(state.compose.as_ref().unwrap().draft.subject, "Dropped");
+        assert!(!state.take_work().iter().any(|w| matches!(w, Work::Send { .. } | Work::Write { .. })));
+        std::fs::write(&path, "# Ordinary Markdown").unwrap();
+        state.drop_files(vec![path.clone()]);
+        finish(&mut state);
+        assert_eq!(state.compose.as_ref().unwrap().draft.attachments, [path.clone()]);
+        let mut idle = connected_many(&["a"]);
+        idle.drop_files(vec![path]);
+        finish(&mut idle);
+        assert!(idle.compose.is_none());
+        assert!(idle.status.contains("framing"));
+    }
+
+    #[test]
+    fn save_is_deferred_refuses_controls_and_never_overwrites_an_unapproved_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mail.md");
+        let mut state = connected_many(&["a"]);
+        state.open_compose(Some("a"), jmap::Composed { subject: "Saved".into(), body: "Text\n\n".into(), ..Default::default() });
+        state.write_document(path.clone(), false);
+        assert!(!path.exists());
+        finish(&mut state);
+        assert_eq!(read(&path).unwrap().body, "Text");
+        std::fs::write(&path, "keep").unwrap();
+        state.write_document(path.clone(), false);
+        finish(&mut state);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "keep");
+        state.write_document(path.clone(), true);
+        finish(&mut state);
+        assert_eq!(read(&path).unwrap().subject, "Saved");
+        state.compose.as_mut().unwrap().draft.subject = "bad\u{0007}".into();
+        state.write_document(path.clone(), true);
+        finish(&mut state);
+        assert!(state.compose.as_ref().unwrap().error.as_ref().unwrap().contains("control"));
+        assert_eq!(read(&path).unwrap().subject, "Saved");
+    }
+}

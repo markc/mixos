@@ -470,7 +470,6 @@ impl FileChooser {
                     ui.weak(own("file-chooser-capped"));
                 }
             });
-        self.scroll_to_cursor = false;
         if let Some((at, modifiers)) = clicked {
             self.selection.click(
                 at,
@@ -483,6 +482,7 @@ impl FileChooser {
             && !self.entries[at].directory && (clicked.is_some() || self.scroll_to_cursor) {
             self.name = self.entries[at].name.clone();
         }
+        self.scroll_to_cursor = false;
         if go_up {
             self.up(&ctx);
         } else if let Some(at) = double.or(self.selection.cursor.filter(|_| activate)) {
@@ -743,6 +743,68 @@ mod tests {
             size: 0,
             modified: None,
         }
+    }
+
+    #[test]
+    fn save_mode_requires_a_name_joins_paths_and_checks_replacements() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut chooser = FileChooser::save(dir.path(), "Save document", "Write");
+        assert!(!chooser.can_confirm());
+        for name in ["", " ", ".", "..", "/tmp/mail.md", "sub/mail.md"] {
+            assert!(save_path(dir.path(), name).is_err());
+        }
+        chooser.name = "mail.md".into();
+        assert!(chooser.can_confirm());
+        let path = save_path(dir.path(), &chooser.name).unwrap();
+        assert_eq!(path, dir.path().join("mail.md"));
+        assert!(matches!(check_save(path.clone()), Ok(Answer::Save(_, false))));
+        std::fs::write(&path, "old").unwrap();
+        assert!(matches!(check_save(path), Ok(Answer::Save(_, true))));
+        assert!(check_save(dir.path().to_owned()).is_err());
+    }
+
+    fn save_fixture() -> FileChooser {
+        let mut chooser = FileChooser::save("/home/user/Documents", "Save mail document as", "Save");
+        chooser.started = true;
+        chooser.name = "message.md".into();
+        chooser.entries = vec![entry("Reports", true), entry("notes.md", false)];
+        chooser
+    }
+
+    #[test]
+    fn file_chooser_save_snapshot() {
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(900.0, 700.0))
+            .build_ui_state(|ui, chooser: &mut FileChooser| { chooser.show(ui.ctx()); }, save_fixture());
+        crate::install(&h.ctx, &crate::Theme::embedded());
+        h.run_steps(5);
+        h.snapshot("file_chooser_save");
+    }
+
+    #[test]
+    fn save_existing_file_waits_for_replace_and_cancel_keeps_chooser() {
+        use egui_kittest::kittest::Queryable;
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(900.0, 700.0))
+            .build_ui_state(|ui, state: &mut (FileChooser, Option<Outcome>)| {
+                if state.1.is_none() { state.1 = state.0.show(ui.ctx()); }
+            }, (save_fixture(), None));
+        crate::install(&h.ctx, &crate::Theme::embedded());
+        h.run_steps(5);
+        let path = PathBuf::from("/home/user/Documents/message.md");
+        let (tx, rx) = mpsc::channel();
+        h.state_mut().0.pending = Some(rx);
+        tx.send(Ok(Answer::Save(path.clone(), true))).unwrap();
+        h.run();
+        assert!(h.state().1.is_none());
+        assert!(h.state().0.replace.is_some());
+        h.key_press(Key::Escape);
+        h.run();
+        assert!(h.state().0.replace.is_none());
+        assert!(h.state().1.is_none());
+        h.state_mut().0.replace = Some(path.clone());
+        h.run();
+        h.get_by_label("Replace").click();
+        h.run();
+        assert_eq!(h.state().1, Some(Outcome::Save { path, replace: true }));
     }
 
     #[test]
