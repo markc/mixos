@@ -25,7 +25,7 @@ try
       stdout: {file: $dir .. "/workshop.log"}, stderr: "stdout"})
   $ready = false
   for $attempt = 1 to 100
-    send workshop-debug-test workshop-debug-test.debug timeout=1
+    send "workshop-debug-test" "workshop-debug-test.debug" timeout=1
     if $rc == 0 then $ready = true; break end
     expect(process_alive($child), "Workshop exited; " .. read_file($dir .. "/workshop.log"))
     sleep(0.1)

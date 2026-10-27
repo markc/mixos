@@ -300,7 +300,7 @@ pub struct SetRequest {
 pub fn describe(service: &str) -> Vec<Value> {
     vec![
         json!({"name":format!("{service}.debug"),"read_only":true,"description":"Read live debug state","params":{}}),
-        json!({"name":format!("{service}.debug.set"),"read_only":false,"description":"Set level or on shorthand; exactly one required","params":{"level":{"type":"string","enum":["off","error","warn","info","debug","trace"]},"on":{"type":"boolean"}}}),
+        json!({"name":format!("{service}.debug.set"),"read_only":false,"description":"Set level or on shorthand; exactly one required","args":{"level":"optional off|error|warn|info|debug|trace","on":"optional boolean; true=debug, false=baseline (exactly one of level/on)"},"params":{"level":{"type":"string","enum":["off","error","warn","info","debug","trace"]},"on":{"type":"boolean"}}}),
     ]
 }
 
