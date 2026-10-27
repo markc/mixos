@@ -419,9 +419,7 @@ impl State {
                 match result {
                     Err(error) => self.document_error(error),
                     Ok(()) => {
-                        if current
-                            && let Some(compose) = &mut self.compose
-                        {
+                        if current && let Some(compose) = &mut self.compose {
                             compose.error = None;
                         }
                     }
