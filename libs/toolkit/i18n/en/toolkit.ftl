@@ -106,7 +106,6 @@ file-chooser-loading = Loading…
 file-chooser-empty = No files in this directory
 file-chooser-capped = First 10,000 entries shown
 file-chooser-modified = Modified (UTC)
-file-chooser-bytes = { $bytes } B
 file-chooser-path-error = { $path }: { $error }
 file-chooser-not-file = { $path } is not a regular file
 file-chooser-worker-stopped = The directory worker stopped

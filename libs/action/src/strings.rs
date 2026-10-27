@@ -38,7 +38,7 @@ impl Strings {
     pub fn with(&self, key: &str, args: &[(&str, &str)]) -> String {
         let mut fluent = FluentArgs::new();
         for (name, value) in args {
-            fluent.set(*name, FluentValue::from(*value));
+            fluent.set(*name, argument(value));
         }
         self.format(key, Some(&fluent))
     }
@@ -59,6 +59,22 @@ impl Strings {
     }
 }
 
+/// A plain whole number (`0`, `1`, `42`) goes to Fluent as a number, so a
+/// plural select such as `[one]` matches; anything else, `0419` included,
+/// stays text exactly as given.
+fn argument(value: &str) -> FluentValue<'_> {
+    let plain = value == "0"
+        || (!value.is_empty()
+            && !value.starts_with('0')
+            && value.len() <= 15
+            && value.bytes().all(|b| b.is_ascii_digit()));
+    if plain {
+        FluentValue::try_number(value)
+    } else {
+        FluentValue::from(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,5 +86,18 @@ mod tests {
         assert_eq!(s.with("greet", &[("name", "Mix")]), "Hello, Mix!");
         assert_eq!(s.get("missing"), "missing");
         assert!(s.has("hello") && !s.has("missing"));
+    }
+
+    #[test]
+    fn whole_numbers_select_plurals_and_other_text_stays_as_given() {
+        let s = Strings::new(
+            "files = { $n ->\n    [one] 1 file\n   *[other] { $n } files\n}\necho = { $v }\n",
+        );
+        assert_eq!(s.with("files", &[("n", "1")]), "1 file");
+        assert_eq!(s.with("files", &[("n", "2")]), "2 files");
+        assert_eq!(s.with("files", &[("n", "0")]), "0 files");
+        for kept in ["0419", "1.5", "2026-10-27", "", "12345678901234567890"] {
+            assert_eq!(s.with("echo", &[("v", kept)]), kept);
+        }
     }
 }

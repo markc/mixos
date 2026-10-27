@@ -151,24 +151,8 @@ pub fn refuses_open(name: &str, mime: Option<&str>) -> bool {
     TYPES.contains(&mime.as_str()) || EXTENSIONS.contains(&ext.as_str())
 }
 
-/// A size as people read it: `512 B`, `1.2 KB`, `3.4 MB`.
-pub fn human_size(bytes: u64) -> String {
-    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
-    if bytes < 1024 {
-        return format!("{bytes} B");
-    }
-    let mut size = bytes as f64 / 1024.0;
-    let mut unit = 0;
-    while size >= 1024.0 && unit < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit += 1;
-    }
-    if size < 10.0 {
-        format!("{size:.1} {}", UNITS[unit])
-    } else {
-        format!("{size:.0} {}", UNITS[unit])
-    }
-}
+/// A size as people read it, the same as the toolkit's file chooser shows.
+pub use toolkit::text::human_size;
 
 /// The downloads directory from `$XDG_DOWNLOAD_DIR` (`env`), else the
 /// `XDG_DOWNLOAD_DIR` line of `user-dirs.dirs` (`user_dirs`, its text),

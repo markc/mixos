@@ -330,31 +330,28 @@ impl FileChooser {
                             ));
                             let selected = self.selection.files.contains(&at)
                                 || self.selection.cursor == Some(at);
-                            let size = (!entry.directory).then(|| {
-                                own_with(
-                                    "file-chooser-bytes",
-                                    &[("bytes", &entry.size.to_string())],
-                                )
-                            });
+                            let size =
+                                (!entry.directory).then(|| crate::text::human_size(entry.size));
                             let date = entry.modified.and_then(modified_date);
+                            // Size and date sit in fixed columns, sized for
+                            // their widest forms, so every row lines up.
                             let font = egui::TextStyle::Body.resolve(ui.style());
-                            let tail = size
-                                .iter()
-                                .chain(date.iter())
-                                .map(|text| {
-                                    ui.painter()
-                                        .layout_no_wrap(
-                                            text.clone(),
-                                            font.clone(),
-                                            chrome.palette.text,
-                                        )
-                                        .size()
-                                        .x
-                                        + ui.spacing().item_spacing.x
-                                })
-                                .sum::<f32>();
-                            let width =
-                                (ui.available_width() - tail).max(field::height_of(ui.ctx()));
+                            let measure = |text: &str| {
+                                ui.painter()
+                                    .layout_no_wrap(
+                                        text.to_owned(),
+                                        font.clone(),
+                                        chrome.palette.text,
+                                    )
+                                    .size()
+                                    .x
+                            };
+                            let size_width = measure("1023 MB");
+                            let date_width = measure("0000-00-00");
+                            let height = field::height_of(ui.ctx());
+                            let tail =
+                                size_width + date_width + 2.0 * ui.spacing().item_spacing.x;
+                            let width = (ui.available_width() - tail).max(height);
                             let response = ui
                                 .allocate_ui(egui::vec2(width, field::height_of(ui.ctx())), |ui| {
                                     ui.set_max_width(width);
@@ -374,12 +371,26 @@ impl FileChooser {
                             if response.double_clicked() {
                                 double = Some(at);
                             }
-                            if let Some(size) = size {
-                                ui.weak(size);
-                            }
-                            if let Some(date) = date {
-                                ui.weak(date).on_hover_text(own("file-chooser-modified"));
-                            }
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(size_width, height),
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.set_min_width(size_width);
+                                    if let Some(size) = size {
+                                        ui.weak(size);
+                                    }
+                                },
+                            );
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(date_width, height),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.set_min_width(date_width);
+                                    if let Some(date) = date {
+                                        ui.weak(date).on_hover_text(own("file-chooser-modified"));
+                                    }
+                                },
+                            );
                         });
                     });
                 }

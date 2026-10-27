@@ -9,6 +9,8 @@
 - Let registries mark dialog-only menus and render selected menus inside a Ui.
   Covered bars leave the active dialog's menu and drive state alone. Dialogs
   can suspend their controls and keyboard handling while a child is open.
+- The chooser shows sizes as people read them (`text::human_size`, shared
+  with Email) in aligned size and date columns.
 
 - Keep `drive::input_request` available when local and injected input share
   a pass. Expose `drive::input_mixed` so apps can record that ambiguity without

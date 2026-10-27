@@ -7,6 +7,25 @@ pub struct Text {
     role: &'static str,
 }
 
+/// A size as people read it: `512 B`, `1.2 KB`, `3.4 MB`.
+pub fn human_size(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut size = bytes as f64 / 1024.0;
+    let mut unit = 0;
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+    if size < 10.0 {
+        format!("{size:.1} {}", UNITS[unit])
+    } else {
+        format!("{size:.0} {}", UNITS[unit])
+    }
+}
+
 pub fn dim(text: impl Into<String>) -> Text {
     role(text, "text_dim")
 }

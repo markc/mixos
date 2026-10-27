@@ -74,8 +74,14 @@ copy-here = Copy Here
 drop-body = Move or copy { $count } item(s) here?
 file-mail = Mail selection
 mail-selection-files-only = Select one or more regular files to mail
-mail-opened = Opened a new message with { $count } files
-mail-added = Added { $count } files to the message being written
+mail-opened = { $count ->
+    [one] Opened a new message with 1 file
+   *[other] Opened a new message with { $count } files
+}
+mail-added = { $count ->
+    [one] Added 1 file to the message being written
+   *[other] Added { $count } files to the message being written
+}
 mail-no-bus = The Bus is unavailable
 mail-outcome-unknown = Email may have received the files; check the message before trying again
 mail-not-sent = The files could not be sent to Email

@@ -36512,6 +36512,11 @@ request limits and the runner’s single-flight limit still apply.
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
 
+## Unreleased — 2026-10-27
+
+- A plain whole-number argument reaches Fluent as a number, so plural
+  selects (`[one]`) match. Any other text, such as `0419`, stays as given.
+
 ## 0.3.0 — 2026-10-21
 
 - Add bounded transactional `History<D>` snapshots, explicit coalescing,
@@ -37917,6 +37922,8 @@ their bytes.
 - Let registries mark dialog-only menus and render selected menus inside a Ui.
   Covered bars leave the active dialog's menu and drive state alone. Dialogs
   can suspend their controls and keyboard handling while a child is open.
+- The chooser shows sizes as people read them (`text::human_size`, shared
+  with Email) in aligned size and date columns.
 
 - Keep `drive::input_request` available when local and injected input share
   a pass. Expose `drive::input_mixed` so apps can record that ambiguity without

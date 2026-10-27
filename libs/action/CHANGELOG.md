@@ -1,6 +1,11 @@
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
 
+## Unreleased — 2026-10-27
+
+- A plain whole-number argument reaches Fluent as a number, so plural
+  selects (`[one]`) match. Any other text, such as `0419`, stays as given.
+
 ## 0.3.0 — 2026-10-21
 
 - Add bounded transactional `History<D>` snapshots, explicit coalescing,

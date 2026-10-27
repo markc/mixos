@@ -208,6 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#unreleased--2026-10-27">Unreleased — 2026-10-27</a>
                         <a href="#030--2026-10-21">0.3.0 — 2026-10-21</a>
                         <a href="#020--2026-10-21">0.2.0 — 2026-10-21</a>
                         <a href="#010--2026-10-20">0.1.0 — 2026-10-20</a>
@@ -240,6 +241,11 @@
 </blockquote>
 &lt;!-- SPDX-License-Identifier: MIT OR Apache-2.0 --&gt;
 <h1 id="changelog">Changelog</h1>
+<h2 id="unreleased--2026-10-27">Unreleased — 2026-10-27</h2>
+<ul>
+<li>A plain whole-number argument reaches Fluent as a number, so plural
+selects (<code>[one]</code>) match. Any other text, such as <code>0419</code>, stays as given.</li>
+</ul>
 <h2 id="030--2026-10-21">0.3.0 — 2026-10-21</h2>
 <ul>
 <li>Add bounded transactional <code>History&lt;D&gt;</code> snapshots, explicit coalescing,
