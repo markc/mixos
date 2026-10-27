@@ -608,7 +608,8 @@ so later Bus commands can proceed.</p>
 outcome with that window's document state, and apply the outcome through the
 owning engine. A deferred viewport callback must queue picked/save outcomes
 rather than start document effects in a rendering copy. Separate composers
-can open choosers and load or save documents independently.</p>
+can open choosers and load or save documents independently. Filesystem workers
+wake the chooser's viewport even when the app's root is parked.</p>
 <h3 id="strings-thumbnails-layer-surfaces">Strings, thumbnails, layer surfaces</h3>
 <ul>
 <li><code>strings</code>: <code>Strings::new(ftl)</code> wraps an app's Fluent catalogue

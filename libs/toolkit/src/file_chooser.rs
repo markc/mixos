@@ -623,6 +623,7 @@ impl FileChooser {
             return;
         }
         let (tx, rx) = mpsc::channel();
+        let viewport = ctx.viewport_id();
         let ctx = ctx.clone();
         let hidden = self.hidden;
         let spawned = std::thread::Builder::new()
@@ -635,7 +636,7 @@ impl FileChooser {
                 };
                 let _ = tx.send(answer);
                 WORKERS.fetch_sub(1, Ordering::SeqCst);
-                ctx.request_repaint();
+                ctx.request_repaint_of(viewport);
             });
         match spawned {
             Ok(_) => self.pending = Some(rx),
@@ -865,6 +866,35 @@ fn modified_date(time: SystemTime) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn directory_worker_wakes_the_viewport_that_owns_its_chooser() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = Context::default();
+        ctx.set_embed_viewports(false);
+        let child = egui::ViewportId::from_hash_of("chooser-child");
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.ctx().show_viewport_deferred(child, Default::default(), |_, _| {});
+        }).drop_without_applying_deltas();
+        let (tx, rx) = mpsc::channel();
+        ctx.set_repaint_observer(move |info| {
+            if std::thread::current().name() == Some("file-chooser") {
+                let _ = tx.send(info.viewport_id);
+            }
+        });
+        let mut chooser = FileChooser::new(dir.path(), "Attach", "Attach");
+        for _ in 0..50 {
+            let mut input = egui::RawInput { viewport_id: child, ..Default::default() };
+            input.viewports.insert(child, Default::default());
+            ctx.run_ui(input, |ui| {
+                chooser.request(ui.ctx(), Request::Open(dir.path().to_owned()));
+            }).drop_without_applying_deltas();
+            if chooser.pending.is_some() { break; }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(chooser.pending.is_some(), "the fixture needs a worker slot");
+        assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), child);
+    }
 
     #[test]
     fn empty_name_and_folder_separators_have_distinct_messages() {

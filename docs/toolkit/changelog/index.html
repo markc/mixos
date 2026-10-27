@@ -251,7 +251,8 @@ root aliases. Saved-window capture workers use distinct per-window identities.</
 </li>
 <li>
 <p>Make chooser outcomes cloneable so deferred viewports can queue them for
-their owning engine without running file operations in rendering copies.</p>
+their owning engine without running file operations in rendering copies.
+Directory and path workers wake the viewport that owns their chooser.</p>
 </li>
 <li>
 <p>Refuse captures with <code>NOT_SHOWN</code> after 1.5 seconds without a viewport UI

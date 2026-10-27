@@ -16,6 +16,7 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
   root aliases. Saved-window capture workers use distinct per-window identities.
 - Make chooser outcomes cloneable so deferred viewports can queue them for
   their owning engine without running file operations in rendering copies.
+  Directory and path workers wake the viewport that owns their chooser.
 
 - Refuse captures with `NOT_SHOWN` after 1.5 seconds without a viewport UI
   pass, or after emitting a screenshot whose GPU copy is never submitted.

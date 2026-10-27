@@ -48,7 +48,7 @@ fn compose_launches_forward_empty_and_document_requests() {
         }
         let output = cli
             .args(["--noded-url", &broker.url, "--service", "email-test"])
-            .env_remove("WAYLAND_DISPLAY")
+            .env("WAYLAND_DISPLAY", dir.path().join("no-display.sock"))
             .env_remove("DISPLAY")
             .env("XDG_CONFIG_HOME", dir.path())
             .env("XDG_STATE_HOME", dir.path())

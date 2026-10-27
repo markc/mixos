@@ -398,7 +398,8 @@ The file chooser belongs to its caller's viewport. Keep the chooser and its
 outcome with that window's document state, and apply the outcome through the
 owning engine. A deferred viewport callback must queue picked/save outcomes
 rather than start document effects in a rendering copy. Separate composers
-can open choosers and load or save documents independently.
+can open choosers and load or save documents independently. Filesystem workers
+wake the chooser's viewport even when the app's root is parked.
 
 ### Strings, thumbnails, layer surfaces
 
