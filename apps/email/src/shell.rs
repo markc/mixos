@@ -566,7 +566,7 @@ fn closing(event: &Event) -> Closing {
         | Event::SecretsSaved(..)
         | Event::Printed(..)
         | Event::WriteDeadline(_) => Closing::Apply,
-        Event::SuggestDue(_) => Closing::Ignore,
+        Event::SuggestDue(_) | Event::Preview(..) => Closing::Ignore,
         Event::Delivery(citizen::Delivery::Command { id, .. }) => Closing::Cancel(*id),
         Event::Shown(..) => Closing::Shown,
         Event::Delivery(_) | Event::Look(..) | Event::LookRetry(_) | Event::PrefsOpened(_) => {
