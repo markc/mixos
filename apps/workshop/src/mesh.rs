@@ -88,6 +88,110 @@ struct Curve {
     points: Vec<Pos2>,
 }
 
+struct NodeLabel {
+    name: std::sync::Arc<egui::Galley>,
+    ip: Option<std::sync::Arc<egui::Galley>>,
+    size: Vec2,
+}
+
+#[derive(Clone, Copy)]
+struct Placement {
+    at: Pos2,
+    radius: f32,
+    label: Rect,
+}
+
+fn peer_angle(index: usize, count: usize) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    if count == 2 {
+        return if index == 0 { PI } else { 0.0 };
+    }
+    // Start horizontally, rotating a half step only when a regular polygon
+    // would otherwise put peers directly above and below this node.
+    let offset = if count.is_multiple_of(4) {
+        PI / count as f32
+    } else {
+        0.0
+    };
+    offset + index as f32 * TAU / count as f32
+}
+
+fn map_layout(rect: Rect, labels: &[Vec2], unit: f32) -> Vec<Placement> {
+    let centre = rect.center();
+    let radius = unit * 0.9;
+    let gap = unit * 0.4;
+    let padding = unit * 0.5;
+    // Bound the extent of a radially placed plate in either axis. Reserving
+    // measured text margins lets the ellipse use the remaining map rectangle.
+    let margin = labels.iter().skip(1).fold(Vec2::ZERO, |margin, size| {
+        let half = *size * 0.5;
+        let common = radius + gap + padding + half.length() * 0.5;
+        margin.max(half * 1.5 + Vec2::splat(common))
+    });
+    let axes = (rect.size() * 0.5 - margin).max(Vec2::ZERO);
+    labels
+        .iter()
+        .enumerate()
+        .map(|(i, size)| {
+            let (at, radius, direction) = if i == 0 {
+                (centre, unit * 1.3, Vec2::Y)
+            } else {
+                let angle = peer_angle(i - 1, labels.len() - 1);
+                let delta = Vec2::new(angle.cos() * axes.x, angle.sin() * axes.y);
+                (
+                    centre + delta,
+                    radius,
+                    delta / delta.length().max(f32::EPSILON),
+                )
+            };
+            let half = *size * 0.5;
+            let support = direction.x.abs() * half.x + direction.y.abs() * half.y;
+            Placement {
+                at,
+                radius,
+                label: Rect::from_center_size(at + direction * (radius + gap + support), *size),
+            }
+        })
+        .collect()
+}
+
+/// Both directions use separate side ports on this node, leaving room for its
+/// label below. The peer ports face inward, away from its outward label plate.
+fn spoke(local: Placement, peer: Placement, out: bool, unit: f32) -> Vec<Pos2> {
+    let delta = peer.at - local.at;
+    let radial = delta / delta.length().max(f32::EPSILON);
+    let normal = Vec2::new(-radial.y, radial.x);
+    let side = if delta.x < 0.0 { -1.0 } else { 1.0 };
+    let lane = if out { -1.0 } else { 1.0 };
+    let port = 0.35_f32;
+    let along = (1.0 - port * port).sqrt();
+    let a = local.at + Vec2::new(side * along, side * lane * port) * local.radius;
+    let b = peer.at - radial * along * peer.radius + normal * lane * port * peer.radius;
+    let lead = (local.label.width() * 0.5 + unit * 2.0).min(delta.length() * 0.5);
+    let c = a + Vec2::new(side * lead, 0.0);
+    let mut d = b - radial * lead + normal * lane * unit * 0.8;
+    if delta.y > 0.0 {
+        // Near-vertical lower spokes stay beside the centre plate until they
+        // turn towards their peer, rather than cutting back through the text.
+        let clearance = local.label.width() * 0.5 + unit * 0.5;
+        d.x = local.at.x + side * ((d.x - local.at.x) * side).max(clearance);
+    }
+    let mut points: Vec<_> = (0..=40)
+        .map(|i| {
+            let t = i as f32 / 40.0;
+            let s = 1.0 - t;
+            Pos2::new(
+                s.powi(3) * a.x + 3.0 * s * s * t * c.x + 3.0 * s * t * t * d.x + t.powi(3) * b.x,
+                s.powi(3) * a.y + 3.0 * s * s * t * c.y + 3.0 * s * t * t * d.y + t.powi(3) * b.y,
+            )
+        })
+        .collect();
+    if !out {
+        points.reverse();
+    }
+    points
+}
+
 fn curve(a: Pos2, b: Pos2, bow: f32) -> Vec<Pos2> {
     let delta = b - a;
     let normal = Vec2::new(-delta.y, delta.x) / delta.length().max(1.0);
@@ -106,14 +210,21 @@ fn curve(a: Pos2, b: Pos2, bow: f32) -> Vec<Pos2> {
 /// Peer pairs have no observed counters on this broker. Their painter accepts
 /// geometry and theme roles only, so it cannot imply measured traffic.
 fn unobserved_links(
-    positions: &[Pos2],
+    positions: &[Placement],
     unit: f32,
     palette: &toolkit::chrome::Palette,
 ) -> Vec<Shape> {
     let mut shapes = Vec::new();
     for i in 1..positions.len() {
         for j in i + 1..positions.len() {
-            let points = curve(positions[i], positions[j], -unit * 2.0);
+            let a = positions[i];
+            let b = positions[j];
+            let delta = b.at - a.at;
+            let normal = Vec2::new(-delta.y, delta.x) / delta.length().max(1.0);
+            let control = a.at + delta * 0.5 - normal * unit * 2.0;
+            let start = a.at + (control - a.at).normalized() * a.radius;
+            let end = b.at + (control - b.at).normalized() * b.radius;
+            let points = curve(start, end, -unit * 2.0);
             shapes.extend(Shape::dashed_line(
                 &points,
                 Stroke::new(unit * 0.06, palette.separator),
@@ -242,36 +353,45 @@ pub fn view(
     toolkit::canvas::surround(ui, rect);
     let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
     let centre = rect.center();
-    let peers = mesh.nodes.len().saturating_sub(1);
-    let positions: Vec<_> = mesh
+    let padding = unit * 0.3;
+    let labels: Vec<_> = mesh
         .nodes
         .iter()
-        .enumerate()
-        .map(|(i, _)| {
-            if i == 0 {
-                centre
-            } else {
-                let angle = -std::f32::consts::FRAC_PI_2
-                    + (i - 1) as f32 * std::f32::consts::TAU / peers.max(1) as f32;
-                centre
-                    + Vec2::new(
-                        angle.cos() * rect.width() * 0.36,
-                        angle.sin() * rect.height() * 0.32,
-                    )
-            }
+        .map(|node| {
+            let text = |value: &str, style: egui::TextStyle| {
+                toolkit::tabs::label(
+                    ui,
+                    value,
+                    style.resolve(ui.style()),
+                    rect.width() * 0.25,
+                    0.0,
+                )
+                .0
+            };
+            let name = text(&node.name, egui::TextStyle::Body);
+            let ip = node
+                .wg_ip
+                .as_deref()
+                .map(|ip| text(ip, egui::TextStyle::Small));
+            let size = Vec2::new(
+                name.size().x.max(ip.as_ref().map_or(0.0, |g| g.size().x)),
+                name.size().y + ip.as_ref().map_or(0.0, |g| g.size().y + padding),
+            ) + Vec2::splat(padding * 2.0);
+            NodeLabel { name, ip, size }
         })
         .collect();
+    let positions = map_layout(
+        rect,
+        &labels.iter().map(|l| l.size).collect::<Vec<_>>(),
+        unit,
+    );
     painter.extend(unobserved_links(&positions, unit, p));
     let links = snapshot["links"].as_array().unwrap();
     let mut curves = Vec::new();
     for (i, node) in mesh.nodes.iter().enumerate().skip(1) {
         let link = links.iter().find(|link| link["b"] == node.name);
         for out in [true, false] {
-            let points = if out {
-                curve(centre, positions[i], unit * 1.8)
-            } else {
-                curve(positions[i], centre, unit * 1.8)
-            };
+            let points = spoke(positions[0], positions[i], out, unit);
             let count = link
                 .map(|link| number(link, if out { "out_5m" } else { "in_5m" }))
                 .unwrap_or(0);
@@ -324,7 +444,9 @@ pub fn view(
         && ui.rect_contains_pointer(rect)
         && ui.input(|i| i.pointer.primary_clicked())
         && let Some(pointer) = ui.input(|i| i.pointer.interact_pos())
-        && !positions.iter().any(|p| p.distance(pointer) < unit * 1.7)
+        && !positions
+            .iter()
+            .any(|p| p.at.distance(pointer) < p.radius * 1.25 || p.label.contains(pointer))
     {
         let closest = curves
             .iter()
@@ -422,9 +544,12 @@ pub fn view(
 
     let mut panel_node = 0;
     for (i, node) in mesh.nodes.iter().enumerate() {
-        let at = positions[i];
-        let radius = unit * if node.local { 1.3 } else { 0.9 };
-        let hit = Rect::from_center_size(at, Vec2::splat(radius * 2.5));
+        let Placement {
+            at,
+            radius,
+            label: plate,
+        } = positions[i];
+        let hit = Rect::from_center_size(at, Vec2::splat(radius * 2.5)).union(plate);
         let response = ui.interact(hit, ui.id().with(("mesh-node", &node.name)), Sense::click());
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &node.name)
@@ -450,22 +575,6 @@ pub fn view(
             radius * 0.25,
             if node.local { p.accent } else { p.text_dim },
         );
-        painter.text(
-            at + Vec2::new(0.0, radius + unit * 0.7),
-            egui::Align2::CENTER_CENTER,
-            &node.name,
-            egui::TextStyle::Body.resolve(ui.style()),
-            p.text,
-        );
-        if let Some(ip) = &node.wg_ip {
-            painter.text(
-                at + Vec2::new(0.0, radius + unit * 1.65),
-                egui::Align2::CENTER_CENTER,
-                ip,
-                egui::TextStyle::Small.resolve(ui.style()),
-                p.text_dim,
-            );
-        }
         if response.clicked() {
             let key = format!("node:{}", node.name);
             if let Some(row) = inspector::engine::find(&engine.tree(), &key) {
@@ -480,6 +589,22 @@ pub fn view(
                     children: Vec::new(),
                 }));
             }
+        }
+    }
+    // Plates paint after all links, particles and circles, keeping labels legible
+    // even where an unobserved peer-pair link passes behind them.
+    for (placement, text) in positions.iter().zip(labels) {
+        let plate = placement.label;
+        painter.rect_filled(plate, chrome.style.square_radius, p.card);
+        let name_at = egui::pos2(
+            plate.center().x - text.name.size().x * 0.5,
+            plate.top() + padding,
+        );
+        let ip_y = name_at.y + text.name.size().y + padding;
+        painter.galley(name_at, text.name, p.text);
+        if let Some(ip) = text.ip {
+            let at = egui::pos2(plate.center().x - ip.size().x * 0.5, ip_y);
+            painter.galley(at, ip, p.text_dim);
         }
     }
     node_panel(ui, &snapshot, &mesh.nodes[panel_node]);
@@ -590,17 +715,121 @@ mod tests {
     fn clock() -> u64 {
         100_000
     }
+    fn layout(peers: usize, size: Vec2) -> Vec<Placement> {
+        map_layout(
+            Rect::from_min_size(Pos2::ZERO, size),
+            &vec![Vec2::new(104.0, 40.0); peers + 1],
+            18.0,
+        )
+    }
+
+    #[test]
+    fn one_peer_is_right_and_two_peers_span_the_available_width() {
+        let size = Vec2::new(900.0, 440.0);
+        let one = layout(1, size);
+        assert!(one[1].at.x > one[0].at.x);
+        assert_eq!(one[1].at.y, one[0].at.y);
+        let two = layout(2, size);
+        assert!(two[1].at.x < two[0].at.x);
+        assert!(two[2].at.x > two[0].at.x);
+        assert!((two[1].at.y - two[0].at.y).abs() < 0.001);
+        assert_eq!(two[2].at.y, two[0].at.y);
+        assert!(two[2].at.x - two[1].at.x > size.x * 0.68);
+        assert!(two[1].label.left() < 18.0);
+        assert!(two[2].label.right() > size.x - 18.0);
+    }
+
+    #[test]
+    fn ellipse_uses_rect_aspect_with_even_angles_and_outward_labels() {
+        use std::f32::consts::{PI, TAU};
+        for count in 3..=64 {
+            for i in 0..count {
+                let angle = peer_angle(i, count);
+                assert!(
+                    angle.cos().abs() > 0.001,
+                    "avoidable vertical peer: {count}"
+                );
+                if i > 0 {
+                    assert!((angle - peer_angle(i - 1, count) - TAU / count as f32).abs() < 0.001);
+                }
+            }
+        }
+        assert!((peer_angle(0, 4) - PI / 4.0).abs() < 0.001);
+        for size in [Vec2::new(900.0, 440.0), Vec2::new(440.0, 900.0)] {
+            let rect = Rect::from_min_size(Pos2::ZERO, size);
+            let nodes = layout(8, size);
+            let centre = nodes[0].at;
+            assert!(nodes[0].label.top() > centre.y + nodes[0].radius);
+            for node in nodes.iter().skip(1) {
+                assert!(rect.contains_rect(node.label));
+                let radial = (node.at - centre).normalized();
+                assert!((node.label.center() - node.at).normalized().dot(radial) > 0.999);
+                for corner in [
+                    node.label.min,
+                    node.label.max,
+                    node.label.left_bottom(),
+                    node.label.right_top(),
+                ] {
+                    assert!((corner - node.at).dot(radial) > node.radius);
+                }
+            }
+            let extent = nodes
+                .iter()
+                .skip(1)
+                .fold(Vec2::ZERO, |max, node| max.max((node.at - centre).abs()));
+            if size.x > size.y {
+                assert!(extent.x > extent.y * 2.0);
+            } else {
+                assert!(extent.y > extent.x * 2.0);
+            }
+        }
+    }
+
+    #[test]
+    fn spokes_meet_circle_edges_and_clear_the_centre_and_peer_labels() {
+        for count in 1..=64 {
+            let nodes = layout(count, Vec2::new(700.0, 480.0));
+            let local = nodes[0];
+            for peer in nodes.iter().skip(1) {
+                let out = spoke(local, *peer, true, 18.0);
+                let input = spoke(local, *peer, false, 18.0);
+                assert!(out[0].distance(*input.last().unwrap()) > 1.0);
+                assert!(out.last().unwrap().distance(input[0]) > 1.0);
+                for (points, start, end) in [(&out, local, *peer), (&input, *peer, local)] {
+                    assert!((points[0].distance(start.at) - start.radius).abs() < 0.001);
+                    assert!((points.last().unwrap().distance(end.at) - end.radius).abs() < 0.001);
+                    for segment in points.windows(2) {
+                        let bounds = Rect::from_two_pos(segment[0], segment[1]);
+                        assert!(
+                            !bounds.intersects(local.label),
+                            "centre label crossed with {count} peers"
+                        );
+                        assert!(
+                            !bounds.intersects(peer.label),
+                            "peer label crossed with {count} peers"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn peer_pair_painter_draws_only_short_unobserved_dashes_and_excludes_this_node() {
         let ctx = egui::Context::default();
         toolkit::install(&ctx, &toolkit::Theme::embedded());
         let chrome = Chrome::of(&ctx);
-        let positions = [
+        let centres = [
             egui::pos2(-100.0, -100.0),
             egui::pos2(0.0, 0.0),
             egui::pos2(100.0, 0.0),
         ];
         let unit = 10.0;
+        let positions = centres.map(|at| Placement {
+            at,
+            radius: unit * 0.9,
+            label: Rect::NOTHING,
+        });
         let shapes = unobserved_links(&positions, unit, &chrome.palette);
         assert!(!shapes.is_empty());
         for shape in shapes {
@@ -613,7 +842,9 @@ mod tests {
             for point in points {
                 assert!((-0.001..=100.001).contains(&point.x));
                 assert!(point.y <= 0.001);
-                assert!(point.distance(positions[0]) > 100.0);
+                assert!(point.distance(positions[0].at) > 100.0);
+                assert!(point.distance(positions[1].at) >= positions[1].radius - 0.001);
+                assert!(point.distance(positions[2].at) >= positions[2].radius - 0.001);
             }
         }
         assert!(unobserved_links(&positions[..2], unit, &chrome.palette).is_empty());
