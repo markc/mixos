@@ -109,7 +109,10 @@ impl Filter {
             && !has_extension
         {
             let mut name = name.to_vec();
-            name.push(b'.');
+            // A trailing dot already separates the extension: `name.` → `name.png`.
+            if name.last() != Some(&b'.') {
+                name.push(b'.');
+            }
             name.extend_from_slice(ext.as_bytes());
             return name;
         }

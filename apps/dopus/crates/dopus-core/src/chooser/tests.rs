@@ -409,7 +409,7 @@ fn single_pattern_extension_is_save_only_and_preserves_existing_extensions() {
         (b"photo.jpg", b"photo.jpg"),
         (b"image.PNG", b"image.PNG"),
         (b"image.png", b"image.png"),
-        (b"name.", b"name..png"),
+        (b"name.", b"name.png"),
         (b".bashrc", b".bashrc.png"),
         (b".config.json", b".config.json"),
         (b"name.ext.", b"name.ext."),
@@ -426,7 +426,7 @@ fn single_pattern_extension_is_save_only_and_preserves_existing_extensions() {
         ("archive", "archive.tar.gz"),
         ("archive.tar", "archive.tar"),
         ("archive.tar.gz", "archive.tar.gz"),
-        ("name.", "name..tar.gz"),
+        ("name.", "name.tar.gz"),
         (".bashrc", ".bashrc.tar.gz"),
     ] {
         assert_eq!(compound.save_name(typed.as_bytes()), expected.as_bytes());
