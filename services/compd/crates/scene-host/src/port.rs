@@ -296,7 +296,7 @@ impl Port {
             });
         let (ui, lane) = bridge(Session::new(consumer), settings_worker);
         let registry = RegistryMailbox::default();
-        let worker_registry = Arc::clone(&registry);
+        let worker_registry = registry.clone();
         let (inbound_tx, inbound) = mpsc::sync_channel(INBOUND_CAPACITY);
         let (outbound, outbound_rx) = tokio_mpsc::unbounded_channel();
         let (events, events_rx) = tokio_mpsc::unbounded_channel();
@@ -1038,7 +1038,9 @@ async fn registry_read(
     };
     let live = settings::native::live_generation(&client);
     if live != Some(generation) {
-        diagnostics.record(format!("read dropped: generation={generation} live={live:?}"));
+        diagnostics.record(format!(
+            "read dropped: generation={generation} live={live:?}"
+        ));
         tracing::warn!(
             generation,
             ?live,
@@ -1403,13 +1405,8 @@ mod tests {
             let (mut port, mut wake) = menu_registry_port(&url, cache.path());
             // No scenes have been loaded: the baseline is the whole broker
             // registry, including an app already running before compd starts.
-            let names = wait_menu_registry(
-                &port,
-                &mut wake,
-                app_first,
-                &format!("{case}/baseline"),
-            )
-            .await;
+            let names =
+                wait_menu_registry(&port, &mut wake, app_first, &format!("{case}/baseline")).await;
             assert!(names.contains("shell"));
             if !app_first {
                 app = Some(
@@ -1426,13 +1423,7 @@ mod tests {
             let (mut restarted, mut wake) = menu_registry_port(&url, cache.path());
             // The app did not reconnect. A subscribe-only host cannot pass:
             // the registry topic is not retained; it needs an initial read.
-            wait_menu_registry(
-                &restarted,
-                &mut wake,
-                true,
-                &format!("{case}/host-restart"),
-            )
-            .await;
+            wait_menu_registry(&restarted, &mut wake, true, &format!("{case}/host-restart")).await;
             app.unwrap().close().await;
             wait_menu_registry(
                 &restarted,
