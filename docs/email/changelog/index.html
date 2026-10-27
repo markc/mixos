@@ -240,6 +240,20 @@
 <h2 id="unreleased">Unreleased</h2>
 <ul>
 <li>
+<p>Open and save inert mail documents from compose's File menu (Ctrl+O,
+Ctrl+Shift+S), with replace questions and background file I/O. Remember the
+Open/Save folder for the session, initially XDG Documents or Home.</p>
+</li>
+<li>
+<p>Accept <code>document</code> paths on <code>email.compose</code> and <code>email.send</code>; refuse mixed
+inline fields, unowned From/Reply-To identities and each format error with
+distinct codes. Drops open mail documents and never send them; other
+Markdown stays an attachment while composing. Drafts remain private JSON.</p>
+</li>
+<li>
+<p>Send Reply-To and ordered References, including through inline Bus sends.</p>
+</li>
+<li>
 <p>Pin received attachments below the reader body, with a remembered expanded
 tile view, Save All/Open All, per-file Open/Save and transfer status.
 Message › Attachments now toggles the bar's expansion.</p>

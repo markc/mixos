@@ -378,6 +378,23 @@ so it refuses the send; <code>Email/import</code> is future work.
 choice: HTML markup, CSS and script are attack surfaces in transit and at
 the reader. Do not add HTML creation
 (<a href="/docs/decisions/2026-10-27-email-sends-no-html/">decision</a>).
+The compose dialog's <strong>File</strong> menu has <strong>Open…</strong> (Ctrl+O) and
+<strong>Save As…</strong> (Ctrl+Shift+S). They read and write <a href="/maildoc/">mail documents</a>,
+ordinary <code>.md</code> files with <code>mail-*</code> headers and a Markdown body. Opening
+asks <strong>Replace / Cancel</strong> when the composer has content. Saving asks before
+replacing an existing file, and reports invalid headers in the composer.
+Reads and writes run in the background, bounded to 8 MiB. Both choosers
+remember their last folder this session; initially they use the XDG
+Documents folder, then Home if it is not configured.
+<code>email.compose {document: "/home/user/message.md"}</code> opens a composer;
+<code>email.send {document: "/home/user/message.md"}</code> deliberately sends it.
+<code>account</code> may accompany <code>document</code>; inline message fields may not
+(<code>DOCUMENT_INLINE</code>). From and Reply-To must match identities in that
+account (<code>IDENTITY_MISMATCH</code>); an omitted From uses its default identity.
+Reply-To and ordered References are written into the MIME headers.
+A dropped <code>.md</code> mail document opens a composer and never sends. Ordinary
+Markdown joins the attachments while composing; otherwise its format
+refusal appears in the status line. Local drafts remain private JSON.
 <code>email.compose</code> and <code>email.send</code> accept <code>attachments: ["/home/user/report.pdf"]</code>.
 Paths must be absolute, readable regular files; symlinks are followed.
 Compose and local drafts keep the paths, never the file contents. Restoring
@@ -401,7 +418,7 @@ the total line shows its estimated size and the account or default limit.
 Files are checked when compose opens, on removal, after a failed send
 and just before Send, with no polling. Text edits and sender changes update the
 size warning from cached file sizes. A draft whose file has vanished shows
-it as missing on restore, keeping its path. There is no file picker yet.
+it as missing on restore, keeping its path.
 Attached files follow the plain text part in <code>multipart/mixed</code>, with MIME
 types guessed from names and leading bytes by the shared desktop MIME
 database on the send worker. The estimate loads no MIME database and reads
@@ -588,8 +605,8 @@ never waits on them.</p>
 <tr><td><code>email.contacts.suggest {text, limit?}</code></td><td>query</td><td>address completions for <code>text</code>: contacts first, then addresses the account has seen; at most <code>limit</code> (8)</td></tr>
 <tr><td><code>email.print {id?}</code></td><td>intent</td><td>write the print page (the open email by default) and open it in the browser; answers <code>{path, opened}</code></td></tr>
 <tr><td><code>email.junk {ids, junk}</code></td><td>intent</td><td>move to the Junk mailbox (<code>junk: true</code>) or back to the inbox; maild trains spam or ham on the move; answers <code>{ids, mailbox}</code></td></tr>
-<tr><td><code>email.send {to, cc?, bcc?, subject, body, in_reply_to?, attachments?}</code></td><td>intent</td><td>send without the dialog; attachments are absolute file paths</td></tr>
-<tr><td><code>email.compose {to?, cc?, bcc?, reply_to?, subject?, body?, attachments?}</code></td><td>intent</td><td>open compose with optional absolute attachment paths; Send reads the files</td></tr>
+<tr><td><code>email.send {document?, from?, to?, cc?, bcc?, reply_to?, subject?, body?, in_reply_to?, references?, attachments?}</code></td><td>intent</td><td>send a mail document or inline fields (To and subject required); From/Reply-To must be owned identity addresses; references is an ordered string or list; attachments are absolute paths read at send time</td></tr>
+<tr><td><code>email.compose {document?, to?, cc?, bcc?, reply_to?, subject?, body?, in_reply_to?, references?, attachments?}</code></td><td>intent</td><td>open a mail document or inline fields; document excludes inline fields; Send reads attachment paths</td></tr>
 <tr><td><code>email.compose.attachment.add {paths:["/home/user/report.pdf"]}</code></td><td>intent</td><td>add to the open compose in order, omitting duplicate paths; no compose: <code>NOT_FOUND</code>, sending: <code>BUSY</code>; relative, non-regular or unreadable paths use <code>ATTACHMENT_RELATIVE</code>, <code>ATTACHMENT_NOT_FILE</code> or <code>ATTACHMENT_UNREADABLE</code>; an invalid batch changes nothing; answers <code>{compose}</code></td></tr>
 <tr><td><code>email.compose.attachment.remove {path}</code></td><td>intent</td><td>remove all occurrences of the exact path from the open compose; no compose or unknown path: <code>NOT_FOUND</code>, sending: <code>BUSY</code>; answers <code>{compose}</code></td></tr>
 <tr><td><code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose dialog, filled in</td></tr>

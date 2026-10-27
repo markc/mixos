@@ -863,7 +863,8 @@ impl Shell {
         match work {
             Work::MailDocument(work) => self.spawn(async move {
                 let (ticket, answer) = tokio::task::spawn_blocking(move || work.perform())
-                    .await.expect("mail document worker panicked");
+                    .await
+                    .expect("mail document worker panicked");
                 Event::MailDocument(ticket, answer)
             }),
             Work::InspectComposeAttachments(inspection) => {
@@ -1829,7 +1830,9 @@ impl Shell {
                     errors.push(label("compose-drop-no-path"));
                 }
             }
-            if !paths.is_empty() { self.state.drop_files(paths); }
+            if !paths.is_empty() {
+                self.state.drop_files(paths);
+            }
             if !errors.is_empty() {
                 self.state.attachment_notice = Some(errors.join("\n"));
             }

@@ -6237,9 +6237,16 @@ impl State {
     /// Send the open compose, when its recipients and attachments are valid.
     pub fn send_compose(&mut self) {
         if let Some(compose) = &self.compose
-            && let Err((_, message)) = crate::documents::identity(self, &compose.account,
-                Some(&compose.draft.from), compose.draft.reply_to.as_deref()) {
-            if let Some(compose) = &mut self.compose { compose.error = Some(message); }
+            && let Err((_, message)) = crate::documents::identity(
+                self,
+                &compose.account,
+                Some(&compose.draft.from),
+                compose.draft.reply_to.as_deref(),
+            )
+        {
+            if let Some(compose) = &mut self.compose {
+                compose.error = Some(message);
+            }
             return;
         }
         if self

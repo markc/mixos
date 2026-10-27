@@ -162,7 +162,12 @@ pub fn dialog(
         .show(ui.ctx(), |ui| {
             events.extend(
                 commands
-                    .menu_bar_for(ui, state, strings, &["compose-file-menu", "compose-attachments-menu"])
+                    .menu_bar_for(
+                        ui,
+                        state,
+                        strings,
+                        &["compose-file-menu", "compose-attachments-menu"],
+                    )
                     .into_iter()
                     .map(|(id, origin)| UiEvent::Command(id, origin)),
             );
@@ -178,9 +183,13 @@ pub fn dialog(
     if state.documents.replace.is_some() {
         let id = egui::Id::unique("compose-document-replace");
         let shown = dialog::Dialog::new(id, crate::label("document-replace-title"))
-            .buttons(vec![Choice::new(crate::label("document-replace"), dialog::Role::Default),
-                Choice::new(crate::label("cancel"), dialog::Role::Cancel)])
-            .show(ui.ctx(), |ui| { ui.label(crate::label("document-replace-body")); });
+            .buttons(vec![
+                Choice::new(crate::label("document-replace"), dialog::Role::Default),
+                Choice::new(crate::label("cancel"), dialog::Role::Cancel),
+            ])
+            .show(ui.ctx(), |ui| {
+                ui.label(crate::label("document-replace-body"));
+            });
         if shown.chosen.is_some() || shown.dismissed {
             dialog::Dialog::reset(ui.ctx(), id);
             events.push(UiEvent::DocumentReplace(shown.chosen == Some(0)));

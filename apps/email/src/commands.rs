@@ -265,13 +265,13 @@ pub const COMMANDS: &[Command] = &[
     command_spec(
         "email.send",
         false,
-        r#"{"account":"optional account id","to":"addresses","cc":"optional addresses","bcc":"optional addresses","subject":"string","body":"string","in_reply_to":"optional Message-ID","attachments":"optional list of absolute file paths"}"#,
+        r#"{"account":"optional account id","document":"optional absolute mail document path; excludes all inline message fields","from":"optional owned identity address","to":"addresses","cc":"optional addresses","bcc":"optional addresses","reply_to":"optional owned identity address","subject":"string","body":"string","in_reply_to":"optional Message-ID","references":"optional ordered Message-ID string or list","attachments":"optional list of absolute file paths"}"#,
         "Send an email without the dialog",
     ),
     command_spec(
         "email.compose",
         false,
-        r#"{"account":"optional account id","to":"optional addresses","cc":"optional addresses","bcc":"optional addresses","reply_to":"optional address (absent: the identity's)","subject":"optional string","body":"optional string","attachments":"optional list of absolute file paths"}"#,
+        r#"{"account":"optional account id","document":"optional absolute mail document path; excludes all inline message fields","to":"optional addresses","cc":"optional addresses","bcc":"optional addresses","reply_to":"optional address (absent: the identity's)","subject":"optional string","body":"optional string","in_reply_to":"optional Message-ID","references":"optional ordered Message-ID string or list","attachments":"optional list of absolute file paths"}"#,
         "Open the compose dialog, filled in",
     ),
     command_spec(
@@ -1017,15 +1017,37 @@ fn dispatch(
         state.query(account, id, query, Then::Answer);
     };
     if matches!(command_name, "email.compose" | "email.send") && args.get("document").is_some() {
-        if ["to", "cc", "bcc", "from", "from_name", "reply_to", "subject", "body", "attachments", "in_reply_to", "references"]
-            .iter().any(|key| args.get(key).is_some()) {
+        if [
+            "to",
+            "cc",
+            "bcc",
+            "from",
+            "from_name",
+            "reply_to",
+            "subject",
+            "body",
+            "attachments",
+            "in_reply_to",
+            "references",
+        ]
+        .iter()
+        .any(|key| args.get(key).is_some())
+        {
             return Err(Bad(code::DOCUMENT_INLINE, crate::label("document-inline")));
         }
         let send = command_name == "email.send";
-        let account = if send { connected(state, args)? } else { account(state, args)? };
-        if !send && state.compose.is_some() { return Err(Bad(code::BUSY, crate::label("compose-open"))); }
+        let account = if send {
+            connected(state, args)?
+        } else {
+            account(state, args)?
+        };
+        if !send && state.compose.is_some() {
+            return Err(Bad(code::BUSY, crate::label("compose-open")));
+        }
         let path = std::path::PathBuf::from(required(args, "document")?);
-        state.read_document(account, path, Some(id), send, false).map_err(|(c, m)| Bad(c, m))?;
+        state
+            .read_document(account, path, Some(id), send, false)
+            .map_err(|(c, m)| Bad(c, m))?;
         return Ok(());
     }
     match command_name {
@@ -1340,6 +1362,9 @@ fn dispatch(
                 subject: text(args, "subject")?.unwrap_or_default(),
                 body: text(args, "body")?.unwrap_or_default(),
                 attachments: attachment_paths(args)?,
+                in_reply_to: text(args, "in_reply_to")?,
+                references: list(args, "references")?.unwrap_or_default().iter()
+                    .flat_map(|v| v.split_whitespace().map(str::to_owned)).collect(),
                 ..Composed::default()
             };
             // The identity sets Reply-To; an explicit one replaces it.

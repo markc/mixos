@@ -10,6 +10,15 @@ generated: by docs/_build/gen-site.mix from apps/email/CHANGELOG.md; do not edit
 
 ## Unreleased
 
+- Open and save inert mail documents from compose's File menu (Ctrl+O,
+  Ctrl+Shift+S), with replace questions and background file I/O. Remember the
+  Open/Save folder for the session, initially XDG Documents or Home.
+- Accept `document` paths on `email.compose` and `email.send`; refuse mixed
+  inline fields, unowned From/Reply-To identities and each format error with
+  distinct codes. Drops open mail documents and never send them; other
+  Markdown stays an attachment while composing. Drafts remain private JSON.
+- Send Reply-To and ordered References, including through inline Bus sends.
+
 - Pin received attachments below the reader body, with a remembered expanded
   tile view, Save All/Open All, per-file Open/Save and transfer status.
   Message › Attachments now toggles the bar's expansion.

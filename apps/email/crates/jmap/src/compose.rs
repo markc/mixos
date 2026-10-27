@@ -239,8 +239,15 @@ fn render_mime(composed: &Composed, message_id: &str, parts: &[String]) -> Vec<u
     } else {
         composed.references.iter().collect::<Vec<_>>()
     };
-    header(&mut mime, "References", &references.into_iter()
-        .map(|id| one_wrap(&clean(id))).collect::<Vec<_>>().join(" "));
+    header(
+        &mut mime,
+        "References",
+        &references
+            .into_iter()
+            .map(|id| one_wrap(&clean(id)))
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
     mime.push_str("MIME-Version: 1.0\r\n");
     if !parts.is_empty() {
         let text = text_part(&composed.body);
@@ -1361,6 +1368,23 @@ mod tests {
         assert!(!mime.contains("\nBcc: eve"));
         // Each stripped control character leaves one space.
         assert!(mime.contains("Subject: Hi  Bcc: eve@example.invalid\r\n"));
+    }
+
+    #[test]
+    fn references_are_ordered_sanitised_and_part_of_the_retry_fingerprint() {
+        let draft = Composed {
+            references: vec!["first@example.invalid".into(), "<second@example.invalid>".into()],
+            reply_to: Some("bob@example.invalid\r\nBcc: eve@example.invalid".into()),
+            ..composed()
+        };
+        let mime = String::from_utf8(build_mime(&draft).unwrap()).unwrap();
+        assert!(mime.contains("References: <first@example.invalid> <second@example.invalid>\r\n"));
+        assert!(mime.contains("Reply-To: bob@example.invalid  Bcc: eve@example.invalid\r\n"));
+        assert!(!mime.contains("\nBcc:"));
+        let injected = Composed { references: vec!["one\r\nBcc: eve@example.invalid".into()], ..draft };
+        let mime = String::from_utf8(build_mime(&injected).unwrap()).unwrap();
+        assert!(!mime.contains("\nBcc:"));
+        assert!(mime.contains("References: <one  Bcc: eve@example.invalid>\r\n"));
     }
 
     #[test]

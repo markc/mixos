@@ -167,22 +167,41 @@ impl FileChooser {
     }
 
     /// Choose exactly one existing file.
-    pub fn single(start: impl Into<PathBuf>, title: impl Into<String>, confirm: impl Into<String>) -> Self {
-        Self { mode: Mode::Single, ..Self::new(start, title, confirm) }
+    pub fn single(
+        start: impl Into<PathBuf>,
+        title: impl Into<String>,
+        confirm: impl Into<String>,
+    ) -> Self {
+        Self {
+            mode: Mode::Single,
+            ..Self::new(start, title, confirm)
+        }
     }
 
     /// Choose a destination; no file is written by the chooser. A replacement
     /// is returned only after the person explicitly accepts its question.
-    pub fn save(start: impl Into<PathBuf>, title: impl Into<String>, confirm: impl Into<String>) -> Self {
-        Self { mode: Mode::Save, ..Self::new(start, title, confirm) }
+    pub fn save(
+        start: impl Into<PathBuf>,
+        title: impl Into<String>,
+        confirm: impl Into<String>,
+    ) -> Self {
+        Self {
+            mode: Mode::Save,
+            ..Self::new(start, title, confirm)
+        }
     }
 
-    pub fn directory(&self) -> &Path { &self.directory }
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
 
     fn can_confirm(&self) -> bool {
-        self.pending.is_none() && if self.mode == Mode::Save {
-            save_path(&self.directory, &self.name).is_ok()
-        } else { !self.selection.files.is_empty() }
+        self.pending.is_none()
+            && if self.mode == Mode::Save {
+                save_path(&self.directory, &self.name).is_ok()
+            } else {
+                !self.selection.files.is_empty()
+            }
     }
 
     /// Show above the current modal; return once the person picks or cancels.
@@ -200,8 +219,15 @@ impl FileChooser {
                         Ok(Answer::Picked(paths)) => {
                             if self.mode == Mode::Save {
                                 if let Some(path) = paths.first() {
-                                    self.name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-                                    self.open(ctx, path.parent().unwrap_or(&self.directory).to_owned());
+                                    self.name = path
+                                        .file_name()
+                                        .unwrap_or_default()
+                                        .to_string_lossy()
+                                        .into_owned();
+                                    self.open(
+                                        ctx,
+                                        path.parent().unwrap_or(&self.directory).to_owned(),
+                                    );
                                 }
                                 return None;
                             }
@@ -211,7 +237,10 @@ impl FileChooser {
                         Ok(Answer::Save(path, true)) => self.replace = Some(path),
                         Ok(Answer::Save(path, false)) => {
                             Dialog::reset(ctx, self.id);
-                            return Some(Outcome::Save { path, replace: false });
+                            return Some(Outcome::Save {
+                                path,
+                                replace: false,
+                            });
                         }
                         Ok(Answer::Listed(listing)) => {
                             self.browsing = None;
@@ -241,8 +270,7 @@ impl FileChooser {
         let layer = egui::LayerId::new(egui::Order::Foreground, self.id);
         ctx.move_to_top(layer);
         let choices = vec![
-            Choice::new(&self.confirm, Role::Default)
-                .enabled(self.can_confirm()),
+            Choice::new(&self.confirm, Role::Default).enabled(self.can_confirm()),
             Choice::new(own("file-chooser-cancel"), Role::Cancel),
         ];
         let shown = Dialog::new(self.id, &self.title)
@@ -263,15 +291,25 @@ impl FileChooser {
         if let Some(path) = self.replace.clone() {
             let id = self.id.with("replace");
             let shown = Dialog::new(id, own("file-chooser-replace-title"))
-                .buttons(vec![Choice::new(own("file-chooser-replace"), Role::Default),
-                    Choice::new(own("file-chooser-cancel"), Role::Cancel)])
-                .show(ctx, |ui| { ui.label(own_with("file-chooser-replace-body", &[("path", &path.display().to_string())])); });
+                .buttons(vec![
+                    Choice::new(own("file-chooser-replace"), Role::Default),
+                    Choice::new(own("file-chooser-cancel"), Role::Cancel),
+                ])
+                .show(ctx, |ui| {
+                    ui.label(own_with(
+                        "file-chooser-replace-body",
+                        &[("path", &path.display().to_string())],
+                    ));
+                });
             if shown.chosen.is_some() || shown.dismissed {
                 Dialog::reset(ctx, id);
                 self.replace = None;
                 if shown.chosen == Some(0) {
                     Dialog::reset(ctx, self.id);
-                    return Some(Outcome::Save { path, replace: true });
+                    return Some(Outcome::Save {
+                        path,
+                        replace: true,
+                    });
                 }
             }
         }
@@ -303,7 +341,14 @@ impl FileChooser {
             self.open(&ctx, resolve_path(&self.directory, &self.path, &home()));
         }
         if self.mode == Mode::Save {
-            ui.add(field::text_edit(&mut self.name, &own("file-chooser-name"), ui.available_width()).id(self.id.with("name")));
+            ui.add(
+                field::text_edit(
+                    &mut self.name,
+                    &own("file-chooser-name"),
+                    ui.available_width(),
+                )
+                .id(self.id.with("name")),
+            );
         }
         ui.horizontal(|ui| {
             if ui
@@ -367,7 +412,12 @@ impl FileChooser {
                         None if down => 0,
                         None => self.entries.len() - 1,
                     };
-                    self.selection.click(at, false, shift && self.mode == Mode::Multiple, &self.entries);
+                    self.selection.click(
+                        at,
+                        false,
+                        shift && self.mode == Mode::Multiple,
+                        &self.entries,
+                    );
                     self.scroll_to_cursor = true;
                 }
                 activate = i.consume_key(Modifiers::NONE, Key::Enter);
@@ -478,8 +528,11 @@ impl FileChooser {
                 &self.entries,
             );
         }
-        if self.mode == Mode::Save && let Some(at) = self.selection.cursor
-            && !self.entries[at].directory && (clicked.is_some() || self.scroll_to_cursor) {
+        if self.mode == Mode::Save
+            && let Some(at) = self.selection.cursor
+            && !self.entries[at].directory
+            && (clicked.is_some() || self.scroll_to_cursor)
+        {
             self.name = self.entries[at].name.clone();
         }
         self.scroll_to_cursor = false;
@@ -489,7 +542,9 @@ impl FileChooser {
             if self.entries[at].directory {
                 self.open(&ctx, self.entries[at].path.clone());
             } else {
-                if self.mode == Mode::Save { self.name = self.entries[at].name.clone(); }
+                if self.mode == Mode::Save {
+                    self.name = self.entries[at].name.clone();
+                }
                 if self.selection.files.is_empty() {
                     self.selection.click(at, false, false, &self.entries);
                 }
@@ -582,17 +637,27 @@ fn check_save(path: PathBuf) -> Result<Answer, String> {
 /// Resolve XDG's Documents folder on a worker, since user-dirs.dirs is a file.
 pub fn documents() -> PathBuf {
     let home = home();
-    if let Some(path) = std::env::var_os("XDG_DOCUMENTS_DIR").map(PathBuf::from).filter(|p| p.is_absolute()) {
+    if let Some(path) = std::env::var_os("XDG_DOCUMENTS_DIR")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+    {
         return path;
     }
-    let config = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from)
-        .filter(|p| p.is_absolute()).unwrap_or_else(|| home.join(".config"));
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .unwrap_or_else(|| home.join(".config"));
     if let Ok(text) = std::fs::read_to_string(config.join("user-dirs.dirs")) {
         for line in text.lines() {
             if let Some(value) = line.trim().strip_prefix("XDG_DOCUMENTS_DIR=") {
-                let value = value.trim().trim_matches('"').replace("$HOME", &home.to_string_lossy());
+                let value = value
+                    .trim()
+                    .trim_matches('"')
+                    .replace("$HOME", &home.to_string_lossy());
                 let path = PathBuf::from(value);
-                if path.is_absolute() { return path; }
+                if path.is_absolute() {
+                    return path;
+                }
             }
         }
     }
@@ -757,14 +822,18 @@ mod tests {
         assert!(chooser.can_confirm());
         let path = save_path(dir.path(), &chooser.name).unwrap();
         assert_eq!(path, dir.path().join("mail.md"));
-        assert!(matches!(check_save(path.clone()), Ok(Answer::Save(_, false))));
+        assert!(matches!(
+            check_save(path.clone()),
+            Ok(Answer::Save(_, false))
+        ));
         std::fs::write(&path, "old").unwrap();
         assert!(matches!(check_save(path), Ok(Answer::Save(_, true))));
         assert!(check_save(dir.path().to_owned()).is_err());
     }
 
     fn save_fixture() -> FileChooser {
-        let mut chooser = FileChooser::save("/home/user/Documents", "Save mail document as", "Save");
+        let mut chooser =
+            FileChooser::save("/home/user/Documents", "Save mail document as", "Save");
         chooser.started = true;
         chooser.name = "message.md".into();
         chooser.entries = vec![entry("Reports", true), entry("notes.md", false)];
@@ -773,8 +842,14 @@ mod tests {
 
     #[test]
     fn file_chooser_save_snapshot() {
-        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(900.0, 700.0))
-            .build_ui_state(|ui, chooser: &mut FileChooser| { chooser.show(ui.ctx()); }, save_fixture());
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(900.0, 700.0))
+            .build_ui_state(
+                |ui, chooser: &mut FileChooser| {
+                    chooser.show(ui.ctx());
+                },
+                save_fixture(),
+            );
         crate::install(&h.ctx, &crate::Theme::embedded());
         h.run_steps(5);
         h.snapshot("file_chooser_save");
@@ -783,10 +858,16 @@ mod tests {
     #[test]
     fn save_existing_file_waits_for_replace_and_cancel_keeps_chooser() {
         use egui_kittest::kittest::Queryable;
-        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(900.0, 700.0))
-            .build_ui_state(|ui, state: &mut (FileChooser, Option<Outcome>)| {
-                if state.1.is_none() { state.1 = state.0.show(ui.ctx()); }
-            }, (save_fixture(), None));
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(900.0, 700.0))
+            .build_ui_state(
+                |ui, state: &mut (FileChooser, Option<Outcome>)| {
+                    if state.1.is_none() {
+                        state.1 = state.0.show(ui.ctx());
+                    }
+                },
+                (save_fixture(), None),
+            );
         crate::install(&h.ctx, &crate::Theme::embedded());
         h.run_steps(5);
         let path = PathBuf::from("/home/user/Documents/message.md");
@@ -804,7 +885,13 @@ mod tests {
         h.run();
         h.get_by_label("Replace").click();
         h.run();
-        assert_eq!(h.state().1, Some(Outcome::Save { path, replace: true }));
+        assert_eq!(
+            h.state().1,
+            Some(Outcome::Save {
+                path,
+                replace: true
+            })
+        );
     }
 
     #[test]

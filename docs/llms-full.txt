@@ -9270,6 +9270,23 @@ A malformed file loads defaults and is never overwritten.
   choice: HTML markup, CSS and script are attack surfaces in transit and at
   the reader. Do not add HTML creation
   ([decision](../docs/decisions/2026-10-27-email-sends-no-html.md)).
+  The compose dialog's **File** menu has **Open…** (Ctrl+O) and
+  **Save As…** (Ctrl+Shift+S). They read and write [mail documents](../maildoc/README.md),
+  ordinary `.md` files with `mail-*` headers and a Markdown body. Opening
+  asks **Replace / Cancel** when the composer has content. Saving asks before
+  replacing an existing file, and reports invalid headers in the composer.
+  Reads and writes run in the background, bounded to 8 MiB. Both choosers
+  remember their last folder this session; initially they use the XDG
+  Documents folder, then Home if it is not configured.
+  `email.compose {document: "/home/user/message.md"}` opens a composer;
+  `email.send {document: "/home/user/message.md"}` deliberately sends it.
+  `account` may accompany `document`; inline message fields may not
+  (`DOCUMENT_INLINE`). From and Reply-To must match identities in that
+  account (`IDENTITY_MISMATCH`); an omitted From uses its default identity.
+  Reply-To and ordered References are written into the MIME headers.
+  A dropped `.md` mail document opens a composer and never sends. Ordinary
+  Markdown joins the attachments while composing; otherwise its format
+  refusal appears in the status line. Local drafts remain private JSON.
   `email.compose` and `email.send` accept `attachments: ["/home/user/report.pdf"]`.
   Paths must be absolute, readable regular files; symlinks are followed.
   Compose and local drafts keep the paths, never the file contents. Restoring
@@ -9293,7 +9310,7 @@ A malformed file loads defaults and is never overwritten.
   Files are checked when compose opens, on removal, after a failed send
   and just before Send, with no polling. Text edits and sender changes update the
   size warning from cached file sizes. A draft whose file has vanished shows
-  it as missing on restore, keeping its path. There is no file picker yet.
+  it as missing on restore, keeping its path.
   Attached files follow the plain text part in `multipart/mixed`, with MIME
   types guessed from names and leading bytes by the shared desktop MIME
   database on the send worker. The estimate loads no MIME database and reads
@@ -9476,8 +9493,8 @@ never waits on them.
 | `email.contacts.suggest {text, limit?}` | query | address completions for `text`: contacts first, then addresses the account has seen; at most `limit` (8) |
 | `email.print {id?}` | intent | write the print page (the open email by default) and open it in the browser; answers `{path, opened}` |
 | `email.junk {ids, junk}` | intent | move to the Junk mailbox (`junk: true`) or back to the inbox; maild trains spam or ham on the move; answers `{ids, mailbox}` |
-| `email.send {to, cc?, bcc?, subject, body, in_reply_to?, attachments?}` | intent | send without the dialog; attachments are absolute file paths |
-| `email.compose {to?, cc?, bcc?, reply_to?, subject?, body?, attachments?}` | intent | open compose with optional absolute attachment paths; Send reads the files |
+| `email.send {document?, from?, to?, cc?, bcc?, reply_to?, subject?, body?, in_reply_to?, references?, attachments?}` | intent | send a mail document or inline fields (To and subject required); From/Reply-To must be owned identity addresses; references is an ordered string or list; attachments are absolute paths read at send time |
+| `email.compose {document?, to?, cc?, bcc?, reply_to?, subject?, body?, in_reply_to?, references?, attachments?}` | intent | open a mail document or inline fields; document excludes inline fields; Send reads attachment paths |
 | `email.compose.attachment.add {paths:["/home/user/report.pdf"]}` | intent | add to the open compose in order, omitting duplicate paths; no compose: `NOT_FOUND`, sending: `BUSY`; relative, non-regular or unreadable paths use `ATTACHMENT_RELATIVE`, `ATTACHMENT_NOT_FILE` or `ATTACHMENT_UNREADABLE`; an invalid batch changes nothing; answers `{compose}` |
 | `email.compose.attachment.remove {path}` | intent | remove all occurrences of the exact path from the open compose; no compose or unknown path: `NOT_FOUND`, sending: `BUSY`; answers `{compose}` |
 | `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
@@ -38011,6 +38028,15 @@ the predecessor repository at revision
 
 ## Unreleased
 
+- Open and save inert mail documents from compose's File menu (Ctrl+O,
+  Ctrl+Shift+S), with replace questions and background file I/O. Remember the
+  Open/Save folder for the session, initially XDG Documents or Home.
+- Accept `document` paths on `email.compose` and `email.send`; refuse mixed
+  inline fields, unowned From/Reply-To identities and each format error with
+  distinct codes. Drops open mail documents and never send them; other
+  Markdown stays an attachment while composing. Drafts remain private JSON.
+- Send Reply-To and ordered References, including through inline Bus sends.
+
 - Pin received attachments below the reader body, with a remembered expanded
   tile view, Save All/Open All, per-file Open/Save and transfer status.
   Message › Attachments now toggles the bar's expansion.
@@ -39255,6 +39281,9 @@ their bytes.
   as app icons give way. Registered SSD apps expose revisioned icons through
   `ui.titlebar.form`; unregistered or CSD windows keep their own bar. Shared
   Lucide sources now live in `icons`, with the same egui image loader.
+- Add single-file and save modes to the file chooser. Save has a file-name
+  field, caller-supplied confirm label and replacement question; path probes
+  stay on workers. Expose the chosen folder and XDG Documents resolution.
 
 - Add a reusable multi-file chooser with asynchronous directory/path probes,
   bounded listings and outstanding workers, keyboard navigation, hidden files,

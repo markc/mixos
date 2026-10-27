@@ -18,6 +18,9 @@
   as app icons give way. Registered SSD apps expose revisioned icons through
   `ui.titlebar.form`; unregistered or CSD windows keep their own bar. Shared
   Lucide sources now live in `icons`, with the same egui image loader.
+- Add single-file and save modes to the file chooser. Save has a file-name
+  field, caller-supplied confirm label and replacement question; path probes
+  stay on workers. Expose the chosen folder and XDG Documents resolution.
 
 - Add a reusable multi-file chooser with asynchronous directory/path probes,
   bounded listings and outstanding workers, keyboard navigation, hidden files,
