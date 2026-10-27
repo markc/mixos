@@ -119,4 +119,9 @@ fn read_only_commands_are_queries() {
             assert_eq!(class_of(name), Some("query"), "{name}");
         }
     }
+    for entry in dopus::choose::manifest() {
+        if entry.read_only && entry.name.starts_with("files.") {
+            assert_eq!(class_of(&entry.name), Some("query"), "{}", entry.name);
+        }
+    }
 }
