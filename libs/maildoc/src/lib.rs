@@ -66,9 +66,13 @@ impl fmt::Display for Refusal {
                 f,
                 "mail document is {bytes} bytes; maximum is {MAX_DOCUMENT_BYTES} bytes (8 MiB)"
             ),
-            Self::Crlf => f.write_str("mail document uses CRLF; use LF and an opening '---\\n' fence"),
+            Self::Crlf => {
+                f.write_str("mail document uses CRLF; use LF and an opening '---\\n' fence")
+            }
             Self::Framing(reason) => write!(f, "invalid mail document framing: {reason}"),
-            Self::HeaderNotAllowed(name) => write!(f, "header not allowed in a mail document: {name}"),
+            Self::HeaderNotAllowed(name) => {
+                write!(f, "header not allowed in a mail document: {name}")
+            }
             Self::MalformedHeader(line) => write!(f, "malformed mail document header: {line:?}"),
             Self::DuplicateHeader(name) => write!(f, "duplicate mail document header: {name}"),
             Self::EmptyValue(name) => write!(f, "empty {name}; omit empty headers"),
@@ -168,8 +172,8 @@ pub fn parse(text: &str) -> Result<MailDocument, Refusal> {
     } else {
         text
     };
-    let (message, report) = wire::parse_lenient(input)
-        .map_err(|err| Refusal::Framing(err.to_string()))?;
+    let (message, report) =
+        wire::parse_lenient(input).map_err(|err| Refusal::Framing(err.to_string()))?;
     if let Some((_, line)) = report.skipped_lines.first() {
         return Err(Refusal::MalformedHeader(line.clone()));
     }
@@ -273,7 +277,11 @@ pub fn write(document: &MailDocument) -> String {
             set(&mut message, name, value);
         }
     }
-    set(&mut message, "mail-references", &document.references.join(" "));
+    set(
+        &mut message,
+        "mail-references",
+        &document.references.join(" "),
+    );
     if !document.attachments.is_empty() {
         message.set(
             "mail-attachments",
