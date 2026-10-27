@@ -76,6 +76,15 @@ pub fn init(
     stats_opts: &StatsOpts,
     defaults: LogDefaults,
 ) -> Result<LogHandle, LogError> {
+    init_inner(opts, stats_opts, defaults, None)
+}
+
+pub(crate) fn init_inner(
+    opts: &LogOpts,
+    stats_opts: &StatsOpts,
+    defaults: LogDefaults,
+    live_filter: Option<EnvFilter>,
+) -> Result<LogHandle, LogError> {
     let effective_level = opts.log_level.unwrap_or(defaults.level);
 
     // Short-circuit (install no subscriber) only when the resolved
@@ -130,7 +139,10 @@ pub fn init(
     // which is still satisfied.
     let short_circuit_subscriber = !env_log_set && !cli_filter_set && !baseline_wants_subscriber;
 
-    let filter_opt = if short_circuit_subscriber {
+    let live_debug = live_filter.is_some();
+    let filter_opt = if live_filter.is_some() {
+        live_filter
+    } else if short_circuit_subscriber {
         debug_assert_eq!(effective_level, LogLevel::None);
         None
     } else {
@@ -224,7 +236,7 @@ pub fn init(
         TriState::Always => true,
         TriState::Never => false,
         TriState::Auto => !journald_active,
-    };
+    } || (live_debug && journald_on && !journald_active);
     let stderr_layer = if stderr_on {
         Some(make_fmt_layer(
             format,

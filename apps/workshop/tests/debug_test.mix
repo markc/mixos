@@ -1,0 +1,58 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- A real headless Workshop, an owned broker, and the worker's journal.
+-- Run from the repository root: mix apps/workshop/tests/debug_test.mix BIN_DIR
+$pb = require("../../../tests/lib/private_bus.mix")
+$bin = args()[0]
+$dir = trim(run_argv_must(["mktemp", "-d", "/var/tmp/workshop-debug.XXXXXX"]))
+$bus = nil
+$child = nil
+fn expect($ok, $message)
+  if not $ok then raise("DEBUG_TEST", $message) end
+end
+fn call_debug($suffix, $body)
+  $command = "workshop-debug-test.debug" .. $suffix
+  send workshop-debug-test $command body=$body timeout=3
+  expect($rc == 0, $command .. ": " .. to_string($result))
+  $value = $result
+  if type($value) == "string" then $value = json_parse($value) end
+  return $value
+end
+try
+  $bus = $pb.start({dir: $dir, name: "debug-test", noded: $bin .. "/noded"})
+  $child = spawn([$bin .. "/workshop", "--headless", "--service", "workshop-debug-test"],
+    {detach: true, env: merge($pb.client_env($bus), {HOME: $dir .. "/home", RUST_LOG: "warn", MIXOS_APP_HOME: $dir .. "/app"}),
+      stdout: {file: $dir .. "/workshop.log"}, stderr: "stdout"})
+  $ready = false
+  for $attempt = 1 to 100
+    send workshop-debug-test workshop-debug-test.debug timeout=1
+    if $rc == 0 then $ready = true; break end
+    expect(process_alive($child), "Workshop exited; " .. read_file($dir .. "/workshop.log"))
+    sleep(0.1)
+  end
+  expect($ready, "Workshop debug service did not register")
+  $initial = call_debug("", {})
+  expect($initial.level == "warn" and $initial.baseline == "warn", "baseline: " .. json_encode($initial))
+  $enabled = call_debug(".set", {on: true})
+  expect($enabled.on and $enabled.level == "debug", "enable: " .. json_encode($enabled))
+  $journal = ""
+  for $attempt = 1 to 50
+    $journal = run_argv_must(["journalctl", "--no-pager", "-t", "workshop", "_PID=" .. to_string($child), "-o", "json"])
+    if contains($journal, "debug mode changed") then break end
+    sleep(0.1)
+  end
+  expect(contains($journal, "debug mode changed"), "no debug event under journalctl -t workshop for the child PID")
+  expect(contains($journal, '"PRIORITY":"7"'), "journal event is not debug priority")
+  $disabled = call_debug(".set", {on: false})
+  expect(not $disabled.on and $disabled.filter == $initial.baseline, "baseline was not restored")
+  for $level in ["off", "error", "warn", "info", "debug", "trace"]
+    $state = call_debug(".set", {level: $level})
+    expect($state.level == $level, "set level " .. $level)
+    expect(call_debug("", {}).level == $level, "query level " .. $level)
+  end
+  call_debug(".set", {on: false})
+  print("PASS workshop debug: live alias, six levels, baseline restoration and journald identifier/priority")
+finally
+  if $child != nil and process_alive($child) then kill($child) end
+  if $bus != nil then $pb.stop($bus) end
+  print("debug test evidence: " .. $dir)
+end

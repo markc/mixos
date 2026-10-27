@@ -26,6 +26,7 @@
 //!   (or `RUST_LOG`) can raise it without restarting the binary.
 
 mod defaults;
+pub mod debug;
 mod handle;
 mod init;
 mod opts;

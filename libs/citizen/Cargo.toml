@@ -26,6 +26,7 @@ mod_module_files = "deny"
 testing = []
 
 [dependencies]
+logging.workspace = true
 bus = { workspace = true, features = ["native"] }
 futures.workspace = true
 serde_json.workspace = true

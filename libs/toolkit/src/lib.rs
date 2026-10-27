@@ -49,6 +49,8 @@ pub mod chrome;
 pub mod combo;
 pub mod content;
 pub mod datatable;
+/// Shared process-local logging and live debug controls.
+pub use logging::debug;
 pub mod decorations;
 pub mod dialog;
 pub mod drive;

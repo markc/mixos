@@ -15,6 +15,7 @@
 pub mod app;
 pub use app::{AppCallError, AppClient, call_app};
 pub mod macros;
+pub use logging::debug;
 pub mod outbox;
 
 use ::bus::native_client::{
@@ -687,6 +688,10 @@ async fn worker(
                 }
                 if pending.len() >= 32 {
                     let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,10,"{\"error_code\":\"BUSY\",\"message\":\"too many pending commands\"}")).await;
+                    continue;
+                }
+                if let Some((rc, body)) = debug::request(&service, &command.command, &command.body) {
+                    let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,rc,&body.to_string())).await;
                     continue;
                 }
                 next_id += 1;

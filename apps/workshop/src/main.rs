@@ -142,14 +142,19 @@ fn run(settings: &Settings) -> Result<(), String> {
 }
 
 fn main() {
+    let mut args: Vec<String> = std::env::args().collect();
+    let _logging = toolkit::debug::init("workshop", "warn", &mut args).unwrap_or_else(|e| {
+        eprintln!("workshop: {e}");
+        std::process::exit(1);
+    });
     buildinfo::exit_on_version!(leading);
-    if matches!(std::env::args().nth(1).as_deref(), Some("--help" | "-h")) {
+    if matches!(args.get(1).map(String::as_str), Some("--help" | "-h")) {
         println!(
-            "workshop — native ABP service and command browser\nUsage: workshop [--headless] [--noded-url URL] [--service NAME] [--comp NAME]"
+            "workshop — native ABP service and command browser\nUsage: workshop [--debug[=LEVEL]] [--headless] [--noded-url URL] [--service NAME] [--comp NAME]\nLevels: off|error|warn|info|debug|trace (default warn; --debug means debug)"
         );
         return;
     }
-    let result = parse(std::env::args().skip(1)).and_then(|settings| {
+    let result = parse(args.into_iter().skip(1)).and_then(|settings| {
         // One window per session: a second launch raises the first.
         if !settings.headless && bus::probe(&settings.url, &settings.service) {
             if let Some(app) = &settings.app {

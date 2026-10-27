@@ -162,6 +162,8 @@
     {name:"workshop.ui.capture", owner:"workshop", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"workshop.window", owner:"workshop", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"workshop.window.state", owner:"workshop", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
+    {name:"workshop.debug", owner:"workshop", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
+    {name:"workshop.debug.set", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"logging::debug::SetRequest"},
     {name:"workshop.macros.list", owner:"workshop", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
     {name:"workshop.macros.reload", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"workshop.macros.run", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
