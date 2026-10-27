@@ -401,6 +401,20 @@ pub fn clamp_size(size: (i32, i32), (min, max): ((i32, i32), (i32, i32))) -> (i3
     (axis(size.0, min.0, max.0), axis(size.1, min.1, max.1))
 }
 
+/// End a grab for an explicit policy operation, without committing a drag zone.
+/// The caller applies the ended grab and redraws to hide any preview.
+pub fn finish_interactive(comp: &mut CompState, id: SurfaceId) -> bool {
+    let Some(grab) = comp.interactive.as_mut().filter(|grab| grab.id == id) else {
+        return false;
+    };
+    grab.ended = true;
+    grab.updated = false;
+    if let Some(drag) = comp.drag.as_mut() {
+        drag.armed = None;
+    }
+    true
+}
+
 /// Apply the host's coalesced delta. The dispatcher's pointer start stays immutable.
 /// Restore and movement share one map operation, before a frame can be drawn.
 pub fn apply_interactive(

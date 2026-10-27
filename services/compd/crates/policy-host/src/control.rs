@@ -1409,16 +1409,9 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
             }
             // A place mid-grab: the grab would steer the window straight back.
             Effect::FinishInteractive(id) => {
-                if let Some(grab) = lp
-                    .inner
-                    .comp
-                    .interactive
-                    .as_mut()
-                    .filter(|grab| grab.id == id)
-                {
-                    grab.ended = true;
-                    grab.updated = false;
+                if crate::geometry::finish_interactive(&mut lp.inner.comp, id) {
                     apply_interactive(lp);
+                    lp.state.schedule_redraw(RedrawReason::WindowState);
                 }
             }
             // The output a fullscreen covers: policy names it by its

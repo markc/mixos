@@ -306,6 +306,126 @@ fn preview(
 }
 
 #[test]
+fn policy_place_during_an_armed_drag_keeps_the_placed_floating_frame() {
+    use comp_model::request::PlaceSpec;
+    use comp_model::snapshot::{OutputSnapshot, RectSnapshot};
+    use policy::effect::Effect;
+    use policy::window::WindowFacts;
+
+    for keep_saved in [false, true] {
+        let mut h = Harness::new();
+        let (surface, _, _) = h.mapped_toplevel(640, 480);
+        let (id, window) = window(&h, &surface);
+        if keep_saved {
+            h.wire.inner.comp.save_float_geometry(
+                id,
+                world::comp::FloatGeometry {
+                    location: (80, 60).into(),
+                    size: (320, 240).into(),
+                    output: "testkit-0".into(),
+                },
+            );
+        }
+        let saved = h.comp().float_geometry(id);
+        begin_move(&mut h, &window);
+        motion(&mut h, (0.0, 540.0));
+        apply(&mut h, &window);
+        assert_eq!(preview(&h).len(), 5);
+        let origin = h.wire.inner.space.state.element_location(&window).unwrap();
+        let record = h.comp().registry.get(id).unwrap();
+        let placement = policy::window::place(
+            &h.comp().registry,
+            &PlaceSpec {
+                id: id.0,
+                generation: record.generation(),
+                output: None,
+                x: Some(500.0),
+                y: Some(300.0),
+                width: None,
+                height: None,
+            },
+            &WindowFacts {
+                interactive: true,
+                window_origin: (origin.x as f32, origin.y as f32),
+                geometry_size: (640, 480),
+                ..Default::default()
+            },
+            &std::collections::BTreeMap::from([(
+                "testkit-0".into(),
+                OutputSnapshot {
+                    name: "testkit-0".into(),
+                    default: true,
+                    x: 0,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                    scale: 1.0,
+                    refresh_mhz: 60_000,
+                    usable: RectSnapshot {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 1920.0,
+                        height: 1080.0,
+                    },
+                    presentation: None,
+                },
+            )]),
+            Some("testkit-0"),
+            Some("testkit-0"),
+            |size| size,
+            |point| point,
+        )
+        .unwrap();
+        assert_eq!(placement.effects[0], Effect::FinishInteractive(id));
+        // TestHost has no production Loop. Drive the policy's real effects
+        // through the shared finish executor and its native Space.
+        for effect in placement.effects {
+            match effect {
+                Effect::FinishInteractive(target) => {
+                    assert!(geometry::finish_interactive(&mut h.wire.inner.comp, target));
+                    apply(&mut h, &window);
+                    // wlcs uses this same effect before its unrestricted MoveTo.
+                    assert_eq!(h.comp().placement(id), Placement::Floating);
+                    assert_eq!(h.comp().float_geometry(id), saved);
+                    assert!(h.comp().interactive.is_none());
+                    assert!(h.comp().drag.is_none());
+                    assert!(preview(&h).is_empty());
+                }
+                Effect::MoveTo { id: target, x, y } => {
+                    assert_eq!(target, id);
+                    h.wire.inner.space.state.map_element(
+                        window.clone(),
+                        (x.round() as i32, y.round() as i32),
+                        false,
+                    );
+                }
+                Effect::RetargetPointer => {}
+                other => panic!("unexpected place effect: {other:?}"),
+            }
+        }
+        {
+            let host = &mut h.wire.inner;
+            geometry::refresh_usable(
+                &mut host.comp,
+                &mut host.space.state,
+                &[(id, window.clone())],
+            );
+        }
+        assert_eq!(h.comp().placement(id), Placement::Floating);
+        assert_eq!(h.comp().float_geometry(id), saved);
+        assert_eq!(h.wire.inner.space.state.element_location(&window), Some((500, 300).into()));
+        assert_eq!(slot::size_of(&window), Some((640, 480).into()));
+        assert!(!decor::window::constrained(&window));
+        for edge in [State::TiledLeft, State::TiledRight, State::TiledTop, State::TiledBottom] {
+            assert!(!window.toplevel().unwrap().with_pending_state(|state| state.states.contains(edge)));
+        }
+        let_go(&mut h);
+        assert!(h.comp().interactive.is_none());
+        assert_eq!(h.comp().placement(id), Placement::Floating);
+    }
+}
+
+#[test]
 fn every_drag_zone_commits_its_placement_frame_and_protocol_states() {
     use world::comp::{TileSlot, TileSplit};
     for (point, tile) in [
