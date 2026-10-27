@@ -452,11 +452,12 @@ impl Harness {
             KeyState::Released
         };
         let code = smithay::input::keyboard::Keycode::new(keycode);
-        let ((modifier, sym), mods_changed) =
+        let ((modifier, sym, binding_sym), mods_changed) =
             keyboard.input_intercept(&mut self.wire.state, code, state, |_, _, handle| {
                 (
                     handle.modified_sym().is_modifier_key(),
                     handle.modified_sym().raw(),
+                    handle.raw_latin_sym_or_raw_current_sym().map(|sym| sym.raw()),
                 )
             });
         if world::comp::tiling::key(
@@ -493,7 +494,7 @@ impl Harness {
             match self.wire.inner.comp.bindings.table_key(
                 keycode,
                 pressed,
-                Some(sym),
+                binding_sym,
                 &modifiers,
                 locked,
             ) {
