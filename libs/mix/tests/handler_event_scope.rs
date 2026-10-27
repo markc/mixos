@@ -17,9 +17,14 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use mix::evaluator::{Evaluator, IncomingEvent, ReservedOutcome, ServeRuntime, SharedBuf};
+use mix::evaluator::{
+    BusFuture, BusHandler, Evaluator, IncomingEvent, REPLY_SHUTTING_DOWN_CODE, ReservedOutcome,
+    ServeRuntime, SharedBuf,
+};
+use mix::error::{MixError, MixResult};
 use mix::lexer::Lexer;
 use mix::parser::Parser;
+use mix::value::Value;
 
 fn mk_event(command: &str, body: &str, headers: &[(&str, &str)]) -> IncomingEvent {
     let mut h = BTreeMap::new();
@@ -306,4 +311,133 @@ async fn healthy_dispatch_records_nothing() {
         .unwrap();
     assert!(runtime.faults.borrow().is_empty());
     assert!(s.stderr.to_string_lossy().is_empty());
+}
+
+/// Count evaluator error records without installing a process-global logger.
+#[derive(Clone, Default)]
+struct ErrorRecords(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl tracing::Subscriber for ErrorRecords {
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        true
+    }
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+    fn event(&self, event: &tracing::Event<'_>) {
+        if *event.metadata().level() == tracing::Level::ERROR {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    fn enter(&self, _: &tracing::span::Id) {}
+    fn exit(&self, _: &tracing::span::Id) {}
+}
+
+struct RefusedReply {
+    shutdown: bool,
+    terminal: RefCell<Vec<(u8, String)>>,
+}
+
+impl BusHandler for RefusedReply {
+    fn send<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: &'a Value,
+    ) -> BusFuture<'a, MixResult<(i32, Value)>> {
+        Box::pin(async { unreachable!("test only replies") })
+    }
+
+    fn reply<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: Option<&'a str>,
+        _: u8,
+        _: &'a str,
+    ) -> BusFuture<'a, MixResult<()>> {
+        Box::pin(async move {
+            // Identical prose: only the transport marker changes classification.
+            let msg = "reply failed: supervised client is shutting down";
+            Err(if self.shutdown {
+                MixError::structured(REPLY_SHUTTING_DOWN_CODE, msg)
+            } else {
+                MixError::RuntimeError { msg: msg.into(), span: None }
+            })
+        })
+    }
+
+    fn reply_shutdown_synth<'a>(
+        &'a self,
+        to: &'a str,
+        command: &'a str,
+        id: Option<&'a str>,
+        rc: u8,
+        body: &'a str,
+    ) -> BusFuture<'a, MixResult<()>> {
+        Box::pin(async move {
+            assert_eq!((to, command, id), ("caller", "refresh", Some("request-1")));
+            self.terminal.borrow_mut().push((rc, body.into()));
+            Ok(())
+        })
+    }
+}
+
+#[tokio::test]
+async fn shutdown_refusal_stays_drain_visible_without_a_handler_fault() {
+    // Class S completes before the drain; Class C completes DURING its grace.
+    // Catching the refusal must also preserve the pending caller's handle.
+    for source in [
+        "fn answer()\n reply(0, \"ok\")\nend\non refresh\n answer()\nend\n",
+        "on refresh async\n reply(0, \"ok\")\nend\n",
+        "on refresh async\n try\n reply(0, \"ok\")\n catch $err\n end\nend\n",
+        // No explicit reply: the normal NO_REPLY synthesis hits the same gate.
+        "on refresh async\n $x = 1\nend\n",
+    ] {
+        tokio::task::LocalSet::new().run_until(async {
+            let records = ErrorRecords::default();
+            let _guard = tracing::subscriber::set_default(records.clone());
+            let mut s = setup(source).await;
+            let runtime = Rc::new(RecordingRuntime { faults: RefCell::new(Vec::new()) });
+            let bus = Rc::new(RefusedReply { shutdown: true, terminal: RefCell::new(Vec::new()) });
+            s.eval.set_serve_runtime(runtime.clone());
+            s.eval.set_bus_handler(bus.clone());
+            s.eval.dispatch_event(mk_event("refresh", "", &[
+                ("type", "request"), ("from", "caller"), ("id", "request-1"),
+            ])).await.unwrap();
+            let outcome = s.eval.drain_class_c_for_shutdown(std::time::Duration::from_secs(1), true).await;
+            assert_eq!(outcome.synth_sent, 1, "{source}: {outcome:?}");
+            assert_eq!(outcome.synth_failed, 0);
+            assert_eq!(outcome.aborted, 0);
+            let terminal = bus.terminal.borrow();
+            assert_eq!(terminal.len(), 1);
+            assert_eq!(terminal[0].0, 16);
+            assert!(terminal[0].1.contains("HANDLER_CANCELLED"));
+            assert_eq!(records.0.load(std::sync::atomic::Ordering::Relaxed), 0);
+            assert!(runtime.faults.borrow().is_empty());
+            assert!(s.stderr.to_string_lossy().is_empty());
+            assert_eq!(s.eval.handler_count(), 1);
+        }).await;
+    }
+}
+
+#[tokio::test]
+async fn other_reply_failure_remains_an_observable_handler_fault() {
+    let records = ErrorRecords::default();
+    let _guard = tracing::subscriber::set_default(records.clone());
+    let mut s = setup("on refresh\n reply(0, \"ok\")\nend\n").await;
+    let runtime = Rc::new(RecordingRuntime { faults: RefCell::new(Vec::new()) });
+    s.eval.set_serve_runtime(runtime.clone());
+    s.eval.set_bus_handler(Rc::new(RefusedReply { shutdown: false, terminal: RefCell::new(Vec::new()) }));
+    s.eval.dispatch_event(mk_event("refresh", "", &[
+        ("type", "request"), ("from", "caller"), ("id", "request-1"),
+    ])).await.unwrap();
+    assert_eq!(runtime.faults.borrow().len(), 1);
+    assert!(s.stderr.to_string_lossy().contains("handler fault: refresh[0]"));
+    assert!(s.stderr.to_string_lossy().contains("handler remains registered"));
+    // Handler error and the failed HANDLER_FAULT synthesis both stay errors.
+    assert_eq!(records.0.load(std::sync::atomic::Ordering::Relaxed), 2);
+    assert_eq!(s.eval.handler_count(), 1);
 }

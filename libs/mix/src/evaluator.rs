@@ -1020,6 +1020,9 @@ pub(crate) struct InvocationReplyHandle {
     /// cooperative-yield duplicate-reply window Codex C.7c R1 MAJOR
     /// flagged.
     state: Cell<ReplyState>,
+    /// A refused shutdown reply must remain visible to the drain even if
+    /// the handler finishes (or catches the refusal) during its grace period.
+    shutdown_refused: Cell<bool>,
     /// Bus handler snapshotted at registration. `None` when no
     /// `bus_handler` was wired; `reply_once` returns the
     /// "Bus not available" error in that case.
@@ -1073,6 +1076,14 @@ pub(crate) enum ReplyState {
     Unanswered,
     Replying,
     Answered,
+}
+
+/// Stable transport marker emitted only for an ordinary reply refused by
+/// the supervised client's shutdown gate. Other failures retain their errors.
+pub const REPLY_SHUTTING_DOWN_CODE: &str = "BUS_REPLY_SHUTTING_DOWN";
+
+fn is_reply_shutting_down(error: &MixError) -> bool {
+    error.info().is_some_and(|info| info.code == REPLY_SHUTTING_DOWN_CODE)
 }
 
 impl InvocationReplyHandle {
@@ -1244,6 +1255,9 @@ impl InvocationReplyHandle {
             }
             Err(e) => {
                 self.state.set(ReplyState::Unanswered);
+                if is_reply_shutting_down(&e) {
+                    self.shutdown_refused.set(true);
+                }
                 Err(e)
             }
         }
@@ -1300,6 +1314,7 @@ impl InvocationReplyRegistry {
             correlation_id,
             is_request,
             state: Cell::new(ReplyState::Unanswered),
+            shutdown_refused: Cell::new(false),
             handler,
         });
         self.handles.borrow_mut().insert(id, Rc::clone(&handle));
@@ -1344,7 +1359,8 @@ impl InvocationReplyRegistry {
 ///
 /// Normal completion in `run_handlers_for` calls
 /// [`Self::complete`] explicitly, which consumes the guard and
-/// removes the entry. A long-lived citizen therefore does not leak
+/// removes the entry unless a shutdown-refused reply still needs the drain.
+/// A long-lived citizen therefore does not leak
 /// per-dispatch entries on the happy path; the registry only grows
 /// when an in-flight task is being cancelled, and C.7f's drain
 /// reclaims everything still registered at shutdown.
@@ -1361,7 +1377,9 @@ impl InvocationRegistration {
     /// Mark this invocation completed and remove its handle from the
     /// registry. Called from `run_handlers_for` after the §3.4 fault
     /// boundary has had its chance to synthesize a reply for an
-    /// unanswered request. Consumes the guard to make accidental
+    /// unanswered request. A shutdown-refused unanswered request stays
+    /// registered for the drain's gate-bypassing terminal reply.
+    /// Consumes the guard to make accidental
     /// double-completion a compile error.
     ///
     /// Does NOT `mem::forget(self)` — the `Drop` impl is a no-op, so
@@ -1372,7 +1390,12 @@ impl InvocationRegistration {
     /// pin its `Cell`/`RefCell` allocations for the life of the
     /// process).
     pub(crate) fn complete(self) {
-        self.registry.remove(self.id);
+        let retain_for_drain = self.registry.handles.borrow().get(&self.id).is_some_and(|h| {
+            h.shutdown_refused.get() && h.is_unanswered_request()
+        });
+        if !retain_for_drain {
+            self.registry.remove(self.id);
+        }
         // `self` falls out of scope here: Drop runs (no-op), then
         // the `id` Copy and `registry` Rc drop normally. The Rc
         // decrement is the load-bearing operation — without it the
@@ -7306,6 +7329,15 @@ impl Evaluator {
                     g.quit_notify.notify_one();
                     requested_exit = true;
                 }
+                Ok(Err(e)) if handle.shutdown_refused.get() && is_reply_shutting_down(&e) => {
+                    self.scope.pop_frame();
+                    tracing::debug!(
+                        command = %event.command,
+                        handler_index = idx,
+                        error = %e,
+                        "Handler reply deferred to shutdown drain"
+                    );
+                }
                 Ok(Err(e)) => {
                     self.scope.pop_frame();
                     faulted = true;
@@ -7425,7 +7457,7 @@ impl Evaluator {
         // forgot its answer fails fast instead of leaving the caller to
         // wait out its full timeout and read a mesh failure that is
         // really a missing reply.
-        if handle.is_unanswered_request() {
+        if handle.is_unanswered_request() && !handle.shutdown_refused.get() {
             let (rc, body) = if faulted {
                 (HANDLER_FAULT_RC, HANDLER_FAULT_BODY)
             } else {
@@ -7440,6 +7472,11 @@ impl Evaluator {
             // `.await` — no globals borrow survives.
             match handle.reply_once(rc, body).await {
                 Ok(_) => {}
+                Err(e) if is_reply_shutting_down(&e) => tracing::debug!(
+                    command = %event.command,
+                    error = %e,
+                    "Synthetic reply deferred to shutdown drain"
+                ),
                 Err(e) => tracing::error!(
                     command = %event.command,
                     error = %e,
@@ -7468,8 +7505,9 @@ impl Evaluator {
         // BLOCKER fix). The `InvocationRegistration` guard's plain
         // `Drop` is a no-op — it leaves cancellation victims in the
         // registry for C.7f's shutdown drain to enumerate. Reaching
-        // this line means the dispatch ran to a clean end, so we
-        // own the deregistration explicitly.
+        // this line means the dispatch ran to a clean end. Completion
+        // retains shutdown-refused requests for the drain; other handles
+        // are deregistered here.
         registration.complete();
     }
 
