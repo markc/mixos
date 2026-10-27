@@ -232,11 +232,15 @@ pub(crate) fn init_inner(
     // install — so journald-primary daemons don't get duplicated lines,
     // and a journald connect failure (layer = None) transparently falls
     // back to stderr. `Always`/`Never` are honoured verbatim.
-    let stderr_on = match opts.log_stderr.unwrap_or(TriState::Auto) {
+    let stderr_on = match if live_debug {
+        crate::debug::stderr_mode(std::io::stderr().is_terminal(), journald_active)
+    } else {
+        opts.log_stderr.unwrap_or(TriState::Auto)
+    } {
         TriState::Always => true,
         TriState::Never => false,
         TriState::Auto => !journald_active,
-    } || (live_debug && journald_on && !journald_active);
+    };
     let stderr_layer = if stderr_on {
         Some(make_fmt_layer(
             format,

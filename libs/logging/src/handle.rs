@@ -174,7 +174,7 @@ impl LogHandle {
 /// without exposing the `tracing_subscriber` reload type.
 #[derive(Clone)]
 pub struct LogReloadHandle {
-    inner: ReloadHandle,
+    pub(crate) inner: ReloadHandle,
 }
 
 impl LogReloadHandle {
