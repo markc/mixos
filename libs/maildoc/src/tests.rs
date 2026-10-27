@@ -296,7 +296,7 @@ proptest! {
         body in "[^\r]{0,256}",
         recipients in prop::collection::vec("[a-z]{1,12}@[a-z]{1,12}\\.example", 0..5),
         optional in prop::option::of("[^\r\n]{1,48}"),
-        references in prop::collection::vec("<[a-z]{1,12}@example.org>", 0..5),
+        references in prop::collection::vec("<[a-z]{1,12}@example\\.org>", 0..5),
         paths in prop::collection::vec("/[^\r\n]{0,48}", 0..5),
     ) {
         let document = MailDocument {
