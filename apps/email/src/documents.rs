@@ -68,15 +68,22 @@ fn save_file(
         .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
     if !replace {
         let mut file = options.open(path)?;
-        return write(&mut file).and_then(|()| file.sync_all());
+        let result = write(&mut file).and_then(|()| file.sync_all());
+        if result.is_err() {
+            // We created it exclusively: never leave a partial document.
+            let _ = std::fs::remove_file(path);
+            return result;
+        }
+        return sync_parent(path);
     }
     // Refuse links and special files just as the non-replacement path does.
-    match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.is_file() => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+    // A replaced file keeps its permission bits.
+    let mode = match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_file() => Some(meta.permissions()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Ok(_) => return Err(std::io::Error::other(crate::label("document-not-file"))),
         Err(error) => return Err(error),
-    }
+    };
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
     let (temporary, mut file) = loop {
         let temporary = path.with_file_name(format!(
@@ -91,12 +98,25 @@ fn save_file(
         }
     };
     let result = write(&mut file)
+        .and_then(|()| match mode {
+            Some(mode) => file.set_permissions(mode),
+            None => Ok(()),
+        })
         .and_then(|()| file.sync_all())
         .and_then(|()| std::fs::rename(&temporary, path));
     if result.is_err() {
         let _ = std::fs::remove_file(&temporary);
+        return result;
     }
-    result
+    sync_parent(path)
+}
+
+/// Make a new or renamed directory entry durable.
+fn sync_parent(path: &std::path::Path) -> std::io::Result<()> {
+    match path.parent() {
+        Some(parent) => std::fs::File::open(parent)?.sync_all(),
+        None => Ok(()),
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -414,12 +434,17 @@ impl State {
                 }
             }
             Answer::Saved(result) => {
-                let current = self
-                    .documents
-                    .saving
-                    .remove(&ticket)
-                    .is_some_and(|fence| fence == self.document_fence());
+                let entry = self.documents.saving.remove(&ticket);
+                let current = entry
+                    .as_ref()
+                    .is_some_and(|fence| *fence == self.document_fence());
+                let fence = entry.flatten();
+                // The same message, even edited since, still owns the error;
+                // a different message never shows another one's failure.
+                let same_message = fence.as_ref().map(|f| &f.0)
+                    == self.compose.as_ref().map(|c| &c.draft_id);
                 match result {
+                    Err(error) if !same_message => self.status = error.1,
                     Err(error) => self.document_error(error),
                     Ok(()) => {
                         if current && let Some(compose) = &mut self.compose {
@@ -1125,11 +1150,43 @@ mod tests {
     }
 
     #[test]
+    fn a_late_save_failure_never_lands_in_a_different_message() {
+        let mut state = connected_many(&["a"]);
+        state.open_compose(Some("a"), jmap::Composed::default());
+        state.write_document("/tmp/mail.md".into(), false);
+        let ticket = *state.documents.saving.keys().next().unwrap();
+        let first = state.compose.as_ref().unwrap().draft_id.clone();
+        state.take_compose();
+        state.open_compose(Some("a"), jmap::Composed::default());
+        assert_ne!(state.compose.as_ref().unwrap().draft_id, first);
+        state.document_done(
+            ticket,
+            Answer::Saved(Err((code::DOCUMENT_IO, "disk full".into()))),
+        );
+        assert_eq!(state.status, "disk full");
+        assert!(state.compose.as_ref().unwrap().error.is_none());
+    }
+
+    #[test]
+    fn a_failed_new_save_leaves_no_partial_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("new.md");
+        let result = save_file(&path, false, |file| {
+            file.write_all(b"partial")?;
+            Err(std::io::Error::other("disk full"))
+        });
+        assert!(result.is_err());
+        assert!(!path.exists(), "a partial new document must be removed");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
     fn replacement_write_failure_preserves_the_old_file_and_cleans_the_sibling() {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("mail.md");
         std::fs::write(&path, "old document").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         let inode = std::fs::metadata(&path).unwrap().ino();
         let result = save_file(&path, true, |file| {
             file.write_all(b"partial")?;
@@ -1143,7 +1200,11 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new document");
         let metadata = std::fs::metadata(&path).unwrap();
         assert_ne!(metadata.ino(), inode, "replacement must use a new inode");
-        assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            metadata.permissions().mode() & 0o777,
+            0o644,
+            "a replaced file keeps its permission bits"
+        );
         assert!(save_file(&path, false, |_| panic!("must not overwrite")).is_err());
         let link = dir.path().join("link.md");
         std::os::unix::fs::symlink(&path, &link).unwrap();
