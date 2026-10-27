@@ -293,6 +293,9 @@ pub fn init(
     off_filter: &str,
     args: &mut Vec<String>,
 ) -> Result<LogHandle, LogError> {
+    if CONTROL.get().is_some() {
+        return Err(LogError::AlreadyInstalled("debug control already installed".into()));
+    }
     let level = strip_args(args)?;
     // An invalid app default is a programming error. A bad environment
     // override must not prevent a GUI from starting or disable its live controls.
@@ -305,7 +308,7 @@ pub fn init(
     let filter = level.map(filter_for).unwrap_or_else(|| baseline.clone());
     let parsed = parse_filter(&filter)?;
     crate::recent::configure(&parsed);
-    let guard = crate::init::init_inner(
+    let guard = match crate::init::init_inner(
         &LogOpts {
             log_stderr: Some(stderr_mode(std::io::stderr().is_terminal(), true)),
             ..LogOpts::default()
@@ -313,7 +316,13 @@ pub fn init(
         &StatsOpts::default(),
         LogDefaults::gui(identity).with_journald(true),
         Some(parsed),
-    )?;
+    ) {
+        Ok(guard) => guard,
+        Err(error) => {
+            crate::recent::configure(&EnvFilter::new("off"));
+            return Err(error);
+        }
+    };
     CONTROL
         .set(Mutex::new(Control {
             reload: guard

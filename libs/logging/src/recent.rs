@@ -63,7 +63,7 @@ impl Ring {
                 None => break,
             }
         }
-        if bytes <= MAX_BYTES {
+        if self.bytes + bytes <= MAX_BYTES {
             self.bytes += bytes;
             self.entries.push_back((entry, bytes));
         }
