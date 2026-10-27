@@ -6,6 +6,10 @@
     "reason": "read config from the etc root (@{etc}), not @{prefix}/etc",
     "sha256": "c152b5d329d5a62e21bdb65112863a0a55dc99a92dbe2444621d8c1585c5be11"
   },
+  "services/monitord/units/monitord.service": {
+    "reason": "allow AF_NETLINK for the unprivileged inet_diag dump behind monitord.connections",
+    "sha256": "ad83108732f90d9eaabd0d24fb24715ada382bd27d96b5127912298077d29ce4"
+  },
   "services/maild/units/maild.service": {
     "reason": "make the default data dir @{var}/jmap a state directory under ProtectSystem=strict",
     "sha256": "3b39b7af52c4f99c28789fbeb1153f3f79681f96ee4a0f335b6fd1e3e1b4fa89"
