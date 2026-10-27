@@ -678,6 +678,9 @@ fn window_state(
         &outputs,
     )?;
     let before = requested(lp, record_id, state);
+    // Un-maximise also untiles, and a tiled window is not maximised either
+    // side of that, so `changed` compares constrained placement instead.
+    let constrained_before = lp.inner.comp.placement(record_id).constrained();
     execute(lp, effects);
     let after = requested(lp, record_id, state);
     if after != enabled {
@@ -686,7 +689,58 @@ fn window_state(
             serde_json::json!({"id": id, "reason": "configure_refused"}),
         ));
     }
+    let constrained_after = lp.inner.comp.placement(record_id).constrained();
+    if untiled_by_unmaximize(state, enabled, constrained_before, constrained_after) {
+        return Ok((record_id, true, false));
+    }
     Ok((record_id, before, after))
+}
+
+/// `comp.window.unmaximize` of a tiled window untiles it, but the window was
+/// not maximised before or after, so its reply must still say `changed`.
+fn untiled_by_unmaximize(
+    state: WindowState,
+    enabled: bool,
+    constrained_before: bool,
+    constrained_after: bool,
+) -> bool {
+    state == WindowState::Maximized && !enabled && constrained_before && !constrained_after
+}
+
+#[cfg(test)]
+mod unmaximize_tests {
+    use super::{WindowState, untiled_by_unmaximize};
+
+    #[test]
+    fn unmaximize_of_a_tile_reports_a_change() {
+        assert!(untiled_by_unmaximize(
+            WindowState::Maximized,
+            false,
+            true,
+            false
+        ));
+        // Already floating: nothing changed.
+        assert!(!untiled_by_unmaximize(
+            WindowState::Maximized,
+            false,
+            false,
+            false
+        ));
+        // Maximise (enable) keeps the maximised-flag comparison.
+        assert!(!untiled_by_unmaximize(
+            WindowState::Maximized,
+            true,
+            true,
+            true
+        ));
+        // Fullscreen is untouched by this rule.
+        assert!(!untiled_by_unmaximize(
+            WindowState::Fullscreen,
+            false,
+            true,
+            false
+        ));
+    }
 }
 
 /// The requested (not yet committed) state: compd's maximise record, the
